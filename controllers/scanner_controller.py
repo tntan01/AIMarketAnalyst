@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from PyQt6.QtCore import QThread
+
+import yfinance as yf
+
+from config.paths import app_data_dir
+from core.scanner import (
+    ScannerRequest,
+    ai_targets,
+    blocked_scanner_row,
+    build_scanner_output,
+    scanner_row_from_analysis,
+    sort_scanner_rows,
+)
+from core.analysis_engine import analyze_symbol
+from core.risk_engine import AnalysisInput
+from services.ai_service import AIProviderConfig, AIService
+from services.mt5_service import MT5Service
+from services.news_service import NewsService
+from services.settings_service import SettingsService
+from services.storage_service import JsonStorage
+from services.telegram_alert_service import TelegramAlertService
+from workers.scanner_worker import ScannerWorker
+
+
+class ScannerController:
+    def __init__(
+        self,
+        settings_service: SettingsService | None = None,
+        mt5_service: MT5Service | None = None,
+        news_service: NewsService | None = None,
+        telegram_service: TelegramAlertService | None = None,
+    ) -> None:
+        self.settings_service = settings_service or SettingsService()
+        self.mt5_service = mt5_service or MT5Service()
+        self.news_service = news_service or NewsService()
+        self.telegram_service = telegram_service or TelegramAlertService()
+
+    def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
+        thread = QThread()
+        worker = ScannerWorker(self.run_market_scan, {"request": request})
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        return thread, worker
+
+    def run_market_scan(
+        self,
+        *,
+        request: ScannerRequest,
+        _progress_callback: Callable[[int, str], None] | None = None,
+    ) -> dict[str, Any]:
+        progress = _progress_callback or (lambda _percent, _message: None)
+        settings = self.settings_service.load()
+        progress(8, "Đang kiểm tra kết nối MetaTrader 5...")
+        status = self.mt5_service.connection_status()
+        if not status.terminal_connected or not status.logged_in:
+            raise RuntimeError("MT5 chưa kết nối đầy đủ hoặc broker chưa đăng nhập.")
+        mt5_balance = self.mt5_service.account_balance()
+        if mt5_balance is None:
+            raise RuntimeError("Không lấy được số dư từ tài khoản MT5.")
+
+        bars_by_timeframe = {
+            "D1": settings.advanced.d1_bars,
+            "H4": settings.advanced.h4_bars,
+            "H1": settings.advanced.h1_bars,
+        }
+        progress(12, "Đang đọc danh sách mã trong Market Watch...")
+        available_symbols = self.mt5_service.available_symbols(market_watch_only=True)
+        rows: list[dict[str, Any]] = []
+
+        # Fetch DXY/VIX/US10Y MỘT LẦN cho toàn bộ scanner (song song)
+        progress(14, "Đang tải dữ liệu thị trường Mỹ (DXY, VIX, US10Y)...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        correlation_context: dict = {"dxy_candles": None, "vix_candles": None, "us10y_candles": None}
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futures = {
+                ex.submit(yf.download, "DX-Y.NYB", period="5d", interval="1d", progress=False): "dxy",
+                ex.submit(yf.download, "^VIX", period="5d", interval="1d", progress=False): "vix",
+                ex.submit(yf.download, "^TNX", period="5d", interval="1d", progress=False): "us10y",
+            }
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    data = future.result()
+                    correlation_context[f"{key}_candles"] = _parse_yf_candles(data)
+                except Exception:
+                    pass
+
+        # Pre-fetch toan bo macro context 1 lan (RSS + calendar) de tai su dung trong vong lap
+        progress(17, "Đang tải tin tức và phân tích vĩ mô...")
+        self.news_service.preload_macro_contexts(request.symbols)
+
+        progress(19, "Đang quét các cặp tiền...")
+        total = max(1, len(request.symbols))
+        for index, symbol in enumerate(request.symbols, start=1):
+            progress(12 + int(index / total * 58), f"Đang quét {symbol} ({index}/{total})...")
+            broker_symbol = self.mt5_service.resolve_symbol(symbol, available_symbols)
+            if not broker_symbol:
+                rows.append(blocked_scanner_row(symbol, "Không tìm thấy mã broker trong Market Watch."))
+                continue
+
+            try:
+                all_candles = self.mt5_service.load_primary_timeframes(
+                    broker_symbol,
+                    {**bars_by_timeframe, "M15": 200},
+                )
+                candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
+                m15_candles = all_candles["M15"]
+                data_quality = self.mt5_service.symbol_data_quality(symbol, broker_symbol)
+                news_flags = self.news_service.data_quality_flags(symbol, include_latest_statements=False)
+                macro_context = news_flags.pop("macro_context", {"events": []})
+                data_quality.update(news_flags)
+                if symbol == "XAU/USD":
+                    contract_override = data_quality.get("contract_size") or 100
+                else:
+                    contract_override = settings.trading.contract_size_override
+                analysis_input = AnalysisInput(
+                    symbol=symbol,
+                    broker_symbol=broker_symbol,
+                    account_balance=mt5_balance,
+                    risk_percent=request.risk_percent,
+                    account_currency=settings.trading.account_currency,
+                    lot_step=settings.trading.lot_step,
+                    minimum_lot=settings.trading.minimum_lot,
+                    contract_size_override=float(contract_override) if contract_override else None,
+                    timezone_name=request.timezone_name,
+                )
+                macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
+                macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
+                quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+                quote_to_usd = self.mt5_service.quote_to_usd_rate(quote_currency)
+                result = analyze_symbol(
+                    analysis_input,
+                    candles,
+                    data_quality=data_quality,
+                    macro_alignment=macro_alignment if isinstance(macro_alignment, dict) else None,
+                    macro_confidence=macro_confidence,
+                    m15_candles=m15_candles,
+                    correlation_context=correlation_context,
+                    quote_to_usd_rate=quote_to_usd,
+                    use_decision_engine_action=True,
+                )
+                result["economic_events"] = macro_context.get("events", [])
+                result["macro"]["driver_context"] = macro_context
+                if isinstance(macro_context, dict):
+                    result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
+                    result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
+                rows.append(scanner_row_from_analysis(result, broker_symbol=broker_symbol))
+            except Exception as exc:
+                rows.append(blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol))
+
+        progress(74, "Đang xếp hạng setup theo rule engine...")
+        rows = sort_scanner_rows(rows)
+
+        active_ai = settings.ai.active_provider()
+        ai_called = 0
+        targets = ai_targets(rows, request.max_ai_details)
+        if active_ai and active_ai.api_key and targets:
+            for index, row in enumerate(targets, start=1):
+                progress(78 + int(index / len(targets) * 12), f"Đang gọi AI cho {row['symbol']} ({index}/{len(targets)})...")
+                summary = self._write_scanner_ai_summary(row, active_ai)
+                if summary:
+                    row["short_reason"] = summary
+                    row["ai_summary_available"] = True
+                    ai_called += 1
+
+        progress(94, "Đang dựng bảng kết quả quét...")
+        output = build_scanner_output(rows, request, ai_called)
+        output["telegram_alerts"] = self._send_telegram_alerts(rows)
+        return output
+
+    def _send_telegram_alerts(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        notifications = self.settings_service.load().notifications
+        result = self.telegram_service.send_ready_trade_alerts(
+            rows,
+            bot_token=notifications.telegram_bot_token,
+            chat_ids=notifications.telegram_chat_ids,
+        )
+        # Gui alert tong ket (luon gui, ke ca khi khong co ma ready)
+        summary_sent = self.telegram_service.send_summary_alert(
+            rows,
+            bot_token=notifications.telegram_bot_token,
+            chat_ids=notifications.telegram_chat_ids,
+            timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
+        )
+        return {"attempted": result.attempted, "sent": result.sent, "errors": result.errors, "summary_sent": summary_sent}
+
+    def save_snapshot(self, result: dict[str, Any]) -> Path:
+        snapshot_dir = app_data_dir() / "scanner_snapshots"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = str(result.get("timestamp", "scanner")).replace(":", "").replace("+", "_")
+        path = snapshot_dir / f"scanner_{timestamp}.json"
+        JsonStorage(path).save(self._snapshot_payload(result))
+        return path
+
+    def _write_scanner_ai_summary(self, row: dict[str, Any], active_ai) -> str:
+        prompt = (
+            "Viết nhận định scanner rất ngắn bằng tiếng Việt, tối đa 2 câu. "
+            "Chỉ diễn giải dữ liệu đã cung cấp, không tự tạo entry/SL/TP/giá mới.\n"
+            f"Mã: {row.get('symbol')}\n"
+            f"Regime: {row.get('market_regime')}\n"
+            f"Bias: {row.get('direction_bias')}\n"
+            f"Permission: {row.get('trade_permission')}\n"
+            f"Buy score: {row.get('buy_score')}\n"
+            f"Sell score: {row.get('sell_score')}\n"
+            f"Best score: {row.get('best_score')}\n"
+            f"Action: {row.get('scanner_action')}\n"
+            f"R:R: {row.get('risk_reward') or '-'}\n"
+            f"Lý do rule engine: {row.get('short_reason')}"
+        )
+        try:
+            return AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)).analyze(prompt)
+        except Exception:
+            return ""
+
+    def _snapshot_payload(self, result: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(result)
+        payload["rows"] = [
+            {key: value for key, value in row.items() if key != "analysis_result"}
+            for row in result.get("rows", [])
+        ]
+        return payload
+
+
+def _parse_yf_candles(data) -> list | None:
+    """Parse yfinance DataFrame thành list Candle objects."""
+    from core.market_models import Candle
+    if data is None or data.empty:
+        return None
+    candles = []
+    for idx, row in data.iterrows():
+        close_val = row["Close"]
+        if hasattr(close_val, "iloc"):
+            close_val = close_val.iloc[0]
+        open_val = row["Open"]
+        if hasattr(open_val, "iloc"):
+            open_val = open_val.iloc[0]
+        high_val = row["High"]
+        if hasattr(high_val, "iloc"):
+            high_val = high_val.iloc[0]
+        low_val = row["Low"]
+        if hasattr(low_val, "iloc"):
+            low_val = low_val.iloc[0]
+        candles.append(Candle(
+            time=idx.to_pydatetime(),
+            open=float(open_val),
+            high=float(high_val),
+            low=float(low_val),
+            close=float(close_val),
+        ))
+    return candles

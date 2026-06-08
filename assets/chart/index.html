@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Market Analyst Chart</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #101214; color: #f3f4f6; font-family: Arial, sans-serif; overflow: hidden; }
+    #chart-wrapper { position: relative; width: 100%; height: 100%; }
+    #chart-container { width: 100%; height: 100%; }
+    #timeframe-selector { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; z-index: 10; }
+    #timeframe-selector button { background: #1e2227; color: #9ca3af; border: 1px solid #374151; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: Arial, sans-serif; }
+    #timeframe-selector button:hover { background: #2d3238; color: #e5e7eb; }
+    #timeframe-selector button.active { background: #374151; color: #f3f4f6; border-color: #6b7280; }
+    #empty-state, #error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; }
+    #watermark { position: absolute; bottom: 8px; left: 10px; color: #6b7280; font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="chart-wrapper">
+    <div id="chart-container"></div>
+    <div id="timeframe-selector">
+      <button data-tf="D1">D1</button>
+      <button data-tf="H4">H4</button>
+      <button data-tf="H1">H1</button>
+    </div>
+    <div id="empty-state">Chua co du lieu bieu do</div>
+    <div id="error-state">Khong the tai bieu do</div>
+    <div id="watermark">AI Market Analyst</div>
+  </div>
+
+  <script src="lightweight-charts.standalone.production.js"></script>
+  <script>
+    // State
+    var _chart = null;
+    var _candleSeries = null;
+    var _emaSeries = [];
+    var _priceLines = [];
+    var _zones = [];
+    var _payload = null;
+    var _activeTF = 'H1';
+
+    var COLORS = {
+      bg: '#101214', text: '#f3f4f6', grid: '#1e2227', border: '#2d3238',
+      buy: '#22c55e', sell: '#ef4444', tp: '#22c55e', sl: '#ef4444',
+      ema20: '#f59e0b', ema50: '#3b82f6', ema200: '#ef4444',
+      currentPrice: '#6b7280', neutral: '#6b7280',
+    };
+
+    // Legend colors for button text
+    function _makeLegend(name, color) {
+      return '<span style="color:' + color + '">●</span> ' + name;
+    }
+
+    var LEGENDS = {
+      ema20: _makeLegend('EMA20', COLORS.ema20),
+      ema50: _makeLegend('EMA50', COLORS.ema50),
+      ema200: _makeLegend('EMA200', COLORS.ema200),
+      sl: _makeLegend('SL', COLORS.sl),
+      tp: _makeLegend('TP', COLORS.tp),
+      entry: _makeLegend('Entry', COLORS.neutral),
+      price: _makeLegend('Price', COLORS.currentPrice),
+    };
+
+    function _hide(id) { var el = document.getElementById(id); if (el) el.style.display = 'none'; }
+    function _show(id) { var el = document.getElementById(id); if (el) el.style.display = 'block'; }
+
+    function _addSeries(seriesType, options) {
+      if (!_chart || !window.LightweightCharts) return null;
+      if (typeof _chart.addSeries === 'function') {
+        return _chart.addSeries(seriesType, options);
+      }
+      if (seriesType === LightweightCharts.CandlestickSeries && typeof _chart.addCandlestickSeries === 'function') {
+        return _chart.addCandlestickSeries(options);
+      }
+      if (seriesType === LightweightCharts.LineSeries && typeof _chart.addLineSeries === 'function') {
+        return _chart.addLineSeries(options);
+      }
+      throw new Error('Unsupported Lightweight Charts series API');
+    }
+
+    function showError(message) {
+      var el = document.getElementById('error-state');
+      if (el && message) el.textContent = message;
+      _show('error-state');
+    }
+
+    function _initChart() {
+      if (_chart) {
+        try { _chart.remove(); } catch(e) {}
+        _chart = null;
+      }
+      _candleSeries = null;
+      _emaSeries = [];
+      _priceLines = [];
+      _zones = [];
+
+      var container = document.getElementById('chart-container');
+      if (!container) return null;
+
+      // Dam bao container co kich thuoc
+      var w = container.clientWidth || container.offsetWidth || 800;
+      var h = container.clientHeight || container.offsetHeight || 500;
+      if (w < 10) w = 800;
+      if (h < 10) h = 500;
+
+      _chart = LightweightCharts.createChart(container, {
+        width: w,
+        height: h,
+        layout: { background: { type: 'solid', color: COLORS.bg }, textColor: COLORS.text },
+        grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
+        crosshair: { mode: 0, vertLine: { color: COLORS.border, style: 2, labelBackgroundColor: COLORS.border },
+          horzLine: { color: COLORS.border, style: 2, labelBackgroundColor: COLORS.border } },
+        rightPriceScale: { borderColor: COLORS.border, autoScale: true },
+        timeScale: { borderColor: COLORS.border, timeVisible: true, secondsVisible: false },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true },
+        handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
+        autoSize: true,
+      });
+
+      return _chart;
+    }
+
+    function _renderCandles() {
+      if (!_payload || !_payload.timeframes || !_chart) return;
+
+      var tfData = _payload.timeframes[_activeTF];
+      if (!tfData || !tfData.candles || tfData.candles.length === 0) {
+        _show('empty-state');
+        return;
+      }
+      _hide('empty-state');
+
+      var candles = tfData.candles.map(function(c) {
+        var t = c.time;
+        if (typeof t === 'string') {
+          t = Math.floor(new Date(t).getTime() / 1000);
+          if (isNaN(t) && c.time.indexOf('T') >= 0) {
+            t = c.time.split('T')[0];
+          }
+        }
+        return { time: t, open: c.open, high: c.high, low: c.low, close: c.close };
+      });
+
+      _candleSeries = _addSeries(LightweightCharts.CandlestickSeries, {
+        upColor: COLORS.buy, downColor: COLORS.sell,
+        borderUpColor: COLORS.buy, borderDownColor: COLORS.sell,
+        wickUpColor: COLORS.buy, wickDownColor: COLORS.sell,
+        priceFormat: { type: 'price', minMove: 0.00001, precision: 5 },
+      });
+      _candleSeries.setData(candles);
+
+      // Price scale margin for levels
+      _candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+
+      // EMA lines
+      if (tfData.indicators && tfData.indicators.length > 0) {
+        var emaConfigs = [
+          { key: 'ema20', color: COLORS.ema20 },
+          { key: 'ema50', color: COLORS.ema50 },
+          { key: 'ema200', color: COLORS.ema200 },
+        ];
+        for (var e = 0; e < emaConfigs.length; e++) {
+          var cfg = emaConfigs[e];
+          var points = [];
+          for (var i = 0; i < tfData.indicators.length; i++) {
+            var pt = tfData.indicators[i];
+            if (pt[cfg.key] !== undefined && i < candles.length) {
+              points.push({ time: candles[i].time, value: pt[cfg.key] });
+            }
+          }
+          if (points.length > 0) {
+            var line = _addSeries(LightweightCharts.LineSeries, {
+              color: cfg.color, lineWidth: 1, priceLineVisible: false,
+              lastValueVisible: false, crosshairMarkerVisible: false,
+            });
+            line.setData(points);
+            _emaSeries.push(line);
+          }
+        }
+      }
+
+      _chart.timeScale().fitContent();
+    }
+
+    function _clearOverlays() {
+      // Remove price lines
+      if (_candleSeries) {
+        try {
+          // Lightweight Charts v5: removePriceLine not available; recreate series instead
+          // We handle this by recreating candles when switching overlays
+        } catch(e) {}
+      }
+    }
+
+    function _renderLevels() {
+      if (!_payload || !_payload.levels || !_candleSeries) return;
+
+      var levels = _payload.levels;
+      for (var i = 0; i < levels.length; i++) {
+        var lv = levels[i];
+        var color = lv.type === 'stop_loss' ? COLORS.sl : COLORS.tp;
+        var label = lv.label || '';
+        try {
+          var pl = _candleSeries.createPriceLine({
+            price: lv.price,
+            color: color,
+            lineWidth: 1,
+            lineStyle: 2, // dashed
+            axisLabelVisible: true,
+            title: label,
+          });
+          _priceLines.push(pl);
+        } catch(e) {}
+      }
+    }
+
+    function _renderEntryZone() {
+      if (!_payload || !_payload.zones || !_candleSeries) return;
+
+      var zones = _payload.zones;
+      var side = (_payload.trade_plan && _payload.trade_plan.side) || 'neutral';
+      var zoneColor = side === 'buy' ? COLORS.buy : (side === 'sell' ? COLORS.sell : COLORS.neutral);
+
+      for (var z = 0; z < zones.length; z++) {
+        var zn = zones[z];
+        try {
+          var pl = _candleSeries.createPriceLine({
+            price: zn.to,
+            color: zoneColor,
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'Entry+',
+          });
+          _priceLines.push(pl);
+          pl = _candleSeries.createPriceLine({
+            price: zn.from,
+            color: zoneColor,
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'Entry-',
+          });
+          _priceLines.push(pl);
+        } catch(e) {}
+      }
+    }
+
+    function _renderCurrentPrice() {
+      if (!_payload || _payload.current_price == null || !_candleSeries) return;
+      try {
+        var pl = _candleSeries.createPriceLine({
+          price: _payload.current_price,
+          color: COLORS.currentPrice,
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: false,
+          title: '',
+        });
+        _priceLines.push(pl);
+      } catch(e) {}
+    }
+
+    function _updateActiveButton() {
+      var buttons = document.querySelectorAll('#timeframe-selector button');
+      for (var i = 0; i < buttons.length; i++) {
+        var btn = buttons[i];
+        if (btn.getAttribute('data-tf') === _activeTF) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      }
+    }
+
+    // === Public API ===
+
+    function setChartData(payload) {
+      _hide('empty-state');
+      _hide('error-state');
+
+      if (!payload || typeof payload !== 'object') {
+        _show('error-state');
+        return;
+      }
+
+      try {
+        _payload = payload;
+        _activeTF = payload.active_timeframe || 'H1';
+
+        if (!payload.timeframes || Object.keys(payload.timeframes).length === 0) {
+          _show('empty-state');
+          return;
+        }
+
+        if (!_initChart()) {
+          _show('error-state');
+          return;
+        }
+        _renderCandles();
+        _renderLevels();
+        _renderEntryZone();
+        _renderCurrentPrice();
+        _updateActiveButton();
+
+        // Legend
+        if (_chart) {
+          _chart.applyOptions({ watermark: { visible: false } });
+        }
+      } catch(e) {
+        showError('Khong the tai bieu do: ' + (e && e.message ? e.message : e));
+      }
+    }
+
+    function switchTimeframe(tf) {
+      if (!_payload) return;
+      if (!_payload.timeframes || !_payload.timeframes[tf]) return;
+
+      _activeTF = tf;
+      _payload.active_timeframe = tf;
+
+      // Reinitialize chart for new timeframe
+      if (!_initChart()) {
+        _show('error-state');
+        return;
+      }
+      _renderCandles();
+      _renderLevels();
+      _renderEntryZone();
+      _renderCurrentPrice();
+      _updateActiveButton();
+    }
+
+    function reloadChart() {
+      if (!_payload) return;
+      if (!_initChart()) {
+        _show('error-state');
+        return;
+      }
+      _renderCandles();
+      _renderLevels();
+      _renderEntryZone();
+      _renderCurrentPrice();
+      _updateActiveButton();
+    }
+
+    function handleResize() {
+      if (!_chart) return;
+      var container = document.getElementById('chart-container');
+      if (!container) return;
+      var w = container.clientWidth;
+      var h = container.clientHeight;
+      if (w > 0 && h > 0) {
+        _chart.resize(w, h);
+      }
+    }
+
+    // Expose to window
+    window.setChartData = setChartData;
+    window.switchTimeframe = switchTimeframe;
+    window.reloadChart = reloadChart;
+    window.handleResize = handleResize;
+    window.showError = showError;
+
+    // Timeframe selector click handlers
+    var buttons = document.querySelectorAll('#timeframe-selector button');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', function(e) {
+        var tf = this.getAttribute('data-tf');
+        if (tf) switchTimeframe(tf);
+      });
+    }
+
+    // Resize observer
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(function() { handleResize(); });
+      var container = document.getElementById('chart-container');
+      if (container) ro.observe(container);
+    }
+    window.addEventListener('resize', handleResize);
+
+    // Initial state
+    _show('empty-state');
+  </script>
+</body>
+</html>

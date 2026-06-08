@@ -1,0 +1,172 @@
+FINISH - PHASE 1 DEEPSEEK V4 PRO PROMPTS — total -> signal_score
+=========================================================
+
+Mục tiêu Phase 1:
+- Đổi cách gọi điểm hiện tại từ "total" sang "signal_score".
+- Làm rõ signal_score chỉ là điểm tín hiệu kỹ thuật, chưa phải điểm cuối cùng.
+- Vẫn giữ total để tương thích ngược, tránh làm vỡ UI hoặc logic cũ.
+- Chỉ chỉnh sửa đúng phần được yêu cầu, không sửa những cái không liên quan.
+
+=========================================================
+PROMPT 1 — AUDIT TRƯỚC, CHƯA SỬA CODE
+=========================================================
+
+Bạn là senior Python engineer làm việc trên hệ thống phân tích giao dịch Forex.
+
+Nhiệm vụ lần này: CHỈ AUDIT Phase 1, CHƯA SỬA CODE.
+
+Mục tiêu Phase 1:
+- Đổi cách gọi điểm hiện tại từ `total` sang `signal_score`.
+- Làm rõ `signal_score` chỉ là điểm tín hiệu kỹ thuật, chưa phải điểm cuối cùng.
+- Vẫn giữ `total` để tương thích ngược, tránh làm vỡ UI hoặc logic cũ.
+
+Phạm vi cần kiểm tra:
+- `core/signal_engine.py`
+- `core/analysis_engine.py`
+- Các file UI nếu có hiển thị `Total Score`
+- Các test liên quan nếu có
+
+Yêu cầu bắt buộc:
+1. Chỉ đọc code, KHÔNG chỉnh sửa file nào.
+2. Tìm function đang trả về `"total": total`, đặc biệt là `score_scenario()` hoặc function tương đương.
+3. Tìm toàn bộ nơi đang đọc score bằng:
+   - `["total"]`
+   - `.get("total")`
+   - text label `"Total Score"`
+4. Xác định nơi nào dùng `total` để ra decision.
+5. Báo cáo danh sách file/function cần sửa ở prompt sau.
+6. Không refactor.
+7. Không đề xuất sửa ngoài phạm vi Phase 1.
+8. Không đổi công thức scoring.
+9. Không đổi threshold decision.
+10. Không sửa UI ở bước này.
+
+Output cần trả về:
+- Danh sách file liên quan.
+- Danh sách function liên quan.
+- Các vị trí đang dùng `total`.
+- Các vị trí UI đang hiển thị `Total Score`, nếu có.
+- Đánh giá rủi ro nếu thêm `signal_score`.
+- Kế hoạch sửa tối thiểu cho bước tiếp theo.
+
+Lưu ý quan trọng:
+Chỉ audit. Tuyệt đối không chỉnh sửa code trong prompt này.
+
+
+=========================================================
+FINISH - PROMPT 2 — SỬA BACKEND: THÊM signal_score, GIỮ total
+=========================================================
+
+Bạn là senior Python engineer. Hãy thực hiện Phase 1 theo phạm vi rất hẹp.
+
+Mục tiêu:
+Thêm `signal_score` vào output scoring, nhưng vẫn giữ `total` để tương thích ngược.
+
+Phạm vi được phép sửa:
+- `core/signal_engine.py`
+- `core/analysis_engine.py` nếu đang đọc trực tiếp `total`
+- Test backend liên quan nếu có
+
+Không được sửa:
+- Không sửa UI ở prompt này.
+- Không đổi công thức scoring.
+- Không đổi trọng số scoring.
+- Không đổi threshold decision.
+- Không đổi tên decision/status.
+- Không refactor code không liên quan.
+- Không format lại toàn file.
+- Không xóa key `total`.
+
+Yêu cầu chi tiết:
+1. Trong `score_scenario()` hoặc function tương đương đang trả về `"total": total`, thêm:
+   ```python
+   "signal_score": total,
+   "total": total,  # deprecated, kept for backward compatibility
+   ```
+2. Nếu có nơi đọc score để xử lý tiếp, đổi cách đọc sang:
+   ```python
+   score.get("signal_score", score.get("total", 0))
+   ```
+3. Chỉ đổi những nơi liên quan trực tiếp tới việc đọc điểm scoring.
+4. Giữ nguyên hành vi decision hiện tại.
+5. Không thay đổi output cũ ngoài việc bổ sung thêm `signal_score`.
+6. Nếu có test hiện tại đang assert `total`, không xóa test đó; chỉ bổ sung test kiểm tra `signal_score`.
+
+Tiêu chí hoàn thành:
+- Output score có cả `signal_score` và `total`.
+- App vẫn chạy như trước.
+- Không mất backward compatibility.
+- Không có logic mới ngoài Phase 1.
+
+Sau khi sửa, hãy báo cáo:
+1. File đã sửa.
+2. Function đã sửa.
+3. Nơi đã thêm `signal_score`.
+4. Nơi đã đổi cách đọc từ `total` sang fallback `signal_score -> total`.
+5. Test nên chạy.
+6. Có phần nào chưa sửa vì nằm ngoài phạm vi prompt này không.
+
+Nhắc lại:
+Chỉ chỉnh sửa đúng phần được yêu cầu. Tuyệt đối không sửa, refactor, đổi tên, format lại hoặc tối ưu các phần không liên quan.
+
+
+=========================================================
+FINISH - PROMPT 3 — SỬA UI LABEL VÀ TEST PHASE 1
+=========================================================
+
+Bạn là senior Python engineer. Hãy hoàn tất phần UI/test của Phase 1 sau khi backend đã có `signal_score`.
+
+Mục tiêu:
+Nếu UI đang hiển thị `Total Score`, đổi label sang `Signal Score` hoặc tiếng Việt là `Điểm tín hiệu`.
+
+Phạm vi được phép sửa:
+- Các file UI có hiển thị text `Total Score`
+- Test UI/test snapshot liên quan nếu có
+- Test backend nếu cần bổ sung kiểm tra `signal_score`
+
+Không được sửa:
+- Không sửa công thức scoring.
+- Không sửa threshold decision.
+- Không sửa logic entry/risk/macro/SMC.
+- Không sửa database.
+- Không refactor UI không liên quan.
+- Không đổi layout lớn.
+- Không xóa hiển thị điểm cũ nếu UI đang phụ thuộc vào field `total`; chỉ đổi label hiển thị.
+
+Yêu cầu chi tiết:
+1. Tìm text UI:
+   - `Total Score`
+   - `total score`
+   - label tiếng Việt tương đương nếu có
+2. Nếu đó là label hiển thị điểm scoring hiện tại, đổi thành:
+   - `Signal Score`
+   hoặc:
+   - `Điểm tín hiệu`
+3. Không đổi tên biến UI nếu việc đổi tên gây rủi ro lớn. Ưu tiên sửa label hiển thị trước.
+4. Bổ sung hoặc cập nhật test để đảm bảo:
+   - score output có `signal_score`
+   - score output vẫn có `total`
+   - UI không còn label `Total Score` nếu label đó thuộc scoring chính
+5. Nếu có nơi vẫn cần dùng `total` vì backward compatibility, giữ nguyên nhưng ghi chú trong báo cáo.
+
+Sau khi sửa, hãy báo cáo:
+1. File UI đã sửa.
+2. Label cũ và label mới.
+3. Test đã thêm/cập nhật.
+4. Lệnh test nên chạy.
+5. Có phần nào không sửa vì nằm ngoài phạm vi Phase 1 không.
+
+Nhắc lại:
+Chỉ chỉnh sửa đúng phần được yêu cầu. Tuyệt đối không sửa, refactor, đổi tên, format lại hoặc tối ưu các phần không liên quan.
+
+
+=========================================================
+THỨ TỰ SỬ DỤNG KHUYẾN NGHỊ
+=========================================================
+
+1. Chạy PROMPT 1 trước để DeepSeek audit vị trí code.
+2. Sau khi xem báo cáo audit, chạy PROMPT 2 để sửa backend.
+3. Chỉ chạy PROMPT 3 nếu audit phát hiện UI thật sự có label `Total Score`.
+
+Không đưa cả 3 prompt vào một lần.
+Mỗi lần chỉ dùng 1 prompt để giảm rủi ro sửa lan man.

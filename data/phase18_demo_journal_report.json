@@ -1,0 +1,37 @@
+{
+  "entries_created": 3,
+  "entry_ids": [
+    1,
+    2,
+    3
+  ],
+  "closed_trades_count": 2,
+  "sample_closed_trade_keys": [
+    "result_r",
+    "result_pct",
+    "closed_at",
+    "exit_reason",
+    "actual_lot",
+    "planned_lot",
+    "symbol",
+    "planned_entry",
+    "actual_entry",
+    "planned_sl",
+    "actual_sl",
+    "planned_tp",
+    "actual_tp",
+    "actual_exit",
+    "setup_type",
+    "regime",
+    "session",
+    "m15_quality",
+    "spread_at_entry",
+    "expected_effective_rr",
+    "realized_effective_rr",
+    "execution_quality_score",
+    "direction",
+    "manual_mistake_tags",
+    "auto_mistake_tags"
+  ],
+  "db_path": "D:\\Projects\\AIMarketAnalyst\\ai-market-analyst-v2.0\\data\\phase18_demo_journal.db"
+}

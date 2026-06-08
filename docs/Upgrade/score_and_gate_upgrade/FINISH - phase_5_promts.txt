@@ -1,0 +1,1064 @@
+PROMPTS CHO DEEPSEEK_V4_PRO — PHASE 5
+FOREX SCORING SYSTEM UPGRADE
+============================================================
+
+GHI CHÚ CHUNG
+============================================================
+
+File này chứa các prompt nhỏ để thực hiện PHASE 5 — SMC CÓ QUYỀN CAP/BLOCK SETUP XẤU.
+
+Ngôn ngữ: Tiếng Việt có dấu đầy đủ.
+
+Bối cảnh hiện tại:
+- Phase 1 đã xong: score đã có `signal_score`, có thể vẫn giữ `total` để backward compatibility.
+- Phase 2 đã xong: đã có `core/trade_gate_engine.py`, output `trade_gate`, gate có quyền block/cap.
+- Phase 3 đã xong: đã có `score_gap`, `direction_bias`, và score_gap đã được truyền vào trade gate.
+- Phase 4 đã xong: macro weight đã giảm, macro modifier đã được thêm, tin mạnh gần là gate/block.
+- Phase 5 chỉ tập trung vào SMC:
+  1. Zone broken thì không được READY.
+  2. CHOCH ngược hướng thì cap `signal_score`, không để score quá cao.
+  3. Liquidity sweep + displacement + M15 strict cùng hướng thì được boost entry quality.
+  4. SMC không chỉ là cộng/trừ điểm, mà có quyền cap/block setup xấu.
+  5. Không triển khai các phase khác.
+
+Triết lý Phase 5:
+- SMC xấu không nên chỉ bị trừ điểm nhẹ.
+- Một vùng hỗ trợ/kháng cự hoặc supply/demand đã broken thì không được tạo READY.
+- CHOCH ngược hướng là cảnh báo mạnh, phải cap score.
+- Setup đẹp kiểu liquidity sweep + displacement + M15 strict đáng được đánh dấu chất lượng cao.
+- Gate kiểm soát quyền vào lệnh; score chỉ xếp hạng setup.
+
+Yêu cầu bắt buộc cho tất cả prompt:
+- Deepseek_v4_pro phải đọc code hiện tại trước khi sửa.
+- Chỉ sửa đúng phần liên quan đến Phase 5.
+- Không được chỉnh sửa, thay đổi hoặc refactor các phần không liên quan.
+- Sau khi code xong phải kiểm tra lại code thật cẩn thận.
+- Sau khi code xong phải chạy test.
+- Phải dùng Python/pytest để test với dữ liệu giống thật hoặc mock hợp lý.
+- Nếu test lỗi do môi trường thiếu PyQt6/MT5 thì không sửa code project để né lỗi, chỉ ghi rõ.
+- Nếu test lỗi do thay đổi Phase 5 thì sửa đúng chỗ gây lỗi.
+- Sau khi hoàn thành hết các công việc trong MỖI prompt, phải báo đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+- Sau khi hoàn thành TOÀN BỘ Phase 5, báo cáo cuối cùng phải có dòng:
+
+ĐÃ HOÀN THÀNH TASK
+
+Khuyến nghị sử dụng:
+- Chạy lần lượt Prompt 1 → Prompt 2 → Prompt 3 → Prompt 4 → Prompt 5.
+- Không nên đưa cả 5 prompt vào Deepseek cùng lúc.
+- Nếu bắt buộc đưa một lần, yêu cầu Deepseek làm tuần tự từng prompt, xong prompt nào phải test prompt đó.
+
+============================================================
+PROMPT 1 — RÀ SOÁT SMC HIỆN TẠI, CHUẨN HÓA HELPER ĐỌC TÍN HIỆU SMC
+============================================================
+
+Bạn đang làm việc trên project Python/PyQt6 AI Market Analyst v2.0 trong VSCode.
+
+Nhiệm vụ lần này CHỈ làm phần đầu của Phase 5:
+- Đọc hiểu SMC context hiện tại.
+- Tạo helper nhỏ để trích xuất các flag SMC cần dùng cho Phase 5.
+- Không thay đổi hành vi scoring/gate ở prompt này, trừ khi chỉ thêm helper không ảnh hưởng output cũ.
+- Không sửa UI/scanner.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa/tạo các phần liên quan trực tiếp:
+  - `core/smc_context.py` nếu helper thuộc SMC context.
+  - hoặc `core/signal_engine.py` nếu helper chỉ phục vụ scoring.
+  - hoặc tạo file mới `core/smc_gate_helpers.py` nếu cấu trúc hiện tại phù hợp hơn.
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa `core/analysis_engine.py` trong prompt này nếu không bắt buộc.
+- KHÔNG sửa `core/trade_gate_engine.py` trong prompt này.
+- KHÔNG sửa macro.
+- KHÔNG sửa risk engine.
+- KHÔNG sửa entry engine.
+- KHÔNG thêm expected effective R:R.
+- KHÔNG thêm account guard.
+- KHÔNG implement Phase 6, 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Không đổi format output cũ của `build_smc_context()` hoặc `score_scenario()` nếu không bắt buộc.
+
+Bước 1 — Đọc code hiện tại:
+Mở và đọc kỹ:
+- `core/smc_context.py`
+- `core/signal_engine.py`
+- `core/analysis_engine.py`
+- `core/trade_gate_engine.py`
+- test liên quan SMC/scoring nếu có:
+  - `tests/test_smc_context.py`
+  - `tests/test_signal_engine.py`
+  - các file test khác có SMC.
+
+Tìm các field hiện có liên quan:
+- BOS
+- CHOCH
+- displacement
+- demand/supply zone
+- order block
+- FVG
+- premium/discount
+- liquidity sweep
+- zone_score
+- zone broken
+- zone mitigated
+- zone test_count
+- selected_zone
+- active_zone
+- entry zone
+- direction
+
+Bước 2 — Tạo helper đọc SMC flag an toàn:
+Tạo một helper nhỏ, tên gợi ý:
+
+```python
+def extract_smc_trade_flags(smc_context: dict | None, direction: str) -> dict:
+    ...
+```
+
+Có thể đặt helper ở:
+- `core/smc_context.py` nếu hợp lý.
+- Nếu không muốn làm file SMC quá nặng, có thể tạo `core/smc_trade_flags.py`.
+
+Output bắt buộc:
+
+```python
+{
+    "zone_broken": False,
+    "choch_against_direction": False,
+    "liquidity_sweep_aligned": False,
+    "displacement_aligned": False,
+    "has_selected_zone": False,
+    "selected_zone_type": None,
+    "selected_zone_score": None,
+    "raw": {},
+}
+```
+
+Yêu cầu helper:
+- Không crash nếu `smc_context` là None.
+- Không crash nếu thiếu key.
+- Không tự thay đổi `smc_context`.
+- Không sửa dữ liệu gốc.
+- Chỉ đọc và trả flag.
+- Nếu không đủ dữ liệu thì trả False/None an toàn.
+- `direction` chỉ nhận `"buy"` hoặc `"sell"`, nếu khác thì xử lý an toàn.
+
+Bước 3 — Logic nhận diện cơ bản:
+Vì cấu trúc SMC thật có thể khác nhau, phải đọc code hiện tại để map đúng field.
+
+Gợi ý logic, nhưng phải điều chỉnh theo code thật:
+
+1. Zone broken:
+- Nếu `selected_zone.get("broken") is True`
+- hoặc `selected_zone.get("status") == "broken"`
+- hoặc zone liên quan có field `is_broken`
+thì:
+```python
+zone_broken = True
+```
+
+2. CHOCH ngược hướng:
+- Nếu direction là buy mà SMC có CHOCH bearish/down/sell thì True.
+- Nếu direction là sell mà SMC có CHOCH bullish/up/buy thì True.
+
+3. Liquidity sweep aligned:
+- Nếu direction buy và có sweep đáy/sell-side liquidity rồi phản ứng tăng thì aligned.
+- Nếu direction sell và có sweep đỉnh/buy-side liquidity rồi phản ứng giảm thì aligned.
+- Nếu code hiện tại chỉ có field đơn giản như `liquidity_sweep_direction`, map theo field đó.
+
+4. Displacement aligned:
+- Nếu direction buy và displacement direction bullish/up/buy thì True.
+- Nếu direction sell và displacement direction bearish/down/sell thì True.
+
+Bước 4 — Test helper:
+Tạo file:
+
+`tests/test_smc_trade_flags_phase5.py`
+
+Test tối thiểu:
+
+1. None input:
+```python
+flags = extract_smc_trade_flags(None, "buy")
+```
+Kỳ vọng:
+```python
+zone_broken is False
+choch_against_direction is False
+liquidity_sweep_aligned is False
+displacement_aligned is False
+```
+
+2. Zone broken:
+Dựng smc_context giả có selected_zone broken.
+Kỳ vọng:
+```python
+flags["zone_broken"] is True
+```
+
+3. CHOCH ngược buy:
+Dựng context có CHOCH bearish/sell.
+Direction buy.
+Kỳ vọng:
+```python
+flags["choch_against_direction"] is True
+```
+
+4. CHOCH ngược sell:
+Dựng context có CHOCH bullish/buy.
+Direction sell.
+Kỳ vọng:
+```python
+flags["choch_against_direction"] is True
+```
+
+5. Sweep + displacement aligned buy:
+Kỳ vọng:
+```python
+flags["liquidity_sweep_aligned"] is True
+flags["displacement_aligned"] is True
+```
+
+6. Sweep + displacement aligned sell:
+Kỳ vọng tương tự.
+
+7. Thiếu key:
+Input dict rỗng `{}`.
+Kỳ vọng không crash, trả flag an toàn.
+
+Chạy test:
+
+```bash
+pytest -q tests/test_smc_trade_flags_phase5.py
+```
+
+Chạy regression liên quan:
+
+```bash
+pytest -q tests/test_signal_engine.py
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_score_gap.py
+```
+
+Nếu test cũ lỗi do môi trường thiếu MT5/PyQt6 thì không sửa lan man.
+Nếu lỗi do Prompt 1 thì sửa đúng chỗ.
+
+Bước 5 — Báo cáo:
+Sau khi hoàn thành Prompt 1, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. Helper đã tạo và output gồm những field nào.
+3. Test đã chạy.
+4. Test pass/fail.
+5. Xác nhận không sửa UI/scanner/gate/risk/entry/macro.
+6. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 1, vì còn các prompt tiếp theo.
+
+============================================================
+PROMPT 2 — ZONE BROKEN PHẢI CAP/BLOCK SETUP: KHÔNG ĐƯỢC READY
+============================================================
+
+Bạn đang tiếp tục Phase 5 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Prompt 1 đã tạo helper đọc SMC flag, ví dụ `extract_smc_trade_flags(...)`.
+- Phase 2 đã có `core/trade_gate_engine.py`.
+- Phase 3/4 đã ổn định.
+
+Nhiệm vụ lần này:
+- Nếu SMC selected zone bị broken thì setup không được READY.
+- Truyền `zone_broken` vào trade gate.
+- Gate phải cap về `WATCH_ONLY`, không để decision action là `ready`.
+- Không sửa UI/scanner.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa:
+  - `core/analysis_engine.py` để truyền `zone_broken` vào `gate_context`, nếu hiện chưa truyền đúng.
+  - `core/trade_gate_engine.py` nếu logic `ZONE_BROKEN` chưa đúng.
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa macro.
+- KHÔNG sửa risk engine.
+- KHÔNG sửa entry engine.
+- KHÔNG sửa thuật toán scoring ngoài phần cần truyền flag SMC.
+- KHÔNG implement Phase 6, 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Nếu `trade_gate_engine.py` đã có logic zone_broken từ Phase 2, chỉ kiểm tra và bổ sung test, không viết trùng.
+
+Bước 1 — Đọc code:
+Mở:
+- `core/analysis_engine.py`
+- `core/trade_gate_engine.py`
+- helper SMC flag đã tạo ở Prompt 1.
+- test Phase 2 gate nếu có.
+
+Bước 2 — Đảm bảo gate xử lý zone broken:
+Trong `core/trade_gate_engine.py`, logic mong muốn:
+
+```python
+if zone_broken:
+    warning_codes.append("ZONE_BROKEN")
+    decision_cap = "WATCH_ONLY"
+```
+
+Yêu cầu:
+- `ZONE_BROKEN` là warning/cap mềm, không phải block cứng tài khoản.
+- `allowed` vẫn True.
+- `decision_cap` phải là `"WATCH_ONLY"`, trừ khi đã có block cứng khác thì block cứng thắng.
+- Nếu cùng lúc có spread abnormal, kết quả cuối vẫn là:
+```python
+allowed = False
+decision_cap = "TRADE_BLOCKED"
+```
+
+Bước 3 — Truyền zone_broken từ SMC vào gate_context:
+Trong `analysis_engine.py`, sau khi có `smc_context` và biết direction/best_side/primary_scenario, dùng helper đã tạo:
+
+```python
+smc_flags = extract_smc_trade_flags(smc_context, best_side)
+```
+
+hoặc theo cấu trúc code thật.
+
+Sau đó truyền vào `gate_context`:
+
+```python
+"zone_broken": smc_flags.get("zone_broken", False),
+```
+
+Nếu hiện `analysis_engine.py` đã truyền zone_broken theo cách cũ, hãy thay bằng cách an toàn hơn hoặc bổ sung fallback, nhưng không phá logic cũ.
+
+Thêm vào output chính nếu hợp lý:
+
+```python
+"smc_trade_flags": smc_flags
+```
+
+Yêu cầu:
+- Không bắt buộc UI dùng ngay.
+- Không xóa SMC output cũ.
+- Không đổi format SMC context cũ.
+- Không làm scanner vỡ.
+
+Bước 4 — Áp dụng cap đã có từ Phase 2:
+Nếu gate_result decision_cap là `"WATCH_ONLY"` và decision cũ là ready, decision cuối phải thành:
+```python
+decision_action = "watch"
+```
+
+Nếu Phase 2 đã có đoạn này thì không viết lại nhiều nơi, chỉ đảm bảo zone_broken dùng được.
+
+Bước 5 — Test:
+Tạo hoặc cập nhật file:
+
+`tests/test_smc_zone_broken_gate_phase5.py`
+
+Test 1 — gate trực tiếp:
+```python
+from core.trade_gate_engine import check_trade_gates
+
+context = {
+    "terminal_connected": True,
+    "broker_logged_in": True,
+    "spread_status": "normal",
+    "zone_broken": True,
+    "m15_quality": "strict",
+    "score_gap": 30,
+}
+result = check_trade_gates(context)
+```
+
+Kỳ vọng:
+```python
+result["allowed"] is True
+result["decision_cap"] == "WATCH_ONLY"
+"ZONE_BROKEN" in result["warning_codes"]
+```
+
+Test 2 — zone broken + spread abnormal:
+Kỳ vọng:
+```python
+result["allowed"] is False
+result["decision_cap"] == "TRADE_BLOCKED"
+"ZONE_BROKEN" in result["warning_codes"]
+"SPREAD_ABNORMAL" in result["block_codes"]
+```
+
+Test 3 — analyze_symbol có zone broken thì không ready:
+Dùng monkeypatch helper SMC flag hoặc dựng smc_context có selected_zone broken.
+Kỳ vọng:
+```python
+result["smc_trade_flags"]["zone_broken"] is True
+result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
+"ZONE_BROKEN" in result["trade_gate"]["warning_codes"]
+result["decision_summary"]["action"] != "ready"
+```
+
+Nếu khó dựng `analyze_symbol`, có thể monkeypatch các phần scoring để score rất cao, mục tiêu là chứng minh zone broken vẫn không READY.
+
+Chạy test:
+
+```bash
+pytest -q tests/test_smc_zone_broken_gate_phase5.py
+pytest -q tests/test_smc_trade_flags_phase5.py
+pytest -q tests/test_trade_gate_engine.py
+```
+
+Chạy regression:
+
+```bash
+pytest -q tests/test_signal_engine.py tests/test_score_gap.py tests/test_macro_modifier_phase4.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5 thì không sửa lan man.
+Nếu lỗi do Prompt 2 thì sửa đúng chỗ.
+
+Bước 6 — Báo cáo:
+Sau khi hoàn thành Prompt 2, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. Zone broken hiện được truyền vào gate thế nào.
+3. Test đã chạy.
+4. Test pass/fail.
+5. Xác nhận không sửa ngoài phạm vi Prompt 2.
+6. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 2, vì còn các prompt tiếp theo.
+
+============================================================
+PROMPT 3 — CHOCH NGƯỢC HƯỚNG PHẢI CAP signal_score, KHÔNG ĐỂ SCORE QUÁ CAO
+============================================================
+
+Bạn đang tiếp tục Phase 5 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Prompt 1 đã có helper `extract_smc_trade_flags(...)`.
+- Prompt 2 đã đảm bảo zone broken không được READY.
+- Phase 1 đã có `signal_score`.
+- Phase 4 đã có `reason_codes` và `penalty_codes` dạng list string nếu đã thêm.
+
+Nhiệm vụ lần này:
+- Nếu CHOCH ngược hướng giao dịch thì cap `signal_score` tối đa 60.
+- Thêm penalty code `"CHOCH_AGAINST_DIRECTION"`.
+- Không để setup có CHOCH ngược hướng đạt score quá cao.
+- Không sửa UI/scanner.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa:
+  - `core/signal_engine.py`
+  - helper SMC flag nếu cần bổ sung rất nhỏ
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa `core/trade_gate_engine.py` trong prompt này, trừ lỗi trực tiếp.
+- KHÔNG sửa macro logic đã làm ở Phase 4.
+- KHÔNG sửa risk engine.
+- KHÔNG sửa entry engine.
+- KHÔNG implement Phase 6, 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Không đổi trọng số scoring trong prompt này.
+
+Bước 1 — Đọc code:
+Mở:
+- `core/signal_engine.py`
+- helper SMC flag đã tạo.
+- test signal/macro hiện có.
+
+Tìm:
+- hàm `score_scenario(...)`
+- nơi tính `signal_score`
+- nơi apply macro modifier
+- nơi clamp score
+- nơi output `reason_codes` / `penalty_codes`
+
+Bước 2 — Áp dụng CHOCH cap:
+Sau khi tính score gốc và sau khi áp dụng macro modifier, hoặc tại vị trí hợp lý cuối pipeline scoring, thêm logic:
+
+```python
+if smc_flags.get("choch_against_direction"):
+    signal_score = min(signal_score, 60)
+    penalty_codes.append("CHOCH_AGAINST_DIRECTION")
+```
+
+Yêu cầu:
+- `signal_score` cuối cùng vẫn clamp 0–100.
+- Nếu có `total` để backward compatibility, đảm bảo `total` phản ánh score cuối sau cap, nếu project đang dùng `total` như alias của `signal_score`.
+- Không xóa các component score cũ.
+- Không làm mất macro_modifier.
+- Không làm mất reason_codes/penalty_codes cũ.
+- Nếu `penalty_codes` chưa có, tạo list an toàn.
+- Không append trùng `"CHOCH_AGAINST_DIRECTION"` nhiều lần.
+
+Bước 3 — Lấy smc_flags:
+Nếu `score_scenario(...)` đã nhận `smc_context`, dùng:
+
+```python
+smc_flags = extract_smc_trade_flags(smc_context, direction)
+```
+
+Nếu `score_scenario(...)` chưa dễ dùng helper, đọc code để lấy field CHOCH hiện có an toàn.
+Không đổi signature hàm lớn nếu không bắt buộc.
+Nếu phải đổi signature thì phải kiểm tra tất cả nơi gọi và giữ backward compatibility.
+
+Bước 4 — Output bổ sung:
+Trong output `score_scenario(...)`, thêm nếu hợp lý:
+
+```python
+"smc_flags": smc_flags,
+"smc_score_cap": 60 if choch_against_direction else None,
+```
+
+Yêu cầu:
+- Không phá output cũ.
+- Không xóa `smc_quality`.
+- Không xóa `components`.
+- Không xóa `signal_score`.
+- Không xóa `total`.
+
+Bước 5 — Test:
+Tạo file:
+
+`tests/test_smc_choch_cap_phase5.py`
+
+Test 1 — CHOCH ngược hướng cap Buy:
+Dựng input sao cho score trước cap có thể cao hơn 60 và CHOCH bearish/sell ngược với buy.
+Kỳ vọng:
+```python
+result["signal_score"] <= 60
+"CHOCH_AGAINST_DIRECTION" in result["penalty_codes"]
+result.get("smc_score_cap") == 60
+```
+
+Test 2 — CHOCH ngược hướng cap Sell:
+Dựng input sao cho CHOCH bullish/buy ngược với sell.
+Kỳ vọng tương tự.
+
+Test 3 — Không có CHOCH ngược thì không cap:
+Kỳ vọng:
+```python
+"CHOCH_AGAINST_DIRECTION" not in result["penalty_codes"]
+result.get("smc_score_cap") in (None, 0)
+```
+
+Test 4 — Không append trùng penalty:
+Nếu gọi logic một lần, penalty code chỉ xuất hiện một lần:
+```python
+result["penalty_codes"].count("CHOCH_AGAINST_DIRECTION") == 1
+```
+
+Test 5 — Backward compatibility:
+```python
+assert "signal_score" in result
+assert "total" in result
+```
+
+Chạy test:
+
+```bash
+pytest -q tests/test_smc_choch_cap_phase5.py
+pytest -q tests/test_smc_trade_flags_phase5.py
+pytest -q tests/test_signal_engine.py
+```
+
+Chạy regression:
+
+```bash
+pytest -q tests/test_macro_modifier_phase4.py tests/test_score_gap.py tests/test_trade_gate_engine.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5 thì không sửa lan man.
+Nếu lỗi do Prompt 3 thì sửa đúng chỗ.
+
+Bước 6 — Báo cáo:
+Sau khi hoàn thành Prompt 3, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. CHOCH ngược hướng cap score thế nào.
+3. Test đã chạy.
+4. Test pass/fail.
+5. Xác nhận không sửa ngoài phạm vi Prompt 3.
+6. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 3, vì còn các prompt tiếp theo.
+
+============================================================
+PROMPT 4 — LIQUIDITY SWEEP + DISPLACEMENT + M15 STRICT ĐƯỢC BOOST ENTRY QUALITY
+============================================================
+
+Bạn đang tiếp tục Phase 5 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Prompt 1 đã có helper SMC flag.
+- Prompt 2 đã xử lý zone broken gate.
+- Prompt 3 đã xử lý CHOCH cap.
+- Phase 2 đã có trade gate.
+- Phase 3 đã có direction_bias/score_gap.
+
+Nhiệm vụ lần này:
+- Nếu có liquidity sweep aligned + displacement aligned + M15 strict cùng hướng, đánh dấu setup entry chất lượng cao.
+- Thêm bonus entry quality nhỏ, tối đa +10.
+- Thêm reason code `"SWEEP_DISPLACEMENT_M15_ALIGNED"`.
+- Không để bonus này phá gate.
+- Nếu có gate block/cap thì gate vẫn thắng.
+- Không sửa UI/scanner.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa:
+  - `core/signal_engine.py` nếu bonus thuộc score scenario.
+  - hoặc `core/entry_engine.py` nếu entry_quality hiện nằm ở entry engine.
+  - hoặc `core/analysis_engine.py` nếu chỉ tổng hợp output.
+  - test liên quan.
+- Phải đọc code trước để đặt bonus đúng nơi.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa macro.
+- KHÔNG sửa risk engine.
+- KHÔNG sửa trade gate trừ khi cần test gate thắng.
+- KHÔNG implement Phase 6, 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Không tăng score quá mức.
+- Không vượt 100 điểm.
+
+Bước 1 — Đọc code:
+Mở:
+- `core/signal_engine.py`
+- `core/entry_engine.py`
+- `core/analysis_engine.py`
+- helper SMC flag.
+- test entry/signal hiện có.
+
+Xác định:
+- M15 quality hiện nằm ở đâu:
+  - scenario?
+  - entry result?
+  - primary_scenario?
+  - score_scenario input?
+- entry_quality hoặc confirmation_score hiện nằm ở đâu.
+- Có field `m15_quality` chưa.
+- Có `reason_codes` chưa.
+
+Bước 2 — Chọn vị trí áp dụng bonus:
+Ưu tiên áp dụng trong scoring nếu có đủ dữ liệu:
+```python
+if (
+    smc_flags.get("liquidity_sweep_aligned")
+    and smc_flags.get("displacement_aligned")
+    and m15_quality == "strict"
+):
+    signal_score += 10
+    reason_codes.append("SWEEP_DISPLACEMENT_M15_ALIGNED")
+    entry_quality_bonus = 10
+```
+
+Nếu trong `score_scenario(...)` chưa có `m15_quality`, không ép sửa lớn.
+Có thể áp dụng trong `analysis_engine.py` sau khi đã có:
+- score result
+- smc_flags
+- primary_scenario.m15_quality
+
+Nhưng phải đảm bảo:
+- Không sửa quá nhiều file.
+- Không tạo double bonus.
+- Bonus chỉ áp dụng một lần.
+- Score clamp 0–100.
+- Gate vẫn thắng sau bonus.
+
+Bước 3 — Điều kiện bonus:
+Bonus chỉ được cộng khi đủ cả 3 điều kiện:
+1. `liquidity_sweep_aligned is True`
+2. `displacement_aligned is True`
+3. `m15_quality == "strict"`
+
+Nếu M15 loose:
+- Không cộng bonus.
+- Có thể vẫn có warning từ gate Phase 2.
+
+Nếu M15 none:
+- Không cộng bonus.
+- Gate vẫn cap WATCH_ONLY.
+
+Nếu zone_broken:
+- Có thể score được bonus nhưng gate vẫn WATCH_ONLY.
+- Không được READY.
+
+Nếu CHOCH ngược hướng:
+- CHOCH cap vẫn phải thắng. Tức là sau bonus, nếu CHOCH ngược hướng thì score không được vượt 60.
+- Nếu thứ tự code hiện tại khó đảm bảo, hãy đặt CHOCH cap sau bonus.
+
+Bước 4 — Output bổ sung:
+Trong output score/scenario, thêm:
+
+```python
+"entry_quality_bonus": 10 hoặc 0,
+```
+
+Nếu đã có reason_codes:
+```python
+"SWEEP_DISPLACEMENT_M15_ALIGNED" in reason_codes
+```
+
+Yêu cầu:
+- Không xóa output cũ.
+- Không xóa signal_score/total.
+- Không làm UI vỡ nếu UI chưa đọc field mới.
+
+Bước 5 — Test:
+Tạo file:
+
+`tests/test_smc_sweep_displacement_bonus_phase5.py`
+
+Test 1 — đủ 3 điều kiện thì cộng bonus:
+Dựng:
+```python
+liquidity_sweep_aligned = True
+displacement_aligned = True
+m15_quality = "strict"
+```
+Kỳ vọng:
+```python
+result["entry_quality_bonus"] == 10
+"SWEEP_DISPLACEMENT_M15_ALIGNED" in result["reason_codes"]
+```
+
+Nếu có thể so sánh score:
+```python
+score_with_bonus - score_without_bonus == 10
+```
+hoặc nếu clamp 100:
+```python
+score_with_bonus <= 100
+```
+
+Test 2 — M15 loose không cộng bonus:
+```python
+m15_quality = "loose"
+```
+Kỳ vọng:
+```python
+entry_quality_bonus == 0
+"SWEEP_DISPLACEMENT_M15_ALIGNED" not in reason_codes
+```
+
+Test 3 — thiếu displacement không cộng:
+Kỳ vọng không bonus.
+
+Test 4 — thiếu liquidity sweep không cộng:
+Kỳ vọng không bonus.
+
+Test 5 — bonus không vượt 100:
+Nếu score trước bonus 98, sau bonus không vượt 100.
+
+Test 6 — CHOCH cap thắng bonus:
+Dựng đủ điều kiện bonus nhưng cũng có CHOCH ngược hướng.
+Kỳ vọng:
+```python
+result["signal_score"] <= 60
+"CHOCH_AGAINST_DIRECTION" in result["penalty_codes"]
+```
+
+Test 7 — zone broken gate vẫn thắng:
+Nếu dùng analyze_symbol/gate:
+- zone_broken True
+- đủ điều kiện bonus
+Kỳ vọng:
+```python
+result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
+result["decision_summary"]["action"] != "ready"
+```
+
+Chạy test:
+
+```bash
+pytest -q tests/test_smc_sweep_displacement_bonus_phase5.py
+pytest -q tests/test_smc_choch_cap_phase5.py
+pytest -q tests/test_smc_zone_broken_gate_phase5.py
+```
+
+Chạy regression:
+
+```bash
+pytest -q tests/test_signal_engine.py tests/test_entry_engine.py tests/test_trade_gate_engine.py tests/test_score_gap.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5 thì không sửa lan man.
+Nếu lỗi do Prompt 4 thì sửa đúng chỗ.
+
+Bước 6 — Báo cáo:
+Sau khi hoàn thành Prompt 4, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. Điều kiện bonus là gì.
+3. Bonus được áp dụng ở đâu.
+4. Test đã chạy.
+5. Test pass/fail.
+6. Xác nhận gate vẫn thắng bonus.
+7. Xác nhận không sửa ngoài phạm vi Prompt 4.
+8. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 4, vì còn Prompt 5 rà soát cuối.
+
+============================================================
+PROMPT 5 — TEST DỮ LIỆU GIỐNG THẬT, RÀ SOÁT TOÀN BỘ PHASE 5 VÀ BÁO CÁO CUỐI
+============================================================
+
+Bạn đang hoàn thiện Phase 5 của project AI Market Analyst v2.0.
+
+Nhiệm vụ lần này:
+- Không thêm tính năng mới.
+- Không refactor.
+- Không sửa UI.
+- Không sửa scanner.
+- Không sửa macro.
+- Không sửa risk engine.
+- Không sửa entry engine nếu không có bug trực tiếp từ Phase 5.
+- Chỉ kiểm tra, test dữ liệu giống thật, và sửa bug nhỏ nếu bug do Phase 5 gây ra.
+
+Mục tiêu:
+Rà soát toàn bộ Phase 5:
+1. Helper SMC flag hoạt động an toàn.
+2. Zone broken không được READY.
+3. CHOCH ngược hướng cap `signal_score` tối đa 60.
+4. Liquidity sweep + displacement + M15 strict được bonus entry quality.
+5. Bonus không phá gate.
+6. CHOCH cap thắng bonus.
+7. Output Phase 1/2/3/4 vẫn còn.
+8. Không làm thay đổi các phần ngoài Phase 5.
+
+Yêu cầu kiểm tra code thủ công:
+
+1. Mở helper SMC flag:
+- Kiểm tra không crash khi input None.
+- Không crash khi thiếu key.
+- Không sửa dữ liệu gốc.
+- Output có:
+```python
+zone_broken
+choch_against_direction
+liquidity_sweep_aligned
+displacement_aligned
+has_selected_zone
+selected_zone_type
+selected_zone_score
+raw
+```
+
+2. Mở `core/trade_gate_engine.py`:
+- Kiểm tra `ZONE_BROKEN` là cap mềm `WATCH_ONLY`.
+- Nếu có block cứng khác thì block cứng thắng.
+- Không biến zone broken thành `TRADE_BLOCKED` nếu không có block cứng khác.
+
+3. Mở `core/signal_engine.py`:
+- Kiểm tra CHOCH ngược hướng:
+```python
+signal_score = min(signal_score, 60)
+```
+- Có penalty code:
+```python
+CHOCH_AGAINST_DIRECTION
+```
+- Kiểm tra sweep + displacement + M15 strict:
+```python
+entry_quality_bonus = 10
+```
+- Có reason code:
+```python
+SWEEP_DISPLACEMENT_M15_ALIGNED
+```
+- Score vẫn clamp 0–100.
+- Nếu vừa có bonus vừa có CHOCH ngược thì score không vượt 60.
+
+4. Mở `core/analysis_engine.py`:
+- Có truyền `zone_broken` vào `gate_context`.
+- Có output `smc_trade_flags` nếu đã thêm.
+- `trade_gate` vẫn tồn tại.
+- `direction_bias` vẫn tồn tại.
+- `decision_summary` vẫn tồn tại.
+- Nếu gate cap thì action không được là `ready`.
+
+Viết hoặc cập nhật test dữ liệu giống thật:
+
+Tạo file:
+`tests/test_phase5_smc_realistic.py`
+
+Mục tiêu test:
+Không cần test chính xác mọi indicator.
+Chỉ cần chứng minh các rule SMC Phase 5 hoạt động với dữ liệu mock/giống thật.
+
+Gợi ý tạo nến giống thật:
+
+```python
+from datetime import datetime, timedelta, timezone
+from core.market_models import Candle
+
+def make_sweep_then_displacement_buy_candles(count=120, base_price=1.0800):
+    candles = []
+    t = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    price = base_price
+
+    for i in range(count):
+        if i == 80:
+            # quét đáy rồi đóng lên
+            open_ = price
+            low = price - 0.0020
+            close = price + 0.0010
+            high = close + 0.0005
+        elif i > 80:
+            open_ = price
+            close = price + 0.00035
+            high = close + 0.0002
+            low = open_ - 0.00015
+        else:
+            open_ = price
+            close = price + (0.00005 if i % 2 == 0 else -0.00003)
+            high = max(open_, close) + 0.0002
+            low = min(open_, close) - 0.0002
+
+        candles.append(Candle(
+            time=t + timedelta(hours=i),
+            open=open_,
+            high=high,
+            low=low,
+            close=close,
+            volume=1000 + i,
+        ))
+        price = close
+
+    return candles
+```
+
+Nếu constructor `Candle` khác field, kiểm tra `core/market_models.py` và sửa test cho đúng.
+Không sửa model chỉ để test.
+
+Test 1 — helper với context thật/mô phỏng:
+Dựng smc_context có:
+```python
+selected_zone broken = True
+choch bearish
+liquidity sweep aligned
+displacement aligned
+```
+Kỳ vọng helper trả đúng flag.
+
+Test 2 — zone broken không READY:
+Dùng analyze_symbol hoặc monkeypatch:
+- score cao
+- M15 strict
+- zone_broken True
+Kỳ vọng:
+```python
+result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
+"ZONE_BROKEN" in result["trade_gate"]["warning_codes"]
+result["decision_summary"]["action"] != "ready"
+```
+
+Test 3 — CHOCH ngược hướng cap score:
+Dùng score_scenario hoặc helper scoring:
+- score trước cap cao
+- CHOCH ngược hướng
+Kỳ vọng:
+```python
+result["signal_score"] <= 60
+"CHOCH_AGAINST_DIRECTION" in result["penalty_codes"]
+```
+
+Test 4 — sweep + displacement + M15 strict bonus:
+Kỳ vọng:
+```python
+result["entry_quality_bonus"] == 10
+"SWEEP_DISPLACEMENT_M15_ALIGNED" in result["reason_codes"]
+```
+
+Test 5 — M15 loose không bonus:
+Kỳ vọng:
+```python
+result["entry_quality_bonus"] == 0
+"SWEEP_DISPLACEMENT_M15_ALIGNED" not in result["reason_codes"]
+```
+
+Test 6 — bonus không phá zone broken gate:
+Dựng:
+- zone_broken True
+- sweep/displacement/M15 strict True
+Kỳ vọng:
+```python
+result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
+result["decision_summary"]["action"] != "ready"
+```
+
+Test 7 — output các phase trước vẫn còn:
+Kỳ vọng result vẫn có:
+```python
+"trade_gate"
+"direction_bias"
+"decision_summary"
+```
+Và score result vẫn có:
+```python
+"signal_score"
+"total"
+```
+
+Chạy toàn bộ test Phase 5:
+
+```bash
+pytest -q tests/test_smc_trade_flags_phase5.py
+pytest -q tests/test_smc_zone_broken_gate_phase5.py
+pytest -q tests/test_smc_choch_cap_phase5.py
+pytest -q tests/test_smc_sweep_displacement_bonus_phase5.py
+pytest -q tests/test_phase5_smc_realistic.py
+```
+
+Chạy regression các phase trước:
+
+```bash
+pytest -q tests/test_signal_engine.py
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_score_gap.py
+pytest -q tests/test_macro_weights_phase4.py
+pytest -q tests/test_macro_modifier_phase4.py
+pytest -q tests/test_macro_news_gate_phase4.py
+```
+
+Chạy regression core nếu môi trường cho phép:
+
+```bash
+pytest -q tests/test_risk_engine.py tests/test_entry_engine.py tests/test_single_analysis.py tests/test_scanner.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5:
+- Không sửa code project để né lỗi.
+- Ghi rõ test nào không chạy được do thiếu dependency.
+
+Nếu lỗi do Phase 5:
+- Sửa đúng chỗ gây lỗi.
+- Không sửa lan sang module khác.
+
+Yêu cầu báo cáo cuối cùng sau khi hoàn thành toàn bộ Phase 5:
+Báo cáo ngắn gồm:
+1. File đã sửa/tạo.
+2. Helper SMC flag đã hoạt động thế nào.
+3. Zone broken gate đã hoạt động thế nào.
+4. CHOCH cap đã hoạt động thế nào.
+5. Sweep + displacement + M15 strict bonus đã hoạt động thế nào.
+6. Test đã chạy.
+7. Test pass/fail.
+8. Nếu fail thì lý do.
+9. Xác nhận không sửa phần ngoài phạm vi Phase 5.
+10. Cuối báo cáo bắt buộc ghi đúng 2 dòng sau:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+ĐÃ HOÀN THÀNH TASK
+
+============================================================
+KẾT THÚC FILE PROMPT PHASE 5
+============================================================

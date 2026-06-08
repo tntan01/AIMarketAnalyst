@@ -1,0 +1,910 @@
+PROMPTS CHO DEEPSEEK_V4_PRO — PHASE 6
+FOREX SCORING SYSTEM UPGRADE
+============================================================
+
+GHI CHÚ CHUNG
+============================================================
+
+File này chứa các prompt nhỏ để thực hiện PHASE 6 — EXPECTED EFFECTIVE R:R TRƯỚC GIAO DỊCH.
+
+Ngôn ngữ: Tiếng Việt có dấu đầy đủ.
+
+Bối cảnh hiện tại:
+- Phase 1 đã xong: score đã có `signal_score`, có thể vẫn giữ `total` để backward compatibility.
+- Phase 2 đã xong: đã có `core/trade_gate_engine.py`, output `trade_gate`, gate có quyền block/cap.
+- Phase 3 đã xong: đã có `score_gap`, `direction_bias`, và score_gap đã được truyền vào trade gate.
+- Phase 4 đã xong: macro weight đã giảm, macro modifier đã được thêm, tin mạnh gần là gate/block.
+- Phase 5 đã xong: SMC có quyền cap/block setup xấu, zone broken không READY, CHOCH ngược hướng cap score, sweep + displacement + M15 strict có bonus.
+- Phase 6 chỉ tập trung vào expected effective R:R:
+  1. Tính R:R thực tế dự kiến sau khi trừ chi phí spread.
+  2. Đưa `expected_effective_rr` vào trade plan/scenario/output.
+  3. Truyền `expected_effective_rr` vào Trade Gate.
+  4. Nếu effective R:R thấp hơn ngưỡng tối thiểu thì không được READY.
+  5. Không triển khai các phase khác.
+
+Triết lý Phase 6:
+- R:R lý tưởng đẹp chưa chắc đáng vào lệnh nếu spread/chi phí thực thi làm R:R thực tế xấu đi.
+- Expected effective R:R là lớp kiểm tra chất lượng thực thi trước khi giao dịch.
+- Nếu expected effective R:R thấp, setup chỉ được WATCH_ONLY, không được READY.
+- Gate vẫn là nơi kiểm soát quyền vào lệnh; score không được tự quyết định vào lệnh.
+
+Yêu cầu bắt buộc cho tất cả prompt:
+- Deepseek_v4_pro phải đọc code hiện tại trước khi sửa.
+- Chỉ sửa đúng phần liên quan đến Phase 6.
+- Không được chỉnh sửa, thay đổi hoặc refactor các phần không liên quan.
+- Sau khi code xong phải kiểm tra lại code thật cẩn thận.
+- Sau khi code xong phải chạy test.
+- Phải dùng Python/pytest để test với dữ liệu giống thật hoặc mock hợp lý.
+- Nếu test lỗi do môi trường thiếu PyQt6/MT5 thì không sửa code project để né lỗi, chỉ ghi rõ.
+- Nếu test lỗi do thay đổi Phase 6 thì sửa đúng chỗ gây lỗi.
+- Sau khi hoàn thành hết các công việc trong MỖI prompt, phải báo đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+- Sau khi hoàn thành TOÀN BỘ Phase 6, báo cáo cuối cùng phải có dòng:
+
+ĐÃ HOÀN THÀNH TASK
+
+Khuyến nghị sử dụng:
+- Chạy lần lượt Prompt 1 → Prompt 2 → Prompt 3 → Prompt 4.
+- Không nên đưa cả 4 prompt vào Deepseek cùng lúc.
+- Nếu bắt buộc đưa một lần, yêu cầu Deepseek làm tuần tự từng prompt, xong prompt nào phải test prompt đó.
+
+============================================================
+PROMPT 1 — THÊM HÀM TÍNH expected_effective_rr ĐỘC LẬP TRONG risk_engine
+============================================================
+
+Bạn đang làm việc trên project Python/PyQt6 AI Market Analyst v2.0 trong VSCode.
+
+Nhiệm vụ lần này CHỈ làm phần đầu của Phase 6:
+- Thêm hàm tính expected effective R:R độc lập.
+- Chỉ test hàm này.
+- Chưa tích hợp vào `analysis_engine.py`.
+- Chưa sửa UI/scanner.
+- Chưa sửa gate, trừ khi chỉ đọc lại để hiểu.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa:
+  - `core/risk_engine.py`
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa `core/analysis_engine.py` trong prompt này.
+- KHÔNG sửa `core/trade_gate_engine.py` trong prompt này.
+- KHÔNG sửa `core/signal_engine.py`.
+- KHÔNG sửa SMC.
+- KHÔNG sửa entry engine.
+- KHÔNG sửa macro.
+- KHÔNG thêm account guard.
+- KHÔNG thêm evidence score.
+- KHÔNG thêm execution quality score.
+- KHÔNG implement Phase 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Sau khi code xong phải tự kiểm tra lại code thật cẩn thận để tránh bug.
+
+Bước 1 — Đọc code hiện tại:
+Mở và đọc kỹ:
+- `core/risk_engine.py`
+- `core/analysis_engine.py` chỉ để hiểu trade plan hiện lấy entry/SL/TP ở đâu, không sửa trong prompt này.
+- test hiện có liên quan risk:
+  - `tests/test_risk_engine.py`
+  - nếu có test khác liên quan position sizing/trade plan thì đọc thêm.
+
+Tìm:
+- nơi tính risk/reward hiện tại.
+- nơi tạo entry, stop_loss, take_profit.
+- nơi xử lý spread/spread_price/spread_status.
+- kiểu dữ liệu giá hiện tại dùng float hay Decimal.
+
+Bước 2 — Thêm hàm tính spread cost đơn giản:
+Trong `core/risk_engine.py`, thêm hàm:
+
+```python
+def calculate_spread_cost(spread_price: float | int | None) -> float:
+    ...
+```
+
+Logic:
+- Nếu `spread_price` là None hoặc không convert được sang float thì trả 0.0.
+- Nếu `spread_price < 0` thì trả 0.0.
+- Nếu hợp lệ thì trả float(spread_price).
+
+Gợi ý:
+
+```python
+def calculate_spread_cost(spread_price):
+    try:
+        value = float(spread_price or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(value, 0.0)
+```
+
+Bước 3 — Thêm hàm expected effective R:R:
+Trong `core/risk_engine.py`, thêm:
+
+```python
+def calculate_expected_effective_rr(
+    direction: str,
+    entry: float,
+    stop_loss: float,
+    take_profit: float,
+    spread_price: float = 0.0,
+) -> float:
+    ...
+```
+
+Logic bắt buộc:
+
+```python
+direction = str(direction).lower()
+
+if direction == "buy":
+    risk = abs(entry - stop_loss)
+    reward = abs(take_profit - entry)
+elif direction == "sell":
+    risk = abs(stop_loss - entry)
+    reward = abs(entry - take_profit)
+else:
+    return 0.0
+
+spread_cost = calculate_spread_cost(spread_price)
+
+effective_risk = risk + spread_cost
+effective_reward = reward - spread_cost
+
+if effective_risk <= 0:
+    return 0.0
+
+return max(effective_reward / effective_risk, 0.0)
+```
+
+Yêu cầu:
+- Hàm không được raise exception khi input lỗi.
+- Nếu entry/SL/TP None hoặc không convert được thì trả 0.0.
+- Nếu direction không phải buy/sell thì trả 0.0.
+- Nếu reward sau trừ spread âm thì trả 0.0.
+- Kết quả nên round hợp lý, ví dụ 4 chữ số thập phân, nhưng không bắt buộc nếu test dùng `pytest.approx`.
+- Không dùng thư viện ngoài.
+- Không làm thay đổi các hàm risk cũ.
+- Không đổi position sizing.
+- Không đổi lot calculation.
+
+Bước 4 — Test:
+Tạo file:
+
+`tests/test_expected_effective_rr_phase6.py`
+
+Test tối thiểu:
+
+1. Buy bình thường:
+```python
+rr = calculate_expected_effective_rr(
+    direction="buy",
+    entry=1.1000,
+    stop_loss=1.0950,
+    take_profit=1.1100,
+    spread_price=0.0002,
+)
+```
+
+Tính:
+- ideal risk = 0.0050
+- ideal reward = 0.0100
+- effective_risk = 0.0052
+- effective_reward = 0.0098
+- rr ≈ 1.8846
+
+Kỳ vọng:
+```python
+assert rr == pytest.approx(1.8846, rel=1e-3)
+```
+
+2. Sell bình thường:
+```python
+rr = calculate_expected_effective_rr(
+    direction="sell",
+    entry=1.1000,
+    stop_loss=1.1050,
+    take_profit=1.0900,
+    spread_price=0.0002,
+)
+```
+Kỳ vọng tương tự khoảng 1.8846.
+
+3. Spread quá lớn làm reward âm:
+```python
+rr = calculate_expected_effective_rr("buy", 1.1000, 1.0990, 1.1005, 0.0010)
+```
+Kỳ vọng:
+```python
+rr == 0.0
+```
+
+4. spread_price None:
+Kỳ vọng không crash và tính như spread 0.
+
+5. direction sai:
+```python
+rr = calculate_expected_effective_rr("hold", 1.1, 1.0, 1.2, 0.0001)
+```
+Kỳ vọng 0.0.
+
+6. input None:
+```python
+rr = calculate_expected_effective_rr("buy", None, 1.0, 1.2, 0.0001)
+```
+Kỳ vọng 0.0, không crash.
+
+7. spread âm:
+```python
+calculate_spread_cost(-0.001) == 0.0
+```
+
+8. spread string hợp lệ:
+```python
+calculate_spread_cost("0.0002") == 0.0002
+```
+
+Chạy test:
+
+```bash
+pytest -q tests/test_expected_effective_rr_phase6.py
+```
+
+Chạy regression risk:
+
+```bash
+pytest -q tests/test_risk_engine.py
+```
+
+Chạy regression liên quan các phase trước:
+
+```bash
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_score_gap.py
+pytest -q tests/test_signal_engine.py
+```
+
+Nếu test cũ lỗi do môi trường thiếu MT5/PyQt6 thì không sửa lan man.
+Nếu lỗi do Prompt 1 thì sửa đúng chỗ.
+
+Bước 5 — Báo cáo:
+Sau khi hoàn thành Prompt 1, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. Hàm mới đã thêm.
+3. Test đã chạy.
+4. Test pass/fail.
+5. Xác nhận không sửa UI/scanner/analysis/gate/signal/SMC/entry.
+6. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 1, vì còn các prompt tiếp theo.
+
+============================================================
+PROMPT 2 — TÍCH HỢP expected_effective_rr VÀO TRADE PLAN / SCENARIO
+============================================================
+
+Bạn đang tiếp tục Phase 6 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Prompt 1 đã thêm hàm:
+  - `calculate_spread_cost(...)`
+  - `calculate_expected_effective_rr(...)`
+- Phase 2 trade gate đã có logic xử lý `expected_effective_rr` nếu context có sẵn key này.
+- Phase 1–5 đã ổn định.
+
+Nhiệm vụ lần này:
+- Tính `expected_effective_rr` cho trade plan/scenario sau khi đã có entry, stop_loss, take_profit, direction và spread_price.
+- Đưa field này vào output phù hợp.
+- Chưa sửa UI/scanner.
+- Chưa thêm settings mới nếu không bắt buộc.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa:
+  - `core/risk_engine.py` nếu trade plan được tạo ở đó.
+  - hoặc `core/analysis_engine.py` nếu scenario/trade plan được tổng hợp ở đó.
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa `core/trade_gate_engine.py` trong prompt này trừ khi có bug trực tiếp.
+- KHÔNG sửa `core/signal_engine.py`.
+- KHÔNG sửa SMC.
+- KHÔNG sửa macro.
+- KHÔNG sửa entry engine nếu không bắt buộc.
+- KHÔNG thêm account guard.
+- KHÔNG thêm evidence score.
+- KHÔNG thêm execution quality score.
+- KHÔNG implement Phase 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Sau khi code xong phải tự kiểm tra lại code thật cẩn thận.
+
+Bước 1 — Đọc code hiện tại:
+Mở:
+- `core/risk_engine.py`
+- `core/analysis_engine.py`
+- `core/entry_engine.py` chỉ để hiểu entry_status/entry zone, không sửa nếu không bắt buộc.
+- test liên quan:
+  - `tests/test_risk_engine.py`
+  - `tests/test_single_analysis.py`
+  - test Phase 2/3 nếu có.
+
+Tìm nơi tạo các field:
+- `entry`
+- `entry_price`
+- `entry_zone`
+- `stop_loss`
+- `take_profit`
+- `tp`
+- `sl`
+- `risk_reward`
+- `rr`
+- `direction`
+- `spread_price`
+- `spread`
+- `spread_status`
+- `primary_scenario`
+- `scenarios`
+- `trade_plan`
+
+Bước 2 — Xác định nguồn spread_price:
+Ưu tiên lấy spread_price từ dữ liệu hiện có, ví dụ:
+- `data_quality.get("spread_price")`
+- `data_quality.get("spread")`
+- `market_data.get("spread_price")`
+- `symbol_profile`
+- hoặc field hiện có trong project.
+
+Không tự bịa field nếu code không có.
+Nếu không có spread_price, dùng 0.0 và vẫn output `expected_effective_rr` dựa trên ideal R:R.
+
+Nếu spread hiện là point/pip chứ không phải price distance, phải đọc code hiện tại:
+- Nếu project đã có hàm convert spread sang price, dùng hàm đó.
+- Nếu chưa có, không tự viết conversion phức tạp ở Prompt 2; dùng `spread_price` nếu có.
+- Nếu chỉ có spread_points, ghi comment TODO ngắn, không phá logic.
+
+Bước 3 — Tính expected_effective_rr:
+Sau khi có direction, entry, stop_loss, take_profit:
+
+```python
+from core.risk_engine import calculate_expected_effective_rr
+
+expected_effective_rr = calculate_expected_effective_rr(
+    direction=direction,
+    entry=entry_price,
+    stop_loss=stop_loss,
+    take_profit=take_profit,
+    spread_price=spread_price,
+)
+```
+
+Yêu cầu:
+- Không crash nếu thiếu entry/SL/TP.
+- Nếu không đủ dữ liệu thì `expected_effective_rr = None` hoặc 0.0 theo style hiện tại của project.
+- Ưu tiên None nếu không có trade plan hợp lệ.
+- Nếu có trade plan hợp lệ thì phải là float.
+
+Bước 4 — Đưa vào output:
+Nếu có `primary_scenario`, thêm:
+
+```python
+primary_scenario["expected_effective_rr"] = expected_effective_rr
+```
+
+Nếu có list `scenarios`, với mỗi scenario có đủ dữ liệu thì thêm:
+
+```python
+scenario["expected_effective_rr"] = expected_effective_rr
+```
+
+Nếu có `risk_management` hoặc `trade_plan`, thêm:
+
+```python
+"expected_effective_rr": expected_effective_rr
+```
+
+Yêu cầu:
+- Không xóa `risk_reward` cũ.
+- Không đổi tên `rr` cũ nếu UI đang dùng.
+- Không xóa trade plan cũ.
+- Không làm scanner vỡ.
+- Không đổi decision logic ở Prompt 2, chỉ đưa data vào output. Gate sẽ xử lý ở Prompt 3 nếu chưa hoạt động.
+
+Bước 5 — Test:
+Tạo file:
+
+`tests/test_expected_effective_rr_integration_phase6.py`
+
+Test 1 — trade plan có expected_effective_rr:
+Dựng hoặc monkeypatch kết quả trade plan có:
+```python
+direction = "buy"
+entry = 1.1000
+stop_loss = 1.0950
+take_profit = 1.1100
+spread_price = 0.0002
+```
+
+Gọi hàm tạo trade plan hoặc `analyze_symbol(...)` tùy cấu trúc project.
+
+Kỳ vọng:
+```python
+expected_effective_rr is not None
+expected_effective_rr == pytest.approx(1.8846, rel=1e-3)
+```
+
+Test 2 — sell:
+```python
+direction = "sell"
+entry = 1.1000
+stop_loss = 1.1050
+take_profit = 1.0900
+spread_price = 0.0002
+```
+Kỳ vọng tương tự.
+
+Test 3 — thiếu trade plan:
+Nếu không có entry/SL/TP hợp lệ, không được crash.
+Kỳ vọng:
+```python
+expected_effective_rr is None hoặc expected_effective_rr == 0.0
+```
+Tùy style bạn chọn, nhưng phải nhất quán.
+
+Test 4 — output cũ vẫn còn:
+Kỳ vọng không mất:
+```python
+risk_reward hoặc rr cũ
+entry
+stop_loss
+take_profit
+```
+
+Test 5 — spread_price 0:
+Kỳ vọng expected_effective_rr bằng ideal R:R.
+
+Chạy test:
+
+```bash
+pytest -q tests/test_expected_effective_rr_phase6.py
+pytest -q tests/test_expected_effective_rr_integration_phase6.py
+```
+
+Chạy regression:
+
+```bash
+pytest -q tests/test_risk_engine.py
+pytest -q tests/test_single_analysis.py
+pytest -q tests/test_trade_gate_engine.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5 thì không sửa lan man.
+Nếu lỗi do Prompt 2 thì sửa đúng chỗ.
+
+Bước 6 — Báo cáo:
+Sau khi hoàn thành Prompt 2, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. expected_effective_rr được tính ở đâu.
+3. expected_effective_rr được đưa vào output nào.
+4. Test đã chạy.
+5. Test pass/fail.
+6. Xác nhận không sửa UI/scanner/signal/SMC/macro/account guard.
+7. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 2, vì còn các prompt tiếp theo.
+
+============================================================
+PROMPT 3 — TRUYỀN expected_effective_rr VÀO TRADE GATE, R:R THẤP KHÔNG ĐƯỢC READY
+============================================================
+
+Bạn đang tiếp tục Phase 6 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Prompt 1 đã thêm hàm tính expected effective R:R.
+- Prompt 2 đã đưa `expected_effective_rr` vào trade plan/scenario/output.
+- Phase 2 trade gate đã có logic đọc `expected_effective_rr` nếu context có key này.
+
+Nhiệm vụ lần này:
+- Đảm bảo `analysis_engine.py` truyền `expected_effective_rr` vào `gate_context`.
+- Nếu `expected_effective_rr < min_expected_effective_rr`, trade gate phải cap về `WATCH_ONLY`.
+- Nếu gate cap WATCH_ONLY thì `decision_summary["action"]` không được là `ready`.
+- Không sửa UI/scanner.
+
+Yêu cầu cực kỳ quan trọng:
+- Ưu tiên CHỈ sửa:
+  - `core/analysis_engine.py`
+  - `core/trade_gate_engine.py` nếu logic expected RR chưa đúng hoặc thiếu test.
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa signal engine.
+- KHÔNG sửa SMC.
+- KHÔNG sửa macro.
+- KHÔNG sửa risk engine trừ bug trực tiếp từ Prompt 1/2.
+- KHÔNG thêm account guard.
+- KHÔNG thêm evidence score.
+- KHÔNG thêm execution quality score.
+- KHÔNG implement Phase 7, 8, 9 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Sau khi code xong phải tự kiểm tra lại code thật cẩn thận.
+
+Bước 1 — Đọc code:
+Mở:
+- `core/analysis_engine.py`
+- `core/trade_gate_engine.py`
+- test Phase 2 gate.
+- test Phase 6 đã tạo.
+
+Bước 2 — Kiểm tra trade gate:
+Trong `core/trade_gate_engine.py`, đảm bảo có logic tương đương:
+
+```python
+expected_effective_rr = context.get("expected_effective_rr")
+min_expected_effective_rr = context.get("min_expected_effective_rr", 1.3)
+
+if expected_effective_rr is not None and expected_effective_rr < min_expected_effective_rr:
+    warning_codes.append("EXPECTED_RR_TOO_LOW")
+    decision_cap = "WATCH_ONLY"
+```
+
+Yêu cầu:
+- `EXPECTED_RR_TOO_LOW` là warning/cap mềm, không phải block cứng.
+- `allowed` vẫn True.
+- `decision_cap` là `"WATCH_ONLY"`, trừ khi đã có block cứng khác thì block cứng thắng.
+- Nếu `expected_effective_rr` là None thì không cap.
+- Nếu convert float lỗi thì không crash; coi như không đủ dữ liệu hoặc cap an toàn tùy style hiện tại, ưu tiên không crash.
+- Không append trùng warning code.
+
+Bước 3 — Truyền vào gate_context:
+Trong `analysis_engine.py`, khi tạo `gate_context`, đảm bảo có:
+
+```python
+"expected_effective_rr": primary_scenario.get("expected_effective_rr") nếu có
+```
+
+hoặc lấy từ trade_plan/risk_management nếu project lưu ở đó:
+
+```python
+"expected_effective_rr": (
+    primary_scenario.get("expected_effective_rr")
+    or risk_management.get("expected_effective_rr")
+    or trade_plan.get("expected_effective_rr")
+)
+```
+
+Chỉ dùng biến thật sự tồn tại.
+Không tự tạo biến không có thật.
+Không refactor lớn.
+
+Nếu có settings hiện có, truyền ngưỡng:
+
+```python
+"min_expected_effective_rr": settings.get("min_expected_effective_rr", 1.3)
+```
+
+Nếu chưa có settings, dùng mặc định 1.3.
+Không bắt buộc sửa file settings trong prompt này.
+
+Bước 4 — Đảm bảo action không READY:
+Nếu `gate_result["decision_cap"] == "WATCH_ONLY"` và decision cũ là `"ready"`, action cuối phải là:
+
+```python
+decision_action = "watch"
+```
+
+Nếu Phase 2 đã có đoạn này thì chỉ kiểm tra nó hoạt động với expected RR, không viết trùng nhiều nơi.
+
+Bước 5 — Test:
+Tạo file:
+
+`tests/test_expected_rr_gate_phase6.py`
+
+Test 1 — gate trực tiếp expected RR thấp:
+```python
+from core.trade_gate_engine import check_trade_gates
+
+context = {
+    "terminal_connected": True,
+    "broker_logged_in": True,
+    "spread_status": "normal",
+    "m15_quality": "strict",
+    "score_gap": 30,
+    "expected_effective_rr": 1.1,
+    "min_expected_effective_rr": 1.3,
+}
+result = check_trade_gates(context)
+```
+
+Kỳ vọng:
+```python
+result["allowed"] is True
+result["decision_cap"] == "WATCH_ONLY"
+"EXPECTED_RR_TOO_LOW" in result["warning_codes"]
+```
+
+Test 2 — expected RR đủ tốt không cap:
+```python
+expected_effective_rr = 1.5
+```
+Kỳ vọng:
+```python
+"EXPECTED_RR_TOO_LOW" not in result["warning_codes"]
+```
+
+Test 3 — expected RR thấp + spread abnormal:
+Kỳ vọng block cứng thắng:
+```python
+result["allowed"] is False
+result["decision_cap"] == "TRADE_BLOCKED"
+"EXPECTED_RR_TOO_LOW" in result["warning_codes"]
+"SPREAD_ABNORMAL" in result["block_codes"]
+```
+
+Test 4 — analyze_symbol/action không ready khi RR thấp:
+Dùng monkeypatch trade plan/scenario có:
+```python
+expected_effective_rr = 1.1
+```
+và score/gate khác đều đẹp.
+
+Kỳ vọng:
+```python
+result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
+"EXPECTED_RR_TOO_LOW" in result["trade_gate"]["warning_codes"]
+result["decision_summary"]["action"] != "ready"
+```
+
+Test 5 — expected RR None không crash:
+Kỳ vọng không có warning `EXPECTED_RR_TOO_LOW`.
+
+Chạy test:
+
+```bash
+pytest -q tests/test_expected_rr_gate_phase6.py
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_expected_effective_rr_integration_phase6.py
+```
+
+Chạy regression:
+
+```bash
+pytest -q tests/test_analysis_trade_gate_integration.py
+pytest -q tests/test_score_gap.py
+pytest -q tests/test_signal_engine.py
+pytest -q tests/test_risk_engine.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5 thì không sửa lan man.
+Nếu lỗi do Prompt 3 thì sửa đúng chỗ.
+
+Bước 6 — Báo cáo:
+Sau khi hoàn thành Prompt 3, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. expected_effective_rr được truyền vào gate thế nào.
+3. R:R thấp được cap thế nào.
+4. Test đã chạy.
+5. Test pass/fail.
+6. Xác nhận không sửa ngoài phạm vi Prompt 3.
+7. Cuối báo cáo ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 3, vì còn Prompt 4 rà soát cuối.
+
+============================================================
+PROMPT 4 — TEST DỮ LIỆU GIỐNG THẬT, RÀ SOÁT TOÀN BỘ PHASE 6 VÀ BÁO CÁO CUỐI
+============================================================
+
+Bạn đang hoàn thiện Phase 6 của project AI Market Analyst v2.0.
+
+Nhiệm vụ lần này:
+- Không thêm tính năng mới.
+- Không refactor.
+- Không sửa UI.
+- Không sửa scanner.
+- Không sửa signal engine nếu không có bug trực tiếp từ Phase 6.
+- Không sửa SMC.
+- Không sửa macro.
+- Không sửa entry engine nếu không có bug trực tiếp từ Phase 6.
+- Chỉ kiểm tra, test dữ liệu giống thật, và sửa bug nhỏ nếu bug do Phase 6 gây ra.
+
+Mục tiêu:
+Rà soát toàn bộ Phase 6:
+1. Hàm `calculate_spread_cost(...)` hoạt động an toàn.
+2. Hàm `calculate_expected_effective_rr(...)` hoạt động an toàn.
+3. Trade plan/scenario có `expected_effective_rr`.
+4. Trade gate nhận `expected_effective_rr`.
+5. Nếu expected effective R:R thấp thì không được READY.
+6. Block/cap các phase trước vẫn thắng đúng thứ tự.
+7. Output Phase 1/2/3/4/5 vẫn còn.
+8. Không làm thay đổi các phần ngoài Phase 6.
+
+Yêu cầu kiểm tra code thủ công:
+
+1. Mở `core/risk_engine.py`, kiểm tra:
+- `calculate_spread_cost(...)` không crash khi None/string/số âm.
+- `calculate_expected_effective_rr(...)` không crash khi input thiếu/sai.
+- Direction buy/sell tính đúng.
+- effective_risk = risk + spread_price.
+- effective_reward = reward - spread_price.
+- Nếu effective_reward âm thì rr = 0.
+- Không sửa sai position sizing/lot calculation cũ.
+
+2. Mở `core/analysis_engine.py`, kiểm tra:
+- Trade plan/scenario có `expected_effective_rr` nếu đủ entry/SL/TP.
+- `expected_effective_rr` được truyền vào `gate_context`.
+- Nếu gate WATCH_ONLY thì action không là ready.
+- Không mất:
+```python
+trade_gate
+direction_bias
+decision_summary
+smc_trade_flags nếu đã có
+```
+
+3. Mở `core/trade_gate_engine.py`, kiểm tra:
+- `EXPECTED_RR_TOO_LOW` là warning/cap mềm.
+- `allowed` vẫn True nếu chỉ RR thấp.
+- `decision_cap` là `"WATCH_ONLY"`.
+- Nếu có block cứng khác thì block cứng thắng.
+
+Viết hoặc cập nhật test dữ liệu giống thật:
+
+Tạo file:
+`tests/test_phase6_expected_rr_realistic.py`
+
+Mục tiêu test:
+- Dùng dữ liệu giá/plan giống thật.
+- Không cần phụ thuộc MT5 thật.
+- Chứng minh RR lý tưởng khác RR effective khi có spread.
+- Chứng minh RR effective thấp làm gate không READY.
+
+Gợi ý dữ liệu trade plan:
+
+Case BUY:
+```python
+direction = "buy"
+entry = 1.1000
+stop_loss = 1.0950
+take_profit = 1.1070
+spread_price = 0.0003
+```
+
+Tính:
+- ideal risk = 0.0050
+- ideal reward = 0.0070
+- ideal RR = 1.4
+- effective risk = 0.0053
+- effective reward = 0.0067
+- expected effective RR ≈ 1.264
+- Nếu min_expected_effective_rr = 1.3 thì phải WATCH_ONLY.
+
+Case SELL:
+```python
+direction = "sell"
+entry = 1.1000
+stop_loss = 1.1050
+take_profit = 1.0930
+spread_price = 0.0003
+```
+
+Kỳ vọng tương tự.
+
+Test 1 — effective RR thấp hơn ideal RR:
+```python
+ideal_rr = abs(take_profit - entry) / abs(entry - stop_loss)
+effective_rr = calculate_expected_effective_rr(...)
+assert effective_rr < ideal_rr
+```
+
+Test 2 — effective RR thấp bị gate WATCH_ONLY:
+```python
+context = {
+    "terminal_connected": True,
+    "broker_logged_in": True,
+    "spread_status": "normal",
+    "m15_quality": "strict",
+    "score_gap": 30,
+    "expected_effective_rr": effective_rr,
+    "min_expected_effective_rr": 1.3,
+}
+gate = check_trade_gates(context)
+assert gate["decision_cap"] == "WATCH_ONLY"
+assert "EXPECTED_RR_TOO_LOW" in gate["warning_codes"]
+```
+
+Test 3 — effective RR đủ tốt không cap:
+Dùng TP xa hơn:
+```python
+take_profit = 1.1120
+```
+Kỳ vọng không có warning `EXPECTED_RR_TOO_LOW`.
+
+Test 4 — analyze_symbol/trade plan output:
+Nếu dễ dựng `analyze_symbol`, dùng dữ liệu giả giống thật hoặc monkeypatch trade plan:
+Kỳ vọng:
+```python
+"expected_effective_rr" in primary_scenario hoặc risk_management/trade_plan
+```
+
+Test 5 — action không ready khi RR thấp:
+Monkeypatch để score cao, m15 strict, score_gap cao, không news, spread_status normal, nhưng expected_effective_rr thấp.
+Kỳ vọng:
+```python
+result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
+result["decision_summary"]["action"] != "ready"
+```
+
+Test 6 — output các phase trước vẫn còn:
+Kỳ vọng result vẫn có:
+```python
+"trade_gate"
+"direction_bias"
+"decision_summary"
+```
+Score vẫn có:
+```python
+"signal_score"
+"total"
+```
+Nếu `smc_trade_flags` đã có từ Phase 5 thì không mất.
+
+Chạy toàn bộ test Phase 6:
+
+```bash
+pytest -q tests/test_expected_effective_rr_phase6.py
+pytest -q tests/test_expected_effective_rr_integration_phase6.py
+pytest -q tests/test_expected_rr_gate_phase6.py
+pytest -q tests/test_phase6_expected_rr_realistic.py
+```
+
+Chạy regression các phase trước:
+
+```bash
+pytest -q tests/test_signal_engine.py
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_score_gap.py
+pytest -q tests/test_macro_weights_phase4.py
+pytest -q tests/test_macro_modifier_phase4.py
+pytest -q tests/test_smc_trade_flags_phase5.py
+pytest -q tests/test_smc_zone_broken_gate_phase5.py
+pytest -q tests/test_smc_choch_cap_phase5.py
+pytest -q tests/test_smc_sweep_displacement_bonus_phase5.py
+```
+
+Chạy regression core nếu môi trường cho phép:
+
+```bash
+pytest -q tests/test_risk_engine.py tests/test_entry_engine.py tests/test_single_analysis.py tests/test_scanner.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5:
+- Không sửa code project để né lỗi.
+- Ghi rõ test nào không chạy được do thiếu dependency.
+
+Nếu lỗi do Phase 6:
+- Sửa đúng chỗ gây lỗi.
+- Không sửa lan sang module khác.
+
+Yêu cầu báo cáo cuối cùng sau khi hoàn thành toàn bộ Phase 6:
+Báo cáo ngắn gồm:
+1. File đã sửa/tạo.
+2. Hàm expected effective R:R đã hoạt động thế nào.
+3. expected_effective_rr được đưa vào output nào.
+4. Gate xử lý expected R:R thấp thế nào.
+5. Test đã chạy.
+6. Test pass/fail.
+7. Nếu fail thì lý do.
+8. Xác nhận không sửa phần ngoài phạm vi Phase 6.
+9. Cuối báo cáo bắt buộc ghi đúng 2 dòng sau:
+
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+ĐÃ HOÀN THÀNH TASK
+
+============================================================
+KẾT THÚC FILE PROMPT PHASE 6
+============================================================

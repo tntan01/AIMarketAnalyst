@@ -1,0 +1,1193 @@
+PROMPT 1 — PHASE 14.1: KIỂM TRA HIỆN TRẠNG SAU PHASE 13 VÀ KHÓA PHẠM VI PHASE 14
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh chung:
+Hệ thống đã hoàn thành Phase 13: có final_score mới, được tính từ signal_score, evidence_score và execution_quality_score. Bây giờ bắt đầu Phase 14: DECISION ENGINE MỚI.
+
+Mục tiêu Phase 14:
+Tạo module quyết định cuối cùng tập trung tại:
+core/decision_engine.py
+
+Decision engine nhận các dữ liệu đã được tính sẵn:
+- final_score
+- signal_score
+- evidence_score
+- execution_quality_score
+- gate_result
+- entry_status
+- score_gap
+- trade_permission
+
+Sau đó trả về decision cuối cùng chuẩn hóa:
+- READY_TO_TRADE
+- WAITING_CONFIRMATION
+- AGGRESSIVE_SETUP
+- WATCH_ONLY
+- TRADE_BLOCKED
+- STAND_ASIDE
+
+Nguyên tắc cực kỳ quan trọng:
+- Phase 14 được phép tạo decision_engine.py.
+- Phase 14 chỉ tập trung vào quyết định cuối cùng.
+- Không sửa công thức signal_score trong signal_engine.py.
+- Không sửa công thức final_score trong final_score_engine.py, trừ khi phát hiện bug nhỏ rõ ràng trong test.
+- Không sửa trade_gate_engine.py trừ khi prompt yêu cầu rõ và chỉ sửa bug nhỏ.
+- Không sửa account_guard.py.
+- Không sửa statistical_edge_engine.py.
+- Không sửa execution_quality_engine.py.
+- Không sửa trade_mistake_detector.py.
+- Không sửa UI/scanner trong các prompt đầu.
+- Không tạo migration/database.
+- Không đổi ranking scanner, vì Phase 15 mới xử lý scanner ranking.
+
+Mục tiêu riêng của prompt này:
+Chỉ kiểm tra hiện trạng code sau Phase 13, xác định file được phép sửa trong Phase 14, và bổ sung reason code cho decision engine nếu còn thiếu. Chưa tạo logic decision đầy đủ.
+
+Yêu cầu rất quan trọng:
+- Chỉ được đọc code và bổ sung constant reason code nếu thiếu.
+- Không sửa analysis_engine.py trong prompt này.
+- Không sửa signal_engine.py.
+- Không sửa final_score_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa UI/scanner.
+- Không sửa database/migration.
+
+Việc cần làm:
+1. Kiểm tra các file sau có tồn tại không:
+   - core/reason_codes.py
+   - core/final_score_engine.py
+   - core/trade_gate_engine.py
+   - core/entry_engine.py
+   - core/analysis_engine.py
+   - tests/
+
+2. Kiểm tra core/decision_engine.py:
+   - Nếu chưa tồn tại thì ghi nhận sẽ tạo ở prompt sau.
+   - Nếu đã tồn tại từ trước thì chỉ đọc để hiểu, không xóa, không refactor.
+
+3. Mở core/final_score_engine.py để hiểu output hiện tại:
+   - final_score
+   - score_inputs
+   - score_weights
+   - reason_codes
+   - penalty_codes
+   - warning_codes
+   Không sửa logic file này.
+
+4. Mở core/trade_gate_engine.py để hiểu output gate hiện tại:
+   - allowed
+   - decision_cap
+   - block_codes
+   - warning_codes
+   - reasons
+   Không sửa logic file này.
+
+5. Mở core/reason_codes.py để kiểm tra đã có các code decision chưa. Nếu thiếu thì chỉ bổ sung đúng các constant sau:
+   - DECISION_READY_TO_TRADE
+   - DECISION_WAITING_CONFIRMATION
+   - DECISION_AGGRESSIVE_SETUP
+   - DECISION_WATCH_ONLY
+   - DECISION_TRADE_BLOCKED
+   - DECISION_STAND_ASIDE
+   - DECISION_GATE_BLOCKED
+   - DECISION_GATE_CAPPED
+   - DECISION_ENTRY_NOT_CONFIRMED
+   - DECISION_FINAL_SCORE_STRONG
+   - DECISION_FINAL_SCORE_MODERATE
+   - DECISION_FINAL_SCORE_WEAK
+   - DECISION_SCORE_GAP_LOW
+   - DECISION_DATA_INCOMPLETE
+
+6. Nếu core/reason_codes.py có REASON_CODE_MESSAGES thì bổ sung message tiếng Việt ngắn cho các code trên, ví dụ:
+   - DECISION_READY_TO_TRADE: "Điều kiện đã đủ mạnh để cân nhắc giao dịch."
+   - DECISION_TRADE_BLOCKED: "Gate đã chặn giao dịch, không được mở lệnh mới."
+   - DECISION_ENTRY_NOT_CONFIRMED: "Entry chưa được xác nhận, cần chờ thêm."
+   - DECISION_SCORE_GAP_LOW: "Khoảng cách điểm Buy/Sell thấp, thiên hướng chưa rõ."
+
+7. Không đổi tên code Phase 9/10/11/12/13 đã có.
+8. Không xóa code cũ.
+9. Không refactor lớn.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_reason_codes_phase9.py -q
+  nếu file này tồn tại.
+- Nếu vừa thêm code mới thì tạo hoặc cập nhật test nhỏ:
+  tests/test_reason_codes_decision_engine_phase14.py
+  Test chỉ cần import được các constant DECISION_* mới và map message được nếu có REASON_CODE_MESSAGES.
+- Chạy:
+  python -m pytest tests/test_reason_codes_decision_engine_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Các constant DECISION_* import được.
+- Không ảnh hưởng behavior hiện tại.
+- Không có lỗi import.
+- Không có thay đổi ở engine khác ngoài reason_codes.py và test reason code nếu cần.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 2 — PHASE 14.2: TẠO MODULE RỖNG core/decision_engine.py VÀ TEST IMPORT
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 14 cần module riêng để quyết định cuối cùng. Prompt này chỉ tạo khung module và test import, chưa tích hợp vào analysis_engine.
+
+Mục tiêu riêng của prompt này:
+Tạo core/decision_engine.py có constants, output mặc định an toàn và test import.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa 2 file:
+  1. core/decision_engine.py
+  2. tests/test_decision_engine_import_phase14.py
+- Không sửa analysis_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa final_score_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa UI/scanner.
+- Không sửa database/migration.
+
+Việc cần làm:
+1. Tạo file mới:
+   core/decision_engine.py
+
+2. Thêm docstring đầu file, nêu rõ:
+   - Module này tạo quyết định cuối cùng từ final_score, gate_result và entry_status.
+   - Module này không tính signal_score.
+   - Module này không tính final_score.
+   - Module này không gọi MT5, AI, database, service hoặc UI.
+   - Module này không thay thế scanner ranking trong Phase 14.
+
+3. Import các reason code từ core.reason_codes nếu đã có:
+   - DECISION_READY_TO_TRADE
+   - DECISION_WAITING_CONFIRMATION
+   - DECISION_AGGRESSIVE_SETUP
+   - DECISION_WATCH_ONLY
+   - DECISION_TRADE_BLOCKED
+   - DECISION_STAND_ASIDE
+   - DECISION_DATA_INCOMPLETE
+
+4. Định nghĩa constants:
+   - READY_TO_TRADE = "READY_TO_TRADE"
+   - WAITING_CONFIRMATION = "WAITING_CONFIRMATION"
+   - AGGRESSIVE_SETUP = "AGGRESSIVE_SETUP"
+   - WATCH_ONLY = "WATCH_ONLY"
+   - TRADE_BLOCKED = "TRADE_BLOCKED"
+   - STAND_ASIDE = "STAND_ASIDE"
+   - VALID_DECISIONS = frozenset({...})
+
+5. Định nghĩa threshold mặc định:
+   DEFAULT_DECISION_THRESHOLDS = {
+       "ready": 80,
+       "watch": 65,
+       "wait": 50,
+       "min_score_gap": 10,
+   }
+
+6. Tạo hàm:
+   def default_decision_result(reason: str = "decision_not_calculated") -> dict:
+       return {
+           "decision": STAND_ASIDE,
+           "final_score": 0,
+           "decision_label": "Đứng ngoài",
+           "reason_codes": [],
+           "warning_codes": [DECISION_DATA_INCOMPLETE],
+           "block_codes": [],
+           "decision_cap": None,
+           "allowed": False,
+           "score_breakdown": {},
+           "reason": reason,
+       }
+
+7. Tạo test:
+   tests/test_decision_engine_import_phase14.py
+
+8. Test cần kiểm tra:
+   - import được core.decision_engine.
+   - VALID_DECISIONS chứa READY_TO_TRADE và TRADE_BLOCKED.
+   - DEFAULT_DECISION_THRESHOLDS có ready=80.
+   - default_decision_result() trả decision = STAND_ASIDE.
+   - default_decision_result() có warning_codes là list.
+
+Test bắt buộc:
+python -m pytest tests/test_decision_engine_import_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Module import sạch.
+- Không ảnh hưởng module khác.
+- Test mới pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 3 — PHASE 14.3: THÊM HELPER ĐỌC FINAL SCORE, GATE, ENTRY STATUS VÀ DECISION CAP AN TOÀN
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Decision engine sẽ nhận dữ liệu từ analysis_result hoặc dict payload. Dữ liệu có thể thiếu, bẩn hoặc dùng tên cũ. Cần helper an toàn trước khi viết logic quyết định.
+
+Mục tiêu riêng của prompt này:
+Thêm helper đọc dữ liệu an toàn trong decision_engine. Chưa viết make_final_decision đầy đủ.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/decision_engine.py
+  2. tests/test_decision_engine_helpers_phase14.py
+- Không sửa analysis_engine.py.
+- Không sửa final_score_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa UI/scanner.
+- Không đổi decision hiện tại.
+
+Việc cần làm:
+1. Trong core/decision_engine.py, thêm:
+   def clamp_score(value: object, default: int = 0) -> int:
+       ...
+
+   Yêu cầu:
+   - Nhận int, float, string số.
+   - None, "", "abc", NaN, inf thì trả default.
+   - Kết quả trong 0-100.
+   - Không raise exception.
+
+2. Thêm:
+   def normalize_decision_cap(value: object) -> str | None:
+       ...
+
+   Yêu cầu:
+   - Nhận None, "", "none" => None.
+   - Nhận các value:
+     + "TRADE_BLOCKED"
+     + "WATCH_ONLY"
+     + "WAITING_CONFIRMATION"
+     + "READY_TO_TRADE"
+     + "STAND_ASIDE"
+   - Không phân biệt hoa thường.
+   - Chấp nhận alias cũ nếu có:
+     + "blocked" => TRADE_BLOCKED
+     + "watch" => WATCH_ONLY
+     + "wait" => WAITING_CONFIRMATION
+     + "ready" => READY_TO_TRADE
+     + "stand_aside" => STAND_ASIDE
+   - Unknown => None.
+
+3. Thêm:
+   def normalize_entry_status(value: object) -> str:
+       ...
+
+   Yêu cầu:
+   - confirmed_entry giữ nguyên.
+   - waiting_confirmation giữ nguyên.
+   - watch_zone giữ nguyên.
+   - invalidated giữ nguyên.
+   - no_setup giữ nguyên.
+   - None hoặc unknown => "unknown".
+   - Không raise exception.
+
+4. Thêm:
+   def gate_allows_trade(gate_result: dict | None, trade_permission: dict | None = None) -> bool:
+       ...
+
+   Logic:
+   - Nếu gate_result là dict và có key allowed thì bool(allowed).
+   - Nếu gate_result không có allowed nhưng trade_permission.status == "blocked" thì False.
+   - Nếu không có dữ liệu gate rõ ràng thì False hoặc True?
+   - Chọn False để an toàn, nhưng phải warning ở make_final_decision sau.
+   - Không raise exception.
+
+5. Thêm:
+   def merge_unique_codes(*groups) -> list[str]:
+       ...
+
+   Yêu cầu:
+   - Nhận list/tuple/set/None.
+   - Bỏ None, string rỗng.
+   - Deduplicate giữ thứ tự.
+   - Không raise exception.
+
+6. Tạo test:
+   tests/test_decision_engine_helpers_phase14.py
+
+Test bắt buộc:
+- clamp_score("82") == 82.
+- clamp_score("abc", default=50) == 50.
+- normalize_decision_cap("blocked") == TRADE_BLOCKED.
+- normalize_decision_cap("WATCH_ONLY") == WATCH_ONLY.
+- normalize_decision_cap("bad") is None.
+- normalize_entry_status(None) == "unknown".
+- gate_allows_trade({"allowed": True}) is True.
+- gate_allows_trade({"allowed": False}) is False.
+- gate_allows_trade(None, {"status": "blocked"}) is False.
+- merge_unique_codes(["A", "B"], ["B", "C"]) == ["A", "B", "C"].
+
+Chạy:
+python -m pytest tests/test_decision_engine_helpers_phase14.py -q
+python -m pytest tests/test_decision_engine_import_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Helper ổn định với dữ liệu bẩn.
+- Không có side effect.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 4 — PHASE 14.4: TRIỂN KHAI make_final_decision() THEO GATE, ENTRY STATUS VÀ FINAL SCORE
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Đã có decision_engine.py với helper an toàn. Bây giờ triển khai hàm quyết định chính.
+
+Mục tiêu riêng của prompt này:
+Tạo make_final_decision() độc lập, không tích hợp vào analysis_engine trong prompt này.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/decision_engine.py
+  2. tests/test_decision_engine_basic_phase14.py
+- Không sửa analysis_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa final_score_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa UI/scanner.
+- Không đổi decision hiện tại trong app.
+
+Việc cần làm:
+1. Trong core/decision_engine.py, thêm hoặc hoàn thiện:
+   def make_final_decision(
+       *,
+       final_score: object,
+       gate_result: dict | None = None,
+       entry_status: object = None,
+       score_gap: object = None,
+       trade_permission: dict | None = None,
+       thresholds: dict | None = None,
+   ) -> dict:
+       ...
+
+2. Logic quyết định bắt buộc, theo đúng thứ tự ưu tiên:
+   A. Nếu gate_result.allowed là False hoặc trade_permission.status == "blocked":
+      decision = TRADE_BLOCKED
+      block_codes thêm DECISION_GATE_BLOCKED
+      allowed = False
+      Không xét final_score nữa.
+
+   B. Nếu gate_result.decision_cap là TRADE_BLOCKED:
+      decision = TRADE_BLOCKED
+      block_codes thêm DECISION_GATE_BLOCKED
+      allowed = False.
+
+   C. Nếu decision_cap là WATCH_ONLY:
+      decision = WATCH_ONLY
+      warning_codes thêm DECISION_GATE_CAPPED.
+
+   D. Nếu decision_cap là WAITING_CONFIRMATION:
+      decision = WAITING_CONFIRMATION
+      warning_codes thêm DECISION_GATE_CAPPED.
+
+   E. Nếu score_gap có giá trị và score_gap < min_score_gap:
+      decision = WAITING_CONFIRMATION
+      warning_codes thêm DECISION_SCORE_GAP_LOW.
+      Lý do: hai phe Buy/Sell còn sát điểm, không được READY.
+
+   F. Nếu entry_status != "confirmed_entry":
+      - Nếu entry_status là "watch_zone" thì decision = WATCH_ONLY.
+      - Nếu entry_status là "waiting_confirmation" thì decision = WAITING_CONFIRMATION.
+      - Nếu entry_status là "invalidated" hoặc "no_setup" thì decision = STAND_ASIDE.
+      - Nếu unknown thì decision = WAITING_CONFIRMATION.
+      warning_codes thêm DECISION_ENTRY_NOT_CONFIRMED nếu chưa confirmed.
+
+   G. Nếu entry_status == "confirmed_entry":
+      - final_score >= ready threshold mặc định 80 => READY_TO_TRADE.
+      - final_score >= watch threshold mặc định 65 => WATCH_ONLY.
+      - final_score >= wait threshold mặc định 50 => WAITING_CONFIRMATION.
+      - còn lại => STAND_ASIDE.
+
+3. Output bắt buộc:
+   {
+       "decision": str,
+       "final_score": int,
+       "decision_label": str,
+       "reason_codes": list[str],
+       "warning_codes": list[str],
+       "block_codes": list[str],
+       "decision_cap": str | None,
+       "allowed": bool,
+       "score_breakdown": {
+           "entry_status": str,
+           "score_gap": int | None,
+           "thresholds": dict,
+           "gate_allowed": bool,
+           "applied_rule": str,
+       },
+       "reason": str,
+   }
+
+4. decision_label tiếng Việt:
+   - READY_TO_TRADE: "Sẵn sàng giao dịch"
+   - WAITING_CONFIRMATION: "Chờ xác nhận"
+   - AGGRESSIVE_SETUP: "Setup mạo hiểm"
+   - WATCH_ONLY: "Chỉ theo dõi"
+   - TRADE_BLOCKED: "Bị chặn giao dịch"
+   - STAND_ASIDE: "Đứng ngoài"
+
+5. reason_codes:
+   - READY_TO_TRADE thêm DECISION_READY_TO_TRADE và DECISION_FINAL_SCORE_STRONG.
+   - WATCH_ONLY thêm DECISION_WATCH_ONLY và có thể DECISION_FINAL_SCORE_MODERATE nếu do score 65-79.
+   - WAITING_CONFIRMATION thêm DECISION_WAITING_CONFIRMATION.
+   - STAND_ASIDE thêm DECISION_STAND_ASIDE và DECISION_FINAL_SCORE_WEAK nếu do score thấp.
+   - TRADE_BLOCKED thêm DECISION_TRADE_BLOCKED.
+
+6. Dữ liệu bẩn không được crash.
+7. Không gọi final_score_engine.
+8. Không gọi trade_gate_engine.
+9. Không gọi service/database/UI.
+
+Test:
+Tạo tests/test_decision_engine_basic_phase14.py
+
+Test bắt buộc:
+1. Gate block:
+   make_final_decision(final_score=95, gate_result={"allowed": False})
+   => decision TRADE_BLOCKED.
+
+2. Decision cap WATCH_ONLY:
+   final_score=95, gate_result={"allowed": True, "decision_cap": "WATCH_ONLY"}, entry_status="confirmed_entry"
+   => WATCH_ONLY.
+
+3. Decision cap WAITING_CONFIRMATION:
+   => WAITING_CONFIRMATION.
+
+4. Score gap thấp:
+   final_score=90, gate_result={"allowed": True}, entry_status="confirmed_entry", score_gap=3
+   => WAITING_CONFIRMATION, không READY.
+
+5. Entry chưa confirmed:
+   final_score=90, gate_result={"allowed": True}, entry_status="waiting_confirmation", score_gap=20
+   => WAITING_CONFIRMATION.
+
+6. Entry confirmed + score 85:
+   => READY_TO_TRADE.
+
+7. Entry confirmed + score 70:
+   => WATCH_ONLY.
+
+8. Entry confirmed + score 55:
+   => WAITING_CONFIRMATION.
+
+9. Entry confirmed + score 40:
+   => STAND_ASIDE.
+
+10. Dữ liệu bẩn:
+   final_score="bad", gate_result=None, entry_status=None
+   => không crash, có DECISION_DATA_INCOMPLETE hoặc safe fallback.
+
+Chạy:
+python -m pytest tests/test_decision_engine_basic_phase14.py -q
+python -m pytest tests/test_decision_engine_import_phase14.py tests/test_decision_engine_helpers_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Logic đúng thứ tự ưu tiên gate > cap > score_gap > entry_status > final_score.
+- Không duplicate code.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 5 — PHASE 14.5: THÊM HỖ TRỢ AGGRESSIVE_SETUP NHƯ TRẠNG THÁI TÙY CHỌN, KHÔNG MẶC ĐỊNH READY
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Plan Phase 14 có state AGGRESSIVE_SETUP. State này chỉ nên xuất hiện khi caller cho phép rõ ràng, ví dụ M15 loose nhưng score rất cao. Không được biến setup mạo hiểm thành READY.
+
+Mục tiêu riêng của prompt này:
+Thêm tùy chọn allow_aggressive_setup vào make_final_decision.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/decision_engine.py
+  2. tests/test_decision_engine_aggressive_phase14.py
+- Không sửa entry_engine.py.
+- Không sửa analysis_engine.py.
+- Không sửa UI/scanner.
+- Không đổi gate.
+
+Việc cần làm:
+1. Cập nhật chữ ký:
+   def make_final_decision(..., allow_aggressive_setup: bool = False, ...):
+
+2. Logic:
+   - Nếu allow_aggressive_setup=False thì behavior giữ nguyên như prompt 4.
+   - Nếu allow_aggressive_setup=True:
+     + entry_status == "waiting_confirmation"
+     + final_score >= ready threshold
+     + gate allowed
+     + decision_cap không phải WATCH_ONLY/WAITING_CONFIRMATION/TRADE_BLOCKED
+     + score_gap rõ ràng
+     => decision = AGGRESSIVE_SETUP.
+   - AGGRESSIVE_SETUP không bao giờ được dùng khi:
+     + gate blocked.
+     + decision_cap tồn tại.
+     + score_gap thấp.
+     + entry_status invalidated/no_setup/watch_zone.
+   - reason_codes thêm DECISION_AGGRESSIVE_SETUP.
+   - warning_codes thêm DECISION_ENTRY_NOT_CONFIRMED.
+   - reason phải nói rõ đây là setup mạo hiểm, chưa phải READY.
+
+3. Không thay đổi default allow_aggressive_setup=False.
+
+4. Test:
+   tests/test_decision_engine_aggressive_phase14.py
+
+Test bắt buộc:
+- allow_aggressive_setup=False, final_score=90, entry_status="waiting_confirmation" => WAITING_CONFIRMATION.
+- allow_aggressive_setup=True, final_score=90, entry_status="waiting_confirmation", gate allowed, score_gap=20 => AGGRESSIVE_SETUP.
+- allow_aggressive_setup=True nhưng score_gap=3 => WAITING_CONFIRMATION.
+- allow_aggressive_setup=True nhưng decision_cap="WATCH_ONLY" => WATCH_ONLY.
+- allow_aggressive_setup=True nhưng gate allowed False => TRADE_BLOCKED.
+- AGGRESSIVE_SETUP có warning DECISION_ENTRY_NOT_CONFIRMED.
+
+Chạy:
+python -m pytest tests/test_decision_engine_aggressive_phase14.py -q
+python -m pytest tests/test_decision_engine_*_phase14.py -q
+
+Tiêu chí hoàn thành:
+- AGGRESSIVE_SETUP chỉ xuất hiện khi caller bật rõ ràng.
+- Không biến waiting_confirmation thành ready.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 6 — PHASE 14.6: THÊM calculate_decision_from_payload() ĐỂ ĐỌC analysis_result AN TOÀN
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Decision engine cần đọc từ analysis_result hiện có, nhưng không nên để analysis_engine tự ghép nhiều field thủ công. Cần helper payload độc lập.
+
+Mục tiêu riêng của prompt này:
+Thêm calculate_decision_from_payload(payload) trong decision_engine.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/decision_engine.py
+  2. tests/test_decision_engine_payload_phase14.py
+- Không sửa analysis_engine.py trong prompt này.
+- Không sửa scanner.py.
+- Không sửa UI.
+- Không sửa gate/final_score engine.
+
+Việc cần làm:
+1. Trong core/decision_engine.py, thêm helper:
+   def pick_final_score(payload: dict | None) -> int:
+       ...
+
+   Logic:
+   - Ưu tiên payload["final_score"].
+   - Sau đó payload["final_score_detail"]["final_score"].
+   - Sau đó payload["decision_summary"]["best_score"] làm fallback tạm.
+   - Sau đó 0.
+   - Không raise.
+
+2. Thêm helper:
+   def pick_gate_result(payload: dict | None) -> dict | None:
+       ...
+
+   Logic:
+   - Ưu tiên payload["trade_gate"].
+   - Sau đó payload["gate"].
+   - Nếu không có thì None.
+   - Không mutate.
+
+3. Thêm helper:
+   def pick_entry_status(payload: dict | None) -> str:
+       ...
+
+   Logic:
+   - Ưu tiên scenario primary đầu tiên trong payload["scenarios"] có type buy/sell.
+   - Lấy scenario["entry_status"].
+   - Nếu không có thì payload["entry_status"].
+   - Fallback "unknown".
+
+4. Thêm helper:
+   def pick_score_gap(payload: dict | None) -> int | None:
+       ...
+
+   Logic:
+   - Ưu tiên payload["decision_summary"]["score_gap"].
+   - Sau đó payload["direction_bias"]["score_gap"] nếu direction_bias là dict.
+   - Sau đó payload["score_gap"].
+   - Nếu không parse được thì None.
+
+5. Thêm hàm:
+   def calculate_decision_from_payload(payload: dict | None, *, thresholds: dict | None = None, allow_aggressive_setup: bool = False) -> dict:
+       ...
+
+   Logic:
+   - Đọc final_score, gate_result, entry_status, score_gap, trade_permission từ payload.
+   - Gọi make_final_decision().
+   - Thêm score_breakdown["source"] = "payload".
+   - Không mutate payload.
+
+6. Test:
+   tests/test_decision_engine_payload_phase14.py
+
+Test bắt buộc:
+- Payload realistic:
+  {
+    "final_score": 85,
+    "trade_gate": {"allowed": True, "decision_cap": None},
+    "scenarios": [{"type": "buy", "entry_status": "confirmed_entry"}],
+    "decision_summary": {"score_gap": 20},
+  }
+  => READY_TO_TRADE.
+
+- Payload gate block:
+  final_score 95, trade_gate allowed False => TRADE_BLOCKED.
+
+- Payload entry waiting => WAITING_CONFIRMATION.
+
+- Payload score_gap thấp => WAITING_CONFIRMATION.
+
+- Payload None không crash.
+
+- Payload gốc không bị mutate.
+
+Chạy:
+python -m pytest tests/test_decision_engine_payload_phase14.py -q
+python -m pytest tests/test_decision_engine_*_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Payload helper đọc analysis_result linh hoạt.
+- Không tích hợp analysis_engine trong prompt này.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 7 — PHASE 14.7: TÍCH HỢP decision_engine VÀO analysis_engine Ở MỨC METADATA-ONLY
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+decision_engine đã có và test độc lập pass. Bây giờ đưa decision_engine_result vào output analyze_symbol để caller đọc, nhưng chưa thay thế decision_summary["action"] cũ trong prompt này.
+
+Mục tiêu riêng của prompt này:
+Tích hợp metadata-only:
+- result["decision_engine"] = decision_result
+- Không đổi legacy decision_summary["action"].
+- Không đổi scanner.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/analysis_engine.py
+  2. tests/test_analysis_decision_engine_metadata_phase14.py
+- Chỉ sửa core/decision_engine.py nếu phát hiện bug nhỏ rõ ràng.
+- Không sửa scanner.py.
+- Không sửa UI.
+- Không sửa trade_gate_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa final_score_engine.py trừ bug nhỏ rõ ràng.
+- Không đổi decision_summary["action"] trong prompt này.
+
+Việc cần làm:
+1. Trong core/analysis_engine.py, import:
+   from core.decision_engine import make_final_decision
+
+2. Tìm đoạn analyze_symbol() đã có:
+   - final_score hoặc final_score_detail từ Phase 13.
+   - gate_result.
+   - primary_scenario.
+   - direction_bias score_gap.
+   - trade_permission.
+
+3. Sau khi final_score_detail và gate_result đã có, tạo:
+   decision_engine_result = make_final_decision(
+       final_score=result_final_score hoặc final_score_detail["final_score"],
+       gate_result=gate_result,
+       entry_status=primary_scenario.get("entry_status"),
+       score_gap=direction_bias.get("score_gap"),
+       trade_permission=trade_permission,
+   )
+
+4. Thêm vào return dict:
+   "decision_engine": decision_engine_result,
+
+5. Không thay đổi:
+   - decision_action.
+   - decision_summary["action"].
+   - main_view.
+   - trade_permission.
+   - gate_result.
+   - scanner output.
+
+6. Nếu analysis_engine hiện chưa có final_score từ Phase 13, không tự triển khai lại Phase 13 lớn. Gọi final_score hiện có hoặc dùng best_score tạm cho decision_engine metadata, nhưng ghi rõ trong score_breakdown source nếu phải fallback.
+
+7. Test:
+   tests/test_analysis_decision_engine_metadata_phase14.py
+
+Test bắt buộc:
+- Tạo dữ liệu candle fake đủ D1/H4/H1 giống các test analysis hiện có.
+- Gọi analyze_symbol.
+- Assert:
+  + result có key "decision_engine".
+  + decision_engine["decision"] nằm trong VALID_DECISIONS.
+  + result["decision_summary"]["action"] vẫn tồn tại.
+  + result["trade_gate"] vẫn tồn tại.
+  + Không assert decision_summary["action"] phải bằng decision_engine, vì prompt này metadata-only.
+
+Chạy:
+python -m pytest tests/test_analysis_decision_engine_metadata_phase14.py -q
+python -m pytest tests/test_decision_engine_*_phase14.py -q
+
+Tiêu chí hoàn thành:
+- analysis_engine output có decision_engine metadata.
+- Không đổi legacy decision.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 8 — PHASE 14.8: THÊM COMPAT MAPPING GIỮA DECISION ENGINE VÀ LEGACY ACTION, CHƯA BẬT THAY THẾ
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+UI/scanner hiện có thể đang dùng legacy action dạng:
+- ready
+- watch
+- wait_for_confirmation
+- stand_aside
+
+Decision engine mới dùng:
+- READY_TO_TRADE
+- WATCH_ONLY
+- WAITING_CONFIRMATION
+- TRADE_BLOCKED
+- STAND_ASIDE
+- AGGRESSIVE_SETUP
+
+Cần mapping để sau này Phase 15/UI dùng được, nhưng prompt này chưa thay thế legacy action.
+
+Mục tiêu riêng của prompt này:
+Thêm helper mapping trong decision_engine.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/decision_engine.py
+  2. tests/test_decision_engine_legacy_mapping_phase14.py
+- Không sửa analysis_engine.py.
+- Không sửa scanner.py.
+- Không sửa UI.
+- Không đổi legacy action hiện tại.
+
+Việc cần làm:
+1. Trong core/decision_engine.py, thêm:
+   def decision_to_legacy_action(decision: object) -> str:
+       ...
+
+   Mapping:
+   - READY_TO_TRADE => "ready"
+   - WATCH_ONLY => "watch"
+   - WAITING_CONFIRMATION => "wait_for_confirmation"
+   - AGGRESSIVE_SETUP => "wait_for_confirmation"
+   - TRADE_BLOCKED => "stand_aside"
+   - STAND_ASIDE => "stand_aside"
+   - unknown => "stand_aside"
+
+2. Thêm:
+   def legacy_action_to_decision(action: object) -> str:
+       ...
+
+   Mapping:
+   - "ready" => READY_TO_TRADE
+   - "watch" => WATCH_ONLY
+   - "wait" hoặc "wait_for_confirmation" => WAITING_CONFIRMATION
+   - "stand_aside" hoặc "skip" => STAND_ASIDE
+   - unknown => STAND_ASIDE
+
+3. Thêm vào make_final_decision output:
+   "legacy_action": decision_to_legacy_action(decision)
+
+4. Không dùng legacy_action để thay đổi analysis_engine.
+5. Không sửa scanner.
+
+6. Test:
+   tests/test_decision_engine_legacy_mapping_phase14.py
+
+Test bắt buộc:
+- decision_to_legacy_action(READY_TO_TRADE) == "ready".
+- decision_to_legacy_action(AGGRESSIVE_SETUP) == "wait_for_confirmation".
+- decision_to_legacy_action(TRADE_BLOCKED) == "stand_aside".
+- legacy_action_to_decision("ready") == READY_TO_TRADE.
+- legacy_action_to_decision("wait") == WAITING_CONFIRMATION.
+- make_final_decision(... READY case ...) output có legacy_action == "ready".
+
+Chạy:
+python -m pytest tests/test_decision_engine_legacy_mapping_phase14.py -q
+python -m pytest tests/test_decision_engine_*_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Mapping rõ ràng.
+- Không đổi behavior app.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 9 — PHASE 14.9: TÙY CHỌN BẬT decision_engine LÀ NGUỒN ACTION MỚI TRONG analysis_engine, GIỮ BACKWARD COMPATIBILITY
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 14.7 đã thêm decision_engine metadata. Bây giờ có thể cho analysis_engine dùng decision_engine làm nguồn action chính, nhưng phải giữ backward compatibility và không phá UI.
+
+Mục tiêu riêng của prompt này:
+Thêm tùy chọn use_decision_engine_action vào analyze_symbol, mặc định False hoặc True theo yêu cầu an toàn. Khuyến nghị mặc định False để không đổi hành vi bất ngờ. Nếu muốn bật, chỉ caller mới bật.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/analysis_engine.py
+  2. tests/test_analysis_decision_engine_action_opt_in_phase14.py
+- Chỉ sửa core/decision_engine.py nếu phát hiện bug nhỏ rõ ràng.
+- Không sửa scanner.py.
+- Không sửa UI.
+- Không sửa trade_gate_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa final_score_engine.py.
+
+Việc cần làm:
+1. Trong analyze_symbol() thêm keyword-only param ở cuối:
+   use_decision_engine_action: bool = False
+
+2. Nếu use_decision_engine_action=False:
+   - behavior giữ nguyên.
+   - decision_summary["action"] vẫn là decision_action cũ.
+   - decision_engine metadata vẫn có.
+
+3. Nếu use_decision_engine_action=True:
+   - decision_summary["action"] dùng decision_engine_result["legacy_action"].
+   - Thêm vào decision_summary:
+     "decision_engine_enabled": True
+     "decision_engine_decision": decision_engine_result["decision"]
+   - Không đổi trade_permission.
+   - Không đổi gate_result.
+   - Không đổi scores.
+
+4. Nếu use_decision_engine_action=False:
+   - decision_summary có thể thêm:
+     "decision_engine_enabled": False
+     "decision_engine_decision": decision_engine_result["decision"]
+   - Nhưng không bắt buộc nếu sợ ảnh hưởng snapshot. Nếu thêm thì test rõ.
+
+5. Test:
+   tests/test_analysis_decision_engine_action_opt_in_phase14.py
+
+Test bắt buộc:
+- Gọi analyze_symbol với use_decision_engine_action=False:
+  + decision_summary["action"] vẫn tồn tại.
+  + decision_engine tồn tại.
+
+- Gọi analyze_symbol với use_decision_engine_action=True:
+  + decision_summary["decision_engine_enabled"] == True.
+  + decision_summary["decision_engine_decision"] == result["decision_engine"]["decision"].
+  + decision_summary["action"] == result["decision_engine"]["legacy_action"].
+
+- Không assert action cụ thể nếu dữ liệu fake không ổn định, chỉ assert mapping nhất quán.
+
+Chạy:
+python -m pytest tests/test_analysis_decision_engine_action_opt_in_phase14.py -q
+python -m pytest tests/test_analysis_decision_engine_metadata_phase14.py -q
+python -m pytest tests/test_decision_engine_*_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Có opt-in dùng decision_engine action.
+- Mặc định không phá behavior cũ.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 10 — PHASE 14.10: TEST REALISTIC TỔNG HỢP CHO DECISION ENGINE
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Decision engine đã có logic độc lập và tích hợp tùy chọn vào analysis_engine. Cần test realistic với nhiều tình huống giao dịch giống thật để tránh bug thứ tự ưu tiên.
+
+Mục tiêu riêng của prompt này:
+Tạo test realistic tổng hợp cho decision_engine.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. tests/test_phase14_decision_engine_realistic.py
+  2. core/decision_engine.py nếu phát hiện bug nhỏ rõ ràng từ test.
+- Không sửa analysis_engine.py trong prompt này.
+- Không sửa engine khác.
+- Không sửa UI/scanner.
+- Không sửa database.
+
+Việc cần làm:
+1. Tạo test file:
+   tests/test_phase14_decision_engine_realistic.py
+
+2. Case 1 — Setup đẹp thật sự:
+   final_score=86
+   gate_result={"allowed": True, "decision_cap": None}
+   entry_status="confirmed_entry"
+   score_gap=22
+   => READY_TO_TRADE
+
+3. Case 2 — Score cao nhưng gate block do news/spread:
+   final_score=92
+   gate_result={"allowed": False, "decision_cap": "TRADE_BLOCKED", "block_codes": ["HIGH_IMPACT_NEWS_NEARBY"]}
+   entry_status="confirmed_entry"
+   score_gap=25
+   => TRADE_BLOCKED
+   block_codes giữ cả DECISION_GATE_BLOCKED và HIGH_IMPACT_NEWS_NEARBY nếu make_final_decision merge gate block_codes.
+
+4. Case 3 — Score cao nhưng M15 chưa confirmed:
+   final_score=88
+   gate_result={"allowed": True}
+   entry_status="waiting_confirmation"
+   score_gap=18
+   => WAITING_CONFIRMATION hoặc AGGRESSIVE_SETUP chỉ khi allow_aggressive_setup=True.
+
+5. Case 4 — Score cao nhưng score gap thấp:
+   final_score=90
+   gate_result={"allowed": True}
+   entry_status="confirmed_entry"
+   score_gap=4
+   => WAITING_CONFIRMATION.
+
+6. Case 5 — Final score trung bình:
+   final_score=70
+   gate_result={"allowed": True}
+   entry_status="confirmed_entry"
+   score_gap=15
+   => WATCH_ONLY.
+
+7. Case 6 — Final score yếu:
+   final_score=42
+   gate_result={"allowed": True}
+   entry_status="confirmed_entry"
+   score_gap=15
+   => STAND_ASIDE.
+
+8. Case 7 — Dữ liệu bẩn:
+   final_score="bad"
+   gate_result=None
+   entry_status=None
+   score_gap="bad"
+   => không crash, decision hợp lệ.
+
+9. Kiểm tra mọi result:
+   - decision nằm trong VALID_DECISIONS.
+   - có legacy_action.
+   - reason_codes/warning_codes/block_codes không duplicate.
+
+Chạy:
+python -m pytest tests/test_phase14_decision_engine_realistic.py -q
+python -m pytest tests/test_decision_engine_*_phase14.py -q
+
+Tiêu chí hoàn thành:
+- Thứ tự ưu tiên đúng.
+- Dữ liệu bẩn không crash.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 11 — PHASE 14.11: REGRESSION TEST PHASE 13, GATE, ENTRY, SCANNER ĐỂ ĐẢM BẢO KHÔNG PHÁ HỆ THỐNG
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 14 thêm decision_engine. Cần chạy regression để chắc chắn không phá final_score, gate, entry_engine và scanner hiện tại.
+
+Mục tiêu riêng của prompt này:
+Chạy test liên quan Phase 13 và các engine quyết định cũ. Chỉ sửa bug nhỏ nếu bug nằm trong code Phase 14 vừa viết.
+
+Yêu cầu rất quan trọng:
+- Không thêm feature mới.
+- Không refactor.
+- Không sửa UI.
+- Không sửa database.
+- Không sửa signal_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa final_score_engine.py trừ bug nhỏ do tương tác Phase 14 rõ ràng.
+- Không sửa scanner.py trừ khi test chỉ ra bug do Phase 14 và prompt này cho phép. Mặc định không sửa scanner.
+- Chỉ được sửa nếu thật sự có bug Phase 14:
+  1. core/decision_engine.py
+  2. core/analysis_engine.py nếu lỗi do tích hợp decision_engine metadata/opt-in
+  3. tests/test_*phase14.py
+
+Việc cần làm:
+1. Chạy toàn bộ test Phase 14:
+   python -m pytest tests/test_decision_engine_*_phase14.py tests/test_analysis_decision_engine_*_phase14.py tests/test_phase14_decision_engine_realistic.py -q
+
+2. Chạy test Phase 13:
+   python -m pytest tests/test_final_score_engine_*_phase13.py tests/test_analysis_final_score_*_phase13.py tests/test_phase13_final_score_realistic.py -q
+
+3. Chạy gate/account guard:
+   python -m pytest tests/test_trade_gate_engine.py tests/test_account_guard_phase7.py tests/test_trade_gate_account_guard_phase7.py -q
+
+4. Chạy entry engine:
+   python -m pytest tests/test_entry_engine.py tests/test_entry_engine_phase8.py tests/test_entry_engine_phase8_integration.py -q
+
+5. Chạy scanner core nếu có:
+   python -m pytest tests/test_scanner.py -q
+
+6. Nếu test fail:
+   - Đọc kỹ lỗi.
+   - Chỉ sửa lỗi do Phase 14 gây ra.
+   - Không thay đổi expected behavior của phase cũ để test pass.
+   - Nếu lỗi do môi trường thiếu MT5/PyQt6 thì ghi rõ, không sửa bừa.
+
+7. Nếu tất cả ổn, không sửa gì thêm.
+
+Tiêu chí hoàn thành:
+- Test Phase 14 pass.
+- Phase 13/gate/entry/scanner không bị ảnh hưởng.
+- Không có sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 12 — PHASE 14.12: RÀ SOÁT CUỐI PHASE 14 VÀ BÁO HOÀN THÀNH
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Đây là prompt cuối Phase 14. Không thêm tính năng mới nữa, chỉ rà soát cuối.
+
+Mục tiêu riêng của prompt này:
+Xác nhận Phase 14 đã hoàn thành đúng phạm vi: có decision_engine mới, có test, có tích hợp metadata/opt-in nếu đã làm, không lấn sang Phase 15 scanner ranking hoặc UI.
+
+Yêu cầu rất quan trọng:
+- Không thêm feature mới.
+- Không refactor code.
+- Không sửa UI.
+- Không sửa database/migration.
+- Không đổi scanner ranking.
+- Không sửa trade_gate_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa account_guard.py.
+- Chỉ sửa lỗi import/test fail nhỏ nếu phát hiện rõ ràng.
+
+Checklist cần kiểm tra:
+1. Có file:
+   - core/decision_engine.py
+
+2. Module có tối thiểu các constants:
+   - READY_TO_TRADE
+   - WAITING_CONFIRMATION
+   - AGGRESSIVE_SETUP
+   - WATCH_ONLY
+   - TRADE_BLOCKED
+   - STAND_ASIDE
+   - VALID_DECISIONS
+
+3. Module có tối thiểu các hàm/helper:
+   - default_decision_result
+   - clamp_score
+   - normalize_decision_cap
+   - normalize_entry_status
+   - gate_allows_trade
+   - merge_unique_codes
+   - make_final_decision
+   - decision_to_legacy_action
+   - legacy_action_to_decision
+   - calculate_decision_from_payload
+
+4. make_final_decision có behavior:
+   - Gate block thắng mọi score cao.
+   - decision_cap WATCH_ONLY/WAITING_CONFIRMATION giới hạn decision.
+   - score_gap thấp không được READY.
+   - entry_status chưa confirmed không được READY.
+   - final_score >= 80 + gate allowed + entry confirmed + gap rõ => READY_TO_TRADE.
+   - Dữ liệu bẩn không crash.
+
+5. analysis_engine nếu đã tích hợp:
+   - result có decision_engine.
+   - Nếu use_decision_engine_action=False thì legacy action không bị thay đổi.
+   - Nếu use_decision_engine_action=True thì decision_summary["action"] dùng legacy_action từ decision_engine.
+
+6. Không có thay đổi có chủ đích ở:
+   - ui/
+   - data/migrations/
+   - core/scanner.py
+   - core/signal_engine.py
+   - core/trade_gate_engine.py
+
+Test bắt buộc:
+1. Chạy toàn bộ test Phase 14:
+   python -m pytest tests/test_decision_engine_*_phase14.py tests/test_analysis_decision_engine_*_phase14.py tests/test_phase14_decision_engine_realistic.py -q
+
+2. Chạy import nhanh bằng python:
+   python - <<'PY'
+   from core.decision_engine import make_final_decision, READY_TO_TRADE
+   result = make_final_decision(
+       final_score=85,
+       gate_result={"allowed": True},
+       entry_status="confirmed_entry",
+       score_gap=20,
+   )
+   print(result)
+   assert result["decision"] == READY_TO_TRADE
+   assert result["legacy_action"] == "ready"
+   PY
+
+3. Nếu đủ thời gian, chạy thêm:
+   python -m pytest -q
+   Nếu full test fail do môi trường thiếu MT5/PyQt6 hoặc network thì ghi rõ test nào fail do môi trường, không sửa code bừa.
+
+Báo cáo cuối cần nêu ngắn gọn:
+- Đã tạo module nào.
+- Các decision state đã hỗ trợ.
+- Đã tích hợp vào analysis_engine ở mức nào.
+- Test nào đã chạy.
+- Có lỗi môi trường nào không.
+
+Sau khi hoàn thành prompt cuối cùng, bắt buộc báo đúng 2 câu sau:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+ĐÃ HOÀN THÀNH PHASE SỐ 14

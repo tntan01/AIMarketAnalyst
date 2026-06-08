@@ -1,0 +1,435 @@
+PROMPT 1 — PHASE 8.1: KIỂM TRA ENTRY ENGINE HIỆN TẠI VÀ TẠO TEST FAILING CHO LOGIC M15 MỚI
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Hệ thống đã hoàn thành Phase 7. Bây giờ chỉ làm Phase 8 theo plan: ENTRY ENGINE — M15 quyết định trạng thái entry.
+
+Mục tiêu Phase 8:
+Không để M15 chỉ là hệ số nhân điểm. M15 phải quyết định trạng thái entry:
+
+- m15_quality == "strict" và confirmation_score >= 70 và có trigger hợp lệ => entry_status = "confirmed_entry"
+- m15_quality == "loose" và confirmation_score >= 70 => entry_status = "waiting_confirmation"
+- m15_quality == "none" => entry_status = "watch_zone"
+- Nếu thiếu M15 hoặc chưa đủ dữ liệu M15 thì không được tự động confirmed_entry trong luồng mới; phải giữ an toàn, tối đa là waiting_confirmation hoặc watch_zone tùy logic hiện tại.
+
+Yêu cầu rất quan trọng:
+- Chỉ đọc và kiểm tra các file liên quan đến entry engine.
+- Chỉ được tạo/sửa test trong bước này.
+- Không sửa core/entry_engine.py trong prompt này.
+- Không sửa core/trade_gate_engine.py, core/account_guard.py, core/signal_engine.py, core/analysis_engine.py, core/risk_engine.py hoặc UI trong prompt này.
+- Không refactor code ngoài phạm vi test.
+- Không đổi format dữ liệu output hiện có.
+
+Việc cần làm:
+1. Mở và đọc kỹ file:
+   - core/entry_engine.py
+   - tests/test_entry_engine.py
+
+2. Hiểu rõ logic hiện tại:
+   - evaluate_entry()
+   - _confirm_m15_structure()
+   - _confirm_m15_displacement()
+   - cách tạo m15_quality strict/loose/none
+   - cách confirmation_score bị nhân m15_score_multiplier
+   - cách entry_status hiện tại được quyết định
+
+3. Tạo file test mới:
+   - tests/test_entry_engine_phase8.py
+
+4. Trong file test mới, viết test bằng Python với dữ liệu nến giống thật, không dùng mock quá đơn giản.
+   Cần tạo helper sinh Candle cho H1 và M15.
+
+5. Test tối thiểu phải có các case sau:
+
+   Case 1 — M15 strict mới được confirmed_entry:
+   - side = buy
+   - price nằm trong entry_zone
+   - H1 có trigger rõ
+   - SMC cùng hướng
+   - confirmation_score đủ cao
+   - M15 có cấu trúc higher low và displacement tăng
+   - Kỳ vọng:
+     entry_status == "confirmed_entry"
+     ready_to_trade is True
+     m15_quality == "strict"
+
+   Case 2 — M15 loose không được confirmed_entry dù confirmation_score cao:
+   - price nằm trong entry_zone
+   - H1 trigger rõ
+   - SMC cùng hướng
+   - M15 chỉ đạt 1 trong 2 điều kiện: structure hoặc displacement
+   - Kỳ vọng theo Phase 8:
+     entry_status == "waiting_confirmation"
+     ready_to_trade is False
+     m15_quality == "loose"
+
+   Case 3 — M15 none không được confirmed_entry dù điểm gốc rất cao:
+   - price nằm trong entry_zone
+   - H1 trigger rõ
+   - SMC cùng hướng
+   - M15 không đạt structure và không đạt displacement
+   - Kỳ vọng theo Phase 8:
+     entry_status == "watch_zone"
+     ready_to_trade is False
+     m15_quality == "none"
+
+   Case 4 — Sell strict:
+   - side = sell
+   - price nằm trong entry_zone
+   - H1 bearish trigger rõ
+   - SMC bearish
+   - M15 có lower high và displacement giảm
+   - Kỳ vọng:
+     entry_status == "confirmed_entry"
+     ready_to_trade is True
+     m15_quality == "strict"
+
+6. Chạy test:
+   python -m pytest tests/test_entry_engine.py tests/test_entry_engine_phase8.py -q
+
+7. Vì chưa sửa core nên có thể test mới bị fail. Điều này chấp nhận được ở prompt này, nhưng phải ghi rõ test nào fail và vì sao fail.
+
+8. Tuyệt đối không sửa gì khác ngoài file test mới.
+
+Sau khi hoàn thành tất cả việc trong prompt này, báo đúng câu:
+
+ĐÃ HOÀN THÀNH PROMPT 1
+
+
+================================================================================
+
+PROMPT 2 — PHASE 8.2: SỬA LOGIC core/entry_engine.py ĐỂ M15 QUYẾT ĐỊNH ENTRY STATUS
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Prompt trước đã tạo test Phase 8 cho entry engine. Bây giờ sửa logic thật trong core/entry_engine.py.
+
+Mục tiêu:
+Trong evaluate_entry(), M15 không còn chỉ là hệ số nhân điểm để rồi vẫn có thể confirmed_entry. M15 phải quyết định trạng thái:
+
+- strict + confirmation_score >= 70 + price in entry zone + trigger hợp lệ => confirmed_entry
+- loose + confirmation_score >= 70 + price in entry zone + trigger hợp lệ => waiting_confirmation
+- none => watch_zone
+- thiếu M15/không đủ M15 => không được confirmed_entry trong logic Phase 8, chỉ được waiting_confirmation hoặc watch_zone tùy vị trí giá và trigger
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa core/entry_engine.py.
+- Chỉ được sửa đúng logic liên quan đến quyết định entry_status theo m15_quality.
+- Không sửa trade_gate_engine.py vì gate M15 đã thuộc phase trước.
+- Không sửa account_guard.py, signal_engine.py, analysis_engine.py, risk_engine.py, scanner.py hoặc UI.
+- Không đổi tên function public evaluate_entry().
+- Không đổi chữ ký evaluate_entry() trừ khi thật sự bắt buộc; ưu tiên giữ nguyên hoàn toàn.
+- Không phá backward compatibility của output keys: entry_status, trigger_type, confirmation_score, invalid_reason, price_in_entry_zone, h1_confirmation, ready_to_trade, m15_available, m15_checked, m15_confirmed, m15_quality, m15_score_multiplier.
+- Không xóa m15_score_multiplier ngay trong phase này; có thể giữ để UI/debug tương thích, nhưng không được để multiplier quyết định confirmed_entry sai.
+
+Việc cần làm:
+1. Mở core/entry_engine.py.
+
+2. Đọc kỹ đoạn hiện tại:
+   - tính confirmation_score gốc
+   - xác định trigger_type
+   - xác định m15_quality
+   - nhân confirmation_score với m15_score_multiplier
+   - biến has_confirmation
+   - các nhánh return confirmed_entry / waiting_confirmation / watch_zone
+
+3. Sửa logic theo hướng an toàn:
+
+   Gợi ý triển khai:
+
+   - Tách rõ raw_confirmation_score và confirmation_score sau M15 nếu cần.
+   - Có thể vẫn giữ confirmation_score là điểm sau multiplier để tương thích UI.
+   - Nhưng biến quyết định trạng thái phải kiểm tra trực tiếp m15_quality.
+
+   Pseudo-code tham khảo:
+
+   trigger_valid = trigger_type != "none"
+   score_passed = confirmation_score >= 70
+
+   if in_zone and trigger_valid and score_passed:
+       if m15_quality == "strict":
+           return confirmed_entry
+       elif m15_quality == "loose":
+           return waiting_confirmation với reason nói rõ M15 xác nhận lỏng
+       elif m15_quality == "none":
+           return watch_zone với reason nói rõ M15 chưa xác nhận
+       else:
+           return waiting_confirmation với reason nói rõ thiếu/chưa kiểm tra M15
+
+   if in_zone:
+       return waiting_confirmation như cũ nhưng reason phải có thông tin M15 nếu có
+
+   if near_zone:
+       return watch_zone như cũ
+
+   else:
+       return watch_zone như cũ
+
+4. Lưu ý về M15 unavailable:
+   - Nếu m15_candles is None hoặc không đủ nến M15, m15_available = False.
+   - Không được cho confirmed_entry chỉ vì H1/SMC mạnh.
+   - Reason phải ghi rõ "M15 data unavailable" hoặc câu tiếng Việt tương đương.
+
+5. Lưu ý về ready_to_trade:
+   - ready_to_trade chỉ True khi entry_status == "confirmed_entry".
+   - Với m15_quality loose/none/unavailable phải False.
+
+6. Lưu ý về reason:
+   - Không cần làm reason_codes ở phase này.
+   - Chỉ cần invalid_reason dễ hiểu, ví dụ:
+     "M15 xác nhận lỏng, chờ xác nhận chặt trước khi vào lệnh."
+     "M15 chưa xác nhận, chỉ theo dõi vùng giá."
+     "Thiếu dữ liệu M15, không xác nhận entry."
+
+7. Sau khi sửa, chạy:
+   python -m pytest tests/test_entry_engine.py tests/test_entry_engine_phase8.py -q
+
+8. Nếu có test cũ bị fail do kỳ vọng cũ cho phép confirmed_entry khi không có M15, hãy cập nhật test cũ một cách tối thiểu để phù hợp Phase 8.
+   Chỉ sửa tests/test_entry_engine.py nếu thật sự cần.
+   Không sửa test không liên quan.
+
+9. Sau khi test pass, tự kiểm tra lại code:
+   - Không có syntax error.
+   - Không có import thừa.
+   - Không có thay đổi ngoài core/entry_engine.py và test entry engine nếu bắt buộc.
+   - Không có logic nào khiến m15_quality == "loose" hoặc "none" trả confirmed_entry.
+
+Sau khi hoàn thành tất cả việc trong prompt này, báo đúng câu:
+
+ĐÃ HOÀN THÀNH PROMPT 2
+
+================================================================================
+
+PROMPT 3 — PHASE 8.3: BỔ SUNG TEST TÍCH HỢP QUA risk_engine/build_scenarios ĐỂ ĐẢM BẢO SCENARIO KHÔNG READY KHI M15 CHƯA STRICT
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+core/entry_engine.py đã được sửa để M15 quyết định entry_status. Bây giờ cần test tích hợp ở lớp tạo kịch bản giao dịch, vì risk_engine.build_scenarios() đang gọi evaluate_entry().
+
+Mục tiêu:
+Đảm bảo khi scenario được build qua core/risk_engine.py, output cuối cùng vẫn tuân thủ Phase 8:
+
+- M15 strict => scenario có thể ready_to_trade nếu các điều kiện khác đủ.
+- M15 loose => scenario không được ready_to_trade, entry_status phải là waiting_confirmation.
+- M15 none => scenario không được ready_to_trade, entry_status phải là watch_zone.
+
+Yêu cầu rất quan trọng:
+- Ưu tiên chỉ tạo/sửa test.
+- Không sửa core/risk_engine.py trừ khi phát hiện bug thật sự do tích hợp Phase 8.
+- Nếu bắt buộc sửa core/risk_engine.py, chỉ sửa đúng phần truyền/nhận entry_state từ evaluate_entry(), không refactor logic risk, position sizing, expected_effective_rr, correlation.
+- Không sửa trade_gate_engine.py, account_guard.py, signal_engine.py, analysis_engine.py hoặc UI.
+- Không thay đổi thuật toán chọn support/resistance/entry_zone nếu không liên quan Phase 8.
+
+Việc cần làm:
+1. Đọc kỹ đoạn trong core/risk_engine.py nơi gọi evaluate_entry().
+
+2. Tạo file test mới:
+   - tests/test_entry_engine_phase8_integration.py
+
+3. Viết test với dữ liệu giống thật:
+   - Tạo D1/H4/H1/M15 candles đủ dài nếu dùng build_scenarios().
+   - Hoặc gọi trực tiếp function cấp thấp tạo scenario nếu project đã có helper phù hợp.
+   - Không dùng dữ liệu quá giả kiểu toàn bộ nến bằng nhau.
+
+4. Test cần kiểm tra output scenario chứa các key:
+   - entry_status
+   - ready_to_trade
+   - m15_quality
+   - m15_checked
+   - m15_available
+   - confirmation_score
+
+5. Test tối thiểu:
+
+   Case 1 — build scenario với M15 strict:
+   - Kỳ vọng nếu price trong entry zone và trigger đủ:
+     entry_status == "confirmed_entry"
+     ready_to_trade is True
+     m15_quality == "strict"
+
+   Case 2 — build scenario với M15 loose:
+   - Kỳ vọng:
+     entry_status == "waiting_confirmation"
+     ready_to_trade is False
+     m15_quality == "loose"
+
+   Case 3 — build scenario với M15 none:
+   - Kỳ vọng:
+     entry_status == "watch_zone"
+     ready_to_trade is False
+     m15_quality == "none"
+
+6. Chạy:
+   python -m pytest tests/test_entry_engine_phase8.py tests/test_entry_engine_phase8_integration.py tests/test_risk_engine.py -q
+
+7. Nếu có lỗi, sửa đúng điểm liên quan Phase 8, không sửa lan.
+
+8. Sau khi test pass, kiểm tra lại:
+   - Không có thay đổi ngoài test mới và file core liên quan nếu bắt buộc.
+   - Các scenario cũ vẫn có expected_effective_rr.
+   - Các scenario cũ vẫn có risk_reward, entry_zone, watch_zone, stop_loss, take_profit.
+
+Sau khi hoàn thành tất cả việc trong prompt này, báo đúng câu:
+ĐÃ HOÀN THÀNH PROMPT 3
+
+
+================================================================================
+
+PROMPT 4 — PHASE 8.4: KIỂM TRA TƯƠNG THÍCH VỚI analyze_symbol VÀ GATE, KHÔNG ĐỂ READY KHI M15 LOOSE/NONE
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 8 đã sửa entry_engine. Nhưng analyze_symbol() trong core/analysis_engine.py lấy scenarios từ build_scenarios(), sau đó dùng has_ready_plan, primary_scenario và trade_gate_engine. Cần kiểm tra luồng phân tích cuối cùng không bị logic cũ đẩy lên ready khi M15 chưa strict.
+
+Mục tiêu:
+Test luồng analyze_symbol để đảm bảo:
+
+- Nếu M15 strict và các gate khác không chặn, hệ thống có thể cho trạng thái tốt nhất.
+- Nếu M15 loose, không được ra ready/READY_TO_TRADE; phải bị giới hạn waiting/watch theo logic hiện tại.
+- Nếu M15 none, không được ready; phải watch/stand_aside tùy decision mapping hiện tại.
+
+Yêu cầu rất quan trọng:
+- Ưu tiên chỉ viết test.
+- Không sửa analysis_engine.py nếu chưa có bug thật sự.
+- Nếu bắt buộc sửa analysis_engine.py, chỉ sửa phần đọc entry_status/ready_to_trade/m15_quality từ primary_scenario và áp gate cap. Không refactor toàn bộ analyze_symbol().
+- Không sửa UI.
+- Không sửa trade_gate_engine.py trừ khi test chỉ ra gate M15 bị sai. Nếu sửa thì chỉ sửa đúng _gate_m15.
+- Không sửa account_guard.py hoặc journal.
+
+Việc cần làm:
+1. Đọc core/analysis_engine.py, tập trung vào:
+   - scenarios = build_scenarios(...)
+   - has_ready_plan
+   - primary_scenario
+   - gate_context["m15_quality"]
+   - gate_result = check_trade_gates(gate_context)
+   - đoạn apply gate cap to decision_action
+
+2. Tạo file test mới:
+   - tests/test_phase8_entry_status_analysis_integration.py
+
+3. Viết test với dữ liệu gần thực tế:
+   - D1 >= 60 nến
+   - H4 >= 60 nến
+   - H1 >= 30 nến
+   - M15 đủ nến để strict/loose/none
+   - Dữ liệu có xu hướng rõ, không dùng toàn giá cố định.
+
+4. Test tối thiểu:
+
+   Case 1 — analyze_symbol với M15 loose:
+   - Chuẩn bị dữ liệu sao cho technical/SMC có thể tạo score tốt.
+   - M15 chỉ đạt structure hoặc displacement.
+   - Kỳ vọng:
+     primary scenario hoặc recommended plan không có ready_to_trade True.
+     entry_status không phải confirmed_entry.
+     m15_quality == "loose" nếu scenario có M15.
+     gate warning có M15_LOOSE_CONFIRMATION hoặc decision_cap là WAITING_CONFIRMATION nếu gate đã chạy.
+
+   Case 2 — analyze_symbol với M15 none:
+   - Kỳ vọng:
+     Không có scenario ready_to_trade True.
+     entry_status == "watch_zone" ở scenario liên quan.
+     gate warning có M15_NOT_CONFIRMED hoặc decision_cap là WATCH_ONLY nếu gate đã chạy.
+
+   Case 3 — Regression với M15 strict:
+   - Nếu dữ liệu đủ đẹp, scenario có thể confirmed_entry.
+   - Không bắt buộc decision cuối phải ready nếu các gate khác hoặc score không đủ, nhưng entry_status phải đúng là confirmed_entry khi điều kiện entry đủ.
+
+5. Chạy:
+   python -m pytest tests/test_phase8_entry_status_analysis_integration.py tests/test_analysis_trade_gate_integration.py tests/test_trade_gate_engine.py -q
+
+6. Nếu test fail vì dữ liệu test không tạo được scenario, hãy chỉnh dữ liệu test cho giống thật hơn, không sửa logic core vội.
+
+7. Nếu phát hiện logic analyze_symbol vẫn dùng has_ready_plan sai sau Phase 8, sửa tối thiểu để has_ready_plan chỉ True khi scenario.ready_to_trade True thật sự sau entry_engine mới.
+
+8. Kiểm tra lại không làm ảnh hưởng các phase cũ:
+   python -m pytest tests/test_phase2_trade_gate_realistic.py tests/test_phase6_expected_rr_realistic.py tests/test_phase7_account_guard_realistic.py -q
+
+Sau khi hoàn thành tất cả việc trong prompt này, báo đúng câu:
+ĐÃ HOÀN THÀNH TASK
+
+Sau khi hoàn thành hết các công việc trong prompt này, báo đúng câu:
+ĐÃ HOÀN THÀNH YÊU CẦU
+
+
+================================================================================
+
+PROMPT 5 — PHASE 8.5: CHẠY REGRESSION TOÀN BỘ PHASE 8, DỌN CODE VÀ BÁO CÁO NGẮN
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Các prompt trước đã sửa Phase 8. Bây giờ cần kiểm tra lại toàn bộ để đảm bảo không phát sinh bug và không sửa nhầm phần không liên quan.
+
+Mục tiêu:
+Phase 8 hoàn thành sạch:
+
+- M15 strict mới được confirmed_entry.
+- M15 loose không được confirmed_entry, chỉ waiting_confirmation.
+- M15 none không được confirmed_entry, chỉ watch_zone.
+- Missing/unavailable M15 không được tự động confirmed_entry.
+- ready_to_trade chỉ True khi entry_status == confirmed_entry.
+- Không phá các phase trước: gate, score gap, macro, SMC, expected effective R:R, account guard.
+
+Yêu cầu rất quan trọng:
+- Không thêm tính năng mới trong prompt này.
+- Không refactor lớn.
+- Không sửa UI.
+- Không đổi format output nếu không bắt buộc.
+- Chỉ sửa lỗi nhỏ nếu test phát hiện bug trực tiếp liên quan Phase 8.
+- Không làm Phase 9 reason_codes, không làm Phase 10 evidence_score, không làm decision_engine mới.
+
+Việc cần làm:
+1. Chạy các test entry engine:
+   python -m pytest tests/test_entry_engine.py tests/test_entry_engine_phase8.py tests/test_entry_engine_phase8_integration.py -q
+
+2. Chạy các test tích hợp liên quan:
+   python -m pytest tests/test_phase8_entry_status_analysis_integration.py tests/test_risk_engine.py tests/test_single_analysis.py -q
+
+3. Chạy regression các phase đã xong:
+   python -m pytest tests/test_trade_gate_engine.py tests/test_phase2_trade_gate_realistic.py tests/test_phase3_score_gap_realistic.py tests/test_phase4_macro_realistic.py tests/test_phase5_smc_realistic.py tests/test_phase6_expected_rr_realistic.py tests/test_phase7_account_guard_realistic.py -q
+
+4. Nếu có thời gian và môi trường cho phép, chạy toàn bộ test:
+   python -m pytest -q
+
+5. Dùng Python tạo một script test nhanh tạm thời hoặc chạy trong Python console để kiểm tra trực tiếp evaluate_entry() với 3 bộ dữ liệu:
+   - strict
+   - loose
+   - none
+
+   In ra các field:
+   - entry_status
+   - ready_to_trade
+   - m15_quality
+   - confirmation_score
+   - invalid_reason
+
+   Kết quả phải chứng minh:
+   - strict => confirmed_entry / True
+   - loose => waiting_confirmation / False
+   - none => watch_zone / False
+
+6. Không commit file script tạm nếu chỉ dùng để kiểm tra thủ công. Nếu có tạo file tạm thì xóa sau khi test.
+
+7. Kiểm tra git diff:
+   - Chỉ nên có thay đổi ở core/entry_engine.py và các file test Phase 8.
+   - Nếu có thay đổi ngoài phạm vi, xem lại và revert nếu không cần thiết.
+
+8. Báo cáo ngắn sau khi xong:
+   - Đã sửa file nào.
+   - Đã thêm test nào.
+   - Kết quả pytest.
+   - Xác nhận không sửa phần không liên quan.
+
+9. Báo cáo không được dài dòng. Không giải thích lan man.
+
+Sau khi hoàn thành tất cả việc trong prompt này, báo đúng câu:
+ĐÃ HOÀN THÀNH PROMPT 4
+
+Sau khi hoàn thành hết các công việc trong prompt này, báo đúng câu:
+ĐÃ HOÀN THÀNH PHASE 8

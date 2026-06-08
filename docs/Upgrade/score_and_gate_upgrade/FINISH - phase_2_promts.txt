@@ -1,0 +1,815 @@
+Mục tiêu Phase 2: Tách Score Layer và Gate Layer.
+
+Triết lý quan trọng:
+- Score Layer = setup có đẹp không.
+- Gate Layer = có được phép giao dịch không.
+- Signal Score cao KHÔNG có nghĩa là được vào lệnh.
+- Gate có quyền chặn/cap quyết định dù signal_score rất cao.
+
+Khuyến nghị sử dụng:
+- Chạy lần lượt Prompt 1 → Prompt 2 → Prompt 3.
+- Không nên đưa cả 3 prompt vào Deepseek cùng lúc nếu muốn hạn chế lỗi.
+- Nếu bắt buộc đưa một lần, yêu cầu Deepseek làm tuần tự từng prompt, xong prompt nào phải test prompt đó.
+
+============================================================
+FINISH - PROMPT 1 — TẠO MODULE trade_gate_engine.py ĐỘC LẬP + UNIT TEST
+============================================================
+
+Bạn đang làm việc trên project Python/PyQt6 AI Market Analyst v2.0 trong VSCode.
+
+Nhiệm vụ lần này CHỈ làm Phase 2: tạo Score Layer và Gate Layer tách biệt.
+
+Yêu cầu cực kỳ quan trọng:
+- CHỈ tạo/sửa các file liên quan trực tiếp đến trade gate.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa logic scoring trong `core/signal_engine.py`.
+- KHÔNG đổi tên thêm field nào ngoài những gì task yêu cầu.
+- KHÔNG implement Phase 3, Phase 4, Phase 5, Phase 6, Phase 7 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Nếu cần thêm helper thì chỉ thêm trong file mới `core/trade_gate_engine.py`.
+- Sau khi code xong phải tự kiểm tra lại code thật cẩn thận để tránh bug.
+
+Mục tiêu:
+Tạo module mới:
+
+`core/trade_gate_engine.py`
+
+Module này cung cấp hàm chính:
+
+```python
+def check_trade_gates(context: dict) -> dict:
+    ...
+```
+
+Output bắt buộc theo format:
+
+```python
+{
+    "allowed": True,
+    "decision_cap": None,
+    "block_codes": [],
+    "warning_codes": [],
+    "reasons": [],
+}
+```
+
+Ý nghĩa:
+- `allowed`: True/False, False nghĩa là bị chặn giao dịch.
+- `decision_cap`: None hoặc một trong các giá trị:
+  - `"TRADE_BLOCKED"`
+  - `"WATCH_ONLY"`
+  - `"WAITING_CONFIRMATION"`
+- `block_codes`: list mã chặn cứng.
+- `warning_codes`: list mã cảnh báo/cap mềm.
+- `reasons`: list giải thích tiếng Việt ngắn gọn cho UI/log.
+
+Các gate cần implement ở Phase 2:
+
+1. Gate MT5/broker:
+
+```python
+if terminal_connected is False or broker_logged_in is False:
+    allowed = False
+    decision_cap = "TRADE_BLOCKED"
+    block_codes.append("MT5_NOT_READY")
+```
+
+2. Gate spread:
+
+```python
+if spread_status == "abnormal":
+    allowed = False
+    decision_cap = "TRADE_BLOCKED"
+    block_codes.append("SPREAD_ABNORMAL")
+```
+
+3. Gate warning từ data_quality:
+
+```python
+if warning:
+    allowed = False
+    decision_cap = "TRADE_BLOCKED"
+    block_codes.append("DATA_QUALITY_WARNING")
+```
+
+4. Gate tin mạnh gần:
+
+```python
+if high_impact_event_within_30m:
+    allowed = False
+    decision_cap = "TRADE_BLOCKED"
+    block_codes.append("HIGH_IMPACT_NEWS_NEARBY")
+```
+
+5. Gate M15:
+
+```python
+if m15_quality == "none":
+    warning_codes.append("M15_NOT_CONFIRMED")
+    decision_cap = "WATCH_ONLY"
+
+elif m15_quality == "loose":
+    warning_codes.append("M15_LOOSE_CONFIRMATION")
+    decision_cap = "WAITING_CONFIRMATION"
+```
+
+Lưu ý:
+- M15 `"strict"` hoặc thiếu `m15_quality` thì không cap ở Phase 2.
+- Không sửa `entry_engine.py` trong prompt này.
+
+6. Gate expected effective R:R:
+
+Chỉ dùng nếu context có sẵn key `expected_effective_rr`.
+Không tự viết hàm tính R:R ở prompt này, vì đó là Phase 6.
+
+```python
+if expected_effective_rr is not None and expected_effective_rr < min_expected_effective_rr:
+    warning_codes.append("EXPECTED_RR_TOO_LOW")
+    decision_cap = "WATCH_ONLY"
+```
+
+Default:
+
+```python
+min_expected_effective_rr = context.get("min_expected_effective_rr", 1.3)
+```
+
+7. Gate daily/weekly loss:
+
+Chỉ dùng nếu context có sẵn key:
+- `daily_loss_limit_reached`
+- `weekly_loss_limit_reached`
+
+Không tự tạo account_guard ở prompt này, vì đó là Phase 7.
+
+```python
+if daily_loss_limit_reached:
+    allowed = False
+    decision_cap = "TRADE_BLOCKED"
+    block_codes.append("DAILY_LOSS_LIMIT_REACHED")
+
+if weekly_loss_limit_reached:
+    allowed = False
+    decision_cap = "TRADE_BLOCKED"
+    block_codes.append("WEEKLY_LOSS_LIMIT_REACHED")
+```
+
+8. Gate score gap:
+
+Chỉ dùng nếu context có sẵn key `score_gap`.
+Không tự sửa `signal_engine.py` hoặc `analysis_engine.py` để tính score gap trong prompt này, vì phần tính score gap là Phase 3.
+
+```python
+if score_gap is not None and score_gap < min_buy_sell_score_gap:
+    warning_codes.append("BUY_SELL_SCORE_GAP_LOW")
+    decision_cap = "WAITING_CONFIRMATION"
+```
+
+Default:
+
+```python
+min_buy_sell_score_gap = context.get("min_buy_sell_score_gap", 10)
+```
+
+9. Gate zone broken:
+
+Chỉ dùng nếu context có sẵn key `zone_broken`.
+
+```python
+if zone_broken:
+    warning_codes.append("ZONE_BROKEN")
+    decision_cap = "WATCH_ONLY"
+```
+
+Không sửa SMC ở prompt này.
+
+Yêu cầu helper:
+Tạo helper nội bộ để xử lý thứ tự cap, ví dụ:
+`TRADE_BLOCKED` mạnh hơn `WATCH_ONLY`, `WATCH_ONLY` mạnh hơn `WAITING_CONFIRMATION`.
+
+Nhưng lưu ý:
+- Nếu `allowed = False` thì `decision_cap` cuối phải là `"TRADE_BLOCKED"`.
+- Nếu chỉ warning/cap mềm thì `allowed` vẫn True.
+
+Viết test mới:
+
+Tạo file:
+
+`tests/test_trade_gate_engine.py`
+
+Test tối thiểu các case:
+
+1. Normal:
+Input terminal connected, broker logged in, spread normal, no news, m15 strict.
+
+Kỳ vọng:
+
+```python
+allowed is True
+decision_cap is None
+block_codes == []
+```
+
+2. Spread abnormal:
+
+Kỳ vọng:
+
+```python
+allowed is False
+decision_cap == "TRADE_BLOCKED"
+"SPREAD_ABNORMAL" in block_codes
+```
+
+3. High impact news nearby:
+
+Kỳ vọng:
+
+```python
+allowed is False
+decision_cap == "TRADE_BLOCKED"
+"HIGH_IMPACT_NEWS_NEARBY" in block_codes
+```
+
+4. M15 none:
+
+Kỳ vọng:
+
+```python
+allowed is True
+decision_cap == "WATCH_ONLY"
+"M15_NOT_CONFIRMED" in warning_codes
+```
+
+5. M15 loose:
+
+Kỳ vọng:
+
+```python
+allowed is True
+decision_cap == "WAITING_CONFIRMATION"
+"M15_LOOSE_CONFIRMATION" in warning_codes
+```
+
+6. Expected effective RR thấp:
+
+Input:
+
+```python
+expected_effective_rr = 1.1
+```
+
+Kỳ vọng:
+
+```python
+allowed is True
+decision_cap == "WATCH_ONLY"
+"EXPECTED_RR_TOO_LOW" in warning_codes
+```
+
+7. Daily loss reached:
+
+Kỳ vọng:
+
+```python
+allowed is False
+decision_cap == "TRADE_BLOCKED"
+"DAILY_LOSS_LIMIT_REACHED" in block_codes
+```
+
+8. Score gap thấp:
+
+Input:
+
+```python
+score_gap = 5
+```
+
+Kỳ vọng:
+
+```python
+allowed is True
+decision_cap == "WAITING_CONFIRMATION"
+"BUY_SELL_SCORE_GAP_LOW" in warning_codes
+```
+
+9. Nhiều gate cùng lúc:
+
+Input spread abnormal + m15 none.
+
+Kỳ vọng:
+
+```python
+allowed is False
+decision_cap == "TRADE_BLOCKED"
+"SPREAD_ABNORMAL" in block_codes
+"M15_NOT_CONFIRMED" in warning_codes
+```
+
+Sau khi code xong phải chạy:
+
+```bash
+pytest -q tests/test_trade_gate_engine.py
+```
+
+Sau đó chạy thêm:
+
+```bash
+pytest -q tests/test_signal_engine.py tests/test_risk_engine.py tests/test_entry_engine.py
+```
+
+Nếu test cũ lỗi do môi trường thiếu MT5/PyQt6 thì không sửa lan man, chỉ ghi nhận.
+Nếu lỗi do code vừa sửa thì phải sửa lại.
+
+Sau cùng, kiểm tra lại bằng Python với dữ liệu giả giống thật:
+
+```python
+from core.trade_gate_engine import check_trade_gates
+
+context = {
+    "terminal_connected": True,
+    "broker_logged_in": True,
+    "spread_status": "normal",
+    "high_impact_event_within_30m": False,
+    "m15_quality": "loose",
+    "expected_effective_rr": 1.8,
+}
+
+print(check_trade_gates(context))
+```
+
+Kết quả phải có:
+
+```python
+allowed=True
+decision_cap="WAITING_CONFIRMATION"
+```
+
+Chỉ hoàn thành task khi:
+- File mới `core/trade_gate_engine.py` hoạt động độc lập.
+- Test mới pass.
+- Không có sửa đổi ngoài phạm vi.
+
+============================================================
+FINISH - PROMPT 2 — TÍCH HỢP GATE VÀO analysis_engine.py Ở MỨC TỐI THIỂU, KHÔNG PHÁ LUỒNG CŨ
+============================================================
+
+Bạn đang tiếp tục Phase 2 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Phase 1 đã xong: score đã có `signal_score`.
+- Prompt trước đã tạo `core/trade_gate_engine.py` và test riêng.
+- Nhiệm vụ lần này là tích hợp gate vào kết quả phân tích, nhưng phải làm tối thiểu và an toàn.
+
+Yêu cầu cực kỳ quan trọng:
+- CHỈ sửa các file cần thiết cho tích hợp gate vào single analysis.
+- Ưu tiên chỉ sửa:
+  - `core/analysis_engine.py`
+  - nếu thật sự cần thì sửa rất nhỏ `core/risk_engine.py`
+  - thêm/cập nhật test tương ứng.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa `core/signal_engine.py`.
+- KHÔNG sửa thuật toán scoring.
+- KHÔNG sửa `entry_engine.py` ở prompt này.
+- KHÔNG implement Phase 3, 4, 5, 6, 7 hoặc các phase sau.
+- Không xóa `trade_permission` cũ vì UI/scanner hiện có thể đang dùng.
+- Không đổi decision state cũ hàng loạt. Phase 14 mới làm decision engine riêng.
+
+Mục tiêu:
+Trong `core/analysis_engine.py`, sau khi đã có:
+- `data_quality`
+- `risk_score`
+- `scores`
+- `best_side`
+- `best_score`
+- `trade_permission`
+- `scenarios`
+- `primary_scenario`
+
+hãy gọi:
+
+```python
+from core.trade_gate_engine import check_trade_gates
+```
+
+Tạo `gate_context` từ dữ liệu hiện có:
+
+```python
+gate_context = {
+    "terminal_connected": data_quality.get("terminal_connected"),
+    "broker_logged_in": data_quality.get("broker_logged_in"),
+    "spread_status": data_quality.get("spread_status"),
+    "warning": data_quality.get("warning"),
+    "high_impact_event_within_30m": data_quality.get("high_impact_event_within_30m"),
+    "resume_after": data_quality.get("resume_after"),
+
+    # từ entry/scenario nếu có
+    "m15_quality": primary_scenario.get("m15_quality") if isinstance(primary_scenario, dict) else None,
+    "expected_effective_rr": primary_scenario.get("expected_effective_rr") if isinstance(primary_scenario, dict) else None,
+    "zone_broken": primary_scenario.get("entry_status") == "invalidated" or primary_scenario.get("trigger_type") == "zone_broken",
+
+    # các field này có thể chưa có ở Phase 2, cứ truyền nếu tồn tại, không tự tính
+    "daily_loss_limit_reached": data_quality.get("daily_loss_limit_reached"),
+    "weekly_loss_limit_reached": data_quality.get("weekly_loss_limit_reached"),
+    "score_gap": data_quality.get("score_gap"),
+}
+```
+
+Lưu ý:
+- `score_gap` chưa cần tính ở prompt này. Phase 3 mới tính.
+- `expected_effective_rr` chưa cần tính ở prompt này. Phase 6 mới tính.
+- `daily_loss_limit_reached` và `weekly_loss_limit_reached` chưa cần tính ở prompt này. Phase 7 mới tính.
+- Mục tiêu chỉ là chuẩn bị pipeline gate để sau này các field có thì gate dùng được.
+
+Sau đó:
+
+```python
+gate_result = check_trade_gates(gate_context)
+```
+
+Thêm vào output chính:
+
+```python
+"trade_gate": gate_result
+```
+
+Đồng thời thêm backward-compatible enhancement cho `trade_permission` nhưng không phá format cũ.
+
+Hiện `trade_permission` đang có:
+
+```python
+{"status": "...", "reason": "...", "resume_after": ...}
+```
+
+Giữ nguyên các key cũ, nhưng nếu `gate_result["allowed"] is False`, hãy đảm bảo:
+
+```python
+trade_permission["status"] = "blocked"
+trade_permission["reason"] = "; ".join(gate_result["reasons"]) or trade_permission["reason"]
+trade_permission["gate_block_codes"] = gate_result["block_codes"]
+trade_permission["gate_warning_codes"] = gate_result["warning_codes"]
+trade_permission["decision_cap"] = gate_result["decision_cap"]
+```
+
+Nếu gate không block cứng nhưng có cap mềm, ví dụ M15 loose hoặc M15 none:
+- Không đổi `trade_permission["status"]` thành blocked.
+- Chỉ thêm:
+
+```python
+trade_permission["gate_warning_codes"] = gate_result["warning_codes"]
+trade_permission["decision_cap"] = gate_result["decision_cap"]
+```
+
+Điều chỉnh `decision_action` tối thiểu.
+
+Sau khi tính `decision_action` cũ bằng `classify_decision(...)`, áp dụng cap từ gate:
+
+```python
+if gate_result["decision_cap"] == "TRADE_BLOCKED":
+    decision_action = "stand_aside"
+elif gate_result["decision_cap"] == "WATCH_ONLY" and decision_action == "ready":
+    decision_action = "watch"
+elif gate_result["decision_cap"] == "WAITING_CONFIRMATION" and decision_action == "ready":
+    decision_action = "wait_for_confirmation"
+```
+
+Không thêm state mới như `"TRADE_BLOCKED"` trong prompt này vì UI hiện có thể chưa hiểu.
+Phase 14 sẽ làm decision engine mới.
+
+Tuy nhiên trong `decision_summary`, thêm thông tin gate để UI sau này đọc được:
+
+```python
+"gate_decision_cap": gate_result.get("decision_cap"),
+"gate_allowed": gate_result.get("allowed"),
+"gate_block_codes": gate_result.get("block_codes", []),
+"gate_warning_codes": gate_result.get("warning_codes", []),
+```
+
+Yêu cầu test:
+
+Tạo hoặc sửa test trong:
+
+`tests/test_single_analysis.py`
+
+hoặc tạo file mới:
+
+`tests/test_analysis_trade_gate_integration.py`
+
+Test tối thiểu:
+
+1. Spread abnormal:
+
+Tạo data_quality có:
+
+```python
+"terminal_connected": True,
+"broker_logged_in": True,
+"spread_status": "abnormal"
+```
+
+Gọi `analyze_symbol(...)` với dữ liệu nến giả giống thật.
+
+Kỳ vọng:
+
+```python
+result["trade_gate"]["allowed"] is False
+result["trade_gate"]["decision_cap"] == "TRADE_BLOCKED"
+"SPREAD_ABNORMAL" in result["trade_gate"]["block_codes"]
+result["trade_permission"]["status"] == "blocked"
+result["decision_summary"]["action"] == "stand_aside"
+```
+
+2. High impact news within 30m:
+
+Kỳ vọng tương tự:
+
+```python
+"HIGH_IMPACT_NEWS_NEARBY" in block_codes
+```
+
+3. M15 loose:
+
+Dùng scenario/entry có `m15_quality = "loose"` nếu test hiện có tạo được.
+Nếu khó dựng full candles M15 thì có thể monkeypatch `build_scenarios()` trong test để trả về scenario giả:
+
+```python
+[{
+    "type": "buy",
+    "priority": "primary",
+    "score": 85,
+    "ready_to_trade": True,
+    "price_in_entry_zone": True,
+    "h1_confirmation": True,
+    "m15_quality": "loose",
+}]
+```
+
+Kỳ vọng:
+
+```python
+result["trade_gate"]["allowed"] is True
+result["trade_gate"]["decision_cap"] == "WAITING_CONFIRMATION"
+"M15_LOOSE_CONFIRMATION" in result["trade_gate"]["warning_codes"]
+result["decision_summary"]["action"] != "ready"
+```
+
+4. M15 none:
+
+Kỳ vọng:
+
+```python
+decision_cap == "WATCH_ONLY"
+"M15_NOT_CONFIRMED" in warning_codes
+decision_summary["action"] != "ready"
+```
+
+Sau khi code xong, chạy:
+
+```bash
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_analysis_trade_gate_integration.py
+```
+
+Nếu file test mới không tồn tại thì chạy đúng file bạn tạo.
+
+Sau đó chạy regression:
+
+```bash
+pytest -q tests/test_single_analysis.py tests/test_risk_engine.py tests/test_entry_engine.py tests/test_scanner.py
+```
+
+Nếu có lỗi do thiếu PyQt6/MT5 trong môi trường thì không sửa lan man.
+Chỉ sửa lỗi liên quan trực tiếp đến thay đổi Phase 2.
+
+Cuối cùng tự rà soát:
+- Không làm mất `trade_permission`.
+- Không đổi tên field UI đang dùng.
+- Không đổi thuật toán score.
+- Không làm scanner vỡ.
+- Gate chỉ có quyền chặn/cap, không tự cộng điểm.
+
+============================================================
+FINISH - PROMPT 3 — TEST DỮ LIỆU GIỐNG THẬT + RÀ SOÁT KHÔNG SỬA LAN MAN
+============================================================
+
+Bạn đang hoàn thiện Phase 2 của project AI Market Analyst v2.0.
+
+Nhiệm vụ lần này:
+- Không thêm tính năng mới.
+- Không refactor.
+- Không sửa UI.
+- Không sửa scanner nếu không có lỗi trực tiếp từ Phase 2.
+- Chỉ kiểm tra, test, sửa bug nhỏ nếu bug do Phase 2 gây ra.
+
+Mục tiêu:
+Rà soát toàn bộ thay đổi Phase 2:
+1. `core/trade_gate_engine.py`
+2. tích hợp `trade_gate` trong `core/analysis_engine.py`
+3. test liên quan
+
+Yêu cầu kiểm tra code thủ công:
+- Mở lại `core/trade_gate_engine.py`.
+- Kiểm tra không có import thừa, không phụ thuộc PyQt6, MT5, services hoặc UI.
+- Hàm `check_trade_gates(context)` phải chạy độc lập bằng dict.
+- Không được raise exception khi context thiếu key.
+- Thiếu key thì xử lý neutral, không block nhầm.
+- `allowed=False` thì `decision_cap` phải luôn là `"TRADE_BLOCKED"`.
+- Nếu vừa có block vừa có warning thì block vẫn thắng.
+- `reasons` phải là list string tiếng Việt ngắn gọn, không để None.
+
+Yêu cầu kiểm tra tích hợp:
+- `analyze_symbol()` output phải có key:
+
+```python
+"trade_gate"
+```
+
+- `trade_permission` cũ vẫn tồn tại.
+- `decision_summary` cũ vẫn tồn tại.
+- `decision_summary["action"]` vẫn dùng state cũ:
+
+```python
+"ready"
+"watch"
+"wait_for_confirmation"
+"stand_aside"
+```
+
+Không đưa state mới vào UI ở Phase 2.
+
+Viết thêm script test bằng Python hoặc test pytest với dữ liệu giống thật.
+
+Tạo file test nếu chưa có:
+
+`tests/test_phase2_trade_gate_realistic.py`
+
+Trong test này, tạo dữ liệu nến giả giống thật cho EUR/USD hoặc GBP/JPY.
+
+Gợi ý tạo candle:
+
+```python
+from datetime import datetime, timedelta, timezone
+from core.market_models import Candle
+
+def make_candles(count=100, start_price=1.0800, step=0.0003):
+    candles = []
+    t = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    price = start_price
+
+    for i in range(count):
+        open_ = price
+        close = price + step
+        high = max(open_, close) + 0.0002
+        low = min(open_, close) - 0.0002
+
+        candles.append(Candle(
+            time=t + timedelta(hours=i),
+            open=open_,
+            high=high,
+            low=low,
+            close=close,
+            volume=1000,
+        ))
+
+        price = close
+
+    return candles
+```
+
+Nếu constructor `Candle` khác field, hãy kiểm tra `core/market_models.py` và sửa test cho đúng, không sửa model.
+
+Test 1 — normal data:
+
+data_quality:
+
+```python
+{
+    "terminal_connected": True,
+    "broker_logged_in": True,
+    "spread_status": "normal",
+    "high_impact_event_within_30m": False,
+    "news_in_3h": False,
+}
+```
+
+Kỳ vọng:
+
+```python
+result["trade_gate"]["allowed"] is True
+result["trade_gate"]["decision_cap"] is None or result["trade_gate"]["decision_cap"] in [None, "WAITING_CONFIRMATION", "WATCH_ONLY"]
+```
+
+Không assert quá cứng decision vì score phụ thuộc technical.
+
+Test 2 — spread abnormal:
+
+Chỉ đổi:
+
+```python
+spread_status = "abnormal"
+```
+
+Kỳ vọng:
+
+```python
+result["trade_gate"]["allowed"] is False
+result["trade_gate"]["decision_cap"] == "TRADE_BLOCKED"
+result["trade_permission"]["status"] == "blocked"
+result["decision_summary"]["action"] == "stand_aside"
+```
+
+Test 3 — high impact news:
+
+```python
+high_impact_event_within_30m = True
+```
+
+Kỳ vọng bị block.
+
+Test 4 — data warning:
+
+```python
+warning = "MT5 data delayed"
+```
+
+Kỳ vọng bị block với code:
+
+```python
+DATA_QUALITY_WARNING
+```
+
+Test trực tiếp module gate với dữ liệu giống thật:
+
+```python
+from core.trade_gate_engine import check_trade_gates
+
+cases = [
+    {
+        "name": "normal",
+        "context": {
+            "terminal_connected": True,
+            "broker_logged_in": True,
+            "spread_status": "normal",
+            "high_impact_event_within_30m": False,
+            "m15_quality": "strict",
+            "expected_effective_rr": 1.8,
+        },
+    },
+    {
+        "name": "spread abnormal",
+        "context": {
+            "terminal_connected": True,
+            "broker_logged_in": True,
+            "spread_status": "abnormal",
+            "m15_quality": "strict",
+        },
+    },
+    {
+        "name": "m15 none",
+        "context": {
+            "terminal_connected": True,
+            "broker_logged_in": True,
+            "spread_status": "normal",
+            "m15_quality": "none",
+            "expected_effective_rr": 1.6,
+        },
+    },
+]
+```
+
+Chạy các lệnh:
+
+```bash
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_analysis_trade_gate_integration.py
+pytest -q tests/test_phase2_trade_gate_realistic.py
+```
+
+Nếu tên file test khác thì chạy đúng file đã tạo.
+
+Sau đó chạy regression:
+
+```bash
+pytest -q tests/test_signal_engine.py tests/test_risk_engine.py tests/test_entry_engine.py tests/test_single_analysis.py tests/test_scanner.py
+```
+
+Nếu lỗi do môi trường thiếu PyQt6/MT5:
+- Không sửa logic project để né lỗi.
+- Chỉ ghi rõ test nào không chạy được do thiếu dependency.
+
+Nếu lỗi do Phase 2:
+- Sửa đúng chỗ gây lỗi.
+- Không sửa lan sang module khác.
+
+Sau khi hoàn thành, báo cáo ngắn:
+1. File đã sửa.
+2. Test đã chạy.
+3. Test pass/fail.
+4. Nếu fail thì lý do.
+5. Xác nhận không sửa phần ngoài phạm vi Phase 2.
+6. Sau khi hoàn thành hết các việc phải báo ĐÃ HOÀN THÀNH TOÀN BỘ
+
+============================================================
+KẾT THÚC FILE PROMPT PHASE 2
+============================================================

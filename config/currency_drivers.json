@@ -1,0 +1,38 @@
+{
+  "USD": {
+    "drivers": ["DXY", "UST 2Y", "UST 10Y", "Fed expectations", "CPI", "PCE", "NFP", "PMI", "Retail Sales", "GDP", "VIX", "risk sentiment"],
+    "behavior_questions": ["USD dang la safe haven hay rate currency?", "Dong tien co bi chi phoi boi yield/DXY/risk-off khong?"]
+  },
+  "EUR": {
+    "drivers": ["ECB expectations", "Bund yield", "US-Germany yield spread", "Eurozone CPI", "core CPI", "PMI", "GDP", "sentiment", "ECB speakers"],
+    "behavior_questions": ["EUR dang giao dich theo rates, growth hay USD weakness?"]
+  },
+  "GBP": {
+    "drivers": ["BoE expectations", "UK CPI", "wage growth", "GDP", "PMI", "Gilts", "risk sentiment"],
+    "behavior_questions": ["GBP dang duoc dinh gia theo BoE repricing hay growth risk?"]
+  },
+  "JPY": {
+    "drivers": ["BoJ expectations", "JGB yield", "US-Japan yield spread", "intervention risk", "risk sentiment"],
+    "behavior_questions": ["JPY dang la funding currency hay safe haven?"]
+  },
+  "CHF": {
+    "drivers": ["SNB expectations", "Swiss CPI", "risk sentiment", "safe haven flow", "EUR/CHF flow"],
+    "behavior_questions": ["CHF dang phan ung theo safe haven hay SNB/rates?"]
+  },
+  "AUD": {
+    "drivers": ["RBA expectations", "China data", "iron ore", "risk sentiment", "Australia CPI", "employment"],
+    "behavior_questions": ["AUD dang bi chi phoi boi China/risk hay RBA?"]
+  },
+  "NZD": {
+    "drivers": ["RBNZ expectations", "New Zealand CPI", "employment", "dairy prices", "China data", "risk sentiment"],
+    "behavior_questions": ["NZD dang bi chi phoi boi RBNZ hay risk beta?"]
+  },
+  "CAD": {
+    "drivers": ["BoC expectations", "Canada CPI", "employment", "GDP", "WTI oil", "US growth"],
+    "behavior_questions": ["CAD dang di theo oil, BoC hay USD leg?"]
+  },
+  "XAU": {
+    "drivers": ["real yields", "UST 10Y", "DXY", "Fed expectations", "geopolitical risk", "ETF flow", "central bank demand"],
+    "behavior_questions": ["Gold dang giao dich theo real yield, USD hay safe haven?"]
+  }
+}

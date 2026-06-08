@@ -1,0 +1,1155 @@
+PROMPT 1 — PHASE 10.1: KIỂM TRA HIỆN TRẠNG SAU PHASE 9 VÀ LẬP DANH SÁCH FILE ĐƯỢC PHÉP ĐỤNG VÀO
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Hệ thống đã hoàn thành Phase 9: reason_codes đã được chuẩn hóa. Bây giờ bắt đầu Phase 10: EVIDENCE SCORE BẢN ĐƠN GIẢN.
+
+Mục tiêu Phase 10:
+Tạo lớp thống kê đơn giản để tính evidence_score từ lịch sử giao dịch/journal. Evidence score KHÔNG được tự quyết định vào lệnh, KHÔNG được block setup chỉ vì thiếu dữ liệu, và KHÔNG được thay đổi decision hiện tại trong phase này.
+
+Mục tiêu riêng của prompt này:
+Chỉ kiểm tra hiện trạng code để tránh sửa nhầm. Chưa viết logic mới, chưa sửa engine chính.
+
+Yêu cầu rất quan trọng:
+- Chỉ được đọc code, tạo ghi chú ngắn trong file tạm nếu cần.
+- Không sửa signal_engine.py.
+- Không sửa entry_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa account_guard.py.
+- Không sửa analysis_engine.py.
+- Không sửa UI.
+- Không sửa database migration.
+- Không làm Phase 11, 12, 13, 14, 15.
+- Không tạo execution_quality_engine.py.
+- Không tạo trade_mistake_detector.py.
+- Không tạo decision_engine.py.
+
+Việc cần làm:
+1. Kiểm tra có tồn tại các file sau không:
+   - core/reason_codes.py
+   - services/journal_service.py
+   - core/account_guard.py
+   - core/trade_gate_engine.py
+   - tests/
+
+2. Mở core/reason_codes.py và xác nhận có các code chuẩn bị cho Phase 10:
+   - STAT_EDGE_NOT_ENOUGH_DATA
+   - STAT_EDGE_POSITIVE
+   - STAT_EDGE_NEGATIVE
+
+3. Nếu thiếu các code trên:
+   - Chỉ bổ sung đúng 3 constant này vào core/reason_codes.py.
+   - Chỉ bổ sung message tiếng Việt tương ứng trong REASON_CODE_MESSAGES nếu file đang có dictionary này.
+   - Không chỉnh bất kỳ reason code nào khác.
+
+4. Kiểm tra journal hiện tại đang lưu field nào liên quan đến Phase 7:
+   - result_r
+   - result_pct
+   - closed_at
+   - exit_reason
+   - actual_lot
+   - planned_lot
+   Ghi nhận để prompt sau biết cách tạo dữ liệu test giống thật.
+
+5. Không cần tích hợp gì trong prompt này.
+
+Test bắt buộc:
+- Chạy lệnh:
+  python -m pytest tests/test_reason_codes_phase9.py -q
+  nếu file test này tồn tại.
+- Chạy thêm:
+  python -m pytest tests/test_account_guard_phase7.py -q
+  nếu file test này tồn tại.
+
+Tiêu chí hoàn thành:
+- Không làm thay đổi hành vi phần mềm.
+- Nếu có chỉnh reason_codes thì chỉ chỉnh đúng 3 code STAT_EDGE_* bị thiếu.
+- Không có lỗi import.
+- Không động vào các engine không liên quan.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 2 — PHASE 10.2: TẠO MODULE RỖNG core/statistical_edge_engine.py VÀ TEST IMPORT
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 10 cần module mới để tính evidence_score từ dữ liệu lịch sử. Prompt này chỉ tạo khung module và test import, chưa viết công thức thống kê phức tạp.
+
+Mục tiêu riêng của prompt này:
+Tạo file core/statistical_edge_engine.py với các constant cơ bản và output trung lập mặc định.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa 2 file:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_import_phase10.py
+- Không sửa signal_engine.py.
+- Không sửa analysis_engine.py.
+- Không sửa journal_service.py.
+- Không sửa UI.
+- Không sửa scanner.
+- Không sửa trade_gate_engine.py.
+- Không sửa account_guard.py.
+- Không thay đổi decision hiện tại.
+
+Việc cần làm:
+1. Tạo file mới:
+   core/statistical_edge_engine.py
+
+2. Trong file này, import reason code từ core.reason_codes nếu tồn tại:
+   - STAT_EDGE_NOT_ENOUGH_DATA
+   - STAT_EDGE_POSITIVE
+   - STAT_EDGE_NEGATIVE
+
+3. Nếu project có style import tương đối/absolutely riêng, hãy theo đúng style hiện tại. Không phá cấu trúc package.
+
+4. Định nghĩa các constant:
+   - DEFAULT_EVIDENCE_SCORE = 50
+   - MIN_SAMPLE_SIZE = 30
+   - STRONG_SAMPLE_SIZE = 50
+
+5. Tạo hàm:
+
+   def neutral_evidence_result(reason: str = "not_enough_data") -> dict:
+       return {
+           "evidence_score": 50,
+           "sample_size": 0,
+           "confidence": "low",
+           "reason_codes": [STAT_EDGE_NOT_ENOUGH_DATA],
+           "warning_codes": [STAT_EDGE_NOT_ENOUGH_DATA],
+           "stats": {
+               "win_rate": None,
+               "avg_win_r": None,
+               "avg_loss_r": None,
+               "expectancy_r": None,
+           },
+           "group_used": None,
+           "reason": reason,
+       }
+
+6. Không được thêm logic tính score trong prompt này.
+
+7. Tạo test mới:
+   tests/test_statistical_edge_engine_import_phase10.py
+
+8. Test cần kiểm tra:
+   - import được core.statistical_edge_engine
+   - DEFAULT_EVIDENCE_SCORE == 50
+   - neutral_evidence_result() trả evidence_score = 50
+   - neutral_evidence_result() có reason_codes chứa STAT_EDGE_NOT_ENOUGH_DATA
+   - sample_size = 0
+   - confidence = low
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_import_phase10.py -q
+- Chạy thêm:
+  python -m pytest tests/test_reason_codes_phase9.py -q
+  nếu file tồn tại.
+
+Tiêu chí hoàn thành:
+- Module import sạch.
+- Không ảnh hưởng hệ thống hiện tại.
+- Test mới pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 3 — PHASE 10.3: THÊM HELPER LÀM SẠCH DỮ LIỆU result_r TỪ JOURNAL
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Evidence score sẽ dựa vào result_r của các lệnh đã đóng. Journal thực tế có thể có dữ liệu thiếu, None, string, NaN, lệnh chưa đóng hoặc lệnh lỗi. Cần helper nhỏ để lọc dữ liệu an toàn.
+
+Mục tiêu riêng của prompt này:
+Thêm helper làm sạch result_r, chưa tính evidence_score chính.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_cleaning_phase10.py
+- Không sửa journal_service.py.
+- Không sửa database.
+- Không sửa analysis_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa decision/gate/UI.
+- Không refactor file khác.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def coerce_result_r(value) -> float | None:
+       ...
+
+2. Logic yêu cầu:
+   - Nếu value là int hoặc float hợp lệ => trả float(value).
+   - Nếu value là string số như "1.2", "-0.8", " 0.5 " => trả float.
+   - Nếu value là None => trả None.
+   - Nếu value là "", "N/A", "nan", "None", object không convert được => trả None.
+   - Nếu value là NaN hoặc inf => trả None.
+
+3. Thêm hàm:
+
+   def extract_closed_trade_results(trades: list[dict]) -> list[float]:
+       ...
+
+4. Logic extract_closed_trade_results:
+   - Nhận list dict giống journal.
+   - Lấy field result_r.
+   - Bỏ qua trade không có result_r hợp lệ.
+   - Bỏ qua trade có status là "open" hoặc "pending" nếu có field status.
+   - Bỏ qua trade có closed_at là None nếu trade có field closed_at và status không phải closed.
+   - Trả list float result_r hợp lệ.
+
+5. Không được raise exception khi dữ liệu bẩn.
+
+6. Tạo test mới:
+   tests/test_statistical_edge_engine_cleaning_phase10.py
+
+7. Test với dữ liệu giống thật:
+   - trade thắng: {"symbol":"EURUSD", "direction":"buy", "result_r":1.5, "closed_at":"2026-06-01T10:00:00"}
+   - trade thua: {"symbol":"EURUSD", "direction":"buy", "result_r":"-1.0", "closed_at":"2026-06-01T11:00:00"}
+   - breakeven: result_r = 0
+   - lệnh mở: status="open", result_r=None
+   - dữ liệu lỗi: result_r="abc"
+   - dữ liệu NaN: result_r=float("nan")
+
+8. Kỳ vọng:
+   extract_closed_trade_results trả đúng [1.5, -1.0, 0.0] hoặc tương đương.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_cleaning_phase10.py -q
+- Chạy lại:
+  python -m pytest tests/test_statistical_edge_engine_import_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Dữ liệu bẩn không làm crash.
+- Chỉ lấy lệnh đã đóng có result_r hợp lệ.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 4 — PHASE 10.4: THÊM HÀM TÍNH THỐNG KÊ WIN RATE, AVG WIN, AVG LOSS, EXPECTANCY
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 10 cần tính thống kê cơ bản từ danh sách result_r đã làm sạch. Prompt này chỉ tính stats, chưa map sang evidence_score.
+
+Mục tiêu riêng của prompt này:
+Thêm hàm calculate_trade_stats(results_r) để tính thống kê lõi.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_stats_phase10.py
+- Không sửa file khác.
+- Không tích hợp vào analysis_engine.
+- Không sửa journal_service.
+- Không sửa UI.
+- Không làm final_score.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def calculate_trade_stats(results_r: list[float]) -> dict:
+       ...
+
+2. Logic:
+   - sample_size = len(results_r)
+   - wins = result_r > 0
+   - losses = result_r <= 0
+   - win_rate = len(wins) / sample_size nếu sample_size > 0, nếu không thì None
+   - avg_win_r = trung bình wins nếu có, nếu không thì 0.0
+   - avg_loss_r = abs(trung bình losses) nếu có, nếu không thì 0.0
+   - expectancy_r = win_rate * avg_win_r - (1 - win_rate) * avg_loss_r
+   - Nếu sample_size = 0 thì expectancy_r = None
+
+3. Output bắt buộc:
+
+   {
+       "sample_size": ...,
+       "win_count": ...,
+       "loss_count": ...,
+       "win_rate": ...,
+       "avg_win_r": ...,
+       "avg_loss_r": ...,
+       "expectancy_r": ...,
+   }
+
+4. Lưu ý:
+   - Breakeven 0R tính vào loss_count theo công thức losses <= 0 để bảo thủ.
+   - Không làm tròn quá sớm. Nếu cần làm tròn thì chỉ làm ở UI sau này, không làm trong engine.
+   - Không dùng pandas/numpy để tránh thêm dependency.
+
+5. Tạo test mới:
+   tests/test_statistical_edge_engine_stats_phase10.py
+
+6. Test dữ liệu giống thật:
+   Dataset 1:
+   results = [1.5, -1.0, 2.0, -1.0, 0.5, -0.5, 0.0, 1.0, -1.0, 1.2]
+   Kiểm tra:
+   - sample_size = 10
+   - win_count = 5
+   - loss_count = 5
+   - win_rate = 0.5
+   - avg_win_r xấp xỉ (1.5 + 2.0 + 0.5 + 1.0 + 1.2) / 5
+   - avg_loss_r xấp xỉ abs((-1.0 -1.0 -0.5 + 0.0 -1.0) / 5)
+   - expectancy_r đúng theo công thức
+
+   Dataset 2:
+   results = []
+   Kiểm tra không crash, sample_size = 0, expectancy_r = None.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_stats_phase10.py -q
+- Chạy lại toàn bộ test Phase 10 đã có:
+  python -m pytest tests/test_statistical_edge_engine_import_phase10.py tests/test_statistical_edge_engine_cleaning_phase10.py tests/test_statistical_edge_engine_stats_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Stats đúng, ổn định, không crash khi rỗng.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 5 — PHASE 10.5: THÊM HÀM MAP EXPECTANCY SANG evidence_score
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Evidence score cần biến expectancy_r thành điểm 0–100. Giai đoạn đầu phải bảo thủ, không để thống kê ít mẫu kéo hệ thống quá mạnh.
+
+Mục tiêu riêng của prompt này:
+Thêm hàm map_expectancy_to_score(expectancy_r, sample_size) độc lập, có test riêng.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_mapping_phase10.py
+- Không sửa analysis_engine.
+- Không sửa signal_engine.
+- Không sửa decision_engine nếu có.
+- Không sửa trade_gate_engine.
+- Không sửa UI.
+- Không làm Phase 13 final_score.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def map_expectancy_to_score(expectancy_r: float | None, sample_size: int) -> int:
+       ...
+
+2. Logic bắt buộc:
+   - Nếu expectancy_r is None => 50.
+   - Nếu sample_size < MIN_SAMPLE_SIZE => 50.
+   - Nếu expectancy_r <= -0.30 => 20.
+   - Nếu expectancy_r <= -0.15 => 35.
+   - Nếu -0.15 < expectancy_r < 0.15 => map quanh 50, có thể dùng:
+       score = 50 + expectancy_r * 100
+     Sau đó clamp 35–65.
+   - Nếu expectancy_r >= 0.50 => 85.
+   - Nếu expectancy_r >= 0.30 => 75.
+   - Nếu expectancy_r >= 0.15 => 65.
+   - Kết quả phải là int từ 0 đến 100.
+
+3. Thêm helper nếu cần:
+
+   def clamp_score(value: float, min_value: int = 0, max_value: int = 100) -> int:
+       ...
+
+4. Tư duy quan trọng:
+   - score 50 = trung lập, chưa đủ bằng chứng.
+   - evidence_score không được mặc định quá cao.
+   - dữ liệu ít mẫu luôn trả 50, kể cả expectancy đẹp.
+
+5. Tạo test mới:
+   tests/test_statistical_edge_engine_mapping_phase10.py
+
+6. Test bắt buộc:
+   - sample_size = 10, expectancy_r = 0.8 => 50 vì thiếu mẫu.
+   - sample_size = 30, expectancy_r = 0.50 => 85.
+   - sample_size = 30, expectancy_r = 0.30 => 75.
+   - sample_size = 30, expectancy_r = 0.15 => 65.
+   - sample_size = 30, expectancy_r = 0.00 => khoảng 50.
+   - sample_size = 30, expectancy_r = -0.15 => 35 hoặc thấp hơn theo logic đã chọn.
+   - sample_size = 30, expectancy_r = -0.30 => 20.
+   - expectancy_r = None => 50.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_mapping_phase10.py -q
+- Chạy lại:
+  python -m pytest tests/test_statistical_edge_engine_stats_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Mapping bảo thủ.
+- Thiếu dữ liệu không được score cao.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 6 — PHASE 10.6: IMPLEMENT calculate_edge(trades) THEO PLAN PHASE 10
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Plan Phase 10 yêu cầu hàm chính calculate_edge(trades) trả evidence_score từ list giao dịch lịch sử.
+
+Mục tiêu riêng của prompt này:
+Implement calculate_edge(trades) dùng các helper đã tạo: extract_closed_trade_results, calculate_trade_stats, map_expectancy_to_score.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_calculate_edge_phase10.py
+- Không sửa journal_service.py.
+- Không sửa analysis_engine.py.
+- Không sửa signal_engine.py.
+- Không sửa UI.
+- Không sửa decision/gate.
+- Không thêm dependency mới.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def calculate_edge(trades: list[dict]) -> dict:
+       ...
+
+2. Logic bắt buộc:
+   - Nếu trades không phải list hoặc rỗng => trả neutral_evidence_result().
+   - Gọi extract_closed_trade_results(trades) để lấy result_r sạch.
+   - sample_size = số result hợp lệ.
+   - Nếu sample_size < MIN_SAMPLE_SIZE:
+       return {
+           "sample_size": sample_size,
+           "evidence_score": 50,
+           "confidence": "low",
+           "reason_codes": [STAT_EDGE_NOT_ENOUGH_DATA],
+           "warning_codes": [STAT_EDGE_NOT_ENOUGH_DATA],
+           "stats": stats,
+           "group_used": None hoặc giữ input nếu có,
+       }
+   - Nếu đủ mẫu:
+       tính stats
+       evidence_score = map_expectancy_to_score(stats["expectancy_r"], sample_size)
+       confidence:
+         sample_size >= 100 => "high"
+         sample_size >= 50 => "medium"
+         sample_size >= 30 => "medium_low" hoặc "medium"
+       reason_codes:
+         expectancy_r > 0 => [STAT_EDGE_POSITIVE]
+         expectancy_r < 0 => [STAT_EDGE_NEGATIVE]
+         expectancy_r == 0 => [] hoặc [STAT_EDGE_NOT_ENOUGH_DATA] nếu muốn bảo thủ, nhưng không được block.
+
+3. Output bắt buộc phải có các key:
+   - evidence_score
+   - sample_size
+   - confidence
+   - reason_codes
+   - warning_codes
+   - stats
+   - group_used
+
+4. Không được dùng evidence_score để đổi decision.
+
+5. Tạo test mới:
+   tests/test_statistical_edge_engine_calculate_edge_phase10.py
+
+6. Test case 1: thiếu mẫu
+   - Tạo 10 trades EURUSD buy có result_r hợp lệ.
+   - Kỳ vọng evidence_score = 50.
+   - sample_size = 10.
+   - confidence = low.
+   - warning_codes có STAT_EDGE_NOT_ENOUGH_DATA.
+
+7. Test case 2: đủ mẫu, edge dương
+   - Tạo 40 trades:
+     24 lệnh thắng +1.2R
+     16 lệnh thua -1.0R
+   - Expectancy dương.
+   - Kỳ vọng evidence_score > 50.
+   - reason_codes có STAT_EDGE_POSITIVE.
+
+8. Test case 3: đủ mẫu, edge âm
+   - Tạo 40 trades:
+     16 lệnh thắng +1.0R
+     24 lệnh thua -1.0R
+   - Expectancy âm.
+   - Kỳ vọng evidence_score < 50.
+   - reason_codes có STAT_EDGE_NEGATIVE.
+
+9. Test case 4: dữ liệu bẩn
+   - Có None, string lỗi, status open, result_r nan.
+   - Không crash.
+   - Chỉ tính lệnh hợp lệ.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_calculate_edge_phase10.py -q
+- Chạy tất cả test statistical edge hiện có:
+  python -m pytest tests/test_statistical_edge_engine_*_phase10.py -q
+
+Tiêu chí hoàn thành:
+- calculate_edge hoạt động độc lập.
+- Thiếu dữ liệu trả trung lập.
+- Dữ liệu đủ mẫu trả positive/negative hợp lý.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 7 — PHASE 10.7: THÊM NORMALIZE symbol/direction ĐỂ CHUẨN BỊ GROUP THEO symbol + direction
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Plan Phase 10 giai đoạn đầu gom thống kê theo symbol + direction. Dữ liệu thực tế có thể ghi EUR/USD, EURUSD, eurusd, Buy, BUY, Long. Cần helper normalize nhỏ để không lệch nhóm.
+
+Mục tiêu riêng của prompt này:
+Thêm normalize_symbol và normalize_direction, test riêng.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_normalize_phase10.py
+- Không sửa services.
+- Không sửa UI.
+- Không sửa analysis_engine.
+- Không sửa scanner.
+- Không sửa decision/gate.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def normalize_symbol(symbol) -> str | None:
+       ...
+
+2. Logic normalize_symbol:
+   - None hoặc rỗng => None.
+   - Strip khoảng trắng.
+   - Chuyển uppercase.
+   - Xóa ký tự '/', '-', '_', khoảng trắng.
+   - Ví dụ:
+     "EUR/USD" => "EURUSD"
+     " eurusd " => "EURUSD"
+     "GBP_JPY" => "GBPJPY"
+     "XAU-USD" => "XAUUSD"
+
+3. Thêm hàm:
+
+   def normalize_direction(direction) -> str | None:
+       ...
+
+4. Logic normalize_direction:
+   - None/rỗng => None.
+   - buy, BUY, long, LONG => "buy"
+   - sell, SELL, short, SHORT => "sell"
+   - giá trị lạ => None.
+
+5. Tạo test mới:
+   tests/test_statistical_edge_engine_normalize_phase10.py
+
+6. Test:
+   - normalize_symbol("EUR/USD") == "EURUSD"
+   - normalize_symbol(" gbp_jpy ") == "GBPJPY"
+   - normalize_symbol("XAU-USD") == "XAUUSD"
+   - normalize_direction("BUY") == "buy"
+   - normalize_direction("long") == "buy"
+   - normalize_direction("SELL") == "sell"
+   - normalize_direction("short") == "sell"
+   - normalize_direction("hold") is None
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_normalize_phase10.py -q
+- Chạy lại:
+  python -m pytest tests/test_statistical_edge_engine_calculate_edge_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Normalize ổn định.
+- Không phá calculate_edge.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 8 — PHASE 10.8: THÊM FILTER TRADES THEO symbol + direction
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Evidence score ban đầu cần gom theo symbol + direction. Prompt này chỉ thêm hàm filter, chưa chọn fallback group.
+
+Mục tiêu riêng của prompt này:
+Thêm filter_trades_by_symbol_direction(trades, symbol, direction).
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_filter_phase10.py
+- Không sửa journal_service.
+- Không sửa analysis_engine.
+- Không sửa UI.
+- Không sửa scanner.
+- Không sửa decision/gate.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def filter_trades_by_symbol_direction(
+       trades: list[dict],
+       symbol: str,
+       direction: str,
+   ) -> list[dict]:
+       ...
+
+2. Logic:
+   - Nếu trades không phải list => trả [].
+   - Normalize symbol input.
+   - Normalize direction input.
+   - Nếu symbol hoặc direction input không hợp lệ => trả [].
+   - Với từng trade:
+     + Lấy trade.get("symbol") hoặc trade.get("pair") nếu symbol không có.
+     + Lấy trade.get("direction") hoặc trade.get("side") nếu direction không có.
+     + Normalize rồi so sánh.
+   - Chỉ trả các trade đúng symbol và direction.
+   - Không thay đổi object trade gốc.
+
+3. Tạo test mới:
+   tests/test_statistical_edge_engine_filter_phase10.py
+
+4. Test dữ liệu giống thật:
+   trades = [
+       {"symbol":"EUR/USD", "direction":"BUY", "result_r":1.2},
+       {"symbol":"EURUSD", "direction":"sell", "result_r":-1.0},
+       {"symbol":"GBP/JPY", "direction":"buy", "result_r":0.8},
+       {"pair":"EUR_USD", "side":"long", "result_r":1.0},
+       {"symbol":"XAUUSD", "direction":"buy", "result_r":2.0},
+   ]
+
+5. Kỳ vọng:
+   filter_trades_by_symbol_direction(trades, "eurusd", "buy") trả 2 trade EURUSD buy/long.
+   filter_trades_by_symbol_direction(trades, "EUR/USD", "sell") trả 1 trade.
+   Input direction lạ trả [].
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_filter_phase10.py -q
+- Chạy lại:
+  python -m pytest tests/test_statistical_edge_engine_normalize_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Filter đúng symbol + direction.
+- Không mutate dữ liệu.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 9 — PHASE 10.9: THÊM GROUP THEO symbol + direction + regime NẾU CÓ DỮ LIỆU
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Plan Phase 10 có fallback logic:
+Nếu đủ mẫu symbol + direction + regime thì dùng nhóm đó.
+Nếu chưa đủ thì dùng symbol + direction.
+Nếu vẫn chưa đủ thì evidence_score trung lập 50.
+
+Mục tiêu riêng của prompt này:
+Thêm filter theo regime và hàm chọn nhóm, nhưng chưa tích hợp analysis_engine.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_grouping_phase10.py
+- Không sửa journal_service.
+- Không sửa analysis_engine.
+- Không sửa signal_engine.
+- Không sửa UI.
+- Không sửa decision/gate.
+
+Việc cần làm:
+1. Thêm hàm:
+
+   def normalize_regime(regime) -> str | None:
+       ...
+
+2. Logic normalize_regime:
+   - None/rỗng => None.
+   - lowercase, strip.
+   - Chấp nhận các regime phổ biến:
+     trending_up, trending_down, ranging, volatile, trend, range.
+   - Có thể map "range" => "ranging".
+   - Giá trị lạ vẫn có thể trả lowercase string nếu không rỗng để không mất dữ liệu, nhưng phải nhất quán.
+
+3. Thêm hàm:
+
+   def filter_trades_by_symbol_direction_regime(
+       trades: list[dict],
+       symbol: str,
+       direction: str,
+       regime: str,
+   ) -> list[dict]:
+       ...
+
+4. Logic:
+   - Dựa trên filter_trades_by_symbol_direction trước.
+   - Lấy trade.get("regime") hoặc trade.get("market_regime").
+   - Normalize rồi so sánh.
+
+5. Thêm hàm:
+
+   def select_evidence_group(
+       trades: list[dict],
+       symbol: str,
+       direction: str,
+       regime: str | None = None,
+       min_group_size: int = STRONG_SAMPLE_SIZE,
+   ) -> dict:
+       ...
+
+6. Logic select_evidence_group:
+   - Nếu có regime và nhóm symbol_direction_regime có sample hợp lệ >= min_group_size:
+       return {
+           "group_used": "symbol_direction_regime",
+           "trades": group_trades,
+           "sample_size": số result_r hợp lệ,
+       }
+   - Nếu nhóm symbol_direction có sample hợp lệ >= min_group_size:
+       return {
+           "group_used": "symbol_direction",
+           "trades": group_trades,
+           "sample_size": số result_r hợp lệ,
+       }
+   - Nếu không đủ:
+       return {
+           "group_used": None,
+           "trades": nhóm tốt nhất hiện có hoặc [],
+           "sample_size": số result_r hợp lệ tốt nhất,
+       }
+
+7. Lưu ý:
+   - sample_size phải tính bằng result_r hợp lệ đã đóng, không phải số dòng thô.
+   - Không được block vì thiếu dữ liệu.
+
+8. Tạo test mới:
+   tests/test_statistical_edge_engine_grouping_phase10.py
+
+9. Test case:
+   - Tạo 60 trades EURUSD buy ranging.
+   - Tạo 80 trades EURUSD buy trending_up.
+   - Tạo 20 trades GBPJPY buy ranging.
+   - Với input EUR/USD buy ranging => group_used = symbol_direction_regime.
+   - Với input EUR/USD buy volatile nhưng volatile không đủ => fallback symbol_direction.
+   - Với input GBPJPY buy ranging sample 20 < 50 => group_used None, sample_size 20.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_grouping_phase10.py -q
+- Chạy lại các test filter/normalize:
+  python -m pytest tests/test_statistical_edge_engine_filter_phase10.py tests/test_statistical_edge_engine_normalize_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Fallback group đúng.
+- Thiếu dữ liệu không crash, không block.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 10 — PHASE 10.10: THÊM API calculate_evidence_score CHO SYMBOL/DIRECTION/REGIME
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Sau khi có calculate_edge và select_evidence_group, cần API dễ dùng cho các phase sau:
+calculate_evidence_score(trades, symbol, direction, regime=None)
+
+Mục tiêu riêng của prompt này:
+Tạo API chính của Phase 10 nhưng vẫn chưa tích hợp vào final_score/decision.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa:
+  1. core/statistical_edge_engine.py
+  2. tests/test_statistical_edge_engine_api_phase10.py
+- Không sửa analysis_engine.
+- Không sửa signal_engine.
+- Không sửa decision_engine.
+- Không sửa scanner.
+- Không sửa UI.
+- Không sửa journal_service.
+
+Việc cần làm:
+1. Trong core/statistical_edge_engine.py, thêm hàm:
+
+   def calculate_evidence_score(
+       trades: list[dict],
+       symbol: str,
+       direction: str,
+       regime: str | None = None,
+   ) -> dict:
+       ...
+
+2. Logic:
+   - Gọi select_evidence_group(trades, symbol, direction, regime).
+   - Nếu group_used is None hoặc sample_size < STRONG_SAMPLE_SIZE:
+       + Vẫn có thể gọi calculate_edge trên nhóm tốt nhất hiện có để lấy stats.
+       + Nhưng evidence_score phải là 50.
+       + confidence = low.
+       + warning_codes có STAT_EDGE_NOT_ENOUGH_DATA.
+       + reason_codes có STAT_EDGE_NOT_ENOUGH_DATA.
+   - Nếu group đủ mẫu:
+       + Gọi calculate_edge(group_trades).
+       + Gắn group_used từ select_evidence_group vào output.
+       + Gắn normalized_symbol, normalized_direction, normalized_regime vào output.
+
+3. Output bắt buộc có key:
+   - evidence_score
+   - sample_size
+   - confidence
+   - reason_codes
+   - warning_codes
+   - stats
+   - group_used
+   - normalized_symbol
+   - normalized_direction
+   - normalized_regime
+
+4. Quy tắc an toàn:
+   - Không bao giờ raise exception ra ngoài với dữ liệu journal bẩn.
+   - Nếu input sai, trả neutral_evidence_result.
+   - Không bao giờ trả evidence_score > 50 khi sample_size không đủ STRONG_SAMPLE_SIZE trong API nhóm.
+
+5. Tạo test mới:
+   tests/test_statistical_edge_engine_api_phase10.py
+
+6. Test case 1: đủ symbol_direction_regime
+   - 60 trades EURUSD buy ranging, expectancy dương.
+   - Kỳ vọng group_used = symbol_direction_regime, evidence_score > 50.
+
+7. Test case 2: regime thiếu mẫu nhưng symbol_direction đủ
+   - 70 trades EURUSD buy tổng thể.
+   - Chỉ 10 trades volatile.
+   - Input regime volatile.
+   - Kỳ vọng fallback group_used = symbol_direction.
+
+8. Test case 3: không đủ mẫu
+   - 20 trades GBPJPY sell.
+   - Kỳ vọng evidence_score = 50, warning STAT_EDGE_NOT_ENOUGH_DATA.
+
+9. Test case 4: input symbol/direction sai
+   - symbol None hoặc direction "hold".
+   - Không crash, evidence_score = 50.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_api_phase10.py -q
+- Chạy toàn bộ Phase 10 statistical tests:
+  python -m pytest tests/test_statistical_edge_engine_*_phase10.py -q
+
+Tiêu chí hoàn thành:
+- API chính chạy ổn.
+- Fallback đúng.
+- Thiếu dữ liệu trung lập.
+- Không ảnh hưởng decision.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 11 — PHASE 10.11: THÊM TEST DỮ LIỆU GIỐNG JOURNAL THẬT CHO 5 SYMBOL
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+User yêu cầu sau khi code phải test kỹ bằng Python với dữ liệu giống thật. Prompt này chỉ tạo test realistic, không thêm logic mới nếu không cần.
+
+Mục tiêu riêng của prompt này:
+Tạo test dữ liệu gần thực tế cho EURUSD, GBPJPY, USDJPY, XAUUSD, AUDUSD để đảm bảo evidence_score ổn định.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. tests/test_statistical_edge_engine_realistic_phase10.py
+  2. core/statistical_edge_engine.py chỉ khi cần sửa bug nhỏ để test pass.
+- Không sửa analysis_engine.
+- Không sửa journal_service.
+- Không sửa UI.
+- Không sửa decision/gate.
+- Không chỉnh logic ngoài statistical_edge_engine.
+
+Việc cần làm:
+1. Tạo file test:
+   tests/test_statistical_edge_engine_realistic_phase10.py
+
+2. Trong test, tạo helper generate_trade:
+
+   def make_trade(symbol, direction, result_r, regime="ranging", status="closed", closed_at="2026-06-01T10:00:00"):
+       return {
+           "symbol": symbol,
+           "direction": direction,
+           "result_r": result_r,
+           "result_pct": result_r * 0.5,
+           "regime": regime,
+           "status": status,
+           "closed_at": closed_at,
+           "exit_reason": "tp" if result_r > 0 else "sl",
+           "actual_lot": 0.1,
+           "planned_lot": 0.1,
+           "m15_quality": "strict",
+       }
+
+3. Tạo dataset:
+   - EURUSD buy: 60 lệnh, edge dương nhẹ.
+   - GBPJPY sell: 60 lệnh, edge âm.
+   - USDJPY buy: 20 lệnh, thiếu mẫu.
+   - XAUUSD buy: có dữ liệu bẩn xen kẽ nhưng vẫn đủ một phần.
+   - AUDUSD sell: direction/symbol format lẫn AUD/USD, AUDUSD, short.
+
+4. Test kỳ vọng:
+   - EURUSD buy evidence_score > 50.
+   - GBPJPY sell evidence_score < 50.
+   - USDJPY buy evidence_score = 50 vì thiếu mẫu.
+   - AUDUSD sell normalize đúng và không crash.
+   - Lệnh open/pending không được tính.
+   - Dữ liệu None/NaN/string lỗi không làm crash.
+
+5. Test thêm invariant:
+   - evidence_score luôn từ 0 đến 100.
+   - output luôn có stats.
+   - output luôn có reason_codes và warning_codes dạng list.
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_realistic_phase10.py -q
+- Chạy toàn bộ Phase 10:
+  python -m pytest tests/test_statistical_edge_engine_*_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Test realistic pass.
+- Không cần MT5, không cần UI, không cần database thật.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 12 — PHASE 10.12: KIỂM TRA TƯƠNG THÍCH TOÀN BỘ TEST CŨ SAU KHI THÊM statistical_edge_engine
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 10 thêm module mới độc lập. Cần đảm bảo không làm hỏng các phase trước.
+
+Mục tiêu riêng của prompt này:
+Chạy test regression và chỉ sửa bug trực tiếp trong statistical_edge_engine nếu có. Không mở rộng tính năng.
+
+Yêu cầu rất quan trọng:
+- Chỉ được sửa core/statistical_edge_engine.py nếu test Phase 10 lỗi do chính module này.
+- Không sửa test cũ để né lỗi.
+- Không sửa signal_engine.py.
+- Không sửa entry_engine.py.
+- Không sửa trade_gate_engine.py.
+- Không sửa account_guard.py.
+- Không sửa analysis_engine.py.
+- Không sửa UI.
+- Không sửa scanner.
+- Không làm Phase 11/12/13.
+
+Việc cần làm:
+1. Chạy toàn bộ test Phase 10:
+   python -m pytest tests/test_statistical_edge_engine_*_phase10.py -q
+
+2. Chạy các test trọng yếu của phase trước nếu tồn tại:
+   python -m pytest tests/test_reason_codes_phase9.py -q
+   python -m pytest tests/test_entry_engine.py -q
+   python -m pytest tests/test_trade_gate_engine.py -q
+   python -m pytest tests/test_account_guard_phase7.py -q
+   python -m pytest tests/test_analysis_account_guard_integration_phase7.py -q
+
+3. Nếu test lỗi do import hoặc type hint không tương thích Python hiện tại:
+   - Sửa tối thiểu trong core/statistical_edge_engine.py.
+   - Không refactor.
+
+4. Nếu test lỗi do môi trường thiếu MT5/PyQt6:
+   - Không sửa code để né.
+   - Ghi rõ test nào bị skip/lỗi do môi trường.
+
+5. Không được thay đổi output các engine hiện tại.
+
+Tiêu chí hoàn thành:
+- Toàn bộ test Phase 10 pass.
+- Các test trọng yếu Phase 7–9 không bị ảnh hưởng.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 13 — PHASE 10.13: TẠO GHI CHÚ KỸ THUẬT NGẮN CHO statistical_edge_engine, KHÔNG TÍCH HỢP DECISION
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 10 hoàn thành module evidence score độc lập. Cần ghi chú ngắn để Phase 13 sau này biết cách dùng, nhưng tuyệt đối chưa được tự ý tích hợp vào final_score hoặc decision.
+
+Mục tiêu riêng của prompt này:
+Thêm docstring/comment kỹ thuật ngắn trong core/statistical_edge_engine.py và/hoặc docs nếu project đã có nơi phù hợp.
+
+Yêu cầu rất quan trọng:
+- Ưu tiên chỉ sửa core/statistical_edge_engine.py bằng docstring ở đầu file.
+- Chỉ được tạo docs/statistical_edge_phase10.md nếu project đang có thư mục docs và việc này không ảnh hưởng app.
+- Không sửa analysis_engine.
+- Không sửa signal_engine.
+- Không sửa decision_engine.
+- Không sửa scanner.
+- Không sửa UI.
+- Không đổi logic đã test.
+
+Nội dung ghi chú cần có:
+1. statistical_edge_engine dùng để tính evidence_score từ journal/backtest.
+2. evidence_score = 50 nghĩa là trung lập hoặc chưa đủ dữ liệu.
+3. Thiếu dữ liệu không được block setup.
+4. Phase 10 chưa dùng evidence_score để đổi decision.
+5. Phase 13 sau này mới kết hợp signal_score + evidence_score + execution_quality_score thành final_score.
+6. API chính:
+   - calculate_edge(trades)
+   - calculate_evidence_score(trades, symbol, direction, regime=None)
+
+Test bắt buộc:
+- Chạy:
+  python -m pytest tests/test_statistical_edge_engine_*_phase10.py -q
+
+Tiêu chí hoàn thành:
+- Ghi chú rõ ràng.
+- Không đổi hành vi.
+- Test Phase 10 vẫn pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 14 — PHASE 10.14: CHỐT PHASE 10, TỔNG KIỂM TRA VÀ BÁO CÁO
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Đây là prompt cuối cùng của Phase 10. Chỉ tổng kiểm tra, không thêm tính năng mới.
+
+Mục tiêu riêng của prompt này:
+Đảm bảo Phase 10 hoàn chỉnh, độc lập, không làm thay đổi decision hiện tại và sẵn sàng cho Phase 11/13 sau này.
+
+Yêu cầu rất quan trọng:
+- Không thêm logic mới nếu không có bug.
+- Không sửa UI.
+- Không sửa analysis_engine.
+- Không sửa signal_engine.
+- Không sửa entry_engine.
+- Không sửa trade_gate_engine.
+- Không sửa account_guard.
+- Không tạo final_score.
+- Không tích hợp evidence_score vào decision.
+- Chỉ sửa core/statistical_edge_engine.py nếu phát hiện bug trực tiếp từ test Phase 10.
+
+Checklist cần kiểm tra:
+1. Có file:
+   - core/statistical_edge_engine.py
+
+2. Có các hàm tối thiểu:
+   - neutral_evidence_result
+   - coerce_result_r
+   - extract_closed_trade_results
+   - calculate_trade_stats
+   - map_expectancy_to_score
+   - calculate_edge
+   - normalize_symbol
+   - normalize_direction
+   - normalize_regime
+   - filter_trades_by_symbol_direction
+   - filter_trades_by_symbol_direction_regime
+   - select_evidence_group
+   - calculate_evidence_score
+
+3. Output calculate_evidence_score có đủ key:
+   - evidence_score
+   - sample_size
+   - confidence
+   - reason_codes
+   - warning_codes
+   - stats
+   - group_used
+   - normalized_symbol
+   - normalized_direction
+   - normalized_regime
+
+4. Quy tắc an toàn:
+   - sample thiếu => evidence_score = 50.
+   - dữ liệu bẩn => không crash.
+   - evidence_score luôn 0–100.
+   - không block setup.
+   - không thay đổi decision.
+
+5. Chạy test:
+   python -m pytest tests/test_statistical_edge_engine_*_phase10.py -q
+
+6. Chạy thêm test liên quan nếu tồn tại:
+   python -m pytest tests/test_reason_codes_phase9.py tests/test_entry_engine.py tests/test_trade_gate_engine.py tests/test_account_guard_phase7.py -q
+
+7. Nếu có lỗi môi trường như thiếu MT5/PyQt6:
+   - Báo rõ là lỗi môi trường.
+   - Không sửa code business để né lỗi môi trường.
+
+Báo cáo cuối cùng cần ghi rõ:
+- Danh sách file đã tạo/sửa.
+- Danh sách test đã chạy.
+- Kết quả pass/fail.
+- Xác nhận chưa tích hợp evidence_score vào decision.
+- Xác nhận chưa làm Phase 11/12/13.
+
+Sau khi hoàn thành công việc trong prompt này, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+Vì đây là prompt cuối cùng của Phase 10, sau dòng trên phải báo thêm đúng câu:
+ĐÃ HOÀN THÀNH PHASE SỐ 10

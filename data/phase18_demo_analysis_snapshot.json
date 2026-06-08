@@ -1,0 +1,104 @@
+[
+  {
+    "symbol": "EUR/USD",
+    "buy_score": 46,
+    "sell_score": 39,
+    "best_score": 46,
+    "final_score": 55,
+    "decision_engine_decision": "WAITING_CONFIRMATION",
+    "decision_action": "stand_aside",
+    "trade_permission": "caution",
+    "gate_decision_cap": "WAITING_CONFIRMATION",
+    "score_gap": 7.0,
+    "scenario_count": 1,
+    "top_entry_status": "",
+    "top_expected_effective_rr": null,
+    "reason_codes": [],
+    "warning_codes": [
+      "BUY_SELL_SCORE_GAP_LOW"
+    ],
+    "block_codes": []
+  },
+  {
+    "symbol": "GBP/JPY",
+    "buy_score": 57,
+    "sell_score": 43,
+    "best_score": 57,
+    "final_score": 62,
+    "decision_engine_decision": "WATCH_ONLY",
+    "decision_action": "stand_aside",
+    "trade_permission": "caution",
+    "gate_decision_cap": "WATCH_ONLY",
+    "score_gap": 14.0,
+    "scenario_count": 1,
+    "top_entry_status": "waiting_confirmation",
+    "top_expected_effective_rr": 0.0,
+    "reason_codes": [],
+    "warning_codes": [
+      "EXPECTED_RR_TOO_LOW"
+    ],
+    "block_codes": []
+  },
+  {
+    "symbol": "USD/JPY",
+    "buy_score": 49,
+    "sell_score": 54,
+    "best_score": 54,
+    "final_score": 60,
+    "decision_engine_decision": "WATCH_ONLY",
+    "decision_action": "stand_aside",
+    "trade_permission": "caution",
+    "gate_decision_cap": "WATCH_ONLY",
+    "score_gap": 5.0,
+    "scenario_count": 1,
+    "top_entry_status": "watch_zone",
+    "top_expected_effective_rr": 0.0,
+    "reason_codes": [],
+    "warning_codes": [
+      "EXPECTED_RR_TOO_LOW",
+      "BUY_SELL_SCORE_GAP_LOW"
+    ],
+    "block_codes": []
+  },
+  {
+    "symbol": "XAU/USD",
+    "buy_score": 57,
+    "sell_score": 43,
+    "best_score": 57,
+    "final_score": 62,
+    "decision_engine_decision": "WATCH_ONLY",
+    "decision_action": "stand_aside",
+    "trade_permission": "caution",
+    "gate_decision_cap": "WATCH_ONLY",
+    "score_gap": 14.0,
+    "scenario_count": 1,
+    "top_entry_status": "waiting_confirmation",
+    "top_expected_effective_rr": 0.1406,
+    "reason_codes": [],
+    "warning_codes": [
+      "EXPECTED_RR_TOO_LOW"
+    ],
+    "block_codes": []
+  },
+  {
+    "symbol": "AUD/USD",
+    "buy_score": 49,
+    "sell_score": 54,
+    "best_score": 54,
+    "final_score": 60,
+    "decision_engine_decision": "WATCH_ONLY",
+    "decision_action": "stand_aside",
+    "trade_permission": "caution",
+    "gate_decision_cap": "WATCH_ONLY",
+    "score_gap": 5.0,
+    "scenario_count": 1,
+    "top_entry_status": "watch_zone",
+    "top_expected_effective_rr": 0.0,
+    "reason_codes": [],
+    "warning_codes": [
+      "EXPECTED_RR_TOO_LOW",
+      "BUY_SELL_SCORE_GAP_LOW"
+    ],
+    "block_codes": []
+  }
+]

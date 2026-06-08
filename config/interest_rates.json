@@ -1,0 +1,82 @@
+{
+  "_description": "Central bank interest rates for macro scoring. Update manually when rates change.",
+  "_last_updated": "2026-06-01",
+  "currencies": {
+    "USD": {
+      "central_bank": "Federal Reserve",
+      "rate": 5.50,
+      "rate_label": "5.25-5.50%",
+      "trend": "hold",
+      "next_decision": "",
+      "drivers": ["DXY", "UST 2Y", "UST 10Y", "Fed expectations"]
+    },
+    "EUR": {
+      "central_bank": "ECB",
+      "rate": 2.50,
+      "rate_label": "2.50%",
+      "trend": "cut",
+      "next_decision": "",
+      "drivers": ["ECB expectations", "Bund yield", "US-Germany yield spread"]
+    },
+    "GBP": {
+      "central_bank": "BOE",
+      "rate": 4.50,
+      "rate_label": "4.50%",
+      "trend": "cut",
+      "next_decision": "",
+      "drivers": ["BOE expectations", "UK CPI", "UK wage growth"]
+    },
+    "JPY": {
+      "central_bank": "BOJ",
+      "rate": 0.50,
+      "rate_label": "0.50%",
+      "trend": "hike",
+      "next_decision": "",
+      "drivers": ["BOJ expectations", "JGB yields", "US-Japan yield spread", "intervention risk"]
+    },
+    "AUD": {
+      "central_bank": "RBA",
+      "rate": 4.10,
+      "rate_label": "4.10%",
+      "trend": "hold",
+      "next_decision": "",
+      "drivers": ["RBA expectations", "Australia CPI", "China data", "iron ore"]
+    },
+    "NZD": {
+      "central_bank": "RBNZ",
+      "rate": 3.50,
+      "rate_label": "3.50%",
+      "trend": "cut",
+      "next_decision": "",
+      "drivers": ["RBNZ expectations", "New Zealand CPI", "Global Dairy Trade"]
+    },
+    "CAD": {
+      "central_bank": "BOC",
+      "rate": 2.75,
+      "rate_label": "2.75%",
+      "trend": "cut",
+      "next_decision": "",
+      "drivers": ["BOC expectations", "Canada CPI", "WTI Oil"]
+    },
+    "CHF": {
+      "central_bank": "SNB",
+      "rate": 0.25,
+      "rate_label": "0.25%",
+      "trend": "cut",
+      "next_decision": "",
+      "drivers": ["SNB expectations", "safe haven demand", "Swiss CPI"]
+    }
+  },
+  "rate_trend_score": {
+    "hike": 4,
+    "hold": 2,
+    "cut": 0
+  },
+  "high_impact_event_whitelist": [
+    "CPI", "Core CPI", "PCE", "Core PCE", "NFP", "Nonfarm Payrolls", "Non-Farm",
+    "FOMC", "Federal Funds Rate", "Interest Rate Decision",
+    "ECB", "BOE", "BOJ", "RBA", "RBNZ", "BOC", "SNB",
+    "GDP", "Unemployment", "Retail Sales", "PMI", "ISM",
+    "Wage", "Employment", "Payroll"
+  ]
+}

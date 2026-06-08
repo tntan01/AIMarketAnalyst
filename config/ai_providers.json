@@ -1,0 +1,33 @@
+{
+  "providers": [
+    {
+      "provider": "DeepSeek",
+      "models": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ]
+    },
+    {
+      "provider": "OpenAI",
+      "models": [
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "o4-mini"
+      ]
+    },
+    {
+      "provider": "Anthropic",
+      "models": [
+        "claude-3-5-haiku-latest",
+        "claude-3-5-sonnet-latest"
+      ]
+    },
+    {
+      "provider": "Gemini",
+      "models": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro"
+      ]
+    }
+  ]
+}

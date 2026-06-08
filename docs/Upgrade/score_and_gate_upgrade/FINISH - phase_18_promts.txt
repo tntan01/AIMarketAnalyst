@@ -1,0 +1,867 @@
+PROMPT 1 — PHASE 18.1: KIỂM TRA TRẠNG THÁI SAU PHASE 17 VÀ KHÓA PHẠM VI PHASE 18
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh chung:
+Hệ thống đã hoàn thành Phase 17: migration/journal plan đã được triển khai. Bây giờ bắt đầu Phase 18: giai đoạn chốt toàn bộ upgrade scoring/gate.
+
+Mục tiêu Phase 18:
+Không thêm feature lớn mới. Phase 18 là giai đoạn kiểm tra cuối, chạy demo, so sánh before/after, regression, kiểm tra packaging/migration và viết báo cáo hoàn tất upgrade.
+
+Theo plan Phase 18:
+1. Chạy demo với 5 symbol.
+2. So sánh before/after.
+3. Xác nhận toàn bộ hệ thống đã chuyển từ “cộng điểm rồi quyết định” sang “score + gate + evidence + execution + decision engine + scanner ranking”.
+
+Nguyên tắc cực kỳ quan trọng:
+- KHÔNG thêm feature mới.
+- KHÔNG refactor lớn.
+- KHÔNG sửa scoring/gate/decision/scanner/journal nếu không có bug rõ ràng từ test.
+- KHÔNG sửa UI nếu không có prompt riêng.
+- KHÔNG sửa database/migration nếu không có lỗi migration rõ ràng.
+- KHÔNG gọi MT5 thật nếu test có thể dùng dữ liệu fake.
+- KHÔNG gọi AI/news/network trong demo core.
+- Nếu lỗi do môi trường thiếu PyQt6/MT5/network thì phân loại rõ, không sửa bừa.
+
+Mục tiêu riêng của prompt này:
+Chỉ kiểm tra trạng thái file, module và test sau Phase 17. Chưa sửa code app.
+
+Yêu cầu rất quan trọng:
+- Chỉ được đọc code và tạo test/checklist audit nhỏ nếu cần.
+- Không sửa core/.
+- Không sửa services/.
+- Không sửa ui/.
+- Không sửa controllers/.
+- Không sửa data/migrations/.
+
+Việc cần làm:
+1. Kiểm tra các module trọng tâm có tồn tại:
+   - core/reason_codes.py
+   - core/trade_gate_engine.py
+   - core/account_guard.py
+   - core/statistical_edge_engine.py
+   - core/execution_quality_engine.py
+   - core/trade_mistake_detector.py
+   - core/final_score_engine.py
+   - core/decision_engine.py
+   - core/scanner_ranking_engine.py
+   - core/scanner.py
+   - services/journal_service.py
+
+2. Kiểm tra migrations:
+   - data/migrations/001_create_journal.sql
+   - data/migrations/002_add_account_guard_fields.sql
+   - data/migrations/003_add_journal_execution_fields.sql nếu Phase 17 đã tạo.
+
+3. Kiểm tra prompt files:
+   - FINISH - phase_13_promts.txt
+   - FINISH - phase_14_promts.txt
+   - FINISH - phase_15_promts.txt
+   - FINISH - phase_16_promts.txt
+   - UNFINISH hoặc FINISH phase_17_promts.
+
+4. Tạo test audit nếu cần:
+   tests/test_phase18_upgrade_surface_audit.py
+
+5. Test audit chỉ import module, không gọi MT5/AI/network/UI:
+   - import core.final_score_engine
+   - import core.decision_engine
+   - import core.scanner_ranking_engine
+   - import core.trade_mistake_detector
+   - import core.execution_quality_engine
+   - import services.journal_service
+
+6. Test audit cũng assert migration 003 tồn tại nếu Phase 17 đã hoàn thành.
+
+Chạy:
+python -m pytest tests/test_phase18_upgrade_surface_audit.py -q
+
+Tiêu chí hoàn thành:
+- Xác nhận bề mặt upgrade đầy đủ.
+- Không sửa app code.
+- Không gọi external dependencies.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 2 — PHASE 18.2: TẠO FIXTURE DỮ LIỆU DEMO 5 SYMBOL GIỐNG THẬT, KHÔNG GỌI MT5
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 18 cần chạy demo với 5 symbol, nhưng không được phụ thuộc MT5 thật. Cần dữ liệu candle fake nhưng giống thật để test analyze_symbol và scanner pipeline.
+
+Mục tiêu riêng của prompt này:
+Tạo test/helper demo data cho 5 symbol:
+- EUR/USD
+- GBP/JPY
+- USD/JPY
+- XAU/USD
+- AUD/USD
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. tests/test_phase18_demo_data_fixtures.py
+  2. tests/phase18_demo_helpers.py nếu muốn tách helper.
+- Không sửa core/.
+- Không sửa services/.
+- Không sửa UI/controller.
+- Không gọi MT5/network/AI.
+
+Việc cần làm:
+1. Tạo helper build_demo_candles(count, start_price, drift, volatility, start_time=None):
+   - Dùng core.market_models.Candle.
+   - time tăng đều, timezone UTC.
+   - open/high/low/close có biến động nhẹ.
+   - high >= max(open, close).
+   - low <= min(open, close).
+   - ATR không bằng 0.
+
+2. Tạo helper build_demo_candles_by_timeframe(symbol):
+   - Trả dict:
+     {
+       "D1": list[Candle] ít nhất 120 nến,
+       "H4": list[Candle] ít nhất 120 nến,
+       "H1": list[Candle] ít nhất 80 nến,
+     }
+   - Mỗi symbol có start_price realistic:
+     EUR/USD khoảng 1.08.
+     GBP/JPY khoảng 190.
+     USD/JPY khoảng 155.
+     XAU/USD khoảng 2300.
+     AUD/USD khoảng 0.66.
+   - Drift khác nhau để tạo tình huống đa dạng:
+     EUR/USD tăng nhẹ.
+     GBP/JPY biến động/range.
+     USD/JPY giảm nhẹ.
+     XAU/USD volatile.
+     AUD/USD yếu.
+
+3. Tạo helper build_demo_analysis_input(symbol):
+   - Dùng core.risk_engine.AnalysisInput.
+   - broker_symbol bỏ slash, ví dụ EURUSD.
+   - account_balance 10000.
+   - risk_percent 1.0.
+   - XAU/USD contract_size_override=100 nếu cần.
+
+4. Tạo helper build_demo_data_quality(symbol):
+   - terminal_connected True.
+   - broker_logged_in True.
+   - spread_status normal mặc định.
+   - news_in_3h False.
+   - high_impact_event_within_30m False.
+   - broker_symbol.
+   - price_source MT5 Demo/Fake.
+
+5. Test:
+   - 5 symbols có đủ candles D1/H4/H1.
+   - Mỗi timeframe đủ số nến.
+   - Candle high/low hợp lệ.
+   - AnalysisInput tạo được.
+   - Không import PyQt6, không import MetaTrader5.
+
+Chạy:
+python -m pytest tests/test_phase18_demo_data_fixtures.py -q
+
+Tiêu chí hoàn thành:
+- Có dữ liệu demo 5 symbol ổn định.
+- Không phụ thuộc external environment.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 3 — PHASE 18.3: CHẠY DEMO ANALYSIS CORE VỚI 5 SYMBOL VÀ LƯU SNAPSHOT JSON
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Đã có demo fixture 5 symbol. Bây giờ chạy core.analysis_engine.analyze_symbol với dữ liệu fake giống thật và lưu snapshot JSON để so sánh/kiểm tra.
+
+Mục tiêu riêng của prompt này:
+Tạo script/test chạy demo core analysis cho 5 symbol, không gọi MT5/AI/news.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. scripts/phase18_run_demo_analysis.py
+  2. tests/test_phase18_demo_analysis_snapshot.py
+  3. tests/phase18_demo_helpers.py nếu helper cần chỉnh nhỏ.
+- Không sửa core/analysis_engine.py trừ bug cực nhỏ rõ ràng do test phát hiện.
+- Không sửa services.
+- Không gọi MT5/network/AI.
+
+Việc cần làm:
+1. Tạo script:
+   scripts/phase18_run_demo_analysis.py
+
+2. Script:
+   - Import helper từ tests/phase18_demo_helpers.py hoặc định nghĩa helper riêng trong script nếu cần.
+   - Chạy analyze_symbol cho 5 symbol.
+   - Với mỗi result, lấy snapshot rút gọn:
+     {
+       "symbol": ...,
+       "buy_score": ...,
+       "sell_score": ...,
+       "best_score": ...,
+       "final_score": ...,
+       "decision_engine_decision": ...,
+       "decision_action": ...,
+       "trade_permission": ...,
+       "gate_decision_cap": ...,
+       "score_gap": ...,
+       "scenario_count": ...,
+       "top_entry_status": ...,
+       "top_expected_effective_rr": ...,
+       "reason_codes": ...,
+       "warning_codes": ...,
+       "block_codes": ...,
+     }
+   - Ghi file:
+     data/phase18_demo_analysis_snapshot.json
+   - Tạo thư mục data nếu cần.
+   - Không ghi API key, không ghi dữ liệu nhạy cảm.
+
+3. Script phải có main guard:
+   if __name__ == "__main__":
+       main()
+
+4. Tạo test:
+   tests/test_phase18_demo_analysis_snapshot.py
+
+5. Test:
+   - Gọi function main hoặc helper run_demo_analysis(output_path=tmp_path/...).
+   - Assert output JSON tồn tại.
+   - Assert có 5 symbol.
+   - Mỗi row có final_score và decision_engine_decision.
+   - final_score trong 0-100.
+   - buy_score/sell_score tồn tại.
+   - Không crash.
+
+6. Không assert quyết định cụ thể vì candle fake có thể hơi thay đổi.
+
+Chạy:
+python -m pytest tests/test_phase18_demo_analysis_snapshot.py -q
+python scripts/phase18_run_demo_analysis.py
+
+Tiêu chí hoàn thành:
+- Demo 5 symbol chạy được bằng dữ liệu fake.
+- Snapshot JSON được tạo.
+- Không gọi external dependencies.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 4 — PHASE 18.4: CHẠY DEMO SCANNER PIPELINE TỪ SNAPSHOT ANALYSIS SANG RANKING
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 18 đã có analysis demo snapshot. Cần chạy scanner pipeline core: scanner_row_from_analysis -> sort_scanner_rows -> build_scanner_output, không gọi controller/MT5.
+
+Mục tiêu riêng của prompt này:
+Tạo script/test demo scanner core với 5 symbol và lưu snapshot scanner.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. scripts/phase18_run_demo_scanner.py
+  2. tests/test_phase18_demo_scanner_snapshot.py
+  3. scripts/phase18_run_demo_analysis.py nếu cần reuse helper nhỏ.
+- Không sửa core/scanner.py trừ bug nhỏ rõ ràng.
+- Không sửa scanner_controller.py.
+- Không sửa UI.
+- Không gọi MT5/AI/network.
+
+Việc cần làm:
+1. Tạo script:
+   scripts/phase18_run_demo_scanner.py
+
+2. Script:
+   - Có thể gọi helper run_demo_analysis() từ script phase18_run_demo_analysis để lấy analysis_results trong memory.
+   - Tạo row cho mỗi result bằng core.scanner.scanner_row_from_analysis(result, broker_symbol=...).
+   - sort_scanner_rows(rows).
+   - build_scanner_output(rows, ScannerRequest(...), ai_called=0).
+   - Ghi snapshot rút gọn:
+     data/phase18_demo_scanner_snapshot.json
+
+3. Snapshot row rút gọn gồm:
+   - rank
+   - symbol
+   - broker_symbol
+   - scanner_group
+   - scanner_action
+   - scanner_decision
+   - best_side
+   - buy_score
+   - sell_score
+   - best_score
+   - final_score
+   - opportunity_score
+   - trade_permission
+   - entry_status
+   - m15_quality
+   - expected_effective_rr
+   - risk_reward
+   - score_gap
+   - ranking_reason_codes
+   - ranking_warning_codes
+   - ranking_penalty_codes
+
+4. Không đưa full analysis_result vào snapshot để file gọn.
+
+5. Tạo test:
+   tests/test_phase18_demo_scanner_snapshot.py
+
+6. Test:
+   - Gọi run_demo_scanner(output_path=temp).
+   - Assert output có rows.
+   - Có đúng 5 rows.
+   - Mỗi row có rank, symbol, opportunity_score, scanner_group.
+   - Rank là 1..5.
+   - Blocked group nếu có không đứng trước ready/wait group nếu dữ liệu tạo ra nhóm đó.
+   - Không crash.
+
+7. Chạy:
+python -m pytest tests/test_phase18_demo_scanner_snapshot.py -q
+python scripts/phase18_run_demo_scanner.py
+
+Tiêu chí hoàn thành:
+- Scanner demo core chạy được.
+- Snapshot scanner có ranking fields.
+- Không gọi MT5/AI/network.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 5 — PHASE 18.5: TẠO SCRIPT SO SÁNH BEFORE/AFTER SCORING SNAPSHOT
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Plan Phase 18 yêu cầu so sánh before/after. Có thể có before_scoring_upgrade_snapshot.json hoặc không. Cần script so sánh an toàn: nếu không có before thì vẫn tạo báo cáo “không có baseline”.
+
+Mục tiêu riêng của prompt này:
+Tạo script compare snapshot và test với dữ liệu fake.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. scripts/phase18_compare_before_after.py
+  2. tests/test_phase18_compare_before_after.py
+- Không sửa core app.
+- Không sửa snapshot demo khác trừ khi test cần.
+
+Việc cần làm:
+1. Tạo script:
+   scripts/phase18_compare_before_after.py
+
+2. Hàm chính:
+   def compare_snapshots(before_path: Path, after_path: Path, output_path: Path) -> dict:
+       ...
+
+3. Input:
+   - before snapshot có thể là list rows hoặc dict {"rows": [...]}
+   - after snapshot có thể là scanner snapshot hoặc analysis snapshot.
+
+4. So sánh theo symbol:
+   - before_buy_score
+   - after_buy_score
+   - before_sell_score
+   - after_sell_score
+   - before_best_score
+   - after_best_score
+   - after_final_score
+   - after_opportunity_score
+   - before_decision/action nếu có
+   - after_decision/action nếu có
+   - score_delta
+   - notes
+
+5. Nếu before_path không tồn tại:
+   - Không crash.
+   - Tạo report:
+     {
+       "baseline_available": false,
+       "message": "Không tìm thấy before snapshot, chỉ ghi after snapshot summary.",
+       "after_count": ...
+     }
+
+6. Nếu after_path không tồn tại:
+   - Raise RuntimeError rõ ràng hoặc trả report lỗi? Chọn RuntimeError vì after là bắt buộc.
+
+7. Ghi output:
+   data/phase18_before_after_report.json
+
+8. Tạo test:
+   tests/test_phase18_compare_before_after.py
+
+9. Test:
+   - before fake có EUR/USD best_score 70.
+   - after fake có EUR/USD best_score 80 final_score 75 opportunity 90.
+   - compare report có score_delta=10.
+   - Missing before không crash.
+   - Missing after raise RuntimeError hoặc exception rõ ràng.
+
+Chạy:
+python -m pytest tests/test_phase18_compare_before_after.py -q
+python scripts/phase18_compare_before_after.py
+
+Tiêu chí hoàn thành:
+- Có script so sánh before/after.
+- Không crash khi thiếu before.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 6 — PHASE 18.6: DEMO JOURNAL WORKFLOW SAU UPGRADE VỚI SNAPSHOT 5 SYMBOL
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Sau Phase 17, journal có migration field mới. Phase 18 cần demo save analysis/scanner vào journal temp db, update outcome và list closed trades.
+
+Mục tiêu riêng của prompt này:
+Tạo test/demo journal workflow với dữ liệu Phase 18, không đụng DB thật của user.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. scripts/phase18_demo_journal_workflow.py
+  2. tests/test_phase18_demo_journal_workflow.py
+- Không sửa services/journal_service.py trừ bug nhỏ rõ ràng.
+- Không dùng DB thật.
+- Không gọi MT5/AI/network.
+
+Việc cần làm:
+1. Tạo script:
+   scripts/phase18_demo_journal_workflow.py
+
+2. Script:
+   - Tạo temp hoặc data/phase18_demo_journal.db? Khuyến nghị:
+     + Trong test dùng tmp_path.
+     + Khi chạy script thật, ghi data/phase18_demo_journal.db.
+   - Chạy demo analysis cho 5 symbol hoặc load snapshot từ script Phase 18.3.
+   - Tạo JournalService(db_path=demo_db).
+   - Save ít nhất 2 analysis vào journal bằng create_from_analysis.
+   - Update outcome cho 1 entry:
+     result_r=1.2, result_pct=1.0, closed_at ISO, exit_reason manual_close/take_profit,
+     actual_entry, actual_exit, actual_lot, auto_mistake_tags, execution_quality_score.
+   - Gọi list_closed_trades_for_account_guard.
+   - Ghi report:
+     data/phase18_demo_journal_report.json
+
+3. Report gồm:
+   - entries_created
+   - closed_trades_count
+   - has_phase17_fields
+   - sample_closed_trade_keys
+   - db_path
+
+4. Tạo test:
+   tests/test_phase18_demo_journal_workflow.py
+
+5. Test:
+   - Gọi run_demo_journal_workflow(db_path=tmp_path/db, output_path=tmp/report).
+   - Assert report tồn tại.
+   - entries_created >= 2.
+   - closed_trades_count >= 1.
+   - sample_closed_trade_keys có result_r, planned_entry/actual_entry nếu Phase 17 hỗ trợ.
+   - Không dùng DB thật.
+
+Chạy:
+python -m pytest tests/test_phase18_demo_journal_workflow.py -q
+python scripts/phase18_demo_journal_workflow.py
+
+Tiêu chí hoàn thành:
+- Journal workflow demo chạy được.
+- Không đụng DB thật.
+- Migration và fields mới hoạt động.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 7 — PHASE 18.7: TẠO BÁO CÁO UPGRADE COMPLETION REPORT DẠNG MARKDOWN
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Phase 18 cần báo cáo hoàn tất upgrade scoring/gate để người dùng đọc nhanh: đã làm gì, test gì, còn rủi ro gì.
+
+Mục tiêu riêng của prompt này:
+Tạo script generate report markdown từ các snapshot/report Phase 18.
+
+Yêu cầu rất quan trọng:
+- Chỉ được tạo/sửa:
+  1. scripts/phase18_generate_upgrade_report.py
+  2. tests/test_phase18_generate_upgrade_report.py
+  3. docs/Upgrade/score_and_gate_upgrade/phase18_upgrade_completion_report.md chỉ là output.
+- Không sửa app code.
+- Không sửa core/services/UI.
+
+Việc cần làm:
+1. Tạo script:
+   scripts/phase18_generate_upgrade_report.py
+
+2. Script đọc nếu có:
+   - data/phase18_demo_analysis_snapshot.json
+   - data/phase18_demo_scanner_snapshot.json
+   - data/phase18_before_after_report.json
+   - data/phase18_demo_journal_report.json
+
+3. Nếu file nào thiếu:
+   - Không crash.
+   - Ghi vào report là “Chưa có snapshot ...”.
+
+4. Ghi markdown:
+   docs/Upgrade/score_and_gate_upgrade/phase18_upgrade_completion_report.md
+
+5. Nội dung report tiếng Việt:
+   - Tiêu đề.
+   - Ngày tạo report.
+   - Tóm tắt mục tiêu upgrade.
+   - Các module chính đã có:
+     + reason_codes
+     + trade_gate_engine
+     + account_guard
+     + statistical_edge_engine
+     + execution_quality_engine
+     + trade_mistake_detector
+     + final_score_engine
+     + decision_engine
+     + scanner_ranking_engine
+     + journal migration
+   - Demo 5 symbol: bảng symbol/final_score/decision/opportunity nếu có.
+   - Scanner ranking summary nếu có.
+   - Journal demo summary nếu có.
+   - Before/after summary nếu có.
+   - Test đã chạy hoặc cần chạy.
+   - Rủi ro còn lại:
+     + chưa có walk-forward real market.
+     + macro/news vẫn phụ thuộc nguồn ngoài.
+     + MT5/live broker cần test riêng.
+   - Kết luận: score không tự quyết định vào lệnh, gate/decision kiểm soát.
+
+6. Tạo test:
+   tests/test_phase18_generate_upgrade_report.py
+
+7. Test:
+   - Tạo temp snapshot fake.
+   - Gọi generate_report(...).
+   - Assert markdown tồn tại.
+   - Nội dung có:
+     + "Báo cáo hoàn tất"
+     + "final_score"
+     + "decision_engine"
+     + "scanner_ranking"
+     + "score không tự quyết định"
+
+Chạy:
+python -m pytest tests/test_phase18_generate_upgrade_report.py -q
+python scripts/phase18_generate_upgrade_report.py
+
+Tiêu chí hoàn thành:
+- Có report markdown tiếng Việt.
+- Missing snapshot không crash.
+- Test pass.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 8 — PHASE 18.8: KIỂM TRA PACKAGING/MIGRATION/ASSET KHÔNG BỊ BỎ SÓT
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Sau upgrade có migration mới và nhiều module core mới. Packaging Windows phải include migrations/assets cần thiết.
+
+Mục tiêu riêng của prompt này:
+Rà soát packaging ở mức test/audit, chỉ sửa packaging nếu rõ ràng bỏ sót migration.
+
+Yêu cầu rất quan trọng:
+- Ưu tiên chỉ đọc và test.
+- Chỉ được sửa nếu thật sự cần:
+  1. packaging/pyinstaller.spec
+  2. packaging/build_windows.ps1
+  3. packaging/installer_notes.md
+  4. tests/test_phase18_packaging_audit.py
+- Không sửa core/services/UI.
+- Không chạy build package nặng.
+
+Việc cần làm:
+1. Tạo test:
+   tests/test_phase18_packaging_audit.py
+
+2. Test kiểm tra:
+   - data/migrations/001_create_journal.sql tồn tại.
+   - data/migrations/002_add_account_guard_fields.sql tồn tại.
+   - data/migrations/003_add_journal_execution_fields.sql tồn tại nếu Phase 17 tạo.
+   - packaging/pyinstaller.spec tồn tại.
+   - packaging/build_windows.ps1 tồn tại.
+
+3. Đọc packaging/pyinstaller.spec:
+   - Assert nội dung có "data" hoặc "migrations" nếu spec include data.
+   - Nếu spec hiện chưa include migrations nhưng build script include, test có thể chấp nhận build script.
+   - Nếu cả hai không include migrations, sửa tối thiểu packaging để include data/migrations.
+
+4. Không chạy pyinstaller.
+
+5. Chạy:
+python -m pytest tests/test_phase18_packaging_audit.py -q
+
+Tiêu chí hoàn thành:
+- Migration không bị bỏ sót packaging.
+- Không build nặng.
+- Không sửa ngoài packaging/test.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 9 — PHASE 18.9: CHẠY FOCUSED REGRESSION CHO PHASE 13-18
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Sau khi tạo demo/report, cần chạy focused regression cho các phase nâng cấp cuối: 13 final score, 14 decision, 15 scanner ranking, 16 tests, 17 journal migration, 18 demo.
+
+Mục tiêu riêng của prompt này:
+Chạy các test trọng tâm, sửa bug nhỏ nếu rõ ràng do phase hiện tại.
+
+Yêu cầu rất quan trọng:
+- Không thêm feature mới.
+- Không refactor.
+- Không sửa code nếu lỗi do môi trường thiếu PyQt6/MT5/network.
+- Chỉ sửa bug nhỏ trong module liên quan nếu test chứng minh rõ.
+
+Việc cần làm:
+1. Chạy:
+   python -m pytest tests/test_final_score_engine_*_phase13.py tests/test_phase13_final_score_realistic.py -q
+
+2. Chạy:
+   python -m pytest tests/test_decision_engine_*_phase14.py tests/test_phase14_decision_engine_realistic.py -q
+
+3. Chạy:
+   python -m pytest tests/test_scanner_ranking_engine_*_phase15.py tests/test_phase15_scanner_ranking_realistic.py tests/test_scanner.py -q
+
+4. Chạy:
+   python -m pytest tests/test_phase16_*.py -q
+
+5. Chạy:
+   python -m pytest tests/test_phase17_*.py -q
+
+6. Chạy:
+   python -m pytest tests/test_phase18_*.py -q
+
+7. Nếu test fail:
+   - Đọc kỹ lỗi.
+   - Nếu lỗi test path/glob trên PowerShell, chạy từng nhóm file hiện có.
+   - Nếu bug code rõ, sửa tối thiểu.
+   - Không thay đổi expected behavior bừa.
+
+8. Ghi kết quả chạy vào report nếu đã có script/report:
+   - Có thể cập nhật phase18_upgrade_completion_report.md bằng tay hoặc script nếu prompt trước hỗ trợ.
+   - Nếu không hỗ trợ, chỉ ghi trong câu trả lời.
+
+Tiêu chí hoàn thành:
+- Focused regression pass hoặc lỗi môi trường được phân loại rõ.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 10 — PHASE 18.10: CHẠY FULL PYTEST NẾU MÔI TRƯỜNG CHO PHÉP VÀ PHÂN LOẠI LỖI
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Focused regression đã chạy. Cần thử full pytest nếu môi trường cho phép để phát hiện tương tác bất ngờ.
+
+Mục tiêu riêng của prompt này:
+Chạy full regression hoặc fallback focused regression, phân loại lỗi.
+
+Yêu cầu rất quan trọng:
+- Không thêm feature mới.
+- Không refactor.
+- Không sửa code nếu lỗi do môi trường.
+- Không sửa tests cũ bừa để full test pass.
+- Chỉ sửa bug rõ ràng nếu liên quan upgrade.
+
+Việc cần làm:
+1. Chạy:
+   python -m pytest -q
+
+2. Nếu full pytest quá lâu hoặc fail do môi trường:
+   - Ghi rõ nhóm lỗi:
+     + PyQt6/QWebEngine thiếu.
+     + MetaTrader5 thiếu.
+     + network/news/yfinance.
+     + test integration external.
+   - Chạy fallback:
+     python -m pytest tests/test_phase18_*.py tests/test_phase17_*.py tests/test_phase16_*.py -q
+     python -m pytest tests/test_final_score_engine_*_phase13.py tests/test_decision_engine_*_phase14.py tests/test_scanner_ranking_engine_*_phase15.py -q
+
+3. Nếu lỗi code rõ ràng:
+   - Sửa tối thiểu.
+   - Chạy lại test liên quan.
+
+4. Không tạo feature mới.
+
+Tiêu chí hoàn thành:
+- Có kết quả full regression hoặc fallback regression.
+- Lỗi môi trường được phân loại rõ.
+- Không sửa ngoài phạm vi.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 11 — PHASE 18.11: ĐỔI TÊN FILE PROMPT UNFINISH THÀNH FINISH SAU KHI XÁC NHẬN HOÀN TẤT
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Các phase trước thường có file prompt FINISH/UNFINISH trong docs/Upgrade/score_and_gate_upgrade. Sau khi Phase 18 gần hoàn tất, cần rà soát trạng thái file prompt.
+
+Mục tiêu riêng của prompt này:
+Chỉ đổi tên file prompt từ UNFINISH sang FINISH nếu phase tương ứng đã thực sự hoàn thành. Không sửa code app.
+
+Yêu cầu rất quan trọng:
+- Không sửa core/.
+- Không sửa services/.
+- Không sửa UI/controller.
+- Không sửa migration.
+- Chỉ được thao tác file trong:
+  docs/Upgrade/score_and_gate_upgrade/
+- Chỉ đổi tên UNFINISH -> FINISH nếu chắc chắn user/phase đã hoàn thành.
+
+Việc cần làm:
+1. Liệt kê file:
+   docs/Upgrade/score_and_gate_upgrade/
+
+2. Nếu Phase 17 đã được user xác nhận hoàn thành, đổi:
+   UNFINISH - phase_17_promts.txt
+   thành:
+   FINISH - phase_17_promts.txt
+
+3. Không đổi Phase 18 sang FINISH trong prompt này nếu Phase 18 chưa hoàn tất. Phase 18 chỉ đổi ở prompt cuối.
+
+4. Nếu file FINISH tương ứng đã tồn tại:
+   - Không overwrite.
+   - Báo rõ.
+
+5. Tạo test audit nhỏ nếu cần:
+   tests/test_phase18_prompt_files_status.py
+
+6. Test:
+   - Assert FINISH - phase_17_promts.txt tồn tại nếu đã đổi.
+   - Assert UNFINISH - phase_18_promts.txt vẫn tồn tại trước prompt cuối.
+
+Chạy:
+python -m pytest tests/test_phase18_prompt_files_status.py -q
+nếu tạo test.
+
+Tiêu chí hoàn thành:
+- File prompt phase status rõ ràng.
+- Không sửa app code.
+
+Sau khi hoàn thành, báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+
+================================================================================
+
+PROMPT 12 — PHASE 18.12: RÀ SOÁT CUỐI VÀ BÁO HOÀN THÀNH TOÀN BỘ UPGRADE SCORING/GATE
+
+Bạn đang làm trong project ai-market-analyst-v2.0 trên VSCode.
+
+Bối cảnh:
+Đây là prompt cuối Phase 18 và cũng là prompt cuối của toàn bộ upgrade scoring/gate.
+
+Mục tiêu riêng của prompt này:
+Rà soát cuối, xác nhận demo/test/report đã hoàn thành, đổi file Phase 18 sang FINISH nếu đúng, và báo hoàn tất.
+
+Yêu cầu rất quan trọng:
+- Không thêm feature mới.
+- Không refactor.
+- Không sửa scoring/gate/decision/scanner/journal nếu không có lỗi import/test rất nhỏ.
+- Không sửa database.
+- Không sửa UI.
+- Chỉ sửa file prompt status và report nếu cần.
+
+Checklist cần kiểm tra:
+1. Có các module:
+   - core/trade_gate_engine.py
+   - core/account_guard.py
+   - core/statistical_edge_engine.py
+   - core/execution_quality_engine.py
+   - core/trade_mistake_detector.py
+   - core/final_score_engine.py
+   - core/decision_engine.py
+   - core/scanner_ranking_engine.py
+
+2. Có migration journal Phase 17:
+   - data/migrations/003_add_journal_execution_fields.sql nếu Phase 17 đã tạo.
+
+3. Có snapshot/report Phase 18 nếu prompt trước đã chạy:
+   - data/phase18_demo_analysis_snapshot.json
+   - data/phase18_demo_scanner_snapshot.json
+   - data/phase18_before_after_report.json hoặc report missing baseline.
+   - data/phase18_demo_journal_report.json
+   - docs/Upgrade/score_and_gate_upgrade/phase18_upgrade_completion_report.md
+
+4. Chạy test bắt buộc:
+   python -m pytest tests/test_phase18_*.py -q
+
+5. Chạy focused regression:
+   python -m pytest tests/test_phase17_*.py tests/test_phase16_*.py -q
+   python -m pytest tests/test_final_score_engine_*_phase13.py tests/test_decision_engine_*_phase14.py tests/test_scanner_ranking_engine_*_phase15.py -q
+
+6. Nếu đủ thời gian, chạy:
+   python -m pytest -q
+   Nếu fail do môi trường, ghi rõ.
+
+7. Nếu Phase 18 đã hoàn tất:
+   - Đổi file:
+     UNFINISH - phase_18_promts.txt
+     thành:
+     FINISH - phase_18_promts.txt
+   - Chỉ đổi nếu file FINISH chưa tồn tại.
+
+8. Báo cáo cuối cần nêu:
+   - Demo 5 symbol đã chạy hay chưa.
+   - Scanner demo đã chạy hay chưa.
+   - Journal demo đã chạy hay chưa.
+   - Before/after có baseline hay không.
+   - Test nào pass.
+   - Lỗi môi trường nếu có.
+   - Kết luận: upgrade scoring/gate hoàn tất.
+
+Sau khi hoàn thành prompt cuối cùng, bắt buộc báo đúng 2 câu sau:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+ĐÃ HOÀN THÀNH PHASE SỐ 18

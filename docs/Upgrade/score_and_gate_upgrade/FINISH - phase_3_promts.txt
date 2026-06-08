@@ -1,0 +1,648 @@
+PROMPTS CHO DEEPSEEK_V4_PRO — PHASE 3
+FOREX SCORING SYSTEM UPGRADE
+============================================================
+
+GHI CHÚ CHUNG
+============================================================
+
+File này chứa các prompt nhỏ để thực hiện PHASE 3 — THÊM score_gap GIỮA BUY VÀ SELL.
+
+Ngôn ngữ: Tiếng Việt có dấu đầy đủ.
+Mục tiêu Phase 3:
+- Tính khoảng cách điểm giữa Buy và Sell.
+- Nếu Buy/Sell quá sát điểm nhau thì không cho hệ thống READY_TO_TRADE.
+- Kết nối score_gap với Trade Gate đã làm ở Phase 2.
+- Không sửa lan sang các phase khác.
+
+Bối cảnh hiện tại:
+- Phase 1 đã xong: score đã có `signal_score`, có thể vẫn giữ `total` để backward compatibility.
+- Phase 2 đã xong: đã có `core/trade_gate_engine.py` và output `trade_gate` trong `analysis_engine.py`.
+- Phase 3 chỉ tập trung vào `score_gap`.
+
+Triết lý:
+- Nếu Buy và Sell sát điểm nhau, nghĩa là thị trường chưa rõ hướng.
+- Không được để app báo READY chỉ vì best_score cao trong khi phe đối diện cũng cao gần tương đương.
+- score_gap là dữ liệu dùng cho Gate, Decision Summary, UI/Scanner sau này.
+- Không thay đổi hệ thống scoring gốc ngoài việc thêm `score_gap`.
+
+Khuyến nghị sử dụng:
+- Chạy lần lượt Prompt 1 → Prompt 2 → Prompt 3.
+- Không đưa cả 3 prompt cùng lúc nếu muốn hạn chế lỗi.
+- Mỗi prompt làm xong phải test trước khi sang prompt tiếp theo.
+- Sau khi hoàn thành tất cả các prompt, Deepseek_v4_pro phải báo cáo đúng câu:
+  ĐÃ HOÀN THÀNH TASK
+
+============================================================
+PROMPT 1 — THÊM HÀM TÍNH score_gap ĐỘC LẬP VÀ TEST RIÊNG
+============================================================
+
+Bạn đang làm việc trên project Python/PyQt6 AI Market Analyst v2.0 trong VSCode.
+
+Nhiệm vụ lần này CHỈ làm Phase 3: thêm score_gap giữa BUY và SELL.
+
+Yêu cầu cực kỳ quan trọng:
+- CHỈ sửa/tạo file liên quan trực tiếp đến việc tính score_gap.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa thuật toán scoring hiện có.
+- KHÔNG thay đổi trọng số scoring.
+- KHÔNG sửa macro weight.
+- KHÔNG sửa SMC.
+- KHÔNG sửa risk engine.
+- KHÔNG sửa entry engine.
+- KHÔNG implement Phase 4, 5, 6, 7 hoặc các phase sau.
+- KHÔNG refactor lan rộng.
+- Sau khi code xong phải tự kiểm tra lại code thật cẩn thận để tránh bug.
+
+Mục tiêu:
+Tạo helper tính direction bias và score_gap dựa trên điểm Buy/Sell.
+
+Ưu tiên thêm vào file:
+`core/signal_engine.py`
+
+Nhưng phải làm theo cách ít ảnh hưởng nhất:
+- Không đổi hàm scoring cũ nếu không cần.
+- Không làm thay đổi output cũ của `score_scenario()` ngoài những gì Phase 1 đã làm.
+- Chỉ thêm helper mới.
+
+Thêm hàm mới:
+
+```python
+def calculate_direction_bias(buy_result: dict, sell_result: dict, min_gap: float = 10.0) -> dict:
+    ...
+```
+
+Hàm này nhận:
+- `buy_result`: dict điểm của BUY, ưu tiên lấy `signal_score`, fallback sang `total`.
+- `sell_result`: dict điểm của SELL, ưu tiên lấy `signal_score`, fallback sang `total`.
+- `min_gap`: ngưỡng tối thiểu để coi hướng là rõ ràng, mặc định 10.0.
+
+Output bắt buộc:
+
+```python
+{
+    "best_side": "buy" hoặc "sell" hoặc "neutral",
+    "buy_score": float,
+    "sell_score": float,
+    "score_gap": float,
+    "is_clear_bias": bool,
+    "min_gap": float,
+}
+```
+
+Logic yêu cầu:
+
+1. Lấy điểm an toàn:
+
+```python
+buy_score = float(buy_result.get("signal_score", buy_result.get("total", 0)) or 0)
+sell_score = float(sell_result.get("signal_score", sell_result.get("total", 0)) or 0)
+```
+
+2. Tính gap:
+
+```python
+score_gap = abs(buy_score - sell_score)
+```
+
+3. Xác định best_side:
+
+```python
+if buy_score > sell_score:
+    best_side = "buy"
+elif sell_score > buy_score:
+    best_side = "sell"
+else:
+    best_side = "neutral"
+```
+
+4. Xác định is_clear_bias:
+
+```python
+is_clear_bias = score_gap >= min_gap
+```
+
+5. Nếu hai điểm bằng nhau thì:
+```python
+best_side = "neutral"
+is_clear_bias = False
+score_gap = 0
+```
+
+Yêu cầu an toàn:
+- Không được raise exception nếu input thiếu key.
+- Không được crash nếu `buy_result` hoặc `sell_result` là None. Trong trường hợp đó coi như dict rỗng.
+- Không thay đổi hàm `best_side()` cũ nếu app đang dùng, trừ khi thật sự cần. Nếu cần thì chỉ sửa tối thiểu và phải giữ backward compatibility.
+
+Viết test mới:
+
+Tạo file:
+`tests/test_score_gap.py`
+
+Test tối thiểu:
+
+1. Buy rõ ràng:
+```python
+buy = {"signal_score": 82}
+sell = {"signal_score": 65}
+```
+Kỳ vọng:
+```python
+best_side == "buy"
+score_gap == 17
+is_clear_bias is True
+```
+
+2. Sell rõ ràng:
+```python
+buy = {"signal_score": 60}
+sell = {"signal_score": 78}
+```
+Kỳ vọng:
+```python
+best_side == "sell"
+score_gap == 18
+is_clear_bias is True
+```
+
+3. Buy/Sell sát nhau:
+```python
+buy = {"signal_score": 80}
+sell = {"signal_score": 77}
+```
+Kỳ vọng:
+```python
+best_side == "buy"
+score_gap == 3
+is_clear_bias is False
+```
+
+4. Điểm bằng nhau:
+```python
+buy = {"signal_score": 70}
+sell = {"signal_score": 70}
+```
+Kỳ vọng:
+```python
+best_side == "neutral"
+score_gap == 0
+is_clear_bias is False
+```
+
+5. Fallback sang total:
+```python
+buy = {"total": 76}
+sell = {"total": 61}
+```
+Kỳ vọng:
+```python
+best_side == "buy"
+score_gap == 15
+is_clear_bias is True
+```
+
+6. Input thiếu key:
+```python
+buy = {}
+sell = {}
+```
+Kỳ vọng:
+```python
+best_side == "neutral"
+buy_score == 0
+sell_score == 0
+score_gap == 0
+is_clear_bias is False
+```
+
+7. Input None:
+```python
+buy = None
+sell = None
+```
+Kỳ vọng không crash và output neutral.
+
+Sau khi code xong, chạy:
+
+```bash
+pytest -q tests/test_score_gap.py
+```
+
+Sau đó chạy regression liên quan:
+
+```bash
+pytest -q tests/test_signal_engine.py
+pytest -q tests/test_trade_gate_engine.py
+```
+
+Nếu test cũ lỗi do môi trường thiếu MT5/PyQt6 thì không sửa lan man.
+Nếu lỗi do code vừa sửa thì sửa đúng chỗ gây lỗi.
+
+Sau khi hoàn thành prompt này, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. Test đã chạy.
+3. Test pass/fail.
+4. Xác nhận không sửa phần ngoài phạm vi Phase 3 Prompt 1.
+
+Chưa được báo “ĐÃ HOÀN THÀNH TASK” sau Prompt 1, vì còn Prompt 2 và Prompt 3.
+
+============================================================
+PROMPT 2 — TÍCH HỢP score_gap VÀO analysis_engine.py VÀ TRADE GATE
+============================================================
+
+Bạn đang tiếp tục Phase 3 của project AI Market Analyst v2.0.
+
+Điều kiện:
+- Phase 1 đã xong: score có `signal_score`.
+- Phase 2 đã xong: có `core/trade_gate_engine.py` và output `trade_gate`.
+- Prompt 1 của Phase 3 đã xong: có helper `calculate_direction_bias(...)`.
+
+Nhiệm vụ lần này:
+Tích hợp `score_gap` vào `core/analysis_engine.py` để:
+1. Output phân tích có direction_bias.
+2. Trade Gate nhận được score_gap.
+3. Nếu score_gap thấp thì không cho decision_action là `ready`.
+
+Yêu cầu cực kỳ quan trọng:
+- CHỈ sửa file cần thiết cho tích hợp score_gap.
+- Ưu tiên chỉ sửa:
+  - `core/analysis_engine.py`
+  - test liên quan.
+- KHÔNG sửa UI.
+- KHÔNG sửa scanner.
+- KHÔNG sửa thuật toán scoring.
+- KHÔNG đổi trọng số scoring.
+- KHÔNG sửa macro.
+- KHÔNG sửa SMC.
+- KHÔNG sửa risk.
+- KHÔNG sửa entry engine.
+- KHÔNG implement Phase 4, 5, 6, 7 hoặc các phase sau.
+- Không đổi decision state sang kiểu mới. Phase 14 mới làm decision engine riêng.
+- Phải giữ backward compatibility với output cũ.
+
+Mục tiêu kỹ thuật:
+
+Trong `core/analysis_engine.py`, sau khi đã có `scores` hoặc đã có `buy_result`, `sell_result`, hãy tính:
+
+```python
+from core.signal_engine import calculate_direction_bias
+
+direction_bias = calculate_direction_bias(
+    buy_result,
+    sell_result,
+    min_gap=settings.get("min_buy_sell_score_gap", 10) nếu settings có sẵn,
+)
+```
+
+Nếu trong `analysis_engine.py` chưa có `settings`, dùng mặc định 10:
+
+```python
+direction_bias = calculate_direction_bias(buy_result, sell_result, min_gap=10)
+```
+
+Lưu ý:
+- Không tự thêm settings mới ở Prompt này nếu hệ thống chưa có cơ chế settings phù hợp.
+- Nếu có settings dict sẵn và an toàn thì có thể dùng.
+- Không sửa file settings nếu không bắt buộc.
+
+Thêm vào result chính:
+
+```python
+"direction_bias": direction_bias
+```
+
+Đồng thời thêm vào `decision_summary`:
+
+```python
+"best_side": direction_bias.get("best_side"),
+"score_gap": direction_bias.get("score_gap"),
+"is_clear_bias": direction_bias.get("is_clear_bias"),
+"min_score_gap": direction_bias.get("min_gap"),
+```
+
+Tích hợp với Trade Gate:
+
+Khi tạo `gate_context`, truyền thêm:
+
+```python
+"score_gap": direction_bias.get("score_gap"),
+"min_buy_sell_score_gap": direction_bias.get("min_gap", 10),
+```
+
+Yêu cầu quan trọng:
+- Gate Phase 2 đã có logic:
+```python
+if score_gap is not None and score_gap < min_buy_sell_score_gap:
+    warning_codes.append("BUY_SELL_SCORE_GAP_LOW")
+    decision_cap = "WAITING_CONFIRMATION"
+```
+- Không viết lại logic gate trong `analysis_engine.py`.
+- `analysis_engine.py` chỉ truyền dữ liệu cho gate và áp dụng cap như Phase 2 đã làm.
+
+Áp dụng cap:
+Nếu `trade_gate["decision_cap"] == "WAITING_CONFIRMATION"` và decision cũ là `ready`, thì decision cuối phải là:
+
+```python
+decision_action = "wait_for_confirmation"
+```
+
+Nếu Phase 2 đã có đoạn này thì chỉ đảm bảo nó hoạt động với score_gap, không viết trùng nhiều nơi.
+
+Yêu cầu output:
+Khi Buy/Sell sát nhau, ví dụ Buy 80 Sell 77:
+- `direction_bias["score_gap"] == 3`
+- `direction_bias["is_clear_bias"] is False`
+- `trade_gate["warning_codes"]` có `"BUY_SELL_SCORE_GAP_LOW"`
+- `trade_gate["decision_cap"] == "WAITING_CONFIRMATION"`
+- `decision_summary["action"] != "ready"`
+
+Yêu cầu test:
+
+Tạo hoặc cập nhật file:
+`tests/test_analysis_score_gap_integration.py`
+
+Test nên dùng monkeypatch để tránh phải dựng toàn bộ thị trường phức tạp.
+
+Test 1 — score_gap rõ ràng, không cap:
+Giả lập:
+```python
+buy_result = {"signal_score": 82}
+sell_result = {"signal_score": 65}
+```
+Kỳ vọng:
+```python
+result["direction_bias"]["best_side"] == "buy"
+result["direction_bias"]["score_gap"] == 17
+result["direction_bias"]["is_clear_bias"] is True
+"BUY_SELL_SCORE_GAP_LOW" not in result["trade_gate"]["warning_codes"]
+```
+
+Test 2 — score_gap thấp, gate cap:
+Giả lập:
+```python
+buy_result = {"signal_score": 80}
+sell_result = {"signal_score": 77}
+```
+Kỳ vọng:
+```python
+result["direction_bias"]["best_side"] == "buy"
+result["direction_bias"]["score_gap"] == 3
+result["direction_bias"]["is_clear_bias"] is False
+"BUY_SELL_SCORE_GAP_LOW" in result["trade_gate"]["warning_codes"]
+result["trade_gate"]["decision_cap"] == "WAITING_CONFIRMATION"
+result["decision_summary"]["action"] != "ready"
+```
+
+Test 3 — sell rõ ràng:
+```python
+buy_result = {"signal_score": 61}
+sell_result = {"signal_score": 79}
+```
+Kỳ vọng:
+```python
+best_side == "sell"
+score_gap == 18
+is_clear_bias is True
+```
+
+Test 4 — điểm bằng nhau:
+```python
+buy_result = {"signal_score": 70}
+sell_result = {"signal_score": 70}
+```
+Kỳ vọng:
+```python
+best_side == "neutral"
+score_gap == 0
+is_clear_bias is False
+"BUY_SELL_SCORE_GAP_LOW" in warning_codes
+decision_summary["action"] != "ready"
+```
+
+Nếu khó monkeypatch trực tiếp `score_scenario`, có thể monkeypatch hàm hoặc đoạn trả scores trong `analysis_engine.py` theo cấu trúc hiện tại của project.
+Tuyệt đối không sửa production code chỉ để test dễ hơn.
+
+Sau khi code xong, chạy:
+
+```bash
+pytest -q tests/test_score_gap.py
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_analysis_score_gap_integration.py
+```
+
+Sau đó chạy regression:
+
+```bash
+pytest -q tests/test_signal_engine.py tests/test_single_analysis.py tests/test_risk_engine.py tests/test_entry_engine.py
+```
+
+Nếu có lỗi do thiếu PyQt6/MT5 thì không sửa lan man.
+Nếu lỗi do Phase 3 thì sửa đúng chỗ.
+
+Sau khi hoàn thành prompt này, báo cáo ngắn:
+1. File đã sửa/tạo.
+2. Test đã chạy.
+3. Test pass/fail.
+4. Xác nhận không sửa UI/scanner/macro/SMC/risk/entry.
+5. Chưa báo “ĐÃ HOÀN THÀNH TASK” vì còn Prompt 3 kiểm tra dữ liệu giống thật.
+
+============================================================
+PROMPT 3 — TEST DỮ LIỆU GIỐNG THẬT VÀ RÀ SOÁT TOÀN BỘ PHASE 3
+============================================================
+
+Bạn đang hoàn thiện Phase 3 của project AI Market Analyst v2.0.
+
+Nhiệm vụ lần này:
+- Không thêm tính năng mới.
+- Không refactor.
+- Không sửa UI.
+- Không sửa scanner.
+- Không sửa macro.
+- Không sửa SMC.
+- Không sửa risk.
+- Không sửa entry engine.
+- Chỉ kiểm tra, test dữ liệu giống thật và sửa bug nhỏ nếu bug do Phase 3 gây ra.
+
+Mục tiêu:
+Rà soát toàn bộ Phase 3:
+1. Helper `calculate_direction_bias(...)`.
+2. Output `direction_bias` trong `analysis_engine.py`.
+3. `score_gap` được truyền vào `trade_gate`.
+4. Gate cap đúng khi Buy/Sell sát điểm.
+5. Không làm thay đổi scoring gốc.
+
+Yêu cầu kiểm tra code thủ công:
+- Mở lại `core/signal_engine.py`.
+- Kiểm tra helper `calculate_direction_bias(...)`:
+  - Không phụ thuộc PyQt6.
+  - Không phụ thuộc MT5.
+  - Không phụ thuộc service.
+  - Không crash nếu input None.
+  - Ưu tiên `signal_score`, fallback `total`.
+  - Không làm thay đổi output của `score_scenario()`.
+- Mở lại `core/analysis_engine.py`.
+- Kiểm tra:
+  - Có output `"direction_bias"`.
+  - Có truyền `score_gap` vào `gate_context`.
+  - Có thêm score_gap vào `decision_summary`.
+  - Không đổi state UI sang state mới.
+- Mở lại `core/trade_gate_engine.py`.
+- Kiểm tra:
+  - Gate `BUY_SELL_SCORE_GAP_LOW` vẫn là warning/cap mềm.
+  - Không block cứng tài khoản vì score_gap thấp.
+  - Cap đúng là `"WAITING_CONFIRMATION"`.
+
+Viết hoặc cập nhật test dữ liệu giống thật:
+
+Tạo file:
+`tests/test_phase3_score_gap_realistic.py`
+
+Mục tiêu test:
+Không cần test chính xác tín hiệu kỹ thuật từng indicator.
+Chỉ cần đảm bảo khi phân tích với dữ liệu giống thật:
+- result có `direction_bias`.
+- result có `score_gap`.
+- trade_gate nhận score_gap.
+- score_gap thấp thì không READY.
+
+Gợi ý tạo dữ liệu nến giả giống thật:
+
+```python
+from datetime import datetime, timedelta, timezone
+from core.market_models import Candle
+
+def make_trending_candles(count=120, start_price=1.0800, step=0.00025):
+    candles = []
+    t = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    price = start_price
+
+    for i in range(count):
+        open_ = price
+        close = price + step
+        high = max(open_, close) + 0.00015
+        low = min(open_, close) - 0.00015
+        candles.append(Candle(
+            time=t + timedelta(hours=i),
+            open=open_,
+            high=high,
+            low=low,
+            close=close,
+            volume=1000 + i,
+        ))
+        price = close
+
+    return candles
+
+
+def make_ranging_candles(count=120, base_price=1.0800):
+    candles = []
+    t = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    for i in range(count):
+        offset = 0.0005 if i % 2 == 0 else -0.0005
+        open_ = base_price
+        close = base_price + offset
+        high = max(open_, close) + 0.0002
+        low = min(open_, close) - 0.0002
+        candles.append(Candle(
+            time=t + timedelta(hours=i),
+            open=open_,
+            high=high,
+            low=low,
+            close=close,
+            volume=1000 + i,
+        ))
+
+    return candles
+```
+
+Nếu constructor `Candle` khác field, kiểm tra `core/market_models.py` và sửa test cho đúng.
+Không sửa model chỉ để test.
+
+Test 1 — output có direction_bias:
+Gọi `analyze_symbol(...)` với dữ liệu trending giả.
+Kỳ vọng:
+
+```python
+assert "direction_bias" in result
+assert "score_gap" in result["direction_bias"]
+assert "is_clear_bias" in result["direction_bias"]
+assert "best_side" in result["direction_bias"]
+```
+
+Test 2 — decision_summary có score_gap:
+Kỳ vọng:
+
+```python
+assert "score_gap" in result["decision_summary"]
+assert "is_clear_bias" in result["decision_summary"]
+```
+
+Test 3 — gate nhận score_gap thấp:
+Nếu khó ép score tự nhiên sát nhau, dùng monkeypatch score kết quả:
+```python
+buy_result = {"signal_score": 80}
+sell_result = {"signal_score": 77}
+```
+
+Kỳ vọng:
+
+```python
+assert result["direction_bias"]["score_gap"] == 3
+assert result["direction_bias"]["is_clear_bias"] is False
+assert "BUY_SELL_SCORE_GAP_LOW" in result["trade_gate"]["warning_codes"]
+assert result["trade_gate"]["decision_cap"] == "WAITING_CONFIRMATION"
+assert result["decision_summary"]["action"] != "ready"
+```
+
+Test 4 — clear gap không sinh warning:
+```python
+buy_result = {"signal_score": 83}
+sell_result = {"signal_score": 62}
+```
+
+Kỳ vọng:
+
+```python
+assert result["direction_bias"]["score_gap"] == 21
+assert result["direction_bias"]["is_clear_bias"] is True
+assert "BUY_SELL_SCORE_GAP_LOW" not in result["trade_gate"]["warning_codes"]
+```
+
+Chạy test:
+
+```bash
+pytest -q tests/test_score_gap.py
+pytest -q tests/test_trade_gate_engine.py
+pytest -q tests/test_analysis_score_gap_integration.py
+pytest -q tests/test_phase3_score_gap_realistic.py
+```
+
+Chạy regression:
+
+```bash
+pytest -q tests/test_signal_engine.py tests/test_single_analysis.py tests/test_risk_engine.py tests/test_entry_engine.py tests/test_scanner.py
+```
+
+Nếu lỗi do thiếu PyQt6/MT5:
+- Không sửa code project để né lỗi.
+- Ghi rõ test nào không chạy được do thiếu dependency.
+
+Nếu lỗi do Phase 3:
+- Sửa đúng chỗ gây lỗi.
+- Không sửa lan sang module khác.
+
+Yêu cầu báo cáo cuối cùng sau khi hoàn thành toàn bộ Phase 3:
+Báo cáo ngắn gồm:
+1. File đã sửa/tạo.
+2. Test đã chạy.
+3. Test pass/fail.
+4. Nếu fail thì lý do.
+5. Xác nhận không sửa phần ngoài phạm vi Phase 3.
+6. Cuối báo cáo bắt buộc ghi đúng dòng:
+
+ĐÃ HOÀN THÀNH TASK
+
+============================================================
+KẾT THÚC FILE PROMPT PHASE 3
+============================================================

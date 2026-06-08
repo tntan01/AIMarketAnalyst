@@ -1,0 +1,11 @@
+PyQt6>=6.7
+PyQt6-WebEngine>=6.7
+MetaTrader5>=5.0
+pandas>=2.2
+numpy>=1.26
+requests>=2.32
+python-dotenv>=1.0
+keyring>=25.0
+pytest>=8.0
+pyinstaller>=6.0
+yfinance>=0.2

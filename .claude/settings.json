@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(python *)",
+      "Bash(pytest *)",
+      "Bash(npm test*)",
+      "Bash(npm run *)",
+      "Bash(pip install *)"
+    ],
+    "ask": [
+      "Bash(git commit*)",
+      "Bash(git push*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(format *)",
+      "Bash(del *)",
+      "Bash(rmdir *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Read(./.env)",
+      "Read(./secrets/**)"
+    ]
+  }
+}

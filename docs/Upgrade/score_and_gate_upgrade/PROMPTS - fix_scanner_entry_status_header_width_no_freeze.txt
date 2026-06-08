@@ -1,0 +1,319 @@
+PROMPTS FIX UI: Header cột “Trạng thái entry” bị lẹm, chỉ chỉnh độ rộng cột, không làm freeze column
+
+Mục tiêu tổng thể:
+- Trên màn hình “Quét thị trường”, bảng “Bảng kết quả quét” có cột “Trạng thái entry”.
+- Header “Trạng thái entry” đang bị lẹm/cắt mất chữ đầu hoặc không hiển thị đủ do độ rộng cột chưa đủ.
+- Cần sửa bằng cách tăng width/min-width riêng cho cột entry_status hoặc điều chỉnh cơ chế tính width/padding hiện có.
+- Không triển khai freeze column kiểu Excel trong phạm vi này.
+- Lý do không làm freeze column: với QTableView/PyQt thường cần view phụ/overlay đồng bộ scroll, selection, row height, sort/filter và style; chi phí cao, dễ phát sinh lỗi. Hiện tại chỉ cần fix lẹm header bằng width/min-width là đúng phạm vi.
+- Không thay đổi scoring, ranking, scanner core, decision, gate, dữ liệu row.
+
+=========================================================================================================
+PROMPT 1: Khảo sát cơ chế resize cột hiện tại và xác định vì sao header “Trạng thái entry” bị lẹm
+
+Bạn là Deepseek_v4_pro đang lập trình trong VSCode tại repo ai-market-analyst-v2.0.
+
+Vấn đề:
+- Trong bảng “Bảng kết quả quét”, header cột “Trạng thái entry” bị lẹm/cắt chữ như ảnh người dùng.
+- Cần sửa để header hiển thị đầy đủ.
+- Người dùng có hỏi freeze cột như Excel, nhưng quyết định chốt là KHÔNG làm freeze trong scope này. Chỉ fix độ rộng cột.
+
+Hãy khảo sát thật kỹ trước khi sửa:
+1. Mở và đọc các file:
+   - ui/screens/scanner_screen.py
+   - tests/test_scanner.py
+   - tests/test_scanner_screen_columns_phase15.py
+   - scripts/check_scanner_entry_status_vietnamese_display.py nếu có
+   - các script render/check scanner table layout nếu có trong scripts/.
+2. Trong ui/screens/scanner_screen.py, tìm và đọc kỹ:
+   - ScannerTableModel.COLUMNS
+   - key "entry_status" và label hiện tại “Trạng thái entry”
+   - ScannerScreen.TABLE_CELL_HORIZONTAL_PADDING
+   - ScannerScreen.TABLE_EXTRA_COLUMN_PADDING
+   - ScannerScreen._configure_table_columns()
+   - ScannerScreen._content_width_for_column()
+   - bất kỳ chỗ nào gọi header.resizeSection(), setSectionResizeMode(), setMinimumSectionSize(), horizontalHeader().
+3. Xác định index hiện tại của cột entry_status bằng code, không hard-code bằng mắt:
+   - column_keys = [key for key, _ in ScannerTableModel.COLUMNS]
+   - entry_status_col = column_keys.index("entry_status")
+4. Xác định nguyên nhân có thể:
+   - Padding cột entry_status chưa đủ.
+   - Header font bold/nặng hơn fontMetrics được dùng hoặc style padding trong QHeaderView làm text bị thiếu.
+   - Header text “Trạng thái entry” dài hơn “Entry status”, nhưng cột chưa có extra padding/min-width riêng.
+   - QHeaderView có border/padding khiến horizontalAdvance(header_text) + padding hiện tại vẫn thiếu.
+5. Không sửa ở prompt này, chỉ ghi lại phương án sửa.
+
+Phạm vi được phép sửa ở prompt sau:
+- ui/screens/scanner_screen.py
+- tests/scripts liên quan trực tiếp đến scanner table column width/header.
+
+Phạm vi cấm sửa:
+- Không làm freeze column/locked column/sticky column.
+- Không tạo thêm QTableView phụ để freeze cột.
+- Không sửa core/analysis_engine.py.
+- Không sửa core/scanner.py.
+- Không sửa core/scanner_ranking_engine.py.
+- Không sửa core/entry_engine.py.
+- Không sửa decision/gate/scoring.
+- Không đổi thứ tự cột.
+- Không đổi text các cột khác.
+- Không sửa progress bar, danh sách mã, nút “Xem chi tiết”, “Lưu snapshot”.
+
+Kết quả cần báo:
+- Nguyên nhân có khả năng cao.
+- Cột entry_status đang ở index nào.
+- Chỗ nên sửa cụ thể.
+- Test/script dự kiến để đảm bảo header không bị lẹm.
+
+Sau khi hoàn thành prompt này, bắt buộc báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+=========================================================================================================
+PROMPT 2: Sửa width/min-width riêng cho cột “Trạng thái entry” để header không bị lẹm
+
+Bạn là Deepseek_v4_pro đang lập trình trong VSCode tại repo ai-market-analyst-v2.0.
+
+Dựa trên khảo sát ở prompt trước, hãy sửa phần resize cột của bảng scanner.
+
+Mục tiêu:
+- Header “Trạng thái entry” phải hiển thị đầy đủ, không bị cắt chữ đầu/cuối.
+- Nội dung trong cột vẫn hiển thị tiếng Việt ngắn như:
+  - Sẵn sàng
+  - Chờ xác nhận
+  - Theo dõi vùng
+  - Vô hiệu
+  - Thiếu dữ liệu
+- Không làm bảng mất scroll ngang.
+- Không làm cột này rộng quá mức.
+
+Yêu cầu kỹ thuật:
+1. Không hard-code index cột entry_status bằng số nếu có thể tránh.
+   - Nên tạo helper hoặc dict dựa trên key:
+     column_keys = [key for key, _ in self.table_model.COLUMNS]
+     entry_status_col = column_keys.index("entry_status")
+   - Nếu cần dùng dict cấu hình theo key thì càng tốt.
+2. Ưu tiên tận dụng cơ chế hiện có:
+   - TABLE_EXTRA_COLUMN_PADDING
+   - _content_width_for_column()
+   - _configure_table_columns()
+3. Có thể thêm min width riêng cho cột entry_status, ví dụ:
+   - 150px hoặc 160px, tùy font thực tế.
+   - Width cuối cùng nên là max(content_width, min_width).
+4. Nếu hiện code dùng TABLE_EXTRA_COLUMN_PADDING theo index, cần tránh index dễ sai khi thứ tự cột thay đổi.
+   - Có thể thêm một cấu hình mới theo key, ví dụ:
+     TABLE_MIN_COLUMN_WIDTHS_BY_KEY = {"entry_status": 150}
+     TABLE_EXTRA_COLUMN_PADDING_BY_KEY = {"entry_status": 32}
+   - Hoặc nếu muốn sửa ít nhất, vẫn có thể thêm index đúng vào TABLE_EXTRA_COLUMN_PADDING, nhưng phải đảm bảo test phát hiện nếu index sai.
+5. _content_width_for_column() cần tính được header text + padding đủ rộng.
+6. Nếu sửa _content_width_for_column(), không làm ảnh hưởng cột “Lý do chính” và các cột khác.
+
+Ràng buộc cực quan trọng:
+- Không triển khai freeze column.
+- Không thêm table view phụ.
+- Không override paint event phức tạp.
+- Không đổi header “Trạng thái entry” thành “TT entry”, vì người dùng đã đồng ý giữ tên rõ nghĩa.
+- Không đổi key dữ liệu "entry_status".
+- Không đổi display mapping tiếng Việt của entry_status nếu đã có.
+- Không đổi thứ tự cột.
+- Không sửa core.
+
+Kiểm tra thủ công bằng Python sau khi sửa:
+- Tạo ScannerScreen offscreen.
+- Tìm index cột entry_status.
+- Gọi _configure_table_columns().
+- Lấy width thực tế:
+  width = screen.table.horizontalHeader().sectionSize(entry_status_col)
+- Lấy header text width:
+  text_width = screen.table.horizontalHeader().fontMetrics().horizontalAdvance("Trạng thái entry")
+- Assert:
+  width >= text_width + một khoảng padding an toàn, ví dụ 24-32px.
+- Assert header vẫn là “Trạng thái entry”.
+
+Sau khi sửa xong, tự rà lại:
+- Header còn bị lẹm ở width màn hình khoảng 1440-1600 không?
+- Cột entry_status có quá rộng không?
+- Các cột khác có bị phình bất thường không?
+- Bảng vẫn scroll ngang được không?
+
+Sau khi hoàn thành prompt này, bắt buộc báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+=========================================================================================================
+PROMPT 3: Thêm script/test kiểm tra header “Trạng thái entry” có đủ width
+
+Bạn là Deepseek_v4_pro đang lập trình trong VSCode tại repo ai-market-analyst-v2.0.
+
+Hãy thêm test hoặc script Python chuyên biệt để đảm bảo lỗi header “Trạng thái entry” bị lẹm không tái phát.
+
+Ưu tiên:
+- Nếu phù hợp, thêm test vào tests/test_scanner.py hoặc tests/test_scanner_screen_columns_phase15.py.
+- Nếu muốn script độc lập, tạo:
+  scripts/check_scanner_entry_status_header_width.py
+
+Yêu cầu test/script:
+1. Set:
+   os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+2. Import:
+   - QApplication
+   - Qt
+   - ScannerScreen
+   - ScannerTableModel
+3. Tạo QApplication.
+4. Tạo ScannerScreen.
+5. Set rows giống thật vào screen.table_model, ví dụ ít nhất 4 dòng:
+   - EUR/AUD, entry_status waiting_for_confirmation
+   - GBP/CAD, entry_status confirmed_entry
+   - XAU/USD, entry_status watch_zone
+   - USD/JPY, entry_status data_unavailable
+6. Resize screen gần giống ảnh người dùng:
+   - width 1450 hoặc 1560
+   - height 850
+7. Gọi:
+   - screen.show()
+   - app.processEvents()
+   - screen._configure_table_columns()
+   - app.processEvents()
+8. Tìm cột entry_status bằng key, không hard-code index:
+   column_keys = [key for key, _ in ScannerTableModel.COLUMNS]
+   entry_col = column_keys.index("entry_status")
+9. Assert:
+   - headerData(entry_col) == "Trạng thái entry"
+   - section_width >= header_text_width + 24
+   - DisplayRole của waiting_for_confirmation là “Chờ xác nhận”
+10. In kết quả rõ:
+   - Header: Trạng thái entry
+   - entry_status_col: ...
+   - section_width: ...
+   - header_text_width: ...
+   - Header width đủ: OK
+
+Nếu tạo script mới:
+- Chạy được bằng:
+  python scripts/check_scanner_entry_status_header_width.py
+- Không gọi MT5 thật.
+- Không gọi network.
+- Không gọi AI.
+- Không cần chạy scanner thật.
+
+Ràng buộc:
+- Không test bằng screenshot pixel phức tạp ở prompt này.
+- Không dùng hard-code index để tránh test sai khi cột thay đổi.
+- Không sửa test bằng cách nới assert quá lỏng.
+
+Sau khi hoàn thành prompt này, bắt buộc báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+=========================================================================================================
+PROMPT 4: Render preview offscreen để kiểm tra bằng mắt, không làm freeze column
+
+Bạn là Deepseek_v4_pro đang lập trình trong VSCode tại repo ai-market-analyst-v2.0.
+
+Hãy tạo hoặc cập nhật script render preview để kiểm tra trực quan sau khi fix width cột.
+
+Mục tiêu:
+- Có ảnh preview cho bảng quét thị trường.
+- Header “Trạng thái entry” hiển thị đầy đủ.
+- Cột không hiển thị raw key kỹ thuật.
+- Không có freeze column/sticky column.
+- Bảng vẫn scroll ngang bình thường.
+
+Nếu đã có script render scanner preview:
+- Có thể cập nhật nhẹ script hiện có.
+- Hoặc tạo script mới:
+  scripts/render_scanner_entry_status_header_width_preview.py
+
+Yêu cầu script render nếu tạo mới:
+1. Set QT_QPA_PLATFORM=offscreen.
+2. Tạo QApplication.
+3. Tạo ScannerScreen.
+4. Gắn rows giống dữ liệu thật, ít nhất 8 dòng:
+   - EUR/AUD, scanner_action skip, direction_bias BUY rõ, entry_status waiting_for_confirmation
+   - GBP/CAD, confirmed_entry
+   - XAU/USD, watch_zone
+   - USD/JPY, data_unavailable
+   - AUD/JPY, no_setup
+   - EUR/USD, invalidated
+   - GBP/USD, waiting_confirmation
+   - NZD/USD, near_zone
+5. Resize screen:
+   - width 1450 hoặc 1560
+   - height 850 hoặc 900
+6. Show/process events/configure columns.
+7. Render ra:
+   data/scanner_entry_status_header_width_preview.png
+8. Trước khi save ảnh, assert model-level:
+   - Header là “Trạng thái entry”.
+   - section width >= header text width + 24.
+   - DisplayRole của waiting_for_confirmation là “Chờ xác nhận”.
+9. In đường dẫn ảnh output.
+
+Kiểm tra bằng mắt sau khi render:
+- Header “Trạng thái entry” không bị mất chữ “T” hoặc mất phần cuối.
+- Header nằm gọn trong cột.
+- Nội dung “Chờ xác nhận” không bị cắt.
+- Không có cột freeze.
+- Không phát sinh overlay/lệch header.
+
+Ràng buộc:
+- Không thêm freeze column.
+- Không thêm QTableView phụ.
+- Không sửa layout tổng thể.
+- Không sửa progress bar.
+- Không sửa cột khác nếu không cần.
+
+Sau khi hoàn thành prompt này, bắt buộc báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+=========================================================================================================
+PROMPT 5: Chạy test cuối và báo cáo xác nhận đã fix header bị lẹm
+
+Bạn là Deepseek_v4_pro đang lập trình trong VSCode tại repo ai-market-analyst-v2.0.
+
+Đây là prompt cuối. Hãy chạy kiểm tra tổng hợp thật cẩn thận.
+
+Các lệnh cần chạy:
+1. Chạy script/test chuyên biệt:
+   - python scripts/check_scanner_entry_status_header_width.py
+   - Nếu có render preview:
+     python scripts/render_scanner_entry_status_header_width_preview.py
+2. Chạy lại script entry status tiếng Việt nếu có:
+   - python scripts/check_scanner_entry_status_vietnamese_display.py
+3. Chạy test scanner/UI liên quan:
+   - python -m pytest tests/test_scanner.py -q
+   - python -m pytest tests/test_scanner_screen_columns_phase15.py -q
+4. Nếu thời gian cho phép, chạy thêm:
+   - python -m pytest tests -q
+5. Rà lại bằng ripgrep:
+   - rg -n "Trạng thái entry|Entry status|entry_status|freeze|frozen|sticky|QTableView" ui tests scripts
+
+Điều cần xác nhận:
+- Header cột entry_status là “Trạng thái entry”.
+- Header không bị lẹm vì section width đủ lớn hơn text width + padding.
+- DisplayRole của entry_status vẫn là tiếng Việt.
+- Không còn hiển thị raw key “waiting_for_confirmation” trong ô bảng.
+- Không triển khai freeze column/sticky column trong scope này.
+- Không thêm QTableView phụ cho freeze.
+- Không thay đổi core scoring/gate/decision/ranking.
+- Không đổi thứ tự cột.
+- Không làm hỏng các test scanner/UI hiện có.
+
+Nếu có lỗi:
+- Đọc kỹ stacktrace.
+- Chỉ sửa đúng phần width/header của cột entry_status.
+- Không sửa bừa test để che lỗi.
+- Không sửa core để làm pass.
+- Chạy lại test sau khi sửa.
+
+Báo cáo cuối cùng cần nêu rõ:
+- File đã sửa.
+- Test/script đã thêm hoặc cập nhật.
+- Các lệnh đã chạy và kết quả pass/fail.
+- Ảnh preview nếu có.
+- Xác nhận không làm freeze column theo đúng quyết định thiết kế.
+- Xác nhận không thay đổi core scoring/gate/decision/ranking.
+
+Sau khi hoàn thành prompt này, bắt buộc báo đúng câu:
+ĐÃ HOÀN THÀNH CÔNG VIỆC TRONG PROMPT
+
+Vì đây là prompt cuối cùng, sau khi chạy test lại toàn bộ và xác nhận lỗi đã được fix xong, bắt buộc báo thêm đúng câu:
+ĐÃ HOÀN THÀNH FIX lỗi
