@@ -294,7 +294,7 @@ class DashboardScreen(QWidget):
         for tag, ticker in tickers.items():
             label = getattr(self, f"{tag.lower()}_label")
             try:
-                data = yf.download(ticker, period="2d", interval="1d", progress=False)
+                data = yf.download(ticker, period="5d", interval="1d", progress=False)
                 if data.empty or len(data) < 2:
                     label.setText(f"{tag}: Chờ dữ liệu...")
                     continue
@@ -321,7 +321,7 @@ class DashboardScreen(QWidget):
         for tag, ticker in tickers.items():
             label = getattr(self, f"{tag.lower()}_label")
             try:
-                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=2d&interval=1d"
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
                 headers = {"User-Agent": "Mozilla/5.0"}
                 resp = requests.get(url, headers=headers, timeout=10)
                 if resp.status_code == 429:

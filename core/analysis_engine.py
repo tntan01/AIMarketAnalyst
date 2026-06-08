@@ -369,7 +369,9 @@ def analyze_symbol(
             ],
         },
         "ai_provider": ai_meta or {},
-        "chart_payload": build_chart_payload(candles_by_timeframe),
+        "chart_payload": build_chart_payload(
+            {**candles_by_timeframe, **({"M15": m15_candles} if m15_candles else {})}
+        ),
         "final_score": final_score_result["final_score"],
         "final_score_detail": final_score_result,
         "evidence": evidence_result,

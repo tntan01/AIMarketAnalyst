@@ -41,7 +41,7 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
     Returns a dict with:
     - symbol
     - active_timeframe
-    - timeframes: {D1/H4/H1: {candles, indicators, smc_zones}}
+    - timeframes: {D1/H4/H1/M15: {candles, indicators, smc_zones}}
     - trade_plan: entry_zone, stop_loss, take_profit, side
     - levels: SL/TP price lines
     - zones: entry zone rectangles

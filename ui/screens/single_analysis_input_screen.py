@@ -63,7 +63,7 @@ class SingleAnalysisInputScreen(QWidget):
             page_header(
                 "Phân tích một mã",
                 "Chọn mã, khung thời gian và rủi ro trước khi chạy phân tích.",
-                "D1 / H4 / H1",
+                "D1 / H4 / H1 / M15",
             )
         )
 
@@ -121,7 +121,7 @@ class SingleAnalysisInputScreen(QWidget):
         timeframes = QWidget()
         tf_layout = QHBoxLayout(timeframes)
         tf_layout.setContentsMargins(0, 0, 0, 0)
-        for label in ["D1", "H4", "H1"]:
+        for label in ["D1", "H4", "H1", "M15"]:
             box = QCheckBox(label)
             box.setChecked(True)
             box.setEnabled(False)
@@ -340,8 +340,7 @@ class SingleAnalysisInputScreen(QWidget):
         self.readiness_label.style().unpolish(self.readiness_label)
         self.readiness_label.style().polish(self.readiness_label)
         self.analyze_button.setEnabled(can_analyze and self.symbol_input.count() > 0)
-        symbol = self.symbol_input.currentText()
-        self.analyze_button.setText(f"Phân tích {symbol}" if symbol else "Phân tích")
+        self._update_analyze_button_label()
 
     def set_analysis_result(self, payload: dict[str, object]) -> None:
         symbol = str(payload.get("symbol", ""))
@@ -373,9 +372,16 @@ class SingleAnalysisInputScreen(QWidget):
         self.broker_symbol_input.setText(resolved or (aliases[0] if aliases else ""))
         if hasattr(self, "data_status_labels"):
             self.data_status_labels["Mã broker"].setText(self._current_broker_symbol() or "--")
+        self._update_analyze_button_label()
 
     def _current_broker_symbol(self) -> str:
         return self.broker_symbol_input.text().strip()
+
+    def _update_analyze_button_label(self) -> None:
+        if self.analysis_thread is not None:
+            return
+        symbol = self.symbol_input.currentText().strip()
+        self.analyze_button.setText(f"Phân tích {symbol}" if symbol else "Phân tích")
 
     def _run_analysis(self) -> None:
         self.analyze_button.setEnabled(False)

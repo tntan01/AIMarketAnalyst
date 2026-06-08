@@ -56,6 +56,24 @@ def test_single_analysis_calculates_rule_based_scores_without_ai() -> None:
     assert "summary" in result["backtest"]
 
 
+def test_single_analysis_chart_payload_includes_m15_when_available() -> None:
+    request = AnalysisInput("EUR/USD", "EURUSDm", 10_000, 1, contract_size_override=100_000)
+    m15 = _candles(80, 1.12, 0.00005, 0.0005)
+
+    result = analyze_symbol(
+        request,
+        {
+            "D1": _candles(240, 1.05, 0.0005, 0.002),
+            "H4": _candles(240, 1.08, 0.00035, 0.0015),
+            "H1": _candles(120, 1.12, 0.0002, 0.001),
+        },
+        data_quality={"terminal_connected": True, "broker_logged_in": True, "spread_status": "normal"},
+        m15_candles=m15,
+    )
+
+    assert len(result["chart_payload"]["M15"]) == 80
+
+
 def test_position_sizing_uses_price_distance_times_contract_size_for_xauusd() -> None:
     request = AnalysisInput(
         "XAU/USD",

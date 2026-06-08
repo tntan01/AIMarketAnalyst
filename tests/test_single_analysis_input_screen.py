@@ -104,3 +104,21 @@ def test_click_analyze_keeps_qthread_alive_until_finished() -> None:
     assert screen.progress_bar.value() == 100
     assert navigated
     assert navigated[0][0] == "analysis_result"
+
+
+def test_analyze_button_label_follows_selected_symbol() -> None:
+    app = QApplication.instance() or QApplication([])
+    screen = SingleAnalysisInputScreen()
+    screen.mt5_service = _FakeMT5Service()
+    screen.analysis_controller = _FakeController()
+    screen.refresh_status()
+
+    assert screen.analyze_button.text() == "Ph\u00e2n t\u00edch EUR/USD"
+
+    screen.symbol_input.setCurrentText("GBP/USD")
+
+    assert screen.broker_symbol_input.text() == "GBPUSD.r"
+    assert screen.data_status_labels["M\u00e3 broker"].text() == "GBPUSD.r"
+    assert screen.analyze_button.text() == "Ph\u00e2n t\u00edch GBP/USD"
+    screen.deleteLater()
+    app.processEvents()

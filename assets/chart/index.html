@@ -24,6 +24,7 @@
       <button data-tf="D1">D1</button>
       <button data-tf="H4">H4</button>
       <button data-tf="H1">H1</button>
+      <button data-tf="M15">M15</button>
     </div>
     <div id="empty-state">Chua co du lieu bieu do</div>
     <div id="error-state">Khong the tai bieu do</div>
@@ -181,7 +182,30 @@
         }
       }
 
-      _chart.timeScale().fitContent();
+      _applyDefaultTimeScale(candles.length);
+    }
+
+    function _applyDefaultTimeScale(candleCount) {
+      if (!_chart || !candleCount) return;
+      var visibleBars = 80;
+      var rightOffset = 6;
+      var from = Math.max(0, candleCount - visibleBars);
+      var to = candleCount + rightOffset;
+      var timeScale = _chart.timeScale();
+
+      try {
+        timeScale.applyOptions({
+          barSpacing: 10,
+          minBarSpacing: 4,
+          rightOffset: rightOffset,
+        });
+      } catch(e) {}
+
+      try {
+        timeScale.setVisibleLogicalRange({ from: from, to: to });
+      } catch(e) {
+        try { timeScale.fitContent(); } catch(_e) {}
+      }
     }
 
     function _clearOverlays() {
