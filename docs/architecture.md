@@ -13,6 +13,19 @@ Mục tiêu kiến trúc:
 * Dễ thêm màn hình, thêm data provider, thêm AI provider và thêm loại tài sản sau này.
 * Dễ đóng gói thành bản cài đặt Windows và chuyển sang máy khác.
 
+## Phạm vi symbol được hỗ trợ
+
+Danh sách symbol chuẩn nằm trong `config/constants.py` tại `SUPPORTED_SYMBOLS`. Ứng dụng hiện hỗ trợ 31 mã:
+
+* 28 cặp Forex chính/phụ.
+* XAU/USD (vàng giao ngay so với USD).
+* XAG/USD (bạc giao ngay so với USD).
+* BTC/USD (Bitcoin so với USD).
+
+Mapping từ symbol hiển thị của ứng dụng sang symbol thật của broker MT5 nằm trong `config/symbol_profiles.json`. Mapping phải hỗ trợ alias không hậu tố và alias có hậu tố phổ biến như `m`, `c`; ví dụ `XAGUSD`, `XAGUSDm`, `BTCUSD`, `BTCUSDm`. Nếu broker dùng hậu tố khác như `.r`, service MT5 phải dò theo tiền tố symbol đã chuẩn hóa trong Market Watch.
+
+Các symbol đặc biệt không được dùng mặc định contract size Forex `100000`. Risk engine phải ưu tiên `trade_contract_size` từ MT5 cho XAU/USD, XAG/USD và BTC/USD; nếu broker không trả về giá trị hợp lệ thì dùng fallback theo cấu hình nội bộ.
+
 ## Cấu trúc thư mục đề xuất
 
 ```text
@@ -186,6 +199,7 @@ Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nh
 * Headline macro mới nhất từ RSS/search feed công khai.
 * Phát biểu đáng chú ý trong 24h qua từ RSS/search feed công khai: Truth Social/Trump, quan chức Mỹ/Fed, thủ tướng Nhật, thủ tướng Anh và quan chức EU.
 * Macro theme theo từng đồng tiền: hawkish, dovish hoặc neutral.
+* Macro theme cho XAU, XAG và BTC dựa trên real yields, DXY, risk sentiment, ETF/flow và catalyst liên quan từng tài sản.
 * Điểm nóng thế giới liên quan risk-off, dầu, chiến sự, trừng phạt, tariff.
 * **Macro alignment score 3 tầng (0-30):** T1 lãi suất & chính sách tiền tệ (0-12) dùng `config/interest_rates.json` + stance từ headline; T2 lịch kinh tế (0-10) dùng calendar events 72h; T3 tâm lý rủi ro & địa chính trị (0-8) dùng sentiment + hotspot count. Score được điều chỉnh theo `macro_confidence` (0.10-1.0) dựa trên chất lượng dữ liệu.
 * AI chỉ được dịch, tóm tắt và nhận định tác động dựa trên dữ liệu app đã lấy, không tự bịa headline, phát biểu hoặc sự kiện.

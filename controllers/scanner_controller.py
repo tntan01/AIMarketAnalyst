@@ -20,8 +20,9 @@ from core.scanner import (
     sort_scanner_rows,
 )
 from core.analysis_engine import analyze_symbol
-from core.risk_engine import AnalysisInput
+from core.risk_engine import AnalysisInput, contract_size_override_for_symbol
 from services.ai_service import AIProviderConfig, AIService
+from services.journal_service import JournalService
 from services.mt5_service import MT5Service
 from services.news_service import NewsService
 from services.settings_service import SettingsService
@@ -37,11 +38,13 @@ class ScannerController:
         mt5_service: MT5Service | None = None,
         news_service: NewsService | None = None,
         telegram_service: TelegramAlertService | None = None,
+        journal_service: JournalService | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.mt5_service = mt5_service or MT5Service()
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
+        self.journal_service = journal_service
 
     def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
         thread = QThread()
@@ -104,6 +107,17 @@ class ScannerController:
         # Pre-fetch toan bo macro context 1 lan (RSS + calendar) de tai su dung trong vong lap
         progress(17, "Đang tải tin tức và phân tích vĩ mô...")
         self.news_service.preload_macro_contexts(request.symbols)
+        freshness_raw = self.news_service.macro_freshness_status()
+        freshness = freshness_raw if isinstance(freshness_raw, dict) else {"confidence_multiplier": 1.0}
+        freshness_multiplier = float(freshness.get("confidence_multiplier", 1.0))
+        closed_trades = self.journal_service.list_closed_trades_for_account_guard() if self.journal_service else []
+        account_guard_settings = {
+            "max_daily_loss_pct": 2.0,
+            "max_weekly_loss_pct": 5.0,
+            "max_consecutive_losses": 3,
+            "max_open_risk_pct": 3.0,
+            "trader_timezone": settings.display.timezone or "Asia/Ho_Chi_Minh",
+        }
 
         progress(19, "Đang quét các cặp tiền...")
         total = max(1, len(request.symbols))
@@ -122,13 +136,15 @@ class ScannerController:
                 candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
                 m15_candles = all_candles["M15"]
                 data_quality = self.mt5_service.symbol_data_quality(symbol, broker_symbol)
-                news_flags = self.news_service.data_quality_flags(symbol, include_latest_statements=False)
+                news_flags = self.news_service.data_quality_flags(symbol)
                 macro_context = news_flags.pop("macro_context", {"events": []})
                 data_quality.update(news_flags)
-                if symbol == "XAU/USD":
-                    contract_override = data_quality.get("contract_size") or 100
-                else:
-                    contract_override = settings.trading.contract_size_override
+                data_quality["macro_freshness"] = freshness
+                contract_override = contract_size_override_for_symbol(
+                    symbol,
+                    data_quality,
+                    settings.trading.contract_size_override,
+                )
                 analysis_input = AnalysisInput(
                     symbol=symbol,
                     broker_symbol=broker_symbol,
@@ -142,6 +158,7 @@ class ScannerController:
                 )
                 macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
                 macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
+                macro_confidence = macro_confidence * freshness_multiplier
                 quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
                 quote_to_usd_fn = getattr(self.mt5_service, "quote_to_usd_rate", None)
                 quote_to_usd = quote_to_usd_fn(quote_currency) if callable(quote_to_usd_fn) else None
@@ -154,6 +171,9 @@ class ScannerController:
                     m15_candles=m15_candles,
                     correlation_context=correlation_context,
                     quote_to_usd_rate=quote_to_usd,
+                    closed_trades=closed_trades,
+                    open_trades=[],
+                    account_guard_settings=account_guard_settings,
                     use_decision_engine_action=True,
                 )
                 result["economic_events"] = macro_context.get("events", [])

@@ -81,7 +81,7 @@ def check_yield_spread(
     if direction is None:
         return {"warning": None, "alignment": "neutral", "us10y_direction": None}
 
-    if symbol == "XAU/USD":
+    if symbol in {"XAU/USD", "XAG/USD"}:
         if side == "buy" and direction == "down":
             return {
                 "warning": None,
@@ -134,6 +134,8 @@ _COMMODITY_MAP: dict[str, str] = {
     "NZD": "NZD nhạy với giá sữa (Global Dairy Trade) và dữ liệu Trung Quốc.",
     "CAD": "CAD nhạy với giá dầu WTI.",
     "XAU": "Vàng nhạy với lợi suất thực, DXY và rủi ro địa chính trị.",
+    "XAG": "Bạc nhạy với lợi suất thực, DXY, gold/silver ratio và nhu cầu công nghiệp.",
+    "BTC": "BTC nhạy với thanh khoản USD, risk sentiment, ETF flow và catalyst crypto.",
 }
 
 
@@ -344,9 +346,9 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
     if not us10y_candles or len(us10y_candles) < 2:
         return 0.0
 
-    # Chỉ áp dụng cho XAU và JPY pairs
+    # Chỉ áp dụng cho kim loại quý và JPY pairs
     sym_upper = symbol.upper()
-    if "XAU" not in sym_upper and "JPY" not in sym_upper:
+    if not any(code in sym_upper for code in ("XAU", "XAG", "JPY")):
         return 0.0
 
     current = us10y_candles[-1].close
@@ -358,8 +360,8 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
               (sym_upper.endswith("/USD") and side == "sell")
 
     directional = 0.0
-    if "XAU" in sym_upper:
-        # XAU: yield up → SELL XAU thuận (USD mạnh + chi phí cơ hội vàng tăng)
+    if "XAU" in sym_upper or "XAG" in sym_upper:
+        # Precious metals: yield up supports SELL (USD stronger + higher opportunity cost).
         if (side == "sell" and y_up) or (side == "buy" and not y_up):
             directional = 2.0
         else:

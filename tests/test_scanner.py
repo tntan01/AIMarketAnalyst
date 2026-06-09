@@ -14,6 +14,7 @@ from controllers.scanner_controller import ScannerController
 import controllers.scanner_controller as scanner_controller_module
 from core.market_models import Candle
 from core.scanner import ScannerRequest, classify_scanner_action, price_vs_entry_zone, sort_scanner_rows
+from config.constants import SUPPORTED_SYMBOLS
 from config.settings import AISettings, AppSettings, NotificationSettings
 from services.mt5_service import MT5ConnectionStatus
 from services.settings_service import SettingsService
@@ -193,6 +194,84 @@ def test_scanner_controller_uses_mt5_balance_for_analysis_input(tmp_path, monkey
         ctrl_mod.yf.download = _orig_yf_download
 
 
+def test_scanner_controller_passes_same_scoring_context_as_single_analysis(tmp_path) -> None:
+    import sys as _sys
+
+    captured_kwargs: list[dict[str, object]] = []
+
+    def fake_analyze_symbol(request, candles, **kwargs):
+        captured_kwargs.append(kwargs)
+        return {
+            "symbol": request.symbol,
+            "data_quality": kwargs.get("data_quality") or {},
+            "technical": {"price": 1.1, "atr_h4": 0.01},
+            "market_regime": {"primary": "trend_up"},
+            "direction_bias": {"best_side": "buy", "score_gap": 20},
+            "trade_permission": {"status": "allowed", "reason": "ok"},
+            "scenario_scores": {
+                "buy": {"signal_score": 80, "total": 80, "smc_quality": 9},
+                "sell": {"signal_score": 40, "total": 40, "smc_quality": 2},
+            },
+            "decision_summary": {"action": "watch", "best_scenario": "buy", "best_score": 80, "score_gap": 20},
+            "decision_engine": {"decision": "WATCH_ONLY", "legacy_action": "watch"},
+            "final_score": 77,
+            "scenarios": [{"type": "buy", "risk_reward": "1:2.0"}],
+            "macro": {"ai_summary": ""},
+        }
+
+    class _FakeJournalService:
+        def list_closed_trades_for_account_guard(self):
+            return [{"symbol": "EUR/USD", "direction": "buy", "result_r": 1.0}]
+
+    class _FreshNewsService(_FakeNewsService):
+        def __init__(self) -> None:
+            self.include_latest_statements_calls: list[object] = []
+
+        def data_quality_flags(self, symbol, include_latest_statements=True):
+            self.include_latest_statements_calls.append(include_latest_statements)
+            return {
+                "macro_context": {
+                    "events": [],
+                    "macro_alignment_scores": {"buy": 20, "sell": 10},
+                    "macro_data_quality": 0.8,
+                },
+            }
+
+        def macro_freshness_status(self):
+            return {"confidence_multiplier": 0.5, "status": "stale"}
+
+    ctrl_mod = _sys.modules["controllers.scanner_controller"]
+    _orig_analyze = ctrl_mod.analyze_symbol
+    _orig_yf_download = ctrl_mod.yf.download
+    ctrl_mod.analyze_symbol = fake_analyze_symbol
+    ctrl_mod.yf.download = lambda *a, **kw: pd.DataFrame()
+    try:
+        news_service = _FreshNewsService()
+        controller = ScannerController(
+            SettingsService(tmp_path / "settings.json"),
+            _FakeMT5Service(),
+            news_service=news_service,
+            journal_service=_FakeJournalService(),
+        )
+        controller.run_market_scan(
+            request=ScannerRequest(["EUR/USD"], 10_000, 1, "Asia/Ho_Chi_Minh", max_ai_details=0)
+        )
+
+        assert len(captured_kwargs) == 1
+        assert news_service.include_latest_statements_calls == [True]
+        call_kwargs = captured_kwargs[0]
+        assert call_kwargs["macro_alignment"] == {"buy": 20, "sell": 10}
+        assert call_kwargs["macro_confidence"] == 0.4
+        assert call_kwargs["closed_trades"] == [{"symbol": "EUR/USD", "direction": "buy", "result_r": 1.0}]
+        assert call_kwargs["open_trades"] == []
+        assert isinstance(call_kwargs["account_guard_settings"], dict)
+        assert call_kwargs["account_guard_settings"]["trader_timezone"] == "Asia/Ho_Chi_Minh"
+        assert call_kwargs["data_quality"]["macro_freshness"] == {"confidence_multiplier": 0.5, "status": "stale"}
+    finally:
+        ctrl_mod.analyze_symbol = _orig_analyze
+        ctrl_mod.yf.download = _orig_yf_download
+
+
 def test_scanner_controller_sends_telegram_alert_for_ready_trade(tmp_path, monkeypatch) -> None:
     import sys as _sys
 
@@ -256,9 +335,14 @@ def test_scanner_controller_sends_telegram_alert_for_ready_trade(tmp_path, monke
         ctrl_mod.yf.download = _orig_yf_download
 
 
-def test_scanner_worker_emits_progress_and_keeps_qthread_alive(tmp_path) -> None:
+def test_scanner_worker_emits_progress_and_keeps_qthread_alive(tmp_path, monkeypatch) -> None:
     app = QApplication.instance() or QApplication([])
-    controller = ScannerController(SettingsService(tmp_path / "settings.json"), _FakeMT5Service())
+    monkeypatch.setattr(scanner_controller_module.yf, "download", lambda *args, **kwargs: pd.DataFrame())
+    controller = ScannerController(
+        SettingsService(tmp_path / "settings.json"),
+        _FakeMT5Service(),
+        news_service=_FakeNewsService(),
+    )
     thread, worker = controller.create_scan_worker(
         ScannerRequest(["EUR/USD"], 10_000, 1, "Asia/Ho_Chi_Minh", max_ai_details=0)
     )
@@ -290,7 +374,7 @@ def test_scanner_screen_uses_table_view_model() -> None:
     assert "price_vs_zone" in [key for key, _label in ScannerTableModel.COLUMNS]
     reason_column = [key for key, _label in ScannerTableModel.COLUMNS].index("short_reason")
     assert screen.table.horizontalHeader().sectionResizeMode(reason_column) == QHeaderView.ResizeMode.Interactive
-    assert len(screen.symbol_boxes) == 29
+    assert len(screen.symbol_boxes) == len(SUPPORTED_SYMBOLS)
     assert screen.scan_mode_combo.currentData() == "once"
     assert screen.scan_interval_combo.findData(300) >= 0
     assert screen.stop_auto_scan_button.text() == "Dừng quét tự động"

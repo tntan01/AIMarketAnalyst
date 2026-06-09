@@ -81,7 +81,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Đang mở: {button_label(active_nav)}", 2500)
 
     def _apply_styles(self) -> None:
-        style_path = Path(__file__).with_name("styles.qss")
+        import sys
+
+        if getattr(sys, "frozen", False):
+            base = Path(sys._MEIPASS) / "ui"
+        else:
+            base = Path(__file__).resolve().parent
+        style_path = base / "styles.qss"
         if style_path.exists():
             self.setStyleSheet(style_path.read_text(encoding="utf-8"))
 
@@ -139,7 +145,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(button)
 
         layout.addStretch(1)
-        footer = QLabel("Dữ liệu: MT5\nDanh sách: 28 Forex + XAU/USD")
+        footer = QLabel("Dữ liệu: MT5\nDanh sách: 28 Forex + XAU/USD + XAG/USD + BTC/USD")
         footer.setObjectName("SidebarFooter")
         footer.setWordWrap(True)
         layout.addWidget(footer)

@@ -12,6 +12,8 @@ Core stack:
 Supported markets:
 - 28 Forex pairs
 - XAU/USD
+- XAG/USD
+- BTC/USD
 
 MT5 note:
 - Broker symbols may include suffixes such as `m` or `c`, for example `USDCADm`, `USDCADc`, `NZDUSDm`, `NZDUSDc`.

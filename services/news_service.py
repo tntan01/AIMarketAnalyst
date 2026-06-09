@@ -32,6 +32,8 @@ class NewsService:
         "NZD": ["RBNZ", "New Zealand CPI", "kiwi"],
         "CAD": ["BOC", "Canada CPI", "WTI", "oil", "loonie"],
         "XAU": ["gold", "real yields", "safe haven", "geopolitics", "central banks"],
+        "XAG": ["silver", "gold/silver ratio", "industrial metals", "real yields", "PMI"],
+        "BTC": ["Bitcoin", "BTC", "crypto", "spot ETF", "on-chain", "digital assets"],
     }
     HAWKISH_TERMS = ["hike", "tightening", "hawkish", "inflation above", "yields rise", "wages rise", "intervention"]
     DOVISH_TERMS = ["cut", "easing", "dovish", "slowdown", "recession", "yields fall", "weaker inflation"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from core.market_models import Candle
-from core.risk_engine import AnalysisInput, build_trade_plan, reward_risk
+from core.risk_engine import AnalysisInput, build_trade_plan, contract_size_for, contract_size_override_for_symbol, reward_risk
 from core.signal_engine import clamp
 
 
@@ -63,3 +63,14 @@ def test_build_trade_plan_uses_narrow_entry_zone_and_separate_watch_zone() -> No
     assert plan["price_in_entry_zone"] is False
     assert plan["entry_status"] == "watch_zone"
     assert plan["ready_to_trade"] is False
+
+
+def test_special_symbols_use_non_forex_contract_sizes() -> None:
+    assert contract_size_for(AnalysisInput("XAG/USD", "XAGUSD", 10_000, 1)) == 5000.0
+    assert contract_size_for(AnalysisInput("BTC/USD", "BTCUSD", 10_000, 1)) == 1.0
+
+
+def test_special_symbol_contract_override_prefers_broker_value() -> None:
+    assert contract_size_override_for_symbol("XAG/USD", {"contract_size": 1000}, 100000) == 1000.0
+    assert contract_size_override_for_symbol("BTC/USD", {"contract_size": None}, 100000) == 1.0
+    assert contract_size_override_for_symbol("EUR/USD", {"contract_size": 100}, 100000) == 100000

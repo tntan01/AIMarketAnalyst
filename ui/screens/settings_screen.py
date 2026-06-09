@@ -911,7 +911,7 @@ class SettingsScreen(QWidget):
         h1_bars.setSuffix(" nến")
 
         ai_limit = QSpinBox()
-        ai_limit.setRange(1, 29)
+        ai_limit.setRange(1, len(SUPPORTED_SYMBOLS))
         ai_limit.setValue(advanced.scanner_ai_detail_limit)
         ai_limit.setSuffix(" mã")
 
@@ -1042,7 +1042,7 @@ class SettingsScreen(QWidget):
         bars.setRange(100, 5000)
         bars.setValue(500)
         limit = QSpinBox()
-        limit.setRange(1, 29)
+        limit.setRange(1, len(SUPPORTED_SYMBOLS))
         limit.setValue(3)
         news = QCheckBox("Chặn giao dịch quanh tin đỏ")
         news.setChecked(True)

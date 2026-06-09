@@ -34,5 +34,13 @@
   "XAU": {
     "drivers": ["real yields", "UST 10Y", "DXY", "Fed expectations", "geopolitical risk", "ETF flow", "central bank demand"],
     "behavior_questions": ["Gold dang giao dich theo real yield, USD hay safe haven?"]
+  },
+  "XAG": {
+    "drivers": ["real yields", "DXY", "gold/silver ratio", "industrial demand", "manufacturing PMI", "ETF flow", "risk sentiment"],
+    "behavior_questions": ["Silver dang di theo precious metals, industrial demand hay USD/real yield?"]
+  },
+  "BTC": {
+    "drivers": ["spot ETF flow", "risk sentiment", "USD liquidity", "real yields", "crypto regulation", "on-chain flow", "equity beta"],
+    "behavior_questions": ["BTC dang giao dich theo liquidity, ETF flow, risk appetite hay crypto-specific catalyst?"]
   }
 }

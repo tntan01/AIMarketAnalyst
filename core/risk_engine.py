@@ -15,6 +15,8 @@ from core.correlation_check import get_correlation_warnings, summarize_correlati
 # không dùng trade_contract_size từ MT5 vì cent account trả về 100 gây sai lot.
 SYMBOL_CONFIG: dict[str, dict[str, Any]] = {
     "XAU/USD": {"contract_size": 100.0, "quote_currency": "USD", "method": "price_distance_x_contract_size"},
+    "XAG/USD": {"contract_size": 5000.0, "quote_currency": "USD", "method": "price_distance_x_contract_size"},
+    "BTC/USD": {"contract_size": 1.0, "quote_currency": "USD", "method": "price_distance_x_contract_size"},
 }
 
 STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
@@ -361,12 +363,30 @@ def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
 
 def contract_size_for(request: AnalysisInput) -> float:
     # Flow ưu tiên:
-    # 1. Controller override (XAU/USD lấy từ MT5, forex luôn lấy từ settings 100,000)
-    # 2. SYMBOL_CONFIG lookup (chỉ chứa symbol đặc biệt như XAU/USD)
+    # 1. Controller override (symbols đặc biệt lấy từ MT5, forex luôn lấy từ settings 100,000)
+    # 2. SYMBOL_CONFIG lookup (chỉ chứa symbol đặc biệt như XAU/USD, XAG/USD, BTC/USD)
     # 3. Fallback mặc định 100,000 (standard forex lot)
     if request.contract_size_override and request.contract_size_override > 0:
         return request.contract_size_override
     return float(SYMBOL_CONFIG.get(request.symbol, {}).get("contract_size", 100000.0))
+
+
+def contract_size_override_for_symbol(
+    symbol: str,
+    data_quality: dict[str, Any],
+    forex_contract_size: float,
+) -> float | None:
+    if symbol in SYMBOL_CONFIG:
+        broker_contract_size = data_quality.get("contract_size")
+        if broker_contract_size:
+            try:
+                broker_value = float(broker_contract_size)
+            except (TypeError, ValueError):
+                broker_value = 0.0
+            if broker_value > 0:
+                return broker_value
+        return float(SYMBOL_CONFIG[symbol]["contract_size"])
+    return forex_contract_size
 
 
 def round_lot(value: float, step: float, minimum: float) -> float:

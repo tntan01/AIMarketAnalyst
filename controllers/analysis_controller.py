@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from core.analysis_engine import analyze_symbol, fallback_ai_commentary
 from core.market_models import Candle
 from core.prompt_builder import build_full_analysis_prompt
-from core.risk_engine import AnalysisInput
+from core.risk_engine import AnalysisInput, contract_size_override_for_symbol
 from PyQt6.QtCore import QThread
 from config.paths import CONFIG_DIR
 from services.ai_service import AIProviderConfig, AIService
@@ -123,10 +123,11 @@ class AnalysisController:
         macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
         macro_confidence = macro_confidence * float(freshness.get("confidence_multiplier", 1.0))
         data_quality["macro_freshness"] = freshness
-        if symbol == "XAU/USD":
-            contract_override = data_quality.get("contract_size") or 100
-        else:
-            contract_override = settings.trading.contract_size_override
+        contract_override = contract_size_override_for_symbol(
+            symbol,
+            data_quality,
+            settings.trading.contract_size_override,
+        )
         request = AnalysisInput(
             symbol=symbol,
             broker_symbol=resolved_broker_symbol,

@@ -60,7 +60,7 @@ Quyết định thiết kế bắt buộc:
 - Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ 1 phút, 5 phút, 15 phút, 30 phút, 1 giờ, 4 giờ, 1 ngày. Khi đang auto-scan phải có nút `Dừng quét tự động`.
 - Settings > Nâng cao có cấu hình Telegram gồm bot token, danh sách chat ID nhận alert và interval auto-scan mặc định. Chat ID có thể nhập nhiều giá trị, cách nhau bằng dấu phẩy.
 - Các phần dài như nhận định AI, điểm thành phần, raw JSON, log kỹ thuật phải đưa vào tab, panel phụ hoặc dialog.
-- Mọi tác vụ nặng như lấy dữ liệu MT5, gọi AI, quét 29 mã, tính indicator phải chạy qua worker/thread; UI không được bị đơ.
+- Mọi tác vụ nặng như lấy dữ liệu MT5, gọi AI, quét 31 mã, tính indicator phải chạy qua worker/thread; UI không được bị đơ.
 
 ### Quy ước tiếng Việt trên giao diện
 
@@ -133,9 +133,9 @@ Chart là một phần quan trọng của trải nghiệm, không phải phần 
 - Không dựng toàn bộ app bằng một file `main.py`.
 - Không dùng Streamlit, web server hoặc browser ngoài.
 - Không đưa Base URL, temperature, max tokens, timeout, retry ra UI cấu hình AI chính.
-- Không hard-code chỉ 7 cặp Forex chính; mọi dropdown và scanner phải lấy từ danh sách 28 cặp Forex + XAU/USD.
+- Không hard-code chỉ 7 cặp Forex chính; mọi dropdown và scanner phải lấy từ danh sách 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD.
 - Không giả định symbol MT5 luôn không có hậu tố; phải kiểm tra cả dạng `m` và `c`, ví dụ `USDCADm`, `USDCADc`, `NZDUSDm`, `NZDUSDc`.
-- Không gọi AI cho toàn bộ 29 mã ngay trong Scanner; quét bằng rule engine trước, chỉ gọi AI cho mã thật sự đáng chú ý.
+- Không gọi AI cho toàn bộ danh sách mã ngay trong Scanner; quét bằng rule engine trước, chỉ gọi AI cho mã thật sự đáng chú ý.
 - Không để label tiếng Anh dài chiếm giao diện nếu có thể dịch ngắn sang tiếng Việt.
 
 ---
@@ -194,7 +194,7 @@ SELECT ANALYSIS MODE (CHỌN CHẾ ĐỘ PHÂN TÍCH)
 Dùng khi muốn phân tích kỹ một symbol (mã giao dịch) cụ thể như XAU/USD (vàng giao ngay so với USD) hoặc EUR/USD (Euro so với đô la Mỹ).
 
 [Scanner Mode (Chế độ quét thị trường)]
-Dùng khi muốn quét nhanh toàn bộ 28 cặp Forex + XAU/USD để tìm setup (thiết lập giao dịch) đáng chú ý.
+Dùng khi muốn quét nhanh toàn bộ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD để tìm setup (thiết lập giao dịch) đáng chú ý.
 
 [Open Journal (Mở nhật ký)]
 Xem lại các phân tích đã lưu.
@@ -515,7 +515,7 @@ Mỗi kết quả phân tích phải luôn có:
 
 ### Mục đích
 
-Scanner (Màn hình quét thị trường) dùng để quét nhanh toàn bộ 28 cặp Forex + XAU/USD, xếp hạng setup (thiết lập giao dịch) đáng chú ý và giúp người dùng chọn mã cần xem chi tiết.
+Scanner (Màn hình quét thị trường) dùng để quét nhanh toàn bộ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD, xếp hạng setup (thiết lập giao dịch) đáng chú ý và giúp người dùng chọn mã cần xem chi tiết.
 
 ### Bố cục màn hình
 
@@ -527,7 +527,7 @@ SCAN SETTINGS (THIẾT LẬP QUÉT)
 --------------------------------------------------
 
 Symbol List (danh sách mã):
-[x] All Supported Symbols (28 cặp Forex + XAU/USD)
+[x] All Supported Symbols (28 cặp Forex + XAU/USD + XAG/USD + BTC/USD)
 
 Hoặc chọn thủ công:
 [x] EUR/USD (Euro so với đô la Mỹ)
@@ -542,6 +542,8 @@ Hoặc chọn thủ công:
 [x] CHF/JPY, AUD/JPY, NZD/JPY, CAD/JPY
 [x] AUD/CHF, NZD/CHF, CAD/CHF, AUD/NZD, AUD/CAD, NZD/CAD
 [x] XAU/USD (vàng giao ngay so với USD)
+[x] XAG/USD (bạc giao ngay so với USD)
+[x] BTC/USD (Bitcoin so với USD)
 
 Account Balance (số dư tài khoản):
 [ 10000 ]
@@ -944,8 +946,10 @@ SYMBOL MAPPING (ÁNH XẠ MÃ GIAO DỊCH)
 | GBP/JPY (Bảng Anh so với Yên Nhật) | GBPJPYm hoặc GBPJPYc | OK (đạt) | Test (kiểm tra) |
 | AUD/NZD (đô la Úc so với đô la New Zealand) | AUDNZDm hoặc AUDNZDc | OK (đạt) | Test (kiểm tra) |
 | XAU/USD (vàng giao ngay so với USD) | XAUUSDm | OK (đạt) | Test (kiểm tra) |
+| XAG/USD (bạc giao ngay so với USD) | XAGUSDm hoặc XAGUSDc | OK (đạt) | Test (kiểm tra) |
+| BTC/USD (Bitcoin so với USD) | BTCUSDm hoặc BTCUSDc | OK (đạt) | Test (kiểm tra) |
 
-Lưu ý: bảng mapping phải hỗ trợ đầy đủ 28 cặp Forex + XAU/USD. Nhiều broker MT5 thêm hậu tố `m` hoặc `c` vào symbol, ví dụ `USDCADm`, `USDCADc`, `NZDUSDm`, `NZDUSDc`; code không được giả định symbol luôn là dạng không hậu tố.
+Lưu ý: bảng mapping phải hỗ trợ đầy đủ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD. Nhiều broker MT5 thêm hậu tố `m` hoặc `c` vào symbol, ví dụ `USDCADm`, `USDCADc`, `NZDUSDm`, `NZDUSDc`; code không được giả định symbol luôn là dạng không hậu tố.
 
 [Add Custom Mapping (Thêm ánh xạ tùy chỉnh)]
 [Auto Detect Broker Symbols (Tự động phát hiện mã broker)]
@@ -958,6 +962,8 @@ SPREAD THRESHOLD (NGƯỠNG CHÊNH LỆCH GIÁ MUA-BÁN)
 | Symbol (mã) | Max Normal Spread (spread bình thường tối đa) | Current Spread (spread hiện tại) | Status (trạng thái) |
 |---|---:|---:|---|
 | XAU/USD (vàng giao ngay so với USD) | 30 points | 22 points | Normal (bình thường) |
+| XAG/USD (bạc giao ngay so với USD) | 40 points | 28 points | Normal (bình thường) |
+| BTC/USD (Bitcoin so với USD) | 500 points | 320 points | Normal (bình thường) |
 | EUR/USD (Euro so với đô la Mỹ) | 20 points | 8 points | Normal (bình thường) |
 
 --------------------------------------------------
@@ -1013,6 +1019,8 @@ CONTRACT SIZE OVERRIDE (GHI ĐÈ QUY MÔ HỢP ĐỒNG)
 | Symbol (mã) | Use Broker Value (dùng giá trị từ broker) | Contract Size Override (giá trị quy mô hợp đồng ghi đè) |
 |---|---|---:|
 | XAU/USD (vàng giao ngay so với USD) | Yes (có) | 100 |
+| XAG/USD (bạc giao ngay so với USD) | Yes (có) | 5000 |
+| BTC/USD (Bitcoin so với USD) | Yes (có) | 1 |
 | EUR/USD (Euro so với đô la Mỹ) | Yes (có) | 100000 |
 
 [Save Trading Settings (Lưu cài đặt giao dịch)]

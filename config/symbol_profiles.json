@@ -27,5 +27,7 @@
   "AUD/NZD": {"base": "AUD", "quote": "NZD", "mt5_aliases": ["AUDNZD", "AUDNZDm", "AUDNZDc"]},
   "AUD/CAD": {"base": "AUD", "quote": "CAD", "mt5_aliases": ["AUDCAD", "AUDCADm", "AUDCADc"]},
   "NZD/CAD": {"base": "NZD", "quote": "CAD", "mt5_aliases": ["NZDCAD", "NZDCADm", "NZDCADc"]},
-  "XAU/USD": {"base": "XAU", "quote": "USD", "mt5_aliases": ["XAUUSD", "XAUUSDm", "XAUUSDc"]}
+  "XAU/USD": {"base": "XAU", "quote": "USD", "mt5_aliases": ["XAUUSD", "XAUUSDm", "XAUUSDc"]},
+  "XAG/USD": {"base": "XAG", "quote": "USD", "mt5_aliases": ["XAGUSD", "XAGUSDm", "XAGUSDc"]},
+  "BTC/USD": {"base": "BTC", "quote": "USD", "mt5_aliases": ["BTCUSD", "BTCUSDm", "BTCUSDc"]}
 }

@@ -9,6 +9,7 @@ a = Analysis(
         ("../config/*.json", "config"),
         ("../prompts", "prompts"),
         ("../data/migrations/*.sql", "data/migrations"),
+        ("../ui/styles.qss", "ui"),
     ],
     hiddenimports=["PyQt6.QtWebEngineWidgets"],
     hookspath=[],
@@ -27,15 +28,16 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
+    icon="../assets/icons/app.ico",
 )
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="AI Market Analyst",
 )

@@ -36,6 +36,8 @@ SUPPORTED_SYMBOLS = [
     "AUD/CAD",
     "NZD/CAD",
     "XAU/USD",
+    "XAG/USD",
+    "BTC/USD",
 ]
 
 DEFAULT_TIMEFRAMES = ["D1", "H4", "H1", "M15"]

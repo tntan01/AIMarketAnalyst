@@ -178,7 +178,7 @@ Tiêu chí đạt:
 
 * AI không tự bịa giá, entry, SL, TP, lot.
 * AI không tự bịa supply/demand zone, order block, FVG, BOS/CHOCH nếu technical/SMC context không cung cấp.
-* Prompt cho từng cặp được sinh từ template chung + symbol profile, không hard-code 29 prompt riêng.
+* Prompt cho từng symbol được sinh từ template chung + symbol profile, không hard-code số lượng prompt riêng cho từng mã.
 * Output AI ngắn gọn nhưng sâu, có chất bank trader / macro trader / SMC trader.
 * Output ưu tiên mức giá, vùng vào lệnh, SL, TP và invalidation.
 * Nếu không có setup sạch, AI phải trả rõ: `No clean setup / đứng ngoài tốt hơn`.

@@ -33,5 +33,5 @@
     "manual_mistake_tags",
     "auto_mistake_tags"
   ],
-  "db_path": "D:\\Projects\\AIMarketAnalyst\\ai-market-analyst-v2.0\\data\\phase18_demo_journal.db"
+  "db_path": "D:\\Projects\\AIMarketAnalyst\\data\\phase18_demo_journal.db"
 }
