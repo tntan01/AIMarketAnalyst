@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from math import floor
 from pathlib import Path
 
 from config.paths import CONFIG_DIR
@@ -23,6 +24,21 @@ class MT5ConnectionStatus:
     balance: float | None = None
     currency: str = ""
     error_code: int | None = None
+    message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MT5OrderResult:
+    success: bool
+    symbol: str
+    broker_symbol: str
+    side: str
+    volume: float
+    price: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    order_id: int | None = None
+    retcode: int | None = None
     message: str = ""
 
 
@@ -278,6 +294,130 @@ class MT5Service:
             return None
         except Exception:
             return None
+
+    def has_open_position_or_order(self, broker_symbol: str) -> bool:
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return False
+        if not mt5.initialize():
+            return False
+
+        positions = mt5.positions_get(symbol=broker_symbol)
+        if positions:
+            return True
+        orders = mt5.orders_get(symbol=broker_symbol)
+        return bool(orders)
+
+    def place_market_order(
+        self,
+        *,
+        symbol: str,
+        broker_symbol: str,
+        side: str,
+        volume: float,
+        stop_loss: float,
+        take_profit: float,
+        comment: str = "AI Market Analyst",
+    ) -> MT5OrderResult:
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, message="Chưa cài package MetaTrader5.")
+
+        if not mt5.initialize():
+            error_code, error_message = mt5.last_error()
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, retcode=error_code, message=error_message or "Không khởi tạo được MT5.")
+
+        if self.has_open_position_or_order(broker_symbol):
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, message="Đã có lệnh/position cho mã này, không vào thêm.")
+
+        if not mt5.symbol_select(broker_symbol, True):
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, message=f"Không chọn được mã {broker_symbol}.")
+
+        info = mt5.symbol_info(broker_symbol)
+        tick = mt5.symbol_info_tick(broker_symbol)
+        if not tick:
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, message=f"Không lấy được giá hiện tại cho {broker_symbol}.")
+
+        normalized_side = side.strip().lower()
+        if normalized_side == "buy":
+            order_type = mt5.ORDER_TYPE_BUY
+            price = float(tick.ask)
+        elif normalized_side == "sell":
+            order_type = mt5.ORDER_TYPE_SELL
+            price = float(tick.bid)
+        else:
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, message=f"Hướng vào lệnh không hợp lệ: {side}.")
+
+        normalized_volume = self._normalize_volume(volume, info)
+        if normalized_volume <= 0:
+            return MT5OrderResult(False, symbol, broker_symbol, side, volume, message="Lot không hợp lệ sau khi chuẩn hóa theo broker.")
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": broker_symbol,
+            "volume": normalized_volume,
+            "type": order_type,
+            "price": price,
+            "sl": float(stop_loss),
+            "tp": float(take_profit),
+            "deviation": 20,
+            "magic": 260609,
+            "comment": comment[:31],
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": self._order_filling(mt5, info),
+        }
+        result = mt5.order_send(request)
+        retcode = getattr(result, "retcode", None) if result else None
+        success_codes = {
+            getattr(mt5, "TRADE_RETCODE_DONE", None),
+            getattr(mt5, "TRADE_RETCODE_PLACED", None),
+            getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", None),
+        }
+        success = retcode in success_codes
+        message = getattr(result, "comment", "") if result else "MT5 không trả kết quả order_send."
+        order_id = getattr(result, "order", None) or getattr(result, "deal", None) if result else None
+        return MT5OrderResult(
+            success=success,
+            symbol=symbol,
+            broker_symbol=broker_symbol,
+            side=normalized_side,
+            volume=normalized_volume,
+            price=price,
+            stop_loss=float(stop_loss),
+            take_profit=float(take_profit),
+            order_id=int(order_id) if order_id else None,
+            retcode=int(retcode) if retcode is not None else None,
+            message=str(message or ("Đã gửi lệnh thành công." if success else "MT5 từ chối lệnh.")),
+        )
+
+    def _normalize_volume(self, volume: float, symbol_info) -> float:
+        try:
+            raw = float(volume)
+        except (TypeError, ValueError):
+            return 0.0
+        if raw <= 0:
+            return 0.0
+        step = float(getattr(symbol_info, "volume_step", 0.01) or 0.01) if symbol_info else 0.01
+        minimum = float(getattr(symbol_info, "volume_min", 0.0) or 0.0) if symbol_info else 0.0
+        maximum = float(getattr(symbol_info, "volume_max", 0.0) or 0.0) if symbol_info else 0.0
+        normalized = floor(raw / step) * step
+        if maximum > 0:
+            normalized = min(normalized, maximum)
+        if minimum > 0 and normalized < minimum:
+            return 0.0
+        return round(normalized, 2)
+
+    def _order_filling(self, mt5_module, symbol_info):
+        filling = getattr(symbol_info, "filling_mode", None) if symbol_info else None
+        if filling in (
+            getattr(mt5_module, "ORDER_FILLING_FOK", None),
+            getattr(mt5_module, "ORDER_FILLING_IOC", None),
+            getattr(mt5_module, "ORDER_FILLING_RETURN", None),
+        ):
+            return filling
+        return getattr(mt5_module, "ORDER_FILLING_IOC", 1)
 
     def _timeframe_id(self, mt5_module, timeframe: str):
         return {

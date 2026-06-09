@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict, replace
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -60,6 +61,11 @@ class ScannerController:
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
         settings = self.settings_service.load()
+        effective_risk_percent = min(
+            max(float(request.risk_percent), 0.0),
+            max(float(settings.trading.max_risk_percent), 0.0),
+        )
+        request = replace(request, risk_percent=effective_risk_percent)
         progress(8, "Đang kiểm tra kết nối MetaTrader 5...")
         status = self.mt5_service.connection_status()
         if not status.terminal_connected or not status.logged_in:
@@ -137,7 +143,8 @@ class ScannerController:
                 macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
                 macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
                 quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-                quote_to_usd = self.mt5_service.quote_to_usd_rate(quote_currency)
+                quote_to_usd_fn = getattr(self.mt5_service, "quote_to_usd_rate", None)
+                quote_to_usd = quote_to_usd_fn(quote_currency) if callable(quote_to_usd_fn) else None
                 result = analyze_symbol(
                     analysis_input,
                     candles,
@@ -175,8 +182,111 @@ class ScannerController:
 
         progress(94, "Đang dựng bảng kết quả quét...")
         output = build_scanner_output(rows, request, ai_called)
+        output["auto_trade_results"] = self._execute_auto_trades(rows, request) if request.auto_trade_enabled else {
+            "enabled": False,
+            "attempted": 0,
+            "opened": 0,
+            "skipped": 0,
+            "errors": [],
+            "orders": [],
+        }
         output["telegram_alerts"] = self._send_telegram_alerts(rows)
         return output
+
+    def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:
+        results: list[dict[str, Any]] = []
+        errors: list[str] = []
+        attempted = 0
+        opened = 0
+        skipped = 0
+
+        for row in rows:
+            if not self._is_auto_trade_candidate(row):
+                continue
+            attempted += 1
+            symbol = str(row.get("symbol") or "--")
+            broker_symbol = str(row.get("broker_symbol") or "").strip()
+            scenario = self._best_scenario(row)
+            sizing = scenario.get("position_sizing", {}) if isinstance(scenario.get("position_sizing"), dict) else {}
+            take_profit = scenario.get("take_profit")
+            first_tp = take_profit[0] if isinstance(take_profit, list) and take_profit else take_profit
+
+            try:
+                volume = float(sizing.get("suggested_lot") or 0.0)
+                stop_loss = float(scenario.get("stop_loss"))
+                tp = float(first_tp)
+            except (TypeError, ValueError):
+                skipped += 1
+                errors.append(f"{symbol}: thiếu lot/SL/TP hợp lệ, bỏ qua auto trade.")
+                continue
+
+            if not broker_symbol:
+                skipped += 1
+                errors.append(f"{symbol}: thiếu broker symbol, bỏ qua auto trade.")
+                continue
+
+            try:
+                if self.mt5_service.has_open_position_or_order(broker_symbol):
+                    skipped += 1
+                    results.append({
+                        "success": False,
+                        "symbol": symbol,
+                        "broker_symbol": broker_symbol,
+                        "side": row.get("best_side"),
+                        "volume": volume,
+                        "message": "Đã có lệnh/position cho mã này, không vào thêm.",
+                    })
+                    continue
+                order = self.mt5_service.place_market_order(
+                    symbol=symbol,
+                    broker_symbol=broker_symbol,
+                    side=str(row.get("best_side") or ""),
+                    volume=volume,
+                    stop_loss=stop_loss,
+                    take_profit=tp,
+                    comment=f"AMA {symbol}",
+                )
+                payload = asdict(order) if hasattr(order, "__dataclass_fields__") else dict(order)
+                results.append(payload)
+                if payload.get("success"):
+                    opened += 1
+                else:
+                    skipped += 1
+                    errors.append(f"{symbol}: {payload.get('message') or 'MT5 từ chối lệnh.'}")
+            except Exception as exc:
+                skipped += 1
+                errors.append(f"{symbol}: {exc}")
+
+        return {
+            "enabled": True,
+            "attempted": attempted,
+            "opened": opened,
+            "skipped": skipped,
+            "errors": errors,
+            "orders": results,
+            "risk_percent": request.risk_percent,
+        }
+
+    def _is_auto_trade_candidate(self, row: dict[str, Any]) -> bool:
+        return (
+            row.get("scanner_action") == "ready"
+            and row.get("trade_permission") == "allowed"
+            and isinstance(row.get("analysis_result"), dict)
+            and bool(self._best_scenario(row))
+        )
+
+    def _best_scenario(self, row: dict[str, Any]) -> dict[str, Any]:
+        analysis = row.get("analysis_result", {})
+        if not isinstance(analysis, dict):
+            return {}
+        scenarios = analysis.get("scenarios", [])
+        if not isinstance(scenarios, list):
+            return {}
+        side = row.get("best_side")
+        for scenario in scenarios:
+            if isinstance(scenario, dict) and scenario.get("type") == side:
+                return scenario
+        return {}
 
     def _send_telegram_alerts(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         notifications = self.settings_service.load().notifications

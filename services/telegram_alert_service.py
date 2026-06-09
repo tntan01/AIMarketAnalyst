@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -49,23 +50,22 @@ class TelegramAlertService:
         sizing = scenario.get("position_sizing", {}) if isinstance(scenario.get("position_sizing"), dict) else {}
         entry = self._format_entry(scenario.get("entry_zone"))
         tp = self._format_take_profit(scenario.get("take_profit"))
-        side = "BUY" if str(row.get("best_side")) == "buy" else "SELL"
         balance = sizing.get("account_balance")
-        balance_text = f"Vốn MT5: {balance}" if balance not in (None, "") else ""
+        balance_text = f"💰 Vốn MT5: {balance}" if balance not in (None, "") else ""
         reason = row.get("short_reason") or row.get("permission_reason") or ""
         lines = [
-                "AI Market Analyst - Tín hiệu vào lệnh",
-                f"Mã: {row.get('symbol', '--')} ({row.get('broker_symbol', '--')})",
-                f"Hướng: {side}",
-                f"Entry: {entry}",
-                f"Stop loss: {scenario.get('stop_loss', '--')}",
-                f"Take profit: {tp}",
-                f"Lot: {sizing.get('suggested_lot', '--')}",
-                f"R:R: {scenario.get('risk_reward', row.get('risk_reward', '--'))}",
-                f"Điểm: {row.get('best_score', '--')}/100",
-                f"Lý do: {reason}",
-                balance_text,
-                f"Nguồn: {analysis.get('mode', 'scanner') if isinstance(analysis, dict) else 'scanner'}",
+            "🔔 AI Market Analyst - Tín hiệu vào lệnh",
+            f"• Mã: {self._format_symbol(row)}",
+            f"• Hướng: {self._format_side(row.get('best_side'))}",
+            f"• Entry: {entry}",
+            f"• Stop loss: {scenario.get('stop_loss', '--')}",
+            f"• Take profit: {tp}",
+            f"• Lot gợi ý: {sizing.get('suggested_lot', '--')}",
+            f"• R:R: {scenario.get('risk_reward', row.get('risk_reward', '--'))}",
+            f"• Điểm setup: {row.get('best_score', '--')}/100",
+            f"• Lý do: {reason}",
+            balance_text,
+            f"• Nguồn: {analysis.get('mode', 'scanner') if isinstance(analysis, dict) else 'scanner'}",
         ]
         return "\n".join(line for line in lines if line).strip()
 
@@ -110,6 +110,19 @@ class TelegramAlertService:
                 return scenario
         return {}
 
+    def _format_symbol(self, row: dict[str, object]) -> str:
+        symbol = str(row.get("symbol") or "--")
+        broker_symbol = str(row.get("broker_symbol") or "").strip()
+        return f"{symbol} ({broker_symbol})" if broker_symbol else symbol
+
+    def _format_side(self, value: object) -> str:
+        side = str(value or "").strip().lower()
+        if side == "buy":
+            return "MUA"
+        if side == "sell":
+            return "BÁN"
+        return "--"
+
     def _format_entry(self, value: object) -> str:
         if isinstance(value, list) and len(value) == 2:
             return f"{value[0]} - {value[1]}"
@@ -120,29 +133,40 @@ class TelegramAlertService:
             return ", ".join(str(item) for item in value) or "--"
         return str(value or "--")
 
+    def _format_ready_plan_line(self, row: dict[str, object]) -> str:
+        scenario = self._best_scenario(row)
+        return (
+            f"• {self._format_symbol(row)} | {self._format_side(row.get('best_side'))} | "
+            f"Entry: {self._format_entry(scenario.get('entry_zone'))} | "
+            f"SL: {scenario.get('stop_loss', '--')} | "
+            f"TP: {self._format_take_profit(scenario.get('take_profit'))}"
+        )
+
+    def _format_timestamp(self, value: str) -> str:
+        cleaned = str(value or "").strip()
+        if not cleaned:
+            return "--"
+        try:
+            return datetime.fromisoformat(cleaned).strftime("%d-%m-%Y %H:%M:%S")
+        except ValueError:
+            return cleaned
+
     def format_summary_alert(self, rows: list[dict[str, object]], timestamp: str) -> str:
         total = len(rows)
         ready_rows = [row for row in rows if self._is_ready_trade(row)]
-        ready_count = len(ready_rows)
-        watching = sum(1 for row in rows if row.get("scanner_action") in ("watch", "ready"))
-
-        buy_list = [str(row.get("symbol", "")) for row in ready_rows if str(row.get("best_side")) == "buy"]
-        sell_list = [str(row.get("symbol", "")) for row in ready_rows if str(row.get("best_side")) == "sell"]
 
         lines = [
-            "AI Market Analyst - Tong ket quet thi truong",
-            f"Thoi gian: {timestamp}",
-            f"Tong so ma da quet: {total}",
-            f"San sang vao lenh: {ready_count} ma",
+            "✨ AI Market Analyst - Tổng kết quét thị trường",
+            f"🕒 Thời gian: {self._format_timestamp(timestamp)}",
+            f"🔎 Đã quét: {total} mã",
+            f"✅ Sẵn sàng vào lệnh: {len(ready_rows)} mã",
         ]
 
-        if ready_count > 0:
-            if buy_list:
-                lines.append(f"[MUA] {', '.join(buy_list)}")
-            if sell_list:
-                lines.append(f"[BAN] {', '.join(sell_list)}")
-
-        lines.append(f"Dang theo doi: {watching} ma")
+        if ready_rows:
+            lines.append("🎯 Danh sách sẵn sàng:")
+            lines.extend(self._format_ready_plan_line(row) for row in ready_rows)
+        else:
+            lines.append("• Chưa có mã nào đủ điều kiện vào lệnh ngay.")
         return "\n".join(lines)
 
     def send_summary_alert(

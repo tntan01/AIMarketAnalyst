@@ -31,6 +31,7 @@ class ScannerRequest:
     risk_percent: float
     timezone_name: str
     max_ai_details: int = 3
+    auto_trade_enabled: bool = False
 
 
 def classify_scanner_action(

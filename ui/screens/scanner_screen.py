@@ -596,12 +596,14 @@ class ScannerScreen (QWidget ):
         self .status_labels ['Đã quét'].setText (f"0 / {len (symbols )}")
         self ._update_status_summary ()
         settings =self .settings_service .load ()
+        auto_trade_enabled =bool (hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto")
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,
         risk_percent =settings .trading .default_risk_percent ,
         timezone_name =settings .display .timezone ,
         max_ai_details =settings .advanced .scanner_ai_detail_limit ,
+        auto_trade_enabled =auto_trade_enabled ,
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
         self .scan_thread =thread 
