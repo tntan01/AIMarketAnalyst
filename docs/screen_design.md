@@ -1137,3 +1137,13 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 - Scanner table phai co cot Entry hien thi `price_vs_zone`: `Trong vung`, `Gan vung`, `Con xa` hoac `--`, kem mau xanh/vang/xam de trader thay ngay gia dang o dau so voi entry zone.
 - Entry checklist muc `Xu huong` phai xet theo side cua setup; range market co the dat neu setup nam tai POI/bien gia tot, khong mac dinh fail.
 - Man hinh ket qua nen hien `confidence_reason` co breakdown diem trend/momentum/location/risk/macro, macro confidence va event caution gan nhat neu co.
+
+## Current Scanner Automation Behavior
+
+- Scanner has two modes: one-shot scan and auto-scan.
+- Auto-entry is attached only to auto-scan mode and requires the user to check `Tự động vào lệnh MT5`. The UI must not place MT5 orders from one-shot scan.
+- The `Tự động vào lệnh MT5` toggle button must be visually highlighted when active, because enabling it can place real MT5 orders. Do not show a separate checkbox indicator inside this button; the whole button is the state indicator.
+- When auto-scan is active and a row becomes `ready`, the user-facing result should still show the normal scanner table and Telegram alert. Auto-entry execution status is returned separately as `auto_trade_results`.
+- Auto-entry status should be displayed or logged with these counts when surfaced in UI: attempted, opened, skipped, and errors.
+- A skipped auto-entry is not a UI failure when the reason is "already has position/order"; it is the intended one-order-per-symbol guard.
+- Telegram summary should remain short: scanned count, ready count, ready symbol list with Entry/SL/TP. Watch-only symbols are intentionally omitted from Telegram summary.

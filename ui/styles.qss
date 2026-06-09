@@ -710,6 +710,32 @@ QCheckBox#ScannerSymbolCheck::indicator:disabled {
   border-color: #334155;
 }
 
+QPushButton#AutoTradeToggle {
+  color: #e5e7eb;
+  font-weight: 700;
+  padding: 6px 10px;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #0b1220;
+}
+
+QPushButton#AutoTradeToggle:hover {
+  border-color: #f59e0b;
+  background: #1f2937;
+}
+
+QPushButton#AutoTradeToggle[autoTradeActive="true"] {
+  color: #111827;
+  border: 1px solid #fbbf24;
+  background: #f59e0b;
+}
+
+QPushButton#AutoTradeToggle:disabled {
+  color: #64748b;
+  border-color: #334155;
+  background: #111827;
+}
+
 QWidget#ActiveProviderCell {
   background: transparent;
 }

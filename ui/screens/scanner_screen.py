@@ -414,6 +414,17 @@ class ScannerScreen (QWidget ):
         tf_seconds =old_to_tf .get (settings .notifications .auto_scan_interval_minutes ,900 )
         interval_index =self .scan_interval_combo .findData (tf_seconds )
         self .scan_interval_combo .setCurrentIndex (interval_index if interval_index >=0 else 1 )
+        self .auto_trade_check =QPushButton ("Tự động vào lệnh MT5")
+        self .auto_trade_check .setObjectName ("AutoTradeToggle")
+        self .auto_trade_check .setCheckable (True )
+        self .auto_trade_check .setCursor (Qt .CursorShape .PointingHandCursor )
+        self .auto_trade_check .setToolTip (
+            "Chỉ dùng khi quét tự động. Khi bật, hệ thống có thể đặt lệnh MT5 cho setup sẵn sàng."
+        )
+        self .auto_trade_check .setChecked (False )
+        self .auto_trade_check .toggled .connect (self ._update_auto_trade_toggle_style )
+        self .scan_mode_combo .currentIndexChanged .connect (self ._update_auto_trade_toggle_state )
+        self ._update_auto_trade_toggle_state ()
 
         self .scan_button =action_button ('Quét thị trường',primary =True )
         self .scan_button .clicked .connect (self ._run_scan )
@@ -426,6 +437,7 @@ class ScannerScreen (QWidget ):
         scan_options .addWidget (self .scan_mode_combo )
         scan_options .addWidget (QLabel ("Khoảng thời gian"))
         scan_options .addWidget (self .scan_interval_combo )
+        scan_options .addWidget (self .auto_trade_check )
         scan_options .addWidget (self .stop_auto_scan_button )
         scan_options .addWidget (self .scan_button )
         scan_options .addStretch (1 )
@@ -471,6 +483,32 @@ class ScannerScreen (QWidget ):
         if last not in ("--",""):
             parts .append (f"Lần quét: {last }")
         self .status_summary_label .setText ("  •  ".join (parts ))
+
+    def _auto_trade_enabled (self )->bool :
+        return bool (
+            hasattr (self ,"scan_mode_combo")
+            and hasattr (self ,"auto_trade_check")
+            and self .scan_mode_combo .currentData ()=="auto"
+            and self .auto_trade_check .isChecked ()
+        )
+
+    def _update_auto_trade_toggle_state (self )->None :
+        if not hasattr (self ,"auto_trade_check"):
+            return
+        is_auto_mode =bool (hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto")
+        self .auto_trade_check .setEnabled (is_auto_mode )
+        if not is_auto_mode and self .auto_trade_check .isChecked ():
+            self .auto_trade_check .setChecked (False )
+        self ._update_auto_trade_toggle_style ()
+
+    def _update_auto_trade_toggle_style (self )->None :
+        if not hasattr (self ,"auto_trade_check"):
+            return
+        active =self ._auto_trade_enabled ()
+        self .auto_trade_check .setProperty ("autoTradeActive",active )
+        self .auto_trade_check .style ().unpolish (self .auto_trade_check )
+        self .auto_trade_check .style ().polish (self .auto_trade_check )
+        self .auto_trade_check .update ()
 
     def _table_card (self )->QFrame :
         frame =card ('Bảng kết quả quét')
@@ -596,7 +634,7 @@ class ScannerScreen (QWidget ):
         self .status_labels ['Đã quét'].setText (f"0 / {len (symbols )}")
         self ._update_status_summary ()
         settings =self .settings_service .load ()
-        auto_trade_enabled =bool (hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto")
+        auto_trade_enabled =self ._auto_trade_enabled ()
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,

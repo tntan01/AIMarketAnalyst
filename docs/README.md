@@ -18,11 +18,11 @@ Tài liệu phải giúp đạt 3 mục tiêu:
 
 ## Danh sách tài liệu
 
-1. `product_spec.md` — Đặc tả sản phẩm, phạm vi 28 cặp Forex + XAU/USD, quy tắc MT5/AI/scoring.
-2. `architecture.md` — Kiến trúc module, dependency, runtime data, chart nhúng và packaging.
-3. `screen_design.md` — Thiết kế chi tiết các màn hình PyQt6.
-4. `installation_guide.md` — Hướng dẫn cài môi trường, chạy app và đóng gói.
-5. `mvp_coding_guide.md` — Thứ tự code MVP theo từng giai đoạn.
+1. `product_spec.md` — Đặc tả sản phẩm, phạm vi 28 cặp Forex + XAU/USD, quy tắc MT5/AI/scoring và phụ lục auto trade hiện tại.
+2. `architecture.md` — Kiến trúc module, dependency, runtime data, chart nhúng, Telegram alert, auto-entry MT5 và packaging.
+3. `screen_design.md` — Thiết kế chi tiết các màn hình PyQt6, gồm hành vi Scanner auto-scan/auto-entry.
+4. `installation_guide.md` — Hướng dẫn cài môi trường, chạy app, đóng gói và checklist an toàn trước khi bật auto trade.
+5. `mvp_coding_guide.md` — Thứ tự code MVP theo từng giai đoạn và quy tắc triển khai auto trade/Telegram.
 
 ## Nguyên tắc cập nhật
 

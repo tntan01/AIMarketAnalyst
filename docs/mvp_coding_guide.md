@@ -239,3 +239,27 @@ Một task chỉ được coi là xong khi:
 - `build_entry_checklist()` phai danh gia muc `Xu huong` theo side cua scenario; range chi pass khi co POI/edge setup va `location_quality` du manh.
 - `score_scenario()` phai tinh tong diem theo trong so: trend 18, momentum 15, location 17, SMC quality 15, risk 15, macro 30. SMC quality phai dung BOS/CHOCH/displacement, premium/discount, liquidity sweep va metadata zone_score/broken/mitigated/test_count.
 - `confidence_reason` phai giai thich breakdown diem trend/momentum/location/SMC/risk/macro, SMC reason, macro confidence thap, va event gan nhat neu dang caution.
+
+## Auto Trade Implementation Rules
+
+- Auto trade chi duoc kich hoat khi Scanner dang o che do auto-scan va nguoi dung da tick `Tu dong vao lenh MT5`. Quet 1 lan/manual scan khong duoc dat lenh.
+- UI phai co nut toggle chon cho phep auto-entry. Khi nut dang bat va dang o auto-scan, control nay phai duoc lam noi bat de nguoi dung nhin thay.
+- Khong hien thi them o checkbox nho ben trong nut toggle auto-entry; toan bo nut la chi bao trang thai bat/tat.
+- UI phai truyen `ScannerRequest.auto_trade_enabled=True` chi khi scan mode la auto va nut auto-entry dang bat.
+- Controller phai cap `risk_percent` theo `settings.trading.max_risk_percent` truoc khi goi analysis va truoc khi dat lenh.
+- Chi auto trade row `ready` + `allowed` + co `analysis_result` + co scenario khop `best_side`.
+- Lot dat lenh phai lay tu `position_sizing.suggested_lot`. Khong tinh lot rieng trong UI, khong tang lot len minimum neu viec do co the vuot risk.
+- Moi broker symbol chi duoc co mot lenh dang ton tai. Phai kiem tra ca `positions_get(symbol=...)` va `orders_get(symbol=...)` truoc khi goi `order_send`.
+- Neu da co position/order cho symbol, ghi ket qua skipped va khong dat lenh moi.
+- Market order:
+  - BUY dung gia `ask`.
+  - SELL dung gia `bid`.
+  - SL dung `scenario.stop_loss`.
+  - TP dung TP dau tien trong `scenario.take_profit`.
+- Ket qua auto trade phai tra ve trong `output["auto_trade_results"]` de UI/log co the hien thi va debug.
+
+## Telegram Alert Implementation Rules
+
+- Telegram detail alert chi gui setup that su ready.
+- Summary alert chi hien thi tong so ma da quet va danh sach ma san sang vao lenh kem Entry/SL/TP. Khong hien thi danh sach theo doi.
+- Thoi gian summary phai dung dinh dang `dd-mm-yyyy HH:MM:SS`.

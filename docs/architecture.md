@@ -418,3 +418,31 @@ Không code tất cả trong một lần.
 - `core.analysis_engine.build_entry_checklist()` evaluates trend compatibility by scenario side and allows range setups only when the POI/location quality is strong enough.
 - `core.signal_engine.score_scenario()` scores each side with Trend 18, Momentum 15, Location 17, SMC quality 15, Risk 15 and Macro 30. SMC quality uses H4/H1 BOS/CHOCH/displacement, premium/discount, liquidity sweeps and zone metadata (`zone_score`, broken/mitigated/test count).
 - `core.analysis_engine.confidence_reason()` includes component score breakdowns, SMC reason and macro/news context so score confidence is explainable from rule-engine data.
+
+## Current Implementation Addendum
+
+### Telegram alert format
+
+- `services/telegram_alert_service.py` sends detailed trade alerts only for scanner rows with `scanner_action == "ready"`, `trade_permission == "allowed"` and a matching trade plan in `analysis_result`.
+- The detailed trade alert is Vietnamese with accents and bullet icons. It includes symbol, broker symbol, side, Entry, Stop loss, Take profit, suggested lot, R:R, setup score, reason, MT5 balance if present, and source.
+- The scanner summary alert no longer lists watch symbols. It shows only scan time, number of scanned symbols, number of ready symbols, and ready symbols with Entry/SL/TP.
+- Summary time is formatted as `dd-mm-yyyy HH:MM:SS`, for example `09-06-2026 10:30:07`.
+
+### Auto-entry on MT5
+
+- Auto-entry is enabled only when the Scanner is running in auto-scan mode and the user has turned on the `Tự động vào lệnh MT5` toggle button. Manual one-shot scans do not place orders.
+- `ui.screens.scanner_screen.ScannerScreen` exposes a visible auto-entry toggle button. The button is disabled in one-shot mode, enabled in auto-scan mode, and highlighted when active.
+- `ScannerScreen` sets `ScannerRequest.auto_trade_enabled=True` only when scan mode is auto and the auto-entry toggle button is on.
+- `controllers.scanner_controller.ScannerController` executes auto trades after all rows are scanned, sorted and enriched.
+- A row can be auto-traded only when it is a true ready setup: `scanner_action == "ready"`, `trade_permission == "allowed"`, `analysis_result` exists, and a scenario matching `best_side` exists.
+- Risk is still controlled by the normal sizing path. The controller caps `request.risk_percent` to `settings.trading.max_risk_percent` before analysis and before auto-entry.
+- Auto-entry uses `scenario.position_sizing.suggested_lot`, which is calculated from the MT5 account balance and configured risk percent.
+- For each broker symbol, `MT5Service.has_open_position_or_order()` checks both open positions and pending orders. If any existing position/order exists for that symbol, the system skips auto-entry for that symbol.
+- `MT5Service.place_market_order()` sends a market order through the MetaTrader5 Python API:
+  - BUY uses current `ask`.
+  - SELL uses current `bid`.
+  - SL comes from the trade plan.
+  - TP uses the first item in `take_profit`.
+  - The order comment is prefixed with `AMA`.
+- Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
+- Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, and `risk_percent`.

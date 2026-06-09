@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QEventLoop, QThread, QTimer
-from PyQt6.QtWidgets import QApplication, QHeaderView, QTableView
+from PyQt6.QtWidgets import QApplication, QHeaderView, QPushButton, QTableView
 
 import pandas as pd
 
@@ -294,6 +294,35 @@ def test_scanner_screen_uses_table_view_model() -> None:
     assert screen.scan_mode_combo.currentData() == "once"
     assert screen.scan_interval_combo.findData(300) >= 0
     assert screen.stop_auto_scan_button.text() == "Dừng quét tự động"
+
+
+def test_scanner_screen_auto_trade_toggle_requires_auto_mode() -> None:
+    app = QApplication.instance() or QApplication([])
+    screen = ScannerScreen()
+
+    assert hasattr(screen, "auto_trade_check")
+    assert isinstance(screen.auto_trade_check, QPushButton)
+    assert screen.auto_trade_check.text() == "Tự động vào lệnh MT5"
+    assert screen.scan_mode_combo.currentData() == "once"
+    assert not screen.auto_trade_check.isChecked()
+    assert not screen.auto_trade_check.isEnabled()
+    assert not screen._auto_trade_enabled()
+
+    auto_index = screen.scan_mode_combo.findData("auto")
+    assert auto_index >= 0
+    screen.scan_mode_combo.setCurrentIndex(auto_index)
+    screen.auto_trade_check.setChecked(True)
+
+    assert screen.auto_trade_check.isEnabled()
+    assert screen._auto_trade_enabled()
+    assert screen.auto_trade_check.property("autoTradeActive") is True
+
+    once_index = screen.scan_mode_combo.findData("once")
+    screen.scan_mode_combo.setCurrentIndex(once_index)
+
+    assert not screen.auto_trade_check.isChecked()
+    assert not screen.auto_trade_check.isEnabled()
+    assert not screen._auto_trade_enabled()
 
 
 def test_scanner_screen_enables_only_market_watch_symbols() -> None:

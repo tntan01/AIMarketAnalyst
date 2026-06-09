@@ -41,6 +41,7 @@ def main() -> int:
     check(hasattr(screen, "scan_button"), "missing scan_button")
     check(hasattr(screen, "scan_mode_combo"), "missing scan_mode_combo")
     check(hasattr(screen, "scan_interval_combo"), "missing scan_interval_combo")
+    check(hasattr(screen, "auto_trade_check"), "missing auto_trade_check")
     check(hasattr(screen, "stop_auto_scan_button"), "missing stop_auto_scan_button")
     check(hasattr(screen, "progress_bar"), "missing progress_bar")
     check(hasattr(screen, "status_summary_label"), "missing status_summary_label")
@@ -81,6 +82,10 @@ def main() -> int:
     # ---- stop button hidden ----
     check(not screen.stop_auto_scan_button.isVisible(),
           "stop_auto_scan_button should be hidden by default")
+    check(not screen.auto_trade_check.isChecked(),
+          "auto_trade_check toggle button should be off by default")
+    check(not screen.auto_trade_check.isEnabled(),
+          "auto_trade_check toggle button should be disabled in one-shot scan mode")
 
     # ---- status_labels ----
     check(hasattr(screen, "status_labels"), "missing status_labels dict")
