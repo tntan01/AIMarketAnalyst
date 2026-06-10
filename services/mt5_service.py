@@ -203,6 +203,58 @@ class MT5Service:
             )
         return candles
 
+    def load_ohlcv_range(
+        self,
+        broker_symbol: str,
+        timeframe: str,
+        start: datetime,
+        end: datetime,
+        skip_select: bool = False,
+    ) -> list[Candle]:
+        try:
+            import MetaTrader5 as mt5
+        except ImportError as exc:
+            raise RuntimeError("Chưa cài package MetaTrader5.") from exc
+
+        if end <= start:
+            raise ValueError("Thời điểm kết thúc phải sau thời điểm bắt đầu.")
+
+        if not mt5.initialize():
+            error_code, error_message = mt5.last_error()
+            raise RuntimeError(error_message or f"Không khởi tạo được MT5 ({error_code}).")
+
+        timeframe_id = self._timeframe_id(mt5, timeframe)
+        if timeframe_id is None:
+            raise ValueError(f"Timeframe không hỗ trợ: {timeframe}")
+
+        if not skip_select:
+            selected = mt5.symbol_select(broker_symbol, True)
+            if not selected:
+                raise RuntimeError(f"Không chọn được mã {broker_symbol} trong MT5 Market Watch.")
+
+        rates = mt5.copy_rates_range(broker_symbol, timeframe_id, start, end)
+        if rates is None or len(rates) == 0:
+            raise RuntimeError(f"Không lấy được OHLCV cho {broker_symbol} {timeframe} trong khoảng đã chọn.")
+
+        candles: list[Candle] = []
+        for item in rates:
+            timestamp = int(item["time"] if hasattr(item, "__getitem__") else getattr(item, "time"))
+            try:
+                volume = float(item["tick_volume"])
+            except Exception:
+                volume = float(getattr(item, "tick_volume", 0.0))
+            candles.append(
+                Candle(
+                    time=datetime.fromtimestamp(timestamp, tz=timezone.utc),
+                    open=float(item["open"] if hasattr(item, "__getitem__") else getattr(item, "open")),
+                    high=float(item["high"] if hasattr(item, "__getitem__") else getattr(item, "high")),
+                    low=float(item["low"] if hasattr(item, "__getitem__") else getattr(item, "low")),
+                    close=float(item["close"] if hasattr(item, "__getitem__") else getattr(item, "close")),
+                    volume=volume,
+                )
+            )
+        return candles
+
     def load_primary_timeframes(self, broker_symbol: str, bars_by_timeframe: dict[str, int]) -> dict[str, list[Candle]]:
         import MetaTrader5 as mt5
         if not mt5.initialize():

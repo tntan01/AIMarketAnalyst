@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.navigation import NAV_ITEMS
+from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.journal_detail_screen import JournalDetailScreen
 from ui.screens.journal_screen import JournalScreen
@@ -98,6 +99,7 @@ class MainWindow(QMainWindow):
             "analysis_result": SingleAnalysisResultScreen,
             "scanner": ScannerScreen,
             "scanner_detail": ScannerDetailScreen,
+            "backtest": BacktestScreen,
             "journal": JournalScreen,
             "journal_detail": JournalDetailScreen,
             "settings": SettingsScreen,
@@ -175,6 +177,8 @@ class MainWindow(QMainWindow):
             return "analysis"
         if route.startswith("scanner"):
             return "scanner"
+        if route.startswith("backtest"):
+            return "backtest"
         if route.startswith("journal"):
             return "journal"
         return route
@@ -185,6 +189,7 @@ def nav_route(key: str) -> str:
         "dashboard": "dashboard",
         "analysis": "analysis_input",
         "scanner": "scanner",
+        "backtest": "backtest",
         "journal": "journal",
         "settings": "settings",
     }[key]
