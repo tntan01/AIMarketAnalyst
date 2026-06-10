@@ -137,6 +137,7 @@ class BacktestScreen(QWidget):
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Strict", "strict")
+        self.mode_combo.addItem("Balanced", "balanced")
         self.mode_combo.addItem("Legacy", "legacy")
         self.mode_combo.addItem("Research", "research")
 
@@ -587,7 +588,7 @@ class BacktestInputHelpDialog(QDialog):
         (
             "Chế độ",
             "Mức độ nghiêm ngặt của bộ lọc setup.",
-            "Strict lọc chặt hơn, thường ít lệnh hơn. Legacy giữ gần logic cũ. Research dùng để khảo sát rộng hơn, có thể nhiều lệnh nhưng nhiễu hơn.",
+            "Strict lọc chặt nhất cho tín hiệu mạnh. Balanced dùng cho backtest: có thể nhận allowed/caution nhưng bắt buộc confirmed entry, M15 strict và điểm cao hơn. Legacy giữ gần logic cũ. Research chỉ dùng khảo sát rộng, nhiễu hơn và không nên dùng kết luận trade thật.",
         ),
         (
             "Số nến",

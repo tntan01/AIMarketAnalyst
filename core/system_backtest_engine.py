@@ -12,6 +12,21 @@ from core.risk_engine import AnalysisInput
 
 
 AnalysisFn = Callable[..., dict[str, Any]]
+BACKTEST_FUNNEL_KEYS = (
+    "snapshots_evaluated",
+    "no_trade_scenario",
+    "setup_detected",
+    "blocked_by_trade_gate",
+    "blocked_by_permission",
+    "blocked_by_decision",
+    "blocked_by_score",
+    "blocked_by_entry_status",
+    "blocked_by_m15",
+    "blocked_by_rr",
+    "entry_zone_not_touched",
+    "invalid_trade_plan",
+    "trade_opened",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +51,11 @@ class BacktestRequest:
     allow_macro: bool = False
     conservative_same_bar: bool = True
     store_analysis_snapshots: bool = False
+    account_guard_enabled: bool = False
+    max_daily_loss_pct: float = 999.0
+    max_weekly_loss_pct: float = 999.0
+    max_consecutive_losses: int = 999
+    max_open_risk_pct: float = 999.0
 
 
 @dataclass(slots=True)
@@ -110,6 +130,7 @@ def run_system_backtest(
     skipped: list[dict[str, Any]] = []
     equity_curve: list[dict[str, Any]] = []
     closed_for_guard: list[dict[str, Any]] = []
+    funnel = {key: 0 for key in BACKTEST_FUNNEL_KEYS}
     balance = float(request.initial_balance)
     snapshots_evaluated = 0
     setups_detected = 0
@@ -150,8 +171,10 @@ def run_system_backtest(
             continue
 
         snapshots_evaluated += 1
+        funnel["snapshots_evaluated"] += 1
         scenario = select_trade_scenario(analysis)
         if not scenario:
+            funnel["no_trade_scenario"] += 1
             skipped.append(
                 _skip(
                     candle.time,
@@ -163,14 +186,18 @@ def run_system_backtest(
             continue
 
         setups_detected += 1
-        if not should_open_trade(analysis, scenario, request.mode):
+        funnel["setup_detected"] += 1
+        block_reason = trade_open_block_reason(analysis, scenario, request.mode)
+        if block_reason is not None:
             if _gate_blocked(analysis):
                 blocked_by_gate += 1
+            if block_reason in funnel:
+                funnel[block_reason] += 1
             skipped.append(
                 _skip(
                     candle.time,
                     "not_actionable",
-                    _skip_reason(analysis, scenario),
+                    _skip_reason(analysis, scenario, block_reason),
                     build_skip_debug(analysis, scenario),
                 )
             )
@@ -184,17 +211,20 @@ def run_system_backtest(
             future_candles=_future_execution_candles(candles_by_timeframe, candle.time),
         )
         if trade is None:
+            skip_funnel_key, skip_message = trade_plan_skip_reason(scenario)
+            funnel[skip_funnel_key] += 1
             skipped.append(
                 _skip(
                     candle.time,
                     "invalid_trade_plan",
-                    trade_plan_skip_message(scenario),
+                    skip_message,
                     build_skip_debug(analysis, scenario),
                 )
             )
             continue
 
         trades.append(trade)
+        funnel["trade_opened"] += 1
         balance += (balance * request.risk_percent / 100.0) * trade.result_r
         equity_curve.append(
             {
@@ -229,6 +259,14 @@ def run_system_backtest(
         "trades_opened": len(trades),
         "trades_skipped": len(skipped),
         "blocked_by_gate": blocked_by_gate,
+        "gate_funnel": funnel,
+        "account_guard": {
+            "enabled": request.account_guard_enabled,
+            "max_daily_loss_pct": request.max_daily_loss_pct,
+            "max_weekly_loss_pct": request.max_weekly_loss_pct,
+            "max_consecutive_losses": request.max_consecutive_losses,
+            "max_open_risk_pct": request.max_open_risk_pct,
+        },
         "analysis_errors": analysis_errors,
         "step_timeframe": request.step_timeframe,
         "execution_timeframe": "M15" if m15_all else "H1",
@@ -290,31 +328,69 @@ def select_trade_scenario(analysis: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def should_open_trade(analysis: dict[str, Any], scenario: dict[str, Any], mode: str = "strict") -> bool:
+    return trade_open_block_reason(analysis, scenario, mode) is None
+
+
+def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], mode: str = "strict") -> str | None:
     mode = str(mode or "strict").lower()
     trade_permission = analysis.get("trade_permission", {}) if isinstance(analysis.get("trade_permission"), dict) else {}
     gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
     decision_engine = analysis.get("decision_engine", {}) if isinstance(analysis.get("decision_engine"), dict) else {}
     decision_summary = analysis.get("decision_summary", {}) if isinstance(analysis.get("decision_summary"), dict) else {}
 
-    allowed = gate.get("allowed") is True and trade_permission.get("status") == "allowed"
-    if not allowed:
-        return False
+    if gate.get("allowed") is not True:
+        return "blocked_by_trade_gate"
+    permission_status = trade_permission.get("status")
 
     if mode == "legacy":
-        return decision_summary.get("action") == "ready"
+        if permission_status != "allowed":
+            return "blocked_by_permission"
+        return None if decision_summary.get("action") == "ready" else "blocked_by_decision"
+    if mode == "balanced":
+        if permission_status not in {"allowed", "caution"}:
+            return "blocked_by_permission"
+        decision = decision_engine.get("decision")
+        if decision not in {"READY_TO_TRADE", "WAITING_CONFIRMATION"}:
+            return "blocked_by_decision"
+        if scenario.get("entry_status") != "confirmed_entry":
+            return "blocked_by_entry_status"
+        if scenario.get("m15_quality") != "strict":
+            return "blocked_by_m15"
+        if _safe_int(analysis.get("final_score")) is None or int(analysis.get("final_score") or 0) < 68:
+            return "blocked_by_score"
+        signal_score = _scenario_signal_score(analysis, scenario)
+        if signal_score is None or signal_score < 65:
+            return "blocked_by_score"
+        expected_rr = _safe_float(scenario.get("expected_effective_rr"))
+        if expected_rr is None or expected_rr < 1.2:
+            return "blocked_by_rr"
+        return None
     if mode == "research":
-        return decision_engine.get("decision") in {
+        allowed_research = decision_engine.get("decision") in {
             "READY_TO_TRADE",
             "WAITING_CONFIRMATION",
             "WATCH_ONLY",
             "AGGRESSIVE_SETUP",
         } and scenario.get("entry_status") in {"confirmed_entry", "waiting_confirmation", "watch_zone"}
-    return (
-        decision_engine.get("decision") == "READY_TO_TRADE"
-        and scenario.get("ready_to_trade") is True
-        and scenario.get("entry_status") == "confirmed_entry"
-        and scenario.get("m15_quality") == "strict"
-    )
+        return None if allowed_research else "blocked_by_decision"
+    if permission_status != "allowed":
+        return "blocked_by_permission"
+    if decision_engine.get("decision") != "READY_TO_TRADE":
+        return "blocked_by_decision"
+    if scenario.get("ready_to_trade") is not True:
+        return "blocked_by_decision"
+    if scenario.get("entry_status") != "confirmed_entry":
+        return "blocked_by_entry_status"
+    if scenario.get("m15_quality") != "strict":
+        return "blocked_by_m15"
+    return None
+
+
+def _scenario_signal_score(analysis: dict[str, Any], scenario: dict[str, Any]) -> int | None:
+    scores = analysis.get("scenario_scores", {}) if isinstance(analysis.get("scenario_scores"), dict) else {}
+    side = str(scenario.get("type") or "")
+    side_scores = scores.get(side, {}) if isinstance(scores.get(side), dict) else {}
+    return _safe_int(side_scores.get("signal_score", side_scores.get("total")))
 
 
 def simulate_trade_from_analysis(
@@ -396,16 +472,20 @@ def find_entry_fill(
     return None
 
 
-def trade_plan_skip_message(scenario: dict[str, Any]) -> str:
+def trade_plan_skip_reason(scenario: dict[str, Any]) -> tuple[str, str]:
     if _entry_zone_bounds(scenario.get("entry_zone")) is None:
-        return "Thiếu entry zone hợp lệ."
+        return "invalid_trade_plan", "Thiếu entry zone hợp lệ."
     try:
         float(scenario["stop_loss"])
         take_profit_raw = scenario.get("take_profit")
         float(take_profit_raw[0] if isinstance(take_profit_raw, list) else take_profit_raw)
     except (KeyError, TypeError, ValueError):
-        return "Thiếu SL/TP hợp lệ."
-    return "Giá M15 chưa chạm entry zone trong thời hạn setup."
+        return "invalid_trade_plan", "Thiếu SL/TP hợp lệ."
+    return "entry_zone_not_touched", "Giá M15 chưa chạm entry zone trong thời hạn setup."
+
+
+def trade_plan_skip_message(scenario: dict[str, Any]) -> str:
+    return trade_plan_skip_reason(scenario)[1]
 
 
 def _entry_zone_bounds(value: object) -> tuple[float, float] | None:
@@ -675,18 +755,26 @@ def _run_analysis_snapshot(
         m15_candles=snapshot.get("M15"),
         correlation_context=None,
         quote_to_usd_rate=1.0,
-        closed_trades=closed_trades,
+        closed_trades=_closed_trades_for_guard(request, closed_trades),
         open_trades=[],
-        account_guard_settings={
-            "max_daily_loss_pct": 2.0,
-            "max_weekly_loss_pct": 5.0,
-            "max_consecutive_losses": 3,
-            "max_open_risk_pct": 3.0,
-            "trader_timezone": request.timezone_name,
-        },
+        account_guard_settings=_account_guard_settings(request),
         trade_date=current_time,
         use_decision_engine_action=True,
     )
+
+
+def _closed_trades_for_guard(request: BacktestRequest, closed_trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return closed_trades if request.account_guard_enabled else []
+
+
+def _account_guard_settings(request: BacktestRequest) -> dict[str, Any]:
+    return {
+        "max_daily_loss_pct": float(request.max_daily_loss_pct),
+        "max_weekly_loss_pct": float(request.max_weekly_loss_pct),
+        "max_consecutive_losses": int(request.max_consecutive_losses),
+        "max_open_risk_pct": float(request.max_open_risk_pct),
+        "trader_timezone": request.timezone_name,
+    }
 
 
 def _future_execution_candles(candles_by_timeframe: dict[str, list[Candle]], moment: datetime) -> list[Candle]:
@@ -706,7 +794,18 @@ def _gate_blocked(analysis: dict[str, Any]) -> bool:
     return gate.get("allowed") is False
 
 
-def _skip_reason(analysis: dict[str, Any], scenario: dict[str, Any]) -> str:
+def _skip_reason(analysis: dict[str, Any], scenario: dict[str, Any], block_reason: str | None = None) -> str:
+    reason_labels = {
+        "blocked_by_trade_gate": "Gate hoặc trade_permission chặn giao dịch.",
+        "blocked_by_permission": "Trade permission chưa cho phép giao dịch.",
+        "blocked_by_decision": "Decision chưa đạt ngưỡng mở lệnh của mode backtest.",
+        "blocked_by_score": "Final score hoặc signal score chưa đạt ngưỡng mode backtest.",
+        "blocked_by_entry_status": "Entry status chưa đạt ngưỡng mode backtest.",
+        "blocked_by_m15": "M15 quality chưa đạt ngưỡng mode backtest.",
+        "blocked_by_rr": "Expected RR chưa đạt ngưỡng mode backtest.",
+    }
+    if block_reason in reason_labels:
+        return reason_labels[block_reason]
     decision = analysis.get("decision_engine", {}) if isinstance(analysis.get("decision_engine"), dict) else {}
     gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
     return str(

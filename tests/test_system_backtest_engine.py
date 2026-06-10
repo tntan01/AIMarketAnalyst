@@ -13,6 +13,7 @@ from core.system_backtest_engine import (
     resolve_exit,
     run_system_backtest,
     summarize_backtest_trades,
+    trade_open_block_reason,
 )
 
 
@@ -210,6 +211,46 @@ def test_build_skip_debug_includes_quantitative_fields() -> None:
     assert debug["liquidity_sweep_aligned"] is True
 
 
+def test_balanced_mode_requires_confirmed_entry_strict_m15_and_does_not_allow_watch_only() -> None:
+    analysis = _analysis_payload(ready=True)
+    scenario = analysis["scenarios"][0]
+    analysis["decision_engine"]["decision"] = "WAITING_CONFIRMATION"
+    analysis["trade_permission"]["status"] = "caution"
+    scenario["ready_to_trade"] = False
+    scenario["entry_status"] = "waiting_confirmation"
+    scenario["m15_quality"] = "loose"
+
+    assert trade_open_block_reason(analysis, scenario, "balanced") == "blocked_by_entry_status"
+
+    scenario["entry_status"] = "confirmed_entry"
+    assert trade_open_block_reason(analysis, scenario, "balanced") == "blocked_by_m15"
+    scenario["m15_quality"] = "strict"
+    assert trade_open_block_reason(analysis, scenario, "balanced") is None
+    assert trade_open_block_reason(analysis, scenario, "strict") == "blocked_by_permission"
+
+    analysis["decision_engine"]["decision"] = "WATCH_ONLY"
+    assert trade_open_block_reason(analysis, scenario, "balanced") == "blocked_by_decision"
+
+
+def test_balanced_mode_blocks_low_score_or_low_rr() -> None:
+    analysis = _analysis_payload(ready=True)
+    scenario = analysis["scenarios"][0]
+    analysis["decision_engine"]["decision"] = "WAITING_CONFIRMATION"
+    scenario["entry_status"] = "confirmed_entry"
+    scenario["m15_quality"] = "strict"
+
+    analysis["final_score"] = 67
+    assert trade_open_block_reason(analysis, scenario, "balanced") == "blocked_by_score"
+
+    analysis["final_score"] = 68
+    analysis["scenario_scores"]["buy"]["signal_score"] = 64
+    assert trade_open_block_reason(analysis, scenario, "balanced") == "blocked_by_score"
+
+    analysis["scenario_scores"]["buy"]["signal_score"] = 65
+    scenario["expected_effective_rr"] = 1.19
+    assert trade_open_block_reason(analysis, scenario, "balanced") == "blocked_by_rr"
+
+
 def test_run_system_backtest_replays_without_future_leak_and_opens_ready_trades() -> None:
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
     d1 = _series(80, base - timedelta(days=79), timedelta(days=1))
@@ -243,6 +284,10 @@ def test_run_system_backtest_replays_without_future_leak_and_opens_ready_trades(
     assert result.summary["wins"] == 1
     assert result.summary["losses"] == 1
     assert result.diagnostics["snapshots_evaluated"] >= 2
+    assert result.diagnostics["gate_funnel"]["trade_opened"] == 2
+    assert result.diagnostics["gate_funnel"]["setup_detected"] >= 2
+    assert result.diagnostics["account_guard"]["enabled"] is False
+    assert result.diagnostics["account_guard"]["max_consecutive_losses"] == 999
     assert result.trades[0].result == "win"
     assert result.trades[1].result == "loss"
     assert result.breakdowns["by_decision"]["READY_TO_TRADE"]["total_trades"] == 2
@@ -269,6 +314,7 @@ def test_run_system_backtest_skipped_setups_include_debug_payload() -> None:
     assert skipped["debug"]["final_score"] == 82
     assert skipped["debug"]["entry_status"] == "watch_zone"
     assert skipped["debug"]["m15_quality"] == "none"
+    assert result.diagnostics["gate_funnel"]["blocked_by_decision"] >= 1
 
 
 def test_run_system_backtest_requires_warmup_and_records_skips() -> None:
@@ -286,3 +332,31 @@ def test_run_system_backtest_requires_warmup_and_records_skips() -> None:
 
     assert result.summary["total_trades"] == 0
     assert any(item["reason"] == "insufficient_warmup" for item in result.skipped_setups)
+
+
+def test_backtest_disables_account_guard_history_by_default() -> None:
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    d1 = _series(80, base - timedelta(days=79), timedelta(days=1))
+    h4 = _series(120, base - timedelta(hours=4 * 119), timedelta(hours=4))
+    h1 = _series(100, base - timedelta(hours=99), timedelta(hours=1), close=1.10)
+    start = h1[80].time
+    end = h1[83].time
+    m15 = _series(500, h1[0].time, timedelta(minutes=15), close=1.10)
+    seen_closed_counts: list[int] = []
+
+    for idx, candle in enumerate(m15):
+        if candle.time in {h1[80].time + timedelta(minutes=15), h1[82].time + timedelta(minutes=15)}:
+            m15[idx] = Candle(candle.time, 1.10, 1.121, 1.099, 1.12)
+
+    def fake_analyze(request, candles_by_timeframe, **kwargs):
+        seen_closed_counts.append(len(kwargs.get("closed_trades") or []))
+        return _analysis_payload(ready=True)
+
+    run_system_backtest(
+        _request(start, end),
+        {"D1": d1, "H4": h4, "H1": h1, "M15": m15},
+        analysis_fn=fake_analyze,
+    )
+
+    assert seen_closed_counts
+    assert set(seen_closed_counts) == {0}

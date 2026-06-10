@@ -47,6 +47,11 @@ class BacktestController:
         slippage_price: float = 0.0,
         max_holding_bars: int = 96,
         timezone_name: str | None = None,
+        account_guard_enabled: bool = False,
+        max_daily_loss_pct: float = 999.0,
+        max_weekly_loss_pct: float = 999.0,
+        max_consecutive_losses: int = 999,
+        max_open_risk_pct: float = 999.0,
     ) -> BacktestRequest:
         settings = self.settings_service.load()
         available = self.mt5_service.available_symbols(market_watch_only=True)
@@ -75,6 +80,11 @@ class BacktestController:
             slippage_price=float(slippage_price),
             max_holding_bars=int(max_holding_bars),
             mode=mode,
+            account_guard_enabled=bool(account_guard_enabled),
+            max_daily_loss_pct=float(max_daily_loss_pct),
+            max_weekly_loss_pct=float(max_weekly_loss_pct),
+            max_consecutive_losses=int(max_consecutive_losses),
+            max_open_risk_pct=float(max_open_risk_pct),
         )
 
     def run_backtest(

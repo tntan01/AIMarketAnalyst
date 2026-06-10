@@ -72,6 +72,8 @@ def test_backtest_screen_renders_summary_and_trade_rows() -> None:
     ]
     assert "1,234.50R" in summary_values
     assert screen.balance_input.text() == "10,000.00"
+    mode_values = [screen.mode_combo.itemData(index) for index in range(screen.mode_combo.count())]
+    assert "balanced" in mode_values
     assert screen.start_date.displayFormat() == "dd/MM/yyyy"
     assert screen.end_date.displayFormat() == "dd/MM/yyyy"
     assert screen.balance_input.buttonSymbols() == QAbstractSpinBox.ButtonSymbols.NoButtons

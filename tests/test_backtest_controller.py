@@ -97,3 +97,5 @@ def test_backtest_controller_build_request_resolves_symbol_and_settings() -> Non
     assert request.start == start
     assert request.end == end
     assert request.mode == "strict"
+    assert request.account_guard_enabled is False
+    assert request.max_consecutive_losses == 999
