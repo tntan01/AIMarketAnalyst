@@ -23,7 +23,7 @@ class JournalController:
     def stats(self) -> dict[str, object]:
         return self.journal_service.stats()
 
-    def save_analysis(self, analysis: dict[str, object], *, mode: str = "single_analysis", note: str = "") -> int:
+    def save_analysis(self, analysis: dict[str, object], *, mode: str = "scanner_detail", note: str = "") -> int:
         return self.journal_service.create_from_analysis(analysis, mode=mode, note=note)
 
     def save_scanner_row(self, row: dict[str, object], *, note: str = "") -> int:

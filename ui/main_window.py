@@ -23,8 +23,6 @@ from ui.screens.journal_screen import JournalScreen
 from ui.screens.scanner_detail_screen import ScannerDetailScreen
 from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.settings_screen import SettingsScreen
-from ui.screens.single_analysis_input_screen import SingleAnalysisInputScreen
-from ui.screens.single_analysis_result_screen import SingleAnalysisResultScreen
 
 
 class MainWindow(QMainWindow):
@@ -95,8 +93,6 @@ class MainWindow(QMainWindow):
     def _build_screens(self) -> None:
         screen_factories = {
             "dashboard": DashboardScreen,
-            "analysis_input": SingleAnalysisInputScreen,
-            "analysis_result": SingleAnalysisResultScreen,
             "scanner": ScannerScreen,
             "scanner_detail": ScannerDetailScreen,
             "backtest": BacktestScreen,
@@ -173,8 +169,6 @@ class MainWindow(QMainWindow):
         self._position_sidebar()
 
     def _nav_key_for_route(self, route: str) -> str:
-        if route.startswith("analysis"):
-            return "analysis"
         if route.startswith("scanner"):
             return "scanner"
         if route.startswith("backtest"):
@@ -187,7 +181,6 @@ class MainWindow(QMainWindow):
 def nav_route(key: str) -> str:
     return {
         "dashboard": "dashboard",
-        "analysis": "analysis_input",
         "scanner": "scanner",
         "backtest": "backtest",
         "journal": "journal",

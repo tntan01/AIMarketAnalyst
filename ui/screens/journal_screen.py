@@ -34,7 +34,7 @@ DECISION_TEXT = {
 }
 BIAS_TEXT = {"buy": "Mua", "sell": "Bán", "neutral": "Trung lập", "stand_aside": "Đứng ngoài"}
 PERMISSION_TEXT = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}
-MODE_TEXT = {"single_analysis": "Phân tích một mã", "scanner_detail": "Chi tiết từ quét"}
+MODE_TEXT: dict[str, str] = {}
 
 
 class JournalTableModel(QAbstractTableModel):

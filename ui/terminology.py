@@ -2,8 +2,8 @@ from __future__ import annotations
 
 TERMS = {
     "Dashboard": "Bang dieu khien",
-    "Single Analysis": "Phan tich mot ma",
     "Scanner": "Quet thi truong",
+    "Backtest": "Backtest",
     "Journal": "Nhat ky",
     "Settings": "Cai dat",
     "AI Provider": "Nha cung cap AI",

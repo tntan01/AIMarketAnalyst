@@ -666,6 +666,15 @@ class ScannerScreen (QWidget ):
             for symbol in symbols
             if settings .trading .symbol_settings .get (symbol)
         }
+        symbol_auto_trade: dict[str, dict] = {}
+        for symbol in symbols:
+            cfg = settings.trading.symbol_settings.get(symbol)
+            if cfg and cfg.backtest and cfg.auto_trade_regime:
+                symbol_auto_trade[symbol] = {
+                    "regime": cfg.auto_trade_regime,
+                    "side": cfg.auto_trade_side,
+                    "min_rr": cfg.auto_trade_min_rr,
+                }
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,
@@ -674,6 +683,7 @@ class ScannerScreen (QWidget ):
         max_ai_details =settings .advanced .scanner_ai_detail_limit ,
         auto_trade_enabled =auto_trade_enabled ,
         min_scores =min_scores ,
+        symbol_auto_trade =symbol_auto_trade ,
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
         self .scan_thread =thread 

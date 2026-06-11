@@ -214,6 +214,17 @@ class ScannerController:
         output["telegram_alerts"] = self._send_telegram_alerts(rows)
         return output
 
+    @staticmethod
+    def _auto_trade_config(request: ScannerRequest, symbol: str) -> dict[str, object] | None:
+        """Return per-symbol auto-trade config, or None if not configured."""
+        cfg = request.symbol_auto_trade.get(symbol) if request.symbol_auto_trade else None
+        if not cfg:
+            return None
+        regime = str(cfg.get("regime", "")).strip().lower()
+        if not regime:
+            return None
+        return cfg
+
     def _apply_min_score_gate(self, row: dict[str, Any], min_score: int) -> dict[str, Any]:
         try:
             threshold = int(min_score)
@@ -246,12 +257,16 @@ class ScannerController:
         skipped = 0
 
         for row in rows:
-            if not self._is_auto_trade_candidate(row):
+            at_cfg = self._auto_trade_config(request, str(row.get("symbol", "")))
+            if not self._is_auto_trade_candidate(row, at_cfg):
                 continue
             attempted += 1
             symbol = str(row.get("symbol") or "--")
             broker_symbol = str(row.get("broker_symbol") or "").strip()
-            scenario = self._best_scenario(row)
+            trade_side = str(at_cfg.get("side", "")).strip().lower() if at_cfg else ""
+            if trade_side not in ("buy", "sell"):
+                trade_side = str(row.get("best_side") or "")
+            scenario = self._best_scenario(row, force_side=trade_side)
             sizing = scenario.get("position_sizing", {}) if isinstance(scenario.get("position_sizing"), dict) else {}
             take_profit = scenario.get("take_profit")
             first_tp = take_profit[0] if isinstance(take_profit, list) and take_profit else take_profit
@@ -277,7 +292,7 @@ class ScannerController:
                         "success": False,
                         "symbol": symbol,
                         "broker_symbol": broker_symbol,
-                        "side": row.get("best_side"),
+                        "side": trade_side,
                         "volume": volume,
                         "message": "Đã có lệnh/position cho mã này, không vào thêm.",
                     })
@@ -285,7 +300,7 @@ class ScannerController:
                 order = self.mt5_service.place_market_order(
                     symbol=symbol,
                     broker_symbol=broker_symbol,
-                    side=str(row.get("best_side") or ""),
+                    side=trade_side,
                     volume=volume,
                     stop_loss=stop_loss,
                     take_profit=tp,
@@ -312,25 +327,65 @@ class ScannerController:
             "risk_percent": request.risk_percent,
         }
 
-    def _is_auto_trade_candidate(self, row: dict[str, Any]) -> bool:
-        return (
-            row.get("scanner_action") == "ready"
-            and row.get("trade_permission") == "allowed"
-            and isinstance(row.get("analysis_result"), dict)
-            and bool(self._best_scenario(row))
-        )
+    def _is_auto_trade_candidate(self, row: dict[str, Any], at_cfg: dict[str, object] | None) -> bool:
+        """Check if a scanner row qualifies for auto-trade.
 
-    def _best_scenario(self, row: dict[str, Any]) -> dict[str, Any]:
+        When *at_cfg* is provided (per-symbol config from Settings), uses
+        backtest-proven filters: regime, side, min_rr.  Otherwise requires
+        the original strict criteria (scanner_action == "ready").
+        """
+        if not isinstance(row.get("analysis_result"), dict):
+            return False
+        # Respect user's Min Score gate and trade permission blocks
+        if row.get("scanner_group") == "blocked":
+            return False
+        if str(row.get("trade_permission", "")).strip().lower() == "blocked":
+            return False
+
+        if at_cfg is None:
+            # No per-symbol config — fall back to original strict criteria
+            return (
+                row.get("scanner_action") == "ready"
+                and row.get("trade_permission") == "allowed"
+                and bool(self._best_scenario(row))
+            )
+
+        # Backtest-proven per-symbol filters
+        cfg_regime = str(at_cfg.get("regime", "")).strip().lower()
+        cfg_side = str(at_cfg.get("side", "")).strip().lower()
+        cfg_min_rr = float(at_cfg.get("min_rr", 0) or 0)
+
+        if cfg_regime and str(row.get("market_regime", "")).strip().lower() != cfg_regime:
+            return False
+        if cfg_min_rr > 0:
+            expected_rr = _safe_float_for_auto(row.get("expected_effective_rr"))
+            if expected_rr is None or expected_rr < cfg_min_rr:
+                return False
+        best_score = int(row.get("best_score", 0) or 0)
+        if best_score < 50:
+            return False
+
+        # Determine trade side: config override or fall back to best_side
+        trade_side = cfg_side if cfg_side in ("buy", "sell") else row.get("best_side")
+        return bool(self._best_scenario(row, force_side=trade_side))
+
+    def _best_scenario(self, row: dict[str, Any], *, force_side: str | None = None) -> dict[str, Any]:
         analysis = row.get("analysis_result", {})
         if not isinstance(analysis, dict):
             return {}
         scenarios = analysis.get("scenarios", [])
         if not isinstance(scenarios, list):
             return {}
-        side = row.get("best_side")
+        side = force_side or row.get("best_side")
         for scenario in scenarios:
             if isinstance(scenario, dict) and scenario.get("type") == side:
                 return scenario
+        # Fallback: if forced side not found, try best_side
+        if force_side:
+            fallback_side = row.get("best_side")
+            for scenario in scenarios:
+                if isinstance(scenario, dict) and scenario.get("type") == fallback_side:
+                    return scenario
         return {}
 
     def _send_telegram_alerts(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -384,6 +439,19 @@ class ScannerController:
             for row in result.get("rows", [])
         ]
         return payload
+
+
+def _safe_float_for_auto(value: object) -> float | None:
+    """Safely convert a value to float, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        result = float(value)
+        if result != result or result == float("inf") or result == float("-inf"):
+            return None
+        return result
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_yf_candles(data) -> list | None:

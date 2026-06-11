@@ -60,16 +60,13 @@ class ScannerDetailScreen(QWidget):
         self.back_button = action_button("Quay lại Scanner")
         self.save_button = action_button("Lưu nhật ký")
         self.export_button = action_button("Xuất JSON")
-        self.run_again_button = action_button("Chạy lại phân tích đầy đủ", primary=True)
         if self.navigate:
             self.back_button.clicked.connect(lambda: self.navigate("scanner"))
-            self.run_again_button.clicked.connect(self._run_full_analysis_again)
         self.save_button.clicked.connect(self._save_to_journal)
         self.export_button.clicked.connect(self._export_json)
         actions.addWidget(self.back_button)
         actions.addStretch(1)
         actions.addWidget(self.export_button)
-        actions.addWidget(self.run_again_button)
         actions.addWidget(self.save_button)
         root.addLayout(actions)
         self._render()
@@ -415,16 +412,6 @@ class ScannerDetailScreen(QWidget):
         path = export_dir / f"scanner_detail_{rank}_{symbol}.json"
         payload = {key: value for key, value in self.row.items() if key != "analysis_result"}
         JsonStorage(path).save(payload)
-
-    def _run_full_analysis_again(self) -> None:
-        if self.navigate and self.row:
-            self.navigate(
-                "analysis_input",
-                {
-                    "symbol": self.row.get("symbol", ""),
-                    "broker_symbol": self.row.get("broker_symbol", ""),
-                },
-            )
 
     def _save_to_journal(self) -> None:
         if not self.row:

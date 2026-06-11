@@ -313,15 +313,72 @@ class BacktestController:
             "H1": (warmup_start, request.end),
             "M15": (request.start - timedelta(days=90), request.end),
         }
-        return {
-            timeframe: self.mt5_service.load_ohlcv_range(
-                request.broker_symbol,
-                timeframe,
-                start,
-                end,
+        result: dict[str, list] = {}
+        for timeframe, (start, end) in ranges.items():
+            if timeframe == "M15":
+                result[timeframe] = self._load_m15_chunked(
+                    request.broker_symbol, start, end,
+                )
+            else:
+                result[timeframe] = self.mt5_service.load_ohlcv_range(
+                    request.broker_symbol, timeframe, start, end,
+                )
+        return result
+
+    def _load_m15_chunked(
+        self,
+        broker_symbol: str,
+        start: datetime,
+        end: datetime,
+        *,
+        max_chunk_days: int = 180,
+    ) -> list:
+        """Load M15 in 180-day chunks to avoid MT5 per-call bar-count limit.
+
+        A single ``copy_rates_range`` for M15 over 3+ years exceeds MT5's
+        internal cap.  Splitting into semi-annual windows works around it.
+        Deduplication by bar timestamp handles chunk-boundary overlap.
+        """
+        from core.market_models import Candle
+
+        # Fast path: try the full range in one call first
+        try:
+            candles = self.mt5_service.load_ohlcv_range(
+                broker_symbol, "M15", start, end,
             )
-            for timeframe, (start, end) in ranges.items()
-        }
+            if candles:
+                return candles
+        except RuntimeError:
+            pass
+
+        # Build chunk list
+        chunk_starts: list[datetime] = []
+        cs = start
+        while cs < end:
+            chunk_starts.append(cs)
+            cs += timedelta(days=max_chunk_days)
+
+        if not chunk_starts:
+            return []
+
+        seen: set[int] = set()
+        all_candles: list[Candle] = []
+
+        for i, cs in enumerate(chunk_starts):
+            ce = min(cs + timedelta(days=max_chunk_days), end)
+            try:
+                chunk = self.mt5_service.load_ohlcv_range(
+                    broker_symbol, "M15", cs, ce, skip_select=(i > 0),
+                )
+            except RuntimeError:
+                continue
+            for c in chunk:
+                key = int(c.time.timestamp())
+                if key not in seen:
+                    seen.add(key)
+                    all_candles.append(c)
+
+        return all_candles
 
     def save_snapshot(self, payload: dict[str, Any]) -> Path:
         snapshot_dir = app_data_dir() / "backtests"

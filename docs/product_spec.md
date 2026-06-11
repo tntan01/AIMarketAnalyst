@@ -1,8 +1,8 @@
 # AI Market Analyst - Đặc tả sản phẩm
 
-> Phiên bản tài liệu: 2026-06-09
+> Phiên bản tài liệu: 2026-06-11
 > Trạng thái: cập nhật theo chương trình hiện tại
-> Phạm vi: ứng dụng desktop PyQt6 phân tích Forex/XAU/USD/XAG/USD/BTC/USD bằng MT5, rule engine và AI commentary
+> Phạm vi: ứng dụng desktop PyQt6 phân tích Forex/XAU/USD/XAG/USD/BTC/USD bằng MT5, rule engine, AI commentary, scanner, backtest và auto-trade MT5
 
 ## 1. Mục tiêu sản phẩm
 
@@ -12,8 +12,9 @@ AI Market Analyst là công cụ cá nhân hỗ trợ trader phân tích thị t
 - Tự tính indicator, market regime, direction bias, SMC context, macro context và risk.
 - Tạo trade plan có Entry, SL, TP, R:R và lot theo risk settings.
 - Quét nhiều mã để tìm setup đủ điều kiện.
+- Backtest hệ thống trên dữ liệu lịch sử để đo lường edge.
 - Gửi Telegram alert cho setup sẵn sàng.
-- Có thể tự động vào lệnh MT5 khi người dùng chủ động bật quyền auto-entry trong Scanner auto-scan.
+- Tự động vào lệnh MT5 khi người dùng bật auto-entry trong Scanner auto-scan, với bộ lọc riêng cho từng cặp dựa trên kết quả backtest.
 
 AI chỉ dùng để diễn giải dữ liệu đã tính và viết nhận định dễ hiểu. AI không được tự bịa giá, entry, SL, TP, lot hoặc trạng thái ready.
 
@@ -30,31 +31,27 @@ Broker symbol trong MT5 có thể có hậu tố như `m`, `c`, `.r`. Code phả
 
 ## 3. Chế độ phân tích
 
-### 3.1 Single Analysis
+### 3.1 Scanner (chính)
 
-Người dùng chọn một mã và chạy phân tích sâu. Kết quả phải có:
+Scanner là chế độ phân tích chính, quét danh sách mã đã chọn trong MT5 Market Watch. Mỗi mã được phân tích đầy đủ qua pipeline `analyze_symbol()`, trả về kết quả gồm:
 
-- Kết luận hành động.
-- Market regime.
-- Direction bias.
-- Buy/Sell score.
-- Final score.
-- Trade permission.
-- Trade plan.
-- Entry checklist.
-- Position sizing.
-- Macro/news context.
-- Replay/backtest summary.
-- AI commentary nếu có cấu hình AI hợp lệ.
+- Market regime, direction bias, buy/sell score, final score.
+- Trade permission, decision engine, scanner group.
+- Trade plan (entry zone, SL, TP, R:R, position sizing).
+- Entry checklist, M15 quality, SMC flags.
+- Macro/news context, macro alignment scores.
+- AI commentary (nếu có cấu hình AI).
 
-### 3.2 Scanner
+Scanner có hai chế độ:
 
-Scanner quét danh sách mã đã chọn trong MT5 Market Watch. Scanner có hai chế độ:
+- `Quét 1 lần`: quét và hiển thị kết quả, không tự động vào lệnh.
+- `Quét theo khoảng thời gian`: dùng timer quét lại định kỳ. Khi bật auto-trade, có thể tự động vào lệnh MT5 với bộ lọc riêng cho từng cặp.
 
-- `Quét 1 lần`: chỉ quét và hiển thị kết quả, không tự động vào lệnh.
-- `Quét theo khoảng thời gian`: dùng timer để quét lại theo nến/khung thời gian đã chọn.
+### 3.2 Backtest
 
-Scanner không được chạy song song hai worker scan. Khi một worker đang chạy, lần quét tiếp theo phải chờ worker hiện tại kết thúc.
+Backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge của hệ thống. Hỗ trợ 5 chế độ (Strict, Balanced, Legacy, Research, Backtest), multi-symbol batch, và breakdown 12 chiều (side, regime, score, M15 quality, SMC, R:R...).
+
+Kết quả backtest dùng để xác định bộ lọc auto-trade tối ưu cho từng cặp, cấu hình trong Settings > MT5.
 
 ## 4. Trạng thái entry và hành động scanner
 
@@ -114,22 +111,24 @@ Nếu MT5 chưa mở, chưa connected, chưa logged in, thiếu symbol, không l
 
 ## 7. Auto-entry MT5
 
-Auto-entry hiện được hỗ trợ có kiểm soát trong Scanner auto-scan.
+Auto-entry được hỗ trợ có kiểm soát trong Scanner auto-scan, với bộ lọc cấu hình riêng cho từng cặp trong Settings > MT5.
 
 Điều kiện bật:
 
 - Scanner đang ở chế độ `Quét theo khoảng thời gian`.
 - Người dùng bật nút chọn `Tự động vào lệnh MT5`.
-- Nút chọn này phải được làm nổi bật khi active để người dùng thấy rõ hệ thống có thể đặt lệnh thật. Không hiển thị thêm ô checkbox nhỏ bên trong nút; toàn bộ nút là trạng thái bật/tắt.
 
-Điều kiện đặt lệnh:
+Điều kiện đặt lệnh (với cặp đã cấu hình auto-trade):
 
-- Row là setup `ready` + `allowed`.
-- Có scenario đúng `best_side`.
-- Có `position_sizing.suggested_lot`.
-- Có `stop_loss`.
-- Có ít nhất một `take_profit`.
+- Row không bị blocked (scanner_group != "blocked", trade_permission != "blocked").
+- Market regime khớp với `auto_trade_regime` trong cấu hình (nếu được đặt).
+- Expected effective R:R >= `auto_trade_min_rr` (nếu được đặt).
+- Signal score >= 50.
+- Có scenario đúng hướng đã cấu hình (`auto_trade_side`) hoặc `best_side`.
+- Có `position_sizing.suggested_lot`, `stop_loss`, `take_profit`.
 - MT5 không có open position hoặc pending order cho cùng broker symbol.
+
+Đối với cặp chưa có cấu hình auto-trade (chưa backtest), hệ thống không tự động vào lệnh — chỉ hiển thị kết quả quét.
 
 Luồng đặt lệnh:
 
@@ -195,16 +194,13 @@ Summary alert không hiển thị danh sách theo dõi.
 
 ## 9. UI/UX chính
 
-Ứng dụng gồm các màn hình chính:
+Ứng dụng gồm 5 màn hình chính:
 
-- Dashboard.
-- Single Analysis Input.
-- Single Analysis Result.
-- Scanner.
-- Scanner Detail.
-- Journal.
-- Journal Detail.
-- Settings.
+- Dashboard — tổng quan trạng thái MT5, AI, thống kê nhanh.
+- Scanner — quét thị trường, bảng xếp hạng cơ hội, auto-trade.
+- Backtest — replay hệ thống trên dữ liệu lịch sử, phân tích edge.
+- Journal — nhật ký giao dịch, xem lại phân tích đã lưu.
+- Settings — cấu hình AI, MT5, giao dịch, auto-trade cho từng cặp.
 
 Yêu cầu UI:
 
@@ -229,21 +225,35 @@ Journal lưu phân tích và trade outcome để người dùng xem lại:
 
 Journal data nằm trong SQLite và phải có migration ổn định.
 
-## 11. Backtest/replay
+## 11. Backtest
 
-Backtest replay kiểm chứng trade plan trên dữ liệu lịch sử. Output nên gồm:
+System backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge.
 
-- Trade count.
-- Win rate.
-- Expectancy R.
-- Average R.
-- Average MFE/MAE.
-- Max drawdown.
-- Breakdown theo symbol/session nếu có.
+Tính năng chính:
 
-Replay không thay thế quyết định realtime và không tự tạo lệnh MT5.
+- 5 chế độ vào lệnh: Strict, Balanced, Legacy, Research, Backtest.
+- Multi-symbol batch backtest.
+- Funnel diagnostics: snapshot → setup → gate → entry → trade.
+- Breakdown 12 chiều: symbol, side, decision, score bucket, final score, M15 quality, regime, SMC zone, entry zone, liquidity sweep, displacement, CHOCH, R:R.
+- Equity curve, drawdown tracking, account guard mô phỏng.
+- Dữ liệu M15 load theo chunk 180 ngày, tự fallback sang H1 khi không có.
 
-## 12. Packaging
+Kết quả backtest là cơ sở để cấu hình bộ lọc auto-trade cho từng cặp trong Settings > MT5.
+
+## 12. Cấu hình auto-trade theo cặp
+
+Mỗi cặp có thể được cấu hình auto-trade riêng trong Settings > MT5:
+
+| Trường | Ý nghĩa |
+|---|---|
+| Min Score | Ngưỡng final score tối thiểu |
+| Auto Regime | Chỉ auto-trade khi regime khớp. Để trống = không lọc |
+| Auto Side | Hướng auto-trade (buy/sell/best) |
+| Min RR | R:R kỳ vọng tối thiểu. 0 = không lọc |
+
+Cặp chưa cấu hình (chưa backtest) sẽ không được auto-trade.
+
+## 13. Packaging
 
 Ứng dụng phải đóng gói được trên Windows:
 
@@ -254,26 +264,17 @@ Replay không thay thế quyết định realtime và không tự tạo lệnh M
 - Include hidden imports cần cho PyQt6/PyQt6-WebEngine/MetaTrader5.
 - User data lưu trong `%APPDATA%/AI Market Analyst/`.
 
-## 13. Testing
+## 14. Testing
 
 Các nhóm test quan trọng:
 
-- Core scoring/risk/entry engine.
-- MT5 service với mock.
-- Scanner controller.
-- Telegram alert formatter.
-- Auto-entry controller.
-- Settings service.
-- UI Scanner controls.
-- Phase 16/17/18 regression nếu môi trường cho phép.
+- Core: scoring, risk, entry engine, signal engine, decision engine, trade gate.
+- MT5 service, scanner controller, auto-trade controller.
+- Backtest engine: system backtest, plan replay, feedback.
+- Telegram alert, journal, settings service.
+- Scanner ranking, opportunity score, scanner row contract.
 
-Lưu ý hiện tại:
-
-- Full PyQt UI tests có thể bị access violation khi gom nhiều file trong cùng process trên Windows. Chạy từng file UI riêng thường ổn định hơn.
-- Test worker scanner có thể flaky nếu dùng `NewsService` thật và network chậm.
-- Phase 18 prompt status test có thể mâu thuẫn nếu tài liệu upgrade đã chuyển từ UNFINISH sang FINISH.
-
-## 14. Nguyên tắc an toàn
+## 15. Nguyên tắc an toàn
 
 - Không tự vào lệnh khi người dùng chưa bật nút chọn auto-entry.
 - Không vào thêm nếu broker symbol đã có position hoặc pending order.

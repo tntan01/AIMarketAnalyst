@@ -62,14 +62,12 @@ ai-market-analyst/
     trade_gate_engine.py
 
   controllers/
-    analysis_controller.py
     backtest_controller.py
     scanner_controller.py
 
   workers/
     base_worker.py
-    analysis_worker.py
-    data_worker.py
+    scanner_worker.py
     backtest_worker.py
 
   services/
@@ -105,10 +103,9 @@ ai-market-analyst/
 
     screens/
       dashboard_screen.py
-      single_analysis_input_screen.py
-      single_analysis_result_screen.py
       scanner_screen.py
       scanner_detail_screen.py
+      backtest_screen.py
       journal_screen.py
       journal_detail_screen.py
       settings_screen.py
@@ -309,16 +306,13 @@ Mỗi màn hình nằm trong một file riêng.
 
 Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 
-8 màn hình logic trong tài liệu thiết kế phải được map rõ vào file UI:
+5 màn hình chính trong ứng dụng:
 
-* `dashboard_screen.py`: Bảng điều khiển.
-* `single_analysis_input_screen.py`: Nhập phân tích một mã.
-* `single_analysis_result_screen.py`: Kết quả phân tích một mã, có vùng chart nhúng.
-* `scanner_screen.py`: Quét thị trường và bảng xếp hạng.
-* `scanner_detail_screen.py`: Chi tiết một mã từ bảng quét.
-* `journal_screen.py`: Danh sách nhật ký.
-* `journal_detail_screen.py`: Chi tiết bản ghi nhật ký.
-* `settings_screen.py`: Cài đặt dạng tab.
+* `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5/AI.
+* `scanner_screen.py`: Quét thị trường, bảng xếp hạng, auto-trade.
+* `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử.
+* `journal_screen.py`: Nhật ký giao dịch.
+* `settings_screen.py`: Cài đặt AI, MT5, giao dịch, auto-trade theo cặp.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.
 

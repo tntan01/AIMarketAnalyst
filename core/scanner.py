@@ -33,6 +33,8 @@ class ScannerRequest:
     max_ai_details: int = 3
     auto_trade_enabled: bool = False
     min_scores: dict[str, int] = field(default_factory=dict)
+    symbol_auto_trade: dict[str, dict] = field(default_factory=dict)
+    # Each entry: {"regime": "range", "side": "buy", "min_rr": 2.0}
 
 
 def classify_scanner_action(
@@ -76,6 +78,16 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         price_in_entry_zone=bool(best_plan and best_plan.get("price_in_entry_zone")),
         h1_confirmation=bool(best_plan and best_plan.get("h1_confirmation")),
     )
+
+    # Backtest-proven override: range + buy + R:R>=2.0 + score>=50
+    # should never be "skip", even if classify_scanner_action says so.
+    regime_label = result.get("market_regime", {}).get("primary", "")
+    if action == "skip" and best_score >= 50 and regime_label == "range":
+        buy_scenario = next((s for s in scenarios if s.get("type") == "buy"), None)
+        if buy_scenario:
+            buy_rr = _parse_rr_float(buy_scenario.get("expected_effective_rr"))
+            if buy_rr is not None and buy_rr >= 2.0:
+                action = "ready"
 
     # Extract macro info
     macro_buy = int(scores.get("buy", {}).get("macro_alignment", 15))
@@ -393,3 +405,16 @@ def _classify_macro_bias(result: dict[str, Any], best_side: str) -> str:
     if best_side == "sell" and macro_diff <= -5:
         return "aligned"
     return "divergent"
+
+
+def _parse_rr_float(value: object) -> float | None:
+    """Safely parse expected_effective_rr to float, returning None on failure."""
+    if value is None:
+        return None
+    try:
+        result = float(value)
+        if result != result or result == float("inf") or result == float("-inf"):
+            return None
+        return result
+    except (TypeError, ValueError):
+        return None

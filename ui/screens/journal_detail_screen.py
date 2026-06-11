@@ -43,19 +43,16 @@ class JournalDetailScreen(QWidget):
 
         actions = QHBoxLayout()
         self.back_button = action_button("Quay lại nhật ký")
-        self.rerun_button = action_button("Phân tích mới cùng mã", primary=True)
         self.export_button = action_button("Xuất JSON")
         self.delete_button = action_button("Xóa bản ghi")
         if self.navigate:
             self.back_button.clicked.connect(lambda: self.navigate("journal"))
-            self.rerun_button.clicked.connect(self._run_new_analysis)
         self.export_button.clicked.connect(self._export_json)
         self.delete_button.clicked.connect(self._delete_entry)
         actions.addWidget(self.back_button)
         actions.addStretch(1)
         actions.addWidget(self.export_button)
         actions.addWidget(self.delete_button)
-        actions.addWidget(self.rerun_button)
         self.root.addLayout(actions)
         self._render()
 
@@ -153,10 +150,6 @@ class JournalDetailScreen(QWidget):
         self.journal_controller.delete_entry(self.entry.id)
         if self.navigate:
             self.navigate("journal")
-
-    def _run_new_analysis(self) -> None:
-        if self.entry and self.navigate:
-            self.navigate("analysis_input", {"symbol": self.entry.symbol, "broker_symbol": self.entry.broker_symbol})
 
 
 def format_json_text(value: str) -> str:

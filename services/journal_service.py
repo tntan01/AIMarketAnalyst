@@ -97,7 +97,7 @@ class JournalService:
                 )
             conn.commit()
 
-    def create_from_analysis(self, analysis: dict[str, Any], *, mode: str = "single_analysis", note: str = "") -> int:
+    def create_from_analysis(self, analysis: dict[str, Any], *, mode: str = "scanner_detail", note: str = "") -> int:
         entry = journal_entry_from_analysis(analysis, mode=mode, note=note)
         return self.create(entry)
 

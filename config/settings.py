@@ -32,6 +32,9 @@ class AISettings:
 class SymbolScanSettings:
     backtest: bool = False
     min_score: int = 0
+    auto_trade_regime: str = ""       # "range", "trend_up", etc. Empty = no filter
+    auto_trade_side: str = ""         # "buy", "sell", "best". Empty = use best_side
+    auto_trade_min_rr: float = 0.0   # min expected_effective_rr. 0 = no filter
 
 
 @dataclass(slots=True)
