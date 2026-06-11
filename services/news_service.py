@@ -620,6 +620,15 @@ class NewsService:
             except Exception as exc:
                 errors.append(f"{source}: {exc}")
                 continue
+
+            # If JSON source, try to enrich actual values from HTML
+            if source == "Forex Factory":
+                try:
+                    html_rows = self._fetch_forex_factory_html_events()
+                    self._merge_actual_from_html(rows, html_rows)
+                except Exception:
+                    pass  # HTML enrichment is best-effort
+
             self._store_calendar_cache(rows)
             return {
                 "source": source,
@@ -640,20 +649,61 @@ class NewsService:
             "warning": "Không lấy được lịch kinh tế từ Forex Factory: " + "; ".join(errors),
         }
 
-    def _fetch_forex_factory_json_events(self) -> list[dict[str, object]]:
-        request = Request(
-            self.FOREX_FACTORY_CALENDAR_URL,
-            headers={"User-Agent": "AI Market Analyst/1.0"},
-        )
-        try:
-            with urlopen(request, timeout=10) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            raise RuntimeError(f"HTTP {exc.code}") from exc
-        except URLError as exc:
-            raise RuntimeError(str(exc.reason)) from exc
+    def _merge_actual_from_html(self, json_rows: list[dict[str, object]], html_rows: list[dict[str, object]]) -> None:
+        """Merge actual values from HTML scraper into JSON rows. Only merge for past events."""
+        if not html_rows:
+            return
+        now = datetime.now(UTC)
+        # Build lookup from HTML: key = (currency, event_name, date_bucket)
+        html_lookup: dict[tuple[str, str, str], str] = {}
+        for row in html_rows:
+            currency = str(row.get("currency", "")).upper()
+            event = str(row.get("event", "")).strip().lower()
+            actual = str(row.get("actual", "")).strip()
+            ev_time = _event_time(row)
+            date_key = ev_time.strftime("%Y%m%d") if ev_time else ""
+            if actual and currency and event:
+                html_lookup[(currency, event, date_key)] = actual
 
-        return self._normalize_calendar_items(payload if isinstance(payload, list) else [], source="Forex Factory")
+        if not html_lookup:
+            return
+
+        for row in json_rows:
+            ev_time = _event_time(row)
+            if not ev_time or ev_time >= now:
+                continue  # Only merge actual for past events
+            currency = str(row.get("currency", "")).upper()
+            event = str(row.get("event", "")).strip().lower()
+            date_key = ev_time.strftime("%Y%m%d")
+            # Try exact date match first, then fall back to name-only match
+            key = (currency, event, date_key)
+            if key in html_lookup and not str(row.get("actual", "")).strip():
+                row["actual"] = html_lookup[key]
+
+    def _fetch_forex_factory_json_events(self) -> list[dict[str, object]]:
+        import time
+        last_error = None
+        for attempt in range(3):
+            try:
+                request = Request(
+                    self.FOREX_FACTORY_CALENDAR_URL,
+                    headers={"User-Agent": "AI Market Analyst/1.0"},
+                )
+                with urlopen(request, timeout=10) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                return self._normalize_calendar_items(payload if isinstance(payload, list) else [], source="Forex Factory")
+            except HTTPError as exc:
+                last_error = RuntimeError(f"HTTP {exc.code}")
+                if exc.code == 429 and attempt < 2:
+                    time.sleep(2 * (attempt + 1))  # 2s, 4s backoff
+                    continue
+                raise last_error from exc
+            except URLError as exc:
+                last_error = RuntimeError(str(exc.reason))
+                if attempt < 2:
+                    time.sleep(1)
+                    continue
+                raise last_error from exc
 
     def _fetch_forex_factory_html_events(self) -> list[dict[str, object]]:
         request = Request(
@@ -677,6 +727,7 @@ class NewsService:
 
     def _normalize_calendar_items(self, payload: list[object], *, source: str) -> list[dict[str, object]]:
         now = datetime.now(UTC)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows: list[dict[str, object]] = []
         for item in payload:
             if not isinstance(item, dict):
@@ -685,7 +736,7 @@ class NewsService:
             if not currency:
                 continue
             event_time = parse_event_time(str(item.get("date") or ""))
-            if event_time and event_time < now:
+            if event_time and event_time < today_start:
                 continue
             hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
             rows.append(
@@ -698,21 +749,42 @@ class NewsService:
                     "hours_until": round(hours_until, 2) if hours_until is not None else None,
                     "forecast": item.get("forecast", ""),
                     "previous": item.get("previous", ""),
+                    "actual": item.get("actual", ""),
                 }
             )
         return rows
 
     def _parse_forex_factory_html(self, html: str) -> list[dict[str, object]]:
+        from datetime import datetime as dt
+
         now = datetime.now(UTC)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows: list[dict[str, object]] = []
+        current_date: str | None = None
+
+        # Detect timezone from HTML (Forex Factory shows times in viewer's local tz)
+        html_tz = self._detect_html_timezone(html)
+
         row_blocks = re.findall(r"<tr[^>]*calendar__row[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL)
         for block in row_blocks:
+            # Track current date from calendar__date cell
+            date_text = self._html_cell_text(block, "calendar__date")
+            if date_text:
+                # Format: "Mon Jun 15" or "Mon  Jun 15"
+                date_clean = re.sub(r"\s+", " ", date_text).strip()
+                current_date = date_clean
+
             currency = self._html_cell_text(block, "calendar__currency")
             event = self._html_cell_text(block, "calendar__event-title") or self._html_cell_text(block, "calendar__event")
             if not currency or not event:
                 continue
-            event_time = self._html_event_time(block)
-            if event_time and event_time < now:
+
+            # Extract time from calendar__time cell + current_date
+            time_text = self._html_raw_cell(block, "calendar__time")
+            time_text = re.sub(r"<[^>]+>", " ", time_text).strip() if time_text else ""
+            event_time = self._parse_html_time(time_text, current_date, html_tz)
+
+            if event_time and event_time < today_start:
                 continue
             hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
             rows.append(
@@ -725,9 +797,76 @@ class NewsService:
                     "hours_until": round(hours_until, 2) if hours_until is not None else None,
                     "forecast": self._html_cell_text(block, "calendar__forecast"),
                     "previous": self._html_cell_text(block, "calendar__previous"),
+                    "actual": self._html_cell_text(block, "calendar__actual"),
                 }
             )
         return rows
+
+    def _detect_html_timezone(self, html: str) -> str:
+        """Detect the timezone used by Forex Factory HTML page.
+
+        Forex Factory auto-detects the viewer's timezone from IP and displays
+        all event times in that timezone. We extract it from the page metadata."""
+        # Primary: "Calendar Time Zone: Asia/Bangkok (GMT +7)"
+        tz_match = re.search(r"Calendar Time Zone:\s*([^<]+)", html)
+        if tz_match:
+            tz_text = tz_match.group(1).strip()
+            tz_name = re.search(r"([A-Z][a-z]+/[A-Z][a-z_]+)", tz_text)
+            if tz_name:
+                return tz_name.group(1)
+        # Secondary: JS config 'User Timezone': 'Asia/Bangkok'
+        tz_match = re.search(r"'User Timezone':\s*'([^']+)'", html)
+        if tz_match:
+            return tz_match.group(1)
+        # Fallback: system local timezone
+        return str(datetime.now().astimezone().tzinfo)
+
+    def _parse_html_time(self, time_text: str, date_text: str | None, html_tz: str = "UTC") -> datetime | None:
+        """Parse time like '5:30am' or 'All Day' combined with date like 'Mon Jun 15'.
+
+        html_tz is the timezone detected from the Forex Factory HTML page
+        (matches the viewer's local timezone based on IP)."""
+        if not time_text or not date_text:
+            return None
+        time_text = time_text.strip().lower()
+        if time_text in ("all day", "tentative", ""):
+            return None  # skip events without specific time
+
+        match = re.match(r"(\d{1,2}):(\d{2})(am|pm)", time_text)
+        if not match:
+            return None
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        ampm = match.group(3)
+        if ampm == "pm" and hour != 12:
+            hour += 12
+        elif ampm == "am" and hour == 12:
+            hour = 0
+
+        # Parse date: "Mon Jun 15"
+        try:
+            parsed_date = datetime.strptime(date_text + f" {datetime.now(UTC).year}", "%a %b %d %Y")
+        except ValueError:
+            return None
+
+        from zoneinfo import ZoneInfo
+        try:
+            tz = ZoneInfo(html_tz)
+        except Exception:
+            tz = None
+        dt_local = parsed_date.replace(hour=hour, minute=minute, tzinfo=tz)
+        if tz:
+            return dt_local.astimezone(UTC)
+        return dt_local.replace(tzinfo=UTC)
+
+    def _html_raw_cell(self, row_html: str, class_name: str) -> str:
+        """Extract raw HTML content of a cell by class name (without stripping tags)."""
+        match = re.search(
+            rf'<(?:td|span|div)[^>]*class="[^"]*{re.escape(class_name)}[^"]*"[^>]*>(.*?)</(?:td|span|div)>',
+            row_html,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        return match.group(1) if match else ""
 
     def _html_cell_text(self, row_html: str, class_name: str) -> str:
         match = re.search(

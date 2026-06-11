@@ -9,7 +9,7 @@ When the user asks the LLM to analyze images or search for current/real-time inf
 
 - **Base URL**: `https://api.ai-box.vn/v1`
 - **Chat Completions**: `POST /v1/chat/completions`
-- **Auth header**: `Authorization: Bearer sk-lnpqpiHzylopocvUeqS2MrX96PP8trBWx1kQM36ppxEpzd2R`
+- **Auth header**: `Authorization: sk-lnpqpiHzylopocvUeqS2MrX96PP8trBWx1kQM36ppxEpzd2R`
 - **Content-Type**: `application/json`
 
 ## Recommended Model
@@ -73,7 +73,7 @@ with open("image.png", "rb") as f:
 resp = requests.post(
     "https://api.ai-box.vn/v1/chat/completions",
     headers={
-        "Authorization": "Bearer sk-lnpqpiHzylopocvUeqS2MrX96PP8trBWx1kQM36ppxEpzd2R",
+        "Authorization": "sk-lnpqpiHzylopocvUeqS2MrX96PP8trBWx1kQM36ppxEpzd2R",
         "Content-Type": "application/json",
     },
     json={
@@ -99,7 +99,7 @@ import requests
 resp = requests.post(
     "https://api.ai-box.vn/v1/chat/completions",
     headers={
-        "Authorization": "Bearer sk-lnpqpiHzylopocvUeqS2MrX96PP8trBWx1kQM36ppxEpzd2R",
+        "Authorization": "sk-lnpqpiHzylopocvUeqS2MrX96PP8trBWx1kQM36ppxEpzd2R",
         "Content-Type": "application/json",
     },
     json={

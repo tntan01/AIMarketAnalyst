@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
     QFrame,
     QGridLayout,
     QHeaderView,
@@ -15,6 +17,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -47,7 +50,6 @@ class DashboardScreen(QWidget):
         root.addWidget(self.market_overview)
         self.economic_calendar = self._build_economic_calendar()
         root.addWidget(self.economic_calendar)
-        root.addLayout(self._build_footer_strip())
         QTimer.singleShot(3000, self._refresh_market_overview)
 
     def _build_header(self) -> QHBoxLayout:
@@ -69,7 +71,7 @@ class DashboardScreen(QWidget):
 
     def _build_status_grid(self) -> QGridLayout:
         grid = QGridLayout()
-        grid.setSpacing(12)
+        grid.setSpacing(8)
         items = [
             ("MT5", "Đang kiểm tra", "Đang đọc terminal MT5", "warning"),
             ("Broker", "Đang kiểm tra", "Đang đọc tài khoản broker", "warning"),
@@ -88,8 +90,8 @@ class DashboardScreen(QWidget):
         frame.setProperty("state", state)
         frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(7)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(3)
         value_label = None
         detail_label = None
         for text, name in [(title, "CardTitle"), (value, "CardValue"), (detail, "CardDetail")]:
@@ -166,39 +168,62 @@ class DashboardScreen(QWidget):
         layout.setSpacing(10)
 
         header_layout = QHBoxLayout()
-        title = QLabel("Lịch kinh tế (48h tới)")
+        title = QLabel("Lịch kinh tế (Hôm nay & Ngày mai)")
         title.setObjectName("PanelTitle")
         header_layout.addWidget(title)
         header_layout.addStretch()
         layout.addLayout(header_layout)
 
-        self.econ_events_widget = QWidget()
-        self.econ_events_widget.setStyleSheet("background:transparent;")
-        self.econ_events_container = QVBoxLayout(self.econ_events_widget)
-        self.econ_events_container.setContentsMargins(0, 0, 0, 0)
-        self.econ_events_container.setSpacing(6)
-        self.econ_events_container.addStretch()
+        self.econ_table = QTableWidget()
+        self.econ_table.setObjectName("EconTable")
+        self.econ_table.setColumnCount(6)
+        self.econ_table.setHorizontalHeaderLabels(["Thời gian", "Sự kiện", "Dự báo", "Kỳ trước", "Kết quả", ""])
+        self.econ_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.econ_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.econ_table.setAlternatingRowColors(True)
+        self.econ_table.verticalHeader().setVisible(False)
+        self.econ_table.setShowGrid(False)
+        self.econ_table.setWordWrap(True)
+        self.econ_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.econ_table.setStyleSheet(
+            "QTableWidget#EconTable {"
+            "  background:#161a22; border:none; border-radius:4px; color:#e5e7eb;"
+            "  alternate-background-color:#191e28;"
+            "}"
+            "QTableWidget#EconTable::item {"
+            "  font-size:13px; padding:6px 8px; border:none;"
+            "}"
+            "QHeaderView::section {"
+            "  background:#11151d; color:#64748b; font-size:11px; font-weight:700;"
+            "  padding:8px 8px; border:none; border-bottom:2px solid #2563eb;"
+            "  text-transform:uppercase;"
+            "}"
+        )
 
-        scroll = QScrollArea()
-        scroll.setObjectName("EconScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(self.econ_events_widget)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea#EconScroll{border:none;background:transparent;}")
-        scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(scroll)
+        header = self.econ_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)    # Thời gian
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Sự kiện
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)    # Dự báo
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)    # Kỳ trước
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)    # Kết quả
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)    # Chi tiết
+        self.econ_table.setColumnWidth(0, 95)
+        self.econ_table.setColumnWidth(2, 85)
+        self.econ_table.setColumnWidth(3, 85)
+        self.econ_table.setColumnWidth(4, 100)
+        self.econ_table.setColumnWidth(5, 45)
 
-        QTimer.singleShot(3500, self._refresh_economic_calendar)
+        layout.addWidget(self.econ_table)
+
+        QTimer.singleShot(1000, self._refresh_economic_calendar)
         panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         return panel
 
     def _refresh_economic_calendar(self) -> None:
         from zoneinfo import ZoneInfo
 
-        while self.econ_events_container.count() > 1:
-            item = self.econ_events_container.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        table = self.econ_table
+        table.setRowCount(0)
 
         try:
             try:
@@ -213,17 +238,28 @@ class DashboardScreen(QWidget):
                 tz = ZoneInfo("Asia/Ho_Chi_Minh")
 
             news = NewsService()
+            # Use full calendar pipeline (JSON → HTML fallback → cache)
             try:
                 events = news._fetch_forex_factory_json_events()
+                # JSON API doesn't include actual values — enrich from HTML
+                try:
+                    html_rows = news._fetch_forex_factory_html_events()
+                    news._merge_actual_from_html(events, html_rows)
+                except Exception:
+                    pass
             except Exception:
-                events = news._cached_calendar_events()
+                try:
+                    events = news._fetch_forex_factory_html_events()
+                except Exception:
+                    events = news._cached_calendar_events()
 
             if not events:
                 self._show_empty_events("Chưa có dữ liệu lịch kinh tế. Kiểm tra kết nối mạng.")
                 return
 
             now = datetime.now(timezone.utc)
-            cutoff = now + timedelta(hours=48)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = today_start + timedelta(days=2)
 
             upcoming: list[tuple[datetime, dict]] = []
             for ev in events:
@@ -236,43 +272,360 @@ class DashboardScreen(QWidget):
                     continue
                 if ev_time.tzinfo is None:
                     ev_time = ev_time.replace(tzinfo=timezone.utc)
-                if now <= ev_time <= cutoff:
+                if today_start <= ev_time < tomorrow_end:
                     upcoming.append((ev_time, ev))
 
             upcoming.sort(key=lambda x: x[0])
 
             if not upcoming:
-                self._show_empty_events("Không có sự kiện kinh tế nào trong 48h tới.")
+                self._show_empty_events("Không có sự kiện kinh tế nào hôm nay và ngày mai.")
                 return
 
-            impact_labels = {"high": "🔴", "medium": "🟡", "low": "⚪"}
-            impact_colors = {"high": "#f44336", "medium": "#ffaa00", "low": "#e5e7eb"}
+            # Find nearest upcoming event index
+            nearest_upcoming_idx = None
+            for i, (ev_time, _) in enumerate(upcoming):
+                if ev_time >= now:
+                    nearest_upcoming_idx = i
+                    break
 
-            for ev_time, ev in upcoming:
+            impact_dots = {"high": "🔴", "medium": "🟡", "low": "⚪"}
+
+            table.setRowCount(len(upcoming))
+            for i, (ev_time, ev) in enumerate(upcoming):
                 impact = str(ev.get("impact", "low")).lower()
-                if impact not in impact_colors:
-                    impact = "low"
                 currency = str(ev.get("currency", ""))
                 event_name = str(ev.get("event", "Sự kiện"))
+                forecast = str(ev.get("forecast", ""))
+                previous = str(ev.get("previous", ""))
+                actual = str(ev.get("actual", ""))
                 local_time = ev_time.astimezone(tz)
-                time_str = local_time.strftime("%d/%m %H:%M")
 
-                dot = impact_labels.get(impact, "⚪")
-                color = impact_colors.get(impact, "#e5e7eb")
-                line_text = f"{dot} {time_str} — {currency}: {event_name}"
-                label = QLabel(line_text)
-                label.setStyleSheet(f"font-size:13px;color:{color};padding:2px 0;")
-                label.setWordWrap(True)
-                self.econ_events_container.addWidget(label)
+                is_nearest = (i == nearest_upcoming_idx)
+                dot = impact_dots.get(impact, "⚪")
+                is_past = ev_time < now
+
+                # Safety: clear actual for future events (should never have actual, but guard against data issues)
+                if not is_past and actual:
+                    actual = ""
+
+                # --- Cột 0: Thời gian ---
+                time_text = local_time.strftime("%d/%m %H:%M")
+                time_item = QTableWidgetItem(time_text)
+                time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if is_nearest:
+                    time_item.setForeground(QColor("#4caf50"))
+                    time_item.setData(Qt.ItemDataRole.UserRole, "▶ ")
+                elif is_past:
+                    time_item.setForeground(QColor("#64748b"))
+                else:
+                    time_item.setForeground(QColor("#e5e7eb"))
+                font = time_item.font()
+                font.setBold(is_nearest)
+                time_item.setFont(font)
+                table.setItem(i, 0, time_item)
+
+                # --- Cột 1: Sự kiện ---
+                if is_nearest:
+                    ev_text = f"▶ {dot} {currency}: {event_name}  ← Sắp tới"
+                    ev_color = QColor("#4caf50")
+                elif is_past:
+                    ev_text = f"{dot} {currency}: {event_name}"
+                    ev_color = QColor("#64748b")
+                else:
+                    ev_text = f"{dot} {currency}: {event_name}"
+                    if impact == "high":
+                        ev_color = QColor("#f44336")
+                    elif impact == "medium":
+                        ev_color = QColor("#ffaa00")
+                    else:
+                        ev_color = QColor("#e5e7eb")
+
+                ev_item = QTableWidgetItem(ev_text)
+                ev_item.setForeground(ev_color)
+                if is_nearest:
+                    f = ev_item.font()
+                    f.setBold(True)
+                    ev_item.setFont(f)
+                table.setItem(i, 1, ev_item)
+
+                # --- Cột 2: Dự báo ---
+                fc_item = QTableWidgetItem(forecast if forecast else "—")
+                fc_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if is_nearest:
+                    fc_item.setForeground(QColor("#4caf50"))
+                    f = fc_item.font()
+                    f.setBold(True)
+                    fc_item.setFont(f)
+                elif is_past:
+                    fc_item.setForeground(QColor("#94a3b8"))
+                else:
+                    fc_item.setForeground(QColor("#e5e7eb"))
+                table.setItem(i, 2, fc_item)
+
+                # --- Cột 3: Kỳ trước ---
+                pv_item = QTableWidgetItem(previous if previous else "—")
+                pv_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if is_nearest:
+                    pv_item.setForeground(QColor("#4caf50"))
+                    f = pv_item.font()
+                    f.setBold(True)
+                    pv_item.setFont(f)
+                elif is_past:
+                    pv_item.setForeground(QColor("#94a3b8"))
+                else:
+                    pv_item.setForeground(QColor("#e5e7eb"))
+                table.setItem(i, 3, pv_item)
+
+                # --- Cột 4: Kết quả ---
+                if actual:
+                    act_item = QTableWidgetItem(actual)
+                    act_color = QColor("#4caf50")
+                elif is_past:
+                    act_item = QTableWidgetItem("Đang cập nhật")
+                    act_color = QColor("#f59e0b")
+                elif is_nearest:
+                    act_item = QTableWidgetItem("—")
+                    act_color = QColor("#4caf50")
+                else:
+                    act_item = QTableWidgetItem("—")
+                    act_color = QColor("#64748b")
+                act_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                act_item.setForeground(act_color)
+                if is_nearest:
+                    f = act_item.font()
+                    f.setBold(True)
+                    act_item.setFont(f)
+                table.setItem(i, 4, act_item)
+
+                # --- Cột 5: Link chi tiết ---
+                link_color = "#4caf50" if is_nearest else "#60a5fa"
+                link_hover = "#66bb6a" if is_nearest else "#93c5fd"
+                detail_btn = QPushButton("Xem")
+                detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                detail_btn.setStyleSheet(
+                    f"QPushButton {{"
+                    f"  font-size:11px; padding:2px 0; margin:0;"
+                    f"  background:transparent; color:{link_color}; border:none;"
+                    f"  text-decoration:underline;"
+                    f"}}"
+                    f"QPushButton:hover {{ color:{link_hover}; }}"
+                )
+                detail_btn.clicked.connect(lambda checked, ev=ev, ev_time=ev_time, tz=tz: self._show_event_detail(ev, ev_time, tz))
+                table.setCellWidget(i, 5, detail_btn)
+
+                # Row height
+                table.setRowHeight(i, 32)
 
         except Exception:
             self._show_empty_events("Không thể tải lịch kinh tế (lỗi kết nối).")
 
     def _show_empty_events(self, message: str) -> None:
-        label = QLabel(message)
-        label.setStyleSheet("font-size:13px;color:#8b9dc3;padding:4px 0;")
-        label.setWordWrap(True)
-        self.econ_events_container.addWidget(label)
+        table = self.econ_table
+        table.setRowCount(1)
+        table.setSpan(0, 0, 1, 6)
+        item = QTableWidgetItem(message)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item.setForeground(QColor("#94a3b8"))
+        table.setItem(0, 0, item)
+        table.setRowHeight(0, 40)
+
+    def _show_event_detail(self, ev: dict, ev_time: datetime, tz) -> None:
+        impact = str(ev.get("impact", "low"))
+        currency = str(ev.get("currency", ""))
+        event_name = str(ev.get("event", "Sự kiện"))
+        forecast = str(ev.get("forecast", "--"))
+        previous = str(ev.get("previous", "--"))
+        actual = str(ev.get("actual", ""))
+        # Guard: clear actual for future events
+        now_utc = datetime.now(timezone.utc)
+        if ev_time >= now_utc:
+            actual = ""
+        local_time = ev_time.astimezone(tz)
+        time_str = local_time.strftime("%d/%m/%Y %H:%M")
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Chi tiết sự kiện — {currency}")
+        dlg.setMinimumSize(700, 480)
+        dlg.resize(750, 520)
+        dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(16)
+
+        # Title
+        title = QLabel(f"<b style='font-size:16px;color:#f8fafc;'>{currency}: {event_name}</b>")
+        title.setWordWrap(True)
+        root.addWidget(title)
+
+        # Info grid — 2 columns
+        info_frame = QFrame()
+        info_frame.setStyleSheet("QFrame { background:transparent; border:none; }")
+        info_layout = QGridLayout(info_frame)
+        info_layout.setContentsMargins(0, 4, 0, 4)
+        info_layout.setHorizontalSpacing(40)
+        info_layout.setVerticalSpacing(8)
+
+        impact_map = {"high": "🔴 Cao", "medium": "🟡 Trung bình", "low": "⚪ Thấp"}
+        impact_text = impact_map.get(impact.lower(), impact)
+
+        left_items = [
+            ("⏰ Thời gian", time_str),
+            ("💱 Tiền tệ", currency),
+            ("📊 Mức tác động", impact_text),
+        ]
+        right_items = [
+            ("📈 Dự báo", forecast),
+            ("📉 Kỳ trước", previous),
+        ]
+        if actual:
+            right_items.append(("✅ Kết quả", actual))
+
+        for row_idx, (label_text, value_text) in enumerate(left_items):
+            lbl = QLabel(f"<span style='color:#94a3b8;font-size:13px;'>{label_text}:</span>")
+            lbl.setFixedWidth(120)
+            val = QLabel(f"<span style='color:#e5e7eb;font-size:13px;font-weight:600;'>{value_text}</span>")
+            val.setWordWrap(True)
+            info_layout.addWidget(lbl, row_idx, 0)
+            info_layout.addWidget(val, row_idx, 1)
+
+        for row_idx, (label_text, value_text) in enumerate(right_items):
+            lbl = QLabel(f"<span style='color:#94a3b8;font-size:13px;'>{label_text}:</span>")
+            lbl.setFixedWidth(120)
+            val = QLabel(f"<span style='color:#e5e7eb;font-size:13px;font-weight:600;'>{value_text}</span>")
+            val.setWordWrap(True)
+            info_layout.addWidget(lbl, row_idx, 2)
+            info_layout.addWidget(val, row_idx, 3)
+
+        root.addWidget(info_frame)
+
+        # AI analysis area
+        self._event_ai_response = QTextEdit()
+        self._event_ai_response.setReadOnly(True)
+        self._event_ai_response.setMinimumHeight(140)
+        self._event_ai_response.setStyleSheet(
+            "QTextEdit { background:#171c24; color:#e5e7eb; font-size:13px; font-family:Segoe UI;"
+            "  border:1px solid #2b3545; border-radius:6px; padding:12px;"
+            "  selection-background-color:#2563eb; }"
+        )
+        self._event_ai_response.setPlaceholderText("Bấm \"Xem tác động\" để AI phân tích...")
+        root.addWidget(self._event_ai_response, 1)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        ai_btn = QPushButton("🤖 Xem tác động")
+        ai_btn.setObjectName("AIImpactBtn")
+        ai_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ai_btn.setStyleSheet(
+            "QPushButton#AIImpactBtn {"
+            "  font-size:13px; font-weight:600; padding:8px 18px;"
+            "  background:#2563eb; color:#fff; border:none; border-radius:6px;"
+            "}"
+            "QPushButton#AIImpactBtn:hover { background:#1d4ed8; }"
+            "QPushButton#AIImpactBtn:disabled { background:#334155; color:#64748b; }"
+        )
+
+        btn_layout.addWidget(ai_btn)
+        btn_layout.addStretch()
+
+        close_btn = QPushButton("Đóng")
+        close_btn.setObjectName("PrimaryButton")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.clicked.connect(dlg.accept)
+        btn_layout.addWidget(close_btn)
+
+        root.addLayout(btn_layout)
+
+        # Connect AI button
+        ai_btn.clicked.connect(lambda: self._request_ai_impact(ai_btn, ev, self._event_ai_response))
+
+        dlg.exec()
+
+    def _request_ai_impact(self, btn: QPushButton, ev: dict, text_widget: QTextEdit) -> None:
+        btn.setEnabled(False)
+        btn.setText("⏳ Đang phân tích...")
+        QApplication.processEvents()
+
+        try:
+            settings = self.settings_service.load()
+            active = settings.ai.active_provider()
+            if not active or not (active.api_key or active.api_key_ref):
+                text_widget.setHtml(
+                    "<p style='color:#f44336;font-size:13px;'>"
+                    "⚠️ Chưa cấu hình AI. Vào <b>Settings</b> để chọn provider và nhập API key."
+                    "</p>"
+                )
+                btn.setText("🤖 Xem tác động")
+                btn.setEnabled(True)
+                return
+
+            from services.ai_service import AIService, AIProviderConfig
+
+            ai_config = AIProviderConfig(
+                provider=active.provider,
+                model=active.model,
+                api_key=active.api_key,
+            )
+            ai = AIService(ai_config)
+
+            currency = str(ev.get("currency", ""))
+            event_name = str(ev.get("event", ""))
+            impact = str(ev.get("impact", ""))
+            forecast = str(ev.get("forecast", "--"))
+            previous = str(ev.get("previous", "--"))
+            actual = str(ev.get("actual", ""))
+
+            prompt_lines = [
+                f"Phân tích ngắn gọn bằng tiếng Việt sự kiện kinh tế sau:",
+                f"- Sự kiện: {event_name}",
+                f"- Tiền tệ: {currency}",
+                f"- Mức tác động: {impact}",
+                f"- Dự báo: {forecast}",
+                f"- Kỳ trước: {previous}",
+            ]
+            if actual:
+                prompt_lines.append(f"- Kết quả thực tế: {actual}")
+                prompt_lines.append("(Đây là tin đã ra — phân tích dựa trên kết quả thực tế này)")
+            prompt_lines.extend([
+                "",
+                "Trả lời theo cấu trúc sau (dùng markdown, ngắn gọn):",
+                "### 📌 Tin này là gì?",
+                "(Giải thích 1-2 câu)",
+                "",
+                "### 📈 Tác động đến các cặp tiền và tài sản:",
+                f"- Nêu cụ thể từng cặp tiền/tài sản bị ảnh hưởng nếu có ({currency} là chính)",
+                "- Với vàng (XAU), bạc (XAG), BTC: nêu rõ nếu có liên quan",
+                "- Dùng bullet point, mỗi dòng 1 ý",
+                "",
+                "### ⚡ Mức độ ảnh hưởng:",
+                "(Cao/Trung bình/Thấp — kèm lý do ngắn)",
+            ])
+            prompt = "\n".join(prompt_lines)
+
+            response = ai.analyze(prompt)
+
+            # Convert markdown to plain text for consistent display
+            lines: list[str] = []
+            for line in response.split("\n"):
+                stripped = line.strip()
+                stripped = stripped.replace("**", "").replace("*", "").replace("### ", "").replace("- ", "  • ")
+                if not stripped:
+                    lines.append("")
+                else:
+                    lines.append(stripped)
+            text_widget.setPlainText("\n".join(lines))
+
+        except Exception as exc:
+            text_widget.setHtml(
+                f"<p style='color:#f44336;font-size:13px;'>"
+                f"❌ Lỗi khi gọi AI: {exc}"
+                f"</p>"
+            )
+        finally:
+            btn.setText("🤖 Xem tác động")
+            btn.setEnabled(True)
 
     def _refresh_market_overview(self) -> None:
         """Lấy DXY/VIX/US10Y: thử yfinance trước, tradingview backup."""
@@ -466,10 +819,8 @@ class DashboardScreen(QWidget):
         if active and active.provider and active.model and has_key:
             detail = f"{active.provider} / {active.model}"
             self._set_status_card("AI", "Đã cấu hình", detail, "ok")
-            self.ai_mode_value.setText(detail)
         else:
             self._set_status_card("AI", "Chưa cấu hình", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
-            self.ai_mode_value.setText("Chưa cấu hình")
 
     def _apply_mt5_status(self, status: MT5ConnectionStatus) -> None:
         if status.initialized and status.terminal_connected:
@@ -505,15 +856,3 @@ class DashboardScreen(QWidget):
         frame.setProperty("state", state)
         frame.style().unpolish(frame)
         frame.style().polish(frame)
-
-    def _build_footer_strip(self) -> QHBoxLayout:
-        from ui.screens.shared import labeled_value
-
-        layout = QHBoxLayout()
-        layout.setSpacing(12)
-        layout.addWidget(labeled_value("Múi giờ", "Asia/Ho_Chi_Minh"))
-        layout.addWidget(labeled_value("Khung chính", "D1 / H4 / H1"))
-        ai_mode = labeled_value("Chế độ AI", "Đang kiểm tra")
-        self.ai_mode_value = ai_mode.findChildren(QLabel)[1]
-        layout.addWidget(ai_mode)
-        return layout
