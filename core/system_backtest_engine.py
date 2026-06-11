@@ -56,6 +56,9 @@ class BacktestRequest:
     max_weekly_loss_pct: float = 999.0
     max_consecutive_losses: int = 999
     max_open_risk_pct: float = 999.0
+    min_final_score: int = 0
+    correlation_context: dict[str, Any] | None = None
+    macro_alignment_override: dict[str, int] | None = None
 
 
 @dataclass(slots=True)
@@ -189,7 +192,7 @@ def run_system_backtest(
 
         setups_detected += 1
         funnel["setup_detected"] += 1
-        block_reason = trade_open_block_reason(analysis, scenario, request.mode)
+        block_reason = trade_open_block_reason(analysis, scenario, request.mode, request.min_final_score)
         if block_reason is not None:
             if _gate_blocked(analysis):
                 blocked_by_gate += 1
@@ -203,6 +206,12 @@ def run_system_backtest(
                     build_skip_debug(analysis, scenario),
                 )
             )
+            # When account guard blocks (daily loss / consecutive losses),
+            # skip to the next trading day to avoid wasted cycles.
+            if _is_account_guard_block(analysis):
+                next_day = candle.time.replace(hour=0, minute=0, second=0, microsecond=0)
+                from datetime import timedelta as _td
+                next_allowed_time = next_day + _td(days=1)
             continue
 
         trade = simulate_trade_from_analysis(
@@ -333,7 +342,7 @@ def should_open_trade(analysis: dict[str, Any], scenario: dict[str, Any], mode: 
     return trade_open_block_reason(analysis, scenario, mode) is None
 
 
-def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], mode: str = "strict") -> str | None:
+def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], mode: str = "strict", min_final_score: int = 0) -> str | None:
     mode = str(mode or "strict").lower()
     trade_permission = analysis.get("trade_permission", {}) if isinstance(analysis.get("trade_permission"), dict) else {}
     gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
@@ -383,6 +392,9 @@ def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], 
             return "blocked_by_decision"
         if scenario.get("entry_status") not in {"confirmed_entry", "waiting_confirmation", "watch_zone"}:
             return "blocked_by_entry_status"
+        if min_final_score > 0 and _safe_int(analysis.get("final_score")) is not None:
+            if int(analysis.get("final_score") or 0) < min_final_score:
+                return "blocked_by_score"
         return None
     if permission_status != "allowed":
         return "blocked_by_permission"
@@ -768,7 +780,12 @@ def _run_analysis_snapshot(
         "news_in_3h": False,
         "high_impact_event_within_30m": False,
     }
-    macro_alignment = None if request.allow_macro else {"buy": 15, "sell": 15}
+    macro_alignment = (
+        request.macro_alignment_override if request.allow_macro and request.macro_alignment_override
+        else None if request.allow_macro
+        else {"buy": 15, "sell": 15}
+    )
+    correlation_context = request.correlation_context if request.allow_macro else None
     return analysis_fn(
         analysis_input,
         {"D1": snapshot["D1"], "H4": snapshot["H4"], "H1": snapshot["H1"]},
@@ -778,7 +795,7 @@ def _run_analysis_snapshot(
         ai_commentary=None,
         ai_meta=None,
         m15_candles=snapshot.get("M15"),
-        correlation_context=None,
+        correlation_context=correlation_context,
         quote_to_usd_rate=1.0,
         closed_trades=_closed_trades_for_guard(request, closed_trades),
         open_trades=[],
@@ -817,6 +834,20 @@ def _entry_price_with_costs(side: str, close: float, request: BacktestRequest) -
 def _gate_blocked(analysis: dict[str, Any]) -> bool:
     gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
     return gate.get("allowed") is False
+
+
+def _is_account_guard_block(analysis: dict[str, Any]) -> bool:
+    """Check if the gate block was triggered by account guard limits."""
+    gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
+    if gate.get("allowed") is not False:
+        return False
+    block_codes = gate.get("block_codes", [])
+    if not isinstance(block_codes, list):
+        return False
+    from core.reason_codes import DAILY_LOSS_LIMIT_REACHED, WEEKLY_LOSS_LIMIT_REACHED, MAX_CONSECUTIVE_LOSSES_REACHED
+    return bool(
+        set(block_codes) & {DAILY_LOSS_LIMIT_REACHED, WEEKLY_LOSS_LIMIT_REACHED, MAX_CONSECUTIVE_LOSSES_REACHED}
+    )
 
 
 def _skip_reason(analysis: dict[str, Any], scenario: dict[str, Any], block_reason: str | None = None) -> str:

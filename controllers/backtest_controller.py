@@ -55,6 +55,8 @@ class BacktestController:
         max_weekly_loss_pct: float = 999.0,
         max_consecutive_losses: int = 999,
         max_open_risk_pct: float = 999.0,
+        min_final_score: int = 0,
+        allow_macro: bool = False,
     ) -> list[BacktestRequest]:
         unique_symbols = list(dict.fromkeys(symbols))
         if not unique_symbols:
@@ -76,6 +78,8 @@ class BacktestController:
                 max_weekly_loss_pct=max_weekly_loss_pct,
                 max_consecutive_losses=max_consecutive_losses,
                 max_open_risk_pct=max_open_risk_pct,
+                min_final_score=min_final_score,
+                allow_macro=allow_macro,
             )
             for symbol in unique_symbols
         ]
@@ -98,6 +102,8 @@ class BacktestController:
         max_weekly_loss_pct: float = 999.0,
         max_consecutive_losses: int = 999,
         max_open_risk_pct: float = 999.0,
+        min_final_score: int = 0,
+        allow_macro: bool = False,
     ) -> BacktestRequest:
         settings = self.settings_service.load()
         available = self.mt5_service.available_symbols(market_watch_only=True)
@@ -131,6 +137,8 @@ class BacktestController:
             max_weekly_loss_pct=float(max_weekly_loss_pct),
             max_consecutive_losses=int(max_consecutive_losses),
             max_open_risk_pct=float(max_open_risk_pct),
+            min_final_score=int(min_final_score),
+            allow_macro=bool(allow_macro),
         )
 
     def run_backtest(
@@ -147,6 +155,9 @@ class BacktestController:
 
         progress(15, "Đang tải dữ liệu lịch sử từ MT5...")
         candles = self._load_history(request)
+        if request.allow_macro:
+            progress(25, "Đang tải dữ liệu macro/correlation...")
+            self._inject_macro_context(request)
         progress(35, "Đang replay hệ thống phân tích...")
         result = run_system_backtest(request, candles, progress_callback=progress)
         payload = result.to_dict()
@@ -173,6 +184,17 @@ class BacktestController:
 
         runs: list[dict[str, Any]] = []
         total = len(requests)
+
+        # Pre-fetch macro context once for all requests
+        any_macro = any(r.allow_macro for r in requests)
+        if any_macro:
+            progress(8, "Đang tải dữ liệu macro/correlation...")
+            corr, macro_align = self._fetch_macro_data()
+            for r in requests:
+                if r.allow_macro:
+                    object.__setattr__(r, "correlation_context", corr)
+                    object.__setattr__(r, "macro_alignment_override", macro_align)
+
         for index, request in enumerate(requests, start=1):
             symbol_label = f"{request.symbol} ({index}/{total})"
             base = 8 + int((index - 1) / total * 86)
@@ -228,6 +250,9 @@ class BacktestController:
                 "setup_expiry_bars": request0.setup_expiry_bars,
                 "step_timeframe": request0.step_timeframe,
                 "mode": request0.mode,
+                "min_final_score": request0.min_final_score,
+                "allow_macro": request0.allow_macro,
+                "account_guard_enabled": request0.account_guard_enabled,
             },
             "summary": summary,
             "trades": trades,
@@ -242,6 +267,43 @@ class BacktestController:
                 "total_trades_skipped": sum(int((run.get("diagnostics", {}) or {}).get("trades_skipped", 0)) for run in runs),
             },
         }
+
+    def _fetch_macro_data(self) -> tuple[dict, dict | None]:
+        """Fetch current correlation data (DXY/VIX/US10Y) and macro alignment.
+        Returns (correlation_context, macro_alignment_override).
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        correlation_context: dict = {"dxy_candles": None, "vix_candles": None, "us10y_candles": None}
+        try:
+            import yfinance as yf
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                futures = {
+                    ex.submit(yf.download, "DX-Y.NYB", period="5d", interval="1d", progress=False): "dxy",
+                    ex.submit(yf.download, "^VIX", period="5d", interval="1d", progress=False): "vix",
+                    ex.submit(yf.download, "^TNX", period="5d", interval="1d", progress=False): "us10y",
+                }
+                for future in as_completed(futures):
+                    key = futures[future]
+                    try:
+                        data = future.result()
+                        if data is not None and not data.empty:
+                            correlation_context[f"{key}_candles"] = [
+                                {"time": idx.isoformat(), "open": float(row["Open"]), "high": float(row["High"]),
+                                 "low": float(row["Low"]), "close": float(row["Close"])}
+                                for idx, row in data.iterrows()
+                            ]
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        return correlation_context, None
+
+    def _inject_macro_context(self, request: BacktestRequest) -> None:
+        corr, macro_align = self._fetch_macro_data()
+        object.__setattr__(request, "correlation_context", corr)
+        object.__setattr__(request, "macro_alignment_override", macro_align)
 
     def _load_history(self, request: BacktestRequest) -> dict[str, list]:
         warmup_start = request.start - timedelta(days=520)

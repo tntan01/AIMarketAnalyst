@@ -93,7 +93,7 @@ class BacktestScreen(QWidget):
         frame = card(None)
         frame.setStyleSheet(self._backtest_form_stylesheet())
         frame.layout().setContentsMargins(12, 10, 12, 4)
-        frame.layout().setSpacing(6)
+        frame.layout().setSpacing(2)
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(12)
@@ -106,14 +106,23 @@ class BacktestScreen(QWidget):
         market_grid.setVerticalSpacing(6)
         market_box.layout().addLayout(market_grid)
 
-        params_box = self._section_box("Tham số")
-        params_grid = QGridLayout()
-        params_grid.setContentsMargins(0, 0, 0, 0)
-        params_grid.setHorizontalSpacing(8)
-        params_grid.setVerticalSpacing(6)
-        params_grid.setColumnStretch(0, 1)
-        params_grid.setColumnStretch(1, 1)
-        params_box.layout().addLayout(params_grid)
+        account_box = self._section_box("Tài khoản")
+        account_grid = QGridLayout()
+        account_grid.setContentsMargins(0, 0, 0, 0)
+        account_grid.setHorizontalSpacing(0)
+        account_grid.setVerticalSpacing(6)
+        account_box.layout().addLayout(account_grid)
+
+        simulation_box = self._section_box("Mô phỏng")
+        simulation_grid = QGridLayout()
+        simulation_grid.setContentsMargins(0, 0, 0, 0)
+        simulation_grid.setHorizontalSpacing(6)
+        simulation_grid.setVerticalSpacing(6)
+        simulation_grid.setColumnMinimumWidth(0, 76)
+        simulation_grid.setColumnStretch(1, 1)
+        simulation_grid.setColumnMinimumWidth(2, 68)
+        simulation_grid.setColumnStretch(3, 1)
+        simulation_box.layout().addLayout(simulation_grid)
 
         self.symbol_summary = QLabel("")
         self.symbol_summary.setObjectName("BacktestSymbolSummary")
@@ -166,6 +175,39 @@ class BacktestScreen(QWidget):
         self._apply_number_format(self.max_holding_input)
         self.max_holding_input.setRange(1, 2000)
         self.max_holding_input.setValue(96)
+        self.max_holding_input.setFixedWidth(72)
+
+        self.min_score_input = QSpinBox()
+        self._apply_number_format(self.min_score_input)
+        self.min_score_input.setRange(0, 100)
+        self.min_score_input.setValue(0)
+        self.min_score_input.setToolTip("Điểm final_score tối thiểu để vào lệnh. 0 = không lọc.")
+        self.min_score_input.setFixedWidth(64)
+
+        self.guard_checkbox = QCheckBox("Account Guard")
+        self.guard_checkbox.setObjectName("BacktestField")
+        self.guard_checkbox.setToolTip("Bật giới hạn thua lỗ thực tế (daily loss, consecutive losses)")
+
+        self.max_daily_loss_input = QDoubleSpinBox()
+        self._apply_number_format(self.max_daily_loss_input)
+        self.max_daily_loss_input.setRange(0.1, 100.0)
+        self.max_daily_loss_input.setDecimals(1)
+        self.max_daily_loss_input.setValue(2.0)
+        self.max_daily_loss_input.setSuffix(" %")
+        self.max_daily_loss_input.setEnabled(False)
+
+        self.max_consecutive_loss_input = QSpinBox()
+        self._apply_number_format(self.max_consecutive_loss_input)
+        self.max_consecutive_loss_input.setRange(1, 100)
+        self.max_consecutive_loss_input.setValue(3)
+        self.max_consecutive_loss_input.setEnabled(False)
+
+        self.guard_checkbox.toggled.connect(self._on_guard_toggled)
+
+        self.macro_checkbox = QCheckBox("Dùng macro/correlation thật")
+        self.macro_checkbox.setObjectName("BacktestField")
+        self.macro_checkbox.setToolTip("Lấy dữ liệu DXY/VIX/US10Y và macro alignment hiện tại thay vì neutral. Làm backtest thực tế hơn.")
+
         for field in (
             self.start_date,
             self.end_date,
@@ -173,22 +215,35 @@ class BacktestScreen(QWidget):
             self.risk_input,
             self.mode_combo,
             self.max_holding_input,
+            self.min_score_input,
             self.spread_input,
             self.slippage_input,
+            self.max_daily_loss_input,
+            self.max_consecutive_loss_input,
         ):
             field.setObjectName("BacktestField")
+            field.setFixedHeight(34)
 
         market_grid.addWidget(self._symbol_cell(), 0, 0)
         market_grid.addWidget(self._field_cell("Từ ngày", self.start_date, 58), 1, 0)
         market_grid.addWidget(self._field_cell("Đến ngày", self.end_date, 58), 2, 0)
+        market_grid.addWidget(self._field_cell("Chế độ", self.mode_combo, 58), 3, 0)
 
         params_label_width = 76
-        params_grid.addWidget(self._field_cell("Số dư", self.balance_input, params_label_width), 0, 0)
-        params_grid.addWidget(self._field_cell("Rủi ro", self.risk_input, params_label_width), 0, 1)
-        params_grid.addWidget(self._field_cell("Chế độ", self.mode_combo, params_label_width), 1, 0)
-        params_grid.addWidget(self._field_cell("Số nến", self.max_holding_input, params_label_width), 1, 1)
-        params_grid.addWidget(self._field_cell("Spread", self.spread_input, params_label_width), 2, 0)
-        params_grid.addWidget(self._field_cell("Slippage", self.slippage_input, params_label_width), 2, 1)
+        account_grid.addWidget(self._field_cell("Số dư", self.balance_input, params_label_width), 0, 0)
+        account_grid.addWidget(self._field_cell("Rủi ro", self.risk_input, params_label_width), 1, 0)
+        account_grid.addWidget(self.guard_checkbox, 2, 0)
+        account_grid.addWidget(self._field_cell("Max daily loss", self.max_daily_loss_input, 104), 3, 0)
+        account_grid.addWidget(self._field_cell("Max cons. loss", self.max_consecutive_loss_input, 104), 4, 0)
+        simulation_grid.addWidget(self._grid_label("Số nến"), 0, 0)
+        simulation_grid.addWidget(self.max_holding_input, 0, 1)
+        simulation_grid.addWidget(self._grid_label("Min Score"), 0, 2)
+        simulation_grid.addWidget(self.min_score_input, 0, 3)
+        simulation_grid.addWidget(self._grid_label("Spread"), 1, 0)
+        simulation_grid.addWidget(self.spread_input, 1, 1, 1, 3)
+        simulation_grid.addWidget(self._grid_label("Slippage"), 2, 0)
+        simulation_grid.addWidget(self.slippage_input, 2, 1, 1, 3)
+        simulation_grid.addWidget(self.macro_checkbox, 3, 0, 1, 4)
 
         summary_box = self._section_box("Kết quả")
         self.summary_row = QGridLayout()
@@ -201,18 +256,22 @@ class BacktestScreen(QWidget):
         summary_box.layout().addLayout(self.summary_row)
         self._set_summary({})
 
-        top_row.addWidget(market_box, 7)
+        top_row.addWidget(market_box, 2, Qt.AlignmentFlag.AlignTop)
         top_row.addWidget(self._vertical_separator())
-        top_row.addWidget(params_box, 10)
+        top_row.addWidget(account_box, 2, Qt.AlignmentFlag.AlignTop)
         top_row.addWidget(self._vertical_separator())
-        top_row.addWidget(summary_box, 8)
+        top_row.addWidget(simulation_box, 2, Qt.AlignmentFlag.AlignTop)
+        top_row.addWidget(self._vertical_separator())
+        top_row.addWidget(summary_box, 3, Qt.AlignmentFlag.AlignTop)
 
         run_bar = QWidget()
         controls = QHBoxLayout(run_bar)
-        controls.setContentsMargins(0, 2, 0, 0)
+        controls.setContentsMargins(0, 10, 0, 10)
         controls.setSpacing(10)
         self.run_button = action_button("Chạy backtest", primary=True)
-        self.run_button.setFixedSize(148, 32)
+        self.run_button.setObjectName("BacktestRunButton")
+        self.run_button.setFixedHeight(32)
+        self.run_button.setMinimumWidth(148)
         self.run_button.clicked.connect(self._run_backtest)
         self.help_button = QPushButton("Giải thích")
         self.help_button.setObjectName("InlineHelpButton")
@@ -246,8 +305,10 @@ class BacktestScreen(QWidget):
         frame.layout().addWidget(run_bar)
         self.snapshot_label = QLabel("")
         self.snapshot_label.setObjectName("HelperText")
-        self.snapshot_label.setFixedHeight(16)
+        self.snapshot_label.setFixedHeight(24)
+        self.snapshot_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.snapshot_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.snapshot_label.hide()
         frame.layout().addWidget(self.snapshot_label)
         return frame
 
@@ -257,7 +318,7 @@ class BacktestScreen(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
         header = QLabel(title)
-        header.setObjectName("MiniStatTitle")
+        header.setObjectName("BacktestSectionTitle")
         header.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(header)
         box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -277,6 +338,43 @@ class BacktestScreen(QWidget):
         field.setFixedHeight(height)
         layout.addWidget(title)
         layout.addWidget(field, 1)
+        return cell
+
+    def _grid_label(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("FormLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        label.setFixedHeight(34)
+        return label
+
+    def _two_small_fields_cell(
+        self,
+        first_label: str,
+        first_field: QWidget,
+        second_label: str,
+        second_field: QWidget,
+        *,
+        first_label_width: int,
+        second_label_width: int,
+        height: int = 34,
+    ) -> QWidget:
+        cell = QWidget()
+        cell.setFixedHeight(height)
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        for label_text, field, width in (
+            (first_label, first_field, first_label_width),
+            (second_label, second_field, second_label_width),
+        ):
+            title = QLabel(label_text)
+            title.setObjectName("FormLabel")
+            title.setFixedWidth(width)
+            title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            field.setFixedHeight(height)
+            layout.addWidget(title)
+            layout.addWidget(field)
+        layout.addStretch(1)
         return cell
 
     def _symbol_cell(self) -> QWidget:
@@ -360,6 +458,11 @@ class BacktestScreen(QWidget):
                 spread_price=self.spread_input.value(),
                 slippage_price=self.slippage_input.value(),
                 max_holding_bars=self.max_holding_input.value(),
+                min_final_score=self.min_score_input.value(),
+                account_guard_enabled=self.guard_checkbox.isChecked(),
+                max_daily_loss_pct=self.max_daily_loss_input.value(),
+                max_consecutive_losses=self.max_consecutive_loss_input.value(),
+                allow_macro=self.macro_checkbox.isChecked(),
             )
         except Exception as exc:
             QMessageBox.warning(self, "Không tạo được request", str(exc))
@@ -379,12 +482,17 @@ class BacktestScreen(QWidget):
         self.progress.setValue(percent)
         self.status_label.setText(message)
 
+    def _on_guard_toggled(self, checked: bool) -> None:
+        self.max_daily_loss_input.setEnabled(checked)
+        self.max_consecutive_loss_input.setEnabled(checked)
+
     def _on_success(self, result: dict) -> None:
         self.result = result
         self.status_label.setText("Hoàn tất backtest.")
         self._set_summary(result.get("summary", {}) if isinstance(result.get("summary"), dict) else {})
         self._set_trades(result.get("trades", []) if isinstance(result.get("trades"), list) else [])
         self.snapshot_label.setText(f"File kết quả: {result.get('snapshot_path', '')}")
+        self.snapshot_label.show()
 
     def _on_failed(self, message: str) -> None:
         self.status_label.setText("Backtest thất bại.")
@@ -479,6 +587,29 @@ class BacktestScreen(QWidget):
     @staticmethod
     def _backtest_form_stylesheet() -> str:
         return """
+        QLabel#BacktestSectionTitle {
+            color: #f8fafc;
+            font-size: 13px;
+            font-weight: 800;
+            padding-bottom: 2px;
+            border-bottom: 1px solid #334155;
+        }
+
+        QPushButton#BacktestRunButton {
+            background: #0d9488;
+            border: 1px solid #14b8a6;
+            border-radius: 6px;
+            color: #ffffff;
+            font-weight: 700;
+            min-width: 148px;
+            padding: 6px 12px;
+        }
+
+        QPushButton#BacktestRunButton:hover {
+            background: #0f766e;
+            border-color: #2dd4bf;
+        }
+
         QComboBox#BacktestField,
         QDateEdit#BacktestField,
         QDoubleSpinBox#BacktestField,
@@ -606,48 +737,73 @@ class BacktestInputHelpDialog(QDialog):
     HELP_ROWS = [
         (
             "Mã",
-            "Một hoặc nhiều cặp tiền/sản phẩm cần kiểm tra, ví dụ EUR/USD và GBP/USD.",
-            "Nên chọn nhiều mã để kiểm tra edge có ổn định hay chỉ tốt trên một thị trường. Mỗi mã có spread, biến động và hành vi giá khác nhau nên kết quả backtest không thể dùng lẫn cho mã khác.",
+            "Chọn một hoặc nhiều mã để chạy backtest.",
+            "Nên test nhiều mã cùng nhóm để biết chiến lược có ổn định hay chỉ tốt trên một mã riêng lẻ.",
         ),
         (
             "Từ ngày",
-            "Ngày bắt đầu lấy dữ liệu lịch sử để chạy lại hệ thống.",
-            "Khoảng thời gian càng dài thì thống kê càng đáng tin hơn, nhưng chạy lâu hơn. Với người mới, nên thử tối thiểu vài tháng dữ liệu trước khi đánh giá.",
+            "Ngày bắt đầu lấy dữ liệu lịch sử.",
+            "Khoảng thời gian càng dài thì kết quả càng đáng tin hơn, nhưng thời gian chạy cũng lâu hơn.",
         ),
         (
             "Đến ngày",
-            "Ngày kết thúc vùng dữ liệu lịch sử.",
-            "Dùng để kiểm tra một giai đoạn cụ thể, ví dụ chỉ năm 2025 hoặc một giai đoạn thị trường biến động mạnh.",
+            "Ngày kết thúc vùng dữ liệu backtest.",
+            "Dùng để kiểm tra một giai đoạn cụ thể, ví dụ 6 tháng gần nhất hoặc một năm thị trường biến động mạnh.",
+        ),
+        (
+            "Chế độ",
+            "Mức độ nới/lọc tín hiệu trước khi cho phép vào lệnh.",
+            "Strict lọc chặt nhất. Balanced cân bằng hơn. Research dùng để khảo sát rộng. Backtest nới lỏng hơn để đo hệ thống nhưng vẫn loại WATCH_ONLY.",
         ),
         (
             "Số dư",
-            "Vốn giả định ban đầu của tài khoản khi backtest.",
-            "Thông số này giúp quy đổi rủi ro theo tiền. Nếu bạn thường giao dịch tài khoản 10,000 USD thì nhập 10,000 để kết quả gần thực tế hơn.",
+            "Vốn giả định ban đầu của tài khoản.",
+            "Dùng để quy đổi rủi ro theo tiền. Ví dụ tài khoản 10,000 USD thì nhập 10,000.",
         ),
         (
             "Rủi ro",
             "Phần trăm tài khoản chấp nhận mất nếu một lệnh chạm stop loss.",
-            "Ví dụ 1% nghĩa là tài khoản 10,000 chỉ rủi ro khoảng 100 cho mỗi lệnh. Người mới thường nên xem 0.5% đến 1% trước khi thử mức cao hơn.",
+            "Ví dụ 1% với tài khoản 10,000 nghĩa là mỗi lệnh rủi ro khoảng 100.",
         ),
         (
-            "Chế độ",
-            "Mức độ nghiêm ngặt của bộ lọc setup.",
-            "Strict lọc chặt nhất cho tín hiệu mạnh. Balanced nhận allowed/caution nhưng bắt buộc confirmed entry, M15 strict và điểm cao. Legacy giữ gần logic cũ. Research khảo sát rộng hơn (nhận cả waiting/watch_zone). Backtest bỏ WATCH_ONLY nhưng vẫn nới M15 quality, score/RR để sinh lệnh nghiên cứu có tín hiệu rõ hơn.",
+            "Account Guard",
+            "Công tắc bật/tắt giới hạn rủi ro tài khoản.",
+            "Không tick thì hai ô Max daily loss và Max cons. loss không có tác dụng. Tick vào thì backtest sẽ áp dụng hai giới hạn này.",
+        ),
+        (
+            "Max daily loss",
+            "Mức lỗ tối đa trong một ngày, tính theo phần trăm tài khoản.",
+            "Chỉ có tác dụng khi tick Account Guard. Ví dụ 2% nghĩa là nếu trong ngày lỗ tới ngưỡng này thì hệ thống dừng nhận thêm lệnh trong ngày đó.",
+        ),
+        (
+            "Max cons. loss",
+            "Số lệnh thua liên tiếp tối đa được phép.",
+            "Chỉ có tác dụng khi tick Account Guard. Ví dụ 3 nghĩa là sau 3 lệnh thua liên tiếp, hệ thống dừng theo quy tắc guard.",
         ),
         (
             "Số nến",
-            "Số nến tối đa cho phép một lệnh còn mở sau khi vào lệnh.",
-            "Nếu sau số nến này lệnh chưa chạm TP hoặc SL, backtest sẽ đóng/đánh giá theo quy tắc thoát thời gian. Giá trị lớn cho lệnh nhiều thời gian hơn nhưng có thể giữ rủi ro lâu hơn.",
+            "Số nến tối đa một lệnh được giữ sau khi vào.",
+            "Nếu hết số nến mà chưa chạm TP/SL, backtest sẽ thoát theo quy tắc thời gian. Số lớn giữ lệnh lâu hơn.",
+        ),
+        (
+            "Min Score",
+            "Điểm final_score tối thiểu để được vào lệnh.",
+            "Đặt 0 nghĩa là không lọc theo điểm. Tăng số này sẽ ít lệnh hơn nhưng kỳ vọng chất lượng setup cao hơn.",
         ),
         (
             "Spread",
-            "Chi phí chênh lệch giữa giá mua và giá bán, tính trực tiếp theo đơn vị giá.",
-            "Spread càng cao thì kết quả càng khó đẹp vì entry bị bất lợi hơn. Nên nhập gần với điều kiện broker thực tế thay vì để 0 nếu muốn đánh giá sát.",
+            "Chi phí chênh lệch mua/bán, tính trực tiếp theo đơn vị giá.",
+            "Spread càng cao thì kết quả càng khó tốt. Nên nhập gần điều kiện broker thực tế.",
         ),
         (
             "Slippage",
             "Mức trượt giá giả định khi khớp lệnh.",
-            "Slippage mô phỏng trường hợp lệnh không khớp đúng giá mong muốn, thường xảy ra khi thị trường chạy nhanh hoặc thanh khoản thấp.",
+            "Dùng để mô phỏng lúc lệnh không khớp đúng giá mong muốn, nhất là khi thị trường chạy nhanh.",
+        ),
+        (
+            "Macro/correlation",
+            "Cho phép dùng dữ liệu DXY, VIX, US10Y và tương quan thật thay vì giả định trung lập.",
+            "Bật lên thì backtest sát bối cảnh thị trường hơn, nhưng phụ thuộc vào dữ liệu macro/correlation có sẵn.",
         ),
     ]
 
@@ -664,8 +820,9 @@ class BacktestInputHelpDialog(QDialog):
         layout.setSpacing(12)
 
         intro = QLabel(
-            "Các tham số dưới đây quyết định dữ liệu, giả định rủi ro và chi phí giao dịch khi chạy backtest. "
-            "Hiểu đúng các ô này giúp kết quả gần với điều kiện giao dịch thật hơn."
+            "Dialog này giải thích từng ô trong form backtest. "
+            "Cách hiểu nhanh: Dữ liệu chọn mã/thời gian/chế độ, Tài khoản mô phỏng vốn và giới hạn rủi ro, "
+            "Mô phỏng chỉnh điều kiện khớp lệnh, Kết quả hiển thị thống kê sau khi chạy."
         )
         intro.setObjectName("HelperText")
         intro.setWordWrap(True)
@@ -693,7 +850,7 @@ class BacktestInputHelpDialog(QDialog):
         header.resizeSection(0, 130)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setDefaultSectionSize(82)
+        self.table.verticalHeader().setDefaultSectionSize(76)
         layout.addWidget(self.table, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)

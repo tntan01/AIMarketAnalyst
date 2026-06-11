@@ -128,18 +128,23 @@ def test_backtest_input_help_dialog_explains_all_fields() -> None:
     assert screen.help_button.text() == "Giải thích"
     assert dialog.windowTitle() == "Giải thích tham số backtest"
     assert dialog.objectName() == "ScannerHelpDialog"
-    assert dialog.table.rowCount() == 9
+    assert dialog.table.rowCount() == 14
     labels = [dialog.table.item(row, 0).text() for row in range(dialog.table.rowCount())]
     assert labels == [
         "Mã",
         "Từ ngày",
         "Đến ngày",
+        "Chế độ",
         "Số dư",
         "Rủi ro",
-        "Chế độ",
+        "Account Guard",
+        "Max daily loss",
+        "Max cons. loss",
         "Số nến",
+        "Min Score",
         "Spread",
         "Slippage",
+        "Macro/correlation",
     ]
     assert "người mới" in dialog.table.horizontalHeaderItem(2).text().lower()
     button_box = dialog.findChild(QDialogButtonBox)

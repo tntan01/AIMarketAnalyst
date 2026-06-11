@@ -132,8 +132,26 @@ def calculate_loss_stats(
 
         loss_sequence.append(is_loss)
 
+    # Count consecutive losses within the current day only.
+    # Trades outside today's range are ignored so the guard resets daily.
     consecutive_losses = 0
-    for is_loss in reversed(loss_sequence):
+    for trade in reversed(trades):
+        if not isinstance(trade, dict):
+            continue
+        closed_at = _ensure_datetime(trade.get("closed_at"))
+        if closed_at is None:
+            continue
+        if not (day_start <= closed_at < day_end):
+            break
+        try:
+            result_pct = float(trade.get("result_pct") or 0.0)
+        except (TypeError, ValueError):
+            result_pct = 0.0
+        try:
+            result_r = float(trade.get("result_r") or 0.0)
+        except (TypeError, ValueError):
+            result_r = 0.0
+        is_loss = result_pct < 0.0 if result_pct != 0.0 else result_r < 0.0
         if is_loss:
             consecutive_losses += 1
         else:

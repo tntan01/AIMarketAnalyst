@@ -87,8 +87,8 @@ def test_loss_stats_consecutive_mixed() -> None:
         {"closed_at": today.isoformat(), "result_pct": -0.9},
     ]
     stats = calculate_loss_stats(trades, now=today, timezone_name="UTC")
-    # Only the last 2 are consecutive losses
-    assert stats["consecutive_losses"] == 2
+    # Only today's trades count for consecutive losses (daily reset).
+    assert stats["consecutive_losses"] == 1
     # Only today's trade in daily
     assert stats["daily_trade_count"] == 1
     assert stats["daily_result_pct"] == -0.9
@@ -243,10 +243,11 @@ def test_guard_weekly_loss_reached() -> None:
 # ---------------------------------------------------------------------------
 def test_guard_consecutive_losses_reached() -> None:
     today = datetime.now(UTC)
+    # 3 losses all within the same day to trigger consecutive loss guard
     trades = [
-        {"closed_at": (today - timedelta(days=2)).isoformat(), "result_pct": -0.3},
-        {"closed_at": (today - timedelta(days=1)).isoformat(), "result_pct": -0.4},
-        {"closed_at": today.isoformat(), "result_pct": -0.5},
+        {"closed_at": today.replace(hour=9).isoformat(), "result_pct": -0.3},
+        {"closed_at": today.replace(hour=10).isoformat(), "result_pct": -0.4},
+        {"closed_at": today.replace(hour=11).isoformat(), "result_pct": -0.5},
     ]
     settings = {
         "max_daily_loss_pct": 100.0,
