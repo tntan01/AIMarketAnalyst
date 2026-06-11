@@ -112,10 +112,10 @@ class ScannerController:
         freshness_multiplier = float(freshness.get("confidence_multiplier", 1.0))
         closed_trades = self.journal_service.list_closed_trades_for_account_guard() if self.journal_service else []
         account_guard_settings = {
-            "max_daily_loss_pct": 2.0,
-            "max_weekly_loss_pct": 5.0,
-            "max_consecutive_losses": 3,
-            "max_open_risk_pct": 3.0,
+            "max_daily_loss_pct": float(settings.trading.max_daily_loss_pct),
+            "max_weekly_loss_pct": float(settings.trading.max_weekly_loss_pct),
+            "max_consecutive_losses": int(settings.trading.max_consecutive_losses),
+            "max_open_risk_pct": float(settings.trading.max_open_risk_pct),
             "trader_timezone": settings.display.timezone or "Asia/Ho_Chi_Minh",
         }
 
@@ -221,7 +221,10 @@ class ScannerController:
         if not cfg:
             return None
         regime = str(cfg.get("regime", "")).strip().lower()
-        if not regime:
+        side = str(cfg.get("side", "")).strip().lower()
+        min_rr = float(cfg.get("min_rr", 0) or 0)
+        # Return config if ANY auto-trade filter is explicitly configured
+        if not regime and side not in ("buy", "sell") and not min_rr:
             return None
         return cfg
 
@@ -362,7 +365,9 @@ class ScannerController:
             if expected_rr is None or expected_rr < cfg_min_rr:
                 return False
         best_score = int(row.get("best_score", 0) or 0)
-        if best_score < 50:
+        cfg_min_score = int(at_cfg.get("min_score", 0) or 0)
+        effective_min_score = cfg_min_score if cfg_min_score > 0 else 50
+        if best_score < effective_min_score:
             return False
 
         # Determine trade side: config override or fall back to best_side

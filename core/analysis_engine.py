@@ -270,8 +270,8 @@ def analyze_symbol(
         or best_side_scores_for_final.get("total")
         or best_score
     )
-    # evidence_score: use real trades if caller provided them, else neutral 50.
-    # execution_quality_score: use caller-provided value if valid, else perfect 100.
+    # evidence_score: use real trades if caller provided them, else neutral (use signal_score).
+    # execution_quality_score: use caller-provided value if valid, else neutral (use signal_score).
     if closed_trades and isinstance(closed_trades, list) and len(closed_trades) > 0:
         regime_key = market_regime.get("primary") if isinstance(market_regime, dict) else None
         evidence_result = calculate_evidence_score(
@@ -280,12 +280,12 @@ def analyze_symbol(
             direction=best_side,
             regime=regime_key,
         )
-        evidence_score = evidence_result.get("evidence_score", 50)
+        evidence_score = evidence_result.get("evidence_score", best_signal_score)
     else:
-        evidence_result = {"evidence_score": 50}
-        evidence_score = 50
+        evidence_result = {"evidence_score": best_signal_score}
+        evidence_score = best_signal_score
 
-    eq_score, eq_source = _resolve_execution_quality(execution_quality_score)
+    eq_score, eq_source = _resolve_execution_quality(execution_quality_score, fallback=best_signal_score)
     final_score_result = calculate_final_score(
         signal_score=best_signal_score,
         evidence_score=evidence_score,
@@ -392,16 +392,16 @@ def analyze_symbol(
     }
 
 
-def _resolve_execution_quality(value: int | float | str | None) -> tuple[int, str]:
+def _resolve_execution_quality(value: int | float | str | None, fallback: int = 100) -> tuple[int, str]:
     """Resolve caller-provided execution_quality_score.
 
-    Returns (score: int, source: str).  Invalid / missing input → (100, "fallback").
+    Returns (score: int, source: str).  Invalid / missing input → (fallback, "fallback").
     """
     from core.final_score_engine import _is_valid_score_value
 
     if _is_valid_score_value(value):
-        return safe_score(value, 100), "provided"
-    return 100, "fallback_no_closed_trade_execution_data"
+        return safe_score(value, fallback), "provided"
+    return fallback, "fallback_no_closed_trade_execution_data"
 
 
 def build_data_quality(

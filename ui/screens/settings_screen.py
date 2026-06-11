@@ -676,7 +676,7 @@ class SettingsScreen(QWidget):
 
             # Auto Regime dropdown
             regime_combo = QComboBox()
-            regime_combo.addItems(["", "range", "trend_up", "trend_down"])
+            regime_combo.addItems(["", "range", "trend_up", "trend_down", "volatile"])
             regime_combo.setCurrentText(symbol_config.auto_trade_regime or "")
             regime_combo.setEnabled(symbol_config.backtest)
             regime_combo.setFixedSize(122, mt5_input_height)
@@ -933,6 +933,10 @@ class SettingsScreen(QWidget):
             lot_step=self.trading_lot_step_input.value(),
             minimum_lot=self.trading_minimum_lot_input.value(),
             contract_size_override=self.trading_contract_size_input.value(),
+            max_daily_loss_pct=self.app_settings.trading.max_daily_loss_pct,
+            max_weekly_loss_pct=self.app_settings.trading.max_weekly_loss_pct,
+            max_consecutive_losses=self.app_settings.trading.max_consecutive_losses,
+            max_open_risk_pct=self.app_settings.trading.max_open_risk_pct,
             enabled_symbols=self.app_settings.trading.enabled_symbols,
             symbol_settings=self.app_settings.trading.symbol_settings,
         )

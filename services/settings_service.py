@@ -108,6 +108,9 @@ class SettingsService:
                 symbol_settings[symbol] = SymbolScanSettings(
                     backtest=bool(item.get("backtest", False)),
                     min_score=max(0, min(100, min_score)),
+                    auto_trade_regime=str(item.get("auto_trade_regime", "")).strip(),
+                    auto_trade_side=str(item.get("auto_trade_side", "")).strip(),
+                    auto_trade_min_rr=float(item.get("auto_trade_min_rr", 0) or 0),
                 )
         return TradingSettings(
             account_balance=float(data.get("account_balance", 10000)),
@@ -117,6 +120,10 @@ class SettingsService:
             lot_step=float(data.get("lot_step", 0.01)),
             minimum_lot=float(data.get("minimum_lot", 0.01)),
             contract_size_override=float(data.get("contract_size_override", 100000)),
+            max_daily_loss_pct=float(data.get("max_daily_loss_pct", 2.0)),
+            max_weekly_loss_pct=float(data.get("max_weekly_loss_pct", 5.0)),
+            max_consecutive_losses=int(data.get("max_consecutive_losses", 3)),
+            max_open_risk_pct=float(data.get("max_open_risk_pct", 3.0)),
             enabled_symbols=enabled,
             symbol_settings=symbol_settings,
         )

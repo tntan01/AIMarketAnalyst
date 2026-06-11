@@ -669,12 +669,17 @@ class ScannerScreen (QWidget ):
         symbol_auto_trade: dict[str, dict] = {}
         for symbol in symbols:
             cfg = settings.trading.symbol_settings.get(symbol)
-            if cfg and cfg.backtest and cfg.auto_trade_regime:
-                symbol_auto_trade[symbol] = {
-                    "regime": cfg.auto_trade_regime,
-                    "side": cfg.auto_trade_side,
-                    "min_rr": cfg.auto_trade_min_rr,
-                }
+            if cfg and cfg.backtest:
+                regime = (cfg.auto_trade_regime or "").strip()
+                side = (cfg.auto_trade_side or "").strip()
+                min_rr = cfg.auto_trade_min_rr or 0.0
+                if regime or side in ("buy", "sell") or min_rr:
+                    symbol_auto_trade[symbol] = {
+                        "regime": cfg.auto_trade_regime,
+                        "side": cfg.auto_trade_side,
+                        "min_rr": cfg.auto_trade_min_rr,
+                        "min_score": cfg.min_score,
+                    }
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,

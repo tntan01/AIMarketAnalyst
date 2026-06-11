@@ -46,6 +46,10 @@ class TradingSettings:
     lot_step: float = 0.01
     minimum_lot: float = 0.01
     contract_size_override: float = 100000
+    max_daily_loss_pct: float = 2.0
+    max_weekly_loss_pct: float = 5.0
+    max_consecutive_losses: int = 3
+    max_open_risk_pct: float = 3.0
     enabled_symbols: list[str] = field(default_factory=list)
     symbol_settings: dict[str, SymbolScanSettings] = field(default_factory=dict)
 
