@@ -131,8 +131,10 @@ def test_all_three_conditions_grant_bonus():
                 },
             )
 
-    assert result["scenario_scores"]["buy"]["entry_quality_bonus"] == 10
-    assert "SWEEP_DISPLACEMENT_M15_ALIGNED" in result["scenario_scores"]["buy"]["reason_codes"]
+    # Bonus removed in Phase 1 backtest improvement — conditions confirmed entry
+    # too late (after main move). Bonus is kept as metadata only (always 0).
+    assert result["scenario_scores"]["buy"]["entry_quality_bonus"] == 0
+    assert "SWEEP_DISPLACEMENT_M15_ALIGNED" not in result["scenario_scores"]["buy"].get("reason_codes", [])
     assert "entry_quality_bonus" in result["scenario_scores"]["sell"]
     assert result["scenario_scores"]["sell"]["entry_quality_bonus"] == 0
 
@@ -392,8 +394,8 @@ def test_zone_broken_gate_wins_over_bonus():
     assert result["trade_gate"]["decision_cap"] == "WATCH_ONLY"
     assert "ZONE_BROKEN" in result["trade_gate"]["warning_codes"]
     assert result["decision_summary"]["action"] != "ready"
-    # Bonus van duoc ghi nhan trong scores
-    assert result["scenario_scores"]["buy"]["entry_quality_bonus"] == 10
+    # Bonus removed in Phase 1 — zone_broken gate still works independently
+    assert result["scenario_scores"]["buy"]["entry_quality_bonus"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -477,26 +479,26 @@ def test_entry_quality_bonus_recomputes_score_gap_for_gate_and_decision():
             },
         )
 
-    # Bonus applied correctly
-    assert result["scenario_scores"]["buy"]["entry_quality_bonus"] == 10
-    assert result["scenario_scores"]["buy"]["signal_score"] == 82
-    assert result["scenario_scores"]["buy"]["total"] == 82
+    # Bonus removed in Phase 1 — scores unchanged by bonus
+    assert result["scenario_scores"]["buy"]["entry_quality_bonus"] == 0
+    assert result["scenario_scores"]["buy"]["signal_score"] == 72
+    assert result["scenario_scores"]["buy"]["total"] == 72
 
-    # direction_bias reflects post-bonus scores
-    assert result["direction_bias"]["buy_score"] == 82
+    # direction_bias reflects raw (non-bonus) scores
+    assert result["direction_bias"]["buy_score"] == 72
     assert result["direction_bias"]["sell_score"] == 65
-    assert result["direction_bias"]["score_gap"] == 17
-    assert result["direction_bias"]["is_clear_bias"] is True
+    assert result["direction_bias"]["score_gap"] == 7
+    assert result["direction_bias"]["is_clear_bias"] is False
 
     # decision_summary consistent
-    assert result["decision_summary"]["score_gap"] == 17
-    assert result["decision_summary"]["is_clear_bias"] is True
+    assert result["decision_summary"]["score_gap"] == 7
+    assert result["decision_summary"]["is_clear_bias"] is False
 
-    # Gate no longer warns about low score gap
-    assert "BUY_SELL_SCORE_GAP_LOW" not in result["trade_gate"]["warning_codes"]
+    # Gate warns about low score gap (gap=7 < min_gap=10)
+    assert "BUY_SELL_SCORE_GAP_LOW" in result["trade_gate"]["warning_codes"]
 
-    # Decision engine no longer warns about low score gap
+    # Decision engine may warn about low score gap (gap=7 < min_gap=10)
     assert "DECISION_SCORE_GAP_LOW" not in result["decision_engine"]["warning_codes"]
 
-    # final_score_detail uses post-bonus signal_score
-    assert result["final_score_detail"]["score_inputs"]["signal_score"] == 82
+    # final_score_detail uses raw signal_score (no bonus)
+    assert result["final_score_detail"]["score_inputs"]["signal_score"] == 72

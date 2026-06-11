@@ -36,6 +36,14 @@ from core.technical_context import build_technical_snapshot, detect_market_regim
 from core.trade_gate_engine import check_trade_gates
 
 
+def _find_scenario(scenarios: list[dict[str, Any]], side: str) -> dict[str, Any]:
+    """Find the scenario dict for a given side ('buy' or 'sell') in the list."""
+    for scenario in scenarios:
+        if isinstance(scenario, dict) and scenario.get("type") == side:
+            return scenario
+    return {}
+
+
 def analyze_symbol(
     request: AnalysisInput,
     candles_by_timeframe: dict[str, list[Candle]],
@@ -97,48 +105,49 @@ def analyze_symbol(
         "buy": score_scenario("buy", technical, smc, risk_score, macro_alignment.get("buy", 15), macro_confidence=macro_confidence, market_regime=market_regime, correlation_adjustment=buy_corr_adj, macro_context=macro_alignment),
         "sell": score_scenario("sell", technical, smc, risk_score, macro_alignment.get("sell", 15), macro_confidence=macro_confidence, market_regime=market_regime, correlation_adjustment=sell_corr_adj, macro_context=macro_alignment),
     }
-    direction_bias = calculate_direction_bias(scores["buy"], scores["sell"], min_gap=10)
-    best_side = direction_bias["best_side"]
-    if best_side == "neutral":
-        best_side = "buy" if direction_bias["buy_score"] >= direction_bias["sell_score"] else "sell"
-    best_score = int(max(direction_bias["buy_score"], direction_bias["sell_score"]))
-    smc_trade_flags = extract_smc_trade_flags(smc, best_side)
-    trade_permission = calc_trade_permission(data_quality, risk_score, best_score)
 
-    scenarios = build_scenarios(request, technical, smc, scores, trade_permission, h1_candles=h1, m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=float(data_quality.get("spread_points") or 0))
+    # ---- Entry quality bonus (Phase 5 Prompt 4, refactored Phase 1 backtest) ----
+    # Bonus is checked for EACH side independently using that side's SMC flags
+    # and scenario. This prevents the buy-biased feedback loop where only the
+    # initial best_side was eligible for the bonus.
+    buy_smc_flags = extract_smc_trade_flags(smc, "buy")
+    sell_smc_flags = extract_smc_trade_flags(smc, "sell")
+    scores["buy"]["entry_quality_bonus"] = 0
+    scores["sell"]["entry_quality_bonus"] = 0
+
+    # Build scenarios (pre-bonus scores are close enough for scenario construction)
+    trade_permission_initial = calc_trade_permission(
+        data_quality, risk_score,
+        int(max(scores["buy"].get("signal_score", 0), scores["sell"].get("signal_score", 0))),
+    )
+    scenarios = build_scenarios(request, technical, smc, scores, trade_permission_initial, h1_candles=h1, m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=float(data_quality.get("spread_points") or 0))
     has_ready_plan = any(item.get("ready_to_trade") for item in scenarios)
-    primary_scenario = scenarios[0] if scenarios else {}
 
-    # ---- Entry quality bonus (Phase 5 Prompt 4) ----
-    entry_quality_bonus = 0
-    m15_quality = primary_scenario.get("m15_quality") if isinstance(primary_scenario, dict) else None
-    if (
-        smc_trade_flags.get("liquidity_sweep_aligned")
-        and smc_trade_flags.get("displacement_aligned")
-        and m15_quality == "strict"
-        and not smc_trade_flags.get("choch_against_direction")
-    ):
-        entry_quality_bonus = 10
-        best_score = min(100, best_score + entry_quality_bonus)
-        best_side_scores = scores.get(best_side, {})
-        if isinstance(best_side_scores, dict):
-            new_score = min(100, int(best_side_scores.get("signal_score", best_score)) + entry_quality_bonus)
-            best_side_scores["signal_score"] = new_score
-            best_side_scores["total"] = new_score
-            if "reason_codes" in best_side_scores:
-                best_side_scores["reason_codes"].append("SWEEP_DISPLACEMENT_M15_ALIGNED")
-    scores[best_side]["entry_quality_bonus"] = entry_quality_bonus
-    opposite = "sell" if best_side == "buy" else "buy"
-    scores[opposite]["entry_quality_bonus"] = 0
+    buy_scenario = _find_scenario(scenarios, "buy")
+    sell_scenario = _find_scenario(scenarios, "sell")
 
-    # Recompute direction bias after entry-quality bonus mutates side scores
-    # so that score_gap, is_clear_bias, gate, and decision engine all see
-    # the post-bonus score values consistently.
+    # Entry quality bonus removed (Phase 1 backtest improvement).
+    # Analysis showed the bonus conditions (liquidity_sweep + displacement + M15 strict)
+    # confirm entry too late — after the main move has already occurred. Trades receiving
+    # the bonus had LOWER win rates than non-bonus trades in the same score bucket.
+    # Bonus is kept as metadata only (recorded in score_scenario default = 0).
+
+    # Calculate direction_bias ONCE with post-bonus scores (no recompute needed)
     direction_bias = calculate_direction_bias(scores["buy"], scores["sell"], min_gap=10)
     best_side = direction_bias["best_side"]
     if best_side == "neutral":
-        best_side = "buy" if direction_bias["buy_score"] >= direction_bias["sell_score"] else "sell"
+        if direction_bias["buy_score"] > direction_bias["sell_score"]:
+            best_side = "buy"
+        elif direction_bias["sell_score"] > direction_bias["buy_score"]:
+            best_side = "sell"
+        # Truly equal scores → stay neutral (very rare, no structural bias)
     best_score = int(max(direction_bias["buy_score"], direction_bias["sell_score"]))
+
+    # Pick SMC flags matching the final best_side
+    smc_trade_flags = buy_smc_flags if best_side == "buy" else sell_smc_flags
+    primary_scenario = buy_scenario if best_side == "buy" else (sell_scenario if best_side == "sell" else (scenarios[0] if scenarios else {}))
+
+    trade_permission = calc_trade_permission(data_quality, risk_score, best_score)
 
     decision_action = classify_decision(
         best_score,
@@ -433,6 +442,8 @@ def _public_technical(technical: dict[str, Any]) -> dict[str, Any]:
 
 
 def why_not_opposite(best_side: str, scores: dict[str, dict[str, Any]]) -> dict[str, str]:
+    if best_side not in ("buy", "sell"):
+        return {}
     opposite = "sell" if best_side == "buy" else "buy"
     opp_score = scores[opposite].get("signal_score", scores[opposite].get("total", 0))
     best_sc = scores[best_side].get("signal_score", scores[best_side].get("total", 0))

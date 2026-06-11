@@ -806,6 +806,21 @@ QDialog#ScannerHelpDialog QLabel#HelperText {
   color: #9ca3af;
 }
 
+QDialog#ScannerHelpDialog QScrollArea {
+  background: #111827;
+  border: 1px solid #2b3545;
+  border-radius: 6px;
+}
+
+QDialog#ScannerHelpDialog QScrollArea QWidget {
+  background: #111827;
+}
+
+QDialog#ScannerHelpDialog QCheckBox {
+  color: #e5e7eb;
+  spacing: 8px;
+}
+
 QDialog#ScannerHelpDialog QTableWidget#DataTable {
   background: #111827;
   alternate-background-color: #151d2a;
@@ -839,6 +854,18 @@ QDialog#ScannerHelpDialog QDialogButtonBox QPushButton {
 QDialog#ScannerHelpDialog QDialogButtonBox QPushButton:hover {
   background: #263142;
   border-color: #38bdf8;
+}
+
+QDialog#ScannerHelpDialog QDialogButtonBox QPushButton#PrimaryButton {
+  background: #0d9488;
+  border: 1px solid #14b8a6;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+QDialog#ScannerHelpDialog QDialogButtonBox QPushButton#PrimaryButton:hover {
+  background: #0f766e;
+  border-color: #2dd4bf;
 }
 
 QMessageBox {

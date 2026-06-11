@@ -160,9 +160,9 @@ def test_find_entry_fill_returns_none_when_zone_is_not_touched_before_expiry() -
 
 def test_summarize_backtest_trades_reports_core_metrics() -> None:
     trades = [
-        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t1", "t2", 1, 0.9, 1.2, 1.2, "win", 2.0, 1, 80, 80, 80, 60, 20, "trend_up", "confirmed_entry", "strict", 2, 80, "demand", True, True, False),
-        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t3", "t4", 1, 0.9, 1.2, 0.9, "loss", -1.0, 1, 80, 80, 80, 60, 20, "trend_up", "confirmed_entry", "strict", 2, 80, "demand", True, True, False),
-        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t5", "t6", 1, 0.9, 1.2, 1.0, "expired", 0.0, 2, 80, 80, 80, 60, 20, "range", "confirmed_entry", "strict", 2, 40, "demand", False, True, False),
+        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t1", "t2", 1, 0.9, 1.2, 1.2, "win", 2.0, 1, 80, 80, 80, 60, 20, "trend_up", "confirmed_entry", "strict", 2, 80, "demand", 80, "demand", True, True, False),
+        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t3", "t4", 1, 0.9, 1.2, 0.9, "loss", -1.0, 1, 80, 80, 80, 60, 20, "trend_up", "confirmed_entry", "strict", 2, 80, "demand", 80, "demand", True, True, False),
+        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t5", "t6", 1, 0.9, 1.2, 1.0, "expired", 0.0, 2, 80, 80, 80, 60, 20, "range", "confirmed_entry", "strict", 2, 40, "demand", None, "technical", False, True, False),
     ]
 
     summary = summarize_backtest_trades(trades)
@@ -178,8 +178,8 @@ def test_summarize_backtest_trades_reports_core_metrics() -> None:
 
 def test_build_breakdowns_groups_by_m15_and_smc_zone_score() -> None:
     trades = [
-        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t1", "t2", 1, 0.9, 1.2, 1.2, "win", 2.0, 1, 80, 80, 80, 60, 20, "trend_up", "confirmed_entry", "strict", 2, 80, "demand", True, True, False),
-        BacktestTrade("EUR/USD", "sell", "READY_TO_TRADE", "t3", "t4", 1, 1.1, 0.8, 1.1, "loss", -1.0, 1, 70, 70, 55, 70, 15, "range", "confirmed_entry", "loose", 1.2, 50, "supply", False, False, True),
+        BacktestTrade("EUR/USD", "buy", "READY_TO_TRADE", "t1", "t2", 1, 0.9, 1.2, 1.2, "win", 2.0, 1, 80, 80, 80, 60, 20, "trend_up", "confirmed_entry", "strict", 2, 80, "demand", 80, "demand", True, True, False),
+        BacktestTrade("EUR/USD", "sell", "READY_TO_TRADE", "t3", "t4", 1, 1.1, 0.8, 1.1, "loss", -1.0, 1, 70, 70, 55, 70, 15, "range", "confirmed_entry", "loose", 1.2, 50, "supply", None, "technical", False, False, True),
     ]
 
     breakdowns = build_breakdowns(trades)
@@ -262,9 +262,11 @@ def test_run_system_backtest_replays_without_future_leak_and_opens_ready_trades(
     m15 = _series(500, h1[0].time, timedelta(minutes=15), close=1.10)
     for idx, candle in enumerate(m15):
         if candle.time == h1[80].time + timedelta(minutes=15):
-            m15[idx] = Candle(candle.time, 1.10, 1.121, 1.099, 1.12)
+            # close=1.105 > zone_low(1.098) → fills; high=1.121 >= TP(1.12) → win
+            m15[idx] = Candle(candle.time, 1.10, 1.121, 1.099, 1.105)
         if candle.time == h1[82].time + timedelta(minutes=15):
-            m15[idx] = Candle(candle.time, 1.10, 1.101, 1.089, 1.09)
+            # close=1.099 > zone_low(1.098) → fills; low=1.088 < SL(1.09) → loss
+            m15[idx] = Candle(candle.time, 1.10, 1.102, 1.088, 1.099)
 
     def fake_analyze(request, candles_by_timeframe, **kwargs):
         current = candles_by_timeframe["H1"][-1].time
@@ -332,6 +334,47 @@ def test_run_system_backtest_requires_warmup_and_records_skips() -> None:
 
     assert result.summary["total_trades"] == 0
     assert any(item["reason"] == "insufficient_warmup" for item in result.skipped_setups)
+
+
+def test_backtest_mode_blocks_watch_only_but_accepts_loose_m15_and_watch_zone() -> None:
+    analysis = _analysis_payload(ready=True)
+    scenario = analysis["scenarios"][0]
+    analysis["decision_engine"]["decision"] = "WATCH_ONLY"
+    analysis["trade_permission"]["status"] = "caution"
+    scenario["ready_to_trade"] = False
+    scenario["entry_status"] = "watch_zone"
+    scenario["m15_quality"] = "none"
+
+    assert trade_open_block_reason(analysis, scenario, "backtest") == "blocked_by_decision"
+
+    analysis["decision_engine"]["decision"] = "WAITING_CONFIRMATION"
+    scenario["m15_quality"] = "loose"
+    assert trade_open_block_reason(analysis, scenario, "backtest") is None
+
+    scenario["entry_status"] = "waiting_confirmation"
+    assert trade_open_block_reason(analysis, scenario, "backtest") is None
+
+    analysis["decision_engine"]["decision"] = "AGGRESSIVE_SETUP"
+    assert trade_open_block_reason(analysis, scenario, "backtest") is None
+
+    analysis["trade_permission"]["status"] = "allowed"
+    assert trade_open_block_reason(analysis, scenario, "backtest") is None
+
+    # Should block invalid states
+    analysis["trade_permission"]["status"] = "denied"
+    assert trade_open_block_reason(analysis, scenario, "backtest") == "blocked_by_permission"
+
+    analysis["trade_permission"]["status"] = "caution"
+    analysis["decision_engine"]["decision"] = "STAND_ASIDE"
+    assert trade_open_block_reason(analysis, scenario, "backtest") == "blocked_by_decision"
+
+    analysis["decision_engine"]["decision"] = "READY_TO_TRADE"
+    scenario["entry_status"] = "invalidated"
+    assert trade_open_block_reason(analysis, scenario, "backtest") == "blocked_by_entry_status"
+
+    # Gate blocked still blocks even in backtest mode
+    analysis["trade_gate"]["allowed"] = False
+    assert trade_open_block_reason(analysis, scenario, "backtest") == "blocked_by_trade_gate"
 
 
 def test_backtest_disables_account_guard_history_by_default() -> None:

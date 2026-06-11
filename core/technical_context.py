@@ -155,25 +155,95 @@ def detect_market_regime(technical: dict[str, Any], news_in_3h: bool) -> dict[st
         secondary.append("volatile")
     if news_in_3h:
         secondary.append("news_sensitive")
+
     price = technical["price"]
     range_info = technical.get("range_info")
-    if technical["ema50_d1"] > technical["ema200_d1"] and price > technical["ema50_d1"] and technical["structure_h4"] == "HH/HL":
-        primary = "trend_up"
-    elif technical["ema50_d1"] < technical["ema200_d1"] and price < technical["ema50_d1"] and technical["structure_h4"] == "LH/LL":
-        primary = "trend_down"
-    elif range_info and range_info.get("is_range"):
+    ema50 = technical["ema50_d1"]
+    ema200 = technical["ema200_d1"]
+    structure = technical["structure_h4"]
+
+    ema_spread = ema50 - ema200
+    abs_spread = abs(ema_spread)
+    ema_ratio = abs_spread / max(atr_h4, 0.00001)
+
+    # ── EMA alignment score (0–40): how clearly are EMAs trending? ──
+    if ema_ratio < 0.5:
+        ema_score = 0
+    elif ema_ratio < 1.0:
+        ema_score = 10
+    elif ema_ratio < 2.0:
+        ema_score = 25
+    else:
+        ema_score = 40
+
+    # ── Structure score (0–30): does H4 swing structure confirm EMA direction? ──
+    if ema_spread > 0:
+        trend_direction = 1
+        if structure == "HH/HL":
+            structure_score = 30
+        elif structure == "LH/LL":
+            structure_score = 0
+        elif structure == "mixed":
+            structure_score = 10
+        else:
+            structure_score = 5
+    elif ema_spread < 0:
+        trend_direction = -1
+        if structure == "LH/LL":
+            structure_score = 30
+        elif structure == "HH/HL":
+            structure_score = 0
+        elif structure == "mixed":
+            structure_score = 10
+        else:
+            structure_score = 5
+    else:
+        trend_direction = 0
+        structure_score = 5
+
+    # ── Price position score (0–30): where is price relative to the EMA stack? ──
+    price_above_50 = price > ema50
+    price_above_200 = price > ema200
+
+    if price_above_50 and price_above_200:
+        price_score = 30 if ema50 > ema200 else 10
+    elif not price_above_50 and not price_above_200:
+        price_score = 30 if ema50 < ema200 else 10
+    elif price_above_200 and not price_above_50:
+        price_score = 15
+    elif not price_above_200 and price_above_50:
+        price_score = 15
+    else:
+        price_score = 5
+
+    # ── Final decision ──
+    total_score = ema_score + structure_score + price_score
+    range_by_indicator = bool(range_info and range_info.get("is_range"))
+    is_volatile = "volatile" in secondary
+
+    if is_volatile and total_score < 50:
+        primary = "volatile"
+    elif range_by_indicator and ema_ratio < 1.5:
         primary = "range"
-    elif abs(technical["ema50_d1"] - technical["ema200_d1"]) <= max(atr_h4, 0.0001) * 0.5:
+    elif ema_ratio < 0.8 and total_score < 40:
+        primary = "range"
+    elif total_score >= 60 and trend_direction != 0:
+        primary = "trend_up" if trend_direction > 0 else "trend_down"
+    elif total_score >= 35 and trend_direction != 0:
+        primary = "trend_up" if trend_direction > 0 else "trend_down"
+    elif ema_ratio < 1.0:
         primary = "range"
     else:
         primary = "unknown"
+
     return {
         "primary": primary,
         "secondary": secondary,
-        "structure": technical["structure_h4"],
+        "structure": structure,
         "explanation": (
-            f"D1 EMA50={technical['ema50_d1']:.5f}, EMA200={technical['ema200_d1']:.5f}; "
-            f"H4 structure={technical['structure_h4']}."
+            f"D1 EMA50={ema50:.5f}, EMA200={ema200:.5f} (spread={abs_spread:.5f}, {ema_ratio:.1f}x ATR); "
+            f"H4 structure={structure}; "
+            f"scores: ema={ema_score} struct={structure_score} price={price_score} total={total_score}."
         ),
     }
 

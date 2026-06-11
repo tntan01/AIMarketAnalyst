@@ -285,46 +285,168 @@ macro_confidence = 1.0
 
 Lý do: hệ thống news/macro hiện tại lấy dữ liệu live. Nếu dùng live data để backtest quá khứ sẽ gây sai lệch nghiêm trọng.
 
-## Điều Kiện Vào Lệnh
+## Chuẩn Hóa Điểm Số Khi Thiếu Macro (Phase 1)
 
-Nên hỗ trợ nhiều chế độ để so sánh.
+### Vấn Đề
 
-### Chế Độ Chặt
+Khi backtest dùng macro trung tính `{buy:15, sell:15}`, công thức gốc `macro_effective = int(macro_raw * macro_cap / 30)` chỉ tạo ra 50% macro_cap:
 
-Chỉ vào lệnh khi:
+- Regime trending/ranging (macro_cap=15): `macro_effective = 7`
+- Regime volatile/unknown (macro_cap=20): `macro_effective = 10`
+
+Tổng điểm tối đa thực tế chỉ đạt ~92/100 thay vì 100. Các setup bị kéo xuống dải 50-59 một cách giả tạo.
+
+### Giải Pháp: Chuẩn Hóa Tỉ Lệ
+
+`score_scenario()` trong `core/signal_engine.py` dùng công thức chuẩn hóa:
 
 ```python
-result["decision_engine"]["decision"] == "READY_TO_TRADE"
-result["trade_gate"]["allowed"] is True
-result["trade_permission"]["status"] == "allowed"
+non_macro_max = sum(weights["trend"], weights["momentum"], weights["location"],
+                    weights["smc"], weights["risk"])
+non_macro_score = technical_scaled + risk_scaled
+available_budget = max(0, 100 - macro_effective)
+
+if non_macro_max > 0:
+    normalized_non_macro = int(non_macro_score * available_budget / non_macro_max)
+else:
+    normalized_non_macro = 0
+
+total = clamp(normalized_non_macro + macro_effective, 0, 100)
 ```
 
-Và scenario cùng hướng có:
+**Nguyên lý:** Phần technical + risk được scale lên để lấp đầy khoảng trống mà macro không chiếm. 100 điểm luôn có nghĩa "tốt nhất có thể với dữ liệu hiện có".
+
+### Ví Dụ
+
+| Macro | macro_effective | Technical+Risk (thô) | Code cũ | Code mới |
+|---|---|---|---|---|
+| Trung tính (15) | 7 | 45/85 | 52 | **56** |
+| Trung tính (15) | 7 | 85/85 (max) | 92 | **100** |
+| Đầy đủ (30) | 15 | 45/85 | 60 | 60 (không đổi) |
+| Không có (0) | 0 | 45/85 | 45 | **53** |
+
+Khi macro đầy đủ, chuẩn hóa là no-op — điểm số giữ nguyên như code cũ.
+
+## Điều Kiện Vào Lệnh
+
+Hệ thống hỗ trợ 5 chế độ để so sánh, từ chặt nhất đến nới lỏng nhất. Hàm quyết định chính là `trade_open_block_reason()` trong `core/system_backtest_engine.py`.
+
+### Chế Độ Strict (mặc định)
+
+Dành cho auto-trade thật. Chỉ vào lệnh khi tất cả điều kiện sau cùng đúng:
 
 ```python
+result["trade_gate"]["allowed"] is True
+result["trade_permission"]["status"] == "allowed"
+result["decision_engine"]["decision"] == "READY_TO_TRADE"
 scenario["ready_to_trade"] is True
 scenario["entry_status"] == "confirmed_entry"
 scenario["m15_quality"] == "strict"
 ```
 
-### Chế Độ Legacy
+### Chế Độ Balanced
 
-Dùng luồng UI/scanner hiện tại:
+Nới lỏng hơn strict, vẫn giữ yêu cầu về entry và M15 nhưng chấp nhận tín hiệu yếu hơn:
 
 ```python
-result["decision_summary"]["action"] == "ready"
+# Permission: chấp nhận cả "caution"
+result["trade_permission"]["status"] in {"allowed", "caution"}
+
+# Decision: chấp nhận WAITING_CONFIRMATION
+result["decision_engine"]["decision"] in {"READY_TO_TRADE", "WAITING_CONFIRMATION"}
+
+# Entry: vẫn yêu cầu confirmed_entry + M15 strict
+scenario["entry_status"] == "confirmed_entry"
+scenario["m15_quality"] == "strict"
+
+# Score: thêm ngưỡng tối thiểu
+analysis["final_score"] >= 68
+signal_score >= 65
+
+# RR: thêm ngưỡng tối thiểu
+scenario["expected_effective_rr"] >= 1.2
+```
+
+### Chế Độ Legacy
+
+Dùng luồng UI/scanner cũ, đơn giản nhất:
+
+```python
 result["trade_permission"]["status"] == "allowed"
+result["decision_summary"]["action"] == "ready"
 ```
 
 ### Chế Độ Research
 
-Cho phép test cả các setup chưa ready:
+Dành cho khảo sát rộng, chấp nhận cả setup chưa sẵn sàng:
 
-- `WATCH_ONLY`
-- `WAITING_CONFIRMATION`
-- `m15_quality == "loose"`
+```python
+result["decision_engine"]["decision"] in {
+    "READY_TO_TRADE", "WAITING_CONFIRMATION", "WATCH_ONLY", "AGGRESSIVE_SETUP"
+}
+scenario["entry_status"] in {"confirmed_entry", "waiting_confirmation", "watch_zone"}
+# Không giới hạn M15 quality, score, RR
+```
 
-Chế độ này chỉ dùng để nghiên cứu, không nên xem là rule auto trade thật.
+### Chế Độ Backtest (nới lỏng nhất)
+
+Thêm vào Phase 1 cải tiến backtest để sinh đủ lệnh nghiên cứu. Bỏ qua M15 quality, score, và RR — ba bộ lọc gây mất lệnh nhiều nhất trong thực tế:
+
+```python
+# Permission: chấp nhận cả "caution"
+result["trade_permission"]["status"] in {"allowed", "caution"}
+
+# Decision: nới hơn Balanced nhưng không nhận WATCH_ONLY
+result["decision_engine"]["decision"] in {
+    "READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP"
+}
+
+# Entry: như Research
+scenario["entry_status"] in {"confirmed_entry", "waiting_confirmation", "watch_zone"}
+
+# KHÔNG giới hạn: M15 quality, final_score, signal_score, expected_effective_rr
+```
+
+Chế độ này giúp sinh nhiều lệnh để phân tích thống kê, nhưng đã loại `WATCH_ONLY` vì nhóm này có nhiễu cao và kéo expectancy xuống trong backtest EUR/USD.
+
+### Bảng So Sánh 5 Chế Độ
+
+| Điều kiện | Strict | Balanced | Legacy | Research | Backtest |
+|---|---|---|---|---|---|
+| Permission | allowed | allowed/caution | allowed | (không check) | allowed/caution |
+| Decision | READY_TO_TRADE | + WAITING_CONFIRMATION | action=ready | + WATCH_ONLY, AGGRESSIVE | + WAITING_CONFIRMATION, AGGRESSIVE |
+| Entry status | confirmed_entry | confirmed_entry | (không check) | + waiting, watch_zone | + waiting, watch_zone |
+| M15 quality | strict | strict | (không check) | (không check) | **(không check)** |
+| Final score | không | >= 68 | không | không | **(không check)** |
+| Signal score | không | >= 65 | không | không | **(không check)** |
+| Expected RR | không | >= 1.2 | không | không | **(không check)** |
+
+## Entry Quality Bonus Và Cân Bằng Buy/Sell (Phase 1)
+
+### Vấn Đề Cũ
+
+`analyze_symbol()` trong `core/analysis_engine.py` có cơ chế thưởng điểm cho setup có entry chất lượng cao (liquidity sweep + displacement + M15 strict + không CHOCH ngược). Code cũ chỉ thưởng cho `best_side` — bên đang dẫn điểm ban đầu — rồi **tính lại direction_bias** với điểm đã bị thổi phồng. Trong thị trường uptrend, buy luôn dẫn điểm ban đầu → luôn được bonus → gap càng rộng → buy càng "thắng". Kết quả: **76% lệnh là buy** trong backtest EUR/USD.
+
+### Giải Pháp 1: Bonus Đối Xứng Cho Cả 2 Bên → Đã Bỏ
+
+Ban đầu bonus được sửa thành đối xứng (cả buy và sell cùng được kiểm tra độc lập), sau đó giảm từ +10 → +5, và cuối cùng **bỏ hẳn** sau khi phân tích backtest cho thấy:
+
+- Các điều kiện bonus (liquidity_sweep + displacement + M15 strict) xác nhận entry **quá muộn** — sau khi sóng chính đã chạy xong
+- Trade được bonus có **win rate thấp hơn** trade không được bonus trong cùng bucket điểm
+- Score 70-79 (chủ yếu là trade được bonus) có win rate 22% vs 38% của score 60-69
+
+Code hiện tại không còn bonus. `entry_quality_bonus` luôn = 0, giữ lại trong schema để tương thích ngược.
+
+### Giải Pháp 2: Sửa Neutral Tiebreaker (đã giữ lại)
+
+Code cũ: `best_side = "buy" if buy_score >= sell_score else "sell"` — `>=` ưu tiên buy khi hòa.
+Code mới: `>` thay cho `>=`, nếu thực sự bằng nhau → giữ `"neutral"`.
+
+### Kết Quả
+
+- Buy và sell được đánh giá công bằng, không bên nào bị ưu tiên
+- Direction bias chỉ tính 1 lần duy nhất
+- Tỉ lệ buy/sell phản ánh đúng thị trường, không bị khuếch đại
 
 ## Lấy Scenario Giao Dịch
 
@@ -364,43 +486,54 @@ choch_against_direction = smc_flags.get("choch_against_direction")
 
 ## Giả Lập Khớp Lệnh
 
-### MVP: Vào Tại Close Hiện Tại
+### Cơ Chế Entry Fill (Phase 1 cải tiến)
 
-Nếu analysis báo `READY_TO_TRADE`, vào tại giá close của nến H1 hiện tại:
-
-```python
-entry_price = h1_until_now[-1].close
-```
-
-Ưu điểm:
-
-- Đơn giản.
-- Dễ debug.
-- Phù hợp để test nhanh logic decision/entry.
-
-Nhược điểm:
-
-- Có thể không đúng với thực tế nếu giá chỉ mới nằm trong entry zone một phần.
-- Chưa mô phỏng pending order.
-
-### Bản Nâng Cấp: Pending Entry Zone
-
-Khi có setup tốt, lưu setup vào danh sách pending. Trong `setup_expiry_bars` nến tiếp theo:
-
-- Buy: nếu `candle.low <= entry_high` và `candle.high >= entry_low` thì khớp.
-- Sell: nếu `candle.low <= entry_high` và `candle.high >= entry_low` thì khớp.
-
-Entry price có thể là:
-
-- Midpoint của entry zone.
-- Biên gần giá hơn.
-- Close của candle chạm zone.
-
-Để bảo thủ nên dùng midpoint:
+`find_entry_fill()` trong `core/system_backtest_engine.py` đã được sửa để yêu cầu **xác nhận đảo chiều** trước khi vào lệnh, thay vì fill ngay khi giá chạm zone lần đầu:
 
 ```python
-entry_price = (entry_zone[0] + entry_zone[1]) / 2
+# Buy: nến M15 chạm zone VÀ close > zone_low (áp lực mua đẩy giá lên khỏi đáy zone)
+if candle.close > zone_low:
+    fill_price = candle.close + spread + slippage
+
+# Sell: nến M15 chạm zone VÀ close < zone_high (áp lực bán đẩy giá xuống khỏi đỉnh zone)
+if candle.close < zone_high:
+    fill_price = candle.close - spread - slippage
 ```
+
+**Khác biệt với code cũ:**
+
+| | Code cũ | Code mới |
+|---|---|---|
+| Điều kiện fill | Chạm zone là fill ngay | Chạm zone + close xác nhận hướng |
+| Giá fill | zone_high (buy) / zone_low (sell) — giá tệ nhất | **close của nến chạm zone** |
+| Xác nhận đảo chiều | Không | Có (close phải cùng hướng với trade) |
+
+**Lợi ích:**
+- Tránh vào lệnh khi giá đang xuyên qua zone (không có dấu hiệu dừng)
+- Fill tại close (thực tế hơn) thay vì biên xấu nhất
+- Giảm tỉ lệ SL bị hit ngay sau entry
+
+### Stop Loss Buffer (Phase 1 cải tiến)
+
+Khoảng cách SL được nới rộng từ `atr * 0.30` → `atr * 0.50`:
+
+```
+Zone bottom = level - atr * 0.20
+SL (cũ)    = level - atr * 0.30 → buffer = atr * 0.10 (~6 pips EUR/USD)
+SL (mới)   = level - atr * 0.50 → buffer = atr * 0.30 (~18 pips EUR/USD)
+```
+
+Buffer dưới đáy zone tăng gấp 3 lần, giảm thiểu việc SL bị quét bởi nhiễu wick.
+
+### Entry Quality Bonus Đã Bỏ (Phase 1)
+
+Bonus cho setup có liquidity_sweep + displacement + M15 strict đã bị **bỏ hẳn** sau 3 vòng backtest:
+
+1. Ban đầu: **+10** — gây lệch buy 76% và vùng 70-79 thua nặng (win rate 5.3%)
+2. Giảm còn **+5** — cải thiện nhưng vùng 70-79 vẫn tệ nhất (win rate 22.2%)
+3. **Bỏ hẳn** — các điều kiện bonus xác nhận entry quá muộn (cuối sóng), không có giá trị dự đoán
+
+`entry_quality_bonus` trong schema giữ lại = 0 để tương thích ngược.
 
 ## Giả Lập SL/TP
 
@@ -618,7 +751,46 @@ unknown
 
 Mục tiêu: biết nên trade trong trend hay range.
 
+## Cách Phát Hiện Market Regime (Scoring)
+
+Từ Phase 1 cải tiến backtest, `detect_market_regime()` trong `core/technical_context.py` dùng hệ thống chấm điểm 3 thành phần thay vì if-else 4 cổng cứng như trước đây. Mục tiêu: giảm tỉ lệ "unknown" từ ~80% xuống ~15-20%.
+
+### Ba Thành Phần Chấm Điểm (tổng 0-100)
+
+| Thành phần | Trọng số | Cách tính |
+|---|---|---|
+| **EMA alignment** | 0-40 | `|EMA50 - EMA200| / ATR_H4`. Spread càng rộng so với ATR → xu hướng càng rõ |
+| **Structure** | 0-30 | H4 structure có xác nhận hướng EMA không. HH/HL khi EMA dương = 30 điểm, mixed = 10, ngược hướng = 0 |
+| **Price position** | 0-30 | Vị trí giá so với stack EMA. Trên cả 2 đường khi EMA dương = 30 điểm, giữa 2 đường = 15, ngược = 10 |
+
+### Ngưỡng Quyết Định
+
+```text
+total >= 60 + EMA có hướng rõ     → trend_up / trend_down
+total >= 35 + EMA có hướng rõ     → trend_up / trend_down (yếu)
+range_info.is_range + spread < 1.5 ATR → range
+spread < 0.8 ATR + total < 40     → range
+volatile (ATR gấp 1.5x) + total < 50 → volatile
+còn lại                            → unknown
+```
+
+### So Sánh Với Code Cũ
+
+| Tình huống thực tế EUR/USD | Code cũ | Code mới |
+|---|---|---|
+| EMA50 > EMA200 rõ, H4 structure mixed | unknown | **trend_up** |
+| EMA50 > EMA200 rõ, H4 structure ngược (LH/LL) | unknown | **trend_up** (EMA thắng) |
+| EMA gần nhau + structure mixed | range (chỉ khi <0.5 ATR) | **range** (nới lỏng <1.5 ATR) |
+| ATR cao + tín hiệu yếu | unknown | **volatile** |
+| EMA50 > EMA200 + HH/HL + giá trên | trend_up | trend_up (giữ nguyên) |
+
+### Ảnh Hưởng Đến Scoring
+
+Regime quyết định bảng trọng số `DYNAMIC_WEIGHTS` trong `core/signal_engine.py`. Khi giảm "unknown" và tăng "trend_up"/"trend_down", hệ thống sẽ dùng trọng số trending (trend=25, momentum=15) thay vì unknown (trend=18, momentum=14) — giúp điểm số phản ánh đúng thực tế thị trường hơn.
+
 ### Theo SMC Metadata
+
+Breakdown theo SMC metadata từ `smc_trade_flags` — đây là zone SMC tốt nhất toàn chart, không nhất thiết là zone được dùng để entry.
 
 ```text
 selected_zone_score >= 75
@@ -637,6 +809,32 @@ selected_zone_type
 ```
 
 Mục tiêu: biết những thành phần SMC nào thật sự có edge.
+
+### Theo Entry Zone Score (Phase 1)
+
+Khác với `selected_zone_score`, `entry_zone_score` là điểm SMC của zone **thực tế được dùng làm entry** trong `build_trade_plan()`. Zone này được chọn bởi `select_best_level()` — zone gần giá nhất trong 1.5 ATR — không phải zone đẹp nhất toàn chart. Khi entry dựa vào technical swing level (không có SMC zone nào đủ gần), `entry_zone_score = None`.
+
+```text
+entry_zone_score >= 75  (entry vào SMC zone mạnh)
+entry_zone_score 55-74  (entry vào SMC zone trung bình)
+entry_zone_score < 55   (entry vào SMC zone yếu)
+no_selected_zone        (entry vào technical level, không dùng SMC)
+```
+
+### Công Thức Chấm Điểm SMC Zone (Phase 1 sửa đổi)
+
+`zone_quality_score()` trong `core/smc_context.py` đã được sửa để **thưởng cho zone đã được kiểm chứng** thay vì zone mới chưa test:
+
+| Tiêu chí | Code cũ | Code mới |
+|---|---|---|
+| Zone đã test nhiều lần + giữ được | Bị trừ điểm (-3 mỗi lần test) | **Thưởng +5 mỗi lần test (max +20)** |
+| Zone mới hình thành (freshness) | +20 (freshness 0 bar) | +10 (bonus nhẹ, chưa được kiểm chứng) |
+| Zone chưa bị chạm (not mitigated) | +12 (thưởng) | **(bỏ, không còn là tiêu chí)** |
+| Displacement lớn | +15 | +15 (giữ nguyên) |
+| Liquidity sweep | +10 | +10 (giữ nguyên) |
+| Vị trí premium/discount | +12/-8 | +12/-8 (giữ nguyên) |
+
+Nguyên tắc: zone đã bị test 3-4 lần và vẫn giữ được = đáng tin cậy hơn zone vừa mới hình thành chưa từng bị test.
 
 ### Theo Expected Effective R:R
 
@@ -810,17 +1008,19 @@ Không nên làm như landing page. Đây là màn hình công cụ, cần rõ r
 
 Controls:
 
-- Symbol combobox.
+- Symbol multi-select list.
 - Broker symbol readonly/resolved.
 - Date from picker.
 - Date to picker.
 - Initial balance input.
 - Risk percent input.
 - Spread/slippage input.
-- Mode segmented control:
-  - Strict
-  - Legacy
-  - Research
+- Mode dropdown (QComboBox):
+  - Strict — lọc chặt nhất cho tín hiệu mạnh
+  - Balanced — nhận allowed/caution, bắt buộc confirmed entry + M15 strict + score + RR
+  - Legacy — giữ logic cũ (action=ready + permission=allowed)
+  - Research — khảo sát rộng, nhận cả waiting/watch_zone
+  - Backtest (nới lỏng nhất) — bỏ qua M15 quality, score, RR; sinh nhiều lệnh để nghiên cứu
 - Time step:
   - H1
   - H4
@@ -1062,7 +1262,7 @@ Closed trade TP/SL
 - Pending entry zone.
 - Setup expiry.
 - Slippage/spread theo symbol.
-- Multi-symbol batch backtest.
+- Multi-symbol batch backtest chạy tuần tự, lưu snapshot tổng và breakdown theo symbol.
 - Out-of-sample comparison.
 
 ### Phase 6: Historical Macro/News

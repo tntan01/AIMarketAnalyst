@@ -18,6 +18,8 @@ from PyQt6.QtWidgets import (
         QMessageBox,
         QProgressBar,
         QPushButton,
+        QCheckBox,
+        QScrollArea,
         QSizePolicy,
         QSpinBox,
         QTableWidget,
@@ -33,6 +35,7 @@ from ui.screens.shared import action_button, card, page_header
 
 class BacktestScreen(QWidget):
     TRADE_COLUMNS = [
+        ("symbol", "Mã"),
         ("entry_time", "Thời gian vào"),
         ("side", "Hướng"),
         ("result", "Kết quả"),
@@ -47,6 +50,7 @@ class BacktestScreen(QWidget):
         ("selected_zone_score", "Zone"),
     ]
     TRADE_COLUMN_WEIGHTS = {
+        "symbol": 0.72,
         "entry_time": 1.65,
         "side": 0.65,
         "result": 0.75,
@@ -68,6 +72,7 @@ class BacktestScreen(QWidget):
         self.backtest_thread = None
         self.backtest_worker = None
         self.result: dict[str, object] | None = None
+        self.selected_symbols = ["EUR/USD"]
         self.setObjectName("FormScreen")
         self._build_ui()
 
@@ -110,9 +115,14 @@ class BacktestScreen(QWidget):
         params_grid.setColumnStretch(1, 1)
         params_box.layout().addLayout(params_grid)
 
-        self.symbol_combo = QComboBox()
-        self.symbol_combo.addItems(sorted(SUPPORTED_SYMBOLS))
-        self.symbol_combo.setCurrentText("EUR/USD")
+        self.symbol_summary = QLabel("")
+        self.symbol_summary.setObjectName("BacktestSymbolSummary")
+        self.symbol_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.symbol_button = QPushButton("Chọn mã")
+        self.symbol_button.setObjectName("InlineHelpButton")
+        self.symbol_button.setFixedHeight(34)
+        self.symbol_button.clicked.connect(self._show_symbol_dialog)
+        self._update_symbol_summary()
 
         today = QDate.currentDate()
         self.start_date = QDateEdit(today.addMonths(-6))
@@ -140,6 +150,7 @@ class BacktestScreen(QWidget):
         self.mode_combo.addItem("Balanced", "balanced")
         self.mode_combo.addItem("Legacy", "legacy")
         self.mode_combo.addItem("Research", "research")
+        self.mode_combo.addItem("Backtest (nới lỏng nhất)", "backtest")
 
         self.spread_input = QDoubleSpinBox()
         self._apply_number_format(self.spread_input)
@@ -156,7 +167,6 @@ class BacktestScreen(QWidget):
         self.max_holding_input.setRange(1, 2000)
         self.max_holding_input.setValue(96)
         for field in (
-            self.symbol_combo,
             self.start_date,
             self.end_date,
             self.balance_input,
@@ -168,7 +178,7 @@ class BacktestScreen(QWidget):
         ):
             field.setObjectName("BacktestField")
 
-        market_grid.addWidget(self._field_cell("Mã", self.symbol_combo, 58), 0, 0)
+        market_grid.addWidget(self._symbol_cell(), 0, 0)
         market_grid.addWidget(self._field_cell("Từ ngày", self.start_date, 58), 1, 0)
         market_grid.addWidget(self._field_cell("Đến ngày", self.end_date, 58), 2, 0)
 
@@ -253,9 +263,9 @@ class BacktestScreen(QWidget):
         box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         return box
 
-    def _field_cell(self, label: str, field: QWidget, label_width: int = 64) -> QWidget:
+    def _field_cell(self, label: str, field: QWidget, label_width: int = 64, *, height: int = 34) -> QWidget:
         cell = QWidget()
-        cell.setFixedHeight(34)
+        cell.setFixedHeight(height)
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -264,9 +274,25 @@ class BacktestScreen(QWidget):
         title.setFixedWidth(label_width)
         title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         field.setMinimumWidth(0)
-        field.setFixedHeight(34)
+        field.setFixedHeight(height)
         layout.addWidget(title)
         layout.addWidget(field, 1)
+        return cell
+
+    def _symbol_cell(self) -> QWidget:
+        cell = QWidget()
+        cell.setFixedHeight(34)
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        title = QLabel("Mã")
+        title.setObjectName("FormLabel")
+        title.setFixedWidth(58)
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.symbol_summary.setFixedHeight(34)
+        layout.addWidget(title)
+        layout.addWidget(self.symbol_summary, 1)
+        layout.addWidget(self.symbol_button)
         return cell
 
     def _stat_cell(self, title: str, value: str) -> QFrame:
@@ -311,6 +337,12 @@ class BacktestScreen(QWidget):
         dialog = BacktestInputHelpDialog(self)
         dialog.exec()
 
+    def _show_symbol_dialog(self) -> None:
+        dialog = SymbolSelectionDialog(self.selected_symbols, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.selected_symbols = dialog.selected_symbols()
+            self._update_symbol_summary()
+
     def eventFilter(self, watched: object, event: QEvent) -> bool:
         if hasattr(self, "table") and watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
             self._resize_trade_columns_to_viewport()
@@ -318,8 +350,8 @@ class BacktestScreen(QWidget):
 
     def _run_backtest(self) -> None:
         try:
-            request = self.controller.build_request(
-                symbol=self.symbol_combo.currentText(),
+            requests = self.controller.build_requests(
+                symbols=self._selected_symbols(),
                 start=self._qdate_to_utc_start(self.start_date.date()),
                 end=self._qdate_to_utc_end(self.end_date.date()),
                 initial_balance=self.balance_input.value(),
@@ -336,7 +368,7 @@ class BacktestScreen(QWidget):
         self.run_button.setEnabled(False)
         self.progress.setValue(0)
         self.status_label.setText("Đang chạy backtest...")
-        self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(request)
+        self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(requests)
         self.backtest_worker.progress.connect(self._on_progress)
         self.backtest_worker.succeeded.connect(self._on_success)
         self.backtest_worker.failed.connect(self._on_failed)
@@ -384,6 +416,18 @@ class BacktestScreen(QWidget):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
         self._apply_trade_table_layout()
+
+    def _selected_symbols(self) -> list[str]:
+        return list(self.selected_symbols)
+
+    def _update_symbol_summary(self) -> None:
+        count = len(self.selected_symbols)
+        if count <= 3:
+            text = ", ".join(self.selected_symbols)
+        else:
+            text = f"{count} mã: " + ", ".join(self.selected_symbols[:3]) + "..."
+        self.symbol_summary.setText(text or "Chưa chọn mã")
+        self.symbol_summary.setToolTip(", ".join(self.selected_symbols))
 
     def _apply_trade_table_layout(self) -> None:
         header = self.table.horizontalHeader()
@@ -562,8 +606,8 @@ class BacktestInputHelpDialog(QDialog):
     HELP_ROWS = [
         (
             "Mã",
-            "Cặp tiền hoặc sản phẩm cần kiểm tra, ví dụ EUR/USD.",
-            "Nên chọn đúng thị trường bạn muốn giao dịch thật. Mỗi mã có spread, biến động và hành vi giá khác nhau nên kết quả backtest không thể dùng lẫn cho mã khác.",
+            "Một hoặc nhiều cặp tiền/sản phẩm cần kiểm tra, ví dụ EUR/USD và GBP/USD.",
+            "Nên chọn nhiều mã để kiểm tra edge có ổn định hay chỉ tốt trên một thị trường. Mỗi mã có spread, biến động và hành vi giá khác nhau nên kết quả backtest không thể dùng lẫn cho mã khác.",
         ),
         (
             "Từ ngày",
@@ -588,7 +632,7 @@ class BacktestInputHelpDialog(QDialog):
         (
             "Chế độ",
             "Mức độ nghiêm ngặt của bộ lọc setup.",
-            "Strict lọc chặt nhất cho tín hiệu mạnh. Balanced dùng cho backtest: có thể nhận allowed/caution nhưng bắt buộc confirmed entry, M15 strict và điểm cao hơn. Legacy giữ gần logic cũ. Research chỉ dùng khảo sát rộng, nhiễu hơn và không nên dùng kết luận trade thật.",
+            "Strict lọc chặt nhất cho tín hiệu mạnh. Balanced nhận allowed/caution nhưng bắt buộc confirmed entry, M15 strict và điểm cao. Legacy giữ gần logic cũ. Research khảo sát rộng hơn (nhận cả waiting/watch_zone). Backtest bỏ WATCH_ONLY nhưng vẫn nới M15 quality, score/RR để sinh lệnh nghiên cứu có tín hiệu rõ hơn.",
         ),
         (
             "Số nến",
@@ -660,3 +704,86 @@ class BacktestInputHelpDialog(QDialog):
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
+
+
+class SymbolSelectionDialog(QDialog):
+    def __init__(self, selected_symbols: list[str], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Chọn mã backtest")
+        self.setObjectName("ScannerHelpDialog")
+        self.setModal(True)
+        self.setMinimumSize(520, 620)
+        self.checkboxes: dict[str, QCheckBox] = {}
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(12)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.select_all_button = QPushButton("Chọn tất cả")
+        self.clear_button = QPushButton("Bỏ chọn")
+        self.forex_button = QPushButton("Forex")
+        self.metal_crypto_button = QPushButton("Kim loại/Crypto")
+        for button in (self.select_all_button, self.clear_button, self.forex_button, self.metal_crypto_button):
+            button.setObjectName("InlineHelpButton")
+            button.setFixedHeight(30)
+            controls.addWidget(button)
+        root.addLayout(controls)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("SymbolSelectionScroll")
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content.setObjectName("SymbolSelectionContent")
+        grid = QGridLayout(content)
+        grid.setContentsMargins(4, 4, 4, 4)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
+        selected_set = set(selected_symbols)
+        symbols = sorted(SUPPORTED_SYMBOLS)
+        for index, symbol in enumerate(symbols):
+            checkbox = QCheckBox(symbol)
+            checkbox.setChecked(symbol in selected_set)
+            self.checkboxes[symbol] = checkbox
+            grid.addWidget(checkbox, index // 3, index % 3)
+        scroll.setWidget(content)
+        root.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if ok_btn is not None:
+            ok_btn.setText("Áp dụng")
+            ok_btn.setObjectName("PrimaryButton")
+        if cancel_btn is not None:
+            cancel_btn.setText("Hủy")
+        root.addWidget(buttons)
+
+        self.select_all_button.clicked.connect(lambda: self._set_all(True))
+        self.clear_button.clicked.connect(lambda: self._set_all(False))
+        self.forex_button.clicked.connect(self._select_forex)
+        self.metal_crypto_button.clicked.connect(self._select_metal_crypto)
+        buttons.accepted.connect(self._accept_if_valid)
+        buttons.rejected.connect(self.reject)
+
+    def selected_symbols(self) -> list[str]:
+        return [symbol for symbol, checkbox in self.checkboxes.items() if checkbox.isChecked()]
+
+    def _set_all(self, checked: bool) -> None:
+        for checkbox in self.checkboxes.values():
+            checkbox.setChecked(checked)
+
+    def _select_forex(self) -> None:
+        for symbol, checkbox in self.checkboxes.items():
+            checkbox.setChecked(symbol not in {"XAU/USD", "XAG/USD", "BTC/USD"})
+
+    def _select_metal_crypto(self) -> None:
+        for symbol, checkbox in self.checkboxes.items():
+            checkbox.setChecked(symbol in {"XAU/USD", "XAG/USD", "BTC/USD"})
+
+    def _accept_if_valid(self) -> None:
+        if not self.selected_symbols():
+            QMessageBox.warning(self, "Chưa chọn mã", "Cần chọn ít nhất một mã để backtest.")
+            return
+        self.accept()

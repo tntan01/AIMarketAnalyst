@@ -83,6 +83,8 @@ class BacktestTrade:
     expected_effective_rr: float | None
     selected_zone_score: int | None
     selected_zone_type: str | None
+    entry_zone_score: int | None
+    entry_zone_source: str | None
     liquidity_sweep_aligned: bool
     displacement_aligned: bool
     choch_against_direction: bool
@@ -373,6 +375,15 @@ def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], 
             "AGGRESSIVE_SETUP",
         } and scenario.get("entry_status") in {"confirmed_entry", "waiting_confirmation", "watch_zone"}
         return None if allowed_research else "blocked_by_decision"
+    if mode == "backtest":
+        if permission_status not in {"allowed", "caution"}:
+            return "blocked_by_permission"
+        decision = decision_engine.get("decision")
+        if decision not in {"READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP"}:
+            return "blocked_by_decision"
+        if scenario.get("entry_status") not in {"confirmed_entry", "waiting_confirmation", "watch_zone"}:
+            return "blocked_by_entry_status"
+        return None
     if permission_status != "allowed":
         return "blocked_by_permission"
     if decision_engine.get("decision") != "READY_TO_TRADE":
@@ -460,6 +471,13 @@ def find_entry_fill(
     setup_expiry_bars: int,
     request: BacktestRequest,
 ) -> tuple[Candle, float, int] | None:
+    """Tim diem vao lenh trong cac nen tuong lai.
+
+    Yeu cau xac nhan dao chieu tai zone:
+    - Buy: nen chạm zone VA close > zone_low (áp lực mua đẩy giá lên)
+    - Sell: nen chạm zone VA close < zone_high (áp lực bán đẩy giá xuống)
+    Fill tại close thay vì biên xấu nhất của zone.
+    """
     zone = _entry_zone_bounds(scenario.get("entry_zone"))
     if zone is None:
         return None
@@ -467,8 +485,12 @@ def find_entry_fill(
     for index, candle in enumerate(future_candles[: max(1, setup_expiry_bars)]):
         if not _candle_touches_zone(candle, zone_low, zone_high):
             continue
-        planned_entry = zone_high if side == "buy" else zone_low
-        return candle, _entry_price_with_costs(side, planned_entry, request), index
+        if side == "buy":
+            if candle.close > zone_low:
+                return candle, _entry_price_with_costs(side, candle.close, request), index
+        else:
+            if candle.close < zone_high:
+                return candle, _entry_price_with_costs(side, candle.close, request), index
     return None
 
 
@@ -585,6 +607,7 @@ def build_breakdowns(trades: list[BacktestTrade]) -> dict[str, Any]:
         "by_m15_quality": breakdown_by(trades, lambda trade: trade.m15_quality or "missing"),
         "by_market_regime": breakdown_by(trades, lambda trade: trade.market_regime or "unknown"),
         "by_smc_zone_score": breakdown_by(trades, lambda trade: zone_score_bucket(trade.selected_zone_score)),
+        "by_entry_zone_score": breakdown_by(trades, lambda trade: zone_score_bucket(trade.entry_zone_score)),
         "by_liquidity_sweep": breakdown_by(trades, lambda trade: str(bool(trade.liquidity_sweep_aligned))),
         "by_displacement": breakdown_by(trades, lambda trade: str(bool(trade.displacement_aligned))),
         "by_choch_against": breakdown_by(trades, lambda trade: str(bool(trade.choch_against_direction))),
@@ -702,6 +725,8 @@ def build_trade_record(
         expected_effective_rr=_safe_float(scenario.get("expected_effective_rr")),
         selected_zone_score=_safe_int(smc_flags.get("selected_zone_score")),
         selected_zone_type=smc_flags.get("selected_zone_type"),
+        entry_zone_score=_safe_int(scenario.get("entry_zone_score")),
+        entry_zone_source=scenario.get("entry_zone_source"),
         liquidity_sweep_aligned=bool(smc_flags.get("liquidity_sweep_aligned")),
         displacement_aligned=bool(smc_flags.get("displacement_aligned")),
         choch_against_direction=bool(smc_flags.get("choch_against_direction")),
@@ -861,6 +886,8 @@ def build_skip_debug(analysis: dict[str, Any] | None, scenario: dict[str, Any] |
         "market_regime": market_regime.get("primary"),
         "selected_zone_score": _safe_int(smc_flags.get("selected_zone_score")),
         "selected_zone_type": smc_flags.get("selected_zone_type"),
+        "entry_zone_score": _safe_int(scenario.get("entry_zone_score")),
+        "entry_zone_source": scenario.get("entry_zone_source"),
         "liquidity_sweep_aligned": bool(smc_flags.get("liquidity_sweep_aligned")),
         "displacement_aligned": bool(smc_flags.get("displacement_aligned")),
         "choch_against_direction": bool(smc_flags.get("choch_against_direction")),

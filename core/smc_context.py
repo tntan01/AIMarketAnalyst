@@ -410,12 +410,30 @@ def zone_has_sweep(side: str, liquidity_sweeps: dict[str, list[dict[str, Any]]])
 
 
 def zone_quality_score(zone: dict[str, Any], side: str) -> int:
+    """Cham diem chat luong SMC zone (0-100).
+
+    Nguyen tac: zone da duoc test nhieu lan va giu duoc = dang tin cay hon
+    zone moi hinh thanh chua tung bi test. Diem thuong cho:
+    - Da test va giu duoc (toi da +20)
+    - Con moi (toi da +10)
+    - Displacement lon (toi da +15)
+    - Quet liquidity (+10)
+    - Nam dung vi tri premium/discount (+12)
+    """
     score = 50
-    score += max(0, 20 - int(zone.get("freshness_bars", 0)) // 2)
-    score += 12 if not zone.get("mitigated") else max(0, 10 - int(zone.get("test_count", 0)) * 3)
+    test_count = int(zone.get("test_count", 0))
+    # Zone da test nhieu lan + giu duoc = tin cay cao
+    score += min(20, test_count * 5)
+    # Zone con moi: bonus nhe (moi la tin hieu tot nhung chua duoc kiem chung)
+    freshness = int(zone.get("freshness_bars", 999))
+    score += max(0, 10 - freshness // 5)
+    # Zone da bi broken = khong con gia tri
     score -= 35 if zone.get("broken") else 0
+    # Displacement impulse: move cang manh → zone cang quan trong
     score += min(15, int(float(zone.get("displacement_multiple", 0)) * 5))
+    # Liquidity sweep: quet stop-loss truoc khi dao chieu = tin hieu manh
     score += 10 if zone.get("liquidity_sweep") else 0
+    # Vi tri trong cau truc premium/discount
     location = zone.get("zone_location")
     if (side == "buy" and location == "discount") or (side == "sell" and location == "premium"):
         score += 12

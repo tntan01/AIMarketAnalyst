@@ -8,7 +8,7 @@ from typing import Any
 from PyQt6.QtCore import QThread
 
 from config.paths import app_data_dir
-from core.system_backtest_engine import BacktestRequest, run_system_backtest
+from core.system_backtest_engine import BacktestRequest, run_system_backtest, summarize_backtest_trades
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
 from services.storage_service import JsonStorage
@@ -24,15 +24,61 @@ class BacktestController:
         self.settings_service = settings_service or SettingsService()
         self.mt5_service = mt5_service or MT5Service()
 
-    def create_backtest_worker(self, request: BacktestRequest) -> tuple[QThread, BacktestWorker]:
+    def create_backtest_worker(self, request: BacktestRequest | list[BacktestRequest]) -> tuple[QThread, BacktestWorker]:
         thread = QThread()
-        worker = BacktestWorker(self.run_backtest, {"request": request})
+        if isinstance(request, list):
+            worker = BacktestWorker(self.run_backtest_batch, {"requests": request})
+        else:
+            worker = BacktestWorker(self.run_backtest, {"request": request})
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         return thread, worker
+
+    def build_requests(
+        self,
+        *,
+        symbols: list[str],
+        start,
+        end,
+        initial_balance: float,
+        risk_percent: float,
+        mode: str = "strict",
+        spread_price: float = 0.0,
+        slippage_price: float = 0.0,
+        max_holding_bars: int = 96,
+        timezone_name: str | None = None,
+        account_guard_enabled: bool = False,
+        max_daily_loss_pct: float = 999.0,
+        max_weekly_loss_pct: float = 999.0,
+        max_consecutive_losses: int = 999,
+        max_open_risk_pct: float = 999.0,
+    ) -> list[BacktestRequest]:
+        unique_symbols = list(dict.fromkeys(symbols))
+        if not unique_symbols:
+            raise ValueError("Cần chọn ít nhất một mã để backtest.")
+        return [
+            self.build_request(
+                symbol=symbol,
+                start=start,
+                end=end,
+                initial_balance=initial_balance,
+                risk_percent=risk_percent,
+                mode=mode,
+                spread_price=spread_price,
+                slippage_price=slippage_price,
+                max_holding_bars=max_holding_bars,
+                timezone_name=timezone_name,
+                account_guard_enabled=account_guard_enabled,
+                max_daily_loss_pct=max_daily_loss_pct,
+                max_weekly_loss_pct=max_weekly_loss_pct,
+                max_consecutive_losses=max_consecutive_losses,
+                max_open_risk_pct=max_open_risk_pct,
+            )
+            for symbol in unique_symbols
+        ]
 
     def build_request(
         self,
@@ -108,6 +154,95 @@ class BacktestController:
         payload["snapshot_path"] = str(self.save_snapshot(payload))
         return payload
 
+    def run_backtest_batch(
+        self,
+        *,
+        requests: list[BacktestRequest],
+        _progress_callback: Callable[[int, str], None] | None = None,
+    ) -> dict[str, Any]:
+        if not requests:
+            raise ValueError("Cần chọn ít nhất một mã để backtest.")
+        if len(requests) == 1:
+            return self.run_backtest(request=requests[0], _progress_callback=_progress_callback)
+
+        progress = _progress_callback or (lambda _percent, _message: None)
+        progress(5, "Đang kiểm tra kết nối MT5...")
+        status = self.mt5_service.connection_status()
+        if not status.terminal_connected or not status.logged_in:
+            raise RuntimeError("MT5 chưa kết nối đầy đủ hoặc broker chưa đăng nhập.")
+
+        runs: list[dict[str, Any]] = []
+        total = len(requests)
+        for index, request in enumerate(requests, start=1):
+            symbol_label = f"{request.symbol} ({index}/{total})"
+            base = 8 + int((index - 1) / total * 86)
+            span = max(1, int(86 / total))
+
+            def child_progress(percent: int, message: str, *, _base: int = base, _span: int = span) -> None:
+                scaled = _base + int(max(0, min(100, percent)) / 100 * _span)
+                progress(min(96, scaled), f"{symbol_label}: {message}")
+
+            child_progress(10, "Đang tải dữ liệu lịch sử từ MT5...")
+            candles = self._load_history(request)
+            child_progress(35, "Đang replay hệ thống phân tích...")
+            result = run_system_backtest(request, candles, progress_callback=child_progress)
+            payload = result.to_dict()
+            payload["timestamp"] = datetime.now().astimezone().isoformat(timespec="seconds")
+            runs.append(payload)
+
+        progress(97, "Đang tổng hợp kết quả nhiều mã...")
+        batch = self._build_batch_payload(requests, runs)
+        batch["snapshot_path"] = str(self.save_snapshot(batch))
+        return batch
+
+    def _build_batch_payload(self, requests: list[BacktestRequest], runs: list[dict[str, Any]]) -> dict[str, Any]:
+        trades = [
+            trade
+            for run in runs
+            for trade in (run.get("trades", []) if isinstance(run.get("trades"), list) else [])
+            if isinstance(trade, dict)
+        ]
+        trades = sorted(trades, key=lambda item: str(item.get("entry_time") or ""))
+        summary = _summarize_trade_dicts(trades)
+        by_symbol = {
+            str(run.get("request", {}).get("symbol", "unknown")): run.get("summary", {})
+            for run in runs
+            if isinstance(run.get("request"), dict)
+        }
+        request0 = requests[0]
+        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+        return {
+            "mode": "system_backtest_batch",
+            "timestamp": timestamp,
+            "request": {
+                "symbols": [request.symbol for request in requests],
+                "start": request0.start.isoformat(),
+                "end": request0.end.isoformat(),
+                "initial_balance": request0.initial_balance,
+                "risk_percent": request0.risk_percent,
+                "account_currency": request0.account_currency,
+                "timezone_name": request0.timezone_name,
+                "spread_price": request0.spread_price,
+                "slippage_price": request0.slippage_price,
+                "max_holding_bars": request0.max_holding_bars,
+                "setup_expiry_bars": request0.setup_expiry_bars,
+                "step_timeframe": request0.step_timeframe,
+                "mode": request0.mode,
+            },
+            "summary": summary,
+            "trades": trades,
+            "equity_curve": [],
+            "breakdowns": {"by_symbol": by_symbol},
+            "runs": runs,
+            "diagnostics": {
+                "symbols_tested": len(requests),
+                "runs_completed": len(runs),
+                "total_snapshots_evaluated": sum(int((run.get("diagnostics", {}) or {}).get("snapshots_evaluated", 0)) for run in runs),
+                "total_setups_detected": sum(int((run.get("diagnostics", {}) or {}).get("setups_detected", 0)) for run in runs),
+                "total_trades_skipped": sum(int((run.get("diagnostics", {}) or {}).get("trades_skipped", 0)) for run in runs),
+            },
+        }
+
     def _load_history(self, request: BacktestRequest) -> dict[str, list]:
         warmup_start = request.start - timedelta(days=520)
         ranges = {
@@ -131,7 +266,50 @@ class BacktestController:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         timestamp = str(payload.get("timestamp") or payload.get("request", {}).get("end") or "backtest")
         timestamp = timestamp.replace(":", "").replace("+", "_").replace("-", "")
-        symbol = str(payload.get("request", {}).get("symbol", "symbol")).replace("/", "")
+        request = payload.get("request", {}) if isinstance(payload.get("request"), dict) else {}
+        if isinstance(request.get("symbols"), list):
+            symbol = "BATCH_" + str(len(request["symbols"])) + "_symbols"
+        else:
+            symbol = str(request.get("symbol", "symbol")).replace("/", "")
         path = snapshot_dir / f"backtest_{symbol}_{timestamp}.json"
         JsonStorage(path).save(payload)
         return path
+
+
+def _summarize_trade_dicts(trades: list[dict[str, Any]]) -> dict[str, Any]:
+    from core.system_backtest_engine import BacktestTrade
+
+    rows = [
+        BacktestTrade(
+            symbol=str(item.get("symbol", "")),
+            side=str(item.get("side", "")),
+            decision=str(item.get("decision", "")),
+            entry_time=str(item.get("entry_time", "")),
+            exit_time=item.get("exit_time"),
+            entry_price=float(item.get("entry_price", 0) or 0),
+            stop_loss=float(item.get("stop_loss", 0) or 0),
+            take_profit=float(item.get("take_profit", 0) or 0),
+            exit_price=float(item["exit_price"]) if item.get("exit_price") is not None else None,
+            result=str(item.get("result", "")),
+            result_r=float(item.get("result_r", 0) or 0),
+            holding_bars=int(item.get("holding_bars", 0) or 0),
+            final_score=int(item.get("final_score", 0) or 0),
+            signal_score=int(item.get("signal_score", 0) or 0),
+            buy_score=int(item.get("buy_score", 0) or 0),
+            sell_score=int(item.get("sell_score", 0) or 0),
+            score_gap=float(item.get("score_gap", 0) or 0),
+            market_regime=str(item.get("market_regime", "")),
+            entry_status=str(item.get("entry_status", "")),
+            m15_quality=item.get("m15_quality"),
+            expected_effective_rr=float(item["expected_effective_rr"]) if item.get("expected_effective_rr") is not None else None,
+            selected_zone_score=int(item["selected_zone_score"]) if item.get("selected_zone_score") is not None else None,
+            selected_zone_type=item.get("selected_zone_type"),
+            entry_zone_score=int(item["entry_zone_score"]) if item.get("entry_zone_score") is not None else None,
+            entry_zone_source=item.get("entry_zone_source"),
+            liquidity_sweep_aligned=bool(item.get("liquidity_sweep_aligned")),
+            displacement_aligned=bool(item.get("displacement_aligned")),
+            choch_against_direction=bool(item.get("choch_against_direction")),
+        )
+        for item in trades
+    ]
+    return summarize_backtest_trades(rows)

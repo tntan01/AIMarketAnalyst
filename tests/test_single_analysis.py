@@ -44,7 +44,7 @@ def test_single_analysis_calculates_rule_based_scores_without_ai() -> None:
     assert result["scenario_scores"]["buy"]["total"] > result["scenario_scores"]["sell"]["total"]
     assert result["scenario_scores"]["buy"]["signal_score"] == result["scenario_scores"]["buy"]["total"]
     assert result["scenario_scores"]["sell"]["signal_score"] == result["scenario_scores"]["sell"]["total"]
-    assert result["scenario_scores"]["buy"]["macro_alignment"] == 10  # fallback neutral 15 * weight(20)/30 = 10
+    assert result["scenario_scores"]["buy"]["macro_alignment"] == 7  # neutral 15 * cap(15 trending)/30 = 7
     assert result["decision_summary"]["best_scenario"] == "buy"
     assert "chart_payload" in result
     assert len(result["chart_payload"]["D1"]) == 240

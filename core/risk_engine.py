@@ -124,11 +124,13 @@ def build_trade_plan(
         if not support:
             return None
         level = support["level"]
+        entry_zone_score = support.get("zone_score")
+        entry_zone_source = support.get("source", "technical")
         watch_low = level - atr_value * 0.10
         watch_high = level + atr_value * 0.50
         entry_low = level - atr_value * 0.20
         entry_high = level + atr_value * 0.20
-        stop_loss = level - max(atr_value * 0.30, min_stop_distance)
+        stop_loss = level - max(atr_value * 0.50, min_stop_distance)
         tp1 = nearest_target(resistance_zones, entry_high, above=True)
         tp2 = next_target(resistance_zones, tp1, above=True) if tp1 else None
         entry_for_rr = entry_high
@@ -141,11 +143,13 @@ def build_trade_plan(
         if not resistance:
             return None
         level = resistance["level"]
+        entry_zone_score = resistance.get("zone_score")
+        entry_zone_source = resistance.get("source", "technical")
         watch_low = level - atr_value * 0.50
         watch_high = level + atr_value * 0.10
         entry_low = level - atr_value * 0.20
         entry_high = level + atr_value * 0.20
-        stop_loss = level + max(atr_value * 0.30, min_stop_distance)
+        stop_loss = level + max(atr_value * 0.50, min_stop_distance)
         tp1 = nearest_target(support_zones, entry_low, above=False)
         tp2 = next_target(support_zones, tp1, above=False) if tp1 else None
         entry_for_rr = entry_low
@@ -193,6 +197,8 @@ def build_trade_plan(
         "position_sizing": sizing,
         "correlation_warnings": corr_warnings,
         "correlation_context": corr_context,
+        "entry_zone_score": entry_zone_score,
+        "entry_zone_source": entry_zone_source,
         **entry_state,
     }
 

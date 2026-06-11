@@ -124,7 +124,21 @@ def score_scenario(
 
     risk_scaled = int(clamp(risk_score, 0, 15) * weights["risk"] / 15)
 
-    total = int(clamp(technical_scaled + risk_scaled + macro_effective, 0, 100))
+    # ── Normalized scoring: scale technical+risk to fill budget not occupied by macro ──
+    # When macro data is unavailable (neutral 15/15), macro_effective only reaches
+    # ~50% of macro_cap. Without normalization, total scores are artificially depressed.
+    # This scales the non-macro portion so 0-100 means "best possible given available data".
+    non_macro_weight_keys = ["trend", "momentum", "location", "smc", "risk"]
+    non_macro_max = sum(int(weights[k]) for k in non_macro_weight_keys)
+    non_macro_score = technical_scaled + risk_scaled
+    available_budget = max(0, 100 - macro_effective)
+
+    if non_macro_max > 0:
+        normalized_non_macro = int(non_macro_score * available_budget / non_macro_max)
+    else:
+        normalized_non_macro = 0
+
+    total = int(clamp(normalized_non_macro + macro_effective, 0, 100))
 
     # ---- Macro modifier (Phase 4 Prompt 2) ----
     macro_status = _detect_macro_status(macro_context, side)
