@@ -209,9 +209,15 @@ def run_system_backtest(
             # When account guard blocks (daily loss / consecutive losses),
             # skip to the next trading day to avoid wasted cycles.
             if _is_account_guard_block(analysis):
-                next_day = candle.time.replace(hour=0, minute=0, second=0, microsecond=0)
                 from datetime import timedelta as _td
-                next_allowed_time = next_day + _td(days=1)
+                from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+                try:
+                    tz = ZoneInfo(request.timezone_name)
+                except (ZoneInfoNotFoundError, KeyError):
+                    tz = ZoneInfo("Asia/Ho_Chi_Minh")
+                local = candle.time.astimezone(tz)
+                next_day_local = local.replace(hour=0, minute=0, second=0, microsecond=0) + _td(days=1)
+                next_allowed_time = next_day_local
             continue
 
         trade = simulate_trade_from_analysis(

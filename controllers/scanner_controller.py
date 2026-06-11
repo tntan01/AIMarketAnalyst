@@ -181,7 +181,8 @@ class ScannerController:
                 if isinstance(macro_context, dict):
                     result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
                     result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
-                rows.append(scanner_row_from_analysis(result, broker_symbol=broker_symbol))
+                row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
+                rows.append(self._apply_min_score_gate(row, request.min_scores.get(symbol, 0)))
             except Exception as exc:
                 rows.append(blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol))
 
@@ -212,6 +213,30 @@ class ScannerController:
         }
         output["telegram_alerts"] = self._send_telegram_alerts(rows)
         return output
+
+    def _apply_min_score_gate(self, row: dict[str, Any], min_score: int) -> dict[str, Any]:
+        try:
+            threshold = int(min_score)
+        except (TypeError, ValueError):
+            threshold = 0
+        threshold = max(0, min(100, threshold))
+        row["min_score"] = threshold
+        if threshold <= 0:
+            return row
+        try:
+            score = int(row.get("final_score", row.get("best_score", 0)))
+        except (TypeError, ValueError):
+            score = 0
+        if score >= threshold:
+            return row
+        row["scanner_action"] = "skip"
+        row["trade_permission"] = "blocked"
+        row["scanner_group"] = "blocked"
+        row["scanner_decision"] = "TRADE_BLOCKED"
+        reason = f"Final score {score} thấp hơn Min Score {threshold}."
+        row["permission_reason"] = reason
+        row["short_reason"] = reason
+        return row
 
     def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:
         results: list[dict[str, Any]] = []

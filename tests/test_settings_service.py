@@ -1,4 +1,4 @@
-from config.settings import AdvancedSettings, AIProviderSettings, AISettings, AppSettings, DisplaySettings, NotificationSettings, TradingSettings
+from config.settings import AdvancedSettings, AIProviderSettings, AISettings, AppSettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
 from services.settings_service import SettingsService
 
 
@@ -86,6 +86,8 @@ def test_settings_roundtrip_trading_and_display(tmp_path) -> None:
             lot_step=0.05,
             minimum_lot=0.01,
             contract_size_override=100,
+            enabled_symbols=["EUR/USD"],
+            symbol_settings={"EUR/USD": SymbolScanSettings(backtest=True, min_score=72)},
         ),
         display=DisplaySettings(
             language="vi",
@@ -101,6 +103,9 @@ def test_settings_roundtrip_trading_and_display(tmp_path) -> None:
     assert loaded.trading.account_balance == 25000
     assert loaded.trading.default_risk_percent == 1.5
     assert loaded.trading.contract_size_override == 100
+    assert loaded.trading.enabled_symbols == ["EUR/USD"]
+    assert loaded.trading.symbol_settings["EUR/USD"].backtest is True
+    assert loaded.trading.symbol_settings["EUR/USD"].min_score == 72
     assert loaded.display.timezone == "Asia/Bangkok"
     assert loaded.display.term_explanation_mode == "tooltip"
 

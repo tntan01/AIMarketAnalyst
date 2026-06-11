@@ -12,6 +12,7 @@ from config.settings import (
     AISettings,
     DisplaySettings,
     NotificationSettings,
+    SymbolScanSettings,
     TradingSettings,
     default_settings,
 )
@@ -90,6 +91,24 @@ class SettingsService:
 
     def _load_trading_settings(self, data: dict | None) -> TradingSettings:
         data = data or {}
+        raw_enabled = data.get("enabled_symbols")
+        enabled: list[str] = []
+        if isinstance(raw_enabled, list):
+            enabled = [str(s) for s in raw_enabled if isinstance(s, str) and s.strip()]
+        raw_symbol_settings = data.get("symbol_settings", {})
+        symbol_settings: dict[str, SymbolScanSettings] = {}
+        if isinstance(raw_symbol_settings, dict):
+            for symbol, item in raw_symbol_settings.items():
+                if not isinstance(symbol, str) or not symbol.strip() or not isinstance(item, dict):
+                    continue
+                try:
+                    min_score = int(item.get("min_score", 0))
+                except (TypeError, ValueError):
+                    min_score = 0
+                symbol_settings[symbol] = SymbolScanSettings(
+                    backtest=bool(item.get("backtest", False)),
+                    min_score=max(0, min(100, min_score)),
+                )
         return TradingSettings(
             account_balance=float(data.get("account_balance", 10000)),
             account_currency=data.get("account_currency", "USD"),
@@ -98,6 +117,8 @@ class SettingsService:
             lot_step=float(data.get("lot_step", 0.01)),
             minimum_lot=float(data.get("minimum_lot", 0.01)),
             contract_size_override=float(data.get("contract_size_override", 100000)),
+            enabled_symbols=enabled,
+            symbol_settings=symbol_settings,
         )
 
     def _load_display_settings(self, data: dict | None, legacy_language: str) -> DisplaySettings:

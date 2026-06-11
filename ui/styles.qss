@@ -713,7 +713,7 @@ QCheckBox#ScannerSymbolCheck::indicator:disabled {
 QPushButton#AutoTradeToggle {
   color: #e5e7eb;
   font-weight: 700;
-  padding: 6px 10px;
+  padding: 4px 10px;
   border: 1px solid #475569;
   border-radius: 6px;
   background: #0b1220;

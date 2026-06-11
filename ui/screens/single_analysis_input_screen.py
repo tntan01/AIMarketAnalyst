@@ -355,6 +355,11 @@ class SingleAnalysisInputScreen(QWidget):
     def _refresh_symbol_dropdown(self, status) -> None:
         current_symbol = self.symbol_input.currentText()
         matches = self.mt5_service.configured_symbols_in_market_watch() if status.terminal_connected else []
+        settings = self.settings_service.load()
+        enabled = settings.trading.enabled_symbols
+        if enabled:
+            enabled_set = set(enabled)
+            matches = [(s, b) for s, b in matches if s in enabled_set]
         self.symbol_broker_map = {symbol: broker for symbol, broker in matches}
         self.symbol_input.blockSignals(True)
         self.symbol_input.clear()

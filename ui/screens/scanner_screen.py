@@ -1,6 +1,6 @@
 from __future__ import annotations 
 
-from config .constants import SUPPORTED_SYMBOLS 
+from config.constants import SUPPORTED_SYMBOLS
 from controllers .scanner_controller import ScannerController 
 from core .scanner import ScannerRequest 
 from PyQt6 .QtCore import QAbstractTableModel ,QEvent ,QModelIndex ,QRect ,QSize ,Qt ,QTimer
@@ -347,6 +347,8 @@ class ScannerScreen (QWidget ):
         self .scan_result :dict [str ,object ]|None =None 
         self .symbol_boxes :list [QCheckBox ]=[]
         self .market_watch_symbols :set [str ]=set ()
+        self .scan_symbols :list [str ]=[]
+        self .selected_scan_symbols :list [str ]=[]
         self .table_model =ScannerTableModel ()
         # Resolve SHORT_REASON_COL dynamically from COLUMNS
         reason_keys =[k for k,_ in self .table_model .COLUMNS]
@@ -379,26 +381,23 @@ class ScannerScreen (QWidget ):
         frame .layout ().setSpacing (4 )
         frame .layout ().setContentsMargins (14 ,8 ,14 ,8 )
         frame .layout ().setAlignment (Qt .AlignmentFlag .AlignTop )
-        self .all_symbols_check =QCheckBox ('Chọn tất cả mã khả dụng')
-        self .all_symbols_check .setObjectName ("ScannerSymbolCheck")
-        self .all_symbols_check .toggled .connect (self ._toggle_all_symbols )
-        frame .layout ().addWidget (self .all_symbols_check )
+        settings = self.settings_service.load()
+        self .scan_symbols =self ._configured_scan_symbols (settings )
+        self .selected_scan_symbols =list (self .scan_symbols )
 
-        symbol_grid_widget =QWidget ()
-        symbol_grid =QGridLayout (symbol_grid_widget )
-        symbol_grid .setContentsMargins (4 ,4 ,4 ,4 )
-        symbol_grid .setHorizontalSpacing (6 )
-        symbol_grid .setVerticalSpacing (2 )
-        for index ,symbol in enumerate (sorted (SUPPORTED_SYMBOLS )):
-            box =QCheckBox (symbol )
-            box .setObjectName ("ScannerSymbolCheck")
-            box .setMinimumWidth (74 )
-            box .toggled .connect (self ._sync_all_symbols_check )
-            self .symbol_boxes .append (box )
-            symbol_grid .addWidget (box ,index //8 ,index %8 )
-        frame .layout ().addWidget (symbol_grid_widget )
+        symbol_row =QHBoxLayout ()
+        symbol_row .setSpacing (10 )
+        self .symbol_select_button =QPushButton ("Chọn mã quét")
+        self .symbol_select_button .setObjectName ("InlineHelpButton")
+        self .symbol_select_button .setCursor (Qt .CursorShape .PointingHandCursor )
+        self .symbol_select_button .clicked .connect (self ._show_symbol_dialog )
+        self .symbol_summary_label =QLabel ("")
+        self .symbol_summary_label .setObjectName ("HelperText")
+        self .symbol_summary_label .setWordWrap (True )
+        symbol_row .addWidget (self .symbol_select_button )
+        symbol_row .addWidget (self .symbol_summary_label ,1 )
+        frame .layout ().addLayout (symbol_row )
 
-        settings =self .settings_service .load ()
         self .scan_mode_combo =QComboBox ()
         self .scan_mode_combo .addItem ("Quét 1 lần","once")
         self .scan_mode_combo .addItem ("Quét theo khoảng thời gian","auto")
@@ -418,6 +417,7 @@ class ScannerScreen (QWidget ):
         self .auto_trade_check .setObjectName ("AutoTradeToggle")
         self .auto_trade_check .setCheckable (True )
         self .auto_trade_check .setCursor (Qt .CursorShape .PointingHandCursor )
+        self .auto_trade_check .setFixedHeight (34 )
         self .auto_trade_check .setToolTip (
             "Chỉ dùng khi quét tự động. Khi bật, hệ thống có thể đặt lệnh MT5 cho setup sẵn sàng."
         )
@@ -427,6 +427,7 @@ class ScannerScreen (QWidget ):
         self ._update_auto_trade_toggle_state ()
 
         self .scan_button =action_button ('Quét thị trường',primary =True )
+        self .scan_button .setFixedHeight (34 )
         self .scan_button .clicked .connect (self ._run_scan )
         self .stop_auto_scan_button =action_button ("Dừng quét tự động")
         self .stop_auto_scan_button .setVisible (False )
@@ -574,38 +575,63 @@ class ScannerScreen (QWidget ):
         self ._update_status_summary ()
 
     def _selected_symbols (self )->list [str ]:
-        return [box .text ()for box in self .symbol_boxes if box .isEnabled ()and box .isChecked ()]
+        allowed =set (self .scan_symbols )&self .market_watch_symbols
+        return [symbol for symbol in self .selected_scan_symbols if symbol in allowed]
 
     def _refresh_symbol_availability (self ,status )->None :
         matches =self .mt5_service .configured_symbols_in_market_watch ()if status .terminal_connected else []
-        previous_available =set (self .market_watch_symbols )
         self .market_watch_symbols ={symbol for symbol ,_broker_symbol in matches }
-        for box in self .symbol_boxes :
-            available =box .text ()in self .market_watch_symbols 
-            checked =available and (box .isChecked ()if box .text ()in previous_available else True )
-            box .blockSignals (True )
-            box .setEnabled (available )
-            box .setChecked (checked )
-            box .setToolTip (""if available else 'Mã này chưa có trong Market Watch của MT5.')
-            box .blockSignals (False )
-        self ._sync_all_symbols_check ()
+        settings =self .settings_service .load ()
+        self .scan_symbols =self ._configured_scan_symbols (settings )
+        if not self .selected_scan_symbols:
+            self .selected_scan_symbols =[symbol for symbol in self .scan_symbols if symbol in self .market_watch_symbols]
+        else:
+            self .selected_scan_symbols =[symbol for symbol in self .selected_scan_symbols if symbol in self .scan_symbols]
+        self ._update_symbol_summary ()
+        self ._refresh_scan_button_state ()
+
+    def _configured_scan_symbols (self ,settings )->list [str ]:
+        return [
+            symbol for symbol in SUPPORTED_SYMBOLS
+            if settings .trading .symbol_settings .get (symbol)and settings .trading .symbol_settings [symbol].backtest
+        ]
+
+    def _update_symbol_summary (self )->None :
+        if not hasattr (self ,"symbol_summary_label"):
+            return
+        selected =self ._selected_symbols ()
+        if not self .scan_symbols:
+            self .symbol_summary_label .setText ("Chưa có mã nào được đánh dấu Backtest trong Settings.")
+        elif not selected:
+            self .symbol_summary_label .setText ("Chưa chọn mã khả dụng để quét.")
+        elif len (selected )<=5:
+            self .symbol_summary_label .setText (", ".join (selected ))
+        else:
+            self .symbol_summary_label .setText (f"{len (selected )} mã: {', '.join (selected [:5])}, ...")
+
+    def _show_symbol_dialog (self )->None :
+        backtest_verified =set (self .scan_symbols )
+        dialog =ScannerSymbolSelectionDialog (
+            sorted (SUPPORTED_SYMBOLS ),
+            backtest_verified,
+            self .market_watch_symbols,
+            self .selected_scan_symbols,
+            self,
+        )
+        if dialog .exec ()==QDialog .DialogCode .Accepted:
+            self .selected_scan_symbols =dialog .selected_symbols ()
+            self ._update_symbol_summary ()
+            self ._refresh_scan_button_state ()
 
     def _toggle_all_symbols (self ,checked :bool )->None :
-        for box in self .symbol_boxes :
-            if not box .isEnabled ():
-                continue 
-            box .blockSignals (True )
-            box .setChecked (checked )
-            box .blockSignals (False )
+        self .selected_scan_symbols =[
+            symbol for symbol in self .scan_symbols if checked and symbol in self .market_watch_symbols
+        ]
+        self ._update_symbol_summary ()
         self ._refresh_scan_button_state ()
 
     def _sync_all_symbols_check (self )->None :
-        enabled_boxes =[box for box in self .symbol_boxes if box .isEnabled ()]
-        checked_count =len ([box for box in enabled_boxes if box .isChecked ()])
-        self .all_symbols_check .blockSignals (True )
-        self .all_symbols_check .setEnabled (bool (enabled_boxes ))
-        self .all_symbols_check .setChecked (bool (enabled_boxes )and checked_count ==len (enabled_boxes ))
-        self .all_symbols_check .blockSignals (False )
+        self ._update_symbol_summary ()
         self ._refresh_scan_button_state ()
 
     def _refresh_scan_button_state (self )->None :
@@ -635,6 +661,11 @@ class ScannerScreen (QWidget ):
         self ._update_status_summary ()
         settings =self .settings_service .load ()
         auto_trade_enabled =self ._auto_trade_enabled ()
+        min_scores ={
+            symbol:int (settings .trading .symbol_settings .get (symbol).min_score )
+            for symbol in symbols
+            if settings .trading .symbol_settings .get (symbol)
+        }
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,
@@ -642,6 +673,7 @@ class ScannerScreen (QWidget ):
         timezone_name =settings .display .timezone ,
         max_ai_details =settings .advanced .scanner_ai_detail_limit ,
         auto_trade_enabled =auto_trade_enabled ,
+        min_scores =min_scores ,
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
         self .scan_thread =thread 
@@ -814,6 +846,114 @@ class ScannerScreen (QWidget ):
             text =str (self .table_model .data (index ,Qt .ItemDataRole .DisplayRole )or "")
             width =max (width ,self .table .fontMetrics ().horizontalAdvance (text )+padding )
         return max (header .minimumSectionSize (),width )
+
+
+class ScannerSymbolSelectionDialog (QDialog ):
+    def __init__ (
+        self,
+        all_symbols: list[str],
+        backtest_verified_symbols: set[str],
+        market_watch_symbols: set[str],
+        selected_symbols: list[str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Chọn mã quét")
+        self.setObjectName("ScannerHelpDialog")
+        self.setModal(True)
+        self.setMinimumSize(560, 520)
+        self.checkboxes: dict[str, QCheckBox] = {}
+        self.market_watch_symbols = set(market_watch_symbols)
+        self.backtest_verified_symbols = set(backtest_verified_symbols)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 18, 20, 16)
+        root.setSpacing(12)
+
+        intro = QLabel(
+            "Tất cả các mã trong hệ thống. "
+            "Chỉ những mã đã tick Backtest trong Settings và có trong Market Watch mới chọn được."
+        )
+        intro.setObjectName("HelperText")
+        intro.setWordWrap(True)
+        root.addWidget(intro)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.select_all_button = QPushButton("Chọn tất cả khả dụng")
+        self.clear_button = QPushButton("Bỏ chọn")
+        for button in (self.select_all_button, self.clear_button):
+            button.setObjectName("InlineHelpButton")
+            button.setFixedHeight(30)
+            controls.addWidget(button)
+        controls.addStretch(1)
+        root.addLayout(controls)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("SymbolSelectionScroll")
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        content.setObjectName("SymbolSelectionContent")
+        grid = QGridLayout(content)
+        grid.setContentsMargins(4, 4, 4, 4)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
+
+        selected_set = set(selected_symbols)
+        for index, symbol in enumerate(sorted(all_symbols)):
+            checkbox = QCheckBox(symbol)
+            checkbox.setObjectName("ScannerSymbolCheck")
+            in_market_watch = symbol in self.market_watch_symbols
+            is_backtested = symbol in self.backtest_verified_symbols
+            selectable = in_market_watch and is_backtested
+            checkbox.setEnabled(selectable)
+            checkbox.setChecked(selectable and symbol in selected_set)
+            if not selectable:
+                if not is_backtested:
+                    checkbox.setToolTip("Mã này chưa được đánh dấu Backtest trong Settings.")
+                elif not in_market_watch:
+                    checkbox.setToolTip("Mã này chưa có trong Market Watch của MT5.")
+            self.checkboxes[symbol] = checkbox
+            grid.addWidget(checkbox, index // 3, index % 3)
+        scroll.setWidget(content)
+        root.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if ok_btn is not None:
+            ok_btn.setText("Áp dụng")
+            ok_btn.setObjectName("PrimaryButton")
+        if cancel_btn is not None:
+            cancel_btn.setText("Hủy")
+        root.addWidget(buttons)
+
+        self.select_all_button.clicked.connect(self._select_all_available)
+        self.clear_button.clicked.connect(self._clear_all)
+        buttons.accepted.connect(self._accept_if_valid)
+        buttons.rejected.connect(self.reject)
+
+    def selected_symbols(self) -> list[str]:
+        return [
+            symbol for symbol, checkbox in self.checkboxes.items()
+            if checkbox.isEnabled() and checkbox.isChecked()
+        ]
+
+    def _select_all_available (self )->None :
+        for checkbox in self .checkboxes .values ():
+            if checkbox .isEnabled ():
+                checkbox .setChecked (True )
+
+    def _clear_all (self )->None :
+        for checkbox in self .checkboxes .values ():
+            if checkbox .isEnabled ():
+                checkbox .setChecked (False )
+
+    def _accept_if_valid (self )->None :
+        if not self .selected_symbols ():
+            QMessageBox .warning (self ,"Chưa chọn mã","Cần chọn ít nhất một mã khả dụng để quét.")
+            return
+        self .accept ()
 
 
 class ScannerColumnsHelpDialog (QDialog ):

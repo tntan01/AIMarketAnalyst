@@ -29,6 +29,12 @@ class AISettings:
 
 
 @dataclass(slots=True)
+class SymbolScanSettings:
+    backtest: bool = False
+    min_score: int = 0
+
+
+@dataclass(slots=True)
 class TradingSettings:
     account_balance: float = 10000
     account_currency: str = "USD"
@@ -37,6 +43,8 @@ class TradingSettings:
     lot_step: float = 0.01
     minimum_lot: float = 0.01
     contract_size_override: float = 100000
+    enabled_symbols: list[str] = field(default_factory=list)
+    symbol_settings: dict[str, SymbolScanSettings] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

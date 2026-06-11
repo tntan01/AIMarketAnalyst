@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -32,6 +32,7 @@ class ScannerRequest:
     timezone_name: str
     max_ai_details: int = 3
     auto_trade_enabled: bool = False
+    min_scores: dict[str, int] = field(default_factory=dict)
 
 
 def classify_scanner_action(

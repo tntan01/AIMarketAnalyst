@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from config.constants import AI_PROVIDERS, DEFAULT_AI_MODELS, DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
-from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, TradingSettings
+from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
 from PyQt6.QtCore import QThread, Qt
+from PyQt6.QtGui import QIntValidator
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -603,9 +604,9 @@ class SettingsScreen(QWidget):
         frame.layout().addLayout(status_row)
 
         self.mt5_display_symbols = sorted(SUPPORTED_SYMBOLS)
-        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 5)
+        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 7)
         self.mt5_symbols_table.setObjectName("DataTable")
-        self.mt5_symbols_table.setHorizontalHeaderLabels(["STT", "Mã hiển thị", "Mã broker trong MT5", "Trạng thái", "Kiểm tra"])
+        self.mt5_symbols_table.setHorizontalHeaderLabels(["STT", "Mã hiển thị", "Mã broker trong MT5", "Trạng thái", "Kiểm tra", "Backtest", "Min Score"])
         self.mt5_symbols_table.verticalHeader().setVisible(False)
         self.mt5_symbols_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.mt5_symbols_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -614,17 +615,61 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(28)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(44)
         for row, symbol in enumerate(self.mt5_display_symbols):
-            for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--"]):
+            for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", ""]):
                 item = QTableWidgetItem(value)
                 if col == 0:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.mt5_symbols_table.setItem(row, col, item)
+            symbol_config = self.app_settings.trading.symbol_settings.get(symbol, SymbolScanSettings())
+            backtest_box = QCheckBox()
+            backtest_box.setChecked(symbol_config.backtest)
+            backtest_box.setToolTip("Tick nếu mã này đã backtest và được phép đưa vào scanner.")
+            self.mt5_symbols_table.setCellWidget(row, 5, self._centered_cell(backtest_box))
+            min_score = QLineEdit(str(symbol_config.min_score))
+            min_score.setObjectName("Mt5MinScoreInput")
+            min_score.setValidator(QIntValidator(0, 100, min_score))
+            min_score.setMaxLength(3)
+            min_score.setFixedSize(68, 32)
+            min_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            min_score.setEnabled(symbol_config.backtest)
+            min_score.setStyleSheet(
+                """
+                QLineEdit#Mt5MinScoreInput {
+                    background: #111827;
+                    border: 1px solid #475569;
+                    border-radius: 6px;
+                    color: #e5e7eb;
+                    padding: 0 6px;
+                }
+                QLineEdit#Mt5MinScoreInput:disabled {
+                    background: #0f172a;
+                    border: 1px solid #475569;
+                    color: #e5e7eb;
+                }
+                QLineEdit#Mt5MinScoreInput:focus {
+                    border: 1px solid #38bdf8;
+                }
+                """
+            )
+            min_score.setToolTip("Ngưỡng final score nhỏ nhất để scanner coi là đủ điều kiện. 0 = không lọc.")
+            backtest_box.toggled.connect(min_score.setEnabled)
+            self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(min_score, vertical_margin=5))
         frame.layout().addWidget(self.mt5_symbols_table)
+        mt5_button_row = QHBoxLayout()
+        mt5_button_row.setContentsMargins(0, 0, 0, 0)
+        mt5_button_row.setSpacing(10)
         self.mt5_detect_button = action_button("Tự phát hiện mã broker", primary=True)
         self.mt5_detect_button.clicked.connect(self.refresh_mt5_status)
-        frame.layout().addWidget(self.mt5_detect_button)
+        mt5_button_row.addWidget(self.mt5_detect_button)
+        self.mt5_symbol_settings_button = action_button("Lưu cấu hình mã quét", primary=True)
+        self.mt5_symbol_settings_button.clicked.connect(self._save_mt5_symbol_settings)
+        mt5_button_row.addWidget(self.mt5_symbol_settings_button)
+        mt5_button_row.addStretch(1)
+        frame.layout().addLayout(mt5_button_row)
         self.refresh_mt5_status()
         return frame
 
@@ -684,6 +729,36 @@ class SettingsScreen(QWidget):
             item.setText(value)
             if col == 0:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def _centered_cell(self, widget: QWidget, *, vertical_margin: int = 0) -> QWidget:
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(0, vertical_margin, 0, vertical_margin)
+        layout.addStretch(1)
+        layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignCenter)
+        layout.addStretch(1)
+        return cell
+
+    def _save_mt5_symbol_settings(self) -> None:
+        symbol_settings: dict[str, SymbolScanSettings] = {}
+        enabled_symbols: list[str] = []
+        for row, symbol in enumerate(self.mt5_display_symbols):
+            backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
+            min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
+            backtest_box = backtest_cell.findChild(QCheckBox) if backtest_cell else None
+            min_score_input = min_score_cell.findChild(QLineEdit) if min_score_cell else None
+            backtested = bool(backtest_box and backtest_box.isChecked())
+            min_score = int(min_score_input.text() or 0) if min_score_input else 0
+            symbol_settings[symbol] = SymbolScanSettings(backtest=backtested, min_score=min_score)
+            if backtested:
+                enabled_symbols.append(symbol)
+        self.app_settings.trading.symbol_settings = symbol_settings
+        self.app_settings.trading.enabled_symbols = enabled_symbols
+        self.settings_service.save(self.app_settings)
+        self.mt5_status_label.setText("Đã lưu cấu hình mã quét.")
+        self.mt5_status_label.setProperty("state", "ok")
+        self.mt5_status_label.style().unpolish(self.mt5_status_label)
+        self.mt5_status_label.style().polish(self.mt5_status_label)
 
     def _trading_tab(self) -> QFrame:
         frame = card("Giao dịch")
@@ -793,6 +868,8 @@ class SettingsScreen(QWidget):
             lot_step=self.trading_lot_step_input.value(),
             minimum_lot=self.trading_minimum_lot_input.value(),
             contract_size_override=self.trading_contract_size_input.value(),
+            enabled_symbols=self.app_settings.trading.enabled_symbols,
+            symbol_settings=self.app_settings.trading.symbol_settings,
         )
         self.settings_service.save(self.app_settings)
         self.trading_status_label.setText("Đã lưu cài đặt giao dịch.")

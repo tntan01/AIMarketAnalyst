@@ -15,11 +15,12 @@ import controllers.scanner_controller as scanner_controller_module
 from core.market_models import Candle
 from core.scanner import ScannerRequest, classify_scanner_action, price_vs_entry_zone, sort_scanner_rows
 from config.constants import SUPPORTED_SYMBOLS
-from config.settings import AISettings, AppSettings, NotificationSettings
+from config.settings import AISettings, AppSettings, NotificationSettings, SymbolScanSettings, TradingSettings
 from services.mt5_service import MT5ConnectionStatus
 from services.settings_service import SettingsService
 from services.telegram_alert_service import TelegramAlertResult
 from ui.screens.scanner_screen import ScannerScreen, ScannerTableModel
+import ui.screens.scanner_screen as scanner_screen_module
 from workers.scanner_worker import ScannerWorker
 
 
@@ -107,6 +108,22 @@ class _FakeNewsService:
         }
     def macro_freshness_status(self):
         return {"confidence_multiplier": 1.0}
+
+
+def _patch_scanner_settings(monkeypatch, settings: AppSettings):
+    class _FakeSettingsService:
+        def __init__(self):
+            self.settings = settings
+
+        def load(self):
+            return self.settings
+
+        def save(self, updated):
+            self.settings = updated
+
+    service = _FakeSettingsService()
+    monkeypatch.setattr(scanner_screen_module, "SettingsService", lambda: service)
+    return service
 
 
 def test_scanner_action_and_sorting_follow_document_priority() -> None:
@@ -272,6 +289,28 @@ def test_scanner_controller_passes_same_scoring_context_as_single_analysis(tmp_p
         ctrl_mod.yf.download = _orig_yf_download
 
 
+def test_scanner_controller_blocks_rows_below_min_score(tmp_path) -> None:
+    controller = ScannerController(SettingsService(tmp_path / "settings.json"), _FakeMT5Service())
+    row = {
+        "symbol": "EUR/USD",
+        "scanner_action": "ready",
+        "trade_permission": "allowed",
+        "scanner_group": "ready_now",
+        "scanner_decision": "READY_TO_TRADE",
+        "final_score": 68,
+        "best_score": 82,
+        "short_reason": "ok",
+    }
+
+    gated = controller._apply_min_score_gate(row, 70)
+
+    assert gated["scanner_action"] == "skip"
+    assert gated["trade_permission"] == "blocked"
+    assert gated["scanner_group"] == "blocked"
+    assert gated["min_score"] == 70
+    assert "Min Score 70" in gated["short_reason"]
+
+
 def test_scanner_controller_sends_telegram_alert_for_ready_trade(tmp_path, monkeypatch) -> None:
     import sys as _sys
 
@@ -365,8 +404,21 @@ def test_scanner_worker_emits_progress_and_keeps_qthread_alive(tmp_path, monkeyp
     assert progress[-1] == 100
 
 
-def test_scanner_screen_uses_table_view_model() -> None:
+def test_scanner_screen_uses_table_view_model(monkeypatch) -> None:
     app = QApplication.instance() or QApplication([])
+    _patch_scanner_settings(
+        monkeypatch,
+        AppSettings(
+            ai=AISettings(),
+            trading=TradingSettings(
+                enabled_symbols=["EUR/USD", "GBP/USD"],
+                symbol_settings={
+                    "EUR/USD": SymbolScanSettings(backtest=True, min_score=70),
+                    "GBP/USD": SymbolScanSettings(backtest=True, min_score=65),
+                },
+            ),
+        ),
+    )
     screen = ScannerScreen()
 
     assert isinstance(screen.table, QTableView)
@@ -374,7 +426,8 @@ def test_scanner_screen_uses_table_view_model() -> None:
     assert "price_vs_zone" in [key for key, _label in ScannerTableModel.COLUMNS]
     reason_column = [key for key, _label in ScannerTableModel.COLUMNS].index("short_reason")
     assert screen.table.horizontalHeader().sectionResizeMode(reason_column) == QHeaderView.ResizeMode.Interactive
-    assert len(screen.symbol_boxes) == len(SUPPORTED_SYMBOLS)
+    assert screen.symbol_select_button.text() == "Chọn mã quét"
+    assert screen.scan_symbols == ["EUR/USD", "GBP/USD"]
     assert screen.scan_mode_combo.currentData() == "once"
     assert screen.scan_interval_combo.findData(300) >= 0
     assert screen.stop_auto_scan_button.text() == "Dừng quét tự động"
@@ -409,18 +462,26 @@ def test_scanner_screen_auto_trade_toggle_requires_auto_mode() -> None:
     assert not screen._auto_trade_enabled()
 
 
-def test_scanner_screen_enables_only_market_watch_symbols() -> None:
+def test_scanner_screen_enables_only_market_watch_symbols(monkeypatch) -> None:
     app = QApplication.instance() or QApplication([])
+    _patch_scanner_settings(
+        monkeypatch,
+        AppSettings(
+            ai=AISettings(),
+            trading=TradingSettings(
+                enabled_symbols=["EUR/USD", "GBP/USD", "USD/JPY"],
+                symbol_settings={
+                    "EUR/USD": SymbolScanSettings(backtest=True, min_score=70),
+                    "GBP/USD": SymbolScanSettings(backtest=True, min_score=65),
+                    "USD/JPY": SymbolScanSettings(backtest=True, min_score=60),
+                },
+            ),
+        ),
+    )
     screen = ScannerScreen()
     screen.mt5_service = _FakeMT5Service()
     screen.refresh_status()
 
-    enabled = {box.text() for box in screen.symbol_boxes if box.isEnabled()}
-    checked = {box.text() for box in screen.symbol_boxes if box.isChecked()}
-
-    assert enabled == {"EUR/USD", "GBP/USD"}
-    assert checked == {"EUR/USD", "GBP/USD"}
-
-    usd_jpy = next(box for box in screen.symbol_boxes if box.text() == "USD/JPY")
-    assert not usd_jpy.isEnabled()
-    assert not usd_jpy.isChecked()
+    assert screen.scan_symbols == ["EUR/USD", "GBP/USD", "USD/JPY"]
+    assert screen._selected_symbols() == ["EUR/USD", "GBP/USD"]
+    assert screen.symbol_summary_label.text() == "EUR/USD, GBP/USD"

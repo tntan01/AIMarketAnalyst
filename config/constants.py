@@ -40,6 +40,18 @@ SUPPORTED_SYMBOLS = [
     "BTC/USD",
 ]
 
+def active_symbols(enabled: list[str] | None = None) -> list[str]:
+    """Return symbols that are enabled for scanning/analysis.
+
+    If ``enabled`` is empty or None, all SUPPORTED_SYMBOLS are active.
+    Otherwise only the intersection of enabled and SUPPORTED_SYMBOLS is returned.
+    """
+    if not enabled:
+        return list(SUPPORTED_SYMBOLS)
+    lookup = set(enabled)
+    return [s for s in SUPPORTED_SYMBOLS if s in lookup]
+
+
 DEFAULT_TIMEFRAMES = ["D1", "H4", "H1", "M15"]
 PRIMARY_ANALYSIS_TIMEFRAMES = ["D1", "H4", "H1"]
 MT5_SYMBOL_SUFFIXES = ["", "m", "c"]
