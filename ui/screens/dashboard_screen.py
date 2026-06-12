@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from config.constants import SUPPORTED_SYMBOLS
 from datetime import datetime, timedelta, timezone
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QStyle,
     QScrollArea,
     QSizePolicy,
     QTableWidget,
@@ -172,6 +173,19 @@ class DashboardScreen(QWidget):
         title.setObjectName("PanelTitle")
         header_layout.addWidget(title)
         header_layout.addStretch()
+
+        self.econ_refresh_button = QPushButton("L\u00e0m m\u1edbi")
+        self.econ_refresh_button.setObjectName("PrimaryButton")
+        self.econ_refresh_button.setProperty("dashboardRefresh", True)
+        self.econ_refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.econ_refresh_button.setToolTip("T\u1ea3i l\u1ea1i to\u00e0n b\u1ed9 l\u1ecbch kinh t\u1ebf")
+        self.econ_refresh_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        self.econ_refresh_button.setFixedHeight(28)
+        self.econ_refresh_button.setMinimumWidth(76)
+        self.econ_refresh_button.setMaximumWidth(92)
+        self.econ_refresh_button.setIconSize(QSize(12, 12))
+        self.econ_refresh_button.clicked.connect(lambda: self.refresh_economic_calendar(force_refresh=True))
+        header_layout.addWidget(self.econ_refresh_button)
         layout.addLayout(header_layout)
 
         self.econ_table = QTableWidget()
@@ -215,11 +229,25 @@ class DashboardScreen(QWidget):
 
         layout.addWidget(self.econ_table)
 
-        QTimer.singleShot(1000, self._refresh_economic_calendar)
+        QTimer.singleShot(1000, self.refresh_economic_calendar)
         panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         return panel
 
-    def _refresh_economic_calendar(self) -> None:
+    def refresh_economic_calendar(self, *, force_refresh: bool = False) -> None:
+        refresh_button = getattr(self, "econ_refresh_button", None)
+        if refresh_button is not None:
+            refresh_button.setEnabled(False)
+            refresh_button.setText("\u0110ang t\u1ea3i...")
+            QApplication.processEvents()
+
+        try:
+            self._refresh_economic_calendar(force_refresh=force_refresh)
+        finally:
+            if refresh_button is not None:
+                refresh_button.setText("L\u00e0m m\u1edbi")
+                refresh_button.setEnabled(True)
+
+    def _refresh_economic_calendar(self, *, force_refresh: bool = False) -> None:
         from zoneinfo import ZoneInfo
 
         table = self.econ_table
@@ -236,6 +264,9 @@ class DashboardScreen(QWidget):
                 tz = ZoneInfo(tz_str)
             except Exception:
                 tz = ZoneInfo("Asia/Ho_Chi_Minh")
+
+            if force_refresh:
+                NewsService._calendar_cache.pop("global", None)
 
             news = NewsService()
             # Merge JSON + HTML + Cache to get full picture (past + upcoming events)
