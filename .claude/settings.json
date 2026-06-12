@@ -20,7 +20,6 @@
       "Bash(format *)",
       "Bash(del *)",
       "Bash(rmdir *)",
-      "Bash(curl *)",
       "Bash(wget *)",
       "Read(./.env)",
       "Read(./secrets/**)"
