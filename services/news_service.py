@@ -727,7 +727,6 @@ class NewsService:
 
     def _normalize_calendar_items(self, payload: list[object], *, source: str) -> list[dict[str, object]]:
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows: list[dict[str, object]] = []
         for item in payload:
             if not isinstance(item, dict):
@@ -736,8 +735,6 @@ class NewsService:
             if not currency:
                 continue
             event_time = parse_event_time(str(item.get("date") or ""))
-            if event_time and event_time < today_start:
-                continue
             hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
             rows.append(
                 {
@@ -758,7 +755,6 @@ class NewsService:
         from datetime import datetime as dt
 
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows: list[dict[str, object]] = []
         current_date: str | None = None
 
@@ -767,12 +763,17 @@ class NewsService:
 
         row_blocks = re.findall(r"<tr[^>]*calendar__row[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL)
         for block in row_blocks:
-            # Track current date from calendar__date cell
+            # Track current date from date header (calendar__cell with colspan)
+            # or inline date cell (calendar__date)
             date_text = self._html_cell_text(block, "calendar__date")
+            if not date_text:
+                date_text = self._html_cell_text(block, "calendar__cell")
             if date_text:
-                # Format: "Mon Jun 15" or "Mon  Jun 15"
-                date_clean = re.sub(r"\s+", " ", date_text).strip()
-                current_date = date_clean
+                # Strip HTML tags: "Thu <span>Jun 12</span>" → "Thu Jun 12"
+                date_clean = re.sub(r"<[^>]+>", "", date_text).strip()
+                date_clean = re.sub(r"\s+", " ", date_clean)
+                if re.search(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}", date_clean, re.IGNORECASE):
+                    current_date = date_clean
 
             currency = self._html_cell_text(block, "calendar__currency")
             event = self._html_cell_text(block, "calendar__event-title") or self._html_cell_text(block, "calendar__event")
@@ -784,8 +785,6 @@ class NewsService:
             time_text = re.sub(r"<[^>]+>", " ", time_text).strip() if time_text else ""
             event_time = self._parse_html_time(time_text, current_date, html_tz)
 
-            if event_time and event_time < today_start:
-                continue
             hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
             rows.append(
                 {
@@ -914,19 +913,50 @@ class NewsService:
         return sorted(important, key=lambda row: str(row.get("time_utc", "")))[:8]
 
     def _store_calendar_cache(self, rows: list[dict[str, object]]) -> None:
-        if rows:
-            now = datetime.now(UTC)
-            snapshot = [dict(row) for row in rows]
-            self._calendar_cache["global"] = (now, snapshot)
-            try:
-                cache_file = self._calendar_cache_file()
-                cache_file.parent.mkdir(parents=True, exist_ok=True)
-                cache_file.write_text(
-                    json.dumps({"stored_utc": now.isoformat(), "rows": snapshot}, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-            except Exception:
-                pass
+        if not rows:
+            return
+        now = datetime.now(UTC)
+        today_key = now.strftime("%Y%m%d")
+        snapshot = [dict(row) for row in rows]
+
+        # Daily accumulation: merge with existing cache so past events persist
+        existing = self._read_calendar_cache_file()
+        if existing and existing.get("date") == today_key:
+            # Same day — merge: keep old events, add new ones (dedup by time+currency+event)
+            old_rows = existing.get("rows", [])
+            existing_keys = set()
+            for r in old_rows:
+                t = str(r.get("time_utc", ""))
+                c = str(r.get("currency", ""))
+                e = str(r.get("event", ""))
+                existing_keys.add((t, c, e))
+            for r in snapshot:
+                t = str(r.get("time_utc", ""))
+                c = str(r.get("currency", ""))
+                e = str(r.get("event", ""))
+                if (t, c, e) not in existing_keys:
+                    old_rows.append(r)
+            snapshot = old_rows
+
+        self._calendar_cache["global"] = (now, snapshot)
+        try:
+            cache_file = self._calendar_cache_file()
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(
+                json.dumps({"date": today_key, "stored_utc": now.isoformat(), "rows": snapshot}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def _read_calendar_cache_file(self) -> dict | None:
+        try:
+            cache_file = self._calendar_cache_file()
+            if cache_file.exists():
+                return json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return None
 
     def _cached_calendar_events(self) -> list[dict[str, object]]:
         cached = self._calendar_cache.get("global")
@@ -934,9 +964,9 @@ class NewsService:
             timestamp, rows = cached
             if datetime.now(UTC) - timestamp <= self.CALENDAR_CACHE_MAX_AGE:
                 return [dict(row) for row in rows]
-        try:
-            cache_file = self._calendar_cache_file()
-            raw = json.loads(cache_file.read_text(encoding="utf-8"))
+
+        raw = self._read_calendar_cache_file()
+        if raw and isinstance(raw, dict):
             stored = parse_event_time(str(raw.get("stored_utc", "")))
             rows = raw.get("rows", [])
             if stored and datetime.now(UTC) - stored <= self.CALENDAR_CACHE_MAX_AGE and isinstance(rows, list):
@@ -944,8 +974,6 @@ class NewsService:
                 if clean_rows:
                     self._calendar_cache["global"] = (stored, clean_rows)
                     return clean_rows
-        except Exception:
-            return []
         return []
 
     def _calendar_cache_file(self) -> Path:

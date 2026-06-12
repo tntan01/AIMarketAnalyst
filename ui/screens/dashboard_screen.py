@@ -168,7 +168,7 @@ class DashboardScreen(QWidget):
         layout.setSpacing(10)
 
         header_layout = QHBoxLayout()
-        title = QLabel("Lịch kinh tế (Hôm nay & Ngày mai)")
+        title = QLabel("Lịch kinh tế (Hôm nay: Đã qua + Sắp tới)")
         title.setObjectName("PanelTitle")
         header_layout.addWidget(title)
         header_layout.addStretch()
@@ -238,27 +238,74 @@ class DashboardScreen(QWidget):
                 tz = ZoneInfo("Asia/Ho_Chi_Minh")
 
             news = NewsService()
-            # Use full calendar pipeline (JSON → HTML fallback → cache)
+            # Merge JSON + HTML + Cache to get full picture (past + upcoming events)
+            events: list[dict] = []
             try:
-                events = news._fetch_forex_factory_json_events()
-                # JSON API doesn't include actual values — enrich from HTML
-                try:
-                    html_rows = news._fetch_forex_factory_html_events()
-                    news._merge_actual_from_html(events, html_rows)
-                except Exception:
-                    pass
+                json_events = news._fetch_forex_factory_json_events()
+                events = json_events
             except Exception:
-                try:
-                    events = news._fetch_forex_factory_html_events()
-                except Exception:
-                    events = news._cached_calendar_events()
+                pass
+
+            try:
+                html_events = news._fetch_forex_factory_html_events()
+                if events:
+                    news._merge_actual_from_html(events, html_events)
+                    existing_keys = set()
+                    for ev in events:
+                        t = str(ev.get("time_utc", ""))
+                        c = str(ev.get("currency", ""))
+                        e = str(ev.get("event", ""))
+                        existing_keys.add((t, c, e))
+                    for hev in html_events:
+                        t = str(hev.get("time_utc", ""))
+                        c = str(hev.get("currency", ""))
+                        e = str(hev.get("event", ""))
+                        if (t, c, e) not in existing_keys:
+                            events.append(hev)
+                else:
+                    events = html_events
+            except Exception:
+                pass
+
+            # Merge cached events: cache stores events from earlier fetches,
+            # capturing past-today events that are no longer in live feeds.
+            try:
+                cached = news._cached_calendar_events()
+                if cached and events:
+                    existing_keys = set()
+                    for ev in events:
+                        t = str(ev.get("time_utc", ""))
+                        c = str(ev.get("currency", ""))
+                        e = str(ev.get("event", ""))
+                        existing_keys.add((t, c, e))
+                    for cev in cached:
+                        t = str(cev.get("time_utc", ""))
+                        c = str(cev.get("currency", ""))
+                        e = str(cev.get("event", ""))
+                        if (t, c, e) not in existing_keys:
+                            events.append(cev)
+                elif cached and not events:
+                    events = cached
+            except Exception:
+                pass
 
             if not events:
                 self._show_empty_events("Chưa có dữ liệu lịch kinh tế. Kiểm tra kết nối mạng.")
                 return
 
+            # Store merged events to cache so future refreshes can show past events
+            try:
+                news._store_calendar_cache(events)
+            except Exception:
+                pass
+
             now = datetime.now(timezone.utc)
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Calculate today_start in user's timezone, then convert to UTC
+            # Example: 06:50 VN Jun 12 = 23:50 UTC Jun 11.
+            # Using UTC midnight would incorrectly treat this as "yesterday".
+            now_local = datetime.now(tz)
+            today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start = today_start_local.astimezone(timezone.utc)
             tomorrow_end = today_start + timedelta(days=2)
 
             upcoming: list[tuple[datetime, dict]] = []
@@ -288,10 +335,59 @@ class DashboardScreen(QWidget):
                     nearest_upcoming_idx = i
                     break
 
+            # Insert a separator row between past and upcoming events
+            # First pass: build rows with separator markers
+            display_rows: list[dict] = []
+            for i, (ev_time, ev) in enumerate(upcoming):
+                is_past = ev_time < now
+                is_nearest = (i == nearest_upcoming_idx)
+                display_rows.append({
+                    "ev_time": ev_time,
+                    "ev": ev,
+                    "is_past": is_past,
+                    "is_nearest": is_nearest,
+                    "is_separator": False,
+                })
+
+            # Find the split point (first future event)
+            split_idx = None
+            for idx, dr in enumerate(display_rows):
+                if not dr["is_past"]:
+                    split_idx = idx
+                    break
+
+            # Insert separator right before first future event
+            if split_idx is not None and split_idx > 0:
+                display_rows.insert(split_idx, {
+                    "ev_time": None,
+                    "ev": {},
+                    "is_past": False,
+                    "is_nearest": False,
+                    "is_separator": True,
+                })
+
             impact_dots = {"high": "🔴", "medium": "🟡", "low": "⚪"}
 
-            table.setRowCount(len(upcoming))
-            for i, (ev_time, ev) in enumerate(upcoming):
+            table.setRowCount(len(display_rows))
+            for i, dr in enumerate(display_rows):
+                if dr["is_separator"]:
+                    # Separator row showing "↑ Đã qua | Sắp tới ↓"
+                    sep_item = QTableWidgetItem("─── Đã qua ▲  |  ▼ Sắp tới ───")
+                    sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    sep_item.setForeground(QColor("#ffaa00"))
+                    f = sep_item.font()
+                    f.setBold(True)
+                    sep_item.setFont(f)
+                    table.setItem(i, 0, sep_item)
+                    # Span across all 6 columns
+                    table.setSpan(i, 0, 1, 6)
+                    table.setRowHeight(i, 28)
+                    continue
+
+                ev_time = dr["ev_time"]
+                ev = dr["ev"]
+                is_past = dr["is_past"]
+                is_nearest = dr["is_nearest"]
                 impact = str(ev.get("impact", "low")).lower()
                 currency = str(ev.get("currency", ""))
                 event_name = str(ev.get("event", "Sự kiện"))
@@ -300,9 +396,7 @@ class DashboardScreen(QWidget):
                 actual = str(ev.get("actual", ""))
                 local_time = ev_time.astimezone(tz)
 
-                is_nearest = (i == nearest_upcoming_idx)
                 dot = impact_dots.get(impact, "⚪")
-                is_past = ev_time < now
 
                 # Safety: clear actual for future events (should never have actual, but guard against data issues)
                 if not is_past and actual:
