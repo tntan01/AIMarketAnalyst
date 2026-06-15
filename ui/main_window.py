@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
             button.setObjectName("NavButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setCheckable(True)
-            button.clicked.connect(lambda _checked=False, name=key: self.navigate(nav_route(name)))
+            button.clicked.connect(lambda _checked=False, name=key: [self.navigate(nav_route(name)), self._set_sidebar_open(False)])
             self.nav_group.addButton(button)
             self.nav_buttons[key] = button
             layout.addWidget(button)

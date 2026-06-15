@@ -185,6 +185,29 @@ def _gate_account_guard(context: dict[str, Any], result: dict[str, Any]) -> None
             append_code(result["block_codes"], code)
 
 
+def _gate_journal_feedback(context: dict[str, Any], result: dict[str, Any]) -> None:
+    feedback = context.get("journal_feedback")
+    if not isinstance(feedback, dict):
+        return
+
+    result["journal_feedback"] = feedback
+    for code in feedback.get("warning_codes", []):
+        append_code(result["warning_codes"], code)
+    for reason in feedback.get("reasons", []):
+        if reason not in result["reasons"]:
+            result["reasons"].append(reason)
+
+    for code in feedback.get("block_codes", []):
+        append_code(result["block_codes"], code)
+
+    cap = feedback.get("decision_cap")
+    if cap == "TRADE_BLOCKED":
+        result["allowed"] = False
+        result["decision_cap"] = _resolve_cap(result["decision_cap"], "TRADE_BLOCKED")
+    elif cap in {"WATCH_ONLY", "WAITING_CONFIRMATION"}:
+        result["decision_cap"] = _resolve_cap(result["decision_cap"], str(cap))
+
+
 # ---------------------------------------------------------------------------
 # Ordered gate list (order matters for reasons readability)
 # ---------------------------------------------------------------------------
@@ -196,6 +219,7 @@ _GATES = [
     _gate_high_impact_news,
     _gate_daily_weekly_loss,
     _gate_account_guard,
+    _gate_journal_feedback,
     _gate_m15,
     _gate_expected_effective_rr,
     _gate_score_gap,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from PyQt6.QtCore import QDate, QEvent, QLocale, Qt
 from PyQt6.QtWidgets import (
@@ -10,6 +11,7 @@ from PyQt6.QtWidgets import (
         QAbstractSpinBox,
         QDialog,
         QDialogButtonBox,
+        QFileDialog,
         QFrame,
         QGridLayout,
         QHBoxLayout,
@@ -24,6 +26,7 @@ from PyQt6.QtWidgets import (
         QSpinBox,
         QTableWidget,
         QTableWidgetItem,
+        QTextEdit,
         QVBoxLayout,
         QWidget,
 )
@@ -35,6 +38,7 @@ from ui.screens.shared import action_button, card, page_header
 
 class BacktestScreen(QWidget):
     TRADE_COLUMNS = [
+        ("stt", "STT"),
         ("symbol", "Mã"),
         ("entry_time", "Thời gian vào"),
         ("side", "Hướng"),
@@ -50,19 +54,20 @@ class BacktestScreen(QWidget):
         ("selected_zone_score", "Zone"),
     ]
     TRADE_COLUMN_WEIGHTS = {
-        "symbol": 0.72,
-        "entry_time": 1.65,
-        "side": 0.65,
-        "result": 0.75,
-        "result_r": 0.52,
-        "entry_price": 0.82,
-        "stop_loss": 0.82,
-        "take_profit": 0.82,
-        "final_score": 0.68,
-        "signal_score": 0.68,
-        "m15_quality": 0.62,
-        "market_regime": 0.88,
-        "selected_zone_score": 0.52,
+        "stt": 0.40,
+        "symbol": 0.68,
+        "entry_time": 1.55,
+        "side": 0.60,
+        "result": 0.70,
+        "result_r": 0.48,
+        "entry_price": 0.78,
+        "stop_loss": 0.78,
+        "take_profit": 0.78,
+        "final_score": 0.64,
+        "signal_score": 0.64,
+        "m15_quality": 0.58,
+        "market_regime": 0.82,
+        "selected_zone_score": 0.48,
     }
 
     def __init__(self, navigate=None) -> None:
@@ -82,8 +87,8 @@ class BacktestScreen(QWidget):
         root.setSpacing(10)
         root.addWidget(
             page_header(
-                "Backtest hệ thống",
-                "Replay pipeline phân tích trên dữ liệu lịch sử để đo expectancy, drawdown và edge theo nhóm.",
+                "Kiểm thử hệ thống",
+                "Chạy lại pipeline phân tích trên dữ liệu lịch sử để đo kỳ vọng, drawdown và lợi thế theo nhóm.",
             )
         )
         root.addWidget(self._settings_card())
@@ -159,7 +164,7 @@ class BacktestScreen(QWidget):
         self.mode_combo.addItem("Balanced", "balanced")
         self.mode_combo.addItem("Legacy", "legacy")
         self.mode_combo.addItem("Research", "research")
-        self.mode_combo.addItem("Backtest (nới lỏng nhất)", "backtest")
+        self.mode_combo.addItem("Kiểm thử (nới lỏng nhất)", "backtest")
 
         self.spread_input = QDoubleSpinBox()
         self._apply_number_format(self.spread_input)
@@ -184,7 +189,7 @@ class BacktestScreen(QWidget):
         self.min_score_input.setToolTip("Điểm final_score tối thiểu để vào lệnh. 0 = không lọc.")
         self.min_score_input.setFixedWidth(64)
 
-        self.guard_checkbox = QCheckBox("Account Guard")
+        self.guard_checkbox = QCheckBox("Bảo vệ tài khoản")
         self.guard_checkbox.setObjectName("BacktestField")
         self.guard_checkbox.setToolTip("Bật giới hạn thua lỗ thực tế (daily loss, consecutive losses)")
 
@@ -233,11 +238,11 @@ class BacktestScreen(QWidget):
         account_grid.addWidget(self._field_cell("Số dư", self.balance_input, params_label_width), 0, 0)
         account_grid.addWidget(self._field_cell("Rủi ro", self.risk_input, params_label_width), 1, 0)
         account_grid.addWidget(self.guard_checkbox, 2, 0)
-        account_grid.addWidget(self._field_cell("Max daily loss", self.max_daily_loss_input, 104), 3, 0)
-        account_grid.addWidget(self._field_cell("Max cons. loss", self.max_consecutive_loss_input, 104), 4, 0)
+        account_grid.addWidget(self._field_cell("Lỗ ngày tối đa", self.max_daily_loss_input, 104), 3, 0)
+        account_grid.addWidget(self._field_cell("Chuỗi thua tối đa", self.max_consecutive_loss_input, 104), 4, 0)
         simulation_grid.addWidget(self._grid_label("Số nến"), 0, 0)
         simulation_grid.addWidget(self.max_holding_input, 0, 1)
-        simulation_grid.addWidget(self._grid_label("Min Score"), 0, 2)
+        simulation_grid.addWidget(self._grid_label("Điểm tối thiểu"), 0, 2)
         simulation_grid.addWidget(self.min_score_input, 0, 3)
         simulation_grid.addWidget(self._grid_label("Spread"), 1, 0)
         simulation_grid.addWidget(self.spread_input, 1, 1, 1, 3)
@@ -418,7 +423,48 @@ class BacktestScreen(QWidget):
         return line
 
     def _trades_card(self) -> QFrame:
-        frame = card("Danh sách lệnh")
+        frame = QFrame()
+        frame.setObjectName("PanelCard")
+        frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+        title = QLabel("Danh sách lệnh")
+        title.setObjectName("PanelTitle")
+        header.addWidget(title)
+        header.addStretch(1)
+
+        load_btn = QPushButton("📂 Xem lại kết quả backtest")
+        load_btn.setObjectName("LoadFileButton")
+        load_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        load_btn.setFixedHeight(22)
+        load_btn.clicked.connect(self._load_backtest_file)
+
+        analyze_btn = QPushButton("🤖 Phân tích")
+        analyze_btn.setObjectName("AnalyzeFileButton")
+        analyze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        analyze_btn.setFixedHeight(22)
+        analyze_btn.clicked.connect(self._analyze_loaded_result)
+        self.analyze_btn = analyze_btn
+
+        for btn in (load_btn, analyze_btn):
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  font-size: 11px; padding: 1px 8px;"
+                "  background: #0d9488; color: #fff; border: 1px solid #14b8a6; border-radius: 4px;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #0f766e; border-color: #2dd4bf;"
+                "}"
+            )
+        header.addWidget(load_btn)
+        header.addWidget(analyze_btn)
+        layout.addLayout(header)
+
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
         self.table.setObjectName("DataTable")
         self.table.setHorizontalHeaderLabels([label for _, label in self.TRADE_COLUMNS])
@@ -428,8 +474,99 @@ class BacktestScreen(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
-        frame.layout().addWidget(self.table, 1)
+        layout.addWidget(self.table, 1)
         return frame
+
+    def _load_backtest_file(self) -> None:
+        from PyQt6.QtWidgets import QApplication
+        from config.paths import app_data_dir
+        default_dir = app_data_dir() / "backtests"
+        default_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Tải file backtest", str(default_dir),
+            "Tệp JSON (*.json);;Tất cả tệp (*)",
+        )
+        if not path:
+            return
+        try:
+            import json
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            summary = data.get("summary", {}) if isinstance(data.get("summary"), dict) else {}
+            trades = data.get("trades", []) if isinstance(data.get("trades"), list) else []
+            self.result = data
+            self._set_summary(summary)
+            self._set_trades(trades)
+            self.status_label.setText(f"Đã tải: {len(trades)} lệnh")
+            self.snapshot_label.setText(f"File: {path}")
+            self.snapshot_label.show()
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi đọc file", f"Không đọc được file:\n{exc}")
+
+    def _analyze_loaded_result(self) -> None:
+        if not self.result:
+            QMessageBox.information(self, "Phân tích", "Chưa có dữ liệu backtest. Hãy chạy backtest hoặc tải file trước.")
+            return
+        from PyQt6.QtWidgets import QApplication
+        from services.ai_service import AIService, AIProviderConfig
+        from services.settings_service import SettingsService
+
+        settings = SettingsService().load()
+        active = settings.ai.active_provider()
+        if not active or not (active.api_key or active.api_key_ref):
+            QMessageBox.warning(self, "Phân tích", "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và nhập API key.")
+            return
+
+        self.analyze_btn.setText("⏳ Đang phân tích...")
+        self.analyze_btn.setEnabled(False)
+        QApplication.processEvents()
+
+        try:
+            summary = self.result.get("summary", {})
+            trades = self.result.get("trades", [])
+            prompt = (
+                "Phân tích ngắn gọn bằng tiếng Việt kết quả backtest sau:\n"
+                f"- Tổng số lệnh: {summary.get('total_trades', 'N/A')}\n"
+                f"- Tỷ lệ thắng: {summary.get('win_rate', 'N/A')}%\n"
+                f"- Kỳ vọng: {summary.get('expectancy_r', 'N/A')}R\n"
+                f"- Hệ số lợi nhuận: {summary.get('profit_factor', 'N/A')}\n"
+                f"- Drawdown tối đa: {summary.get('max_drawdown_r', 'N/A')}R\n"
+                f"- Tổng R: {summary.get('total_r', 'N/A')}R\n"
+                "\nĐánh giá:\n"
+                "1. Hệ thống này có edge không?\n"
+                "2. Rủi ro chính là gì?\n"
+                "3. Có nên trade live không? Nếu có thì cần điều kiện gì?\n"
+                "Trả lời ngắn gọn, bullet point."
+            )
+            config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key)
+            ai = AIService(config)
+            response = ai.analyze(prompt)
+
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Phân tích kết quả backtest")
+            dlg.setMinimumSize(600, 400)
+            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(20, 18, 20, 16)
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setStyleSheet(
+                "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: 1px solid #2b3545; border-radius: 6px; padding: 12px; }"
+            )
+            text.setPlainText(response)
+            layout.addWidget(text, 1)
+            close_btn = QPushButton("Đóng")
+            close_btn.setObjectName("PrimaryButton")
+            close_btn.clicked.connect(dlg.accept)
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+            btn_row.addWidget(close_btn)
+            layout.addLayout(btn_row)
+            dlg.exec()
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi phân tích", str(exc))
+        finally:
+            self.analyze_btn.setText("🤖 Phân tích")
+            self.analyze_btn.setEnabled(True)
 
     def _show_input_help(self) -> None:
         dialog = BacktestInputHelpDialog(self)
@@ -495,8 +632,8 @@ class BacktestScreen(QWidget):
         self.snapshot_label.show()
 
     def _on_failed(self, message: str) -> None:
-        self.status_label.setText("Backtest thất bại.")
-        QMessageBox.critical(self, "Backtest thất bại", message)
+        self.status_label.setText("Kiểm thử thất bại.")
+        QMessageBox.critical(self, "Kiểm thử thất bại", message)
 
     def _set_summary(self, summary: dict[str, object]) -> None:
         while self.summary_row.count():
@@ -507,9 +644,9 @@ class BacktestScreen(QWidget):
         items = [
             ("Số lệnh", self._format_integer(summary.get("total_trades", 0))),
             ("Tỷ lệ thắng", self._format_decimal(summary.get("win_rate", 0), 2, "%")),
-            ("Expectancy", self._format_decimal(summary.get("expectancy_r", 0), 2, "R")),
-            ("Profit factor", self._format_decimal(summary.get("profit_factor", 0), 2)),
-            ("Max DD", self._format_decimal(summary.get("max_drawdown_r", 0), 2, "R")),
+            ("Kỳ vọng", self._format_decimal(summary.get("expectancy_r", 0), 2, "R")),
+            ("Hệ số lợi nhuận", self._format_decimal(summary.get("profit_factor", 0), 2)),
+            ("DD tối đa", self._format_decimal(summary.get("max_drawdown_r", 0), 2, "R")),
             ("Tổng R", self._format_decimal(summary.get("total_r", 0), 2, "R")),
         ]
         for index, (title, value) in enumerate(items):
@@ -519,8 +656,12 @@ class BacktestScreen(QWidget):
         self.table.setRowCount(len(trades))
         for row, trade in enumerate(trades):
             for col, (key, _label) in enumerate(self.TRADE_COLUMNS):
-                item = QTableWidgetItem(self._format_trade_value(key, trade.get(key, "--")))
-                if key in {"result_r", "final_score", "signal_score", "selected_zone_score"}:
+                if key == "stt":
+                    value = str(row + 1)
+                else:
+                    value = self._format_trade_value(key, trade.get(key, "--"))
+                item = QTableWidgetItem(value)
+                if key in {"stt", "result_r", "final_score", "signal_score", "selected_zone_score"}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
         self._apply_trade_table_layout()
@@ -615,7 +756,7 @@ class BacktestScreen(QWidget):
         QDoubleSpinBox#BacktestField,
         QSpinBox#BacktestField {
             background: #111827;
-            border: 1px solid #334155;
+            border: 1px solid #475569;
             border-radius: 6px;
             color: #e5e7eb;
             min-height: 18px;
@@ -634,7 +775,7 @@ class BacktestScreen(QWidget):
         QDoubleSpinBox#BacktestField:hover,
         QSpinBox#BacktestField:hover {
             background: #151f2e;
-            border-color: #475569;
+            border-color: #64748b;
         }
 
         QComboBox#BacktestField:focus,
@@ -652,7 +793,7 @@ class BacktestScreen(QWidget):
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 30px;
-            border-left: 1px solid #334155;
+            border-left: 1px solid #475569;
             border-top-right-radius: 6px;
             border-bottom-right-radius: 6px;
             background: transparent;
@@ -661,7 +802,7 @@ class BacktestScreen(QWidget):
         QComboBox#BacktestField::drop-down:hover,
         QDateEdit#BacktestField::drop-down:hover {
             background: #172235;
-            border-left-color: #475569;
+            border-left-color: #64748b;
         }
 
         QComboBox#BacktestField::down-arrow,
@@ -674,7 +815,7 @@ class BacktestScreen(QWidget):
 
         QComboBox#BacktestField QAbstractItemView {
             background: #111827;
-            border: 1px solid #475569;
+            border: 1px solid #64748b;
             outline: 0;
             color: #e5e7eb;
             selection-background-color: #0d9488;
@@ -753,7 +894,7 @@ class BacktestInputHelpDialog(QDialog):
         (
             "Chế độ",
             "Mức độ nới/lọc tín hiệu trước khi cho phép vào lệnh.",
-            "Strict lọc chặt nhất. Balanced cân bằng hơn. Research dùng để khảo sát rộng. Backtest nới lỏng hơn để đo hệ thống nhưng vẫn loại WATCH_ONLY.",
+            "Strict lọc chặt nhất. Balanced cân bằng hơn. Research dùng để khảo sát rộng. Kiểm thử nới lỏng hơn để đo hệ thống nhưng vẫn loại WATCH_ONLY.",
         ),
         (
             "Số dư",
@@ -766,19 +907,19 @@ class BacktestInputHelpDialog(QDialog):
             "Ví dụ 1% với tài khoản 10,000 nghĩa là mỗi lệnh rủi ro khoảng 100.",
         ),
         (
-            "Account Guard",
+            "Bảo vệ tài khoản",
             "Công tắc bật/tắt giới hạn rủi ro tài khoản.",
-            "Không tick thì hai ô Max daily loss và Max cons. loss không có tác dụng. Tick vào thì backtest sẽ áp dụng hai giới hạn này.",
+            "Không tick thì hai ô Lỗ ngày tối đa và Chuỗi thua tối đa không có tác dụng. Tick vào thì kiểm thử sẽ áp dụng hai giới hạn này.",
         ),
         (
-            "Max daily loss",
+            "Lỗ ngày tối đa",
             "Mức lỗ tối đa trong một ngày, tính theo phần trăm tài khoản.",
-            "Chỉ có tác dụng khi tick Account Guard. Ví dụ 2% nghĩa là nếu trong ngày lỗ tới ngưỡng này thì hệ thống dừng nhận thêm lệnh trong ngày đó.",
+            "Chỉ có tác dụng khi tick Bảo vệ tài khoản. Ví dụ 2% nghĩa là nếu trong ngày lỗ tới ngưỡng này thì hệ thống dừng nhận thêm lệnh trong ngày đó.",
         ),
         (
-            "Max cons. loss",
+            "Chuỗi thua tối đa",
             "Số lệnh thua liên tiếp tối đa được phép.",
-            "Chỉ có tác dụng khi tick Account Guard. Ví dụ 3 nghĩa là sau 3 lệnh thua liên tiếp, hệ thống dừng theo quy tắc guard.",
+            "Chỉ có tác dụng khi tick Bảo vệ tài khoản. Ví dụ 3 nghĩa là sau 3 lệnh thua liên tiếp, hệ thống dừng theo quy tắc bảo vệ.",
         ),
         (
             "Số nến",
@@ -786,7 +927,7 @@ class BacktestInputHelpDialog(QDialog):
             "Nếu hết số nến mà chưa chạm TP/SL, backtest sẽ thoát theo quy tắc thời gian. Số lớn giữ lệnh lâu hơn.",
         ),
         (
-            "Min Score",
+            "Điểm tối thiểu",
             "Điểm final_score tối thiểu để được vào lệnh.",
             "Đặt 0 nghĩa là không lọc theo điểm. Tăng số này sẽ ít lệnh hơn nhưng kỳ vọng chất lượng setup cao hơn.",
         ),
@@ -866,7 +1007,7 @@ class BacktestInputHelpDialog(QDialog):
 class SymbolSelectionDialog(QDialog):
     def __init__(self, selected_symbols: list[str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Chọn mã backtest")
+        self.setWindowTitle("Chọn mã kiểm thử")
         self.setObjectName("ScannerHelpDialog")
         self.setModal(True)
         self.setMinimumSize(520, 620)

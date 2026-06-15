@@ -61,6 +61,15 @@ class JournalEntry:
     manual_mistake_tags: str | None = None
     auto_mistake_tags: str | None = None
     execution_quality_score: int | None = None
+    # Trade lifecycle fields
+    trade_status: str | None = "planned"
+    opened_at: str | None = None
+    result_amount: float | None = None
+    mt5_deal_id: int | None = None
+    mt5_order_id: int | None = None
+    mt5_position_id: int | None = None
+    synced_from: str | None = None
+    synced_at_utc: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,11 +173,12 @@ class JournalService:
     # Phase 17 field whitelist for update_trade_outcome
     _UPDATE_WHITELIST = frozenset({
         "result", "result_r", "result_pct", "closed_at", "exit_reason",
-        "actual_lot", "planned_lot",
-        "actual_entry", "actual_sl", "actual_tp", "actual_exit",
+        "actual_lot", "planned_lot", "trade_status", "opened_at", "result_amount",
+        "planned_entry", "actual_entry", "planned_sl", "actual_sl", "planned_tp", "actual_tp", "actual_exit",
         "realized_effective_rr",
         "manual_mistake_tags", "auto_mistake_tags",
         "execution_quality_score",
+        "mt5_deal_id", "mt5_order_id", "mt5_position_id", "synced_from", "synced_at_utc",
         "note",
     })
 
@@ -189,14 +199,21 @@ class JournalService:
             if key in ("manual_mistake_tags", "auto_mistake_tags"):
                 safe[key] = tags_to_json(value)
             elif key in ("result_r", "result_pct", "actual_lot", "planned_lot",
-                         "actual_entry", "actual_sl", "actual_tp", "actual_exit",
-                         "realized_effective_rr", "execution_quality_score"):
+                         "planned_entry", "actual_entry", "planned_sl", "actual_sl", "planned_tp", "actual_tp", "actual_exit",
+                         "realized_effective_rr", "execution_quality_score", "result_amount"):
                 try:
                     safe[key] = float(value) if value is not None else None
                 except (TypeError, ValueError):
                     safe[key] = None
-            elif key == "closed_at":
+            elif key in {"closed_at", "opened_at"}:
                 safe[key] = str(value or "")
+            elif key == "trade_status":
+                safe[key] = normalize_trade_status(value)
+            elif key in {"mt5_deal_id", "mt5_order_id", "mt5_position_id"}:
+                try:
+                    safe[key] = int(value) if value not in (None, "") else None
+                except (TypeError, ValueError):
+                    safe[key] = None
             else:
                 safe[key] = str(value or "") if not isinstance(value, (int, float)) else value
 
@@ -212,6 +229,126 @@ class JournalService:
                 values,
             )
             conn.commit()
+
+    def update_lifecycle(self, entry_id: int, updates: dict[str, object], *, auto_analyze: bool = True) -> dict[str, object] | None:
+        """Update planned/actual trade fields and derive outcome metrics.
+
+        The UI sends loosely typed values. This method normalises lifecycle
+        state, computes result_r/result_pct/realized_effective_rr when enough
+        price data exists, persists the row, and optionally refreshes mistake
+        detection/execution quality for closed trades.
+        """
+        entry = self.get_entry(entry_id)
+        if entry is None:
+            return None
+
+        merged = asdict(entry)
+        merged.update(updates or {})
+        status = normalize_trade_status(merged.get("trade_status"))
+        if merged.get("closed_at"):
+            status = "closed"
+        elif merged.get("opened_at") or merged.get("actual_entry") is not None:
+            status = "opened" if status == "planned" else status
+        merged["trade_status"] = status
+
+        outcome = calculate_trade_outcome(merged)
+        if outcome:
+            merged.update(outcome)
+            if "realized_effective_rr" not in updates:
+                merged["realized_effective_rr"] = outcome.get("result_r")
+        elif any(key in updates for key in ("actual_entry", "planned_entry", "actual_sl", "planned_sl", "actual_exit")):
+            merged["result_r"] = None
+            merged["result_pct"] = None
+            merged["realized_effective_rr"] = None
+
+        payload = {key: merged.get(key) for key in self._UPDATE_WHITELIST if key in merged}
+        self.update_trade_outcome(entry_id, payload)
+
+        analysis: dict[str, object] | None = None
+        if auto_analyze and status == "closed":
+            analysis = self.apply_execution_analysis_to_entry(entry_id)
+
+        updated = self.get_entry(entry_id)
+        return {
+            "entry": asdict(updated) if updated else None,
+            "outcome": outcome,
+            "execution_analysis": analysis,
+        }
+
+    def sync_mt5_closed_trades(self, trades: list[dict[str, object]]) -> dict[str, object]:
+        """Import MT5 closed trades into journal, updating existing rows when possible."""
+        summary = {"received": len(trades), "created": 0, "updated": 0, "skipped": 0, "errors": []}
+        synced_ids: list[int] = []
+        for trade in trades:
+            try:
+                entry_id = self._find_mt5_sync_entry(trade)
+                payload = self._mt5_trade_update_payload(trade)
+                if entry_id is None:
+                    entry_id = self.create(journal_entry_from_mt5_trade(trade))
+                    summary["created"] = int(summary["created"]) + 1
+                else:
+                    self.update_lifecycle(entry_id, payload)
+                    summary["updated"] = int(summary["updated"]) + 1
+                synced_ids.append(int(entry_id))
+            except sqlite3.IntegrityError:
+                summary["skipped"] = int(summary["skipped"]) + 1
+            except Exception as exc:  # pragma: no cover - defensive sync boundary.
+                summary["errors"].append(str(exc))
+        summary["synced_entry_ids"] = synced_ids
+        return summary
+
+    def _find_mt5_sync_entry(self, trade: dict[str, object]) -> int | None:
+        deal_id = _safe_int(trade.get("mt5_deal_id"))
+        position_id = _safe_int(trade.get("mt5_position_id"))
+        with self._connect() as conn:
+            if deal_id is not None:
+                row = conn.execute("SELECT id FROM journal_entries WHERE mt5_deal_id = ?", (deal_id,)).fetchone()
+                if row:
+                    return int(row["id"])
+            if position_id is not None:
+                row = conn.execute("SELECT id FROM journal_entries WHERE mt5_position_id = ?", (position_id,)).fetchone()
+                if row:
+                    return int(row["id"])
+
+            symbol = str(trade.get("symbol") or "")
+            broker_symbol = str(trade.get("broker_symbol") or "")
+            side = str(trade.get("side") or "")
+            closed_at = str(trade.get("closed_at") or "")
+            rows = conn.execute(
+                "SELECT id, closed_at, timestamp_utc FROM journal_entries "
+                "WHERE (symbol = ? OR broker_symbol = ?) AND selected_scenario = ? "
+                "AND (mt5_deal_id IS NULL AND mt5_position_id IS NULL) "
+                "AND (closed_at IS NULL OR closed_at = '') "
+                "AND (trade_status IS NULL OR trade_status IN ('planned', 'opened')) "
+                "ORDER BY id DESC LIMIT 20",
+                (symbol, broker_symbol, side),
+            ).fetchall()
+        close_time = _parse_utc(closed_at)
+        for row in rows:
+            candidate_time = _parse_utc(row["closed_at"] or row["timestamp_utc"])
+            if close_time and candidate_time and abs((close_time - candidate_time).total_seconds()) <= 86400:
+                return int(row["id"])
+        return None
+
+    def _mt5_trade_update_payload(self, trade: dict[str, object]) -> dict[str, object]:
+        amount = _safe_float(trade.get("result_amount"))
+        result = "win" if amount and amount > 0 else "loss" if amount and amount < 0 else "breakeven"
+        return {
+            "trade_status": "closed",
+            "opened_at": trade.get("opened_at") or "",
+            "closed_at": trade.get("closed_at") or "",
+            "actual_entry": trade.get("actual_entry"),
+            "actual_exit": trade.get("actual_exit"),
+            "actual_lot": trade.get("actual_lot"),
+            "result_amount": trade.get("result_amount"),
+            "result": result,
+            "exit_reason": trade.get("exit_reason") or "mt5_history",
+            "mt5_deal_id": trade.get("mt5_deal_id"),
+            "mt5_order_id": trade.get("mt5_order_id"),
+            "mt5_position_id": trade.get("mt5_position_id"),
+            "synced_from": "mt5_history",
+            "synced_at_utc": utc_now(),
+        }
 
     def apply_execution_analysis_to_entry(
         self, entry_id: int, *, previous_limit: int = 50
@@ -286,6 +423,11 @@ class JournalService:
         top_symbol = max(symbol_counts.items(), key=lambda item: item[1])[0] if symbol_counts else "--"
         return {"total": len(entries), **counts, "top_symbol": top_symbol}
 
+    def performance_summary(self, limit: int = 1000) -> dict[str, object]:
+        """Summarise closed-trade performance from journal outcome fields."""
+        trades = self.list_closed_trades_for_account_guard(limit=limit)
+        return build_performance_summary(trades)
+
     def list_closed_trades_for_account_guard(self, limit: int = 500) -> list[dict[str, object]]:
         """Trả về danh sách closed trades phục vụ Account Guard và Phase 17 engines.
 
@@ -303,6 +445,7 @@ class JournalService:
         select_cols = (
             "result_r", "result_pct", "closed_at", "exit_reason",
             "actual_lot", "planned_lot", "symbol", "selected_scenario",
+            "trade_status", "opened_at", "result_amount",
             "planned_entry", "actual_entry", "planned_sl", "actual_sl",
             "planned_tp", "actual_tp", "actual_exit",
             "setup_type", "regime", "session", "m15_quality",
@@ -323,7 +466,7 @@ class JournalService:
             trade: dict[str, object] = {}
             for key in (
                 "result_r", "result_pct", "closed_at", "exit_reason",
-                "actual_lot", "planned_lot", "symbol",
+                "actual_lot", "planned_lot", "symbol", "trade_status", "opened_at", "result_amount",
                 "planned_entry", "actual_entry", "planned_sl", "actual_sl",
                 "planned_tp", "actual_tp", "actual_exit",
                 "setup_type", "regime", "session", "m15_quality",
@@ -364,6 +507,27 @@ def _safe_float(value: object) -> float | None:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+
+
+def _safe_int(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_utc(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _parse_entry_from_zone(zone: object) -> float | None:
@@ -461,6 +625,9 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
         manual_mistake_tags=manual_tags if manual_tags != "[]" else None,
         auto_mistake_tags=auto_tags if auto_tags != "[]" else None,
         execution_quality_score=exec_qual_score,
+        trade_status="planned",
+        opened_at=None,
+        result_amount=None,
     )
 
 
@@ -527,6 +694,73 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
         manual_mistake_tags=row_manual_tags if row_manual_tags != "[]" else None,
         auto_mistake_tags=row_auto_tags if row_auto_tags != "[]" else None,
         execution_quality_score=row_exec_qual,
+        trade_status="planned",
+        opened_at=None,
+        result_amount=None,
+    )
+
+
+def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
+    now = utc_now()
+    amount = _safe_float(trade.get("result_amount"))
+    result = "win" if amount and amount > 0 else "loss" if amount and amount < 0 else "breakeven"
+    payload = {"source": "mt5_history", "trade": trade}
+    return JournalEntry(
+        id=None,
+        timestamp_utc=normalize_utc_timestamp(str(trade.get("opened_at") or trade.get("closed_at") or now)),
+        saved_at_utc=now,
+        symbol=str(trade.get("symbol") or trade.get("broker_symbol") or ""),
+        broker_symbol=str(trade.get("broker_symbol") or ""),
+        mode="mt5_sync",
+        data_source="MT5",
+        market_regime="",
+        decision="closed",
+        direction_bias=str(trade.get("side") or ""),
+        trade_permission="",
+        buy_score=0,
+        sell_score=0,
+        selected_scenario=str(trade.get("side") or ""),
+        entry_zone="",
+        stop_loss="",
+        take_profit="",
+        risk_reward="",
+        suggested_lot=None,
+        ai_commentary="Imported from MT5 history.",
+        analysis_json=json.dumps(payload, ensure_ascii=False),
+        user_action="",
+        result=result,
+        note="",
+        result_r=None,
+        result_pct=None,
+        closed_at=str(trade.get("closed_at") or ""),
+        exit_reason=str(trade.get("exit_reason") or "mt5_history"),
+        actual_lot=_safe_float(trade.get("actual_lot")),
+        planned_lot=None,
+        planned_entry=None,
+        actual_entry=_safe_float(trade.get("actual_entry")),
+        planned_sl=None,
+        actual_sl=None,
+        planned_tp=None,
+        actual_tp=None,
+        actual_exit=_safe_float(trade.get("actual_exit")),
+        setup_type="mt5_history",
+        regime=None,
+        session=None,
+        m15_quality=None,
+        spread_at_entry=None,
+        expected_effective_rr=None,
+        realized_effective_rr=None,
+        manual_mistake_tags=None,
+        auto_mistake_tags=None,
+        execution_quality_score=None,
+        trade_status="closed",
+        opened_at=str(trade.get("opened_at") or ""),
+        result_amount=amount,
+        mt5_deal_id=_safe_int(trade.get("mt5_deal_id")),
+        mt5_order_id=_safe_int(trade.get("mt5_order_id")),
+        mt5_position_id=_safe_int(trade.get("mt5_position_id")),
+        synced_from="mt5_history",
+        synced_at_utc=now,
     )
 
 
@@ -605,6 +839,169 @@ def tags_to_json(value: object) -> str:
 def tags_from_json(value: object) -> list[str]:
     """Parse a tag JSON string back to a list; delegates to :func:`normalize_tag_list`."""
     return normalize_tag_list(value)
+
+
+def normalize_trade_status(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "plan": "planned",
+        "planned": "planned",
+        "open": "opened",
+        "opened": "opened",
+        "close": "closed",
+        "closed": "closed",
+        "cancel": "cancelled",
+        "cancelled": "cancelled",
+        "miss": "missed",
+        "missed": "missed",
+    }
+    return aliases.get(raw, "planned")
+
+
+def calculate_trade_outcome(trade: dict[str, object]) -> dict[str, float | str]:
+    """Calculate R-multiple and percent result from journal trade data.
+
+    Uses actual values first, falling back to planned values. Result R is
+    positive when price moves in the selected scenario direction.
+    """
+    side = str(trade.get("selected_scenario") or trade.get("direction") or "").strip().lower()
+    if side not in {"buy", "sell"}:
+        return {}
+
+    entry = _safe_float(trade.get("actual_entry"))
+    if entry is None:
+        entry = _safe_float(trade.get("planned_entry"))
+    stop = _safe_float(trade.get("actual_sl"))
+    if stop is None:
+        stop = _safe_float(trade.get("planned_sl"))
+    exit_price = _safe_float(trade.get("actual_exit"))
+    if entry is None or stop is None or exit_price is None:
+        return {}
+
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return {}
+
+    signed_move = exit_price - entry if side == "buy" else entry - exit_price
+    result_r = signed_move / risk
+    result_pct = (signed_move / entry * 100) if entry else 0.0
+    label = "win" if result_r > 0 else "loss" if result_r < 0 else "breakeven"
+    return {
+        "result_r": round(result_r, 3),
+        "result_pct": round(result_pct, 3),
+        "realized_effective_rr": round(result_r, 3),
+        "result": label,
+    }
+
+
+def build_performance_summary(trades: list[dict[str, object]]) -> dict[str, object]:
+    valid = [trade for trade in trades if _safe_float(trade.get("result_r")) is not None]
+    valid_for_curve = sorted(valid, key=lambda item: str(item.get("closed_at") or ""))
+    results = [float(_safe_float(trade.get("result_r")) or 0.0) for trade in valid_for_curve]
+    amounts = [float(value) for value in (_safe_float(trade.get("result_amount")) for trade in trades) if value is not None]
+    outcome_values = results if results else amounts
+    wins = [value for value in outcome_values if value > 0]
+    losses = [value for value in outcome_values if value < 0]
+    breakeven = [value for value in outcome_values if value == 0]
+    r_wins = [value for value in results if value > 0]
+    r_losses = [value for value in results if value < 0]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    avg_quality_values = [
+        float(score)
+        for score in (_safe_float(trade.get("execution_quality_score")) for trade in valid)
+        if score is not None
+    ]
+    summary = {
+        "closed_trades": len(trades),
+        "r_trades": len(valid),
+        "amount_trades": len(amounts),
+        "win_count": len(wins),
+        "loss_count": len(losses),
+        "breakeven_count": len(breakeven),
+        "win_rate": round(len(wins) / len(outcome_values) * 100, 2) if outcome_values else 0.0,
+        "expectancy_r": round(sum(results) / len(results), 3) if results else 0.0,
+        "total_r": round(sum(results), 3) if results else 0.0,
+        "average_win_r": round(sum(r_wins) / len(r_wins), 3) if r_wins else 0.0,
+        "average_loss_r": round(sum(r_losses) / len(r_losses), 3) if r_losses else 0.0,
+        "net_amount": round(sum(amounts), 2) if amounts else 0.0,
+        "profit_factor": round(gross_profit / gross_loss, 3) if gross_loss > 0 else (round(gross_profit, 3) if gross_profit > 0 else 0.0),
+        "max_drawdown_r": round(max_drawdown_r(results), 3),
+        "average_execution_quality": round(sum(avg_quality_values) / len(avg_quality_values), 1) if avg_quality_values else 0.0,
+    }
+    return {
+        "summary": summary,
+        "by_symbol": group_performance(trades, "symbol"),
+        "by_setup": group_performance(trades, "setup_type"),
+        "by_regime": group_performance(trades, "regime"),
+        "by_session": group_performance(trades, "session"),
+        "by_direction": group_performance(trades, "direction"),
+        "recent": recent_trade_rows(trades, limit=12),
+    }
+
+
+def group_performance(trades: list[dict[str, object]], key: str, *, limit: int = 8) -> list[dict[str, object]]:
+    groups: dict[str, list[dict[str, float | None]]] = {}
+    for trade in trades:
+        label = str(trade.get(key) or "--").strip() or "--"
+        result = _safe_float(trade.get("result_r"))
+        amount = _safe_float(trade.get("result_amount"))
+        if result is None and amount is None:
+            continue
+        groups.setdefault(label, []).append({"result_r": result, "amount": amount})
+    rows: list[dict[str, object]] = []
+    for label, items in groups.items():
+        results = [float(item["result_r"]) for item in items if item["result_r"] is not None]
+        amounts = [float(item["amount"]) for item in items if item["amount"] is not None]
+        outcome_values = results if results else amounts
+        wins = [value for value in outcome_values if value > 0]
+        losses = [value for value in outcome_values if value < 0]
+        rows.append({
+            "label": label,
+            "trades": len(items),
+            "win_rate": round(len(wins) / len(outcome_values) * 100, 2) if outcome_values else 0.0,
+            "expectancy_r": round(sum(results) / len(results), 3) if results else 0.0,
+            "total_r": round(sum(results), 3),
+            "net_amount": round(sum(amounts), 2) if amounts else 0.0,
+            "profit_factor": _profit_factor(wins, losses),
+        })
+    rows.sort(key=lambda item: (int(item["trades"]), float(item["total_r"])), reverse=True)
+    return rows[:limit]
+
+
+def recent_trade_rows(trades: list[dict[str, object]], *, limit: int = 12) -> list[dict[str, object]]:
+    rows = sorted(trades, key=lambda item: str(item.get("closed_at") or ""), reverse=True)
+    return [
+        {
+            "closed_at": trade.get("closed_at") or "--",
+            "symbol": trade.get("symbol") or "--",
+            "direction": trade.get("direction") or "--",
+            "result_r": round(float(_safe_float(trade.get("result_r"))), 3) if _safe_float(trade.get("result_r")) is not None else None,
+            "result_amount": _safe_float(trade.get("result_amount")),
+            "exit_reason": trade.get("exit_reason") or "--",
+            "execution_quality_score": trade.get("execution_quality_score"),
+        }
+        for trade in rows[:limit]
+    ]
+
+
+def _profit_factor(wins: list[float], losses: list[float]) -> float:
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    if gross_loss > 0:
+        return round(gross_profit / gross_loss, 3)
+    return round(gross_profit, 3) if gross_profit > 0 else 0.0
+
+
+def max_drawdown_r(results: list[float]) -> float:
+    peak = 0.0
+    equity = 0.0
+    max_dd = 0.0
+    for value in results:
+        equity += value
+        peak = max(peak, equity)
+        max_dd = max(max_dd, peak - equity)
+    return max_dd
 
 
 def utc_now() -> str:

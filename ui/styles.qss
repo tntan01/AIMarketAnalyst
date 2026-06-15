@@ -581,7 +581,7 @@ QSpinBox,
 QDateEdit,
 QTextEdit {
   background: #111827;
-  border: 1px solid #334155;
+  border: 1px solid #475569;
   border-radius: 6px;
   color: #e5e7eb;
   padding: 7px 9px;
@@ -591,7 +591,7 @@ QTextEdit {
 
 QComboBox {
   background: #111827;
-  border: 1px solid #64748b;
+  border: 1px solid #475569;
   border-radius: 6px;
   color: #e5e7eb;
   min-height: 18px;
@@ -600,9 +600,14 @@ QComboBox {
   selection-color: #ffffff;
 }
 
+QLineEdit:hover,
+QDoubleSpinBox:hover,
+QSpinBox:hover,
+QDateEdit:hover,
+QTextEdit:hover,
 QComboBox:hover {
   background: #151f2e;
-  border: 1px solid #94a3b8;
+  border: 1px solid #64748b;
 }
 
 QLineEdit:focus,
@@ -610,7 +615,8 @@ QDoubleSpinBox:focus,
 QSpinBox:focus,
 QDateEdit:focus,
 QTextEdit:focus {
-  border-color: #38bdf8;
+  background: #101827;
+  border: 1px solid #38bdf8;
 }
 
 QComboBox:focus,
@@ -619,6 +625,11 @@ QComboBox:on {
   border: 1px solid #38bdf8;
 }
 
+QLineEdit:disabled,
+QDoubleSpinBox:disabled,
+QSpinBox:disabled,
+QDateEdit:disabled,
+QTextEdit:disabled,
 QComboBox:disabled {
   background: #111827;
   border: 1px solid #334155;
@@ -641,7 +652,8 @@ QProgressBar#AnalysisProgressBar::chunk {
   border-radius: 5px;
 }
 
-QComboBox::drop-down {
+QComboBox::drop-down,
+QDateEdit::drop-down {
   subcontrol-origin: padding;
   subcontrol-position: top right;
   width: 30px;
@@ -651,20 +663,98 @@ QComboBox::drop-down {
   background: transparent;
 }
 
-QComboBox::drop-down:hover {
+QComboBox::drop-down:hover,
+QDateEdit::drop-down:hover {
   background: #172235;
   border-left-color: #64748b;
 }
 
-QComboBox::down-arrow {
+QComboBox::down-arrow,
+QDateEdit::down-arrow {
   image: url(assets/icons/chevron-down.svg);
   width: 14px;
   height: 14px;
   margin-right: 8px;
 }
 
-QComboBox::down-arrow:on {
+QComboBox::down-arrow:on,
+QDateEdit::down-arrow:on {
   top: 1px;
+}
+
+QDoubleSpinBox::up-button,
+QDoubleSpinBox::down-button,
+QSpinBox::up-button,
+QSpinBox::down-button {
+  background: transparent;
+  border: none;
+  width: 0px;
+}
+
+QComboBox#FilterField,
+QDateEdit#FilterField,
+QDoubleSpinBox#FilterField,
+QSpinBox#FilterField,
+QLineEdit#FilterField {
+  background: #0f172a;
+  border: 1px solid #64748b;
+  border-radius: 6px;
+  color: #f8fafc;
+  min-height: 18px;
+  padding: 4px 30px 4px 8px;
+  selection-background-color: #0d9488;
+  selection-color: #ffffff;
+}
+
+QDoubleSpinBox#FilterField,
+QSpinBox#FilterField,
+QLineEdit#FilterField {
+  padding-right: 10px;
+}
+
+QComboBox#FilterField:hover,
+QDateEdit#FilterField:hover,
+QDoubleSpinBox#FilterField:hover,
+QSpinBox#FilterField:hover,
+QLineEdit#FilterField:hover {
+  background: #111c2d;
+  border: 1px solid #94a3b8;
+}
+
+QComboBox#FilterField:focus,
+QComboBox#FilterField:on,
+QDateEdit#FilterField:focus,
+QDateEdit#FilterField:on,
+QDoubleSpinBox#FilterField:focus,
+QSpinBox#FilterField:focus,
+QLineEdit#FilterField:focus {
+  background: #0f172a;
+  border: 1px solid #38bdf8;
+}
+
+QComboBox#FilterField::drop-down,
+QDateEdit#FilterField::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 30px;
+  border-left: 1px solid #64748b;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  background: #111827;
+}
+
+QComboBox#FilterField::drop-down:hover,
+QDateEdit#FilterField::drop-down:hover {
+  border-left-color: #94a3b8;
+  background: #172235;
+}
+
+QComboBox#FilterField::down-arrow,
+QDateEdit#FilterField::down-arrow {
+  image: url(assets/icons/chevron-down.svg);
+  width: 14px;
+  height: 14px;
+  margin-right: 7px;
 }
 
 QComboBox QAbstractItemView {

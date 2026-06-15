@@ -679,7 +679,7 @@ class DashboardScreen(QWidget):
             if not active or not (active.api_key or active.api_key_ref):
                 text_widget.setHtml(
                     "<p style='color:#f44336;font-size:13px;'>"
-                    "⚠️ Chưa cấu hình AI. Vào <b>Settings</b> để chọn provider và nhập API key."
+                    "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
                     "</p>"
                 )
                 btn.setText("🤖 Xem tác động")

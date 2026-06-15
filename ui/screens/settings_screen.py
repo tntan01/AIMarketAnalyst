@@ -609,7 +609,7 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
             "STT", "Mã hiển thị", "Mã broker trong MT5", "Trạng thái",
-            "Kiểm tra", "Backtest", "Min Score", "Auto Regime", "Auto Side", "Min RR",
+            "Kiểm tra", "Kiểm thử", "Điểm tối thiểu", "Regime tự động", "Hướng tự động", "RR tối thiểu",
         ])
         self.mt5_symbols_table.verticalHeader().setVisible(False)
         self.mt5_symbols_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

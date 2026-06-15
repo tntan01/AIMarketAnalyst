@@ -481,6 +481,14 @@ def calculate_opportunity_score(
         entry_status=row.get("entry_status"),
         ready_to_trade=row.get("ready_to_trade"),
     )
+    journal_feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
+    journal_cap = str(journal_feedback.get("decision_cap") or "").strip()
+    if journal_cap == "TRADE_BLOCKED":
+        group = BLOCKED
+    elif journal_cap == "WATCH_ONLY" and group in {READY_NOW, WAITING_CONFIRMATION}:
+        group = WATCH_ZONE
+    elif journal_cap == "WAITING_CONFIRMATION" and group == READY_NOW:
+        group = WAITING_CONFIRMATION
 
     # ---- proximity ----
     prox = normalize_price_vs_zone(
@@ -534,8 +542,10 @@ def calculate_opportunity_score(
     elif _truthy(row.get("news_in_3h")):
         news_pen = -int(w.get("news_penalty", 10.0) * 0.5)
 
+    journal_pen = int(safe_float(journal_feedback.get("opportunity_penalty"), 0.0))
+
     # ---- total ----
-    raw = float(base) + prox_bonus + readiness_bonus + rr_bonus + spread_pen + news_pen
+    raw = float(base) + prox_bonus + readiness_bonus + rr_bonus + spread_pen + news_pen + journal_pen
     score = int(max(0, min(round(raw), 120)))
 
     # ---- block cap ----
@@ -561,6 +571,10 @@ def calculate_opportunity_score(
         penalty_codes.append(SCANNER_SPREAD_PENALTY)
     if _truthy(row.get("high_impact_event_within_30m")):
         penalty_codes.append(SCANNER_NEWS_PENALTY)
+    for code in journal_feedback.get("warning_codes", []):
+        warning_codes.append(str(code))
+    for code in journal_feedback.get("block_codes", []):
+        penalty_codes.append(str(code))
 
     return {
         "opportunity_score": score,
@@ -575,6 +589,7 @@ def calculate_opportunity_score(
             "rr_bonus": rr_bonus,
             "spread_penalty": spread_pen,
             "news_penalty": news_pen,
+            "journal_feedback_penalty": journal_pen,
             "raw_score": round(raw, 2),
         },
         "reason": f"opportunity_score={score}, group={group}",

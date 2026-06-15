@@ -101,6 +101,7 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     if not isinstance(decision_engine, dict):
         decision_engine = {}
     row_final_score = result.get("final_score", best_score)
+    journal_feedback = result.get("journal_feedback", {})
     m15_quality = best_plan.get("m15_quality") if best_plan else None
     expected_effective_rr = best_plan.get("expected_effective_rr") if best_plan else None
     score_gap = result.get("decision_summary", {}).get("score_gap")
@@ -124,7 +125,10 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "macro_score": macro_score,
         "macro_bias": macro_bias,
         "macro_confidence": round(macro_confidence, 2),
-        "short_reason": build_short_reason(result, best_side, best_score, permission, best_plan),
+        "short_reason": append_journal_feedback_reason(
+            build_short_reason(result, best_side, best_score, permission, best_plan),
+            journal_feedback if isinstance(journal_feedback, dict) else {},
+        ),
         "ai_summary_available": False,
         "detail_action": "View Detail",
         "analysis_result": result,
@@ -135,6 +139,11 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "score_gap": score_gap,
         "m15_quality": m15_quality,
         "expected_effective_rr": expected_effective_rr,
+        "journal_feedback": journal_feedback if isinstance(journal_feedback, dict) else {},
+        "journal_sample_size": journal_feedback.get("sample_size") if isinstance(journal_feedback, dict) else 0,
+        "journal_expectancy_r": journal_feedback.get("expectancy_r") if isinstance(journal_feedback, dict) else None,
+        "journal_evidence_score": journal_feedback.get("evidence_score") if isinstance(journal_feedback, dict) else None,
+        "journal_opportunity_penalty": journal_feedback.get("opportunity_penalty") if isinstance(journal_feedback, dict) else 0,
     }
 
     return enrich_scanner_row_with_ranking(row)
@@ -341,6 +350,24 @@ def build_short_reason(
     if best_score >= 60:
         return "Setup chưa rõ, chờ thêm xác nhận từ D1/H4/H1."
     return "Điểm thấp hoặc rủi ro cao, nên bỏ qua."
+
+
+def append_journal_feedback_reason(reason: str, feedback: dict[str, Any]) -> str:
+    if not isinstance(feedback, dict):
+        return reason
+    expectancy = feedback.get("expectancy_r")
+    sample = feedback.get("sample_size")
+    cap = feedback.get("decision_cap")
+    if expectancy is None or not sample:
+        return reason
+    try:
+        exp = float(expectancy)
+        samples = int(sample)
+    except (TypeError, ValueError):
+        return reason
+    if exp < -0.15 or cap:
+        return f"{reason} Nhật ký: {samples} mẫu, kỳ vọng {exp:.2f}R."
+    return reason
 
 
 def best_plan_score_smc(result: dict[str, Any], best_side: str) -> int | None:

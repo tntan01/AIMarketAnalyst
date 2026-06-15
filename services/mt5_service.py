@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import floor
 from pathlib import Path
 
@@ -444,6 +444,38 @@ class MT5Service:
             message=str(message or ("Đã gửi lệnh thành công." if success else "MT5 từ chối lệnh.")),
         )
 
+    def app_symbol_for_broker_symbol(self, broker_symbol: str) -> str:
+        normalized = self._normalize_symbol_name(broker_symbol)
+        for app_symbol in self.symbol_profiles:
+            aliases = self.aliases_for(app_symbol) + [app_symbol.replace("/", "")]
+            if any(self._normalize_symbol_name(alias) == normalized for alias in aliases):
+                return app_symbol
+        return broker_symbol
+
+    def closed_trade_history(self, *, start: datetime, end: datetime) -> list[dict[str, object]]:
+        """Return closed MT5 positions grouped into journal-ready trades."""
+        try:
+            import MetaTrader5 as mt5
+        except ImportError as exc:
+            raise RuntimeError("Chưa cài package MetaTrader5.") from exc
+
+        if not mt5.initialize():
+            error_code, error_message = mt5.last_error()
+            raise RuntimeError(error_message or f"Không khởi tạo được MT5 ({error_code}).")
+
+        start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
+        end_utc = end.astimezone(timezone.utc) if end.tzinfo else end.replace(tzinfo=timezone.utc)
+        deals = mt5.history_deals_get(start_utc, end_utc)
+        if deals is None:
+            error_code, error_message = mt5.last_error()
+            raise RuntimeError(error_message or f"Không lấy được lịch sử deal MT5 ({error_code}).")
+        return self._closed_trades_from_deals(mt5, list(deals))
+
+    def closed_trade_history_recent(self, days: int = 90) -> list[dict[str, object]]:
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=max(1, int(days)))
+        return self.closed_trade_history(start=start, end=end)
+
     def _normalize_volume(self, volume: float, symbol_info) -> float:
         try:
             raw = float(volume)
@@ -482,3 +514,59 @@ class MT5Service:
 
     def _normalize_symbol_name(self, symbol: str) -> str:
         return "".join(char.lower() for char in symbol if char.isalnum())
+
+    def _closed_trades_from_deals(self, mt5_module, deals: list[object]) -> list[dict[str, object]]:
+        entry_in = getattr(mt5_module, "DEAL_ENTRY_IN", 0)
+        entry_out = getattr(mt5_module, "DEAL_ENTRY_OUT", 1)
+        entry_inout = getattr(mt5_module, "DEAL_ENTRY_INOUT", 2)
+        buy_type = getattr(mt5_module, "DEAL_TYPE_BUY", 0)
+        sell_type = getattr(mt5_module, "DEAL_TYPE_SELL", 1)
+
+        groups: dict[int, list[object]] = {}
+        for deal in deals:
+            symbol = str(getattr(deal, "symbol", "") or "")
+            if not symbol:
+                continue
+            deal_type = getattr(deal, "type", None)
+            if deal_type not in {buy_type, sell_type}:
+                continue
+            position_id = int(getattr(deal, "position_id", 0) or getattr(deal, "order", 0) or getattr(deal, "ticket", 0) or 0)
+            if position_id <= 0:
+                continue
+            groups.setdefault(position_id, []).append(deal)
+
+        trades: list[dict[str, object]] = []
+        for position_id, rows in groups.items():
+            ordered = sorted(rows, key=lambda item: int(getattr(item, "time", 0) or 0))
+            entry_deals = [deal for deal in ordered if getattr(deal, "entry", None) == entry_in]
+            exit_deals = [deal for deal in ordered if getattr(deal, "entry", None) in {entry_out, entry_inout}]
+            if not exit_deals:
+                continue
+            entry_deal = entry_deals[0] if entry_deals else ordered[0]
+            exit_deal = exit_deals[-1]
+
+            symbol = str(getattr(exit_deal, "symbol", "") or getattr(entry_deal, "symbol", "") or "")
+            entry_type = getattr(entry_deal, "type", None)
+            side = "buy" if entry_type == buy_type else "sell" if entry_type == sell_type else ""
+            open_time = datetime.fromtimestamp(int(getattr(entry_deal, "time", 0) or 0), tz=timezone.utc)
+            close_time = datetime.fromtimestamp(int(getattr(exit_deal, "time", 0) or 0), tz=timezone.utc)
+            volume = sum(float(getattr(deal, "volume", 0.0) or 0.0) for deal in entry_deals) or float(getattr(exit_deal, "volume", 0.0) or 0.0)
+            profit = sum(float(getattr(deal, "profit", 0.0) or 0.0) for deal in exit_deals)
+            commission = sum(float(getattr(deal, "commission", 0.0) or 0.0) for deal in ordered)
+            swap = sum(float(getattr(deal, "swap", 0.0) or 0.0) for deal in ordered)
+            trades.append({
+                "symbol": self.app_symbol_for_broker_symbol(symbol),
+                "broker_symbol": symbol,
+                "side": side,
+                "opened_at": open_time.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "closed_at": close_time.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                "actual_entry": float(getattr(entry_deal, "price", 0.0) or 0.0),
+                "actual_exit": float(getattr(exit_deal, "price", 0.0) or 0.0),
+                "actual_lot": round(volume, 4),
+                "result_amount": round(profit + commission + swap, 2),
+                "exit_reason": str(getattr(exit_deal, "reason", "") or ""),
+                "mt5_deal_id": int(getattr(exit_deal, "ticket", 0) or 0),
+                "mt5_order_id": int(getattr(exit_deal, "order", 0) or 0),
+                "mt5_position_id": position_id,
+            })
+        return trades

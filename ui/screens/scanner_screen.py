@@ -52,6 +52,8 @@ class ScannerTableModel (QAbstractTableModel ):
     ("macro_score","Vĩ mô (0-30)"),
     ("macro_bias","Thuận vĩ mô"),
     ("risk_reward","R:R"),
+    ("journal_sample_size","Mẫu NK"),
+    ("journal_expectancy_r","Kỳ vọng NK"),
     ("short_reason","Lý do chính"),
     ("detail_action","Chi tiết"),
     ]
@@ -96,7 +98,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"rank","best_score","buy_score","sell_score","macro_score","macro_bias","price_vs_zone","risk_reward","detail_action","final_score","opportunity_score","scanner_group","entry_status","m15_quality","score_gap","direction_bias"}:
+            if key in {"rank","best_score","buy_score","sell_score","macro_score","macro_bias","price_vs_zone","risk_reward","detail_action","final_score","opportunity_score","scanner_group","entry_status","m15_quality","score_gap","direction_bias","journal_sample_size","journal_expectancy_r"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .ForegroundRole :
@@ -106,9 +108,14 @@ class ScannerTableModel (QAbstractTableModel ):
                 return self ._direction_bias_tooltip (value )
             if key =="entry_status":
                 return self ._entry_status_tooltip (value ,row )
+            if key in {"journal_sample_size","journal_expectancy_r"}:
+                feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
+                reasons = feedback.get("reasons", []) if isinstance(feedback, dict) else []
+                return "\n".join(str(item) for item in reasons) if reasons else "Phản hồi từ nhật ký các lệnh đã đóng."
             return str (row .get ("permission_reason")or row .get ("short_reason")or "")
-        # Cot 12 (Ly do chinh): tat text elide de hien thi day du, khong cat "..."
-        if role ==0x010B and index .column ()==18 :
+        # Cot ly do chinh: tat text elide de hien thi day du, khong cat "..."
+        reason_col = next((idx for idx, (col_key, _label) in enumerate(self.COLUMNS) if col_key == "short_reason"), -1)
+        if role ==0x010B and index .column ()==reason_col :
             return Qt .TextElideMode .ElideNone
         return None
 
@@ -154,6 +161,10 @@ class ScannerTableModel (QAbstractTableModel ):
             return self .MACRO_BIAS_TEXT .get (str (value ),str (value or "--"))
         if key =="risk_reward":
             return str (value or "-")
+        if key =="journal_sample_size":
+            return str (int (value ))if isinstance (value ,(int ,float ))else "0"
+        if key =="journal_expectancy_r":
+            return f"{float(value):.2f}R" if isinstance(value, (int, float)) else "--"
         if key =="final_score":
             return str (int (value ))if isinstance (value ,(int ,float ))else "--"
         if key =="opportunity_score":
@@ -223,6 +234,18 @@ class ScannerTableModel (QAbstractTableModel ):
             if val >=15 :
                 return QColor ("#facc15")
             return QColor ("#94a3b8")
+        if key =="journal_expectancy_r":
+            try:
+                val =float (row .get ("journal_expectancy_r"))
+            except (TypeError ,ValueError ):
+                return QColor ("#94a3b8")
+            if val >0 :
+                return QColor ("#5eead4")
+            if val <0 :
+                return QColor ("#fb7185")
+            return QColor ("#94a3b8")
+        if key =="journal_sample_size":
+            return QColor ("#9ca3af")
         if key =="entry_status":
             if self ._has_no_entry_zone (row ):
                 return QColor ("#94a3b8")
@@ -601,7 +624,7 @@ class ScannerScreen (QWidget ):
             return
         selected =self ._selected_symbols ()
         if not self .scan_symbols:
-            self .symbol_summary_label .setText ("Chưa có mã nào được đánh dấu Backtest trong Settings.")
+            self .symbol_summary_label .setText ("Chưa có mã nào được đánh dấu Kiểm thử trong Cài đặt.")
         elif not selected:
             self .symbol_summary_label .setText ("Chưa chọn mã khả dụng để quét.")
         elif len (selected )<=5:
@@ -887,7 +910,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
 
         intro = QLabel(
             "Tất cả các mã trong hệ thống. "
-            "Chỉ những mã đã tick Backtest trong Settings và có trong Market Watch mới chọn được."
+            "Chỉ những mã đã tick Kiểm thử trong Cài đặt và có trong Market Watch mới chọn được."
         )
         intro.setObjectName("HelperText")
         intro.setWordWrap(True)
@@ -925,7 +948,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
             checkbox.setChecked(selectable and symbol in selected_set)
             if not selectable:
                 if not is_backtested:
-                    checkbox.setToolTip("Mã này chưa được đánh dấu Backtest trong Settings.")
+                    checkbox.setToolTip("Mã này chưa được đánh dấu Kiểm thử trong Cài đặt.")
                 elif not in_market_watch:
                     checkbox.setToolTip("Mã này chưa có trong Market Watch của MT5.")
             self.checkboxes[symbol] = checkbox

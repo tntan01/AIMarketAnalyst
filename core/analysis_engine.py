@@ -24,6 +24,7 @@ from core.signal_engine import (
 from core.correlation_check import compute_correlation_adjustment
 from core.final_score_engine import calculate_final_score, safe_score
 from core.decision_engine import make_final_decision
+from core.journal_feedback_engine import build_journal_feedback
 from core.statistical_edge_engine import calculate_evidence_score
 from core.reason_codes import (
     DAILY_LOSS_LIMIT_REACHED,
@@ -149,6 +150,14 @@ def analyze_symbol(
 
     trade_permission = calc_trade_permission(data_quality, risk_score, best_score)
 
+    regime_key = market_regime.get("primary") if isinstance(market_regime, dict) else None
+    journal_feedback = build_journal_feedback(
+        closed_trades or [],
+        symbol=request.symbol,
+        direction=best_side if best_side in {"buy", "sell"} else "",
+        regime=regime_key,
+    ) if best_side in {"buy", "sell"} else {}
+
     decision_action = classify_decision(
         best_score,
         trade_permission["status"],
@@ -177,6 +186,7 @@ def analyze_symbol(
         "weekly_loss_limit_reached": data_quality.get("weekly_loss_limit_reached"),
         "score_gap": direction_bias.get("score_gap"),
         "min_buy_sell_score_gap": direction_bias.get("min_gap", 10),
+        "journal_feedback": journal_feedback,
     }
     account_guard_result = check_account_guard(
         closed_trades=closed_trades or [],
@@ -272,20 +282,19 @@ def analyze_symbol(
     )
     # evidence_score: use real trades if caller provided them, else neutral (use signal_score).
     # execution_quality_score: use caller-provided value if valid, else neutral (use signal_score).
-    if closed_trades and isinstance(closed_trades, list) and len(closed_trades) > 0:
-        regime_key = market_regime.get("primary") if isinstance(market_regime, dict) else None
-        evidence_result = calculate_evidence_score(
-            closed_trades,
-            symbol=request.symbol,
-            direction=best_side,
-            regime=regime_key,
-        )
+    if isinstance(journal_feedback, dict) and journal_feedback.get("evidence"):
+        evidence_result = journal_feedback.get("evidence")
+        evidence_score = evidence_result.get("evidence_score", best_signal_score)
+    elif closed_trades and isinstance(closed_trades, list) and len(closed_trades) > 0:
+        evidence_result = calculate_evidence_score(closed_trades, symbol=request.symbol, direction=best_side, regime=regime_key)
         evidence_score = evidence_result.get("evidence_score", best_signal_score)
     else:
         evidence_result = {"evidence_score": best_signal_score}
         evidence_score = best_signal_score
 
-    eq_score, eq_source = _resolve_execution_quality(execution_quality_score, fallback=best_signal_score)
+    feedback_eq = journal_feedback.get("average_execution_quality") if isinstance(journal_feedback, dict) else None
+    eq_input = execution_quality_score if execution_quality_score is not None else feedback_eq
+    eq_score, eq_source = _resolve_execution_quality(eq_input, fallback=best_signal_score)
     final_score_result = calculate_final_score(
         signal_score=best_signal_score,
         evidence_score=evidence_score,
@@ -333,6 +342,7 @@ def analyze_symbol(
             "decision_engine_decision": decision_engine_result["decision"],
         },
         "trade_gate": gate_result,
+        "journal_feedback": journal_feedback,
         "account_guard": account_guard_result,
         "technical": _public_technical(technical),
         "smc": smc,

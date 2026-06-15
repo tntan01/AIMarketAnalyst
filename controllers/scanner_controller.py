@@ -44,7 +44,7 @@ class ScannerController:
         self.mt5_service = mt5_service or MT5Service()
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
-        self.journal_service = journal_service
+        self.journal_service = journal_service or JournalService()
 
     def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
         thread = QThread()
@@ -343,6 +343,9 @@ class ScannerController:
         if row.get("scanner_group") == "blocked":
             return False
         if str(row.get("trade_permission", "")).strip().lower() == "blocked":
+            return False
+        journal_feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
+        if journal_feedback.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
             return False
 
         if at_cfg is None:
