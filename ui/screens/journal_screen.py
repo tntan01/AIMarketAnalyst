@@ -189,11 +189,17 @@ class JournalScreen(QWidget):
         frame.layout().addLayout(layout)
 
         self.date_from_input = QDateEdit()
+        self.date_from_input.setMinimumWidth(135)
         self.date_from_input.setCalendarPopup(True)
+        self.date_from_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
         self.date_from_input.setDate(QDate.currentDate().addMonths(-1))
+        self.date_from_input.setDisplayFormat("dd/MM/yyyy")
         self.date_to_input = QDateEdit()
+        self.date_to_input.setMinimumWidth(135)
         self.date_to_input.setCalendarPopup(True)
+        self.date_to_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
         self.date_to_input.setDate(QDate.currentDate())
+        self.date_to_input.setDisplayFormat("dd/MM/yyyy")
         self.symbol_input = QComboBox()
         self.decision_input = QComboBox()
         self.decision_input.addItems(["Tất cả", "Sẵn sàng", "Theo dõi", "Chờ", "Đứng ngoài"])
@@ -735,7 +741,7 @@ def permission_value(text: str) -> str | None:
 def format_time(value: str) -> str:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
-        return parsed.strftime("%Y-%m-%d %H:%M")
+        return parsed.strftime("%d/%m/%Y %H:%M:%S")
     except ValueError:
         return value
 

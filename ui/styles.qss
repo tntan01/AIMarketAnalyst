@@ -598,7 +598,8 @@ QLabel#ConditionDetail {
 QLineEdit,
 QDoubleSpinBox,
 QSpinBox,
-QDateEdit {
+QDateEdit,
+QDateTimeEdit {
   background: #111827;
   border: 1px solid #475569;
   border-radius: 6px;
@@ -685,7 +686,8 @@ QProgressBar#AnalysisProgressBar::chunk {
 }
 
 QComboBox::drop-down,
-QDateEdit::drop-down {
+QDateEdit::drop-down,
+QDateTimeEdit::drop-down {
   subcontrol-origin: padding;
   subcontrol-position: top right;
   width: 22px;
@@ -696,13 +698,15 @@ QDateEdit::drop-down {
 }
 
 QComboBox::drop-down:hover,
-QDateEdit::drop-down:hover {
+QDateEdit::drop-down:hover,
+QDateTimeEdit::drop-down:hover {
   background: #172235;
   border-left-color: #64748b;
 }
 
 QComboBox::down-arrow,
-QDateEdit::down-arrow {
+QDateEdit::down-arrow,
+QDateTimeEdit::down-arrow {
   image: url(assets/icons/chevron-down.svg);
   width: 14px;
   height: 14px;
@@ -710,7 +714,8 @@ QDateEdit::down-arrow {
 }
 
 QComboBox::down-arrow:on,
-QDateEdit::down-arrow:on {
+QDateEdit::down-arrow:on,
+QDateTimeEdit::down-arrow:on {
   top: 1px;
 }
 
@@ -720,7 +725,14 @@ QSpinBox::up-button,
 QSpinBox::down-button {
   background: transparent;
   border: none;
+}
+
+QDateEdit#FilterField::up-button,
+QDateEdit#FilterField::down-button {
   width: 0px;
+  height: 0px;
+  border: none;
+  background: transparent;
 }
 
 QComboBox#FilterField,

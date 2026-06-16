@@ -355,7 +355,7 @@ class ScannerScreen (QWidget ):
     # Dynamically resolved from COLUMNS
     SHORT_REASON_COL =12  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
-    TABLE_EXTRA_COLUMN_PADDING ={2 :18 ,3 :18 ,6 :18 ,10 :18 ,15 :22 ,16 :22 ,17 :24 }
+    TABLE_EXTRA_COLUMN_PADDING ={2 :18 ,3 :18 ,6 :18 ,10 :18 ,15 :22 ,16 :22 ,17 :24, 19 :24 }
     TABLE_REASON_HORIZONTAL_PADDING =30
     TABLE_MIN_REASON_WIDTH =150
 

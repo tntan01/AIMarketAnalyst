@@ -36,10 +36,14 @@ class ScannerDetailScreen(QWidget):
             self.stat_value_labels.append(value_label)
             self.stats.addWidget(widget, 0, index)
             self.stats.setColumnStretch(index, 1)
-        root.addLayout(self.stats)
 
         body = QHBoxLayout()
         body.setSpacing(10)
+        
+        left_col = QVBoxLayout()
+        left_col.setSpacing(10)
+        left_col.addLayout(self.stats)
+        
         self.chart = AnalysisChartView()
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("AnalysisChartFrame")
@@ -47,7 +51,10 @@ class ScannerDetailScreen(QWidget):
         chart_layout.setContentsMargins(8, 8, 8, 8)
         chart_layout.setSpacing(0)
         chart_layout.addWidget(self.chart)
-        body.addWidget(self.chart_frame, 7)
+        
+        left_col.addWidget(self.chart_frame, 1)
+        body.addLayout(left_col, 7)
+        
         detail = self._decision_card()
         detail.setMinimumWidth(320)
         detail.setMaximumWidth(520)
@@ -168,11 +175,11 @@ class ScannerDetailScreen(QWidget):
     def _compact_stat(self, title: str, value: str) -> tuple[QFrame, QLabel]:
         frame = QFrame()
         frame.setObjectName("ScannerDetailStat")
-        frame.setMinimumHeight(58)
-        frame.setMaximumHeight(68)
+        frame.setMinimumHeight(32)
+        frame.setMaximumHeight(36)
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(6)
         title_label = QLabel(title)
         title_label.setObjectName("ScannerDetailStatTitle")
         value_label = QLabel(value)

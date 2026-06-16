@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from config.constants import SUPPORTED_SYMBOLS
 from datetime import datetime, timedelta, timezone
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -27,6 +27,131 @@ import requests
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.news_service import NewsService
 from services.settings_service import SettingsService
+
+class MarketWorker(QThread):
+    finished = pyqtSignal(dict)
+    
+    def run(self):
+        data = {}
+        # Try yfinance
+        try:
+            import yfinance as yf
+            tickers = {"DXY": "DX-Y.NYB", "VIX": "^VIX", "US10Y": "^TNX"}
+            for tag, ticker in tickers.items():
+                try:
+                    df = yf.download(ticker, period="5d", interval="1d", progress=False)
+                    if not df.empty and len(df) >= 2:
+                        close_series = df["Close"]
+                        close_val = close_series.iloc[-1]
+                        prev_val = close_series.iloc[-2]
+                        if hasattr(close_val, "iloc"):
+                            close = float(close_val.iloc[0])
+                            prev = float(prev_val.iloc[0])
+                        else:
+                            close = float(close_val)
+                            prev = float(prev_val)
+                        change_pct = (close - prev) / prev * 100 if prev != 0 else 0
+                        data[tag] = (close, change_pct)
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+            
+        if len(data) == 3:
+            self.finished.emit(data)
+            return
+            
+        # Fallback to tradingview
+        tickers = {"DXY": "DX-Y.NYB", "VIX": "^VIX", "US10Y": "^TNX"}
+        import requests
+        for tag, ticker in tickers.items():
+            if tag in data:
+                continue
+            try:
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
+                headers = {"User-Agent": "Mozilla/5.0"}
+                resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code == 429:
+                    import time
+                    time.sleep(2)
+                    resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    json_data = resp.json()
+                    quotes = json_data.get("chart", {}).get("result", [])[0].get("indicators", {}).get("quote", [])
+                    closes = [c for c in quotes[0].get("close", []) if c is not None]
+                    if len(closes) >= 2:
+                        close = closes[-1]
+                        prev = closes[-2]
+                        change_pct = (close - prev) / prev * 100 if prev != 0 else 0
+                        data[tag] = (close, change_pct)
+            except Exception:
+                pass
+                
+        self.finished.emit(data)
+
+class CalendarWorker(QThread):
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, force_refresh):
+        super().__init__()
+        self.force_refresh = force_refresh
+
+    def run(self):
+        try:
+            from services.news_service import NewsService
+            
+            if self.force_refresh:
+                NewsService._calendar_cache.pop("global", None)
+
+            news = NewsService()
+            events = []
+            
+            try:
+                events = news._fetch_forex_factory_json_events()
+            except Exception:
+                pass
+                
+            try:
+                html_events = news._fetch_forex_factory_html_events()
+                if events:
+                    news._merge_actual_from_html(events, html_events)
+                    existing_keys = set()
+                    for ev in events:
+                        existing_keys.add((str(ev.get("time_utc", "")), str(ev.get("currency", "")), str(ev.get("event", ""))))
+                    for hev in html_events:
+                        k = (str(hev.get("time_utc", "")), str(hev.get("currency", "")), str(hev.get("event", "")))
+                        if k not in existing_keys:
+                            events.append(hev)
+                else:
+                    events = html_events
+            except Exception:
+                pass
+                
+            try:
+                cached = news._cached_calendar_events()
+                if cached and events:
+                    existing_keys = set()
+                    for ev in events:
+                        existing_keys.add((str(ev.get("time_utc", "")), str(ev.get("currency", "")), str(ev.get("event", ""))))
+                    for cev in cached:
+                        k = (str(cev.get("time_utc", "")), str(cev.get("currency", "")), str(cev.get("event", "")))
+                        if k not in existing_keys:
+                            events.append(cev)
+                elif cached and not events:
+                    events = cached
+            except Exception:
+                pass
+                
+            try:
+                if events:
+                    news._store_calendar_cache(events)
+            except Exception:
+                pass
+                
+            self.finished.emit(events)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class DashboardScreen(QWidget):
@@ -226,19 +351,23 @@ class DashboardScreen(QWidget):
         refresh_button = getattr(self, "econ_refresh_button", None)
         if refresh_button is not None:
             refresh_button.setEnabled(False)
-            refresh_button.setText("\u0110ang t\u1ea3i...")
+            refresh_button.setText("Đang tải...")
             QApplication.processEvents()
 
-        try:
-            self._refresh_economic_calendar(force_refresh=force_refresh)
-        finally:
-            if refresh_button is not None:
-                refresh_button.setText("🔄 Làm mới")
-                refresh_button.setEnabled(True)
+        self.calendar_worker = CalendarWorker(force_refresh)
+        self.calendar_worker.finished.connect(self._on_calendar_data_ready)
+        self.calendar_worker.error.connect(lambda e: self._show_empty_events(f"Lỗi: {e}"))
+        self.calendar_worker.finished.connect(lambda: self._reset_calendar_button(refresh_button))
+        self.calendar_worker.error.connect(lambda: self._reset_calendar_button(refresh_button))
+        self.calendar_worker.start()
 
-    def _refresh_economic_calendar(self, *, force_refresh: bool = False) -> None:
+    def _reset_calendar_button(self, refresh_button):
+        if refresh_button is not None:
+            refresh_button.setText("🔄 Làm mới")
+            refresh_button.setEnabled(True)
+
+    def _on_calendar_data_ready(self, events: list) -> None:
         from zoneinfo import ZoneInfo
-
         table = self.econ_table
         table.setRowCount(0)
 
@@ -254,75 +383,11 @@ class DashboardScreen(QWidget):
             except Exception:
                 tz = ZoneInfo("Asia/Ho_Chi_Minh")
 
-            if force_refresh:
-                NewsService._calendar_cache.pop("global", None)
-
-            news = NewsService()
-            # Merge JSON + HTML + Cache to get full picture (past + upcoming events)
-            events: list[dict] = []
-            try:
-                json_events = news._fetch_forex_factory_json_events()
-                events = json_events
-            except Exception:
-                pass
-
-            try:
-                html_events = news._fetch_forex_factory_html_events()
-                if events:
-                    news._merge_actual_from_html(events, html_events)
-                    existing_keys = set()
-                    for ev in events:
-                        t = str(ev.get("time_utc", ""))
-                        c = str(ev.get("currency", ""))
-                        e = str(ev.get("event", ""))
-                        existing_keys.add((t, c, e))
-                    for hev in html_events:
-                        t = str(hev.get("time_utc", ""))
-                        c = str(hev.get("currency", ""))
-                        e = str(hev.get("event", ""))
-                        if (t, c, e) not in existing_keys:
-                            events.append(hev)
-                else:
-                    events = html_events
-            except Exception:
-                pass
-
-            # Merge cached events: cache stores events from earlier fetches,
-            # capturing past-today events that are no longer in live feeds.
-            try:
-                cached = news._cached_calendar_events()
-                if cached and events:
-                    existing_keys = set()
-                    for ev in events:
-                        t = str(ev.get("time_utc", ""))
-                        c = str(ev.get("currency", ""))
-                        e = str(ev.get("event", ""))
-                        existing_keys.add((t, c, e))
-                    for cev in cached:
-                        t = str(cev.get("time_utc", ""))
-                        c = str(cev.get("currency", ""))
-                        e = str(cev.get("event", ""))
-                        if (t, c, e) not in existing_keys:
-                            events.append(cev)
-                elif cached and not events:
-                    events = cached
-            except Exception:
-                pass
-
             if not events:
                 self._show_empty_events("Chưa có dữ liệu lịch kinh tế. Kiểm tra kết nối mạng.")
                 return
 
-            # Store merged events to cache so future refreshes can show past events
-            try:
-                news._store_calendar_cache(events)
-            except Exception:
-                pass
-
             now = datetime.now(timezone.utc)
-            # Calculate today_start in user's timezone, then convert to UTC
-            # Example: 06:50 VN Jun 12 = 23:50 UTC Jun 11.
-            # Using UTC midnight would incorrectly treat this as "yesterday".
             now_local = datetime.now(tz)
             today_start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
             today_start = today_start_local.astimezone(timezone.utc)
@@ -348,15 +413,12 @@ class DashboardScreen(QWidget):
                 self._show_empty_events("Không có sự kiện kinh tế nào hôm nay và ngày mai.")
                 return
 
-            # Find nearest upcoming event index
             nearest_upcoming_idx = None
             for i, (ev_time, _) in enumerate(upcoming):
                 if ev_time >= now:
                     nearest_upcoming_idx = i
                     break
 
-            # Insert a separator row between past and upcoming events
-            # First pass: build rows with separator markers
             display_rows: list[dict] = []
             for i, (ev_time, ev) in enumerate(upcoming):
                 is_past = ev_time < now
@@ -369,14 +431,12 @@ class DashboardScreen(QWidget):
                     "is_separator": False,
                 })
 
-            # Find the split point (first future event)
             split_idx = None
             for idx, dr in enumerate(display_rows):
                 if not dr["is_past"]:
                     split_idx = idx
                     break
 
-            # Insert separator right before first future event
             if split_idx is not None and split_idx > 0:
                 display_rows.insert(split_idx, {
                     "ev_time": None,
@@ -391,7 +451,6 @@ class DashboardScreen(QWidget):
             table.setRowCount(len(display_rows))
             for i, dr in enumerate(display_rows):
                 if dr["is_separator"]:
-                    # Separator row showing "↑ Đã qua | Sắp tới ↓"
                     sep_item = QTableWidgetItem("─── Đã qua ▲  |  ▼ Sắp tới ───")
                     sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     sep_item.setForeground(QColor("#ffaa00"))
@@ -399,7 +458,6 @@ class DashboardScreen(QWidget):
                     f.setBold(True)
                     sep_item.setFont(f)
                     table.setItem(i, 0, sep_item)
-                    # Span across all 6 columns
                     table.setSpan(i, 0, 1, 6)
                     table.setRowHeight(i, 28)
                     continue
@@ -418,11 +476,9 @@ class DashboardScreen(QWidget):
 
                 dot = impact_dots.get(impact, "⚪")
 
-                # Safety: clear actual for future events (should never have actual, but guard against data issues)
                 if not is_past and actual:
                     actual = ""
 
-                # --- Cột 0: Thời gian ---
                 time_text = local_time.strftime("%d/%m %H:%M")
                 time_item = QTableWidgetItem(time_text)
                 time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -438,7 +494,6 @@ class DashboardScreen(QWidget):
                 time_item.setFont(font)
                 table.setItem(i, 0, time_item)
 
-                # --- Cột 1: Sự kiện ---
                 if is_nearest:
                     ev_text = f"▶ {dot} {currency}: {event_name}  ← Sắp tới"
                     ev_color = QColor("#4caf50")
@@ -462,7 +517,6 @@ class DashboardScreen(QWidget):
                     ev_item.setFont(f)
                 table.setItem(i, 1, ev_item)
 
-                # --- Cột 2: Dự báo ---
                 fc_item = QTableWidgetItem(forecast if forecast else "—")
                 fc_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_nearest:
@@ -476,7 +530,6 @@ class DashboardScreen(QWidget):
                     fc_item.setForeground(QColor("#e5e7eb"))
                 table.setItem(i, 2, fc_item)
 
-                # --- Cột 3: Kỳ trước ---
                 pv_item = QTableWidgetItem(previous if previous else "—")
                 pv_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_nearest:
@@ -490,7 +543,6 @@ class DashboardScreen(QWidget):
                     pv_item.setForeground(QColor("#e5e7eb"))
                 table.setItem(i, 3, pv_item)
 
-                # --- Cột 4: Kết quả ---
                 if actual:
                     act_item = QTableWidgetItem(actual)
                     act_color = QColor("#4caf50")
@@ -511,7 +563,6 @@ class DashboardScreen(QWidget):
                     act_item.setFont(f)
                 table.setItem(i, 4, act_item)
 
-                # --- Cột 5: Link chi tiết ---
                 link_color = "#4caf50" if is_nearest else "#60a5fa"
                 link_hover = "#66bb6a" if is_nearest else "#93c5fd"
                 detail_btn = QPushButton("Xem")
@@ -527,11 +578,10 @@ class DashboardScreen(QWidget):
                 detail_btn.clicked.connect(lambda checked, ev=ev, ev_time=ev_time, tz=tz: self._show_event_detail(ev, ev_time, tz))
                 table.setCellWidget(i, 5, detail_btn)
 
-                # Row height
                 table.setRowHeight(i, 32)
 
         except Exception:
-            self._show_empty_events("Không thể tải lịch kinh tế (lỗi kết nối).")
+            self._show_empty_events("Không thể tải lịch kinh tế (lỗi xử lý giao diện).")
 
     def _show_empty_events(self, message: str) -> None:
         table = self.econ_table
@@ -730,80 +780,26 @@ class DashboardScreen(QWidget):
             btn.setEnabled(True)
 
     def _refresh_market_overview(self) -> None:
-        """Lấy DXY/VIX/US10Y: thử yfinance trước, tradingview backup."""
-        if self._try_market_from_yfinance():
-            return
-        if self._try_market_from_tradingview():
-            return
-        self.dxy_label.setText("DXY: Không có dữ liệu")
-        self.vix_label.setText("VIX: Không có dữ liệu")
-        self.us10y_label.setText("US10Y: Không có dữ liệu")
+        """Fetch market overview data using MarketWorker to avoid freezing UI."""
+        self.market_worker = MarketWorker()
+        self.market_worker.finished.connect(self._on_market_data_ready)
+        self.market_worker.start()
 
-    def _try_market_from_yfinance(self) -> bool:
-        try:
-            import yfinance as yf
-        except ImportError:
-            return False
-        tickers = {"DXY": "DX-Y.NYB", "VIX": "^VIX", "US10Y": "^TNX"}
-        any_success = False
-        for tag, ticker in tickers.items():
-            label = getattr(self, f"{tag.lower()}_label")
-            try:
-                data = yf.download(ticker, period="5d", interval="1d", progress=False)
-                if data.empty or len(data) < 2:
-                    label.setText(f"{tag}: Chờ dữ liệu...")
-                    continue
-                close_series = data["Close"]
-                close_val = close_series.iloc[-1]
-                prev_val = close_series.iloc[-2]
-                if hasattr(close_val, "iloc"):
-                    close = float(close_val.iloc[0])
-                    prev = float(prev_val.iloc[0])
-                else:
-                    close = float(close_val)
-                    prev = float(prev_val)
-                change_pct = (close - prev) / prev * 100 if prev != 0 else 0
-                self._format_market_label(tag, close, change_pct, label)
-                any_success = True
-            except Exception:
-                label.setText(f"{tag}: Chờ dữ liệu...")
-        return any_success
-
-    def _try_market_from_tradingview(self) -> bool:
-        """Fallback: Yahoo Finance v8 chart API."""
-        tickers = {"DXY": "DX-Y.NYB", "VIX": "^VIX", "US10Y": "^TNX"}
-        any_success = False
-        for tag, ticker in tickers.items():
-            label = getattr(self, f"{tag.lower()}_label")
-            try:
-                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
-                headers = {"User-Agent": "Mozilla/5.0"}
-                resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code == 429:
-                    import time
-                    time.sleep(2)
-                    resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code != 200:
-                    raise Exception(f"HTTP {resp.status_code}")
-                data = resp.json()
-                result = data.get("chart", {}).get("result", [])
-                if not result:
-                    raise Exception("no chart result")
-                quotes = result[0].get("indicators", {}).get("quote", [])
-                if not quotes:
-                    raise Exception("no quote data")
-                closes = quotes[0].get("close", [])
-                closes = [c for c in closes if c is not None]
-                if len(closes) < 2:
-                    raise Exception("not enough close prices")
-                close = closes[-1]
-                prev = closes[-2]
-                change_pct = (close - prev) / prev * 100 if prev != 0 else 0
-                self._format_market_label(tag, close, change_pct, label)
-                any_success = True
-            except Exception:
-                continue
-        return any_success
+    def _on_market_data_ready(self, data: dict) -> None:
+        if "DXY" in data:
+            self._format_market_label("DXY", data["DXY"][0], data["DXY"][1], self.dxy_label)
+        else:
+            self.dxy_label.setText("DXY: Không có dữ liệu")
+            
+        if "VIX" in data:
+            self._format_market_label("VIX", data["VIX"][0], data["VIX"][1], self.vix_label)
+        else:
+            self.vix_label.setText("VIX: Không có dữ liệu")
+            
+        if "US10Y" in data:
+            self._format_market_label("US10Y", data["US10Y"][0], data["US10Y"][1], self.us10y_label)
+        else:
+            self.us10y_label.setText("US10Y: Không có dữ liệu")
 
     def _format_market_label(self, tag: str, close: float, change_pct: float, label: QLabel) -> None:
         arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else ""
