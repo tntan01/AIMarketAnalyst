@@ -26,7 +26,9 @@ Decision states
 
 Public API
 ----------
-* ``make_decision(final_score, gate_result, entry_status)`` — primary entry.
+* ``make_final_decision(final_score, gate_result, entry_status)`` — primary entry.
+* ``make_decision(final_score_result, gate_result, entry_status)`` — compatibility
+  wrapper that delegates to ``make_final_decision``.
 * ``default_decision_result()`` — safe fallback.
 """
 
@@ -283,170 +285,19 @@ def make_decision(
     dict
         Standardised decision result.  Never raises.
     """
-    # ---------------------------------------------------------------
-    # Safety — default on missing inputs
-    # ---------------------------------------------------------------
     if not isinstance(final_score_result, dict):
         return default_decision_result("missing_final_score_result")
     if not isinstance(gate_result, dict):
         return default_decision_result("missing_gate_result")
 
-    t = thresholds or DEFAULT_DECISION_THRESHOLDS
-    final_score = int(final_score_result.get("final_score", 0))
-    gate_allowed = bool(gate_result.get("allowed", False))
-    decision_cap = gate_result.get("decision_cap")  # "TRADE_BLOCKED", "WATCH_ONLY", ...
-
-    reason_codes: list[str] = []
-    warning_codes: list[str] = []
-    block_codes: list[str] = []
-
-    # ---------------------------------------------------------------
-    # Gate layer — absolute priority
-    # ---------------------------------------------------------------
-    if not gate_allowed or decision_cap == "TRADE_BLOCKED":
-        for code in (gate_result.get("block_codes") or []):
-            block_codes.append(str(code))
-        for code in (gate_result.get("warning_codes") or []):
-            warning_codes.append(str(code))
-        return {
-            "decision": TRADE_BLOCKED,
-            "final_score": final_score,
-            "decision_label": DECISION_LABELS[TRADE_BLOCKED],
-            "reason_codes": [DECISION_TRADE_BLOCKED],
-            "warning_codes": warning_codes,
-            "block_codes": block_codes,
-            "decision_cap": decision_cap,
-            "allowed": False,
-            "score_breakdown": {},
-            "reason": "Gate blocked the trade.",
-        }
-
-    if decision_cap == "WATCH_ONLY":
-        return {
-            "decision": WATCH_ONLY,
-            "final_score": final_score,
-            "decision_label": DECISION_LABELS[WATCH_ONLY],
-            "reason_codes": [DECISION_WATCH_ONLY],
-            "warning_codes": [str(c) for c in (gate_result.get("warning_codes") or [])],
-            "block_codes": [],
-            "decision_cap": decision_cap,
-            "allowed": True,
-            "score_breakdown": {"capped_by": "gate", "cap": "WATCH_ONLY"},
-            "reason": "Gate capped decision to WATCH_ONLY.",
-        }
-
-    # ---------------------------------------------------------------
-    # Entry status layer
-    # ---------------------------------------------------------------
-    if entry_status == "confirmed_entry":
-        if final_score >= t.get("ready", 80):
-            reason_codes.append(DECISION_READY_TO_TRADE)
-            return {
-                "decision": READY_TO_TRADE,
-                "final_score": final_score,
-                "decision_label": DECISION_LABELS[READY_TO_TRADE],
-                "reason_codes": reason_codes,
-                "warning_codes": warning_codes,
-                "block_codes": block_codes,
-                "decision_cap": decision_cap,
-                "allowed": True,
-                "score_breakdown": {},
-                "reason": "Setup confirmed, gate passed, score sufficient.",
-            }
-        if final_score >= t.get("watch", 65):
-            reason_codes.append(DECISION_WAITING_CONFIRMATION)
-            return {
-                "decision": WAITING_CONFIRMATION,
-                "final_score": final_score,
-                "decision_label": DECISION_LABELS[WAITING_CONFIRMATION],
-                "reason_codes": reason_codes,
-                "warning_codes": warning_codes,
-                "block_codes": block_codes,
-                "decision_cap": decision_cap,
-                "allowed": True,
-                "score_breakdown": {"reason": "confirmed_entry but score below ready threshold"},
-                "reason": "Entry confirmed but score not high enough for READY.",
-            }
-
-    # ---------------------------------------------------------------
-    # Score-based classification (entry not yet confirmed)
-    # ---------------------------------------------------------------
-    if final_score >= t.get("ready", 80):
-        # Aggressive — score is high but entry confirmation is missing
-        if final_score >= 85:
-            reason_codes.append(DECISION_AGGRESSIVE_SETUP)
-            return {
-                "decision": AGGRESSIVE_SETUP,
-                "final_score": final_score,
-                "decision_label": DECISION_LABELS[AGGRESSIVE_SETUP],
-                "reason_codes": reason_codes,
-                "warning_codes": warning_codes,
-                "block_codes": block_codes,
-                "decision_cap": decision_cap,
-                "allowed": True,
-                "score_breakdown": {"reason": "High score but no confirmed entry"},
-                "reason": "Score is high but entry not yet confirmed.",
-            }
-        reason_codes.append(DECISION_WAITING_CONFIRMATION)
-        return {
-            "decision": WAITING_CONFIRMATION,
-            "final_score": final_score,
-            "decision_label": DECISION_LABELS[WAITING_CONFIRMATION],
-            "reason_codes": reason_codes,
-            "warning_codes": warning_codes,
-            "block_codes": block_codes,
-            "decision_cap": decision_cap,
-            "allowed": True,
-            "score_breakdown": {},
-            "reason": "Waiting for entry confirmation / M15 signal.",
-        }
-
-    if final_score >= t.get("watch", 65):
-        reason_codes.append(DECISION_WATCH_ONLY)
-        return {
-            "decision": WATCH_ONLY,
-            "final_score": final_score,
-            "decision_label": DECISION_LABELS[WATCH_ONLY],
-            "reason_codes": reason_codes,
-            "warning_codes": warning_codes,
-            "block_codes": block_codes,
-            "decision_cap": decision_cap,
-            "allowed": True,
-            "score_breakdown": {},
-            "reason": "Score in watch range.",
-        }
-
-    if final_score >= t.get("wait", 50):
-        reason_codes.append(DECISION_WAITING_CONFIRMATION)
-        return {
-            "decision": WAITING_CONFIRMATION,
-            "final_score": final_score,
-            "decision_label": DECISION_LABELS[WAITING_CONFIRMATION],
-            "reason_codes": reason_codes,
-            "warning_codes": warning_codes,
-            "block_codes": block_codes,
-            "decision_cap": decision_cap,
-            "allowed": True,
-            "score_breakdown": {},
-            "reason": "Score below watch threshold, waiting for better conditions.",
-        }
-
-    # ---------------------------------------------------------------
-    # Below all thresholds
-    # ---------------------------------------------------------------
-    reason_codes.append(DECISION_STAND_ASIDE)
-    return {
-        "decision": STAND_ASIDE,
-        "final_score": final_score,
-        "decision_label": DECISION_LABELS[STAND_ASIDE],
-        "reason_codes": reason_codes,
-        "warning_codes": warning_codes,
-        "block_codes": block_codes,
-        "decision_cap": decision_cap,
-        "allowed": True,
-        "score_breakdown": {},
-        "reason": "Score too low for any action.",
-    }
+    # Compatibility wrapper: keep the old import surface while ensuring
+    # make_final_decision remains the single authoritative decision path.
+    return make_final_decision(
+        final_score=final_score_result.get("final_score", 0),
+        gate_result=gate_result,
+        entry_status=entry_status,
+        thresholds=thresholds,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +480,7 @@ def make_final_decision(
                 "decision": WATCH_ONLY,
                 "final_score": score,
                 "decision_label": _label_for(WATCH_ONLY),
-            "legacy_action": decision_to_legacy_action(WATCH_ONLY),
+                "legacy_action": decision_to_legacy_action(WATCH_ONLY),
                 "reason_codes": [DECISION_WATCH_ONLY],
                 "warning_codes": merge_unique_codes(warning_codes),
                 "block_codes": merge_unique_codes(block_codes),
@@ -643,7 +494,7 @@ def make_final_decision(
                 "decision": STAND_ASIDE,
                 "final_score": score,
                 "decision_label": _label_for(STAND_ASIDE),
-            "legacy_action": decision_to_legacy_action(STAND_ASIDE),
+                "legacy_action": decision_to_legacy_action(STAND_ASIDE),
                 "reason_codes": [DECISION_STAND_ASIDE],
                 "warning_codes": merge_unique_codes(warning_codes),
                 "block_codes": merge_unique_codes(block_codes),
@@ -721,7 +572,7 @@ def make_final_decision(
         "decision": STAND_ASIDE,
         "final_score": score,
         "decision_label": _label_for(STAND_ASIDE),
-            "legacy_action": decision_to_legacy_action(STAND_ASIDE),
+        "legacy_action": decision_to_legacy_action(STAND_ASIDE),
         "reason_codes": merge_unique_codes(reason_codes),
         "warning_codes": merge_unique_codes(warning_codes),
         "block_codes": merge_unique_codes(block_codes),

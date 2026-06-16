@@ -159,7 +159,6 @@ class ScannerController:
                     closed_trades=closed_trades,
                     open_trades=[],
                     account_guard_settings=account_guard_settings,
-                    use_decision_engine_action=True,
                 )
                 result["economic_events"] = macro_context.get("events", [])
                 result["macro"]["driver_context"] = macro_context
@@ -228,7 +227,7 @@ class ScannerController:
             score = 0
         if score >= threshold:
             return row
-        row["scanner_action"] = "skip"
+        row["scanner_action"] = "stand_aside"
         row["trade_permission"] = "blocked"
         row["scanner_group"] = "blocked"
         row["scanner_decision"] = "TRADE_BLOCKED"

@@ -14,7 +14,7 @@ from core.scanner_ranking_engine import (
 )
 
 
-ACTION_PRIORITY = {"ready": 0, "watch": 1, "wait": 2, "skip": 3}
+ACTION_PRIORITY = {"ready": 0, "watch": 1, "wait_for_confirmation": 2, "wait": 2, "stand_aside": 3, "skip": 3}
 PERMISSION_PRIORITY = {"allowed": 0, "caution": 1, "blocked": 2}
 GROUP_PRIORITY_NEW = {
     READY_NOW: 0,
@@ -37,21 +37,6 @@ class ScannerRequest:
     # Each entry: {"regime": "range", "side": "buy", "min_rr": 2.0}
 
 
-def classify_scanner_action(
-    *,
-    best_score: int,
-    permission: str,
-    has_trade_plan: bool,
-    price_in_entry_zone: bool = False,
-    h1_confirmation: bool = False,
-) -> str:
-    if permission == "blocked" or best_score < 60:
-        return "skip"
-    if best_score >= 80 and permission == "allowed" and has_trade_plan and (price_in_entry_zone or h1_confirmation):
-        return "ready"
-    if best_score >= 75 and permission != "blocked":
-        return "watch"
-    return "wait"
 
 
 def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | None = None) -> dict[str, Any]:
@@ -70,19 +55,18 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         best_plan.get("entry_zone") if best_plan else None,
         technical.get("atr_h4") or technical.get("atr_d1") or 0.0,
     )
-    ready_to_trade = bool(best_plan and best_plan.get("ready_to_trade"))
-    action = classify_scanner_action(
-        best_score=best_score,
-        permission=permission,
-        has_trade_plan=ready_to_trade,
-        price_in_entry_zone=bool(best_plan and best_plan.get("price_in_entry_zone")),
-        h1_confirmation=bool(best_plan and best_plan.get("h1_confirmation")),
-    )
+    # Decision engine result — single source of truth for action (CT-2).
+    decision_engine = result.get("decision_engine", {})
+    if not isinstance(decision_engine, dict):
+        decision_engine = {}
+
+    # Action from decision engine (CT-2) — the single source of truth.
+    action = str(decision_engine.get("legacy_action") or "stand_aside")
 
     # Backtest-proven override: range + buy + R:R>=2.0 + score>=50
-    # should never be "skip", even if classify_scanner_action says so.
+    # should never be "stand_aside", even if the decision engine says so.
     regime_label = result.get("market_regime", {}).get("primary", "")
-    if action == "skip" and best_score >= 50 and regime_label == "range":
+    if action == "stand_aside" and best_score >= 50 and regime_label == "range":
         buy_scenario = next((s for s in scenarios if s.get("type") == "buy"), None)
         if buy_scenario:
             buy_rr = _parse_rr_float(buy_scenario.get("expected_effective_rr"))
@@ -97,9 +81,6 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     macro_bias = _classify_macro_bias(result, best_side)
 
     # ---- Phase 15: new ranking metadata ----
-    decision_engine = result.get("decision_engine", {})
-    if not isinstance(decision_engine, dict):
-        decision_engine = {}
     row_final_score = result.get("final_score", best_score)
     journal_feedback = result.get("journal_feedback", {})
     m15_quality = best_plan.get("m15_quality") if best_plan else None
@@ -162,7 +143,7 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
         "sell_score": 0,
         "best_side": "stand_aside",
         "best_score": 0,
-        "scanner_action": "skip",
+        "scanner_action": "stand_aside",
         "entry_status": "data_unavailable",
         "price_vs_zone": "unknown",
         "risk_reward": None,
@@ -255,9 +236,9 @@ def ai_targets(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
 def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     # Legacy counts (unchanged)
     ready_count = sum(1 for row in rows if row.get("scanner_action") == "ready")
-    watch_count = sum(1 for row in rows if row.get("scanner_action") == "watch")
-    wait_count = sum(1 for row in rows if row.get("scanner_action") == "wait")
-    skip_count = sum(1 for row in rows if row.get("scanner_action") == "skip")
+    watch_count = sum(1 for row in rows if row.get("scanner_action") in ("watch",))
+    wait_count = sum(1 for row in rows if row.get("scanner_action") in ("wait", "wait_for_confirmation"))
+    skip_count = sum(1 for row in rows if row.get("scanner_action") in ("skip", "stand_aside"))
 
     # Phase 15: group-based counts
     ready_now = 0
@@ -279,7 +260,7 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 group = WAITING_CONFIRMATION
             elif action == "watch":
                 group = WATCH_ZONE
-            elif action == "skip":
+            elif action in ("skip", "stand_aside"):
                 group = BLOCKED
             else:
                 group = WATCH_ZONE

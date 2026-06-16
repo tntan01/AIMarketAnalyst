@@ -586,24 +586,24 @@ Dưới đây là đánh giá chi tiết về việc mục nào nên làm, mục
 1. Nhóm sửa lỗi kỹ thuật (GĐ1 - L-1, L-2, L-3)
 
 OK - L-2 (mt5.shutdown() bị thiếu): Đây là lỗi nghiêm trọng nhất. Thư viện MetaTrader5 dùng cơ chế IPC (Inter-Process Communication) ngầm. Việc gọi initialize() liên tục mà không shutdown() sẽ rò rỉ bộ nhớ (memory leak) và chắc chắn làm crash terminal MT5 khi chạy auto-scan thời gian dài.
-L-3 (SQLite WAL mode + Timeout): Việc thiếu timeout và chế độ WAL trong journal_service.py sẽ làm ứng dụng bị văng (crash) với lỗi database is locked ngay khi luồng background scanner và UI cùng cố gắng ghi log.
-L-1 (Trùng key legacy_action): Tuy hiện tại không gây crash do dict tự ghi đè, nhưng đây là "bom nổ chậm" nếu sau này cần đổi logic. Sửa chỉ mất 1 phút.
+OK - L-3 (SQLite WAL mode + Timeout): Việc thiếu timeout và chế độ WAL trong journal_service.py sẽ làm ứng dụng bị văng (crash) với lỗi database is locked ngay khi luồng background scanner và UI cùng cố gắng ghi log.
+OK - L-1 (Trùng key legacy_action): Tuy hiện tại không gây crash do dict tự ghi đè, nhưng đây là "bom nổ chậm" nếu sau này cần đổi logic. Sửa chỉ mất 1 phút.
 2. Nhóm bảo vệ hệ thống (GĐ2 - L-4, L-5, SD-4)
 
-L-4 (Dọn dẹp ThreadPoolExecutor): Chắc chắn phải làm. ThreadPool không được quản lý sẽ tạo ra "zombie threads", tiếp tục ngầm gọi MT5 ngay cả khi user đã huỷ backtest.
-L-5 (Migration SQL an toàn): Việc thêm PRAGMA table_info trước khi ADD COLUMN là bắt buộc đối với SQLite để tránh crash app khi cập nhật phiên bản.
-SD-4 (Dọn 12 file script tạm): Rất nên làm. Gom toàn bộ vào thư mục scripts/ui_migrations/ để root directory sạch sẽ.
+OK - L-4 (Dọn dẹp ThreadPoolExecutor): Chắc chắn phải làm. ThreadPool không được quản lý sẽ tạo ra "zombie threads", tiếp tục ngầm gọi MT5 ngay cả khi user đã huỷ backtest.
+OK - L-5 (Migration SQL an toàn): Việc thêm PRAGMA table_info trước khi ADD COLUMN là bắt buộc đối với SQLite để tránh crash app khi cập nhật phiên bản.
+OK - SD-4 (Dọn 12 file script tạm): Rất nên làm. Gom toàn bộ vào thư mục scripts/ui_migrations/ để root directory sạch sẽ.
 3. Nhóm Tests (CT-5) - Cần đẩy mức độ ưu tiên lên cao nhất
 
-Báo cáo xếp CT-5 (Integration test cho scanner pipeline) vào Giai đoạn 3 là hơi muộn. Bạn BẮT BUỘC phải viết integration test cho analyze_symbol() trước khi tiến hành tách file (CT-1) để tránh lỗi hồi quy (regression bugs).
+OK - Báo cáo xếp CT-5 (Integration test cho scanner pipeline) vào Giai đoạn 3 là hơi muộn. Bạn BẮT BUỘC phải viết integration test cho analyze_symbol() trước khi tiến hành tách file (CT-1) để tránh lỗi hồi quy (regression bugs).
 🟡 Những mục NÊN LÀM (Nhưng cần làm cẩn thận)
-1. Tách analyze_symbol (CT-1)
+OK - 1. Tách analyze_symbol (CT-1)
 
 Hàm này đang dài >350 dòng và ôm đồm quá nhiều việc (God Object). Việc tách thành AnalysisPipeline là đúng đắn. Tuy nhiên, rủi ro làm hỏng logic hiện tại rất cao. Chỉ làm sau khi đã xong mục test (CT-5).
-2. Loại bỏ hệ thống decision cũ (CT-2)
+OK - 2. Loại bỏ hệ thống decision cũ (CT-2)
 
 Nên làm để code đồng nhất. Tuy nhiên, cần rà soát kỹ các file UI (Dashboard, Scanner Screen) vì chúng có thể đang bind trực tiếp vào các chuỗi cũ như ready, watch.
-3. Dependency Injection (CT-4)
+OK - 3. Dependency Injection (CT-4)
 
 Rất tốt cho kiến trúc, giúp chỉ khởi tạo MT5Service một lần. Nên làm.
 🔴 Những mục KHÔNG NÊN LÀM (Hoặc cần xem xét lại mức độ khả thi)

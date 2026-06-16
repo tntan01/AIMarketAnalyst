@@ -29,10 +29,13 @@ from ui.screens.shared import action_button, card, labeled_value, page_header
 
 
 class JournalDetailScreen(QWidget):
-    def __init__(self, navigate=None) -> None:
+    def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
         self.navigate = navigate
-        self.journal_controller = JournalController()
+        self.app = app
+        self.journal_controller = (
+            app.journal_controller if app else JournalController()
+        )
         self.entry: JournalEntry | None = None
         self.setObjectName("FormScreen")
         self._build_ui()

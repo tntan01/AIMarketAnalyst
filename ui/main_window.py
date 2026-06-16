@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from controllers.app_controller import AppController
 from ui.navigation import NAV_ITEMS
 from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.dashboard_screen import DashboardScreen
@@ -26,8 +27,9 @@ from ui.screens.settings_screen import SettingsScreen
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, app: AppController | None = None) -> None:
         super().__init__()
+        self.app = app or AppController()
         self.setWindowTitle("AI Market Analyst")
         self.resize(1280, 800)
         self.setMinimumSize(1024, 700)
@@ -101,7 +103,7 @@ class MainWindow(QMainWindow):
             "settings": SettingsScreen,
         }
         for route, factory in screen_factories.items():
-            screen = factory(self.navigate)
+            screen = factory(self.navigate, app=self.app)
             self.screens[route] = screen
             self.stack.addWidget(screen)
 

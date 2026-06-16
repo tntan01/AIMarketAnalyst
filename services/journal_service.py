@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -9,6 +10,10 @@ from typing import Any
 
 from config.paths import PROJECT_ROOT, journal_db_path
 from core.safe_types import optional_float
+
+
+SQLITE_TIMEOUT_SECONDS = 15
+SQLITE_BUSY_TIMEOUT_MS = SQLITE_TIMEOUT_SECONDS * 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,12 +105,55 @@ class JournalService:
                 version = migration.stem
                 if version in applied:
                     continue
-                conn.executescript(migration.read_text(encoding="utf-8"))
+                self._safe_execute_migration(conn, migration.read_text(encoding="utf-8"))
                 conn.execute(
                     "INSERT INTO schema_migrations (version, applied_at_utc) VALUES (?, ?)",
                     (version, utc_now()),
                 )
             conn.commit()
+
+    def _safe_execute_migration(self, conn: sqlite3.Connection, sql: str) -> None:
+        """Execute migration SQL, skipping ALTER TABLE ADD COLUMN for columns that already exist.
+
+        SQLite does not support IF NOT EXISTS for ADD COLUMN.  If a migration
+        is re-run on a database that already has the column (e.g. after a
+        backup restore or partial migration), the ALTER TABLE would fail with
+        a "duplicate column" error.  We guard against that by inspecting
+        PRAGMA table_info before each ADD COLUMN statement.
+        """
+        # Strip -- style comments so they don't interfere with statement
+        # splitting (comments have no trailing ; and would otherwise merge
+        # with the following ALTER TABLE, defeating the regex).
+        lines = [line for line in sql.split("\n") if not line.strip().startswith("--")]
+        clean_sql = "\n".join(lines)
+
+        existing_columns: set[str] = set()
+        _table_info_fetched = False
+
+        statements = [s.strip() for s in clean_sql.split(";") if s.strip()]
+
+        for stmt in statements:
+            match = re.match(
+                r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)",
+                stmt,
+                re.IGNORECASE,
+            )
+            if match:
+                table_name = match.group(1)
+                column_name = match.group(2)
+
+                if not _table_info_fetched:
+                    rows = conn.execute(
+                        f"PRAGMA table_info({table_name})"
+                    ).fetchall()
+                    existing_columns = {row[1] for row in rows}
+                    _table_info_fetched = True
+
+                if column_name in existing_columns:
+                    continue  # already present — skip safely
+                existing_columns.add(column_name)  # track for later statements in same script
+
+            conn.execute(stmt)
 
     def create_from_analysis(self, analysis: dict[str, Any], *, mode: str = "scanner_detail", note: str = "") -> int:
         entry = journal_entry_from_analysis(analysis, mode=mode, note=note)
@@ -489,9 +537,10 @@ class JournalService:
             )
             trade["auto_mistake_tags"] = tags_from_json(
                 row["auto_mistake_tags"] if "auto_mistake_tags" in row.keys() else None
-                summary["errors"].append(str(exc))
-        summary["synced_entry_ids"] = synced_ids
-        return summary
+            )
+
+            trades.append(trade)
+        return trades
 
     def _find_mt5_sync_entry(self, trade: dict[str, object]) -> int | None:
         deal_id = _safe_int(trade.get("mt5_deal_id"))
@@ -690,9 +739,11 @@ class JournalService:
         return trades
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=15)
+        conn = sqlite3.connect(self.db_path, timeout=SQLITE_TIMEOUT_SECONDS)
         conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
 

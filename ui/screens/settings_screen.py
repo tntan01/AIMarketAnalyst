@@ -33,13 +33,14 @@ from workers.ai_test_worker import AITestWorker
 
 
 class SettingsScreen(QWidget):
-    def __init__(self, navigate=None) -> None:
+    def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
         self.navigate = navigate
-        self.settings_service = SettingsService()
-        self.ai_catalog_service = AIProviderCatalogService()
+        self.app = app
+        self.settings_service = app.settings_service if app else SettingsService()
+        self.ai_catalog_service = app.ai_catalog_service if app else AIProviderCatalogService()
+        self.mt5_service = app.mt5_service if app else MT5Service()
         self.ai_model_catalog = self.ai_catalog_service.load() or dict(DEFAULT_AI_MODELS)
-        self.mt5_service = MT5Service()
         self.app_settings = self.settings_service.load()
         self.ai_test_thread = None
         self.ai_test_worker = None

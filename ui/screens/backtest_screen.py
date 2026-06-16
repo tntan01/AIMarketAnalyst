@@ -70,10 +70,13 @@ class BacktestScreen(QWidget):
         "selected_zone_score": 0.48,
     }
 
-    def __init__(self, navigate=None) -> None:
+    def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
         self.navigate = navigate
-        self.controller = BacktestController()
+        self.app = app
+        self.controller = (
+            app.backtest_controller if app else BacktestController()
+        )
         self.backtest_thread = None
         self.backtest_worker = None
         self.result: dict[str, object] | None = None

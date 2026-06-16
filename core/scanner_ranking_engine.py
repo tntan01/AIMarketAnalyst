@@ -339,7 +339,7 @@ def classify_scanner_group(
     if norm_decision in ("WATCH_ONLY", "STAND_ASIDE"):
         return WATCH_ZONE
 
-    # ---- 3. Legacy scanner_action ----
+    # ---- 3. Legacy fallback (rows without decision engine result) ----
     if norm_action == "ready" and _truthy(ready_to_trade):
         return READY_NOW
     if norm_action in ("wait", "wait_for_confirmation"):
@@ -355,8 +355,8 @@ def classify_scanner_group(
     if norm_entry in ("invalidated", "no_setup", "data_unavailable"):
         return BLOCKED
 
-    # ---- 5. Legacy skip (no decision or entry override) ----
-    if norm_action == "skip":
+    # ---- 5. Legacy skip / stand_aside ----
+    if norm_action in ("skip", "stand_aside"):
         return BLOCKED
 
     # ---- 6. Fallback ----

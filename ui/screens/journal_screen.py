@@ -145,10 +145,13 @@ class JournalTableModel(QAbstractTableModel):
 
 
 class JournalScreen(QWidget):
-    def __init__(self, navigate=None) -> None:
+    def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
         self.navigate = navigate
-        self.journal_controller = JournalController()
+        self.app = app
+        self.journal_controller = (
+            app.journal_controller if app else JournalController()
+        )
         self.table_model = JournalTableModel()
         self.setObjectName("FormScreen")
         self._build_ui()

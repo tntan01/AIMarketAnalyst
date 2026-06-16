@@ -492,18 +492,3 @@ def calculate_direction_bias(
     }
 
 
-def classify_decision(
-    best_score: int,
-    permission: str,
-    has_trade_plan: bool,
-    *,
-    price_in_entry_zone: bool = False,
-    h1_confirmation: bool = False,
-) -> str:
-    if permission == "blocked" or best_score < 60:
-        return "stand_aside"
-    if best_score >= 80 and permission == "allowed" and has_trade_plan and (price_in_entry_zone or h1_confirmation):
-        return "ready"
-    if best_score >= 75 and permission != "blocked":
-        return "watch"
-    return "wait_for_confirmation"

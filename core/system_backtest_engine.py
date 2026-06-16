@@ -808,7 +808,6 @@ def _run_analysis_snapshot(
         open_trades=[],
         account_guard_settings=_account_guard_settings(request),
         trade_date=current_time,
-        use_decision_engine_action=True,
     )
 
 

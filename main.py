@@ -27,6 +27,7 @@ def main() -> int:
     try:
         from PyQt6.QtGui import QIcon
         from PyQt6.QtWidgets import QApplication
+        from controllers.app_controller import AppController
         from ui.main_window import MainWindow
     except ImportError as exc:
         print("PyQt6 is not installed. Run: pip install -r requirements.txt")
@@ -34,11 +35,12 @@ def main() -> int:
         return 1
 
     app = QApplication(sys.argv)
+    app_ctrl = AppController()
     ico = _icon_path()
     app_icon = QIcon(str(ico)) if ico.exists() else QIcon()
     if ico.exists():
         app.setWindowIcon(app_icon)
-    window = MainWindow()
+    window = MainWindow(app_ctrl)
     if not app_icon.isNull():
         window.setWindowIcon(app_icon)
     window.showMaximized()

@@ -345,9 +345,14 @@ def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
     quote = symbol.split("/")[-1]
     if quote == "USD":
         return 1.0
+    mt5 = None
+    initialized = False
     try:
         import MetaTrader5 as mt5
-        # Assume connected
+
+        initialized = mt5.initialize()
+        if not initialized:
+            return None
         for pair_name in (quote + "USD", "USD" + quote):
             tick = mt5.symbol_info_tick(pair_name)
             if tick is None:
@@ -364,6 +369,9 @@ def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
         return None
     except Exception:
         return None
+    finally:
+        if initialized and mt5 is not None:
+            mt5.shutdown()
 
 
 def contract_size_for(request: AnalysisInput) -> float:

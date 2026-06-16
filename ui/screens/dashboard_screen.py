@@ -100,11 +100,12 @@ class CalendarWorker(QThread):
 
 
 class DashboardScreen(QWidget):
-    def __init__(self, navigate=None) -> None:
+    def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
         self.navigate = navigate
-        self.mt5_service = MT5Service()
-        self.settings_service = SettingsService()
+        self.app = app
+        self.mt5_service = app.mt5_service if app else MT5Service()
+        self.settings_service = app.settings_service if app else SettingsService()
         self.status_cards: dict[str, tuple[QFrame, QLabel, QLabel]] = {}
         self.setObjectName("DashboardScreen")
         self._build_ui()

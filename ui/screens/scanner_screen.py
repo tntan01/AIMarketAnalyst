@@ -359,11 +359,12 @@ class ScannerScreen (QWidget ):
     TABLE_REASON_HORIZONTAL_PADDING =30
     TABLE_MIN_REASON_WIDTH =150
 
-    def __init__ (self ,navigate =None )->None :
+    def __init__ (self ,navigate =None ,*, app =None )->None :
         super ().__init__ ()
-        self .navigate =navigate 
-        self .settings_service =SettingsService ()
-        self .mt5_service =MT5Service ()
+        self .navigate =navigate
+        self .app =app
+        self .settings_service =app .settings_service if app else SettingsService ()
+        self .mt5_service =app .mt5_service if app else MT5Service ()
         self .scanner_controller =ScannerController (self .settings_service ,self .mt5_service )
         self .scan_thread =None 
         self .scan_worker =None 

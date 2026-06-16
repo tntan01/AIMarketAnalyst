@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.reason_codes import CHOCH_AGAINST_DIRECTION, MACRO_CONFLICT
-from core.signal_engine import calculate_direction_bias, classify_decision, score_scenario
+from core.signal_engine import calculate_direction_bias, score_scenario
 
 
 def _technical_buy_context() -> dict:
@@ -83,13 +83,6 @@ def test_calculate_direction_bias_marks_clear_sell_when_gap_is_large():
     assert result["best_side"] == "sell"
     assert result["score_gap"] == 21.0
     assert result["is_clear_bias"] is True
-
-
-def test_classify_decision_legacy_thresholds():
-    assert classify_decision(85, "allowed", True, price_in_entry_zone=True) == "ready"
-    assert classify_decision(77, "allowed", True) == "watch"
-    assert classify_decision(65, "allowed", True) == "wait_for_confirmation"
-    assert classify_decision(90, "blocked", True, price_in_entry_zone=True) == "stand_aside"
 
 
 def test_score_scenario_applies_macro_conflict_penalty():
