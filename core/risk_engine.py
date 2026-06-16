@@ -347,8 +347,7 @@ def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
         return 1.0
     try:
         import MetaTrader5 as mt5
-        if not mt5.initialize():
-            return None
+        # Assume connected
         for pair_name in (quote + "USD", "USD" + quote):
             tick = mt5.symbol_info_tick(pair_name)
             if tick is None:

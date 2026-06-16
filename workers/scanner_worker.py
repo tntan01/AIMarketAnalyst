@@ -22,6 +22,8 @@ class ScannerWorker(QObject):
 
     @pyqtSlot()
     def run(self) -> None:
+        import MetaTrader5 as mt5
+        mt5.initialize()
         self.state = WorkerState.RUNNING
         try:
             self.progress.emit(5, "Đang chuẩn bị quét thị trường...")
@@ -34,6 +36,7 @@ class ScannerWorker(QObject):
             self.progress.emit(100, "Hoàn tất quét thị trường.")
             self.succeeded.emit(result)
         finally:
+            mt5.shutdown()
             self.finished.emit()
 
     def _emit_progress(self, percent: int, message: str) -> None:

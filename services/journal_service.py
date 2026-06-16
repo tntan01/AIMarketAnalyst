@@ -489,14 +489,210 @@ class JournalService:
             )
             trade["auto_mistake_tags"] = tags_from_json(
                 row["auto_mistake_tags"] if "auto_mistake_tags" in row.keys() else None
+                summary["errors"].append(str(exc))
+        summary["synced_entry_ids"] = synced_ids
+        return summary
+
+    def _find_mt5_sync_entry(self, trade: dict[str, object]) -> int | None:
+        deal_id = _safe_int(trade.get("mt5_deal_id"))
+        position_id = _safe_int(trade.get("mt5_position_id"))
+        with self._connect() as conn:
+            if deal_id is not None:
+                row = conn.execute("SELECT id FROM journal_entries WHERE mt5_deal_id = ?", (deal_id,)).fetchone()
+                if row:
+                    return int(row["id"])
+            if position_id is not None:
+                row = conn.execute("SELECT id FROM journal_entries WHERE mt5_position_id = ?", (position_id,)).fetchone()
+                if row:
+                    return int(row["id"])
+
+            symbol = str(trade.get("symbol") or "")
+            broker_symbol = str(trade.get("broker_symbol") or "")
+            side = str(trade.get("side") or "")
+            closed_at = str(trade.get("closed_at") or "")
+            rows = conn.execute(
+                "SELECT id, closed_at, timestamp_utc FROM journal_entries "
+                "WHERE (symbol = ? OR broker_symbol = ?) AND selected_scenario = ? "
+                "AND (mt5_deal_id IS NULL AND mt5_position_id IS NULL) "
+                "AND (closed_at IS NULL OR closed_at = '') "
+                "AND (trade_status IS NULL OR trade_status IN ('planned', 'opened')) "
+                "ORDER BY id DESC LIMIT 20",
+                (symbol, broker_symbol, side),
+            ).fetchall()
+        close_time = _parse_utc(closed_at)
+        for row in rows:
+            candidate_time = _parse_utc(row["closed_at"] or row["timestamp_utc"])
+            if close_time and candidate_time and abs((close_time - candidate_time).total_seconds()) <= 86400:
+                return int(row["id"])
+        return None
+
+    def _mt5_trade_update_payload(self, trade: dict[str, object]) -> dict[str, object]:
+        amount = _safe_float(trade.get("result_amount"))
+        result = "win" if amount and amount > 0 else "loss" if amount and amount < 0 else "breakeven"
+        return {
+            "trade_status": "closed",
+            "opened_at": trade.get("opened_at") or "",
+            "closed_at": trade.get("closed_at") or "",
+            "actual_entry": trade.get("actual_entry"),
+            "actual_exit": trade.get("actual_exit"),
+            "actual_lot": trade.get("actual_lot"),
+            "result_amount": trade.get("result_amount"),
+            "result": result,
+            "exit_reason": trade.get("exit_reason") or "mt5_history",
+            "mt5_deal_id": trade.get("mt5_deal_id"),
+            "mt5_order_id": trade.get("mt5_order_id"),
+            "mt5_position_id": trade.get("mt5_position_id"),
+            "synced_from": "mt5_history",
+            "synced_at_utc": utc_now(),
+        }
+
+    def apply_execution_analysis_to_entry(
+        self, entry_id: int, *, previous_limit: int = 50
+    ) -> dict | None:
+        """Run mistake detector and execution quality analysis on a closed entry.
+
+        Retrieves the entry, converts to dict, runs
+        :func:`core.trade_mistake_detector.detect_trade_mistakes` and
+        :func:`core.execution_quality_engine.calculate_execution_quality`,
+        then saves the results via :meth:`update_trade_outcome`.
+
+        Does **not** affect live trade decisions, scoring, or gates.
+        Returns ``None`` if the entry does not exist.
+        """
+        entry = self.get_entry(entry_id)
+        if entry is None:
+            return None
+
+        from dataclasses import asdict
+        from core.trade_mistake_detector import detect_trade_mistakes
+        from core.execution_quality_engine import calculate_execution_quality
+
+        trade_dict: dict[str, object] = asdict(entry)
+        # Use timestamp_utc as opened_at if not present
+        if not trade_dict.get("opened_at"):
+            trade_dict["opened_at"] = trade_dict.get("timestamp_utc")
+
+        previous = self.list_closed_trades_for_account_guard(limit=previous_limit)
+
+        # Detect mistakes
+        detection = detect_trade_mistakes(trade_dict, previous_trades=previous)
+
+        # Merge auto tags into trade dict for execution_quality
+        if isinstance(detection, dict):
+            trade_dict["auto_mistake_tags"] = detection.get("auto_mistake_tags")
+
+        # Calculate execution quality (don't reuse existing — recompute fresh)
+        quality = calculate_execution_quality(trade_dict, use_existing_score=False)
+
+        # Build update payload
+        updates: dict[str, object] = {}
+        if isinstance(detection, dict):
+            updates["auto_mistake_tags"] = detection.get("auto_mistake_tags")
+        if isinstance(quality, dict) and "execution_quality_score" in quality:
+            updates["execution_quality_score"] = quality["execution_quality_score"]
+
+        if updates:
+            self.update_trade_outcome(entry_id, updates)
+
+        return {
+            "detection": detection,
+            "execution_quality": quality,
+            "updated_entry_id": entry_id,
+        }
+
+    def symbols(self) -> list[str]:
+        with self._connect() as conn:
+            return [row[0] for row in conn.execute("SELECT DISTINCT symbol FROM journal_entries ORDER BY symbol").fetchall()]
+
+    def stats(self) -> dict[str, object]:
+        entries = self.list_entries()
+        counts = {"ready": 0, "watch": 0, "wait": 0, "stand_aside": 0}
+        symbol_counts: dict[str, int] = {}
+        for entry in entries:
+            if entry.decision in {"ready", "watch"}:
+                counts[entry.decision] += 1
+            elif entry.decision in {"wait", "wait_for_confirmation"}:
+                counts["wait"] += 1
+            else:
+                counts["stand_aside"] += 1
+            symbol_counts[entry.symbol] = symbol_counts.get(entry.symbol, 0) + 1
+        top_symbol = max(symbol_counts.items(), key=lambda item: item[1])[0] if symbol_counts else "--"
+        return {"total": len(entries), **counts, "top_symbol": top_symbol}
+
+    def performance_summary(self, limit: int = 1000) -> dict[str, object]:
+        """Summarise closed-trade performance from journal outcome fields."""
+        trades = self.list_closed_trades_for_account_guard(limit=limit)
+        return build_performance_summary(trades)
+
+    def list_closed_trades_for_account_guard(self, limit: int = 500) -> list[dict[str, object]]:
+        """Trả về danh sách closed trades phục vụ Account Guard và Phase 17 engines.
+
+        Returns list of dict with keys:
+            result_r, result_pct, closed_at, exit_reason, actual_lot, planned_lot,
+            symbol, direction (selected_scenario)
+        Phase 17 additions:
+            planned_entry, actual_entry, planned_sl, actual_sl, planned_tp, actual_tp,
+            actual_exit, setup_type, regime, session, m15_quality, spread_at_entry,
+            expected_effective_rr, realized_effective_rr,
+            manual_mistake_tags (list), auto_mistake_tags (list),
+            execution_quality_score
+        Only includes entries where closed_at is not null.
+        """
+        select_cols = (
+            "result_r", "result_pct", "closed_at", "exit_reason",
+            "actual_lot", "planned_lot", "symbol", "selected_scenario",
+            "trade_status", "opened_at", "result_amount",
+            "planned_entry", "actual_entry", "planned_sl", "actual_sl",
+            "planned_tp", "actual_tp", "actual_exit",
+            "setup_type", "regime", "session", "m15_quality",
+            "spread_at_entry", "expected_effective_rr", "realized_effective_rr",
+            "manual_mistake_tags", "auto_mistake_tags", "execution_quality_score",
+        )
+        cols_str = ", ".join(select_cols)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT {cols_str} FROM journal_entries "
+                "WHERE closed_at IS NOT NULL AND closed_at != '' "
+                "ORDER BY closed_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+        trades: list[dict[str, object]] = []
+        for row in rows:
+            trade: dict[str, object] = {}
+            for key in (
+                "result_r", "result_pct", "closed_at", "exit_reason",
+                "actual_lot", "planned_lot", "symbol", "trade_status", "opened_at", "result_amount",
+                "planned_entry", "actual_entry", "planned_sl", "actual_sl",
+                "planned_tp", "actual_tp", "actual_exit",
+                "setup_type", "regime", "session", "m15_quality",
+                "spread_at_entry", "expected_effective_rr", "realized_effective_rr",
+                "execution_quality_score",
+            ):
+                try:
+                    trade[key] = row[key]
+                except (KeyError, IndexError):
+                    trade[key] = None
+            try:
+                trade["direction"] = row["selected_scenario"]
+            except (KeyError, IndexError):
+                trade["direction"] = None
+
+            # Parse tag JSON strings
+            trade["manual_mistake_tags"] = tags_from_json(
+                row["manual_mistake_tags"] if "manual_mistake_tags" in row.keys() else None
+            )
+            trade["auto_mistake_tags"] = tags_from_json(
+                row["auto_mistake_tags"] if "auto_mistake_tags" in row.keys() else None
             )
 
             trades.append(trade)
         return trades
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=15)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
 

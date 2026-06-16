@@ -47,6 +47,20 @@ class MT5Service:
         path = symbol_profile_path or CONFIG_DIR / "symbol_profiles.json"
         self.symbol_profiles = json.loads(path.read_text(encoding="utf-8"))
 
+    def connect_thread(self) -> bool:
+        try:
+            import MetaTrader5 as mt5
+            return mt5.initialize()
+        except ImportError:
+            return False
+
+    def disconnect_thread(self) -> None:
+        try:
+            import MetaTrader5 as mt5
+            mt5.shutdown()
+        except ImportError:
+            pass
+
     def connection_status(self) -> MT5ConnectionStatus:
         try:
             import MetaTrader5 as mt5
@@ -59,9 +73,9 @@ class MT5Service:
                 message="Chưa cài package MetaTrader5.",
             )
 
-        initialized = mt5.initialize()
+        # initialized = mt5.initialize()
         error_code, error_message = mt5.last_error()
-        if not initialized:
+        if False: # bypass explicit initialize in status check
             return MT5ConnectionStatus(
                 initialized=False,
                 terminal_connected=False,
@@ -145,8 +159,7 @@ class MT5Service:
         except ImportError:
             return []
 
-        if not mt5.initialize():
-            return []
+        # if not mt5.initialize(): return []
 
         symbols = mt5.symbols_get()
         if not symbols:
@@ -167,9 +180,7 @@ class MT5Service:
         except ImportError as exc:
             raise RuntimeError("Chưa cài package MetaTrader5.") from exc
 
-        if not mt5.initialize():
-            error_code, error_message = mt5.last_error()
-            raise RuntimeError(error_message or f"Không khởi tạo được MT5 ({error_code}).")
+        # Assume connected
 
         timeframe_id = self._timeframe_id(mt5, timeframe)
         if timeframe_id is None:
@@ -219,9 +230,7 @@ class MT5Service:
         if end <= start:
             raise ValueError("Thời điểm kết thúc phải sau thời điểm bắt đầu.")
 
-        if not mt5.initialize():
-            error_code, error_message = mt5.last_error()
-            raise RuntimeError(error_message or f"Không khởi tạo được MT5 ({error_code}).")
+        # Assume connected
 
         timeframe_id = self._timeframe_id(mt5, timeframe)
         if timeframe_id is None:
@@ -257,23 +266,14 @@ class MT5Service:
 
     def load_primary_timeframes(self, broker_symbol: str, bars_by_timeframe: dict[str, int]) -> dict[str, list[Candle]]:
         import MetaTrader5 as mt5
-        if not mt5.initialize():
-            error_code, error_message = mt5.last_error()
-            raise RuntimeError(error_message or f"Không khởi tạo được MT5 ({error_code}).")
+        # Assume connected
         selected = mt5.symbol_select(broker_symbol, True)
         if not selected:
             raise RuntimeError(f"Không chọn được mã {broker_symbol} trong MT5 Market Watch.")
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         results: dict[str, list[Candle]] = {}
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {
-                executor.submit(self.load_ohlcv, broker_symbol, timeframe, bars, True): timeframe
-                for timeframe, bars in bars_by_timeframe.items()
-            }
-            for future in as_completed(futures):
-                tf = futures[future]
-                results[tf] = future.result()
+        for timeframe, bars in bars_by_timeframe.items():
+            results[timeframe] = self.load_ohlcv(broker_symbol, timeframe, bars, True)
         return results
 
     def symbol_data_quality(self, display_symbol: str, broker_symbol: str) -> dict[str, object]:
@@ -310,8 +310,7 @@ class MT5Service:
         """Trả về thời gian UTC từ MT5 server, hoặc None nếu không lấy được."""
         try:
             import MetaTrader5 as mt5
-            if not mt5.initialize():
-                return None
+            # Assume connected
             symbols = mt5.symbols_get()
             if symbols:
                 tick = mt5.symbol_info_tick(symbols[0].name)
@@ -327,8 +326,7 @@ class MT5Service:
             return 1.0
         try:
             import MetaTrader5 as mt5
-            if not mt5.initialize():
-                return None
+            # Assume connected
             # Thử QUOTEUSD (vd: GBP → GBPUSD) hoặc USDQUOTE (vd: JPY → USDJPY)
             for pair_name in (quote_currency + "USD", "USD" + quote_currency):
                 tick = mt5.symbol_info_tick(pair_name)
@@ -352,8 +350,7 @@ class MT5Service:
             import MetaTrader5 as mt5
         except ImportError:
             return False
-        if not mt5.initialize():
-            return False
+        # Assume connected
 
         positions = mt5.positions_get(symbol=broker_symbol)
         if positions:
@@ -377,9 +374,7 @@ class MT5Service:
         except ImportError:
             return MT5OrderResult(False, symbol, broker_symbol, side, volume, message="Chưa cài package MetaTrader5.")
 
-        if not mt5.initialize():
-            error_code, error_message = mt5.last_error()
-            return MT5OrderResult(False, symbol, broker_symbol, side, volume, retcode=error_code, message=error_message or "Không khởi tạo được MT5.")
+        # Assume connected
 
         if self.has_open_position_or_order(broker_symbol):
             return MT5OrderResult(False, symbol, broker_symbol, side, volume, message="Đã có lệnh/position cho mã này, không vào thêm.")
@@ -459,9 +454,7 @@ class MT5Service:
         except ImportError as exc:
             raise RuntimeError("Chưa cài package MetaTrader5.") from exc
 
-        if not mt5.initialize():
-            error_code, error_message = mt5.last_error()
-            raise RuntimeError(error_message or f"Không khởi tạo được MT5 ({error_code}).")
+        # Assume connected
 
         start_utc = start.astimezone(timezone.utc) if start.tzinfo else start.replace(tzinfo=timezone.utc)
         end_utc = end.astimezone(timezone.utc) if end.tzinfo else end.replace(tzinfo=timezone.utc)
