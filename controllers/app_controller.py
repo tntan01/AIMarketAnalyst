@@ -1,9 +1,10 @@
 """Application controller — dependency-injection container (CT-4).
 
-Owns singleton instances of all services and controllers so they are
+Owns singleton instances of app-wide services and controllers so they are
 created exactly once and shared across screens.  Every screen receives
-the same ``AppController`` via ``MainWindow`` and pulls the services it
-needs from it.
+the same ``AppController`` via ``MainWindow`` and pulls the dependencies it
+needs from it. Per-provider clients such as ``AIService`` are created by
+factory method because their config changes at runtime.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from controllers.journal_controller import JournalController
 from controllers.scanner_controller import ScannerController
 from controllers.settings_controller import SettingsController
 from services.ai_provider_catalog_service import AIProviderCatalogService
-from services.ai_service import AIService
+from services.ai_service import AIProviderConfig, AIService
 from services.journal_service import JournalService
 from services.mt5_service import MT5Service
 from services.news_service import NewsService
@@ -41,7 +42,6 @@ class AppController:
         self._mt5_service: MT5Service | None = None
         self._news_service: NewsService | None = None
         self._journal_service: JournalService | None = None
-        self._ai_service: AIService | None = None
         self._ai_catalog_service: AIProviderCatalogService | None = None
         self._telegram_service: TelegramAlertService | None = None
 
@@ -80,11 +80,8 @@ class AppController:
             self._journal_service = JournalService()
         return self._journal_service
 
-    @property
-    def ai_service(self) -> AIService:
-        if self._ai_service is None:
-            self._ai_service = AIService()
-        return self._ai_service
+    def create_ai_service(self, config: AIProviderConfig) -> AIService:
+        return AIService(config)
 
     @property
     def ai_catalog_service(self) -> AIProviderCatalogService:

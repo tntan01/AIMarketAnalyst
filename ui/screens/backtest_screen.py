@@ -480,9 +480,12 @@ class BacktestScreen(QWidget):
             return
         from PyQt6.QtWidgets import QApplication
         from services.ai_service import AIService, AIProviderConfig
-        from services.settings_service import SettingsService
 
-        settings = SettingsService().load()
+        settings = (
+            self.app.settings_service.load()
+            if self.app
+            else self.controller.settings_service.load()
+        )
         active = settings.ai.active_provider()
         if not active or not (active.api_key or active.api_key_ref):
             QMessageBox.warning(self, "Phân tích", "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và nhập API key.")
@@ -510,7 +513,7 @@ class BacktestScreen(QWidget):
                 "Trả lời ngắn gọn, bullet point."
             )
             config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key)
-            ai = AIService(config)
+            ai = self.app.create_ai_service(config) if self.app else AIService(config)
             response = ai.analyze(prompt)
 
             dlg = QDialog(self)

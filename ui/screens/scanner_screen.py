@@ -365,7 +365,7 @@ class ScannerScreen (QWidget ):
         self .app =app
         self .settings_service =app .settings_service if app else SettingsService ()
         self .mt5_service =app .mt5_service if app else MT5Service ()
-        self .scanner_controller =ScannerController (self .settings_service ,self .mt5_service )
+        self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,self .mt5_service )
         self .scan_thread =None 
         self .scan_worker =None 
         self .scan_result :dict [str ,object ]|None =None 
