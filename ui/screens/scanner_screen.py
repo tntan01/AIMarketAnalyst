@@ -581,6 +581,15 @@ class ScannerScreen (QWidget ):
         return frame 
 
     def _show_columns_help (self )->None :
+        selected = self.table.selectionModel().selectedRows()
+        if selected:
+            row_index = selected[0].row()
+            row_data = self.table_model.row_at(row_index)
+            if row_data:
+                dialog = ScannerRowExplanationDialog(row_data, self.table_model, self)
+                dialog.exec()
+                return
+
         dialog =ScannerColumnsHelpDialog (self )
         dialog .exec ()
 
@@ -986,13 +995,176 @@ class ScannerSymbolSelectionDialog (QDialog ):
         self .accept ()
 
 
+class ScannerRowExplanationDialog(QDialog):
+    PARAM_COL_WIDTH = 150
+    VALUE_COL_WIDTH = 220
+    MIN_ROW_HEIGHT = 32
+    CELL_VERTICAL_PADDING = 32
+    CELL_HORIZONTAL_PADDING = 32
+
+    def __init__(self, row_data: dict[str, object], table_model: ScannerTableModel, parent=None):
+        super().__init__(parent)
+        self.row_data = row_data
+        self.table_model = table_model
+        
+        symbol = str(row_data.get('symbol', 'Mã'))
+        self.setWindowTitle(f'Giải thích chi tiết - {symbol}')
+        self.setMinimumSize(880, 500)
+        self.resize(880, 600)
+        self.setObjectName("ScannerHelpDialog")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        header_label = QLabel(f"Giải thích chi tiết cho {symbol}")
+        header_label.setObjectName("HelpHeaderLabel")
+        header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(header_label)
+
+        self.table = QTableWidget()
+        self.table.setObjectName("DataTable")
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Thông số", "Giá trị", "Giải thích chi tiết"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setWordWrap(True)
+        self.table.setVerticalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.table.setFrameShape(QFrame.Shape.NoFrame)
+
+        layout.addWidget(self.table)
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 8, 0, 0)
+        buttons_layout.addStretch(1)
+        close_btn = action_button("❌ Đóng")
+        close_btn.clicked.connect(self.reject)
+        buttons_layout.addWidget(close_btn)
+        layout.addLayout(buttons_layout)
+
+        self._populate_table()
+
+    def _help_cell_label(self, text: str, *, bold: bool = False, color: str = "#e5e7eb") -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("ScannerHelpCell")
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        label.setContentsMargins(8, 6, 8, 6)
+        label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        label.setStyleSheet(f"color: {color}; background: transparent;")
+        if bold:
+            font = label.font()
+            font.setBold(True)
+            label.setFont(font)
+        return label
+
+    def _populate_table(self):
+        keys_to_show = [
+            ("Hành động", "scanner_action", "action_reason"),
+            ("Xu hướng", "direction_bias", "bias_reason"),
+            ("Entry", "price_vs_zone", "entry_reason"),
+            ("Quyền", "trade_permission", "permission_reason"),
+            ("Điểm tốt nhất", "best_score", "best_reason"),
+            ("Điểm mua", "buy_score", "buy_reason"),
+            ("Điểm bán", "sell_score", "sell_reason"),
+            ("Vĩ mô", "macro_score", "macro_reason"),
+            ("Final", "final_score", "final_reason"),
+            ("Cơ hội", "opportunity_score", "opportunity_reason"),
+            ("Lý do chính", "short_reason", None),
+        ]
+
+        self.row_items = []
+        for title, key, reason_key in keys_to_show:
+            val = self.row_data.get(key)
+            if val is None or val == "":
+                continue
+                
+            display_val = self.table_model._display_value(key, val, self.row_data)
+            color = self.table_model._foreground(self.row_data, key)
+            color_hex = color.name() if color else "#e5e7eb"
+            
+            reason_text = self.row_data.get(reason_key) if reason_key else None
+            
+            general_cases = ""
+            default_exp = ""
+            for help_item in ScannerColumnsHelpDialog.COLUMN_HELP:
+                if help_item["column"] == title:
+                    general_cases = help_item.get("cases", "")
+                    default_exp = help_item.get("meaning", "")
+                    break
+                    
+            explanation = ""
+            if reason_text:
+                explanation = str(reason_text)
+            else:
+                if general_cases:
+                    explanation = f"{default_exp}\n({general_cases})"
+                else:
+                    explanation = default_exp
+            
+            self.row_items.append({
+                "param": title,
+                "value": display_val,
+                "color_hex": color_hex,
+                "explanation": explanation
+            })
+
+        self.table.setRowCount(len(self.row_items))
+        for row, item in enumerate(self.row_items):
+            param_label = self._help_cell_label(item["param"], bold=True, color="#5eead4")
+            val_label = self._help_cell_label(item["value"], bold=True, color=item["color_hex"])
+            exp_label = self._help_cell_label(item["explanation"], color="#e5e7eb")
+            
+            self.table.setCellWidget(row, 0, param_label)
+            self.table.setCellWidget(row, 1, val_label)
+            self.table.setCellWidget(row, 2, exp_label)
+
+        QTimer.singleShot(10, self._sync_table_layout)
+
+    def _sync_table_layout(self) -> None:
+        header = self.table.horizontalHeader()
+        viewport_width = max(self.table.viewport().width(), self.width() - 80)
+        scrollbar_width = self.table.verticalScrollBar().sizeHint().width()
+        fixed_width = self.PARAM_COL_WIDTH + self.VALUE_COL_WIDTH
+        exp_width = max(280, viewport_width - fixed_width - scrollbar_width - 6)
+        
+        header.resizeSection(0, self.PARAM_COL_WIDTH)
+        header.resizeSection(1, self.VALUE_COL_WIDTH)
+        header.resizeSection(2, exp_width)
+
+        column_widths = {0: self.PARAM_COL_WIDTH, 1: self.VALUE_COL_WIDTH, 2: exp_width}
+        
+        for row, item in enumerate(self.row_items):
+            heights = [self.MIN_ROW_HEIGHT]
+            
+            for col in range(3):
+                label = self.table.cellWidget(row, col)
+                if isinstance(label, QLabel):
+                    usable_width = max(50, column_widths[col] - 24)
+                    label.setFixedWidth(usable_width)
+                    heights.append(label.heightForWidth(usable_width) + 24)
+            
+            row_height = max(heights)
+            self.table.setRowHeight(row, row_height)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._sync_table_layout()
+
+
+
 class ScannerColumnsHelpDialog (QDialog ):
-    ICON_COL_WIDTH =64
-    COLUMN_COL_WIDTH =190
-    MEANING_COL_WIDTH =330
-    MIN_ROW_HEIGHT =86
-    CELL_VERTICAL_PADDING =42
-    CELL_HORIZONTAL_PADDING =18
+    COLUMN_COL_WIDTH =150
+    MEANING_COL_WIDTH =320
+    MIN_ROW_HEIGHT =32
+    CELL_VERTICAL_PADDING =32
+    CELL_HORIZONTAL_PADDING =34
 
     COLUMN_HELP :list [dict [str ,str ]]=[
         {"icon":"🏆","column":"Xếp hạng","meaning":"Thứ tự ưu tiên sau khi sắp xếp. Số nhỏ hơn nghĩa là đáng xem trước hơn.","cases":"1 = ưu tiên cao nhất; 2 = tiếp theo; các dòng sau giảm dần mức ưu tiên."},
@@ -1022,8 +1194,8 @@ class ScannerColumnsHelpDialog (QDialog ):
         self .setWindowTitle ('Giải thích Bảng kết quả quét')
         self .setObjectName ("ScannerHelpDialog")
         self .setModal (True )
-        self .setMinimumSize (920 ,600 )
-        self .resize (1040 ,700 )
+        self .setMinimumSize (780 ,500 )
+        self .resize (880 ,600 )
 
         layout =QVBoxLayout (self )
         layout .setContentsMargins (20 ,18 ,20 ,16 )
@@ -1037,9 +1209,9 @@ class ScannerColumnsHelpDialog (QDialog ):
         intro .setWordWrap (True )
         layout .addWidget (intro )
 
-        table =QTableWidget (len (self .COLUMN_HELP ),4 )
+        table =QTableWidget (len (self .COLUMN_HELP ),3 )
         table .setObjectName ("DataTable")
-        table .setHorizontalHeaderLabels (['','Cột','Ý nghĩa','Trường hợp thường gặp'])
+        table .setHorizontalHeaderLabels (['Cột','Ý nghĩa','Trường hợp thường gặp'])
         table .verticalHeader ().setVisible (False )
         table .setEditTriggers (QTableWidget .EditTrigger .NoEditTriggers )
         table .setSelectionMode (QTableWidget .SelectionMode .NoSelection )
@@ -1050,37 +1222,22 @@ class ScannerColumnsHelpDialog (QDialog ):
         table .setHorizontalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAlwaysOff )
         table .setVerticalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAsNeeded )
         table .setVerticalScrollMode (QTableWidget .ScrollMode .ScrollPerPixel )
-        table .setIconSize (QSize (30 ,30 ))
         table .verticalHeader ().setDefaultSectionSize (self .MIN_ROW_HEIGHT )
         for row ,item in enumerate (self .COLUMN_HELP ):
-            icon_item =QTableWidgetItem ("")
-            icon_item .setFlags (Qt .ItemFlag .ItemIsEnabled )
-            icon_item .setTextAlignment (Qt .AlignmentFlag .AlignCenter )
-            column_item =QTableWidgetItem ("")
-            column_item .setFlags (Qt .ItemFlag .ItemIsEnabled )
-            column_item .setTextAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
-            meaning_item =QTableWidgetItem ("")
-            meaning_item .setFlags (Qt .ItemFlag .ItemIsEnabled )
-            meaning_item .setTextAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
-            cases_item =QTableWidgetItem ("")
-            cases_item .setFlags (Qt .ItemFlag .ItemIsEnabled )
-            cases_item .setTextAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
-            table .setItem (row ,0 ,icon_item )
-            table .setItem (row ,1 ,column_item )
-            table .setItem (row ,2 ,meaning_item )
-            table .setItem (row ,3 ,cases_item )
-            table .setCellWidget (row ,0 ,self ._help_icon_label (item .get ("icon","")))
-            table .setCellWidget (row ,1 ,self ._help_cell_label (item .get ("column",""),bold =False ))
-            table .setCellWidget (row ,2 ,self ._help_cell_label (item .get ("meaning","")))
-            table .setCellWidget (row ,3 ,self ._help_cell_label (item .get ("cases","")))
+            for col in range (3 ):
+                cell =QTableWidgetItem ("")
+                cell .setFlags (Qt .ItemFlag .ItemIsEnabled )
+                cell .setTextAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
+                table .setItem (row ,col ,cell )
+            table .setCellWidget (row ,0 ,self ._help_cell_label (item .get ("column",""),bold =True ,color ="#5eead4"))
+            table .setCellWidget (row ,1 ,self ._help_cell_label (item .get ("meaning",""),color ="#e5e7eb"))
+            table .setCellWidget (row ,2 ,self ._help_cell_label (item .get ("cases",""),color ="#94a3b8"))
         header =table .horizontalHeader ()
         header .setSectionResizeMode (0 ,QHeaderView .ResizeMode .Fixed )
-        header .resizeSection (0 ,self .ICON_COL_WIDTH )
+        header .resizeSection (0 ,self .COLUMN_COL_WIDTH )
         header .setSectionResizeMode (1 ,QHeaderView .ResizeMode .Fixed )
-        header .resizeSection (1 ,self .COLUMN_COL_WIDTH )
-        header .setSectionResizeMode (2 ,QHeaderView .ResizeMode .Fixed )
-        header .resizeSection (2 ,self .MEANING_COL_WIDTH )
-        header .setSectionResizeMode (3 ,QHeaderView .ResizeMode .Stretch )
+        header .resizeSection (1 ,self .MEANING_COL_WIDTH )
+        header .setSectionResizeMode (2 ,QHeaderView .ResizeMode .Stretch )
         header .setMinimumSectionSize (30 )
         self .help_table =table
         layout .addWidget (table ,1 )
@@ -1104,32 +1261,19 @@ class ScannerColumnsHelpDialog (QDialog ):
         if hasattr (self ,"help_table"):
             QTimer .singleShot (0 ,self ._sync_help_table_layout )
 
-    def _help_cell_label (self ,text :str ,*,bold :bool =False )->QLabel :
+    def _help_cell_label (self ,text :str ,*,bold :bool =False ,color :str ="#e5e7eb")->QLabel :
         label =QLabel (text )
         label .setObjectName ("ScannerHelpCell")
         label .setWordWrap (True )
         label .setTextInteractionFlags (Qt .TextInteractionFlag .NoTextInteraction )
         label .setAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
-        label .setContentsMargins (9 ,8 ,9 ,8 )
+        label .setContentsMargins (6 ,4 ,6 ,4 )
         label .setSizePolicy (QSizePolicy .Policy .Expanding ,QSizePolicy .Policy .Preferred )
+        label .setStyleSheet (f"color: {color}; background: transparent;")
         if bold :
             font =label .font ()
             font .setBold (True )
             label .setFont (font )
-        return label
-
-    def _help_icon_label (self ,text :str )->QLabel :
-        label =QLabel (text )
-        label .setObjectName ("ScannerHelpEmoji")
-        label .setAlignment (Qt .AlignmentFlag .AlignCenter )
-        label .setContentsMargins (0 ,0 ,0 ,0 )
-        label .setMinimumSize (self .ICON_COL_WIDTH ,self .MIN_ROW_HEIGHT )
-        label .setSizePolicy (QSizePolicy .Policy .Expanding ,QSizePolicy .Policy .Expanding )
-        font =label .font ()
-        font .setFamily ("Segoe UI Emoji")
-        font .setPointSize (13 )
-        label .setFont (font )
-        label .setStyleSheet ("background: transparent;")
         return label
 
     def _sync_help_table_layout (self )->None :
@@ -1137,59 +1281,23 @@ class ScannerColumnsHelpDialog (QDialog ):
         header =table .horizontalHeader ()
         viewport_width =max (table .viewport ().width (),self .width ()-80 )
         scrollbar_width =table .verticalScrollBar ().sizeHint ().width ()
-        fixed_width =self .ICON_COL_WIDTH +self .COLUMN_COL_WIDTH +self .MEANING_COL_WIDTH
-        cases_width =max (360 ,viewport_width -fixed_width -scrollbar_width -6 )
-        header .resizeSection (0 ,self .ICON_COL_WIDTH )
-        header .resizeSection (1 ,self .COLUMN_COL_WIDTH )
-        header .resizeSection (2 ,self .MEANING_COL_WIDTH )
-        header .resizeSection (3 ,cases_width )
+        fixed_width =self .COLUMN_COL_WIDTH +self .MEANING_COL_WIDTH
+        cases_width =max (280 ,viewport_width -fixed_width -scrollbar_width -6 )
+        
+        header .resizeSection (0 ,self .COLUMN_COL_WIDTH )
+        header .resizeSection (1 ,self .MEANING_COL_WIDTH )
+        header .resizeSection (2 ,cases_width )
 
-        column_widths ={1 :self .COLUMN_COL_WIDTH ,2 :self .MEANING_COL_WIDTH ,3 :cases_width}
+        column_widths ={0 :self .COLUMN_COL_WIDTH ,1 :self .MEANING_COL_WIDTH ,2 :cases_width}
+        
         for row ,item in enumerate (self .COLUMN_HELP ):
             heights =[self .MIN_ROW_HEIGHT ]
-            for col ,key in ((1 ,"column"),(2 ,"meaning"),(3 ,"cases")):
+            for col in range (3 ):
                 label =table .cellWidget (row ,col )
                 if isinstance (label ,QLabel ):
-                    content_width =max (80 ,column_widths [col ]-self .CELL_HORIZONTAL_PADDING )
-                    label .setFixedWidth (column_widths [col ])
-                    text_rect =label .fontMetrics ().boundingRect (
-                    QRect (0 ,0 ,content_width ,2000 ),
-                    Qt .TextFlag .TextWordWrap ,
-                    item .get (key ,""),
-                    )
-                    heights .append (text_rect .height ()+self .CELL_VERTICAL_PADDING )
+                    usable_width = max(50, column_widths[col] - 24)
+                    label .setFixedWidth (usable_width)
+                    heights .append (label .heightForWidth (usable_width) + 24)
+            
             row_height =max (heights )
             table .setRowHeight (row ,row_height )
-            icon_label =table .cellWidget (row ,0 )
-            if isinstance (icon_label ,QLabel ):
-                icon_label .setFixedSize (header .sectionSize (0 ),row_height )
-
-    @staticmethod
-    def _style_icon_for_row (row :int )->int |None :
-        """Map row index to QStyle.StandardPixmap for a meaningful icon.
-
-        Returns None when no suitable Qt icon exists; caller falls back to
-        the emoji text already stored in the item.
-        """
-        return [
-            QStyle .StandardPixmap .SP_ArrowUp,           # 0  Xep hang
-            QStyle .StandardPixmap .SP_DriveNetIcon,       # 1  Ma
-            QStyle .StandardPixmap .SP_MediaPlay,           # 2  Hanh dong
-            QStyle .StandardPixmap .SP_ArrowForward,        # 3  Xu huong
-            QStyle .StandardPixmap .SP_FileDialogContentsView,  # 4  Entry
-            QStyle .StandardPixmap .SP_DialogApplyButton,   # 5  Quyen
-            QStyle .StandardPixmap .SP_FileDialogInfoView,  # 6  Diem tot nhat
-            QStyle .StandardPixmap .SP_DialogOkButton,      # 7  Final
-            QStyle .StandardPixmap .SP_FileDialogListView,  # 8  Co hoi
-            QStyle .StandardPixmap .SP_DirOpenIcon,         # 9  Nhom
-            QStyle .StandardPixmap .SP_MessageBoxQuestion,  # 10 Trang thai entry
-            QStyle .StandardPixmap .SP_MediaPause,          # 11 M15
-            QStyle .StandardPixmap .SP_ArrowRight,          # 12 Gap
-            QStyle .StandardPixmap .SP_ArrowUp,             # 13 Diem mua
-            QStyle .StandardPixmap .SP_ArrowDown,           # 14 Diem ban
-            QStyle .StandardPixmap .SP_ComputerIcon,        # 15 Vi mo (0-30)
-            QStyle .StandardPixmap .SP_CommandLink,         # 16 Thuan vi mo
-            QStyle .StandardPixmap .SP_FileDialogDetailedView,  # 17 R:R
-            QStyle .StandardPixmap .SP_MessageBoxInformation,   # 18 Ly do chinh
-            QStyle .StandardPixmap .SP_FileDialogDetailedView,  # 19 Chi tiet
-        ][row ]

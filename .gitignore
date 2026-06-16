@@ -9,3 +9,5 @@ logs/
 temp/
 build/
 dist/
+.pytest_cache/
+.claude/
