@@ -9,6 +9,7 @@ from PyQt6.QtCore import QThread
 
 from config.paths import app_data_dir
 from core.system_backtest_engine import BacktestRequest, run_system_backtest, summarize_backtest_trades
+from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
 from services.storage_service import JsonStorage
@@ -272,33 +273,7 @@ class BacktestController:
         """Fetch current correlation data (DXY/VIX/US10Y) and macro alignment.
         Returns (correlation_context, macro_alignment_override).
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        correlation_context: dict = {"dxy_candles": None, "vix_candles": None, "us10y_candles": None}
-        try:
-            import yfinance as yf
-            with ThreadPoolExecutor(max_workers=3) as ex:
-                futures = {
-                    ex.submit(yf.download, "DX-Y.NYB", period="5d", interval="1d", progress=False): "dxy",
-                    ex.submit(yf.download, "^VIX", period="5d", interval="1d", progress=False): "vix",
-                    ex.submit(yf.download, "^TNX", period="5d", interval="1d", progress=False): "us10y",
-                }
-                for future in as_completed(futures):
-                    key = futures[future]
-                    try:
-                        data = future.result()
-                        if data is not None and not data.empty:
-                            correlation_context[f"{key}_candles"] = [
-                                {"time": idx.isoformat(), "open": float(row["Open"]), "high": float(row["High"]),
-                                 "low": float(row["Low"]), "close": float(row["Close"])}
-                                for idx, row in data.iterrows()
-                            ]
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        return correlation_context, None
+        return fetch_macro_correlation_context(), None
 
     def _inject_macro_context(self, request: BacktestRequest) -> None:
         corr, macro_align = self._fetch_macro_data()

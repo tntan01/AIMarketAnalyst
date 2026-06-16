@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from ui.screens.shared import action_button
-import requests
+from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.news_service import NewsService
 from services.settings_service import SettingsService
@@ -32,62 +32,7 @@ class MarketWorker(QThread):
     finished = pyqtSignal(dict)
     
     def run(self):
-        data = {}
-        # Try yfinance
-        try:
-            import yfinance as yf
-            tickers = {"DXY": "DX-Y.NYB", "VIX": "^VIX", "US10Y": "^TNX"}
-            for tag, ticker in tickers.items():
-                try:
-                    df = yf.download(ticker, period="5d", interval="1d", progress=False)
-                    if not df.empty and len(df) >= 2:
-                        close_series = df["Close"]
-                        close_val = close_series.iloc[-1]
-                        prev_val = close_series.iloc[-2]
-                        if hasattr(close_val, "iloc"):
-                            close = float(close_val.iloc[0])
-                            prev = float(prev_val.iloc[0])
-                        else:
-                            close = float(close_val)
-                            prev = float(prev_val)
-                        change_pct = (close - prev) / prev * 100 if prev != 0 else 0
-                        data[tag] = (close, change_pct)
-                except Exception:
-                    pass
-        except ImportError:
-            pass
-            
-        if len(data) == 3:
-            self.finished.emit(data)
-            return
-            
-        # Fallback to tradingview
-        tickers = {"DXY": "DX-Y.NYB", "VIX": "^VIX", "US10Y": "^TNX"}
-        import requests
-        for tag, ticker in tickers.items():
-            if tag in data:
-                continue
-            try:
-                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
-                headers = {"User-Agent": "Mozilla/5.0"}
-                resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code == 429:
-                    import time
-                    time.sleep(2)
-                    resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    json_data = resp.json()
-                    quotes = json_data.get("chart", {}).get("result", [])[0].get("indicators", {}).get("quote", [])
-                    closes = [c for c in quotes[0].get("close", []) if c is not None]
-                    if len(closes) >= 2:
-                        close = closes[-1]
-                        prev = closes[-2]
-                        change_pct = (close - prev) / prev * 100 if prev != 0 else 0
-                        data[tag] = (close, change_pct)
-            except Exception:
-                pass
-                
-        self.finished.emit(data)
+        self.finished.emit(fetch_market_overview())
 
 class CalendarWorker(QThread):
     finished = pyqtSignal(list)

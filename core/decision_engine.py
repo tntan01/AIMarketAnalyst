@@ -50,6 +50,8 @@ from core.reason_codes import (
     DECISION_FINAL_SCORE_MODERATE,
     DECISION_FINAL_SCORE_WEAK,
 )
+from core.normalization import normalize_choice
+from core.safe_types import clamp_score as _shared_clamp_score
 
 # ---------------------------------------------------------------------------
 # Decision-state constants
@@ -136,26 +138,7 @@ def clamp_score(value: object, default: int = 0) -> int:
     - ``None``, ``""``, ``"abc"``, NaN, ±Inf → *default*.
     - Never raises.
     """
-    clamped_default = min(max(int(default), 0), 100)
-    if value is None:
-        return clamped_default
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return clamped_default
-        try:
-            num = float(stripped)
-        except (ValueError, OverflowError):
-            return clamped_default
-        if num != num or num == float("inf") or num == float("-inf"):
-            return clamped_default
-        return int(min(max(round(num), 0), 100))
-    if isinstance(value, (int, float)):
-        num = float(value)
-        if num != num or num == float("inf") or num == float("-inf"):
-            return clamped_default
-        return int(min(max(round(num), 0), 100))
-    return clamped_default
+    return _shared_clamp_score(value, 0, 100, default=default)
 
 
 def normalize_decision_cap(value: object) -> str | None:
@@ -170,20 +153,14 @@ def normalize_decision_cap(value: object) -> str | None:
 
     Returns ``None`` for unrecognised, empty, or non-string input.
     """
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip().lower()
-    if not cleaned:
-        return None
-    if cleaned in ("none", "null", "n/a"):
-        return None
-    # Exact match first
-    if cleaned.upper() in VALID_DECISIONS:
-        return cleaned.upper()
-    # Alias lookup
-    return _CAP_ALIASES.get(cleaned)
+    return normalize_choice(
+        value,
+        VALID_DECISIONS,
+        aliases=_CAP_ALIASES,
+        default=None,
+        case="upper",
+        null_values=frozenset({"none", "null", "n/a"}),
+    )
 
 
 def normalize_entry_status(value: object) -> str:
@@ -194,18 +171,14 @@ def normalize_entry_status(value: object) -> str:
 
     ``None`` or unrecognised → ``"unknown"``.  Never raises.
     """
-    if value is None:
-        return "unknown"
-    if not isinstance(value, str):
-        return "unknown"
-    cleaned = value.strip().lower()
-    if not cleaned:
-        return "unknown"
-    valid = {
-        "confirmed_entry", "waiting_confirmation", "watch_zone",
-        "invalidated", "no_setup",
-    }
-    return cleaned if cleaned in valid else "unknown"
+    return normalize_choice(
+        value,
+        frozenset({
+            "confirmed_entry", "waiting_confirmation", "watch_zone",
+            "invalidated", "no_setup",
+        }),
+        default="unknown",
+    ) or "unknown"
 
 
 def gate_allows_trade(

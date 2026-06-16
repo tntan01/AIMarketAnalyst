@@ -8,8 +8,6 @@ from typing import Any
 
 from PyQt6.QtCore import QThread
 
-import yfinance as yf
-
 from config.paths import app_data_dir
 from core.scanner import (
     ScannerRequest,
@@ -23,6 +21,7 @@ from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol
 from services.ai_service import AIProviderConfig, AIService
 from services.journal_service import JournalService
+from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
 from services.news_service import NewsService
 from services.settings_service import SettingsService
@@ -88,21 +87,7 @@ class ScannerController:
 
         # Fetch DXY/VIX/US10Y MỘT LẦN cho toàn bộ scanner (song song)
         progress(14, "Đang tải dữ liệu thị trường Mỹ (DXY, VIX, US10Y)...")
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        correlation_context: dict = {"dxy_candles": None, "vix_candles": None, "us10y_candles": None}
-        with ThreadPoolExecutor(max_workers=3) as ex:
-            futures = {
-                ex.submit(yf.download, "DX-Y.NYB", period="5d", interval="1d", progress=False): "dxy",
-                ex.submit(yf.download, "^VIX", period="5d", interval="1d", progress=False): "vix",
-                ex.submit(yf.download, "^TNX", period="5d", interval="1d", progress=False): "us10y",
-            }
-            for future in as_completed(futures):
-                key = futures[future]
-                try:
-                    data = future.result()
-                    correlation_context[f"{key}_candles"] = _parse_yf_candles(data)
-                except Exception:
-                    pass
+        correlation_context = fetch_macro_correlation_context()
 
         # Pre-fetch toan bo macro context 1 lan (RSS + calendar) de tai su dung trong vong lap
         progress(17, "Đang tải tin tức và phân tích vĩ mô...")
@@ -461,31 +446,3 @@ def _safe_float_for_auto(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
-def _parse_yf_candles(data) -> list | None:
-    """Parse yfinance DataFrame thành list Candle objects."""
-    from core.market_models import Candle
-    if data is None or data.empty:
-        return None
-    candles = []
-    for idx, row in data.iterrows():
-        close_val = row["Close"]
-        if hasattr(close_val, "iloc"):
-            close_val = close_val.iloc[0]
-        open_val = row["Open"]
-        if hasattr(open_val, "iloc"):
-            open_val = open_val.iloc[0]
-        high_val = row["High"]
-        if hasattr(high_val, "iloc"):
-            high_val = high_val.iloc[0]
-        low_val = row["Low"]
-        if hasattr(low_val, "iloc"):
-            low_val = low_val.iloc[0]
-        candles.append(Candle(
-            time=idx.to_pydatetime(),
-            open=float(open_val),
-            high=float(high_val),
-            low=float(low_val),
-            close=float(close_val),
-        ))
-    return candles

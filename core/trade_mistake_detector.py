@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from math import isfinite, isnan
 from typing import Any
 
 from core.reason_codes import (
@@ -39,6 +38,7 @@ from core.reason_codes import (
     MISTAKE_REVENGE_TRADE_CONFIRMED,
     MISTAKE_REVENGE_TRADE_WARNING,
 )
+from core.safe_types import safe_float as _shared_safe_float
 
 # ---------------------------------------------------------------------------
 # Default detector settings
@@ -67,24 +67,8 @@ def safe_float(value: object, default: float = 0.0) -> float:
     Accepts int, float, and numeric strings.  Returns *default* for
     None, empty string, non-numeric strings, NaN, and infinity.
     """
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        if isinstance(value, float) and (isnan(value) or not isfinite(value)):
-            return default
-        return float(value)
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return default
-        try:
-            val = float(stripped)
-        except (ValueError, OverflowError):
-            return default
-        if isnan(val) or not isfinite(val):
-            return default
-        return val
-    return default
+    result = _shared_safe_float(value, default=default)
+    return default if result is None else result
 
 
 def safe_datetime(value: object) -> datetime | None:

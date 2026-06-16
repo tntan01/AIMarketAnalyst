@@ -12,6 +12,7 @@ from core.reason_codes import (
     STAT_EDGE_NOT_ENOUGH_DATA,
     STAT_EDGE_POSITIVE,
 )
+from core.safe_types import optional_float
 from core.statistical_edge_engine import calculate_evidence_score, coerce_result_r
 
 
@@ -133,12 +134,7 @@ def _normalize_symbol(value: str) -> str:
 
 
 def _safe_float(value: object) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    return optional_float(value)
 
 
 def _dedupe(values: list[str]) -> list[str]:

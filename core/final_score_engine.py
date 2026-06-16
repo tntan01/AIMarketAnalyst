@@ -43,6 +43,8 @@ from core.reason_codes import (
     FINAL_SCORE_EXECUTION_STRONG,
     FINAL_SCORE_EXECUTION_WEAK,
 )
+from core.safe_types import clamp_score as _shared_clamp_score
+from core.safe_types import safe_float as _safe_numeric_float
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -78,27 +80,8 @@ NumericLike = int | float | str | None
 
 def _to_float_safe(value: object, default: float = 0.0) -> float:
     """Safely convert any value to a float, returning *default* on failure."""
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        num = float(value)
-        if isnan(num) or not isfinite(num):
-            return default
-        if num < 0:
-            return default
-        return num
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return default
-        try:
-            num = float(stripped)
-            if isnan(num) or not isfinite(num) or num < 0:
-                return default
-            return num
-        except (ValueError, OverflowError):
-            return default
-    return default
+    result = _safe_numeric_float(value, default=default, allow_negative=False)
+    return default if result is None else result
 
 
 def safe_score(value: object, default: int = 0) -> int:
@@ -199,27 +182,7 @@ def clamp_score(value: object, minimum: int = 0, maximum: int = 100) -> int:
     - Result is rounded to the nearest integer.
     - Never raises an exception.
     """
-    if value is None:
-        return minimum
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return minimum
-        try:
-            value = float(stripped)
-        except (ValueError, OverflowError):
-            return minimum
-    if not isinstance(value, (int, float)):
-        return minimum
-    num = float(value)
-    if isnan(num) or not isfinite(num):
-        return minimum
-    result = int(round(num))
-    if result < minimum:
-        return minimum
-    if result > maximum:
-        return maximum
-    return result
+    return _shared_clamp_score(value, minimum, maximum)
 
 
 def default_final_score_result(reason: str = "final_score_not_calculated") -> dict[str, Any]:

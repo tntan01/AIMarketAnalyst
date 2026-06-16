@@ -33,7 +33,7 @@ available.
 
 from __future__ import annotations
 
-from math import isnan
+from math import inf
 from typing import Any
 
 from core.reason_codes import (
@@ -45,6 +45,8 @@ from core.reason_codes import (
     EXECUTION_QUALITY_OK,
     EXECUTION_REVENGE_CONFIRMED,
 )
+from core.safe_types import clamp_score as _shared_clamp_score
+from core.safe_types import optional_float
 
 DEFAULT_EXECUTION_QUALITY_SCORE = 100
 MIN_EXECUTION_QUALITY_SCORE = 0
@@ -54,23 +56,15 @@ MAX_EXECUTION_QUALITY_SCORE = 100
 def clamp_score(value: object, minimum: int = 0, maximum: int = 100) -> int:
     """Safely clamp any numeric input into [*minimum*, *maximum*].
 
-    Returns *minimum* for unparseable / NaN / infinite / None input.
+    Returns *minimum* for unparseable / NaN / None input.
+    Positive infinity is clamped to *maximum* to preserve existing behavior.
     """
-    if value is None:
+    num = optional_float(value)
+    if num == inf:
+        return maximum
+    if num == -inf:
         return minimum
-    try:
-        if isinstance(value, float) and (isnan(value) or value != value):
-            return minimum
-        num = float(value) if not isinstance(value, (int, float)) else float(value)
-        if isnan(num) or num != num:
-            return minimum
-        if num > maximum:
-            return maximum
-        if num < minimum:
-            return minimum
-        return int(round(num))
-    except (ValueError, TypeError, OverflowError):
-        return minimum
+    return _shared_clamp_score(value, minimum, maximum)
 
 
 def default_execution_quality_result(

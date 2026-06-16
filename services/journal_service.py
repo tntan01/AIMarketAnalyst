@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from config.paths import PROJECT_ROOT, journal_db_path
+from core.safe_types import optional_float
 
 
 @dataclass(frozen=True, slots=True)
@@ -501,12 +502,7 @@ class JournalService:
 
 def _safe_float(value: object) -> float | None:
     """Parse float safely, returning None for bad input."""
-    if value is None:
-        return None
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+    return optional_float(value)
 
 
 def _safe_int(value: object) -> int | None:

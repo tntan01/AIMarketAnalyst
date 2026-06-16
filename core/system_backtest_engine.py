@@ -9,6 +9,7 @@ from typing import Any
 from core.analysis_engine import analyze_symbol
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
+from core.safe_types import optional_float
 
 
 AnalysisFn = Callable[..., dict[str, Any]]
@@ -945,7 +946,32 @@ def _request_to_dict(request: BacktestRequest) -> dict[str, Any]:
     data = asdict(request)
     data["start"] = request.start.isoformat()
     data["end"] = request.end.isoformat()
+    data["correlation_context"] = _serialize_correlation_context(request.correlation_context)
     return data
+
+
+def _serialize_correlation_context(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, list):
+            result[key] = [
+                {
+                    "time": candle.time.isoformat(),
+                    "open": candle.open,
+                    "high": candle.high,
+                    "low": candle.low,
+                    "close": candle.close,
+                    "volume": candle.volume,
+                }
+                if isinstance(candle, Candle)
+                else candle
+                for candle in item
+            ]
+        else:
+            result[key] = item
+    return result
 
 
 def _current_drawdown(results: list[float]) -> float:
@@ -969,10 +995,7 @@ def _parse_time(value: str | None) -> datetime | None:
 
 
 def _safe_float(value: object) -> float | None:
-    try:
-        return float(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
+    return optional_float(value)
 
 
 def _safe_int(value: object) -> int | None:

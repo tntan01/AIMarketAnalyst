@@ -46,6 +46,9 @@ from core.reason_codes import (
     SCANNER_NEWS_PENALTY,
     SCANNER_SPREAD_PENALTY,
 )
+from core.normalization import normalize_choice
+from core.safe_types import clamp_score as _shared_clamp_score
+from core.safe_types import safe_float as _shared_safe_float
 
 # ---------------------------------------------------------------------------
 # Scanner-group constants
@@ -139,26 +142,7 @@ def clamp_score(
     - None, "", "abc", NaN, ±Inf → *default* (already clamped).
     - Never raises.
     """
-    d = max(min(int(default), maximum), minimum)
-    if value is None:
-        return d
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return d
-        try:
-            num = float(s)
-        except (ValueError, OverflowError):
-            return d
-        if num != num or num == float("inf") or num == float("-inf"):
-            return d
-        return int(max(min(round(num), maximum), minimum))
-    if isinstance(value, (int, float)):
-        num = float(value)
-        if num != num or num == float("inf") or num == float("-inf"):
-            return d
-        return int(max(min(round(num), maximum), minimum))
-    return d
+    return _shared_clamp_score(value, minimum, maximum, default=default)
 
 
 def safe_float(value: object, default: float = 0.0) -> float:
@@ -167,25 +151,8 @@ def safe_float(value: object, default: float = 0.0) -> float:
     - None, "", "abc", NaN, ±Inf → *default*.
     - Never raises.
     """
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        num = float(value)
-        if num != num or num == float("inf") or num == float("-inf"):
-            return default
-        return num
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return default
-        try:
-            num = float(s)
-            if num != num or num == float("inf") or num == float("-inf"):
-                return default
-            return num
-        except (ValueError, OverflowError):
-            return default
-    return default
+    result = _shared_safe_float(value, default=default)
+    return default if result is None else result
 
 
 def parse_risk_reward(value: object) -> float:
@@ -258,14 +225,7 @@ _ENTRY_STATUS_SET = frozenset({
 
 def normalize_entry_status(value: object) -> str:
     """Normalise an entry-status string to a canonical value."""
-    if not isinstance(value, str):
-        return "unknown"
-    cleaned = value.strip().lower()
-    if not cleaned:
-        return "unknown"
-    if cleaned in _ENTRY_STATUS_SET:
-        return cleaned
-    return "unknown"
+    return normalize_choice(value, _ENTRY_STATUS_SET, default="unknown") or "unknown"
 
 
 _DECISION_ALIASES: dict[str, str] = {
@@ -290,17 +250,16 @@ def normalize_decision(value: object) -> str:
     Accepts both engine constants and legacy action strings.
     Unknown → ``""``.
     """
-    if not isinstance(value, str):
-        return ""
-    cleaned = value.strip()
-    if not cleaned:
-        return ""
-    upper = cleaned.upper()
-    if upper in ("READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP",
-                 "WATCH_ONLY", "TRADE_BLOCKED", "STAND_ASIDE"):
-        return upper
-    lower = cleaned.lower()
-    return _DECISION_ALIASES.get(lower, "")
+    return normalize_choice(
+        value,
+        frozenset({
+            "READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP",
+            "WATCH_ONLY", "TRADE_BLOCKED", "STAND_ASIDE",
+        }),
+        aliases=_DECISION_ALIASES,
+        default="",
+        case="upper",
+    ) or ""
 
 
 def merge_unique_codes(*groups: object) -> list[str]:
