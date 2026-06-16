@@ -96,10 +96,9 @@ class SettingsScreen(QWidget):
         catalog_layout.addWidget(form_row("Mô hình", self.ai_catalog_model_input))
 
         catalog_button_container, catalog_button_row = self._aligned_button_row()
-        self.ai_catalog_add_button = action_button("Thêm", primary=True)
-        self.ai_catalog_update_button = action_button("Sửa")
-        self.ai_catalog_delete_button = action_button("Xóa")
-        self._set_compact_action_button(self.ai_catalog_add_button)
+        self.ai_catalog_add_button = action_button("➕ Thêm", primary=True)
+        self.ai_catalog_update_button = action_button("✏️ Sửa")
+        self.ai_catalog_delete_button = action_button("🗑️ Xóa", primary=True, color="danger")
         catalog_button_row.addWidget(self.ai_catalog_add_button)
         catalog_button_row.addWidget(self.ai_catalog_update_button)
         catalog_button_row.addWidget(self.ai_catalog_delete_button)
@@ -149,10 +148,9 @@ class SettingsScreen(QWidget):
         api_layout.addWidget(form_row("Khóa API", self.ai_api_key_input))
 
         api_button_container, api_button_row = self._aligned_button_row()
-        self.ai_test_button = action_button("Kiểm tra")
-        self.ai_save_button = action_button("Lưu", primary=True)
-        self.ai_delete_button = action_button("Xóa")
-        self._set_compact_action_button(self.ai_save_button)
+        self.ai_test_button = action_button("🧪 Kiểm tra", primary=True, color="info")
+        self.ai_save_button = action_button("💾 Lưu", primary=True, color="success")
+        self.ai_delete_button = action_button("🗑️ Xóa", primary=True, color="danger")
         api_button_row.addWidget(self.ai_test_button)
         api_button_row.addWidget(self.ai_save_button)
         api_button_row.addWidget(self.ai_delete_button)
@@ -590,7 +588,7 @@ class SettingsScreen(QWidget):
         self.mt5_detail_label = QLabel("")
         self.mt5_detail_label.setObjectName("HelperText")
         self.mt5_detail_label.setWordWrap(True)
-        self.mt5_retry_button = action_button("Thử kết nối lại", primary=True)
+        self.mt5_retry_button = action_button("🔄 Thử kết nối lại", primary=True, color="info")
         self.mt5_retry_button.clicked.connect(self.refresh_mt5_status)
 
         status_row = QHBoxLayout()
@@ -624,13 +622,12 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(50)
+        self.mt5_symbols_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(56)
         self.mt5_symbols_table.setColumnWidth(6, 112)
         self.mt5_symbols_table.setColumnWidth(7, 144)
         self.mt5_symbols_table.setColumnWidth(8, 116)
         self.mt5_symbols_table.setColumnWidth(9, 118)
-        mt5_input_height = 34
         for row, symbol in enumerate(self.mt5_display_symbols):
             for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", ""]):
                 item = QTableWidgetItem(value)
@@ -646,53 +643,32 @@ class SettingsScreen(QWidget):
             min_score.setObjectName("Mt5MinScoreInput")
             min_score.setValidator(QIntValidator(0, 100, min_score))
             min_score.setMaxLength(3)
-            min_score.setFixedSize(76, mt5_input_height)
+            min_score.setFixedWidth(76)
             min_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
             min_score.setEnabled(symbol_config.backtest)
-            min_score.setStyleSheet(
-                """
-                QLineEdit#Mt5MinScoreInput {
-                    background: #111827;
-                    border: 1px solid #475569;
-                    border-radius: 6px;
-                    color: #e5e7eb;
-                    min-height: 32px;
-                    max-height: 32px;
-                    padding: 0 6px;
-                }
-                QLineEdit#Mt5MinScoreInput:disabled {
-                    background: #0f172a;
-                    border: 1px solid #475569;
-                    color: #e5e7eb;
-                }
-                QLineEdit#Mt5MinScoreInput:focus {
-                    border: 1px solid #38bdf8;
-                }
-                """
-            )
             min_score.setToolTip("Ngưỡng final score nhỏ nhất để scanner coi là đủ điều kiện. 0 = không lọc.")
             backtest_box.toggled.connect(min_score.setEnabled)
-            self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(min_score, vertical_margin=6))
+            self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(min_score))
 
             # Auto Regime dropdown
             regime_combo = QComboBox()
             regime_combo.addItems(["", "range", "trend_up", "trend_down", "volatile"])
             regime_combo.setCurrentText(symbol_config.auto_trade_regime or "")
             regime_combo.setEnabled(symbol_config.backtest)
-            regime_combo.setFixedSize(122, mt5_input_height)
+            regime_combo.setFixedWidth(122)
             regime_combo.setToolTip("Chỉ auto-trade khi market regime khớp. Để trống nếu không lọc.")
             backtest_box.toggled.connect(regime_combo.setEnabled)
-            self.mt5_symbols_table.setCellWidget(row, 7, self._centered_cell(regime_combo, vertical_margin=6))
+            self.mt5_symbols_table.setCellWidget(row, 7, self._centered_cell(regime_combo))
 
             # Auto Side dropdown
             side_combo = QComboBox()
             side_combo.addItems(["best", "buy", "sell"])
             side_combo.setCurrentText(symbol_config.auto_trade_side or "best")
             side_combo.setEnabled(symbol_config.backtest)
-            side_combo.setFixedSize(92, mt5_input_height)
+            side_combo.setFixedWidth(92)
             side_combo.setToolTip("Hướng auto-trade. 'best' = dùng best_side từ phân tích.")
             backtest_box.toggled.connect(side_combo.setEnabled)
-            self.mt5_symbols_table.setCellWidget(row, 8, self._centered_cell(side_combo, vertical_margin=6))
+            self.mt5_symbols_table.setCellWidget(row, 8, self._centered_cell(side_combo))
 
             # Min RR spinbox
             min_rr = QDoubleSpinBox()
@@ -702,20 +678,20 @@ class SettingsScreen(QWidget):
             min_rr.setValue(symbol_config.auto_trade_min_rr)
             min_rr.setEnabled(symbol_config.backtest)
             min_rr.setObjectName("Mt5MinRrInput")
-            min_rr.setFixedSize(96, mt5_input_height)
+            min_rr.setFixedWidth(96)
             min_rr.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
             min_rr.setAlignment(Qt.AlignmentFlag.AlignCenter)
             min_rr.setToolTip("R:R kỳ vọng tối thiểu để auto-trade. 0 = không lọc.")
             backtest_box.toggled.connect(min_rr.setEnabled)
-            self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr, vertical_margin=6))
+            self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr))
         frame.layout().addWidget(self.mt5_symbols_table)
         mt5_button_row = QHBoxLayout()
         mt5_button_row.setContentsMargins(0, 0, 0, 0)
         mt5_button_row.setSpacing(10)
-        self.mt5_detect_button = action_button("Tự phát hiện mã broker", primary=True)
+        self.mt5_detect_button = action_button("🔍 Tự phát hiện mã broker", primary=True, color="info")
         self.mt5_detect_button.clicked.connect(self.refresh_mt5_status)
         mt5_button_row.addWidget(self.mt5_detect_button)
-        self.mt5_symbol_settings_button = action_button("Lưu cấu hình mã quét", primary=True)
+        self.mt5_symbol_settings_button = action_button("💾 Lưu cấu hình mã quét", primary=True, color="success")
         self.mt5_symbol_settings_button.clicked.connect(self._save_mt5_symbol_settings)
         mt5_button_row.addWidget(self.mt5_symbol_settings_button)
         mt5_button_row.addStretch(1)
@@ -909,7 +885,7 @@ class SettingsScreen(QWidget):
         button_spacer = QWidget()
         button_spacer.setFixedWidth(132)
         button_row.addWidget(button_spacer)
-        self.trading_save_button = action_button("Lưu cài đặt giao dịch", primary=True)
+        self.trading_save_button = action_button("💾 Lưu cài đặt giao dịch", primary=True, color="success")
         self.trading_save_button.clicked.connect(self._save_trading_settings)
         button_row.addWidget(self.trading_save_button)
         button_row.addStretch(1)
@@ -992,7 +968,7 @@ class SettingsScreen(QWidget):
         button_spacer = QWidget()
         button_spacer.setFixedWidth(132)
         button_row.addWidget(button_spacer)
-        self.display_save_button = action_button("Lưu hiển thị", primary=True)
+        self.display_save_button = action_button("💾 Lưu hiển thị", primary=True, color="success")
         self.display_save_button.clicked.connect(self._save_display_settings)
         button_row.addWidget(self.display_save_button)
         button_row.addStretch(1)
@@ -1138,7 +1114,7 @@ class SettingsScreen(QWidget):
         button_spacer = QWidget()
         button_spacer.setFixedWidth(132)
         button_row.addWidget(button_spacer)
-        self.advanced_save_button = action_button("Lưu nâng cao", primary=True)
+        self.advanced_save_button = action_button("💾 Lưu nâng cao", primary=True, color="success")
         self.advanced_save_button.clicked.connect(self._save_advanced_settings)
         button_row.addWidget(self.advanced_save_button)
         button_row.addStretch(1)
@@ -1195,5 +1171,5 @@ class SettingsScreen(QWidget):
         frame.layout().addWidget(form_row("Số nến mỗi khung", bars))
         frame.layout().addWidget(form_row("Số mã gọi AI", limit))
         frame.layout().addWidget(news)
-        frame.layout().addWidget(action_button("Lưu nâng cao", primary=True))
+        frame.layout().addWidget(action_button("💾 Lưu nâng cao", primary=True, color="success"))
         return frame

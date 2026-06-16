@@ -132,9 +132,7 @@ class BacktestScreen(QWidget):
         self.symbol_summary = QLabel("")
         self.symbol_summary.setObjectName("BacktestSymbolSummary")
         self.symbol_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.symbol_button = QPushButton("Chọn mã")
-        self.symbol_button.setObjectName("InlineHelpButton")
-        self.symbol_button.setFixedHeight(34)
+        self.symbol_button = action_button("🔍 Chọn mã", primary=True, color="info")
         self.symbol_button.clicked.connect(self._show_symbol_dialog)
         self._update_symbol_summary()
 
@@ -227,7 +225,6 @@ class BacktestScreen(QWidget):
             self.max_consecutive_loss_input,
         ):
             field.setObjectName("BacktestField")
-            field.setFixedHeight(34)
 
         market_grid.addWidget(self._symbol_cell(), 0, 0)
         market_grid.addWidget(self._field_cell("Từ ngày", self.start_date, 58), 1, 0)
@@ -273,14 +270,9 @@ class BacktestScreen(QWidget):
         controls = QHBoxLayout(run_bar)
         controls.setContentsMargins(0, 10, 0, 10)
         controls.setSpacing(10)
-        self.run_button = action_button("Chạy backtest", primary=True)
-        self.run_button.setObjectName("BacktestRunButton")
-        self.run_button.setFixedHeight(32)
-        self.run_button.setMinimumWidth(148)
+        self.run_button = action_button("▶️ Chạy backtest", primary=True, color="success")
         self.run_button.clicked.connect(self._run_backtest)
-        self.help_button = QPushButton("Giải thích")
-        self.help_button.setObjectName("InlineHelpButton")
-        self.help_button.setFixedHeight(32)
+        self.help_button = action_button("❓ Giải thích", primary=True, color="info")
         self.help_button.clicked.connect(self._show_input_help)
         self.progress = QProgressBar()
         self.progress.setObjectName("BacktestProgress")
@@ -329,9 +321,8 @@ class BacktestScreen(QWidget):
         box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         return box
 
-    def _field_cell(self, label: str, field: QWidget, label_width: int = 64, *, height: int = 34) -> QWidget:
+    def _field_cell(self, label: str, field: QWidget, label_width: int = 64) -> QWidget:
         cell = QWidget()
-        cell.setFixedHeight(height)
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -340,7 +331,6 @@ class BacktestScreen(QWidget):
         title.setFixedWidth(label_width)
         title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         field.setMinimumWidth(0)
-        field.setFixedHeight(height)
         layout.addWidget(title)
         layout.addWidget(field, 1)
         return cell
@@ -349,7 +339,6 @@ class BacktestScreen(QWidget):
         label = QLabel(text)
         label.setObjectName("FormLabel")
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        label.setFixedHeight(34)
         return label
 
     def _two_small_fields_cell(
@@ -361,10 +350,8 @@ class BacktestScreen(QWidget):
         *,
         first_label_width: int,
         second_label_width: int,
-        height: int = 34,
     ) -> QWidget:
         cell = QWidget()
-        cell.setFixedHeight(height)
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -376,7 +363,6 @@ class BacktestScreen(QWidget):
             title.setObjectName("FormLabel")
             title.setFixedWidth(width)
             title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            field.setFixedHeight(height)
             layout.addWidget(title)
             layout.addWidget(field)
         layout.addStretch(1)
@@ -384,7 +370,6 @@ class BacktestScreen(QWidget):
 
     def _symbol_cell(self) -> QWidget:
         cell = QWidget()
-        cell.setFixedHeight(34)
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -392,7 +377,6 @@ class BacktestScreen(QWidget):
         title.setObjectName("FormLabel")
         title.setFixedWidth(58)
         title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.symbol_summary.setFixedHeight(34)
         layout.addWidget(title)
         layout.addWidget(self.symbol_summary, 1)
         layout.addWidget(self.symbol_button)
@@ -438,29 +422,14 @@ class BacktestScreen(QWidget):
         header.addWidget(title)
         header.addStretch(1)
 
-        load_btn = QPushButton("📂 Xem lại kết quả backtest")
-        load_btn.setObjectName("LoadFileButton")
-        load_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        load_btn.setFixedHeight(22)
+        load_btn = action_button("📂 Xem lại kết quả", primary=True, color="success")
         load_btn.clicked.connect(self._load_backtest_file)
 
-        analyze_btn = QPushButton("🤖 Phân tích")
-        analyze_btn.setObjectName("AnalyzeFileButton")
-        analyze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        analyze_btn.setFixedHeight(22)
+        analyze_btn = action_button("🤖 Phân tích", primary=True, color="info")
         analyze_btn.clicked.connect(self._analyze_loaded_result)
         self.analyze_btn = analyze_btn
 
-        for btn in (load_btn, analyze_btn):
-            btn.setStyleSheet(
-                "QPushButton {"
-                "  font-size: 11px; padding: 1px 8px;"
-                "  background: #0d9488; color: #fff; border: 1px solid #14b8a6; border-radius: 4px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: #0f766e; border-color: #2dd4bf;"
-                "}"
-            )
+        
         header.addWidget(load_btn)
         header.addWidget(analyze_btn)
         layout.addLayout(header)
@@ -554,8 +523,7 @@ class BacktestScreen(QWidget):
             )
             text.setPlainText(response)
             layout.addWidget(text, 1)
-            close_btn = QPushButton("Đóng")
-            close_btn.setObjectName("PrimaryButton")
+            close_btn = action_button("❌ Đóng")
             close_btn.clicked.connect(dlg.accept)
             btn_row = QHBoxLayout()
             btn_row.addStretch()
@@ -736,92 +704,6 @@ class BacktestScreen(QWidget):
             border-bottom: 1px solid #334155;
         }
 
-        QPushButton#BacktestRunButton {
-            background: #0d9488;
-            border: 1px solid #14b8a6;
-            border-radius: 6px;
-            color: #ffffff;
-            font-weight: 700;
-            min-width: 148px;
-            padding: 6px 12px;
-        }
-
-        QPushButton#BacktestRunButton:hover {
-            background: #0f766e;
-            border-color: #2dd4bf;
-        }
-
-        QComboBox#BacktestField,
-        QDateEdit#BacktestField,
-        QDoubleSpinBox#BacktestField,
-        QSpinBox#BacktestField {
-            background: #111827;
-            border: 1px solid #475569;
-            border-radius: 6px;
-            color: #e5e7eb;
-            min-height: 18px;
-            padding: 7px 9px;
-            selection-background-color: #0d9488;
-            selection-color: #ffffff;
-        }
-
-        QComboBox#BacktestField,
-        QDateEdit#BacktestField {
-            padding-right: 34px;
-        }
-
-        QComboBox#BacktestField:hover,
-        QDateEdit#BacktestField:hover,
-        QDoubleSpinBox#BacktestField:hover,
-        QSpinBox#BacktestField:hover {
-            background: #151f2e;
-            border-color: #64748b;
-        }
-
-        QComboBox#BacktestField:focus,
-        QComboBox#BacktestField:on,
-        QDateEdit#BacktestField:focus,
-        QDateEdit#BacktestField:on,
-        QDoubleSpinBox#BacktestField:focus,
-        QSpinBox#BacktestField:focus {
-            background: #101827;
-            border-color: #38bdf8;
-        }
-
-        QComboBox#BacktestField::drop-down,
-        QDateEdit#BacktestField::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 30px;
-            border-left: 1px solid #475569;
-            border-top-right-radius: 6px;
-            border-bottom-right-radius: 6px;
-            background: transparent;
-        }
-
-        QComboBox#BacktestField::drop-down:hover,
-        QDateEdit#BacktestField::drop-down:hover {
-            background: #172235;
-            border-left-color: #64748b;
-        }
-
-        QComboBox#BacktestField::down-arrow,
-        QDateEdit#BacktestField::down-arrow {
-            image: url(assets/icons/chevron-down.svg);
-            width: 14px;
-            height: 14px;
-            margin-right: 8px;
-        }
-
-        QComboBox#BacktestField QAbstractItemView {
-            background: #111827;
-            border: 1px solid #64748b;
-            outline: 0;
-            color: #e5e7eb;
-            selection-background-color: #0d9488;
-            selection-color: #ffffff;
-            padding: 4px;
-        }
         """
 
     @staticmethod
@@ -994,14 +876,13 @@ class BacktestInputHelpDialog(QDialog):
         self.table.verticalHeader().setDefaultSectionSize(76)
         layout.addWidget(self.table, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close_btn = buttons.button(QDialogButtonBox.StandardButton.Close)
-        if close_btn is not None:
-            close_btn.setText("Đóng")
-            close_btn.setObjectName("PrimaryButton")
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
-        layout.addWidget(buttons)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 8, 0, 0)
+        buttons_layout.addStretch(1)
+        close_btn = action_button("❌ Đóng")
+        close_btn.clicked.connect(self.accept)
+        buttons_layout.addWidget(close_btn)
+        layout.addLayout(buttons_layout)
 
 
 class SymbolSelectionDialog(QDialog):
@@ -1019,13 +900,11 @@ class SymbolSelectionDialog(QDialog):
 
         controls = QHBoxLayout()
         controls.setSpacing(8)
-        self.select_all_button = QPushButton("Chọn tất cả")
-        self.clear_button = QPushButton("Bỏ chọn")
-        self.forex_button = QPushButton("Forex")
-        self.metal_crypto_button = QPushButton("Kim loại/Crypto")
+        self.select_all_button = action_button("✅ Chọn tất cả", primary=True, color="success")
+        self.clear_button = action_button("❌ Bỏ chọn", primary=True, color="danger")
+        self.forex_button = action_button("💱 Forex", primary=True, color="info")
+        self.metal_crypto_button = action_button("🪙 Kim loại/Crypto", primary=True, color="info")
         for button in (self.select_all_button, self.clear_button, self.forex_button, self.metal_crypto_button):
-            button.setObjectName("InlineHelpButton")
-            button.setFixedHeight(30)
             controls.addWidget(button)
         root.addLayout(controls)
 
@@ -1048,22 +927,22 @@ class SymbolSelectionDialog(QDialog):
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        if ok_btn is not None:
-            ok_btn.setText("Áp dụng")
-            ok_btn.setObjectName("PrimaryButton")
-        if cancel_btn is not None:
-            cancel_btn.setText("Hủy")
-        root.addWidget(buttons)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 8, 0, 0)
+        buttons_layout.setSpacing(8)
+        buttons_layout.addStretch(1)
+        cancel_btn = action_button("❌ Hủy", primary=False, color="danger")
+        ok_btn = action_button("✅ Áp dụng", primary=True, color="success")
+        buttons_layout.addWidget(cancel_btn)
+        buttons_layout.addWidget(ok_btn)
+        root.addLayout(buttons_layout)
 
         self.select_all_button.clicked.connect(lambda: self._set_all(True))
         self.clear_button.clicked.connect(lambda: self._set_all(False))
         self.forex_button.clicked.connect(self._select_forex)
         self.metal_crypto_button.clicked.connect(self._select_metal_crypto)
-        buttons.accepted.connect(self._accept_if_valid)
-        buttons.rejected.connect(self.reject)
+        ok_btn.clicked.connect(self._accept_if_valid)
+        cancel_btn.clicked.connect(self.reject)
 
     def selected_symbols(self) -> list[str]:
         return [symbol for symbol, checkbox in self.checkboxes.items() if checkbox.isChecked()]

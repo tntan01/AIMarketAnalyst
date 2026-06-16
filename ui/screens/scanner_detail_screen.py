@@ -57,9 +57,9 @@ class ScannerDetailScreen(QWidget):
         root.addLayout(body, 1)
 
         actions = QHBoxLayout()
-        self.back_button = action_button("Quay lại Scanner")
-        self.save_button = action_button("Lưu nhật ký")
-        self.export_button = action_button("Xuất JSON")
+        self.back_button = action_button("⬅️ Quay lại")
+        self.save_button = action_button("💾 Lưu nhật ký", primary=True, color="success")
+        self.export_button = action_button("📤 Xuất JSON")
         if self.navigate:
             self.back_button.clicked.connect(lambda: self.navigate("scanner"))
         self.save_button.clicked.connect(self._save_to_journal)

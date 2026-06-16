@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ui.screens.shared import action_button
 import requests
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.news_service import NewsService
@@ -122,9 +123,7 @@ class DashboardScreen(QWidget):
         self.mt5_warning_detail.setWordWrap(True)
         text_box.addWidget(self.mt5_warning_title)
         text_box.addWidget(self.mt5_warning_detail)
-        retry = QPushButton("Thử lại MT5")
-        retry.setObjectName("PrimaryButton")
-        retry.setCursor(Qt.CursorShape.PointingHandCursor)
+        retry = action_button("🔄 Thử lại MT5", primary=True, color="info")
         retry.clicked.connect(self.refresh_mt5_status)
         layout.addLayout(text_box, 1)
         layout.addWidget(retry)
@@ -152,9 +151,7 @@ class DashboardScreen(QWidget):
         layout.addWidget(self.dxy_label)
         layout.addWidget(self.vix_label)
         layout.addWidget(self.us10y_label)
-        help_btn = QPushButton("Giải thích chỉ số")
-        help_btn.setObjectName("MarketHelpBtn")
-        help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        help_btn = action_button("❓ Giải thích chỉ số", primary=True, color="info")
         help_btn.setToolTip("Ý nghĩa các chỉ số")
         help_btn.clicked.connect(self._show_market_help)
         layout.addWidget(help_btn)
@@ -174,16 +171,8 @@ class DashboardScreen(QWidget):
         header_layout.addWidget(title)
         header_layout.addStretch()
 
-        self.econ_refresh_button = QPushButton("L\u00e0m m\u1edbi")
-        self.econ_refresh_button.setObjectName("PrimaryButton")
-        self.econ_refresh_button.setProperty("dashboardRefresh", True)
-        self.econ_refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.econ_refresh_button.setToolTip("T\u1ea3i l\u1ea1i to\u00e0n b\u1ed9 l\u1ecbch kinh t\u1ebf")
-        self.econ_refresh_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        self.econ_refresh_button.setFixedHeight(28)
-        self.econ_refresh_button.setMinimumWidth(76)
-        self.econ_refresh_button.setMaximumWidth(92)
-        self.econ_refresh_button.setIconSize(QSize(12, 12))
+        self.econ_refresh_button = action_button("🔄 Làm mới", primary=True, color="info")
+        self.econ_refresh_button.setToolTip("Tải lại toàn bộ lịch kinh tế")
         self.econ_refresh_button.clicked.connect(lambda: self.refresh_economic_calendar(force_refresh=True))
         header_layout.addWidget(self.econ_refresh_button)
         layout.addLayout(header_layout)
@@ -244,7 +233,7 @@ class DashboardScreen(QWidget):
             self._refresh_economic_calendar(force_refresh=force_refresh)
         finally:
             if refresh_button is not None:
-                refresh_button.setText("L\u00e0m m\u1edbi")
+                refresh_button.setText("🔄 Làm mới")
                 refresh_button.setEnabled(True)
 
     def _refresh_economic_calendar(self, *, force_refresh: bool = False) -> None:
@@ -640,24 +629,12 @@ class DashboardScreen(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        ai_btn = QPushButton("🤖 Xem tác động")
-        ai_btn.setObjectName("AIImpactBtn")
-        ai_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        ai_btn.setStyleSheet(
-            "QPushButton#AIImpactBtn {"
-            "  font-size:13px; font-weight:600; padding:8px 18px;"
-            "  background:#2563eb; color:#fff; border:none; border-radius:6px;"
-            "}"
-            "QPushButton#AIImpactBtn:hover { background:#1d4ed8; }"
-            "QPushButton#AIImpactBtn:disabled { background:#334155; color:#64748b; }"
-        )
+        ai_btn = action_button("🤖 Xem tác động", primary=True, color="info")
 
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = QPushButton("Đóng")
-        close_btn.setObjectName("PrimaryButton")
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn = action_button("❌ Đóng")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
 
@@ -915,9 +892,7 @@ class DashboardScreen(QWidget):
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        close_btn = QPushButton("Đóng")
-        close_btn.setObjectName("PrimaryButton")
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn = action_button("❌ Đóng")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         root_layout.addLayout(btn_layout)

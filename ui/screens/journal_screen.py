@@ -7,7 +7,9 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
     QDateEdit,
+    QDialog,
     QDoubleSpinBox,
+    QSpinBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -18,6 +20,8 @@ from PyQt6.QtWidgets import (
     QTableView,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -33,6 +37,7 @@ DECISION_TEXT = {
     "wait": "Chờ",
     "wait_for_confirmation": "Chờ",
     "stand_aside": "Đứng ngoài",
+    "closed": "Đã đóng",
     "skip": "Bỏ qua",
 }
 BIAS_TEXT = {"buy": "Mua", "sell": "Bán", "neutral": "Trung lập", "stand_aside": "Đứng ngoài"}
@@ -50,6 +55,8 @@ class JournalTableModel(QAbstractTableModel):
         ("buy_score", "Mua"),
         ("sell_score", "Bán"),
         ("trade_permission", "Quyền"),
+        ("result_r", "K.quả R"),
+        ("result_amount", "Lợi nhuận"),
         ("note", "Ghi chú"),
         ("open", "Mở"),
     ]
@@ -72,14 +79,25 @@ class JournalTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return self._display(entry, key)
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if key in {"buy_score", "sell_score", "open"}:
+            if key in {"buy_score", "sell_score", "result_r", "result_amount", "open"}:
                 return Qt.AlignmentFlag.AlignCenter
             return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         if role == Qt.ItemDataRole.ForegroundRole:
+            if key == "open":
+                return QColor("#38bdf8")
             if key == "decision":
                 return {"ready": QColor("#5eead4"), "watch": QColor("#93c5fd"), "wait_for_confirmation": QColor("#facc15")}.get(entry.decision)
             if key == "trade_permission":
                 return {"allowed": QColor("#5eead4"), "caution": QColor("#facc15"), "blocked": QColor("#94a3b8")}.get(entry.trade_permission)
+            if key == "direction_bias":
+                return {"buy": QColor("#22c55e"), "sell": QColor("#fb7185")}.get(entry.direction_bias)
+            if key in {"result_r", "result_amount"}:
+                val = getattr(entry, key)
+                if val is not None:
+                    if val > 0:
+                        return QColor("#5eead4")
+                    elif val < 0:
+                        return QColor("#fb7185")
         if role == Qt.ItemDataRole.ToolTipRole:
             return entry.note or entry.ai_commentary
         return None
@@ -103,7 +121,7 @@ class JournalTableModel(QAbstractTableModel):
 
     def _display(self, entry: JournalEntry, key: str) -> str:
         if key == "open":
-            return "Mở"
+            return "Chi tiết ↗"
         if key == "timestamp_utc":
             return format_time(entry.timestamp_utc)
         if key == "mode":
@@ -114,6 +132,14 @@ class JournalTableModel(QAbstractTableModel):
             return BIAS_TEXT.get(entry.direction_bias, entry.direction_bias)
         if key == "trade_permission":
             return PERMISSION_TEXT.get(entry.trade_permission, entry.trade_permission)
+        if key == "result_r":
+            if entry.result_r is not None:
+                return f"{entry.result_r:+.2f}R"
+            return "--"
+        if key == "result_amount":
+            if entry.result_amount is not None:
+                return f"{entry.result_amount:+.2f}"
+            return "--"
         value = getattr(entry, key)
         return str(value if value not in (None, "") else "--")
 
@@ -132,19 +158,35 @@ class JournalScreen(QWidget):
         root.setContentsMargins(18, 14, 18, 14)
         root.setSpacing(10)
         root.addWidget(page_header("Nhật ký phân tích", "Lọc, mở lại và ghi chú các phân tích đã lưu.", "SQLite"))
-        root.addWidget(self._filters())
-        root.addWidget(self._table_card(), 1)
-        root.addWidget(self._stats_bar())
-        root.addWidget(self._performance_card(), 1)
+
+        tabs = QTabWidget()
+        tabs.setObjectName("ContentTabs")
+
+        tab1 = QWidget()
+        tab1_layout = QVBoxLayout(tab1)
+        tab1_layout.setContentsMargins(0, 8, 0, 0)
+        tab1_layout.setSpacing(10)
+        tab1_layout.addWidget(self._filters())
+        tab1_layout.addWidget(self._table_card(), 1)
+        tabs.addTab(tab1, "Nhật ký Phân tích")
+
+        tab2 = QWidget()
+        tab2_layout = QVBoxLayout(tab2)
+        tab2_layout.setContentsMargins(0, 8, 0, 0)
+        tab2_layout.setSpacing(10)
+        tab2_layout.addWidget(self._stats_bar())
+        tab2_layout.addWidget(self._performance_card(), 1)
+        tabs.addTab(tab2, "Thống kê Hiệu suất")
+
+        root.addWidget(tabs, 1)
         self.refresh_status()
 
     def _filters(self) -> QFrame:
-        frame = card("Bộ lọc")
-        frame.layout().setSpacing(8)
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 4)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(10)
+        frame = card()  # Không tiêu đề để giao diện thoáng đãng
+        frame.layout().setContentsMargins(12, 8, 12, 8)
+        layout = QHBoxLayout()
+        layout.setSpacing(10)
+        frame.layout().addLayout(layout)
 
         self.date_from_input = QDateEdit()
         self.date_from_input.setCalendarPopup(True)
@@ -157,35 +199,41 @@ class JournalScreen(QWidget):
         self.decision_input.addItems(["Tất cả", "Sẵn sàng", "Theo dõi", "Chờ", "Đứng ngoài"])
         self.permission_input = QComboBox()
         self.permission_input.addItems(["Tất cả", "Được phép", "Cẩn trọng", "Bị chặn"])
-        self.min_score_input = QDoubleSpinBox()
+        self.min_score_input = QSpinBox()
         self.min_score_input.setRange(0, 100)
-        self.min_score_input.setDecimals(0)
         self.min_score_input.setValue(0)
 
-        fields = [
-            ("Từ ngày", self.date_from_input),
-            ("Đến ngày", self.date_to_input),
-            ("Mã", self.symbol_input),
-            ("Kết luận", self.decision_input),
-            ("Quyền", self.permission_input),
-            ("Điểm tối thiểu", self.min_score_input),
-        ]
-        for _, field in fields:
+        for field in [self.date_from_input, self.date_to_input, self.symbol_input, self.decision_input, self.permission_input, self.min_score_input]:
             field.setObjectName("FilterField")
-        for index, (label, field) in enumerate(fields):
-            grid.addWidget(self._compact_field(label, field), index // 3, index % 3)
-        frame.layout().addLayout(grid)
 
-        actions = QHBoxLayout()
-        actions.addStretch(1)
-        apply_button = action_button("Áp dụng", primary=True)
-        clear_button = action_button("Xóa bộ lọc")
+        layout.addWidget(self._compact_field_horizontal("Từ", self.date_from_input))
+        layout.addWidget(self._compact_field_horizontal("Đến", self.date_to_input))
+        layout.addWidget(self._compact_field_horizontal("Mã", self.symbol_input))
+        layout.addWidget(self._compact_field_horizontal("K.luận", self.decision_input))
+        layout.addWidget(self._compact_field_horizontal("Quyền", self.permission_input))
+        layout.addWidget(self._compact_field_horizontal("Điểm >=", self.min_score_input))
+
+        layout.addStretch(1)
+
+        apply_button = action_button("✅ Áp dụng", primary=True, color="success")
+        clear_button = action_button("🧹 Xóa lọc")
         apply_button.clicked.connect(self._apply_filters)
         clear_button.clicked.connect(self._clear_filters)
-        actions.addWidget(apply_button)
-        actions.addWidget(clear_button)
-        frame.layout().addLayout(actions)
+
+        layout.addWidget(apply_button)
+        layout.addWidget(clear_button)
         return frame
+
+    def _compact_field_horizontal(self, label: str, field: QWidget) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        lbl = QLabel(label)
+        lbl.setObjectName("FormLabel")
+        layout.addWidget(lbl)
+        layout.addWidget(field)
+        return widget
 
     def _table_card(self) -> QFrame:
         frame = card("Danh sách nhật ký")
@@ -196,7 +244,6 @@ class JournalScreen(QWidget):
         self.table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
-        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.table.clicked.connect(self._table_clicked)
         frame.layout().addWidget(self.table, 1)
 
@@ -207,7 +254,7 @@ class JournalScreen(QWidget):
 
         actions = QHBoxLayout()
         actions.addStretch(1)
-        self.open_button = action_button("Mở chi tiết", primary=True)
+        self.open_button = action_button("🔍 Mở chi tiết", primary=True)
         self.open_button.setEnabled(False)
         self.open_button.clicked.connect(self._open_selected)
         actions.addWidget(self.open_button)
@@ -218,12 +265,12 @@ class JournalScreen(QWidget):
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(16)
         self.stat_labels: dict[str, QLabel] = {}
         for title in ["Tổng", "Sẵn sàng", "Theo dõi", "Chờ", "Đứng ngoài", "Mã nhiều nhất"]:
-            item = labeled_value(title, "--")
-            self.stat_labels[title] = item.findChildren(QLabel)[1]
+            item = self._compact_metric(title, "--", is_stat=True)
             layout.addWidget(item)
+        layout.addStretch(1)
         return widget
 
     def _performance_card(self) -> QFrame:
@@ -234,10 +281,16 @@ class JournalScreen(QWidget):
         self.performance_scope_label.setWordWrap(True)
         actions.addWidget(self.performance_scope_label, 1)
         actions.addStretch(1)
-        refresh_button = action_button("Làm mới")
+        
+        explain_button = action_button("📖 Giải thích")
+        explain_button.clicked.connect(self._show_explanation_dialog)
+        actions.addWidget(explain_button)
+        
+        refresh_button = action_button("🔄 Làm mới", primary=True)
         refresh_button.clicked.connect(self._refresh_performance)
         actions.addWidget(refresh_button)
-        self.sync_mt5_button = action_button("Đồng bộ MT5")
+        
+        self.sync_mt5_button = action_button("⬇️ Đồng bộ MT5", primary=True, color="info")
         self.sync_mt5_button.setToolTip("Nhập các lệnh đã đóng từ lịch sử MT5 trong 90 ngày gần nhất.")
         self.sync_mt5_button.clicked.connect(self._sync_mt5_history)
         actions.addWidget(self.sync_mt5_button)
@@ -245,8 +298,8 @@ class JournalScreen(QWidget):
 
         self.performance_labels: dict[str, QLabel] = {}
         grid = QGridLayout()
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(12)
         metrics = [
             ("Đã đóng", "0"),
             ("Tỷ lệ thắng", "0%"),
@@ -260,9 +313,8 @@ class JournalScreen(QWidget):
             ("Chất lượng thực thi", "0"),
         ]
         for index, (title, value) in enumerate(metrics):
-            item = labeled_value(title, value)
-            self.performance_labels[title] = item.findChildren(QLabel)[1]
-            grid.addWidget(item, index // 3, index % 3)
+            item = self._compact_metric(title, value, is_stat=False)
+            grid.addWidget(item, index // 5, index % 5)
         frame.layout().addLayout(grid)
 
         tables = QHBoxLayout()
@@ -275,12 +327,10 @@ class JournalScreen(QWidget):
         self.performance_group_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.performance_group_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.performance_group_table.setAlternatingRowColors(True)
-        self.performance_group_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.performance_group_table.setColumnWidth(0, 86)
+        self.performance_group_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.performance_group_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         for column in range(2, 7):
-            self.performance_group_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-            self.performance_group_table.setColumnWidth(column, 72)
+            self.performance_group_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         tables.addWidget(self.performance_group_table, 3)
 
         self.recent_trade_table = QTableWidget()
@@ -291,12 +341,10 @@ class JournalScreen(QWidget):
         self.recent_trade_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.recent_trade_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.recent_trade_table.setAlternatingRowColors(True)
-        self.recent_trade_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.recent_trade_table.setColumnWidth(0, 118)
+        self.recent_trade_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.recent_trade_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         for column in (1, 2, 3, 5):
-            self.recent_trade_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-            self.recent_trade_table.setColumnWidth(column, 62)
+            self.recent_trade_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         tables.addWidget(self.recent_trade_table, 2)
         frame.layout().addLayout(tables, 1)
 
@@ -309,6 +357,10 @@ class JournalScreen(QWidget):
         self.performance_sync_label.setWordWrap(True)
         frame.layout().addWidget(self.performance_sync_label)
         return frame
+
+    def _show_explanation_dialog(self) -> None:
+        dialog = MetricsExplanationDialog(self)
+        dialog.exec()
 
     def refresh_status(self) -> None:
         self._refresh_symbol_filter()
@@ -383,6 +435,17 @@ class JournalScreen(QWidget):
         }
         for title, label in self.performance_labels.items():
             label.setText(str(values.get(title, "--")))
+            if title == "Lãi/lỗ ròng":
+                net_amount = summary.get("net_amount")
+                if isinstance(net_amount, (int, float)):
+                    if net_amount > 0:
+                        label.setStyleSheet("color: #10b981;")
+                    elif net_amount < 0:
+                        label.setStyleSheet("color: #ef4444;")
+                    else:
+                        label.setStyleSheet("")
+                else:
+                    label.setStyleSheet("")
         self._fill_group_table(data)
         recent = data.get("recent", []) if isinstance(data.get("recent"), list) else []
         self._fill_recent_trade_table(recent)
@@ -456,7 +519,12 @@ class JournalScreen(QWidget):
         try:
             result = self.journal_controller.sync_mt5_history(days=90)
         except Exception as exc:
-            QMessageBox.warning(self, "Đồng bộ MT5 thất bại", str(exc))
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Đồng bộ MT5 thất bại")
+            msg_box.setText(str(exc))
+            msg_box.setIcon(QMessageBox.Icon.Warning)
+            msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+            msg_box.exec()
             return
         finally:
             self.sync_mt5_button.setText("Đồng bộ MT5")
@@ -465,17 +533,18 @@ class JournalScreen(QWidget):
         self.performance_sync_label.setText(
             f"Lần đồng bộ MT5 gần nhất: nhận {result.get('received', 0)}, tạo mới {result.get('created', 0)}, cập nhật {result.get('updated', 0)}, bỏ qua {result.get('skipped', 0)}."
         )
-        QMessageBox.information(
-            self,
-            "Đồng bộ MT5 hoàn tất",
-            (
-                f"Nhận: {result.get('received', 0)}\n"
-                f"Tạo mới: {result.get('created', 0)}\n"
-                f"Cập nhật: {result.get('updated', 0)}\n"
-                f"Bỏ qua: {result.get('skipped', 0)}\n"
-                f"Lỗi: {len(result.get('errors', [])) if isinstance(result.get('errors'), list) else 0}"
-            ),
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Đồng bộ MT5 hoàn tất")
+        msg_box.setText(
+            f"Nhận: {result.get('received', 0)}\n"
+            f"Tạo mới: {result.get('created', 0)}\n"
+            f"Cập nhật: {result.get('updated', 0)}\n"
+            f"Bỏ qua: {result.get('skipped', 0)}\n"
+            f"Lỗi: {len(result.get('errors', [])) if isinstance(result.get('errors'), list) else 0}"
         )
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+        msg_box.exec()
 
     def _table_clicked(self, index: QModelIndex) -> None:
         self.open_button.setEnabled(index.isValid())
@@ -494,11 +563,25 @@ class JournalScreen(QWidget):
 
     def _configure_table_columns(self) -> None:
         header = self.table.horizontalHeader()
-        widths = {0: 132, 1: 72, 2: 112, 3: 82, 4: 82, 5: 48, 6: 48, 7: 84, 9: 48}
+        widths = {
+            0: 135,  # Thời gian
+            1: 75,   # Mã
+            2: 85,   # Chế độ
+            3: 90,   # Kết luận
+            4: 95,   # Thiên hướng
+            5: 48,   # Mua (score)
+            6: 48,   # Bán (score)
+            7: 90,   # Quyền
+            8: 85,   # Kết quả R
+            9: 90,   # Lợi nhuận
+            11: 80,  # Mở
+        }
         for column, width in widths.items():
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-            self.table.setColumnWidth(column, width)
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+            if column < len(JournalTableModel.COLUMNS):
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+                self.table.setColumnWidth(column, width)
+        if len(JournalTableModel.COLUMNS) > 10:
+            header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
 
     def _compact_field(self, label: str, field: QWidget) -> QWidget:
         widget = QWidget()
@@ -511,6 +594,134 @@ class JournalScreen(QWidget):
         layout.addWidget(label_widget)
         layout.addWidget(field, 1)
         return widget
+
+    def _compact_metric(self, title: str, val: str, is_stat: bool = False) -> QWidget:
+        w = QWidget()
+        l = QHBoxLayout(w)
+        l.setContentsMargins(0, 0, 0, 0)
+        l.setSpacing(6)
+        t = QLabel(f"{title}:")
+        t.setObjectName("FormLabel")
+        v = QLabel(val)
+        v.setObjectName("MiniStatValue")
+        if is_stat:
+            self.stat_labels[title] = v
+        else:
+            self.performance_labels[title] = v
+        l.addWidget(t)
+        l.addWidget(v)
+        l.addStretch(1)
+        return w
+
+
+class MetricsExplanationDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Giải thích các chỉ số")
+        self.setMinimumSize(800, 600)
+        self.setObjectName("AnalysisDetailDialog")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+        
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(False)
+        browser.setObjectName("ChartPanel")
+        
+        html = """
+        <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; font-size: 13px; color: #e5e7eb; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+            th { text-align: left; padding: 10px; border-bottom: 1px solid #38bdf8; color: #38bdf8; font-weight: normal; font-size: 14px;}
+            td { padding: 8px 10px; border-bottom: 1px solid #2b3545; vertical-align: top; }
+            .term { color: #5eead4; }
+            .highlight { color: #facc15; }
+            .section-title { color: #38bdf8; font-weight: normal; font-size: 16px; margin-top: 10px; margin-bottom: 10px; }
+        </style>
+        <body>
+            <div class='section-title'>Chỉ số hiệu suất (Performance Metrics)</div>
+            <table>
+                <tr>
+                    <th width="30%">Chỉ số</th>
+                    <th>Ý nghĩa & Ứng dụng</th>
+                </tr>
+                <tr>
+                    <td><span class="term">Đã đóng</span></td>
+                    <td>Tổng số lệnh giao dịch đã kết thúc và có kết quả cuối cùng.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Tỷ lệ thắng (Win rate)</span></td>
+                    <td>Tỉ lệ phần trăm các lệnh mang lại lợi nhuận. Chỉ số này cần được kết hợp với <span class="highlight">Kỳ vọng</span> để biết hệ thống có thực sự sinh lời hay không.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Kỳ vọng (Expectancy)</span></td>
+                    <td>Trung bình mỗi lệnh bạn mang về bao nhiêu <span class="highlight">đơn vị rủi ro (R)</span>. Nếu giá trị này lớn hơn 0, hệ thống của bạn có lợi thế toán học trong dài hạn.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Tổng R</span></td>
+                    <td>Tổng lợi nhuận được quy đổi ra <span class="highlight">đơn vị R</span>. Đây là thước đo chuẩn xác nhất về hiệu suất độc lập với quy mô vốn.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Lãi/lỗ ròng (Net P/L)</span></td>
+                    <td>Tổng số tiền lợi nhuận hoặc thua lỗ thực tế thu về tài khoản.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Hệ số lợi nhuận (Profit Factor)</span></td>
+                    <td>Tỉ lệ giữa tổng số tiền kiếm được và tổng số tiền mất đi. Giá trị <span class="highlight">trên 1.0</span> cho thấy chiến lược đang có lãi.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">DD tối đa (Max Drawdown)</span></td>
+                    <td>Chuỗi sụt giảm tài khoản sâu nhất từ mức đỉnh (tính theo R). Dùng để đánh giá <span class="highlight">mức độ rủi ro</span> của hệ thống.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Thắng TB / Thua TB</span></td>
+                    <td>Số R trung bình đạt được khi lệnh thắng, và số R trung bình mất đi khi lệnh thua (Reward/Risk Ratio thực tế).</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Chất lượng thực thi</span></td>
+                    <td>Điểm số đánh giá mức độ <span class="highlight">tuân thủ kỷ luật</span> và khả năng bám sát đúng kế hoạch giao dịch đã đề ra.</td>
+                </tr>
+            </table>
+
+            <div class='section-title'>Các cột dữ liệu Bảng nhóm & Bảng lệnh</div>
+            <table>
+                <tr>
+                    <th width="30%">Tên cột</th>
+                    <th>Giải thích chi tiết</th>
+                </tr>
+                <tr>
+                    <td><span class="term">Nhóm / Tên</span></td>
+                    <td>Tiêu chí dùng để phân loại và gom nhóm dữ liệu (Ví dụ: theo Mã giao dịch, Setup, Phiên giao dịch...).</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Lệnh</span></td>
+                    <td>Khối lượng (số lượng) lệnh giao dịch thuộc về nhóm tương ứng.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">Đóng lúc</span></td>
+                    <td>Thời gian thực tế mà lệnh giao dịch được thanh lý (đóng).</td>
+                </tr>
+                <tr>
+                    <td><span class="term">R / P/L</span></td>
+                    <td>Kết quả cuối cùng của lệnh tính theo <span class="highlight">tỉ lệ rủi ro (R)</span> và theo <span class="highlight">tiền mặt (P/L)</span>.</td>
+                </tr>
+                <tr>
+                    <td><span class="term">CL (Chất lượng)</span></td>
+                    <td>Điểm chất lượng thực thi của riêng lệnh đó, giúp rà soát lại các lệnh có lỗi tâm lý hoặc vi phạm nguyên tắc.</td>
+                </tr>
+            </table>
+        </body>
+        """
+        browser.setHtml(html)
+        layout.addWidget(browser)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch(1)
+        close_btn = action_button("❌ Đóng")
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
 
 
 def decision_value(text: str) -> str | None:

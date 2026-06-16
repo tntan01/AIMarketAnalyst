@@ -56,8 +56,8 @@ def labeled_value(title: str, value: str) -> QFrame:
     frame = QFrame()
     frame.setObjectName("MiniStat")
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(12, 9, 12, 9)
-    layout.setSpacing(4)
+    layout.setContentsMargins(6, 4, 6, 4)
+    layout.setSpacing(0)
     title_label = QLabel(title)
     title_label.setObjectName("MiniStatTitle")
     value_label = QLabel(value)
@@ -81,10 +81,12 @@ def form_row(label: str, field: QWidget) -> QWidget:
     return widget
 
 
-def action_button(text: str, primary: bool = False) -> QPushButton:
+def action_button(text: str, primary: bool = False, color: str | None = None) -> QPushButton:
     button = QPushButton(text)
     button.setObjectName("PrimaryButton" if primary else "SecondaryButton")
     button.setCursor(Qt.CursorShape.PointingHandCursor)
+    if color:
+        button.setProperty("btnColor", color)
     return button
 
 

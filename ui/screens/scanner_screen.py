@@ -355,7 +355,7 @@ class ScannerScreen (QWidget ):
     # Dynamically resolved from COLUMNS
     SHORT_REASON_COL =12  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
-    TABLE_EXTRA_COLUMN_PADDING ={2 :18 ,3 :18 ,6 :18 ,10 :18 ,15 :22 ,16 :22 }
+    TABLE_EXTRA_COLUMN_PADDING ={2 :18 ,3 :18 ,6 :18 ,10 :18 ,15 :22 ,16 :22 ,17 :24 }
     TABLE_REASON_HORIZONTAL_PADDING =30
     TABLE_MIN_REASON_WIDTH =150
 
@@ -410,9 +410,7 @@ class ScannerScreen (QWidget ):
 
         symbol_row =QHBoxLayout ()
         symbol_row .setSpacing (10 )
-        self .symbol_select_button =QPushButton ("Chọn mã quét")
-        self .symbol_select_button .setObjectName ("InlineHelpButton")
-        self .symbol_select_button .setCursor (Qt .CursorShape .PointingHandCursor )
+        self.symbol_select_button = action_button("🔍 Chọn mã quét", primary=True, color="info")
         self .symbol_select_button .clicked .connect (self ._show_symbol_dialog )
         self .symbol_summary_label =QLabel ("")
         self .symbol_summary_label .setObjectName ("HelperText")
@@ -436,11 +434,10 @@ class ScannerScreen (QWidget ):
         tf_seconds =old_to_tf .get (settings .notifications .auto_scan_interval_minutes ,900 )
         interval_index =self .scan_interval_combo .findData (tf_seconds )
         self .scan_interval_combo .setCurrentIndex (interval_index if interval_index >=0 else 1 )
-        self .auto_trade_check =QPushButton ("Tự động vào lệnh MT5")
-        self .auto_trade_check .setObjectName ("AutoTradeToggle")
-        self .auto_trade_check .setCheckable (True )
-        self .auto_trade_check .setCursor (Qt .CursorShape .PointingHandCursor )
-        self .auto_trade_check .setFixedHeight (34 )
+        self.auto_trade_check = QPushButton("🤖 Tự động vào lệnh MT5")
+        self.auto_trade_check.setObjectName("AutoTradeToggle")
+        self.auto_trade_check.setCheckable(True)
+        self.auto_trade_check.setCursor(Qt.CursorShape.PointingHandCursor)
         self .auto_trade_check .setToolTip (
             "Chỉ dùng khi quét tự động. Khi bật, hệ thống có thể đặt lệnh MT5 cho setup sẵn sàng."
         )
@@ -449,10 +446,9 @@ class ScannerScreen (QWidget ):
         self .scan_mode_combo .currentIndexChanged .connect (self ._update_auto_trade_toggle_state )
         self ._update_auto_trade_toggle_state ()
 
-        self .scan_button =action_button ('Quét thị trường',primary =True )
-        self .scan_button .setFixedHeight (34 )
+        self .scan_button =action_button ('🔎 Quét thị trường',primary =True ,color ="info")
         self .scan_button .clicked .connect (self ._run_scan )
-        self .stop_auto_scan_button =action_button ("Dừng quét tự động")
+        self .stop_auto_scan_button =action_button ("⏹️ Dừng quét tự động",primary =True ,color ="danger")
         self .stop_auto_scan_button .setVisible (False )
         self .stop_auto_scan_button .clicked .connect (self ._stop_auto_scan )
 
@@ -547,17 +543,15 @@ class ScannerScreen (QWidget ):
             header_label =QLabel ('Bảng kết quả quét')
             header_label .setObjectName ("PanelTitle")
             header_layout .addWidget (header_label )
-            self .help_button =QPushButton ('Giải thích ý nghĩa')
-            self .help_button .setObjectName ("InlineHelpButton")
-            self .help_button .setCursor (Qt .CursorShape .PointingHandCursor )
+            self.help_button = action_button("❓ Giải thích", primary=True, color="info")
             self .help_button .setToolTip ('Xem giải thích các thông số trong bảng')
             self .help_button .clicked .connect (self ._show_columns_help )
             header_layout .addWidget (self .help_button )
             header_layout .addStretch (1 )
-            self .detail_button =action_button ('Xem chi tiết',primary =True )
+            self .detail_button =action_button ('🔍 Xem chi tiết',primary =True )
             self .detail_button .setEnabled (False )
             self .detail_button .clicked .connect (self ._open_selected_detail )
-            self .save_button =action_button ('Lưu snapshot')
+            self .save_button =action_button ('📸 Lưu snapshot',primary =True ,color ="success")
             self .save_button .setEnabled (False )
             self .save_button .clicked .connect (self ._save_snapshot )
             header_layout .addWidget (self .detail_button )
@@ -575,7 +569,6 @@ class ScannerScreen (QWidget ):
         self .table .verticalHeader ().setVisible (False )
         self .table .horizontalHeader ().setStretchLastSection (False )
         self .table .horizontalHeader ().setDefaultAlignment (Qt .AlignmentFlag .AlignCenter )
-        self .table .horizontalHeader ().setMinimumHeight (52 )
         self .table .horizontalHeader ().setHighlightSections (False )
         self .table .setHorizontalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAsNeeded )
         self .table .setHorizontalScrollMode (QTableView .ScrollMode .ScrollPerPixel )
@@ -918,11 +911,9 @@ class ScannerSymbolSelectionDialog (QDialog ):
 
         controls = QHBoxLayout()
         controls.setSpacing(8)
-        self.select_all_button = QPushButton("Chọn tất cả khả dụng")
-        self.clear_button = QPushButton("Bỏ chọn")
+        self.select_all_button = action_button("✅ Chọn tất cả khả dụng", primary=True, color="success")
+        self.clear_button = action_button("❌ Bỏ chọn", primary=True, color="danger")
         for button in (self.select_all_button, self.clear_button):
-            button.setObjectName("InlineHelpButton")
-            button.setFixedHeight(30)
             controls.addWidget(button)
         controls.addStretch(1)
         root.addLayout(controls)
@@ -956,20 +947,20 @@ class ScannerSymbolSelectionDialog (QDialog ):
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        if ok_btn is not None:
-            ok_btn.setText("Áp dụng")
-            ok_btn.setObjectName("PrimaryButton")
-        if cancel_btn is not None:
-            cancel_btn.setText("Hủy")
-        root.addWidget(buttons)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 8, 0, 0)
+        buttons_layout.setSpacing(8)
+        buttons_layout.addStretch(1)
+        cancel_btn = action_button("❌ Hủy", primary=False, color="danger")
+        ok_btn = action_button("✅ Áp dụng", primary=True, color="success")
+        buttons_layout.addWidget(cancel_btn)
+        buttons_layout.addWidget(ok_btn)
+        root.addLayout(buttons_layout)
 
         self.select_all_button.clicked.connect(self._select_all_available)
         self.clear_button.clicked.connect(self._clear_all)
-        buttons.accepted.connect(self._accept_if_valid)
-        buttons.rejected.connect(self.reject)
+        ok_btn.clicked.connect(self._accept_if_valid)
+        cancel_btn.clicked.connect(self.reject)
 
     def selected_symbols(self) -> list[str]:
         return [
@@ -1093,15 +1084,13 @@ class ScannerColumnsHelpDialog (QDialog ):
         self .help_table =table
         layout .addWidget (table ,1 )
 
-        buttons =QDialogButtonBox (QDialogButtonBox .StandardButton .Close )
-        buttons .rejected .connect (self .reject )
-        buttons .accepted .connect (self .accept )
-        close_btn =buttons .button (QDialogButtonBox .StandardButton .Close )
-        if close_btn is not None :
-            close_btn .setText ('Đóng')
-            close_btn .setObjectName ("SecondaryButton")
-            close_btn .clicked .connect (self .accept )
-        layout .addWidget (buttons )
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 8, 0, 0)
+        buttons_layout.addStretch(1)
+        close_btn = action_button("❌ Đóng")
+        close_btn.clicked.connect(self.accept)
+        buttons_layout.addWidget(close_btn)
+        layout.addLayout(buttons_layout)
         self ._sync_help_table_layout ()
 
     def showEvent (self ,event )->None :
