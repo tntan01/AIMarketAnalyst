@@ -47,10 +47,18 @@ class MT5Service:
         path = symbol_profile_path or CONFIG_DIR / "symbol_profiles.json"
         self.symbol_profiles = json.loads(path.read_text(encoding="utf-8"))
 
+    def _ensure_initialized(self, mt5: object) -> bool:
+        try:
+            if mt5.terminal_info() is not None or mt5.account_info() is not None:
+                return True
+        except Exception:
+            pass
+        return bool(mt5.initialize())
+
     def connect_thread(self) -> bool:
         try:
             import MetaTrader5 as mt5
-            return mt5.initialize()
+            return self._ensure_initialized(mt5)
         except ImportError:
             return False
 
@@ -73,9 +81,9 @@ class MT5Service:
                 message="Chưa cài package MetaTrader5.",
             )
 
-        # initialized = mt5.initialize()
+        initialized = self._ensure_initialized(mt5)
         error_code, error_message = mt5.last_error()
-        if False: # bypass explicit initialize in status check
+        if not initialized:
             return MT5ConnectionStatus(
                 initialized=False,
                 terminal_connected=False,
@@ -159,7 +167,8 @@ class MT5Service:
         except ImportError:
             return []
 
-        # if not mt5.initialize(): return []
+        if not self._ensure_initialized(mt5):
+            return []
 
         symbols = mt5.symbols_get()
         if not symbols:

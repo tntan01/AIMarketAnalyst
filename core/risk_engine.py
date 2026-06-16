@@ -347,9 +347,14 @@ def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
         return 1.0
     mt5 = None
     initialized = False
+    owned_connection = False
     try:
         import MetaTrader5 as mt5
 
+        try:
+            owned_connection = mt5.terminal_info() is None and mt5.account_info() is None
+        except Exception:
+            owned_connection = True
         initialized = mt5.initialize()
         if not initialized:
             return None
@@ -370,7 +375,7 @@ def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
     except Exception:
         return None
     finally:
-        if initialized and mt5 is not None:
+        if initialized and owned_connection and mt5 is not None:
             mt5.shutdown()
 
 

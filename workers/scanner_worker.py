@@ -22,10 +22,15 @@ class ScannerWorker(QObject):
 
     @pyqtSlot()
     def run(self) -> None:
-        import MetaTrader5 as mt5
-        mt5.initialize()
+        mt5 = None
+        initialized = False
         self.state = WorkerState.RUNNING
         try:
+            import MetaTrader5 as mt5
+
+            initialized = mt5.initialize()
+            if not initialized:
+                raise RuntimeError("Khong khoi tao duoc ket noi MT5 cho scanner.")
             self.progress.emit(5, "Đang chuẩn bị quét thị trường...")
             result = self.task(**self.request, _progress_callback=self._emit_progress)
         except Exception as exc:
@@ -36,7 +41,8 @@ class ScannerWorker(QObject):
             self.progress.emit(100, "Hoàn tất quét thị trường.")
             self.succeeded.emit(result)
         finally:
-            mt5.shutdown()
+            if initialized and mt5 is not None:
+                mt5.shutdown()
             self.finished.emit()
 
     def _emit_progress(self, percent: int, message: str) -> None:
