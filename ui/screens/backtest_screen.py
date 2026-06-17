@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -496,38 +497,36 @@ class BacktestScreen(QWidget):
         QApplication.processEvents()
 
         try:
-            summary = self.result.get("summary", {})
-            trades = self.result.get("trades", [])
-            prompt = (
-                "Phân tích ngắn gọn bằng tiếng Việt kết quả backtest sau:\n"
-                f"- Tổng số lệnh: {summary.get('total_trades', 'N/A')}\n"
-                f"- Tỷ lệ thắng: {summary.get('win_rate', 'N/A')}%\n"
-                f"- Kỳ vọng: {summary.get('expectancy_r', 'N/A')}R\n"
-                f"- Hệ số lợi nhuận: {summary.get('profit_factor', 'N/A')}\n"
-                f"- Drawdown tối đa: {summary.get('max_drawdown_r', 'N/A')}R\n"
-                f"- Tổng R: {summary.get('total_r', 'N/A')}R\n"
-                "\nĐánh giá:\n"
-                "1. Hệ thống này có edge không?\n"
-                "2. Rủi ro chính là gì?\n"
-                "3. Có nên trade live không? Nếu có thì cần điều kiện gì?\n"
-                "Trả lời ngắn gọn, bullet point."
-            )
+            prompt = self._build_analysis_prompt()
             config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key)
             ai = self.app.create_ai_service(config) if self.app else AIService(config)
             response = ai.analyze(prompt)
 
             dlg = QDialog(self)
             dlg.setWindowTitle("Phân tích kết quả backtest")
-            dlg.setMinimumSize(600, 400)
+            dlg.setMinimumSize(740, 560)
             dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
             layout = QVBoxLayout(dlg)
             layout.setContentsMargins(20, 18, 20, 16)
             text = QTextEdit()
             text.setReadOnly(True)
             text.setStyleSheet(
-                "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: 1px solid #2b3545; border-radius: 6px; padding: 12px; }"
+                "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: 1px solid #2b3545; border-radius: 6px; padding: 16px; }"
             )
-            text.setPlainText(response)
+            
+            stats_html = self._generate_stats_html()
+            ai_html = self._format_ai_to_html(response)
+            
+            final_html = (
+                f"{stats_html}"
+                f"<hr style='border: 0; border-top: 1px dashed #334155; margin: 24px 0;' />"
+                f"<div style='font-family:-apple-system,Segoe UI,sans-serif;'>"
+                f"<h2 style='color:#a78bfa; margin-bottom: 12px; font-size: 16px;'>🤖 AI NHẬN XÉT & ĐÁNH GIÁ</h2>"
+                f"{ai_html}"
+                f"</div>"
+            )
+            
+            text.setHtml(final_html)
             layout.addWidget(text, 1)
             close_btn = action_button("❌ Đóng")
             close_btn.clicked.connect(dlg.accept)
@@ -541,6 +540,270 @@ class BacktestScreen(QWidget):
         finally:
             self.analyze_btn.setText("🤖 Phân tích")
             self.analyze_btn.setEnabled(True)
+
+    def _build_analysis_prompt(self) -> str:
+        summary = self.result.get("summary", {}) if isinstance(self.result.get("summary"), dict) else {}
+        breakdowns = self.result.get("breakdowns", {}) if isinstance(self.result.get("breakdowns"), dict) else {}
+        by_symbol = breakdowns.get("by_symbol", {}) if isinstance(breakdowns, dict) else {}
+
+        lines = [
+            "Dựa vào các số liệu backtest sau, hãy đưa ra NHẬN XÉT VÀ ĐÁNH GIÁ (không cần lặp lại số liệu):",
+            "",
+            "TỔNG HỢP TẤT CẢ MÃ:",
+            f"  Tổng số lệnh: {summary.get('total_trades', 'N/A')}",
+            f"  Tỷ lệ thắng: {summary.get('win_rate', 'N/A')}%",
+            f"  Kỳ vọng: {summary.get('expectancy_r', 'N/A')}R",
+            f"  Hệ số lợi nhuận: {summary.get('profit_factor', 'N/A')}",
+            f"  Drawdown tối đa: {summary.get('max_drawdown_r', 'N/A')}R",
+            f"  Tổng R: {summary.get('total_r', 'N/A')}R",
+        ]
+
+        if by_symbol:
+            lines.append("")
+            lines.append("PHÂN TÍCH THEO TỪNG CẶP:")
+            for symbol, sym_stats in by_symbol.items():
+                if not isinstance(sym_stats, dict):
+                    continue
+                lines.append(f"  {symbol}:")
+                lines.append(f"    Số lệnh: {sym_stats.get('total_trades', 'N/A')}")
+                lines.append(f"    Tỷ lệ thắng: {sym_stats.get('win_rate', 'N/A')}%")
+                lines.append(f"    Kỳ vọng: {sym_stats.get('expectancy_r', 'N/A')}R")
+                lines.append(f"    Hệ số lợi nhuận: {sym_stats.get('profit_factor', 'N/A')}")
+                lines.append(f"    Drawdown tối đa: {sym_stats.get('max_drawdown_r', 'N/A')}R")
+                lines.append(f"    Tổng R: {sym_stats.get('total_r', 'N/A')}R")
+
+        lines.extend([
+            "",
+            "Yêu cầu Đánh giá:",
+            "1. Hệ thống này có edge (lợi thế) không?",
+            "2. Rủi ro chính là gì?",
+            "3. Có nên trade live không? Nếu có thì cần điều kiện gì?",
+            "4. So sánh hiệu suất giữa các cặp (nếu có nhiều cặp), cặp nào tốt nhất/tệ nhất?",
+            "",
+            "Trả lời ngắn gọn, bullet point, KHÔNG dùng ký tự * hay markdown. KHÔNG CẦN CHÉP LẠI BẢNG THỐNG KÊ, CHỈ ĐƯA RA NHẬN XÉT.",
+        ])
+        return "\n".join(lines)
+
+    def _generate_stats_html(self) -> str:
+        summary = self.result.get("summary", {}) if isinstance(self.result.get("summary"), dict) else {}
+        breakdowns = self.result.get("breakdowns", {}) if isinstance(self.result.get("breakdowns"), dict) else {}
+        by_symbol = breakdowns.get("by_symbol", {}) if isinstance(breakdowns, dict) else {}
+
+        def get_stat(data: dict, key: str, default: str = "0.00") -> str:
+            val = data.get(key)
+            if val is None:
+                return default
+            if isinstance(val, (int, float)):
+                return f"{val:.2f}" if isinstance(val, float) else str(val)
+            return str(val)
+
+        def eval_winrate(wr: float) -> str:
+            if wr >= 55: return "🟢 Tốt"
+            if wr >= 45: return "🟡 Ổn định"
+            return "🔴 Cảnh báo"
+
+        def eval_profit_factor(pf: float) -> str:
+            if pf >= 1.5: return "🔥 Tuyệt vời"
+            if pf >= 1.1: return "👍 Khả quan"
+            return "⚠️ Rủi ro"
+
+        def eval_drawdown(dd: float) -> str:
+            if dd > -10: return "🛡️ An toàn"
+            if dd > -20: return "⚠️ Cần theo dõi"
+            return "🆘 Nguy hiểm"
+
+        html = [
+            "<div style='font-family:-apple-system,Segoe UI,sans-serif;'>",
+            "<h2 style='color:#38bdf8; margin-top: 0; margin-bottom: 12px; font-size: 16px;'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
+        ]
+        
+        wr = float(summary.get("win_rate", 0) or 0)
+        pf = float(summary.get("profit_factor", 0) or 0)
+        dd = float(summary.get("max_drawdown_r", 0) or 0)
+        
+        html.append(
+            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;'>"
+            f"<tr>"
+            f"<th style='text-align: left; padding: 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Chỉ số</th>"
+            f"<th style='text-align: right; padding: 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Giá trị</th>"
+            f"<th style='text-align: right; padding: 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Đánh giá</th>"
+            f"</tr>"
+            
+            f"<tr>"
+            f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>🔢 Tổng số lệnh</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #f8fafc; font-weight: bold;'>{get_stat(summary, 'total_trades', '0')}</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #94a3b8;'>-</td>"
+            f"</tr>"
+            
+            f"<tr>"
+            f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>🎯 Tỷ lệ thắng</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #f8fafc; font-weight: bold;'>{get_stat(summary, 'win_rate')}%</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b;'>{eval_winrate(wr)}</td>"
+            f"</tr>"
+            
+            f"<tr>"
+            f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>💎 Hệ số lợi nhuận</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #f8fafc; font-weight: bold;'>{get_stat(summary, 'profit_factor')}</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b;'>{eval_profit_factor(pf)}</td>"
+            f"</tr>"
+
+            f"<tr>"
+            f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>🚀 Kỳ vọng</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #f8fafc; font-weight: bold;'>{get_stat(summary, 'expectancy_r')}R</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #94a3b8;'>-</td>"
+            f"</tr>"
+            
+            f"<tr>"
+            f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>📉 Drawdown tối đa</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #f8fafc; font-weight: bold;'>{get_stat(summary, 'max_drawdown_r')}R</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b;'>{eval_drawdown(dd)}</td>"
+            f"</tr>"
+            
+            f"<tr>"
+            f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>💰 Tổng R</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{get_stat(summary, 'total_r')}R</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #94a3b8;'>-</td>"
+            f"</tr>"
+            f"</table>"
+        )
+
+        if by_symbol and len(by_symbol) > 0:
+            html.append("<h2 style='color:#fbbf24; margin-bottom: 16px; margin-top: 24px; font-size: 16px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
+            html.append("<div style='display: flex; flex-wrap: wrap; gap: 12px;'>")
+            
+            for symbol, sym_stats in by_symbol.items():
+                if not isinstance(sym_stats, dict):
+                    continue
+                sym_wr = float(sym_stats.get("win_rate", 0) or 0)
+                sym_pf = float(sym_stats.get("profit_factor", 0) or 0)
+                sym_dd = float(sym_stats.get("max_drawdown_r", 0) or 0)
+                
+                html.append(
+                    f"<div style='background-color: #1e293b; border-radius: 8px; padding: 14px; width: calc(50% - 6px); box-sizing: border-box; border-left: 4px solid #38bdf8;'>"
+                    f"<div style='font-size: 15px; font-weight: bold; color: #f8fafc; margin-bottom: 10px;'>✨ {symbol}</div>"
+                    f"<table style='width: 100%; border-collapse: collapse; font-size: 13px;'>"
+                    f"<tr>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>Lệnh:</span> <span style='color: #e2e8f0; font-weight: bold;'>{get_stat(sym_stats, 'total_trades', '0')}</span></td>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>Kỳ vọng:</span> <span style='color: #e2e8f0; font-weight: bold;'>{get_stat(sym_stats, 'expectancy_r')}R</span></td>"
+                    f"</tr>"
+                    f"<tr>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>Tỷ lệ thắng:</span> <span style='color: #e2e8f0; font-weight: bold;'>{get_stat(sym_stats, 'win_rate')}%</span> {eval_winrate(sym_wr)}</td>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>PF:</span> <span style='color: #e2e8f0; font-weight: bold;'>{get_stat(sym_stats, 'profit_factor')}</span> {eval_profit_factor(sym_pf)}</td>"
+                    f"</tr>"
+                    f"<tr>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>Tổng R:</span> <span style='color: #22c55e; font-weight: bold;'>{get_stat(sym_stats, 'total_r')}R</span></td>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>DD:</span> <span style='color: #ef4444; font-weight: bold;'>{get_stat(sym_stats, 'max_drawdown_r')}R</span></td>"
+                    f"</tr>"
+                    f"</table>"
+                    f"</div>"
+                )
+            html.append("</div>")
+
+        html.append("</div>")
+        return "".join(html)
+
+    @staticmethod
+    def _format_ai_to_html(raw: str) -> str:
+        lines = raw.splitlines()
+        html_lines: list[str] = []
+        in_ul = False
+        in_ol = False
+
+        def _close_lists():
+            nonlocal in_ul, in_ol
+            if in_ul:
+                html_lines.append("</ul>")
+                in_ul = False
+            if in_ol:
+                html_lines.append("</ol>")
+                in_ol = False
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # Strip ** markers
+            line = line.replace("**", "")
+
+            stripped = line.strip()
+
+            # Empty line -> close lists, add paragraph break
+            if not stripped:
+                _close_lists()
+                html_lines.append("<br>")
+                i += 1
+                continue
+
+            # Bold heading-like lines (all caps or ending with colon, short)
+            is_heading = (
+                stripped.isupper()
+                or (stripped.endswith(":") and len(stripped) < 80 and not stripped.startswith(("-", "•", "*", "1.", "2.", "3.", "4.", "5.")))
+            )
+
+            if is_heading:
+                _close_lists()
+                html_lines.append(f"<p style='margin:14px 0 6px;font-weight:700;color:#f8fafc;font-size:14px;'>{stripped}</p>")
+                i += 1
+                continue
+
+            # Bullet lines: -, *, •, or numbered 1. 2. etc.
+            bullet_match = False
+            prefix = ""
+
+            m = re.match(r"^(\s*)([-*•])\s+(.*)", stripped)
+            if m:
+                bullet_match = True
+                prefix = "ul"
+                content = m.group(3)
+            else:
+                m = re.match(r"^(\s*)(\d+)[.)]\s+(.*)", stripped)
+                if m:
+                    bullet_match = True
+                    prefix = "ol"
+                    content = m.group(3)
+                else:
+                    # Check for bare * at start (italic marker)
+                    m = re.match(r"^\*\s*(.*?)\*$", stripped)
+                    if m:
+                        # *text* -> italic
+                        _close_lists()
+                        html_lines.append(f"<p style='margin:4px 0;font-style:italic;color:#cbd5e1;'>{m.group(1)}</p>")
+                        i += 1
+                        continue
+                    # Line starting with * but not a bullet - strip leading *
+                    if stripped.startswith("*") and not stripped.startswith("* "):
+                        stripped = stripped.lstrip("*")
+
+            if bullet_match:
+                if prefix == "ul" and not in_ul:
+                    _close_lists()
+                    html_lines.append("<ul style='margin-top:8px; margin-bottom:8px; padding-left:24px; color:#d1d5db;'>")
+                    in_ul = True
+                elif prefix == "ol" and not in_ol:
+                    _close_lists()
+                    html_lines.append("<ol style='margin-top:8px; margin-bottom:8px; padding-left:24px; color:#d1d5db;'>")
+                    in_ol = True
+                # Strip remaining * in content
+                content = content.replace("*", "")
+                html_lines.append(f"<li style='margin-top:8px; margin-bottom:8px;'>{content}</li>")
+                i += 1
+                continue
+
+            # Regular paragraph line
+            _close_lists()
+            # Strip any remaining standalone * markers
+            clean = stripped.replace("*", "")
+            html_lines.append(f"<p style='margin-top:8px; margin-bottom:8px; color:#d1d5db;'>{clean}</p>")
+            i += 1
+
+        _close_lists()
+
+        body = "\n".join(html_lines)
+        return (
+            "<div style='font-family:-apple-system,Segoe UI,sans-serif; font-size:13px;'>"
+            + body
+            + "</div>"
+        )
 
     def _show_input_help(self) -> None:
         dialog = BacktestInputHelpDialog(self)
