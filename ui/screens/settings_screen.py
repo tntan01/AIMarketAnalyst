@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFrame,
+    QGridLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -26,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from services.ai_provider_catalog_service import AIProviderCatalogService, FIXED_AI_PROVIDERS
 from services.ai_service import AIProviderConfig
+from services.data_provider import ConnectionStatus, DataProvider
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
 from ui.screens.shared import action_button, card, form_row, page_header
@@ -39,7 +41,7 @@ class SettingsScreen(QWidget):
         self.app = app
         self.settings_service = app.settings_service if app else SettingsService()
         self.ai_catalog_service = app.ai_catalog_service if app else AIProviderCatalogService()
-        self.mt5_service = app.mt5_service if app else MT5Service()
+        self.data_provider: DataProvider = app.data_provider if app else MT5Service()
         self.ai_model_catalog = self.ai_catalog_service.load() or dict(DEFAULT_AI_MODELS)
         self.app_settings = self.settings_service.load()
         self.ai_test_thread = None
@@ -55,7 +57,7 @@ class SettingsScreen(QWidget):
         tabs = QTabWidget()
         tabs.setObjectName("ContentTabs")
         tabs.addTab(self._ai_tab(), "AI")
-        tabs.addTab(self._mt5_tab(), "MT5")
+        tabs.addTab(self._mt5_tab(), "Dữ liệu")
         tabs.addTab(self._trading_tab(), "Giao dịch")
         tabs.addTab(self._display_tab(), "Hiển thị")
         tabs.addTab(self._advanced_tab(), "Nâng cao")
@@ -581,10 +583,109 @@ class SettingsScreen(QWidget):
         self.ai_status_label.style().unpolish(self.ai_status_label)
         self.ai_status_label.style().polish(self.ai_status_label)
 
-    def _mt5_tab(self) -> QFrame:
-        frame = card("Dữ liệu MT5")
+    def _mt5_tab(self) -> QWidget:
+        container = QWidget()
+        main_layout = QVBoxLayout(container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(16)
+        
+        frame = card("Nguồn dữ liệu")
         frame.layout().setSpacing(8)
-        self.mt5_status_label = QLabel("Đang kiểm tra MT5...")
+        
+        def _col(t, w):
+            l = QLabel(t)
+            l.setObjectName("FormLabel")
+            l.setStyleSheet("color: #9CA3AF; font-size: 11px;")
+            v = QVBoxLayout()
+            v.setSpacing(4)
+            v.setContentsMargins(0, 0, 0, 0)
+            v.addWidget(l)
+            v.addWidget(w)
+            return v
+
+        top_grid = QGridLayout()
+        top_grid.setContentsMargins(0, 0, 0, 0)
+        top_grid.setSpacing(12)
+        
+        self.data_source_combo = QComboBox()
+        self.data_source_combo.addItems(["MetaTrader 5", "cTrader"])
+        self.data_source_combo.setFixedWidth(160)
+        current_ds = self.app_settings.data_source
+        if current_ds == "ctrader":
+            self.data_source_combo.setCurrentText("cTrader")
+        else:
+            self.data_source_combo.setCurrentText("MetaTrader 5")
+            
+        top_grid.addLayout(_col("Nguồn dữ liệu", self.data_source_combo), 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        
+        # cTrader credentials
+        self.ctrader_panel = QFrame()
+        
+        ctrader_layout = QHBoxLayout(self.ctrader_panel)
+        ctrader_layout.setContentsMargins(0, 0, 0, 0)
+        ctrader_layout.setSpacing(12)
+        
+        self.ctrader_env = QComboBox()
+        self.ctrader_env.addItems(["Demo", "Live"])
+        self.ctrader_env.setCurrentText("Live" if self.app_settings.ctrader.environment == "live" else "Demo")
+        
+        self.ctrader_id = QLineEdit(self.app_settings.ctrader.client_id)
+        self.ctrader_id.setPlaceholderText("Nhập Client ID")
+        
+        self.ctrader_secret = QLineEdit(self.app_settings.ctrader.client_secret)
+        self.ctrader_secret.setPlaceholderText("Nhập Client Secret")
+        self.ctrader_secret.setEchoMode(QLineEdit.EchoMode.Password)
+        
+        self.ctrader_token = QLineEdit(self.app_settings.ctrader.access_token)
+        self.ctrader_token.setPlaceholderText("Nhập Access Token")
+        self.ctrader_token.setEchoMode(QLineEdit.EchoMode.Password)
+        
+        acc_id = self.app_settings.ctrader.account_id
+        self.ctrader_acc = QLineEdit("" if not acc_id else str(acc_id))
+        self.ctrader_acc.setPlaceholderText("Ví dụ: 12345678")
+
+        ctrader_layout.addLayout(_col("Môi trường", self.ctrader_env), 1)
+        ctrader_layout.addLayout(_col("Account ID", self.ctrader_acc), 1)
+        ctrader_layout.addLayout(_col("Client ID", self.ctrader_id), 2)
+        ctrader_layout.addLayout(_col("Client Secret", self.ctrader_secret), 3)
+        ctrader_layout.addLayout(_col("Access Token", self.ctrader_token), 3)
+        
+        top_grid.addWidget(self.ctrader_panel, 0, 1)
+        top_grid.setColumnStretch(1, 1)
+        
+        # Row 1: Buttons
+        btn_layout = QHBoxLayout()
+        self.creds_save_btn = action_button("💾 Lưu cấu hình nguồn", primary=True)
+        self.creds_save_btn.clicked.connect(self._save_credentials)
+        btn_layout.addWidget(self.creds_save_btn)
+        
+        self.app_restart_btn = action_button("🔄 Khởi động lại", primary=True, color="danger")
+        self.app_restart_btn.clicked.connect(self._restart_app)
+        self.app_restart_btn.setVisible(False)
+        btn_layout.addWidget(self.app_restart_btn)
+        btn_layout.addStretch(1)
+        
+        top_grid.addLayout(btn_layout, 1, 0, 1, 2)
+        
+        # Row 2: Status
+        self.data_source_status_label = QLabel("")
+        self.data_source_status_label.setObjectName("HelperText")
+        self.data_source_status_label.setWordWrap(True)
+        self.data_source_status_label.setVisible(False)
+        top_grid.addWidget(self.data_source_status_label, 2, 0, 1, 2)
+        
+        frame.layout().addLayout(top_grid)
+        
+        main_layout.addWidget(frame)
+        
+        frame2 = card("Kiểm tra & Cấu hình mã")
+        frame2.layout().setSpacing(8)
+        
+        # Connect visibility toggle
+        self.data_source_combo.currentTextChanged.connect(self._toggle_ctrader_panel)
+        self._toggle_ctrader_panel(self.data_source_combo.currentText())
+
+        self.mt5_status_label = QLabel("Đang kiểm tra dữ liệu...")
         self.mt5_status_label.setObjectName("HelperText")
         self.mt5_detail_label = QLabel("")
         self.mt5_detail_label.setObjectName("HelperText")
@@ -600,7 +701,7 @@ class SettingsScreen(QWidget):
         status_text.addWidget(self.mt5_detail_label)
         status_row.addLayout(status_text, 1)
         status_row.addWidget(self.mt5_retry_button)
-        frame.layout().addLayout(status_row)
+        frame2.layout().addLayout(status_row)
 
         self.mt5_display_symbols = sorted(SUPPORTED_SYMBOLS)
         self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 10)
@@ -685,7 +786,7 @@ class SettingsScreen(QWidget):
             min_rr.setToolTip("R:R kỳ vọng tối thiểu để auto-trade. 0 = không lọc.")
             backtest_box.toggled.connect(min_rr.setEnabled)
             self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr))
-        frame.layout().addWidget(self.mt5_symbols_table)
+        frame2.layout().addWidget(self.mt5_symbols_table, 1)
         mt5_button_row = QHBoxLayout()
         mt5_button_row.setContentsMargins(0, 0, 0, 0)
         mt5_button_row.setSpacing(10)
@@ -696,26 +797,27 @@ class SettingsScreen(QWidget):
         self.mt5_symbol_settings_button.clicked.connect(self._save_mt5_symbol_settings)
         mt5_button_row.addWidget(self.mt5_symbol_settings_button)
         mt5_button_row.addStretch(1)
-        frame.layout().addLayout(mt5_button_row)
+        frame2.layout().addLayout(mt5_button_row)
+        main_layout.addWidget(frame2, 1)
         self.refresh_mt5_status()
-        return frame
+        return container
 
     def refresh_mt5_status(self) -> None:
         if not hasattr(self, "mt5_status_label"):
             return
-        status = self.mt5_service.connection_status()
+        status = self.data_provider.connection_status()
         self._apply_mt5_status(status)
         self._refresh_mt5_symbol_table(status)
 
-    def _apply_mt5_status(self, status: MT5ConnectionStatus) -> None:
-        if status.initialized and status.terminal_connected and status.logged_in:
-            self.mt5_status_label.setText("MT5 đã kết nối")
+    def _apply_mt5_status(self, status: ConnectionStatus) -> None:
+        if status.initialized and status.connected and status.logged_in:
+            self.mt5_status_label.setText(f"{status.provider_name} đã kết nối")
             detail = f"Broker: {status.broker or '--'} | Server: {status.server or '--'} | Login: {status.login or '--'}"
             self.mt5_detail_label.setText(detail)
             self.mt5_status_label.setProperty("state", "ok")
         else:
-            self.mt5_status_label.setText("MT5 chưa kết nối đầy đủ")
-            detail = status.message or "Mở MT5, đăng nhập broker rồi bấm thử kết nối lại."
+            self.mt5_status_label.setText(f"{status.provider_name or 'Dữ liệu'} chưa kết nối đầy đủ")
+            detail = status.message or "Kiểm tra kết nối rồi bấm thử kết nối lại."
             if status.error_code is not None:
                 detail = f"{detail} ({status.error_code})"
             self.mt5_detail_label.setText(detail)
@@ -724,27 +826,27 @@ class SettingsScreen(QWidget):
             label.style().unpolish(label)
             label.style().polish(label)
 
-    def _refresh_mt5_symbol_table(self, status: MT5ConnectionStatus) -> None:
+    def _refresh_mt5_symbol_table(self, status: ConnectionStatus) -> None:
         if not hasattr(self, "mt5_symbols_table"):
             return
 
-        if not status.initialized or not status.terminal_connected:
+        if not status.initialized or not status.connected:
             for row, symbol in enumerate(self.mt5_display_symbols):
-                self._set_mt5_symbol_row(row, symbol, "--", "Chưa kết nối", "Mở MT5")
+                self._set_mt5_symbol_row(row, symbol, "--", "Chưa kết nối", "Kiểm tra kết nối")
             return
 
-        available_symbols = self.mt5_service.available_symbols(market_watch_only=True)
+        available_symbols = self.data_provider.available_symbols(market_watch_only=True)
         if not available_symbols:
             for row, symbol in enumerate(self.mt5_display_symbols):
-                self._set_mt5_symbol_row(row, symbol, "--", "Không có trong Market Watch", "Kiểm tra MT5")
+                self._set_mt5_symbol_row(row, symbol, "--", "Không có mã khả dụng", "Kiểm tra nguồn dữ liệu")
             return
 
         for row, symbol in enumerate(self.mt5_display_symbols):
-            broker_symbol = self.mt5_service.resolve_symbol(symbol, available_symbols)
+            broker_symbol = self.data_provider.resolve_symbol(symbol, available_symbols)
             if broker_symbol:
-                self._set_mt5_symbol_row(row, symbol, broker_symbol, "Đã khớp", "Có trong MT5")
+                self._set_mt5_symbol_row(row, symbol, broker_symbol, "Đã khớp", "Có trong hệ thống")
             else:
-                self._set_mt5_symbol_row(row, symbol, "--", "Không có trong Market Watch", "Cần thêm mã")
+                self._set_mt5_symbol_row(row, symbol, "--", "Không có mã", "Cần thêm mã")
 
     def _set_mt5_symbol_row(self, row: int, app_symbol: str, broker_symbol: str, status: str, check: str) -> None:
         values = [str(row + 1), app_symbol, broker_symbol, status, check]
@@ -765,6 +867,37 @@ class SettingsScreen(QWidget):
         layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addStretch(1)
         return cell
+
+    def _save_credentials(self) -> None:
+        ds_map = {"MetaTrader 5": "mt5", "cTrader": "ctrader"}
+        self.app_settings.data_source = ds_map.get(self.data_source_combo.currentText(), "mt5")
+        self.app_settings.ctrader.client_id = self.ctrader_id.text().strip()
+        self.app_settings.ctrader.client_secret = self.ctrader_secret.text().strip()
+        self.app_settings.ctrader.access_token = self.ctrader_token.text().strip()
+        self.app_settings.ctrader.account_id = int(self.ctrader_acc.text().strip() or 0)
+        self.app_settings.ctrader.environment = "live" if self.ctrader_env.currentText() == "Live" else "demo"
+        self.settings_service.save(self.app_settings)
+        if self.app:
+            self.app.switch_data_source(self.app_settings.data_source)
+        if hasattr(self, "data_source_status_label"):
+            self.data_source_status_label.setText("Đã lưu cấu hình. Hãy khởi động lại ứng dụng nếu đổi nguồn dữ liệu.")
+            self.data_source_status_label.setProperty("state", "ok")
+            self.data_source_status_label.setVisible(True)
+            self.data_source_status_label.style().unpolish(self.data_source_status_label)
+            self.data_source_status_label.style().polish(self.data_source_status_label)
+        if hasattr(self, "app_restart_btn"):
+            self.app_restart_btn.setVisible(True)
+
+    def _toggle_ctrader_panel(self, text: str) -> None:
+        if hasattr(self, "ctrader_panel"):
+            self.ctrader_panel.setVisible(text == "cTrader")
+            
+    def _restart_app(self) -> None:
+        import sys
+        import subprocess
+        from PyQt6.QtWidgets import QApplication
+        subprocess.Popen([sys.executable] + sys.argv)
+        QApplication.quit()
 
     def _save_mt5_symbol_settings(self) -> None:
         symbol_settings: dict[str, SymbolScanSettings] = {}
@@ -818,7 +951,7 @@ class SettingsScreen(QWidget):
         balance.setDecimals(0)
         balance.setGroupSeparatorShown(True)
         balance.setSingleStep(100)
-        mt5_balance = self.mt5_service.account_balance()
+        mt5_balance = self.data_provider.account_balance()
         balance.setValue(mt5_balance if mt5_balance is not None else trading.account_balance)
         balance.setSuffix(f" {trading.account_currency}")
         balance.setEnabled(False)

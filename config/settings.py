@@ -83,12 +83,23 @@ class NotificationSettings:
 
 
 @dataclass(slots=True)
+class CTraderSettings:
+    client_id: str = ""
+    client_secret: str = ""
+    access_token: str = ""
+    account_id: int = 0
+    environment: str = "demo"   # "demo" or "live"
+
+
+@dataclass(slots=True)
 class AppSettings:
     ai: AISettings
     trading: TradingSettings = field(default_factory=TradingSettings)
     display: DisplaySettings = field(default_factory=DisplaySettings)
     advanced: AdvancedSettings = field(default_factory=AdvancedSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
+    ctrader: CTraderSettings = field(default_factory=CTraderSettings)
+    data_source: str = "mt5"        # "mt5" or "ctrader"
     default_symbol: str = "EUR/USD"
     default_timeframe: str = "H1"
     language: str = "vi"

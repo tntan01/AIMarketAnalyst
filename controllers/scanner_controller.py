@@ -20,6 +20,7 @@ from core.scanner import (
 from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol
 from services.ai_service import AIProviderConfig, AIService
+from services.data_provider import DataProvider
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
@@ -34,13 +35,15 @@ class ScannerController:
     def __init__(
         self,
         settings_service: SettingsService | None = None,
-        mt5_service: MT5Service | None = None,
+        data_provider: DataProvider | None = None,
         news_service: NewsService | None = None,
         telegram_service: TelegramAlertService | None = None,
         journal_service: JournalService | None = None,
+        # Backward compat: accept mt5_service kwarg and use it as data_provider
+        mt5_service: MT5Service | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
-        self.mt5_service = mt5_service or MT5Service()
+        self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
@@ -68,21 +71,21 @@ class ScannerController:
             max(float(settings.trading.max_risk_percent), 0.0),
         )
         request = replace(request, risk_percent=effective_risk_percent)
-        progress(8, "Đang kiểm tra kết nối MetaTrader 5...")
-        status = self.mt5_service.connection_status()
-        if not status.terminal_connected or not status.logged_in:
-            raise RuntimeError("MT5 chưa kết nối đầy đủ hoặc broker chưa đăng nhập.")
-        mt5_balance = self.mt5_service.account_balance()
+        progress(8, "Đang kiểm tra kết nối dữ liệu...")
+        status = self.data_provider.connection_status()
+        if not status.connected or not status.logged_in:
+            raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
+        mt5_balance = self.data_provider.account_balance()
         if mt5_balance is None:
-            raise RuntimeError("Không lấy được số dư từ tài khoản MT5.")
+            raise RuntimeError("Không lấy được số dư từ tài khoản.")
 
         bars_by_timeframe = {
             "D1": settings.advanced.d1_bars,
             "H4": settings.advanced.h4_bars,
             "H1": settings.advanced.h1_bars,
         }
-        progress(12, "Đang đọc danh sách mã trong Market Watch...")
-        available_symbols = self.mt5_service.available_symbols(market_watch_only=True)
+        progress(12, "Đang đọc danh sách mã giao dịch...")
+        available_symbols = self.data_provider.available_symbols(market_watch_only=True)
         rows: list[dict[str, Any]] = []
 
         # Fetch DXY/VIX/US10Y MỘT LẦN cho toàn bộ scanner (song song)
@@ -108,19 +111,19 @@ class ScannerController:
         total = max(1, len(request.symbols))
         for index, symbol in enumerate(request.symbols, start=1):
             progress(12 + int(index / total * 58), f"Đang quét {symbol} ({index}/{total})...")
-            broker_symbol = self.mt5_service.resolve_symbol(symbol, available_symbols)
+            broker_symbol = self.data_provider.resolve_symbol(symbol, available_symbols)
             if not broker_symbol:
-                rows.append(blocked_scanner_row(symbol, "Không tìm thấy mã broker trong Market Watch."))
+                rows.append(blocked_scanner_row(symbol, "Không tìm thấy mã broker."))
                 continue
 
             try:
-                all_candles = self.mt5_service.load_primary_timeframes(
+                all_candles = self.data_provider.load_primary_timeframes(
                     broker_symbol,
                     {**bars_by_timeframe, "M15": 200},
                 )
                 candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
                 m15_candles = all_candles["M15"]
-                data_quality = self.mt5_service.symbol_data_quality(symbol, broker_symbol)
+                data_quality = self.data_provider.symbol_data_quality(symbol, broker_symbol)
                 news_flags = self.news_service.data_quality_flags(symbol)
                 macro_context = news_flags.pop("macro_context", {"events": []})
                 data_quality.update(news_flags)
@@ -145,7 +148,7 @@ class ScannerController:
                 macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
                 macro_confidence = macro_confidence * freshness_multiplier
                 quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-                quote_to_usd_fn = getattr(self.mt5_service, "quote_to_usd_rate", None)
+                quote_to_usd_fn = getattr(self.data_provider, "quote_to_usd_rate", None)
                 quote_to_usd = quote_to_usd_fn(quote_currency) if callable(quote_to_usd_fn) else None
                 result = analyze_symbol(
                     analysis_input,
@@ -273,7 +276,7 @@ class ScannerController:
                 continue
 
             try:
-                if self.mt5_service.has_open_position_or_order(broker_symbol):
+                if self.data_provider.has_open_position_or_order(broker_symbol):
                     skipped += 1
                     results.append({
                         "success": False,
@@ -284,7 +287,7 @@ class ScannerController:
                         "message": "Đã có lệnh/position cho mã này, không vào thêm.",
                     })
                     continue
-                order = self.mt5_service.place_market_order(
+                order = self.data_provider.place_market_order(
                     symbol=symbol,
                     broker_symbol=broker_symbol,
                     side=trade_side,

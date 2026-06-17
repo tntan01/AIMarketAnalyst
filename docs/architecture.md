@@ -227,7 +227,7 @@ Mọi lịch kinh tế hiển thị cho người dùng phải ưu tiên mẫu: `
 
 Chứa kết nối bên ngoài:
 
-* MT5.
+* Nguồn dữ liệu thị trường (MT5 & cTrader qua BaseDataProvider).
 * AI API.
 * Tin tức.
 * Telegram alert.

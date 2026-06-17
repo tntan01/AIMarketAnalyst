@@ -28,6 +28,7 @@ QVBoxLayout ,
 QWidget ,
 )
 from services .mt5_service import MT5Service 
+from services .data_provider import DataProvider
 from services .settings_service import SettingsService 
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header 
 
@@ -364,8 +365,8 @@ class ScannerScreen (QWidget ):
         self .navigate =navigate
         self .app =app
         self .settings_service =app .settings_service if app else SettingsService ()
-        self .mt5_service =app .mt5_service if app else MT5Service ()
-        self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,self .mt5_service )
+        self .data_provider =app .data_provider if app else MT5Service ()
+        self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,data_provider=self .data_provider )
         self .scan_thread =None 
         self .scan_worker =None 
         self .scan_result :dict [str ,object ]|None =None 
@@ -594,8 +595,8 @@ class ScannerScreen (QWidget ):
         dialog .exec ()
 
     def refresh_status (self )->None :
-        status =self .mt5_service .connection_status ()
-        self .status_labels ["MT5"].setText ('Đã kết nối'if status .terminal_connected and status .logged_in else 'Chưa kết nối đầy đủ')
+        status =self .data_provider .connection_status ()
+        self .status_labels ["MT5"].setText ('Đã kết nối'if status .connected and status .logged_in else 'Chưa kết nối đầy đủ')
         self ._refresh_symbol_availability (status )
         self ._refresh_scan_button_state ()
         self ._update_status_summary ()
@@ -605,7 +606,7 @@ class ScannerScreen (QWidget ):
         return [symbol for symbol in self .selected_scan_symbols if symbol in allowed]
 
     def _refresh_symbol_availability (self ,status )->None :
-        matches =self .mt5_service .configured_symbols_in_market_watch ()if status .terminal_connected else []
+        matches =self .data_provider .configured_symbols_in_market_watch ()if status .connected else []
         self .market_watch_symbols ={symbol for symbol ,_broker_symbol in matches }
         settings =self .settings_service .load ()
         self .scan_symbols =self ._configured_scan_symbols (settings )
@@ -742,7 +743,7 @@ class ScannerScreen (QWidget ):
             return 900
 
     def _compute_next_candle_delay_ms (self ,timeframe_seconds :int )->int :
-        server_time =self .mt5_service .server_time_utc ()
+        server_time =self .data_provider .server_time_utc ()
         if server_time is None :
             return timeframe_seconds *1000
         now_ms =int (server_time .timestamp ()*1000 )

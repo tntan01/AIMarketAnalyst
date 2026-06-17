@@ -5,14 +5,21 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from config.paths import app_data_dir
+from services.data_provider import DataProvider
 from services.journal_service import JournalEntry, JournalFilter, JournalService
 from services.mt5_service import MT5Service
 
 
 class JournalController:
-    def __init__(self, journal_service: JournalService | None = None, mt5_service: MT5Service | None = None) -> None:
+    def __init__(
+        self,
+        journal_service: JournalService | None = None,
+        data_provider: DataProvider | None = None,
+        # Backward compat
+        mt5_service: MT5Service | None = None,
+    ) -> None:
         self.journal_service = journal_service or JournalService()
-        self.mt5_service = mt5_service or MT5Service()
+        self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
 
     def list_entries(self, filters: JournalFilter | None = None) -> list[JournalEntry]:
         return self.journal_service.list_entries(filters)
@@ -32,7 +39,7 @@ class JournalController:
     def sync_mt5_history(self, days: int = 90) -> dict[str, object]:
         end = datetime.now(UTC)
         start = end - timedelta(days=max(1, int(days)))
-        trades = self.mt5_service.closed_trade_history(start=start, end=end)
+        trades = self.data_provider.closed_trade_history(start=start, end=end)
         return self.journal_service.sync_mt5_closed_trades(trades)
 
     def save_analysis(self, analysis: dict[str, object], *, mode: str = "scanner_detail", note: str = "") -> int:

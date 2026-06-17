@@ -1,33 +1,312 @@
 {
-  "EUR/USD": {"base": "EUR", "quote": "USD", "mt5_aliases": ["EURUSD", "EURUSDm", "EURUSDc"]},
-  "GBP/USD": {"base": "GBP", "quote": "USD", "mt5_aliases": ["GBPUSD", "GBPUSDm", "GBPUSDc"]},
-  "AUD/USD": {"base": "AUD", "quote": "USD", "mt5_aliases": ["AUDUSD", "AUDUSDm", "AUDUSDc"]},
-  "NZD/USD": {"base": "NZD", "quote": "USD", "mt5_aliases": ["NZDUSD", "NZDUSDm", "NZDUSDc"]},
-  "USD/JPY": {"base": "USD", "quote": "JPY", "mt5_aliases": ["USDJPY", "USDJPYm", "USDJPYc"]},
-  "USD/CHF": {"base": "USD", "quote": "CHF", "mt5_aliases": ["USDCHF", "USDCHFm", "USDCHFc"]},
-  "USD/CAD": {"base": "USD", "quote": "CAD", "mt5_aliases": ["USDCAD", "USDCADm", "USDCADc"]},
-  "EUR/GBP": {"base": "EUR", "quote": "GBP", "mt5_aliases": ["EURGBP", "EURGBPm", "EURGBPc"]},
-  "EUR/JPY": {"base": "EUR", "quote": "JPY", "mt5_aliases": ["EURJPY", "EURJPYm", "EURJPYc"]},
-  "EUR/CHF": {"base": "EUR", "quote": "CHF", "mt5_aliases": ["EURCHF", "EURCHFm", "EURCHFc"]},
-  "EUR/AUD": {"base": "EUR", "quote": "AUD", "mt5_aliases": ["EURAUD", "EURAUDm", "EURAUDc"]},
-  "EUR/NZD": {"base": "EUR", "quote": "NZD", "mt5_aliases": ["EURNZD", "EURNZDm", "EURNZDc"]},
-  "EUR/CAD": {"base": "EUR", "quote": "CAD", "mt5_aliases": ["EURCAD", "EURCADm", "EURCADc"]},
-  "GBP/JPY": {"base": "GBP", "quote": "JPY", "mt5_aliases": ["GBPJPY", "GBPJPYm", "GBPJPYc"]},
-  "GBP/CHF": {"base": "GBP", "quote": "CHF", "mt5_aliases": ["GBPCHF", "GBPCHFm", "GBPCHFc"]},
-  "GBP/AUD": {"base": "GBP", "quote": "AUD", "mt5_aliases": ["GBPAUD", "GBPAUDm", "GBPAUDc"]},
-  "GBP/NZD": {"base": "GBP", "quote": "NZD", "mt5_aliases": ["GBPNZD", "GBPNZDm", "GBPNZDc"]},
-  "GBP/CAD": {"base": "GBP", "quote": "CAD", "mt5_aliases": ["GBPCAD", "GBPCADm", "GBPCADc"]},
-  "CHF/JPY": {"base": "CHF", "quote": "JPY", "mt5_aliases": ["CHFJPY", "CHFJPYm", "CHFJPYc"]},
-  "AUD/JPY": {"base": "AUD", "quote": "JPY", "mt5_aliases": ["AUDJPY", "AUDJPYm", "AUDJPYc"]},
-  "NZD/JPY": {"base": "NZD", "quote": "JPY", "mt5_aliases": ["NZDJPY", "NZDJPYm", "NZDJPYc"]},
-  "CAD/JPY": {"base": "CAD", "quote": "JPY", "mt5_aliases": ["CADJPY", "CADJPYm", "CADJPYc"]},
-  "AUD/CHF": {"base": "AUD", "quote": "CHF", "mt5_aliases": ["AUDCHF", "AUDCHFm", "AUDCHFc"]},
-  "NZD/CHF": {"base": "NZD", "quote": "CHF", "mt5_aliases": ["NZDCHF", "NZDCHFm", "NZDCHFc"]},
-  "CAD/CHF": {"base": "CAD", "quote": "CHF", "mt5_aliases": ["CADCHF", "CADCHFm", "CADCHFc"]},
-  "AUD/NZD": {"base": "AUD", "quote": "NZD", "mt5_aliases": ["AUDNZD", "AUDNZDm", "AUDNZDc"]},
-  "AUD/CAD": {"base": "AUD", "quote": "CAD", "mt5_aliases": ["AUDCAD", "AUDCADm", "AUDCADc"]},
-  "NZD/CAD": {"base": "NZD", "quote": "CAD", "mt5_aliases": ["NZDCAD", "NZDCADm", "NZDCADc"]},
-  "XAU/USD": {"base": "XAU", "quote": "USD", "mt5_aliases": ["XAUUSD", "XAUUSDm", "XAUUSDc"]},
-  "XAG/USD": {"base": "XAG", "quote": "USD", "mt5_aliases": ["XAGUSD", "XAGUSDm", "XAGUSDc"]},
-  "BTC/USD": {"base": "BTC", "quote": "USD", "mt5_aliases": ["BTCUSD", "BTCUSDm", "BTCUSDc"]}
+    "EUR/USD": {
+        "base": "EUR",
+        "quote": "USD",
+        "mt5_aliases": [
+            "EURUSD",
+            "EURUSDm",
+            "EURUSDc"
+        ],
+        "ctrader_symbol": "EUR/USD"
+    },
+    "GBP/USD": {
+        "base": "GBP",
+        "quote": "USD",
+        "mt5_aliases": [
+            "GBPUSD",
+            "GBPUSDm",
+            "GBPUSDc"
+        ],
+        "ctrader_symbol": "GBP/USD"
+    },
+    "AUD/USD": {
+        "base": "AUD",
+        "quote": "USD",
+        "mt5_aliases": [
+            "AUDUSD",
+            "AUDUSDm",
+            "AUDUSDc"
+        ],
+        "ctrader_symbol": "AUD/USD"
+    },
+    "NZD/USD": {
+        "base": "NZD",
+        "quote": "USD",
+        "mt5_aliases": [
+            "NZDUSD",
+            "NZDUSDm",
+            "NZDUSDc"
+        ],
+        "ctrader_symbol": "NZD/USD"
+    },
+    "USD/JPY": {
+        "base": "USD",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "USDJPY",
+            "USDJPYm",
+            "USDJPYc"
+        ],
+        "ctrader_symbol": "USD/JPY"
+    },
+    "USD/CHF": {
+        "base": "USD",
+        "quote": "CHF",
+        "mt5_aliases": [
+            "USDCHF",
+            "USDCHFm",
+            "USDCHFc"
+        ],
+        "ctrader_symbol": "USD/CHF"
+    },
+    "USD/CAD": {
+        "base": "USD",
+        "quote": "CAD",
+        "mt5_aliases": [
+            "USDCAD",
+            "USDCADm",
+            "USDCADc"
+        ],
+        "ctrader_symbol": "USD/CAD"
+    },
+    "EUR/GBP": {
+        "base": "EUR",
+        "quote": "GBP",
+        "mt5_aliases": [
+            "EURGBP",
+            "EURGBPm",
+            "EURGBPc"
+        ],
+        "ctrader_symbol": "EUR/GBP"
+    },
+    "EUR/JPY": {
+        "base": "EUR",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "EURJPY",
+            "EURJPYm",
+            "EURJPYc"
+        ],
+        "ctrader_symbol": "EUR/JPY"
+    },
+    "EUR/CHF": {
+        "base": "EUR",
+        "quote": "CHF",
+        "mt5_aliases": [
+            "EURCHF",
+            "EURCHFm",
+            "EURCHFc"
+        ],
+        "ctrader_symbol": "EUR/CHF"
+    },
+    "EUR/AUD": {
+        "base": "EUR",
+        "quote": "AUD",
+        "mt5_aliases": [
+            "EURAUD",
+            "EURAUDm",
+            "EURAUDc"
+        ],
+        "ctrader_symbol": "EUR/AUD"
+    },
+    "EUR/NZD": {
+        "base": "EUR",
+        "quote": "NZD",
+        "mt5_aliases": [
+            "EURNZD",
+            "EURNZDm",
+            "EURNZDc"
+        ],
+        "ctrader_symbol": "EUR/NZD"
+    },
+    "EUR/CAD": {
+        "base": "EUR",
+        "quote": "CAD",
+        "mt5_aliases": [
+            "EURCAD",
+            "EURCADm",
+            "EURCADc"
+        ],
+        "ctrader_symbol": "EUR/CAD"
+    },
+    "GBP/JPY": {
+        "base": "GBP",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "GBPJPY",
+            "GBPJPYm",
+            "GBPJPYc"
+        ],
+        "ctrader_symbol": "GBP/JPY"
+    },
+    "GBP/CHF": {
+        "base": "GBP",
+        "quote": "CHF",
+        "mt5_aliases": [
+            "GBPCHF",
+            "GBPCHFm",
+            "GBPCHFc"
+        ],
+        "ctrader_symbol": "GBP/CHF"
+    },
+    "GBP/AUD": {
+        "base": "GBP",
+        "quote": "AUD",
+        "mt5_aliases": [
+            "GBPAUD",
+            "GBPAUDm",
+            "GBPAUDc"
+        ],
+        "ctrader_symbol": "GBP/AUD"
+    },
+    "GBP/NZD": {
+        "base": "GBP",
+        "quote": "NZD",
+        "mt5_aliases": [
+            "GBPNZD",
+            "GBPNZDm",
+            "GBPNZDc"
+        ],
+        "ctrader_symbol": "GBP/NZD"
+    },
+    "GBP/CAD": {
+        "base": "GBP",
+        "quote": "CAD",
+        "mt5_aliases": [
+            "GBPCAD",
+            "GBPCADm",
+            "GBPCADc"
+        ],
+        "ctrader_symbol": "GBP/CAD"
+    },
+    "CHF/JPY": {
+        "base": "CHF",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "CHFJPY",
+            "CHFJPYm",
+            "CHFJPYc"
+        ],
+        "ctrader_symbol": "CHF/JPY"
+    },
+    "AUD/JPY": {
+        "base": "AUD",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "AUDJPY",
+            "AUDJPYm",
+            "AUDJPYc"
+        ],
+        "ctrader_symbol": "AUD/JPY"
+    },
+    "NZD/JPY": {
+        "base": "NZD",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "NZDJPY",
+            "NZDJPYm",
+            "NZDJPYc"
+        ],
+        "ctrader_symbol": "NZD/JPY"
+    },
+    "CAD/JPY": {
+        "base": "CAD",
+        "quote": "JPY",
+        "mt5_aliases": [
+            "CADJPY",
+            "CADJPYm",
+            "CADJPYc"
+        ],
+        "ctrader_symbol": "CAD/JPY"
+    },
+    "AUD/CHF": {
+        "base": "AUD",
+        "quote": "CHF",
+        "mt5_aliases": [
+            "AUDCHF",
+            "AUDCHFm",
+            "AUDCHFc"
+        ],
+        "ctrader_symbol": "AUD/CHF"
+    },
+    "NZD/CHF": {
+        "base": "NZD",
+        "quote": "CHF",
+        "mt5_aliases": [
+            "NZDCHF",
+            "NZDCHFm",
+            "NZDCHFc"
+        ],
+        "ctrader_symbol": "NZD/CHF"
+    },
+    "CAD/CHF": {
+        "base": "CAD",
+        "quote": "CHF",
+        "mt5_aliases": [
+            "CADCHF",
+            "CADCHFm",
+            "CADCHFc"
+        ],
+        "ctrader_symbol": "CAD/CHF"
+    },
+    "AUD/NZD": {
+        "base": "AUD",
+        "quote": "NZD",
+        "mt5_aliases": [
+            "AUDNZD",
+            "AUDNZDm",
+            "AUDNZDc"
+        ],
+        "ctrader_symbol": "AUD/NZD"
+    },
+    "AUD/CAD": {
+        "base": "AUD",
+        "quote": "CAD",
+        "mt5_aliases": [
+            "AUDCAD",
+            "AUDCADm",
+            "AUDCADc"
+        ],
+        "ctrader_symbol": "AUD/CAD"
+    },
+    "NZD/CAD": {
+        "base": "NZD",
+        "quote": "CAD",
+        "mt5_aliases": [
+            "NZDCAD",
+            "NZDCADm",
+            "NZDCADc"
+        ],
+        "ctrader_symbol": "NZD/CAD"
+    },
+    "XAU/USD": {
+        "base": "XAU",
+        "quote": "USD",
+        "mt5_aliases": [
+            "XAUUSD",
+            "XAUUSDm",
+            "XAUUSDc"
+        ],
+        "ctrader_symbol": "XAU/USD"
+    },
+    "XAG/USD": {
+        "base": "XAG",
+        "quote": "USD",
+        "mt5_aliases": [
+            "XAGUSD",
+            "XAGUSDm",
+            "XAGUSDc"
+        ],
+        "ctrader_symbol": "XAG/USD"
+    },
+    "BTC/USD": {
+        "base": "BTC",
+        "quote": "USD",
+        "mt5_aliases": [
+            "BTCUSD",
+            "BTCUSDm",
+            "BTCUSDc"
+        ],
+        "ctrader_symbol": "BTC/USD"
+    }
 }

@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 from ui.screens.shared import action_button
+from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.news_service import NewsService
@@ -104,7 +105,7 @@ class DashboardScreen(QWidget):
         super().__init__()
         self.navigate = navigate
         self.app = app
-        self.mt5_service = app.mt5_service if app else MT5Service()
+        self.data_provider = app.data_provider if app else MT5Service()
         self.settings_service = app.settings_service if app else SettingsService()
         self.status_cards: dict[str, tuple[QFrame, QLabel, QLabel]] = {}
         self.setObjectName("DashboardScreen")
@@ -146,10 +147,10 @@ class DashboardScreen(QWidget):
         grid = QGridLayout()
         grid.setSpacing(8)
         items = [
-            ("MT5", "Đang kiểm tra", "Đang đọc terminal MT5", "warning"),
-            ("Broker", "Đang kiểm tra", "Đang đọc tài khoản broker", "warning"),
+            ("Kết nối", "Đang kiểm tra", "Đang đọc kết nối dữ liệu", "warning"),
+            ("Broker", "Đang kiểm tra", "Đang đọc tài khoản", "warning"),
             ("AI", "Đang kiểm tra", "Đang đọc cấu hình AI", "warning"),
-            ("Nguồn dữ liệu", "MetaTrader 5", "Không dùng nguồn giá thay thế", "ok"),
+            ("Nguồn dữ liệu", "Đang kiểm tra", "Đang xác định nguồn dữ liệu", "warning"),
         ]
         for index, item in enumerate(items):
             card = self._status_card(*item)
@@ -187,14 +188,14 @@ class DashboardScreen(QWidget):
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(14)
         text_box = QVBoxLayout()
-        self.mt5_warning_title = QLabel("MT5 chưa sẵn sàng")
+        self.mt5_warning_title = QLabel("Dữ liệu chưa sẵn sàng")
         self.mt5_warning_title.setObjectName("WarningTitle")
-        self.mt5_warning_detail = QLabel("Hãy mở MetaTrader 5, đăng nhập broker và kiểm tra mã trong Market Watch.")
+        self.mt5_warning_detail = QLabel("Hãy kiểm tra kết nối dữ liệu và đăng nhập tài khoản.")
         self.mt5_warning_detail.setObjectName("WarningDetail")
         self.mt5_warning_detail.setWordWrap(True)
         text_box.addWidget(self.mt5_warning_title)
         text_box.addWidget(self.mt5_warning_detail)
-        retry = action_button("🔄 Thử lại MT5", primary=True, color="info")
+        retry = action_button("🔄 Thử lại", primary=True, color="info")
         retry.clicked.connect(self.refresh_mt5_status)
         layout.addLayout(text_box, 1)
         layout.addWidget(retry)
@@ -851,8 +852,8 @@ class DashboardScreen(QWidget):
         self.refresh_ai_status()
 
     def refresh_mt5_status(self) -> None:
-        status = self.mt5_service.connection_status()
-        self._apply_mt5_status(status)
+        status = self.data_provider.connection_status()
+        self._apply_connection_status(status)
 
     def refresh_ai_status(self) -> None:
         settings = self.settings_service.load()
@@ -864,29 +865,35 @@ class DashboardScreen(QWidget):
         else:
             self._set_status_card("AI", "Chưa cấu hình", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
 
-    def _apply_mt5_status(self, status: MT5ConnectionStatus) -> None:
-        if status.initialized and status.terminal_connected:
-            self._set_status_card("MT5", "Đã kết nối", status.terminal_name or status.message, "ok")
+        # Update data source card
+        source = settings.data_source
+        source_name = "cTrader" if source == "ctrader" else "MetaTrader 5"
+        self._set_status_card("Nguồn dữ liệu", source_name, f"Đang dùng {source_name}", "ok")
+
+    def _apply_connection_status(self, status: ConnectionStatus) -> None:
+        provider = status.provider_name or "Dữ liệu"
+        if status.initialized and status.connected:
+            self._set_status_card("Kết nối", "Đã kết nối", f"{provider}: {status.message}", "ok")
         else:
             detail = status.message
             if status.error_code is not None:
                 detail = f"{detail} ({status.error_code})"
-            self._set_status_card("MT5", "Chưa kết nối", detail, "danger")
+            self._set_status_card("Kết nối", "Chưa kết nối", detail, "danger")
 
         if status.logged_in:
-            account = f"{status.login} - {status.server}" if status.login else status.server
+            account = f"{status.login} - {status.server}" if status.login else str(status.server)
             self._set_status_card("Broker", "Đã đăng nhập", account, "ok")
         else:
-            self._set_status_card("Broker", "Chưa đăng nhập", "Cần đăng nhập tài khoản broker trong MT5", "warning")
+            self._set_status_card("Broker", "Chưa đăng nhập", f"Cần đăng nhập tài khoản trên {provider}", "warning")
 
-        ready = status.initialized and status.terminal_connected and status.logged_in
+        ready = status.initialized and status.connected and status.logged_in
         self.mt5_warning.setVisible(not ready)
         if ready:
-            self.mt5_warning_title.setText("MT5 đã sẵn sàng")
-            self.mt5_warning_detail.setText("Đã đọc được terminal và tài khoản broker.")
+            self.mt5_warning_title.setText(f"{provider} đã sẵn sàng")
+            self.mt5_warning_detail.setText(f"Đã kết nối và đăng nhập thành công.")
         else:
-            self.mt5_warning_title.setText("MT5 chưa sẵn sàng")
-            self.mt5_warning_detail.setText(status.message or "Hãy mở MetaTrader 5, đăng nhập broker và bấm thử lại.")
+            self.mt5_warning_title.setText(f"{provider} chưa sẵn sàng")
+            self.mt5_warning_detail.setText(status.message or "Hãy kiểm tra kết nối và thử lại.")
 
     def _set_status_card(self, title: str, value: str, detail: str, state: str) -> None:
         card_data = self.status_cards.get(title)

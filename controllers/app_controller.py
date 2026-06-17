@@ -15,8 +15,10 @@ from controllers.scanner_controller import ScannerController
 from controllers.settings_controller import SettingsController
 from services.ai_provider_catalog_service import AIProviderCatalogService
 from services.ai_service import AIProviderConfig, AIService
+from services.data_provider import DataProvider
 from services.journal_service import JournalService
 from services.mt5_service import MT5Service
+from services.ctrader_service import CTraderService
 from services.news_service import NewsService
 from services.settings_service import SettingsService
 from services.telegram_alert_service import TelegramAlertService
@@ -40,6 +42,8 @@ class AppController:
         # Lazy-initialised singletons
         self._settings_service: SettingsService | None = None
         self._mt5_service: MT5Service | None = None
+        self._ctrader_service: CTraderService | None = None
+        self._data_provider: DataProvider | None = None
         self._news_service: NewsService | None = None
         self._journal_service: JournalService | None = None
         self._ai_catalog_service: AIProviderCatalogService | None = None
@@ -67,6 +71,31 @@ class AppController:
         if self._mt5_service is None:
             self._mt5_service = MT5Service()
         return self._mt5_service
+
+    @property
+    def ctrader_service(self) -> CTraderService:
+        if self._ctrader_service is None:
+            self._ctrader_service = CTraderService(config=self.settings.ctrader)
+        return self._ctrader_service
+
+    @property
+    def data_provider(self) -> DataProvider:
+        """Return the active data provider based on settings.data_source."""
+        if self._data_provider is None:
+            if self.settings.data_source == "ctrader":
+                self._data_provider = self.ctrader_service
+            else:
+                self._data_provider = self.mt5_service
+        return self._data_provider
+
+    def switch_data_source(self, source: str) -> None:
+        """Switch data source at runtime and invalidate cached controllers."""
+        self.settings.data_source = source
+        self._data_provider = None
+        # Invalidate controllers that depend on data_provider
+        self._scanner_controller = None
+        self._backtest_controller = None
+        self._journal_controller = None
 
     @property
     def news_service(self) -> NewsService:
@@ -102,7 +131,7 @@ class AppController:
         if self._scanner_controller is None:
             self._scanner_controller = ScannerController(
                 settings_service=self.settings_service,
-                mt5_service=self.mt5_service,
+                data_provider=self.data_provider,
                 news_service=self.news_service,
                 telegram_service=self.telegram_service,
                 journal_service=self.journal_service,
@@ -114,7 +143,7 @@ class AppController:
         if self._backtest_controller is None:
             self._backtest_controller = BacktestController(
                 settings_service=self.settings_service,
-                mt5_service=self.mt5_service,
+                data_provider=self.data_provider,
             )
         return self._backtest_controller
 
@@ -123,7 +152,7 @@ class AppController:
         if self._journal_controller is None:
             self._journal_controller = JournalController(
                 journal_service=self.journal_service,
-                mt5_service=self.mt5_service,
+                data_provider=self.data_provider,
             )
         return self._journal_controller
 

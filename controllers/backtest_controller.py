@@ -9,6 +9,7 @@ from PyQt6.QtCore import QThread
 
 from config.paths import app_data_dir
 from core.system_backtest_engine import BacktestRequest, run_system_backtest, summarize_backtest_trades
+from services.data_provider import DataProvider
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
@@ -20,10 +21,12 @@ class BacktestController:
     def __init__(
         self,
         settings_service: SettingsService | None = None,
+        data_provider: DataProvider | None = None,
+        # Backward compat
         mt5_service: MT5Service | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
-        self.mt5_service = mt5_service or MT5Service()
+        self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
 
     def create_backtest_worker(self, request: BacktestRequest | list[BacktestRequest]) -> tuple[QThread, BacktestWorker]:
         thread = QThread()
@@ -107,9 +110,9 @@ class BacktestController:
         allow_macro: bool = False,
     ) -> BacktestRequest:
         settings = self.settings_service.load()
-        available = self.mt5_service.available_symbols(market_watch_only=True)
-        broker_symbol = self.mt5_service.resolve_symbol(symbol, available) or symbol.replace("/", "")
-        data_quality = self.mt5_service.symbol_data_quality(symbol, broker_symbol)
+        available = self.data_provider.available_symbols(market_watch_only=True)
+        broker_symbol = self.data_provider.resolve_symbol(symbol, available) or symbol.replace("/", "")
+        data_quality = self.data_provider.symbol_data_quality(symbol, broker_symbol)
         from core.risk_engine import contract_size_override_for_symbol
 
         contract_override = contract_size_override_for_symbol(
@@ -149,12 +152,12 @@ class BacktestController:
         _progress_callback: Callable[[int, str], None] | None = None,
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
-        progress(8, "Đang kiểm tra kết nối MT5...")
-        status = self.mt5_service.connection_status()
-        if not status.terminal_connected or not status.logged_in:
-            raise RuntimeError("MT5 chưa kết nối đầy đủ hoặc broker chưa đăng nhập.")
+        progress(8, "Đang kiểm tra kết nối dữ liệu...")
+        status = self.data_provider.connection_status()
+        if not status.connected or not status.logged_in:
+            raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
 
-        progress(15, "Đang tải dữ liệu lịch sử từ MT5...")
+        progress(15, "Đang tải dữ liệu lịch sử...")
         candles = self._load_history(request)
         if request.allow_macro:
             progress(25, "Đang tải dữ liệu macro/correlation...")
@@ -178,10 +181,10 @@ class BacktestController:
             return self.run_backtest(request=requests[0], _progress_callback=_progress_callback)
 
         progress = _progress_callback or (lambda _percent, _message: None)
-        progress(5, "Đang kiểm tra kết nối MT5...")
-        status = self.mt5_service.connection_status()
-        if not status.terminal_connected or not status.logged_in:
-            raise RuntimeError("MT5 chưa kết nối đầy đủ hoặc broker chưa đăng nhập.")
+        progress(5, "Đang kiểm tra kết nối dữ liệu...")
+        status = self.data_provider.connection_status()
+        if not status.connected or not status.logged_in:
+            raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
 
         runs: list[dict[str, Any]] = []
         total = len(requests)
@@ -205,7 +208,7 @@ class BacktestController:
                 scaled = _base + int(max(0, min(100, percent)) / 100 * _span)
                 progress(min(96, scaled), f"{symbol_label}: {message}")
 
-            child_progress(10, "Đang tải dữ liệu lịch sử từ MT5...")
+            child_progress(10, "Đang tải dữ liệu lịch sử...")
             candles = self._load_history(request)
             child_progress(35, "Đang replay hệ thống phân tích...")
             result = run_system_backtest(request, candles, progress_callback=child_progress)
@@ -295,7 +298,7 @@ class BacktestController:
                     request.broker_symbol, start, end,
                 )
             else:
-                result[timeframe] = self.mt5_service.load_ohlcv_range(
+                result[timeframe] = self.data_provider.load_ohlcv_range(
                     request.broker_symbol, timeframe, start, end,
                 )
         return result
@@ -318,7 +321,7 @@ class BacktestController:
 
         # Fast path: try the full range in one call first
         try:
-            candles = self.mt5_service.load_ohlcv_range(
+            candles = self.data_provider.load_ohlcv_range(
                 broker_symbol, "M15", start, end,
             )
             if candles:
@@ -342,7 +345,7 @@ class BacktestController:
         for i, cs in enumerate(chunk_starts):
             ce = min(cs + timedelta(days=max_chunk_days), end)
             try:
-                chunk = self.mt5_service.load_ohlcv_range(
+                chunk = self.data_provider.load_ohlcv_range(
                     broker_symbol, "M15", cs, ce, skip_select=(i > 0),
                 )
             except RuntimeError:

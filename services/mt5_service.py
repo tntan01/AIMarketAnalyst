@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import floor
 from pathlib import Path
+from typing import Any
 
 from config.paths import CONFIG_DIR
 from core.market_models import Candle
+from services.data_provider import ConnectionStatus, DataProvider, OrderResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +44,7 @@ class MT5OrderResult:
     message: str = ""
 
 
-class MT5Service:
+class MT5Service(DataProvider):
     def __init__(self, symbol_profile_path: Path | None = None) -> None:
         path = symbol_profile_path or CONFIG_DIR / "symbol_profiles.json"
         self.symbol_profiles = json.loads(path.read_text(encoding="utf-8"))
@@ -54,6 +56,14 @@ class MT5Service:
         except Exception:
             pass
         return bool(mt5.initialize())
+
+    # -- DataProvider interface: connection ---------------------------------
+
+    def connect(self) -> bool:
+        return self.connect_thread()
+
+    def disconnect(self) -> None:
+        self.disconnect_thread()
 
     def connect_thread(self) -> bool:
         try:
@@ -69,7 +79,24 @@ class MT5Service:
         except ImportError:
             pass
 
-    def connection_status(self) -> MT5ConnectionStatus:
+    def connection_status(self) -> ConnectionStatus:
+        mt5_status = self.mt5_connection_status()
+        return ConnectionStatus(
+            initialized=mt5_status.initialized,
+            connected=mt5_status.terminal_connected,
+            logged_in=mt5_status.logged_in,
+            trade_allowed=mt5_status.trade_allowed,
+            provider_name="MT5",
+            broker=mt5_status.broker,
+            server=mt5_status.server,
+            login=mt5_status.login,
+            balance=mt5_status.balance,
+            currency=mt5_status.currency,
+            error_code=mt5_status.error_code,
+            message=mt5_status.message,
+        )
+
+    def mt5_connection_status(self) -> MT5ConnectionStatus:
         try:
             import MetaTrader5 as mt5
         except ImportError:
@@ -116,7 +143,7 @@ class MT5Service:
         )
 
     def account_balance(self) -> float | None:
-        status = self.connection_status()
+        status = self.mt5_connection_status()
         if not status.terminal_connected or not status.logged_in:
             return None
         return status.balance
@@ -285,8 +312,45 @@ class MT5Service:
             results[timeframe] = self.load_ohlcv(broker_symbol, timeframe, bars, True)
         return results
 
-    def symbol_data_quality(self, display_symbol: str, broker_symbol: str) -> dict[str, object]:
-        status = self.connection_status()
+    # -- DataProvider interface: trading ------------------------------------
+
+    def place_market_order_unified(
+        self,
+        *,
+        symbol: str,
+        broker_symbol: str,
+        side: str,
+        volume: float,
+        stop_loss: float,
+        take_profit: float,
+        comment: str = "AI Market Analyst",
+    ) -> OrderResult:
+        """DataProvider-compatible wrapper around :meth:`place_market_order`."""
+        mt5_result = self.place_market_order(
+            symbol=symbol,
+            broker_symbol=broker_symbol,
+            side=side,
+            volume=volume,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            comment=comment,
+        )
+        return OrderResult(
+            success=mt5_result.success,
+            symbol=mt5_result.symbol,
+            broker_symbol=mt5_result.broker_symbol,
+            side=mt5_result.side,
+            volume=mt5_result.volume,
+            price=mt5_result.price,
+            stop_loss=mt5_result.stop_loss,
+            take_profit=mt5_result.take_profit,
+            order_id=mt5_result.order_id,
+            retcode=mt5_result.retcode,
+            message=mt5_result.message,
+        )
+
+    def symbol_data_quality(self, display_symbol: str, broker_symbol: str) -> dict[str, Any]:
+        status = self.mt5_connection_status()
         spread_points = None
         spread_status = "unknown"
         contract_size = None
@@ -516,6 +580,9 @@ class MT5Service:
 
     def _normalize_symbol_name(self, symbol: str) -> str:
         return "".join(char.lower() for char in symbol if char.isalnum())
+
+    def _symbol_profiles(self) -> dict[str, Any]:
+        return self.symbol_profiles
 
     def _closed_trades_from_deals(self, mt5_module, deals: list[object]) -> list[dict[str, object]]:
         entry_in = getattr(mt5_module, "DEAL_ENTRY_IN", 0)
