@@ -441,13 +441,20 @@ def calculate_opportunity_score(
         ready_to_trade=row.get("ready_to_trade"),
     )
     journal_feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
-    journal_cap = str(journal_feedback.get("decision_cap") or "").strip()
-    if journal_cap == "TRADE_BLOCKED":
-        group = BLOCKED
-    elif journal_cap == "WATCH_ONLY" and group in {READY_NOW, WAITING_CONFIRMATION}:
-        group = WATCH_ZONE
-    elif journal_cap == "WAITING_CONFIRMATION" and group == READY_NOW:
-        group = WAITING_CONFIRMATION
+    try:
+        journal_sample = int(journal_feedback.get("sample_size", 0) or 0)
+    except (TypeError, ValueError):
+        journal_sample = 0
+    # Chỉ áp dụng journal feedback khi đủ mẫu thống kê (≥ 8 lệnh).
+    # Dưới 8 mẫu, feedback chỉ mang tính tham khảo, không override quyết định live.
+    if journal_sample >= 8:
+        journal_cap = str(journal_feedback.get("decision_cap") or "").strip()
+        if journal_cap == "TRADE_BLOCKED":
+            group = BLOCKED
+        elif journal_cap == "WATCH_ONLY" and group in {READY_NOW, WAITING_CONFIRMATION}:
+            group = WATCH_ZONE
+        elif journal_cap == "WAITING_CONFIRMATION" and group == READY_NOW:
+            group = WAITING_CONFIRMATION
 
     # ---- proximity ----
     prox = normalize_price_vs_zone(
@@ -501,7 +508,8 @@ def calculate_opportunity_score(
     elif _truthy(row.get("news_in_3h")):
         news_pen = -int(w.get("news_penalty", 10.0) * 0.5)
 
-    journal_pen = int(safe_float(journal_feedback.get("opportunity_penalty"), 0.0))
+    # Chỉ trừ điểm journal khi đủ mẫu (≥ 8), nếu không penalty = 0
+    journal_pen = int(safe_float(journal_feedback.get("opportunity_penalty"), 0.0)) if journal_sample >= 8 else 0
 
     # ---- total ----
     raw = float(base) + prox_bonus + readiness_bonus + rr_bonus + spread_pen + news_pen + journal_pen

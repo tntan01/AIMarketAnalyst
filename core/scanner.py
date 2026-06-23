@@ -63,16 +63,6 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     # Action from decision engine (CT-2) — the single source of truth.
     action = str(decision_engine.get("legacy_action") or "stand_aside")
 
-    # Backtest-proven override: range + buy + R:R>=2.0 + score>=50
-    # should never be "stand_aside", even if the decision engine says so.
-    regime_label = result.get("market_regime", {}).get("primary", "")
-    if action == "stand_aside" and best_score >= 50 and regime_label == "range":
-        buy_scenario = next((s for s in scenarios if s.get("type") == "buy"), None)
-        if buy_scenario:
-            buy_rr = _parse_rr_float(buy_scenario.get("expected_effective_rr"))
-            if buy_rr is not None and buy_rr >= 2.0:
-                action = "ready"
-
     # Extract macro info
     macro_buy = int(scores.get("buy", {}).get("macro_alignment", 15))
     macro_sell = int(scores.get("sell", {}).get("macro_alignment", 15))
@@ -111,6 +101,8 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
             journal_feedback if isinstance(journal_feedback, dict) else {},
         ),
         "ai_summary_available": False,
+        "ai_audit_available": False,
+        "ai_setup_audit": {},
         "detail_action": "View Detail",
         "analysis_result": result,
         # ---- Phase 15 ranking fields ----
@@ -152,6 +144,8 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
         "macro_confidence": 0.0,
         "short_reason": reason,
         "ai_summary_available": False,
+        "ai_audit_available": False,
+        "ai_setup_audit": {},
         "detail_action": "View Detail",
         "analysis_result": None,
         # Phase 15 ranking fields
@@ -346,6 +340,12 @@ def append_journal_feedback_reason(reason: str, feedback: dict[str, Any]) -> str
         samples = int(sample)
     except (TypeError, ValueError):
         return reason
+
+    # Chỉ đưa ra kết luận khi đủ mẫu thống kê (≥ 8 lệnh).
+    # Dưới 8 mẫu: chỉ thông báo "chưa đủ dữ liệu", không phán xét.
+    if samples < 8:
+        return f"{reason} Nhật ký: chưa đủ mẫu ({samples} lệnh)."
+
     if exp < -0.15 or cap:
         return f"{reason} Nhật ký: {samples} mẫu, kỳ vọng {exp:.2f}R."
     return reason

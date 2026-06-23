@@ -147,26 +147,36 @@ class NewsService:
             "resume_after": resume_after,
         }
 
-    def preload_macro_contexts(self, symbols: list[str]) -> None:
-        """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores."""
+    def preload_macro_contexts(self, symbols: list[str], progress_callback=None) -> None:
+        """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores.
+
+        Args:
+            symbols: List of symbols to pre-compute macro contexts for.
+            progress_callback: Optional callable(percent: int, message: str) for UI updates.
+        """
         if not symbols:
             return
+        progress = progress_callback or (lambda _p, _m: None)
 
         # Buoc 1: Fetch calendar 1 lan
+        progress(15, "Đang tải lịch kinh tế (Forex Factory)...")
         first = symbols[0]
         currencies_first = [part for part in first.split("/") if part]
         self._calendar_events(currencies_first)
 
         # Buoc 2: Fetch RSS headlines 1 lan duy nhat (query tong quat cho ca forex)
-        # MOI: Thay vi goi _macro_headlines 29 lan, chi goi 1 lan voi query tong quat
+        progress(16, "Đang tải tin tức toàn cầu (Google News RSS)...")
         self._global_headlines: list[dict[str, object]] = self._fetch_global_forex_headlines()
+
+        progress(17, "Đang tải phát biểu quan chức mới nhất...")
         self._latest_official_statements()
 
         # Buoc 3: Pre-compute macro context cho TAT CA symbols
-        # latest_macro_context se dung _global_headlines thay vi goi _macro_headlines
         self._preloading = True
         try:
-            for symbol in symbols:
+            total = max(1, len(symbols))
+            for idx, symbol in enumerate(symbols):
+                progress(17 + int((idx + 1) / total * 2), f"Đang phân tích vĩ mô {symbol} ({idx + 1}/{total})...")
                 for include_stmts in (True,):
                     ctx = self.latest_macro_context(symbol, include_latest_statements=include_stmts)
                     cache_key = f"{symbol}_{include_stmts}"

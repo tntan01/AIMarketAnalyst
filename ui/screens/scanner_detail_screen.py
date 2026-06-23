@@ -1,14 +1,58 @@
 from __future__ import annotations
 
+from html import escape
+
 from config.paths import app_data_dir
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
+    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+)
 from controllers.journal_controller import JournalController
 from services.storage_service import JsonStorage
 
 from ui.components.chart_view import AnalysisChartView
+from ui.components.info_card import InfoCard
 from ui.screens.shared import action_button, card, page_header
 
+
+# ---------------------------------------------------------------------------
+# Translation maps for code constants → Vietnamese display
+# ---------------------------------------------------------------------------
+
+_VN_CODE = {
+    # Reason codes
+    "MACRO_ALIGNED": "Vĩ mô thuận",
+    "MACRO_CONFLICT": "Vĩ mô xung đột",
+    "MACRO_UNCLEAR": "Vĩ mô chưa rõ",
+    # Penalty codes
+    "CHOCH_AGAINST_DIRECTION": "CHOCH ngược hướng",
+    # Common values
+    "neutral": "trung lập",
+    "conflict": "xung đột",
+    "aligned": "thuận",
+    "unclear": "chưa rõ",
+}
+
+_VN_MACRO = {
+    "neutral": "trung lập",
+    "conflict": "xung đột",
+    "aligned": "thuận",
+    "unclear": "chưa rõ",
+    "": "trung lập",
+}
+
+
+def _translate_codes(codes: list[str]) -> list[str]:
+    """Translate reason/penalty code constants to Vietnamese display text."""
+    result: list[str] = []
+    for c in codes:
+        result.append(_VN_CODE.get(c, c))
+    return result
+
+
+
+# ---------------------------------------------------------------------------
 
 class ScannerDetailScreen(QWidget):
     def __init__(self, navigate=None, *, app=None) -> None:
@@ -27,42 +71,132 @@ class ScannerDetailScreen(QWidget):
         self.header_slot = QVBoxLayout()
         root.addLayout(self.header_slot)
 
-        self.stats = QGridLayout()
-        self.stats.setSpacing(10)
-        self.stat_value_labels = []
-        for index, (title, value) in enumerate(
-            [("Xếp hạng", "--"), ("Điểm tốt nhất", "--"), ("Thiên hướng", "--"), ("Quyền", "--")]
-        ):
-            widget, value_label = self._compact_stat(title, value)
-            self.stat_value_labels.append(value_label)
-            self.stats.addWidget(widget, 0, index)
-            self.stats.setColumnStretch(index, 1)
+        # ---- Tab widget: Tổng quan | Chẩn đoán | AI kiểm định ---------------
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("ScannerDetailTabs")
+        self.tabs.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid #334155; border-radius: 6px; background: #1a1f2e; }"
+            "QTabBar::tab { padding: 8px 20px; font-size: 13px; color: #94a3b8; background: #171c24; border: 1px solid #334155; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; }"
+            "QTabBar::tab:selected { color: #f8fafc; background: #1a1f2e; border-bottom: 2px solid #38bdf8; }"
+            "QTabBar::tab:hover:!selected { color: #e2e8f0; background: #1e293b; }"
+        )
 
-        body = QHBoxLayout()
-        body.setSpacing(10)
-        
-        left_col = QVBoxLayout()
-        left_col.setSpacing(10)
-        left_col.addLayout(self.stats)
-        
+        # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
+        overview_tab = QWidget()
+        ov = QVBoxLayout(overview_tab)
+        ov.setContentsMargins(6, 6, 6, 6)
+        ov.setSpacing(8)
+
+        # -- Hero verdict bar --
+        self.hero_bar = QLabel("")
+        self.hero_bar.setObjectName("ScannerDetailHero")
+        self.hero_bar.setWordWrap(True)
+        self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
+        self.hero_bar.setFixedHeight(40)
+        self.hero_bar.setStyleSheet(
+            "QLabel#ScannerDetailHero { border-radius: 6px; padding: 0 14px; font-size: 14px; }"
+        )
+        ov.addWidget(self.hero_bar)
+
+        # -- Info cards row 1: scores --
+        cards1 = QHBoxLayout()
+        cards1.setSpacing(8)
+        self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#38bdf8")
+        self.card_buysell = InfoCard("Mua / Bán", "--", "", accent="#a78bfa")
+        self.card_final = InfoCard("Điểm cuối", "--", "", accent="#22c55e")
+        self.card_gap = InfoCard("Chênh lệch", "--", "", accent="#fbbf24")
+        self.card_rr = InfoCard("R:R", "--", "", accent="#fb923c")
+        for c in [self.card_best, self.card_buysell, self.card_final, self.card_gap, self.card_rr]:
+            cards1.addWidget(c)
+        ov.addLayout(cards1)
+
+        # -- Info cards row 2: context --
+        cards2 = QHBoxLayout()
+        cards2.setSpacing(8)
+        self.card_entry = InfoCard("Entry", "--", "", accent="#22c55e")
+        self.card_position = InfoCard("Vị trí giá", "--", "", accent="#38bdf8")
+        self.card_m15 = InfoCard("M15", "--", "", accent="#fbbf24")
+        self.card_regime = InfoCard("Chế độ TT", "--", "", accent="#c084fc")
+        self.card_permission = InfoCard("Quyền", "--", "", accent="#fb7185")
+        for c in [self.card_entry, self.card_position, self.card_m15, self.card_regime, self.card_permission]:
+            cards2.addWidget(c)
+        ov.addLayout(cards2)
+
+        # -- Chart --
         self.chart = AnalysisChartView()
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("AnalysisChartFrame")
-        chart_layout = QVBoxLayout(self.chart_frame)
-        chart_layout.setContentsMargins(8, 8, 8, 8)
-        chart_layout.setSpacing(0)
-        chart_layout.addWidget(self.chart)
-        
-        left_col.addWidget(self.chart_frame, 1)
-        body.addLayout(left_col, 7)
-        
-        detail = self._decision_card()
-        detail.setMinimumWidth(320)
-        detail.setMaximumWidth(520)
-        body.addWidget(detail, 3)
-        body.setStretch(0, 7)
-        body.setStretch(1, 3)
-        root.addLayout(body, 1)
+        cl = QVBoxLayout(self.chart_frame)
+        cl.setContentsMargins(4, 4, 4, 4)
+        cl.setSpacing(0)
+        cl.addWidget(self.chart)
+        ov.addWidget(self.chart_frame, 1)
+
+        # -- Bottom: wait conditions + risks --
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+
+        wait_frame = QFrame()
+        wait_frame.setObjectName("ScannerDetailBottom")
+        wait_frame.setStyleSheet(
+            "QFrame#ScannerDetailBottom { background: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
+        )
+        wl = QVBoxLayout(wait_frame)
+        wl.setContentsMargins(10, 8, 10, 8)
+        wl.setSpacing(4)
+        wl.addWidget(self._section_title("Điều kiện cần chờ"))
+        self.wait_layout = QVBoxLayout()
+        self.wait_layout.setContentsMargins(0, 0, 0, 0)
+        self.wait_layout.setSpacing(3)
+        wl.addLayout(self.wait_layout)
+        wl.addStretch(1)
+        bottom.addWidget(wait_frame, 1)
+
+        risk_frame = QFrame()
+        risk_frame.setObjectName("ScannerDetailBottom")
+        risk_frame.setStyleSheet(
+            "QFrame#ScannerDetailBottom { background: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
+        )
+        rl = QVBoxLayout(risk_frame)
+        rl.setContentsMargins(10, 8, 10, 8)
+        rl.setSpacing(4)
+        rl.addWidget(self._section_title("Luận điểm & rủi ro"))
+        self.insight_layout = QVBoxLayout()
+        self.insight_layout.setContentsMargins(0, 0, 0, 0)
+        self.insight_layout.setSpacing(3)
+        rl.addLayout(self.insight_layout)
+        rl.addStretch(1)
+        bottom.addWidget(risk_frame, 1)
+
+        ov.addLayout(bottom)
+        self.tabs.addTab(overview_tab, "📊 Tổng quan")
+
+        # ---- Tab 2: Chẩn đoán (score + gate + checklist) ----------------
+        diag_tab = QWidget()
+        diag_layout = QVBoxLayout(diag_tab)
+        diag_layout.setContentsMargins(4, 4, 4, 4)
+        diag_layout.setSpacing(0)
+        self.diag_text = QTextEdit()
+        self.diag_text.setReadOnly(True)
+        self.diag_text.setStyleSheet(
+            "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: none; border-radius: 6px; padding: 12px; }"
+        )
+        diag_layout.addWidget(self.diag_text, 1)
+        self.tabs.addTab(diag_tab, "🔬 Chẩn đoán")
+
+        audit_tab = QWidget()
+        audit_layout = QVBoxLayout(audit_tab)
+        audit_layout.setContentsMargins(4, 4, 4, 4)
+        audit_layout.setSpacing(0)
+        self.audit_text = QTextEdit()
+        self.audit_text.setReadOnly(True)
+        self.audit_text.setStyleSheet(
+            "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: none; border-radius: 6px; padding: 12px; }"
+        )
+        audit_layout.addWidget(self.audit_text, 1)
+        self.tabs.addTab(audit_tab, "AI kiểm định")
+
+        root.addWidget(self.tabs, 1)
 
         actions = QHBoxLayout()
         self.back_button = action_button("⬅️ Quay lại")
@@ -79,87 +213,6 @@ class ScannerDetailScreen(QWidget):
         root.addLayout(actions)
         self._render()
 
-    def _decision_card(self):
-        frame = card("Bảng quyết định", object_name="ScannerDecisionPanel")
-
-        self.decision_hero = QFrame()
-        self.decision_hero.setObjectName("ScannerDecisionHero")
-        hero_layout = QVBoxLayout(self.decision_hero)
-        hero_layout.setContentsMargins(12, 10, 12, 10)
-        hero_layout.setSpacing(4)
-        self.action_label = QLabel("--")
-        self.action_label.setObjectName("ScannerDecisionAction")
-        self.action_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.action_reason_label = QLabel("--")
-        self.action_reason_label.setObjectName("ScannerDecisionReason")
-        self.action_reason_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.action_reason_label.setWordWrap(True)
-        hero_layout.addWidget(self.action_label)
-        hero_layout.addWidget(self.action_reason_label)
-        frame.layout().addWidget(self.decision_hero)
-
-        self.metric_labels: dict[str, QLabel] = {}
-        metrics = QGridLayout()
-        metrics.setContentsMargins(0, 0, 0, 0)
-        metrics.setHorizontalSpacing(8)
-        metrics.setVerticalSpacing(8)
-        for index, (key, title) in enumerate(
-            [
-                ("best_score", "Điểm tốt nhất"),
-                ("buy_sell", "Buy / Sell"),
-                ("gap", "Gap"),
-                ("rr", "R:R"),
-                ("m15", "M15"),
-                ("entry", "Entry"),
-            ]
-        ):
-            item, value_label = self._metric_tile(title, "--")
-            self.metric_labels[key] = value_label
-            metrics.addWidget(item, index // 2, index % 2)
-        frame.layout().addLayout(metrics)
-
-        scroll = QScrollArea()
-        scroll.setObjectName("ScannerDecisionScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_content = QWidget()
-        scroll_content.setObjectName("ScannerDecisionScrollContent")
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 4, 0)
-        scroll_layout.setSpacing(8)
-
-        scroll_layout.addWidget(self._section_title("Điều kiện cần chờ"))
-        self.wait_layout = QVBoxLayout()
-        self.wait_layout.setContentsMargins(0, 0, 0, 0)
-        self.wait_layout.setSpacing(6)
-        scroll_layout.addLayout(self.wait_layout)
-
-        scroll_layout.addWidget(self._section_title("Luận điểm & rủi ro"))
-        self.insight_layout = QVBoxLayout()
-        self.insight_layout.setContentsMargins(0, 0, 0, 0)
-        self.insight_layout.setSpacing(6)
-        scroll_layout.addLayout(self.insight_layout)
-        scroll_layout.addStretch(1)
-        scroll.setWidget(scroll_content)
-        frame.layout().addWidget(scroll, 1)
-        return frame
-
-    def _metric_tile(self, title: str, value: str) -> tuple[QFrame, QLabel]:
-        frame = QFrame()
-        frame.setObjectName("ScannerDecisionMetric")
-        frame.setMinimumHeight(48)
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(2)
-        title_label = QLabel(title)
-        title_label.setObjectName("ScannerDecisionMetricTitle")
-        value_label = QLabel(value)
-        value_label.setObjectName("ScannerDecisionMetricValue")
-        value_label.setWordWrap(True)
-        layout.addWidget(title_label)
-        layout.addWidget(value_label)
-        return frame, value_label
-
     def _section_title(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setObjectName("ScannerDecisionSectionTitle")
@@ -172,25 +225,6 @@ class ScannerDetailScreen(QWidget):
         label.setWordWrap(True)
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         return label
-
-    def _compact_stat(self, title: str, value: str) -> tuple[QFrame, QLabel]:
-        frame = QFrame()
-        frame.setObjectName("ScannerDetailStat")
-        frame.setMinimumHeight(32)
-        frame.setMaximumHeight(36)
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(6)
-        title_label = QLabel(title)
-        title_label.setObjectName("ScannerDetailStatTitle")
-        value_label = QLabel(value)
-        value_label.setObjectName("ScannerDetailStatValue")
-        value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        value_label.setWordWrap(False)
-        layout.addWidget(title_label)
-        layout.addStretch(1)
-        layout.addWidget(value_label)
-        return frame, value_label
 
     def set_analysis_result(self, payload: dict[str, object]) -> None:
         self.row = dict(payload.get("scanner_row", {}) or {})
@@ -210,16 +244,12 @@ class ScannerDetailScreen(QWidget):
                 symbol,
             )
         )
-        values = [
-            f"#{self.row.get('rank', '--')}",
-            f"{self.row.get('best_score', '--')} / 100",
-            self._bias_text(self.row.get("direction_bias", "--")),
-            self._permission_text(str(self.row.get("trade_permission", "--"))),
-        ]
-        for label, value in zip(self.stat_value_labels, values):
-            label.setText(str(value))
-        self._refresh_decision_panel()
+        self._refresh_hero()
+        self._refresh_cards()
+        self._refresh_conditions()
         self._refresh_chart()
+        self._refresh_diagnostics()
+        self._refresh_ai_audit()
 
     def _refresh_chart(self) -> None:
         if not hasattr(self, "chart"):
@@ -237,29 +267,113 @@ class ScannerDetailScreen(QWidget):
         except Exception:
             self.chart.show_error("Khong the tao du lieu bieu do tu ket qua quet.")
 
-    def _refresh_decision_panel(self) -> None:
+    def _refresh_hero(self) -> None:
+        """Render the colored verdict bar at the top of the overview."""
         if not self.row:
-            self.action_label.setText("--")
-            self.action_reason_label.setText("Chọn một dòng trong bảng quét để xem chi tiết.")
+            self.hero_bar.setText("")
+            self.hero_bar.hide()
             return
 
         action_code = str(self.row.get("display_action") or self.row.get("scanner_action") or "--")
         action_text = self._action_text(action_code)
-        self.action_label.setText(action_text.upper())
-        self.action_label.setProperty("state", action_code)
-        self.action_label.style().unpolish(self.action_label)
-        self.action_label.style().polish(self.action_label)
-        self.action_reason_label.setText(self._decision_reason())
+        rank = self.row.get("rank", "--")
+        reason = self._decision_reason()
 
-        self.metric_labels["best_score"].setText(f"{self.row.get('best_score', '--')} / 100")
-        self.metric_labels["buy_sell"].setText(f"{self.row.get('buy_score', '--')} / {self.row.get('sell_score', '--')}")
-        self.metric_labels["gap"].setText(self._gap_text())
-        self.metric_labels["rr"].setText(str(self.row.get("risk_reward") or "Chưa có"))
-        self.metric_labels["m15"].setText(self._m15_text())
-        self.metric_labels["entry"].setText(self._entry_status_display())
+        if action_code == "ready":
+            bg, accent, icon = "#14532d", "#22c55e", "🟢"
+        elif action_code in ("watch", "wait"):
+            bg, accent, icon = "#4a3f00", "#facc15", "🟡"
+        elif action_code == "skip":
+            bg, accent, icon = "#7f1d1d", "#ef4444", "🔴"
+        else:
+            bg, accent, icon = "#1e293b", "#94a3b8", "⚪"
 
+        self.hero_bar.setText(
+            f"<div style='background:{bg};padding:6px 14px;border-radius:6px;'>"
+            f"<b style='color:{accent};font-size:15px;'>{icon} {action_text.upper()}</b>"
+            f"<span style='color:#cbd5e1;margin-left:10px;font-size:13px;'>#{rank} — {reason}</span>"
+            f"</div>"
+        )
+        self.hero_bar.show()
+
+    def _refresh_cards(self) -> None:
+        """Populate the 10 info cards with scanner row data."""
+        if not self.row:
+            return
+
+        # Row 1: scores
+        best = self.row.get("best_score", "--")
+        self.card_best.set_value(f"{best}/100")
+        rating = self._score_rating(int(best) if str(best).isdigit() else 0)
+        self.card_best.set_detail(rating)
+
+        buy_s = self.row.get("buy_score", "--")
+        sell_s = self.row.get("sell_score", "--")
+        bias = self.row.get("direction_bias", {})
+        side_label = ""
+        if isinstance(bias, dict):
+            side = str(bias.get("best_side", ""))
+            clarity = "rõ" if bias.get("is_clear_bias") else "TB"
+            side_label = f"{'MUA' if side == 'buy' else 'BÁN' if side == 'sell' else '?'} {clarity}"
+        self.card_buysell.set_value(f"{buy_s} / {sell_s}")
+        self.card_buysell.set_detail(side_label)
+
+        final_v = self.row.get("final_score", "--")
+        self.card_final.set_value(f"{final_v}/100")
+        self.card_final.set_detail(self._score_rating(int(final_v) if str(final_v).isdigit() else 0))
+
+        gap = self.row.get("score_gap", "--")
+        min_gap = "10"
+        if isinstance(bias, dict):
+            min_gap = str(bias.get("min_gap", "10"))
+        self.card_gap.set_value(f"{self._compact_number(gap)}")
+        self.card_gap.set_detail(f"tối thiểu {min_gap}")
+
+        rr = self.row.get("risk_reward") or "--"
+        self.card_rr.set_value(str(rr))
+        eff_rr = self.row.get("expected_effective_rr")
+        rr_detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
+        self.card_rr.set_detail(rr_detail)
+
+        # Row 2: context
+        entry_raw = str(self.row.get("entry_status") or "--")
+        self.card_entry.set_value(self._entry_status_display(),
+                                   accent="#22c55e" if "Đã xác nhận" in self._entry_status_display() else "#fbbf24")
+
+        price_zone = str(self.row.get("price_vs_zone") or "")
+        zone_map = {"in_zone": "Trong vùng", "near_zone": "Gần vùng", "far": "Còn xa"}
+        self.card_position.set_value(zone_map.get(price_zone, price_zone or "Chưa có"))
+
+        m15 = self._m15_text()
+        m15_accent = "#22c55e" if m15 == "strict" else ("#fbbf24" if m15 == "loose" else "#ef4444")
+        self.card_m15.set_value(m15, accent=m15_accent)
+
+        regime = str(self.row.get("market_regime") or "--")
+        regime_map = {"trend_up": "Tăng", "trend_down": "Giảm", "range": "Đi ngang",
+                       "volatile": "Biến động", "unknown": "Chưa rõ"}
+        self.card_regime.set_value(regime_map.get(regime, regime))
+
+        perm = str(self.row.get("trade_permission") or "--")
+        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}
+        perm_accent = {"allowed": "#22c55e", "caution": "#fbbf24", "blocked": "#ef4444"}.get(perm, "#94a3b8")
+        self.card_permission.set_value(perm_map.get(perm, perm), accent=perm_accent)
+
+    def _refresh_conditions(self) -> None:
+        """Refresh wait conditions and insights at the bottom."""
+        if not self.row:
+            return
         self._fill_pills(self.wait_layout, self._wait_conditions(), "wait")
         self._fill_pills(self.insight_layout, self._insights(), "risk")
+
+    @staticmethod
+    def _score_rating(sc: int) -> str:
+        if sc >= 80:
+            return "🟢 Mạnh"
+        if sc >= 65:
+            return "🔵 Khá"
+        if sc >= 50:
+            return "🟡 TB"
+        return "🔴 Yếu"
 
     def _fill_pills(self, layout: QVBoxLayout, items: list[tuple[str, str]], fallback_state: str) -> None:
         while layout.count():
@@ -409,6 +523,653 @@ class ScannerDetailScreen(QWidget):
         if min_gap is None:
             return self._compact_number(gap)
         return f"{self._compact_number(gap)} / {self._compact_number(min_gap)}"
+
+    # ------------------------------------------------------------------
+    # Diagnostics Tab
+    # ------------------------------------------------------------------
+
+    def _refresh_diagnostics(self) -> None:
+        if not hasattr(self, "diag_text"):
+            return
+        if not self.row:
+            self.diag_text.setHtml("<p style='color:#94a3b8;'>Chọn một dòng trong bảng quét để xem chẩn đoán.</p>")
+            return
+        analysis = self.row.get("analysis_result")
+        if not isinstance(analysis, dict):
+            self.diag_text.setHtml("<p style='color:#94a3b8;'>Không có dữ liệu phân tích để hiển thị chẩn đoán.</p>")
+            return
+
+        parts: list[str] = []
+        parts.append(self._diag_score_breakdown_html(analysis))
+        parts.append(self._diag_gate_html(analysis))
+        parts.append(self._diag_checklist_html(analysis))
+        parts.append(self._diag_pipeline_steps_html(analysis))
+        parts.append(self._diag_final_score_html(analysis))
+        self.diag_text.setHtml("\n".join(parts))
+
+    # -- AI Setup Audit ----------------------------------------------------
+
+    def _refresh_ai_audit(self) -> None:
+        if not hasattr(self, "audit_text"):
+            return
+        if not self.row:
+            self.audit_text.setHtml("<p style='color:#94a3b8;'>Chọn một dòng trong bảng quét để xem AI kiểm định.</p>")
+            return
+        audit = self.row.get("ai_setup_audit")
+        if not isinstance(audit, dict) or not audit:
+            self.audit_text.setHtml(
+                "<p style='color:#94a3b8;'>Chưa có AI Setup Auditor cho dòng này. "
+                "Scanner chỉ gọi AI cho các setup đứng đầu theo giới hạn cấu hình.</p>"
+            )
+            return
+        self.audit_text.setHtml(self._ai_audit_html(audit))
+
+    def _ai_audit_html(self, audit: dict) -> str:
+        agreement = str(audit.get("agreement") or "caution").strip().lower()
+        label_map = {
+            "agree": ("ĐỒNG THUẬN", "#22c55e"),
+            "caution": ("CẢNH BÁO", "#fbbf24"),
+            "disagree": ("KHÔNG ĐỒNG THUẬN", "#ef4444"),
+        }
+        label, color = label_map.get(agreement, label_map["caution"])
+        confidence = self._compact_number(audit.get("confidence_score", 0))
+        quality = self._compact_number(audit.get("trade_plan_quality", 0))
+        setup_summary = escape(str(audit.get("setup_summary") or "").strip() or "AI chưa có tóm tắt setup.")
+        market_summary = escape(str(audit.get("market_context_summary") or "").strip() or "AI chưa có tóm tắt bối cảnh.")
+        no_trade = escape(str(audit.get("do_not_trade_reason") or "").strip())
+        error = escape(str(audit.get("auditor_error") or "").strip())
+
+        rows = [
+            "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>",
+            "<h2 style='color:#38bdf8;margin:0 0 4px;font-size:16px;'>AI Setup Auditor</h2>",
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "AI chỉ kiểm định setup rule engine đã tạo. Phần này không tự thay đổi quyết định, gate hoặc auto trade."
+            "</p>",
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:14px;background:#1e293b;border-radius:6px;'>",
+            "<tr>",
+            f"<td style='padding:10px 12px;color:#94a3b8;width:120px;'>Kết luận</td>",
+            f"<td style='padding:10px 12px;color:{color};font-weight:800;font-size:15px;'>{label}</td>",
+            f"<td style='padding:10px 12px;color:#94a3b8;width:90px;'>Tin cậy</td>",
+            f"<td style='padding:10px 12px;color:#e2e8f0;font-weight:700;'>{confidence}/100</td>",
+            f"<td style='padding:10px 12px;color:#94a3b8;width:110px;'>Chất lượng plan</td>",
+            f"<td style='padding:10px 12px;color:#e2e8f0;font-weight:700;'>{quality}/100</td>",
+            "</tr>",
+            "</table>",
+        ]
+        if error:
+            rows.append(
+                f"<div style='color:#fbbf24;background:#2b2330;border:1px solid #854d0e;"
+                f"border-radius:6px;padding:10px 12px;margin-bottom:12px;'>AI auditor lỗi: {error}</div>"
+            )
+        rows.extend([
+            self._audit_block("Tóm tắt setup", setup_summary, "#38bdf8"),
+            self._audit_block("Bối cảnh thị trường", market_summary, "#a78bfa"),
+            self._audit_list_block("Cảnh báo rủi ro", audit.get("risk_flags"), "#f97316"),
+            self._audit_list_block("Điều kiện còn thiếu", audit.get("missing_confirmations"), "#fbbf24"),
+        ])
+        if no_trade:
+            rows.append(self._audit_block("Lý do không nên giao dịch", no_trade, "#ef4444"))
+        rows.append("</div>")
+        return "\n".join(rows)
+
+    def _audit_block(self, title: str, body: str, color: str) -> str:
+        return (
+            f"<h3 style='color:{color};margin:16px 0 6px;font-size:14px;'>{escape(title)}</h3>"
+            f"<div style='color:#e2e8f0;background:#111827;border:1px solid #334155;"
+            f"border-radius:6px;padding:10px 12px;margin-bottom:8px;'>{body}</div>"
+        )
+
+    def _audit_list_block(self, title: str, values: object, color: str) -> str:
+        items = values if isinstance(values, list) else []
+        if not items:
+            body = "<span style='color:#94a3b8;'>Không có mục đáng chú ý.</span>"
+        else:
+            body = "<ul style='margin:0;padding-left:18px;'>" + "".join(
+                f"<li style='margin:4px 0;color:#e2e8f0;'>{escape(str(item))}</li>"
+                for item in items
+                if str(item).strip()
+            ) + "</ul>"
+        return (
+            f"<h3 style='color:{color};margin:16px 0 6px;font-size:14px;'>{escape(title)}</h3>"
+            f"<div style='background:#111827;border:1px solid #334155;border-radius:6px;"
+            f"padding:10px 12px;margin-bottom:8px;'>{body}</div>"
+        )
+
+    # -- Score Breakdown -------------------------------------------------
+
+    def _diag_score_breakdown_html(self, analysis: dict) -> str:
+        scores = analysis.get("scenario_scores", {})
+        if not isinstance(scores, dict):
+            return ""
+
+        buy = scores.get("buy", {}) if isinstance(scores.get("buy"), dict) else {}
+        sell = scores.get("sell", {}) if isinstance(scores.get("sell"), dict) else {}
+
+        def _sc(comp: str, side_dict: dict) -> str:
+            val = side_dict.get(comp, 0)
+            try:
+                return str(int(val))
+            except (TypeError, ValueError):
+                return str(val)
+
+        def _rating(sc: int) -> str:
+            if sc >= 80:
+                return '<span style="color:#22c55e;">MẠNH</span>'
+            if sc >= 65:
+                return '<span style="color:#38bdf8;">KHÁ</span>'
+            if sc >= 50:
+                return '<span style="color:#fbbf24;">TRUNG BÌNH</span>'
+            return '<span style="color:#ef4444;">YẾU</span>'
+
+        def _color(val: int, max_val: int) -> str:
+            pct = val / max(max_val, 1)
+            if pct >= 0.7:
+                return "#22c55e"
+            if pct >= 0.4:
+                return "#fbbf24"
+            return "#ef4444"
+
+        buy_total = int(buy.get("signal_score", buy.get("total", 0)) or 0)
+        sell_total = int(sell.get("signal_score", sell.get("total", 0)) or 0)
+        buy_macro_status = _VN_MACRO.get(buy.get("macro_status", ""), buy.get("macro_status", ""))
+        sell_macro_status = _VN_MACRO.get(sell.get("macro_status", ""), sell.get("macro_status", ""))
+        buy_penalty = ", ".join(_translate_codes(buy.get("penalty_codes", []) or [])) or "không"
+        sell_penalty = ", ".join(_translate_codes(sell.get("penalty_codes", []) or [])) or "không"
+        buy_reason = ", ".join(_translate_codes(buy.get("reason_codes", []) or [])) or "không"
+        sell_reason = ", ".join(_translate_codes(sell.get("reason_codes", []) or [])) or "không"
+        buy_corr = buy.get("correlation_adjustment", 0) or 0
+        sell_corr = sell.get("correlation_adjustment", 0) or 0
+
+        rows = [
+            "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>",
+            "<h2 style='color:#38bdf8;margin:0 0 4px;font-size:16px;'>Phân rã điểm số</h2>",
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "Hệ thống chấm điểm 6 thành phần cho mỗi hướng MUA và BÁN. "
+            "<b>Xu hướng</b> (EMA50/200, cấu trúc HH/HL) · "
+            "<b>Động lượng</b> (RSI, MACD) · "
+            "<b>Vị trí</b> (gần hỗ trợ/kháng cự) · "
+            "<b>SMC</b> (BOS, CHOCH, vùng cung/cầu) · "
+            "<b>Rủi ro</b> (ATR, spread, tin tức) · "
+            "<b>Vĩ mô</b> (lãi suất, DXY, VIX, US10Y). "
+            "Tổng 0-100; &ge;80 Mạnh, &ge;65 Khá, &ge;50 Trung bình, &lt;50 Yếu."
+            "</p>",
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:16px;'>",
+            "<tr>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;' title='Thành phần được chấm điểm'>Thành phần</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:55px;' title='Điểm tối đa của thành phần này'>Max</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #38bdf8;color:#38bdf8;width:55px;' title='Điểm kịch bản MUA'>MUA</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #fb7185;color:#fb7185;width:55px;' title='Điểm kịch bản BÁN'>BÁN</th>",
+            "</tr>",
+        ]
+
+        components = [
+            ("Xu hướng", "trend_alignment", 25, "EMA50/200, cấu trúc đỉnh/đáy H4/D1"),
+            ("Động lượng", "momentum_alignment", 20, "RSI, MACD histogram"),
+            ("Vị trí", "location_quality", 25, "Khoảng cách đến hỗ trợ/kháng cự gần nhất"),
+            ("SMC", "smc_quality", 15, "BOS, CHOCH, displacement, vùng cung/cầu, thanh khoản"),
+            ("Rủi ro", "risk_condition", 15, "ATR, spread, tin tức tác động cao"),
+            ("Vĩ mô", "macro_alignment", None, "Lãi suất, DXY, VIX, US10Y, tâm lý thị trường"),
+        ]
+        for label, key, max_v, tooltip in components:
+            bv = buy.get(key, 0) or 0
+            sv = sell.get(key, 0) or 0
+            eff_max = max_v if max_v is not None else max(int(bv), int(sv), 1)
+            rows.append(
+                f"<tr>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='{tooltip}'>{label}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>{eff_max}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{_color(int(bv), eff_max)};font-weight:700;'>{int(bv)}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{_color(int(sv), eff_max)};font-weight:700;'>{int(sv)}</td>"
+                f"</tr>"
+            )
+
+        rows.append(
+            f"<tr style='border-top:2px solid #334155;'>"
+            f"<td style='padding:8px 10px;color:#f8fafc;font-weight:700;' title='Tổng điểm tín hiệu sau khi chuẩn hóa (0-100)'>TỔNG</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#64748b;'>100</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#38bdf8;font-weight:700;font-size:15px;'>{buy_total}</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#fb7185;font-weight:700;font-size:15px;'>{sell_total}</td>"
+            f"</tr>"
+        )
+        rows.append("</table>")
+
+        # Rating + modifiers — use table for reliable rendering
+        rows.append(
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;'>"
+            "<tr>"
+            f"<td style='padding:4px 12px;color:#94a3b8;width:110px;'>Đánh giá MUA</td>"
+            f"<td style='padding:4px 12px;color:#e2e8f0;'>{_rating(buy_total)}</td>"
+            f"<td style='padding:4px 12px;color:#94a3b8;width:110px;'>Tương quan MUA</td>"
+            f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{buy_corr:+.0f}</b></td>"
+            "</tr>"
+            "<tr>"
+            f"<td style='padding:4px 12px;color:#94a3b8;'>Đánh giá BÁN</td>"
+            f"<td style='padding:4px 12px;color:#e2e8f0;'>{_rating(sell_total)}</td>"
+            f"<td style='padding:4px 12px;color:#94a3b8;'>Tương quan BÁN</td>"
+            f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{sell_corr:+.0f}</b></td>"
+            "</tr>"
+        )
+
+        if buy_macro_status or sell_macro_status:
+            rows.append(
+                "<tr>"
+                f"<td style='padding:4px 12px;color:#94a3b8;'>Vĩ mô MUA</td>"
+                f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{buy_macro_status or 'trung lập'}</b></td>"
+                f"<td style='padding:4px 12px;color:#94a3b8;'>Vĩ mô BÁN</td>"
+                f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{sell_macro_status or 'trung lập'}</b></td>"
+                "</tr>"
+            )
+        rows.append(
+            "<tr>"
+            f"<td style='padding:4px 12px;color:#94a3b8;'>Phạt MUA</td>"
+            f"<td style='padding:4px 12px;color:#64748b;'>{buy_penalty}</td>"
+            f"<td style='padding:4px 12px;color:#94a3b8;'>Phạt BÁN</td>"
+            f"<td style='padding:4px 12px;color:#64748b;'>{sell_penalty}</td>"
+            "</tr>"
+        )
+        rows.append(
+            "<tr>"
+            f"<td style='padding:4px 12px;color:#94a3b8;'>Lý do MUA</td>"
+            f"<td style='padding:4px 12px;color:#64748b;'>{buy_reason}</td>"
+            f"<td style='padding:4px 12px;color:#94a3b8;'>Lý do BÁN</td>"
+            f"<td style='padding:4px 12px;color:#64748b;'>{sell_reason}</td>"
+            "</tr>"
+        )
+
+        # SMC reason
+        buy_smc = buy.get("smc_reason", "")
+        sell_smc = sell.get("smc_reason", "")
+        if buy_smc or sell_smc:
+            rows.append(
+                "<tr>"
+                f"<td style='padding:4px 12px;color:#94a3b8;'>SMC MUA</td>"
+                f"<td style='padding:4px 12px;color:#64748b;'>{buy_smc or '--'}</td>"
+                f"<td style='padding:4px 12px;color:#94a3b8;'>SMC BÁN</td>"
+                f"<td style='padding:4px 12px;color:#64748b;'>{sell_smc or '--'}</td>"
+                "</tr>"
+            )
+        rows.append("</table>")
+
+        rows.append("</div>")
+        return "\n".join(rows)
+
+    # -- Gate Diagnostics --------------------------------------------------
+
+    def _diag_gate_html(self, analysis: dict) -> str:
+        gate = analysis.get("trade_gate", {})
+        if not isinstance(gate, dict):
+            gate = {}
+        permission = analysis.get("trade_permission", {})
+        if not isinstance(permission, dict):
+            permission = {}
+
+        # Try pipeline diagnostics first (from backtest), fall back to trade_gate
+        pipe_diags = analysis.get("pipeline_diagnostics")
+        gate_checks: list[dict] = []
+        if isinstance(pipe_diags, list):
+            for d in pipe_diags:
+                if isinstance(d, dict) and d.get("step") == "gate":
+                    gate_checks = d.get("details", {}).get("gate_checks", []) or []
+                    break
+
+        # Build from trade_gate if no pipeline diagnostics
+        if not gate_checks:
+            gate_checks = self._build_gate_checks_from_result(analysis)
+
+        GATE_VN_NAME = {
+            "MT5": "MT5 (kết nối)", "Spread": "Spread (chênh lệch)",
+            "DataQuality": "Chất lượng DL", "News": "Tin tức",
+            "DailyWeeklyLoss": "Lỗ ngày/tuần", "AccountGuard": "Bảo vệ TK",
+            "Journal": "Nhật ký", "M15": "M15 (xác nhận)",
+            "ExpectedRR": "R:R kỳ vọng", "ScoreGap": "Chênh lệch điểm",
+            "ZoneBroken": "Vùng bị phá",
+        }
+        GATE_EXPLAIN = {
+            "MT5": "Kiểm tra kết nối MT5 — terminal và broker đã đăng nhập chưa",
+            "Spread": "Kiểm tra chênh lệch mua/bán có bất thường không",
+            "DataQuality": "Kiểm tra cảnh báo chất lượng dữ liệu từ broker",
+            "News": "Kiểm tra tin tức tác động cao trong 30 phút tới",
+            "DailyWeeklyLoss": "Kiểm tra giới hạn thua lỗ ngày/tuần đã đạt chưa",
+            "AccountGuard": "Kiểm tra bảo vệ tài khoản (số dư, chuỗi thua)",
+            "Journal": "Kiểm tra phản hồi từ nhật ký giao dịch cũ",
+            "M15": "Kiểm tra khung M15 xác nhận tín hiệu vào lệnh",
+            "ExpectedRR": "Kiểm tra tỷ lệ R:R kỳ vọng có đạt tối thiểu không",
+            "ScoreGap": "Kiểm tra chênh lệch điểm BUY/SELL có đủ rõ ràng không",
+            "ZoneBroken": "Kiểm tra vùng entry có bị phá vỡ không",
+        }
+
+        rows = [
+            "<h2 style='color:#f97316;margin:20px 0 4px;font-size:16px;'>Gate kiểm tra</h2>",
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "Gate là các lớp kiểm tra trước khi cho phép vào lệnh. "
+            "Mỗi gate có thể <b style='color:#22c55e;'>Cho qua</b>, "
+            "<b style='color:#fbbf24;'>Cảnh báo</b> (giới hạn mức quyết định), "
+            "hoặc <b style='color:#ef4444;'>Chặn</b> (cấm vào lệnh). "
+            "Thứ tự ưu tiên: CHẶN > CẢNH BÁO > Pass."
+            "</p>",
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
+            "<tr>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:110px;'>Gate</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:70px;'>Kết quả</th>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Ý nghĩa / Chi tiết</th>",
+            "</tr>",
+        ]
+
+        for gc in gate_checks:
+            if not isinstance(gc, dict):
+                continue
+            g_name = gc.get("gate", "?")
+            g_status = gc.get("status", "pass")
+            g_detail = gc.get("detail", "")
+            g_explain = GATE_EXPLAIN.get(g_name, "")
+            g_label = GATE_VN_NAME.get(g_name, g_name)
+
+            if g_status == "block":
+                icon = "🔴"
+                color = "#ef4444"
+                text = "CHẶN"
+            elif g_status == "warning":
+                icon = "🟡"
+                color = "#fbbf24"
+                text = "C.BÁO"
+            else:
+                icon = "🟢"
+                color = "#22c55e"
+                text = "Qua"
+
+            rows.append(
+                f"<tr>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='{g_explain}'>{g_label}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{color};font-weight:700;'>{icon} {text}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;'>{g_explain} &mdash; {g_detail}</td>"
+                f"</tr>"
+            )
+        rows.append("</table>")
+
+        # Summary
+        allowed = gate.get("allowed", True)
+        cap = gate.get("decision_cap") or permission.get("decision_cap") or "không"
+        reasons = gate.get("reasons", []) or []
+        perm_status = permission.get("status", "?")
+        perm_text = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}.get(perm_status, perm_status)
+
+        if allowed:
+            summary_color = "#22c55e"
+            summary_text = f"CHO PHÉP (mức: {cap})"
+        elif not allowed:
+            summary_color = "#ef4444"
+            summary_text = f"BỊ CHẶN (mức: {cap})"
+        else:
+            summary_color = "#fbbf24"
+            summary_text = f"CẢNH BÁO (mức: {cap})"
+
+        rows.append(
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;"
+            "background:#1e293b;border-radius:6px;'>"
+            "<tr>"
+            f"<td style='padding:8px 12px;color:#94a3b8;width:130px;'>KẾT LUẬN GATE</td>"
+            f"<td style='padding:8px 12px;color:{summary_color};font-weight:700;'>{summary_text}</td>"
+            f"<td style='padding:8px 12px;color:#94a3b8;width:60px;'>Quyền</td>"
+            f"<td style='padding:8px 12px;color:#e2e8f0;'>{perm_text}</td>"
+            "</tr>"
+            "</table>"
+        )
+        if reasons:
+            rows.append(
+                f"<div style='font-size:12px;color:#ef4444;padding:4px 12px;margin-bottom:8px;'>"
+                f"Lý do: {'; '.join(reasons)}"
+                f"</div>"
+            )
+
+        rows.append("</div>")
+        return "\n".join(rows)
+
+    def _build_gate_checks_from_result(self, analysis: dict) -> list[dict]:
+        """Build gate checks from trade_gate + data_quality when pipeline diagnostics unavailable."""
+        gate = analysis.get("trade_gate", {})
+        if not isinstance(gate, dict):
+            gate = {}
+        dq = analysis.get("data_quality", {})
+        if not isinstance(dq, dict):
+            dq = {}
+        direction = analysis.get("direction_bias", {})
+        if not isinstance(direction, dict):
+            direction = {}
+        primary = analysis.get("scenarios", [{}])[0] if isinstance(analysis.get("scenarios"), list) else {}
+
+        block_codes = set(gate.get("block_codes", []) or [])
+        warning_codes = set(gate.get("warning_codes", []) or [])
+
+        def _st(code: str) -> str:
+            if code in block_codes:
+                return "block"
+            if code in warning_codes:
+                return "warning"
+            return "pass"
+
+        from core.reason_codes import (
+            MT5_NOT_READY, SPREAD_ABNORMAL, DATA_QUALITY_WARNING,
+            HIGH_IMPACT_NEWS_NEARBY, DAILY_LOSS_LIMIT_REACHED, WEEKLY_LOSS_LIMIT_REACHED,
+            M15_NOT_CONFIRMED, M15_LOOSE_CONFIRMATION, EXPECTED_RR_TOO_LOW,
+            BUY_SELL_SCORE_GAP_LOW, ZONE_BROKEN,
+        )
+
+        return [
+            {"gate": "MT5", "status": _st(MT5_NOT_READY),
+             "detail": "MT5 sẵn sàng" if _st(MT5_NOT_READY) == "pass" else "MT5 chưa sẵn sàng"},
+            {"gate": "Spread", "status": _st(SPREAD_ABNORMAL),
+             "detail": f"spread={dq.get('spread_status', 'normal')}"},
+            {"gate": "DataQuality", "status": _st(DATA_QUALITY_WARNING),
+             "detail": "không cảnh báo" if _st(DATA_QUALITY_WARNING) == "pass" else str(dq.get('warning', ''))},
+            {"gate": "News", "status": _st(HIGH_IMPACT_NEWS_NEARBY),
+             "detail": "không có tin gần" if _st(HIGH_IMPACT_NEWS_NEARBY) == "pass" else "có tin tác động cao trong 30 phút"},
+            {"gate": "DailyWeeklyLoss", "status": _st(DAILY_LOSS_LIMIT_REACHED) if _st(DAILY_LOSS_LIMIT_REACHED) != "pass" else _st(WEEKLY_LOSS_LIMIT_REACHED),
+             "detail": "trong giới hạn" if _st(DAILY_LOSS_LIMIT_REACHED) == "pass" and _st(WEEKLY_LOSS_LIMIT_REACHED) == "pass" else "vượt giới hạn lỗ"},
+            {"gate": "AccountGuard", "status": "pass",
+             "detail": "bảo vệ OK"},
+            {"gate": "Journal", "status": "pass",
+             "detail": "không vấn đề"},
+            {"gate": "M15", "status": _st(M15_NOT_CONFIRMED) if _st(M15_NOT_CONFIRMED) != "pass" else _st(M15_LOOSE_CONFIRMATION),
+             "detail": f"M15={primary.get('m15_quality', '?')}"},
+            {"gate": "ExpectedRR", "status": _st(EXPECTED_RR_TOO_LOW),
+             "detail": f"R:R={primary.get('expected_effective_rr', '?')}"},
+            {"gate": "ScoreGap", "status": _st(BUY_SELL_SCORE_GAP_LOW),
+             "detail": f"chênh lệch={direction.get('score_gap', '?')} (tối thiểu {direction.get('min_gap', 10)})"},
+            {"gate": "ZoneBroken", "status": _st(ZONE_BROKEN),
+             "detail": "vùng còn nguyên" if _st(ZONE_BROKEN) == "pass" else "vùng đã bị phá"},
+        ]
+
+    # -- Entry Checklist ----------------------------------------------------
+
+    def _diag_checklist_html(self, analysis: dict) -> str:
+        checklist = analysis.get("entry_checklist")
+        if not isinstance(checklist, list) or not checklist:
+            return ""
+
+        rows = [
+            "<h2 style='color:#a78bfa;margin:20px 0 4px;font-size:16px;'>Điều kiện vào lệnh</h2>",
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "Các điều kiện cần đạt trước khi vào lệnh thật. "
+            "<b style='color:#22c55e;'>✅ Đạt</b> = đã thỏa mãn. "
+            "<b style='color:#fbbf24;'>⏳ Chờ</b> = cần theo dõi thêm, chưa nên vào lệnh vội."
+            "</p>",
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
+            "<tr>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:110px;'>Điều kiện</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:70px;'>Trạng thái</th>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:160px;'>Giá trị</th>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Ghi chú</th>",
+            "</tr>",
+        ]
+
+        for item in checklist:
+            if not isinstance(item, dict):
+                continue
+            label = item.get("label", "?")
+            passed = item.get("status") == "pass"
+            value = item.get("value", "--")
+            note = item.get("note", "")
+
+            icon = "✅" if passed else "⏳"
+            status_text = "Đạt" if passed else "Chờ"
+            color = "#22c55e" if passed else "#fbbf24"
+
+            rows.append(
+                f"<tr>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;'>{label}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{color};font-weight:700;'>{icon} {status_text}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;'>{value}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;font-size:12px;'>{note}</td>"
+                f"</tr>"
+            )
+        rows.append("</table>")
+        return "\n".join(rows)
+
+    # -- Pipeline Steps ----------------------------------------------------
+
+    def _diag_pipeline_steps_html(self, analysis: dict) -> str:
+        pipe_diags = analysis.get("pipeline_diagnostics")
+        if not isinstance(pipe_diags, list) or not pipe_diags:
+            return ""
+
+        STEP_EXPLAIN = {
+            "validate": "Kiểm tra dữ liệu đầu vào (đủ số nến D1/H4/H1 chưa), xác định chế độ thị trường, rủi ro",
+            "correlation": "Tính điều chỉnh tương quan từ DXY (USD index), VIX (sợ hãi), US10Y (lợi suất trái phiếu)",
+            "score": "Chấm điểm 6 thành phần (xu hướng, động lượng, vị trí, SMC, rủi ro, vĩ mô) cho cả 2 hướng",
+            "scenarios": "Xây dựng kế hoạch giao dịch: vùng entry, SL, TP, cỡ lot, đánh giá chất lượng M15",
+            "direction": "So sánh điểm BUY vs SELL để chọn hướng giao dịch tốt nhất",
+            "gate": "Chạy 11 gate kiểm tra: MT5, spread, tin tức, bảo vệ TK, M15, R:R, chênh lệch điểm...",
+            "final_score": "Tổng hợp điểm cuối cùng (tín hiệu×65% + bằng chứng NK×20% + thực thi×15%) và ra quyết định",
+        }
+
+        rows = [
+            "<h2 style='color:#fb923c;margin:20px 0 4px;font-size:16px;'>Pipeline từng bước</h2>",
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "Quy trình phân tích tuần tự 7 bước. Nếu một bước <b style='color:#ef4444;'>thất bại</b>, "
+            "các bước sau không chạy. Bước <b style='color:#fbbf24;'>cảnh báo</b> vẫn tiếp tục "
+            "nhưng có thể ảnh hưởng kết quả cuối cùng."
+            "</p>",
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
+            "<tr>",
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:120px;'>Bước</th>",
+            "<th style='text-align:center;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:70px;'>Kết quả</th>",
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Diễn giải / Tóm tắt</th>",
+            "</tr>",
+        ]
+
+        step_labels = {
+            "validate": "1. Kiểm tra DL",
+            "correlation": "2. Tương quan",
+            "score": "3. Chấm điểm",
+            "scenarios": "4. Kế hoạch",
+            "direction": "5. Chọn hướng",
+            "gate": "6. Gate",
+            "final_score": "7. Điểm cuối",
+        }
+
+        for entry in pipe_diags:
+            if not isinstance(entry, dict):
+                continue
+            step = entry.get("step", "?")
+            status = entry.get("status", "pass")
+            summary = entry.get("summary", "")
+
+            if status == "fail":
+                icon = "🔴"
+                color = "#ef4444"
+                text = "LỖI"
+            elif status == "warning":
+                icon = "🟡"
+                color = "#fbbf24"
+                text = "C.BÁO"
+            else:
+                icon = "🟢"
+                color = "#22c55e"
+                text = "QUA"
+
+            label = step_labels.get(step, step)
+            explain = STEP_EXPLAIN.get(step, "")
+            rows.append(
+                f"<tr>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='{explain}'>{label}</td>"
+                f"<td style='text-align:center;padding:5px 10px;border-bottom:1px solid #1e293b;color:{color};font-weight:700;'>{icon} {text}</td>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;'>{summary}</td>"
+                f"</tr>"
+            )
+        rows.append("</table>")
+        return "\n".join(rows)
+
+    # -- Final Score Breakdown ----------------------------------------------
+
+    def _diag_final_score_html(self, analysis: dict) -> str:
+        final_detail = analysis.get("final_score_detail", {})
+        if not isinstance(final_detail, dict):
+            final_detail = {}
+        final_score = analysis.get("final_score", 0)
+        decision = analysis.get("decision_engine", {})
+        if not isinstance(decision, dict):
+            decision = {}
+
+        signal_s = final_detail.get("signal_score", "?")
+        evidence_s = final_detail.get("evidence_score", "?")
+        exec_s = final_detail.get("execution_quality_score", "?")
+
+        rows = [
+            "<h2 style='color:#22c55e;margin:20px 0 4px;font-size:16px;'>Điểm cuối cùng</h2>",
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "Điểm tổng hợp từ 3 nguồn: <b>Tín hiệu</b> (điểm kỹ thuật/SMC/vĩ mô), "
+            "<b>Bằng chứng nhật ký</b> (hiệu suất lịch sử của setup tương tự), "
+            "<b>Chất lượng thực thi</b> (tỷ lệ vào lệnh thành công trước đây). "
+            "Điểm này quyết định hành động cuối cùng."
+            "</p>",
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
+            "<tr>",
+            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Thành phần</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:60px;' title='Trọng lượng trong công thức'>TL</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:60px;' title='Điểm thành phần'>Điểm</th>",
+            "</tr>",
+            f"<tr><td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='Điểm tín hiệu từ bước chấm điểm (0-100)'>Tín hiệu</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>65%</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:700;'>{signal_s}</td></tr>",
+            f"<tr><td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='Điểm từ nhật ký giao dịch cũ (setup tương tự từng thắng không)'>Bằng chứng (NK)</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>20%</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:700;'>{evidence_s}</td></tr>",
+            f"<tr><td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='Điểm chất lượng thực thi lệnh (tỷ lệ khớp lệnh thành công)'>Chất lượng thực thi</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>15%</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:700;'>{exec_s}</td></tr>",
+            f"<tr style='border-top:2px solid #334155;'>"
+            f"<td style='padding:8px 10px;color:#f8fafc;font-weight:700;' title='Điểm cuối cùng = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>ĐIỂM CUỐI</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#64748b;'>100%</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#22c55e;font-weight:700;font-size:15px;'>{final_score}</td></tr>",
+            "</table>",
+        ]
+
+        # Decision
+        dec_decision = decision.get("decision", "?")
+        dec_action = decision.get("legacy_action", "?")
+        DECISION_EXPLAIN = {
+            "READY_TO_TRADE": "Sẵn sàng giao dịch — mọi điều kiện đều đạt",
+            "WAITING_CONFIRMATION": "Chờ xác nhận thêm — cần thêm tín hiệu H1/M15",
+            "WATCH_ONLY": "Chỉ theo dõi — chưa đủ điều kiện vào lệnh",
+            "AGGRESSIVE_SETUP": "Setup táo bạo — rủi ro cao hơn bình thường",
+            "STAND_ASIDE": "Đứng ngoài — không nên giao dịch lúc này",
+            "TRADE_BLOCKED": "Bị chặn — gate đã chặn không cho vào lệnh",
+        }
+        dec_explain = DECISION_EXPLAIN.get(dec_decision, "")
+        rows.append(
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;'>"
+            "<tr>"
+            f"<td style='padding:4px 12px;color:#94a3b8;width:110px;'>Quyết định</td>"
+            f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{dec_decision}</b>"
+            + (f" <span style='color:#64748b;'>({dec_explain})</span>" if dec_explain else "")
+            + f" → hành động: <b>{dec_action}</b></td>"
+            "</tr>"
+            "</table>"
+        )
+        rows.append("</div>")
+        return "\n".join(rows)
+
+    # ------------------------------------------------------------------
 
     def _export_json(self) -> None:
         if not self.row:

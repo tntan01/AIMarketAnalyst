@@ -793,6 +793,13 @@ class SettingsScreen(QWidget):
         self.mt5_detect_button = action_button("🔍 Tự phát hiện mã broker", primary=True, color="info")
         self.mt5_detect_button.clicked.connect(self.refresh_mt5_status)
         mt5_button_row.addWidget(self.mt5_detect_button)
+        self.mt5_paste_config_button = action_button("📋 Dán cấu hình Backtest", color="warning")
+        self.mt5_paste_config_button.clicked.connect(self._paste_backtest_configs)
+        self.mt5_paste_config_button.setToolTip(
+            "Đọc cấu hình JSON từ clipboard (được copy từ nút 'Đề xuất cấu hình Scanner' "
+            "trong màn hình Backtest) và tự động điền vào bảng."
+        )
+        mt5_button_row.addWidget(self.mt5_paste_config_button)
         self.mt5_symbol_settings_button = action_button("💾 Lưu cấu hình mã quét", primary=True, color="success")
         self.mt5_symbol_settings_button.clicked.connect(self._save_mt5_symbol_settings)
         mt5_button_row.addWidget(self.mt5_symbol_settings_button)
@@ -898,6 +905,94 @@ class SettingsScreen(QWidget):
         from PyQt6.QtWidgets import QApplication
         subprocess.Popen([sys.executable] + sys.argv)
         QApplication.quit()
+
+    def _paste_backtest_configs(self) -> None:
+        """Read backtest config JSON from clipboard and fill the MT5 symbols table."""
+        import json
+
+        from PyQt6.QtWidgets import QApplication, QMessageBox
+
+        clipboard_text = QApplication.clipboard().text().strip()
+        if not clipboard_text:
+            QMessageBox.information(self, "Dán cấu hình", "Clipboard trống.")
+            return
+
+        try:
+            configs = json.loads(clipboard_text)
+        except json.JSONDecodeError as exc:
+            QMessageBox.warning(self, "Lỗi JSON", f"Không đọc được dữ liệu clipboard:\n{exc}")
+            return
+
+        if not isinstance(configs, dict):
+            QMessageBox.warning(self, "Sai định dạng", "Clipboard không chứa cấu hình hợp lệ (cần JSON object).")
+            return
+
+        updated = 0
+        for row, symbol in enumerate(self.mt5_display_symbols):
+            cfg = configs.get(symbol)
+            if cfg is None or not isinstance(cfg, dict):
+                continue
+
+            # Tick "Kiểm thử" checkbox (col 5)
+            backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
+            if isinstance(backtest_cell, QWidget):
+                cb = backtest_cell.findChild(QCheckBox)
+                if cb and not cb.isChecked():
+                    cb.setChecked(True)
+
+            # Set "Điểm tối thiểu" (col 6)
+            min_score_val = cfg.get("min_score", 0)
+            if min_score_val:
+                min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
+                if isinstance(min_score_cell, QWidget):
+                    le = min_score_cell.findChild(QLineEdit)
+                    if le:
+                        le.setText(str(min_score_val))
+
+            # Set "Regime tự động" (col 7)
+            regime_val = cfg.get("regime", "")
+            if regime_val:
+                regime_cell = self.mt5_symbols_table.cellWidget(row, 7)
+                if isinstance(regime_cell, QWidget):
+                    combo = regime_cell.findChild(QComboBox)
+                    if combo:
+                        idx = combo.findText(regime_val)
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+
+            # Set "Hướng tự động" (col 8)
+            side_val = cfg.get("side", "")
+            if side_val:
+                side_cell = self.mt5_symbols_table.cellWidget(row, 8)
+                if isinstance(side_cell, QWidget):
+                    combo = side_cell.findChild(QComboBox)
+                    if combo:
+                        idx = combo.findText(side_val)
+                        if idx >= 0:
+                            combo.setCurrentIndex(idx)
+
+            # Set "RR tối thiểu" (col 9)
+            rr_val = cfg.get("min_rr", 0)
+            if rr_val:
+                rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
+                if isinstance(rr_cell, QWidget):
+                    spin = rr_cell.findChild(QDoubleSpinBox)
+                    if spin:
+                        spin.setValue(float(rr_val))
+
+            updated += 1
+
+        if updated:
+            QMessageBox.information(
+                self, "Đã dán",
+                f"Đã cập nhật cấu hình cho {updated} cặp.\n"
+                "Nhấn '💾 Lưu cấu hình mã quét' để lưu lại."
+            )
+        else:
+            QMessageBox.information(
+                self, "Không khớp",
+                "Không tìm thấy cặp nào trong bảng khớp với dữ liệu clipboard."
+            )
 
     def _save_mt5_symbol_settings(self) -> None:
         symbol_settings: dict[str, SymbolScanSettings] = {}

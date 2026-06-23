@@ -36,6 +36,14 @@ class ConnectionStatus:
     error_code: int | None = None
     message: str = ""
 
+    @property
+    def terminal_connected(self) -> bool:
+        return self.connected
+
+    @property
+    def broker_logged_in(self) -> bool:
+        return self.logged_in
+
 
 @dataclass(frozen=True, slots=True)
 class OrderResult:

@@ -285,6 +285,92 @@ macro_confidence = 1.0
 
 Lý do: hệ thống news/macro hiện tại lấy dữ liệu live. Nếu dùng live data để backtest quá khứ sẽ gây sai lệch nghiêm trọng.
 
+## Pipeline Diagnostics — Log Từng Bước Phân Tích
+
+Từ Phase 2, `AnalysisPipeline` trong `core/analysis_pipeline.py` tự động ghi lại chẩn đoán (diagnostics) cho từng bước trong pipeline. Mỗi lần `execute()` được gọi, pipeline tạo một danh sách `pipeline_diagnostics` chứa thông tin pass/fail/warning của từng bước.
+
+### Cấu Trúc Diagnostic Entry
+
+Mỗi entry trong `pipeline_diagnostics` có dạng:
+
+```python
+{
+    "step": "validate",       # Tên bước: validate, correlation, score, scenarios, direction, gate, final_score
+    "status": "pass",         # pass | fail | warning
+    "summary": "D1=245, H4=980, H1=3920 | Regime: trend_up | Risk: 4/15",
+    "details": { ... }        # Dữ liệu chi tiết của bước đó
+}
+```
+
+### Nội Dung Log Từng Bước
+
+| Bước | Thông tin chính | Khi nào fail/warning |
+|------|----------------|---------------------|
+| **validate** | Số lượng candle D1/H4/H1, market regime, risk_score, ATR, spread_status | Fail nếu < 60 D1 hoặc < 60 H4 hoặc < 30 H1 |
+| **correlation** | DXY/VIX/US10Y availability, buy/sell adjustment values | Luôn pass (dùng neutral nếu thiếu data) |
+| **score** | 6 components (T/M/L/S/R/Ma) cho BUY và SELL, signal_score tổng | Luôn pass (chỉ tính toán) |
+| **scenarios** | Số lượng scenario, entry_status, M15 quality, R:R, ready_to_trade | Warning nếu không có scenario nào |
+| **direction** | buy_score vs sell_score, score_gap, best_side, is_clear_bias | Warning nếu best_side = neutral |
+| **gate** | **11 gate checks riêng lẻ** (MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken) — mỗi gate có pass/block/warning + detail | Fail nếu allowed=false; Warning nếu có warning_codes |
+| **final_score** | signal_score, evidence_score, execution_quality, final_score, decision, action | Warning nếu final_score < 65 |
+
+### Gate Diagnostics Chi Tiết
+
+Bước gate đặc biệt quan trọng vì đây là nơi quyết định lệnh có được vào hay không. Mỗi gate check được log riêng:
+
+```python
+"gate_checks": [
+    {"gate": "MT5", "status": "pass", "detail": "Terminal & broker OK"},
+    {"gate": "Spread", "status": "block", "detail": "spread=abnormal"},
+    {"gate": "M15", "status": "warning", "detail": "M15 loose (→WAITING_CONFIRMATION)"},
+    {"gate": "ExpectedRR", "status": "warning", "detail": "RR=1.1 vs min=1.3"},
+    ...
+]
+```
+
+### Aggregate Trong Backtest Engine
+
+`run_system_backtest()` trong `core/system_backtest_engine.py` gọi `_aggregate_pipeline_diag()` cho mỗi snapshot để gom thống kê:
+
+```python
+diagnostics = {
+    ...
+    "pipeline_stats": {
+        "validate": {"pass": 5000, "fail": 0, "warning": 0},
+        "correlation": {"pass": 5000, "fail": 0, "warning": 0},
+        "score": {"pass": 5000, "fail": 0, "warning": 0},
+        "scenarios": {"pass": 200, "fail": 0, "warning": 4800},
+        "direction": {"pass": 5000, "fail": 0, "warning": 0},
+        "gate": {"pass": 80, "fail": 30, "warning": 90},
+        "final_score": {"pass": 80, "fail": 0, "warning": 0},
+    },
+    "gate_fail_counts": {
+        "M15": 90,
+        "ScoreGap": 80,
+        "ExpectedRR": 45,
+        "ZoneBroken": 20,
+        "Spread": 15,
+    },
+    "score_below_50_count": 4500,
+}
+```
+
+Dữ liệu này cho biết chính xác bước nào đang lọc nhiều nhất, gate nào chặn nhiều nhất, và có bất thường không (ví dụ: 90% snapshot bị gate chặn → cần kiểm tra lại cấu hình).
+
+### Hiển Thị Trong UI
+
+Khi người dùng bấm nút "Phân tích" trong màn hình Backtest:
+
+1. **Prompt AI** (`_build_analysis_prompt`) — bao gồm pipeline_stats và gate_fail_counts để AI đánh giá bước nào đang lọc nhiều, có bất thường không
+2. **Bảng HTML** (`_generate_stats_html`) — hiển thị bảng chẩn đoán pipeline với pass/fail/warning từng bước, kèm bảng chi tiết gate
+
+Dialog phân tích hiển thị:
+- Bảng tổng hợp KPI (tổng số lệnh, win rate, expectancy, profit factor, drawdown, total R)
+- Chi tiết từng cặp (nếu backtest nhiều symbol)
+- **Bảng chẩn đoán pipeline** — mỗi bước: pass/fail/warning + trạng thái (🟢 OK / 🟡 Cảnh báo / 🔴 Có lỗi)
+- **Bảng chi tiết gate** — gate nào chặn/cảnh báo bao nhiêu lần
+- AI nhận xét & đánh giá
+
 ## Chuẩn Hóa Điểm Số Khi Thiếu Macro (Phase 1)
 
 ### Vấn Đề
@@ -1031,17 +1117,12 @@ Controls:
 
 ### KPI Strip
 
-Hiển thị:
+Hiển thị 9 ô (3 hàng × 3 cột):
 
 ```text
-Total trades
-Win rate
-Expectancy R
-Total R
-Profit factor
-Max drawdown R
-Max consecutive losses
-Average holding bars
+Số lệnh          | Tỷ lệ thắng      | Kỳ vọng
+Hệ số LN         | DD tối đa        | Tổng R
+R thắng TB       | R thua TB        | Chuỗi thua max
 ```
 
 Màu sắc:
@@ -1050,6 +1131,20 @@ Màu sắc:
 - Expectancy <= 0: đỏ/cảnh báo.
 - Profit factor < 1.2: cảnh báo.
 - Max drawdown cao: cảnh báo.
+
+### Verdict Banner (Kết luận nhanh)
+
+Sau khi backtest hoàn tất, một banner màu hiển thị ngay dưới thanh công cụ và trên bảng trade, cho biết kết luận tổng thể:
+
+| Ngưỡng | Banner | Màu |
+|--------|--------|-----|
+| Expectancy > 0.10R và PF > 1.2 | 🟢 HỆ THỐNG CÓ EDGE | Xanh |
+| Expectancy > 0 nhưng PF ≤ 1.2 | 🟡 EDGE YẾU — CẦN THEO DÕI | Vàng |
+| Tổng R dương nhưng expectancy thấp | 🟠 CHƯA RÕ RÀNG | Cam |
+| Tổng R ≤ 0 | 🔴 HỆ THỐNG ÂM — KHÔNG NÊN TRADE | Đỏ |
+| 0 lệnh | ⚪ KHÔNG CÓ LỆNH | Xám |
+
+Banner hiển thị kèm các chỉ số chính: số lệnh, win rate, drawdown.
 
 ### Equity Curve
 
@@ -1078,9 +1173,35 @@ Average analysis time
 
 Mục tiêu là debug vì sao backtest ít lệnh hoặc không có lệnh.
 
+Từ Phase 2, diagnostics panel còn bao gồm **Pipeline Diagnostics**:
+
+- **Bảng chẩn đoán từng bước**: hiển thị pass/fail/warning cho validate, correlation, score, scenarios, direction, gate, final_score
+- **Bảng chi tiết gate**: hiển thị số lần mỗi gate (MT5, Spread, M15, ExpectedRR, ScoreGap, ZoneBroken, ...) chặn hoặc cảnh báo
+- **Tổng snapshot điểm < 50**: số snapshot có best_score dưới 50 — chỉ báo chất lượng tín hiệu
+
+Dữ liệu này được hiển thị trong dialog "Phân tích kết quả backtest" khi người dùng bấm nút "Phân tích", dưới dạng bảng HTML có màu sắc:
+- 🟢 Xanh: pass
+- 🟡 Vàng: warning
+- 🔴 Đỏ: fail/block
+
+Dialog "Phân tích" còn bao gồm **bảng Phân bổ kết quả** với các chỉ số mở rộng:
+- 🟢 Thắng / 🔴 Thua / ⚪ Hòa / ⏰ Hết hạn (số lượng)
+- Trung bình R thắng / Trung bình R thua
+- Chuỗi thắng tối đa / Chuỗi thua tối đa
+- Số nến giữ lệnh trung bình
+- Đánh giá từng chỉ số (Tốt / Ổn định / Cảnh báo / Nguy hiểm)
+
 ### Trades Tab
 
-Bảng trade:
+Bảng trade với **màu nền theo kết quả**:
+
+| Kết quả | Màu nền |
+|---------|---------|
+| Thắng (win) | Xanh đậm |
+| Thua (loss) | Đỏ đậm |
+| Hòa (breakeven) | Xám đậm |
+
+Cột hiển thị:
 
 ```text
 Time
@@ -1212,16 +1333,37 @@ Closed trade TP/SL
   "request": {},
   "summary": {
     "total_trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "breakeven": 0,
+    "expired": 0,
     "win_rate": 0.0,
     "expectancy_r": 0.0,
     "profit_factor": 0.0,
-    "max_drawdown_r": 0.0
+    "max_drawdown_r": 0.0,
+    "total_r": 0.0,
+    "average_win_r": 0.0,
+    "average_loss_r": 0.0,
+    "max_consecutive_losses": 0,
+    "max_consecutive_wins": 0,
+    "average_holding_bars": 0.0
   },
   "equity_curve": [],
   "breakdowns": {},
   "trades": [],
   "skipped_setups": [],
-  "diagnostics": {}
+  "diagnostics": {
+    "data_range": {},
+    "snapshots_evaluated": 0,
+    "setups_detected": 0,
+    "trades_opened": 0,
+    "trades_skipped": 0,
+    "blocked_by_gate": 0,
+    "gate_funnel": {},
+    "pipeline_stats": {},
+    "gate_fail_counts": {},
+    "score_below_50_count": 0
+  }
 }
 ```
 

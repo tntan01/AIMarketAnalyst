@@ -17,6 +17,12 @@ from core.scanner import (
     scanner_row_from_analysis,
     sort_scanner_rows,
 )
+from core.scanner_ai_auditor import (
+    build_ai_setup_audit_prompt,
+    parse_ai_setup_audit,
+    summarize_ai_setup_audit,
+)
+from core.scanner_session_review import build_market_brief_prompt
 from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol
 from services.ai_service import AIProviderConfig, AIService
@@ -44,6 +50,7 @@ class ScannerController:
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
+        self.mt5_service = self.data_provider
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
@@ -93,8 +100,7 @@ class ScannerController:
         correlation_context = fetch_macro_correlation_context()
 
         # Pre-fetch toan bo macro context 1 lan (RSS + calendar) de tai su dung trong vong lap
-        progress(17, "Đang tải tin tức và phân tích vĩ mô...")
-        self.news_service.preload_macro_contexts(request.symbols)
+        self.news_service.preload_macro_contexts(request.symbols, progress_callback=progress)
         freshness_raw = self.news_service.macro_freshness_status()
         freshness = freshness_raw if isinstance(freshness_raw, dict) else {"confidence_multiplier": 1.0}
         freshness_multiplier = float(freshness.get("confidence_multiplier", 1.0))
@@ -169,7 +175,9 @@ class ScannerController:
                     result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
                     result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
                 row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
-                rows.append(self._apply_min_score_gate(row, request.min_scores.get(symbol, 0)))
+                row = self._apply_min_score_gate(row, request.min_scores.get(symbol, 0))
+                row = self._apply_symbol_override(row, request.symbol_auto_trade.get(symbol))
+                rows.append(row)
             except Exception as exc:
                 rows.append(blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol))
 
@@ -181,15 +189,35 @@ class ScannerController:
         targets = ai_targets(rows, request.max_ai_details)
         if active_ai and active_ai.api_key and targets:
             for index, row in enumerate(targets, start=1):
-                progress(78 + int(index / len(targets) * 12), f"Đang gọi AI cho {row['symbol']} ({index}/{len(targets)})...")
-                summary = self._write_scanner_ai_summary(row, active_ai)
-                if summary:
-                    row["short_reason"] = summary
+                progress(78 + int(index / len(targets) * 12), f"Đang gọi AI auditor cho {row['symbol']} ({index}/{len(targets)})...")
+                audit = self._write_scanner_ai_audit(row, active_ai)
+                if audit:
+                    row["ai_setup_audit"] = audit
+                    row["ai_audit_available"] = not bool(audit.get("auditor_error"))
                     row["ai_summary_available"] = True
                     ai_called += 1
+                    summary = summarize_ai_setup_audit(audit)
+                    if summary:
+                        row["short_reason"] = summary
+
+        # ---- AI Market Brief (1 call, after all individual audits) ----
+        market_brief = ""
+        if active_ai and active_ai.api_key:
+            try:
+                brief_prompt = build_market_brief_prompt(
+                    rows,
+                    correlation_context=correlation_context,
+                    freshness=freshness,
+                )
+                market_brief = AIService(
+                    AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)
+                ).analyze(brief_prompt, max_tokens=4000)
+            except Exception:
+                market_brief = ""
 
         progress(94, "Đang dựng bảng kết quả quét...")
         output = build_scanner_output(rows, request, ai_called)
+        output["market_brief"] = market_brief
         output["auto_trade_results"] = self._execute_auto_trades(rows, request) if request.auto_trade_enabled else {
             "enabled": False,
             "attempted": 0,
@@ -237,6 +265,75 @@ class ScannerController:
         reason = f"Final score {score} thấp hơn Min Score {threshold}."
         row["permission_reason"] = reason
         row["short_reason"] = reason
+        return row
+
+    def _apply_symbol_override(self, row: dict[str, Any], cfg: dict[str, object] | None) -> dict[str, Any]:
+        """Apply per-symbol backtest-driven override from Settings.
+
+        If cfg is provided and the row's current action is ``stand_aside``,
+        check whether the setup matches the configured conditions (regime,
+        side, min_rr, min_score).  When ALL conditions match, upgrade the
+        action from ``stand_aside`` to ``ready``.
+
+        This replaces the old hard-coded ``range + buy + RR>=2.0 + score>=50``
+        override with per-symbol configuration sourced from backtest results.
+        """
+        if cfg is None:
+            return row
+        if not isinstance(cfg, dict):
+            return row
+
+        action = str(row.get("scanner_action") or "")
+        if action != "stand_aside":
+            return row
+
+        cfg_regime = str(cfg.get("regime", "")).strip().lower()
+        cfg_side = str(cfg.get("side", "")).strip().lower()
+        cfg_min_rr = float(cfg.get("min_rr", 0) or 0)
+        cfg_min_score = int(cfg.get("min_score", 0) or 0)
+
+        # No conditions configured — nothing to override
+        if not cfg_regime and cfg_side not in ("buy", "sell") and not cfg_min_rr and not cfg_min_score:
+            return row
+
+        # Regime check
+        actual_regime = str(row.get("market_regime", "")).strip().lower()
+        if cfg_regime and actual_regime != cfg_regime:
+            return row
+
+        # Side check
+        actual_side = str(row.get("best_side", "")).strip().lower()
+        if cfg_side in ("buy", "sell") and actual_side != cfg_side:
+            return row
+
+        # Min score check
+        if cfg_min_score > 0:
+            try:
+                score = int(row.get("final_score", row.get("best_score", 0)))
+            except (TypeError, ValueError):
+                score = 0
+            if score < cfg_min_score:
+                return row
+
+        # Min RR check
+        if cfg_min_rr > 0:
+            try:
+                rr = float(row.get("expected_effective_rr", 0) or 0)
+            except (TypeError, ValueError):
+                rr = 0.0
+            if rr < cfg_min_rr:
+                return row
+
+        # Gate/permission must not be blocked
+        if str(row.get("trade_permission", "")).strip().lower() == "blocked":
+            return row
+
+        # All conditions matched — upgrade
+        row["scanner_action"] = "ready"
+        row["scanner_group"] = "ready_now"
+        row["display_action"] = "ready"
+        row["scanner_decision"] = "READY_TO_TRADE"
+        row["short_reason"] = "Nâng cấp bởi cấu hình backtest"
         return row
 
     def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:
@@ -407,25 +504,24 @@ class ScannerController:
         JsonStorage(path).save(self._snapshot_payload(result))
         return path
 
-    def _write_scanner_ai_summary(self, row: dict[str, Any], active_ai) -> str:
-        prompt = (
-            "Viết nhận định scanner rất ngắn bằng tiếng Việt, tối đa 2 câu. "
-            "Chỉ diễn giải dữ liệu đã cung cấp, không tự tạo entry/SL/TP/giá mới.\n"
-            f"Mã: {row.get('symbol')}\n"
-            f"Regime: {row.get('market_regime')}\n"
-            f"Bias: {row.get('direction_bias')}\n"
-            f"Permission: {row.get('trade_permission')}\n"
-            f"Buy score: {row.get('buy_score')}\n"
-            f"Sell score: {row.get('sell_score')}\n"
-            f"Best score: {row.get('best_score')}\n"
-            f"Action: {row.get('scanner_action')}\n"
-            f"R:R: {row.get('risk_reward') or '-'}\n"
-            f"Lý do rule engine: {row.get('short_reason')}"
-        )
+    def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
+        prompt = build_ai_setup_audit_prompt(row)
         try:
-            return AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)).analyze(prompt)
-        except Exception:
-            return ""
+            raw = AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)).analyze(prompt)
+            return parse_ai_setup_audit(raw)
+        except Exception as exc:
+            return {
+                "schema_version": 1,
+                "agreement": "caution",
+                "confidence_score": 0,
+                "trade_plan_quality": 0,
+                "setup_summary": "",
+                "market_context_summary": "",
+                "risk_flags": [],
+                "missing_confirmations": [],
+                "do_not_trade_reason": "",
+                "auditor_error": str(exc),
+            }
 
     def _snapshot_payload(self, result: dict[str, Any]) -> dict[str, Any]:
         payload = dict(result)

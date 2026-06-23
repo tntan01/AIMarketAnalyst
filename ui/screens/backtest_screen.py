@@ -424,6 +424,15 @@ class BacktestScreen(QWidget):
         title = QLabel("Danh sách lệnh")
         title.setObjectName("PanelTitle")
         header.addWidget(title)
+
+        # --- Verdict banner inline in header (hidden until backtest) ---
+        self.verdict_banner = QLabel("")
+        self.verdict_banner.setObjectName("BacktestVerdict")
+        self.verdict_banner.setWordWrap(False)
+        self.verdict_banner.setTextFormat(Qt.TextFormat.RichText)
+        self.verdict_banner.hide()
+        header.addWidget(self.verdict_banner, 1)
+
         header.addStretch(1)
 
         load_btn = action_button("📂 Xem lại kết quả", primary=True, color="success")
@@ -433,9 +442,14 @@ class BacktestScreen(QWidget):
         analyze_btn.clicked.connect(self._analyze_loaded_result)
         self.analyze_btn = analyze_btn
 
-        
+        self.recommend_btn = action_button("📋 Đề xuất cấu hình", primary=True, color="warning")
+        self.recommend_btn.clicked.connect(self._recommend_scanner_configs)
+        self.recommend_btn.setToolTip("Phân tích backtest để đề xuất cấu hình Scanner cho từng cặp.")
+
+
         header.addWidget(load_btn)
         header.addWidget(analyze_btn)
+        header.addWidget(self.recommend_btn)
         layout.addLayout(header)
 
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
@@ -443,7 +457,7 @@ class BacktestScreen(QWidget):
         self.table.setHorizontalHeaderLabels([label for _, label in self.TRADE_COLUMNS])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setAlternatingRowColors(True)
+        self.table.setAlternatingRowColors(False)
         self.table.verticalHeader().setVisible(False)
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
@@ -469,6 +483,7 @@ class BacktestScreen(QWidget):
             self.result = data
             self._set_summary(summary)
             self._set_trades(trades)
+            self._update_verdict()
             self.status_label.setText(f"Đã tải: {len(trades)} lệnh")
             self.snapshot_label.setText(f"File: {path}")
             self.snapshot_label.show()
@@ -541,10 +556,130 @@ class BacktestScreen(QWidget):
             self.analyze_btn.setText("🤖 Phân tích")
             self.analyze_btn.setEnabled(True)
 
+    def _recommend_scanner_configs(self) -> None:
+        """Analyze backtest result and recommend per-symbol scanner configs."""
+        if not self.result:
+            QMessageBox.information(self, "Đề xuất", "Chưa có dữ liệu backtest. Hãy chạy backtest hoặc tải file trước.")
+            return
+
+        from core.backtest_to_scanner_config import recommend_scanner_configs, summarize_recommendations
+
+        try:
+            recs = recommend_scanner_configs(self.result)
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi phân tích", f"Không thể phân tích backtest:\n{exc}")
+            return
+
+        # Build HTML table
+        rows_html = ""
+        for symbol, cfg in sorted(recs.items()):
+            if cfg is None:
+                rows_html += (
+                    f"<tr>"
+                    f"<td style='padding:6px 10px;color:#e2e8f0;'>{symbol}</td>"
+                    f"<td colspan='4' style='padding:6px 10px;color:#64748b;'>Không đủ dữ liệu</td>"
+                    f"</tr>"
+                )
+            else:
+                evidence = cfg.get("_evidence", "")
+                rows_html += (
+                    f"<tr>"
+                    f"<td style='padding:6px 10px;color:#e2e8f0;font-weight:700;'>{symbol}</td>"
+                    f"<td style='padding:6px 10px;color:#22c55e;'>{cfg['regime']}</td>"
+                    f"<td style='padding:6px 10px;color:#38bdf8;'>{cfg['side'].upper()}</td>"
+                    f"<td style='padding:6px 10px;color:#fbbf24;'>≥ {cfg['min_score']}</td>"
+                    f"<td style='padding:6px 10px;color:#fb923c;'>≥ {cfg['min_rr']}</td>"
+                    f"<td style='padding:6px 10px;color:#94a3b8;font-size:12px;'>{evidence}</td>"
+                    f"</tr>"
+                )
+
+        html = (
+            "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>"
+            "<h2 style='color:#fbbf24;margin:0 0 4px;font-size:16px;'>Đề xuất cấu hình Scanner từ Backtest</h2>"
+            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            "Dựa trên kết quả backtest, hệ thống đề xuất cấu hình cho từng cặp. "
+            "Cấu hình này có thể dùng trong Settings để tự động nâng setup đủ điều kiện."
+            "</p>"
+            "<table style='width:100%;border-collapse:collapse;margin-bottom:16px;'>"
+            "<tr>"
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Mã</th>"
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Regime</th>"
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Hướng</th>"
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Min Score</th>"
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Min RR</th>"
+            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Bằng chứng</th>"
+            "</tr>"
+            + rows_html +
+            "</table>"
+            "<p style='color:#64748b;font-size:11px;'>"
+            "Tiêu chí: ≥ 10 lệnh tổng, ≥ 8 lệnh sau lọc, kỳ vọng > +0.10R, PF > 1.2. "
+            "Chọn chế độ <b>Backtest</b> hoặc <b>Research</b> để có nhiều lệnh phân tích hơn."
+            "</p>"
+            "</div>"
+        )
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Đề xuất cấu hình Scanner")
+        dlg.setMinimumSize(800, 400)
+        dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 18, 20, 16)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setStyleSheet(
+            "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: 1px solid #2b3545; border-radius: 6px; padding: 12px; }"
+        )
+        text.setHtml(html)
+        layout.addWidget(text, 1)
+
+        btn_row = QHBoxLayout()
+        copy_btn = action_button("📋 Sao chép", color="info")
+        copy_btn.clicked.connect(lambda: self._copy_recommendations_to_clipboard(recs))
+        close_btn = action_button("❌ Đóng")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(copy_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        dlg.exec()
+
+    def _copy_recommendations_to_clipboard(self, recs: dict) -> None:
+        """Copy recommendations as JSON to clipboard for pasting into Settings."""
+        import json
+
+        configs = {}
+        for symbol, cfg in recs.items():
+            if cfg is None:
+                continue
+            configs[symbol] = {
+                "regime": cfg["regime"],
+                "side": cfg["side"],
+                "min_score": cfg["min_score"],
+                "min_rr": cfg["min_rr"],
+            }
+
+        if not configs:
+            QMessageBox.information(self, "Sao chép", "Không có đề xuất nào để sao chép.")
+            return
+
+        text = json.dumps(configs, ensure_ascii=False, indent=2)
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText(text)
+        QMessageBox.information(
+            self, "Đã sao chép",
+            f"Đã sao chép cấu hình {len(configs)} cặp vào clipboard.\n\n"
+            "Cách dán:\n"
+            "1. Vào Cài đặt > Nguồn dữ liệu > bảng MT5\n"
+            "2. Nhấn nút '📋 Dán cấu hình Backtest' phía trên bảng\n"
+            "3. Hoặc điền thủ công: tick cột 'Kiểm thử', chọn Regime/Hướng/RR"
+        )
+
     def _build_analysis_prompt(self) -> str:
         summary = self.result.get("summary", {}) if isinstance(self.result.get("summary"), dict) else {}
         breakdowns = self.result.get("breakdowns", {}) if isinstance(self.result.get("breakdowns"), dict) else {}
         by_symbol = breakdowns.get("by_symbol", {}) if isinstance(breakdowns, dict) else {}
+        diagnostics = self.result.get("diagnostics", {}) if isinstance(self.result.get("diagnostics"), dict) else {}
 
         lines = [
             "Dựa vào các số liệu backtest sau, hãy đưa ra NHẬN XÉT VÀ ĐÁNH GIÁ (không cần lặp lại số liệu):",
@@ -572,6 +707,29 @@ class BacktestScreen(QWidget):
                 lines.append(f"    Drawdown tối đa: {sym_stats.get('max_drawdown_r', 'N/A')}R")
                 lines.append(f"    Tổng R: {sym_stats.get('total_r', 'N/A')}R")
 
+        # Include pipeline diagnostics
+        pipeline_stats = diagnostics.get("pipeline_stats", {})
+        gate_fail_counts = diagnostics.get("gate_fail_counts", {})
+        if pipeline_stats or gate_fail_counts:
+            lines.append("")
+            lines.append("CHẨN ĐOÁN PIPELINE (thống kê từng bước phân tích):")
+            lines.append(f"  Tổng snapshot đã phân tích: {diagnostics.get('snapshots_evaluated', 'N/A')}")
+            lines.append(f"  Số setup phát hiện: {diagnostics.get('setups_detected', 'N/A')}")
+            lines.append(f"  Số lệnh bị gate chặn: {diagnostics.get('blocked_by_gate', 'N/A')}")
+            lines.append(f"  Số snapshot điểm <50: {diagnostics.get('score_below_50_count', 'N/A')}")
+
+            if pipeline_stats:
+                lines.append("  Thống kê pass/fail/warning từng bước:")
+                for step in ["validate", "correlation", "score", "scenarios", "direction", "gate", "final_score"]:
+                    stats = pipeline_stats.get(step, {})
+                    if stats:
+                        lines.append(f"    {step}: pass={stats.get('pass', 0)}, fail={stats.get('fail', 0)}, warning={stats.get('warning', 0)}")
+
+            if gate_fail_counts:
+                lines.append("  Số lần mỗi gate chặn/cảnh báo:")
+                for gate_name, count in sorted(gate_fail_counts.items(), key=lambda x: -x[1]):
+                    lines.append(f"    {gate_name}: {count} lần")
+
         lines.extend([
             "",
             "Yêu cầu Đánh giá:",
@@ -579,6 +737,7 @@ class BacktestScreen(QWidget):
             "2. Rủi ro chính là gì?",
             "3. Có nên trade live không? Nếu có thì cần điều kiện gì?",
             "4. So sánh hiệu suất giữa các cặp (nếu có nhiều cặp), cặp nào tốt nhất/tệ nhất?",
+            "5. Dựa vào chẩn đoán pipeline, bước nào đang lọc nhiều nhất? Gate nào chặn nhiều nhất? Có bất thường không?",
             "",
             "Trả lời ngắn gọn, bullet point, KHÔNG dùng ký tự * hay markdown. KHÔNG CẦN CHÉP LẠI BẢNG THỐNG KÊ, CHỈ ĐƯA RA NHẬN XÉT.",
         ])
@@ -667,6 +826,62 @@ class BacktestScreen(QWidget):
             f"</table>"
         )
 
+        # --- Expanded stats: win/loss breakdown ---
+        wins = int(summary.get("wins", 0) or 0)
+        losses = int(summary.get("losses", 0) or 0)
+        breakeven_count = int(summary.get("breakeven", 0) or 0)
+        expired_count = int(summary.get("expired", 0) or 0)
+        avg_win_r = float(summary.get("average_win_r", 0) or 0)
+        avg_loss_r = float(summary.get("average_loss_r", 0) or 0)
+        max_consec_wins = int(summary.get("max_consecutive_wins", 0) or 0)
+        max_consec_losses = int(summary.get("max_consecutive_losses", 0) or 0)
+        avg_holding = float(summary.get("average_holding_bars", 0) or 0)
+
+        html.append(
+            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;'>"
+            f"<tr>"
+            f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Phân bổ kết quả</th>"
+            f"<th style='text-align: right; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Số lượng</th>"
+            f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Chỉ số bổ sung</th>"
+            f"<th style='text-align: right; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Giá trị</th>"
+            f"</tr>"
+
+            f"<tr>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e;'>🟢 Thắng</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{wins}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Trung bình R thắng</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{avg_win_r:+.2f}R</td>"
+            f"</tr>"
+
+            f"<tr>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444;'>🔴 Thua</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444; font-weight: bold;'>{losses}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Trung bình R thua</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444; font-weight: bold;'>{avg_loss_r:+.2f}R</td>"
+            f"</tr>"
+
+            f"<tr>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #94a3b8;'>⚪ Hòa</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #94a3b8; font-weight: bold;'>{breakeven_count}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Chuỗi thắng tối đa</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{max_consec_wins}</td>"
+            f"</tr>"
+
+            f"<tr>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #64748b;'>⏰ Hết hạn</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #64748b; font-weight: bold;'>{expired_count}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Chuỗi thua tối đa</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444; font-weight: bold;'>{max_consec_losses}</td>"
+            f"</tr>"
+
+            f"<tr>"
+            f"<td colspan='2'></td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Số nến giữ lệnh TB</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #94a3b8; font-weight: bold;'>{avg_holding:.0f} nến</td>"
+            f"</tr>"
+            f"</table>"
+        )
+
         if by_symbol and len(by_symbol) > 0:
             html.append("<h2 style='color:#fbbf24; margin-bottom: 16px; margin-top: 24px; font-size: 16px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
             html.append("<div style='display: flex; flex-wrap: wrap; gap: 12px;'>")
@@ -698,6 +913,91 @@ class BacktestScreen(QWidget):
                     f"</div>"
                 )
             html.append("</div>")
+
+        # Pipeline diagnostics table
+        diagnostics = self.result.get("diagnostics", {}) if isinstance(self.result.get("diagnostics"), dict) else {}
+        pipeline_stats = diagnostics.get("pipeline_stats", {})
+        gate_fail_counts = diagnostics.get("gate_fail_counts", {})
+        if pipeline_stats:
+            html.append("<h2 style='color:#f97316; margin-bottom: 12px; margin-top: 24px; font-size: 16px;'>🔬 CHẨN ĐOÁN PIPELINE</h2>")
+            html.append(
+                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px;'>"
+                f"<tr>"
+                f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Bước</th>"
+                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #22c55e;'>Pass</th>"
+                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #ef4444;'>Fail</th>"
+                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #fbbf24;'>Warning</th>"
+                f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Trạng thái</th>"
+                f"</tr>"
+            )
+            step_labels = {
+                "validate": "1. Validate",
+                "correlation": "2. Correlation",
+                "score": "3. Score",
+                "scenarios": "4. Scenarios",
+                "direction": "5. Direction",
+                "gate": "6. Gate",
+                "final_score": "7. Final Score",
+            }
+            for step_key, label in step_labels.items():
+                stats = pipeline_stats.get(step_key, {})
+                if not stats:
+                    continue
+                p = stats.get("pass", 0)
+                f = stats.get("fail", 0)
+                w = stats.get("warning", 0)
+                total = p + f + w
+                if total == 0:
+                    continue
+                if f > 0:
+                    status_icon = "🔴"
+                    status_text = "Có lỗi"
+                elif w > 0:
+                    status_icon = "🟡"
+                    status_text = "Cảnh báo"
+                else:
+                    status_icon = "🟢"
+                    status_text = "OK"
+                html.append(
+                    f"<tr>"
+                    f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>{label}</td>"
+                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e;'>{p}</td>"
+                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444;'>{f}</td>"
+                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #fbbf24;'>{w}</td>"
+                    f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b;'>{status_icon} {status_text}</td>"
+                    f"</tr>"
+                )
+            html.append("</table>")
+
+            # Summary row
+            ev = diagnostics.get("snapshots_evaluated", 0)
+            blk = diagnostics.get("blocked_by_gate", 0)
+            low = diagnostics.get("score_below_50_count", 0)
+            html.append(
+                f"<div style='display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: #94a3b8;'>"
+                f"<span>📊 Tổng snapshot: <b style='color:#e2e8f0;'>{ev}</b></span>"
+                f"<span>🚫 Bị gate chặn: <b style='color:#ef4444;'>{blk}</b></span>"
+                f"<span>⚠️ Điểm {'<'}50: <b style='color:#fbbf24;'>{low}</b></span>"
+                f"</div>"
+            )
+
+        if gate_fail_counts:
+            html.append("<h3 style='color:#fb923c; margin-bottom: 8px; margin-top: 16px; font-size: 14px;'>🚧 Chi tiết Gate</h3>")
+            html.append(
+                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 12px;'>"
+                f"<tr>"
+                f"<th style='text-align: left; padding: 6px 10px; border-bottom: 1px solid #334155; color: #94a3b8;'>Gate</th>"
+                f"<th style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #334155; color: #94a3b8;'>Số lần chặn/cảnh báo</th>"
+                f"</tr>"
+            )
+            for gate_name, count in sorted(gate_fail_counts.items(), key=lambda x: -x[1]):
+                html.append(
+                    f"<tr>"
+                    f"<td style='padding: 4px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>{gate_name}</td>"
+                    f"<td style='text-align: right; padding: 4px 10px; border-bottom: 1px solid #1e293b; color: #f87171; font-weight: bold;'>{count}</td>"
+                    f"</tr>"
+                )
+            html.append("</table>")
 
         html.append("</div>")
         return "".join(html)
@@ -865,6 +1165,7 @@ class BacktestScreen(QWidget):
         self.status_label.setText("Hoàn tất backtest.")
         self._set_summary(result.get("summary", {}) if isinstance(result.get("summary"), dict) else {})
         self._set_trades(result.get("trades", []) if isinstance(result.get("trades"), list) else [])
+        self._update_verdict()
         self.snapshot_label.setText(f"File kết quả: {result.get('snapshot_path', '')}")
         self.snapshot_label.show()
 
@@ -882,9 +1183,12 @@ class BacktestScreen(QWidget):
             ("Số lệnh", self._format_integer(summary.get("total_trades", 0))),
             ("Tỷ lệ thắng", self._format_decimal(summary.get("win_rate", 0), 2, "%")),
             ("Kỳ vọng", self._format_decimal(summary.get("expectancy_r", 0), 2, "R")),
-            ("Hệ số lợi nhuận", self._format_decimal(summary.get("profit_factor", 0), 2)),
+            ("Hệ số LN", self._format_decimal(summary.get("profit_factor", 0), 2)),
             ("DD tối đa", self._format_decimal(summary.get("max_drawdown_r", 0), 2, "R")),
             ("Tổng R", self._format_decimal(summary.get("total_r", 0), 2, "R")),
+            ("R thắng TB", self._format_decimal(summary.get("average_win_r", 0), 2, "R")),
+            ("R thua TB", self._format_decimal(summary.get("average_loss_r", 0), 2, "R")),
+            ("Chuỗi thua max", str(int(summary.get("max_consecutive_losses", 0) or 0))),
         ]
         for index, (title, value) in enumerate(items):
             self.summary_row.addWidget(self._stat_cell(str(title), str(value)), index // 3, index % 3)
@@ -892,16 +1196,79 @@ class BacktestScreen(QWidget):
     def _set_trades(self, trades: list[dict[str, object]]) -> None:
         self.table.setRowCount(len(trades))
         for row, trade in enumerate(trades):
+            result = str(trade.get("result", "")).lower()
+            if result == "win":
+                bg = "#14532d"  # dark green
+            elif result == "loss":
+                bg = "#7f1d1d"  # dark red
+            elif result == "breakeven":
+                bg = "#1e293b"  # dark gray
+            else:
+                bg = "#1a1f2e"  # default dark
             for col, (key, _label) in enumerate(self.TRADE_COLUMNS):
                 if key == "stt":
                     value = str(row + 1)
                 else:
                     value = self._format_trade_value(key, trade.get(key, "--"))
                 item = QTableWidgetItem(value)
+                item.setBackground(Qt.GlobalColor.transparent)
                 if key in {"stt", "result_r", "final_score", "signal_score", "selected_zone_score"}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
+            # Apply row background to all cells
+            from PyQt6.QtGui import QColor
+            row_color = QColor(bg)
+            for col in range(len(self.TRADE_COLUMNS)):
+                cell = self.table.item(row, col)
+                if cell:
+                    cell.setBackground(row_color)
         self._apply_trade_table_layout()
+
+    def _update_verdict(self) -> None:
+        """Show a compact verdict badge inline in the header row."""
+        if not self.result:
+            self.verdict_banner.hide()
+            return
+        summary = self.result.get("summary", {}) if isinstance(self.result.get("summary"), dict) else {}
+
+        total = int(summary.get("total_trades", 0) or 0)
+        wr = float(summary.get("win_rate", 0) or 0)
+        exp_r = float(summary.get("expectancy_r", 0) or 0)
+        pf = float(summary.get("profit_factor", 0) or 0)
+        dd = float(summary.get("max_drawdown_r", 0) or 0)
+        total_r = float(summary.get("total_r", 0) or 0)
+
+        has_edge = exp_r > 0.10
+        good_pf = pf > 1.2
+        positive_total = total_r > 0
+
+        if total == 0:
+            icon, accent, bg = "⚪", "#64748b", "#1e293b"
+            line = "Chưa có lệnh nào"
+        elif has_edge and good_pf:
+            icon, accent, bg = "🟢", "#22c55e", "#14532d"
+            line = f"CÓ LỢI THẾ · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
+        elif has_edge and not good_pf:
+            icon, accent, bg = "🟡", "#facc15", "#4a3f00"
+            line = f"LỢI THẾ YẾU · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
+        elif positive_total and not has_edge:
+            icon, accent, bg = "🟠", "#fb923c", "#4a3000"
+            line = f"CHƯA RÕ · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
+        else:
+            icon, accent, bg = "🔴", "#ef4444", "#7f1d1d"
+            line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
+
+        self.verdict_banner.setText(
+            f"<span style='display:inline-block;padding:3px 14px;border-radius:4px;background:{bg};"
+            f"font-size:13px;white-space:nowrap;'>"
+            f"<b style='color:{accent};'>{icon} {line}</b>"
+            f"<span style='color:#64748b;'>&nbsp;&nbsp;│&nbsp;&nbsp;</span>"
+            f"<span style='color:#cbd5e1;'>"
+            f"{total} lệnh &nbsp;·&nbsp; TL thắng {wr:.1f}% &nbsp;·&nbsp; DD {dd:.1f}R"
+            f"</span>"
+            f"</span>"
+        )
+        self.verdict_banner.show()
 
     def _selected_symbols(self) -> list[str]:
         return list(self.selected_symbols)

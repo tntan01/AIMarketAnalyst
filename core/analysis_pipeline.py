@@ -112,8 +112,19 @@ class AnalysisPipeline:
         self._trade_date = trade_date
         self._execution_quality_score_in = execution_quality_score
 
+        # ---- Pipeline diagnostics ------------------------------------------
+        self._diag: list[dict[str, Any]] = []
+
         # ---- Step 1: validate + build context ------------------------------
-        self._step_validate_and_build_context()
+        try:
+            self._step_validate_and_build_context()
+        except ValueError:
+            self._log_step(
+                "validate", "fail",
+                f"VALIDATION FAILED: insufficient candles (D1={len(self._d1)}, H4={len(self._h4)}, H1={len(self._h1)})",
+                {"d1_count": len(self._d1), "h4_count": len(self._h4), "h1_count": len(self._h1)},
+            )
+            raise
 
         # ---- Step 2: correlation adjustments -------------------------------
         self._step_compute_correlation()
@@ -140,6 +151,51 @@ class AnalysisPipeline:
         return self._assemble_result()
 
     # ------------------------------------------------------------------
+    # Diagnostics helpers
+    # ------------------------------------------------------------------
+
+    def _log_step(self, step: str, status: str, summary: str, details: dict[str, Any] | None = None) -> None:
+        self._diag.append({
+            "step": step,
+            "status": status,
+            "summary": summary,
+            "details": details or {},
+        })
+
+    def _ensure_safe_defaults(self) -> None:
+        """Set safe defaults for attributes that _assemble_result expects."""
+        for attr, default in [
+            ("_technical", {"structure_h4": "unknown", "price": 0.0, "atr_h4": None, "atr_d1": None, "atr_avg_14d": None}),
+            ("_smc", {"H4": {}, "H1": {}}), ("_data_quality", {}),
+            ("_spread_status", "unknown"), ("_news_in_3h", False),
+            ("_market_regime", {"primary": "unknown"}), ("_risk_score", 0),
+            ("_macro_alignment", {"buy": 15, "sell": 15}),
+            ("_macro_confidence_in", 1.0),
+            ("_buy_corr_adj", 0), ("_sell_corr_adj", 0),
+            ("_scores", {"buy": {}, "sell": {}}),
+            ("_buy_smc_flags", {}), ("_sell_smc_flags", {}),
+            ("_scenarios", []), ("_has_ready_plan", False),
+            ("_buy_scenario", {}), ("_sell_scenario", {}),
+            ("_direction_bias", {"best_side": "neutral", "buy_score": 0, "sell_score": 0, "score_gap": 0, "is_clear_bias": False, "min_gap": 10}),
+            ("_best_side", "neutral"), ("_best_score", 0),
+            ("_smc_trade_flags", {}), ("_primary_scenario", {}),
+            ("_trade_permission", {"status": "blocked", "reason": "validation failed"}),
+            ("_decision_action", "stand_aside"),
+            ("_journal_feedback", {}),
+            ("_gate_result", {"allowed": False, "decision_cap": "TRADE_BLOCKED", "block_codes": [], "warning_codes": [], "reasons": ["Pipeline validation failed"]}),
+            ("_account_guard_result", {"blocked": False, "block_codes": [], "warning_codes": []}),
+            ("_main_view", "Validation failed"),
+            ("_pattern_feedback", {}),
+            ("_reason_codes", []), ("_penalty_codes", []), ("_warning_codes", []), ("_block_codes", []),
+            ("_reason_messages", []),
+            ("_evidence_result", {}), ("_eq_score", 0), ("_eq_source", "fallback"),
+            ("_final_score_result", {"final_score": 0}),
+            ("_decision_engine_result", {"decision": "STAND_ASIDE", "legacy_action": "stand_aside"}),
+        ]:
+            if not hasattr(self, attr):
+                setattr(self, attr, default)
+
+    # ------------------------------------------------------------------
     # Step 1 — validate inputs & build technical / SMC context
     # ------------------------------------------------------------------
 
@@ -164,6 +220,29 @@ class AnalysisPipeline:
         )
         self._macro_alignment = self._macro_alignment_in or {"buy": 15, "sell": 15}
 
+        _atr = self._technical.get("atr_h4") or 0
+        self._log_step(
+            "validate",
+            "pass",
+            f"D1={len(self._d1)}, H4={len(self._h4)}, H1={len(self._h1)} candles "
+            f"| Regime: {self._market_regime.get('primary', '?')} "
+            f"| Risk: {self._risk_score}/15 "
+            f"| ATR: {float(_atr):.5f}",
+            {
+                "d1_count": len(self._d1),
+                "h4_count": len(self._h4),
+                "h1_count": len(self._h1),
+                "market_regime": self._market_regime,
+                "risk_score": self._risk_score,
+                "spread_status": self._spread_status,
+                "news_in_3h": self._news_in_3h,
+                "atr_h4": self._technical.get("atr_h4"),
+                "atr_d1": self._technical.get("atr_d1"),
+                "structure_h4": self._technical.get("structure_h4"),
+                "price": self._technical.get("price"),
+            },
+        )
+
     # ------------------------------------------------------------------
     # Step 2 — DXY / VIX / US10Y correlation
     # ------------------------------------------------------------------
@@ -181,6 +260,23 @@ class AnalysisPipeline:
             dxy_candles=corr_ctx.get("dxy_candles"),
             us10y_candles=corr_ctx.get("us10y_candles"),
             vix_candles=corr_ctx.get("vix_candles"),
+        )
+
+        has_dxy = bool(corr_ctx.get("dxy_candles"))
+        has_vix = bool(corr_ctx.get("vix_candles"))
+        has_us10y = bool(corr_ctx.get("us10y_candles"))
+        self._log_step(
+            "correlation",
+            "pass",
+            f"DXY={'yes' if has_dxy else 'no'}, VIX={'yes' if has_vix else 'no'}, US10Y={'yes' if has_us10y else 'no'} "
+            f"| Buy adj: {self._buy_corr_adj:+.0f} | Sell adj: {self._sell_corr_adj:+.0f}",
+            {
+                "has_dxy": has_dxy,
+                "has_vix": has_vix,
+                "has_us10y": has_us10y,
+                "buy_correlation_adjustment": self._buy_corr_adj,
+                "sell_correlation_adjustment": self._sell_corr_adj,
+            },
         )
 
     # ------------------------------------------------------------------
@@ -213,6 +309,25 @@ class AnalysisPipeline:
         self._scores["buy"]["entry_quality_bonus"] = 0
         self._scores["sell"]["entry_quality_bonus"] = 0
 
+        buy_sc = self._scores["buy"]
+        sell_sc = self._scores["sell"]
+        self._log_step(
+            "score",
+            "pass",
+            f"BUY={buy_sc.get('signal_score', 0)}/100 "
+            f"(T={buy_sc.get('trend_alignment', 0)} M={buy_sc.get('momentum_alignment', 0)} "
+            f"L={buy_sc.get('location_quality', 0)} S={buy_sc.get('smc_quality', 0)} "
+            f"R={buy_sc.get('risk_condition', 0)} Ma={buy_sc.get('macro_alignment', 0)}) "
+            f"| SELL={sell_sc.get('signal_score', 0)}/100 "
+            f"(T={sell_sc.get('trend_alignment', 0)} M={sell_sc.get('momentum_alignment', 0)} "
+            f"L={sell_sc.get('location_quality', 0)} S={sell_sc.get('smc_quality', 0)} "
+            f"R={sell_sc.get('risk_condition', 0)} Ma={sell_sc.get('macro_alignment', 0)})",
+            {
+                "buy": {k: v for k, v in buy_sc.items() if not k.startswith("_")},
+                "sell": {k: v for k, v in sell_sc.items() if not k.startswith("_")},
+            },
+        )
+
     # ------------------------------------------------------------------
     # Step 4 — build trade plans / scenarios
     # ------------------------------------------------------------------
@@ -239,6 +354,39 @@ class AnalysisPipeline:
         )
         self._buy_scenario = _find_scenario(self._scenarios, "buy")
         self._sell_scenario = _find_scenario(self._scenarios, "sell")
+
+        scenario_summaries = []
+        for sc in self._scenarios:
+            if isinstance(sc, dict):
+                s_type = sc.get("type", "?")
+                entry = sc.get("entry_status", "?")
+                m15 = sc.get("m15_quality", "?")
+                rr = sc.get("expected_effective_rr")
+                rr_str = f"{float(rr):.1f}" if rr is not None else "?"
+                ready = "READY" if sc.get("ready_to_trade") else "no"
+                scenario_summaries.append(f"{s_type}(entry={entry}, m15={m15}, RR={rr_str}, {ready})")
+        self._log_step(
+            "scenarios",
+            "pass" if self._scenarios else "warning",
+            f"{len(self._scenarios)} scenarios: {'; '.join(scenario_summaries) if scenario_summaries else 'none'}",
+            {
+                "count": len(self._scenarios),
+                "has_ready_plan": self._has_ready_plan,
+                "trade_permission_status": trade_permission_initial.get("status"),
+                "scenarios": [
+                    {
+                        "type": s.get("type"),
+                        "entry_status": s.get("entry_status"),
+                        "m15_quality": s.get("m15_quality"),
+                        "expected_effective_rr": s.get("expected_effective_rr"),
+                        "ready_to_trade": s.get("ready_to_trade"),
+                        "trigger_type": s.get("trigger_type"),
+                        "entry_zone": s.get("entry_zone"),
+                    }
+                    for s in self._scenarios if isinstance(s, dict)
+                ],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Step 5 — direction bias, best side, primary scenario
@@ -269,6 +417,24 @@ class AnalysisPipeline:
             self._buy_scenario if self._best_side == "buy"
             else self._sell_scenario if self._best_side == "sell"
             else (self._scenarios[0] if self._scenarios else {})
+        )
+
+        gap = self._direction_bias.get("score_gap", 0)
+        is_clear = self._direction_bias.get("is_clear_bias", False)
+        self._log_step(
+            "direction",
+            "pass" if self._best_side != "neutral" else "warning",
+            f"BUY={self._direction_bias.get('buy_score', 0)} vs SELL={self._direction_bias.get('sell_score', 0)} "
+            f"| Gap={gap} | Best: {self._best_side.upper()} "
+            f"| Clear bias: {'yes' if is_clear else 'no'}",
+            {
+                "buy_score": self._direction_bias.get("buy_score"),
+                "sell_score": self._direction_bias.get("sell_score"),
+                "score_gap": gap,
+                "best_side": self._best_side,
+                "is_clear_bias": is_clear,
+                "min_gap": self._direction_bias.get("min_gap"),
+            },
         )
 
     # ------------------------------------------------------------------
@@ -366,6 +532,97 @@ class AnalysisPipeline:
             self._decision_action = "watch"
         elif cap == "WAITING_CONFIRMATION":
             self._decision_action = "wait_for_confirmation"
+
+        # --- Gate diagnostics (per-gate breakdown) --------------------------
+        gate_checks: list[dict[str, Any]] = []
+        # 1. MT5 gate
+        mt5_ok = not (
+            gate_context.get("terminal_connected") is False
+            or gate_context.get("broker_logged_in") is False
+        )
+        gate_checks.append({"gate": "MT5", "status": "pass" if mt5_ok else "block",
+                            "detail": "Terminal & broker OK" if mt5_ok else "MT5 not ready"})
+        # 2. Spread gate
+        spread_ok = gate_context.get("spread_status") != "abnormal"
+        gate_checks.append({"gate": "Spread", "status": "pass" if spread_ok else "block",
+                            "detail": f"spread={gate_context.get('spread_status', '?')}"})
+        # 3. Data quality gate
+        dq_ok = not gate_context.get("data_quality_warning")
+        gate_checks.append({"gate": "DataQuality", "status": "pass" if dq_ok else "block",
+                            "detail": "no warning" if dq_ok else "data quality warning"})
+        # 4. News gate
+        news_ok = not gate_context.get("high_impact_event_within_30m")
+        gate_checks.append({"gate": "News", "status": "pass" if news_ok else "block",
+                            "detail": "no news nearby" if news_ok else "high impact news within 30m"})
+        # 5. Daily/Weekly loss gate
+        loss_ok = not (gate_context.get("daily_loss_limit_reached") or gate_context.get("weekly_loss_limit_reached"))
+        gate_checks.append({"gate": "DailyWeeklyLoss", "status": "pass" if loss_ok else "block",
+                            "detail": "within limits" if loss_ok else "loss limit reached"})
+        # 6. Account guard gate
+        ag_blocked = self._account_guard_result.get("blocked", False)
+        gate_checks.append({"gate": "AccountGuard", "status": "pass" if not ag_blocked else "block",
+                            "detail": "guard OK" if not ag_blocked else f"blocked: {self._account_guard_result.get('block_codes', [])}"})
+        # 7. Journal feedback gate
+        jf = self._journal_feedback if isinstance(self._journal_feedback, dict) else {}
+        jf_warnings = jf.get("warnings", [])
+        jf_blocks = jf.get("blocks", [])
+        jf_ok = not jf_warnings and not jf_blocks
+        gate_checks.append({"gate": "Journal", "status": "pass" if jf_ok else ("block" if jf_blocks else "warning"),
+                            "detail": "no issues" if jf_ok else f"warnings={len(jf_warnings)}, blocks={len(jf_blocks)}"})
+        # 8. M15 gate
+        m15_q = gate_context.get("m15_quality")
+        if m15_q == "none":
+            m15_status, m15_detail = "warning", "M15 not confirmed (→WATCH_ONLY)"
+        elif m15_q == "loose":
+            m15_status, m15_detail = "warning", "M15 loose (→WAITING_CONFIRMATION)"
+        elif m15_q == "strict":
+            m15_status, m15_detail = "pass", "M15 strict"
+        else:
+            m15_status, m15_detail = "pass", f"m15={m15_q}"
+        gate_checks.append({"gate": "M15", "status": m15_status, "detail": m15_detail})
+        # 9. Expected R:R gate
+        rr_val = gate_context.get("expected_effective_rr")
+        if rr_val is not None:
+            min_rr = gate_context.get("min_expected_effective_rr", 1.3)
+            rr_ok = rr_val >= min_rr
+            gate_checks.append({"gate": "ExpectedRR", "status": "pass" if rr_ok else "warning",
+                                "detail": f"RR={float(rr_val):.1f} vs min={min_rr}"})
+        else:
+            gate_checks.append({"gate": "ExpectedRR", "status": "pass", "detail": "no RR data"})
+        # 10. Score gap gate
+        gap_val = gate_context.get("score_gap")
+        min_gap = gate_context.get("min_buy_sell_score_gap", 10)
+        if gap_val is not None:
+            gap_ok = gap_val >= min_gap
+            gate_checks.append({"gate": "ScoreGap", "status": "pass" if gap_ok else "warning",
+                                "detail": f"gap={gap_val} vs min={min_gap}"})
+        else:
+            gate_checks.append({"gate": "ScoreGap", "status": "pass", "detail": "no gap data"})
+        # 11. Zone broken gate
+        zone_ok = not gate_context.get("zone_broken", False)
+        gate_checks.append({"gate": "ZoneBroken", "status": "pass" if zone_ok else "warning",
+                            "detail": "zone intact" if zone_ok else "zone broken"})
+
+        gate_status = "fail" if not self._gate_result["allowed"] else ("warning" if self._gate_result["warning_codes"] else "pass")
+        self._log_step(
+            "gate",
+            gate_status,
+            f"Allowed: {'yes' if self._gate_result['allowed'] else 'NO'} "
+            f"| Cap: {self._gate_result.get('decision_cap') or 'none'} "
+            f"| Blocks: {len(self._gate_result.get('block_codes', []))} "
+            f"| Warnings: {len(self._gate_result.get('warning_codes', []))} "
+            f"| Reasons: {'; '.join(self._gate_result.get('reasons', []))}",
+            {
+                "allowed": self._gate_result["allowed"],
+                "decision_cap": self._gate_result["decision_cap"],
+                "block_codes": self._gate_result["block_codes"],
+                "warning_codes": self._gate_result["warning_codes"],
+                "reasons": self._gate_result["reasons"],
+                "gate_checks": gate_checks,
+                "account_guard_blocked": ag_blocked,
+                "account_guard_block_codes": self._account_guard_result.get("block_codes", []),
+            },
+        )
 
     # ------------------------------------------------------------------
     # Step 7 — main view, pattern feedback, reason codes
@@ -503,6 +760,27 @@ class AnalysisPipeline:
             trade_permission=self._trade_permission,
         )
 
+        final_sc = self._final_score_result["final_score"]
+        decision = self._decision_engine_result.get("decision", "?")
+        action = self._decision_engine_result.get("legacy_action", "?")
+        self._log_step(
+            "final_score",
+            "pass" if final_sc >= 65 else "warning",
+            f"Signal={best_signal_score} Evidence={evidence_score} Exec={self._eq_score} "
+            f"| Final={final_sc}/100 | Decision: {decision} | Action: {action}",
+            {
+                "signal_score": best_signal_score,
+                "evidence_score": evidence_score,
+                "execution_quality_score": self._eq_score,
+                "execution_quality_source": self._eq_source,
+                "final_score": final_sc,
+                "final_score_detail": self._final_score_result,
+                "decision": decision,
+                "legacy_action": action,
+                "entry_status": primary_entry_status,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Step 9 — assemble output dict
     # ------------------------------------------------------------------
@@ -613,6 +891,7 @@ class AnalysisPipeline:
                 "source": self._eq_source,
             },
             "decision_engine": self._decision_engine_result,
+            "pipeline_diagnostics": self._diag,
         }
 
 

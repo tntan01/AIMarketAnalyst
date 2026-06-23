@@ -143,6 +143,9 @@ def run_system_backtest(
     blocked_by_gate = 0
     analysis_errors = 0
     next_allowed_time: datetime | None = None
+    pipeline_stats: dict[str, dict[str, int]] = {}  # step → {pass/fail/warning: count}
+    gate_fail_counts: dict[str, int] = {}  # gate_name → fail count
+    score_fail_count = 0  # snapshots where best_score < 50
 
     eligible_steps = [
         (index, candle)
@@ -178,6 +181,12 @@ def run_system_backtest(
 
         snapshots_evaluated += 1
         funnel["snapshots_evaluated"] += 1
+
+        # --- Aggregate pipeline diagnostics from this snapshot ---
+        _aggregate_pipeline_diag(analysis, pipeline_stats, gate_fail_counts)
+        if analysis.get("decision_summary", {}).get("best_score", 0) < 50:
+            score_fail_count += 1
+
         scenario = select_trade_scenario(analysis)
         if not scenario:
             funnel["no_trade_scenario"] += 1
@@ -288,6 +297,9 @@ def run_system_backtest(
         "analysis_errors": analysis_errors,
         "step_timeframe": request.step_timeframe,
         "execution_timeframe": "M15" if m15_all else "H1",
+        "pipeline_stats": pipeline_stats,
+        "gate_fail_counts": gate_fail_counts,
+        "score_below_50_count": score_fail_count,
     }
     return BacktestResult(
         request=request,
@@ -1002,3 +1014,30 @@ def _safe_int(value: object) -> int | None:
         return int(value) if value is not None else None
     except (TypeError, ValueError):
         return None
+
+
+def _aggregate_pipeline_diag(
+    analysis: dict[str, Any],
+    pipeline_stats: dict[str, dict[str, int]],
+    gate_fail_counts: dict[str, int],
+) -> None:
+    """Aggregate pipeline diagnostics from one analysis snapshot into running totals."""
+    diags = analysis.get("pipeline_diagnostics")
+    if not isinstance(diags, list):
+        return
+    for entry in diags:
+        if not isinstance(entry, dict):
+            continue
+        step = str(entry.get("step", "unknown"))
+        status = str(entry.get("status", "pass"))
+        if step not in pipeline_stats:
+            pipeline_stats[step] = {"pass": 0, "fail": 0, "warning": 0}
+        pipeline_stats[step][status] = pipeline_stats[step].get(status, 0) + 1
+
+        # Count per-gate failures from ALL gate steps (not just failed ones)
+        if step == "gate":
+            details = entry.get("details", {}) if isinstance(entry.get("details"), dict) else {}
+            for gc in details.get("gate_checks", []) or []:
+                if isinstance(gc, dict) and gc.get("status") in ("block", "warning"):
+                    gate_name = str(gc.get("gate", "?"))
+                    gate_fail_counts[gate_name] = gate_fail_counts.get(gate_name, 0) + 1

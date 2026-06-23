@@ -24,6 +24,7 @@ QStyle ,
 QTableView ,
 QTableWidget ,
 QTableWidgetItem ,
+QTextEdit ,
 QVBoxLayout ,
 QWidget ,
 )
@@ -369,7 +370,8 @@ class ScannerScreen (QWidget ):
         self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,data_provider=self .data_provider )
         self .scan_thread =None 
         self .scan_worker =None 
-        self .scan_result :dict [str ,object ]|None =None 
+        self .scan_result :dict [str ,object ]|None =None
+        self._market_brief_text = ""
         self .symbol_boxes :list [QCheckBox ]=[]
         self .market_watch_symbols :set [str ]=set ()
         self .scan_symbols :list [str ]=[]
@@ -556,8 +558,13 @@ class ScannerScreen (QWidget ):
             self .save_button =action_button ('📸 Lưu snapshot',primary =True ,color ="success")
             self .save_button .setEnabled (False )
             self .save_button .clicked .connect (self ._save_snapshot )
+            self .brief_button = action_button ('📊 Bản tin thị trường', primary=True, color="warning")
+            self .brief_button .setEnabled (False )
+            self.brief_button.setToolTip("Xem bản tin thị trường do AI tổng hợp từ kết quả quét.")
+            self .brief_button .clicked .connect (self ._show_market_brief )
             header_layout .addWidget (self .detail_button )
             header_layout .addWidget (self .save_button )
+            header_layout .addWidget (self .brief_button )
             frame .layout ().insertWidget (0 ,header )
 
         self .table =QTableView ()
@@ -766,7 +773,7 @@ class ScannerScreen (QWidget ):
         self .scan_button .setText (message )
 
     def _scan_finished (self ,result :dict [str ,object ])->None :
-        self .scan_result =result 
+        self .scan_result =result
         rows =list (result .get ("rows",[]))
         self .table_model .set_rows (rows )
         self .status_labels ['Đã quét'].setText (f"{result .get ('symbols_scanned',0 )} / {len (self ._selected_symbols ())}")
@@ -785,6 +792,15 @@ class ScannerScreen (QWidget ):
         self .detail_button .setEnabled (bool (rows ))
         self .save_button .setEnabled (bool (rows ))
         self ._update_status_summary ()
+
+        # --- Market Brief ---
+        market_brief = str(result.get("market_brief", "")).strip()
+        if market_brief:
+            self._market_brief_text = market_brief
+            self.brief_button.setEnabled(True)
+        else:
+            self._market_brief_text = ""
+            self.brief_button.setEnabled(False)
         self .progress_bar .setValue (100 )
         self .progress_bar .setVisible (False )
         self .progress_container .setVisible (False )
@@ -820,6 +836,57 @@ class ScannerScreen (QWidget ):
         if not row or not self .navigate :
             return 
         self .navigate ("scanner_detail",{"scanner_row":row ,"scanner_result":self .scan_result or {}})
+
+    def _show_market_brief(self) -> None:
+        """Open a dialog displaying the AI-generated market brief."""
+        from html import escape
+
+        from PyQt6.QtWidgets import QApplication
+
+        if not getattr(self, "_market_brief_text", ""):
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Bản tin thị trường")
+        dlg.setMinimumSize(820, 560)
+        dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(20, 18, 20, 16)
+
+        title = QLabel("📊 BẢN TIN THỊ TRƯỜNG")
+        title.setObjectName("PanelTitle")
+        title.setStyleSheet("font-size: 15px; color: #fbbf24; margin-bottom: 4px;")
+        layout.addWidget(title)
+
+        timestamp = str(self.scan_result.get("timestamp", "") if self.scan_result else "")
+        ts_label = QLabel(timestamp.replace("T", " ")[:19] if timestamp else "")
+        ts_label.setObjectName("HelperText")
+        ts_label.setStyleSheet("color: #64748b; font-size: 11px; margin-bottom: 10px;")
+        layout.addWidget(ts_label)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setStyleSheet(
+            "QTextEdit { background: #171c24; color: #cbd5e1; font-size: 13px;"
+            "border: 1px solid #2b3545; border-radius: 6px; padding: 12px; line-height: 1.6; }"
+        )
+        brief_html = _format_market_brief_html(self._market_brief_text)
+        text.setHtml(f"<div style='font-size:13px;line-height:1.7;'>{brief_html}</div>")
+        layout.addWidget(text, 1)
+
+        btn_row = QHBoxLayout()
+        copy_btn = action_button("📋 Sao chép", color="info")
+        copy_btn.clicked.connect(
+            lambda: (QApplication.clipboard().setText(self._market_brief_text),
+                     QMessageBox.information(dlg, "Đã sao chép", "Đã sao chép bản tin vào clipboard."))
+        )
+        close_btn = action_button("❌ Đóng")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(copy_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        dlg.exec()
 
     def _save_snapshot (self )->None :
         if not self .scan_result :
@@ -1302,3 +1369,90 @@ class ScannerColumnsHelpDialog (QDialog ):
             
             row_height =max (heights )
             table .setRowHeight (row ,row_height )
+
+
+# ---------------------------------------------------------------------------
+# Market brief HTML formatter (module-level helper)
+# ---------------------------------------------------------------------------
+
+def _format_market_brief_html(raw: str) -> str:
+    """Convert AI market brief plain text to styled HTML.
+
+    - Numbered section headers (1. TỔNG QUAN, etc.) → bold + colored
+    - Bullet lines (- or •) → indented list items
+    - Other lines → paragraphs
+    """
+    from html import escape
+    import re
+
+    lines = raw.splitlines()
+    html_lines: list[str] = []
+    in_list = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append("<br>")
+            continue
+
+        # Section header: "1. TỔNG QUAN PHIÊN:" or "TỔNG QUAN PHIÊN:"
+        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s]{3,60}):?\s*$", stripped)
+        if m:
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            heading = m.group(2).strip().rstrip(":")
+            escaped = escape(heading)
+            html_lines.append(
+                f"<p style='margin:16px 0 6px;font-weight:700;color:#f8fafc;font-size:14px;'>{escaped}</p>"
+            )
+            continue
+
+        # ALL CAPS short line (e.g. "KẾT LUẬN")
+        if stripped.isupper() and len(stripped) < 80:
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(
+                f"<p style='margin:14px 0 4px;font-weight:700;color:#fbbf24;font-size:13px;'>{escape(stripped)}</p>"
+            )
+            continue
+
+        # Bullet line: "- text" or "• text" or "* text"
+        m = re.match(r"^[-•*]\s+(.*)", stripped)
+        if m:
+            if not in_list:
+                html_lines.append(
+                    "<ul style='margin:4px 0;padding-left:20px;color:#d1d5db;list-style-type:disc;'>"
+                )
+                in_list = True
+            html_lines.append(f"<li style='margin:3px 0;'>{escape(m.group(1))}</li>")
+            continue
+
+        # Numbered bullet: "1. text" or "1) text"
+        m = re.match(r"^\d+[.)]\s+(.*)", stripped)
+        if m:
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            if not in_list:
+                html_lines.append(
+                    "<ol style='margin:4px 0;padding-left:20px;color:#d1d5db;'>"
+                )
+                in_list = True  # reuse flag for ol
+            html_lines.append(f"<li style='margin:3px 0;'>{escape(m.group(1))}</li>")
+            continue
+
+        # Regular paragraph
+        if in_list:
+            html_lines.append("</ul>" if "<ul" in html_lines[-1] else "</ol>")
+            in_list = False  # Simplified - just close
+        html_lines.append(f"<p style='margin:4px 0;color:#cbd5e1;'>{escape(stripped)}</p>")
+
+    if in_list:
+        html_lines.append("</ul>")
+
+    return "\n".join(html_lines)

@@ -26,27 +26,27 @@ class AIService:
         response = self.analyze("Trả lời đúng một câu ngắn bằng tiếng Việt: Kết nối AI hợp lệ.")
         return bool(response.strip())
 
-    def analyze(self, prompt: str) -> str:
+    def analyze(self, prompt: str, *, max_tokens: int = 1800) -> str:
         provider = self.config.provider.lower()
         if "openai" in provider:
-            return self._openai_response(prompt)
+            return self._openai_response(prompt, max_tokens)
         if "deepseek" in provider:
             if self.config.model not in DEEPSEEK_MODELS:
                 raise RuntimeError(
                     "Model DeepSeek không hợp lệ. Hãy chọn deepseek-v4-flash hoặc deepseek-v4-pro trong Settings."
                 )
-            return self._chat_completion("https://api.deepseek.com/chat/completions", prompt)
+            return self._chat_completion("https://api.deepseek.com/chat/completions", prompt, max_tokens)
         if "anthropic" in provider or "claude" in provider:
-            return self._anthropic_message(prompt)
+            return self._anthropic_message(prompt, max_tokens)
         if "gemini" in provider or "google" in provider:
             return self._gemini_generate_content(prompt)
-        return self._chat_completion("https://api.openai.com/v1/chat/completions", prompt)
+        return self._chat_completion("https://api.openai.com/v1/chat/completions", prompt, max_tokens)
 
-    def _openai_response(self, prompt: str) -> str:
+    def _openai_response(self, prompt: str, max_tokens: int = 1800) -> str:
         payload = {
             "model": self.config.model,
             "input": prompt,
-            "max_output_tokens": 1800,
+            "max_output_tokens": max_tokens,
         }
         data = self._post_json(
             "https://api.openai.com/v1/responses",
@@ -65,7 +65,7 @@ class AIService:
             return "\n".join(texts).strip()
         raise RuntimeError("AI không trả về nội dung phân tích.")
 
-    def _chat_completion(self, url: str, prompt: str) -> str:
+    def _chat_completion(self, url: str, prompt: str, max_tokens: int = 1800) -> str:
         payload = {
             "model": self.config.model,
             "messages": [
@@ -76,7 +76,7 @@ class AIService:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": 1800,
+            "max_tokens": max_tokens,
         }
         data = self._post_json(url, payload, {"Authorization": f"Bearer {self.config.api_key}"})
         content = self._extract_chat_completion_text(data)
@@ -146,10 +146,10 @@ class AIService:
             return f"AI khong tra ve noi dung phan tich. finish_reason={finish_reason}."
         return "AI khong tra ve noi dung phan tich."
 
-    def _anthropic_message(self, prompt: str) -> str:
+    def _anthropic_message(self, prompt: str, max_tokens: int = 1800) -> str:
         payload = {
             "model": self.config.model,
-            "max_tokens": 1800,
+            "max_tokens": max_tokens,
             "system": "Bạn là AI Writer của AI Market Analyst. Không tự bịa số liệu; chỉ diễn giải dữ liệu do app cung cấp.",
             "messages": [{"role": "user", "content": prompt}],
         }
