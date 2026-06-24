@@ -658,21 +658,25 @@ class SettingsScreen(QWidget):
         self.creds_save_btn = action_button("💾 Lưu cấu hình nguồn", primary=True)
         self.creds_save_btn.clicked.connect(self._save_credentials)
         btn_layout.addWidget(self.creds_save_btn)
-        
+
+        self.ctrader_test_btn = action_button("🔄 Kiểm tra kết nối cTrader", primary=True, color="warning")
+        self.ctrader_test_btn.clicked.connect(self._test_ctrader_connection)
+        btn_layout.addWidget(self.ctrader_test_btn)
+
         self.app_restart_btn = action_button("🔄 Khởi động lại", primary=True, color="danger")
         self.app_restart_btn.clicked.connect(self._restart_app)
         self.app_restart_btn.setVisible(False)
         btn_layout.addWidget(self.app_restart_btn)
         btn_layout.addStretch(1)
-        
+
         top_grid.addLayout(btn_layout, 1, 0, 1, 2)
-        
-        # Row 2: Status
-        self.data_source_status_label = QLabel("")
-        self.data_source_status_label.setObjectName("HelperText")
-        self.data_source_status_label.setWordWrap(True)
-        self.data_source_status_label.setVisible(False)
-        top_grid.addWidget(self.data_source_status_label, 2, 0, 1, 2)
+
+        # Row 2: cTrader test result
+        self.ctrader_status_label = QLabel("")
+        self.ctrader_status_label.setObjectName("HelperText")
+        self.ctrader_status_label.setWordWrap(True)
+        self.ctrader_status_label.setVisible(False)
+        top_grid.addWidget(self.ctrader_status_label, 2, 0, 1, 2)
         
         frame.layout().addLayout(top_grid)
         
@@ -896,8 +900,76 @@ class SettingsScreen(QWidget):
             self.app_restart_btn.setVisible(True)
 
     def _toggle_ctrader_panel(self, text: str) -> None:
+        is_ctrader = text == "cTrader"
         if hasattr(self, "ctrader_panel"):
-            self.ctrader_panel.setVisible(text == "cTrader")
+            self.ctrader_panel.setVisible(is_ctrader)
+        if hasattr(self, "ctrader_test_btn"):
+            self.ctrader_test_btn.setVisible(is_ctrader)
+        if hasattr(self, "ctrader_status_label"):
+            self.ctrader_status_label.setVisible(False)
+
+    def _test_ctrader_connection(self) -> None:
+        """Test cTrader connection with current form values and show result."""
+        try:
+            from config.settings import CTraderSettings
+            from services.ctrader_service import CTraderService
+            account_id = int(self.ctrader_acc.text().strip() or 0)
+        except ImportError as e:
+            self.ctrader_status_label.setStyleSheet("color: #ef4444; font-size: 12px; padding: 6px 0;")
+            self.ctrader_status_label.setText(f"❌ Thiếu thư viện: {e}. Chạy: pip install ctrader-open-api twisted")
+            self.ctrader_status_label.setVisible(True)
+            return
+        except ValueError:
+            self.ctrader_status_label.setStyleSheet("color: #ef4444; font-size: 12px; padding: 6px 0;")
+            self.ctrader_status_label.setText("❌ Account ID phải là số nguyên.")
+            self.ctrader_status_label.setVisible(True)
+            return
+
+        config = CTraderSettings(
+            client_id=self.ctrader_id.text().strip(),
+            client_secret=self.ctrader_secret.text().strip(),
+            access_token=self.ctrader_token.text().strip(),
+            account_id=account_id,
+            environment="live" if self.ctrader_env.currentText() == "Live" else "demo",
+        )
+        self.ctrader_test_btn.setText("⏳ Đang kiểm tra...")
+        self.ctrader_test_btn.setEnabled(False)
+        self.ctrader_status_label.setVisible(False)
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+        try:
+            service = CTraderService(config)
+            ok, msg = service.test_connection()
+            try:
+                service.disconnect()
+            except Exception:
+                pass
+
+            if ok:
+                self.ctrader_status_label.setStyleSheet("color: #22c55e; font-size: 12px; padding: 6px 0;")
+                self.ctrader_status_label.setText(f"✅ {msg}")
+                # Connect the app's data_provider too so the symbol table populates
+                try:
+                    self.data_provider.connect()
+                    self.refresh_mt5_status()
+                except Exception:
+                    pass
+            else:
+                self.ctrader_status_label.setStyleSheet("color: #ef4444; font-size: 12px; padding: 6px 0;")
+                self.ctrader_status_label.setText(f"❌ {msg}")
+            self.ctrader_status_label.setVisible(True)
+        except ImportError as e:
+            self.ctrader_status_label.setStyleSheet("color: #ef4444; font-size: 12px; padding: 6px 0;")
+            self.ctrader_status_label.setText(f"❌ Thiếu thư viện: {e}. Chạy: pip install ctrader-open-api twisted")
+            self.ctrader_status_label.setVisible(True)
+        except Exception as e:
+            self.ctrader_status_label.setStyleSheet("color: #ef4444; font-size: 12px; padding: 6px 0;")
+            self.ctrader_status_label.setText(f"❌ Lỗi không xác định: {e}")
+            self.ctrader_status_label.setVisible(True)
+        finally:
+            self.ctrader_test_btn.setText("🔄 Kiểm tra kết nối cTrader")
+            self.ctrader_test_btn.setEnabled(True)
             
     def _restart_app(self) -> None:
         import sys
@@ -1231,6 +1303,11 @@ class SettingsScreen(QWidget):
         self.display_status_label.setProperty("state", "ok")
         self.display_status_label.style().unpolish(self.display_status_label)
         self.display_status_label.style().polish(self.display_status_label)
+        
+        # Hot-reload stylesheet
+        parent_win = self.window()
+        if parent_win and hasattr(parent_win, "_apply_styles"):
+            parent_win._apply_styles()
 
     def _advanced_tab_impl(self) -> QFrame:
         frame = card("Nâng cao")

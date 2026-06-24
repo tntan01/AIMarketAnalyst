@@ -88,7 +88,17 @@ class MainWindow(QMainWindow):
             base = Path(sys._MEIPASS) / "ui"
         else:
             base = Path(__file__).resolve().parent
-        style_path = base / "styles.qss"
+            
+        theme = "dark"
+        if hasattr(self, "app") and self.app:
+            try:
+                settings = self.app.settings_service.load()
+                theme = settings.display.theme
+            except Exception:
+                pass
+                
+        filename = "styles_light.qss" if theme == "light" else "styles.qss"
+        style_path = base / filename
         if style_path.exists():
             self.setStyleSheet(style_path.read_text(encoding="utf-8"))
 

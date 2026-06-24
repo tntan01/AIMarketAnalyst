@@ -202,39 +202,39 @@ class ScannerTableModel (QAbstractTableModel ):
         if key =="scanner_action":
             action =str (row .get ("display_action")or row .get (key ))
             return {
-            "ready":QColor ("#5eead4"),
-            "watch":QColor ("#93c5fd"),
-            "wait":QColor ("#facc15"),
-            "skip":QColor ("#94a3b8"),
+            "ready":QColor ("#10b981"),
+            "watch":QColor ("#f59e0b"),
+            "wait":QColor ("#ea580c"),
+            "skip":QColor ("#e11d48"),
             }.get (action )
         if key =="direction_bias":
             side =self ._direction_bias_side (row .get (key ))
-            return {"buy":QColor ("#5eead4"),"sell":QColor ("#fb7185")}.get (side )
+            return {"buy":QColor ("#ea580c"),"sell":QColor ("#f43f5e")}.get (side )
         if key =="trade_permission":
             return {
-            "allowed":QColor ("#5eead4"),
-            "caution":QColor ("#facc15"),
-            "blocked":QColor ("#94a3b8"),
+            "allowed":QColor ("#10b981"),
+            "caution":QColor ("#f59e0b"),
+            "blocked":QColor ("#e11d48"),
             }.get (str (row .get (key )))
         if key =="price_vs_zone":
             return {
-            "in_zone":QColor ("#5eead4"),
-            "near_zone":QColor ("#facc15"),
+            "in_zone":QColor ("#10b981"),
+            "near_zone":QColor ("#f59e0b"),
             "far":QColor ("#94a3b8"),
             "unknown":QColor ("#94a3b8"),
             }.get (str (row .get (key )))
         if key =="macro_bias":
             return {
-            "aligned":QColor ("#5eead4"),
-            "neutral":QColor ("#facc15"),
-            "divergent":QColor ("#fb7185"),
+            "aligned":QColor ("#10b981"),
+            "neutral":QColor ("#f59e0b"),
+            "divergent":QColor ("#e11d48"),
             }.get (str (row .get (key )))
         if key =="macro_score":
             val =int (row .get ("macro_score",15 ))
             if val >=22 :
-                return QColor ("#5eead4")
+                return QColor ("#10b981")
             if val >=15 :
-                return QColor ("#facc15")
+                return QColor ("#f59e0b")
             return QColor ("#94a3b8")
         if key =="journal_expectancy_r":
             try:
@@ -242,9 +242,9 @@ class ScannerTableModel (QAbstractTableModel ):
             except (TypeError ,ValueError ):
                 return QColor ("#94a3b8")
             if val >0 :
-                return QColor ("#5eead4")
+                return QColor ("#10b981")
             if val <0 :
-                return QColor ("#fb7185")
+                return QColor ("#e11d48")
             return QColor ("#94a3b8")
         if key =="journal_sample_size":
             return QColor ("#9ca3af")
@@ -253,9 +253,9 @@ class ScannerTableModel (QAbstractTableModel ):
                 return QColor ("#94a3b8")
             raw =str (row .get (key ,"")).strip ().lower ()
             if raw in ("confirmed_entry","ready","ready_to_trade"):
-                return QColor ("#5eead4")
+                return QColor ("#10b981")
             if raw in ("waiting_confirmation","waiting_for_confirmation","watch_zone","in_zone","near_zone"):
-                return QColor ("#facc15")
+                return QColor ("#f59e0b")
             if raw in ("invalidated","no_setup","data_unavailable","","none"):
                 return QColor ("#94a3b8")
             return None
@@ -855,7 +855,7 @@ class ScannerScreen (QWidget ):
 
         title = QLabel("📊 BẢN TIN THỊ TRƯỜNG")
         title.setObjectName("PanelTitle")
-        title.setStyleSheet("font-size: 15px; color: #fbbf24; margin-bottom: 4px;")
+        title.setStyleSheet("font-size: 15px; color: #ea580c; margin-bottom: 4px;")
         layout.addWidget(title)
 
         timestamp = str(self.scan_result.get("timestamp", "") if self.scan_result else "")
@@ -868,10 +868,10 @@ class ScannerScreen (QWidget ):
         text.setReadOnly(True)
         text.setStyleSheet(
             "QTextEdit { background: #171c24; color: #cbd5e1; font-size: 13px;"
-            "border: 1px solid #2b3545; border-radius: 6px; padding: 12px; line-height: 1.6; }"
+            "border: 1px solid #334155; border-radius: 6px; padding: 12px; }"
         )
         brief_html = _format_market_brief_html(self._market_brief_text)
-        text.setHtml(f"<div style='font-size:13px;line-height:1.7;'>{brief_html}</div>")
+        text.setHtml(f"<div style='font-size:13px;'>{brief_html}</div>")
         layout.addWidget(text, 1)
 
         btn_row = QHBoxLayout()
@@ -1376,83 +1376,96 @@ class ScannerColumnsHelpDialog (QDialog ):
 # ---------------------------------------------------------------------------
 
 def _format_market_brief_html(raw: str) -> str:
-    """Convert AI market brief plain text to styled HTML.
-
-    - Numbered section headers (1. TỔNG QUAN, etc.) → bold + colored
-    - Bullet lines (- or •) → indented list items
-    - Other lines → paragraphs
-    """
     from html import escape
     import re
 
     lines = raw.splitlines()
-    html_lines: list[str] = []
-    in_list = False
+    html_lines = []
+    list_type = None
+
+    def get_icon(h: str) -> str:
+        h_up = h.upper()
+        if "TỔNG QUAN" in h_up: return "🌍"
+        if "ƯU TIÊN" in h_up: return "⭐"
+        if "TRÁNH" in h_up: return "🚫"
+        if "RỦI RO" in h_up: return "🛡️"
+        if "CHỜ" in h_up: return "⏳"
+        if "KẾT LUẬN" in h_up: return "📌"
+        return "🔹"
 
     for line in lines:
         stripped = line.strip()
         if not stripped:
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
-            html_lines.append("<br>")
+            if list_type:
+                html_lines.append(f"</{list_type}>")
+                list_type = None
             continue
 
-        # Section header: "1. TỔNG QUAN PHIÊN:" or "TỔNG QUAN PHIÊN:"
-        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s]{3,60}):?\s*$", stripped)
+        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60}):(.*)$", stripped)
         if m:
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
-            heading = m.group(2).strip().rstrip(":")
-            escaped = escape(heading)
-            html_lines.append(
-                f"<p style='margin:16px 0 6px;font-weight:700;color:#f8fafc;font-size:14px;'>{escaped}</p>"
-            )
+            if list_type:
+                html_lines.append(f"</{list_type}>")
+                list_type = None
+            heading = m.group(2).strip()
+            rest = m.group(3).strip()
+            icon = get_icon(heading)
+            escaped_heading = escape(heading)
+            
+            p_style = "margin:10px 0 2px;"
+            span_style = "font-weight:700;color:#ea580c;font-size:14px;text-transform:uppercase;"
+            
+            if rest:
+                escaped_rest = escape(rest)
+                html_lines.append(
+                    f"<p style='{p_style}'><span style='{span_style}'>{icon} {escaped_heading}:</span> <span style='color:#cbd5e1;'>{escaped_rest}</span></p>"
+                )
+            else:
+                html_lines.append(
+                    f"<p style='{p_style}'><span style='{span_style}'>{icon} {escaped_heading}:</span></p>"
+                )
             continue
 
-        # ALL CAPS short line (e.g. "KẾT LUẬN")
         if stripped.isupper() and len(stripped) < 80:
-            if in_list:
-                html_lines.append("</ul>")
-                in_list = False
+            if list_type:
+                html_lines.append(f"</{list_type}>")
+                list_type = None
             html_lines.append(
-                f"<p style='margin:14px 0 4px;font-weight:700;color:#fbbf24;font-size:13px;'>{escape(stripped)}</p>"
+                f"<p style='margin:10px 0 2px;'><span style='font-weight:700;color:#ea580c;font-size:13px;'>{escape(stripped)}</span></p>"
             )
             continue
 
-        # Bullet line: "- text" or "• text" or "* text"
         m = re.match(r"^[-•*]\s+(.*)", stripped)
         if m:
-            if not in_list:
+            if list_type == "ol":
+                html_lines.append("</ol>")
+                list_type = None
+            if not list_type:
                 html_lines.append(
-                    "<ul style='margin:4px 0;padding-left:20px;color:#d1d5db;list-style-type:disc;'>"
+                    "<ul style='margin:2px 0 6px;padding-left:20px;color:#d1d5db;list-style-type:disc;'>"
                 )
-                in_list = True
+                list_type = "ul"
             html_lines.append(f"<li style='margin:3px 0;'>{escape(m.group(1))}</li>")
             continue
 
-        # Numbered bullet: "1. text" or "1) text"
         m = re.match(r"^\d+[.)]\s+(.*)", stripped)
         if m:
-            if in_list:
+            if list_type == "ul":
                 html_lines.append("</ul>")
-                in_list = False
-            if not in_list:
+                list_type = None
+            if not list_type:
                 html_lines.append(
-                    "<ol style='margin:4px 0;padding-left:20px;color:#d1d5db;'>"
+                    "<ol style='margin:2px 0 6px;padding-left:20px;color:#d1d5db;'>"
                 )
-                in_list = True  # reuse flag for ol
+                list_type = "ol"
             html_lines.append(f"<li style='margin:3px 0;'>{escape(m.group(1))}</li>")
             continue
 
-        # Regular paragraph
-        if in_list:
-            html_lines.append("</ul>" if "<ul" in html_lines[-1] else "</ol>")
-            in_list = False  # Simplified - just close
-        html_lines.append(f"<p style='margin:4px 0;color:#cbd5e1;'>{escape(stripped)}</p>")
+        if list_type:
+            html_lines.append(f"</{list_type}>")
+            list_type = None
+        html_lines.append(f"<p style='margin:2px 0 6px;color:#cbd5e1;'>{escape(stripped)}</p>")
 
-    if in_list:
-        html_lines.append("</ul>")
+    if list_type:
+        html_lines.append(f"</{list_type}>")
 
     return "\n".join(html_lines)

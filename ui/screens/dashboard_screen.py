@@ -270,7 +270,7 @@ class DashboardScreen(QWidget):
             "}"
             "QHeaderView::section {"
             "  background:#11151d; color:#64748b; font-size:11px; font-weight:700;"
-            "  padding:8px 8px; border:none; border-bottom:2px solid #2563eb;"
+            "  padding:8px 8px; border:none; border-bottom:2px solid #ea580c;"
             "  text-transform:uppercase;"
             "}"
         )
@@ -400,7 +400,7 @@ class DashboardScreen(QWidget):
                 if dr["is_separator"]:
                     sep_item = QTableWidgetItem("─── Đã qua ▲  |  ▼ Sắp tới ───")
                     sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    sep_item.setForeground(QColor("#ffaa00"))
+                    sep_item.setForeground(QColor("#f59e0b"))
                     f = sep_item.font()
                     f.setBold(True)
                     sep_item.setFont(f)
@@ -430,7 +430,7 @@ class DashboardScreen(QWidget):
                 time_item = QTableWidgetItem(time_text)
                 time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_nearest:
-                    time_item.setForeground(QColor("#4caf50"))
+                    time_item.setForeground(QColor("#10b981"))
                     time_item.setData(Qt.ItemDataRole.UserRole, "▶ ")
                 elif is_past:
                     time_item.setForeground(QColor("#64748b"))
@@ -443,16 +443,16 @@ class DashboardScreen(QWidget):
 
                 if is_nearest:
                     ev_text = f"▶ {dot} {currency}: {event_name}  ← Sắp tới"
-                    ev_color = QColor("#4caf50")
+                    ev_color = QColor("#10b981")
                 elif is_past:
                     ev_text = f"{dot} {currency}: {event_name}"
                     ev_color = QColor("#64748b")
                 else:
                     ev_text = f"{dot} {currency}: {event_name}"
                     if impact == "high":
-                        ev_color = QColor("#f44336")
+                        ev_color = QColor("#e11d48")
                     elif impact == "medium":
-                        ev_color = QColor("#ffaa00")
+                        ev_color = QColor("#f59e0b")
                     else:
                         ev_color = QColor("#e5e7eb")
 
@@ -467,7 +467,7 @@ class DashboardScreen(QWidget):
                 fc_item = QTableWidgetItem(forecast if forecast else "—")
                 fc_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_nearest:
-                    fc_item.setForeground(QColor("#4caf50"))
+                    fc_item.setForeground(QColor("#10b981"))
                     f = fc_item.font()
                     f.setBold(True)
                     fc_item.setFont(f)
@@ -480,7 +480,7 @@ class DashboardScreen(QWidget):
                 pv_item = QTableWidgetItem(previous if previous else "—")
                 pv_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_nearest:
-                    pv_item.setForeground(QColor("#4caf50"))
+                    pv_item.setForeground(QColor("#10b981"))
                     f = pv_item.font()
                     f.setBold(True)
                     pv_item.setFont(f)
@@ -492,13 +492,13 @@ class DashboardScreen(QWidget):
 
                 if actual:
                     act_item = QTableWidgetItem(actual)
-                    act_color = QColor("#4caf50")
+                    act_color = QColor("#10b981")
                 elif is_past:
                     act_item = QTableWidgetItem("Đang cập nhật")
                     act_color = QColor("#f59e0b")
                 elif is_nearest:
                     act_item = QTableWidgetItem("—")
-                    act_color = QColor("#4caf50")
+                    act_color = QColor("#10b981")
                 else:
                     act_item = QTableWidgetItem("—")
                     act_color = QColor("#64748b")
@@ -510,8 +510,8 @@ class DashboardScreen(QWidget):
                     act_item.setFont(f)
                 table.setItem(i, 4, act_item)
 
-                link_color = "#4caf50" if is_nearest else "#60a5fa"
-                link_hover = "#66bb6a" if is_nearest else "#93c5fd"
+                link_color = "#10b981" if is_nearest else "#ea580c"
+                link_hover = "#34d399" if is_nearest else "#fb923c"
                 detail_btn = QPushButton("Xem")
                 detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 detail_btn.setStyleSheet(
@@ -617,7 +617,7 @@ class DashboardScreen(QWidget):
         self._event_ai_response.setStyleSheet(
             "QTextEdit { background:#171c24; color:#e5e7eb; font-size:13px; font-family:Segoe UI;"
             "  border:1px solid #2b3545; border-radius:6px; padding:12px;"
-            "  selection-background-color:#2563eb; }"
+            "  selection-background-color:#ea580c; }"
         )
         self._event_ai_response.setPlaceholderText("Bấm \"Xem tác động\" để AI phân tích...")
         root.addWidget(self._event_ai_response, 1)
@@ -652,7 +652,7 @@ class DashboardScreen(QWidget):
             active = settings.ai.active_provider()
             if not active or not (active.api_key or active.api_key_ref):
                 text_widget.setHtml(
-                    "<p style='color:#f44336;font-size:13px;'>"
+                    "<p style='color:#e11d48;font-size:13px;'>"
                     "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
                     "</p>"
                 )
@@ -718,7 +718,7 @@ class DashboardScreen(QWidget):
 
         except Exception as exc:
             text_widget.setHtml(
-                f"<p style='color:#f44336;font-size:13px;'>"
+                f"<p style='color:#e11d48;font-size:13px;'>"
                 f"❌ Lỗi khi gọi AI: {exc}"
                 f"</p>"
             )
@@ -753,17 +753,17 @@ class DashboardScreen(QWidget):
         abs_change = abs(change_pct)
         if tag == "VIX":
             if close > 25:
-                status, color = "Rủi ro cao", "#f44336"
+                status, color = "Rủi ro cao", "#e11d48"
             elif close >= 20:
-                status, color = "Cảnh báo", "#ffaa00"
+                status, color = "Cảnh báo", "#f59e0b"
             else:
-                status, color = "Bình thường", "#4caf50"
+                status, color = "Bình thường", "#10b981"
             label.setText(f"VIX: {close:.1f} — {status}  (sợ hãi thị trường)")
         elif tag == "DXY":
-            color = "#4caf50" if change_pct > 0 else "#f44336" if change_pct < 0 else "#e5e7eb"
+            color = "#10b981" if change_pct > 0 else "#e11d48" if change_pct < 0 else "#e5e7eb"
             label.setText(f"DXY: {close:.2f} {arrow} {abs_change:.1f}%  (sức mạnh USD)")
         else:  # US10Y: lợi suất GIẢM → tốt (xanh), TĂNG → xấu (đỏ)
-            color = "#f44336" if change_pct > 0 else "#4caf50" if change_pct < 0 else "#e5e7eb"
+            color = "#e11d48" if change_pct > 0 else "#10b981" if change_pct < 0 else "#e5e7eb"
             label.setText(f"US10Y: {close:.2f}% {arrow}  (lợi suất TPCP Mỹ 10Y)")
         label.setStyleSheet(f"font-weight:700;font-size:14px;color:{color};")
 
@@ -804,11 +804,11 @@ class DashboardScreen(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c < 2 else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 if c == 2:
                     if "Đỏ" in val:
-                        item.setForeground(QColor("#f44336"))
+                        item.setForeground(QColor("#e11d48"))
                     elif "Vàng" in val:
-                        item.setForeground(QColor("#ffaa00"))
+                        item.setForeground(QColor("#f59e0b"))
                     elif "Xanh" in val:
-                        item.setForeground(QColor("#4caf50"))
+                        item.setForeground(QColor("#10b981"))
                 table.setItem(r, c, item)
 
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

@@ -77,50 +77,28 @@ class ScannerDetailScreen(QWidget):
         self.tabs.setStyleSheet(
             "QTabWidget::pane { border: 1px solid #334155; border-radius: 6px; background: #1a1f2e; }"
             "QTabBar::tab { padding: 8px 20px; font-size: 13px; color: #94a3b8; background: #171c24; border: 1px solid #334155; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; }"
-            "QTabBar::tab:selected { color: #f8fafc; background: #1a1f2e; border-bottom: 2px solid #38bdf8; }"
+            "QTabBar::tab:selected { color: #f8fafc; background: #1a1f2e; border-bottom: 2px solid #ea580c; }"
             "QTabBar::tab:hover:!selected { color: #e2e8f0; background: #1e293b; }"
         )
 
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
         overview_tab = QWidget()
-        ov = QVBoxLayout(overview_tab)
+        ov = QHBoxLayout(overview_tab)
         ov.setContentsMargins(6, 6, 6, 6)
-        ov.setSpacing(8)
+        ov.setSpacing(12)
+
+        left_col = QVBoxLayout()
+        left_col.setSpacing(8)
 
         # -- Hero verdict bar --
         self.hero_bar = QLabel("")
         self.hero_bar.setObjectName("ScannerDetailHero")
         self.hero_bar.setWordWrap(True)
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
-        self.hero_bar.setFixedHeight(40)
         self.hero_bar.setStyleSheet(
-            "QLabel#ScannerDetailHero { border-radius: 6px; padding: 0 14px; font-size: 14px; }"
+            "QLabel#ScannerDetailHero { border-radius: 6px; padding: 4px 12px; font-size: 14px; background: #1e293b; border: 1px solid #334155; }"
         )
-        ov.addWidget(self.hero_bar)
-
-        # -- Info cards row 1: scores --
-        cards1 = QHBoxLayout()
-        cards1.setSpacing(8)
-        self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#38bdf8")
-        self.card_buysell = InfoCard("Mua / Bán", "--", "", accent="#a78bfa")
-        self.card_final = InfoCard("Điểm cuối", "--", "", accent="#22c55e")
-        self.card_gap = InfoCard("Chênh lệch", "--", "", accent="#fbbf24")
-        self.card_rr = InfoCard("R:R", "--", "", accent="#fb923c")
-        for c in [self.card_best, self.card_buysell, self.card_final, self.card_gap, self.card_rr]:
-            cards1.addWidget(c)
-        ov.addLayout(cards1)
-
-        # -- Info cards row 2: context --
-        cards2 = QHBoxLayout()
-        cards2.setSpacing(8)
-        self.card_entry = InfoCard("Entry", "--", "", accent="#22c55e")
-        self.card_position = InfoCard("Vị trí giá", "--", "", accent="#38bdf8")
-        self.card_m15 = InfoCard("M15", "--", "", accent="#fbbf24")
-        self.card_regime = InfoCard("Chế độ TT", "--", "", accent="#c084fc")
-        self.card_permission = InfoCard("Quyền", "--", "", accent="#fb7185")
-        for c in [self.card_entry, self.card_position, self.card_m15, self.card_regime, self.card_permission]:
-            cards2.addWidget(c)
-        ov.addLayout(cards2)
+        left_col.addWidget(self.hero_bar)
 
         # -- Chart --
         self.chart = AnalysisChartView()
@@ -130,45 +108,40 @@ class ScannerDetailScreen(QWidget):
         cl.setContentsMargins(4, 4, 4, 4)
         cl.setSpacing(0)
         cl.addWidget(self.chart)
-        ov.addWidget(self.chart_frame, 1)
+        left_col.addWidget(self.chart_frame, 1)
 
-        # -- Bottom: wait conditions + risks --
-        bottom = QHBoxLayout()
-        bottom.setSpacing(8)
+        ov.addLayout(left_col, 7)
 
-        wait_frame = QFrame()
-        wait_frame.setObjectName("ScannerDetailBottom")
-        wait_frame.setStyleSheet(
-            "QFrame#ScannerDetailBottom { background: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
-        )
-        wl = QVBoxLayout(wait_frame)
-        wl.setContentsMargins(10, 8, 10, 8)
-        wl.setSpacing(4)
-        wl.addWidget(self._section_title("Điều kiện cần chờ"))
-        self.wait_layout = QVBoxLayout()
-        self.wait_layout.setContentsMargins(0, 0, 0, 0)
-        self.wait_layout.setSpacing(3)
-        wl.addLayout(self.wait_layout)
-        wl.addStretch(1)
-        bottom.addWidget(wait_frame, 1)
+        # -- Right Col: Info Cards --
+        right_col = QVBoxLayout()
+        right_col.setSpacing(4)
+        right_col.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        risk_frame = QFrame()
-        risk_frame.setObjectName("ScannerDetailBottom")
-        risk_frame.setStyleSheet(
-            "QFrame#ScannerDetailBottom { background: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
-        )
-        rl = QVBoxLayout(risk_frame)
-        rl.setContentsMargins(10, 8, 10, 8)
-        rl.setSpacing(4)
-        rl.addWidget(self._section_title("Luận điểm & rủi ro"))
-        self.insight_layout = QVBoxLayout()
-        self.insight_layout.setContentsMargins(0, 0, 0, 0)
-        self.insight_layout.setSpacing(3)
-        rl.addLayout(self.insight_layout)
-        rl.addStretch(1)
-        bottom.addWidget(risk_frame, 1)
+        self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#ea580c")
+        self.card_buysell = InfoCard("Mua / Bán", "--", "", accent="#fb7185")
+        self.card_final = InfoCard("Điểm cuối", "--", "", accent="#10b981")
+        self.card_gap = InfoCard("Chênh lệch", "--", "", accent="#f59e0b")
+        self.card_rr = InfoCard("Tỷ lệ R:R", "--", "", accent="#ea580c")
+        
+        self.card_entry = InfoCard("Vùng vào lệnh", "--", "", accent="#10b981")
+        self.card_position = InfoCard("Vị trí giá", "--", "", accent="#f59e0b")
+        self.card_m15 = InfoCard("Khung M15", "--", "", accent="#f59e0b")
+        self.card_regime = InfoCard("Chế độ TT", "--", "", accent="#fb7185")
+        self.card_permission = InfoCard("Quyền giao dịch", "--", "", accent="#e11d48")
 
-        ov.addLayout(bottom)
+        right_col.addWidget(self.card_best)
+        right_col.addWidget(self.card_buysell)
+        right_col.addWidget(self.card_final)
+        right_col.addWidget(self.card_gap)
+        right_col.addWidget(self.card_rr)
+        right_col.addWidget(self.card_entry)
+        right_col.addWidget(self.card_position)
+        right_col.addWidget(self.card_m15)
+        right_col.addWidget(self.card_regime)
+        right_col.addWidget(self.card_permission)
+
+        ov.addLayout(right_col, 2)
+
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 
         # ---- Tab 2: Chẩn đoán (score + gate + checklist) ----------------
@@ -194,7 +167,7 @@ class ScannerDetailScreen(QWidget):
             "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: none; border-radius: 6px; padding: 12px; }"
         )
         audit_layout.addWidget(self.audit_text, 1)
-        self.tabs.addTab(audit_tab, "AI kiểm định")
+        self.tabs.addTab(audit_tab, "🤖 Kiểm định AI")
 
         root.addWidget(self.tabs, 1)
 
@@ -246,7 +219,6 @@ class ScannerDetailScreen(QWidget):
         )
         self._refresh_hero()
         self._refresh_cards()
-        self._refresh_conditions()
         self._refresh_chart()
         self._refresh_diagnostics()
         self._refresh_ai_audit()
@@ -280,19 +252,34 @@ class ScannerDetailScreen(QWidget):
         reason = self._decision_reason()
 
         if action_code == "ready":
-            bg, accent, icon = "#14532d", "#22c55e", "🟢"
+            bg, border, accent, icon = "#064e3b", "#065f46", "#10b981", "✅"
         elif action_code in ("watch", "wait"):
-            bg, accent, icon = "#4a3f00", "#facc15", "🟡"
+            bg, border, accent, icon = "#451a03", "#78350f", "#f59e0b", "⏳"
         elif action_code == "skip":
-            bg, accent, icon = "#7f1d1d", "#ef4444", "🔴"
+            bg, border, accent, icon = "#4c0519", "#881337", "#e11d48", "❌"
         else:
-            bg, accent, icon = "#1e293b", "#94a3b8", "⚪"
+            bg, border, accent, icon = "#0f172a", "#1e293b", "#94a3b8", "ℹ️"
+
+        self.hero_bar.setStyleSheet(
+            f"QLabel#ScannerDetailHero {{"
+            f"  background-color: {bg};"
+            f"  border: 1px solid {border};"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 12px;"
+            f"}}"
+        )
 
         self.hero_bar.setText(
-            f"<div style='background:{bg};padding:6px 14px;border-radius:6px;'>"
-            f"<b style='color:{accent};font-size:15px;'>{icon} {action_text.upper()}</b>"
-            f"<span style='color:#cbd5e1;margin-left:10px;font-size:13px;'>#{rank} — {reason}</span>"
-            f"</div>"
+            f"<table width='100%' style='margin:0;padding:0;border:none;'><tr>"
+            f"<td width='120' style='vertical-align:middle;'>"
+            f"<span style='color:{accent};font-size:15px;font-weight:bold;letter-spacing:1px;'>{icon} {action_text.upper()}</span>"
+            f"</td>"
+            f"<td style='vertical-align:middle;'>"
+            f"<span style='color:#cbd5e1;font-size:14px;font-weight:normal;'>"
+            f"Hạng <b style='color:#f8fafc;'>#{rank}</b> &nbsp;&bull;&nbsp; {reason}"
+            f"</span>"
+            f"</td>"
+            f"</tr></table>"
         )
         self.hero_bar.show()
 
@@ -340,23 +327,28 @@ class ScannerDetailScreen(QWidget):
         self.card_entry.set_value(self._entry_status_display(),
                                    accent="#22c55e" if "Đã xác nhận" in self._entry_status_display() else "#fbbf24")
 
-        price_zone = str(self.row.get("price_vs_zone") or "")
-        zone_map = {"in_zone": "Trong vùng", "near_zone": "Gần vùng", "far": "Còn xa"}
-        self.card_position.set_value(zone_map.get(price_zone, price_zone or "Chưa có"))
+        price_zone = str(self.row.get("price_vs_zone") or "").lower()
+        zone_map = {"in_zone": "Trong vùng", "near_zone": "Gần vùng", "far": "Còn xa", "unknown": "Chưa rõ"}
+        pz_val = zone_map.get(price_zone)
+        if not pz_val:
+            pz_val = "Chưa rõ" if price_zone in ("unknown", "--", "") else price_zone.title()
+        self.card_position.set_value(pz_val)
 
-        m15 = self._m15_text()
-        m15_accent = "#22c55e" if m15 == "strict" else ("#fbbf24" if m15 == "loose" else "#ef4444")
-        self.card_m15.set_value(m15, accent=m15_accent)
+        m15_raw = self._m15_text().lower()
+        m15_map = {"strict": "Chặt chẽ", "loose": "Lỏng lẻo", "chưa xác nhận": "Chưa xác nhận"}
+        m15_val = m15_map.get(m15_raw, m15_raw.title())
+        m15_accent = "#10b981" if m15_raw == "strict" else ("#f59e0b" if m15_raw == "loose" else "#e11d48")
+        self.card_m15.set_value(m15_val, accent=m15_accent)
 
-        regime = str(self.row.get("market_regime") or "--")
+        regime = str(self.row.get("market_regime") or "--").lower()
         regime_map = {"trend_up": "Tăng", "trend_down": "Giảm", "range": "Đi ngang",
-                       "volatile": "Biến động", "unknown": "Chưa rõ"}
-        self.card_regime.set_value(regime_map.get(regime, regime))
+                       "volatile": "Biến động", "unknown": "Chưa rõ", "--": "--"}
+        self.card_regime.set_value(regime_map.get(regime, regime.title()))
 
-        perm = str(self.row.get("trade_permission") or "--")
-        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}
-        perm_accent = {"allowed": "#22c55e", "caution": "#fbbf24", "blocked": "#ef4444"}.get(perm, "#94a3b8")
-        self.card_permission.set_value(perm_map.get(perm, perm), accent=perm_accent)
+        perm = str(self.row.get("trade_permission") or "--").lower()
+        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
+        perm_accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#e11d48"}.get(perm, "#94a3b8")
+        self.card_permission.set_value(perm_map.get(perm, perm.title()), accent=perm_accent)
 
     def _refresh_conditions(self) -> None:
         """Refresh wait conditions and insights at the bottom."""
@@ -370,7 +362,7 @@ class ScannerDetailScreen(QWidget):
         if sc >= 80:
             return "🟢 Mạnh"
         if sc >= 65:
-            return "🔵 Khá"
+            return "🟠 Khá"
         if sc >= 50:
             return "🟡 TB"
         return "🔴 Yếu"
@@ -430,7 +422,7 @@ class ScannerDetailScreen(QWidget):
         return items
 
     def _action_text(self, value: str) -> str:
-        return {"ready": "Sẵn sàng", "watch": "Theo dõi", "wait": "Chờ", "skip": "Bỏ qua"}.get(value, value)
+        return {"ready": "Sẵn sàng", "watch": "Theo dõi", "wait": "Chờ đợi", "skip": "Bỏ qua"}.get(value, value)
 
     def _bias_text(self, value: object) -> str:
         side_map = {"buy": "Mua", "sell": "Bán", "neutral": "Trung lập", "stand_aside": "Đứng ngoài"}
@@ -471,7 +463,7 @@ class ScannerDetailScreen(QWidget):
             "waiting_for_confirmation": "Chờ xác nhận",
             "watch_zone": "Vùng theo dõi",
             "invalidated": "Đã vô hiệu",
-            "no_setup": "Không có setup",
+            "no_setup": "Không có thiết lập",
             "data_unavailable": "Thiếu dữ liệu",
         }.get(value, value)
 
@@ -654,20 +646,20 @@ class ScannerDetailScreen(QWidget):
 
         def _rating(sc: int) -> str:
             if sc >= 80:
-                return '<span style="color:#22c55e;">MẠNH</span>'
+                return '<span style="color:#10b981;">MẠNH</span>'
             if sc >= 65:
-                return '<span style="color:#38bdf8;">KHÁ</span>'
+                return '<span style="color:#ea580c;">KHÁ</span>'
             if sc >= 50:
-                return '<span style="color:#fbbf24;">TRUNG BÌNH</span>'
-            return '<span style="color:#ef4444;">YẾU</span>'
+                return '<span style="color:#f59e0b;">TRUNG BÌNH</span>'
+            return '<span style="color:#e11d48;">YẾU</span>'
 
         def _color(val: int, max_val: int) -> str:
             pct = val / max(max_val, 1)
             if pct >= 0.7:
-                return "#22c55e"
+                return "#10b981"
             if pct >= 0.4:
-                return "#fbbf24"
-            return "#ef4444"
+                return "#f59e0b"
+            return "#e11d48"
 
         buy_total = int(buy.get("signal_score", buy.get("total", 0)) or 0)
         sell_total = int(sell.get("signal_score", sell.get("total", 0)) or 0)
@@ -682,7 +674,7 @@ class ScannerDetailScreen(QWidget):
 
         rows = [
             "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>",
-            "<h2 style='color:#38bdf8;margin:0 0 4px;font-size:16px;'>Phân rã điểm số</h2>",
+            "<h2 style='color:#ea580c;margin:0 0 4px;font-size:16px;'>Phân rã điểm số</h2>",
             "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
             "Hệ thống chấm điểm 6 thành phần cho mỗi hướng MUA và BÁN. "
             "<b>Xu hướng</b> (EMA50/200, cấu trúc HH/HL) · "
@@ -697,8 +689,8 @@ class ScannerDetailScreen(QWidget):
             "<tr>",
             "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;' title='Thành phần được chấm điểm'>Thành phần</th>",
             "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:55px;' title='Điểm tối đa của thành phần này'>Max</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #38bdf8;color:#38bdf8;width:55px;' title='Điểm kịch bản MUA'>MUA</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #fb7185;color:#fb7185;width:55px;' title='Điểm kịch bản BÁN'>BÁN</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:55px;' title='Điểm kịch bản MUA'>MUA</th>",
+            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:55px;' title='Điểm kịch bản BÁN'>BÁN</th>",
             "</tr>",
         ]
 
@@ -727,8 +719,8 @@ class ScannerDetailScreen(QWidget):
             f"<tr style='border-top:2px solid #334155;'>"
             f"<td style='padding:8px 10px;color:#f8fafc;font-weight:700;' title='Tổng điểm tín hiệu sau khi chuẩn hóa (0-100)'>TỔNG</td>"
             f"<td style='text-align:center;padding:8px 10px;color:#64748b;'>100</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#38bdf8;font-weight:700;font-size:15px;'>{buy_total}</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#fb7185;font-weight:700;font-size:15px;'>{sell_total}</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#ea580c;font-weight:700;font-size:15px;'>{buy_total}</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:#f43f5e;font-weight:700;font-size:15px;'>{sell_total}</td>"
             f"</tr>"
         )
         rows.append("</table>")

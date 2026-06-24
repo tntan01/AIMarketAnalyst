@@ -19,6 +19,7 @@ from ctrader_open_api.messages.OpenApiCommonMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiCommonModelMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiMessages_pb2 import *
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import *
+from ctrader_open_api.tcpProtocol import TcpProtocol
 
 from config.settings import CTraderSettings
 from core.market_models import Candle
@@ -73,51 +74,68 @@ class CTraderService(DataProvider):
     def _generate_client_msg_id(self) -> str:
         return uuid.uuid4().hex
 
-    def _send_message_sync(self, request, timeout=10.0) -> Any:
+    def _send_message_sync(self, request, timeout=15.0) -> Any:
+        """Send a protobuf request and wait for the matching response.
+
+        Uses the ctrader-open-api Client.send() which internally manages
+        a deferred with its own timeout.  We piggy-back on the library's
+        deferred and set a threading.Event so the calling (non-reactor)
+        thread can block until a response (or error) arrives.
+
+        Returns the extracted protobuf response object.
+        Raises RuntimeError on timeout or server-reported error.
+        """
         if not self._client or not self._connected:
-            raise RuntimeError("cTrader cTrader client is not connected.")
-            
+            raise RuntimeError("cTrader client is not connected.")
+
         msg_id = self._generate_client_msg_id()
         event = threading.Event()
-        
-        context = {
-            "event": event,
-            "response": None,
-            "error": None
-        }
-        
+        context: dict[str, Any] = {"event": event, "response": None, "error": None}
+
         with self._lock:
             self._pending_requests[msg_id] = context
-            
+
         def _send():
             try:
-                self._client.send(request, clientMsgId=msg_id)
-            except Exception as e:
-                context["error"] = e
+                # Let the library manage response matching via deferred.
+                # Our _on_message_received will also fire for the same message
+                # and set the event.
+                self._client.send(request, clientMsgId=msg_id, responseTimeoutInSeconds=timeout)
+            except Exception as exc:
+                context["error"] = str(exc)
                 event.set()
-                
+
         reactor.callFromThread(_send)
-        event.wait(timeout)
-        
+
+        if not event.wait(timeout + 3):
+            with self._lock:
+                self._pending_requests.pop(msg_id, None)
+            raise RuntimeError(
+                f"Không nhận được phản hồi từ cTrader sau {timeout + 3:.0f}s."
+            )
+
         with self._lock:
             self._pending_requests.pop(msg_id, None)
-            
+
         if context["error"]:
-            raise RuntimeError(f"Error sending message: {context['error']}")
-            
+            raise RuntimeError(f"cTrader lỗi: {context['error']}")
+
+        if context["response"] is None:
+            raise RuntimeError("cTrader không trả về dữ liệu.")
+
         return context["response"]
 
-    def _on_connected(self):
+    def _on_connected(self, _client=None):
         logger.info("cTrader connected.")
         self._connected = True
 
-    def _on_disconnected(self, reason):
-        logger.warning(f"cTrader disconnected: {reason}")
+    def _on_disconnected(self, _client=None, _reason=None):
+        logger.warning(f"cTrader disconnected: {_reason}")
         self._connected = False
         self._app_authed = False
         self._account_authed = False
 
-    def _on_message_received(self, client, message):
+    def _on_message_received(self, _client=None, message=None):
         msg_type = message.payloadType
         client_msg_id = message.clientMsgId
         
@@ -140,60 +158,131 @@ class CTraderService(DataProvider):
                     return
 
     def connect(self) -> bool:
-        if self._connected and self._account_authed:
-            return True
+        """Full connection flow. Returns True on success, False on failure."""
+        ok, msg = self.test_connection()
+        return ok
+
+    def test_connection(self) -> tuple[bool, str]:
+        """Test connection with detailed error reporting.
+
+        Returns:
+            (success: bool, message: str) — success flag and human-readable
+            Vietnamese description of the result or failure reason.
+        """
+        # Reset state
+        self._connected = False
+        self._app_authed = False
+        self._account_authed = False
+
+        if not self._config.client_id or not self._config.client_secret:
+            return False, "Thiếu Client ID hoặc Client Secret."
+        if not self._config.access_token:
+            return False, "Thiếu Access Token."
             
-        endpoint = EndPoints.DATACENTER_DEMO if self._config.environment.lower() == "demo" else EndPoints.DATACENTER_LIVE
-        
-        self._client = Client(endpoint.HOST, endpoint.PORT, EndPoints.PROTOCOLS.TCP)
-        self._client.set_connectedCallback(self._on_connected)
-        self._client.set_disconnectedCallback(self._on_disconnected)
-        self._client.set_messageReceivedCallback(self._on_message_received)
-        
-        # Start connection from reactor thread
-        connect_event = threading.Event()
-        
+        host = EndPoints.PROTOBUF_DEMO_HOST if self._config.environment.lower() == "demo" else EndPoints.PROTOBUF_LIVE_HOST
+        port = EndPoints.PROTOBUF_PORT
+        env_label = "Demo" if self._config.environment.lower() == "demo" else "Live"
+
+        try:
+            self._client = Client(host, port, TcpProtocol)
+        except Exception as e:
+            return False, f"Không tạo được kết nối TCP đến {env_label} ({host}:{port}): {e}"
+
+        self._client.setConnectedCallback(self._on_connected)
+        self._client.setDisconnectedCallback(self._on_disconnected)
+        self._client.setMessageReceivedCallback(self._on_message_received)
+
+        # Start connection from reactor thread and wait for _on_connected callback
+        start_event = threading.Event()
+
         def _start_client():
-            self._client.startService()
-            # Twisted doesn't block on startService, we just need to wait a bit for connection
-            reactor.callLater(2.0, connect_event.set)
-            
+            try:
+                self._client.startService()
+            except Exception as e:
+                logger.error(f"startService failed: {e}")
+            start_event.set()
+
         reactor.callFromThread(_start_client)
-        connect_event.wait(5.0)
-        
+        if not start_event.wait(10.0):
+            self._client = None
+            return False, f"Reactor không phản hồi khi khởi động kết nối đến {env_label}."
+
+        # Poll _on_connected with timeout (SSL handshake có thể mất vài giây)
+        deadline = time.monotonic() + 15.0
+        while not self._connected and time.monotonic() < deadline:
+            time.sleep(0.2)
+
+        if not self._connected:
+            self._client = None
+            return False, (
+                f"Không kết nối được đến máy chủ cTrader {env_label} ({host}:{port}). "
+                "Kiểm tra: (1) môi trường Demo/Live đã chọn đúng chưa, "
+                "(2) firewall có chặn cổng 5035 không, "
+                "(3) ctrader-open-api và twisted đã cài đúng phiên bản chưa."
+            )
+
         # Auth App
-        if self._connected and not self._app_authed:
+        try:
             req = ProtoOAApplicationAuthReq()
             req.clientId = self._config.client_id
             req.clientSecret = self._config.client_secret
-            try:
-                res = self._send_message_sync(req)
-                if isinstance(res, ProtoOAApplicationAuthRes):
-                    self._app_authed = True
-            except Exception as e:
-                logger.error(f"Failed to auth app: {e}")
-                return False
+            res = self._send_message_sync(req)
+            if isinstance(res, ProtoOAApplicationAuthRes):
+                self._app_authed = True
+            else:
+                return False, f"Xác thực App thất bại: phản hồi không đúng định dạng."
+        except Exception as e:
+            self._client = None
+            return False, f"Xác thực App thất bại: {e}. Kiểm tra Client ID và Client Secret."
 
-        # Auth Account
-        if self._app_authed and not self._account_authed:
-            req = ProtoOAAccountAuthReq()
-            req.ctidTraderAccountId = self._config.account_id
-            req.accessToken = self._config.access_token
+        # Auth Account — auto-discover account ID from token if set to 0
+        account_id = self._config.account_id
+        if account_id <= 0:
             try:
-                res = self._send_message_sync(req)
-                if isinstance(res, ProtoOAAccountAuthRes):
-                    self._account_authed = True
+                list_req = ProtoOAGetAccountListByAccessTokenReq()
+                list_req.accessToken = self._config.access_token
+                list_res = self._send_message_sync(list_req)
+                if hasattr(list_res, "ctidTraderAccount") and list_res.ctidTraderAccount:
+                    account_id = list_res.ctidTraderAccount[0].ctidTraderAccountId
+                    self._account_id = account_id  # save for later API calls
+                    logger.info(f"Auto-discovered ctidTraderAccountId={account_id}")
+                else:
+                    self._client = None
+                    return False, (
+                        "Access Token khong lien ket voi tai khoan nao. "
+                        "Vao id.ctrader.com, chon tai khoan, bam Grant Access."
+                    )
             except Exception as e:
-                logger.error(f"Failed to auth account: {e}")
-                return False
-                
-        # Fetch initial account info and symbols
-        if self._account_authed:
+                self._client = None
+                return False, f"Khong lay duoc danh sach tai khoan: {e}"
+
+        try:
+            req = ProtoOAAccountAuthReq()
+            req.ctidTraderAccountId = account_id
+            req.accessToken = self._config.access_token
+            res = self._send_message_sync(req)
+            if isinstance(res, ProtoOAAccountAuthRes):
+                self._account_authed = True
+            else:
+                return False, f"Xac thuc tai khoan that bai: phan hoi khong dung dinh dang."
+        except Exception as e:
+            self._client = None
+            return False, f"Xac thuc tai khoan that bai: {e}. ctidTraderAccountId={account_id}."
+
+        # Fetch initial data
+        try:
             self._fetch_account_info()
             self._fetch_symbols()
             self._fetch_assets()
-            
-        return self._account_authed
+        except Exception as e:
+            logger.warning(f"Post-auth data fetch warning: {e}")
+
+        bal = self._account_balance or 0
+        cur = self._account_currency or "USD"
+        return True, (
+            f"Kết nối thành công! {env_label}, TK {self._get_account_id()}, "
+            f"Số dư {bal:,.2f} {cur}, {len(self._symbol_name_to_id)} mã."
+        )
 
     def disconnect(self) -> None:
         if self._client:
@@ -227,14 +316,14 @@ class CTraderService(DataProvider):
             provider_name="cTrader",
             broker="cTrader",
             server=self._config.environment.upper(),
-            login=self._config.account_id,
+            login=self._get_account_id(),
             balance=self._account_balance,
             currency=self._account_currency,
         )
 
     def _fetch_account_info(self):
         req = ProtoOATraderReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         res = self._send_message_sync(req)
         if isinstance(res, ProtoOATraderRes):
             # Balance is usually in cents (e.g. 1000000 = 10000.00)
@@ -243,11 +332,13 @@ class CTraderService(DataProvider):
             if asset_id in self._asset_id_to_name:
                 self._account_currency = self._asset_id_to_name[asset_id]
                 
+    def _get_account_id(self) -> int:
+        """Return the effective account ID (auto-discovered or configured)."""
+        return getattr(self, '_account_id', 0) or self._config.account_id
+
     def _fetch_assets(self):
-        req = ProtoOAGetCtidProfileReq() # No, assets are listed somewhere else? 
-        # Wait, ProtoOAAssetListReq
         req = ProtoOAAssetListReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         try:
             res = self._send_message_sync(req)
             if isinstance(res, ProtoOAAssetListRes):
@@ -259,11 +350,11 @@ class CTraderService(DataProvider):
     def _fetch_symbols(self):
         if self._symbols_cache:
             return
-            
+
         req = ProtoOASymbolsListReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         res = self._send_message_sync(req)
-        
+
         if isinstance(res, ProtoOASymbolsListRes):
             for symbol in res.symbol:
                 self._symbols_cache.append(symbol)
@@ -331,7 +422,7 @@ class CTraderService(DataProvider):
             return []
             
         req = ProtoOAGetTrendbarsReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         req.period = self._map_timeframe(timeframe)
         req.symbolId = symbol_id
         req.count = bars
@@ -401,7 +492,7 @@ class CTraderService(DataProvider):
             return []
             
         req = ProtoOAGetTrendbarsReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         req.period = self._map_timeframe(timeframe)
         req.symbolId = symbol_id
         req.fromTimestamp = int(start.timestamp() * 1000)
@@ -449,7 +540,7 @@ class CTraderService(DataProvider):
             
         # Get positions
         req = ProtoOAReconcileReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         try:
             res = self._send_message_sync(req)
             if isinstance(res, ProtoOAReconcileRes):
@@ -489,7 +580,7 @@ class CTraderService(DataProvider):
     def closed_trade_history(self, *, start: datetime, end: datetime) -> list[dict[str, Any]]:
         # Fetch deal history
         req = ProtoOADealListReq()
-        req.ctidTraderAccountId = self._config.account_id
+        req.ctidTraderAccountId = self._get_account_id()
         req.fromTimestamp = int(start.timestamp() * 1000)
         req.toTimestamp = int(end.timestamp() * 1000)
         

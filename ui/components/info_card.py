@@ -22,38 +22,35 @@ class InfoCard(QFrame):
             "QFrame#InfoCard { background: #1e293b; border: 1px solid #334155; border-radius: 6px; }"
             "QFrame#InfoCard:hover { border-color: #475569; }"
         )
-        self.setMinimumHeight(52)
-        self.setMaximumHeight(64)
+        self.setFixedHeight(28)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(0)
+        layout.setContentsMargins(10, 2, 10, 2)
+        layout.setSpacing(6)
 
-        left = QVBoxLayout()
-        left.setSpacing(1)
         self._label_w = QLabel(label)
         self._label_w.setObjectName("InfoCardLabel")
-        self._label_w.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        self._label_w.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        
         self._value_w = QLabel(value)
         self._value_w.setObjectName("InfoCardValue")
-        self._value_w.setStyleSheet(f"color: {accent}; font-size: 15px; font-weight: 700;")
-        left.addWidget(self._label_w)
-        left.addWidget(self._value_w)
-        layout.addLayout(left, 1)
+        self._value_w.setStyleSheet(f"color: {accent}; font-size: 12px; font-weight: bold;")
+        
+        layout.addWidget(self._label_w)
+        layout.addStretch(1)
+        layout.addWidget(self._value_w)
 
         self._detail_w = QLabel(detail)
         self._detail_w.setObjectName("InfoCardDetail")
         self._detail_w.setStyleSheet("color: #64748b; font-size: 11px;")
         self._detail_w.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._detail_w.setWordWrap(True)
-        self._detail_w.setMaximumWidth(100)
         layout.addWidget(self._detail_w)
 
     def set_value(self, text: str, accent: str | None = None) -> None:
         self._value_w.setText(text)
         if accent:
-            self._value_w.setStyleSheet(f"color: {accent}; font-size: 15px; font-weight: 700;")
+            self._value_w.setStyleSheet(f"color: {accent}; font-size: 12px; font-weight: bold;")
 
     def set_detail(self, text: str) -> None:
         self._detail_w.setText(text)

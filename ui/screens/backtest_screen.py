@@ -291,7 +291,7 @@ class BacktestScreen(QWidget):
             "border-radius: 5px;"
             "}"
             "QProgressBar#BacktestProgress::chunk {"
-            "background: #14b8a6;"
+            "background: #ea580c;"
             "border-radius: 4px;"
             "}"
         )
@@ -536,7 +536,7 @@ class BacktestScreen(QWidget):
                 f"{stats_html}"
                 f"<hr style='border: 0; border-top: 1px dashed #334155; margin: 24px 0;' />"
                 f"<div style='font-family:-apple-system,Segoe UI,sans-serif;'>"
-                f"<h2 style='color:#a78bfa; margin-bottom: 12px; font-size: 16px;'>🤖 AI NHẬN XÉT & ĐÁNH GIÁ</h2>"
+                f"<h2 style='color:#f59e0b; margin-bottom: 12px; font-size: 16px;'>🤖 AI NHẬN XÉT & ĐÁNH GIÁ</h2>"
                 f"{ai_html}"
                 f"</div>"
             )
@@ -585,9 +585,9 @@ class BacktestScreen(QWidget):
                 rows_html += (
                     f"<tr>"
                     f"<td style='padding:6px 10px;color:#e2e8f0;font-weight:700;'>{symbol}</td>"
-                    f"<td style='padding:6px 10px;color:#22c55e;'>{cfg['regime']}</td>"
-                    f"<td style='padding:6px 10px;color:#38bdf8;'>{cfg['side'].upper()}</td>"
-                    f"<td style='padding:6px 10px;color:#fbbf24;'>≥ {cfg['min_score']}</td>"
+                    f"<td style='padding:6px 10px;color:#10b981;'>{cfg['regime']}</td>"
+                    f"<td style='padding:6px 10px;color:#ea580c;'>{cfg['side'].upper()}</td>"
+                    f"<td style='padding:6px 10px;color:#f59e0b;'>≥ {cfg['min_score']}</td>"
                     f"<td style='padding:6px 10px;color:#fb923c;'>≥ {cfg['min_rr']}</td>"
                     f"<td style='padding:6px 10px;color:#94a3b8;font-size:12px;'>{evidence}</td>"
                     f"</tr>"
@@ -595,7 +595,7 @@ class BacktestScreen(QWidget):
 
         html = (
             "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>"
-            "<h2 style='color:#fbbf24;margin:0 0 4px;font-size:16px;'>Đề xuất cấu hình Scanner từ Backtest</h2>"
+            "<h2 style='color:#f59e0b;margin:0 0 4px;font-size:16px;'>Đề xuất cấu hình Scanner từ Backtest</h2>"
             "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
             "Dựa trên kết quả backtest, hệ thống đề xuất cấu hình cho từng cặp. "
             "Cấu hình này có thể dùng trong Settings để tự động nâng setup đủ điều kiện."
@@ -773,7 +773,7 @@ class BacktestScreen(QWidget):
 
         html = [
             "<div style='font-family:-apple-system,Segoe UI,sans-serif;'>",
-            "<h2 style='color:#38bdf8; margin-top: 0; margin-bottom: 12px; font-size: 16px;'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
+            "<h2 style='color:#ea580c; margin-top: 0; margin-bottom: 12px; font-size: 16px;'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
         ]
         
         wr = float(summary.get("win_rate", 0) or 0)
@@ -820,7 +820,7 @@ class BacktestScreen(QWidget):
             
             f"<tr>"
             f"<td style='padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>💰 Tổng R</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{get_stat(summary, 'total_r')}R</td>"
+            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #10b981; font-weight: bold;'>{get_stat(summary, 'total_r')}R</td>"
             f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid #1e293b; color: #94a3b8;'>-</td>"
             f"</tr>"
             f"</table>"
@@ -847,31 +847,31 @@ class BacktestScreen(QWidget):
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e;'>🟢 Thắng</td>"
-            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{wins}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #10b981;'>🟢 Thắng</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #10b981; font-weight: bold;'>{wins}</td>"
             f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Trung bình R thắng</td>"
-            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{avg_win_r:+.2f}R</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #10b981; font-weight: bold;'>{avg_win_r:+.2f}R</td>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444;'>🔴 Thua</td>"
-            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444; font-weight: bold;'>{losses}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e11d48;'>🔴 Thua</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e11d48; font-weight: bold;'>{losses}</td>"
             f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Trung bình R thua</td>"
-            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444; font-weight: bold;'>{avg_loss_r:+.2f}R</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e11d48; font-weight: bold;'>{avg_loss_r:+.2f}R</td>"
             f"</tr>"
 
             f"<tr>"
             f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #94a3b8;'>⚪ Hòa</td>"
             f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #94a3b8; font-weight: bold;'>{breakeven_count}</td>"
             f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Chuỗi thắng tối đa</td>"
-            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e; font-weight: bold;'>{max_consec_wins}</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #10b981; font-weight: bold;'>{max_consec_wins}</td>"
             f"</tr>"
 
             f"<tr>"
             f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #64748b;'>⏰ Hết hạn</td>"
             f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #64748b; font-weight: bold;'>{expired_count}</td>"
             f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>Chuỗi thua tối đa</td>"
-            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444; font-weight: bold;'>{max_consec_losses}</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e11d48; font-weight: bold;'>{max_consec_losses}</td>"
             f"</tr>"
 
             f"<tr>"
@@ -883,7 +883,7 @@ class BacktestScreen(QWidget):
         )
 
         if by_symbol and len(by_symbol) > 0:
-            html.append("<h2 style='color:#fbbf24; margin-bottom: 16px; margin-top: 24px; font-size: 16px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
+            html.append("<h2 style='color:#f59e0b; margin-bottom: 16px; margin-top: 24px; font-size: 16px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
             html.append("<div style='display: flex; flex-wrap: wrap; gap: 12px;'>")
             
             for symbol, sym_stats in by_symbol.items():
@@ -894,7 +894,7 @@ class BacktestScreen(QWidget):
                 sym_dd = float(sym_stats.get("max_drawdown_r", 0) or 0)
                 
                 html.append(
-                    f"<div style='background-color: #1e293b; border-radius: 8px; padding: 14px; width: calc(50% - 6px); box-sizing: border-box; border-left: 4px solid #38bdf8;'>"
+                    f"<div style='background-color: #1e293b; border-radius: 8px; padding: 14px; width: calc(50% - 6px); box-sizing: border-box; border-left: 4px solid #ea580c;'>"
                     f"<div style='font-size: 15px; font-weight: bold; color: #f8fafc; margin-bottom: 10px;'>✨ {symbol}</div>"
                     f"<table style='width: 100%; border-collapse: collapse; font-size: 13px;'>"
                     f"<tr>"
@@ -906,8 +906,8 @@ class BacktestScreen(QWidget):
                     f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>PF:</span> <span style='color: #e2e8f0; font-weight: bold;'>{get_stat(sym_stats, 'profit_factor')}</span> {eval_profit_factor(sym_pf)}</td>"
                     f"</tr>"
                     f"<tr>"
-                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>Tổng R:</span> <span style='color: #22c55e; font-weight: bold;'>{get_stat(sym_stats, 'total_r')}R</span></td>"
-                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>DD:</span> <span style='color: #ef4444; font-weight: bold;'>{get_stat(sym_stats, 'max_drawdown_r')}R</span></td>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>Tổng R:</span> <span style='color: #10b981; font-weight: bold;'>{get_stat(sym_stats, 'total_r')}R</span></td>"
+                    f"<td style='padding: 4px 0;'><span style='color: #94a3b8;'>DD:</span> <span style='color: #e11d48; font-weight: bold;'>{get_stat(sym_stats, 'max_drawdown_r')}R</span></td>"
                     f"</tr>"
                     f"</table>"
                     f"</div>"
@@ -924,9 +924,9 @@ class BacktestScreen(QWidget):
                 f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px;'>"
                 f"<tr>"
                 f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Bước</th>"
-                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #22c55e;'>Pass</th>"
-                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #ef4444;'>Fail</th>"
-                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #fbbf24;'>Warning</th>"
+                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #10b981;'>Pass</th>"
+                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #e11d48;'>Fail</th>"
+                f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid #334155; color: #f59e0b;'>Warning</th>"
                 f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid #334155; color: #94a3b8;'>Trạng thái</th>"
                 f"</tr>"
             )
@@ -961,9 +961,9 @@ class BacktestScreen(QWidget):
                 html.append(
                     f"<tr>"
                     f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>{label}</td>"
-                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #22c55e;'>{p}</td>"
-                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #ef4444;'>{f}</td>"
-                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #fbbf24;'>{w}</td>"
+                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #10b981;'>{p}</td>"
+                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #e11d48;'>{f}</td>"
+                    f"<td style='text-align: center; padding: 6px 10px; border-bottom: 1px solid #1e293b; color: #f59e0b;'>{w}</td>"
                     f"<td style='padding: 6px 10px; border-bottom: 1px solid #1e293b;'>{status_icon} {status_text}</td>"
                     f"</tr>"
                 )
@@ -976,8 +976,8 @@ class BacktestScreen(QWidget):
             html.append(
                 f"<div style='display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: #94a3b8;'>"
                 f"<span>📊 Tổng snapshot: <b style='color:#e2e8f0;'>{ev}</b></span>"
-                f"<span>🚫 Bị gate chặn: <b style='color:#ef4444;'>{blk}</b></span>"
-                f"<span>⚠️ Điểm {'<'}50: <b style='color:#fbbf24;'>{low}</b></span>"
+                f"<span>🚫 Bị gate chặn: <b style='color:#e11d48;'>{blk}</b></span>"
+                f"<span>⚠️ Điểm {'<'}50: <b style='color:#f59e0b;'>{low}</b></span>"
                 f"</div>"
             )
 
@@ -994,7 +994,7 @@ class BacktestScreen(QWidget):
                 html.append(
                     f"<tr>"
                     f"<td style='padding: 4px 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0;'>{gate_name}</td>"
-                    f"<td style='text-align: right; padding: 4px 10px; border-bottom: 1px solid #1e293b; color: #f87171; font-weight: bold;'>{count}</td>"
+                    f"<td style='text-align: right; padding: 4px 10px; border-bottom: 1px solid #1e293b; color: #fb7185; font-weight: bold;'>{count}</td>"
                     f"</tr>"
                 )
             html.append("</table>")
@@ -1198,9 +1198,9 @@ class BacktestScreen(QWidget):
         for row, trade in enumerate(trades):
             result = str(trade.get("result", "")).lower()
             if result == "win":
-                bg = "#14532d"  # dark green
+                bg = "#064e3b"  # dark green
             elif result == "loss":
-                bg = "#7f1d1d"  # dark red
+                bg = "#881337"  # dark red
             elif result == "breakeven":
                 bg = "#1e293b"  # dark gray
             else:
@@ -1246,16 +1246,16 @@ class BacktestScreen(QWidget):
             icon, accent, bg = "⚪", "#64748b", "#1e293b"
             line = "Chưa có lệnh nào"
         elif has_edge and good_pf:
-            icon, accent, bg = "🟢", "#22c55e", "#14532d"
+            icon, accent, bg = "🟢", "#10b981", "#064e3b"
             line = f"CÓ LỢI THẾ · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
         elif has_edge and not good_pf:
-            icon, accent, bg = "🟡", "#facc15", "#4a3f00"
+            icon, accent, bg = "🟡", "#f59e0b", "#78350f"
             line = f"LỢI THẾ YẾU · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
         elif positive_total and not has_edge:
-            icon, accent, bg = "🟠", "#fb923c", "#4a3000"
+            icon, accent, bg = "🟠", "#fb923c", "#78350f"
             line = f"CHƯA RÕ · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
         else:
-            icon, accent, bg = "🔴", "#ef4444", "#7f1d1d"
+            icon, accent, bg = "🔴", "#e11d48", "#881337"
             line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
 
         self.verdict_banner.setText(
