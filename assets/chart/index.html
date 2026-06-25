@@ -15,6 +15,13 @@
     #timeframe-selector button.active { background: #374151; color: #f3f4f6; border-color: #6b7280; }
     #empty-state, #error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; }
     #watermark { position: absolute; bottom: 8px; left: 10px; color: #6b7280; font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
+    
+    /* Light theme styles */
+    body.light-theme { background: #ffffff; color: #111827; }
+    body.light-theme #timeframe-selector button { background: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
+    body.light-theme #timeframe-selector button:hover { background: #e5e7eb; color: #1f2937; }
+    body.light-theme #timeframe-selector button.active { background: #D94625; color: #ffffff; border-color: #D94625; }
+    body.light-theme #empty-state, body.light-theme #error-state, body.light-theme #watermark { color: #9ca3af; }
   </style>
 </head>
 <body>
@@ -313,6 +320,21 @@
       try {
         _payload = payload;
         _activeTF = payload.active_timeframe || 'H1';
+
+        // Theme configuration
+        var isLight = payload.theme === 'light';
+        document.body.classList.toggle('light-theme', isLight);
+        if (isLight) {
+          COLORS.bg = '#ffffff';
+          COLORS.text = '#111827';
+          COLORS.grid = '#f3f4f6';
+          COLORS.border = '#e5e7eb';
+        } else {
+          COLORS.bg = '#101214';
+          COLORS.text = '#f3f4f6';
+          COLORS.grid = '#1e2227';
+          COLORS.border = '#2d3238';
+        }
 
         if (!payload.timeframes || Object.keys(payload.timeframes).length === 0) {
           _show('empty-state');

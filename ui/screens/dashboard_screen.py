@@ -269,6 +269,7 @@ class DashboardScreen(QWidget):
         self.econ_table.setShowGrid(False)
         self.econ_table.setWordWrap(True)
         self.econ_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.econ_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
 
         header = self.econ_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)    # Thời gian

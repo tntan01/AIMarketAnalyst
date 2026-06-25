@@ -62,6 +62,7 @@ QPushButton#NavButton {
   border-radius: 6px;
   background: transparent;
   border: 1px solid transparent;
+  font-weight: 700;
 }
 
 QPushButton#NavButton:hover, QPushButton#NavButton:pressed {
@@ -83,13 +84,13 @@ QPushButton#FloatingSidebarToggle {
   border: 1px solid #F5978A;
   border-radius: 6px;
   color: #ffffff;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 900;
-  min-width: 26px;
-  max-width: 32px;
-  min-height: 24px;
+  min-width: 28px;
+  max-width: 28px;
+  min-height: 28px;
   max-height: 28px;
-  padding: 0;
+  padding: 0px 0px 3px 0px;
 }
 
 QPushButton#SidebarToggleButton:hover,
@@ -905,8 +906,20 @@ QTableView#DataTable {
   border-radius: 6px;
   color: #111827;
   gridline-color: #D6D2C8;
-  selection-background-color: #D94625;
-  selection-color: #ffffff;
+  selection-background-color: #FCE8E5; /* Soft light red/orange tint */
+  selection-color: #111827; /* Dark text for high contrast */
+}
+
+QTableWidget#DataTable::item:hover,
+QTableView#DataTable::item:hover {
+  background: #FAF8F5; /* Soft light hover background */
+  color: #111827;
+}
+
+QTableWidget#DataTable::item:selected,
+QTableView#DataTable::item:selected {
+  background: #FCE8E5; /* Soft selected background */
+  color: #111827;
 }
 
 QPushButton#InlineHelpButton {
@@ -1113,16 +1126,16 @@ QTableView#DataTable QScrollBar:horizontal,
 QTableWidget#DataTable QScrollBar:horizontal {
   background: #EAE6DF;
   border: 1px solid #D6D2C8;
-  border-radius: 6px;
+  border-radius: 4px;
   height: 14px;
-  margin: 0;
+  margin: 2px 8px 4px 8px;
 }
 
 QTableView#DataTable QScrollBar::handle:horizontal,
 QTableWidget#DataTable QScrollBar::handle:horizontal {
   background: #D94625;
   border: 1px solid #F5978A;
-  border-radius: 6px;
+  border-radius: 4px;
   min-width: 48px;
 }
 
@@ -1137,6 +1150,37 @@ QTableWidget#DataTable QScrollBar::add-line:horizontal,
 QTableWidget#DataTable QScrollBar::sub-line:horizontal {
   width: 0;
   height: 0;
+}
+
+/* Thanh cuộn dọc cho bảng DataTable */
+QTableView#DataTable QScrollBar:vertical,
+QTableWidget#DataTable QScrollBar:vertical {
+  background: #EAE6DF;
+  width: 14px;
+  border-radius: 4px;
+  margin: 8px 4px 8px 2px;
+}
+QTableView#DataTable QScrollBar::handle:vertical,
+QTableWidget#DataTable QScrollBar::handle:vertical {
+  background: #CCC7BD;
+  border-radius: 4px;
+  min-height: 30px;
+}
+QTableView#DataTable QScrollBar::handle:vertical:hover,
+QTableWidget#DataTable QScrollBar::handle:vertical:hover {
+  background: #B5B0A6;
+}
+QTableView#DataTable QScrollBar::add-line:vertical,
+QTableView#DataTable QScrollBar::sub-line:vertical,
+QTableWidget#DataTable QScrollBar::add-line:vertical,
+QTableWidget#DataTable QScrollBar::sub-line:vertical {
+  height: 0px;
+}
+QTableView#DataTable QScrollBar::add-page:vertical,
+QTableView#DataTable QScrollBar::sub-page:vertical,
+QTableWidget#DataTable QScrollBar::add-page:vertical,
+QTableWidget#DataTable QScrollBar::sub-page:vertical {
+  background: transparent;
 }
 
 QScrollArea#SymbolScroll {
@@ -1177,9 +1221,10 @@ QTableWidget#DataTable QHeaderView::section:hover {
 }
 
 QTabWidget#ContentTabs::pane {
-  border: none;
-  background: transparent;
-  padding-top: 12px;
+  border: 1px solid #D6D2C8;
+  background: #FAF9F5;
+  border-radius: 8px;
+  padding: 12px;
 }
 
 QTabBar::tab {
@@ -1368,8 +1413,8 @@ QLabel#CardValue[impact="low"] { color: #736B60; }
 
 QTableWidget#EconTable {
   background: #FAF9F5;
-  border: none;
-  border-radius: 4px;
+  border: 1px solid #D6D2C8;
+  border-radius: 8px;
   color: #111827;
   alternate-background-color: #F4F1EA;
 }
@@ -1387,4 +1432,28 @@ QTableWidget#EconTable QHeaderView::section {
   border: none;
   border-bottom: 2px solid #D94625;
   text-transform: uppercase;
+}
+
+/* Thanh cuộn dọc cho bảng Lịch kinh tế (EconTable) */
+QTableWidget#EconTable QScrollBar:vertical {
+  background: #EAE6DF;
+  width: 14px;
+  border-radius: 4px;
+  margin: 8px 4px 8px 2px;
+}
+QTableWidget#EconTable QScrollBar::handle:vertical {
+  background: #CCC7BD;
+  border-radius: 4px;
+  min-height: 30px;
+}
+QTableWidget#EconTable QScrollBar::handle:vertical:hover {
+  background: #B5B0A6;
+}
+QTableWidget#EconTable QScrollBar::add-line:vertical,
+QTableWidget#EconTable QScrollBar::sub-line:vertical {
+  height: 0px;
+}
+QTableWidget#EconTable QScrollBar::add-page:vertical,
+QTableWidget#EconTable QScrollBar::sub-page:vertical {
+  background: transparent;
 }

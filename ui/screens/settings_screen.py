@@ -56,11 +56,11 @@ class SettingsScreen(QWidget):
         root.addWidget(page_header("Cài đặt", "Cấu hình AI, MT5, giao dịch và hiển thị.", "Đơn giản"))
         tabs = QTabWidget()
         tabs.setObjectName("ContentTabs")
-        tabs.addTab(self._ai_tab(), "AI")
-        tabs.addTab(self._mt5_tab(), "Dữ liệu")
-        tabs.addTab(self._trading_tab(), "Giao dịch")
-        tabs.addTab(self._display_tab(), "Hiển thị")
-        tabs.addTab(self._advanced_tab(), "Nâng cao")
+        tabs.addTab(self._ai_tab(), "🤖 AI")
+        tabs.addTab(self._mt5_tab(), "🔌 Dữ liệu")
+        tabs.addTab(self._trading_tab(), "💼 Giao dịch")
+        tabs.addTab(self._display_tab(), "🎨 Hiển thị")
+        tabs.addTab(self._advanced_tab(), "⚙️ Nâng cao")
         root.addWidget(tabs, 1)
 
     def _ai_tab(self) -> QFrame:

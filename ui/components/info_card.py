@@ -27,6 +27,33 @@ class InfoCard(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InfoCard")
+        self._accent = accent
+
+        self.setFixedHeight(32)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 0, 12, 0)
+        layout.setSpacing(6)
+
+        self._label_w = QLabel(label)
+        self._label_w.setObjectName("InfoCardLabel")
+        
+        self._value_w = QLabel(value)
+        self._value_w.setObjectName("InfoCardValue")
+        
+        layout.addWidget(self._label_w)
+        layout.addStretch(1)
+        layout.addWidget(self._value_w)
+
+        self._detail_w = QLabel(detail)
+        self._detail_w.setObjectName("InfoCardDetail")
+        self._detail_w.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self._detail_w)
+
+        self.refresh_theme()
+
+    def refresh_theme(self, accent: str | None = None) -> None:
         self._light = _is_light_theme()
 
         if self._light:
@@ -39,45 +66,25 @@ class InfoCard(QFrame):
             default_accent = "#38bdf8"
 
         if not accent:
-            accent = default_accent
+            accent = self._accent if self._accent else default_accent
 
         self.setStyleSheet(
             f"QFrame#InfoCard {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
             f"QFrame#InfoCard:hover {{ border-color: {hover_border}; }}"
         )
-        self.setFixedHeight(28)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 2, 10, 2)
-        layout.setSpacing(6)
-
-        self._label_w = QLabel(label)
-        self._label_w.setObjectName("InfoCardLabel")
         self._label_w.setStyleSheet(f"color: {label_color}; font-size: 11px;")
-        
-        self._value_w = QLabel(value)
-        self._value_w.setObjectName("InfoCardValue")
         self._value_w.setStyleSheet(f"color: {accent}; font-size: 12px; font-weight: bold;")
-        
-        layout.addWidget(self._label_w)
-        layout.addStretch(1)
-        layout.addWidget(self._value_w)
-
-        self._detail_w = QLabel(detail)
-        self._detail_w.setObjectName("InfoCardDetail")
         self._detail_w.setStyleSheet(f"color: {detail_color}; font-size: 11px;")
-        self._detail_w.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self._detail_w)
 
     def set_value(self, text: str, accent: str | None = None) -> None:
         self._value_w.setText(text)
-        if accent:
-            self._value_w.setStyleSheet(f"color: {accent}; font-size: 12px; font-weight: bold;")
+        self.refresh_theme(accent=accent)
 
     def set_detail(self, text: str) -> None:
         self._detail_w.setText(text)
+        self.refresh_theme()
 
     def set_label(self, text: str) -> None:
         self._label_w.setText(text)
+        self.refresh_theme()
 

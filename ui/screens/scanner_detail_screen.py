@@ -59,6 +59,8 @@ class ScannerDetailScreen(QWidget):
         super().__init__()
         self.navigate = navigate
         self.app = app
+        from services.settings_service import SettingsService
+        self.settings_service = app.settings_service if app else SettingsService()
         self.journal_controller = app.journal_controller if app else JournalController()
         self.row: dict[str, object] = {}
         self.setObjectName("FormScreen")
@@ -76,10 +78,11 @@ class ScannerDetailScreen(QWidget):
         self.tabs.setObjectName("ContentTabs")
 
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
-        overview_tab = QWidget()
-        ov = QHBoxLayout(overview_tab)
-        ov.setContentsMargins(6, 6, 6, 6)
+        overview_tab = card()
+        ov = QHBoxLayout()
+        ov.setContentsMargins(0, 0, 0, 0)
         ov.setSpacing(12)
+        overview_tab.layout().addLayout(ov)
 
         left_col = QVBoxLayout()
         left_col.setSpacing(8)
@@ -106,61 +109,61 @@ class ScannerDetailScreen(QWidget):
 
         ov.addLayout(left_col, 7)
 
-        # -- Right Col: Info Cards --
-        right_col = QVBoxLayout()
-        right_col.setSpacing(4)
-        right_col.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # -- Right Col: Info Cards (2-column grid) --
+        right_widget = QWidget()
+        right_grid = QGridLayout(right_widget)
+        right_grid.setHorizontalSpacing(8)
+        right_grid.setVerticalSpacing(8)
+        right_grid.setContentsMargins(0, 0, 0, 0)
 
         self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#ea580c")
         self.card_buysell = InfoCard("Mua / Bán", "--", "", accent="#fb7185")
         self.card_final = InfoCard("Điểm cuối", "--", "", accent="#10b981")
         self.card_gap = InfoCard("Chênh lệch", "--", "", accent="#f59e0b")
+        self.card_macro_score = InfoCard("Điểm vĩ mô", "--", "", accent="#38bdf8")
         self.card_rr = InfoCard("Tỷ lệ R:R", "--", "", accent="#ea580c")
-        
+
         self.card_entry = InfoCard("Vùng vào lệnh", "--", "", accent="#10b981")
         self.card_position = InfoCard("Vị trí giá", "--", "", accent="#f59e0b")
         self.card_m15 = InfoCard("Khung M15", "--", "", accent="#f59e0b")
+        self.card_scanner_group = InfoCard("Nhóm scanner", "--", "", accent="#a78bfa")
         self.card_regime = InfoCard("Chế độ TT", "--", "", accent="#fb7185")
         self.card_permission = InfoCard("Quyền giao dịch", "--", "", accent="#e11d48")
+        self.card_journal_sample = InfoCard("Mẫu nhật ký", "--", "", accent="#9ca3af")
+        self.card_journal_expectancy = InfoCard("Kỳ vọng NK", "--", "", accent="#38bdf8")
 
-        right_col.addWidget(self.card_best)
-        right_col.addWidget(self.card_buysell)
-        right_col.addWidget(self.card_final)
-        right_col.addWidget(self.card_gap)
-        right_col.addWidget(self.card_rr)
-        right_col.addWidget(self.card_entry)
-        right_col.addWidget(self.card_position)
-        right_col.addWidget(self.card_m15)
-        right_col.addWidget(self.card_regime)
-        right_col.addWidget(self.card_permission)
+        right_grid.addWidget(self.card_best, 0, 0)
+        right_grid.addWidget(self.card_buysell, 0, 1)
+        right_grid.addWidget(self.card_final, 1, 0)
+        right_grid.addWidget(self.card_gap, 1, 1)
+        right_grid.addWidget(self.card_macro_score, 2, 0)
+        right_grid.addWidget(self.card_rr, 2, 1)
+        right_grid.addWidget(self.card_entry, 3, 0)
+        right_grid.addWidget(self.card_position, 3, 1)
+        right_grid.addWidget(self.card_m15, 4, 0)
+        right_grid.addWidget(self.card_scanner_group, 4, 1)
+        right_grid.addWidget(self.card_regime, 5, 0)
+        right_grid.addWidget(self.card_permission, 5, 1)
+        right_grid.addWidget(self.card_journal_sample, 6, 0)
+        right_grid.addWidget(self.card_journal_expectancy, 6, 1)
+        right_grid.setRowStretch(7, 1)
 
-        ov.addLayout(right_col, 2)
+        ov.addWidget(right_widget, 2)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 
         # ---- Tab 2: Chẩn đoán (score + gate + checklist) ----------------
-        diag_tab = QWidget()
-        diag_layout = QVBoxLayout(diag_tab)
-        diag_layout.setContentsMargins(4, 4, 4, 4)
-        diag_layout.setSpacing(0)
+        diag_tab = card()
         self.diag_text = QTextEdit()
         self.diag_text.setReadOnly(True)
-        self.diag_text.setStyleSheet(
-            "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: none; border-radius: 6px; padding: 12px; }"
-        )
-        diag_layout.addWidget(self.diag_text, 1)
+        diag_tab.layout().addWidget(self.diag_text, 1)
         self.tabs.addTab(diag_tab, "🔬 Chẩn đoán")
 
-        audit_tab = QWidget()
-        audit_layout = QVBoxLayout(audit_tab)
-        audit_layout.setContentsMargins(4, 4, 4, 4)
-        audit_layout.setSpacing(0)
+        # ---- Tab 3: Kiểm định AI ----------------------------------------
+        audit_tab = card()
         self.audit_text = QTextEdit()
         self.audit_text.setReadOnly(True)
-        self.audit_text.setStyleSheet(
-            "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: none; border-radius: 6px; padding: 12px; }"
-        )
-        audit_layout.addWidget(self.audit_text, 1)
+        audit_tab.layout().addWidget(self.audit_text, 1)
         self.tabs.addTab(audit_tab, "🤖 Kiểm định AI")
 
         root.addWidget(self.tabs, 1)
@@ -211,6 +214,28 @@ class ScannerDetailScreen(QWidget):
                 symbol,
             )
         )
+        
+        # Apply transparent theme-appropriate styling to text views
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+            
+        if light:
+            self.diag_text.setStyleSheet(
+                "QTextEdit { background: transparent; color: #111827; font-size: 13px; border: none; padding: 2px; }"
+            )
+            self.audit_text.setStyleSheet(
+                "QTextEdit { background: transparent; color: #111827; font-size: 13px; border: none; padding: 2px; }"
+            )
+        else:
+            self.diag_text.setStyleSheet(
+                "QTextEdit { background: transparent; color: #e5e7eb; font-size: 13px; border: none; padding: 2px; }"
+            )
+            self.audit_text.setStyleSheet(
+                "QTextEdit { background: transparent; color: #e5e7eb; font-size: 13px; border: none; padding: 2px; }"
+            )
+
         self._refresh_hero()
         self._refresh_cards()
         self._refresh_chart()
@@ -229,6 +254,14 @@ class ScannerDetailScreen(QWidget):
 
             symbol = str(analysis_result.get("symbol") or self.row.get("symbol") or "")
             payload = build_full_chart_payload(symbol, analysis_result)
+            
+            # Inject current theme to payload
+            try:
+                light = self.settings_service.load().display.theme == "light"
+            except Exception:
+                light = False
+            payload["theme"] = "light" if light else "dark"
+            
             self.chart.set_payload(payload)
         except Exception:
             self.chart.show_error("Khong the tao du lieu bieu do tu ket qua quet.")
@@ -240,28 +273,46 @@ class ScannerDetailScreen(QWidget):
             self.hero_bar.hide()
             return
 
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
         action_code = str(self.row.get("display_action") or self.row.get("scanner_action") or "--")
         action_text = self._action_text(action_code)
         rank = self.row.get("rank", "--")
         reason = self._decision_reason()
 
-        if action_code == "ready":
-            bg, border, accent, icon = "#064e3b", "#065f46", "#10b981", "✅"
-        elif action_code in ("watch", "wait"):
-            bg, border, accent, icon = "#451a03", "#78350f", "#f59e0b", "⏳"
-        elif action_code == "skip":
-            bg, border, accent, icon = "#4c0519", "#881337", "#e11d48", "❌"
+        if light:
+            if action_code == "ready":
+                bg, border, accent, icon = "#d1fae5", "#10b981", "#047857", "✅"
+            elif action_code in ("watch", "wait"):
+                bg, border, accent, icon = "#fef3c7", "#f59e0b", "#b45309", "⏳"
+            elif action_code == "skip":
+                bg, border, accent, icon = "#ffe4e6", "#e11d48", "#be123c", "❌"
+            else:
+                bg, border, accent, icon = "#f1f5f9", "#cbd5e1", "#475569", "ℹ️"
         else:
-            bg, border, accent, icon = "#0f172a", "#1e293b", "#94a3b8", "ℹ️"
+            if action_code == "ready":
+                bg, border, accent, icon = "#064e3b", "#065f46", "#10b981", "✅"
+            elif action_code in ("watch", "wait"):
+                bg, border, accent, icon = "#451a03", "#78350f", "#f59e0b", "⏳"
+            elif action_code == "skip":
+                bg, border, accent, icon = "#4c0519", "#881337", "#e11d48", "❌"
+            else:
+                bg, border, accent, icon = "#0f172a", "#1e293b", "#94a3b8", "ℹ️"
 
         self.hero_bar.setStyleSheet(
             f"QLabel#ScannerDetailHero {{"
             f"  background-color: {bg};"
             f"  border: 1px solid {border};"
             f"  border-radius: 6px;"
-            f"  padding: 4px 12px;"
+            f"  padding: 6px 12px;"
             f"}}"
         )
+
+        text_color = "#1e293b" if light else "#cbd5e1"
+        bold_color = "#0f172a" if light else "#f8fafc"
 
         self.hero_bar.setText(
             f"<table width='100%' style='margin:0;padding:0;border:none;'><tr>"
@@ -269,8 +320,8 @@ class ScannerDetailScreen(QWidget):
             f"<span style='color:{accent};font-size:15px;font-weight:bold;letter-spacing:1px;'>{icon} {action_text.upper()}</span>"
             f"</td>"
             f"<td style='vertical-align:middle;'>"
-            f"<span style='color:#cbd5e1;font-size:14px;font-weight:normal;'>"
-            f"Hạng <b style='color:#f8fafc;'>#{rank}</b> &nbsp;&bull;&nbsp; {reason}"
+            f"<span style='color:{text_color};font-size:14px;font-weight:normal;'>"
+            f"Hạng <b style='color:{bold_color};'>#{rank}</b> &nbsp;&bull;&nbsp; {reason}"
             f"</span>"
             f"</td>"
             f"</tr></table>"
@@ -343,6 +394,44 @@ class ScannerDetailScreen(QWidget):
         perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
         perm_accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#e11d48"}.get(perm, "#94a3b8")
         self.card_permission.set_value(perm_map.get(perm, perm.title()), accent=perm_accent)
+
+        # Row 3: removed-from-overview columns now shown here
+        macro_val = self.row.get("macro_score", "--")
+        try:
+            macro_num = int(macro_val)
+        except (TypeError, ValueError):
+            macro_num = 15
+        conf = float(self.row.get("macro_confidence", 1.0))
+        quality_dot = "●" if conf >= 0.8 else ("○" if conf >= 0.5 else "◌")
+        macro_accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
+        self.card_macro_score.set_value(f"{quality_dot} {macro_num}/30", accent=macro_accent)
+        macro_detail = self.row.get("macro_bias", "--")
+        if isinstance(macro_detail, str):
+            self.card_macro_score.set_detail(macro_detail.title())
+
+        group_raw = str(self.row.get("scanner_group") or "--")
+        group_map = {"ready_now": "Sẵn sàng ngay", "waiting_confirmation": "Chờ xác nhận",
+                     "watch_zone": "Theo dõi", "blocked": "Bị chặn"}
+        group_accent = {"ready_now": "#10b981", "waiting_confirmation": "#f59e0b",
+                       "watch_zone": "#f59e0b", "blocked": "#e11d48"}.get(group_raw, "#94a3b8")
+        self.card_scanner_group.set_value(group_map.get(group_raw, group_raw), accent=group_accent)
+
+        sample = self.row.get("journal_sample_size", 0)
+        try:
+            sample_num = int(sample)
+        except (TypeError, ValueError):
+            sample_num = 0
+        self.card_journal_sample.set_value(str(sample_num))
+
+        exp_r = self.row.get("journal_expectancy_r")
+        try:
+            exp_num = float(exp_r)
+            exp_text = f"{exp_num:.2f}R"
+            exp_accent = "#10b981" if exp_num > 0 else ("#e11d48" if exp_num < 0 else "#94a3b8")
+        except (TypeError, ValueError):
+            exp_text = "--"
+            exp_accent = "#94a3b8"
+        self.card_journal_expectancy.set_value(exp_text, accent=exp_accent)
 
     def _refresh_conditions(self) -> None:
         """Refresh wait conditions and insights at the bottom."""
@@ -502,18 +591,6 @@ class ScannerDetailScreen(QWidget):
             min_gap_num = None
         return gap_num, min_gap_num
 
-    def _gap_text(self) -> str:
-        gap, min_gap = self._gap_numbers()
-        if gap is None:
-            return "--"
-        if min_gap is None:
-            return self._compact_number(gap)
-        return f"{self._compact_number(gap)} / {self._compact_number(min_gap)}"
-
-    # ------------------------------------------------------------------
-    # Diagnostics Tab
-    # ------------------------------------------------------------------
-
     def _refresh_diagnostics(self) -> None:
         if not hasattr(self, "diag_text"):
             return
@@ -525,12 +602,17 @@ class ScannerDetailScreen(QWidget):
             self.diag_text.setHtml("<p style='color:#94a3b8;'>Không có dữ liệu phân tích để hiển thị chẩn đoán.</p>")
             return
 
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
         parts: list[str] = []
-        parts.append(self._diag_score_breakdown_html(analysis))
-        parts.append(self._diag_gate_html(analysis))
-        parts.append(self._diag_checklist_html(analysis))
-        parts.append(self._diag_pipeline_steps_html(analysis))
-        parts.append(self._diag_final_score_html(analysis))
+        parts.append(self._diag_score_breakdown_html(analysis, light=light))
+        parts.append(self._diag_gate_html(analysis, light=light))
+        parts.append(self._diag_checklist_html(analysis, light=light))
+        parts.append(self._diag_pipeline_steps_html(analysis, light=light))
+        parts.append(self._diag_final_score_html(analysis, light=light))
         self.diag_text.setHtml("\n".join(parts))
 
     # -- AI Setup Audit ----------------------------------------------------
@@ -548,9 +630,15 @@ class ScannerDetailScreen(QWidget):
                 "Scanner chỉ gọi AI cho các setup đứng đầu theo giới hạn cấu hình.</p>"
             )
             return
-        self.audit_text.setHtml(self._ai_audit_html(audit))
 
-    def _ai_audit_html(self, audit: dict) -> str:
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
+        self.audit_text.setHtml(self._ai_audit_html(audit, light=light))
+
+    def _ai_audit_html(self, audit: dict, light: bool = False) -> str:
         agreement = str(audit.get("agreement") or "caution").strip().lower()
         label_map = {
             "agree": ("ĐỒNG THUẬN", "#22c55e"),
@@ -565,65 +653,83 @@ class ScannerDetailScreen(QWidget):
         no_trade = escape(str(audit.get("do_not_trade_reason") or "").strip())
         error = escape(str(audit.get("auditor_error") or "").strip())
 
+        text_color = "#334155" if light else "#94a3b8"
+        value_color = "#0f172a" if light else "#e2e8f0"
+        bg_color = "#f1f5f9" if light else "#1e293b"
+        border_color = "#cbd5e1" if light else "#2b3545"
+        desc_color = "#736B60" if light else "#64748b"
+        title_color = "#0369A1" if light else "#38bdf8"
+        error_bg = "#fef2f2" if light else "#2b2330"
+        error_border = "#fca5a5" if light else "#854d0e"
+        error_text = "#991b1b" if light else "#fbbf24"
+
         rows = [
             "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>",
-            "<h2 style='color:#38bdf8;margin:0 0 4px;font-size:16px;'>AI Setup Auditor</h2>",
-            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            f"<h2 style='color:{title_color};margin:0 0 4px;font-size:16px;'>AI Setup Auditor</h2>",
+            f"<p style='color:{desc_color};font-size:11px;margin:0 0 12px;'>"
             "AI chỉ kiểm định setup rule engine đã tạo. Phần này không tự thay đổi quyết định, gate hoặc auto trade."
             "</p>",
-            "<table style='width:100%;border-collapse:collapse;margin-bottom:14px;background:#1e293b;border-radius:6px;'>",
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:14px;background:{bg_color};border-radius:6px;'>",
             "<tr>",
-            f"<td style='padding:10px 12px;color:#94a3b8;width:120px;'>Kết luận</td>",
+            f"<td style='padding:10px 12px;color:{text_color};width:120px;'>Kết luận</td>",
             f"<td style='padding:10px 12px;color:{color};font-weight:800;font-size:15px;'>{label}</td>",
-            f"<td style='padding:10px 12px;color:#94a3b8;width:90px;'>Tin cậy</td>",
-            f"<td style='padding:10px 12px;color:#e2e8f0;font-weight:700;'>{confidence}/100</td>",
-            f"<td style='padding:10px 12px;color:#94a3b8;width:110px;'>Chất lượng plan</td>",
-            f"<td style='padding:10px 12px;color:#e2e8f0;font-weight:700;'>{quality}/100</td>",
+            f"<td style='padding:10px 12px;color:{text_color};width:90px;'>Tin cậy</td>",
+            f"<td style='padding:10px 12px;color:{value_color};font-weight:700;'>{confidence}/100</td>",
+            f"<td style='padding:10px 12px;color:{text_color};width:110px;'>Chất lượng plan</td>",
+            f"<td style='padding:10px 12px;color:{value_color};font-weight:700;'>{quality}/100</td>",
             "</tr>",
             "</table>",
         ]
         if error:
             rows.append(
-                f"<div style='color:#fbbf24;background:#2b2330;border:1px solid #854d0e;"
+                f"<div style='color:{error_text};background:{error_bg};border:1px solid {error_border};"
                 f"border-radius:6px;padding:10px 12px;margin-bottom:12px;'>AI auditor lỗi: {error}</div>"
             )
         rows.extend([
-            self._audit_block("Tóm tắt setup", setup_summary, "#38bdf8"),
-            self._audit_block("Bối cảnh thị trường", market_summary, "#a78bfa"),
-            self._audit_list_block("Cảnh báo rủi ro", audit.get("risk_flags"), "#f97316"),
-            self._audit_list_block("Điều kiện còn thiếu", audit.get("missing_confirmations"), "#fbbf24"),
+            self._audit_block("Tóm tắt setup", setup_summary, "#38bdf8" if not light else "#0284c7", light=light),
+            self._audit_block("Bối cảnh thị trường", market_summary, "#a78bfa" if not light else "#7c3aed", light=light),
+            self._audit_list_block("Cảnh báo rủi ro", audit.get("risk_flags"), "#f97316" if not light else "#ea580c", light=light),
+            self._audit_list_block("Điều kiện còn thiếu", audit.get("missing_confirmations"), "#fbbf24" if not light else "#d97706", light=light),
         ])
         if no_trade:
-            rows.append(self._audit_block("Lý do không nên giao dịch", no_trade, "#ef4444"))
+            rows.append(self._audit_block("Lý do không nên giao dịch", no_trade, "#ef4444", light=light))
         rows.append("</div>")
         return "\n".join(rows)
 
-    def _audit_block(self, title: str, body: str, color: str) -> str:
+    def _audit_block(self, title: str, body: str, color: str, light: bool = False) -> str:
+        text_color = "#111827" if light else "#e2e8f0"
+        bg_color = "#ffffff" if light else "#111827"
+        border_color = "#D6D2C8" if light else "#334155"
         return (
             f"<h3 style='color:{color};margin:16px 0 6px;font-size:14px;'>{escape(title)}</h3>"
-            f"<div style='color:#e2e8f0;background:#111827;border:1px solid #334155;"
+            f"<div style='color:{text_color};background:{bg_color};border:1px solid {border_color};"
             f"border-radius:6px;padding:10px 12px;margin-bottom:8px;'>{body}</div>"
         )
 
-    def _audit_list_block(self, title: str, values: object, color: str) -> str:
+    def _audit_list_block(self, title: str, values: object, color: str, light: bool = False) -> str:
         items = values if isinstance(values, list) else []
+        muted_color = "#736B60" if light else "#94a3b8"
+        text_color = "#111827" if light else "#e2e8f0"
+        bg_color = "#ffffff" if light else "#111827"
+        border_color = "#D6D2C8" if light else "#334155"
+
         if not items:
-            body = "<span style='color:#94a3b8;'>Không có mục đáng chú ý.</span>"
+            body = f"<span style='color:{muted_color};'>Không có mục đáng chú ý.</span>"
         else:
             body = "<ul style='margin:0;padding-left:18px;'>" + "".join(
-                f"<li style='margin:4px 0;color:#e2e8f0;'>{escape(str(item))}</li>"
+                f"<li style='margin:4px 0;color:{text_color};'>{escape(str(item))}</li>"
                 for item in items
                 if str(item).strip()
             ) + "</ul>"
         return (
             f"<h3 style='color:{color};margin:16px 0 6px;font-size:14px;'>{escape(title)}</h3>"
-            f"<div style='background:#111827;border:1px solid #334155;border-radius:6px;"
+            f"<div style='background:{bg_color};border:1px solid {border_color};border-radius:6px;"
             f"padding:10px 12px;margin-bottom:8px;'>{body}</div>"
         )
 
     # -- Score Breakdown -------------------------------------------------
 
-    def _diag_score_breakdown_html(self, analysis: dict) -> str:
+    def _diag_score_breakdown_html(self, analysis: dict, light: bool = False) -> str:
         scores = analysis.get("scenario_scores", {})
         if not isinstance(scores, dict):
             return ""
@@ -666,10 +772,19 @@ class ScannerDetailScreen(QWidget):
         buy_corr = buy.get("correlation_adjustment", 0) or 0
         sell_corr = sell.get("correlation_adjustment", 0) or 0
 
+        title_color = "#D94625" if light else "#ea580c"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        label_color = "#111827" if light else "#f8fafc"
+        muted_color = "#57534E" if light else "#94a3b8"
+        bg_color = "#f1f5f9" if light else "#1e293b"
+
         rows = [
             "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>",
-            "<h2 style='color:#ea580c;margin:0 0 4px;font-size:16px;'>Phân rã điểm số</h2>",
-            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            f"<h2 style='color:{title_color};margin:0 0 4px;font-size:16px;'>Phân rã điểm số</h2>",
+            f"<p style='color:{desc_color};font-size:11px;margin:0 0 12px;'>"
             "Hệ thống chấm điểm 6 thành phần cho mỗi hướng MUA và BÁN. "
             "<b>Xu hướng</b> (EMA50/200, cấu trúc HH/HL) · "
             "<b>Động lượng</b> (RSI, MACD) · "
@@ -681,10 +796,10 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             "<table style='width:100%;border-collapse:collapse;margin-bottom:16px;'>",
             "<tr>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;' title='Thành phần được chấm điểm'>Thành phần</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:55px;' title='Điểm tối đa của thành phần này'>Max</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:55px;' title='Điểm kịch bản MUA'>MUA</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:55px;' title='Điểm kịch bản BÁN'>BÁN</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};' title='Thành phần được chấm điểm'>Thành phần</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:55px;' title='Điểm tối đa của thành phần này'>Max</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:55px;' title='Điểm kịch bản MUA'>MUA</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:55px;' title='Điểm kịch bản BÁN'>BÁN</th>",
             "</tr>",
         ]
 
@@ -702,17 +817,17 @@ class ScannerDetailScreen(QWidget):
             eff_max = max_v if max_v is not None else max(int(bv), int(sv), 1)
             rows.append(
                 f"<tr>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='{tooltip}'>{label}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>{eff_max}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{_color(int(bv), eff_max)};font-weight:700;'>{int(bv)}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{_color(int(sv), eff_max)};font-weight:700;'>{int(sv)}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='{tooltip}'>{label}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{eff_max}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{_color(int(bv), eff_max)};font-weight:700;'>{int(bv)}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{_color(int(sv), eff_max)};font-weight:700;'>{int(sv)}</td>"
                 f"</tr>"
             )
 
         rows.append(
-            f"<tr style='border-top:2px solid #334155;'>"
-            f"<td style='padding:8px 10px;color:#f8fafc;font-weight:700;' title='Tổng điểm tín hiệu sau khi chuẩn hóa (0-100)'>TỔNG</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#64748b;'>100</td>"
+            f"<tr style='border-top:2px solid {border_color};'>"
+            f"<td style='padding:8px 10px;color:{label_color};font-weight:700;' title='Tổng điểm tín hiệu sau khi chuẩn hóa (0-100)'>TỔNG</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:{desc_color};'>100</td>"
             f"<td style='text-align:center;padding:8px 10px;color:#ea580c;font-weight:700;font-size:15px;'>{buy_total}</td>"
             f"<td style='text-align:center;padding:8px 10px;color:#f43f5e;font-weight:700;font-size:15px;'>{sell_total}</td>"
             f"</tr>"
@@ -721,44 +836,44 @@ class ScannerDetailScreen(QWidget):
 
         # Rating + modifiers — use table for reliable rendering
         rows.append(
-            "<table style='width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;'>"
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:14px;font-size:12px;background:{bg_color};border-radius:6px;'>"
             "<tr>"
-            f"<td style='padding:4px 12px;color:#94a3b8;width:110px;'>Đánh giá MUA</td>"
-            f"<td style='padding:4px 12px;color:#e2e8f0;'>{_rating(buy_total)}</td>"
-            f"<td style='padding:4px 12px;color:#94a3b8;width:110px;'>Tương quan MUA</td>"
-            f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{buy_corr:+.0f}</b></td>"
+            f"<td style='padding:6px 12px;color:{muted_color};width:110px;'>Đánh giá MUA</td>"
+            f"<td style='padding:6px 12px;color:{text_color};'>{_rating(buy_total)}</td>"
+            f"<td style='padding:6px 12px;color:{muted_color};width:110px;'>Tương quan MUA</td>"
+            f"<td style='padding:6px 12px;color:{text_color};'><b>{buy_corr:+.0f}</b></td>"
             "</tr>"
             "<tr>"
-            f"<td style='padding:4px 12px;color:#94a3b8;'>Đánh giá BÁN</td>"
-            f"<td style='padding:4px 12px;color:#e2e8f0;'>{_rating(sell_total)}</td>"
-            f"<td style='padding:4px 12px;color:#94a3b8;'>Tương quan BÁN</td>"
-            f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{sell_corr:+.0f}</b></td>"
+            f"<td style='padding:6px 12px;color:{muted_color};'>Đánh giá BÁN</td>"
+            f"<td style='padding:6px 12px;color:{text_color};'>{_rating(sell_total)}</td>"
+            f"<td style='padding:6px 12px;color:{muted_color};width:110px;'>Tương quan BÁN</td>"
+            f"<td style='padding:6px 12px;color:{text_color};'><b>{sell_corr:+.0f}</b></td>"
             "</tr>"
         )
 
         if buy_macro_status or sell_macro_status:
             rows.append(
                 "<tr>"
-                f"<td style='padding:4px 12px;color:#94a3b8;'>Vĩ mô MUA</td>"
-                f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{buy_macro_status or 'trung lập'}</b></td>"
-                f"<td style='padding:4px 12px;color:#94a3b8;'>Vĩ mô BÁN</td>"
-                f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{sell_macro_status or 'trung lập'}</b></td>"
+                f"<td style='padding:6px 12px;color:{muted_color};'>Vĩ mô MUA</td>"
+                f"<td style='padding:6px 12px;color:{text_color};'><b>{buy_macro_status or 'trung lập'}</b></td>"
+                f"<td style='padding:6px 12px;color:{muted_color};'>Vĩ mô BÁN</td>"
+                f"<td style='padding:6px 12px;color:{text_color};'><b>{sell_macro_status or 'trung lập'}</b></td>"
                 "</tr>"
             )
         rows.append(
             "<tr>"
-            f"<td style='padding:4px 12px;color:#94a3b8;'>Phạt MUA</td>"
-            f"<td style='padding:4px 12px;color:#64748b;'>{buy_penalty}</td>"
-            f"<td style='padding:4px 12px;color:#94a3b8;'>Phạt BÁN</td>"
-            f"<td style='padding:4px 12px;color:#64748b;'>{sell_penalty}</td>"
+            f"<td style='padding:6px 12px;color:{muted_color};'>Phạt MUA</td>"
+            f"<td style='padding:6px 12px;color:{desc_color};'>{buy_penalty}</td>"
+            f"<td style='padding:6px 12px;color:{muted_color};'>Phạt BÁN</td>"
+            f"<td style='padding:6px 12px;color:{desc_color};'>{sell_penalty}</td>"
             "</tr>"
         )
         rows.append(
             "<tr>"
-            f"<td style='padding:4px 12px;color:#94a3b8;'>Lý do MUA</td>"
-            f"<td style='padding:4px 12px;color:#64748b;'>{buy_reason}</td>"
-            f"<td style='padding:4px 12px;color:#94a3b8;'>Lý do BÁN</td>"
-            f"<td style='padding:4px 12px;color:#64748b;'>{sell_reason}</td>"
+            f"<td style='padding:6px 12px;color:{muted_color};'>Lý do MUA</td>"
+            f"<td style='padding:6px 12px;color:{desc_color};'>{buy_reason}</td>"
+            f"<td style='padding:6px 12px;color:{muted_color};'>Lý do BÁN</td>"
+            f"<td style='padding:6px 12px;color:{desc_color};'>{sell_reason}</td>"
             "</tr>"
         )
 
@@ -768,10 +883,10 @@ class ScannerDetailScreen(QWidget):
         if buy_smc or sell_smc:
             rows.append(
                 "<tr>"
-                f"<td style='padding:4px 12px;color:#94a3b8;'>SMC MUA</td>"
-                f"<td style='padding:4px 12px;color:#64748b;'>{buy_smc or '--'}</td>"
-                f"<td style='padding:4px 12px;color:#94a3b8;'>SMC BÁN</td>"
-                f"<td style='padding:4px 12px;color:#64748b;'>{sell_smc or '--'}</td>"
+                f"<td style='padding:6px 12px;color:{muted_color};'>SMC MUA</td>"
+                f"<td style='padding:6px 12px;color:{desc_color};'>{buy_smc or '--'}</td>"
+                f"<td style='padding:6px 12px;color:{muted_color};'>SMC BÁN</td>"
+                f"<td style='padding:6px 12px;color:{desc_color};'>{sell_smc or '--'}</td>"
                 "</tr>"
             )
         rows.append("</table>")
@@ -781,7 +896,7 @@ class ScannerDetailScreen(QWidget):
 
     # -- Gate Diagnostics --------------------------------------------------
 
-    def _diag_gate_html(self, analysis: dict) -> str:
+    def _diag_gate_html(self, analysis: dict, light: bool = False) -> str:
         gate = analysis.get("trade_gate", {})
         if not isinstance(gate, dict):
             gate = {}
@@ -824,9 +939,17 @@ class ScannerDetailScreen(QWidget):
             "ZoneBroken": "Kiểm tra vùng entry có bị phá vỡ không",
         }
 
+        title_color = "#D94625" if light else "#f97316"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+        bg_color = "#f1f5f9" if light else "#1e293b"
+
         rows = [
-            "<h2 style='color:#f97316;margin:20px 0 4px;font-size:16px;'>Gate kiểm tra</h2>",
-            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            f"<h2 style='color:{title_color};margin:20px 0 4px;font-size:16px;'>Gate kiểm tra</h2>",
+            f"<p style='color:{desc_color};font-size:11px;margin:0 0 12px;'>"
             "Gate là các lớp kiểm tra trước khi cho phép vào lệnh. "
             "Mỗi gate có thể <b style='color:#22c55e;'>Cho qua</b>, "
             "<b style='color:#fbbf24;'>Cảnh báo</b> (giới hạn mức quyết định), "
@@ -835,9 +958,9 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:110px;'>Gate</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:70px;'>Kết quả</th>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Ý nghĩa / Chi tiết</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;'>Gate</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:70px;'>Kết quả</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Ý nghĩa / Chi tiết</th>",
             "</tr>",
         ]
 
@@ -865,9 +988,9 @@ class ScannerDetailScreen(QWidget):
 
             rows.append(
                 f"<tr>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='{g_explain}'>{g_label}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{color};font-weight:700;'>{icon} {text}</td>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;'>{g_explain} &mdash; {g_detail}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='{g_explain}'>{g_label}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;'>{icon} {text}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:12px;'>{g_explain} &mdash; {g_detail}</td>"
                 f"</tr>"
             )
         rows.append("</table>")
@@ -890,15 +1013,15 @@ class ScannerDetailScreen(QWidget):
             summary_text = f"CẢNH BÁO (mức: {cap})"
 
         rows.append(
-            "<table style='width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;"
-            "background:#1e293b;border-radius:6px;'>"
-            "<tr>"
-            f"<td style='padding:8px 12px;color:#94a3b8;width:130px;'>KẾT LUẬN GATE</td>"
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;"
+            f"background:{bg_color};border-radius:6px;'>"
+            f"<tr>"
+            f"<td style='padding:8px 12px;color:{muted_color};width:130px;'>KẾT LUẬN GATE</td>"
             f"<td style='padding:8px 12px;color:{summary_color};font-weight:700;'>{summary_text}</td>"
-            f"<td style='padding:8px 12px;color:#94a3b8;width:60px;'>Quyền</td>"
-            f"<td style='padding:8px 12px;color:#e2e8f0;'>{perm_text}</td>"
-            "</tr>"
-            "</table>"
+            f"<td style='padding:8px 12px;color:{muted_color};width:60px;'>Quyền</td>"
+            f"<td style='padding:8px 12px;color:{text_color};'>{perm_text}</td>"
+            f"</tr>"
+            f"</table>"
         )
         if reasons:
             rows.append(
@@ -967,24 +1090,31 @@ class ScannerDetailScreen(QWidget):
 
     # -- Entry Checklist ----------------------------------------------------
 
-    def _diag_checklist_html(self, analysis: dict) -> str:
+    def _diag_checklist_html(self, analysis: dict, light: bool = False) -> str:
         checklist = analysis.get("entry_checklist")
         if not isinstance(checklist, list) or not checklist:
             return ""
 
+        title_color = "#0369A1" if light else "#a78bfa"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+
         rows = [
-            "<h2 style='color:#a78bfa;margin:20px 0 4px;font-size:16px;'>Điều kiện vào lệnh</h2>",
-            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            f"<h2 style='color:{title_color};margin:20px 0 4px;font-size:16px;'>Điều kiện vào lệnh</h2>",
+            f"<p style='color:{desc_color};font-size:11px;margin:0 0 12px;'>"
             "Các điều kiện cần đạt trước khi vào lệnh thật. "
             "<b style='color:#22c55e;'>✅ Đạt</b> = đã thỏa mãn. "
             "<b style='color:#fbbf24;'>⏳ Chờ</b> = cần theo dõi thêm, chưa nên vào lệnh vội."
             "</p>",
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:110px;'>Điều kiện</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:70px;'>Trạng thái</th>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:160px;'>Giá trị</th>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Ghi chú</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;'>Điều kiện</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:70px;'>Trạng thái</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:160px;'>Giá trị</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Ghi chú</th>",
             "</tr>",
         ]
 
@@ -1002,10 +1132,10 @@ class ScannerDetailScreen(QWidget):
 
             rows.append(
                 f"<tr>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;'>{label}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:{color};font-weight:700;'>{icon} {status_text}</td>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;'>{value}</td>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;font-size:12px;'>{note}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};'>{label}</td>"
+                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;'>{icon} {status_text}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:12px;'>{value}</td>"
+                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:12px;'>{note}</td>"
                 f"</tr>"
             )
         rows.append("</table>")
@@ -1013,7 +1143,7 @@ class ScannerDetailScreen(QWidget):
 
     # -- Pipeline Steps ----------------------------------------------------
 
-    def _diag_pipeline_steps_html(self, analysis: dict) -> str:
+    def _diag_pipeline_steps_html(self, analysis: dict, light: bool = False) -> str:
         pipe_diags = analysis.get("pipeline_diagnostics")
         if not isinstance(pipe_diags, list) or not pipe_diags:
             return ""
@@ -1028,18 +1158,25 @@ class ScannerDetailScreen(QWidget):
             "final_score": "Tổng hợp điểm cuối cùng (tín hiệu×65% + bằng chứng NK×20% + thực thi×15%) và ra quyết định",
         }
 
+        title_color = "#D94625" if light else "#fb923c"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+
         rows = [
-            "<h2 style='color:#fb923c;margin:20px 0 4px;font-size:16px;'>Pipeline từng bước</h2>",
-            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            f"<h2 style='color:{title_color};margin:20px 0 4px;font-size:16px;'>Pipeline từng bước</h2>",
+            f"<p style='color:{desc_color};font-size:11px;margin:0 0 12px;'>"
             "Quy trình phân tích tuần tự 7 bước. Nếu một bước <b style='color:#ef4444;'>thất bại</b>, "
             "các bước sau không chạy. Bước <b style='color:#fbbf24;'>cảnh báo</b> vẫn tiếp tục "
             "nhưng có thể ảnh hưởng kết quả cuối cùng."
             "</p>",
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
-            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:120px;'>Bước</th>",
-            "<th style='text-align:center;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:70px;'>Kết quả</th>",
-            "<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Diễn giải / Tóm tắt</th>",
+            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:120px;'>Bước</th>",
+            f"<th style='text-align:center;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:70px;'>Kết quả</th>",
+            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Diễn giải / Tóm tắt</th>",
             "</tr>",
         ]
 
@@ -1077,9 +1214,9 @@ class ScannerDetailScreen(QWidget):
             explain = STEP_EXPLAIN.get(step, "")
             rows.append(
                 f"<tr>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='{explain}'>{label}</td>"
-                f"<td style='text-align:center;padding:5px 10px;border-bottom:1px solid #1e293b;color:{color};font-weight:700;'>{icon} {text}</td>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;'>{summary}</td>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='{explain}'>{label}</td>"
+                f"<td style='text-align:center;padding:5px 10px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;'>{icon} {text}</td>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:12px;'>{summary}</td>"
                 f"</tr>"
             )
         rows.append("</table>")
@@ -1087,7 +1224,7 @@ class ScannerDetailScreen(QWidget):
 
     # -- Final Score Breakdown ----------------------------------------------
 
-    def _diag_final_score_html(self, analysis: dict) -> str:
+    def _diag_final_score_html(self, analysis: dict, light: bool = False) -> str:
         final_detail = analysis.get("final_score_detail", {})
         if not isinstance(final_detail, dict):
             final_detail = {}
@@ -1100,9 +1237,18 @@ class ScannerDetailScreen(QWidget):
         evidence_s = final_detail.get("evidence_score", "?")
         exec_s = final_detail.get("execution_quality_score", "?")
 
+        title_color = "#047857" if light else "#22c55e"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+        label_color = "#111827" if light else "#f8fafc"
+        bg_color = "#f1f5f9" if light else "#1e293b"
+
         rows = [
-            "<h2 style='color:#22c55e;margin:20px 0 4px;font-size:16px;'>Điểm cuối cùng</h2>",
-            "<p style='color:#64748b;font-size:11px;margin:0 0 12px;'>"
+            f"<h2 style='color:{title_color};margin:20px 0 4px;font-size:16px;'>Điểm cuối cùng</h2>",
+            f"<p style='color:{desc_color};font-size:11px;margin:0 0 12px;'>"
             "Điểm tổng hợp từ 3 nguồn: <b>Tín hiệu</b> (điểm kỹ thuật/SMC/vĩ mô), "
             "<b>Bằng chứng nhật ký</b> (hiệu suất lịch sử của setup tương tự), "
             "<b>Chất lượng thực thi</b> (tỷ lệ vào lệnh thành công trước đây). "
@@ -1110,22 +1256,22 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
-            "<th style='text-align:left;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;'>Thành phần</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:60px;' title='Trọng lượng trong công thức'>TL</th>",
-            "<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #334155;color:#94a3b8;width:60px;' title='Điểm thành phần'>Điểm</th>",
+            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Thành phần</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:60px;' title='Trọng lượng trong công thức'>TL</th>",
+            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:60px;' title='Điểm thành phần'>Điểm</th>",
             "</tr>",
-            f"<tr><td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='Điểm tín hiệu từ bước chấm điểm (0-100)'>Tín hiệu</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>65%</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:700;'>{signal_s}</td></tr>",
-            f"<tr><td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='Điểm từ nhật ký giao dịch cũ (setup tương tự từng thắng không)'>Bằng chứng (NK)</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>20%</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:700;'>{evidence_s}</td></tr>",
-            f"<tr><td style='padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;' title='Điểm chất lượng thực thi lệnh (tỷ lệ khớp lệnh thành công)'>Chất lượng thực thi</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#64748b;'>15%</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid #1e293b;color:#e2e8f0;font-weight:700;'>{exec_s}</td></tr>",
-            f"<tr style='border-top:2px solid #334155;'>"
-            f"<td style='padding:8px 10px;color:#f8fafc;font-weight:700;' title='Điểm cuối cùng = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>ĐIỂM CUỐI</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#64748b;'>100%</td>"
+            f"<tr><td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='Điểm tín hiệu từ bước chấm điểm (0-100)'>Tín hiệu</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};'>65%</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:700;'>{signal_s}</td></tr>",
+            f"<tr><td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='Điểm từ nhật ký giao dịch cũ (setup tương tự từng thắng không)'>Bằng chứng (NK)</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};'>20%</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:700;'>{evidence_s}</td></tr>",
+            f"<tr><td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='Điểm chất lượng thực thi lệnh (tỷ lệ khớp lệnh thành công)'>Chất lượng thực thi</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};'>15%</td>"
+            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:700;'>{exec_s}</td></tr>",
+            f"<tr style='border-top:2px solid {border_color};'>"
+            f"<td style='padding:8px 10px;color:{label_color};font-weight:700;' title='Điểm cuối cùng = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>ĐIỂM CUỐI</td>"
+            f"<td style='text-align:center;padding:8px 10px;color:{desc_color};'>100%</td>"
             f"<td style='text-align:center;padding:8px 10px;color:#22c55e;font-weight:700;font-size:15px;'>{final_score}</td></tr>",
             "</table>",
         ]
@@ -1143,11 +1289,11 @@ class ScannerDetailScreen(QWidget):
         }
         dec_explain = DECISION_EXPLAIN.get(dec_decision, "")
         rows.append(
-            "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;'>"
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;background:{bg_color};border-radius:6px;'>"
             "<tr>"
-            f"<td style='padding:4px 12px;color:#94a3b8;width:110px;'>Quyết định</td>"
-            f"<td style='padding:4px 12px;color:#e2e8f0;'><b>{dec_decision}</b>"
-            + (f" <span style='color:#64748b;'>({dec_explain})</span>" if dec_explain else "")
+            f"<td style='padding:6px 12px;color:{muted_color};width:110px;'>Quyết định</td>"
+            f"<td style='padding:6px 12px;color:{text_color};'><b>{dec_decision}</b>"
+            + (f" <span style='color:{desc_color};'>({dec_explain})</span>" if dec_explain else "")
             + f" → hành động: <b>{dec_action}</b></td>"
             "</tr>"
             "</table>"

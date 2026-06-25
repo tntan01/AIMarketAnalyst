@@ -36,26 +36,14 @@ from ui .screens .shared import action_button ,card ,labeled_value ,page_header
 
 class ScannerTableModel (QAbstractTableModel ):
     COLUMNS =[
-    ("rank","Xếp hạng"),
     ("symbol","Mã"),
     ("scanner_action","Hành động"),
-    ("direction_bias","Xu hướng"),
+    ("direction_bias","Hướng"),
     ("price_vs_zone","Entry"),
     ("trade_permission","Quyền"),
-    ("best_score","Điểm tốt nhất"),
-    ("final_score","Final"),
-    ("opportunity_score","Cơ hội"),
-    ("scanner_group","Nhóm"),
-    ("entry_status","Trạng thái entry"),
-    ("m15_quality","M15"),
-    ("score_gap","Gap"),
-    ("buy_score","Điểm mua"),
-    ("sell_score","Điểm bán"),
-    ("macro_score","Vĩ mô (0-30)"),
-    ("macro_bias","Thuận vĩ mô"),
+    ("opportunity_score","Điểm"),
     ("risk_reward","R:R"),
-    ("journal_sample_size","Mẫu NK"),
-    ("journal_expectancy_r","Kỳ vọng NK"),
+    ("macro_bias","Vĩ mô"),
     ("short_reason","Lý do chính"),
     ("detail_action","Chi tiết"),
     ]
@@ -100,7 +88,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"rank","best_score","buy_score","sell_score","macro_score","macro_bias","price_vs_zone","risk_reward","detail_action","final_score","opportunity_score","scanner_group","entry_status","m15_quality","score_gap","direction_bias","journal_sample_size","journal_expectancy_r"}:
+            if key in {"scanner_action","direction_bias","price_vs_zone","trade_permission","opportunity_score","risk_reward","macro_bias","detail_action"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .ForegroundRole :
@@ -355,9 +343,9 @@ class ScannerTableModel (QAbstractTableModel ):
 
 class ScannerScreen (QWidget ):
     # Dynamically resolved from COLUMNS
-    SHORT_REASON_COL =12  # overridden in __init__
+    SHORT_REASON_COL =8  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
-    TABLE_EXTRA_COLUMN_PADDING ={2 :18 ,3 :18 ,6 :18 ,10 :18 ,15 :22 ,16 :22 ,17 :24, 19 :24 }
+    TABLE_EXTRA_COLUMN_PADDING ={1 :18 ,2 :18 ,5 :18 ,7 :18 ,9 :24}
     TABLE_REASON_HORIZONTAL_PADDING =30
     TABLE_MIN_REASON_WIDTH =150
 
@@ -581,6 +569,7 @@ class ScannerScreen (QWidget ):
         self .table .horizontalHeader ().setHighlightSections (False )
         self .table .setHorizontalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAsNeeded )
         self .table .setHorizontalScrollMode (QTableView .ScrollMode .ScrollPerPixel )
+        self .table .setVerticalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAlwaysOn )
         self .table .viewport ().installEventFilter (self )
         self ._configure_table_columns ()
         self .table .setSortingEnabled (False )
@@ -838,42 +827,134 @@ class ScannerScreen (QWidget ):
         self .navigate ("scanner_detail",{"scanner_row":row ,"scanner_result":self .scan_result or {}})
 
     def _show_market_brief(self) -> None:
-        """Open a dialog displaying the AI-generated market brief."""
+        """Open a dialog displaying the AI-generated market brief using a native card layout."""
         from html import escape
-
-        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication, QScrollArea, QFrame
 
         if not getattr(self, "_market_brief_text", ""):
             return
 
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
         dlg = QDialog(self)
         dlg.setWindowTitle("Bản tin thị trường")
-        dlg.setMinimumSize(820, 560)
-        dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+        dlg.setMinimumSize(850, 650)
+        
+        if light:
+            dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
+        else:
+            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+            
         layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
 
+        # Header Section
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(2)
+        
         title = QLabel("📊 BẢN TIN THỊ TRƯỜNG")
         title.setObjectName("PanelTitle")
-        title.setStyleSheet("font-size: 15px; color: #ea580c; margin-bottom: 4px;")
-        layout.addWidget(title)
+        if light:
+            title.setStyleSheet("font-size: 16px; color: #D94625; font-weight: bold;")
+        else:
+            title.setStyleSheet("font-size: 16px; color: #ea580c; font-weight: bold;")
+        header_layout.addWidget(title)
 
         timestamp = str(self.scan_result.get("timestamp", "") if self.scan_result else "")
-        ts_label = QLabel(timestamp.replace("T", " ")[:19] if timestamp else "")
+        ts_text = f"Thời gian quét: {timestamp.replace('T', ' ')[:19]}" if timestamp else "Bản tin tổng hợp từ AI"
+        ts_label = QLabel(ts_text)
         ts_label.setObjectName("HelperText")
-        ts_label.setStyleSheet("color: #64748b; font-size: 11px; margin-bottom: 10px;")
-        layout.addWidget(ts_label)
+        if light:
+            ts_label.setStyleSheet("color: #736B60; font-size: 11px;")
+        else:
+            ts_label.setStyleSheet("color: #64748b; font-size: 11px;")
+        header_layout.addWidget(ts_label)
+        layout.addLayout(header_layout)
 
-        text = QTextEdit()
-        text.setReadOnly(True)
-        text.setStyleSheet(
-            "QTextEdit { background: #171c24; color: #cbd5e1; font-size: 13px;"
-            "border: 1px solid #334155; border-radius: 6px; padding: 12px; }"
-        )
-        brief_html = _format_market_brief_html(self._market_brief_text)
-        text.setHtml(f"<div style='font-size:13px;'>{brief_html}</div>")
-        layout.addWidget(text, 1)
+        # Content Container (Outer Frame)
+        container_frame = QFrame()
+        container_frame.setObjectName("ContainerFrame")
+        if light:
+            container_frame.setStyleSheet(
+                "QFrame#ContainerFrame { background: #EDEBE4; border: 1px solid #D6D2C8; border-radius: 8px; }"
+            )
+        else:
+            container_frame.setStyleSheet(
+                "QFrame#ContainerFrame { background: #171c24; border: 1px solid #2b3545; border-radius: 8px; }"
+            )
+            
+        container_layout = QVBoxLayout(container_frame)
+        container_layout.setContentsMargins(4, 4, 4, 4)
+        
+        # Scroll Area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.viewport().setStyleSheet("background: transparent;")
+        
+        scroll_content = QWidget()
+        scroll_content.setObjectName("ScrollContent")
+        scroll_content.setStyleSheet("background: transparent;")
+        scroll_content_layout = QVBoxLayout(scroll_content)
+        scroll_content_layout.setContentsMargins(12, 12, 12, 12)
+        scroll_content_layout.setSpacing(12)
+        
+        # Parse the brief text into sections
+        sections = parse_market_brief(self._market_brief_text)
+        
+        for sec in sections:
+            card = QFrame()
+            card.setObjectName("SectionCard")
+            if light:
+                card.setStyleSheet(
+                    "QFrame#SectionCard { background: #ffffff; border: 1px solid #D6D2C8; border-radius: 8px; }"
+                )
+            else:
+                card.setStyleSheet(
+                    "QFrame#SectionCard { background: #1e2533; border: 1px solid #2b3545; border-radius: 8px; }"
+                )
+                
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 14, 16, 14)
+            card_layout.setSpacing(8)
+            
+            # Section Header (Icon + Title)
+            sec_title = QLabel(f"{sec['icon']}  {sec['title'].upper()}")
+            sec_title.setObjectName("SectionTitle")
+            if light:
+                sec_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #D94625;")
+            else:
+                sec_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #ea580c;")
+            card_layout.addWidget(sec_title)
+            
+            # Section Body Content
+            sec_content = QLabel()
+            sec_content.setObjectName("SectionContent")
+            sec_content.setWordWrap(True)
+            sec_content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            
+            formatted_html = _format_section_content_to_html(sec['content'], light=light)
+            sec_content.setText(formatted_html)
+            
+            if light:
+                sec_content.setStyleSheet("font-size: 13px; color: #111827; line-height: 1.5;")
+            else:
+                sec_content.setStyleSheet("font-size: 13px; color: #cbd5e1; line-height: 1.5;")
+                
+            card_layout.addWidget(sec_content)
+            scroll_content_layout.addWidget(card)
+            
+        scroll_content_layout.addStretch(1)
+        scroll.setWidget(scroll_content)
+        container_layout.addWidget(scroll)
+        layout.addWidget(container_frame, 1)
 
+        # Buttons Row
         btn_row = QHBoxLayout()
         copy_btn = action_button("📋 Sao chép", color="info")
         copy_btn.clicked.connect(
@@ -886,6 +967,7 @@ class ScannerScreen (QWidget ):
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+        
         dlg.exec()
 
     def _save_snapshot (self )->None :
@@ -1183,11 +1265,28 @@ class ScannerRowExplanationDialog(QDialog):
                 "explanation": explanation
             })
 
+        # Check if light theme
+        try:
+            light = SettingsService().load().display.theme == "light"
+        except Exception:
+            light = False
+
         self.table.setRowCount(len(self.row_items))
         for row, item in enumerate(self.row_items):
-            param_label = self._help_cell_label(item["param"], bold=True, color="#5eead4")
-            val_label = self._help_cell_label(item["value"], bold=True, color=item["color_hex"])
-            exp_label = self._help_cell_label(item["explanation"], color="#e5e7eb")
+            if light:
+                param_color = "#0f766e"
+                val_color = item["color_hex"]
+                if val_color.lower() == "#e5e7eb":
+                    val_color = "#111827"
+                exp_color = "#1f2937"
+            else:
+                param_color = "#5eead4"
+                val_color = item["color_hex"]
+                exp_color = "#e5e7eb"
+
+            param_label = self._help_cell_label(item["param"], bold=True, color=param_color)
+            val_label = self._help_cell_label(item["value"], bold=True, color=val_color)
+            exp_label = self._help_cell_label(item["explanation"], color=exp_color)
             
             self.table.setCellWidget(row, 0, param_label)
             self.table.setCellWidget(row, 1, val_label)
@@ -1235,26 +1334,16 @@ class ScannerColumnsHelpDialog (QDialog ):
     CELL_HORIZONTAL_PADDING =34
 
     COLUMN_HELP :list [dict [str ,str ]]=[
-        {"icon":"🏆","column":"Xếp hạng","meaning":"Thứ tự ưu tiên sau khi sắp xếp. Số nhỏ hơn nghĩa là đáng xem trước hơn.","cases":"1 = ưu tiên cao nhất; 2 = tiếp theo; các dòng sau giảm dần mức ưu tiên."},
         {"icon":"💸","column":"Mã","meaning":"Cặp tiền hoặc sản phẩm được quét.","cases":"28 cặp Forex (ngoại hối) + XAU/USD (vàng) + XAG/USD (bạc) + BTC/USD; chỉ hiển thị mã đang có trong Market Watch (danh sách theo dõi) của MT5."},
         {"icon":"🚀","column":"Hành động","meaning":"Mức độ sẵn sàng giao dịch sau khi xét các điều kiện.","cases":"Sẵn sàng = có thể xem xét; Theo dõi = đáng chú ý; Chờ = cần xác nhận; Bỏ qua = chưa đạt hoặc bị chặn."},
-        {"icon":"🧭","column":"Xu hướng","meaning":"Thiên hướng giao dịch được hệ thống đánh giá từ điểm BUY (mua) và SELL (bán).","cases":"BUY rõ (mua rõ) / SELL rõ (bán rõ) = nghiêng rõ một phía; BUY yếu / SELL yếu = có nghiêng nhưng chưa mạnh; Trung lập = chưa đủ lệch."},
+        {"icon":"🧭","column":"Hướng","meaning":"Thiên hướng giao dịch được hệ thống đánh giá từ điểm BUY (mua) và SELL (bán).","cases":"BUY rõ (mua rõ) / SELL rõ (bán rõ) = nghiêng rõ một phía; BUY yếu / SELL yếu = có nghiêng nhưng chưa mạnh; Trung lập = chưa đủ lệch."},
         {"icon":"🎯","column":"Entry","meaning":"Entry (vùng vào lệnh): vị trí giá hiện tại so với vùng vào lệnh dự kiến.","cases":"Trong vùng = có thể theo sát; Gần vùng = chuẩn bị quan sát; Còn xa = chưa vội; -- = thiếu dữ liệu."},
         {"icon":"🛡️","column":"Quyền","meaning":"Trạng thái cho phép giao dịch dựa trên dữ liệu và rủi ro.","cases":"Được phép = dữ liệu ổn, có thể xem xét; Cẩn trọng = có rủi ro phụ như tin tức hoặc spread (chênh lệch giá); Bị chặn = không nên vào lệnh."},
-        {"icon":"🌟","column":"Điểm tốt nhất","meaning":"Điểm cao nhất giữa kịch bản mua và bán.","cases":"Thang 0-100; >= 70 = tốt; 50-69 = trung bình/khá; < 50 = yếu. Điểm này trước khi qua các gate (cổng lọc điều kiện)."},
-        {"icon":"✅","column":"Final","meaning":"Final (điểm cuối): điểm sau khi đi qua gate (cổng lọc) và điều kiện xác nhận.","cases":"Bằng Điểm tốt nhất = setup (thiết lập) sạch; thấp hơn = bị cap (giới hạn điểm) hoặc bị phạt; 0 = bị chặn hoàn toàn."},
-        {"icon":"🔍","column":"Cơ hội","meaning":"Điểm xếp hạng cơ hội giao dịch trong scanner (bộ quét thị trường).","cases":">= 100 = cơ hội cao; 80-99 = khá; < 50 = thấp. Ưu tiên setup (thiết lập) gần vùng, rõ hướng, ít bị chặn."},
-        {"icon":"🧺","column":"Nhóm","meaning":"Nhóm phân loại theo mức độ sẵn sàng.","cases":"Sẵn sàng ngay = ưu tiên cao nhất; Chờ xác nhận = cần thêm tín hiệu; Theo dõi = chưa đủ điều kiện; Bị chặn = không xét."},
-        {"icon":"🚦","column":"Trạng thái entry","meaning":"Trạng thái xác nhận entry (vùng vào lệnh) hiện tại.","cases":"Sẵn sàng / Đã xác nhận = có entry; Chờ xác nhận = cần trigger (tín hiệu kích hoạt); Theo dõi vùng = chờ giá; Vô hiệu / Thiếu dữ liệu = không dùng."},
-        {"icon":"⏰","column":"M15","meaning":"M15 (khung 15 phút): chất lượng xác nhận entry trên khung thời gian 15 phút.","cases":"strict (xác nhận chặt) = nhiều nến đóng thuận; loose (xác nhận yếu) = tín hiệu chưa mạnh; none (không có) / -- = chưa có dữ liệu hoặc không đạt."},
-        {"icon":"📏","column":"Gap","meaning":"Gap (độ lệch điểm): khoảng cách điểm giữa BUY (mua) và SELL (bán).","cases":"Gap (độ lệch điểm) càng lớn thì xu hướng càng rõ; gap >= 10 = lệch rõ; gap < 10 = chưa rõ ràng, cần thận trọng."},
-        {"icon":"🟢","column":"Điểm mua","meaning":"Điểm riêng của kịch bản BUY (mua).","cases":"Thang 0-100; >= 65 = khá mạnh; 50-64 = trung bình; < 50 = yếu. Tổng hợp từ xu hướng, động lượng, vị trí, SMC (cấu trúc dòng tiền), rủi ro, vĩ mô."},
-        {"icon":"🔴","column":"Điểm bán","meaning":"Điểm riêng của kịch bản SELL (bán).","cases":"Thang 0-100; >= 65 = khá mạnh; 50-64 = trung bình; < 50 = yếu. Tổng hợp từ xu hướng, động lượng, vị trí, SMC (cấu trúc dòng tiền), rủi ro, vĩ mô."},
-        {"icon":"🌍","column":"Vĩ mô (0-30)","meaning":"Điểm vĩ mô từ lãi suất, lịch kinh tế, tâm lý rủi ro và bối cảnh tin tức.","cases":">= 22 = macro (vĩ mô) thuận lợi; 15-21 = trung bình; < 15 = bất lợi. Chấm đầu dòng: ● dữ liệu tốt; ○ thiếu 1 phần; ◌ thiếu nhiều."},
-        {"icon":"🤝","column":"Thuận vĩ mô","meaning":"Mức độ đồng thuận của vĩ mô với xu hướng kỹ thuật.","cases":"Thuận = vĩ mô cùng chiều với kỹ thuật; Trung tính = chưa rõ; Ngược = mâu thuẫn, cảnh báo nên thận trọng."},
+        {"icon":"🔍","column":"Điểm","meaning":"Điểm xếp hạng cơ hội giao dịch tổng hợp trong scanner (bộ quét thị trường).","cases":">= 100 = cơ hội cao; 80-99 = khá; < 50 = thấp. Ưu tiên setup (thiết lập) gần vùng, rõ hướng, ít bị chặn. Xem chi tiết các điểm thành phần trong trang Chi tiết."},
         {"icon":"⚖️","column":"R:R","meaning":"R:R (rủi ro/lợi nhuận): tỷ lệ rủi ro so với lợi nhuận dự kiến của kế hoạch.","cases":"1:2.0 = lợi nhuận kỳ vọng gấp 2 lần rủi ro; >= 1:1.5 = chấp nhận được; < 1:1.0 = quá thấp, thường bị bỏ qua."},
+        {"icon":"🤝","column":"Vĩ mô","meaning":"Mức độ đồng thuận của vĩ mô (lãi suất, DXY, tin tức) với xu hướng kỹ thuật.","cases":"Thuận = vĩ mô cùng chiều với kỹ thuật; Trung tính = chưa rõ; Ngược = mâu thuẫn, cảnh báo nên thận trọng. Điểm vĩ mô chi tiết có trong trang Chi tiết."},
         {"icon":"💡","column":"Lý do chính","meaning":"Tóm tắt ngắn vì sao mã được xếp hạng như vậy.","cases":"Tiền tố AI (trí tuệ nhân tạo): = nhận định do AI viết; không có AI = rule engine (bộ luật chấm điểm) sinh. Luôn đọc kèm trạng thái entry và quyền."},
-        {"icon":"🧐","column":"Chi tiết","meaning":"Mở màn hình chi tiết của mã được chọn.","cases":"Bấm ô Xem trên dòng hoặc chọn dòng rồi bấm nút Xem chi tiết để mở Scanner Detail (màn hình chi tiết quét)."},
+        {"icon":"🧐","column":"Chi tiết","meaning":"Mở màn hình chi tiết của mã được chọn.","cases":"Bấm ô Xem trên dòng hoặc chọn dòng rồi bấm nút Xem chi tiết để mở Scanner Detail (màn hình chi tiết quét) với đầy đủ điểm thành phần, gate, chẩn đoán và AI kiểm định."},
     ]
 
     def __init__ (self ,parent :QWidget |None =None )->None :
@@ -1271,7 +1360,9 @@ class ScannerColumnsHelpDialog (QDialog ):
 
         intro =QLabel (
             'Các cột dưới đây giúp đọc nhanh kết quả quét. '
-            'Giá trị trong bảng đã được rút gọn để dễ so sánh.'
+            'Giá trị trong bảng đã được rút gọn để dễ so sánh. '
+            'Các điểm thành phần (best_score, buy_score, sell_score, final_score, score_gap, macro_score, '
+            'entry_status, m15_quality, scanner_group, journal) được hiển thị trong trang Chi tiết.'
         )
         intro .setObjectName ("HelperText")
         intro .setWordWrap (True )
@@ -1291,15 +1382,31 @@ class ScannerColumnsHelpDialog (QDialog ):
         table .setVerticalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAsNeeded )
         table .setVerticalScrollMode (QTableWidget .ScrollMode .ScrollPerPixel )
         table .verticalHeader ().setDefaultSectionSize (self .MIN_ROW_HEIGHT )
+
+        # Check if light theme
+        try:
+            light = SettingsService().load().display.theme == "light"
+        except Exception:
+            light = False
+
+        if light:
+            col0_color = "#0f766e"
+            col1_color = "#1f2937"
+            col2_color = "#4b5563"
+        else:
+            col0_color = "#5eead4"
+            col1_color = "#e5e7eb"
+            col2_color = "#94a3b8"
+
         for row ,item in enumerate (self .COLUMN_HELP ):
             for col in range (3 ):
                 cell =QTableWidgetItem ("")
                 cell .setFlags (Qt .ItemFlag .ItemIsEnabled )
                 cell .setTextAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
                 table .setItem (row ,col ,cell )
-            table .setCellWidget (row ,0 ,self ._help_cell_label (item .get ("column",""),bold =True ,color ="#5eead4"))
-            table .setCellWidget (row ,1 ,self ._help_cell_label (item .get ("meaning",""),color ="#e5e7eb"))
-            table .setCellWidget (row ,2 ,self ._help_cell_label (item .get ("cases",""),color ="#94a3b8"))
+            table .setCellWidget (row ,0 ,self ._help_cell_label (item .get ("column",""),bold =True ,color =col0_color))
+            table .setCellWidget (row ,1 ,self ._help_cell_label (item .get ("meaning",""),color =col1_color))
+            table .setCellWidget (row ,2 ,self ._help_cell_label (item .get ("cases",""),color =col2_color))
         header =table .horizontalHeader ()
         header .setSectionResizeMode (0 ,QHeaderView .ResizeMode .Fixed )
         header .resizeSection (0 ,self .COLUMN_COL_WIDTH )
@@ -1375,14 +1482,11 @@ class ScannerColumnsHelpDialog (QDialog ):
 # Market brief HTML formatter (module-level helper)
 # ---------------------------------------------------------------------------
 
-def _format_market_brief_html(raw: str) -> str:
-    from html import escape
+def parse_market_brief(raw: str) -> list[dict]:
     import re
-
-    lines = raw.splitlines()
-    html_lines = []
-    list_type = None
-
+    sections = []
+    current_section = None
+    
     def get_icon(h: str) -> str:
         h_up = h.upper()
         if "TỔNG QUAN" in h_up: return "🌍"
@@ -1393,6 +1497,59 @@ def _format_market_brief_html(raw: str) -> str:
         if "KẾT LUẬN" in h_up: return "📌"
         return "🔹"
 
+    lines = raw.splitlines()
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+            
+        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60}):(.*)$", stripped)
+        if m:
+            heading = m.group(2).strip()
+            rest = m.group(3).strip()
+            icon = get_icon(heading)
+            
+            current_section = {
+                "title": heading,
+                "icon": icon,
+                "lines": []
+            }
+            if rest:
+                current_section["lines"].append(rest)
+            sections.append(current_section)
+        else:
+            if current_section is not None:
+                current_section["lines"].append(stripped)
+            else:
+                current_section = {
+                    "title": "Bản tin",
+                    "icon": "📊",
+                    "lines": [stripped]
+                }
+                sections.append(current_section)
+                
+    formatted_sections = []
+    for s in sections:
+        content = "\n".join(s["lines"])
+        formatted_sections.append({
+            "title": s["title"],
+            "icon": s["icon"],
+            "content": content
+        })
+    return formatted_sections
+
+
+def _format_section_content_to_html(text: str, light: bool = False) -> str:
+    from html import escape
+    import re
+    
+    text_color = "#111827" if light else "#cbd5e1"
+    list_color = "#1f2937" if light else "#d1d5db"
+    
+    lines = text.splitlines()
+    html_lines = []
+    list_type = None
+    
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -1400,40 +1557,7 @@ def _format_market_brief_html(raw: str) -> str:
                 html_lines.append(f"</{list_type}>")
                 list_type = None
             continue
-
-        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60}):(.*)$", stripped)
-        if m:
-            if list_type:
-                html_lines.append(f"</{list_type}>")
-                list_type = None
-            heading = m.group(2).strip()
-            rest = m.group(3).strip()
-            icon = get_icon(heading)
-            escaped_heading = escape(heading)
             
-            p_style = "margin:10px 0 2px;"
-            span_style = "font-weight:700;color:#ea580c;font-size:14px;text-transform:uppercase;"
-            
-            if rest:
-                escaped_rest = escape(rest)
-                html_lines.append(
-                    f"<p style='{p_style}'><span style='{span_style}'>{icon} {escaped_heading}:</span> <span style='color:#cbd5e1;'>{escaped_rest}</span></p>"
-                )
-            else:
-                html_lines.append(
-                    f"<p style='{p_style}'><span style='{span_style}'>{icon} {escaped_heading}:</span></p>"
-                )
-            continue
-
-        if stripped.isupper() and len(stripped) < 80:
-            if list_type:
-                html_lines.append(f"</{list_type}>")
-                list_type = None
-            html_lines.append(
-                f"<p style='margin:10px 0 2px;'><span style='font-weight:700;color:#ea580c;font-size:13px;'>{escape(stripped)}</span></p>"
-            )
-            continue
-
         m = re.match(r"^[-•*]\s+(.*)", stripped)
         if m:
             if list_type == "ol":
@@ -1441,12 +1565,12 @@ def _format_market_brief_html(raw: str) -> str:
                 list_type = None
             if not list_type:
                 html_lines.append(
-                    "<ul style='margin:2px 0 6px;padding-left:20px;color:#d1d5db;list-style-type:disc;'>"
+                    f"<ul style='margin: 4px 0; padding-left: 20px; color: {list_color}; list-style-type: disc;'>"
                 )
                 list_type = "ul"
-            html_lines.append(f"<li style='margin:3px 0;'>{escape(m.group(1))}</li>")
+            html_lines.append(f"<li style='margin: 3px 0; line-height: 1.4;'>{escape(m.group(1))}</li>")
             continue
-
+            
         m = re.match(r"^\d+[.)]\s+(.*)", stripped)
         if m:
             if list_type == "ul":
@@ -1454,18 +1578,19 @@ def _format_market_brief_html(raw: str) -> str:
                 list_type = None
             if not list_type:
                 html_lines.append(
-                    "<ol style='margin:2px 0 6px;padding-left:20px;color:#d1d5db;'>"
+                    f"<ol style='margin: 4px 0; padding-left: 20px; color: {list_color};'>"
                 )
                 list_type = "ol"
-            html_lines.append(f"<li style='margin:3px 0;'>{escape(m.group(1))}</li>")
+            html_lines.append(f"<li style='margin: 3px 0; line-height: 1.4;'>{escape(m.group(1))}</li>")
             continue
-
+            
         if list_type:
             html_lines.append(f"</{list_type}>")
             list_type = None
-        html_lines.append(f"<p style='margin:2px 0 6px;color:#cbd5e1;'>{escape(stripped)}</p>")
-
+            
+        html_lines.append(f"<p style='margin: 4px 0; color: {text_color}; line-height: 1.5;'>{escape(stripped)}</p>")
+        
     if list_type:
         html_lines.append(f"</{list_type}>")
-
+        
     return "\n".join(html_lines)
