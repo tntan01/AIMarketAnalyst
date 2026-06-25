@@ -260,20 +260,6 @@ class DashboardScreen(QWidget):
         self.econ_table.setShowGrid(False)
         self.econ_table.setWordWrap(True)
         self.econ_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.econ_table.setStyleSheet(
-            "QTableWidget#EconTable {"
-            "  background:#161a22; border:none; border-radius:4px; color:#e5e7eb;"
-            "  alternate-background-color:#191e28;"
-            "}"
-            "QTableWidget#EconTable::item {"
-            "  font-size:13px; padding:6px 8px; border:none;"
-            "}"
-            "QHeaderView::section {"
-            "  background:#11151d; color:#64748b; font-size:11px; font-weight:700;"
-            "  padding:8px 8px; border:none; border-bottom:2px solid #ea580c;"
-            "  text-transform:uppercase;"
-            "}"
-        )
 
         header = self.econ_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)    # Thời gian
@@ -434,8 +420,6 @@ class DashboardScreen(QWidget):
                     time_item.setData(Qt.ItemDataRole.UserRole, "▶ ")
                 elif is_past:
                     time_item.setForeground(QColor("#64748b"))
-                else:
-                    time_item.setForeground(QColor("#e5e7eb"))
                 font = time_item.font()
                 font.setBold(is_nearest)
                 time_item.setFont(font)
@@ -454,10 +438,11 @@ class DashboardScreen(QWidget):
                     elif impact == "medium":
                         ev_color = QColor("#f59e0b")
                     else:
-                        ev_color = QColor("#e5e7eb")
+                        ev_color = None
 
                 ev_item = QTableWidgetItem(ev_text)
-                ev_item.setForeground(ev_color)
+                if ev_color:
+                    ev_item.setForeground(ev_color)
                 if is_nearest:
                     f = ev_item.font()
                     f.setBold(True)
@@ -473,8 +458,6 @@ class DashboardScreen(QWidget):
                     fc_item.setFont(f)
                 elif is_past:
                     fc_item.setForeground(QColor("#94a3b8"))
-                else:
-                    fc_item.setForeground(QColor("#e5e7eb"))
                 table.setItem(i, 2, fc_item)
 
                 pv_item = QTableWidgetItem(previous if previous else "—")
@@ -486,8 +469,6 @@ class DashboardScreen(QWidget):
                     pv_item.setFont(f)
                 elif is_past:
                     pv_item.setForeground(QColor("#94a3b8"))
-                else:
-                    pv_item.setForeground(QColor("#e5e7eb"))
                 table.setItem(i, 3, pv_item)
 
                 if actual:
@@ -558,14 +539,15 @@ class DashboardScreen(QWidget):
         dlg.setWindowTitle(f"Chi tiết sự kiện — {currency}")
         dlg.setMinimumSize(700, 480)
         dlg.resize(750, 520)
-        dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+        dlg.setObjectName("AnalysisDetailDialog")
 
         root = QVBoxLayout(dlg)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(16)
 
         # Title
-        title = QLabel(f"<b style='font-size:16px;color:#f8fafc;'>{currency}: {event_name}</b>")
+        title = QLabel(f"{currency}: {event_name}")
+        title.setObjectName("ActionTitle")
         title.setWordWrap(True)
         root.addWidget(title)
 
@@ -577,33 +559,49 @@ class DashboardScreen(QWidget):
         info_layout.setHorizontalSpacing(40)
         info_layout.setVerticalSpacing(8)
 
-        impact_map = {"high": "🔴 Cao", "medium": "🟡 Trung bình", "low": "⚪ Thấp"}
+        impact_map = {
+            "high": "<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🔴</span> Cao",
+            "medium": "<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🟡</span> Trung bình",
+            "low": "<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>⚪</span> Thấp"
+        }
         impact_text = impact_map.get(impact.lower(), impact)
 
         left_items = [
-            ("⏰ Thời gian", time_str),
-            ("💱 Tiền tệ", currency),
-            ("📊 Mức tác động", impact_text),
+            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>⏰</span> Thời gian", time_str),
+            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>💱</span> Tiền tệ", currency),
+            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📊</span> Mức tác động", impact_text),
         ]
         right_items = [
-            ("📈 Dự báo", forecast),
-            ("📉 Kỳ trước", previous),
+            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📈</span> Dự báo", forecast),
+            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📉</span> Kỳ trước", previous),
         ]
         if actual:
-            right_items.append(("✅ Kết quả", actual))
+            right_items.append(("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>✅</span> Kết quả", actual))
 
         for row_idx, (label_text, value_text) in enumerate(left_items):
-            lbl = QLabel(f"<span style='color:#94a3b8;font-size:13px;'>{label_text}:</span>")
+            lbl = QLabel(label_text)
+            lbl.setObjectName("CardDetail")
             lbl.setFixedWidth(120)
-            val = QLabel(f"<span style='color:#e5e7eb;font-size:13px;font-weight:600;'>{value_text}</span>")
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            val = QLabel(value_text)
+            val.setObjectName("CardValue")
+            val.setMargin(2)
+            val.setTextFormat(Qt.TextFormat.RichText)
             val.setWordWrap(True)
+            if "Mức tác động" in label_text:
+                val.setProperty("impact", impact.lower())
             info_layout.addWidget(lbl, row_idx, 0)
             info_layout.addWidget(val, row_idx, 1)
 
         for row_idx, (label_text, value_text) in enumerate(right_items):
-            lbl = QLabel(f"<span style='color:#94a3b8;font-size:13px;'>{label_text}:</span>")
+            lbl = QLabel(label_text)
+            lbl.setObjectName("CardDetail")
             lbl.setFixedWidth(120)
-            val = QLabel(f"<span style='color:#e5e7eb;font-size:13px;font-weight:600;'>{value_text}</span>")
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            val = QLabel(value_text)
+            val.setObjectName("CardValue")
+            val.setMargin(2)
+            val.setTextFormat(Qt.TextFormat.RichText)
             val.setWordWrap(True)
             info_layout.addWidget(lbl, row_idx, 2)
             info_layout.addWidget(val, row_idx, 3)
@@ -612,13 +610,9 @@ class DashboardScreen(QWidget):
 
         # AI analysis area
         self._event_ai_response = QTextEdit()
+        self._event_ai_response.setObjectName("ReadonlyText")
         self._event_ai_response.setReadOnly(True)
         self._event_ai_response.setMinimumHeight(140)
-        self._event_ai_response.setStyleSheet(
-            "QTextEdit { background:#171c24; color:#e5e7eb; font-size:13px; font-family:Segoe UI;"
-            "  border:1px solid #2b3545; border-radius:6px; padding:12px;"
-            "  selection-background-color:#ea580c; }"
-        )
         self._event_ai_response.setPlaceholderText("Bấm \"Xem tác động\" để AI phân tích...")
         root.addWidget(self._event_ai_response, 1)
 

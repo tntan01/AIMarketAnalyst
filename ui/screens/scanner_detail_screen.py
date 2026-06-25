@@ -73,13 +73,7 @@ class ScannerDetailScreen(QWidget):
 
         # ---- Tab widget: Tổng quan | Chẩn đoán | AI kiểm định ---------------
         self.tabs = QTabWidget()
-        self.tabs.setObjectName("ScannerDetailTabs")
-        self.tabs.setStyleSheet(
-            "QTabWidget::pane { border: 1px solid #334155; border-radius: 6px; background: #1a1f2e; }"
-            "QTabBar::tab { padding: 8px 20px; font-size: 13px; color: #94a3b8; background: #171c24; border: 1px solid #334155; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px; }"
-            "QTabBar::tab:selected { color: #f8fafc; background: #1a1f2e; border-bottom: 2px solid #ea580c; }"
-            "QTabBar::tab:hover:!selected { color: #e2e8f0; background: #1e293b; }"
-        )
+        self.tabs.setObjectName("ContentTabs")
 
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
         overview_tab = QWidget()
