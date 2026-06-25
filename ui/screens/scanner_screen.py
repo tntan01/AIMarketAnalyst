@@ -689,6 +689,16 @@ class ScannerScreen (QWidget ):
             for symbol in symbols
             if settings .trading .symbol_settings .get (symbol)
         }
+        thresholds: dict[str, dict[str, int]] = {}
+        for symbol in symbols:
+            cfg = settings.trading.symbol_settings.get(symbol)
+            if cfg:
+                thresholds[symbol] = {
+                    "ready": cfg.decision_ready,
+                    "watch": cfg.decision_watch,
+                    "wait": cfg.decision_wait,
+                    "min_score_gap": 10,
+                }
         symbol_auto_trade: dict[str, dict] = {}
         for symbol in symbols:
             cfg = settings.trading.symbol_settings.get(symbol)
@@ -712,6 +722,7 @@ class ScannerScreen (QWidget ):
         auto_trade_enabled =auto_trade_enabled ,
         min_scores =min_scores ,
         symbol_auto_trade =symbol_auto_trade ,
+        thresholds =thresholds ,
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
         self .scan_thread =thread 

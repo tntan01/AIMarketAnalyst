@@ -451,6 +451,8 @@ Không code tất cả trong một lần.
 - `core.analysis_engine.build_entry_checklist()` evaluates trend compatibility by scenario side and allows range setups only when the POI/location quality is strong enough.
 - `core.signal_engine.score_scenario()` scores each side with Trend 18, Momentum 15, Location 17, SMC quality 15, Risk 15 and Macro 30. SMC quality uses H4/H1 BOS/CHOCH/displacement, premium/discount, liquidity sweeps and zone metadata (`zone_score`, broken/mitigated/test count).
 - `core.analysis_engine.confidence_reason()` includes component score breakdowns, SMC reason and macro/news context so score confidence is explainable from rule-engine data.
+- `core.decision_engine.make_final_decision()` accepts per-symbol `thresholds` (dict with keys `ready`, `watch`, `wait`, `min_score_gap`) that override `DEFAULT_DECISION_THRESHOLDS` (80/65/50/10). Custom thresholds flow from `config.settings.SymbolScanSettings.decision_ready/watch/wait` → `ui.screens.scanner_screen` builds per-symbol dict → `ScannerRequest.thresholds` → `scanner_controller` passes to `analyze_symbol(thresholds=...)` → `AnalysisPipeline.execute()` → `make_final_decision(thresholds=...)`.
+- `config.settings.SymbolScanSettings` stores per-symbol decision thresholds: `decision_ready` (default 80), `decision_watch` (default 65), `decision_wait` (default 50). These are loaded from JSON by `services.settings_service.SettingsService` with backward-compatible fallback to defaults when fields are missing.
 
 ## Current Implementation Addendum
 

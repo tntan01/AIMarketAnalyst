@@ -33,6 +33,7 @@ def analyze_symbol(
     account_guard_settings: dict[str, Any] | None = None,
     trade_date: datetime | None = None,
     execution_quality_score: int | float | str | None = None,
+    thresholds: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Orchestrate the full market analysis pipeline.
 
@@ -60,4 +61,5 @@ def analyze_symbol(
         account_guard_settings=account_guard_settings,
         trade_date=trade_date,
         execution_quality_score=execution_quality_score,
+        thresholds=thresholds,
     )

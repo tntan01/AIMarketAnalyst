@@ -48,6 +48,7 @@ class MT5Service(DataProvider):
     def __init__(self, symbol_profile_path: Path | None = None) -> None:
         path = symbol_profile_path or CONFIG_DIR / "symbol_profiles.json"
         self.symbol_profiles = json.loads(path.read_text(encoding="utf-8"))
+        self._quote_usd_cache: dict[str, float | None] = {}
 
     def _ensure_initialized(self, mt5: object) -> bool:
         try:
@@ -302,14 +303,26 @@ class MT5Service(DataProvider):
 
     def load_primary_timeframes(self, broker_symbol: str, bars_by_timeframe: dict[str, int]) -> dict[str, list[Candle]]:
         import MetaTrader5 as mt5
-        # Assume connected
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         selected = mt5.symbol_select(broker_symbol, True)
         if not selected:
             raise RuntimeError(f"Không chọn được mã {broker_symbol} trong MT5 Market Watch.")
 
         results: dict[str, list[Candle]] = {}
-        for timeframe, bars in bars_by_timeframe.items():
-            results[timeframe] = self.load_ohlcv(broker_symbol, timeframe, bars, True)
+        with ThreadPoolExecutor(max_workers=min(len(bars_by_timeframe), 4)) as ex:
+            futures = {
+                ex.submit(self.load_ohlcv, broker_symbol, timeframe, bars, True): timeframe
+                for timeframe, bars in bars_by_timeframe.items()
+            }
+            for future in as_completed(futures):
+                timeframe = futures[future]
+                try:
+                    results[timeframe] = future.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Không lấy được OHLCV cho {broker_symbol} {timeframe}: {exc}"
+                    ) from exc
         return results
 
     # -- DataProvider interface: trading ------------------------------------
@@ -394,13 +407,16 @@ class MT5Service(DataProvider):
             return None
 
     def quote_to_usd_rate(self, quote_currency: str) -> float | None:
-        """Trả về tỷ giá quy đổi từ quote_currency sang USD, hoặc None nếu không lấy được."""
+        """Trả về tỷ giá quy đổi từ quote_currency sang USD, hoặc None nếu không lấy được.
+
+        Results are cached per currency for the lifetime of this MT5Service instance."""
         if quote_currency == "USD":
             return 1.0
+        if quote_currency in self._quote_usd_cache:
+            return self._quote_usd_cache[quote_currency]
         try:
             import MetaTrader5 as mt5
             # Assume connected
-            # Thử QUOTEUSD (vd: GBP → GBPUSD) hoặc USDQUOTE (vd: JPY → USDJPY)
             for pair_name in (quote_currency + "USD", "USD" + quote_currency):
                 tick = mt5.symbol_info_tick(pair_name)
                 if tick is None:
@@ -413,9 +429,13 @@ class MT5Service(DataProvider):
                             break
                 if tick and tick.bid:
                     rate = float(tick.bid)
-                    return rate if pair_name.startswith(quote_currency) else 1.0 / rate
+                    result = rate if pair_name.startswith(quote_currency) else 1.0 / rate
+                    self._quote_usd_cache[quote_currency] = result
+                    return result
+            self._quote_usd_cache[quote_currency] = None
             return None
         except Exception:
+            self._quote_usd_cache[quote_currency] = None
             return None
 
     def has_open_position_or_order(self, broker_symbol: str) -> bool:

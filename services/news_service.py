@@ -147,31 +147,41 @@ class NewsService:
             "resume_after": resume_after,
         }
 
+    _preload_cache_time: datetime | None = None
+    _preload_cache_ttl = timedelta(minutes=5)
+
     def preload_macro_contexts(self, symbols: list[str], progress_callback=None) -> None:
         """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores.
 
-        Args:
-            symbols: List of symbols to pre-compute macro contexts for.
-            progress_callback: Optional callable(percent: int, message: str) for UI updates.
+        Results are cached for _preload_cache_ttl (5 min) to avoid redundant
+        HTTP calls on repeated scans.
         """
         if not symbols:
             return
         progress = progress_callback or (lambda _p, _m: None)
 
-        # Buoc 1: Fetch calendar 1 lan
-        progress(15, "Đang tải lịch kinh tế (Forex Factory)...")
+        # Skip if preload was done recently (within 5 min)
+        now = datetime.now(UTC)
+        if self._preload_cache_time is not None and now - self._preload_cache_time < self._preload_cache_ttl:
+            return
+
+        # Buoc 1: Fetch calendar 1 lan (uses disk cache with 12h TTL)
+        progress(15, "Đang tải lịch kinh tế...")
         first = symbols[0]
         currencies_first = [part for part in first.split("/") if part]
         self._calendar_events(currencies_first)
 
-        # Buoc 2: Fetch RSS headlines 1 lan duy nhat (query tong quat cho ca forex)
-        progress(16, "Đang tải tin tức toàn cầu (Google News RSS)...")
-        self._global_headlines: list[dict[str, object]] = self._fetch_global_forex_headlines()
+        # Buoc 2+3: Fetch RSS + official statements in parallel
+        progress(16, "Đang tải tin tức toàn cầu...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        progress(17, "Đang tải phát biểu quan chức mới nhất...")
-        self._latest_official_statements()
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            headlines_future = ex.submit(self._fetch_global_forex_headlines)
+            statements_future = ex.submit(self._latest_official_statements)
+            self._global_headlines: list[dict[str, object]] = headlines_future.result()
+            statements_future.result()  # caches internally
 
-        # Buoc 3: Pre-compute macro context cho TAT CA symbols
+        # Buoc 4: Pre-compute macro context cho TAT CA symbols
         self._preloading = True
         try:
             total = max(1, len(symbols))
@@ -184,10 +194,13 @@ class NewsService:
         finally:
             self._preloading = False
 
-        self._last_fetch_time = datetime.now(UTC)
+        self._last_fetch_time = now
+        self._preload_cache_time = now
 
     def _fetch_global_forex_headlines(self) -> list[dict[str, object]]:
-        """Fetch 1 query tong quat de lay headlines cho toan bo cac cap tien te."""
+        """Fetch 3 broad queries in parallel to get headlines for all currency pairs."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         rows: list[dict[str, object]] = []
         seen: set[str] = set()
         cutoff = datetime.now(UTC) - timedelta(hours=24)
@@ -196,17 +209,32 @@ class NewsService:
             "global macro risk sentiment dollar yen euro pound forex markets",
             "forex geopolitical oil gold safe haven latest",
         ]
-        for query in broad_queries:
+
+        def _fetch_one(query: str) -> list[dict[str, object]]:
+            items: list[dict[str, object]] = []
             url = "https://news.google.com/rss/search?q=" + quote_plus(query) + "&hl=en-US&gl=US&ceid=US:en"
             for item in self._rss_items(url, query=query):
                 title_key = str(item.get("title", "")).lower()
-                if not title_key or title_key in seen:
+                if not title_key:
                     continue
                 published = parse_rss_time(str(item.get("published_utc", "")))
                 if not published or published < cutoff:
                     continue
-                seen.add(title_key)
-                rows.append(item)
+                items.append(item)
+            return items
+
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futures = {ex.submit(_fetch_one, q): q for q in broad_queries}
+            for future in as_completed(futures):
+                try:
+                    for item in future.result():
+                        title_key = str(item.get("title", "")).lower()
+                        if title_key in seen:
+                            continue
+                        seen.add(title_key)
+                        rows.append(item)
+                except Exception:
+                    pass
         return rows
 
     def _get_headlines(self, symbol: str, currencies: list[str]) -> list[dict[str, object]]:
@@ -620,7 +648,17 @@ class NewsService:
         return self._select_calendar_events(currencies, self._fetch_forex_factory_json_events())
 
     def _calendar_events(self, currencies: list[str]) -> dict[str, object]:
+        # Use cached calendar if still fresh (12h TTL via _cached_calendar_events)
+        cached = self._cached_calendar_events()
+        if cached:
+            return {
+                "source": "Calendar file cache",
+                "events": self._select_calendar_events(currencies, cached),
+                "warning": "",
+            }
+
         errors: list[str] = []
+        # Try JSON first (fast), fallback to HTML scraper
         for source, fetcher in (
             ("Forex Factory", self._fetch_forex_factory_json_events),
             ("Forex Factory HTML", self._fetch_forex_factory_html_events),
@@ -646,13 +684,6 @@ class NewsService:
                 "warning": "",
             }
 
-        cached = self._cached_calendar_events()
-        if cached:
-            return {
-                "source": "Calendar file cache",
-                "events": self._select_calendar_events(currencies, cached),
-                "warning": "Không cập nhật được lịch kinh tế từ Forex Factory; đang dùng cache lịch kinh tế gần nhất.",
-            }
         return {
             "source": "Calendar unavailable",
             "events": [],
@@ -1078,7 +1109,7 @@ class NewsService:
     def _rss_items(self, url: str, *, query: str) -> list[dict[str, object]]:
         request = Request(url, headers={"User-Agent": "AI Market Analyst/1.0"})
         try:
-            with urlopen(request, timeout=8) as response:
+            with urlopen(request, timeout=5) as response:
                 payload = response.read()
         except Exception:
             return []

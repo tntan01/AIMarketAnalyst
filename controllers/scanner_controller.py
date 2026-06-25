@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, replace
 from collections.abc import Callable
 from datetime import datetime
@@ -91,16 +93,26 @@ class ScannerController:
             "H4": settings.advanced.h4_bars,
             "H1": settings.advanced.h1_bars,
         }
-        progress(12, "Đang đọc danh sách mã giao dịch...")
-        available_symbols = self.data_provider.available_symbols(market_watch_only=True)
+
+        # ---- Kick off background I/O immediately (runs while we do MT5 setup) ----
+        with ThreadPoolExecutor(max_workers=2) as _bg:
+            _corr_future = _bg.submit(fetch_macro_correlation_context)
+            _preload_future = _bg.submit(
+                self.news_service.preload_macro_contexts,
+                request.symbols,
+                progress_callback=lambda p, m: progress(min(14 + p // 10, 18), m),
+            )
+
+            progress(12, "Đang đọc danh sách mã giao dịch...")
+            available_symbols = self.data_provider.available_symbols(market_watch_only=True)
+
+            # Wait for background I/O to complete before proceeding
+            progress(14, "Đang tải dữ liệu thị trường Mỹ...")
+            correlation_context = _corr_future.result()
+            _preload_future.result()
+
         rows: list[dict[str, Any]] = []
 
-        # Fetch DXY/VIX/US10Y MỘT LẦN cho toàn bộ scanner (song song)
-        progress(14, "Đang tải dữ liệu thị trường Mỹ (DXY, VIX, US10Y)...")
-        correlation_context = fetch_macro_correlation_context()
-
-        # Pre-fetch toan bo macro context 1 lan (RSS + calendar) de tai su dung trong vong lap
-        self.news_service.preload_macro_contexts(request.symbols, progress_callback=progress)
         freshness_raw = self.news_service.macro_freshness_status()
         freshness = freshness_raw if isinstance(freshness_raw, dict) else {"confidence_multiplier": 1.0}
         freshness_multiplier = float(freshness.get("confidence_multiplier", 1.0))
@@ -113,92 +125,104 @@ class ScannerController:
             "trader_timezone": settings.display.timezone or "Asia/Ho_Chi_Minh",
         }
 
-        progress(19, "Đang quét các cặp tiền...")
+        progress(19, "Đang tải dữ liệu giá từ MT5...")
         total = max(1, len(request.symbols))
-        for index, symbol in enumerate(request.symbols, start=1):
-            progress(12 + int(index / total * 58), f"Đang quét {symbol} ({index}/{total})...")
-            broker_symbol = self.data_provider.resolve_symbol(symbol, available_symbols)
-            if not broker_symbol:
-                rows.append(blocked_scanner_row(symbol, "Không tìm thấy mã broker."))
-                continue
 
+        analysis_input_kwargs: dict[str, Any] = {
+            "account_balance": mt5_balance,
+            "risk_percent": request.risk_percent,
+            "account_currency": settings.trading.account_currency,
+            "lot_step": settings.trading.lot_step,
+            "minimum_lot": settings.trading.minimum_lot,
+            "timezone_name": request.timezone_name,
+        }
+
+        # ---- Phase 1: fetch MT5 data sequentially (MT5 works best single-threaded) ----
+        packets: list[dict[str, Any] | None] = []
+        for i, symbol in enumerate(request.symbols):
+            progress(19 + int(i / total * 30), f"Đang tải dữ liệu {symbol} ({i + 1}/{total})...")
             try:
-                all_candles = self.data_provider.load_primary_timeframes(
-                    broker_symbol,
-                    {**bars_by_timeframe, "M15": 200},
-                )
-                candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
-                m15_candles = all_candles["M15"]
-                data_quality = self.data_provider.symbol_data_quality(symbol, broker_symbol)
-                news_flags = self.news_service.data_quality_flags(symbol)
-                macro_context = news_flags.pop("macro_context", {"events": []})
-                data_quality.update(news_flags)
-                data_quality["macro_freshness"] = freshness
-                contract_override = contract_size_override_for_symbol(
+                pkt = _fetch_one_symbol_mt5(
                     symbol,
-                    data_quality,
-                    settings.trading.contract_size_override,
+                    data_provider=self.data_provider,
+                    available_symbols=available_symbols,
+                    bars_by_timeframe=bars_by_timeframe,
+                    news_service=self.news_service,
+                    freshness=freshness,
                 )
-                analysis_input = AnalysisInput(
-                    symbol=symbol,
-                    broker_symbol=broker_symbol,
-                    account_balance=mt5_balance,
-                    risk_percent=request.risk_percent,
-                    account_currency=settings.trading.account_currency,
-                    lot_step=settings.trading.lot_step,
-                    minimum_lot=settings.trading.minimum_lot,
-                    contract_size_override=float(contract_override) if contract_override else None,
-                    timezone_name=request.timezone_name,
-                )
-                macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
-                macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
-                macro_confidence = macro_confidence * freshness_multiplier
-                quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-                quote_to_usd_fn = getattr(self.data_provider, "quote_to_usd_rate", None)
-                quote_to_usd = quote_to_usd_fn(quote_currency) if callable(quote_to_usd_fn) else None
-                result = analyze_symbol(
-                    analysis_input,
-                    candles,
-                    data_quality=data_quality,
-                    macro_alignment=macro_alignment if isinstance(macro_alignment, dict) else None,
-                    macro_confidence=macro_confidence,
-                    m15_candles=m15_candles,
-                    correlation_context=correlation_context,
-                    quote_to_usd_rate=quote_to_usd,
-                    closed_trades=closed_trades,
-                    open_trades=[],
-                    account_guard_settings=account_guard_settings,
-                )
-                result["economic_events"] = macro_context.get("events", [])
-                result["macro"]["driver_context"] = macro_context
-                if isinstance(macro_context, dict):
-                    result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
-                    result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
-                row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
-                row = self._apply_min_score_gate(row, request.min_scores.get(symbol, 0))
+            except Exception:
+                pkt = None
+            packets.append(pkt)
+
+        # ---- Phase 2: analyze all symbols in parallel (CPU-only, no MT5) ----
+        progress(49, "Đang phân tích kỹ thuật các cặp tiền...")
+        analyze_kwargs = {
+            "correlation_context": correlation_context,
+            "freshness_multiplier": freshness_multiplier,
+            "contract_size_overrides": settings.trading.contract_size_override,
+            "analysis_input_kwargs": analysis_input_kwargs,
+            "closed_trades": closed_trades,
+            "account_guard_settings": account_guard_settings,
+        }
+
+        with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 4)) as ex:
+            futures: dict[Any, int] = {}
+            for i, pkt in enumerate(packets):
+                symbol = request.symbols[i]
+                if pkt is None:
+                    rows.append(blocked_scanner_row(symbol, "Không tìm thấy mã broker."))
+                    continue
+                futures[
+                    ex.submit(
+                        _analyze_one_symbol,
+                        pkt,
+                        thresholds=request.thresholds.get(symbol),
+                        **analyze_kwargs,
+                    )
+                ] = i
+
+            completed = 0
+            for future in as_completed(futures):
+                i = futures[future]
+                symbol = request.symbols[i]
+                completed += 1
+                progress(49 + int(completed / total * 25), f"Đã phân tích {symbol} ({completed}/{total})...")
+                try:
+                    row = future.result()
+                except Exception as exc:
+                    row = blocked_scanner_row(symbol, f"Lỗi không mong đợi: {exc}")
                 row = self._apply_symbol_override(row, request.symbol_auto_trade.get(symbol))
                 rows.append(row)
-            except Exception as exc:
-                rows.append(blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol))
 
         progress(74, "Đang xếp hạng setup theo rule engine...")
         rows = sort_scanner_rows(rows)
 
         active_ai = settings.ai.active_provider()
-        ai_called = 0
         targets = ai_targets(rows, request.max_ai_details)
         if active_ai and active_ai.api_key and targets:
-            for index, row in enumerate(targets, start=1):
-                progress(78 + int(index / len(targets) * 12), f"Đang gọi AI auditor cho {row['symbol']} ({index}/{len(targets)})...")
-                audit = self._write_scanner_ai_audit(row, active_ai)
+            progress(78, f"Đang gọi AI auditor cho {len(targets)} setup...")
+
+            def _audit_one(target_row: dict[str, Any]) -> dict[str, Any]:
+                audit = self._write_scanner_ai_audit(target_row, active_ai)
                 if audit:
-                    row["ai_setup_audit"] = audit
-                    row["ai_audit_available"] = not bool(audit.get("auditor_error"))
-                    row["ai_summary_available"] = True
-                    ai_called += 1
+                    target_row["ai_setup_audit"] = audit
+                    target_row["ai_audit_available"] = not bool(audit.get("auditor_error"))
+                    target_row["ai_summary_available"] = True
                     summary = summarize_ai_setup_audit(audit)
                     if summary:
-                        row["short_reason"] = summary
+                        target_row["short_reason"] = summary
+                return target_row
+
+            ai_called = 0
+            with ThreadPoolExecutor(max_workers=min(len(targets), 3)) as ex:
+                futures = [ex.submit(_audit_one, row) for row in targets]
+                for i, future in enumerate(as_completed(futures), start=1):
+                    progress(78 + int(i / len(targets) * 12), f"Đã audit AI {i}/{len(targets)}...")
+                    try:
+                        future.result()
+                        ai_called += 1
+                    except Exception:
+                        pass
 
         # ---- AI Market Brief (1 call, after all individual audits) ----
         market_brief = ""
@@ -242,30 +266,6 @@ class ScannerController:
         if not regime and side not in ("buy", "sell") and not min_rr:
             return None
         return cfg
-
-    def _apply_min_score_gate(self, row: dict[str, Any], min_score: int) -> dict[str, Any]:
-        try:
-            threshold = int(min_score)
-        except (TypeError, ValueError):
-            threshold = 0
-        threshold = max(0, min(100, threshold))
-        row["min_score"] = threshold
-        if threshold <= 0:
-            return row
-        try:
-            score = int(row.get("final_score", row.get("best_score", 0)))
-        except (TypeError, ValueError):
-            score = 0
-        if score >= threshold:
-            return row
-        row["scanner_action"] = "stand_aside"
-        row["trade_permission"] = "blocked"
-        row["scanner_group"] = "blocked"
-        row["scanner_decision"] = "TRADE_BLOCKED"
-        reason = f"Final score {score} thấp hơn Min Score {threshold}."
-        row["permission_reason"] = reason
-        row["short_reason"] = reason
-        return row
 
     def _apply_symbol_override(self, row: dict[str, Any], cfg: dict[str, object] | None) -> dict[str, Any]:
         """Apply per-symbol backtest-driven override from Settings.
@@ -543,4 +543,187 @@ def _safe_float_for_auto(value: object) -> float | None:
         return result
     except (TypeError, ValueError):
         return None
+
+
+def _scan_one_symbol(
+    symbol: str,
+    *,
+    available_symbols: list[str],
+    bars_by_timeframe: dict[str, int],
+    correlation_context: dict[str, Any],
+    news_service: NewsService,
+    freshness: dict[str, Any],
+    freshness_multiplier: float,
+    contract_size_overrides: dict[str, float],
+    analysis_input_kwargs: dict[str, Any],
+    closed_trades: list[dict[str, Any]],
+    account_guard_settings: dict[str, Any],
+    thresholds: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Process a single symbol — safe for ThreadPoolExecutor (each thread inits its own MT5)."""
+    import MetaTrader5 as _mt5
+
+    _mt5_ok = _mt5.initialize()
+    try:
+        data_provider = MT5Service()
+        broker_symbol = data_provider.resolve_symbol(symbol, available_symbols)
+        if not broker_symbol:
+            return blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
+
+        all_candles = data_provider.load_primary_timeframes(
+            broker_symbol,
+            {**bars_by_timeframe, "M15": 200},
+        )
+        candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
+        m15_candles = all_candles["M15"]
+        data_quality = data_provider.symbol_data_quality(symbol, broker_symbol)
+        news_flags = news_service.data_quality_flags(symbol)
+        macro_context = news_flags.pop("macro_context", {"events": []})
+        data_quality.update(news_flags)
+        data_quality["macro_freshness"] = freshness
+
+        contract_override = contract_size_override_for_symbol(
+            symbol,
+            data_quality,
+            contract_size_overrides,
+        )
+        analysis_input = AnalysisInput(
+            symbol=symbol,
+            broker_symbol=broker_symbol,
+            **analysis_input_kwargs,
+            contract_size_override=float(contract_override) if contract_override else None,
+        )
+        macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
+        macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
+        macro_confidence = macro_confidence * freshness_multiplier
+        quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+        quote_to_usd = data_provider.quote_to_usd_rate(quote_currency)
+
+        result = analyze_symbol(
+            analysis_input,
+            candles,
+            data_quality=data_quality,
+            macro_alignment=macro_alignment if isinstance(macro_alignment, dict) else None,
+            macro_confidence=macro_confidence,
+            m15_candles=m15_candles,
+            correlation_context=correlation_context,
+            quote_to_usd_rate=quote_to_usd,
+            closed_trades=closed_trades,
+            open_trades=[],
+            account_guard_settings=account_guard_settings,
+            thresholds=thresholds,
+        )
+        result["economic_events"] = macro_context.get("events", [])
+        result["macro"]["driver_context"] = macro_context
+        if isinstance(macro_context, dict):
+            result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
+            result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
+        row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
+        return row
+    except Exception as exc:
+        broker_symbol = None
+        try:
+            temp = MT5Service()
+            broker_symbol = temp.resolve_symbol(symbol, available_symbols)
+        except Exception:
+            pass
+        return blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol)
+    finally:
+        if _mt5_ok:
+            _mt5.shutdown()
+
+
+# ---- Two-phase scan: Phase 1 fetches MT5 data on main thread,
+# Phase 2 runs analysis in parallel (no MT5 needed) ----
+
+def _fetch_one_symbol_mt5(
+    symbol: str,
+    data_provider: Any,
+    available_symbols: list[str],
+    bars_by_timeframe: dict[str, int],
+    news_service: Any,
+    freshness: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
+    consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved."""
+    broker_symbol = data_provider.resolve_symbol(symbol, available_symbols)
+    if not broker_symbol:
+        return None
+
+    all_candles = data_provider.load_primary_timeframes(
+        broker_symbol, {**bars_by_timeframe, "M15": 100},
+    )
+    data_quality = data_provider.symbol_data_quality(symbol, broker_symbol)
+    news_flags = news_service.data_quality_flags(symbol)
+    macro_context = news_flags.pop("macro_context", {"events": []})
+    data_quality.update(news_flags)
+    data_quality["macro_freshness"] = freshness
+    quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+    quote_to_usd = data_provider.quote_to_usd_rate(quote_currency)
+
+    return {
+        "symbol": symbol,
+        "broker_symbol": broker_symbol,
+        "candles": {tf: all_candles[tf] for tf in bars_by_timeframe},
+        "m15_candles": all_candles["M15"],
+        "data_quality": data_quality,
+        "macro_context": macro_context,
+        "quote_to_usd": quote_to_usd,
+    }
+
+
+def _analyze_one_symbol(
+    pkt: dict[str, Any],
+    *,
+    correlation_context: dict[str, Any],
+    freshness_multiplier: float,
+    contract_size_overrides: dict[str, float],
+    analysis_input_kwargs: dict[str, Any],
+    closed_trades: list[dict[str, Any]],
+    account_guard_settings: dict[str, Any],
+    thresholds: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Run the analysis pipeline for one symbol (CPU-only, thread-safe)."""
+    symbol = pkt["symbol"]
+    broker_symbol = pkt["broker_symbol"]
+    data_quality = pkt["data_quality"]
+    macro_context = pkt["macro_context"]
+
+    contract_override = contract_size_override_for_symbol(
+        symbol, data_quality, contract_size_overrides,
+    )
+    analysis_input = AnalysisInput(
+        symbol=symbol,
+        broker_symbol=broker_symbol,
+        **analysis_input_kwargs,
+        contract_size_override=float(contract_override) if contract_override else None,
+    )
+    macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
+    macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
+    macro_confidence = macro_confidence * freshness_multiplier
+
+    try:
+        result = analyze_symbol(
+            analysis_input,
+            pkt["candles"],
+            data_quality=data_quality,
+            macro_alignment=macro_alignment if isinstance(macro_alignment, dict) else None,
+            macro_confidence=macro_confidence,
+            m15_candles=pkt["m15_candles"],
+            correlation_context=correlation_context,
+            quote_to_usd_rate=pkt["quote_to_usd"],
+            closed_trades=closed_trades,
+            open_trades=[],
+            account_guard_settings=account_guard_settings,
+            thresholds=thresholds,
+        )
+    except Exception as exc:
+        return blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol)
+
+    result["economic_events"] = macro_context.get("events", [])
+    result["macro"]["driver_context"] = macro_context
+    if isinstance(macro_context, dict):
+        result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
+        result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
+    return scanner_row_from_analysis(result, broker_symbol=broker_symbol)
 

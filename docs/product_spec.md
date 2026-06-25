@@ -47,6 +47,8 @@ Scanner có hai chế độ:
 - `Quét 1 lần`: quét và hiển thị kết quả, không tự động vào lệnh.
 - `Quét theo khoảng thời gian`: dùng timer quét lại định kỳ. Khi bật auto-trade, có thể tự động vào lệnh MT5 với bộ lọc riêng cho từng cặp.
 
+Mỗi cặp có thể được cấu hình ngưỡng quyết định riêng (`decision_ready`, `decision_watch`, `decision_wait`) trong `SymbolScanSettings`. Các ngưỡng này được truyền vào `decision_engine.make_final_decision()` để phân loại setup thành READY_TO_TRADE, WATCH_ONLY, WAITING_CONFIRMATION, hoặc STAND_ASIDE. Nếu không cấu hình riêng, hệ thống dùng mặc định ready=80, watch=65, wait=50.
+
 ### 3.2 Backtest
 
 Backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge của hệ thống. Hỗ trợ 5 chế độ (Strict, Balanced, Legacy, Research, Backtest), multi-symbol batch, và breakdown 12 chiều (side, regime, score, M15 quality, SMC, R:R...).

@@ -21,6 +21,153 @@ SYMBOL_CONFIG: dict[str, dict[str, Any]] = {
 
 STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
 
+# Dynamic SL multiplier by market regime — wider stops in trends/volatile,
+# tighter stops in ranges.
+REGIME_SL_MULTIPLIER: dict[str, float] = {
+    "trend_up":   0.65,
+    "trend_down": 0.65,
+    "range":      0.40,
+    "volatile":   0.85,
+    "unknown":    0.50,
+}
+_DEFAULT_SL_MULT = 0.50
+_ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
+_ZONE_SL_CAP_RATIO = 1.5     # SL cannot exceed 1.5× ATR-based width
+
+# Fibonacci extension levels for TP fallback when no S/R zones available
+_FIB_TP1 = 0.382
+_FIB_TP2 = 0.618
+
+
+def _find_impulse_swing(
+    swing_highs: list[dict[str, Any]],
+    swing_lows: list[dict[str, Any]],
+    side: str,
+) -> tuple[float, float] | None:
+    """Find the best completed impulse pair (start, end) for Fib projection.
+
+    For BUY: find a swing low → later swing high (upward impulse).
+    For SELL: find a swing high → later swing low (downward impulse).
+    Returns (start_level, end_level) or None if insufficient swing data.
+    """
+    if side == "buy":
+        if len(swing_lows) < 1 or len(swing_highs) < 1:
+            return None
+        # Use the most recent swing low as impulse start
+        low = swing_lows[-1]
+        # Find the highest swing high AFTER this low
+        best_high = None
+        for h in swing_highs:
+            if h["index"] > low["index"]:
+                if best_high is None or h["level"] > best_high["level"]:
+                    best_high = h
+        if best_high is None:
+            return None
+        return (low["level"], best_high["level"])
+    else:
+        if len(swing_highs) < 1 or len(swing_lows) < 1:
+            return None
+        # Use the most recent swing high as impulse start
+        high = swing_highs[-1]
+        # Find the lowest swing low AFTER this high
+        best_low = None
+        for lo in swing_lows:
+            if lo["index"] > high["index"]:
+                if best_low is None or lo["level"] < best_low["level"]:
+                    best_low = lo
+        if best_low is None:
+            return None
+        return (high["level"], best_low["level"])
+
+
+def _fib_extension_target(
+    smc: dict[str, Any] | None,
+    side: str,
+    atr_value: float,
+    fib_level: float,
+) -> float | None:
+    """Calculate Fibonacci extension target from H4 swings.
+
+    For BUY: projects upward from the last completed upward impulse.
+    For SELL: projects downward from the last completed downward impulse.
+
+    Returns the Fib extension price, or None if swing data is unavailable.
+    """
+    if not isinstance(smc, dict):
+        return None
+    h4 = smc.get("H4", {})
+    if not isinstance(h4, dict):
+        return None
+    swings = h4.get("swings", {})
+    if not isinstance(swings, dict):
+        return None
+
+    highs = swings.get("highs", [])
+    lows = swings.get("lows", [])
+    if not isinstance(highs, list) or not isinstance(lows, list):
+        return None
+
+    pair = _find_impulse_swing(highs, lows, side)
+    if pair is None:
+        return None
+
+    start, end = pair
+    impulse = abs(end - start)
+
+    if side == "buy":
+        target = end + impulse * fib_level
+        # Sanity: TP must be above entry area and at least 0.3 ATR away
+        if target <= end:
+            return None
+        return round_price(target)
+    else:
+        target = end - impulse * fib_level
+        if target >= end:
+            return None
+        return round_price(target)
+
+
+def _calc_stop_loss_buy(
+    level: float,
+    atr_value: float,
+    sl_mult: float,
+    min_stop_distance: float,
+    zone: dict[str, Any] | None,
+) -> float:
+    """Calculate BUY stop loss: prefer below-zone-low, capped at 1.5× ATR."""
+    atr_sl = level - max(atr_value * sl_mult, min_stop_distance)
+    max_sl = level - atr_value * sl_mult * _ZONE_SL_CAP_RATIO  # widest allowed
+
+    zone_low = zone.get("low") if isinstance(zone, dict) else None
+    if zone_low is None or zone_low >= level:
+        return atr_sl  # no valid zone boundary below level, use ATR-based
+
+    zone_sl = zone_low - atr_value * _ZONE_SL_BUFFER_ATR
+    if zone_sl >= max_sl:
+        return zone_sl  # zone is close enough, place SL below it
+    return max_sl       # zone too far, cap at 1.5×
+
+
+def _calc_stop_loss_sell(
+    level: float,
+    atr_value: float,
+    sl_mult: float,
+    min_stop_distance: float,
+    zone: dict[str, Any] | None,
+) -> float:
+    """Calculate SELL stop loss: prefer above-zone-high, capped at 1.5× ATR."""
+    atr_sl = level + max(atr_value * sl_mult, min_stop_distance)
+    min_sl = level + atr_value * sl_mult * _ZONE_SL_CAP_RATIO  # tightest allowed
+
+    zone_high = zone.get("high") if isinstance(zone, dict) else None
+    if zone_high is None or zone_high <= level:
+        return atr_sl  # no valid zone boundary above level, use ATR-based
+
+    zone_sl = zone_high + atr_value * _ZONE_SL_BUFFER_ATR
+    if zone_sl <= min_sl:
+        return zone_sl  # zone is close enough, place SL above it
+    return min_sl       # zone too far, cap at 1.5×
+
 
 @dataclass(frozen=True, slots=True)
 class AnalysisInput:
@@ -77,13 +224,14 @@ def build_scenarios(
     correlation_context: dict[str, Any] | None = None,
     quote_to_usd_rate: float | None = None,
     spread_price: float = 0.0,
+    market_regime: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
     for side in ("buy", "sell"):
         side_total = scores[side].get("signal_score", scores[side].get("total", 0))
         if side_total < 50 or trade_permission["status"] == "blocked":
             continue
-        plan = build_trade_plan(side, request, technical, smc, h1_candles or [], m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=spread_price)
+        plan = build_trade_plan(side, request, technical, smc, h1_candles or [], m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=spread_price, market_regime=market_regime)
         if not plan:
             continue
         plan.update({
@@ -106,18 +254,24 @@ def build_trade_plan(
     correlation_context: dict[str, Any] | None = None,
     quote_to_usd_rate: float | None = None,
     spread_price: float = 0.0,
+    market_regime: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     price = technical["price"]
     atr_value = technical["atr_h4"] or technical["atr_d1"] or 0.0
     if atr_value <= 0:
         return None
     min_stop_distance = max(atr_value * 0.20, price * 0.0002)
+    regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
+    sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
     h4_smc = smc.get("H4", {}) if isinstance(smc, dict) else {}
     smc_supports = _smc_zones_to_levels(h4_smc.get("demand_zones", []))
     smc_resistances = _smc_zones_to_levels(h4_smc.get("supply_zones", []))
 
     support_zones = list(technical["support_zones"]) + smc_supports
     resistance_zones = list(technical["resistance_zones"]) + smc_resistances
+
+    # Entry Ladder Phase 1: wider zone (atr×0.40) for scaled positioning
+    entry_zone_atr_mult = 0.40
 
     if side == "buy":
         support = select_best_level(support_zones, price, atr_value * 1.5, below=True)
@@ -127,15 +281,25 @@ def build_trade_plan(
         entry_zone_score = support.get("zone_score")
         entry_zone_source = support.get("source", "technical")
         watch_low = level - atr_value * 0.10
-        watch_high = level + atr_value * 0.50
-        entry_low = level - atr_value * 0.20
-        entry_high = level + atr_value * 0.20
-        stop_loss = level - max(atr_value * 0.50, min_stop_distance)
-        tp1 = nearest_target(resistance_zones, entry_high, above=True)
-        tp2 = next_target(resistance_zones, tp1, above=True) if tp1 else None
+        watch_high = level + atr_value * 0.70
+        entry_low = level - atr_value * entry_zone_atr_mult
+        entry_high = level + atr_value * entry_zone_atr_mult
+        stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
+        # Guard: SL must be strictly below the entry zone
+        sl_floor = entry_low - atr_value * 0.10
+        if stop_loss >= sl_floor:
+            stop_loss = sl_floor
         entry_for_rr = entry_high
+        # TP1: nearest S/R zone, fallback to Fib 0.382
+        tp1 = nearest_target(resistance_zones, entry_for_rr, above=True)
+        if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
+            tp1 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP1)
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             return None
+        # TP2: next S/R zone, fallback to Fib 0.618
+        tp2 = next_target(resistance_zones, tp1, above=True)
+        if tp2 is None:
+            tp2 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP2)
         condition = _build_buy_condition(h4_smc)
         invalidation = _build_buy_invalidation(stop_loss, h4_smc)
     else:
@@ -145,16 +309,26 @@ def build_trade_plan(
         level = resistance["level"]
         entry_zone_score = resistance.get("zone_score")
         entry_zone_source = resistance.get("source", "technical")
-        watch_low = level - atr_value * 0.50
+        watch_low = level - atr_value * 0.70
         watch_high = level + atr_value * 0.10
-        entry_low = level - atr_value * 0.20
-        entry_high = level + atr_value * 0.20
-        stop_loss = level + max(atr_value * 0.50, min_stop_distance)
-        tp1 = nearest_target(support_zones, entry_low, above=False)
-        tp2 = next_target(support_zones, tp1, above=False) if tp1 else None
+        entry_low = level - atr_value * entry_zone_atr_mult
+        entry_high = level + atr_value * entry_zone_atr_mult
+        stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
+        # Guard: SL must be strictly above the entry zone
+        sl_ceiling = entry_high + atr_value * 0.10
+        if stop_loss <= sl_ceiling:
+            stop_loss = sl_ceiling
         entry_for_rr = entry_low
+        # TP1: nearest S/R zone, fallback to Fib 0.382
+        tp1 = nearest_target(support_zones, entry_for_rr, above=False)
+        if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
+            tp1 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP1)
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             return None
+        # TP2: next S/R zone, fallback to Fib 0.618
+        tp2 = next_target(support_zones, tp1, above=False)
+        if tp2 is None:
+            tp2 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP2)
         condition = _build_sell_condition(h4_smc)
         invalidation = _build_sell_invalidation(stop_loss, h4_smc)
 
@@ -168,7 +342,14 @@ def build_trade_plan(
         entry_zone=entry_zone,
         m15_candles=m15_candles,
     )
-    sizing = position_sizing(request, (entry_low + entry_high) / 2, stop_loss, quote_to_usd_rate=quote_to_usd_rate)
+    # Entry Ladder Phase 1: scale size by price position within zone
+    entry_ladder = entry_state.get("entry_ladder", {})
+    size_multiplier = float(entry_ladder.get("size_multiplier", 1.0)) if isinstance(entry_ladder, dict) else 1.0
+    sizing = position_sizing(
+        request, entry_for_rr, stop_loss,
+        quote_to_usd_rate=quote_to_usd_rate,
+        size_multiplier=size_multiplier,
+    )
 
     corr_warnings: list[str] = []
     corr_context: dict[str, Any] | None = None
@@ -199,6 +380,7 @@ def build_trade_plan(
         "correlation_context": corr_context,
         "entry_zone_score": entry_zone_score,
         "entry_zone_source": entry_zone_source,
+        "entry_ladder": entry_ladder,
         **entry_state,
     }
 
@@ -315,9 +497,9 @@ def next_target(zones: list[dict[str, Any]], first_target: float, *, above: bool
     return levels[0] if levels else None
 
 
-def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float, *, quote_to_usd_rate: float | None = None) -> dict[str, Any]:
+def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float, *, quote_to_usd_rate: float | None = None, size_multiplier: float = 1.0) -> dict[str, Any]:
     contract_size = contract_size_for(request)
-    risk_amount = request.account_balance * request.risk_percent / 100
+    risk_amount = request.account_balance * request.risk_percent / 100 * size_multiplier
     price_distance = abs(entry_price - stop_loss)
     loss_per_lot = price_distance * contract_size
     if quote_to_usd_rate is None:
@@ -335,6 +517,7 @@ def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float
         "price_distance": round_price(price_distance),
         "contract_size": contract_size,
         "suggested_lot": lot,
+        "size_multiplier": size_multiplier,
     }
 
 

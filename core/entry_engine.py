@@ -20,6 +20,41 @@ _M15_QUALITY_LABELS = {
     "none": "không đạt (×0.7)",
 }
 
+# Entry Ladder Phase 1: sub-zone size multipliers
+_LADDER_SIZES = {"top": 0.4, "mid": 0.7, "bottom": 1.0}
+_LADDER_LABELS = {
+    "top": "Top zone (40% size, cần M15)",
+    "mid": "Mid zone (70% size, cần H1+M15)",
+    "bottom": "Bottom zone (100% size, cần H1+M15+sweep)",
+}
+
+
+def _classify_sub_zone(price: float, low: float, high: float, side: str) -> tuple[str | None, float]:
+    """Classify price position within entry zone into top/mid/bottom sub-zone.
+
+    Returns (sub_zone, depth_pct) where depth_pct is 0.0 at outer edge
+    and 1.0 at deepest point.  Returns (None, 0.0) if zone is invalid.
+    """
+    zone_width = high - low
+    if zone_width <= 0:
+        return None, 0.0
+
+    if side == "buy":
+        # Price drops into support: 0% = entry_high (outer), 100% = entry_low (deepest)
+        depth_pct = (high - price) / zone_width
+    else:
+        # Price rises into resistance: 0% = entry_low (outer), 100% = entry_high (deepest)
+        depth_pct = (price - low) / zone_width
+
+    depth_pct = max(0.0, min(1.0, depth_pct))
+
+    if depth_pct <= 0.33:
+        return "top", depth_pct
+    elif depth_pct <= 0.66:
+        return "mid", depth_pct
+    else:
+        return "bottom", depth_pct
+
 
 def _find_swings_m15(candles: list[Candle], lookback: int = 5) -> tuple[list[float], list[float]]:
     highs: list[float] = []
@@ -143,42 +178,172 @@ def evaluate_entry(
         confirmation_score = int(confirmation_score * m15_score_multiplier)
     # ------------------------------
 
-    # --- Phase 8: M15 decides entry status (not just a score multiplier) ---
+    # --- Phase 8 + Entry Ladder: sub-zone-aware entry decision ---
     trigger_valid = trigger_type != "none"
     score_passed = confirmation_score >= 70
 
+    # Check for SMC liquidity sweep (used by bottom-zone requirement)
+    has_sweep = False
+    if side == "buy":
+        sweeps = smc.get("H1", {}).get("liquidity_sweeps", {}) if isinstance(smc, dict) else {}
+        has_sweep = bool(sweeps.get("swept_lows"))
+    else:
+        sweeps = smc.get("H1", {}).get("liquidity_sweeps", {}) if isinstance(smc, dict) else {}
+        has_sweep = bool(sweeps.get("swept_highs"))
+
+    # Without M15 data, fall back to legacy (can't classify sub-zone quality).
+    if in_zone and trigger_valid and score_passed and not m15_available:
+        return _result("waiting_confirmation", trigger_type, confirmation_score,
+                       "Thiếu dữ liệu M15, không xác nhận entry.",
+                       in_zone, False,
+                       m15_structure=m15_structure, m15_displacement=m15_displacement,
+                       m15_available=m15_available, m15_quality=m15_quality,
+                       m15_score_multiplier=m15_score_multiplier,
+                       warning_codes=[M15_DATA_UNAVAILABLE])
+
     if in_zone and trigger_valid and score_passed:
+        sub_zone, depth_pct = _classify_sub_zone(price, low, high, side)
+        entry_ladder = {
+            "sub_zone": sub_zone,
+            "depth_pct": round(depth_pct, 3),
+            "size_multiplier": _LADDER_SIZES.get(sub_zone, 1.0),
+            "label": _LADDER_LABELS.get(sub_zone, ""),
+        }
+
+        if sub_zone == "top":
+            # Top zone: only need M15 (loose or strict), smallest size
+            if m15_available and m15_quality in ("strict", "loose"):
+                return _result("confirmed_entry", trigger_type, confirmation_score,
+                               f"Top zone entry, size=40%. {_LADDER_LABELS['top']}",
+                               in_zone, True,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               reason_codes=[M15_STRICT_CONFIRMED] if m15_quality == "strict" else [M15_LOOSE_CONFIRMATION],
+                               entry_ladder=entry_ladder)
+            else:
+                entry_ladder["size_multiplier"] = 0.0
+                return _result("waiting_confirmation", trigger_type, confirmation_score,
+                               "Top zone — cần ít nhất M15 xác nhận lỏng.",
+                               in_zone, False,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               warning_codes=[M15_NOT_CONFIRMED] if m15_quality == "none" else [M15_LOOSE_CONFIRMATION],
+                               entry_ladder=entry_ladder)
+
+        elif sub_zone == "mid":
+            # Mid zone: need H1 trigger + M15 strict, medium size
+            if m15_available and m15_quality == "strict":
+                return _result("confirmed_entry", trigger_type, confirmation_score,
+                               f"Mid zone entry, size=70%. {_LADDER_LABELS['mid']}",
+                               in_zone, True,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               reason_codes=[M15_STRICT_CONFIRMED],
+                               entry_ladder=entry_ladder)
+            elif m15_available and m15_quality == "loose":
+                entry_ladder["size_multiplier"] = 0.0
+                return _result("waiting_confirmation", trigger_type, confirmation_score,
+                               "Mid zone — M15 xác nhận lỏng, cần strict để vào lệnh.",
+                               in_zone, False,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               warning_codes=[M15_LOOSE_CONFIRMATION],
+                               entry_ladder=entry_ladder)
+            else:
+                entry_ladder["size_multiplier"] = 0.0
+                return _result("watch_zone", trigger_type, confirmation_score,
+                               "Mid zone — M15 chưa xác nhận.",
+                               False, False,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               warning_codes=[M15_NOT_CONFIRMED],
+                               entry_ladder=entry_ladder)
+
+        elif sub_zone == "bottom":
+            # Bottom zone: need H1 trigger + M15 strict + SMC sweep, full size
+            if m15_available and m15_quality == "strict" and has_sweep:
+                return _result("confirmed_entry", trigger_type, confirmation_score,
+                               f"Bottom zone entry, size=100%. {_LADDER_LABELS['bottom']}",
+                               in_zone, True,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               reason_codes=[M15_STRICT_CONFIRMED],
+                               entry_ladder=entry_ladder)
+            elif m15_available and m15_quality == "strict" and not has_sweep:
+                # Bottom zone without sweep — degrade: treat like mid zone
+                entry_ladder["size_multiplier"] = _LADDER_SIZES["mid"]
+                entry_ladder["degraded"] = True
+                return _result("confirmed_entry", trigger_type, confirmation_score,
+                               "Bottom zone — thiếu SMC sweep, degrade xuống mid (70% size).",
+                               in_zone, True,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               reason_codes=[M15_STRICT_CONFIRMED],
+                               entry_ladder=entry_ladder)
+            elif m15_available and m15_quality == "loose":
+                entry_ladder["size_multiplier"] = 0.0
+                return _result("waiting_confirmation", trigger_type, confirmation_score,
+                               "Bottom zone — M15 xác nhận lỏng, cần strict + sweep.",
+                               in_zone, False,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               warning_codes=[M15_LOOSE_CONFIRMATION],
+                               entry_ladder=entry_ladder)
+            else:
+                entry_ladder["size_multiplier"] = 0.0
+                return _result("watch_zone", trigger_type, confirmation_score,
+                               "Bottom zone — M15 chưa xác nhận.",
+                               False, False,
+                               m15_structure=m15_structure, m15_displacement=m15_displacement,
+                               m15_available=m15_available, m15_quality=m15_quality,
+                               m15_score_multiplier=m15_score_multiplier,
+                               warning_codes=[M15_NOT_CONFIRMED],
+                               entry_ladder=entry_ladder)
+
+        # Unknown sub-zone — fall through to legacy behavior
         if m15_available:
             if m15_quality == "strict":
                 return _result("confirmed_entry", trigger_type, confirmation_score, "", in_zone, True,
                                m15_structure=m15_structure, m15_displacement=m15_displacement,
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
-                               reason_codes=[M15_STRICT_CONFIRMED])
+                               reason_codes=[M15_STRICT_CONFIRMED],
+                               entry_ladder=entry_ladder)
             elif m15_quality == "loose":
-                reason = "M15 xác nhận lỏng, chờ xác nhận chặt trước khi vào lệnh."
-                return _result("waiting_confirmation", trigger_type, confirmation_score, reason,
+                return _result("waiting_confirmation", trigger_type, confirmation_score,
+                               "M15 xác nhận lỏng, chờ xác nhận chặt trước khi vào lệnh.",
                                in_zone, False,
                                m15_structure=m15_structure, m15_displacement=m15_displacement,
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
-                               warning_codes=[M15_LOOSE_CONFIRMATION])
-            else:  # m15_quality == "none"
-                reason = "M15 chưa xác nhận, chỉ theo dõi vùng giá."
-                return _result("watch_zone", trigger_type, confirmation_score, reason,
+                               warning_codes=[M15_LOOSE_CONFIRMATION],
+                               entry_ladder=entry_ladder)
+            else:
+                return _result("watch_zone", trigger_type, confirmation_score,
+                               "M15 chưa xác nhận, chỉ theo dõi vùng giá.",
                                False, False,
                                m15_structure=m15_structure, m15_displacement=m15_displacement,
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
-                               warning_codes=[M15_NOT_CONFIRMED])
+                               warning_codes=[M15_NOT_CONFIRMED],
+                               entry_ladder=entry_ladder)
         else:
-            reason = "Thiếu dữ liệu M15, không xác nhận entry."
-            return _result("waiting_confirmation", trigger_type, confirmation_score, reason,
+            return _result("waiting_confirmation", trigger_type, confirmation_score,
+                           "Thiếu dữ liệu M15, không xác nhận entry.",
                            in_zone, False,
                            m15_structure=m15_structure, m15_displacement=m15_displacement,
                            m15_available=m15_available, m15_quality=m15_quality,
                            m15_score_multiplier=m15_score_multiplier,
-                           warning_codes=[M15_DATA_UNAVAILABLE])
+                           warning_codes=[M15_DATA_UNAVAILABLE],
+                           entry_ladder=entry_ladder)
 
     if in_zone:
         reason = "Giá đã vào vùng nhưng chưa đủ xác nhận H1/SMC."
@@ -241,6 +406,7 @@ def _result(
     reason_codes: list[str] | None = None,
     warning_codes: list[str] | None = None,
     block_codes: list[str] | None = None,
+    entry_ladder: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "entry_status": status,
@@ -256,6 +422,8 @@ def _result(
         "warning_codes": normalize_codes(warning_codes),
         "block_codes": normalize_codes(block_codes),
     }
+    if entry_ladder is not None:
+        result["entry_ladder"] = entry_ladder
     if m15_structure is not None:
         result["m15_structure"] = m15_structure
     if m15_displacement is not None:

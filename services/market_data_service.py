@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
@@ -20,6 +20,10 @@ _CORRELATION_KEYS: dict[str, str] = {
     "VIX": "vix_candles",
     "US10Y": "us10y_candles",
 }
+
+_CORRELATION_CACHE: dict[str, Any] | None = None
+_CORRELATION_CACHE_TIME: datetime | None = None
+_CORRELATION_CACHE_TTL = timedelta(minutes=15)
 
 
 def parse_yf_candles(data: Any) -> list[Candle] | None:
@@ -56,8 +60,24 @@ def fetch_macro_correlation_context(
     period: str = "5d",
     interval: str = "1d",
     downloader: Any | None = None,
+    force_refresh: bool = False,
 ) -> dict[str, list[Candle] | None]:
-    """Fetch DXY/VIX/US10Y candles for correlation checks."""
+    """Fetch DXY/VIX/US10Y candles for correlation checks.
+
+    Results are cached for _CORRELATION_CACHE_TTL (15 min) to avoid
+    redundant yfinance downloads on repeated scans.
+    """
+    global _CORRELATION_CACHE, _CORRELATION_CACHE_TIME
+
+    now = datetime.now()
+    if (
+        not force_refresh
+        and _CORRELATION_CACHE is not None
+        and _CORRELATION_CACHE_TIME is not None
+        and now - _CORRELATION_CACHE_TIME < _CORRELATION_CACHE_TTL
+    ):
+        return _CORRELATION_CACHE
+
     context: dict[str, list[Candle] | None] = {
         "dxy_candles": None,
         "vix_candles": None,
@@ -76,6 +96,9 @@ def fetch_macro_correlation_context(
                 context[_CORRELATION_KEYS[tag]] = parse_yf_candles(future.result())
             except Exception:
                 pass
+
+    _CORRELATION_CACHE = context
+    _CORRELATION_CACHE_TIME = now
     return context
 
 

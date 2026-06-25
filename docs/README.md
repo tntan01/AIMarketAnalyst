@@ -23,7 +23,7 @@ Tài liệu phải giúp đạt 3 mục tiêu:
 3. `screen_design.md` — Thiết kế chi tiết các màn hình PyQt6, gồm hành vi Scanner auto-scan/auto-entry.
 4. `installation_guide.md` — Hướng dẫn cài môi trường, chạy app, đóng gói và checklist an toàn trước khi bật auto trade.
 5. `mvp_coding_guide.md` — Thứ tự code MVP theo từng giai đoạn và quy tắc triển khai auto trade/Telegram.
-6. `workflow_guide.md` — Hướng dẫn người dùng: quy trình backtest → cấu hình min_score → quét thị trường → auto trade.
+6. `workflow_guide.md` — Hướng dẫn người dùng: quy trình backtest → cấu hình ngưỡng quyết định (decision_ready/watch/wait) → quét thị trường → auto trade.
 
 ## Nguyên tắc cập nhật
 

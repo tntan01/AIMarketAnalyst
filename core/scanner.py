@@ -34,6 +34,7 @@ class ScannerRequest:
     auto_trade_enabled: bool = False
     min_scores: dict[str, int] = field(default_factory=dict)
     symbol_auto_trade: dict[str, dict] = field(default_factory=dict)
+    thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
     # Each entry: {"regime": "range", "side": "buy", "min_rr": 2.0}
 
 

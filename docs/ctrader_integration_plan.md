@@ -255,7 +255,7 @@ class AppController:
 │   Trạng thái: Đã kết nối / Chưa kết nối                 │
 ├────────────────────────────────────────────────────────┤
 │ 3. Cấu hình mã quét (dùng chung)                        │
-│   [Bảng symbol với backtest, min_score, regime...]      │
+│   [Bảng symbol với backtest, decision thresholds, regime...] │
 │   [🔍 Tự phát hiện mã broker]  [💾 Lưu cấu hình mã]    │
 └────────────────────────────────────────────────────────┘
 ```

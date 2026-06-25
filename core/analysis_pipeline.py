@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from core.account_guard import check_account_guard
-from core.backtest_engine import replay_plan
+from core.backtest_engine import replay_plan, empty_replay
 from core.backtest_feedback import compute_pattern_confidence
 from core.chart_payload import build_chart_payload
 from core.market_models import Candle
@@ -91,6 +91,7 @@ class AnalysisPipeline:
         account_guard_settings: dict[str, Any] | None = None,
         trade_date: datetime | None = None,
         execution_quality_score: int | float | str | None = None,
+        thresholds: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         # ---- Step 0: stash inputs ------------------------------------------
         self._request = request
@@ -111,6 +112,7 @@ class AnalysisPipeline:
         self._account_guard_settings = account_guard_settings
         self._trade_date = trade_date
         self._execution_quality_score_in = execution_quality_score
+        self._thresholds = thresholds
 
         # ---- Pipeline diagnostics ------------------------------------------
         self._diag: list[dict[str, Any]] = []
@@ -348,6 +350,7 @@ class AnalysisPipeline:
             correlation_context=self._correlation_context,
             quote_to_usd_rate=self._quote_to_usd_rate,
             spread_price=float(self._data_quality.get("spread_points") or 0),
+            market_regime=self._market_regime,
         )
         self._has_ready_plan = any(
             item.get("ready_to_trade") for item in self._scenarios
@@ -758,6 +761,7 @@ class AnalysisPipeline:
             entry_status=primary_entry_status,
             score_gap=self._direction_bias.get("score_gap"),
             trade_permission=self._trade_permission,
+            thresholds=self._thresholds,
         )
 
         final_sc = self._final_score_result["final_score"]
@@ -857,7 +861,7 @@ class AnalysisPipeline:
                 self._data_quality,
                 self._scores.get(best_side, {}),
             ),
-            "backtest": replay_plan(self._request.symbol, primary_scenario, self._h1),
+            "backtest": _conditional_backtest(self._request.symbol, primary_scenario, self._h1, self._best_score),
             "pattern_backtest": self._pattern_feedback,
             "why_not_opposite": _why_not_opposite(best_side, self._scores),
             "confidence_reason": _confidence_reason(
@@ -1098,6 +1102,18 @@ def _parse_rr(value: object) -> float:
 # ---------------------------------------------------------------------------
 # Legacy compatibility helper
 # ---------------------------------------------------------------------------
+
+
+def _conditional_backtest(
+    symbol: str,
+    scenario: dict[str, Any],
+    h1_candles: list[Candle],
+    best_score: int,
+) -> dict[str, Any]:
+    """Run replay_plan only for symbols with meaningful scores (>=50)."""
+    if best_score < 50 or not scenario or not h1_candles:
+        return empty_replay("score below threshold or missing data")
+    return replay_plan(symbol, scenario, h1_candles)
 
 
 def build_analysis_context(contexts: list[Any]) -> dict[str, Any]:

@@ -114,6 +114,9 @@ class SettingsService:
                     auto_trade_regime=str(item.get("auto_trade_regime", "")).strip(),
                     auto_trade_side=str(item.get("auto_trade_side", "")).strip(),
                     auto_trade_min_rr=float(item.get("auto_trade_min_rr", 0) or 0),
+                    decision_ready=max(0, min(100, int(item.get("decision_ready", 80)))),
+                    decision_watch=max(0, min(100, int(item.get("decision_watch", 65)))),
+                    decision_wait=max(0, min(100, int(item.get("decision_wait", 50)))),
                 )
         return TradingSettings(
             account_balance=float(data.get("account_balance", 10000)),
