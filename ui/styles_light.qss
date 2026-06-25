@@ -163,7 +163,7 @@ QFrame#SupportCardResult {
 }
 
 QLabel#SupportCardLine {
-  color: #DBEAFE;
+  color: #1E40AF;
   font-size: 13px;
   font-weight: 600;
 }
@@ -212,24 +212,24 @@ QLabel#ScannerDecisionAction {
 QLabel#ScannerDecisionAction[state="ready"] {
   background: #D1F0E3;
   border-color: #059669;
-  color: #FCE8E5;
+  color: #065F46;
 }
 
 QLabel#ScannerDecisionAction[state="wait"],
 QLabel#ScannerDecisionAction[state="watch"] {
   background: #FEF3C7;
   border-color: #EAB308;
-  color: #fef3c7;
+  color: #92400E;
 }
 
 QLabel#ScannerDecisionAction[state="skip"] {
   background: #FEE2E2;
   border-color: #fb7185;
-  color: #FFE4E6;
+  color: #9F1239;
 }
 
 QLabel#ScannerDecisionReason {
-  color: #D6D2C8;
+  color: #57534E;
   font-size: 12px;
   font-weight: 700;
 }
@@ -261,11 +261,11 @@ QLabel#ScannerDecisionSectionTitle {
 }
 
 QLabel#ScannerDecisionPill {
-  background: #101826;
+  background: #EAE6DF;
   border: 1px solid #D6D2C8;
   border-left: 4px solid #A19B90;
   border-radius: 6px;
-  color: #DBEAFE;
+  color: #1E293B;
   font-size: 11px;
   font-weight: 650;
   padding: 7px 10px;
@@ -273,17 +273,17 @@ QLabel#ScannerDecisionPill {
 
 QLabel#ScannerDecisionPill[state="ok"] {
   border-left-color: #E0533C;
-  color: #FCE8E5;
+  color: #065F46;
 }
 
 QLabel#ScannerDecisionPill[state="wait"] {
   border-left-color: #EAB308;
-  color: #fef3c7;
+  color: #92400E;
 }
 
 QLabel#ScannerDecisionPill[state="risk"] {
   border-left-color: #fb7185;
-  color: #FFE4E6;
+  color: #9F1239;
 }
 
 QScrollArea#ScannerDecisionScroll {
@@ -358,7 +358,7 @@ QFrame#ConditionInfoCardSkip {
 }
 
 QFrame#ConditionInfoCardEntry QLabel#ConditionInfoTitle {
-  color: #F5978A;
+  color: #C2410C;
 }
 
 QFrame#ConditionInfoCardWait QLabel#ConditionInfoTitle {
@@ -913,7 +913,7 @@ QPushButton#InlineHelpButton {
   background: #E6E2D8;
   border: 1px solid #CCC7BD;
   border-radius: 6px;
-  color: #DBEAFE;
+  color: #0369A1;
   font-weight: 600;
   padding: 4px 12px;
 }
