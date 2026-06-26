@@ -51,9 +51,10 @@ from core.reason_codes import (
     DECISION_FINAL_SCORE_STRONG,
     DECISION_FINAL_SCORE_MODERATE,
     DECISION_FINAL_SCORE_WEAK,
+    merge_unique_codes,
 )
-from core.normalization import normalize_choice
-from core.safe_types import clamp_score as _shared_clamp_score
+from core.normalization import normalize_choice, normalize_entry_status
+from core.safe_types import clamp_score
 
 # ---------------------------------------------------------------------------
 # Decision-state constants
@@ -132,17 +133,6 @@ _CAP_ALIASES: dict[str, str] = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-
-def clamp_score(value: object, default: int = 0) -> int:
-    """Safely read a score value, clamping to 0–100.
-
-    - Accepts int, float, or numeric strings.
-    - ``None``, ``""``, ``"abc"``, NaN, ±Inf → *default*.
-    - Never raises.
-    """
-    return _shared_clamp_score(value, 0, 100, default=default)
-
-
 def normalize_decision_cap(value: object) -> str | None:
     """Normalise a decision-cap string to a canonical constant.
 
@@ -163,25 +153,6 @@ def normalize_decision_cap(value: object) -> str | None:
         case="upper",
         null_values=frozenset({"none", "null", "n/a"}),
     )
-
-
-def normalize_entry_status(value: object) -> str:
-    """Normalise an entry-status string.
-
-    Canonical values: ``"confirmed_entry"``, ``"waiting_confirmation"``,
-    ``"watch_zone"``, ``"invalidated"``, ``"no_setup"``.
-
-    ``None`` or unrecognised → ``"unknown"``.  Never raises.
-    """
-    return normalize_choice(
-        value,
-        frozenset({
-            "confirmed_entry", "waiting_confirmation", "watch_zone",
-            "invalidated", "no_setup",
-        }),
-        default="unknown",
-    ) or "unknown"
-
 
 def gate_allows_trade(
     gate_result: dict[str, object] | None,
@@ -209,31 +180,6 @@ def gate_allows_trade(
             return False
 
     return False
-
-
-def merge_unique_codes(*groups: object) -> list[str]:
-    """Merge multiple code lists/tuples, dropping dupes while preserving order.
-
-    - Skips ``None`` elements and empty strings.
-    - Never raises.
-    """
-    seen: set[str] = set()
-    result: list[str] = []
-    for group in groups:
-        if group is None:
-            continue
-        if not isinstance(group, (list, tuple, set)):
-            continue
-        for code in group:
-            if code is None:
-                continue
-            s = str(code).strip()
-            if not s:
-                continue
-            if s not in seen:
-                seen.add(s)
-                result.append(s)
-    return result
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -334,7 +280,7 @@ def make_final_decision(
     Never raises.
     """
     t = thresholds or DEFAULT_DECISION_THRESHOLDS
-    score = clamp_score(final_score, 0)
+    score = clamp_score(final_score, default=0)
     norm_entry = normalize_entry_status(entry_status)
     norm_cap = normalize_decision_cap(
         gate_result.get("decision_cap") if isinstance(gate_result, dict) else None
@@ -615,17 +561,6 @@ _DECISION_TO_LEGACY: dict[str, str] = {
     STAND_ASIDE: "stand_aside",
 }
 
-# Map legacy action strings → decision-engine constants
-_LEGACY_TO_DECISION: dict[str, str] = {
-    "ready": READY_TO_TRADE,
-    "watch": WATCH_ONLY,
-    "wait": WAITING_CONFIRMATION,
-    "wait_for_confirmation": WAITING_CONFIRMATION,
-    "stand_aside": STAND_ASIDE,
-    "skip": STAND_ASIDE,
-}
-
-
 def decision_to_legacy_action(decision: object) -> str:
     """Map a decision-engine constant to a legacy action string.
 
@@ -639,21 +574,6 @@ def decision_to_legacy_action(decision: object) -> str:
         return "stand_aside"
     cleaned = decision.strip()
     return _DECISION_TO_LEGACY.get(cleaned, "stand_aside")
-
-
-def legacy_action_to_decision(action: object) -> str:
-    """Map a legacy action string to a decision-engine constant.
-
-    - ``"ready"`` → ``READY_TO_TRADE``
-    - ``"watch"`` → ``WATCH_ONLY``
-    - ``"wait"`` / ``"wait_for_confirmation"`` → ``WAITING_CONFIRMATION``
-    - ``"stand_aside"`` / ``"skip"`` → ``STAND_ASIDE``
-    - Unknown → ``STAND_ASIDE`` (safe default)
-    """
-    if not isinstance(action, str):
-        return STAND_ASIDE
-    cleaned = action.strip().lower()
-    return _LEGACY_TO_DECISION.get(cleaned, STAND_ASIDE)
 
 
 def _breakdown(
@@ -692,17 +612,17 @@ def pick_final_score(payload: dict[str, Any] | None) -> int:
         return 0
     direct = payload.get("final_score")
     if isinstance(direct, (int, float)):
-        return clamp_score(direct)
+        return clamp_score(direct, default=0)
     detail = payload.get("final_score_detail")
     if isinstance(detail, dict):
         fs = detail.get("final_score")
         if isinstance(fs, (int, float)):
-            return clamp_score(fs)
+            return clamp_score(fs, default=0)
     decision = payload.get("decision_summary")
     if isinstance(decision, dict):
         best = decision.get("best_score")
         if isinstance(best, (int, float)):
-            return clamp_score(best)
+            return clamp_score(best, default=0)
     return 0
 
 

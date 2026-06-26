@@ -48,7 +48,11 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     best_score = max(buy_score, sell_score)
     permission = str(result.get("trade_permission", {}).get("status", "blocked"))
     scenarios = [item for item in result.get("scenarios", []) if item.get("type") in {"buy", "sell"}]
-    best_plan = next((item for item in scenarios if item.get("type") == best_side), scenarios[0] if scenarios else None)
+    best_plan = next((item for item in scenarios if item.get("type") == best_side), None)
+    if best_plan is None and scenarios:
+        # Best side has no valid plan — use whatever plan exists and align side
+        best_plan = scenarios[0]
+        best_side = str(best_plan.get("type", best_side))
     risk_reward = best_plan.get("risk_reward") if best_plan else None
     technical = result.get("technical", {}) if isinstance(result.get("technical"), dict) else {}
     price_vs_zone = price_vs_entry_zone(
@@ -78,14 +82,20 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     expected_effective_rr = best_plan.get("expected_effective_rr") if best_plan else None
     score_gap = result.get("decision_summary", {}).get("score_gap")
 
+    # Align direction_bias with actual plan side (may differ from raw score comparison)
+    direction_bias = dict(result.get("direction_bias", {})) if isinstance(result.get("direction_bias"), dict) else {}
+    if direction_bias and best_plan and best_score >= 50:
+        direction_bias["best_side"] = best_side
+
     row = {
         "rank": 0,
         "symbol": result.get("symbol", ""),
         "broker_symbol": broker_symbol or result.get("data_quality", {}).get("broker_symbol", ""),
         "market_regime": result.get("market_regime", {}).get("primary", "unknown"),
-        "direction_bias": result.get("direction_bias", "stand_aside"),
+        "direction_bias": direction_bias,
         "trade_permission": permission,
         "permission_reason": result.get("trade_permission", {}).get("reason", ""),
+        "min_score": int(result.get("trade_permission", {}).get("min_score", 65) or 65),
         "buy_score": buy_score,
         "sell_score": sell_score,
         "best_side": best_side if best_score >= 50 else "stand_aside",

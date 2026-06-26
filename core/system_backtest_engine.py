@@ -391,7 +391,7 @@ def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], 
         signal_score = _scenario_signal_score(analysis, scenario)
         if signal_score is None or signal_score < 65:
             return "blocked_by_score"
-        expected_rr = _safe_float(scenario.get("expected_effective_rr"))
+        expected_rr = optional_float(scenario.get("expected_effective_rr"))
         if expected_rr is None or expected_rr < 1.2:
             return "blocked_by_rr"
         return None
@@ -753,7 +753,7 @@ def build_trade_record(
         market_regime=str(market_regime.get("primary", "unknown")),
         entry_status=str(scenario.get("entry_status", "unknown")),
         m15_quality=scenario.get("m15_quality"),
-        expected_effective_rr=_safe_float(scenario.get("expected_effective_rr")),
+        expected_effective_rr=optional_float(scenario.get("expected_effective_rr")),
         selected_zone_score=_safe_int(smc_flags.get("selected_zone_score")),
         selected_zone_type=smc_flags.get("selected_zone_type"),
         entry_zone_score=_safe_int(scenario.get("entry_zone_score")),
@@ -919,7 +919,7 @@ def build_skip_debug(analysis: dict[str, Any] | None, scenario: dict[str, Any] |
         "signal_score": _safe_int(side_scores.get("signal_score", side_scores.get("total"))),
         "buy_score": _safe_int(buy_scores.get("signal_score", buy_scores.get("total"))),
         "sell_score": _safe_int(sell_scores.get("signal_score", sell_scores.get("total"))),
-        "score_gap": _safe_float(decision_summary.get("score_gap")),
+        "score_gap": optional_float(decision_summary.get("score_gap")),
         "best_side": best_side or None,
         "trade_permission": trade_permission.get("status"),
         "gate_allowed": trade_gate.get("allowed"),
@@ -930,7 +930,7 @@ def build_skip_debug(analysis: dict[str, Any] | None, scenario: dict[str, Any] |
         "trigger_type": scenario.get("trigger_type"),
         "m15_quality": scenario.get("m15_quality"),
         "m15_available": scenario.get("m15_available"),
-        "expected_effective_rr": _safe_float(scenario.get("expected_effective_rr")),
+        "expected_effective_rr": optional_float(scenario.get("expected_effective_rr")),
         "risk_reward": scenario.get("risk_reward"),
         "market_regime": market_regime.get("primary"),
         "selected_zone_score": _safe_int(smc_flags.get("selected_zone_score")),
@@ -1003,10 +1003,6 @@ def _parse_time(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
-
-
-def _safe_float(value: object) -> float | None:
-    return optional_float(value)
 
 
 def _safe_int(value: object) -> int | None:

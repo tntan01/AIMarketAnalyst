@@ -425,9 +425,10 @@ def test_ai_audit_empty_state():
     screen = _make_screen()
     screen.row = {"symbol": "EUR/USD"}
     screen.audit_text = _FakeTextEdit()
+    screen.audit_btn = None  # needed for hasattr check
     screen._refresh_ai_audit()
 
-    assert "Chưa có AI Setup Auditor" in screen.audit_text._html
+    assert "Chưa có kết quả kiểm định AI" in screen.audit_text._html
 
     print("  PASS: test_ai_audit_empty_state")
 

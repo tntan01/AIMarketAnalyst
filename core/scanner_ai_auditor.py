@@ -134,26 +134,39 @@ def _extract_json_object(raw: str) -> dict[str, Any] | None:
     if not isinstance(raw, str) or not raw.strip():
         return None
     text = raw.strip()
+    # Try direct parse first
     try:
         value = json.loads(text)
         return value if isinstance(value, dict) else None
     except json.JSONDecodeError:
         pass
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    # Try fenced block (greedy match for nested JSON)
+    fenced = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     if fenced:
         try:
             value = json.loads(fenced.group(1))
             return value if isinstance(value, dict) else None
         except json.JSONDecodeError:
             pass
+    # Try finding outermost { ... } by bracket counting
     start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            value = json.loads(text[start:end + 1])
-            return value if isinstance(value, dict) else None
-        except json.JSONDecodeError:
-            return None
+    if start >= 0:
+        depth = 0
+        end = -1
+        for i in range(start, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+        if end > start:
+            try:
+                value = json.loads(text[start:end + 1])
+                return value if isinstance(value, dict) else None
+            except json.JSONDecodeError:
+                return None
     return None
 
 

@@ -76,8 +76,9 @@ def test_fetch_macro_correlation_context_uses_downloader_and_candles():
 
     context = fetch_macro_correlation_context(downloader=fake_download)
 
-    assert set(calls) == {"DX-Y.NYB", "^VIX", "^TNX"}
+    assert set(calls) == {"DX-Y.NYB", "^VIX", "^TNX", "2YY=F"}
     assert context["dxy_candles"] is not None
+    assert context["us2y_candles"] is not None
     assert context["vix_candles"] is not None
     assert context["us10y_candles"] is not None
     assert context["dxy_candles"][-1].close == 102.0

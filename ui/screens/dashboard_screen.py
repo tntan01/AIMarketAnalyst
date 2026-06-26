@@ -26,7 +26,7 @@ from ui.screens.shared import action_button
 from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
-from services.news_service import NewsService
+from services.forex_factory_client import ForexFactoryClient
 from services.settings_service import SettingsService
 
 class MarketWorker(QThread):
@@ -45,23 +45,23 @@ class CalendarWorker(QThread):
 
     def run(self):
         try:
-            from services.news_service import NewsService
-            
-            if self.force_refresh:
-                NewsService._calendar_cache.pop("global", None)
+            from services.forex_factory_client import ForexFactoryClient
 
-            news = NewsService()
+            ff = ForexFactoryClient()
+            if self.force_refresh:
+                ff._calendar_cache.pop("global", None)
+
             events = []
             
             try:
-                events = news._fetch_forex_factory_json_events()
+                events = ff._fetch_json_events()
             except Exception:
                 pass
                 
             try:
-                html_events = news._fetch_forex_factory_html_events()
+                html_events = ff._fetch_html_events()
                 if events:
-                    news._merge_actual_from_html(events, html_events)
+                    ff._merge_actual_from_html(events, html_events)
                     existing_keys = set()
                     for ev in events:
                         existing_keys.add((str(ev.get("time_utc", "")), str(ev.get("currency", "")), str(ev.get("event", ""))))
@@ -75,7 +75,7 @@ class CalendarWorker(QThread):
                 pass
                 
             try:
-                cached = news._cached_calendar_events()
+                cached = ff._cached_calendar_events()
                 if cached and events:
                     existing_keys = set()
                     for ev in events:
@@ -91,7 +91,7 @@ class CalendarWorker(QThread):
                 
             try:
                 if events:
-                    news._store_calendar_cache(events)
+                    ff._store_calendar_cache(events)
             except Exception:
                 pass
                 
@@ -112,6 +112,11 @@ class DashboardScreen(QWidget):
         self.setObjectName("DashboardScreen")
         self._build_ui()
         self.refresh_status()
+
+    def refresh_theme_styles(self) -> None:
+        self._light = self._is_light_theme()
+        self._refresh_market_overview()
+        self.refresh_economic_calendar()
 
     def _is_light_theme(self) -> bool:
         try:
@@ -229,9 +234,14 @@ class DashboardScreen(QWidget):
         self.us10y_label.setObjectName("MarketBadge")
         self.us10y_label.setStyleSheet(f"font-weight:700;font-size:14px;color:{_badge_color};")
 
+        self.us2y_label = QLabel("US2Y: Đang tải...")
+        self.us2y_label.setObjectName("MarketBadge")
+        self.us2y_label.setStyleSheet(f"font-weight:700;font-size:14px;color:{_badge_color};")
+
         layout.addWidget(self.dxy_label)
         layout.addWidget(self.vix_label)
         layout.addWidget(self.us10y_label)
+        layout.addWidget(self.us2y_label)
         help_btn = action_button("❓ Giải thích chỉ số", primary=True, color="info")
         help_btn.setToolTip("Ý nghĩa các chỉ số")
         help_btn.clicked.connect(self._show_market_help)
@@ -310,6 +320,7 @@ class DashboardScreen(QWidget):
             refresh_button.setEnabled(True)
 
     def _on_calendar_data_ready(self, events: list) -> None:
+        self._light = self._is_light_theme()
         from zoneinfo import ZoneInfo
         table = self.econ_table
         table.setRowCount(0)
@@ -526,6 +537,7 @@ class DashboardScreen(QWidget):
             self._show_empty_events("Không thể tải lịch kinh tế (lỗi xử lý giao diện).")
 
     def _show_empty_events(self, message: str) -> None:
+        self._light = self._is_light_theme()
         table = self.econ_table
         table.setRowCount(1)
         table.setSpan(0, 0, 1, 6)
@@ -756,7 +768,13 @@ class DashboardScreen(QWidget):
         else:
             self.us10y_label.setText("US10Y: Không có dữ liệu")
 
+        if "US2Y" in data:
+            self._format_market_label("US2Y", data["US2Y"][0], data["US2Y"][1], self.us2y_label)
+        else:
+            self.us2y_label.setText("US2Y: Không có dữ liệu")
+
     def _format_market_label(self, tag: str, close: float, change_pct: float, label: QLabel) -> None:
+        self._light = self._is_light_theme()
         arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else ""
         abs_change = abs(change_pct)
         neutral = "#374151" if self._light else "#e5e7eb"
@@ -774,14 +792,16 @@ class DashboardScreen(QWidget):
         elif tag == "DXY":
             color = green if change_pct > 0 else red if change_pct < 0 else neutral
             label.setText(f"DXY: {close:.2f} {arrow} {abs_change:.1f}%  (sức mạnh USD)")
-        else:  # US10Y: lợi suất GIẢM → tốt (xanh), TĂNG → xấu (đỏ)
+        else:  # US10Y / US2Y: lợi suất GIẢM → tốt (xanh), TĂNG → xấu (đỏ)
             color = red if change_pct > 0 else green if change_pct < 0 else neutral
-            label.setText(f"US10Y: {close:.2f}% {arrow}  (lợi suất TPCP Mỹ 10Y)")
+            yr = "10Y" if tag == "US10Y" else "2Y"
+            label.setText(f"{tag}: {close:.2f}% {arrow}  (lợi suất TPCP Mỹ {yr})")
         label.setStyleSheet(f"font-weight:700;font-size:14px;color:{color};")
 
     def _show_market_help(self) -> None:
         from PyQt6.QtWidgets import QDialog
 
+        self._light = self._is_light_theme()
         dlg = QDialog(self)
         dlg.setWindowTitle("Ý nghĩa các chỉ số thị trường")
         dlg.setMinimumSize(900, 540)
@@ -798,7 +818,7 @@ class DashboardScreen(QWidget):
         table = QTableWidget()
         table.setColumnCount(4)
         table.setHorizontalHeaderLabels(["", "Chỉ số", "Màu sắc", "Ý nghĩa"])
-        table.setRowCount(8)
+        table.setRowCount(10)
 
         data = [
             ["📈", "DXY", "🟢 Xanh", "USD mạnh lên so với hôm qua — tốt cho USD, xấu cho vàng"],
@@ -808,7 +828,9 @@ class DashboardScreen(QWidget):
             ["😱", "VIX", "🔴 Đỏ (> 25)", "Rủi ro cao, thị trường hoảng loạn — hạn chế giao dịch"],
             ["💰", "US10Y", "🟢 Xanh", "Lợi suất giảm → tiền rẻ hơn, tốt cho thị trường"],
             ["💰", "US10Y", "🔴 Đỏ", "Lợi suất tăng → tiền đắt hơn, áp lực lên thị trường"],
-            ["", "", "⚪️ Trắng", "Không có dữ liệu hoặc không thay đổi"],
+            ["💰", "US2Y", "🟢 Xanh", "Lợi suất giảm → phản ánh kỳ vọng FED giảm lãi suất"],
+            ["💰", "US2Y", "🔴 Đỏ", "Lợi suất tăng → phản ánh kỳ vọng FED giữ/tăng lãi suất"],
+            ["", "", "⚪ Xám/Trắng", "Không có dữ liệu hoặc không thay đổi (Xám ở nền sáng, Trắng ở nền tối)"],
         ]
 
         for r, row_data in enumerate(data):
@@ -817,11 +839,11 @@ class DashboardScreen(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c < 2 else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 if c == 2:
                     if "Đỏ" in val:
-                        item.setForeground(QColor("#e11d48"))
+                        item.setForeground(QColor("#BE123C" if self._light else "#e11d48"))
                     elif "Vàng" in val:
-                        item.setForeground(QColor("#f59e0b"))
+                        item.setForeground(QColor("#B45309" if self._light else "#f59e0b"))
                     elif "Xanh" in val:
-                        item.setForeground(QColor("#10b981"))
+                        item.setForeground(QColor("#059669" if self._light else "#10b981"))
                 table.setItem(r, c, item)
 
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -850,7 +872,7 @@ class DashboardScreen(QWidget):
         root_layout.addWidget(table)
 
         _note_color = "#57534E" if self._light else "#94a3b8"
-        note = QLabel(f"<span style='color:{_note_color};font-size:12px;'><b>Ghi chú:</b> DXY tăng = xanh (USD mạnh). US10Y tăng = đỏ (ngược với DXY vì lợi suất tăng gây áp lực lên thị trường).</span>")
+        note = QLabel(f"<span style='color:{_note_color};font-size:12px;'><b>Ghi chú:</b> DXY tăng = xanh (USD mạnh). US10Y, US2Y tăng = đỏ (ngược với DXY vì lợi suất tăng gây áp lực lên thị trường).</span>")
         note.setWordWrap(True)
         root_layout.addWidget(note)
 

@@ -13,7 +13,6 @@ from PyQt6.QtCore import QThread
 from config.paths import app_data_dir
 from core.scanner import (
     ScannerRequest,
-    ai_targets,
     blocked_scanner_row,
     build_scanner_output,
     scanner_row_from_analysis,
@@ -22,7 +21,6 @@ from core.scanner import (
 from core.scanner_ai_auditor import (
     build_ai_setup_audit_prompt,
     parse_ai_setup_audit,
-    summarize_ai_setup_audit,
 )
 from core.scanner_session_review import build_market_brief_prompt
 from core.analysis_engine import analyze_symbol
@@ -197,35 +195,10 @@ class ScannerController:
         progress(74, "Đang xếp hạng setup theo rule engine...")
         rows = sort_scanner_rows(rows)
 
-        active_ai = settings.ai.active_provider()
-        targets = ai_targets(rows, request.max_ai_details)
-        if active_ai and active_ai.api_key and targets:
-            progress(78, f"Đang gọi AI auditor cho {len(targets)} setup...")
-
-            def _audit_one(target_row: dict[str, Any]) -> dict[str, Any]:
-                audit = self._write_scanner_ai_audit(target_row, active_ai)
-                if audit:
-                    target_row["ai_setup_audit"] = audit
-                    target_row["ai_audit_available"] = not bool(audit.get("auditor_error"))
-                    target_row["ai_summary_available"] = True
-                    summary = summarize_ai_setup_audit(audit)
-                    if summary:
-                        target_row["short_reason"] = summary
-                return target_row
-
-            ai_called = 0
-            with ThreadPoolExecutor(max_workers=min(len(targets), 3)) as ex:
-                futures = [ex.submit(_audit_one, row) for row in targets]
-                for i, future in enumerate(as_completed(futures), start=1):
-                    progress(78 + int(i / len(targets) * 12), f"Đã audit AI {i}/{len(targets)}...")
-                    try:
-                        future.result()
-                        ai_called += 1
-                    except Exception:
-                        pass
-
-        # ---- AI Market Brief (1 call, after all individual audits) ----
+        # AI Market Brief (1 call, after all individual audits)
         market_brief = ""
+        market_brief_error = ""
+        active_ai = settings.ai.active_provider()
         if active_ai and active_ai.api_key:
             try:
                 brief_prompt = build_market_brief_prompt(
@@ -236,12 +209,15 @@ class ScannerController:
                 market_brief = AIService(
                     AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)
                 ).analyze(brief_prompt, max_tokens=4000)
-            except Exception:
-                market_brief = ""
+            except Exception as exc:
+                market_brief_error = str(exc)
+        elif not active_ai or not active_ai.api_key:
+            market_brief_error = "Chưa cấu hình AI Provider hoặc API key trong Settings."
 
         progress(94, "Đang dựng bảng kết quả quét...")
-        output = build_scanner_output(rows, request, ai_called)
+        output = build_scanner_output(rows, request, 0)  # ai_called=0 since audit is now manual
         output["market_brief"] = market_brief
+        output["market_brief_error"] = market_brief_error
         output["auto_trade_results"] = self._execute_auto_trades(rows, request) if request.auto_trade_enabled else {
             "enabled": False,
             "attempted": 0,
@@ -507,7 +483,7 @@ class ScannerController:
     def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
         prompt = build_ai_setup_audit_prompt(row)
         try:
-            raw = AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)).analyze(prompt)
+            raw = AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)).analyze(prompt, max_tokens=4000)
             return parse_ai_setup_audit(raw)
         except Exception as exc:
             return {
@@ -522,6 +498,15 @@ class ScannerController:
                 "do_not_trade_reason": "",
                 "auditor_error": str(exc),
             }
+
+    def audit_single_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Run AI audit on a single row on-demand (called from detail screen)."""
+        settings = self.settings_service.load()
+        active_ai = settings.ai.active_provider()
+        if not active_ai or not active_ai.api_key:
+            return {"auditor_error": "Chưa cấu hình AI Provider hoặc API key trong Settings."}
+        audit = self._write_scanner_ai_audit(row, active_ai)
+        return audit or {"auditor_error": "AI không trả về kết quả."}
 
     def _snapshot_payload(self, result: dict[str, Any]) -> dict[str, Any]:
         payload = dict(result)

@@ -4,6 +4,7 @@ from typing import Any
 
 from core.indicators import atr, ema, macd, rsi
 from core.market_models import Candle
+from core.smc_context import swing_points
 
 
 STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
@@ -78,19 +79,6 @@ def build_technical_snapshot(d1: list[Candle], h4: list[Candle], h1: list[Candle
         "range_info": range_info,
     }
     return technical
-
-
-def swing_points(candles: list[Candle], lookback: int = 2) -> dict[str, list[dict[str, Any]]]:
-    highs: list[dict[str, Any]] = []
-    lows: list[dict[str, Any]] = []
-    for index in range(lookback, len(candles) - lookback):
-        window = candles[index - lookback : index + lookback + 1]
-        candle = candles[index]
-        if candle.high == max(item.high for item in window) and sum(candle.high == item.high for item in window) == 1:
-            highs.append({"level": candle.high, "time": candle.time.isoformat(), "index": index})
-        if candle.low == min(item.low for item in window) and sum(candle.low == item.low for item in window) == 1:
-            lows.append({"level": candle.low, "time": candle.time.isoformat(), "index": index})
-    return {"highs": highs, "lows": lows}
 
 
 def detect_structure(swings: dict[str, list[dict[str, Any]]]) -> str:

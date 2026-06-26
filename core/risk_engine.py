@@ -33,6 +33,10 @@ REGIME_SL_MULTIPLIER: dict[str, float] = {
 _DEFAULT_SL_MULT = 0.50
 _ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
 _ZONE_SL_CAP_RATIO = 1.5     # SL cannot exceed 1.5× ATR-based width
+ENTRY_ZONE_ATR_MULT = 0.20   # half-width of entry zone in ATR multiples
+_SWING_SL_BUFFER_ATR = 0.15  # buffer beyond swing level for SL placement
+_MIN_SL_DISTANCE_ATR = 0.5   # reject plans with SL tighter than this × ATR
+_EQ_TP_MAX_RR = 3.0          # max R:R for equal-highs/lows TP1 (cap distance)
 
 # Fibonacci extension levels for TP fallback when no S/R zones available
 _FIB_TP1 = 0.382
@@ -127,6 +131,89 @@ def _fib_extension_target(
         return round_price(target)
 
 
+def _find_nearest_swing_for_sl(
+    smc: dict[str, Any] | None,
+    side: str,
+    price: float,
+) -> float | None:
+    """Find the nearest swing low (buy) or swing high (sell) from H4/H1 for SL.
+
+    Searches both H4 and H1 swing data, returns the swing level closest to
+    *price* that is structurally on the correct side.  Returns None when no
+    suitable swing exists — the caller should fall back to ATR/zone-based SL.
+    """
+    if not isinstance(smc, dict):
+        return None
+
+    candidates: list[float] = []
+    for tf in ("H4", "H1"):
+        tf_data = smc.get(tf, {})
+        if not isinstance(tf_data, dict):
+            continue
+        swings = tf_data.get("swings", {})
+        if not isinstance(swings, dict):
+            continue
+        swing_list = swings.get("lows" if side == "buy" else "highs", [])
+        if not isinstance(swing_list, list):
+            continue
+        for s in swing_list:
+            if not isinstance(s, dict):
+                continue
+            level = s.get("level")
+            if isinstance(level, (int, float)):
+                candidates.append(float(level))
+
+    if not candidates:
+        return None
+
+    if side == "buy":
+        below = [l for l in candidates if l < price]
+        return max(below) if below else None
+    else:
+        above = [h for h in candidates if h > price]
+        return min(above) if above else None
+
+
+def _find_nearest_equal_level(
+    smc: dict[str, Any] | None,
+    side: str,
+    price: float,
+) -> float | None:
+    """Find the nearest equal high (buy) or equal low (sell) for TP1 placement.
+
+    Searches H4 and H1 liquidity_pools for equal highs/lows — clusters where
+    price is likely drawn to sweep stop-losses.  Returns None when no suitable
+    level exists, so the caller falls back to S/R zones.
+    """
+    if not isinstance(smc, dict):
+        return None
+
+    candidates: list[float] = []
+    for tf in ("H4", "H1"):
+        tf_data = smc.get(tf, {})
+        if not isinstance(tf_data, dict):
+            continue
+        pools = tf_data.get("liquidity_pools", {})
+        if not isinstance(pools, dict):
+            continue
+        key = "equal_highs" if side == "buy" else "equal_lows"
+        levels = pools.get(key, [])
+        if isinstance(levels, list):
+            for v in levels:
+                if isinstance(v, (int, float)):
+                    candidates.append(float(v))
+
+    if not candidates:
+        return None
+
+    if side == "buy":
+        above = [l for l in candidates if l > price]
+        return min(above) if above else None
+    else:
+        below = [l for l in candidates if l < price]
+        return max(below) if below else None
+
+
 def _calc_stop_loss_buy(
     level: float,
     atr_value: float,
@@ -189,7 +276,7 @@ def reward_risk(entry: float, stop: float, target: float) -> float:
     return abs(target - entry) / risk
 
 
-def calc_trade_permission(data_quality: dict[str, Any], risk_score: int, best_score: int) -> dict[str, Any]:
+def calc_trade_permission(data_quality: dict[str, Any], risk_score: int, best_score: int, *, min_score: int = 65) -> dict[str, Any]:
     if not data_quality.get("terminal_connected", False) or not data_quality.get("broker_logged_in", False):
         return {"status": "blocked", "reason": "MT5 chưa sẵn sàng hoặc broker chưa đăng nhập.", "resume_after": None}
     if data_quality.get("spread_status") == "abnormal":
@@ -208,9 +295,9 @@ def calc_trade_permission(data_quality: dict[str, Any], risk_score: int, best_sc
             "reason": "Có tin kinh tế tác động cao trong 3 giờ tới, chỉ theo dõi và chờ sau tin.",
             "resume_after": data_quality.get("resume_after"),
         }
-    if risk_score < 9 or best_score < 65:
-        return {"status": "caution", "reason": "Điều kiện rủi ro hoặc điểm setup chưa đủ mạnh, cần chờ xác nhận.", "resume_after": None}
-    return {"status": "allowed", "reason": "Dữ liệu ổn, không có cảnh báo rủi ro chính.", "resume_after": None}
+    if risk_score < 9 or best_score < min_score:
+        return {"status": "caution", "reason": f"Điểm setup {best_score} chưa đạt ngưỡng {min_score}, cần chờ xác nhận.", "resume_after": None, "min_score": min_score}
+    return {"status": "allowed", "reason": "Dữ liệu ổn, không có cảnh báo rủi ro chính.", "resume_after": None, "min_score": min_score}
 
 
 def build_scenarios(
@@ -270,8 +357,8 @@ def build_trade_plan(
     support_zones = list(technical["support_zones"]) + smc_supports
     resistance_zones = list(technical["resistance_zones"]) + smc_resistances
 
-    # Entry Ladder Phase 1: wider zone (atr×0.40) for scaled positioning
-    entry_zone_atr_mult = 0.40
+    # Entry Ladder Phase 1: narrow zone for precise positioning
+    entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
 
     if side == "buy":
         support = select_best_level(support_zones, price, atr_value * 1.5, below=True)
@@ -284,14 +371,26 @@ def build_trade_plan(
         watch_high = level + atr_value * 0.70
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
-        stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
+        # SL: prefer nearest swing low from H4/H1, fallback to zone/ATR-based
+        swing_sl = _find_nearest_swing_for_sl(smc, "buy", level)
+        if swing_sl is not None:
+            stop_loss = swing_sl - atr_value * _SWING_SL_BUFFER_ATR
+        else:
+            stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
         # Guard: SL must be strictly below the entry zone
         sl_floor = entry_low - atr_value * 0.10
         if stop_loss >= sl_floor:
             stop_loss = sl_floor
+        # Guard: skip plan if SL is too tight (noise would sweep it)
+        if abs(level - stop_loss) < atr_value * _MIN_SL_DISTANCE_ATR:
+            return None
         entry_for_rr = entry_high
-        # TP1: nearest S/R zone, fallback to Fib 0.382
-        tp1 = nearest_target(resistance_zones, entry_for_rr, above=True)
+        # TP1: try equal highs (liquidity cluster), then S/R zone, then Fib
+        tp1 = _find_nearest_equal_level(smc, "buy", entry_for_rr)
+        if tp1 is not None and (tp1 - entry_for_rr) > (entry_for_rr - stop_loss) * _EQ_TP_MAX_RR:
+            tp1 = None  # equal level too far, fall through
+        if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
+            tp1 = nearest_target(resistance_zones, entry_for_rr, above=True)
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             tp1 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP1)
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
@@ -313,14 +412,26 @@ def build_trade_plan(
         watch_high = level + atr_value * 0.10
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
-        stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
+        # SL: prefer nearest swing high from H4/H1, fallback to zone/ATR-based
+        swing_sl = _find_nearest_swing_for_sl(smc, "sell", level)
+        if swing_sl is not None:
+            stop_loss = swing_sl + atr_value * _SWING_SL_BUFFER_ATR
+        else:
+            stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
         # Guard: SL must be strictly above the entry zone
         sl_ceiling = entry_high + atr_value * 0.10
         if stop_loss <= sl_ceiling:
             stop_loss = sl_ceiling
+        # Guard: skip plan if SL is too tight (noise would sweep it)
+        if abs(level - stop_loss) < atr_value * _MIN_SL_DISTANCE_ATR:
+            return None
         entry_for_rr = entry_low
-        # TP1: nearest S/R zone, fallback to Fib 0.382
-        tp1 = nearest_target(support_zones, entry_for_rr, above=False)
+        # TP1: try equal lows (liquidity cluster), then S/R zone, then Fib
+        tp1 = _find_nearest_equal_level(smc, "sell", entry_for_rr)
+        if tp1 is not None and (entry_for_rr - tp1) > (stop_loss - entry_for_rr) * _EQ_TP_MAX_RR:
+            tp1 = None  # equal level too far, fall through
+        if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
+            tp1 = nearest_target(support_zones, entry_for_rr, above=False)
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             tp1 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP1)
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):

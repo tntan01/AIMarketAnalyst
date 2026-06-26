@@ -13,12 +13,14 @@ MARKET_TICKERS: dict[str, str] = {
     "DXY": "DX-Y.NYB",
     "VIX": "^VIX",
     "US10Y": "^TNX",
+    "US2Y": "2YY=F",
 }
 
 _CORRELATION_KEYS: dict[str, str] = {
     "DXY": "dxy_candles",
     "VIX": "vix_candles",
     "US10Y": "us10y_candles",
+    "US2Y": "us2y_candles",
 }
 
 _CORRELATION_CACHE: dict[str, Any] | None = None
@@ -82,6 +84,7 @@ def fetch_macro_correlation_context(
         "dxy_candles": None,
         "vix_candles": None,
         "us10y_candles": None,
+        "us2y_candles": None,
     }
     download = downloader or _yf_download
 
@@ -114,7 +117,7 @@ def latest_change(candles: list[Candle] | None) -> tuple[float, float] | None:
 
 def fetch_market_overview(
     *,
-    period: str = "5d",
+    period: str = "1mo",
     interval: str = "1d",
     downloader: Any | None = None,
 ) -> dict[str, tuple[float, float]]:
@@ -152,7 +155,7 @@ def fetch_market_overview_from_yahoo_chart(
         if tag in skip:
             continue
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1d"
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1mo&interval=1d"
             resp = requests.get(url, headers=headers, timeout=timeout)
             if resp.status_code == 429:
                 import time

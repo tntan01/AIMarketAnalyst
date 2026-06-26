@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.safe_types import optional_float
+
 
 # ---- Thresholds ----
 
@@ -83,7 +85,7 @@ def _normalize_trades(raw: list[Any]) -> list[dict[str, Any]]:
             "market_regime": str(t.get("market_regime", "")).lower(),
             "signal_score": int(t.get("signal_score", 0) or 0),
             "final_score": int(t.get("final_score", 0) or 0),
-            "expected_effective_rr": _safe_float(t.get("expected_effective_rr")),
+            "expected_effective_rr": optional_float(t.get("expected_effective_rr")),
             "result": str(t.get("result", "")).lower(),
             "result_r": float(t.get("result_r", 0) or 0),
         })
@@ -254,12 +256,3 @@ def _summarize(trades: list[dict]) -> dict[str, Any]:
         "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0
         else (round(gross_profit, 2) if gross_profit > 0 else 0.0),
     }
-
-
-def _safe_float(value: object) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None

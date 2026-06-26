@@ -31,3 +31,31 @@ def normalize_choice(
     if aliases is None:
         return default
     return aliases.get(alias_key, default)
+
+
+# Canonical entry-status sets — decision engine excludes scanner-only values
+_DECISION_ENTRY_STATUS_SET: frozenset[str] = frozenset({
+    "confirmed_entry", "waiting_confirmation", "watch_zone",
+    "invalidated", "no_setup",
+})
+
+_SCANNER_ENTRY_STATUS_SET: frozenset[str] = frozenset({
+    "confirmed_entry", "waiting_confirmation", "watch_zone",
+    "invalidated", "no_setup", "data_unavailable",
+})
+
+
+def normalize_entry_status(value: object) -> str:
+    """Normalise an entry-status string (decision-engine set, 5 values).
+
+    ``None`` or unrecognised -> ``"unknown"``.  Never raises.
+    """
+    return normalize_choice(value, _DECISION_ENTRY_STATUS_SET, default="unknown") or "unknown"
+
+
+def normalize_scanner_entry_status(value: object) -> str:
+    """Normalise an entry-status string (scanner set, includes data_unavailable).
+
+    ``None`` or unrecognised -> ``"unknown"``.  Never raises.
+    """
+    return normalize_choice(value, _SCANNER_ENTRY_STATUS_SET, default="unknown") or "unknown"

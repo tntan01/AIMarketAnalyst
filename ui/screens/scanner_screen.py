@@ -36,6 +36,7 @@ from ui .screens .shared import action_button ,card ,labeled_value ,page_header
 
 class ScannerTableModel (QAbstractTableModel ):
     COLUMNS =[
+    ("rank","STT"),
     ("symbol","Mã"),
     ("scanner_action","Hành động"),
     ("direction_bias","Hướng"),
@@ -88,7 +89,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"scanner_action","direction_bias","price_vs_zone","trade_permission","opportunity_score","risk_reward","macro_bias","detail_action"}:
+            if key in {"rank","scanner_action","direction_bias","price_vs_zone","trade_permission","opportunity_score","risk_reward","macro_bias","detail_action"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .ForegroundRole :
@@ -547,7 +548,6 @@ class ScannerScreen (QWidget ):
             self .save_button .setEnabled (False )
             self .save_button .clicked .connect (self ._save_snapshot )
             self .brief_button = action_button ('📊 Bản tin thị trường', primary=True, color="warning")
-            self .brief_button .setEnabled (False )
             self.brief_button.setToolTip("Xem bản tin thị trường do AI tổng hợp từ kết quả quét.")
             self .brief_button .clicked .connect (self ._show_market_brief )
             header_layout .addWidget (self .detail_button )
@@ -691,7 +691,12 @@ class ScannerScreen (QWidget ):
         }
         thresholds: dict[str, dict[str, int]] = {}
         for symbol in symbols:
+            # Settings store symbol as 'USD/CAD', but scan uses 'USDCAD'
             cfg = settings.trading.symbol_settings.get(symbol)
+            if cfg is None:
+                # Try with slash: 'USDCAD' -> 'USD/CAD'
+                slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
+                cfg = settings.trading.symbol_settings.get(slash_symbol)
             if cfg:
                 thresholds[symbol] = {
                     "ready": cfg.decision_ready,
@@ -797,10 +802,11 @@ class ScannerScreen (QWidget ):
         market_brief = str(result.get("market_brief", "")).strip()
         if market_brief:
             self._market_brief_text = market_brief
-            self.brief_button.setEnabled(True)
         else:
             self._market_brief_text = ""
-            self.brief_button.setEnabled(False)
+            err = str(result.get("market_brief_error", ""))
+            if err:
+                self._market_brief_text = f"Lỗi tạo bản tin: {err}"
         self .progress_bar .setValue (100 )
         self .progress_bar .setVisible (False )
         self .progress_container .setVisible (False )
@@ -838,11 +844,19 @@ class ScannerScreen (QWidget ):
         self .navigate ("scanner_detail",{"scanner_row":row ,"scanner_result":self .scan_result or {}})
 
     def _show_market_brief(self) -> None:
-        """Open a dialog displaying the AI-generated market brief using a native card layout."""
+        """Open a dialog displaying the AI-generated market brief."""
+        try:
+            self._show_market_brief_impl()
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi hiển thị", f"Không thể hiển thị bản tin:\n{exc}")
+
+    def _show_market_brief_impl(self) -> None:
         from html import escape
         from PyQt6.QtWidgets import QApplication, QScrollArea, QFrame
 
         if not getattr(self, "_market_brief_text", ""):
+            QMessageBox.information(self, "Bản tin thị trường",
+                "Chưa có dữ liệu bản tin.\nCần quét thị trường và bật AI để tạo bản tin.")
             return
 
         try:
@@ -1513,32 +1527,57 @@ def parse_market_brief(raw: str) -> list[dict]:
         stripped = line.strip()
         if not stripped:
             continue
-            
-        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60}):(.*)$", stripped)
+
+        # Strip markdown prefixes that AI models sometimes add
+        cleaned = re.sub(r"^(\*{1,3}|#{1,3})\s*", "", stripped)
+
+        # Try standard format: "1. HEADING: content" or "HEADING: content"
+        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60}):(.*)$", cleaned)
         if m:
             heading = m.group(2).strip()
             rest = m.group(3).strip()
-            icon = get_icon(heading)
-            
-            current_section = {
-                "title": heading,
-                "icon": icon,
-                "lines": []
-            }
-            if rest:
-                current_section["lines"].append(rest)
-            sections.append(current_section)
         else:
-            if current_section is not None:
-                current_section["lines"].append(stripped)
+            # Fallback: markdown heading "### HEADING" or "**HEADING**"
+            m2 = re.match(r"^(?:#{1,3}\s*|\*{2})([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60})(?:\*{2})?\s*$", cleaned)
+            if m2 and len(cleaned) < 80:
+                heading = m2.group(1).strip()
+                rest = ""
             else:
-                current_section = {
-                    "title": "Bản tin",
-                    "icon": "📊",
-                    "lines": [stripped]
-                }
-                sections.append(current_section)
-                
+                # Not a heading — accumulate into current section
+                if current_section is not None:
+                    current_section["lines"].append(stripped)
+                else:
+                    current_section = {
+                        "title": "Bản tin",
+                        "icon": "📊",
+                        "lines": [stripped]
+                    }
+                    sections.append(current_section)
+                continue
+
+        icon = get_icon(heading)
+        current_section = {"title": heading, "icon": icon, "lines": []}
+        if rest:
+            current_section["lines"].append(rest)
+        sections.append(current_section)
+
+    # Fallback: if only 1 default section, try splitting by numbered lines in content
+    if len(sections) == 1 and sections[0]["title"] == "Bản tin":
+        content = "\n".join(sections[0]["lines"])
+        # Try to find "1. HEADING" or "1) HEADING" patterns within the text
+        parts = re.split(r"\n(?=\d+[.)]\s*[A-ZÀ-ỸĐ])", content)
+        if len(parts) > 1:
+            sections = []
+            for part in parts:
+                part = part.strip()
+                m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60})", part)
+                if m:
+                    heading = m.group(2).strip()
+                    body = part[m.end():].strip().lstrip(":- ")
+                    sections.append({"title": heading, "icon": get_icon(heading), "lines": [body] if body else []})
+                else:
+                    sections.append({"title": "Bản tin", "icon": "📊", "lines": [part]})
+
     formatted_sections = []
     for s in sections:
         content = "\n".join(s["lines"])

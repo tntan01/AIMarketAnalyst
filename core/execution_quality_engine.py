@@ -46,7 +46,7 @@ from core.reason_codes import (
     EXECUTION_REVENGE_CONFIRMED,
 )
 from core.safe_types import clamp_score as _shared_clamp_score
-from core.safe_types import optional_float
+from core.safe_types import normalize_tags, optional_float, truthy
 
 DEFAULT_EXECUTION_QUALITY_SCORE = 100
 MIN_EXECUTION_QUALITY_SCORE = 0
@@ -81,75 +81,7 @@ def default_execution_quality_result(
     }
 
 
-# ---------------------------------------------------------------------------
-# Data-reading helpers
-# ---------------------------------------------------------------------------
 
-_TRUTHY = frozenset({"true", "yes", "y", "1", "có", "co", "đúng", "dung"})
-_FALSEY = frozenset({"false", "no", "n", "0", "không", "khong", "sai"})
-
-
-def truthy(value: object) -> bool:
-    """Interpret a loosely-typed value as a boolean.
-
-    Accepts Vietnamese aliases (``có``, ``đúng``, ``không``, ``sai``)
-    alongside standard English forms.  Never raises.
-    """
-    if value is None:
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        stripped = value.strip().lower()
-        if stripped in _TRUTHY:
-            return True
-        if stripped in _FALSEY:
-            return False
-        try:
-            return bool(int(stripped))
-        except (ValueError, OverflowError):
-            pass
-    return False
-
-
-def normalize_tags(value: object) -> list[str]:
-    """Normalise a flexible tag input into a clean list of lowercase strings.
-
-    Handles:
-    - Already a list/tuple/set
-    - JSON-encoded list string
-    - Comma-separated string
-    - None / garbage → empty list
-    """
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple, set)):
-        result: list[str] = []
-        for item in value:
-            if isinstance(item, str):
-                s = item.strip().lower()
-                if s:
-                    result.append(s)
-        return result
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return []
-        # JSON list?
-        if stripped.startswith("[") and stripped.endswith("]"):
-            import json
-            try:
-                parsed = json.loads(stripped)
-                if isinstance(parsed, list):
-                    return normalize_tags(parsed)
-            except (json.JSONDecodeError, ValueError):
-                pass
-        # Comma-separated
-        parts = [p.strip().lower() for p in stripped.split(",")]
-        return [p for p in parts if p]
-    return []
 
 
 _TAG_FIELDS = ("auto_mistake_tags", "manual_mistake_tags", "mistake_tags", "execution_tags")

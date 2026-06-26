@@ -43,7 +43,7 @@ from core.reason_codes import (
     FINAL_SCORE_EXECUTION_STRONG,
     FINAL_SCORE_EXECUTION_WEAK,
 )
-from core.safe_types import clamp_score as _shared_clamp_score
+from core.safe_types import clamp_score
 from core.safe_types import safe_float as _safe_numeric_float
 
 # ---------------------------------------------------------------------------
@@ -174,15 +174,6 @@ def build_score_inputs(
     }
 
 
-def clamp_score(value: object, minimum: int = 0, maximum: int = 100) -> int:
-    """Safely clamp any numeric input into [*minimum*, *maximum*] as int.
-
-    - Accepts int, float, or numeric strings like ``"72.5"``.
-    - ``None``, ``""``, non-numeric strings, NaN, and ±Inf return *minimum*.
-    - Result is rounded to the nearest integer.
-    - Never raises an exception.
-    """
-    return _shared_clamp_score(value, minimum, maximum)
 
 
 def default_final_score_result(reason: str = "final_score_not_calculated") -> dict[str, Any]:

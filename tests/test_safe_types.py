@@ -5,7 +5,6 @@ from math import inf, nan
 from core.decision_engine import clamp_score as decision_clamp_score
 from core.execution_quality_engine import clamp_score as execution_clamp_score
 from core.final_score_engine import clamp_score as final_clamp_score
-from core.journal_feedback_engine import _safe_float as feedback_safe_float
 from core.safe_types import (
     clamp_score,
     finite_float,
@@ -14,6 +13,9 @@ from core.safe_types import (
     safe_optional_float,
 )
 from core.scanner_ranking_engine import clamp_score as scanner_clamp_score
+
+# Legacy alias test — _safe_float was consolidated into optional_float
+feedback_safe_float = optional_float
 
 
 def test_finite_float_accepts_numeric_like_values():

@@ -45,6 +45,7 @@ from core.reason_codes import (
     STAT_EDGE_NOT_ENOUGH_DATA,
     STAT_EDGE_POSITIVE,
 )
+from core.safe_types import clamp_score
 
 DEFAULT_EVIDENCE_SCORE = 50
 MIN_SAMPLE_SIZE = 30
@@ -446,11 +447,6 @@ def calculate_trade_stats(results_r: list[float]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def clamp_score(value: float, min_value: int = 0, max_value: int = 100) -> int:
-    """Clamp a numeric value into [*min_value*, *max_value*] and cast to int."""
-    return int(max(min_value, min(max_value, value)))
-
-
 def map_expectancy_to_score(expectancy_r: float | None, sample_size: int) -> int:
     """Convert an expectancy R-multiple into a 0–100 evidence score.
 
@@ -479,7 +475,7 @@ def map_expectancy_to_score(expectancy_r: float | None, sample_size: int) -> int
 
     # Near-zero zone: linear mapping around 50, clamped to 35–65
     score = 50.0 + expectancy_r * 100.0
-    return clamp_score(score, 35, 65)
+    return clamp_score(score, minimum=35, maximum=65)
 
 
 # ---------------------------------------------------------------------------

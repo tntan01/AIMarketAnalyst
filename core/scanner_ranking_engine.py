@@ -45,10 +45,10 @@ from core.reason_codes import (
     SCANNER_RR_WEAK,
     SCANNER_NEWS_PENALTY,
     SCANNER_SPREAD_PENALTY,
+    merge_unique_codes,
 )
-from core.normalization import normalize_choice
-from core.safe_types import clamp_score as _shared_clamp_score
-from core.safe_types import safe_float as _shared_safe_float
+from core.normalization import normalize_choice, normalize_scanner_entry_status
+from core.safe_types import clamp_score, parse_risk_reward, safe_float
 
 # ---------------------------------------------------------------------------
 # Scanner-group constants
@@ -134,27 +134,6 @@ _GROUP_REASON_CODES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def clamp_score(
-    value: object, default: int = 0, minimum: int = 0, maximum: int = 100
-) -> int:
-    """Safely read a score value, clamping to [*minimum*, *maximum*].
-
-    - None, "", "abc", NaN, ±Inf → *default* (already clamped).
-    - Never raises.
-    """
-    return _shared_clamp_score(value, minimum, maximum, default=default)
-
-
-def safe_float(value: object, default: float = 0.0) -> float:
-    """Safely convert a value to float.
-
-    - None, "", "abc", NaN, ±Inf → *default*.
-    - Never raises.
-    """
-    result = _shared_safe_float(value, default=default)
-    return default if result is None else result
-
-
 def parse_risk_reward(value: object) -> float:
     """Parse a risk/reward ratio string.
 
@@ -217,17 +196,6 @@ def normalize_price_vs_zone(value: object) -> str:
     return _PROXIMITY_ALIASES.get(cleaned, "unknown")
 
 
-_ENTRY_STATUS_SET = frozenset({
-    "confirmed_entry", "waiting_confirmation", "watch_zone",
-    "invalidated", "no_setup", "data_unavailable",
-})
-
-
-def normalize_entry_status(value: object) -> str:
-    """Normalise an entry-status string to a canonical value."""
-    return normalize_choice(value, _ENTRY_STATUS_SET, default="unknown") or "unknown"
-
-
 _DECISION_ALIASES: dict[str, str] = {
     "ready": "READY_TO_TRADE",
     "ready_to_trade": "READY_TO_TRADE",
@@ -260,27 +228,6 @@ def normalize_decision(value: object) -> str:
         default="",
         case="upper",
     ) or ""
-
-
-def merge_unique_codes(*groups: object) -> list[str]:
-    """Merge multiple code lists, deduplicating while preserving order."""
-    seen: set[str] = set()
-    result: list[str] = []
-    for group in groups:
-        if group is None:
-            continue
-        if not isinstance(group, (list, tuple, set)):
-            continue
-        for code in group:
-            if code is None:
-                continue
-            s = str(code).strip()
-            if not s:
-                continue
-            if s not in seen:
-                seen.add(s)
-                result.append(s)
-    return result
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -317,7 +264,7 @@ def classify_scanner_group(
     Never raises.
     """
     norm_decision = normalize_decision(decision)
-    norm_entry = normalize_entry_status(entry_status)
+    norm_entry = normalize_scanner_entry_status(entry_status)
     norm_action = str(scanner_action or "").strip().lower()
     tp_blocked = False
     if isinstance(trade_permission, dict):
@@ -429,7 +376,7 @@ def calculate_opportunity_score(
     w = weights or DEFAULT_OPPORTUNITY_WEIGHTS
 
     # ---- base score ----
-    base = clamp_score(row.get("final_score") or row.get("best_score"), 0)
+    base = clamp_score(row.get("final_score") or row.get("best_score"), default=0)
 
     # ---- scanner group ----
     decision_val = row.get("scanner_decision") or row.get("decision")

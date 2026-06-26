@@ -38,7 +38,7 @@ from core.reason_codes import (
     MISTAKE_REVENGE_TRADE_CONFIRMED,
     MISTAKE_REVENGE_TRADE_WARNING,
 )
-from core.safe_types import safe_float as _shared_safe_float
+from core.safe_types import normalize_tags, safe_float, truthy
 
 # ---------------------------------------------------------------------------
 # Default detector settings
@@ -53,22 +53,6 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "closed_too_early_actual_r_threshold": 0.5,
 }
 
-# ---------------------------------------------------------------------------
-# Safe data-reading helpers
-# ---------------------------------------------------------------------------
-
-_TRUTHY = frozenset({"true", "yes", "y", "1", "có", "co", "đúng", "dung"})
-_FALSY = frozenset({"false", "no", "n", "0", "không", "khong", "sai"})
-
-
-def safe_float(value: object, default: float = 0.0) -> float:
-    """Safely convert *value* to float, returning *default* on failure.
-
-    Accepts int, float, and numeric strings.  Returns *default* for
-    None, empty string, non-numeric strings, NaN, and infinity.
-    """
-    result = _shared_safe_float(value, default=default)
-    return default if result is None else result
 
 
 def safe_datetime(value: object) -> datetime | None:
@@ -99,63 +83,6 @@ def safe_datetime(value: object) -> datetime | None:
     return None
 
 
-def truthy(value: object) -> bool:
-    """Interpret a loosely-typed value as a boolean.
-
-    Accepts English and Vietnamese aliases.  Never raises.
-    """
-    if value is None:
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        stripped = value.strip().lower()
-        if stripped in _TRUTHY:
-            return True
-        if stripped in _FALSY:
-            return False
-        try:
-            return bool(int(stripped))
-        except (ValueError, OverflowError):
-            pass
-    return False
-
-
-def normalize_tags(value: object) -> list[str]:
-    """Normalise flexible tag input into a clean list of lowercase strings.
-
-    Handles:
-    - Already a list / tuple / set
-    - JSON-encoded list string (``'["a", "b"]'``)
-    - Comma-separated string (``"a, b"``)
-    - None / garbage → empty list
-    """
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple, set)):
-        result: list[str] = []
-        for item in value:
-            if isinstance(item, str):
-                s = item.strip().lower()
-                if s:
-                    result.append(s)
-        return result
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return []
-        if stripped.startswith("[") and stripped.endswith("]"):
-            try:
-                parsed = json.loads(stripped)
-                if isinstance(parsed, list):
-                    return normalize_tags(parsed)
-            except (json.JSONDecodeError, ValueError):
-                pass
-        parts = [p.strip().lower() for p in stripped.split(",")]
-        return [p for p in parts if p]
-    return []
 
 
 def add_unique(items: list[str], value: str) -> None:

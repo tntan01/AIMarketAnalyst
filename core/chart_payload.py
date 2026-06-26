@@ -5,19 +5,6 @@ from typing import Any
 from core.market_models import Candle
 
 
-def candles_to_chart_payload(candles: list[Candle]) -> list[dict[str, float | int]]:
-    return [
-        {
-            "time": int(candle.time.timestamp()),
-            "open": candle.open,
-            "high": candle.high,
-            "low": candle.low,
-            "close": candle.close,
-        }
-        for candle in candles
-    ]
-
-
 def build_chart_payload(candles_by_timeframe: dict[str, list[Candle]]) -> dict[str, list[dict[str, Any]]]:
     return {
         timeframe: [

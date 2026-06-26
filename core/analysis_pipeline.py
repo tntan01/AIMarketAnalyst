@@ -335,12 +335,14 @@ class AnalysisPipeline:
     # ------------------------------------------------------------------
 
     def _step_build_trade_scenarios(self) -> None:
+        min_score = self._thresholds.get("ready", 65) if self._thresholds else 65
         trade_permission_initial = calc_trade_permission(
             self._data_quality, self._risk_score,
             int(max(
                 self._scores["buy"].get("signal_score", 0),
                 self._scores["sell"].get("signal_score", 0),
             )),
+            min_score=min_score,
         )
         self._scenarios = build_scenarios(
             self._request, self._technical, self._smc, self._scores,
@@ -445,8 +447,10 @@ class AnalysisPipeline:
     # ------------------------------------------------------------------
 
     def _step_apply_gates(self) -> None:
+        min_score = self._thresholds.get("ready", 65) if self._thresholds else 65
         self._trade_permission = calc_trade_permission(
             self._data_quality, self._risk_score, self._best_score,
+            min_score=min_score,
         )
 
         regime_key = (

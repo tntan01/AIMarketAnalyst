@@ -1,25 +1,42 @@
+"""News service — macro context, calendar data quality, and headline analysis."""
+
 from __future__ import annotations
 
 import json
-import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from urllib.error import HTTPError, URLError
+from typing import Any
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 from config.paths import app_data_dir
+from services.forex_factory_client import (
+    ForexFactoryClient,
+    _event_time,
+    _is_high_impact,
+    clean_text,
+    parse_event_time,
+)
+
+# ---------------------------------------------------------------------------
+# Re-export for backward compatibility
+# ---------------------------------------------------------------------------
+__all__ = [
+    "NewsService",
+    "parse_event_time",
+    "clean_text",
+    "parse_rss_time",
+    "currency_stance",
+    "stance_value",
+    "macro_score_from_delta",
+]
 
 
 class NewsService:
-    FOREX_FACTORY_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-    FOREX_FACTORY_HTML_URL = "https://www.forexfactory.com/calendar?week=this"
-    CALENDAR_CACHE_MAX_AGE = timedelta(hours=12)
-    CALENDAR_CACHE_FILE: Path | None = None
-    HIGH_IMPACT_VALUES = {"high", "red", "cao"}
     BASELINE_MACRO_SCORE = 7
     BASELINE_MACRO_SCORE_30 = 15  # neutral midpoint for 0-30 scale
     CURRENCY_KEYWORDS = {
@@ -38,10 +55,12 @@ class NewsService:
     HAWKISH_TERMS = ["hike", "tightening", "hawkish", "inflation above", "yields rise", "wages rise", "intervention"]
     DOVISH_TERMS = ["cut", "easing", "dovish", "slowdown", "recession", "yields fall", "weaker inflation"]
     HOTSPOT_TERMS = ["war", "strike", "sanction", "tariff", "oil", "geopolitical", "Middle East", "Ukraine", "Taiwan", "risk-off"]
-    _calendar_cache: dict[str, tuple[datetime, list[dict[str, object]]]] = {}
     _interest_rates: dict[str, object] | None = None
     _tier_scores_cache: dict[str, dict[str, object]] = {}
     _last_fetch_time: datetime | None = None
+
+    def __init__(self) -> None:
+        self._ff_client = ForexFactoryClient()
 
     # ------------------------------------------------------------------
     # Interest rate config
@@ -78,7 +97,7 @@ class NewsService:
             return self._tier_scores_cache[cache_key]
 
         currencies = [part for part in symbol.split("/") if part]
-        calendar = self._calendar_events(currencies)
+        calendar = self._ff_client.calendar_events(currencies)
         events = calendar["events"]
         calendar_source = str(calendar["source"])
         calendar_warning = str(calendar["warning"])
@@ -169,12 +188,10 @@ class NewsService:
         progress(15, "Đang tải lịch kinh tế...")
         first = symbols[0]
         currencies_first = [part for part in first.split("/") if part]
-        self._calendar_events(currencies_first)
+        self._ff_client.calendar_events(currencies_first)
 
         # Buoc 2+3: Fetch RSS + official statements in parallel
         progress(16, "Đang tải tin tức toàn cầu...")
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         with ThreadPoolExecutor(max_workers=2) as ex:
             headlines_future = ex.submit(self._fetch_global_forex_headlines)
             statements_future = ex.submit(self._latest_official_statements)
@@ -199,8 +216,6 @@ class NewsService:
 
     def _fetch_global_forex_headlines(self) -> list[dict[str, object]]:
         """Fetch 3 broad queries in parallel to get headlines for all currency pairs."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         rows: list[dict[str, object]] = []
         seen: set[str] = set()
         cutoff = datetime.now(UTC) - timedelta(hours=24)
@@ -323,14 +338,12 @@ class NewsService:
         }
 
     # --- Tier 1: Interest Rate & Monetary Policy (0-12) ---
-    # Weights: rate_diff 0-2, trend 0-5, stance 0-5 = total 0-12
-    # Trend and stance dominate because markets care more about where rates are GOING
     def _macro_tier1(self, base: str, quote: str, base_stance: str, quote_stance: str) -> tuple[int, int, dict[str, object]]:
         rates = self._load_interest_rates()
         base_info = rates.get(base, {})
         quote_info = rates.get(quote, {})
 
-        # Rate differential score (0-2): absolute level matters less
+        # Rate differential score (0-2)
         rate_diff = self.rate_differential(base, quote)
         if rate_diff > 2.0:
             diff_buy, diff_sell = 2, 0
@@ -343,7 +356,7 @@ class NewsService:
         else:
             diff_buy, diff_sell = 0, 2
 
-        # Rate trend score (0-5): direction of change dominates
+        # Rate trend score (0-5)
         trend_score_map = {"hike": 5, "hold": 2, "cut": 0}
         base_trend = int(trend_score_map.get(str(base_info.get("trend", "hold")), 2))
         quote_trend = int(trend_score_map.get(str(quote_info.get("trend", "hold")), 2))
@@ -359,7 +372,7 @@ class NewsService:
         else:
             trend_buy, trend_sell = 0, 5
 
-        # Stance score from headlines (0-5): real-time sentiment
+        # Stance score from headlines (0-5)
         stance_delta = stance_value(base_stance) - stance_value(quote_stance)
         if stance_delta >= 2:
             stance_buy, stance_sell = 5, 0
@@ -389,15 +402,13 @@ class NewsService:
         return (diff_buy + trend_buy + stance_buy, diff_sell + trend_sell + stance_sell, detail)
 
     # --- Tier 2: Economic Calendar Impact (0-10) ---
-    # Calendar events create timing uncertainty — penalize the exposed side.
-    # Base 5 for each side; high-impact events on a currency reduce that side's score.
     def _macro_tier2(self, base: str, quote: str, events: list[dict[str, object]]) -> tuple[int, int, dict[str, object]]:
         whitelist = self._high_impact_whitelist()
         now = datetime.now(UTC)
         cutoff = now + timedelta(hours=72)
 
-        base_quality = 0  # count of high-importance events for base
-        quote_quality = 0  # count of high-importance events for quote
+        base_quality = 0
+        quote_quality = 0
         base_total = 0
         quote_total = 0
 
@@ -420,9 +431,6 @@ class NewsService:
                 if is_high:
                     quote_quality += 1
 
-        # Events on a currency → uncertainty for positions exposed to that currency
-        # BUY = long base + short quote → penalized by base events, helped by quote events
-        # SELL = short base + long quote → penalized by quote events, helped by base events
         buy_cal = 5 - min(2, base_quality) + min(2, quote_quality)
         sell_cal = 5 - min(2, quote_quality) + min(2, base_quality)
         buy_cal = max(1, min(9, buy_cal))
@@ -443,14 +451,12 @@ class NewsService:
     ) -> tuple[int, int, dict[str, object]]:
         all_text = " ".join(str(item.get("title", "")) for item in headlines).lower()
 
-        # Risk sentiment: count risk-on vs risk-off terms
         risk_on_terms = ["risk-on", "rally", "bullish", "soft landing", "goldilocks", "stimulus", "recovery"]
         risk_off_terms = ["risk-off", "sell-off", "bearish", "recession", "crash", "fear", "panic", "flight to safety"]
 
         risk_on_count = sum(1 for t in risk_on_terms if t in all_text)
         risk_off_count = sum(1 for t in risk_off_terms if t in all_text)
 
-        # Risk-off → favors safe havens (USD, JPY, CHF, XAU) and hurts risk currencies (AUD, NZD, CAD)
         base = currencies[0] if currencies else ""
         quote = currencies[1] if len(currencies) > 1 else ""
         safe_havens = {"USD", "JPY", "CHF", "XAU"}
@@ -502,7 +508,6 @@ class NewsService:
                 hotspot_severity += 1
         hotspot_severity = min(4, hotspot_severity)
 
-        # Hotspots → risk-off → safe havens benefit
         if hotspot_severity >= 3:
             if base_is_safe:
                 geo_buy, geo_sell = 3, 1
@@ -540,7 +545,6 @@ class NewsService:
         confidence = 1.0
         now = datetime.now(UTC)
 
-        # Check headline recency
         if headlines:
             newest = None
             for h in headlines:
@@ -561,15 +565,13 @@ class NewsService:
                 elif age_hours > 3:
                     confidence -= 0.05
         else:
-            confidence -= 0.30  # No headlines at all
+            confidence -= 0.30
 
-        # Check headline count
         if len(headlines) < 3:
             confidence -= 0.10
         if len(headlines) == 0:
             confidence -= 0.10
 
-        # Check calendar data
         if not events:
             confidence -= 0.10
 
@@ -644,384 +646,6 @@ class NewsService:
                 "Wage", "Employment", "Payroll",
             ]
 
-    def _forex_factory_events(self, currencies: list[str]) -> list[dict[str, object]]:
-        return self._select_calendar_events(currencies, self._fetch_forex_factory_json_events())
-
-    def _calendar_events(self, currencies: list[str]) -> dict[str, object]:
-        # Use cached calendar if still fresh (12h TTL via _cached_calendar_events)
-        cached = self._cached_calendar_events()
-        if cached:
-            return {
-                "source": "Calendar file cache",
-                "events": self._select_calendar_events(currencies, cached),
-                "warning": "",
-            }
-
-        errors: list[str] = []
-        # Try JSON first (fast), fallback to HTML scraper
-        for source, fetcher in (
-            ("Forex Factory", self._fetch_forex_factory_json_events),
-            ("Forex Factory HTML", self._fetch_forex_factory_html_events),
-        ):
-            try:
-                rows = fetcher()
-            except Exception as exc:
-                errors.append(f"{source}: {exc}")
-                continue
-
-            # If JSON source, try to enrich actual values from HTML
-            if source == "Forex Factory":
-                try:
-                    html_rows = self._fetch_forex_factory_html_events()
-                    self._merge_actual_from_html(rows, html_rows)
-                except Exception:
-                    pass  # HTML enrichment is best-effort
-
-            self._store_calendar_cache(rows)
-            return {
-                "source": source,
-                "events": self._select_calendar_events(currencies, rows),
-                "warning": "",
-            }
-
-        return {
-            "source": "Calendar unavailable",
-            "events": [],
-            "warning": "Không lấy được lịch kinh tế từ Forex Factory: " + "; ".join(errors),
-        }
-
-    def _merge_actual_from_html(self, json_rows: list[dict[str, object]], html_rows: list[dict[str, object]]) -> None:
-        """Merge actual values from HTML scraper into JSON rows. Only merge for past events."""
-        if not html_rows:
-            return
-        now = datetime.now(UTC)
-        # Build lookup from HTML: key = (currency, event_name, date_bucket)
-        html_lookup: dict[tuple[str, str, str], str] = {}
-        for row in html_rows:
-            currency = str(row.get("currency", "")).upper()
-            event = str(row.get("event", "")).strip().lower()
-            actual = str(row.get("actual", "")).strip()
-            ev_time = _event_time(row)
-            date_key = ev_time.strftime("%Y%m%d") if ev_time else ""
-            if actual and currency and event:
-                html_lookup[(currency, event, date_key)] = actual
-
-        if not html_lookup:
-            return
-
-        for row in json_rows:
-            ev_time = _event_time(row)
-            if not ev_time or ev_time >= now:
-                continue  # Only merge actual for past events
-            currency = str(row.get("currency", "")).upper()
-            event = str(row.get("event", "")).strip().lower()
-            date_key = ev_time.strftime("%Y%m%d")
-            # Try exact date match first, then fall back to name-only match
-            key = (currency, event, date_key)
-            if key in html_lookup and not str(row.get("actual", "")).strip():
-                row["actual"] = html_lookup[key]
-
-    def _fetch_forex_factory_json_events(self) -> list[dict[str, object]]:
-        import time
-        last_error = None
-        for attempt in range(3):
-            try:
-                request = Request(
-                    self.FOREX_FACTORY_CALENDAR_URL,
-                    headers={"User-Agent": "AI Market Analyst/1.0"},
-                )
-                with urlopen(request, timeout=10) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                return self._normalize_calendar_items(payload if isinstance(payload, list) else [], source="Forex Factory")
-            except HTTPError as exc:
-                last_error = RuntimeError(f"HTTP {exc.code}")
-                if exc.code == 429 and attempt < 2:
-                    time.sleep(2 * (attempt + 1))  # 2s, 4s backoff
-                    continue
-                raise last_error from exc
-            except URLError as exc:
-                last_error = RuntimeError(str(exc.reason))
-                if attempt < 2:
-                    time.sleep(1)
-                    continue
-                raise last_error from exc
-
-    def _fetch_forex_factory_html_events(self) -> list[dict[str, object]]:
-        request = Request(
-            self.FOREX_FACTORY_HTML_URL,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; AI Market Analyst/1.0)",
-                "Accept": "text/html,application/xhtml+xml",
-            },
-        )
-        try:
-            with urlopen(request, timeout=10) as response:
-                html = response.read().decode("utf-8", errors="ignore")
-        except HTTPError as exc:
-            raise RuntimeError(f"HTTP {exc.code}") from exc
-        except URLError as exc:
-            raise RuntimeError(str(exc.reason)) from exc
-        rows = self._parse_forex_factory_html(html)
-        if not rows:
-            raise RuntimeError("không đọc được bảng HTML")
-        return rows
-
-    def _normalize_calendar_items(self, payload: list[object], *, source: str) -> list[dict[str, object]]:
-        now = datetime.now(UTC)
-        rows: list[dict[str, object]] = []
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            currency = str(item.get("country") or item.get("currency") or "")
-            if not currency:
-                continue
-            event_time = parse_event_time(str(item.get("date") or ""))
-            hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
-            rows.append(
-                {
-                    "source": source,
-                    "currency": currency,
-                    "event": item.get("title", ""),
-                    "impact": item.get("impact", ""),
-                    "time_utc": event_time.isoformat(timespec="minutes").replace("+00:00", "Z") if event_time else "",
-                    "hours_until": round(hours_until, 2) if hours_until is not None else None,
-                    "forecast": item.get("forecast", ""),
-                    "previous": item.get("previous", ""),
-                    "actual": item.get("actual", ""),
-                }
-            )
-        return rows
-
-    def _parse_forex_factory_html(self, html: str) -> list[dict[str, object]]:
-        from datetime import datetime as dt
-
-        now = datetime.now(UTC)
-        rows: list[dict[str, object]] = []
-        current_date: str | None = None
-
-        # Detect timezone from HTML (Forex Factory shows times in viewer's local tz)
-        html_tz = self._detect_html_timezone(html)
-
-        row_blocks = re.findall(r"<tr[^>]*calendar__row[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL)
-        for block in row_blocks:
-            # Track current date from date header (calendar__cell with colspan)
-            # or inline date cell (calendar__date)
-            date_text = self._html_cell_text(block, "calendar__date")
-            if not date_text:
-                date_text = self._html_cell_text(block, "calendar__cell")
-            if date_text:
-                # Strip HTML tags: "Thu <span>Jun 12</span>" → "Thu Jun 12"
-                date_clean = re.sub(r"<[^>]+>", "", date_text).strip()
-                date_clean = re.sub(r"\s+", " ", date_clean)
-                if re.search(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}", date_clean, re.IGNORECASE):
-                    current_date = date_clean
-
-            currency = self._html_cell_text(block, "calendar__currency")
-            event = self._html_cell_text(block, "calendar__event-title") or self._html_cell_text(block, "calendar__event")
-            if not currency or not event:
-                continue
-
-            # Extract time from calendar__time cell + current_date
-            time_text = self._html_raw_cell(block, "calendar__time")
-            time_text = re.sub(r"<[^>]+>", " ", time_text).strip() if time_text else ""
-            event_time = self._parse_html_time(time_text, current_date, html_tz)
-
-            hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
-            rows.append(
-                {
-                    "source": "Forex Factory HTML",
-                    "currency": currency,
-                    "event": event,
-                    "impact": self._html_impact(block),
-                    "time_utc": event_time.isoformat(timespec="minutes").replace("+00:00", "Z") if event_time else "",
-                    "hours_until": round(hours_until, 2) if hours_until is not None else None,
-                    "forecast": self._html_cell_text(block, "calendar__forecast"),
-                    "previous": self._html_cell_text(block, "calendar__previous"),
-                    "actual": self._html_cell_text(block, "calendar__actual"),
-                }
-            )
-        return rows
-
-    def _detect_html_timezone(self, html: str) -> str:
-        """Detect the timezone used by Forex Factory HTML page.
-
-        Forex Factory auto-detects the viewer's timezone from IP and displays
-        all event times in that timezone. We extract it from the page metadata."""
-        # Primary: "Calendar Time Zone: Asia/Bangkok (GMT +7)"
-        tz_match = re.search(r"Calendar Time Zone:\s*([^<]+)", html)
-        if tz_match:
-            tz_text = tz_match.group(1).strip()
-            tz_name = re.search(r"([A-Z][a-z]+/[A-Z][a-z_]+)", tz_text)
-            if tz_name:
-                return tz_name.group(1)
-        # Secondary: JS config 'User Timezone': 'Asia/Bangkok'
-        tz_match = re.search(r"'User Timezone':\s*'([^']+)'", html)
-        if tz_match:
-            return tz_match.group(1)
-        # Fallback: system local timezone
-        return str(datetime.now().astimezone().tzinfo)
-
-    def _parse_html_time(self, time_text: str, date_text: str | None, html_tz: str = "UTC") -> datetime | None:
-        """Parse time like '5:30am' or 'All Day' combined with date like 'Mon Jun 15'.
-
-        html_tz is the timezone detected from the Forex Factory HTML page
-        (matches the viewer's local timezone based on IP)."""
-        if not time_text or not date_text:
-            return None
-        time_text = time_text.strip().lower()
-        if time_text in ("all day", "tentative", ""):
-            return None  # skip events without specific time
-
-        match = re.match(r"(\d{1,2}):(\d{2})(am|pm)", time_text)
-        if not match:
-            return None
-        hour = int(match.group(1))
-        minute = int(match.group(2))
-        ampm = match.group(3)
-        if ampm == "pm" and hour != 12:
-            hour += 12
-        elif ampm == "am" and hour == 12:
-            hour = 0
-
-        # Parse date: "Mon Jun 15"
-        try:
-            parsed_date = datetime.strptime(date_text + f" {datetime.now(UTC).year}", "%a %b %d %Y")
-        except ValueError:
-            return None
-
-        from zoneinfo import ZoneInfo
-        try:
-            tz = ZoneInfo(html_tz)
-        except Exception:
-            tz = None
-        dt_local = parsed_date.replace(hour=hour, minute=minute, tzinfo=tz)
-        if tz:
-            return dt_local.astimezone(UTC)
-        return dt_local.replace(tzinfo=UTC)
-
-    def _html_raw_cell(self, row_html: str, class_name: str) -> str:
-        """Extract raw HTML content of a cell by class name (without stripping tags)."""
-        match = re.search(
-            rf'<(?:td|span|div)[^>]*class="[^"]*{re.escape(class_name)}[^"]*"[^>]*>(.*?)</(?:td|span|div)>',
-            row_html,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        return match.group(1) if match else ""
-
-    def _html_cell_text(self, row_html: str, class_name: str) -> str:
-        match = re.search(
-            rf'<(?:td|span|div)[^>]*class="[^"]*{re.escape(class_name)}[^"]*"[^>]*>(.*?)</(?:td|span|div)>',
-            row_html,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if not match:
-            return ""
-        return clean_text(re.sub(r"<[^>]+>", " ", match.group(1)))
-
-    def _html_event_time(self, row_html: str) -> datetime | None:
-        for pattern in (
-            r'data-event-datetime="([^"]+)"',
-            r'data-event-time="([^"]+)"',
-            r'datetime="([^"]+)"',
-        ):
-            match = re.search(pattern, row_html, flags=re.IGNORECASE)
-            if match:
-                parsed = parse_event_time(match.group(1))
-                if parsed:
-                    return parsed
-        return None
-
-    def _html_impact(self, row_html: str) -> str:
-        lowered = row_html.lower()
-        if "high impact" in lowered or "calendar__impact-icon--red" in lowered or "ff-impact-red" in lowered:
-            return "High"
-        if "medium impact" in lowered or "calendar__impact-icon--orange" in lowered or "ff-impact-orange" in lowered:
-            return "Medium"
-        if "low impact" in lowered or "calendar__impact-icon--yellow" in lowered or "ff-impact-yellow" in lowered:
-            return "Low"
-        return ""
-
-    def _select_calendar_events(self, currencies: list[str], rows: list[dict[str, object]]) -> list[dict[str, object]]:
-        wanted = {currency.upper() for currency in currencies}
-        relevant = [dict(row) for row in rows if str(row.get("currency", "")).upper() in wanted]
-        if relevant:
-            return sorted(relevant, key=lambda row: str(row.get("time_utc", "")))[:8]
-        important = [
-            dict(row)
-            for row in rows
-            if _is_high_impact(str(row.get("impact", ""))) or str(row.get("impact", "")).lower() == "medium"
-        ]
-        return sorted(important, key=lambda row: str(row.get("time_utc", "")))[:8]
-
-    def _store_calendar_cache(self, rows: list[dict[str, object]]) -> None:
-        if not rows:
-            return
-        now = datetime.now(UTC)
-        today_key = now.strftime("%Y%m%d")
-        snapshot = [dict(row) for row in rows]
-
-        # Daily accumulation: merge with existing cache so past events persist
-        existing = self._read_calendar_cache_file()
-        if existing and existing.get("date") == today_key:
-            # Same day — merge: keep old events, add new ones (dedup by time+currency+event)
-            old_rows = existing.get("rows", [])
-            existing_keys = set()
-            for r in old_rows:
-                t = str(r.get("time_utc", ""))
-                c = str(r.get("currency", ""))
-                e = str(r.get("event", ""))
-                existing_keys.add((t, c, e))
-            for r in snapshot:
-                t = str(r.get("time_utc", ""))
-                c = str(r.get("currency", ""))
-                e = str(r.get("event", ""))
-                if (t, c, e) not in existing_keys:
-                    old_rows.append(r)
-            snapshot = old_rows
-
-        self._calendar_cache["global"] = (now, snapshot)
-        try:
-            cache_file = self._calendar_cache_file()
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(
-                json.dumps({"date": today_key, "stored_utc": now.isoformat(), "rows": snapshot}, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception:
-            pass
-
-    def _read_calendar_cache_file(self) -> dict | None:
-        try:
-            cache_file = self._calendar_cache_file()
-            if cache_file.exists():
-                return json.loads(cache_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-        return None
-
-    def _cached_calendar_events(self) -> list[dict[str, object]]:
-        cached = self._calendar_cache.get("global")
-        if cached:
-            timestamp, rows = cached
-            if datetime.now(UTC) - timestamp <= self.CALENDAR_CACHE_MAX_AGE:
-                return [dict(row) for row in rows]
-
-        raw = self._read_calendar_cache_file()
-        if raw and isinstance(raw, dict):
-            stored = parse_event_time(str(raw.get("stored_utc", "")))
-            rows = raw.get("rows", [])
-            if stored and datetime.now(UTC) - stored <= self.CALENDAR_CACHE_MAX_AGE and isinstance(rows, list):
-                clean_rows = [dict(row) for row in rows if isinstance(row, dict)]
-                if clean_rows:
-                    self._calendar_cache["global"] = (stored, clean_rows)
-                    return clean_rows
-        return []
-
-    def _calendar_cache_file(self) -> Path:
-        if self.CALENDAR_CACHE_FILE is not None:
-            return self.CALENDAR_CACHE_FILE
-        return app_data_dir() / "cache" / "economic_calendar_thisweek.json"
-
     def _macro_headlines(self, symbol: str, currencies: list[str]) -> list[dict[str, object]]:
         queries = self._headline_queries(symbol, currencies)
         rows: list[dict[str, object]] = []
@@ -1072,7 +696,6 @@ class NewsService:
                 items.append(enriched)
             return items
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=6) as executor:
             futures = {executor.submit(_fetch_one, q): q for q in queries}
             for future in as_completed(futures):
@@ -1200,30 +823,6 @@ class NewsService:
 # ------------------------------------------------------------------
 # Module-level helpers
 # ------------------------------------------------------------------
-def parse_event_time(value: str) -> datetime | None:
-    if not value:
-        return None
-    normalized = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _event_time(event: object) -> datetime | None:
-    if not isinstance(event, dict):
-        return None
-    return parse_event_time(str(event.get("time_utc") or ""))
-
-
-def _is_high_impact(value: str) -> bool:
-    normalized = value.strip().lower()
-    return normalized in NewsService.HIGH_IMPACT_VALUES or "high" in normalized or "red" in normalized
-
-
 def parse_rss_time(value: str) -> datetime | None:
     if not value:
         return None
@@ -1236,10 +835,6 @@ def parse_rss_time(value: str) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
-
-
-def clean_text(value: str) -> str:
-    return " ".join(unescape(value or "").split())
 
 
 def currency_stance(headlines: list[str], hawkish_terms: list[str], dovish_terms: list[str]) -> str:

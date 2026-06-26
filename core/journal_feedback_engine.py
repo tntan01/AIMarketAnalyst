@@ -45,7 +45,7 @@ def build_journal_feedback(
     expectancy = sum(results) / sample_size if sample_size else None
     quality_values = [
         float(value)
-        for value in (_safe_float(trade.get("execution_quality_score")) for trade in matched)
+        for value in (optional_float(trade.get("execution_quality_score")) for trade in matched)
         if value is not None
     ]
     avg_quality = sum(quality_values) / len(quality_values) if quality_values else None
@@ -133,8 +133,6 @@ def _normalize_symbol(value: str) -> str:
     return "".join(char for char in value.upper() if char.isalnum())
 
 
-def _safe_float(value: object) -> float | None:
-    return optional_float(value)
 
 
 def _dedupe(values: list[str]) -> list[str]:

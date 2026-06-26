@@ -292,3 +292,29 @@ def append_code(target: list[str], code: str | None) -> None:
         return
     if code not in target:
         target.append(code)
+
+
+def merge_unique_codes(*groups: object) -> list[str]:
+    """Merge multiple code lists, deduplicating while preserving order.
+
+    - Skips ``None`` groups and non-list/tuple/set items.
+    - Skips ``None`` elements and empty strings.
+    - Never raises.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for group in groups:
+        if group is None:
+            continue
+        if not isinstance(group, (list, tuple, set)):
+            continue
+        for code in group:
+            if code is None:
+                continue
+            s = str(code).strip()
+            if not s:
+                continue
+            if s not in seen:
+                seen.add(s)
+                result.append(s)
+    return result

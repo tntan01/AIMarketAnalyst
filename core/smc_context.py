@@ -35,6 +35,7 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
             "bos": False,
             "choch": False,
             "displacement": "neutral",
+            "swings": {"highs": [], "lows": []},
             "supply_zones": [],
             "demand_zones": [],
             "order_blocks": [],
@@ -62,6 +63,7 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
         "bos": bos.get("bos", False),
         "choch": bos.get("choch", False),
         "displacement": bos.get("displacement", "neutral"),
+        "swings": swings,
         "supply_zones": supply_zones,
         "demand_zones": demand_zones,
         "order_blocks": order_blocks,
@@ -472,12 +474,6 @@ def swept_recent_high(candle: Candle, previous: list[Candle]) -> bool:
     highs = [item.high for item in previous[-8:]]
     return bool(highs and candle.high > max(highs) and candle.close < max(highs))
 
-
-def supply_demand_to_zones(smc: dict[str, dict[str, Any]], timeframe: str = "H4") -> dict[str, list[dict[str, Any]]]:
-    block = smc.get(timeframe, {}) if isinstance(smc, dict) else {}
-    supply = block.get("supply_zones", []) if isinstance(block, dict) else []
-    demand = block.get("demand_zones", []) if isinstance(block, dict) else []
-    return {"supply": list(supply), "demand": list(demand)}
 
 
 # ---------------------------------------------------------------------------

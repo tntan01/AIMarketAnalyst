@@ -142,6 +142,55 @@ class TelegramAlertService:
             f"TP: {self._format_take_profit(scenario.get('take_profit'))}"
         )
 
+    # ------------------------------------------------------------------
+    # Waiting setups — near-ready trades worth watching
+    # ------------------------------------------------------------------
+
+    def _is_waiting_trade(self, row: dict[str, object]) -> bool:
+        """Check if a row is a waiting setup with a valid trade plan."""
+        return (
+            row.get("scanner_group") == "waiting_confirmation"
+            and row.get("trade_permission") != "blocked"
+            and isinstance(row.get("analysis_result"), dict)
+            and bool(self._best_scenario(row))
+        )
+
+    def _waiting_missing_reason(self, row: dict[str, object]) -> str:
+        """Build a short reason with how-close info."""
+        status = str(row.get("entry_status", "")).strip().lower()
+        m15 = str(row.get("m15_quality", "")).strip().lower()
+        score = int(row.get("best_score", 0) or 0)
+        gap = int(row.get("score_gap", 0) or 0)
+        threshold = int(row.get("min_score", 65) or 65)
+        to_ready = max(0, threshold - score)
+
+        parts = []
+        if to_ready > 0:
+            parts.append(f"còn {to_ready}đ nữa là đạt")
+        if status in ("watch_zone", "near_zone"):
+            parts.append("giá chưa vào zone")
+        elif status == "waiting_confirmation":
+            parts.append("chờ xác nhận H1/M15")
+        elif m15 in ("none",):
+            parts.append("M15 chưa xác nhận")
+        if gap < 10:
+            parts.append("hướng chưa rõ")
+        return ", ".join(parts) if parts else "đang chờ điều kiện"
+
+    def _format_waiting_line(self, row: dict[str, object]) -> str:
+        """Format one waiting setup with how-close it is to ready."""
+        scenario = self._best_scenario(row)
+        entry = self._format_entry(scenario.get("entry_zone"))
+        sl = scenario.get("stop_loss", "--")
+        score = int(row.get("best_score", 0) or 0)
+        gap = int(row.get("score_gap", 0) or 0)
+        missing = self._waiting_missing_reason(row)
+        gap_mark = "✓" if gap >= 10 else "△"
+        return (
+            f"• {self._format_symbol(row)} | {self._format_side(row.get('best_side'))} | "
+            f"Điểm: {score}/100 {gap_mark} | SL: {sl} | {missing}"
+        )
+
     def _format_timestamp(self, value: str) -> str:
         cleaned = str(value or "").strip()
         if not cleaned:
@@ -154,19 +203,29 @@ class TelegramAlertService:
     def format_summary_alert(self, rows: list[dict[str, object]], timestamp: str) -> str:
         total = len(rows)
         ready_rows = [row for row in rows if self._is_ready_trade(row)]
+        waiting_rows = [row for row in rows if self._is_waiting_trade(row)]
+        waiting_rows.sort(key=lambda r: int(r.get("best_score", 0) or 0), reverse=True)
 
         lines = [
             "✨ AI Market Analyst - Tổng kết quét thị trường",
             f"🕒 Thời gian: {self._format_timestamp(timestamp)}",
             f"🔎 Đã quét: {total} mã",
             f"✅ Sẵn sàng vào lệnh: {len(ready_rows)} mã",
+            f"⏳ Đang chờ - đáng theo dõi: {len(waiting_rows)} mã",
         ]
 
         if ready_rows:
-            lines.append("🎯 Danh sách sẵn sàng:")
+            lines.append("")
+            lines.append("🎯 SẴN SÀNG VÀO LỆNH:")
             lines.extend(self._format_ready_plan_line(row) for row in ready_rows)
         else:
             lines.append("• Chưa có mã nào đủ điều kiện vào lệnh ngay.")
+
+        if waiting_rows:
+            lines.append("")
+            lines.append("⏳ ĐANG CHỜ — THEO DÕI PHIÊN SAU:")
+            lines.extend(self._format_waiting_line(row) for row in waiting_rows[:6])
+
         return "\n".join(lines)
 
     def send_summary_alert(

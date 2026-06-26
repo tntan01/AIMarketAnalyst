@@ -146,7 +146,16 @@ class ScannerDetailScreen(QWidget):
         right_grid.addWidget(self.card_permission, 5, 1)
         right_grid.addWidget(self.card_journal_sample, 6, 0)
         right_grid.addWidget(self.card_journal_expectancy, 6, 1)
-        right_grid.setRowStretch(7, 1)
+
+        # Entry checklist card (row 7, span 2 cols)
+        self.entry_checklist_card = QFrame()
+        self.entry_checklist_card.setObjectName("EntryChecklistCard")
+        self.entry_checklist_layout = QVBoxLayout(self.entry_checklist_card)
+        self.entry_checklist_layout.setContentsMargins(12, 10, 12, 10)
+        self.entry_checklist_layout.setSpacing(4)
+        right_grid.addWidget(self.entry_checklist_card, 7, 0, 1, 2)
+
+        right_grid.setRowStretch(8, 1)
 
         ov.addWidget(right_widget, 2)
 
@@ -161,9 +170,21 @@ class ScannerDetailScreen(QWidget):
 
         # ---- Tab 3: Kiểm định AI ----------------------------------------
         audit_tab = card()
+        audit_layout = audit_tab.layout()
+        # Button row
+        btn_row = QHBoxLayout()
+        self.audit_btn = action_button("🔍 Chạy kiểm định AI", primary=True, color="warning")
+        self.audit_btn.clicked.connect(self._run_ai_audit)
+        self.audit_status = QLabel("")
+        self.audit_status.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        btn_row.addWidget(self.audit_btn)
+        btn_row.addWidget(self.audit_status)
+        btn_row.addStretch()
+        audit_layout.addLayout(btn_row)
+        # Result area
         self.audit_text = QTextEdit()
         self.audit_text.setReadOnly(True)
-        audit_tab.layout().addWidget(self.audit_text, 1)
+        audit_layout.addWidget(self.audit_text, 1)
         self.tabs.addTab(audit_tab, "🤖 Kiểm định AI")
 
         root.addWidget(self.tabs, 1)
@@ -433,6 +454,148 @@ class ScannerDetailScreen(QWidget):
             exp_accent = "#94a3b8"
         self.card_journal_expectancy.set_value(exp_text, accent=exp_accent)
 
+        # Entry checklist
+        self._refresh_entry_checklist()
+
+    def _refresh_entry_checklist(self) -> None:
+        """Show what conditions are met / missing for trade entry."""
+        if not self.row:
+            return
+
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
+        bg = "#ffffff" if light else "#1a1f2e"
+        border = "#d1d5db" if light else "#2b3545"
+        text_color = "#111827" if light else "#cbd5e1"
+        green = "#10b981"
+        red = "#e11d48"
+        yellow = "#f59e0b"
+        gray = "#94a3b8"
+
+        items = self._build_entry_checklist()
+
+        # Clear existing
+        while self.entry_checklist_layout.count():
+            child = self.entry_checklist_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        # Title
+        title = QLabel("🔍 Điều kiện vào lệnh")
+        title.setStyleSheet(f"font-weight: bold; font-size: 12px; color: {text_color}; margin-bottom: 2px;")
+        self.entry_checklist_layout.addWidget(title)
+
+        self.entry_checklist_card.setStyleSheet(
+            f"QFrame#EntryChecklistCard {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
+        )
+
+        for item in items:
+            icon = "✅" if item["pass"] else "❌"
+            color = green if item["pass"] else red
+            row_w = QWidget()
+            row_l = QHBoxLayout(row_w)
+            row_l.setContentsMargins(0, 1, 0, 1)
+            row_l.setSpacing(6)
+            row_l.setAlignment(Qt.AlignmentFlag.AlignTop)
+            icon_lbl = QLabel(icon)
+            icon_lbl.setStyleSheet(f"font-size: 11px;")
+            icon_lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
+            row_l.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignTop)
+            text_lbl = QLabel(item["label"])
+            text_lbl.setStyleSheet(f"font-size: 11px; color: {color};")
+            text_lbl.setWordWrap(True)
+            row_l.addWidget(text_lbl, 1)
+            self.entry_checklist_layout.addWidget(row_w)
+
+    def _build_entry_checklist(self) -> list[dict]:
+        """Build a list of {pass: bool, label: str} for entry conditions."""
+        if not self.row:
+            return []
+
+        items = []
+        best = int(self.row.get("best_score", 0) or 0)
+        gap = int(self.row.get("score_gap", 0) or 0)
+        perm = str(self.row.get("trade_permission", ""))
+        entry = str(self.row.get("entry_status", ""))
+        m15 = str(self.row.get("m15_quality", "")).lower()
+        price_zone = str(self.row.get("price_vs_zone", ""))
+        rr = str(self.row.get("risk_reward", ""))
+        min_score = int(self.row.get("min_score", 65) or 65)
+        analysis = self.row.get("analysis_result", {}) if isinstance(self.row.get("analysis_result"), dict) else {}
+        gate = analysis.get("trade_gate", {}) if isinstance(analysis, dict) else {}
+        gate_allowed = bool(gate.get("allowed", True)) if isinstance(gate, dict) else True
+
+        # 1. Trade Permission
+        items.append({
+            "pass": perm == "allowed",
+            "label": f"Quyền giao dịch: {perm} (điểm {best}/{min_score})" if perm != "allowed"
+                     else f"Quyền giao dịch: allowed (điểm {best} >= {min_score})"
+        })
+
+        # 2. Gate
+        gate_reasons = gate.get("reasons", []) if isinstance(gate, dict) else []
+        gate_text = "; ".join(gate_reasons[:2]) if gate_reasons else "không bị gate chặn"
+        items.append({
+            "pass": gate_allowed,
+            "label": f"Gate: {'PASS' if gate_allowed else 'BLOCKED'} — {gate_text}"
+        })
+
+        # 3. Score Gap
+        items.append({
+            "pass": gap >= 10,
+            "label": f"Chênh lệch Buy/Sell: {gap}/10 — {'rõ hướng' if gap >= 10 else 'chưa rõ hướng'}"
+        })
+
+        # 4. Entry confirmed
+        entry_ok = entry in ("confirmed_entry", "ready", "ready_to_trade")
+        entry_map = {
+            "confirmed_entry": "đã xác nhận",
+            "watch_zone": "giá chưa vào zone hoặc chưa có nến xác nhận",
+            "waiting_confirmation": "chờ xác nhận H1/M15",
+            "no_setup": "chưa có setup",
+        }
+        entry_label = entry_map.get(entry, entry)
+        items.append({
+            "pass": entry_ok,
+            "label": f"Xác nhận entry: {entry_label}"
+        })
+
+        # 5. Price in zone
+        in_zone = price_zone == "in_zone"
+        zone_map = {"in_zone": "đang trong zone", "near_zone": "gần zone", "far": "còn xa zone"}
+        items.append({
+            "pass": in_zone,
+            "label": f"Vị trí giá: {zone_map.get(price_zone, price_zone)}"
+        })
+
+        # 6. M15
+        m15_ok = m15 in ("strict",)
+        m15_label = {"strict": "chặt chẽ", "loose": "lỏng lẻo", "none": "chưa xác nhận", "": "chưa có dữ liệu"}
+        items.append({
+            "pass": m15_ok,
+            "label": f"M15: {m15_label.get(m15, m15)}"
+        })
+
+        # 7. R:R
+        rr_val = 0.0
+        try:
+            if ":" in str(rr):
+                rr_val = float(str(rr).split(":")[1])
+            else:
+                rr_val = float(rr)
+        except (ValueError, TypeError):
+            pass
+        rr_ok = rr_val >= 1.5
+        items.append({
+            "pass": rr_ok,
+            "label": f"R:R: {rr} — {'đủ' if rr_ok else 'dưới 1.5:1'}"
+        })
+
+        return items
+
     def _refresh_conditions(self) -> None:
         """Refresh wait conditions and insights at the bottom."""
         if not self.row:
@@ -622,12 +785,15 @@ class ScannerDetailScreen(QWidget):
             return
         if not self.row:
             self.audit_text.setHtml("<p style='color:#94a3b8;'>Chọn một dòng trong bảng quét để xem AI kiểm định.</p>")
+            if getattr(self, "audit_btn", None):
+                self.audit_btn.setEnabled(False)
             return
+        if getattr(self, "audit_btn", None):
+            self.audit_btn.setEnabled(True)
         audit = self.row.get("ai_setup_audit")
         if not isinstance(audit, dict) or not audit:
             self.audit_text.setHtml(
-                "<p style='color:#94a3b8;'>Chưa có AI Setup Auditor cho dòng này. "
-                "Scanner chỉ gọi AI cho các setup đứng đầu theo giới hạn cấu hình.</p>"
+                "<p style='color:#94a3b8;'>Chưa có kết quả kiểm định AI. Bấm nút <b>Chạy kiểm định AI</b> để AI phân tích setup này.</p>"
             )
             return
 
@@ -637,6 +803,58 @@ class ScannerDetailScreen(QWidget):
             light = False
 
         self.audit_text.setHtml(self._ai_audit_html(audit, light=light))
+
+    def _run_ai_audit(self) -> None:
+        """Run AI audit on-demand for the current row."""
+        if not self.row:
+            return
+        if not self.app or not hasattr(self.app, "scanner_controller"):
+            self.audit_status.setText("Lỗi: không tìm thấy scanner controller.")
+            return
+
+        self.audit_btn.setEnabled(False)
+        self.audit_status.setText("Đang gọi AI...")
+        self.audit_text.setHtml("<p style='color:#f59e0b;'>⏳ Đang chờ AI phản hồi...</p>")
+
+        # Run in a simple thread to not block UI
+        from PyQt6.QtCore import QThread, pyqtSignal
+
+        class AuditWorker(QThread):
+            finished_audit = pyqtSignal(dict)
+
+            def __init__(self, controller, row):
+                super().__init__()
+                self.controller = controller
+                self.row = row
+
+            def run(self):
+                result = self.controller.audit_single_row(self.row)
+                self.finished_audit.emit(result)
+
+        self._audit_worker = AuditWorker(self.app.scanner_controller, self.row)
+        self._audit_worker.finished_audit.connect(self._on_audit_done)
+        self._audit_worker.start()
+
+    def _on_audit_done(self, audit: dict) -> None:
+        """Handle AI audit result."""
+        self.audit_btn.setEnabled(True)
+        if audit.get("auditor_error"):
+            raw = str(audit.get("raw_response", "") or "")[:800]
+            raw_display = f"<pre style='color:#94a3b8;font-size:11px;max-height:200px;overflow:auto;'>{raw}</pre>" if raw else ""
+            self.audit_status.setText(f"Lỗi: {audit['auditor_error']}")
+            self.audit_text.setHtml(
+                f"<p style='color:#e11d48;'>Lỗi kiểm định: {audit['auditor_error']}</p>"
+                f"<p style='color:#94a3b8;'>AI không trả về JSON hợp lệ.</p>"
+                f"{raw_display}"
+            )
+        else:
+            self.audit_status.setText("Hoàn tất kiểm định.")
+            self.row["ai_setup_audit"] = audit
+            try:
+                light = self.settings_service.load().display.theme == "light"
+            except Exception:
+                light = False
+            self.audit_text.setHtml(self._ai_audit_html(audit, light=light))
 
     def _ai_audit_html(self, audit: dict, light: bool = False) -> str:
         agreement = str(audit.get("agreement") or "caution").strip().lower()

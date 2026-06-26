@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from core.decision_engine import (
     normalize_decision_cap,
+)
+from core.normalization import (
+    normalize_choice,
     normalize_entry_status as normalize_decision_entry_status,
+    normalize_scanner_entry_status,
 )
-from core.normalization import normalize_choice
-from core.scanner_ranking_engine import (
-    normalize_decision,
-    normalize_entry_status as normalize_scanner_entry_status,
-)
+from core.scanner_ranking_engine import normalize_decision
 
 
 def test_normalize_choice_handles_valid_values_aliases_and_defaults():

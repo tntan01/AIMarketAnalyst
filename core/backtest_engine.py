@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from core.market_models import Candle
+from core.safe_types import parse_risk_reward
 
 MAX_LOOKBACK_DAYS = 180
 
@@ -199,16 +200,6 @@ def trading_session(moment: datetime) -> str:
     return "Late US"
 
 
-def parse_risk_reward(value: object) -> float:
-    if not value:
-        return 0.0
-    text = str(value)
-    if ":" not in text:
-        return 0.0
-    try:
-        return float(text.split(":", 1)[1])
-    except ValueError:
-        return 0.0
 
 
 def round_price(value: float) -> float:

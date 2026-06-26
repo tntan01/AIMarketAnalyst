@@ -101,6 +101,11 @@ class MainWindow(QMainWindow):
         style_path = base / filename
         if style_path.exists():
             self.setStyleSheet(style_path.read_text(encoding="utf-8"))
+            
+        if hasattr(self, "screens"):
+            for screen in self.screens.values():
+                if hasattr(screen, "refresh_theme_styles"):
+                    screen.refresh_theme_styles()
 
     def _build_screens(self) -> None:
         screen_factories = {
