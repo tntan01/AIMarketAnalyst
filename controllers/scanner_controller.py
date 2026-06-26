@@ -429,7 +429,7 @@ class ScannerController:
                 return False
         best_score = int(row.get("best_score", 0) or 0)
         cfg_min_score = int(at_cfg.get("min_score", 0) or 0)
-        effective_min_score = cfg_min_score if cfg_min_score > 0 else 50
+        effective_min_score = cfg_min_score if cfg_min_score > 0 else 65
         if best_score < effective_min_score:
             return False
 

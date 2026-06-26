@@ -38,6 +38,7 @@ class SymbolScanSettings:
     decision_ready: int = 80          # final_score >= this → READY_TO_TRADE
     decision_watch: int = 65          # final_score >= this → WATCH_ONLY
     decision_wait: int = 50           # final_score >= this → WAITING_CONFIRMATION
+    min_expected_rr: float = 1.3      # min expected_effective_rr for gate
 
 
 @dataclass(slots=True)

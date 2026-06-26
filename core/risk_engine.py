@@ -723,12 +723,18 @@ def calculate_spread_cost(spread_price: float | int | str | None) -> float:
     """Chuyen spread_price thanh float an toan.
 
     Tra ve 0.0 neu None, am, hoac khong convert duoc.
+    Neu gia tri > 1, coi la points (MT5) va chuyen sang gia (points / 100000).
     """
     try:
         value = float(spread_price or 0.0)
     except (TypeError, ValueError):
         return 0.0
-    return max(value, 0.0)
+    if value < 0:
+        return 0.0
+    # MT5 returns spread in points (e.g. 16). Convert to price (0.00016).
+    if value > 1.0:
+        value = value / 100000.0
+    return value
 
 
 def calculate_expected_effective_rr(

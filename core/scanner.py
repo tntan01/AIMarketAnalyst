@@ -96,6 +96,7 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "trade_permission": permission,
         "permission_reason": result.get("trade_permission", {}).get("reason", ""),
         "min_score": int(result.get("trade_permission", {}).get("min_score", 65) or 65),
+        "min_rr": float(result.get("trade_permission", {}).get("min_rr", 1.3) or 1.3),
         "buy_score": buy_score,
         "sell_score": sell_score,
         "best_side": best_side if best_score >= 50 else "stand_aside",

@@ -117,6 +117,7 @@ class SettingsService:
                     decision_ready=max(0, min(100, int(item.get("decision_ready", 80)))),
                     decision_watch=max(0, min(100, int(item.get("decision_watch", 65)))),
                     decision_wait=max(0, min(100, int(item.get("decision_wait", 50)))),
+                    min_expected_rr=float(item.get("min_expected_rr", 1.3) or 1.3),
                 )
         return TradingSettings(
             account_balance=float(data.get("account_balance", 10000)),

@@ -699,11 +699,14 @@ class ScannerScreen (QWidget ):
                 slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
                 cfg = settings.trading.symbol_settings.get(slash_symbol)
             if cfg:
+                # Use min_score if set, otherwise fall back to decision_ready
+                eff_min_score = cfg.min_score if cfg.min_score > 0 else cfg.decision_ready
                 thresholds[symbol] = {
-                    "ready": cfg.decision_ready,
+                    "ready": eff_min_score,
                     "watch": cfg.decision_watch,
                     "wait": cfg.decision_wait,
                     "min_score_gap": 10,
+                    "min_rr": cfg.auto_trade_min_rr or cfg.min_expected_rr or 0,
                 }
         symbol_auto_trade: dict[str, dict] = {}
         for symbol in symbols:
@@ -716,8 +719,8 @@ class ScannerScreen (QWidget ):
                     symbol_auto_trade[symbol] = {
                         "regime": cfg.auto_trade_regime,
                         "side": cfg.auto_trade_side,
-                        "min_rr": cfg.auto_trade_min_rr,
-                        "min_score": cfg.min_score,
+                        "min_rr": cfg.auto_trade_min_rr or cfg.min_expected_rr or 0,
+                        "min_score": cfg.min_score if cfg.min_score > 0 else cfg.decision_ready,
                     }
         request =ScannerRequest (
         symbols =symbols ,

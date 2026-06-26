@@ -435,6 +435,12 @@ class AnalysisPipeline:
             else self._sell_scenario if self._best_side == "sell"
             else (self._scenarios[0] if self._scenarios else {})
         )
+        # Fallback: if best_side scenario is empty, use the first available scenario
+        if not self._primary_scenario:
+            self._primary_scenario = next(
+                (s for s in self._scenarios if isinstance(s, dict) and s.get("type") in ("buy", "sell")),
+                self._scenarios[0] if self._scenarios else {},
+            )
 
         gap = self._direction_bias.get("score_gap", 0)
         is_clear = self._direction_bias.get("is_clear_bias", False)
@@ -460,10 +466,12 @@ class AnalysisPipeline:
 
     def _step_apply_gates(self) -> None:
         min_score = self._thresholds.get("ready", 65) if self._thresholds else 65
+        min_rr = self._thresholds.get("min_rr", 1.3) if self._thresholds else 1.3
         self._trade_permission = calc_trade_permission(
             self._data_quality, self._risk_score, self._best_score,
             min_score=min_score,
         )
+        self._trade_permission["min_rr"] = min_rr
 
         regime_key = (
             self._market_regime.get("primary")
@@ -485,6 +493,14 @@ class AnalysisPipeline:
         self._decision_action = "stand_aside"
 
         # --- gate context ---------------------------------------------------
+        # Find best available scenario for gate context (may differ from _primary_scenario)
+        _gate_scenario = self._primary_scenario if isinstance(self._primary_scenario, dict) and self._primary_scenario else {}
+        if not _gate_scenario.get("expected_effective_rr"):
+            for s in self._scenarios:
+                if isinstance(s, dict) and s.get("type") in ("buy", "sell") and s.get("expected_effective_rr"):
+                    _gate_scenario = s
+                    break
+
         gate_context: dict[str, Any] = {
             "terminal_connected": self._data_quality.get("terminal_connected"),
             "broker_logged_in": self._data_quality.get("broker_logged_in"),
@@ -492,19 +508,22 @@ class AnalysisPipeline:
             "data_quality_warning": self._data_quality.get("warning"),
             "high_impact_event_within_30m": self._data_quality.get("high_impact_event_within_30m"),
             "m15_quality": (
-                self._primary_scenario.get("m15_quality") or "none"
-                if isinstance(self._primary_scenario, dict) else "none"
+                _gate_scenario.get("m15_quality") or "none"
+                if isinstance(_gate_scenario, dict) else "none"
             ),
             "expected_effective_rr": (
-                self._primary_scenario.get("expected_effective_rr")
-                if isinstance(self._primary_scenario, dict) else None
+                _gate_scenario.get("expected_effective_rr")
+                if isinstance(_gate_scenario, dict) else None
+            ),
+            "min_expected_effective_rr": (
+                self._thresholds.get("min_rr", 1.3) if self._thresholds else 1.3
             ),
             "zone_broken": (
                 self._smc_trade_flags.get("zone_broken", False)
                 or (
-                    self._primary_scenario.get("entry_status") == "invalidated"
-                    or self._primary_scenario.get("trigger_type") == "zone_broken"
-                ) if isinstance(self._primary_scenario, dict) else False
+                    _gate_scenario.get("entry_status") == "invalidated"
+                    or _gate_scenario.get("trigger_type") == "zone_broken"
+                ) if isinstance(_gate_scenario, dict) else False
             ),
             "daily_loss_limit_reached": self._data_quality.get("daily_loss_limit_reached"),
             "weekly_loss_limit_reached": self._data_quality.get("weekly_loss_limit_reached"),
