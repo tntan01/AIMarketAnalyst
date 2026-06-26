@@ -62,7 +62,7 @@ def _make_mock_analysis() -> dict:
             {"label": "Xác nhận H1", "status": "wait", "value": "none", "note": "Cần nến H1 xác nhận tại vùng."},
             {"label": "Tin tức", "status": "pass", "value": "Không có tin gần", "note": "Tránh vào lệnh gần tin tác động cao."},
             {"label": "Spread", "status": "pass", "value": "normal", "note": "Spread phải bình thường."},
-            {"label": "R:R", "status": "pass", "value": "1:2.1", "note": "R:R tối thiểu nên từ 1:1.5 trở lên."},
+            {"label": "R:R", "status": "pass", "value": "1:2.1", "note": "R:R tối thiểu là 1:1.3."},
             {"label": "Lot", "status": "pass", "value": "0.02", "note": "Lot chỉ tính khi entry đã xác nhận."},
         ],
         "pipeline_diagnostics": [

@@ -109,8 +109,10 @@ def _gate_expected_effective_rr(context: dict[str, Any], result: dict[str, Any])
     if expected_effective_rr < min_expected_effective_rr:
         append_code(result["warning_codes"], EXPECTED_RR_TOO_LOW)
         result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
+        nominal_rr = context.get("risk_reward", "")
+        nominal_info = f" (danh nghĩa {nominal_rr})" if nominal_rr else ""
         result["reasons"].append(
-            f"Tỷ lệ R:R kỳ vọng ({expected_effective_rr:.1f}) thấp hơn mức tối thiểu ({min_expected_effective_rr:.1f})."
+            f"Tỷ lệ R:R kỳ vọng ({expected_effective_rr:.1f} sau spread{nominal_info}) thấp hơn mức tối thiểu ({min_expected_effective_rr:.1f})."
         )
 
 

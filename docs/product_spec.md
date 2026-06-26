@@ -124,7 +124,7 @@ Auto-entry được hỗ trợ có kiểm soát trong Scanner auto-scan, với b
 
 - Row không bị blocked (scanner_group != "blocked", trade_permission != "blocked").
 - Market regime khớp với `auto_trade_regime` trong cấu hình (nếu được đặt).
-- Expected effective R:R >= `auto_trade_min_rr` (nếu được đặt).
+- Expected effective R:R >= `min_expected_rr` (nếu được đặt).
 - Signal score >= 50.
 - Có scenario đúng hướng đã cấu hình (`auto_trade_side`) hoặc `best_side`.
 - Có `position_sizing.suggested_lot`, `stop_loss`, `take_profit`.

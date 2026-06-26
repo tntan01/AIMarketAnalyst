@@ -602,23 +602,29 @@ class SettingsScreen(QWidget):
             v.addWidget(w)
             return v
 
-        top_grid = QGridLayout()
-        top_grid.setContentsMargins(0, 0, 0, 0)
-        top_grid.setSpacing(12)
+        top_vbox = QVBoxLayout()
+        top_vbox.setContentsMargins(0, 0, 0, 0)
+        top_vbox.setSpacing(6)
+        
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(12)
+        top_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         
         self.data_source_combo = QComboBox()
         self.data_source_combo.addItems(["MetaTrader 5", "cTrader"])
-        self.data_source_combo.setFixedWidth(160)
+        self.data_source_combo.setFixedWidth(130)
         current_ds = self.app_settings.data_source
         if current_ds == "ctrader":
             self.data_source_combo.setCurrentText("cTrader")
         else:
             self.data_source_combo.setCurrentText("MetaTrader 5")
             
-        top_grid.addLayout(_col("Nguồn dữ liệu", self.data_source_combo), 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        top_layout.addLayout(_col("Nguồn dữ liệu", self.data_source_combo))
         
         # cTrader credentials
         self.ctrader_panel = QFrame()
+        self.ctrader_panel.setContentsMargins(0, 0, 0, 0)
         
         ctrader_layout = QHBoxLayout(self.ctrader_panel)
         ctrader_layout.setContentsMargins(0, 0, 0, 0)
@@ -626,117 +632,132 @@ class SettingsScreen(QWidget):
         
         self.ctrader_env = QComboBox()
         self.ctrader_env.addItems(["Demo", "Live"])
+        self.ctrader_env.setFixedWidth(70)
         self.ctrader_env.setCurrentText("Live" if self.app_settings.ctrader.environment == "live" else "Demo")
         
+        self.ctrader_acc = QLineEdit("" if not self.app_settings.ctrader.account_id else str(self.app_settings.ctrader.account_id))
+        self.ctrader_acc.setPlaceholderText("Account ID")
+        self.ctrader_acc.setFixedWidth(90)
+        
         self.ctrader_id = QLineEdit(self.app_settings.ctrader.client_id)
-        self.ctrader_id.setPlaceholderText("Nhập Client ID")
+        self.ctrader_id.setPlaceholderText("Client ID")
+        self.ctrader_id.setFixedWidth(100)
         
         self.ctrader_secret = QLineEdit(self.app_settings.ctrader.client_secret)
-        self.ctrader_secret.setPlaceholderText("Nhập Client Secret")
+        self.ctrader_secret.setPlaceholderText("Client Secret")
         self.ctrader_secret.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ctrader_secret.setFixedWidth(100)
         
         self.ctrader_token = QLineEdit(self.app_settings.ctrader.access_token)
-        self.ctrader_token.setPlaceholderText("Nhập Access Token")
+        self.ctrader_token.setPlaceholderText("Access Token")
         self.ctrader_token.setEchoMode(QLineEdit.EchoMode.Password)
-        
-        acc_id = self.app_settings.ctrader.account_id
-        self.ctrader_acc = QLineEdit("" if not acc_id else str(acc_id))
-        self.ctrader_acc.setPlaceholderText("Ví dụ: 12345678")
+        self.ctrader_token.setFixedWidth(120)
 
-        ctrader_layout.addLayout(_col("Môi trường", self.ctrader_env), 1)
-        ctrader_layout.addLayout(_col("Account ID", self.ctrader_acc), 1)
-        ctrader_layout.addLayout(_col("Client ID", self.ctrader_id), 2)
-        ctrader_layout.addLayout(_col("Client Secret", self.ctrader_secret), 3)
-        ctrader_layout.addLayout(_col("Access Token", self.ctrader_token), 3)
+        ctrader_layout.addLayout(_col("Môi trường", self.ctrader_env))
+        ctrader_layout.addLayout(_col("Account ID", self.ctrader_acc))
+        ctrader_layout.addLayout(_col("Client ID", self.ctrader_id))
+        ctrader_layout.addLayout(_col("Client Secret", self.ctrader_secret))
+        ctrader_layout.addLayout(_col("Access Token", self.ctrader_token))
         
-        top_grid.addWidget(self.ctrader_panel, 0, 1)
-        top_grid.setColumnStretch(1, 1)
-        
-        # Row 1: Buttons
-        btn_layout = QHBoxLayout()
-        self.creds_save_btn = action_button("💾 Lưu cấu hình nguồn", primary=True)
-        self.creds_save_btn.clicked.connect(self._save_credentials)
-        btn_layout.addWidget(self.creds_save_btn)
-
-        self.ctrader_test_btn = action_button("🔄 Kiểm tra kết nối cTrader", primary=True, color="warning")
+        # Test connection button is inside ctrader_panel so it automatically hides when not using cTrader
+        self.ctrader_test_btn = action_button("🔄 Kiểm tra kết nối", primary=True, color="warning")
         self.ctrader_test_btn.clicked.connect(self._test_ctrader_connection)
-        btn_layout.addWidget(self.ctrader_test_btn)
+        self.ctrader_test_btn.setFixedWidth(130)
+        ctrader_layout.addLayout(_col("", self.ctrader_test_btn))
+        
+        top_layout.addWidget(self.ctrader_panel)
+        
+        # Save Button
+        self.creds_save_btn = action_button("💾 Lưu cấu hình", primary=True)
+        self.creds_save_btn.clicked.connect(self._save_credentials)
+        self.creds_save_btn.setFixedWidth(110)
+        top_layout.addLayout(_col("", self.creds_save_btn))
 
+        # Restart Button
         self.app_restart_btn = action_button("🔄 Khởi động lại", primary=True, color="danger")
         self.app_restart_btn.clicked.connect(self._restart_app)
         self.app_restart_btn.setVisible(False)
-        btn_layout.addWidget(self.app_restart_btn)
-        btn_layout.addStretch(1)
-
-        top_grid.addLayout(btn_layout, 1, 0, 1, 2)
-
-        # Row 2: cTrader test result
+        self.app_restart_btn.setFixedWidth(110)
+        top_layout.addLayout(_col("", self.app_restart_btn))
+        
+        top_layout.addStretch(1)
+        top_vbox.addLayout(top_layout)
+        
+        # cTrader test result status label
         self.ctrader_status_label = QLabel("")
         self.ctrader_status_label.setObjectName("HelperText")
         self.ctrader_status_label.setWordWrap(True)
         self.ctrader_status_label.setVisible(False)
-        top_grid.addWidget(self.ctrader_status_label, 2, 0, 1, 2)
+        top_vbox.addWidget(self.ctrader_status_label)
         
-        frame.layout().addLayout(top_grid)
+        frame.layout().addLayout(top_vbox)
         
-        # Bỏ addWidget(frame) ở đây để thêm vào QSplitter bên dưới
-        
-        frame2 = card("Kiểm tra & Cấu hình mã")
+        frame2 = card()
         frame2.layout().setSpacing(8)
         
         # Connect visibility toggle
         self.data_source_combo.currentTextChanged.connect(self._toggle_ctrader_panel)
         self._toggle_ctrader_panel(self.data_source_combo.currentText())
 
+        title_label = QLabel("Kiểm tra & Cấu hình mã")
+        title_label.setObjectName("PanelTitle")
+
         self.mt5_status_label = QLabel("Đang kiểm tra dữ liệu...")
         self.mt5_status_label.setObjectName("HelperText")
         self.mt5_detail_label = QLabel("")
         self.mt5_detail_label.setObjectName("HelperText")
-        self.mt5_detail_label.setWordWrap(True)
+        self.mt5_detail_label.setWordWrap(False)
         self.mt5_retry_button = action_button("🔄 Thử kết nối lại", primary=True, color="info")
         self.mt5_retry_button.clicked.connect(self.refresh_mt5_status)
 
-        status_row = QHBoxLayout()
-        status_row.setSpacing(10)
-        status_text = QVBoxLayout()
-        status_text.setSpacing(3)
-        status_text.addWidget(self.mt5_status_label)
-        status_text.addWidget(self.mt5_detail_label)
-        status_row.addLayout(status_text, 1)
-        status_row.addWidget(self.mt5_retry_button)
-        frame2.layout().addLayout(status_row)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+        header_row.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        header_row.addWidget(title_label)
+        header_row.addSpacing(8)
+        header_row.addWidget(self.mt5_status_label)
+        header_row.addWidget(self.mt5_detail_label)
+        header_row.addStretch(1)
+        header_row.addWidget(self.mt5_retry_button)
+        
+        frame2.layout().addLayout(header_row)
 
         self.mt5_display_symbols = sorted(SUPPORTED_SYMBOLS)
-        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 12)
+        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 10)
         self.mt5_symbols_table.setObjectName("DataTable")
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
             "STT", "Mã hiển thị", "Mã broker trong MT5", "Trạng thái",
             "Kiểm tra", "Kiểm thử", "Điểm tối thiểu", "Regime tự động", "Hướng tự động", "RR tối thiểu",
         ])
+        self.mt5_symbols_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mt5_symbols_table.verticalHeader().setVisible(False)
         self.mt5_symbols_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.mt5_symbols_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(32)
         self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(56)
-        self.mt5_symbols_table.setColumnWidth(6, 72)
-        self.mt5_symbols_table.setColumnWidth(9, 88)
+        self.mt5_symbols_table.setColumnWidth(3, 100)
+        self.mt5_symbols_table.setColumnWidth(4, 130)
+        self.mt5_symbols_table.setColumnWidth(5, 80)
+        self.mt5_symbols_table.setColumnWidth(6, 110)
+        self.mt5_symbols_table.setColumnWidth(7, 140)
+        self.mt5_symbols_table.setColumnWidth(8, 110)
+        self.mt5_symbols_table.setColumnWidth(9, 100)
         for row, symbol in enumerate(self.mt5_display_symbols):
             for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", "", "", "", ""]):
                 item = QTableWidgetItem(value)
-                if col == 0:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.mt5_symbols_table.setItem(row, col, item)
             symbol_config = self.app_settings.trading.symbol_settings.get(symbol, SymbolScanSettings())
             backtest_box = QCheckBox()
@@ -782,13 +803,13 @@ class SettingsScreen(QWidget):
             min_rr.setRange(0.0, 10.0)
             min_rr.setSingleStep(0.1)
             min_rr.setDecimals(1)
-            min_rr.setValue(symbol_config.auto_trade_min_rr)
+            min_rr.setValue(symbol_config.min_expected_rr)
             min_rr.setEnabled(symbol_config.backtest)
             min_rr.setObjectName("Mt5MinRrInput")
-            min_rr.setFixedWidth(96)
+            min_rr.setFixedWidth(60)
             min_rr.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
             min_rr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            min_rr.setToolTip("R:R kỳ vọng tối thiểu để auto-trade. 0 = không lọc.")
+            min_rr.setToolTip("R:R kỳ vọng tối thiểu. Dùng cho cả gate chẩn đoán và auto-trade.")
             backtest_box.toggled.connect(min_rr.setEnabled)
             self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr))
 
@@ -877,8 +898,7 @@ class SettingsScreen(QWidget):
                 item = QTableWidgetItem()
                 self.mt5_symbols_table.setItem(row, col, item)
             item.setText(value)
-            if col == 0:
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def _centered_cell(self, widget: QWidget, *, vertical_margin: int = 0) -> QWidget:
         cell = QWidget()
@@ -979,7 +999,7 @@ class SettingsScreen(QWidget):
             self.ctrader_status_label.setText(f"❌ Lỗi không xác định: {e}")
             self.ctrader_status_label.setVisible(True)
         finally:
-            self.ctrader_test_btn.setText("🔄 Kiểm tra kết nối cTrader")
+            self.ctrader_test_btn.setText("🔄 Kiểm tra kết nối")
             self.ctrader_test_btn.setEnabled(True)
             
     def _restart_app(self) -> None:
@@ -1085,8 +1105,7 @@ class SettingsScreen(QWidget):
             min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
             regime_cell = self.mt5_symbols_table.cellWidget(row, 7)
             side_cell = self.mt5_symbols_table.cellWidget(row, 8)
-            min_rr_cell = self.mt5_symbols_table.cellWidget(row, 7)
-            gate_min_rr_cell = self.mt5_symbols_table.cellWidget(row, 8)
+            min_rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
             backtest_box = backtest_cell.findChild(QCheckBox) if backtest_cell else None
             min_score_input = min_score_cell.findChild(QLineEdit) if min_score_cell else None
             regime_combo = regime_cell.findChild(QComboBox) if regime_cell else None
@@ -1107,8 +1126,7 @@ class SettingsScreen(QWidget):
                 decision_wait=50,
                 auto_trade_regime=regime,
                 auto_trade_side=side,
-                auto_trade_min_rr=min_rr,
-                min_expected_rr=min_rr,  # same as auto-trade RR
+                min_expected_rr=min_rr,
             )
             if backtested:
                 enabled_symbols.append(symbol)

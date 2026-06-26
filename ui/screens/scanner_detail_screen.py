@@ -580,6 +580,7 @@ class ScannerDetailScreen(QWidget):
         })
 
         # 7. R:R
+        min_rr = float(self.row.get("min_rr", 1.3) or 1.3)
         rr_val = 0.0
         try:
             if ":" in str(rr):
@@ -588,10 +589,10 @@ class ScannerDetailScreen(QWidget):
                 rr_val = float(rr)
         except (ValueError, TypeError):
             pass
-        rr_ok = rr_val >= 1.5
+        rr_ok = rr_val >= min_rr
         items.append({
             "pass": rr_ok,
-            "label": f"R:R: {rr} — {'đủ' if rr_ok else 'dưới 1.5:1'}"
+            "label": f"R:R là {rr} — {'đạt' if rr_ok else f'dưới R:R tối thiểu là 1:{min_rr:.1f}'}"
         })
 
         return items
@@ -1300,7 +1301,7 @@ class ScannerDetailScreen(QWidget):
             {"gate": "M15", "status": _st(M15_NOT_CONFIRMED) if _st(M15_NOT_CONFIRMED) != "pass" else _st(M15_LOOSE_CONFIRMATION),
              "detail": f"M15={primary.get('m15_quality', '?')}"},
             {"gate": "ExpectedRR", "status": _st(EXPECTED_RR_TOO_LOW),
-             "detail": f"R:R={primary.get('expected_effective_rr', '?')}"},
+             "detail": f"R:R={primary.get('expected_effective_rr', '?')} sau spread (danh nghĩa {primary.get('risk_reward', '?')})"},
             {"gate": "ScoreGap", "status": _st(BUY_SELL_SCORE_GAP_LOW),
              "detail": f"chênh lệch={direction.get('score_gap', '?')} (tối thiểu {direction.get('min_gap', 10)})"},
             {"gate": "ZoneBroken", "status": _st(ZONE_BROKEN),

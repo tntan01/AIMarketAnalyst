@@ -515,6 +515,10 @@ class AnalysisPipeline:
                 _gate_scenario.get("expected_effective_rr")
                 if isinstance(_gate_scenario, dict) else None
             ),
+            "risk_reward": (
+                _gate_scenario.get("risk_reward")
+                if isinstance(_gate_scenario, dict) else None
+            ),
             "min_expected_effective_rr": (
                 self._thresholds.get("min_rr", 1.3) if self._thresholds else 1.3
             ),
@@ -620,11 +624,13 @@ class AnalysisPipeline:
         gate_checks.append({"gate": "M15", "status": m15_status, "detail": m15_detail})
         # 9. Expected R:R gate
         rr_val = gate_context.get("expected_effective_rr")
+        nominal_rr = gate_context.get("risk_reward", "")
+        nominal_str = f" (danh nghĩa {nominal_rr})" if nominal_rr else ""
         if rr_val is not None:
             min_rr = gate_context.get("min_expected_effective_rr", 1.3)
             rr_ok = rr_val >= min_rr
             gate_checks.append({"gate": "ExpectedRR", "status": "pass" if rr_ok else "warning",
-                                "detail": f"RR={float(rr_val):.1f} vs min={min_rr}"})
+                                "detail": f"RR={float(rr_val):.1f} sau spread{nominal_str} vs min={min_rr}"})
         else:
             gate_checks.append({"gate": "ExpectedRR", "status": "warning", "detail": "chưa có điểm vào — không có RR"})
         # 10. Score gap gate
@@ -1080,13 +1086,14 @@ def _build_entry_checklist(
     score: dict[str, Any],
 ) -> list[dict[str, Any]]:
     trend_pass, trend_note = _entry_trend_check(scenario, market_regime, score)
+    min_rr = trade_permission.get("min_rr", 1.3)
     return [
         _checklist_item("Xu hướng", trend_pass, market_regime.get("primary", "unknown"), trend_note),
         _checklist_item("Vùng POI", bool(scenario.get("entry_zone")) and scenario.get("entry_status") != "invalidated", scenario.get("entry_zone", "--"), "Cần có vùng entry/POI hợp lệ và chưa bị vô hiệu."),
         _checklist_item("Xác nhận H1", bool(scenario.get("h1_confirmation")), scenario.get("trigger_type", "none"), scenario.get("invalid_reason") or "Cần nến H1 xác nhận tại vùng."),
         _checklist_item("Tin tức", not data_quality.get("news_in_3h") and trade_permission.get("status") != "blocked", data_quality.get("next_high_impact_event") or "Không có tin tác động cao gần", "Tránh vào lệnh gần tin tác động cao."),
         _checklist_item("Spread", data_quality.get("spread_status") == "normal", data_quality.get("spread_status", "unknown"), "Spread phải bình thường."),
-        _checklist_item("R:R", _parse_rr(scenario.get("risk_reward")) >= 1.5, scenario.get("risk_reward", "--"), "R:R tối thiểu nên từ 1:1.5 trở lên."),
+        _checklist_item("R:R", _parse_rr(scenario.get("risk_reward")) >= min_rr, scenario.get("risk_reward", "--"), f"R:R tối thiểu là 1:{min_rr:.1f}."),
         _checklist_item(
             "Lot",
             isinstance(scenario.get("position_sizing"), dict) and float(scenario.get("position_sizing", {}).get("suggested_lot", 0)) > 0,

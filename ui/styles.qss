@@ -1084,7 +1084,7 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox {
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput {
-  padding: 2px 22px 2px 8px;
+  padding: 2px 6px;
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput:focus,

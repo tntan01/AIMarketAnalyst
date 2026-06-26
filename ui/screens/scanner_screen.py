@@ -706,7 +706,7 @@ class ScannerScreen (QWidget ):
                     "watch": cfg.decision_watch,
                     "wait": cfg.decision_wait,
                     "min_score_gap": 10,
-                    "min_rr": cfg.auto_trade_min_rr or cfg.min_expected_rr or 0,
+                    "min_rr": cfg.min_expected_rr or 0,
                 }
         symbol_auto_trade: dict[str, dict] = {}
         for symbol in symbols:
@@ -714,12 +714,12 @@ class ScannerScreen (QWidget ):
             if cfg and cfg.backtest:
                 regime = (cfg.auto_trade_regime or "").strip()
                 side = (cfg.auto_trade_side or "").strip()
-                min_rr = cfg.auto_trade_min_rr or 0.0
+                min_rr = cfg.min_expected_rr or 0.0
                 if regime or side in ("buy", "sell") or min_rr:
                     symbol_auto_trade[symbol] = {
                         "regime": cfg.auto_trade_regime,
                         "side": cfg.auto_trade_side,
-                        "min_rr": cfg.auto_trade_min_rr or cfg.min_expected_rr or 0,
+                        "min_rr": cfg.min_expected_rr or 0,
                         "min_score": cfg.min_score if cfg.min_score > 0 else cfg.decision_ready,
                     }
         request =ScannerRequest (
