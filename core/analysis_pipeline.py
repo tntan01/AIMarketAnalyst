@@ -255,27 +255,39 @@ class AnalysisPipeline:
             symbol=self._request.symbol, side="buy",
             dxy_candles=corr_ctx.get("dxy_candles"),
             us10y_candles=corr_ctx.get("us10y_candles"),
+            us2y_candles=corr_ctx.get("us2y_candles"),
             vix_candles=corr_ctx.get("vix_candles"),
         )
         self._sell_corr_adj = compute_correlation_adjustment(
             symbol=self._request.symbol, side="sell",
             dxy_candles=corr_ctx.get("dxy_candles"),
             us10y_candles=corr_ctx.get("us10y_candles"),
+            us2y_candles=corr_ctx.get("us2y_candles"),
             vix_candles=corr_ctx.get("vix_candles"),
         )
 
         has_dxy = bool(corr_ctx.get("dxy_candles"))
         has_vix = bool(corr_ctx.get("vix_candles"))
         has_us10y = bool(corr_ctx.get("us10y_candles"))
+        has_us2y = bool(corr_ctx.get("us2y_candles"))
+        any_macro = has_dxy or has_vix or has_us10y or has_us2y
+        corr_status = "pass" if any_macro else "warning"
+        corr_summary = (
+            f"DXY={'yes' if has_dxy else 'no'}, VIX={'yes' if has_vix else 'no'}, "
+            f"US10Y={'yes' if has_us10y else 'no'}, US2Y={'yes' if has_us2y else 'no'} "
+            f"| Buy adj: {self._buy_corr_adj:+.0f} | Sell adj: {self._sell_corr_adj:+.0f}"
+        )
+        if not any_macro:
+            corr_summary = "KHÔNG CÓ DỮ LIỆU VĨ MÔ — " + corr_summary
         self._log_step(
             "correlation",
-            "pass",
-            f"DXY={'yes' if has_dxy else 'no'}, VIX={'yes' if has_vix else 'no'}, US10Y={'yes' if has_us10y else 'no'} "
-            f"| Buy adj: {self._buy_corr_adj:+.0f} | Sell adj: {self._sell_corr_adj:+.0f}",
+            corr_status,
+            corr_summary,
             {
                 "has_dxy": has_dxy,
                 "has_vix": has_vix,
                 "has_us10y": has_us10y,
+                "has_us2y": has_us2y,
                 "buy_correlation_adjustment": self._buy_corr_adj,
                 "sell_correlation_adjustment": self._sell_corr_adj,
             },
@@ -480,8 +492,8 @@ class AnalysisPipeline:
             "data_quality_warning": self._data_quality.get("warning"),
             "high_impact_event_within_30m": self._data_quality.get("high_impact_event_within_30m"),
             "m15_quality": (
-                self._primary_scenario.get("m15_quality")
-                if isinstance(self._primary_scenario, dict) else None
+                self._primary_scenario.get("m15_quality") or "none"
+                if isinstance(self._primary_scenario, dict) else "none"
             ),
             "expected_effective_rr": (
                 self._primary_scenario.get("expected_effective_rr")
@@ -578,14 +590,14 @@ class AnalysisPipeline:
                             "detail": "no issues" if jf_ok else f"warnings={len(jf_warnings)}, blocks={len(jf_blocks)}"})
         # 8. M15 gate
         m15_q = gate_context.get("m15_quality")
-        if m15_q == "none":
-            m15_status, m15_detail = "warning", "M15 not confirmed (→WATCH_ONLY)"
+        if m15_q in (None, "none"):
+            m15_status, m15_detail = "warning", "M15 không xác nhận (→WATCH_ONLY)"
         elif m15_q == "loose":
-            m15_status, m15_detail = "warning", "M15 loose (→WAITING_CONFIRMATION)"
+            m15_status, m15_detail = "warning", "M15 xác nhận lỏng (→WAITING_CONFIRMATION)"
         elif m15_q == "strict":
-            m15_status, m15_detail = "pass", "M15 strict"
+            m15_status, m15_detail = "pass", "M15 xác nhận chặt"
         else:
-            m15_status, m15_detail = "pass", f"m15={m15_q}"
+            m15_status, m15_detail = "warning", f"m15={m15_q} (không rõ)"
         gate_checks.append({"gate": "M15", "status": m15_status, "detail": m15_detail})
         # 9. Expected R:R gate
         rr_val = gate_context.get("expected_effective_rr")
@@ -595,7 +607,7 @@ class AnalysisPipeline:
             gate_checks.append({"gate": "ExpectedRR", "status": "pass" if rr_ok else "warning",
                                 "detail": f"RR={float(rr_val):.1f} vs min={min_rr}"})
         else:
-            gate_checks.append({"gate": "ExpectedRR", "status": "pass", "detail": "no RR data"})
+            gate_checks.append({"gate": "ExpectedRR", "status": "warning", "detail": "chưa có điểm vào — không có RR"})
         # 10. Score gap gate
         gap_val = gate_context.get("score_gap")
         min_gap = gate_context.get("min_buy_sell_score_gap", 10)
@@ -604,7 +616,7 @@ class AnalysisPipeline:
             gate_checks.append({"gate": "ScoreGap", "status": "pass" if gap_ok else "warning",
                                 "detail": f"gap={gap_val} vs min={min_gap}"})
         else:
-            gate_checks.append({"gate": "ScoreGap", "status": "pass", "detail": "no gap data"})
+            gate_checks.append({"gate": "ScoreGap", "status": "pass", "detail": "không có chênh lệch (hướng trung lập)"})
         # 11. Zone broken gate
         zone_ok = not gate_context.get("zone_broken", False)
         gate_checks.append({"gate": "ZoneBroken", "status": "pass" if zone_ok else "warning",

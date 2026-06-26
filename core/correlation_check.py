@@ -72,6 +72,21 @@ def check_dxy_alignment(symbol: str, side: str, dxy_candles: list[Candle] | None
     }
 
 
+def _us2y_direction(candles: list[Candle] | None) -> str | None:
+    if not candles or len(candles) < 5:
+        return None
+    first_close = candles[0].close
+    last_close = candles[-1].close
+    if first_close <= 0:
+        return None
+    change_pct = (last_close - first_close) / first_close * 100
+    if change_pct > 0.5:
+        return "up"
+    if change_pct < -0.5:
+        return "down"
+    return "flat"
+
+
 def check_yield_spread(
     symbol: str,
     side: str,
@@ -127,6 +142,63 @@ def check_yield_spread(
         }
 
     return {"warning": None, "alignment": "neutral", "us10y_direction": direction}
+
+
+def check_us2y_spread(
+    symbol: str,
+    side: str,
+    us2y_candles: list[Candle] | None,
+) -> dict[str, Any]:
+    direction = _us2y_direction(us2y_candles)
+    if direction is None:
+        return {"warning": None, "alignment": "neutral", "us2y_direction": None}
+
+    if symbol in {"XAU/USD", "XAG/USD"}:
+        if side == "buy" and direction == "down":
+            return {
+                "warning": None,
+                "alignment": "supports",
+                "us2y_direction": direction,
+                "detail": f"US2Y {direction} — lợi suất ngắn hạn giảm hỗ trợ vàng.",
+            }
+        if side == "sell" and direction == "up":
+            return {
+                "warning": None,
+                "alignment": "supports",
+                "us2y_direction": direction,
+                "detail": f"US2Y {direction} — lợi suất ngắn hạn tăng thuận với bán vàng.",
+            }
+        if side == "buy" and direction == "up":
+            return {
+                "warning": f"US2Y đang tăng — lợi suất ngắn hạn cao gây áp lực lên vàng, cảnh báo cho lệnh BUY {symbol}.",
+                "alignment": "against",
+                "us2y_direction": direction,
+                "detail": f"US2Y {direction} — lợi suất ngắn hạn tăng thường gây sức ép lên vàng.",
+            }
+        if side == "sell" and direction == "down":
+            return {
+                "warning": f"US2Y đang giảm — lợi suất ngắn hạn thấp hỗ trợ vàng, cảnh báo cho lệnh SELL {symbol}.",
+                "alignment": "against",
+                "us2y_direction": direction,
+                "detail": f"US2Y {direction} — lợi suất ngắn hạn giảm thường hỗ trợ vàng.",
+            }
+
+    if "JPY" in symbol:
+        if direction == "up":
+            return {
+                "warning": None,
+                "alignment": "supports",
+                "us2y_direction": direction,
+                "detail": f"US2Y {direction} — lợi suất ngắn hạn US tăng, chênh lệch với JPY mở rộng, thuận cho JPY yếu.",
+            }
+        return {
+            "warning": f"US2Y đang giảm — lợi suất ngắn hạn US giảm, JPY có thể mạnh lên.",
+            "alignment": "against",
+            "us2y_direction": direction,
+            "detail": f"US2Y {direction} — chênh lệch lợi suất ngắn hạn thu hẹp, JPY có thể mạnh lên.",
+        }
+
+    return {"warning": None, "alignment": "neutral", "us2y_direction": direction}
 
 
 _COMMODITY_MAP: dict[str, str] = {
@@ -194,6 +266,7 @@ def get_correlation_warnings(
     side: str,
     dxy_candles: list[Candle] | None = None,
     us10y_candles: list[Candle] | None = None,
+    us2y_candles: list[Candle] | None = None,
     vix_candles: list[Candle] | None = None,
 ) -> list[str]:
     warnings: list[str] = []
@@ -204,6 +277,10 @@ def get_correlation_warnings(
     us10y = check_yield_spread(symbol, side, us10y_candles)
     if us10y.get("warning"):
         warnings.append(str(us10y["warning"]))
+
+    us2y = check_us2y_spread(symbol, side, us2y_candles)
+    if us2y.get("warning"):
+        warnings.append(str(us2y["warning"]))
 
     vix = check_vix_context(vix_candles)
     if vix.get("warning"):
@@ -217,10 +294,12 @@ def summarize_correlation_context(
     side: str,
     dxy_candles: list[Candle] | None = None,
     us10y_candles: list[Candle] | None = None,
+    us2y_candles: list[Candle] | None = None,
     vix_candles: list[Candle] | None = None,
 ) -> dict[str, Any]:
     dxy = check_dxy_alignment(symbol, side, dxy_candles)
     us10y = check_yield_spread(symbol, side, us10y_candles)
+    us2y = check_us2y_spread(symbol, side, us2y_candles)
     commodity = check_commodity(symbol, side)
     vix = check_vix_context(vix_candles)
 
@@ -229,6 +308,8 @@ def summarize_correlation_context(
         context_lines.append(f"DXY: {dxy['detail']}")
     if us10y.get("detail"):
         context_lines.append(f"US10Y: {us10y['detail']}")
+    if us2y.get("detail"):
+        context_lines.append(f"US2Y: {us2y['detail']}")
     if commodity.get("detail"):
         context_lines.append(f"Commodity: {commodity['detail']}")
     if vix.get("detail"):
@@ -237,11 +318,12 @@ def summarize_correlation_context(
     return {
         "dxy_alignment": dxy,
         "us10y_spread": us10y,
+        "us2y_spread": us2y,
         "commodity_note": commodity,
         "vix_context": vix,
         "summary_lines": context_lines,
         "warnings": [
-            str(w) for w in (dxy.get("warning"), us10y.get("warning"), vix.get("warning")) if w
+            str(w) for w in (dxy.get("warning"), us10y.get("warning"), us2y.get("warning"), vix.get("warning")) if w
         ],
     }
 
@@ -397,16 +479,87 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
     return round(total, 1)
 
 
+def _us2y_score(side: str, symbol: str, us2y_candles: list | None) -> float:
+    """
+    US2Y 3-tier scoring cho XAU, XAG và JPY pairs.
+
+    US2Y phản ánh kỳ vọng chính sách Fed ngắn hạn, nhạy hơn US10Y
+    với các thay đổi lãi suất. Đường cong 2s10s cho tín hiệu suy thoái.
+
+    Tầng 1 - Directional (60%): Yield tăng → USD mạnh ngắn hạn
+      - BUY USD/XXX + yield up: +2
+      - SELL USD/XXX + yield down: +2
+      - Ngược lại: -2 đến -3
+
+    Tầng 2 - Absolute Level (25%): US2Y > 4.5% → thắt chặt mạnh
+      - BUY USD khi US2Y > 4.5%: -2 (rủi ro đảo chiều chính sách)
+      - US2Y > 3.5%: -1
+
+    Tầng 3 - Momentum (15%): US2Y biến động >0.4%/tuần
+      - Thị trường bất ổn → -1 đến -2 cả 2 hướng
+    """
+    if not us2y_candles or len(us2y_candles) < 2:
+        return 0.0
+
+    sym_upper = symbol.upper()
+    if not any(code in sym_upper for code in ("XAU", "XAG", "JPY")):
+        return 0.0
+
+    current = us2y_candles[-1].close
+    prev_day = us2y_candles[-2].close
+    y_up = current > prev_day
+
+    # --- Tầng 1: Directional (60%) ---
+    buy_usd = (sym_upper.startswith("USD") and side == "buy") or \
+              (sym_upper.endswith("/USD") and side == "sell")
+
+    directional = 0.0
+    if "XAU" in sym_upper or "XAG" in sym_upper:
+        if (side == "sell" and y_up) or (side == "buy" and not y_up):
+            directional = 2.0
+        else:
+            directional = -3.0
+    elif "JPY" in sym_upper:
+        if buy_usd:
+            directional = 2.0 if y_up else -2.0
+        else:
+            directional = 2.0 if not y_up else -2.0
+
+    # --- Tầng 2: Absolute Level (25%) ---
+    level_score = 0.0
+    if current > 4.5:
+        if buy_usd:
+            level_score = -2.0
+    elif current > 3.5:
+        if buy_usd:
+            level_score = -1.0
+
+    # --- Tầng 3: Momentum 5 ngày (15%) ---
+    momentum_score = 0.0
+    if len(us2y_candles) >= 5:
+        five_day_ago = us2y_candles[-5].close
+        if five_day_ago > 0:
+            change = abs(current - five_day_ago)
+            if change > 0.4:
+                momentum_score = -2.0
+            elif change > 0.25:
+                momentum_score = -1.0
+
+    total = directional * 0.60 + level_score * 0.25 + momentum_score * 0.15
+    return round(total, 1)
+
+
 def compute_correlation_adjustment(
     symbol: str,
     side: str,
     dxy_candles: list | None = None,
     us10y_candles: list | None = None,
+    us2y_candles: list | None = None,
     vix_candles: list | None = None,
 ) -> float:
     """
-    Tổng hợp điều chỉnh điểm Macro từ DXY + VIX + US10Y.
-    Trả về float từ -13 đến +5.
+    Tổng hợp điều chỉnh điểm Macro từ DXY + VIX + US10Y + US2Y.
+    Trả về float từ -18 đến +7.
 
     Returns:
         float: Số điểm điều chỉnh (có thể âm hoặc dương)
@@ -421,5 +574,8 @@ def compute_correlation_adjustment(
 
     if us10y_candles is not None:
         adjustment += _us10y_score(side, symbol, us10y_candles)
+
+    if us2y_candles is not None:
+        adjustment += _us2y_score(side, symbol, us2y_candles)
 
     return round(adjustment, 1)

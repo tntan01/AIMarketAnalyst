@@ -21,7 +21,7 @@ def build_market_brief_prompt(
 
     Args:
         rows: Sorted scanner rows (all symbols, not just top N).
-        correlation_context: DXY/VIX/US10Y data.
+        correlation_context: DXY/VIX/US10Y/US2Y data.
         freshness: Macro freshness status dict.
 
     Returns:
@@ -95,6 +95,7 @@ def build_market_brief_prompt(
             "has_dxy": bool(correlation_context.get("dxy_candles")),
             "has_vix": bool(correlation_context.get("vix_candles")),
             "has_us10y": bool(correlation_context.get("us10y_candles")),
+            "has_us2y": bool(correlation_context.get("us2y_candles")),
         }
     if isinstance(freshness, dict):
         macro_summary["freshness"] = freshness
@@ -144,6 +145,14 @@ def build_market_brief_prompt(
         "cần theo dõi thêm.\n\n"
         "Chỉ dựa vào dữ liệu đã cung cấp, không tự tạo giá/entry/SL/TP. "
         "Viết đầy đủ từng mục, mỗi mục 2-4 câu. Không dùng markdown ** hay *.\n\n"
+        "ĐỊNH DẠNG BẮT BUỘC: Mỗi mục PHẢI bắt đầu bằng dòng riêng với số thứ tự "
+        "và tiêu đề viết HOA, kết thúc bằng dấu hai chấm. Ví dụ:\n"
+        "1. TỔNG QUAN PHIÊN: ...\n"
+        "2. NHÓM NÊN ƯU TIÊN: ...\n"
+        "3. NHÓM NÊN TRÁNH: ...\n"
+        "4. MỨC RỦI RO KHUYẾN NGHỊ: ...\n"
+        "5. SETUP ĐANG CHỜ: ...\n\n"
+        "TUYỆT ĐỐI không viết thành đoạn văn liên tục không có tiêu đề.\n\n"
         "DỮ LIỆU QUÉT THỊ TRƯỜNG:\n"
         f"{json.dumps(prompt_data, ensure_ascii=False, default=str, indent=2)}"
     )

@@ -87,7 +87,7 @@ def _gate_high_impact_news(context: dict[str, Any], result: dict[str, Any]) -> N
 def _gate_m15(context: dict[str, Any], result: dict[str, Any]) -> None:
     m15_quality = context.get("m15_quality")
 
-    if m15_quality == "none":
+    if m15_quality in (None, "none"):
         append_code(result["warning_codes"], M15_NOT_CONFIRMED)
         result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
         result["reasons"].append("M15 không xác nhận tín hiệu vào lệnh.")
@@ -100,6 +100,8 @@ def _gate_m15(context: dict[str, Any], result: dict[str, Any]) -> None:
 def _gate_expected_effective_rr(context: dict[str, Any], result: dict[str, Any]) -> None:
     expected_effective_rr = context.get("expected_effective_rr")
     if expected_effective_rr is None:
+        result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
+        result["reasons"].append("Chưa có điểm vào — không tính được R:R kỳ vọng.")
         return
 
     min_expected_effective_rr = context.get("min_expected_effective_rr", 1.3)

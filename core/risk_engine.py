@@ -467,9 +467,10 @@ def build_trade_plan(
     if correlation_context:
         corr_dxy = correlation_context.get("dxy_candles")
         corr_us10y = correlation_context.get("us10y_candles")
+        corr_us2y = correlation_context.get("us2y_candles")
         corr_vix = correlation_context.get("vix_candles")
-        corr_warnings = get_correlation_warnings(request.symbol, side, dxy_candles=corr_dxy, us10y_candles=corr_us10y, vix_candles=corr_vix)
-        corr_context = summarize_correlation_context(request.symbol, side, dxy_candles=corr_dxy, us10y_candles=corr_us10y, vix_candles=corr_vix)
+        corr_warnings = get_correlation_warnings(request.symbol, side, dxy_candles=corr_dxy, us10y_candles=corr_us10y, us2y_candles=corr_us2y, vix_candles=corr_vix)
+        corr_context = summarize_correlation_context(request.symbol, side, dxy_candles=corr_dxy, us10y_candles=corr_us10y, us2y_candles=corr_us2y, vix_candles=corr_vix)
 
     return {
         "entry_zone": entry_zone,

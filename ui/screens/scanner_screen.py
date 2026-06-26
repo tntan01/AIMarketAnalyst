@@ -574,6 +574,7 @@ class ScannerScreen (QWidget ):
         self ._configure_table_columns ()
         self .table .setSortingEnabled (False )
         self .table .clicked .connect (self ._table_clicked )
+        self .table .doubleClicked .connect (self ._table_double_clicked )
         frame .layout ().addWidget (self .table ,1 )
         return frame 
 
@@ -830,6 +831,10 @@ class ScannerScreen (QWidget ):
     def _table_clicked (self ,index :QModelIndex )->None :
         self .detail_button .setEnabled (index .isValid ())
         if index .column ()==len (ScannerTableModel .COLUMNS )-1 :
+            self ._open_row_detail (index .row ())
+
+    def _table_double_clicked (self ,index :QModelIndex )->None :
+        if index .isValid ():
             self ._open_row_detail (index .row ())
 
     def _open_selected_detail (self )->None :
@@ -1173,7 +1178,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
 class ScannerRowExplanationDialog(QDialog):
     PARAM_COL_WIDTH = 150
     VALUE_COL_WIDTH = 220
-    MIN_ROW_HEIGHT = 32
+    MIN_ROW_HEIGHT = 20
     CELL_VERTICAL_PADDING = 32
     CELL_HORIZONTAL_PADDING = 32
 
@@ -1192,7 +1197,7 @@ class ScannerRowExplanationDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        header_label = QLabel(f"Giải thích chi tiết cho {symbol}")
+        header_label = QLabel(f"Giải thích chi tiết cho cặp {symbol}")
         header_label.setObjectName("HelpHeaderLabel")
         header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header_label)
@@ -1230,7 +1235,7 @@ class ScannerRowExplanationDialog(QDialog):
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        label.setContentsMargins(8, 6, 8, 6)
+        label.setContentsMargins(4, 2, 4, 2)
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         label.setStyleSheet(f"color: {color}; background: transparent;")
         if bold:
@@ -1338,9 +1343,9 @@ class ScannerRowExplanationDialog(QDialog):
             for col in range(3):
                 label = self.table.cellWidget(row, col)
                 if isinstance(label, QLabel):
-                    usable_width = max(50, column_widths[col] - 24)
+                    usable_width = max(50, column_widths[col] - 16)
                     label.setFixedWidth(usable_width)
-                    heights.append(label.heightForWidth(usable_width) + 24)
+                    heights.append(label.heightForWidth(usable_width) + 6)
             
             row_height = max(heights)
             self.table.setRowHeight(row, row_height)
@@ -1509,82 +1514,182 @@ class ScannerColumnsHelpDialog (QDialog ):
 
 def parse_market_brief(raw: str) -> list[dict]:
     import re
-    sections = []
-    current_section = None
-    
-    def get_icon(h: str) -> str:
-        h_up = h.upper()
-        if "TỔNG QUAN" in h_up: return "🌍"
-        if "ƯU TIÊN" in h_up: return "⭐"
-        if "TRÁNH" in h_up: return "🚫"
-        if "RỦI RO" in h_up: return "🛡️"
-        if "CHỜ" in h_up: return "⏳"
-        if "KẾT LUẬN" in h_up: return "📌"
-        return "🔹"
+
+    # Section keywords with their icons — order matters (first match wins)
+    SECTION_PATTERNS: list[tuple[str, str]] = [
+        ("TỔNG QUAN", "🌍"),
+        ("ƯU TIÊN", "⭐"),
+        ("TRÁNH", "🚫"),
+        ("RỦI RO", "🛡️"),
+        ("CHỜ", "⏳"),
+        ("KẾT LUẬN", "📌"),
+    ]
+
+    def match_heading(line: str) -> tuple[str, str] | None:
+        """Try to extract a section heading from a line. Returns (heading, icon) or None."""
+        upper = line.upper()
+        for keyword, icon in SECTION_PATTERNS:
+            if keyword in upper:
+                # Extract the heading text: strip leading numbers, bullets, markdown
+                cleaned = re.sub(r"^[\d\s.)\-•*#]+\s*", "", line)
+                cleaned = cleaned.strip().rstrip(":").strip()
+                # Keep the heading concise (first 60 chars)
+                if len(cleaned) > 60:
+                    cleaned = cleaned[:60]
+                return (cleaned, icon)
+        return None
+
+    def looks_like_heading(line: str) -> bool:
+        """Quick check if a line is likely a heading (short, starts with number/marker)."""
+        stripped = line.strip()
+        if len(stripped) > 80:
+            return False
+        upper = stripped.upper()
+        # Starts with optional number/marker + keyword
+        if re.match(r"^[\d\s.)\-•*#]+\s*", stripped):
+            return any(kw in upper for kw, _ in SECTION_PATTERNS)
+        # Or the entire line is just a heading keyword phrase
+        return any(kw in upper and len(stripped) < 60 for kw, _ in SECTION_PATTERNS)
 
     lines = raw.splitlines()
+    sections: list[dict] = []
+    current_section: dict | None = None
+
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
 
-        # Strip markdown prefixes that AI models sometimes add
-        cleaned = re.sub(r"^(\*{1,3}|#{1,3})\s*", "", stripped)
+        # Strip leading markdown bold/heading markers for cleaner matching
+        cleaned = re.sub(r"^(\*{1,3}\s*|#{1,3}\s*)", "", stripped)
 
-        # Try standard format: "1. HEADING: content" or "HEADING: content"
-        m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60}):(.*)$", cleaned)
-        if m:
-            heading = m.group(2).strip()
-            rest = m.group(3).strip()
+        heading_match = match_heading(cleaned)
+        is_heading = heading_match is not None and looks_like_heading(cleaned)
+
+        if is_heading:
+            heading, icon = heading_match  # type: ignore[misc]
+            current_section = {"title": heading, "icon": icon, "lines": []}
+            sections.append(current_section)
+            # Check if there's content after a colon on the same line
+            rest = re.sub(r"^[\d\s.)\-•*#]+\s*", "", stripped)
+            colon_idx = rest.find(":")
+            if colon_idx > 0:
+                after_colon = rest[colon_idx + 1:].strip()
+                if after_colon:
+                    current_section["lines"].append(after_colon)
         else:
-            # Fallback: markdown heading "### HEADING" or "**HEADING**"
-            m2 = re.match(r"^(?:#{1,3}\s*|\*{2})([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60})(?:\*{2})?\s*$", cleaned)
-            if m2 and len(cleaned) < 80:
-                heading = m2.group(1).strip()
-                rest = ""
+            if current_section is not None:
+                current_section["lines"].append(stripped)
             else:
-                # Not a heading — accumulate into current section
-                if current_section is not None:
-                    current_section["lines"].append(stripped)
-                else:
-                    current_section = {
-                        "title": "Bản tin",
-                        "icon": "📊",
-                        "lines": [stripped]
-                    }
-                    sections.append(current_section)
-                continue
+                current_section = {
+                    "title": "Bản tin",
+                    "icon": "📊",
+                    "lines": [stripped],
+                }
+                sections.append(current_section)
 
-        icon = get_icon(heading)
-        current_section = {"title": heading, "icon": icon, "lines": []}
-        if rest:
-            current_section["lines"].append(rest)
-        sections.append(current_section)
-
-    # Fallback: if only 1 default section, try splitting by numbered lines in content
+    # Fallback: if only 1 default "Bản tin" section, try harder to split
     if len(sections) == 1 and sections[0]["title"] == "Bản tin":
         content = "\n".join(sections[0]["lines"])
-        # Try to find "1. HEADING" or "1) HEADING" patterns within the text
-        parts = re.split(r"\n(?=\d+[.)]\s*[A-ZÀ-ỸĐ])", content)
+        # Split on numbered headings like "1. TỔNG QUAN" or "2) ƯU TIÊN"
+        parts = re.split(r"\n(?=\d+[.)]\s*[A-Za-zÀ-ỸĐ])", content)
         if len(parts) > 1:
             sections = []
             for part in parts:
                 part = part.strip()
-                m = re.match(r"^(\d+[.)]\s*)?([A-ZÀ-ỸĐ][A-ZÀ-ỸĐ\s_]{3,60})", part)
-                if m:
-                    heading = m.group(2).strip()
-                    body = part[m.end():].strip().lstrip(":- ")
-                    sections.append({"title": heading, "icon": get_icon(heading), "lines": [body] if body else []})
+                if not part:
+                    continue
+                hm = match_heading(part.split("\n")[0])
+                if hm:
+                    heading, icon = hm
+                    # Remove heading line from body
+                    body_lines = part.split("\n")
+                    first = body_lines[0]
+                    rest_first = re.sub(r"^[\d\s.)\-•*#]+\s*", "", first)
+                    colon_idx = rest_first.find(":")
+                    if colon_idx > 0:
+                        after = rest_first[colon_idx + 1:].strip()
+                        if after:
+                            body_lines = [after] + body_lines[1:]
+                        else:
+                            body_lines = body_lines[1:]
+                    else:
+                        body_lines = body_lines[1:]
+                    body = "\n".join(line.strip() for line in body_lines if line.strip())
+                    sections.append({"title": heading, "icon": icon, "lines": [body] if body else []})
                 else:
                     sections.append({"title": "Bản tin", "icon": "📊", "lines": [part]})
 
-    formatted_sections = []
+    # Third fallback: continuous narrative without headings — split by topic transitions
+    if len(sections) == 1:
+        content = "\n".join(sections[0]["lines"])
+        # Transition markers: (regex, title, icon) — first match determines section boundary
+        TRANSITIONS: list[tuple[str, str, str]] = [
+            (r"(?:tuyệt\s*đối\s*)?(?:nên|hãy|cần|phải)\s*tránh", "NHÓM NÊN TRÁNH", "🚫"),
+            (r"tránh\s*giao\s*dịch", "NHÓM NÊN TRÁNH", "🚫"),
+            (r"rủi\s*ro\s*toàn\s*hệ\s*thống", "MỨC RỦI RO KHUYẾN NGHỊ", "🛡️"),
+            (r"(?:mức|quản\s*trị)\s*rủi\s*ro", "MỨC RỦI RO KHUYẾN NGHỊ", "🛡️"),
+            (r"(?:đang|còn)\s*chờ\s*(?:tín\s*hiệu|xác\s*nhận)", "SETUP ĐANG CHỜ", "⏳"),
+            (r"các\s*mã\s*đang\s*chờ", "SETUP ĐANG CHỜ", "⏳"),
+            (r"(?:nhóm|tập\s*trung)\s*(?:nên|đáng|cần)\s*(?:ưu\s*tiên|tập\s*trung|chú\s*ý)", "NHÓM NÊN ƯU TIÊN", "⭐"),
+            (r"nên\s*tập\s*trung", "NHÓM NÊN ƯU TIÊN", "⭐"),
+            (r"kết\s*luận", "KẾT LUẬN", "📌"),
+        ]
+        # Split content into sentences, then find where topic transitions occur
+        sentences = re.split(r"(?<=[.!?])\s+", content)
+        if len(sentences) > 1:
+            new_sections: list[dict] = []
+            cur_title = sections[0]["title"]
+            cur_icon = sections[0]["icon"]
+            cur_lines: list[str] = []
+            for sent in sentences:
+                sent = sent.strip()
+                if not sent:
+                    continue
+                # Check if this sentence starts a new topic
+                matched = False
+                for pattern, title, icon in TRANSITIONS:
+                    if re.search(pattern, sent, re.IGNORECASE):
+                        # Save current section before switching
+                        if cur_lines:
+                            new_sections.append({"title": cur_title, "icon": cur_icon, "lines": list(cur_lines)})
+                        cur_title = title
+                        cur_icon = icon
+                        cur_lines = [sent]
+                        matched = True
+                        break
+                if not matched:
+                    cur_lines.append(sent)
+            if cur_lines:
+                new_sections.append({"title": cur_title, "icon": cur_icon, "lines": cur_lines})
+            if len(new_sections) > 1:
+                sections = new_sections
+
+    # Rename default first section if it contains market overview content
+    if sections and sections[0]["title"] == "Bản tin":
+        first_text = "\n".join(sections[0]["lines"]).lower()
+        if any(kw in first_text for kw in ("thị trường hôm nay", "tổng quan", "xu hướng", "phiên")):
+            sections[0]["title"] = "TỔNG QUAN PHIÊN"
+            sections[0]["icon"] = "🌍"
+
+    # Post-process: deduplicate consecutive sections with same title
+    merged: list[dict] = []
     for s in sections:
+        s_title = s["title"]
+        s_icon = s["icon"]
+        if merged and merged[-1]["title"] == s_title:
+            merged[-1]["lines"].extend(s["lines"])
+        else:
+            merged.append(s)
+
+    # Build final output
+    formatted_sections = []
+    for s in merged:
         content = "\n".join(s["lines"])
         formatted_sections.append({
             "title": s["title"],
             "icon": s["icon"],
-            "content": content
+            "content": content,
         })
     return formatted_sections
 

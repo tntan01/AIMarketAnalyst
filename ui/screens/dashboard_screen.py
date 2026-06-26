@@ -788,14 +788,14 @@ class DashboardScreen(QWidget):
                 status, color = "Cảnh báo", yellow
             else:
                 status, color = "Bình thường", green
-            label.setText(f"VIX: {close:.1f} — {status}  (sợ hãi thị trường)")
+            label.setText(f"VIX: {close:.1f} — {status}")
         elif tag == "DXY":
             color = green if change_pct > 0 else red if change_pct < 0 else neutral
-            label.setText(f"DXY: {close:.2f} {arrow} {abs_change:.1f}%  (sức mạnh USD)")
+            label.setText(f"DXY: {close:.2f} {arrow} {abs_change:.1f}%")
         else:  # US10Y / US2Y: lợi suất GIẢM → tốt (xanh), TĂNG → xấu (đỏ)
             color = red if change_pct > 0 else green if change_pct < 0 else neutral
             yr = "10Y" if tag == "US10Y" else "2Y"
-            label.setText(f"{tag}: {close:.2f}% {arrow}  (lợi suất TPCP Mỹ {yr})")
+            label.setText(f"{tag}: {close:.2f}% {arrow}")
         label.setStyleSheet(f"font-weight:700;font-size:14px;color:{color};")
 
     def _show_market_help(self) -> None:

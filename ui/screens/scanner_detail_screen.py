@@ -1177,7 +1177,7 @@ class ScannerDetailScreen(QWidget):
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
             f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;'>Gate</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:70px;'>Kết quả</th>",
+            f"<th colspan='2' style='text-align:left;padding:8px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;'>Kết quả</th>",
             f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Ý nghĩa / Chi tiết</th>",
             "</tr>",
         ]
@@ -1207,7 +1207,8 @@ class ScannerDetailScreen(QWidget):
             rows.append(
                 f"<tr>"
                 f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='{g_explain}'>{g_label}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;'>{icon} {text}</td>"
+                f"<td style='width:24px;text-align:right;padding:6px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
+                f"<td style='width:71px;text-align:left;padding:6px 0 6px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;font-size:12px;'>{text}</td>"
                 f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:12px;'>{g_explain} &mdash; {g_detail}</td>"
                 f"</tr>"
             )
@@ -1220,15 +1221,15 @@ class ScannerDetailScreen(QWidget):
         perm_status = permission.get("status", "?")
         perm_text = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}.get(perm_status, perm_status)
 
-        if allowed:
-            summary_color = "#22c55e"
-            summary_text = f"CHO PHÉP (mức: {cap})"
-        elif not allowed:
+        if not allowed:
             summary_color = "#ef4444"
             summary_text = f"BỊ CHẶN (mức: {cap})"
-        else:
+        elif cap in ("WATCH_ONLY", "WAITING_CONFIRMATION"):
             summary_color = "#fbbf24"
             summary_text = f"CẢNH BÁO (mức: {cap})"
+        else:
+            summary_color = "#22c55e"
+            summary_text = f"CHO PHÉP (mức: {cap})"
 
         rows.append(
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;"
@@ -1293,9 +1294,9 @@ class ScannerDetailScreen(QWidget):
             {"gate": "DailyWeeklyLoss", "status": _st(DAILY_LOSS_LIMIT_REACHED) if _st(DAILY_LOSS_LIMIT_REACHED) != "pass" else _st(WEEKLY_LOSS_LIMIT_REACHED),
              "detail": "trong giới hạn" if _st(DAILY_LOSS_LIMIT_REACHED) == "pass" and _st(WEEKLY_LOSS_LIMIT_REACHED) == "pass" else "vượt giới hạn lỗ"},
             {"gate": "AccountGuard", "status": "pass",
-             "detail": "bảo vệ OK"},
+             "detail": "không kiểm tra (thiếu dữ liệu pipeline)"},
             {"gate": "Journal", "status": "pass",
-             "detail": "không vấn đề"},
+             "detail": "không kiểm tra (thiếu dữ liệu pipeline)"},
             {"gate": "M15", "status": _st(M15_NOT_CONFIRMED) if _st(M15_NOT_CONFIRMED) != "pass" else _st(M15_LOOSE_CONFIRMATION),
              "detail": f"M15={primary.get('m15_quality', '?')}"},
             {"gate": "ExpectedRR", "status": _st(EXPECTED_RR_TOO_LOW),
@@ -1330,7 +1331,7 @@ class ScannerDetailScreen(QWidget):
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
             f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;'>Điều kiện</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:70px;'>Trạng thái</th>",
+            f"<th colspan='2' style='text-align:left;padding:8px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;'>Trạng thái</th>",
             f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:160px;'>Giá trị</th>",
             f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Ghi chú</th>",
             "</tr>",
@@ -1351,7 +1352,8 @@ class ScannerDetailScreen(QWidget):
             rows.append(
                 f"<tr>"
                 f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};'>{label}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;'>{icon} {status_text}</td>"
+                f"<td style='width:24px;text-align:right;padding:6px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
+                f"<td style='width:71px;text-align:left;padding:6px 0 6px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;font-size:12px;'>{status_text}</td>"
                 f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:12px;'>{value}</td>"
                 f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:12px;'>{note}</td>"
                 f"</tr>"
@@ -1393,7 +1395,7 @@ class ScannerDetailScreen(QWidget):
             "<table style='width:100%;border-collapse:collapse;margin-bottom:12px;'>",
             "<tr>",
             f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:120px;'>Bước</th>",
-            f"<th style='text-align:center;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:70px;'>Kết quả</th>",
+            f"<th colspan='2' style='text-align:left;padding:6px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;'>Kết quả</th>",
             f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Diễn giải / Tóm tắt</th>",
             "</tr>",
         ]
@@ -1433,7 +1435,8 @@ class ScannerDetailScreen(QWidget):
             rows.append(
                 f"<tr>"
                 f"<td style='padding:5px 10px;border-bottom:1px solid {row_border_color};color:{text_color};' title='{explain}'>{label}</td>"
-                f"<td style='text-align:center;padding:5px 10px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;'>{icon} {text}</td>"
+                f"<td style='width:24px;text-align:right;padding:5px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
+                f"<td style='width:71px;text-align:left;padding:5px 0 5px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:700;font-size:12px;'>{text}</td>"
                 f"<td style='padding:5px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:12px;'>{summary}</td>"
                 f"</tr>"
             )
