@@ -727,9 +727,9 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.setObjectName("DataTable")
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
-            "STT", "Mã hiển thị", "Mã broker trong MT5", "Trạng thái",
-            "Kiểm tra", "Kiểm thử", "Điểm tối thiểu", "Regime tự động",
-            "Hướng tự động", "RR tối thiểu", "Sẵn sàng", "Theo dõi", "Chờ",
+            "STT", "Mã hiển thị", "Mã MT5", "Trạng thái",
+            "Kiểm tra", "Backtest", "Min Score", "Regime tự động",
+            "Hướng tự động", "RR tối thiểu", "Ready", "Watch", "Wait",
         ])
         self.mt5_symbols_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mt5_symbols_table.horizontalHeader().setMinimumHeight(38)
@@ -740,7 +740,20 @@ class SettingsScreen(QWidget):
             if col_idx == 2:
                 self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Stretch)
             else:
-                self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.ResizeToContents)
+                self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Interactive)
+        
+        self.mt5_symbols_table.setColumnWidth(0, 40)
+        self.mt5_symbols_table.setColumnWidth(1, 85)
+        self.mt5_symbols_table.setColumnWidth(3, 100)
+        self.mt5_symbols_table.setColumnWidth(4, 170)
+        self.mt5_symbols_table.setColumnWidth(5, 70)
+        self.mt5_symbols_table.setColumnWidth(6, 85)
+        self.mt5_symbols_table.setColumnWidth(7, 130)
+        self.mt5_symbols_table.setColumnWidth(8, 150)
+        self.mt5_symbols_table.setColumnWidth(9, 95)
+        self.mt5_symbols_table.setColumnWidth(10, 90)
+        self.mt5_symbols_table.setColumnWidth(11, 90)
+        self.mt5_symbols_table.setColumnWidth(12, 90)
         self.mt5_symbols_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(32)
         self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(48)
@@ -769,7 +782,7 @@ class SettingsScreen(QWidget):
             min_score_input.setFixedWidth(48)
             min_score_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
             min_score_input.setEnabled(symbol_config.backtest)
-            min_score_input.setToolTip("Ghi đè ngưỡng Ready khi Kiểm thử=ON. Để trống = dùng Ready. Chỉnh trong khoảng 0-100.")
+            min_score_input.setToolTip("Ghi đè ngưỡng Ready khi Backtest=ON. Để trống = dùng Ready. Chỉnh trong khoảng 0-100.")
             def _make_min_score_toggle(mi, stored):
                 def _toggle(checked):
                     mi.setEnabled(checked)
@@ -786,14 +799,14 @@ class SettingsScreen(QWidget):
             # Auto Regime dropdown (col 7)
             REGIME_OPTIONS = [
                 ("", ""),
-                ("range", "đi ngang"),
-                ("trend_up", "tăng"),
-                ("trend_down", "giảm"),
-                ("volatile", "biến động"),
+                ("range", "Range"),
+                ("trend_up", "Trend up"),
+                ("trend_down", "Trend down"),
+                ("volatile", "Volatile"),
             ]
             regime_combo = QComboBox()
             for _r_key, _r_label in REGIME_OPTIONS:
-                regime_combo.addItem(f"{_r_key} ({_r_label})" if _r_label else "", _r_key)
+                regime_combo.addItem(_r_label, _r_key)
             # Set current from stored English key
             _stored_regime = symbol_config.auto_trade_regime or ""
             _regime_idx = next((i for i in range(regime_combo.count()) if regime_combo.itemData(i) == _stored_regime), 0)
@@ -811,6 +824,7 @@ class SettingsScreen(QWidget):
                 ("sell", "bán"),
             ]
             side_combo = QComboBox()
+            side_combo.setFixedWidth(125)
             for _s_key, _s_label in SIDE_OPTIONS:
                 side_combo.addItem(f"{_s_key} ({_s_label})", _s_key)
             _stored_side = symbol_config.auto_trade_side or "best"
@@ -1171,14 +1185,14 @@ class SettingsScreen(QWidget):
             if cfg is None or not isinstance(cfg, dict):
                 continue
 
-            # Tick "Kiểm thử" checkbox (col 5)
+            # Tick "Backtest" checkbox (col 5)
             backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
             if isinstance(backtest_cell, QWidget):
                 cb = backtest_cell.findChild(QCheckBox)
                 if cb and not cb.isChecked():
                     cb.setChecked(True)
 
-            # Set "Điểm tối thiểu" (col 6)
+            # Set "Min Score" (col 6)
             min_score_val = cfg.get("min_score", cfg.get("decision_ready", 0))
             if min_score_val:
                 min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)

@@ -64,7 +64,9 @@ class ForexFactoryClient:
     """Fetch, parse, cache, and filter Forex Factory economic calendar events."""
 
     FOREX_FACTORY_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    FOREX_FACTORY_NEXTWEEK_URL = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
     FOREX_FACTORY_HTML_URL = "https://www.forexfactory.com/calendar?week=this"
+    FOREX_FACTORY_NEXTWEEK_HTML_URL = "https://www.forexfactory.com/calendar?week=next"
     CALENDAR_CACHE_MAX_AGE = timedelta(hours=12)
     CALENDAR_CACHE_FILE: Path | None = None
 
@@ -116,6 +118,119 @@ class ForexFactoryClient:
             "warning": "Không lấy được lịch kinh tế từ Forex Factory: " + "; ".join(errors),
         }
 
+    def calendar_events_window(
+        self, currencies: list[str], from_date: datetime, to_date: datetime
+    ) -> dict[str, object]:
+        """Return economic calendar events in [from_date, to_date] range.
+
+        Fetches thisweek + nextweek JSON (with HTML fallback) and merges
+        with disk cache. Filters to the requested date window.
+        """
+        all_rows: list[dict[str, object]] = []
+        sources: list[str] = []
+        errors: list[str] = []
+
+        # Try thisweek JSON
+        for label, fetcher in (
+            ("Forex Factory (thisweek)", self._fetch_json_events),
+            ("Forex Factory (nextweek)", self._fetch_json_events_nextweek),
+        ):
+            try:
+                rows = fetcher()
+                if rows:
+                    sources.append(label)
+                    all_rows.extend(rows)
+            except Exception as exc:
+                errors.append(f"{label}: {exc}")
+
+        # HTML fallback for thisweek
+        if not any("thisweek" in s for s in sources):
+            try:
+                rows = self._fetch_html_events()
+                if rows:
+                    sources.append("Forex Factory HTML (thisweek)")
+                    all_rows.extend(rows)
+            except Exception as exc:
+                errors.append(f"HTML thisweek: {exc}")
+
+        # HTML fallback for nextweek
+        if not any("nextweek" in s for s in sources):
+            try:
+                rows = self._fetch_html_events_nextweek()
+                if rows:
+                    sources.append("Forex Factory HTML (nextweek)")
+                    all_rows.extend(rows)
+            except Exception as exc:
+                errors.append(f"HTML nextweek: {exc}")
+
+        # Merge with disk cache for extra coverage
+        try:
+            cached = self._cached_calendar_events()
+            if cached:
+                existing_keys = set()
+                for ev in all_rows:
+                    existing_keys.add((
+                        str(ev.get("time_utc", "")),
+                        str(ev.get("currency", "")),
+                        str(ev.get("event", "")),
+                    ))
+                for cev in cached:
+                    k = (str(cev.get("time_utc", "")), str(cev.get("currency", "")), str(cev.get("event", "")))
+                    if k not in existing_keys:
+                        all_rows.append(cev)
+                if not sources:
+                    sources.append("Disk cache")
+        except Exception:
+            pass
+
+        # Deduplicate
+        seen = set()
+        deduped: list[dict[str, object]] = []
+        for ev in all_rows:
+            k = (str(ev.get("time_utc", "")), str(ev.get("currency", "")), str(ev.get("event", "")))
+            if k not in seen:
+                seen.add(k)
+                deduped.append(ev)
+
+        # Store combined results to cache for future fallback
+        if deduped and sources and "Disk cache" not in sources:
+            try:
+                self._store_calendar_cache(deduped)
+            except Exception:
+                pass
+
+        # Filter by date window AND currencies
+        filtered = self._select_calendar_events_window(currencies, deduped, from_date, to_date)
+
+        return {
+            "source": ", ".join(sources) if sources else "Calendar unavailable",
+            "events": filtered,
+            "warning": "" if filtered else ("Không có sự kiện trong khoảng ngày. " + "; ".join(errors)).strip(),
+        }
+
+    def _select_calendar_events_window(
+        self,
+        currencies: list[str],
+        rows: list[dict[str, object]],
+        from_date: datetime,
+        to_date: datetime,
+    ) -> list[dict[str, object]]:
+        wanted = {currency.upper() for currency in currencies} if currencies else set()
+        relevant: list[dict[str, object]] = []
+        for row in rows:
+            currency = str(row.get("currency", "")).upper()
+            if wanted and currency not in wanted:
+                continue
+            ev_time = _event_time(row)
+            if ev_time is None:
+                # Keep events without time if they might be relevant
+                if wanted and currency in wanted:
+                    relevant.append(dict(row))
+                continue
+            if from_date <= ev_time <= to_date:
+                relevant.append(dict(row))
+        return sorted(relevant, key=lambda row: str(row.get("time_utc", "")))
+
     # ------------------------------------------------------------------
     # HTTP fetch
     # ------------------------------------------------------------------
@@ -164,6 +279,52 @@ class ForexFactoryClient:
         rows = self._parse_html(html)
         if not rows:
             raise RuntimeError("không đọc được bảng HTML")
+        return rows
+
+    def _fetch_json_events_nextweek(self) -> list[dict[str, object]]:
+        last_error = None
+        for attempt in range(3):
+            try:
+                request = Request(
+                    self.FOREX_FACTORY_NEXTWEEK_URL,
+                    headers={"User-Agent": "AI Market Analyst/1.0"},
+                )
+                with urlopen(request, timeout=10) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                return self._normalize_calendar_items(
+                    payload if isinstance(payload, list) else [], source="Forex Factory (nextweek)"
+                )
+            except HTTPError as exc:
+                last_error = RuntimeError(f"HTTP {exc.code}")
+                if exc.code == 429 and attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise last_error from exc
+            except URLError as exc:
+                last_error = RuntimeError(str(exc.reason))
+                if attempt < 2:
+                    time.sleep(1)
+                    continue
+                raise last_error from exc
+
+    def _fetch_html_events_nextweek(self) -> list[dict[str, object]]:
+        request = Request(
+            self.FOREX_FACTORY_NEXTWEEK_HTML_URL,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; AI Market Analyst/1.0)",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                html = response.read().decode("utf-8", errors="ignore")
+        except HTTPError as exc:
+            raise RuntimeError(f"HTTP {exc.code}") from exc
+        except URLError as exc:
+            raise RuntimeError(str(exc.reason)) from exc
+        rows = self._parse_html(html)
+        if not rows:
+            raise RuntimeError("không đọc được bảng HTML nextweek")
         return rows
 
     # ------------------------------------------------------------------

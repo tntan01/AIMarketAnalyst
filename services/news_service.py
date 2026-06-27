@@ -168,6 +168,13 @@ class NewsService:
 
     _preload_cache_time: datetime | None = None
     _preload_cache_ttl = timedelta(minutes=5)
+    NEWS_WINDOW_DAYS = 7
+
+    # Additional RSS feeds (free, no API key)
+    EXTRA_RSS_FEEDS = [
+        "https://www.fxstreet.com/rss/news",
+        "https://www.investing.com/rss/news_301.rss",
+    ]
 
     def preload_macro_contexts(self, symbols: list[str], progress_callback=None) -> None:
         """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores.
@@ -213,6 +220,258 @@ class NewsService:
 
         self._last_fetch_time = now
         self._preload_cache_time = now
+
+    # ------------------------------------------------------------------
+    # News Window API (±7 days for Dashboard display)
+    # ------------------------------------------------------------------
+    def fetch_news_window(
+        self,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+        currencies: list[str] | None = None,
+    ) -> dict[str, object]:
+        """Fetch headlines + calendar events in [from_date, to_date] range.
+
+        Defaults to ±NEWS_WINDOW_DAYS from now. Tries multiple sources with
+        graceful fallback. Returns a dict suitable for Dashboard display.
+        """
+        now = datetime.now(UTC)
+        if from_date is None:
+            from_date = now - timedelta(days=self.NEWS_WINDOW_DAYS)
+        if to_date is None:
+            to_date = now + timedelta(days=self.NEWS_WINDOW_DAYS)
+        if currencies is None:
+            currencies = []
+
+        # 1) Fetch headlines from multiple RSS sources
+        headlines, headline_sources = self._fetch_headlines_window(from_date, to_date)
+
+        # 2) Fetch calendar events
+        calendar_result: dict[str, object] = {"source": "", "events": [], "warning": ""}
+        try:
+            calendar_result = self._ff_client.calendar_events_window(currencies, from_date, to_date)
+        except Exception as exc:
+            calendar_result = {"source": "unavailable", "events": [], "warning": str(exc)}
+
+        events = calendar_result.get("events", [])
+        if not isinstance(events, list):
+            events = []
+
+        # 3) Store to disk cache
+        try:
+            self._store_news_cache(headlines, events)
+        except Exception:
+            pass
+
+        # 4) Build deduplicated, tagged combined list
+        combined = self._build_news_feed(headlines, events, from_date, to_date, now)
+
+        return {
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "headlines": headlines,
+            "events": events,
+            "combined": combined,
+            "sources": {
+                "headlines": headline_sources,
+                "calendar": str(calendar_result.get("source", "")),
+            },
+            "warnings": [w for w in [str(calendar_result.get("warning", "")).strip()] if w],
+        }
+
+    def _fetch_headlines_window(
+        self, from_date: datetime, to_date: datetime
+    ) -> tuple[list[dict[str, object]], list[str]]:
+        """Fetch headlines from Google News RSS → extra RSS feeds → disk cache."""
+        all_headlines: list[dict[str, object]] = []
+        sources: list[str] = []
+        seen: set[str] = set()
+
+        def add_items(items: list[dict[str, object]], source_label: str) -> None:
+            if items and source_label not in sources:
+                sources.append(source_label)
+            for item in items:
+                title_key = str(item.get("title", "")).lower().strip()
+                if not title_key or title_key in seen:
+                    continue
+                seen.add(title_key)
+                all_headlines.append(item)
+
+        # Source 1: Google News RSS (broad queries)
+        try:
+            broad_queries = [
+                "forex central bank Fed ECB BOJ BOE rate decision macro latest",
+                "global macro risk sentiment dollar yen euro pound forex markets",
+                "forex geopolitical oil gold safe haven latest",
+            ]
+            cutoff = from_date
+
+            def _fetch_one(query: str) -> list[dict[str, object]]:
+                items: list[dict[str, object]] = []
+                url = "https://news.google.com/rss/search?q=" + quote_plus(query) + "&hl=en-US&gl=US&ceid=US:en"
+                for item in self._rss_items(url, query=query):
+                    published = parse_rss_time(str(item.get("published_utc", "")))
+                    if not published or published < cutoff:
+                        continue
+                    items.append(item)
+                return items
+
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                futures = {ex.submit(_fetch_one, q): q for q in broad_queries}
+                for future in as_completed(futures):
+                    try:
+                        add_items(future.result(), "Google News RSS")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Source 2: Extra RSS feeds (FXStreet, Investing.com)
+        for feed_url in self.EXTRA_RSS_FEEDS:
+            try:
+                items = self._fetch_extra_rss(feed_url, from_date)
+                source_name = "FXStreet" if "fxstreet" in feed_url else "Investing.com"
+                add_items(items, source_name)
+            except Exception:
+                pass
+
+        # Fallback: disk cache
+        if not all_headlines:
+            try:
+                cached = self._read_news_cache()
+                cached_headlines = cached.get("headlines", [])
+                if isinstance(cached_headlines, list):
+                    for item in cached_headlines:
+                        if not isinstance(item, dict):
+                            continue
+                        published = parse_rss_time(str(item.get("published_utc", "")))
+                        if published and from_date <= published <= to_date:
+                            add_items([item], "Disk cache")
+            except Exception:
+                pass
+
+        # Sort by published date descending
+        all_headlines.sort(
+            key=lambda h: str(h.get("published_utc", "")),
+            reverse=True,
+        )
+        return all_headlines, sources
+
+    def _fetch_extra_rss(self, url: str, cutoff: datetime) -> list[dict[str, object]]:
+        """Fetch items from a standard RSS feed (FXStreet, Investing.com, etc.)."""
+        items: list[dict[str, object]] = []
+        try:
+            request = Request(url, headers={"User-Agent": "AI Market Analyst/1.0"})
+            with urlopen(request, timeout=8) as response:
+                payload = response.read()
+            root = ElementTree.fromstring(payload)
+        except Exception:
+            return items
+
+        for item in root.findall(".//item")[:15]:
+            title = clean_text(item.findtext("title") or "")
+            link = clean_text(item.findtext("link") or "")
+            source_name = clean_text(item.findtext("source") or "")
+            pub_str = item.findtext("pubDate") or ""
+            published = parse_rss_time(pub_str)
+            if not title:
+                continue
+            if published and published < cutoff:
+                continue
+            if not source_name:
+                source_name = url.split("/")[2].replace("www.", "")
+            tags = self._headline_tags(title)
+            items.append({
+                "source": source_name,
+                "title": title,
+                "url": link,
+                "published_utc": published.isoformat(timespec="minutes").replace("+00:00", "Z") if published else "",
+                "tags": tags,
+                "impact_note": self._headline_impact_note(title),
+            })
+        return items
+
+    def _build_news_feed(
+        self,
+        headlines: list[dict[str, object]],
+        events: list[dict[str, object]],
+        from_date: datetime,
+        to_date: datetime,
+        now: datetime,
+    ) -> list[dict[str, object]]:
+        """Merge headlines and calendar events into a unified sorted feed."""
+        combined: list[dict[str, object]] = []
+
+        for h in headlines:
+            pub = parse_rss_time(str(h.get("published_utc", "")))
+            combined.append({
+                "type": "headline",
+                "title": str(h.get("title", "")),
+                "source": str(h.get("source", "RSS")),
+                "url": str(h.get("url", "")),
+                "time_utc": pub.isoformat().replace("+00:00", "Z") if pub else "",
+                "display_time": pub,
+                "tags": h.get("tags", []),
+                "impact_note": str(h.get("impact_note", "")),
+            })
+
+        for ev in events:
+            ev_time = _event_time(ev)
+            combined.append({
+                "type": "event",
+                "title": str(ev.get("event", "")),
+                "currency": str(ev.get("currency", "")),
+                "impact": str(ev.get("impact", "low")),
+                "source": str(ev.get("source", "Forex Factory")),
+                "time_utc": str(ev.get("time_utc", "")),
+                "display_time": ev_time,
+                "forecast": str(ev.get("forecast", "")),
+                "previous": str(ev.get("previous", "")),
+                "actual": str(ev.get("actual", "")),
+                "tags": [],
+                "impact_note": "",
+            })
+
+        # Sort by time (items without time go last)
+        def sort_key(item: dict[str, object]) -> tuple[int, str]:
+            dt = item.get("display_time")
+            if isinstance(dt, datetime):
+                return (0, dt.isoformat())
+            return (1, "")
+
+        combined.sort(key=sort_key)
+        return combined
+
+    # ------------------------------------------------------------------
+    # News disk cache
+    # ------------------------------------------------------------------
+    def _news_cache_file(self) -> Path:
+        return app_data_dir() / "cache" / "news_cache.json"
+
+    def _read_news_cache(self) -> dict[str, object]:
+        try:
+            cache_file = self._news_cache_file()
+            if cache_file.exists():
+                return json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return {}
+
+    def _store_news_cache(
+        self, headlines: list[dict[str, object]], events: list[dict[str, object]]
+    ) -> None:
+        now = datetime.now(UTC)
+        cache_file = self._news_cache_file()
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(
+            json.dumps({
+                "date": now.strftime("%Y%m%d"),
+                "stored_utc": now.isoformat(),
+                "headlines": headlines[:50],
+                "events": events[:50],
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def _fetch_global_forex_headlines(self) -> list[dict[str, object]]:
         """Fetch 3 broad queries in parallel to get headlines for all currency pairs."""

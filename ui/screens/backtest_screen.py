@@ -245,7 +245,7 @@ class BacktestScreen(QWidget):
         account_grid.addWidget(self._field_cell("Chuỗi thua tối đa", self.max_consecutive_loss_input, 104), 4, 0)
         simulation_grid.addWidget(self._grid_label("Số nến"), 0, 0)
         simulation_grid.addWidget(self.max_holding_input, 0, 1)
-        simulation_grid.addWidget(self._grid_label("Điểm tối thiểu"), 0, 2)
+        simulation_grid.addWidget(self._grid_label("Min Score"), 0, 2)
         simulation_grid.addWidget(self.min_score_input, 0, 3)
         simulation_grid.addWidget(self._grid_label("Spread"), 1, 0)
         simulation_grid.addWidget(self.spread_input, 1, 1, 1, 3)
@@ -1623,7 +1623,7 @@ class BacktestInputHelpDialog(QDialog):
             "Nếu hết số nến mà chưa chạm TP/SL, backtest sẽ thoát theo quy tắc thời gian. Số lớn giữ lệnh lâu hơn.",
         ),
         (
-            "Điểm tối thiểu",
+            "Min Score",
             "Điểm final_score tối thiểu để được vào lệnh.",
             "Đặt 0 nghĩa là không lọc theo điểm. Tăng số này sẽ ít lệnh hơn nhưng kỳ vọng chất lượng setup cao hơn.",
         ),
