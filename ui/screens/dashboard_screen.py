@@ -270,7 +270,7 @@ class DashboardScreen(QWidget):
         tab_layout.addStretch()
 
         self.news_refresh_button = action_button("🔄 Làm mới", primary=True, color="info")
-        self.news_refresh_button.setToolTip("Tải lại tin tức & sự kiện (±7 ngày)")
+        self.news_refresh_button.setToolTip("Tải lại chỉ số thị trường, tin tức & sự kiện (±7 ngày)")
         self.news_refresh_button.clicked.connect(self.refresh_news_section)
         tab_layout.addWidget(self.news_refresh_button)
 
@@ -315,6 +315,8 @@ class DashboardScreen(QWidget):
             btn.setEnabled(False)
             btn.setText("⏳ Đang tải...")
             QApplication.processEvents()
+
+        self._refresh_market_overview()
 
         self.news_worker = NewsWorker(currencies=[])
         self.news_worker.finished.connect(self._on_news_data_ready)
