@@ -810,7 +810,7 @@ class AnalysisPipeline:
         action = self._decision_engine_result.get("legacy_action", "?")
         self._log_step(
             "final_score",
-            "pass" if final_sc >= 65 else "warning",
+            "pass" if final_sc >= (self._thresholds.get("ready", 65) if self._thresholds else 65) else "warning",
             f"Signal={best_signal_score} Evidence={evidence_score} Exec={self._eq_score} "
             f"| Final={final_sc}/100 | Decision: {decision} | Action: {action}",
             {
@@ -850,7 +850,7 @@ class AnalysisPipeline:
             "decision_summary": {
                 "main_view": self._main_view,
                 "action": self._decision_engine_result["legacy_action"],
-                "best_scenario": best_side if best_score >= 50 else "stand_aside",
+                "best_scenario": best_side if best_score >= (self._thresholds.get("wait", 55) if self._thresholds else 55) else "stand_aside",
                 "best_score": best_score,
                 "best_side": self._direction_bias.get("best_side"),
                 "score_gap": self._direction_bias.get("score_gap"),
@@ -1067,7 +1067,8 @@ def _build_main_view(symbol: str, side: str, score: int, action: str, permission
 
 
 def _fallback_ai_commentary(symbol: str, best_side: str, best_score: int, trade_permission: dict[str, Any]) -> str:
-    if trade_permission["status"] == "blocked" or best_score < 65:
+    min_threshold = trade_permission.get("min_score", 65)
+    if trade_permission["status"] == "blocked" or best_score < min_threshold:
         return (
             f"{symbol}: No clean setup / đứng ngoài tốt hơn. Hệ thống vẫn hiển thị số liệu kỹ thuật, "
             "nhưng AI chưa có nhận định riêng hoặc điều kiện giao dịch chưa sạch."

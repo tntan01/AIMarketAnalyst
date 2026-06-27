@@ -81,9 +81,9 @@ VALID_DECISIONS = frozenset({
 # ---------------------------------------------------------------------------
 
 DEFAULT_DECISION_THRESHOLDS: dict[str, int] = {
-    "ready": 80,
-    "watch": 65,
-    "wait": 50,
+    "ready": 65,
+    "watch": 60,
+    "wait": 55,
     "min_score_gap": 10,
 }
 
@@ -393,7 +393,7 @@ def make_final_decision(
     if (
         allow_aggressive_setup
         and norm_entry == "waiting_confirmation"
-        and score >= t.get("ready", 80)
+        and score >= t.get("ready", DEFAULT_DECISION_THRESHOLDS["ready"])
         and norm_cap is None
     ):
         code = [DECISION_AGGRESSIVE_SETUP]
@@ -481,7 +481,7 @@ def make_final_decision(
             "reason": "Entry confirmed và final score đủ mạnh.",
         }
 
-    if score >= t.get("watch", 65):
+    if score >= t.get("watch", DEFAULT_DECISION_THRESHOLDS["watch"]):
         reason_codes = [DECISION_WATCH_ONLY, DECISION_FINAL_SCORE_MODERATE]
         return {
             "decision": WATCH_ONLY,
@@ -497,7 +497,7 @@ def make_final_decision(
             "reason": "Entry confirmed nhưng score ở mức watch.",
         }
 
-    if score >= t.get("wait", 50):
+    if score >= t.get("wait", DEFAULT_DECISION_THRESHOLDS["wait"]):
         reason_codes = [DECISION_WAITING_CONFIRMATION]
         return {
             "decision": WAITING_CONFIRMATION,

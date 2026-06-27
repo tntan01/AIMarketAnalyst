@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from config.constants import AI_PROVIDERS, DEFAULT_AI_MODELS, DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
 from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
-from PyQt6.QtCore import QThread, Qt
-from PyQt6.QtGui import QIntValidator
+from PyQt6.QtCore import QThread, Qt, QEvent, QObject
+from PyQt6.QtGui import QIntValidator, QKeyEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -723,39 +723,29 @@ class SettingsScreen(QWidget):
         frame2.layout().addLayout(header_row)
 
         self.mt5_display_symbols = sorted(SUPPORTED_SYMBOLS)
-        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 10)
+        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 13)
         self.mt5_symbols_table.setObjectName("DataTable")
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
             "STT", "Mã hiển thị", "Mã broker trong MT5", "Trạng thái",
-            "Kiểm tra", "Kiểm thử", "Điểm tối thiểu", "Regime tự động", "Hướng tự động", "RR tối thiểu",
+            "Kiểm tra", "Kiểm thử", "Điểm tối thiểu", "Regime tự động",
+            "Hướng tự động", "RR tối thiểu", "Sẵn sàng", "Theo dõi", "Chờ",
         ])
         self.mt5_symbols_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.mt5_symbols_table.horizontalHeader().setMinimumHeight(38)
         self.mt5_symbols_table.verticalHeader().setVisible(False)
         self.mt5_symbols_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.mt5_symbols_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
+        for col_idx in range(13):
+            if col_idx == 2:
+                self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Stretch)
+            else:
+                self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.ResizeToContents)
         self.mt5_symbols_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(32)
-        self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(56)
-        self.mt5_symbols_table.setColumnWidth(3, 100)
-        self.mt5_symbols_table.setColumnWidth(4, 130)
-        self.mt5_symbols_table.setColumnWidth(5, 80)
-        self.mt5_symbols_table.setColumnWidth(6, 110)
-        self.mt5_symbols_table.setColumnWidth(7, 140)
-        self.mt5_symbols_table.setColumnWidth(8, 110)
-        self.mt5_symbols_table.setColumnWidth(9, 100)
+        self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(48)
         for row, symbol in enumerate(self.mt5_display_symbols):
-            for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", "", "", "", ""]):
+            for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", "", "", "", "", "", "", ""]):
                 item = QTableWidgetItem(value)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.mt5_symbols_table.setItem(row, col, item)
@@ -763,40 +753,74 @@ class SettingsScreen(QWidget):
             backtest_box = QCheckBox()
             backtest_box.setChecked(symbol_config.backtest)
             backtest_box.setToolTip("Tick nếu mã này đã backtest và được phép đưa vào scanner.")
+            backtest_box.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 5, self._centered_cell(backtest_box))
 
-            # Min Score (col 6)
-            min_score_val = symbol_config.min_score if symbol_config.min_score > 0 else symbol_config.decision_ready
-            min_score_input = QLineEdit(str(min_score_val))
+            # Min Score (col 6) — only editable when backtest=ON
+            _stored_min_score = symbol_config.min_score
+            if symbol_config.backtest and _stored_min_score > 0:
+                min_score_text = str(_stored_min_score)
+            else:
+                min_score_text = ""
+            min_score_input = QLineEdit(min_score_text)
             min_score_input.setObjectName("Mt5MinScoreInput")
             min_score_input.setValidator(QIntValidator(0, 100, min_score_input))
             min_score_input.setMaxLength(3)
             min_score_input.setFixedWidth(48)
             min_score_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
             min_score_input.setEnabled(symbol_config.backtest)
-            min_score_input.setToolTip("best_score ≥ mức này → tự động vào lệnh (auto-trade). Mặc định 65.")
-            backtest_box.toggled.connect(min_score_input.setEnabled)
+            min_score_input.setToolTip("Ghi đè ngưỡng Ready khi Kiểm thử=ON. Để trống = dùng Ready. Chỉnh trong khoảng 0-100.")
+            def _make_min_score_toggle(mi, stored):
+                def _toggle(checked):
+                    mi.setEnabled(checked)
+                    if not checked:
+                        mi.setText("")
+                    elif checked and not mi.text().strip():
+                        if stored > 0:
+                            mi.setText(str(stored))
+                return _toggle
+            backtest_box.toggled.connect(_make_min_score_toggle(min_score_input, _stored_min_score))
+            min_score_input.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(min_score_input))
 
-            # Auto Regime dropdown (col 9)
+            # Auto Regime dropdown (col 7)
+            REGIME_OPTIONS = [
+                ("", ""),
+                ("range", "đi ngang"),
+                ("trend_up", "tăng"),
+                ("trend_down", "giảm"),
+                ("volatile", "biến động"),
+            ]
             regime_combo = QComboBox()
-            regime_combo.addItems(["", "range", "trend_up", "trend_down", "volatile"])
-            regime_combo.setCurrentText(symbol_config.auto_trade_regime or "")
+            for _r_key, _r_label in REGIME_OPTIONS:
+                regime_combo.addItem(f"{_r_key} ({_r_label})" if _r_label else "", _r_key)
+            # Set current from stored English key
+            _stored_regime = symbol_config.auto_trade_regime or ""
+            _regime_idx = next((i for i in range(regime_combo.count()) if regime_combo.itemData(i) == _stored_regime), 0)
+            regime_combo.setCurrentIndex(_regime_idx)
             regime_combo.setEnabled(symbol_config.backtest)
-            regime_combo.setFixedWidth(122)
-            regime_combo.setToolTip("Chỉ auto-trade khi market regime khớp. Để trống nếu không lọc.")
+            regime_combo.setToolTip("Chỉ tự động vào lệnh khi chế độ thị trường khớp với lựa chọn này. Để trống nếu không muốn lọc.")
             backtest_box.toggled.connect(regime_combo.setEnabled)
-            self.mt5_symbols_table.setCellWidget(row, 7, self._centered_cell(regime_combo))
+            regime_combo.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 7, self._padded_cell(regime_combo))
 
-            # Auto Side dropdown (col 10)
+            # Auto Side dropdown (col 8)
+            SIDE_OPTIONS = [
+                ("best", "tốt nhất"),
+                ("buy", "mua"),
+                ("sell", "bán"),
+            ]
             side_combo = QComboBox()
-            side_combo.addItems(["best", "buy", "sell"])
-            side_combo.setCurrentText(symbol_config.auto_trade_side or "best")
+            for _s_key, _s_label in SIDE_OPTIONS:
+                side_combo.addItem(f"{_s_key} ({_s_label})", _s_key)
+            _stored_side = symbol_config.auto_trade_side or "best"
+            _side_idx = next((i for i in range(side_combo.count()) if side_combo.itemData(i) == _stored_side), 0)
+            side_combo.setCurrentIndex(_side_idx)
             side_combo.setEnabled(symbol_config.backtest)
-            side_combo.setFixedWidth(92)
-            side_combo.setToolTip("Hướng auto-trade. 'best' = dùng best_side từ phân tích.")
+            side_combo.setToolTip("Hướng tự động vào lệnh. 'best (tốt nhất)' = dùng hướng do hệ thống phân tích.")
             backtest_box.toggled.connect(side_combo.setEnabled)
-            self.mt5_symbols_table.setCellWidget(row, 8, self._centered_cell(side_combo))
+            side_combo.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 8, self._padded_cell(side_combo))
 
             # Min RR spinbox (col 11)
             min_rr = QDoubleSpinBox()
@@ -811,7 +835,41 @@ class SettingsScreen(QWidget):
             min_rr.setAlignment(Qt.AlignmentFlag.AlignCenter)
             min_rr.setToolTip("R:R kỳ vọng tối thiểu. Dùng cho cả gate chẩn đoán và auto-trade.")
             backtest_box.toggled.connect(min_rr.setEnabled)
+            min_rr.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr))
+
+            # Ready (col 10)
+            ready_input = QLineEdit(str(symbol_config.decision_ready))
+            ready_input.setValidator(QIntValidator(0, 100, ready_input))
+            ready_input.setMaxLength(3)
+            ready_input.setFixedWidth(40)
+            ready_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            ready_input.setObjectName("Mt5ReadyInput")
+            ready_input.setToolTip("Điểm cuối ≥ mức này → SẴN SÀNG vào lệnh. Mặc định 65.")
+            ready_input.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 10, self._centered_cell(ready_input))
+
+            # Watch (col 11)
+            watch_input = QLineEdit(str(symbol_config.decision_watch))
+            watch_input.setValidator(QIntValidator(0, 100, watch_input))
+            watch_input.setMaxLength(3)
+            watch_input.setFixedWidth(40)
+            watch_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            watch_input.setObjectName("Mt5WatchInput")
+            watch_input.setToolTip("Điểm cuối ≥ mức này → THEO DÕI. Mặc định 60.")
+            watch_input.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 11, self._centered_cell(watch_input))
+
+            # Wait (col 12)
+            wait_input = QLineEdit(str(symbol_config.decision_wait))
+            wait_input.setValidator(QIntValidator(0, 100, wait_input))
+            wait_input.setMaxLength(3)
+            wait_input.setFixedWidth(40)
+            wait_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            wait_input.setObjectName("Mt5WaitInput")
+            wait_input.setToolTip("Điểm cuối ≥ mức này → CHỜ XÁC NHẬN. Mặc định 55.")
+            wait_input.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 12, self._centered_cell(wait_input))
 
         frame2.layout().addWidget(self.mt5_symbols_table, 1)
         mt5_button_row = QHBoxLayout()
@@ -909,6 +967,83 @@ class SettingsScreen(QWidget):
         layout.addWidget(widget, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addStretch(1)
         return cell
+
+    def _padded_cell(self, widget: QWidget, *, margin_h: int = 6, margin_v: int = 2) -> QWidget:
+        cell = QWidget()
+        layout = QHBoxLayout(cell)
+        layout.setContentsMargins(margin_h, margin_v, margin_h, margin_v)
+        layout.setSpacing(0)
+        layout.addWidget(widget)
+        return cell
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Tab:
+                if self._focus_next_cell_widget(obj, forward=True):
+                    return True
+            elif event.key() == Qt.Key.Key_Backtab:
+                if self._focus_next_cell_widget(obj, forward=False):
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _focus_next_cell_widget(self, current_widget: QWidget, forward: bool) -> bool:
+        # Find row and col for this widget
+        target_row = -1
+        target_col = -1
+        parent_widget = current_widget.parent()
+
+        for r in range(self.mt5_symbols_table.rowCount()):
+            for c in [5, 6, 7, 8, 9, 10, 11, 12]:
+                cell_w = self.mt5_symbols_table.cellWidget(r, c)
+                if cell_w and (cell_w == parent_widget or cell_w == current_widget or cell_w.findChild(QWidget) == current_widget):
+                    target_row = r
+                    target_col = c
+                    break
+            if target_row != -1:
+                break
+
+        if target_row == -1:
+            return False
+
+        cols = [5, 6, 7, 8, 9, 10, 11, 12]
+        col_idx = cols.index(target_col)
+
+        if forward:
+            if col_idx < len(cols) - 1:
+                next_col = cols[col_idx + 1]
+                next_row = target_row
+            else:
+                next_col = cols[0]
+                next_row = (target_row + 1) % self.mt5_symbols_table.rowCount()
+        else:
+            if col_idx > 0:
+                next_col = cols[col_idx - 1]
+                next_row = target_row
+            else:
+                next_col = cols[-1]
+                next_row = (target_row - 1 + self.mt5_symbols_table.rowCount()) % self.mt5_symbols_table.rowCount()
+
+        next_cell = self.mt5_symbols_table.cellWidget(next_row, next_col)
+        if not next_cell:
+            return False
+
+        target_input = None
+        for child_type in [QCheckBox, QLineEdit, QComboBox, QDoubleSpinBox]:
+            child = next_cell.findChild(child_type)
+            if child:
+                target_input = child
+                break
+
+        if not target_input:
+            target_input = next_cell
+
+        if target_input:
+            target_input.setFocus(Qt.FocusReason.TabFocusReason)
+            if isinstance(target_input, QLineEdit):
+                target_input.selectAll()
+            return True
+
+        return False
 
     def _save_credentials(self) -> None:
         ds_map = {"MetaTrader 5": "mt5", "cTrader": "ctrader"}
@@ -1059,22 +1194,22 @@ class SettingsScreen(QWidget):
                 if isinstance(regime_cell, QWidget):
                     combo = regime_cell.findChild(QComboBox)
                     if combo:
-                        idx = combo.findText(regime_val)
+                        idx = next((i for i in range(combo.count()) if combo.itemData(i) == regime_val), -1)
                         if idx >= 0:
                             combo.setCurrentIndex(idx)
 
-            # Set "Hướng tự động" (col 10)
+            # Set "Hướng tự động" (col 8)
             side_val = cfg.get("side", "")
             if side_val:
                 side_cell = self.mt5_symbols_table.cellWidget(row, 8)
                 if isinstance(side_cell, QWidget):
                     combo = side_cell.findChild(QComboBox)
                     if combo:
-                        idx = combo.findText(side_val)
+                        idx = next((i for i in range(combo.count()) if combo.itemData(i) == side_val), -1)
                         if idx >= 0:
                             combo.setCurrentIndex(idx)
 
-            # Set "RR tối thiểu" (col 11)
+            # Set "RR tối thiểu" (col 9)
             rr_val = cfg.get("min_rr", 0)
             if rr_val:
                 rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
@@ -1106,24 +1241,55 @@ class SettingsScreen(QWidget):
             regime_cell = self.mt5_symbols_table.cellWidget(row, 7)
             side_cell = self.mt5_symbols_table.cellWidget(row, 8)
             min_rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
+            ready_cell = self.mt5_symbols_table.cellWidget(row, 10)
+            watch_cell = self.mt5_symbols_table.cellWidget(row, 11)
+            wait_cell = self.mt5_symbols_table.cellWidget(row, 12)
+
             backtest_box = backtest_cell.findChild(QCheckBox) if backtest_cell else None
             min_score_input = min_score_cell.findChild(QLineEdit) if min_score_cell else None
             regime_combo = regime_cell.findChild(QComboBox) if regime_cell else None
             side_combo = side_cell.findChild(QComboBox) if side_cell else None
             min_rr_spin = min_rr_cell.findChild(QDoubleSpinBox) if min_rr_cell else None
-            
+            ready_input = ready_cell.findChild(QLineEdit) if ready_cell else None
+            watch_input = watch_cell.findChild(QLineEdit) if watch_cell else None
+            wait_input = wait_cell.findChild(QLineEdit) if wait_cell else None
+
             backtested = bool(backtest_box and backtest_box.isChecked())
-            min_score = int(min_score_input.text() or 65) if min_score_input else 65
-            regime = str(regime_combo.currentText() or "").strip() if regime_combo else ""
-            side = str(side_combo.currentText() or "").strip() if side_combo else ""
+            regime = str(regime_combo.currentData() or "").strip() if regime_combo else ""
+            side = str(side_combo.currentData() or "").strip() if side_combo else ""
             min_rr = float(min_rr_spin.value() or 0) if min_rr_spin else 0.0
-            
+
+            # Min Score — only meaningful when backtest=ON, 0 means "use decision_ready"
+            min_score_text = min_score_input.text().strip() if min_score_input else ""
+            try:
+                min_score = int(min_score_text) if min_score_text else 0
+            except ValueError:
+                min_score = 0
+
+            # Validate Ready / Watch / Wait
+            decisions: dict[str, int] = {}
+            for field_name, widget in [("Ready", ready_input), ("Watch", watch_input), ("Wait", wait_input)]:
+                raw = widget.text().strip() if widget else ""
+                if not raw:
+                    QMessageBox.warning(self, "Lỗi nhập liệu",
+                        f"{field_name} cho {symbol} không được để trống. Nhập số nguyên từ 0-100.")
+                    return
+                try:
+                    val = int(raw)
+                    if val < 0 or val > 100:
+                        raise ValueError
+                except (ValueError, TypeError):
+                    QMessageBox.warning(self, "Lỗi nhập liệu",
+                        f"{field_name} cho {symbol} phải là số nguyên từ 0-100.")
+                    return
+                decisions[field_name] = val
+
             symbol_settings[symbol] = SymbolScanSettings(
                 backtest=backtested,
                 min_score=min_score,
-                decision_ready=80,
-                decision_watch=65,
-                decision_wait=50,
+                decision_ready=decisions["Ready"],
+                decision_watch=decisions["Watch"],
+                decision_wait=decisions["Wait"],
                 auto_trade_regime=regime,
                 auto_trade_side=side,
                 min_expected_rr=min_rr,

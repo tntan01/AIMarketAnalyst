@@ -47,7 +47,7 @@ Scanner có hai chế độ:
 - `Quét 1 lần`: quét và hiển thị kết quả, không tự động vào lệnh.
 - `Quét theo khoảng thời gian`: dùng timer quét lại định kỳ. Khi bật auto-trade, có thể tự động vào lệnh MT5 với bộ lọc riêng cho từng cặp.
 
-Mỗi cặp có thể được cấu hình ngưỡng quyết định riêng (`decision_ready`, `decision_watch`, `decision_wait`) trong `SymbolScanSettings`. Các ngưỡng này được truyền vào `decision_engine.make_final_decision()` để phân loại setup thành READY_TO_TRADE, WATCH_ONLY, WAITING_CONFIRMATION, hoặc STAND_ASIDE. Nếu không cấu hình riêng, hệ thống dùng mặc định ready=80, watch=65, wait=50.
+Mỗi cặp có thể được cấu hình ngưỡng quyết định riêng (`decision_ready`, `decision_watch`, `decision_wait`) trong `SymbolScanSettings`. Các ngưỡng này được truyền vào `decision_engine.make_final_decision()` để phân loại setup thành READY_TO_TRADE, WATCH_ONLY, WAITING_CONFIRMATION, hoặc STAND_ASIDE. Mặc định: ready=65, watch=60, wait=55.
 
 ### 3.2 Backtest
 
@@ -113,47 +113,97 @@ Nếu provider chưa kết nối, thiếu symbol, không lấy được OHLCV ho
 
 ## 7. Auto-entry
 
-Auto-entry được hỗ trợ có kiểm soát trong Scanner auto-scan, với bộ lọc cấu hình riêng cho từng cặp trong Settings > MT5.
+Auto-entry hoạt động theo cơ chế **hai nhánh** dựa trên cấu hình trong Settings > Dữ liệu. Cặp nào được bật Backtest và có filter riêng sẽ chạy **Nhánh B**, ngược lại chạy **Nhánh A**.
 
-Điều kiện bật:
+### 7.1 Nguồn dữ liệu cấu hình
 
-- Scanner đang ở chế độ `Quét theo khoảng thời gian`.
-- Người dùng bật nút chọn `Tự động vào lệnh`.
+Mỗi cặp được cấu hình trong `SymbolScanSettings` tại `config/settings.py`. Bảng cấu hình trong Settings > Dữ liệu gồm các cột:
 
-Điều kiện đặt lệnh (với cặp đã cấu hình auto-trade):
+| Cột | Trường | Mặc định | Ý nghĩa |
+|---|---|---|---|
+| Kiểm thử | `backtest` | OFF | Bật/tắt chế độ auto-trade riêng cho cặp |
+| Điểm tối thiểu | `min_score` | (rỗng) | Ghi đè ngưỡng Ready khi backtest=ON. Rỗng = dùng `decision_ready` |
+| Regime | `auto_trade_regime` | (rỗng) | Lọc regime, chỉ auto-trade khi khớp |
+| Hướng | `auto_trade_side` | best | Hướng vào lệnh: buy/sell/best |
+| RR tối thiểu | `min_expected_rr` | 1.3 | Ngưỡng effective R:R tối thiểu |
+| Ready | `decision_ready` | **65** | final_score ≥ mức này → READY_TO_TRADE |
+| Watch | `decision_watch` | **60** | final_score ≥ mức này → WATCH_ONLY |
+| Wait | `decision_wait` | **55** | final_score ≥ mức này → WAITING_CONFIRMATION |
 
-- Row không bị blocked (scanner_group != "blocked", trade_permission != "blocked").
-- Market regime khớp với `auto_trade_regime` trong cấu hình (nếu được đặt).
-- Expected effective R:R >= `min_expected_rr` (nếu được đặt).
-- Signal score >= 50.
-- Có scenario đúng hướng đã cấu hình (`auto_trade_side`) hoặc `best_side`.
-- Có `position_sizing.suggested_lot`, `stop_loss`, `take_profit`.
-- Tài khoản không có open position hoặc pending order cho cùng broker symbol.
+Các cột Ready, Watch, Wait **luôn hiển thị và có thể chỉnh sửa** cho mọi cặp, không phụ thuộc vào trạng thái Backtest. Cột Điểm tối thiểu **chỉ được nhập khi Backtest = ON**, ngược lại để trống và disabled.
 
-Đối với cặp chưa có cấu hình auto-trade (chưa backtest), hệ thống không tự động vào lệnh — chỉ hiển thị kết quả quét.
+### 7.2 Luồng pipeline chung (cả hai nhánh)
 
-Luồng đặt lệnh:
+Mỗi cặp khi quét đều chạy qua 2 lớp trong pipeline `AnalysisPipeline`:
+
+**Lớp 1 — Chấm điểm (Step 1→5):** Phân tích kỹ thuật (trend, momentum, location, SMC, risk, macro) → cho điểm BUY/SELL (0-100). Tạo scenario với Entry/SL/TP/R:R.
+
+**Lớp 2 — Gate (Step 6):** 11 gate kiểm tra an toàn tuần tự: MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken. Gate có thể Block (chặn cứng), Warning (hạ cap xuống WATCH_ONLY/WAITING_CONFIRMATION), hoặc Pass.
+
+**Decision Engine (Step 7):** Kết hợp score + gate + entry status để ra quyết định cuối cùng. Thứ tự ưu tiên: Gate block → Gate cap → Score gap → Entry status → Score so với thresholds. `ready` threshold được lấy từ `min_score` (nếu > 0) hoặc `decision_ready`.
+
+### 7.3 Nhánh A — Cặp KHÔNG có cấu hình auto-trade riêng (Backtest = OFF)
+
+**Pipeline:** Dùng thresholds từ `decision_ready/watch/wait` (mặc định 65/60/55). Không có cơ chế override.
+
+**Auto-trade:** `_is_auto_trade_candidate` yêu cầu điều kiện strict:
+- `scanner_action == "ready"` (decision engine phải ra READY_TO_TRADE)
+- `trade_permission == "allowed"`
+- Có scenario hợp lệ (Entry/SL/TP/Lot)
+
+**Tóm lại:** Chỉ vào lệnh khi pipeline tự tin 100%: score đạt ngưỡng, gate pass, entry confirmed.
+
+### 7.4 Nhánh B — Cặp CÓ cấu hình auto-trade riêng (Backtest = ON, có ít nhất 1 filter)
+
+**Pipeline:** Dùng thresholds từ Settings:
+- Nếu `min_score > 0`: `ready = min_score` (vd: 55), ngược lại dùng `decision_ready` (65)
+- `min_rr = min_expected_rr` (vd: 1.5) thay vì mặc định 1.3
+
+**`_apply_symbol_override` (chạy sau pipeline, trước auto-trade):**
+Nếu row đang `stand_aside` (entry invalidated hoặc score < wait), kiểm tra 4 điều kiện từ cấu hình backtest:
+1. Regime khớp `auto_trade_regime` (nếu được đặt)
+2. Side khớp `auto_trade_side` (nếu là buy/sell)
+3. Score ≥ `min_score`
+4. effective_rr ≥ `min_expected_rr`
+
+Cả 4 đạt → nâng `scanner_action` lên `ready`. Cơ chế này cho phép backtest "phủ quyết" pipeline khi pipeline quá conservative.
+
+**Auto-trade (`_execute_auto_trades`):** Không cần `scanner_action == "ready"`. Dùng bộ lọc backtest riêng:
+- Không bị blocked (gate, permission, journal_feedback)
+- Regime khớp (nếu được đặt)
+- `expected_effective_rr >= min_expected_rr` (nếu > 0)
+- `best_score >= min_score` (fallback 65 nếu min_score = 0)
+- Có scenario đúng hướng với Entry/SL/TP/Lot hợp lệ
+- Chưa có lệnh mở cho mã đó
+
+→ Đạt tất cả: **đặt lệnh Market Order ngay**, không cần pipeline phê duyệt.
+
+### 7.5 So sánh hai nhánh
+
+| | Nhánh A (không backtest) | Nhánh B (có backtest) |
+|---|---|---|
+| Ngưỡng ready | `decision_ready` (65) | `min_score` nếu > 0, else `decision_ready` |
+| Ngưỡng watch | `decision_watch` (60) | `decision_watch` (60) |
+| Ngưỡng wait | `decision_wait` (55) | `decision_wait` (55) |
+| Ngưỡng min_rr | 1.3 (cứng) | `min_expected_rr` |
+| Override stand_aside | Không | Có, nếu khớp 4 điều kiện |
+| Auto-trade điều kiện | `scanner_action == "ready"` | Vượt bộ lọc backtest |
+| Regime filter | Không | Có, nếu đặt |
+| Ai quyết định vào lệnh | Decision engine | Backtest config + gate |
+
+### 7.6 Luồng đặt lệnh
 
 1. Controller quét xong toàn bộ danh sách.
-2. Controller lọc các row đủ điều kiện.
-3. Với từng broker symbol, gọi `DataProvider.has_open_position_or_order()`.
-4. Nếu đã có position/order, bỏ qua symbol đó.
-5. Nếu chưa có, gọi `DataProvider.place_market_order()`.
-6. BUY dùng giá `ask`; SELL dùng giá `bid`.
-7. SL lấy từ `scenario.stop_loss`.
-8. TP dùng TP đầu tiên trong `scenario.take_profit`.
-9. Volume dùng `scenario.position_sizing.suggested_lot` sau khi chuẩn hóa xuống theo broker step.
-10. Kết quả trả về trong `output["auto_trade_results"]`.
+2. Với mỗi row, gọi `_apply_symbol_override` → gọi `_is_auto_trade_candidate`.
+3. Nếu candidate pass, gọi `DataProvider.has_open_position_or_order()`.
+4. Nếu chưa có lệnh, gọi `DataProvider.place_market_order()`.
+5. BUY dùng giá `ask`; SELL dùng giá `bid`.
+6. SL lấy từ `scenario.stop_loss`.
+7. TP dùng TP đầu tiên trong `scenario.take_profit`.
+8. Volume dùng `scenario.position_sizing.suggested_lot` sau khi chuẩn hóa theo broker step.
+9. Kết quả trả về trong `output["auto_trade_results"]`.
 
-`auto_trade_results` gồm:
-
-- `enabled`.
-- `attempted`.
-- `opened`.
-- `skipped`.
-- `errors`.
-- `orders`.
-- `risk_percent`.
+`auto_trade_results` gồm: `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`.
 
 Manual/one-shot scan không được đặt lệnh MT5.
 

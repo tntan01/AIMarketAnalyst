@@ -1065,29 +1065,39 @@ QTableView#DataTable::item {
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox {
   background: #111827;
   border: 1px solid #475569;
   border-radius: 6px;
   color: #e5e7eb;
-  min-height: 18px;
-  max-height: 18px;
+  min-height: 20px;
+  max-height: 20px;
+  font-size: 8pt;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput {
-  padding: 2px 6px;
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput {
+  padding: 0px 6px;
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox {
-  padding: 2px 28px 2px 8px;
+  padding: 0px 22px 0px 6px;
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput {
-  padding: 2px 6px;
+  padding: 0px 6px;
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput:focus,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput:focus,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput:focus,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput:focus,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput:focus,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox:focus,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox:on {
@@ -1095,6 +1105,9 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox:on {
 }
 
 QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput:disabled,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput:disabled,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput:disabled,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput:disabled,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput:disabled,
 QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox:disabled {
   background: #0f172a;
@@ -1218,7 +1231,7 @@ QTableWidget#DataTable QHeaderView::section {
   color: #f8fafc;
   font-size: 13px;
   font-weight: 800;
-  padding: 2px 8px;
+  padding: 6px 8px;
 }
 
 QTableView#DataTable QHeaderView::section:hover,

@@ -34,9 +34,9 @@ class SymbolScanSettings:
     min_score: int = 0
     auto_trade_regime: str = ""       # "range", "trend_up", etc. Empty = no filter
     auto_trade_side: str = ""         # "buy", "sell", "best". Empty = use best_side
-    decision_ready: int = 80          # final_score >= this → READY_TO_TRADE
-    decision_watch: int = 65          # final_score >= this → WATCH_ONLY
-    decision_wait: int = 50           # final_score >= this → WAITING_CONFIRMATION
+    decision_ready: int = 65          # final_score >= this → READY_TO_TRADE
+    decision_watch: int = 60          # final_score >= this → WATCH_ONLY
+    decision_wait: int = 55           # final_score >= this → WAITING_CONFIRMATION
     min_expected_rr: float = 1.3      # min expected_effective_rr for gate
 
 
