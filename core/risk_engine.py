@@ -575,12 +575,16 @@ def _build_sell_invalidation(stop_loss: float, h4_smc: dict[str, Any]) -> str:
 def select_best_level(
     zones: list[dict[str, Any]], price: float, max_distance: float, *, below: bool
 ) -> dict[str, Any] | None:
-    candidates = [
-        zone
-        for zone in zones
-        if (zone["level"] <= price + max_distance if below else zone["level"] >= price - max_distance)
-        and abs(zone["level"] - price) <= max_distance
-    ]
+    if below:
+        candidates = [
+            zone for zone in zones
+            if zone["level"] <= price and (price - zone["level"]) <= max_distance
+        ]
+    else:
+        candidates = [
+            zone for zone in zones
+            if zone["level"] >= price and (zone["level"] - price) <= max_distance
+        ]
     if not candidates:
         return None
     return sorted(

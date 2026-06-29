@@ -5,8 +5,9 @@ from html import escape
 from config.paths import app_data_dir
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSizePolicy,
-    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
+    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
+    QWidget,
 )
 from controllers.journal_controller import JournalController
 from services.storage_service import JsonStorage
@@ -63,6 +64,7 @@ class ScannerDetailScreen(QWidget):
         self.settings_service = app.settings_service if app else SettingsService()
         self.journal_controller = app.journal_controller if app else JournalController()
         self.row: dict[str, object] = {}
+        self.scanner_result: dict[str, object] = {}
         self.setObjectName("FormScreen")
         self._build_ui()
 
@@ -109,18 +111,74 @@ class ScannerDetailScreen(QWidget):
 
         ov.addLayout(left_col, 7)
 
-        # -- Right Col: Info Cards (Scrollable to prevent truncation) --
+        # -- Right Col: button + entry checklist (InfoCards moved to dialog) --
+        right_col = QVBoxLayout()
+        right_col.setSpacing(8)
+        right_col.setContentsMargins(0, 0, 0, 0)
+
+        self.show_detail_btn = action_button("📋 Xem chi tiết kết quả quét", primary=True, color="warning")
+        self.show_detail_btn.setObjectName("ShowScanDetailBtn")
+        self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.show_detail_btn.setToolTip("Xem toàn bộ chỉ số phân tích (điểm, R:R, vùng, vĩ mô...)")
+        self.show_detail_btn.setStyleSheet(
+            "QPushButton#ShowScanDetailBtn {"
+            "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "    stop:0 #d97706, stop:1 #ea580c);"
+            "  border: 1px solid #f59e0b;"
+            "  border-radius: 6px;"
+            "  color: #ffffff;"
+            "  font-size: 13px;"
+            "  font-weight: bold;"
+            "  padding: 8px 14px;"
+            "  letter-spacing: 0.3px;"
+            "}"
+            "QPushButton#ShowScanDetailBtn:hover {"
+            "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "    stop:0 #f59e0b, stop:1 #f97316);"
+            "  border-color: #fbbf24;"
+            "}"
+            "QPushButton#ShowScanDetailBtn:pressed {"
+            "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "    stop:0 #b45309, stop:1 #c2410c);"
+            "}"
+        )
+        self.show_detail_btn.clicked.connect(self._show_scan_detail_dialog)
+        right_col.addWidget(self.show_detail_btn)
+
+        # Entry checklist (visible, scrollable)
         self.right_scroll = QScrollArea()
         self.right_scroll.setWidgetResizable(True)
         self.right_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.right_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QWidget#RightContent { background: transparent; }")
+        self.right_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QWidget#RightContent { background: transparent; }"
+        )
+        right_content = QWidget()
+        right_content.setObjectName("RightContent")
+        right_content_layout = QVBoxLayout(right_content)
+        right_content_layout.setContentsMargins(0, 0, 0, 0)
+        right_content_layout.setSpacing(0)
 
-        right_widget = QWidget()
-        right_widget.setObjectName("RightContent")
-        right_grid = QGridLayout(right_widget)
-        right_grid.setHorizontalSpacing(6)
-        right_grid.setVerticalSpacing(6)
-        right_grid.setContentsMargins(0, 0, 0, 0)
+        self.entry_checklist_card = QFrame()
+        self.entry_checklist_card.setObjectName("EntryChecklistCard")
+        self.entry_checklist_layout = QVBoxLayout(self.entry_checklist_card)
+        self.entry_checklist_layout.setContentsMargins(14, 12, 14, 12)
+        self.entry_checklist_layout.setSpacing(6)
+        right_content_layout.addWidget(self.entry_checklist_card)
+        right_content_layout.addStretch(1)
+
+        self.right_scroll.setWidget(right_content)
+        right_col.addWidget(self.right_scroll, 1)
+
+        ov.addLayout(right_col, 3)
+
+        # -- Hidden container: InfoCards populated by _refresh_cards(), shown in dialog only --
+        self._cards_container = QWidget()
+        self._cards_container.setVisible(False)
+        _hidden_grid = QGridLayout(self._cards_container)
+        _hidden_grid.setHorizontalSpacing(6)
+        _hidden_grid.setVerticalSpacing(6)
+        _hidden_grid.setContentsMargins(0, 0, 0, 0)
 
         self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#ea580c")
         self.card_buysell = InfoCard("Mua / Bán", "--", "", accent="#fb7185")
@@ -128,7 +186,6 @@ class ScannerDetailScreen(QWidget):
         self.card_gap = InfoCard("Chênh lệch", "--", "", accent="#f59e0b")
         self.card_macro_score = InfoCard("Điểm vĩ mô", "--", "", accent="#38bdf8")
         self.card_rr = InfoCard("Tỷ lệ R:R", "--", "", accent="#ea580c")
-
         self.card_entry = InfoCard("Vùng vào lệnh", "--", "", accent="#10b981")
         self.card_position = InfoCard("Vị trí giá", "--", "", accent="#f59e0b")
         self.card_m15 = InfoCard("Khung M15", "--", "", accent="#f59e0b")
@@ -138,33 +195,20 @@ class ScannerDetailScreen(QWidget):
         self.card_journal_sample = InfoCard("Mẫu nhật ký", "--", "", accent="#9ca3af")
         self.card_journal_expectancy = InfoCard("Kỳ vọng NK", "--", "", accent="#38bdf8")
 
-        right_grid.addWidget(self.card_best, 0, 0)
-        right_grid.addWidget(self.card_buysell, 0, 1)
-        right_grid.addWidget(self.card_final, 1, 0)
-        right_grid.addWidget(self.card_gap, 1, 1)
-        right_grid.addWidget(self.card_macro_score, 2, 0)
-        right_grid.addWidget(self.card_rr, 2, 1)
-        right_grid.addWidget(self.card_entry, 3, 0)
-        right_grid.addWidget(self.card_position, 3, 1)
-        right_grid.addWidget(self.card_m15, 4, 0)
-        right_grid.addWidget(self.card_scanner_group, 4, 1)
-        right_grid.addWidget(self.card_regime, 5, 0)
-        right_grid.addWidget(self.card_permission, 5, 1)
-        right_grid.addWidget(self.card_journal_sample, 6, 0)
-        right_grid.addWidget(self.card_journal_expectancy, 6, 1)
-
-        # Entry checklist card (row 7, span 2 cols)
-        self.entry_checklist_card = QFrame()
-        self.entry_checklist_card.setObjectName("EntryChecklistCard")
-        self.entry_checklist_layout = QVBoxLayout(self.entry_checklist_card)
-        self.entry_checklist_layout.setContentsMargins(14, 12, 14, 12)
-        self.entry_checklist_layout.setSpacing(6)
-        right_grid.addWidget(self.entry_checklist_card, 7, 0, 1, 2)
-
-        right_grid.setRowStretch(8, 1)
-
-        self.right_scroll.setWidget(right_widget)
-        ov.addWidget(self.right_scroll, 3)
+        _hidden_grid.addWidget(self.card_best, 0, 0)
+        _hidden_grid.addWidget(self.card_buysell, 0, 1)
+        _hidden_grid.addWidget(self.card_final, 1, 0)
+        _hidden_grid.addWidget(self.card_gap, 1, 1)
+        _hidden_grid.addWidget(self.card_macro_score, 2, 0)
+        _hidden_grid.addWidget(self.card_rr, 2, 1)
+        _hidden_grid.addWidget(self.card_entry, 3, 0)
+        _hidden_grid.addWidget(self.card_position, 3, 1)
+        _hidden_grid.addWidget(self.card_m15, 4, 0)
+        _hidden_grid.addWidget(self.card_scanner_group, 4, 1)
+        _hidden_grid.addWidget(self.card_regime, 5, 0)
+        _hidden_grid.addWidget(self.card_permission, 5, 1)
+        _hidden_grid.addWidget(self.card_journal_sample, 6, 0)
+        _hidden_grid.addWidget(self.card_journal_expectancy, 6, 1)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 
@@ -226,7 +270,256 @@ class ScannerDetailScreen(QWidget):
 
     def set_analysis_result(self, payload: dict[str, object]) -> None:
         self.row = dict(payload.get("scanner_row", {}) or {})
+        self.scanner_result = dict(payload.get("scanner_result", {}) or {})
         self._render()
+
+    def _show_scan_detail_dialog(self) -> None:
+        """Open a dialog showing all InfoCards and the entry checklist."""
+        if not self.row:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Chưa có dữ liệu", "Chưa chọn mã nào từ bảng quét.")
+            return
+
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
+        symbol = str(self.row.get("symbol", "--"))
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"📋 Chi tiết kết quả quét — {symbol}")
+        dlg.setMinimumSize(680, 560)
+        dlg.resize(720, 620)
+        dlg.setObjectName("AnalysisDetailDialog")
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(20, 16, 20, 16)
+        root.setSpacing(12)
+
+        # Header
+        title_color = "#0f172a" if light else "#f8fafc"
+        sub_color = "#475569" if light else "#94a3b8"
+        title = QLabel(f"<b style='font-size:15px;color:{title_color};'>📋 Chi tiết kết quả quét — {symbol}</b>")
+        title.setTextFormat(Qt.TextFormat.RichText)
+        root.addWidget(title)
+
+        # Scrollable card grid
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        grid = QGridLayout(content)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        grid.setContentsMargins(0, 0, 0, 0)
+
+        # Re-create display cards inline for the dialog (read values from self.row directly)
+        card_defs = [
+            ("Điểm tốt nhất", self._dialog_card_best(), "#ea580c"),
+            ("Mua / Bán", self._dialog_card_buysell(), "#fb7185"),
+            ("Điểm cuối", self._dialog_card_final(), "#10b981"),
+            ("Chênh lệch", self._dialog_card_gap(), "#f59e0b"),
+            ("Điểm vĩ mô", self._dialog_card_macro(), "#38bdf8"),
+            ("Tỷ lệ R:R", self._dialog_card_rr(), "#ea580c"),
+            ("Vùng vào lệnh", self._dialog_card_entry(), "#10b981"),
+            ("Vị trí giá", self._dialog_card_position(), "#f59e0b"),
+            ("Khung M15", self._dialog_card_m15(), "#f59e0b"),
+            ("Nhóm scanner", self._dialog_card_group(), "#a78bfa"),
+            ("Chế độ TT", self._dialog_card_regime(), "#fb7185"),
+            ("Quyền giao dịch", self._dialog_card_permission(), "#e11d48"),
+            ("Mẫu nhật ký", self._dialog_card_journal_sample(), "#9ca3af"),
+            ("Kỳ vọng NK", self._dialog_card_journal_exp(), "#38bdf8"),
+        ]
+
+        bg = "#ffffff" if light else "#1a1f2e"
+        border = "#e2e8f0" if light else "#2b3545"
+        label_color = "#475569" if light else "#94a3b8"
+        value_color = "#0f172a" if light else "#f1f5f9"
+
+        for idx, (label_text, (value_text, detail_text, accent), _) in enumerate(card_defs):
+            row_i, col_i = divmod(idx, 2)
+            cell = QFrame()
+            cell.setStyleSheet(
+                f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
+            )
+            cell_l = QVBoxLayout(cell)
+            cell_l.setContentsMargins(12, 8, 12, 8)
+            cell_l.setSpacing(2)
+
+            accent_used = accent if accent else "#ea580c"
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color}; background: transparent; border: none;")
+            val = QLabel(value_text)
+            val.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {accent_used}; background: transparent; border: none;")
+            cell_l.addWidget(lbl)
+            cell_l.addWidget(val)
+            if detail_text:
+                det = QLabel(detail_text)
+                det.setStyleSheet(f"font-size: 11px; color: {label_color}; background: transparent; border: none;")
+                cell_l.addWidget(det)
+            grid.addWidget(cell, row_i, col_i)
+
+        # Entry checklist section
+        checklist_frame = QFrame()
+        checklist_frame.setStyleSheet(
+            f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
+        )
+        cl = QVBoxLayout(checklist_frame)
+        cl.setContentsMargins(14, 12, 14, 12)
+        cl.setSpacing(6)
+
+        ck_title = QLabel("🔍 Điều kiện vào lệnh")
+        ck_title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {value_color}; background: transparent; border: none;")
+        cl.addWidget(ck_title)
+
+        green = "#10b981"
+        red = "#e11d48"
+        for item in self._build_entry_checklist():
+            icon = "✅" if item["pass"] else "❌"
+            color = green if item["pass"] else red
+            row_w = QWidget()
+            row_w.setStyleSheet("background: transparent;")
+            row_l = QHBoxLayout(row_w)
+            row_l.setContentsMargins(0, 2, 0, 2)
+            row_l.setSpacing(8)
+            row_l.setAlignment(Qt.AlignmentFlag.AlignTop)
+            icon_lbl = QLabel(icon)
+            icon_lbl.setStyleSheet("font-size: 13px; background: transparent; border: none;")
+            icon_lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
+            row_l.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignTop)
+            text_lbl = QLabel(item["label"])
+            text_lbl.setStyleSheet(f"font-size: 13px; color: {color}; background: transparent; border: none;")
+            text_lbl.setWordWrap(True)
+            row_l.addWidget(text_lbl, 1)
+            cl.addWidget(row_w)
+
+        grid.addWidget(checklist_frame, len(card_defs) // 2, 0, 1, 2)
+        grid.setRowStretch(len(card_defs) // 2 + 1, 1)
+
+        scroll.setWidget(content)
+        root.addWidget(scroll, 1)
+
+        # Close button
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        close_btn = action_button("✖ Đóng")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+        dlg.exec()
+
+    # ---------------------------------------------------------------------------
+    # Dialog card value helpers — read from self.row, return (value, detail, accent)
+    # ---------------------------------------------------------------------------
+
+    def _dialog_card_best(self) -> tuple[str, str, str]:
+        best = self.row.get("best_score", "--")
+        rating = self._score_rating(int(best) if str(best).isdigit() else 0)
+        return f"{best}/100", rating, "#ea580c"
+
+    def _dialog_card_buysell(self) -> tuple[str, str, str]:
+        buy_s = self.row.get("buy_score", "--")
+        sell_s = self.row.get("sell_score", "--")
+        bias = self.row.get("direction_bias", {})
+        side_label = ""
+        if isinstance(bias, dict):
+            side = str(bias.get("best_side", ""))
+            clarity = "rõ" if bias.get("is_clear_bias") else "TB"
+            side_label = f"{'MUA' if side == 'buy' else 'BÁN' if side == 'sell' else '?'} {clarity}"
+        return f"{buy_s} / {sell_s}", side_label, "#fb7185"
+
+    def _dialog_card_final(self) -> tuple[str, str, str]:
+        final_v = self.row.get("final_score", "--")
+        return (f"{final_v}/100",
+                self._score_rating(int(final_v) if str(final_v).isdigit() else 0),
+                "#10b981")
+
+    def _dialog_card_gap(self) -> tuple[str, str, str]:
+        gap = self.row.get("score_gap", "--")
+        bias = self.row.get("direction_bias", {})
+        min_gap = str(bias.get("min_gap", "10")) if isinstance(bias, dict) else "10"
+        return self._compact_number(gap), f"tối thiểu {min_gap}", "#f59e0b"
+
+    def _dialog_card_macro(self) -> tuple[str, str, str]:
+        macro_val = self.row.get("macro_score", "--")
+        try:
+            macro_num = int(macro_val)
+        except (TypeError, ValueError):
+            macro_num = 15
+        conf = float(self.row.get("macro_confidence", 1.0))
+        dot = "●" if conf >= 0.8 else ("○" if conf >= 0.5 else "◌")
+        accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
+        detail = str(self.row.get("macro_bias", "--")).title()
+        return f"{dot} {macro_num}/30", detail, accent
+
+    def _dialog_card_rr(self) -> tuple[str, str, str]:
+        rr = self.row.get("risk_reward") or "--"
+        eff_rr = self.row.get("expected_effective_rr")
+        detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
+        return str(rr), detail, "#ea580c"
+
+    def _dialog_card_entry(self) -> tuple[str, str, str]:
+        val = self._entry_status_display()
+        accent = "#22c55e" if "Đã xác nhận" in val else "#fbbf24"
+        return val, "", accent
+
+    def _dialog_card_position(self) -> tuple[str, str, str]:
+        price_zone = str(self.row.get("price_vs_zone") or "").lower()
+        zone_map = {"in_zone": "Trong vùng", "near_zone": "Gần vùng", "far": "Còn xa", "unknown": "Chưa rõ"}
+        val = zone_map.get(price_zone, "Chưa rõ" if price_zone in ("unknown", "--", "") else price_zone.title())
+        return val, "", "#f59e0b"
+
+    def _dialog_card_m15(self) -> tuple[str, str, str]:
+        m15_raw = self._m15_text().lower()
+        m15_map = {"strict": "Chặt chẽ", "loose": "Lỏng lẻo", "chưa xác nhận": "Chưa xác nhận"}
+        val = m15_map.get(m15_raw, m15_raw.title())
+        accent = "#10b981" if m15_raw == "strict" else ("#f59e0b" if m15_raw == "loose" else "#e11d48")
+        return val, "", accent
+
+    def _dialog_card_group(self) -> tuple[str, str, str]:
+        group_raw = str(self.row.get("scanner_group") or "--")
+        group_map = {"ready_now": "Sẵn sàng ngay", "waiting_confirmation": "Chờ xác nhận",
+                     "watch_zone": "Theo dõi", "blocked": "Bị chặn"}
+        accent = {"ready_now": "#10b981", "waiting_confirmation": "#f59e0b",
+                  "watch_zone": "#f59e0b", "blocked": "#e11d48"}.get(group_raw, "#94a3b8")
+        return group_map.get(group_raw, group_raw), "", accent
+
+    def _dialog_card_regime(self) -> tuple[str, str, str]:
+        regime = str(self.row.get("market_regime") or "--").lower()
+        regime_map = {"trend_up": "Tăng", "trend_down": "Giảm", "range": "Đi ngang",
+                      "volatile": "Biến động", "unknown": "Chưa rõ", "--": "--"}
+        return regime_map.get(regime, regime.title()), "", "#fb7185"
+
+    def _dialog_card_permission(self) -> tuple[str, str, str]:
+        perm = str(self.row.get("trade_permission") or "--").lower()
+        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
+        accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#e11d48"}.get(perm, "#94a3b8")
+        return perm_map.get(perm, perm.title()), "", accent
+
+    def _dialog_card_journal_sample(self) -> tuple[str, str, str]:
+        sample = self.row.get("journal_sample_size", 0)
+        try:
+            val = str(int(sample))
+        except (TypeError, ValueError):
+            val = "0"
+        return val, "", "#9ca3af"
+
+    def _dialog_card_journal_exp(self) -> tuple[str, str, str]:
+        exp_r = self.row.get("journal_expectancy_r")
+        try:
+            exp_num = float(exp_r)
+            text = f"{exp_num:.2f}R"
+            accent = "#10b981" if exp_num > 0 else ("#e11d48" if exp_num < 0 else "#94a3b8")
+        except (TypeError, ValueError):
+            text = "--"
+            accent = "#94a3b8"
+        return text, "", accent
+
+
 
     def _render(self) -> None:
         while self.header_slot.count():
