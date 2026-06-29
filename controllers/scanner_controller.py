@@ -168,7 +168,9 @@ class ScannerController:
             for i, pkt in enumerate(packets):
                 symbol = request.symbols[i]
                 if pkt is None:
-                    rows.append(blocked_scanner_row(symbol, "Không tìm thấy mã broker."))
+                    row = blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
+                    row["auto_trade_branch"] = "A"
+                    rows.append(row)
                     continue
                 futures[
                     ex.submit(
@@ -189,7 +191,11 @@ class ScannerController:
                     row = future.result()
                 except Exception as exc:
                     row = blocked_scanner_row(symbol, f"Lỗi không mong đợi: {exc}")
-                row = self._apply_symbol_override(row, request.symbol_auto_trade.get(symbol))
+                # Tag branch type + config for diagnostics display
+                at_cfg = self._auto_trade_config(request, symbol)
+                row["auto_trade_branch"] = "B" if at_cfg else "A"
+                if at_cfg:
+                    row["auto_trade_config"] = dict(at_cfg)
                 rows.append(row)
 
         progress(74, "Đang xếp hạng setup theo rule engine...")
@@ -249,75 +255,6 @@ class ScannerController:
         if not regime and side not in ("buy", "sell") and not min_rr:
             return None
         return cfg
-
-    def _apply_symbol_override(self, row: dict[str, Any], cfg: dict[str, object] | None) -> dict[str, Any]:
-        """Apply per-symbol backtest-driven override from Settings.
-
-        If cfg is provided and the row's current action is ``stand_aside``,
-        check whether the setup matches the configured conditions (regime,
-        side, min_rr, min_score).  When ALL conditions match, upgrade the
-        action from ``stand_aside`` to ``ready``.
-
-        This replaces the old hard-coded ``range + buy + RR>=2.0 + score>=50``
-        override with per-symbol configuration sourced from backtest results.
-        """
-        if cfg is None:
-            return row
-        if not isinstance(cfg, dict):
-            return row
-
-        action = str(row.get("scanner_action") or "")
-        if action != "stand_aside":
-            return row
-
-        cfg_regime = str(cfg.get("regime", "")).strip().lower()
-        cfg_side = str(cfg.get("side", "")).strip().lower()
-        cfg_min_rr = float(cfg.get("min_rr", 0) or 0)
-        cfg_min_score = int(cfg.get("min_score", 0) or 0)
-
-        # No conditions configured — nothing to override
-        if not cfg_regime and cfg_side not in ("buy", "sell") and not cfg_min_rr and not cfg_min_score:
-            return row
-
-        # Regime check
-        actual_regime = str(row.get("market_regime", "")).strip().lower()
-        if cfg_regime and actual_regime != cfg_regime:
-            return row
-
-        # Side check
-        actual_side = str(row.get("best_side", "")).strip().lower()
-        if cfg_side in ("buy", "sell") and actual_side != cfg_side:
-            return row
-
-        # Min score check
-        if cfg_min_score > 0:
-            try:
-                score = int(row.get("final_score", row.get("best_score", 0)))
-            except (TypeError, ValueError):
-                score = 0
-            if score < cfg_min_score:
-                return row
-
-        # Min RR check
-        if cfg_min_rr > 0:
-            try:
-                rr = float(row.get("expected_effective_rr", 0) or 0)
-            except (TypeError, ValueError):
-                rr = 0.0
-            if rr < cfg_min_rr:
-                return row
-
-        # Gate/permission must not be blocked
-        if str(row.get("trade_permission", "")).strip().lower() == "blocked":
-            return row
-
-        # All conditions matched — upgrade
-        row["scanner_action"] = "ready"
-        row["scanner_group"] = "ready_now"
-        row["display_action"] = "ready"
-        row["scanner_decision"] = "READY_TO_TRADE"
-        row["short_reason"] = "Nâng cấp bởi cấu hình backtest"
-        return row
 
     def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
@@ -494,16 +431,152 @@ class ScannerController:
                     return scenario
         return {}
 
+    def _get_alert_order_candidates(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Filter scanner rows using the SAME gates as the 'Hiển thị lệnh' dialog.
+
+        Returns a list of order-candidate dicts with entry, SL, TP, volume, etc.
+        """
+        try:
+            settings = self.settings_service.load()
+        except Exception:
+            settings = None
+
+        candidates: list[dict[str, Any]] = []
+        for row in rows:
+            analysis = row.get("analysis_result")
+            if not isinstance(analysis, dict):
+                continue
+            if row.get("scanner_group") == "blocked":
+                continue
+            if str(row.get("trade_permission", "")).strip().lower() == "blocked":
+                continue
+            journal = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
+            if journal.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
+                continue
+
+            best_side = str(row.get("best_side", ""))
+            if best_side not in ("buy", "sell"):
+                continue
+
+            symbol = str(row.get("symbol", "--"))
+
+            # --- Backtest config gate (same as _build_order_rows) ---
+            if settings:
+                sym_cfg = settings.trading.symbol_settings.get(symbol)
+                if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
+                    slash_key = symbol[:3] + "/" + symbol[3:]
+                    sym_cfg = settings.trading.symbol_settings.get(slash_key)
+
+                if sym_cfg and sym_cfg.backtest:
+                    cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
+                    row_regime = str(row.get("market_regime", "")).strip().lower()
+                    if cfg_regime and row_regime and row_regime != cfg_regime:
+                        continue
+
+                    cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
+                    if cfg_side in ("buy", "sell") and best_side != cfg_side:
+                        continue
+
+                    cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
+                    if cfg_min_rr > 0:
+                        row_rr = row.get("expected_effective_rr")
+                        try:
+                            row_rr_f = float(row_rr) if row_rr is not None else 0.0
+                        except (TypeError, ValueError):
+                            row_rr_f = 0.0
+                        if row_rr_f < cfg_min_rr:
+                            continue
+
+                    cfg_min_score = int(sym_cfg.min_score or 0)
+                    if cfg_min_score > 0:
+                        best_score = int(row.get("best_score", 0) or 0)
+                        if best_score < cfg_min_score:
+                            continue
+
+            scenarios = analysis.get("scenarios", [])
+            if not isinstance(scenarios, list):
+                continue
+            scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
+            if not scenario:
+                continue
+
+            entry_zone = scenario.get("entry_zone")
+            if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+                entry_low = float(entry_zone[0])
+                entry_high = float(entry_zone[1])
+                entry_price = entry_high if best_side == "buy" else entry_low
+            else:
+                entry_low = entry_high = 0.0
+                entry_price = None
+
+            # --- Entry zone check: price must be inside entry zone ---
+            technical = analysis.get("technical", {}) if isinstance(analysis, dict) else {}
+            if not isinstance(technical, dict):
+                technical = {}
+            current_price = float(technical.get("price", 0) or 0)
+
+            if entry_low > 0 and entry_high > 0 and current_price > 0:
+                if not (entry_low <= current_price <= entry_high):
+                    continue
+
+            take_profit = scenario.get("take_profit")
+            if isinstance(take_profit, list) and take_profit:
+                tp = float(take_profit[0])
+            else:
+                try:
+                    tp = float(take_profit)
+                except (TypeError, ValueError):
+                    tp = None
+
+            sl = scenario.get("stop_loss")
+            try:
+                sl = float(sl)
+            except (TypeError, ValueError):
+                sl = None
+
+            sizing = scenario.get("position_sizing", {})
+            if not isinstance(sizing, dict):
+                sizing = {}
+            vol = sizing.get("suggested_lot")
+
+            rr = scenario.get("risk_reward", row.get("risk_reward", ""))
+
+            candidates.append({
+                "symbol": symbol,
+                "broker_symbol": str(row.get("broker_symbol") or "").strip(),
+                "side": best_side,
+                "entry_price": entry_price,
+                "stop_loss": sl,
+                "take_profit": tp,
+                "volume": vol,
+                "risk_reward": rr,
+                "entry_zone": entry_zone,
+                "entry_low": entry_low,
+                "entry_high": entry_high,
+                "market_regime": str(row.get("market_regime", "")),
+                "expected_effective_rr": row.get("expected_effective_rr"),
+                "best_score": int(row.get("best_score", 0) or 0),
+                "scanner_action": str(row.get("scanner_action", "")),
+                "trade_permission": str(row.get("trade_permission", "")),
+                "short_reason": str(row.get("short_reason") or row.get("permission_reason") or ""),
+                "scanner_group": str(row.get("scanner_group", "")),
+                "analysis_result": analysis,
+            })
+
+        return candidates
+
     def _send_telegram_alerts(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         notifications = self.settings_service.load().notifications
-        result = self.telegram_service.send_ready_trade_alerts(
-            rows,
+        # Filter using the SAME gates as "Hiển thị lệnh" dialog
+        candidates = self._get_alert_order_candidates(rows)
+        result = self.telegram_service.send_order_alerts(
+            candidates,
             bot_token=notifications.telegram_bot_token,
             chat_ids=notifications.telegram_chat_ids,
         )
-        # Gui alert tong ket (luon gui, ke ca khi khong co ma ready)
         summary_sent = self.telegram_service.send_summary_alert(
             rows,
+            candidates=candidates,
             bot_token=notifications.telegram_bot_token,
             chat_ids=notifications.telegram_chat_ids,
             timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),

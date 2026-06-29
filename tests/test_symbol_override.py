@@ -1,5 +1,8 @@
-"""Tests for _apply_symbol_override replacing the old hard-coded
-range+buy+RR>=2 override with per-symbol config from Settings."""
+"""Tests for auto-trade candidate logic: Branch A vs Branch B.
+
+Branch A (no backtest config): requires scanner_action == "ready"
+Branch B (backtest config): checks filters only, ignores scanner_action entirely.
+"""
 
 from __future__ import annotations
 
@@ -10,26 +13,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def _make_row(**overrides) -> dict:
-    """Build a realistic stand_aside scanner row."""
     row = {
         "symbol": "EUR/USD",
+        "broker_symbol": "EURUSD",
         "scanner_action": "stand_aside",
         "scanner_group": "stand_aside",
-        "display_action": "stand_aside",
-        "scanner_decision": "STAND_ASIDE",
         "trade_permission": "caution",
         "best_side": "buy",
-        "best_score": 55,
-        "final_score": 55,
+        "best_score": 68,
+        "final_score": 68,
         "market_regime": "range",
         "expected_effective_rr": 2.5,
-        "short_reason": "Score below threshold.",
-        "permission_reason": "",
-        "buy_score": 55,
-        "sell_score": 40,
-        "entry_status": "waiting_confirmation",
-        "m15_quality": "loose",
-        "risk_reward": "1:2.5",
+        "journal_feedback": {},
+        "analysis_result": {
+            "scenarios": [
+                {
+                    "type": "buy",
+                    "entry_zone": [1.0850, 1.0875],
+                    "stop_loss": 1.0820,
+                    "take_profit": [1.0920],
+                    "risk_reward": "1:2.5",
+                    "position_sizing": {"suggested_lot": 0.1},
+                }
+            ]
+        },
     }
     row.update(overrides)
     return row
@@ -37,184 +44,202 @@ def _make_row(**overrides) -> dict:
 
 def _make_controller():
     from controllers.scanner_controller import ScannerController
-    ctrl = ScannerController.__new__(ScannerController)
-    return ctrl
+    return ScannerController.__new__(ScannerController)
 
 
 # ---------------------------------------------------------------------------
-# Test 1: No config — row unchanged
+# Test 1: Branch A — stand_aside with no config → fails
 # ---------------------------------------------------------------------------
 
-def test_no_config_passes_through():
+def test_branch_a_stand_aside_fails():
     ctrl = _make_controller()
-    row = _make_row()
-    result = ctrl._apply_symbol_override(row, None)
-    assert result["scanner_action"] == "stand_aside"
-
-    result = ctrl._apply_symbol_override(row, {})
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_no_config_passes_through")
+    row = _make_row(scanner_action="stand_aside", trade_permission="allowed")
+    result = ctrl._is_auto_trade_candidate(row, None)
+    assert result is False, "Branch A: stand_aside should NOT auto-trade"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 2: Config matches all conditions — upgrades to ready
+# Test 2: Branch A — ready + allowed → passes
 # ---------------------------------------------------------------------------
 
-def test_config_matches_upgrades():
+def test_branch_a_ready_passes():
     ctrl = _make_controller()
-    row = _make_row()
-    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 50}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "ready"
-    assert result["scanner_group"] == "ready_now"
-    assert result["scanner_decision"] == "READY_TO_TRADE"
-
-    print("  PASS: test_config_matches_upgrades")
+    row = _make_row(scanner_action="ready", trade_permission="allowed")
+    result = ctrl._is_auto_trade_candidate(row, None)
+    assert result is True, "Branch A: ready + allowed should auto-trade"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Config regime mismatch — row unchanged
+# Test 3: Branch A — watch with no config → fails
 # ---------------------------------------------------------------------------
 
-def test_config_regime_mismatch():
+def test_branch_a_watch_fails():
+    ctrl = _make_controller()
+    row = _make_row(scanner_action="watch", trade_permission="allowed")
+    result = ctrl._is_auto_trade_candidate(row, None)
+    assert result is False, "Branch A: watch should NOT auto-trade"
+    print("  PASS")
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Branch B — stand_aside with matching config → passes!
+# ---------------------------------------------------------------------------
+
+def test_branch_b_stand_aside_passes():
+    ctrl = _make_controller()
+    row = _make_row(scanner_action="stand_aside")
+    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 65}
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is True, "Branch B: stand_aside with matching filters should pass"
+    print("  PASS")
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Branch B — watch with matching config → passes
+# ---------------------------------------------------------------------------
+
+def test_branch_b_watch_passes():
+    ctrl = _make_controller()
+    row = _make_row(scanner_action="watch")
+    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 65}
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is True, "Branch B: watch with matching filters should pass"
+    print("  PASS")
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Branch B — wait with matching config → passes
+# ---------------------------------------------------------------------------
+
+def test_branch_b_wait_passes():
+    ctrl = _make_controller()
+    row = _make_row(scanner_action="wait")
+    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 65}
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is True, "Branch B: wait with matching filters should pass"
+    print("  PASS")
+
+
+# ---------------------------------------------------------------------------
+# Test 7: Branch B — regime mismatch → fails
+# ---------------------------------------------------------------------------
+
+def test_branch_b_regime_mismatch():
     ctrl = _make_controller()
     row = _make_row(market_regime="trend_up")
     cfg = {"regime": "range", "side": "buy", "min_rr": 2.0}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_config_regime_mismatch")
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is False, "Branch B: wrong regime should fail"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Config side mismatch — row unchanged
+# Test 8: Branch B — side=buy forces buy trade, even if best_side=sell
+#          (config "side" is an override, not a filter)
 # ---------------------------------------------------------------------------
 
-def test_config_side_mismatch():
+def test_branch_b_side_override():
     ctrl = _make_controller()
+    # Pipeline says sell, but config says buy → overrides to buy
     row = _make_row(best_side="sell")
     cfg = {"regime": "range", "side": "buy", "min_rr": 2.0}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_config_side_mismatch")
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    # Should pass because config overrides side to "buy" and a buy scenario exists
+    assert result is True, "Branch B: side config overrides best_side, should find buy scenario"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Config RR too low — row unchanged
+# Test 9: Branch B — side=buy but no buy scenario -> falls back to best_side
 # ---------------------------------------------------------------------------
 
-def test_config_rr_too_low():
+def test_branch_b_side_override_fallback():
     ctrl = _make_controller()
-    row = _make_row(expected_effective_rr=1.5)
+    # Config forces "buy" but only "sell" scenario exists
+    # _best_scenario falls back to best_side ("sell") if forced side not found
+    row = _make_row(best_side="sell", analysis_result={"scenarios": [
+        {"type": "sell", "entry_zone": [1.0900, 1.0920], "stop_loss": 1.0950,
+         "take_profit": [1.0850], "risk_reward": "1:2.0", "position_sizing": {"suggested_lot": 0.1}}
+    ]})
     cfg = {"regime": "range", "side": "buy", "min_rr": 2.0}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_config_rr_too_low")
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    # Falls back to best_side="sell" scenario -> passes
+    assert result is True, "Branch B: side=buy no scenario -> falls back to best_side sell -> should pass"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Config score too low — row unchanged
+# Test 10: Branch B — RR too low -> fails
 # ---------------------------------------------------------------------------
 
-def test_config_score_too_low():
+def test_branch_b_rr_too_low():
     ctrl = _make_controller()
-    row = _make_row(best_score=45, final_score=45)
-    cfg = {"regime": "range", "side": "buy", "min_score": 50}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_config_score_too_low")
-
-
-# ---------------------------------------------------------------------------
-# Test 7: Already ready — not downgraded
-# ---------------------------------------------------------------------------
-
-def test_already_ready_not_downgraded():
-    ctrl = _make_controller()
-    row = _make_row(scanner_action="ready", scanner_group="ready_now")
+    row = _make_row(expected_effective_rr=1.2)
     cfg = {"regime": "range", "side": "buy", "min_rr": 2.0}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "ready"  # stays ready
-
-    print("  PASS: test_already_ready_not_downgraded")
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is False, "Branch B: RR too low should fail"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 8: Permission blocked — not upgraded
+# Test 10: Branch B — score too low → fails
 # ---------------------------------------------------------------------------
 
-def test_permission_blocked_not_upgraded():
+def test_branch_b_score_too_low():
+    ctrl = _make_controller()
+    row = _make_row(best_score=50, final_score=50)
+    cfg = {"regime": "range", "side": "buy", "min_score": 65}
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is False, "Branch B: score too low should fail"
+    print("  PASS")
+
+
+# ---------------------------------------------------------------------------
+# Test 11: Branch B — blocked permission → fails (regardless of config)
+# ---------------------------------------------------------------------------
+
+def test_branch_b_blocked_fails():
     ctrl = _make_controller()
     row = _make_row(trade_permission="blocked")
-    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 50}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_permission_blocked_not_upgraded")
+    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 65}
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is False, "Branch B: blocked permission should fail"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 9: Blank config (all empty) — no effect
+# Test 12: Branch B — blocked scanner_group → fails
 # ---------------------------------------------------------------------------
 
-def test_blank_config_no_effect():
+def test_branch_b_scanner_group_blocked():
     ctrl = _make_controller()
-    row = _make_row()
-    cfg = {"regime": "", "side": "", "min_rr": 0.0, "min_score": 0}
-
-    result = ctrl._apply_symbol_override(row, cfg)
-    assert result["scanner_action"] == "stand_aside"
-
-    print("  PASS: test_blank_config_no_effect")
+    row = _make_row(scanner_group="blocked")
+    cfg = {"regime": "range", "side": "buy", "min_rr": 2.0, "min_score": 65}
+    result = ctrl._is_auto_trade_candidate(row, cfg)
+    assert result is False, "Branch B: blocked scanner_group should fail"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
-# Test 10: Old hard-coded override behavior is gone
-# (stand_aside + range + buy + RR>=2.0 + score>=50 should NOT auto-upgrade without config)
+# Test 13: Branch B — empty config returns None → Branch A fallback
 # ---------------------------------------------------------------------------
 
-def test_old_hardcode_is_gone():
-    """Verify the hard-coded override in scanner_row_from_analysis is removed."""
-    from core.scanner import scanner_row_from_analysis
+def test_empty_config_falls_to_branch_a():
+    from core.scanner import ScannerRequest
+    ctrl = _make_controller()
 
-    # Build a mock analysis result matching the old hard-coded condition
-    # range + buy + RR>=2.0 + score>=50, decision says stand_aside
-    mock_result = {
-        "symbol": "EUR/USD",
-        "scenario_scores": {
-            "buy": {"signal_score": 55, "total": 55, "macro_alignment": 7},
-            "sell": {"signal_score": 40, "total": 40, "macro_alignment": 7},
-        },
-        "trade_permission": {"status": "caution", "reason": "M15 chưa xác nhận"},
-        "decision_engine": {"legacy_action": "stand_aside", "decision": "STAND_ASIDE"},
-        "decision_summary": {"best_side": "buy", "best_score": 55},
-        "market_regime": {"primary": "range"},
-        "scenarios": [
-            {"type": "buy", "expected_effective_rr": 2.5, "entry_status": "waiting_confirmation",
-             "m15_quality": "loose", "risk_reward": "1:2.5"},
-        ],
-        "final_score": 55,
-    }
-
-    row = scanner_row_from_analysis(mock_result, broker_symbol="EURUSD")
-    # With the old hard-code, this would be "ready".
-    # Now it should be "stand_aside" (no override without config).
-    assert row["scanner_action"] == "stand_aside", (
-        f"Expected stand_aside (no hard-code override), got {row['scanner_action']}"
+    # No filters set → _auto_trade_config returns None
+    req = ScannerRequest(
+        symbols=["EUR/USD"], account_balance=10000, risk_percent=1.0,
+        timezone_name="Asia/Ho_Chi_Minh",
+        symbol_auto_trade={"EUR/USD": {"regime": "", "side": "", "min_rr": 0}},
+        thresholds={}, min_scores={},
     )
-
-    print("  PASS: test_old_hardcode_is_gone")
+    at_cfg = ctrl._auto_trade_config(req, "EUR/USD")
+    assert at_cfg is None, "Empty filters → should return None → Branch A"
+    print("  PASS")
 
 
 # ---------------------------------------------------------------------------
@@ -223,20 +248,24 @@ def test_old_hardcode_is_gone():
 
 def run_all_tests():
     tests = [
-        ("No config passes through", test_no_config_passes_through),
-        ("Config matches upgrades", test_config_matches_upgrades),
-        ("Config regime mismatch", test_config_regime_mismatch),
-        ("Config side mismatch", test_config_side_mismatch),
-        ("Config RR too low", test_config_rr_too_low),
-        ("Config score too low", test_config_score_too_low),
-        ("Already ready not downgraded", test_already_ready_not_downgraded),
-        ("Permission blocked not upgraded", test_permission_blocked_not_upgraded),
-        ("Blank config no effect", test_blank_config_no_effect),
-        ("Old hardcode is gone", test_old_hardcode_is_gone),
+        ("Branch A: stand_aside fails", test_branch_a_stand_aside_fails),
+        ("Branch A: ready passes", test_branch_a_ready_passes),
+        ("Branch A: watch fails", test_branch_a_watch_fails),
+        ("Branch B: stand_aside passes", test_branch_b_stand_aside_passes),
+        ("Branch B: watch passes", test_branch_b_watch_passes),
+        ("Branch B: wait passes", test_branch_b_wait_passes),
+        ("Branch B: regime mismatch", test_branch_b_regime_mismatch),
+        ("Branch B: side override", test_branch_b_side_override),
+        ("Branch B: side override fallback", test_branch_b_side_override_fallback),
+        ("Branch B: RR too low", test_branch_b_rr_too_low),
+        ("Branch B: score too low", test_branch_b_score_too_low),
+        ("Branch B: blocked permission", test_branch_b_blocked_fails),
+        ("Branch B: scanner_group blocked", test_branch_b_scanner_group_blocked),
+        ("Empty config -> Branch A", test_empty_config_falls_to_branch_a),
     ]
 
     print("=" * 60)
-    print("Symbol Override Config Tests")
+    print("Auto-Trade Branch A/B Tests")
     print("=" * 60)
 
     passed = 0

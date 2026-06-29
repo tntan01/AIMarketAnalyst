@@ -161,7 +161,7 @@ def test_gate_html_from_pipeline_diagnostics():
     assert "Chênh lệch điểm" in html
     assert "Vùng bị phá" in html
     assert "C.BÁO" in html
-    assert "CHO PHÉP" in html  # gate.allowed = True
+    assert "CẢNH BÁO" in html  # gate.allowed = True but capped
     assert "WAITING_CONFIRMATION" in html
     assert "M15 xác nhận lỏng" in html
 
@@ -184,7 +184,7 @@ def test_gate_html_fallback():
     assert "Spread" in html
     assert "M15" in html
     assert "C.BÁO" in html
-    assert "CHO PHÉP" in html
+    assert "CẢNH BÁO" in html
 
     print("  PASS: test_gate_html_fallback")
 

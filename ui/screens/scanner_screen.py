@@ -1367,7 +1367,7 @@ class ScannerScreen (QWidget ):
     def _configured_scan_symbols (self ,settings )->list [str ]:
         return [
             symbol for symbol in SUPPORTED_SYMBOLS
-            if settings .trading .symbol_settings .get (symbol)and settings .trading .symbol_settings [symbol].backtest
+            if settings .trading .symbol_settings .get (symbol)
         ]
 
     def _update_symbol_summary (self )->None :
@@ -1375,7 +1375,7 @@ class ScannerScreen (QWidget ):
             return
         selected =self ._selected_symbols ()
         if not self .scan_symbols:
-            self .symbol_summary_label .setText ("Chưa có mã nào được đánh dấu Kiểm thử trong Cài đặt.")
+            self .symbol_summary_label .setText ("Chưa có mã nào được cấu hình trong Cài đặt.")
         elif not selected:
             self .symbol_summary_label .setText ("Chưa chọn mã khả dụng để quét.")
         elif len (selected )<=5:
@@ -1848,7 +1848,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
 
         intro = QLabel(
             "Tất cả các mã trong hệ thống. "
-            "Chỉ những mã đã tick Kiểm thử trong Cài đặt và có trong Market Watch mới chọn được."
+            "Mã có trong Market Watch là chọn được. Mã đã tick Backtest sẽ có đánh dấu ✅."
         )
         intro.setObjectName("HelperText")
         intro.setWordWrap(True)
@@ -1879,14 +1879,16 @@ class ScannerSymbolSelectionDialog (QDialog ):
             checkbox.setObjectName("ScannerSymbolCheck")
             in_market_watch = symbol in self.market_watch_symbols
             is_backtested = symbol in self.backtest_verified_symbols
-            selectable = in_market_watch and is_backtested
+            selectable = in_market_watch
             checkbox.setEnabled(selectable)
             checkbox.setChecked(selectable and symbol in selected_set)
             if not selectable:
-                if not is_backtested:
-                    checkbox.setToolTip("Mã này chưa được đánh dấu Kiểm thử trong Cài đặt.")
-                elif not in_market_watch:
-                    checkbox.setToolTip("Mã này chưa có trong Market Watch của MT5.")
+                checkbox.setToolTip("Mã này chưa có trong Market Watch của MT5.")
+            elif is_backtested:
+                checkbox.setText(f"{symbol}  ✅")
+                checkbox.setToolTip("Đã cấu hình Backtest — dùng filter từ backtest nếu có.")
+            else:
+                checkbox.setToolTip("Chưa tick Backtest — chạy theo điều kiện Ready mặc định.")
             self.checkboxes[symbol] = checkbox
             grid.addWidget(checkbox, index // 3, index % 3)
         scroll.setWidget(content)

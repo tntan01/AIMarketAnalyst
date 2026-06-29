@@ -91,7 +91,7 @@ class BacktestScreen(QWidget):
         root.setSpacing(10)
         root.addWidget(
             page_header(
-                "Kiểm thử hệ thống",
+                "Backtest",
                 "Chạy lại pipeline phân tích trên dữ liệu lịch sử để đo kỳ vọng, drawdown và lợi thế theo nhóm.",
             )
         )

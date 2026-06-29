@@ -62,6 +62,14 @@ def _make_mock_result() -> dict:
                             "profit_factor": 1.4, "max_drawdown_r": -6.0, "total_r": 2.0},
             },
         },
+        "symbol_stats": {
+            "EUR/USD": {"total_trades": 40, "win_rate": 47.5, "expectancy_r": 0.35,
+                        "profit_factor": 1.8, "max_drawdown_r": -5.0, "total_r": 14.0},
+            "GBP/USD": {"total_trades": 25, "win_rate": 40.0, "expectancy_r": 0.05,
+                        "profit_factor": 1.1, "max_drawdown_r": -8.5, "total_r": 2.5},
+            "USD/JPY": {"total_trades": 20, "win_rate": 45.0, "expectancy_r": 0.15,
+                        "profit_factor": 1.4, "max_drawdown_r": -6.0, "total_r": 2.0},
+        },
         "diagnostics": {
             "snapshots_evaluated": 5000,
             "setups_detected": 200,
@@ -231,7 +239,7 @@ def test_expanded_stats_html():
     assert "Tổng R" in html
 
     # New stats
-    assert "Phân bổ kết quả" in html
+    assert "Chi tiết thắng/thua" in html
     assert "Thắng" in html
     assert "Thua" in html
     assert "Hòa" in html
