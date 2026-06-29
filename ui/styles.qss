@@ -912,13 +912,15 @@ QTableView#DataTable {
 }
 
 QTableWidget#DataTable::item:hover,
-QTableView#DataTable::item:hover {
+QTableView#DataTable::item:hover,
+QTableWidget#EconTable::item:hover {
   background: #1c2533; /* Soft dark hover background */
   color: #e5e7eb;
 }
 
 QTableWidget#DataTable::item:selected,
-QTableView#DataTable::item:selected {
+QTableView#DataTable::item:selected,
+QTableWidget#EconTable::item:selected {
   background: #143735; /* Soft selected background */
   color: #e5e7eb;
 }

@@ -36,19 +36,25 @@ class MarketWorker(QThread):
         self.finished.emit(fetch_market_overview())
 
 class NewsWorker(QThread):
-    """Fetch news headlines + economic calendar for ±7 day window."""
+    """Fetch news headlines + economic calendar for the given date window."""
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, currencies=None):
+    def __init__(self, currencies=None, from_date=None, to_date=None):
         super().__init__()
         self.currencies = currencies or []
+        self.from_date = from_date
+        self.to_date = to_date
 
     def run(self):
         try:
             from services.news_service import NewsService
             svc = NewsService()
-            result = svc.fetch_news_window(currencies=self.currencies)
+            result = svc.fetch_news_window(
+                from_date=self.from_date,
+                to_date=self.to_date,
+                currencies=self.currencies,
+            )
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -63,7 +69,7 @@ class DashboardScreen(QWidget):
         self.settings_service = app.settings_service if app else SettingsService()
         self.status_cards: dict[str, tuple[QFrame, QLabel, QLabel]] = {}
         self._light = self._is_light_theme()
-        self._news_tab = "all"
+        self._news_tab = "this_week"
         self._news_data: dict = {}
         self.setObjectName("DashboardScreen")
         self._build_ui()
@@ -234,9 +240,9 @@ class DashboardScreen(QWidget):
 
         self.tab_buttons: dict[str, QPushButton] = {}
         tab_configs = [
-            ("all", "🌐 Tất cả"),
-            ("headlines", "📰 Tin tức"),
-            ("events", "📊 Sự kiện kinh tế"),
+            ("last_week", "📅 Tuần trước"),
+            ("this_week", "📅 Tuần này"),
+            ("next_week", "📅 Tuần sau"),
         ]
         for tab_key, tab_label in tab_configs:
             btn = QPushButton(tab_label)
@@ -248,8 +254,8 @@ class DashboardScreen(QWidget):
             tab_layout.addWidget(btn)
 
         self.news_scroll_btn = action_button("📍 Xem tin sắp tới", primary=True, color="info")
-        self.news_scroll_btn.setToolTip("Kéo tới tin sắp tới gần nhất")
-        self.news_scroll_btn.clicked.connect(self._scroll_to_nearest)
+        self.news_scroll_btn.setToolTip("Chuyển sang tuần này và kéo tới tin sắp tới gần nhất")
+        self.news_scroll_btn.clicked.connect(self._go_to_nearest)
         tab_layout.addWidget(self.news_scroll_btn)
 
         self.eval_today_btn = action_button("📊 Đánh giá hôm nay", primary=True, color="info")
@@ -270,7 +276,7 @@ class DashboardScreen(QWidget):
         tab_layout.addStretch()
 
         self.news_refresh_button = action_button("🔄 Làm mới", primary=True, color="info")
-        self.news_refresh_button.setToolTip("Tải lại chỉ số thị trường, tin tức & sự kiện (±7 ngày)")
+        self.news_refresh_button.setToolTip("Tải lại chỉ số thị trường, tin tức & sự kiện (3 tuần)")
         self.news_refresh_button.clicked.connect(self.refresh_news_section)
         tab_layout.addWidget(self.news_refresh_button)
 
@@ -318,7 +324,27 @@ class DashboardScreen(QWidget):
 
         self._refresh_market_overview()
 
-        self.news_worker = NewsWorker(currencies=[])
+        # Compute date range: last Monday 00:00 → next Sunday 23:59 (covers all 3 weeks)
+        from zoneinfo import ZoneInfo
+        try:
+            try:
+                settings = self.settings_service.load()
+                tz_str = settings.display.timezone
+            except Exception:
+                tz_str = "Asia/Ho_Chi_Minh"
+            tz = ZoneInfo(tz_str)
+        except Exception:
+            tz = ZoneInfo("Asia/Ho_Chi_Minh")
+
+        now_local = datetime.now(tz)
+        weekday = now_local.weekday()  # Monday=0
+        this_monday = (now_local - timedelta(days=weekday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        from_date = (this_monday - timedelta(days=7)).astimezone(timezone.utc)
+        to_date = (this_monday + timedelta(days=14)).astimezone(timezone.utc)
+
+        self.news_worker = NewsWorker(currencies=[], from_date=from_date, to_date=to_date)
         self.news_worker.finished.connect(self._on_news_data_ready)
         self.news_worker.error.connect(lambda e: self._show_news_empty(f"Lỗi: {e}"))
         self.news_worker.finished.connect(lambda: self._reset_news_button(btn))
@@ -360,7 +386,10 @@ class DashboardScreen(QWidget):
         try:
             fd = datetime.fromisoformat(str(result.get("from_date", "")))
             td = datetime.fromisoformat(str(result.get("to_date", "")))
-            self.news_date_range.setText(f"({fd.strftime('%d/%m')} — {td.strftime('%d/%m')})")
+            # Convert to user timezone for display
+            fd_local = fd.astimezone(tz) if fd.tzinfo else fd.replace(tzinfo=timezone.utc).astimezone(tz)
+            td_local = td.astimezone(tz) if td.tzinfo else td.replace(tzinfo=timezone.utc).astimezone(tz)
+            self.news_date_range.setText(f"({fd_local.strftime('%d/%m')} — {td_local.strftime('%d/%m')})")
         except Exception:
             self.news_date_range.setText("")
 
@@ -376,14 +405,47 @@ class DashboardScreen(QWidget):
 
         # Filter by active tab
         rows = self._filter_news_rows(combined)
-        self._render_news_rows(rows, tz, now_utc)
+        self._render_news_rows(rows, tz, now_utc, self._news_tab)
 
     def _filter_news_rows(self, combined: list) -> list:
-        if self._news_tab == "headlines":
-            return [r for r in combined if r.get("type") == "headline"]
-        elif self._news_tab == "events":
-            return [r for r in combined if r.get("type") == "event"]
-        return combined
+        """Filter combined news items by the active week tab (Mon 00:00 – Sun 23:59)."""
+        from zoneinfo import ZoneInfo
+
+        try:
+            try:
+                settings = self.settings_service.load()
+                tz_str = settings.display.timezone
+            except Exception:
+                tz_str = "Asia/Ho_Chi_Minh"
+            tz = ZoneInfo(tz_str)
+        except Exception:
+            tz = ZoneInfo("Asia/Ho_Chi_Minh")
+
+        now_local = datetime.now(tz)
+        weekday = now_local.weekday()  # Monday=0
+        this_monday = (now_local - timedelta(days=weekday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        if self._news_tab == "last_week":
+            start_local = this_monday - timedelta(days=7)
+            end_local = this_monday
+        elif self._news_tab == "next_week":
+            start_local = this_monday + timedelta(days=7)
+            end_local = this_monday + timedelta(days=14)
+        else:  # this_week
+            start_local = this_monday
+            end_local = this_monday + timedelta(days=7)
+
+        start_utc = start_local.astimezone(timezone.utc)
+        end_utc = end_local.astimezone(timezone.utc)
+
+        filtered: list[dict] = []
+        for r in combined:
+            dt = r.get("display_time")
+            if isinstance(dt, datetime) and start_utc <= dt < end_utc:
+                filtered.append(r)
+        return filtered
 
     def _switch_news_tab(self, tab_key: str) -> None:
         self._news_tab = tab_key
@@ -391,13 +453,19 @@ class DashboardScreen(QWidget):
         if self._news_data:
             from zoneinfo import ZoneInfo
             try:
-                tz = ZoneInfo("Asia/Ho_Chi_Minh")
+                try:
+                    settings = self.settings_service.load()
+                    tz_str = settings.display.timezone
+                except Exception:
+                    tz_str = "Asia/Ho_Chi_Minh"
+                tz = ZoneInfo(tz_str)
             except Exception:
-                tz = ZoneInfo("UTC")
+                tz = ZoneInfo("Asia/Ho_Chi_Minh")
             self._render_news_rows(
                 self._filter_news_rows(self._news_data.get("combined", [])),
                 tz,
                 datetime.now(timezone.utc),
+                self._news_tab,
             )
 
     def _update_tab_styles(self) -> None:
@@ -442,7 +510,7 @@ class DashboardScreen(QWidget):
                 btn.setStyleSheet(inactive_style)
                 btn.setChecked(False)
 
-    def _render_news_rows(self, rows: list, tz, now_utc: datetime) -> None:
+    def _render_news_rows(self, rows: list, tz, now_utc: datetime, tab_key: str = "this_week") -> None:
         self._light = self._is_light_theme()
         table = self.news_table
         table.setRowCount(0)
@@ -453,7 +521,7 @@ class DashboardScreen(QWidget):
 
         impact_dots = {"high": "🔴", "medium": "🟡", "low": "⚪"}
 
-        # --- Split into 3 zones ---
+        # --- Split into zones based on tab context ---
         past_rows: list[dict] = []
         nearest_row: dict | None = None
         future_rows: list[dict] = []
@@ -465,6 +533,8 @@ class DashboardScreen(QWidget):
                 continue
             if dt < now_utc:
                 past_rows.append(row)
+            elif tab_key == "next_week":
+                future_rows.append(row)  # no "nearest" highlight for next week
             elif nearest_row is None:
                 nearest_row = row
             else:
@@ -649,6 +719,13 @@ class DashboardScreen(QWidget):
 
         # Auto-scroll to nearest upcoming after render
         QTimer.singleShot(50, self._scroll_to_nearest)
+
+    def _go_to_nearest(self) -> None:
+        """Switch to this week's tab and scroll to the nearest upcoming item."""
+        if self._news_tab != "this_week":
+            self._switch_news_tab("this_week")
+        else:
+            self._scroll_to_nearest()
 
     def _scroll_to_nearest(self) -> None:
         """Scroll the news table so the nearest upcoming item is at the top."""

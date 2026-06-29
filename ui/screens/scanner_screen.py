@@ -439,11 +439,16 @@ class ScannerScreen (QWidget ):
         self .scan_mode_combo .currentIndexChanged .connect (self ._update_auto_trade_toggle_state )
         self ._update_auto_trade_toggle_state ()
 
-        self .scan_button =action_button ('🔎 Quét thị trường',primary =True ,color ="info")
+        self.scan_button = action_button("🔍 Quét thị trường", primary=True, color="info")
         self .scan_button .clicked .connect (self ._run_scan )
         self .stop_auto_scan_button =action_button ("⏹️ Dừng quét tự động",primary =True ,color ="danger")
         self .stop_auto_scan_button .setVisible (False )
         self .stop_auto_scan_button .clicked .connect (self ._stop_auto_scan )
+
+        self.show_orders_button = action_button("📋 Hiển thị lệnh", primary=True, color="info")
+        self.show_orders_button.setToolTip("Xem danh sách lệnh sẽ được vào / đã vào từ MT5")
+        self.show_orders_button.clicked.connect(self._show_orders_dialog)
+        self._dim_show_orders_button()
 
         scan_options =QHBoxLayout ()
         scan_options .addWidget (QLabel ("Chế độ"))
@@ -453,6 +458,7 @@ class ScannerScreen (QWidget ):
         scan_options .addWidget (self .auto_trade_check )
         scan_options .addWidget (self .stop_auto_scan_button )
         scan_options .addWidget (self .scan_button )
+        scan_options .addWidget (self .show_orders_button )
         scan_options .addStretch (1 )
         frame .layout ().addLayout (scan_options )
 
@@ -513,6 +519,750 @@ class ScannerScreen (QWidget ):
         if not is_auto_mode and self .auto_trade_check .isChecked ():
             self .auto_trade_check .setChecked (False )
         self ._update_auto_trade_toggle_style ()
+
+    # ------------------------------------------------------------------
+    # Show Orders button
+    # ------------------------------------------------------------------
+    def _dim_show_orders_button(self) -> None:
+        """Dim the 'Hiển thị lệnh' button to indicate no scan data available."""
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+        muted_fg = "#9ca3af" if light else "#6b7280"
+        muted_border = "#d1d5db" if light else "#374151"
+        self.show_orders_button.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size:12px; font-weight:500; padding:0px 6px;"
+            f"  min-height:24px; max-height:24px;"
+            f"  background:transparent; color:{muted_fg};"
+            f"  border:1px solid {muted_border}; border-radius:6px;"
+            f"}}"
+        )
+
+    def _highlight_show_orders_button(self) -> None:
+        """Highlight the 'Hiển thị lệnh' button after a scan completes."""
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+        accent_bg = "#D94625" if light else "#ea580c"
+        accent_hover = "#E0533C" if light else "#f97316"
+        self.show_orders_button.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size:12px; font-weight:700; padding:0px 6px;"
+            f"  min-height:24px; max-height:24px;"
+            f"  background:{accent_bg}; color:#ffffff; border:none; border-radius:6px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background:{accent_hover};"
+            f"}}"
+        )
+
+    def _show_orders_dialog(self) -> None:
+        """Show a dialog listing trade orders (actual or would-be)."""
+        scan_result = getattr(self, "scan_result", None)
+        if not scan_result:
+            QMessageBox.information(self, "Hiển thị lệnh",
+                "Chưa có kết quả quét.\nHãy quét thị trường trước.")
+            return
+
+        rows = list(scan_result.get("rows", []))
+        if not rows:
+            QMessageBox.information(self, "Hiển thị lệnh",
+                "Kết quả quét không có mã nào.")
+            return
+
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
+        auto_trade_enabled = self._auto_trade_enabled()
+        auto_results = scan_result.get("auto_trade_results", {})
+        if not isinstance(auto_results, dict):
+            auto_results = {}
+
+        order_rows = self._build_order_rows(rows, auto_trade_enabled, auto_results)
+        if not order_rows:
+            QMessageBox.information(self, "Hiển thị lệnh",
+                "Không có lệnh nào được khớp.\n"
+                "Kiểm tra lại điều kiện vào lệnh hoặc kết quả quét.")
+            return
+
+        # Build dialog
+        dlg = QDialog(self)
+        title_text = "Lệnh đã vào MT5" if auto_trade_enabled else "Lệnh sẽ được khớp"
+        dlg.setWindowTitle(f"📋 {title_text}")
+        dlg.setMinimumSize(940, 560)
+        dlg.resize(980, 620)
+        dlg.setObjectName("AnalysisDetailDialog")
+
+        # Lư Trung Hỏa theme color variables
+        lth_bg = "#D94625" if light else "#ea580c"
+        lth_hover = "#E0533C" if light else "#f97316"
+        disabled_bg = "#e5e7eb" if light else "#1f2937"
+        disabled_fg = "#9ca3af" if light else "#4b5563"
+        disabled_border = "#d1d5db" if light else "#374151"
+
+        active_btn_style = f"""
+            QPushButton {{
+                font-size: 11px;
+                font-weight: bold;
+                padding-left: 12px;
+                padding-right: 8px;
+                padding-top: 0px;
+                padding-bottom: 0px;
+                min-height: 22px;
+                max-height: 22px;
+                border-radius: 4px;
+                background-color: {lth_bg};
+                color: #ffffff;
+                border: none;
+            }}
+            QPushButton:hover {{
+                background-color: {lth_hover};
+            }}
+        """
+
+        disabled_btn_style = f"""
+            QPushButton {{
+                font-size: 11px;
+                font-weight: bold;
+                padding-left: 12px;
+                padding-right: 8px;
+                padding-top: 0px;
+                padding-bottom: 0px;
+                min-height: 22px;
+                max-height: 22px;
+                border-radius: 4px;
+                background-color: {disabled_bg};
+                color: {disabled_fg};
+                border: 1px solid {disabled_border};
+            }}
+        """
+
+        # Action button helper for manual trade execution
+        def execute_manual_order(order_info: dict, btn: QPushButton) -> None:
+            btn.setEnabled(False)
+            btn.setText("Đang đặt...")
+            btn.setStyleSheet(disabled_btn_style)
+            from PyQt6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+            symbol = order_info.get("symbol")
+            broker_symbol = order_info.get("broker_symbol")
+            side = order_info.get("side")
+            volume = order_info.get("volume")
+            stop_loss = order_info.get("stop_loss")
+            take_profit = order_info.get("take_profit")
+
+            # Validate required numeric fields
+            try:
+                vol_f = float(volume or 0.0)
+                sl_f = float(stop_loss) if stop_loss is not None else 0.0
+                tp_f = float(take_profit) if take_profit is not None else 0.0
+            except (TypeError, ValueError):
+                QMessageBox.warning(dlg, "Lỗi dữ liệu",
+                    f"Dữ liệu lệnh {symbol} không hợp lệ (volume/SL/TP).")
+                btn.setEnabled(True)
+                btn.setText("⚡ Vào lệnh")
+                btn.setStyleSheet(active_btn_style)
+                return
+            if vol_f <= 0 or sl_f <= 0 or tp_f <= 0:
+                QMessageBox.warning(dlg, "Lỗi dữ liệu",
+                    f"Dữ liệu lệnh {symbol} không hợp lệ (volume/SL/TP phải > 0).\n"
+                    f"Vol={vol_f}, SL={sl_f}, TP={tp_f}")
+                btn.setEnabled(True)
+                btn.setText("⚡ Vào lệnh")
+                btn.setStyleSheet(active_btn_style)
+                return
+
+            if not broker_symbol:
+                try:
+                    available = self.data_provider.available_symbols()
+                    broker_symbol = self.data_provider.resolve_symbol(symbol, available)
+                except Exception:
+                    broker_symbol = None
+
+            if not broker_symbol:
+                QMessageBox.warning(dlg, "Lỗi vào lệnh", f"Không tìm thấy mã broker cho {symbol}")
+                btn.setEnabled(True)
+                btn.setText("⚡ Vào lệnh")
+                btn.setStyleSheet(active_btn_style)
+                return
+
+            # --- Backtest config + distance gate checks ---
+            gate_blocked = False
+            try:
+                settings = self.settings_service.load()
+                # Normalize symbol format: rows use "USDCHF", settings use "USD/CHF"
+                sym_cfg = settings.trading.symbol_settings.get(symbol)
+                if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
+                    slash_key = symbol[:3] + "/" + symbol[3:]
+                    sym_cfg = settings.trading.symbol_settings.get(slash_key)
+                if sym_cfg and sym_cfg.backtest:
+                    # Regime check
+                    cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
+                    row_regime = str(order_info.get("market_regime", "")).strip().lower()
+                    if cfg_regime and row_regime and row_regime != cfg_regime:
+                        QMessageBox.warning(dlg, "Không đạt điều kiện vào lệnh",
+                            f"{symbol}: chế độ thị trường hiện tại ({row_regime}) "
+                            f"không khớp cấu hình backtest ({cfg_regime}).")
+                        gate_blocked = True
+
+                    # Side check
+                    if not gate_blocked:
+                        cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
+                        order_side = str(order_info.get("side", "")).strip().lower()
+                        if cfg_side in ("buy", "sell") and order_side != cfg_side:
+                            QMessageBox.warning(dlg, "Không đạt điều kiện vào lệnh",
+                                f"{symbol}: hướng lệnh ({order_side}) không khớp "
+                                f"cấu hình backtest ({cfg_side}).")
+                            gate_blocked = True
+
+                    # Min RR check
+                    if not gate_blocked:
+                        cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
+                        if cfg_min_rr > 0:
+                            row_rr = order_info.get("expected_effective_rr")
+                            try:
+                                row_rr_f = float(row_rr) if row_rr is not None else 0.0
+                            except (TypeError, ValueError):
+                                row_rr_f = 0.0
+                            if row_rr_f < cfg_min_rr:
+                                QMessageBox.warning(dlg, "Không đạt điều kiện vào lệnh",
+                                    f"{symbol}: Expected RR ({row_rr_f:.2f}) thấp hơn "
+                                    f"ngưỡng backtest ({cfg_min_rr:.2f}).")
+                                gate_blocked = True
+
+                # Entry zone check: price must be inside entry zone
+                if not gate_blocked:
+                    entry_zone = order_info.get("entry_zone")
+                    if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+                        try:
+                            entry_low = float(entry_zone[0])
+                            entry_high = float(entry_zone[1])
+                        except (TypeError, ValueError):
+                            entry_low = entry_high = 0.0
+
+                        if entry_low > 0 and entry_high > 0:
+                            try:
+                                import MetaTrader5 as mt5
+                                tick = mt5.symbol_info_tick(broker_symbol)
+                                order_side = str(order_info.get("side", "")).strip().lower()
+                                current_price = float(tick.ask) if order_side == "buy" else float(tick.bid)
+                            except Exception:
+                                current_price = float(order_info.get("entry_price", 0) or 0)
+
+                            if current_price > 0 and not (entry_low <= current_price <= entry_high):
+                                QMessageBox.warning(dlg, "Giá ngoài vùng entry",
+                                    f"{symbol}: giá hiện tại {current_price:.5f} nằm ngoài vùng entry "
+                                    f"[{entry_low:.5f}–{entry_high:.5f}].\n\n"
+                                    f"Chỉ vào lệnh khi giá nằm trong vùng entry.")
+                                gate_blocked = True
+            except Exception:
+                pass  # If gate check fails for any reason, allow the order
+
+            if gate_blocked:
+                btn.setEnabled(True)
+                btn.setText("⚡ Vào lệnh")
+                btn.setStyleSheet(active_btn_style)
+                return
+
+            try:
+                # Pre-check: MT5 terminal algo trading status
+                try:
+                    import MetaTrader5 as mt5
+                    term_info = mt5.terminal_info()
+                    if term_info and not getattr(term_info, "trade_allowed", True):
+                        QMessageBox.warning(dlg, "Không thể vào lệnh",
+                            f"MT5 đang chặn giao dịch tự động (Algo Trading).\n\n"
+                            f"Vào MT5 → Tools → Options → Expert Advisors → "
+                            f"tích chọn 'Allow Algo Trading'.\n\n"
+                            f"Sau đó thử lại.")
+                        btn.setEnabled(True)
+                        btn.setText("⚡ Vào lệnh")
+                        btn.setStyleSheet(active_btn_style)
+                        return
+                except Exception:
+                    pass  # terminal_info() not available, proceed anyway
+
+                if self.data_provider.has_open_position_or_order(broker_symbol):
+                    QMessageBox.information(dlg, "Thông báo", f"Đã có lệnh/position cho {symbol} ({broker_symbol}).")
+                    btn.setText("Đã có lệnh")
+                    btn.setStyleSheet(disabled_btn_style)
+                    return
+
+                order_res = self.data_provider.place_market_order(
+                    symbol=symbol,
+                    broker_symbol=broker_symbol,
+                    side=side,
+                    volume=vol_f,
+                    stop_loss=sl_f,
+                    take_profit=tp_f,
+                    comment=f"AMA Manual {symbol}",
+                )
+
+                if order_res and getattr(order_res, "success", False):
+                    QMessageBox.information(dlg, "Thành công",
+                        f"Đặt lệnh {side.upper()} {symbol} thành công!\n"
+                        f"ID: {getattr(order_res, 'order_id', '--')}")
+                    btn.setText("Đã vào lệnh")
+                    btn.setEnabled(False)
+                    btn.setStyleSheet(disabled_btn_style)
+                else:
+                    msg = str(getattr(order_res, "message", "") or "MT5 từ chối lệnh.")
+                    # Detect common MT5 issues and give actionable guidance
+                    hint = ""
+                    msg_lower = msg.lower()
+                    if "autotrading disabled" in msg_lower:
+                        hint = ("\n\nMT5 đang chặn giao dịch tự động.\n"
+                                "Vào MT5 → Tools → Options → Expert Advisors → "
+                                "tích chọn 'Allow Algo Trading'.")
+                    elif "trade is disabled" in msg_lower:
+                        hint = ("\n\nMã này có thể đã bị vô hiệu hóa giao dịch trong MT5.\n"
+                                "Kiểm tra Market Watch: chuột phải lên mã → Trade.")
+                    elif "not enough money" in msg_lower:
+                        hint = "\n\nTài khoản không đủ margin/ký quỹ. Giảm khối lượng hoặc nạp thêm."
+                    elif "off quotes" in msg_lower or "requote" in msg_lower:
+                        hint = "\n\nThị trường biến động mạnh. Thử lại sau vài giây."
+                    QMessageBox.warning(dlg, "Đặt lệnh thất bại",
+                        f"Đặt lệnh {symbol} thất bại:\n{msg}{hint}")
+                    btn.setEnabled(True)
+                    btn.setText("⚡ Thử lại")
+                    btn.setStyleSheet(active_btn_style)
+            except Exception as e:
+                QMessageBox.critical(dlg, "Lỗi hệ thống", f"Lỗi khi đặt lệnh {symbol}:\n{str(e)}")
+                btn.setEnabled(True)
+                btn.setText("⚡ Vào lệnh")
+                btn.setStyleSheet(active_btn_style)
+
+        def create_order_button(row_order: dict) -> QWidget:
+            btn_container = QWidget()
+            btn_layout = QHBoxLayout(btn_container)
+            btn_layout.setContentsMargins(4, 2, 4, 2)
+            btn_layout.setSpacing(0)
+            
+            btn = action_button("⚡ Vào lệnh", primary=True)
+            
+            broker_symbol = row_order.get("broker_symbol")
+            has_existing = False
+            if broker_symbol:
+                try:
+                    if self.data_provider.has_open_position_or_order(broker_symbol):
+                        has_existing = True
+                except Exception:
+                    pass
+            
+            if has_existing:
+                btn.setText("Đã có lệnh")
+                btn.setEnabled(False)
+                btn.setStyleSheet(disabled_btn_style)
+            else:
+                btn.setStyleSheet(active_btn_style)
+                
+            btn.clicked.connect(lambda: execute_manual_order(row_order, btn))
+            btn_layout.addWidget(btn)
+            return btn_container
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(12)
+
+        # Beautiful Header Card
+        header_frame = QFrame()
+        header_frame.setObjectName("PanelCard")
+        header_accent = "#10b981" if auto_trade_enabled else "#fb923c"
+        header_frame.setStyleSheet(
+            f"QFrame#PanelCard {{"
+            f"  border-left: 4px solid {header_accent};"
+            f"  background: {'#fbfbfb' if light else '#171c24'};"
+            f"}}"
+        )
+        header_frame.setStyleSheet(
+            f"QFrame#PanelCard {{"
+            f"  border-left: 4px solid {header_accent};"
+            f"  background: {'#fbfbfb' if light else '#171c24'};"
+            f"}}"
+        )
+        header_layout = QVBoxLayout(header_frame)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(4)
+
+        title_label = QLabel(f"📋 {title_text}")
+        title_label.setObjectName("ActionTitle")
+        title_label.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {'#111827' if light else '#f8fafc'};"
+        )
+        
+        subtitle_text = (
+            f"{len(order_rows)} lệnh được khớp từ kết quả quét thị trường."
+            if auto_trade_enabled
+            else f"{len(order_rows)} lệnh dự kiến từ kết quả quét thị trường "
+                  f"(chưa vào MT5 vì chưa bật tự động vào lệnh)."
+        )
+        subtitle = QLabel(subtitle_text)
+        subtitle.setObjectName("CardDetail")
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet(
+            f"font-size: 12px; color: {'#4b5563' if light else '#9ca3af'};"
+        )
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(subtitle)
+        root.addWidget(header_frame)
+
+
+        # Table
+        table = QTableWidget()
+        table.setObjectName("EconTable")
+        columns = ["STT", "Mã", "Hướng", "Entry", "SL", "TP", "KL", "R:R", "Ghi chú"]
+        if not auto_trade_enabled:
+            columns.append("Thao tác")
+        table.setColumnCount(len(columns))
+        table.setHorizontalHeaderLabels(columns)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+        table.setShowGrid(False)
+        table.setWordWrap(True)
+
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+        
+        table.setColumnWidth(0, 45)
+        table.setColumnWidth(1, 80)
+        table.setColumnWidth(2, 85)
+        table.setColumnWidth(3, 90)
+        table.setColumnWidth(4, 90)
+        table.setColumnWidth(5, 90)
+        table.setColumnWidth(6, 70)
+        table.setColumnWidth(7, 70)
+
+        if not auto_trade_enabled:
+            header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
+            table.setColumnWidth(9, 120)
+        else:
+            header.setSectionResizeMode(8, QHeaderView.ResizeMode.Stretch)
+
+        table.setRowCount(len(order_rows))
+
+        buy_color = QColor("#059669" if light else "#10b981")
+        sell_color = QColor("#b91c1c" if light else "#f87171")
+        neutral_fg = QColor("#4b5563" if light else "#9ca3af")
+
+        def create_direction_pill(direction: str, light_theme: bool) -> QWidget:
+            container = QWidget()
+            layout = QHBoxLayout(container)
+            layout.setContentsMargins(0, 4, 0, 4)
+            layout.setSpacing(0)
+            label = QLabel()
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if direction == "buy":
+                label.setText(" MUA ")
+                bg = "#d1fae5" if light_theme else "#064e3b"
+                fg = "#065f46" if light_theme else "#34d399"
+            elif direction == "sell":
+                label.setText(" BÁN ")
+                bg = "#ffe4e6" if light_theme else "#4c0519"
+                fg = "#9f1239" if light_theme else "#f87171"
+            else:
+                label.setText(" -- ")
+                bg = "#e5e7eb" if light_theme else "#1f2937"
+                fg = "#374151" if light_theme else "#9ca3af"
+            label.setStyleSheet(
+                f"QLabel {{"
+                f"  background-color: {bg};"
+                f"  color: {fg};"
+                f"  font-size: 11px;"
+                f"  font-weight: bold;"
+                f"  border-radius: 4px;"
+                f"  padding: 3px 12px;"
+                f"}}"
+            )
+            layout.addWidget(label)
+            return container
+
+        for idx, order in enumerate(order_rows):
+            direction = str(order.get("side", "")).lower()
+
+            def styled_item(text: str, align=Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(align)
+                return item
+
+            # STT
+            stt_item = styled_item(str(idx + 1))
+            stt_item.setForeground(neutral_fg)
+            table.setItem(idx, 0, stt_item)
+
+            # Symbol
+            sym_item = styled_item(str(order.get("symbol", "--")))
+            f = sym_item.font()
+            f.setBold(True)
+            sym_item.setFont(f)
+            table.setItem(idx, 1, sym_item)
+
+            # Direction pill
+            table.setCellWidget(idx, 2, create_direction_pill(direction, light))
+
+            # Entry
+            entry = order.get("entry_price")
+            entry_text = f"{float(entry):.5f}" if entry is not None else "--"
+            table.setItem(idx, 3, styled_item(entry_text))
+
+            # SL
+            sl = order.get("stop_loss")
+            sl_text = f"{float(sl):.5f}" if sl is not None else "--"
+            sl_item = styled_item(sl_text)
+            sl_item.setForeground(sell_color)
+            table.setItem(idx, 4, sl_item)
+
+            # TP
+            tp = order.get("take_profit")
+            tp_text = f"{float(tp):.5f}" if tp is not None else "--"
+            tp_item = styled_item(tp_text)
+            tp_item.setForeground(buy_color)
+            table.setItem(idx, 5, tp_item)
+
+            # Volume
+            vol = order.get("volume")
+            vol_text = f"{float(vol):.2f}" if vol is not None else "--"
+            table.setItem(idx, 6, styled_item(vol_text))
+
+            # R:R
+            rr = order.get("risk_reward")
+            rr_text = str(rr) if rr else "--"
+            table.setItem(idx, 7, styled_item(rr_text))
+
+            # Note
+            note = str(order.get("note", "") or order.get("message", ""))
+            note_item = QTableWidgetItem(note if note else "--")
+            note_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            if note:
+                note_lower = note.lower()
+                if "lỗi" in note_lower or "từ chối" in note_lower or "fail" in note_lower or "error" in note_lower:
+                    note_item.setForeground(sell_color)
+                elif "thành công" in note_lower or "success" in note_lower or "ok" in note_lower:
+                    note_item.setForeground(buy_color)
+                else:
+                    note_item.setForeground(neutral_fg)
+            else:
+                note_item.setForeground(neutral_fg)
+            table.setItem(idx, 8, note_item)
+
+            if not auto_trade_enabled:
+                table.setCellWidget(idx, 9, create_order_button(order))
+
+            table.setRowHeight(idx, 36)
+
+        root.addWidget(table, 1)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        btn_layout.addStretch()
+
+        close_btn = action_button("❌ Đóng")
+        active_bg = "#D94625" if light else "#ea580c"
+        active_hover = "#E0533C" if light else "#f97316"
+        close_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size:12px; font-weight:500; padding:0px 16px 0px 20px;"
+            f"  background:transparent;"
+            f"  color:{'#4b5563' if light else '#9ca3af'};"
+            f"  border:1px solid {'#d1d5db' if light else '#4b5563'};"
+            f"  border-radius:6px; min-height:24px; max-height:24px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background:{'#fce8e5' if light else '#2c1910'};"
+            f"  color:{active_bg};"
+            f"  border:1px solid {active_bg};"
+            f"}}"
+        )
+        close_btn.clicked.connect(dlg.accept)
+        btn_layout.addWidget(close_btn)
+        root.addLayout(btn_layout)
+
+        if light:
+            dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
+        else:
+            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
+        dlg.exec()
+
+    def _build_order_rows(
+        self,
+        rows: list[dict],
+        auto_trade_enabled: bool,
+        auto_results: dict,
+    ) -> list[dict]:
+        """Build a list of order dicts from scanner rows."""
+        if auto_trade_enabled:
+            orders = auto_results.get("orders", [])
+            if not isinstance(orders, list):
+                return []
+            result: list[dict] = []
+            for o in orders:
+                if not isinstance(o, dict):
+                    continue
+                result.append({
+                    "symbol": str(o.get("symbol", o.get("broker_symbol", "--"))),
+                    "broker_symbol": str(o.get("broker_symbol", "")),
+                    "side": str(o.get("side", "")),
+                    "entry_price": o.get("entry_price") or o.get("price"),
+                    "stop_loss": o.get("stop_loss") or o.get("sl"),
+                    "take_profit": o.get("take_profit") or o.get("tp"),
+                    "volume": o.get("volume"),
+                    "risk_reward": o.get("risk_reward", ""),
+                    "note": str(o.get("message", o.get("status", ""))),
+                })
+            return result
+
+        # Not auto-trade: compute would-be orders from scan rows
+        # Apply the SAME gates as _execute_auto_trades + _is_auto_trade_candidate
+        try:
+            settings = self.settings_service.load()
+        except Exception:
+            settings = None
+
+        result: list[dict] = []
+        for row in rows:
+            analysis = row.get("analysis_result")
+            if not isinstance(analysis, dict):
+                continue
+            if row.get("scanner_group") == "blocked":
+                continue
+            if str(row.get("trade_permission", "")).strip().lower() == "blocked":
+                continue
+            journal = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
+            if journal.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
+                continue
+
+            best_side = str(row.get("best_side", ""))
+            if best_side not in ("buy", "sell"):
+                continue
+
+            symbol = str(row.get("symbol", "--"))
+
+            # --- Backtest config gate (same as _is_auto_trade_candidate) ---
+            if settings:
+                sym_cfg = settings.trading.symbol_settings.get(symbol)
+                if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
+                    slash_key = symbol[:3] + "/" + symbol[3:]
+                    sym_cfg = settings.trading.symbol_settings.get(slash_key)
+
+                if sym_cfg and sym_cfg.backtest:
+                    # Regime
+                    cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
+                    row_regime = str(row.get("market_regime", "")).strip().lower()
+                    if cfg_regime and row_regime and row_regime != cfg_regime:
+                        continue
+
+                    # Side
+                    cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
+                    if cfg_side in ("buy", "sell") and best_side != cfg_side:
+                        continue
+
+                    # Min RR
+                    cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
+                    if cfg_min_rr > 0:
+                        row_rr = row.get("expected_effective_rr")
+                        try:
+                            row_rr_f = float(row_rr) if row_rr is not None else 0.0
+                        except (TypeError, ValueError):
+                            row_rr_f = 0.0
+                        if row_rr_f < cfg_min_rr:
+                            continue
+
+                    # Min Score
+                    cfg_min_score = int(sym_cfg.min_score or 0)
+                    if cfg_min_score > 0:
+                        best_score = int(row.get("best_score", 0) or 0)
+                        if best_score < cfg_min_score:
+                            continue
+
+            scenarios = analysis.get("scenarios", [])
+            if not isinstance(scenarios, list):
+                continue
+            scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
+            if not scenario:
+                continue
+
+            entry_zone = scenario.get("entry_zone")
+            if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+                entry_low = float(entry_zone[0])
+                entry_high = float(entry_zone[1])
+                entry_price = entry_high if best_side == "buy" else entry_low
+            else:
+                entry_low = entry_high = 0.0
+                entry_price = None
+
+            # --- Entry zone check: price must be inside entry zone ---
+            technical = analysis.get("technical", {}) if isinstance(analysis, dict) else {}
+            if not isinstance(technical, dict):
+                technical = {}
+            current_price = float(technical.get("price", 0) or 0)
+
+            if entry_low > 0 and entry_high > 0 and current_price > 0:
+                if not (entry_low <= current_price <= entry_high):
+                    continue  # outside entry zone
+
+            take_profit = scenario.get("take_profit")
+            if isinstance(take_profit, list) and take_profit:
+                tp = float(take_profit[0])
+            else:
+                try:
+                    tp = float(take_profit)
+                except (TypeError, ValueError):
+                    tp = None
+
+            sl = scenario.get("stop_loss")
+            try:
+                sl = float(sl)
+            except (TypeError, ValueError):
+                sl = None
+
+            sizing = scenario.get("position_sizing", {})
+            if not isinstance(sizing, dict):
+                sizing = {}
+            vol = sizing.get("suggested_lot")
+
+            rr = scenario.get("risk_reward", "")
+
+            action = str(row.get("scanner_action", ""))
+            note = {
+                "ready": "Sẵn sàng",
+                "watch": "Theo dõi",
+                "wait": "Chờ",
+            }.get(action, action)
+
+            # Extra fields for gate checks in manual order
+            result.append({
+                "symbol": str(row.get("symbol", "--")),
+                "broker_symbol": str(row.get("broker_symbol") or "").strip(),
+                "side": best_side,
+                "entry_price": entry_price,
+                "stop_loss": sl,
+                "take_profit": tp,
+                "volume": vol,
+                "risk_reward": rr,
+                "note": note,
+                "entry_zone": entry_zone,
+                "market_regime": str(row.get("market_regime", "")),
+                "expected_effective_rr": row.get("expected_effective_rr"),
+                "best_score": row.get("best_score", 0),
+            })
+
+        return result
 
     def _update_auto_trade_toggle_style (self )->None :
         if not hasattr (self ,"auto_trade_check"):
@@ -678,6 +1428,7 @@ class ScannerScreen (QWidget ):
         self .scan_button .setText ('Đang quét...')
         self .detail_button .setEnabled (False )
         self .save_button .setEnabled (False )
+        self ._dim_show_orders_button ()
         self .progress_bar .setValue (0 )
         self .progress_bar .setVisible (True )
         self .progress_container .setVisible (True )
@@ -800,6 +1551,7 @@ class ScannerScreen (QWidget ):
         self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
         self .detail_button .setEnabled (bool (rows ))
         self .save_button .setEnabled (bool (rows ))
+        self ._highlight_show_orders_button ()
         self ._update_status_summary ()
 
         # --- Market Brief ---
@@ -822,7 +1574,7 @@ class ScannerScreen (QWidget ):
         QMessageBox .warning (self ,'Không thể quét thị trường',message )
 
     def _scan_thread_finished (self )->None :
-        self .scan_button .setText ('Quét thị trường')
+        self.scan_button.setText("🔍 Quét thị trường")
         self .scan_thread =None
         self .scan_worker =None
         self ._refresh_scan_button_state ()

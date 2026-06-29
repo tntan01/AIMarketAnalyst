@@ -109,11 +109,17 @@ class ScannerDetailScreen(QWidget):
 
         ov.addLayout(left_col, 7)
 
-        # -- Right Col: Info Cards (2-column grid) --
+        # -- Right Col: Info Cards (Scrollable to prevent truncation) --
+        self.right_scroll = QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
+        self.right_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.right_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QWidget#RightContent { background: transparent; }")
+
         right_widget = QWidget()
+        right_widget.setObjectName("RightContent")
         right_grid = QGridLayout(right_widget)
-        right_grid.setHorizontalSpacing(8)
-        right_grid.setVerticalSpacing(8)
+        right_grid.setHorizontalSpacing(6)
+        right_grid.setVerticalSpacing(6)
         right_grid.setContentsMargins(0, 0, 0, 0)
 
         self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#ea580c")
@@ -157,7 +163,8 @@ class ScannerDetailScreen(QWidget):
 
         right_grid.setRowStretch(8, 1)
 
-        ov.addWidget(right_widget, 2)
+        self.right_scroll.setWidget(right_widget)
+        ov.addWidget(self.right_scroll, 3)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 

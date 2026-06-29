@@ -29,12 +29,12 @@ class InfoCard(QFrame):
         self.setObjectName("InfoCard")
         self._accent = accent
 
-        self.setFixedHeight(32)
+        self.setFixedHeight(26)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 0, 12, 0)
-        layout.setSpacing(6)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(4)
 
         self._label_w = QLabel(label)
         self._label_w.setObjectName("InfoCardLabel")
@@ -69,12 +69,12 @@ class InfoCard(QFrame):
             accent = self._accent if self._accent else default_accent
 
         self.setStyleSheet(
-            f"QFrame#InfoCard {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
+            f"QFrame#InfoCard {{ background: {bg}; border: 1px solid {border}; border-radius: 4px; }}"
             f"QFrame#InfoCard:hover {{ border-color: {hover_border}; }}"
         )
         self._label_w.setStyleSheet(f"color: {label_color}; font-size: 11px;")
-        self._value_w.setStyleSheet(f"color: {accent}; font-size: 12px; font-weight: bold;")
-        self._detail_w.setStyleSheet(f"color: {detail_color}; font-size: 11px;")
+        self._value_w.setStyleSheet(f"color: {accent}; font-size: 11px; font-weight: bold;")
+        self._detail_w.setStyleSheet(f"color: {detail_color}; font-size: 10px;")
 
     def set_value(self, text: str, accent: str | None = None) -> None:
         self._value_w.setText(text)

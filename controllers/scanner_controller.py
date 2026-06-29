@@ -232,8 +232,15 @@ class ScannerController:
     @staticmethod
     def _auto_trade_config(request: ScannerRequest, symbol: str) -> dict[str, object] | None:
         """Return per-symbol auto-trade config, or None if not configured."""
-        cfg = request.symbol_auto_trade.get(symbol) if request.symbol_auto_trade else None
-        if not cfg:
+        if not request.symbol_auto_trade:
+            return None
+        # Normalize symbol format: rows use "USDCHF", settings use "USD/CHF"
+        cfg = request.symbol_auto_trade.get(symbol)
+        if cfg is None and "/" not in symbol and len(symbol) == 6:
+            # Try slash format: "USDCHF" → "USD/CHF"
+            slash_key = symbol[:3] + "/" + symbol[3:]
+            cfg = request.symbol_auto_trade.get(slash_key)
+        if cfg is None:
             return None
         regime = str(cfg.get("regime", "")).strip().lower()
         side = str(cfg.get("side", "")).strip().lower()
@@ -360,6 +367,37 @@ class ScannerController:
                         "message": "Đã có lệnh/position cho mã này, không vào thêm.",
                     })
                     continue
+
+                # --- Entry zone check: price must be inside entry zone ---
+                entry_zone = scenario.get("entry_zone")
+                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+                    try:
+                        entry_low = float(entry_zone[0])
+                        entry_high = float(entry_zone[1])
+                    except (TypeError, ValueError):
+                        entry_low = entry_high = 0.0
+                else:
+                    entry_low = entry_high = 0.0
+
+                if entry_low > 0 and entry_high > 0:
+                    analysis = row.get("analysis_result", {})
+                    if isinstance(analysis, dict):
+                        technical = analysis.get("technical", {})
+                    else:
+                        technical = {}
+                    if isinstance(technical, dict):
+                        current_price = float(technical.get("price", 0) or 0)
+                    else:
+                        current_price = 0.0
+
+                    if current_price > 0 and not (entry_low <= current_price <= entry_high):
+                        skipped += 1
+                        errors.append(
+                            f"{symbol}: giá {current_price:.5f} nằm ngoài vùng entry "
+                            f"[{entry_low:.5f}–{entry_high:.5f}], bỏ qua."
+                        )
+                        continue
+
                 order = self.data_provider.place_market_order(
                     symbol=symbol,
                     broker_symbol=broker_symbol,

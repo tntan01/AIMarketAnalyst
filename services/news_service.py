@@ -335,20 +335,19 @@ class NewsService:
             except Exception:
                 pass
 
-        # Fallback: disk cache
-        if not all_headlines:
-            try:
-                cached = self._read_news_cache()
-                cached_headlines = cached.get("headlines", [])
-                if isinstance(cached_headlines, list):
-                    for item in cached_headlines:
-                        if not isinstance(item, dict):
-                            continue
-                        published = parse_rss_time(str(item.get("published_utc", "")))
-                        if published and from_date <= published <= to_date:
-                            add_items([item], "Disk cache")
-            except Exception:
-                pass
+        # Always merge disk cache to preserve older headlines not in live RSS
+        try:
+            cached = self._read_news_cache()
+            cached_headlines = cached.get("headlines", [])
+            if isinstance(cached_headlines, list):
+                for item in cached_headlines:
+                    if not isinstance(item, dict):
+                        continue
+                    published = parse_rss_time(str(item.get("published_utc", "")))
+                    if published and from_date <= published <= to_date:
+                        add_items([item], "Disk cache")
+        except Exception:
+            pass
 
         # Sort by published date descending
         all_headlines.sort(
@@ -460,15 +459,72 @@ class NewsService:
     def _store_news_cache(
         self, headlines: list[dict[str, object]], events: list[dict[str, object]]
     ) -> None:
+        """Merge new headlines/events into persistent cache, keeping up to 14 days."""
         now = datetime.now(UTC)
+        cutoff = now - timedelta(days=14)
         cache_file = self._news_cache_file()
         cache_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Read existing cache
+        existing = {}
+        try:
+            if cache_file.exists():
+                existing = json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+        # Merge headlines (dedup by title)
+        seen_titles: set[str] = set()
+        merged_headlines: list[dict[str, object]] = []
+        for item in headlines:
+            title_key = str(item.get("title", "")).lower().strip()
+            if title_key and title_key not in seen_titles:
+                seen_titles.add(title_key)
+                merged_headlines.append(item)
+
+        existing_headlines = existing.get("headlines", [])
+        if isinstance(existing_headlines, list):
+            for item in existing_headlines:
+                if not isinstance(item, dict):
+                    continue
+                title_key = str(item.get("title", "")).lower().strip()
+                if not title_key or title_key in seen_titles:
+                    continue
+                published = parse_rss_time(str(item.get("published_utc", "")))
+                if published and published < cutoff:
+                    continue
+                seen_titles.add(title_key)
+                merged_headlines.append(item)
+
+        # Merge events (dedup by currency+title+time)
+        seen_event_keys: set[str] = set()
+        merged_events: list[dict[str, object]] = []
+        for ev in events:
+            key = f"{ev.get('currency','')}|{ev.get('event','')}|{ev.get('time_utc','')}".lower()
+            if key not in seen_event_keys:
+                seen_event_keys.add(key)
+                merged_events.append(ev)
+
+        existing_events = existing.get("events", [])
+        if isinstance(existing_events, list):
+            for ev in existing_events:
+                if not isinstance(ev, dict):
+                    continue
+                key = f"{ev.get('currency','')}|{ev.get('event','')}|{ev.get('time_utc','')}".lower()
+                if key in seen_event_keys:
+                    continue
+                ev_time = parse_event_time(str(ev.get("time_utc", "")))
+                if ev_time and ev_time < cutoff:
+                    continue
+                seen_event_keys.add(key)
+                merged_events.append(ev)
+
         cache_file.write_text(
             json.dumps({
                 "date": now.strftime("%Y%m%d"),
                 "stored_utc": now.isoformat(),
-                "headlines": headlines[:50],
-                "events": events[:50],
+                "headlines": merged_headlines[:200],
+                "events": merged_events[:200],
             }, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )

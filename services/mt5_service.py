@@ -562,6 +562,170 @@ class MT5Service(DataProvider):
         start = end - timedelta(days=max(1, int(days)))
         return self.closed_trade_history(start=start, end=end)
 
+    # ------------------------------------------------------------------
+    # Position & order management
+    # ------------------------------------------------------------------
+    def get_open_positions(self) -> list[dict[str, object]]:
+        """Return all currently open positions from MT5."""
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return []
+        try:
+            raw = mt5.positions_get()
+            if raw is None:
+                return []
+            result: list[dict[str, object]] = []
+            for pos in raw:
+                symbol = getattr(pos, "symbol", "")
+                result.append({
+                    "position_id": int(getattr(pos, "ticket", 0)),
+                    "symbol": str(symbol),
+                    "side": "buy" if getattr(pos, "type", 0) == 0 else "sell",
+                    "volume": float(getattr(pos, "volume", 0)),
+                    "open_price": float(getattr(pos, "price_open", 0)),
+                    "current_price": float(getattr(pos, "price_current", 0)),
+                    "sl": float(getattr(pos, "sl", 0) or 0),
+                    "tp": float(getattr(pos, "tp", 0) or 0),
+                    "profit": float(getattr(pos, "profit", 0)),
+                    "swap": float(getattr(pos, "swap", 0)),
+                    "commission": float(getattr(pos, "commission", 0)),
+                    "comment": str(getattr(pos, "comment", "")),
+                    "open_time": int(getattr(pos, "time", 0)),
+                })
+            return result
+        except Exception:
+            return []
+
+    def get_pending_orders(self) -> list[dict[str, object]]:
+        """Return all pending (limit/stop) orders from MT5."""
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return []
+        try:
+            raw = mt5.orders_get()
+            if raw is None:
+                return []
+            result: list[dict[str, object]] = []
+            # MT5 order types
+            _type_map = {
+                2: "buy_limit",
+                3: "sell_limit",
+                4: "buy_stop",
+                5: "sell_stop",
+                6: "buy_stop_limit",
+                7: "sell_stop_limit",
+            }
+            for order in raw:
+                otype = int(getattr(order, "type", 0))
+                result.append({
+                    "order_id": int(getattr(order, "ticket", 0)),
+                    "symbol": str(getattr(order, "symbol", "")),
+                    "type": _type_map.get(otype, f"unknown_{otype}"),
+                    "volume": float(getattr(order, "volume_current", 0) or getattr(order, "volume_initial", 0)),
+                    "price": float(getattr(order, "price_open", 0)),
+                    "sl": float(getattr(order, "sl", 0) or 0),
+                    "tp": float(getattr(order, "tp", 0) or 0),
+                    "comment": str(getattr(order, "comment", "")),
+                    "setup_time": int(getattr(order, "time_setup", 0)),
+                })
+            return result
+        except Exception:
+            return []
+
+    def close_position(self, position_id: int, *, volume: float | None = None, comment: str = "") -> dict[str, object]:
+        """Close an open position (fully or partially) by position ticket."""
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return {"success": False, "message": "Chưa cài package MetaTrader5."}
+        try:
+            pos_info = mt5.positions_get(ticket=position_id)
+            if not pos_info:
+                return {"success": False, "message": f"Không tìm thấy vị thế ticket={position_id}."}
+            pos = pos_info[0]
+            symbol = getattr(pos, "symbol", "")
+            pos_volume = float(getattr(pos, "volume", 0))
+            close_vol = min(float(volume or pos_volume), pos_volume) if volume else pos_volume
+            pos_type = int(getattr(pos, "type", 0))
+
+            tick = mt5.symbol_info_tick(symbol)
+            if not tick:
+                return {"success": False, "message": f"Không lấy được giá cho {symbol}."}
+
+            # Opposite direction to close
+            close_price = float(tick.bid) if pos_type == 0 else float(tick.ask)  # buy→sell at bid, sell→buy at ask
+            close_type = mt5.ORDER_TYPE_SELL if pos_type == 0 else mt5.ORDER_TYPE_BUY
+
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": close_vol,
+                "type": close_type,
+                "position": position_id,
+                "price": close_price,
+                "deviation": 20,
+                "magic": 260609,
+                "comment": (comment or "AMA Close")[:31],
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+            result = mt5.order_send(request)
+            retcode = getattr(result, "retcode", None) if result else None
+            success_codes = {mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED, mt5.TRADE_RETCODE_DONE_PARTIAL}
+            success = retcode in success_codes
+            msg = str(getattr(result, "comment", "") or "") if result else "MT5 không trả kết quả."
+            return {
+                "success": success,
+                "position_id": position_id,
+                "symbol": symbol,
+                "volume": close_vol,
+                "price": close_price,
+                "message": msg or ("Đã đóng lệnh thành công." if success else "MT5 từ chối đóng lệnh."),
+            }
+        except Exception as exc:
+            return {"success": False, "position_id": position_id, "message": str(exc)}
+
+    def modify_position_sltp(self, position_id: int, *, sl: float | None = None, tp: float | None = None) -> dict[str, object]:
+        """Modify SL and/or TP for an open position."""
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return {"success": False, "message": "Chưa cài package MetaTrader5."}
+        try:
+            pos_info = mt5.positions_get(ticket=position_id)
+            if not pos_info:
+                return {"success": False, "message": f"Không tìm thấy vị thế ticket={position_id}."}
+            pos = pos_info[0]
+            symbol = getattr(pos, "symbol", "")
+
+            request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": symbol,
+                "position": position_id,
+            }
+            if sl is not None:
+                request["sl"] = float(sl)
+            if tp is not None:
+                request["tp"] = float(tp)
+
+            result = mt5.order_send(request)
+            retcode = getattr(result, "retcode", None) if result else None
+            success_codes = {mt5.TRADE_RETCODE_DONE, mt5.TRADE_RETCODE_PLACED}
+            success = retcode in success_codes
+            msg = str(getattr(result, "comment", "") or "") if result else "MT5 không trả kết quả."
+            return {
+                "success": success,
+                "position_id": position_id,
+                "symbol": symbol,
+                "sl": sl,
+                "tp": tp,
+                "message": msg or ("Đã sửa SL/TP thành công." if success else "MT5 từ chối sửa SL/TP."),
+            }
+        except Exception as exc:
+            return {"success": False, "position_id": position_id, "message": str(exc)}
+
     def _normalize_volume(self, volume: float, symbol_info) -> float:
         try:
             raw = float(volume)
