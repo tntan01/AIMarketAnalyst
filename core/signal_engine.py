@@ -99,11 +99,12 @@ def score_scenario(
     market_regime: dict[str, Any] | None = None,
     correlation_adjustment: float = 0.0,
     macro_context: dict[str, Any] | None = None,
+    entry_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     trend = trend_alignment_score(side, technical)
     momentum = momentum_alignment_score(side, technical)
     location = location_quality_score(side, technical)
-    smc_quality, smc_reason = smc_quality_score(side, smc or {})
+    smc_quality, smc_reason = smc_quality_score(side, smc or {}, technical)
 
     weights = DYNAMIC_WEIGHTS.get(
         _resolve_regime_key(market_regime or {}),
@@ -165,6 +166,23 @@ def score_scenario(
         smc_score_cap = 60
         append_code(penalty_codes, CHOCH_AGAINST_DIRECTION)
 
+    entry_quality_bonus = 0
+    if isinstance(entry_context, dict):
+        sub_zone = entry_context.get("sub_zone")
+        if sub_zone == "bottom":
+            entry_quality_bonus += 3
+        elif sub_zone == "mid":
+            entry_quality_bonus += 2
+        elif sub_zone == "top":
+            entry_quality_bonus += 1
+        if entry_context.get("price_distance_to_zone_atr", 999) < 0.3:
+            entry_quality_bonus += 2
+        if entry_context.get("spread_vs_atr", 999) < 0.5:
+            entry_quality_bonus += 1
+        if entry_context.get("price_moving_toward_zone"):
+            entry_quality_bonus += 2
+        entry_quality_bonus = int(clamp(entry_quality_bonus * 12.5, 0, 100))
+
     return {
         "trend_alignment": int(clamp(trend, 0, 25)),
         "momentum_alignment": int(clamp(momentum, 0, 20)),
@@ -192,7 +210,7 @@ def score_scenario(
         "penalty_codes": normalize_codes(penalty_codes),
         "smc_score_cap": smc_score_cap,
         "smc_flags": smc_flags,
-        "entry_quality_bonus": 0,
+        "entry_quality_bonus": entry_quality_bonus,
     }
 
 
@@ -328,7 +346,7 @@ def location_quality_score(side: str, t: dict[str, Any]) -> int:
     return int(clamp(base + bonus, 0, 25))
 
 
-def smc_quality_score(side: str, smc: dict[str, Any]) -> tuple[int, str]:
+def smc_quality_score(side: str, smc: dict[str, Any], technical: dict[str, Any]) -> tuple[int, str]:
     h4 = smc.get("H4", {}) if isinstance(smc, dict) else {}
     h1 = smc.get("H1", {}) if isinstance(smc, dict) else {}
     expected = "bullish" if side == "buy" else "bearish"
@@ -343,9 +361,27 @@ def smc_quality_score(side: str, smc: dict[str, Any]) -> tuple[int, str]:
         score += 3
         reasons.append(f"H1 {'BOS' if h1.get('bos') else 'CHOCH'} {expected}")
 
-    zone = _best_smc_zone(side, h4)
+    zone = _best_smc_zone(side, h4, h1)
     if zone:
-        zone_score = int(zone.get("zone_score", 0) or 0)
+        zone_score_scanner = int(zone.get("zone_score", 0) or 0)
+        if zone_score_scanner < 50:
+            internal_points = 0
+            if not zone.get("broken"):
+                internal_points += 2
+            if not zone.get("mitigated"):
+                internal_points += 1
+            if int(zone.get("test_count", 0) or 0) <= 2:
+                internal_points += 1
+            if zone.get("liquidity_sweep"):
+                internal_points += 1
+            location = str(zone.get("zone_location", "unknown"))
+            if (side == "buy" and location == "discount") or (side == "sell" and location == "premium"):
+                internal_points += 1
+            internal_zone_score = min(100, internal_points * 20)
+            zone_score = max(zone_score_scanner, internal_zone_score)
+        else:
+            zone_score = zone_score_scanner
+
         if zone_score >= 75:
             zone_points = 4
         elif zone_score >= 55:
@@ -357,6 +393,8 @@ def smc_quality_score(side: str, smc: dict[str, Any]) -> tuple[int, str]:
         if zone.get("mitigated"):
             zone_points = max(0, zone_points - 1)
         if int(zone.get("test_count", 0) or 0) >= 3:
+            zone_points = max(0, zone_points - 1)
+        if zone.get("_h1_fallback"):
             zone_points = max(0, zone_points - 1)
         score += zone_points
         reasons.append(f"zone_score={zone_score}")
@@ -375,6 +413,29 @@ def smc_quality_score(side: str, smc: dict[str, Any]) -> tuple[int, str]:
         if zone.get("liquidity_sweep"):
             score += 1
             reasons.append("liquidity sweep")
+
+        # Cross-validate SMC zone with technical swing points
+        atr_value = float(technical.get("atr_h4") or technical.get("atr_d1") or 0.0)
+        if atr_value > 0:
+            zone_low = zone.get("low")
+            zone_high = zone.get("high")
+            if zone_low is not None and zone_high is not None:
+                zone_level = (float(zone_low) + float(zone_high)) / 2
+                swing_candidates = technical.get("support_zones" if side == "buy" else "resistance_zones", [])
+                if isinstance(swing_candidates, list):
+                    nearest_swing = None
+                    min_dist = float("inf")
+                    for s in swing_candidates:
+                        if isinstance(s, dict):
+                            lev = s.get("level")
+                            if lev is not None:
+                                dist = abs(float(lev) - zone_level)
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    nearest_swing = s
+                    if nearest_swing is not None and min_dist < atr_value * 0.3:
+                        score += 2
+                        reasons.append("cross-validated with technical swing")
     else:
         reasons.append("không có SMC zone thuận")
 
@@ -397,25 +458,37 @@ def smc_quality_score(side: str, smc: dict[str, Any]) -> tuple[int, str]:
     return score, "; ".join(reasons) if reasons else "SMC chưa có tín hiệu rõ."
 
 
-def _best_smc_zone(side: str, h4: dict[str, Any]) -> dict[str, Any] | None:
+def _best_smc_zone(side: str, h4: dict[str, Any], h1: dict[str, Any] | None = None) -> dict[str, Any] | None:
     zone_keys = ["demand_zones", "order_blocks", "fvg"] if side == "buy" else ["supply_zones", "order_blocks", "fvg"]
-    candidates: list[dict[str, Any]] = []
-    for key in zone_keys:
-        zones = h4.get(key, [])
-        if not isinstance(zones, list):
-            continue
-        for zone in zones:
-            if not isinstance(zone, dict) or zone.get("broken"):
+
+    def _search(tf_data: dict[str, Any]) -> dict[str, Any] | None:
+        candidates: list[dict[str, Any]] = []
+        for key in zone_keys:
+            zones = tf_data.get(key, [])
+            if not isinstance(zones, list):
                 continue
-            zone_type = str(zone.get("type", ""))
-            if side == "buy" and any(term in zone_type for term in ("bearish", "supply")):
-                continue
-            if side == "sell" and any(term in zone_type for term in ("bullish", "demand")):
-                continue
-            candidates.append(zone)
-    if not candidates:
-        return None
-    return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
+            for zone in zones:
+                if not isinstance(zone, dict) or zone.get("broken"):
+                    continue
+                zone_type = str(zone.get("type", ""))
+                if side == "buy" and any(term in zone_type for term in ("bearish", "supply")):
+                    continue
+                if side == "sell" and any(term in zone_type for term in ("bullish", "demand")):
+                    continue
+                candidates.append(zone)
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
+
+    best = _search(h4)
+    if best is not None:
+        return best
+    if isinstance(h1, dict):
+        best = _search(h1)
+        if best is not None:
+            best = dict(best)
+            best["_h1_fallback"] = True
+    return best
 
 
 def calc_risk_condition(atr_current: float, atr_avg_14d: float, news_in_3h: bool, spread_status: str) -> int:

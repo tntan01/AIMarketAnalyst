@@ -540,6 +540,7 @@ def build_trade_plan(
         "entry_zone_score": entry_zone_score,
         "entry_zone_source": entry_zone_source,
         "entry_ladder": entry_ladder,
+        "sub_zone": entry_ladder.get("sub_zone") if isinstance(entry_ladder, dict) else None,
         **entry_state,
     }
 
