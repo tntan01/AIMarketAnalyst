@@ -1145,6 +1145,49 @@ class NewsService:
     # Actual value lookup (Brave Search)
     # ------------------------------------------------------------------
 
+    _CURRENCY_TO_COUNTRY: dict[str, str] = {
+        "USD": "US United States",
+        "CAD": "Canada",
+        "GBP": "UK United Kingdom",
+        "EUR": "Eurozone Euro area",
+        "JPY": "Japan",
+        "AUD": "Australia",
+        "NZD": "New Zealand",
+        "CHF": "Switzerland",
+        "CNY": "China",
+    }
+    _ABBREV_TO_FULL: dict[str, str] = {
+        "m/m": "monthly",
+        "q/q": "quarterly",
+        "y/y": "annual year-over-year",
+    }
+    _MONTH_NAMES: list[str] = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+
+    @classmethod
+    def _build_search_query(cls, currency: str, event_name: str, date_str: str) -> str:
+        country = cls._CURRENCY_TO_COUNTRY.get(currency.upper(), currency)
+        event_full = event_name
+        for abbr, full in cls._ABBREV_TO_FULL.items():
+            if abbr in event_full.lower():
+                event_full = event_full.replace(abbr, full).replace(abbr.upper(), full)
+        month = ""
+        year = ""
+        try:
+            parts = date_str.split("-")
+            if len(parts) >= 2:
+                m = int(parts[1])
+                if 1 <= m <= 12:
+                    month = cls._MONTH_NAMES[m - 1]
+            if len(parts) >= 1:
+                year = parts[0]
+        except (ValueError, IndexError):
+            pass
+        time_part = f"{month} {year}".strip() if month else date_str
+        return f"{country} {event_full} {time_part} actual result"
+
     def _get_brave_api_key(self) -> str:
         try:
             from config.paths import settings_path
@@ -1189,7 +1232,7 @@ class NewsService:
         if cache_key in cache:
             return cache[cache_key]
 
-        query = f"{currency} {event_name} {date_key} actual result"
+        query = self._build_search_query(currency, event_name, date_key)
         from services.forex_factory_client import ForexFactoryClient
         ff_client = ForexFactoryClient()
         results = ff_client._brave_search(query, api_key)
@@ -1271,7 +1314,7 @@ class NewsService:
             ev_time_str = str(ev.get("time_utc", ""))
             date_key = ev_time_str[:10]
 
-            query = f"{currency} {title} {date_key} actual result"
+            query = self._build_search_query(currency, title, date_key)
             try:
                 results = ff_client._brave_search(query, api_key)
             except Exception:
