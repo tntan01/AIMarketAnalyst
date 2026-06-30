@@ -1251,10 +1251,18 @@ class NewsService:
     @staticmethod
     def _parse_actual_simple(text: str) -> str:
         clean = re.sub(r"<[^>]+>", "", text)
+
+        # Primary: verbs that carry economic meaning on their own
         m = re.search(
-            r'(?:actual|result|rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|came in at|unchanged at|at)\s+(?:by\s+)?(\d+\.?\d*)\s*(%|million|billion|thousand|[MBK])?',
+            r'(?:actual|result|rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|came in at|unchanged at)\s+(?:by\s+)?(\d+\.?\d*)\s*(%|million|billion|thousand|[MBK])?',
             clean, re.IGNORECASE,
         )
+        # Fallback: "at" only when followed by number WITH a unit
+        if not m:
+            m = re.search(
+                r'(?:was\s+|remained\s+|stood\s+)?at\s+(\d+\.?\d*)\s*(%|million|billion|thousand|[MBK])',
+                clean, re.IGNORECASE,
+            )
         if not m:
             return ""
         num = m.group(1).strip()
