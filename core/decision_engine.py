@@ -171,7 +171,7 @@ def gate_allows_trade(
         if isinstance(allowed, bool):
             return allowed
         decision_cap = gate_result.get("decision_cap")
-        if decision_cap == "TRADE_BLOCKED":
+        if decision_cap == TRADE_BLOCKED:
             return False
 
     if isinstance(trade_permission, dict):
@@ -300,7 +300,7 @@ def make_final_decision(
     reason_codes: list[str] = []
     warning_codes: list[str] = []
     block_codes: list[str] = []
-    applied_rule = "initial"
+
 
     # ---- A. Gate / trade_permission block ----
     if not gate_allowed or tp_blocked:

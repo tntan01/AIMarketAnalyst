@@ -147,12 +147,12 @@ def score_scenario(
     macro_modifier = 0
 
     if macro_status == "conflict":
-        macro_modifier = -15
+        macro_modifier = int(-15 * macro_confidence)
         append_code(penalty_codes, MACRO_CONFLICT)
     elif macro_status == "unclear":
         append_code(penalty_codes, MACRO_UNCLEAR)
     elif macro_status == "aligned":
-        macro_modifier = 5
+        macro_modifier = int(5 * macro_confidence)
         append_code(reason_codes, MACRO_ALIGNED)
 
     total = int(clamp(total + macro_modifier, 0, 100))
@@ -315,10 +315,16 @@ def location_quality_score(side: str, t: dict[str, Any]) -> int:
         bonus_zone = nearest_resistance
 
     bonus = 0
-    if bonus_zone and bonus_zone.get("confluence_count", 0) >= 2:
-        bonus += 5
-    if bonus_zone and bonus_zone.get("consolidation_bars", 0) >= 3:
-        bonus += 5
+    if bonus_zone:
+        test_count = bonus_zone.get("test_count", 0)
+        if test_count >= 3:
+            bonus -= 5
+        if test_count >= 5:
+            bonus -= 3
+        if bonus_zone.get("confluence_count", 0) >= 3:
+            bonus += 5
+        if bonus_zone.get("is_round_number"):
+            bonus += 3
     return int(clamp(base + bonus, 0, 25))
 
 
@@ -432,9 +438,10 @@ def detect_direction_bias(
         return "stand_aside"
     if market_regime["primary"] == "range" and best_score < 75:
         return "neutral"
-    opposite = "sell" if side == "buy" else "buy"
-    opposite_total = scores[opposite].get("signal_score", scores[opposite].get("total", 0))
-    return side if best_score - opposite_total >= 10 else "neutral"
+    bias_result = calculate_direction_bias(scores["buy"], scores["sell"])
+    if bias_result["is_clear_bias"] and bias_result["best_side"] == side:
+        return side
+    return "neutral"
 
 
 def calculate_direction_bias(

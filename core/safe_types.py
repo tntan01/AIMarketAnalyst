@@ -170,7 +170,7 @@ def parse_risk_reward(value: object) -> float:
         return 0.0
     if isinstance(value, (int, float)):
         f = float(value)
-        return max(f, 0.0) if f == f else 0.0
+        return max(f, 0.0) if isfinite(f) else 0.0
     if isinstance(value, str):
         s = value.strip()
         if not s:
@@ -187,7 +187,7 @@ def parse_risk_reward(value: object) -> float:
                 pass
         try:
             f = float(s)
-            return max(f, 0.0) if f == f else 0.0
+            return max(f, 0.0) if isfinite(f) else 0.0
         except (ValueError, OverflowError):
             pass
     return 0.0

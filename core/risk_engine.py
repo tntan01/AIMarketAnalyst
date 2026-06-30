@@ -156,7 +156,6 @@ def _find_nearest_swing_for_sl(
     if not isinstance(smc, dict):
         return None
 
-    candidates: list[float] = []
     for tf in ("H4", "H1"):
         tf_data = smc.get(tf, {})
         if not isinstance(tf_data, dict):
@@ -167,6 +166,7 @@ def _find_nearest_swing_for_sl(
         swing_list = swings.get("lows" if side == "buy" else "highs", [])
         if not isinstance(swing_list, list):
             continue
+        candidates: list[float] = []
         for s in swing_list:
             if not isinstance(s, dict):
                 continue
@@ -174,15 +174,19 @@ def _find_nearest_swing_for_sl(
             if isinstance(level, (int, float)):
                 candidates.append(float(level))
 
-    if not candidates:
-        return None
+        if not candidates:
+            continue
 
-    if side == "buy":
-        below = [l for l in candidates if l < price]
-        return max(below) if below else None
-    else:
-        above = [h for h in candidates if h > price]
-        return min(above) if above else None
+        if side == "buy":
+            below = [l for l in candidates if l < price]
+            if below:
+                return max(below)
+        else:
+            above = [h for h in candidates if h > price]
+            if above:
+                return min(above)
+
+    return None
 
 
 def _find_nearest_equal_level(
@@ -363,6 +367,14 @@ def build_trade_plan(
     regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
     sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
     zone_dist_mult = REGIME_ZONE_DISTANCE_MULT.get(regime_primary, _DEFAULT_ZONE_DISTANCE_MULT)
+    if regime_primary == "volatile":
+        watch_zone_atr_mult = 0.70
+    elif "trend" in regime_primary:
+        watch_zone_atr_mult = 0.40
+    elif regime_primary == "range":
+        watch_zone_atr_mult = 0.50
+    else:
+        watch_zone_atr_mult = 0.50
     h4_smc = smc.get("H4", {}) if isinstance(smc, dict) else {}
     smc_supports = _smc_zones_to_levels(h4_smc.get("demand_zones", []))
     smc_resistances = _smc_zones_to_levels(h4_smc.get("supply_zones", []))
@@ -387,13 +399,15 @@ def build_trade_plan(
         else:
             entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
         watch_low = level - atr_value * 0.10
-        watch_high = level + atr_value * 0.70
+        watch_high = level + atr_value * watch_zone_atr_mult
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
         # SL: prefer nearest swing low from H4/H1, fallback to zone/ATR-based
         swing_sl = _find_nearest_swing_for_sl(smc, "buy", level)
         if swing_sl is not None:
             stop_loss = swing_sl - atr_value * _SWING_SL_BUFFER_ATR
+            if abs(level - stop_loss) < min_stop_distance:
+                stop_loss = level - min_stop_distance
         else:
             stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
         # Guard: SL must be strictly below the entry zone
@@ -436,7 +450,7 @@ def build_trade_plan(
             entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * 0.5))
         else:
             entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
-        watch_low = level - atr_value * 0.70
+        watch_low = level - atr_value * watch_zone_atr_mult
         watch_high = level + atr_value * 0.10
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
@@ -444,6 +458,8 @@ def build_trade_plan(
         swing_sl = _find_nearest_swing_for_sl(smc, "sell", level)
         if swing_sl is not None:
             stop_loss = swing_sl + atr_value * _SWING_SL_BUFFER_ATR
+            if abs(level - stop_loss) < min_stop_distance:
+                stop_loss = level + min_stop_distance
         else:
             stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
         # Guard: SL must be strictly above the entry zone

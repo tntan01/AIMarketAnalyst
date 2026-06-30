@@ -459,23 +459,27 @@ def map_expectancy_to_score(expectancy_r: float | None, sample_size: int) -> int
     if expectancy_r is None or sample_size < MIN_SAMPLE_SIZE:
         return DEFAULT_EVIDENCE_SCORE
 
-    # Strong positive
-    if expectancy_r >= 0.50:
-        return 85
-    if expectancy_r >= 0.30:
-        return 75
-    if expectancy_r >= 0.15:
-        return 65
-
-    # Strong negative
-    if expectancy_r <= -0.30:
-        return 20
-    if expectancy_r <= -0.15:
+    if expectancy_r < 0.00:
         return 35
 
-    # Near-zero zone: linear mapping around 50, clamped to 35–65
-    score = 50.0 + expectancy_r * 100.0
-    return clamp_score(score, minimum=35, maximum=65)
+    if expectancy_r >= 0.75:
+        return 95
+
+    anchors = [
+        (0.00, 50),
+        (0.15, 65),
+        (0.30, 75),
+        (0.50, 85),
+        (0.75, 95),
+    ]
+    for i in range(len(anchors) - 1):
+        exp_low, score_low = anchors[i]
+        exp_high, score_high = anchors[i + 1]
+        if exp_low <= expectancy_r < exp_high:
+            score = score_low + (score_high - score_low) * (expectancy_r - exp_low) / (exp_high - exp_low)
+            return clamp_score(int(round(score)), minimum=20, maximum=95)
+
+    return DEFAULT_EVIDENCE_SCORE
 
 
 # ---------------------------------------------------------------------------

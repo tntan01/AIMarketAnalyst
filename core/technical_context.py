@@ -118,8 +118,6 @@ def build_zones(kind: str, swings: list[dict[str, Any]], atr_value: float) -> li
 
 def classify_zone_strength(zone_type: str, confluence_count: int, test_count: int) -> str:
     score = 0
-    if zone_type in {"pivot_monthly", "pivot_weekly"}:
-        score += 2
     if test_count >= 3:
         score += 2
     elif test_count >= 1:

@@ -148,7 +148,7 @@ def evaluate_entry(
     confirmation_score += candle_signal["score"]
     confirmation_score += smc_signal["score"]
     confirmation_score += location_score
-    confirmation_score = min(100, confirmation_score)
+
 
     trigger_type = _first_trigger(candle_signal["trigger_type"], smc_signal["trigger_type"])
 

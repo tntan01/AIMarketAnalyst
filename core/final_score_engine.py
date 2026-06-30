@@ -270,6 +270,49 @@ def _classify_reason_codes(
 
 
 # ---------------------------------------------------------------------------
+# Adaptive weight adjustment
+# ---------------------------------------------------------------------------
+
+
+def _compute_adaptive_weight_adjustment(
+    recent_trades: list[dict[str, object]] | None,
+    signal_score: int,
+) -> dict[str, Any]:
+    if not recent_trades or len(recent_trades) < 10:
+        return {"adjustment_pct": 0, "hit_rate_gap": None, "reason": "insufficient_data"}
+
+    sample = recent_trades[-20:]
+    results_r: list[float] = []
+    for t in sample:
+        if not isinstance(t, dict):
+            continue
+        rr = t.get("result_r")
+        if rr is None:
+            continue
+        try:
+            val = float(rr)
+            if not isfinite(val):
+                continue
+            results_r.append(val)
+        except (ValueError, TypeError):
+            continue
+
+    if len(results_r) < 10:
+        return {"adjustment_pct": 0, "hit_rate_gap": None, "reason": "insufficient_data"}
+
+    wins = [r for r in results_r if r > 0]
+    actual_win_rate = len(wins) / len(results_r)
+    expected_win_rate = signal_score / 100.0
+    hit_rate_gap = actual_win_rate - expected_win_rate
+
+    if hit_rate_gap < -0.15:
+        return {"adjustment_pct": -5, "hit_rate_gap": round(hit_rate_gap, 3), "reason": "underperformance"}
+    if hit_rate_gap > 0.10:
+        return {"adjustment_pct": 5, "hit_rate_gap": round(hit_rate_gap, 3), "reason": "overperformance"}
+    return {"adjustment_pct": 0, "hit_rate_gap": round(hit_rate_gap, 3), "reason": "within_range"}
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -280,6 +323,7 @@ def calculate_final_score(
     execution_quality_score: object = None,
     *,
     weights: dict[str, float] | None = None,
+    recent_trades: list[dict[str, object]] | None = None,
 ) -> dict[str, Any]:
     """Blend three score layers into a final_score (0–100).
 
@@ -315,6 +359,14 @@ def calculate_final_score(
     ev = _coerce_input(evidence_score, DEFAULT_EVIDENCE_SCORE)
     eq = _coerce_input(execution_quality_score, DEFAULT_EXECUTION_QUALITY_SCORE)
 
+    adj_info = _compute_adaptive_weight_adjustment(recent_trades, sig)
+    adj_pct = adj_info["adjustment_pct"]
+    if adj_pct != 0:
+        w = dict(w)
+        w["signal_score"] = w["signal_score"] + adj_pct / 100.0
+        w["evidence_score"] = w["evidence_score"] - adj_pct / 100.0
+        w = normalize_weights(w)
+
     sig_weighted = weighted_component(sig, w["signal_score"])
     ev_weighted = weighted_component(ev, w["evidence_score"])
     eq_weighted = weighted_component(eq, w["execution_quality_score"])
@@ -347,6 +399,7 @@ def calculate_final_score(
             "formula": (
                 "signal_score*{:.2f} + evidence_score*{:.2f} + execution_quality_score*{:.2f}"
             ).format(w["signal_score"], w["evidence_score"], w["execution_quality_score"]),
+            "adaptive_weight_adjustment": adj_info,
         },
         "reason": "final_score_calculated",
     }
