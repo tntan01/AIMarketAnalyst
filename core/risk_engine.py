@@ -30,10 +30,20 @@ REGIME_SL_MULTIPLIER: dict[str, float] = {
     "volatile":   0.85,
     "unknown":    0.50,
 }
+REGIME_ZONE_DISTANCE_MULT: dict[str, float] = {
+    "trend_up":   2.0,
+    "trend_down": 2.0,
+    "range":      1.5,
+    "volatile":   2.5,
+    "unknown":    1.5,
+}
 _DEFAULT_SL_MULT = 0.50
+_DEFAULT_ZONE_DISTANCE_MULT = 1.5
 _ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
 _ZONE_SL_CAP_RATIO = 1.5     # SL cannot exceed 1.5× ATR-based width
-ENTRY_ZONE_ATR_MULT = 0.20   # half-width of entry zone in ATR multiples
+ENTRY_ZONE_ATR_MULT = 0.20   # fallback half-width of entry zone in ATR multiples
+_ENTRY_ZONE_ATR_MIN = 0.10   # min half-width when S/R zone is very narrow
+_ENTRY_ZONE_ATR_MAX = 0.30   # max half-width when S/R zone is very wide
 _ENTRY_AGGRESSIVENESS = 0.0  # 0.0=nearest edge (best RR), 1.0=farthest edge (old behavior)
 _SWING_SL_BUFFER_ATR = 0.15  # buffer beyond swing level for SL placement
 _MIN_SL_DISTANCE_ATR = 0.5   # reject plans with SL tighter than this × ATR
@@ -352,6 +362,7 @@ def build_trade_plan(
     min_stop_distance = max(atr_value * 0.20, spread_price * 3)
     regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
     sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
+    zone_dist_mult = REGIME_ZONE_DISTANCE_MULT.get(regime_primary, _DEFAULT_ZONE_DISTANCE_MULT)
     h4_smc = smc.get("H4", {}) if isinstance(smc, dict) else {}
     smc_supports = _smc_zones_to_levels(h4_smc.get("demand_zones", []))
     smc_resistances = _smc_zones_to_levels(h4_smc.get("supply_zones", []))
@@ -360,15 +371,21 @@ def build_trade_plan(
     resistance_zones = list(technical["resistance_zones"]) + smc_resistances
 
     # Entry Ladder Phase 1: narrow zone for precise positioning
-    entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
 
     if side == "buy":
-        support = select_best_level(support_zones, price, atr_value * 1.5, below=True)
+        support = select_best_level(support_zones, price, atr_value * zone_dist_mult, below=True)
         if not support:
             return None
         level = support["level"]
         entry_zone_score = support.get("zone_score")
         entry_zone_source = support.get("source", "technical")
+        zone_low = support.get("low")
+        zone_high = support.get("high")
+        if zone_low is not None and zone_high is not None and zone_high > zone_low:
+            zone_width_atr = (zone_high - zone_low) / atr_value
+            entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * 0.5))
+        else:
+            entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
         watch_low = level - atr_value * 0.10
         watch_high = level + atr_value * 0.70
         entry_low = level - atr_value * entry_zone_atr_mult
@@ -394,22 +411,31 @@ def build_trade_plan(
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             tp1 = nearest_target(resistance_zones, entry_for_rr, above=True)
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
-            tp1 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP1)
+            if regime_primary != "range":
+                tp1 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP1)
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             return None
         # TP2: next S/R zone, fallback to Fib 0.618
         tp2 = next_target(resistance_zones, tp1, above=True)
         if tp2 is None:
-            tp2 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP2)
+            if regime_primary != "range":
+                tp2 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP2)
         condition = _build_buy_condition(h4_smc)
         invalidation = _build_buy_invalidation(stop_loss, h4_smc)
     else:
-        resistance = select_best_level(resistance_zones, price, atr_value * 1.5, below=False)
+        resistance = select_best_level(resistance_zones, price, atr_value * zone_dist_mult, below=False)
         if not resistance:
             return None
         level = resistance["level"]
         entry_zone_score = resistance.get("zone_score")
         entry_zone_source = resistance.get("source", "technical")
+        zone_low = resistance.get("low")
+        zone_high = resistance.get("high")
+        if zone_low is not None and zone_high is not None and zone_high > zone_low:
+            zone_width_atr = (zone_high - zone_low) / atr_value
+            entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * 0.5))
+        else:
+            entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
         watch_low = level - atr_value * 0.70
         watch_high = level + atr_value * 0.10
         entry_low = level - atr_value * entry_zone_atr_mult
@@ -435,13 +461,15 @@ def build_trade_plan(
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             tp1 = nearest_target(support_zones, entry_for_rr, above=False)
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
-            tp1 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP1)
+            if regime_primary != "range":
+                tp1 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP1)
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             return None
         # TP2: next S/R zone, fallback to Fib 0.618
         tp2 = next_target(support_zones, tp1, above=False)
         if tp2 is None:
-            tp2 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP2)
+            if regime_primary != "range":
+                tp2 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP2)
         condition = _build_sell_condition(h4_smc)
         invalidation = _build_sell_invalidation(stop_loss, h4_smc)
 
