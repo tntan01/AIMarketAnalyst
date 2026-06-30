@@ -1252,15 +1252,45 @@ class NewsService:
     def _parse_actual_simple(text: str) -> str:
         clean = re.sub(r"<[^>]+>", "", text)
         m = re.search(
-            r'(?:actual|result|rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|came in at)\s+(?:by\s+)?(\d+\.?\d*%?)',
+            r'(?:actual|result|rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|came in at|unchanged at|at)\s+(?:by\s+)?(\d+\.?\d*)\s*(%|million|billion|thousand|[MBK])?',
             clean, re.IGNORECASE,
         )
-        if m:
-            val = m.group(1).strip()
-            if "%" not in val:
-                val = val + "%"
+        if not m:
+            return ""
+        num = m.group(1).strip()
+        unit = (m.group(2) or "").strip()
+
+        unit_lower = unit.lower()
+        if unit_lower == "million":
+            unit = "M"
+        elif unit_lower == "billion":
+            unit = "B"
+        elif unit_lower == "thousand":
+            unit = "K"
+
+        val = num + unit
+
+        has_pct = unit == "%"
+        has_suffix = unit in ("K", "M", "B")
+        if has_suffix:
             return val
-        return ""
+
+        num_str = num.replace(",", "")
+        try:
+            f = float(num_str)
+        except (ValueError, TypeError):
+            return ""
+
+        if has_pct:
+            if not (-100.0 <= f <= 100.0):
+                return ""
+        else:
+            if not (-10000.0 <= f <= 10000.0):
+                return ""
+
+        if not has_pct:
+            val = val + "%"
+        return val
 
     def lookup_actuals_batch(self, events: list[dict[str, object]]) -> None:
         api_key = self._get_brave_api_key()
