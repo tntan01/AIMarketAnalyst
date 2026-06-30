@@ -666,10 +666,14 @@ class BacktestScreen(QWidget):
         layout.addWidget(text, 1)
 
         btn_row = QHBoxLayout()
+        apply_btn = action_button("✅ Áp dụng vào Settings", primary=True, color="success")
+        apply_btn.setToolTip("Ghi trực tiếp cấu hình đề xuất vào Settings, không cần copy/paste")
+        apply_btn.clicked.connect(lambda: self._apply_recommendations_to_settings(recs, dlg))
         copy_btn = action_button("📋 Sao chép", color="info")
         copy_btn.clicked.connect(lambda: self._copy_recommendations_to_clipboard(recs))
         close_btn = action_button("❌ Đóng")
         close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(apply_btn)
         btn_row.addWidget(copy_btn)
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
@@ -705,6 +709,67 @@ class BacktestScreen(QWidget):
             "1. Vào Cài đặt > Nguồn dữ liệu > bảng MT5\n"
             "2. Nhấn nút '📋 Dán cấu hình Backtest' phía trên bảng\n"
             "3. Hoặc điền thủ công: tick cột 'Kiểm thử', chọn Regime/Hướng/RR"
+        )
+
+    def _apply_recommendations_to_settings(self, recs: dict, dlg: QDialog) -> None:
+        """Apply recommended configs directly to Settings (no copy/paste needed)."""
+        configs = {}
+        for symbol, cfg in recs.items():
+            if cfg is None:
+                continue
+            configs[symbol] = {
+                "regime": cfg["regime"],
+                "side": cfg["side"],
+                "min_score": cfg["min_score"],
+                "min_rr": cfg["min_rr"],
+            }
+
+        if not configs:
+            QMessageBox.information(self, "Áp dụng", "Không có đề xuất nào để áp dụng.")
+            return
+
+        try:
+            settings = (
+                self.app.settings_service.load()
+                if self.app else self.controller.settings_service.load()
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi", f"Không đọc được Settings:\n{exc}")
+            return
+
+        updated = 0
+        for symbol, cfg in configs.items():
+            sym_settings = settings.trading.symbol_settings.get(symbol)
+            if sym_settings is None:
+                from config.settings import SymbolScanSettings
+                sym_settings = SymbolScanSettings()
+                settings.trading.symbol_settings[symbol] = sym_settings
+
+            sym_settings.backtest = True
+            sym_settings.auto_trade_regime = cfg["regime"]
+            sym_settings.auto_trade_side = cfg["side"]
+            sym_settings.min_score = int(cfg["min_score"])
+            sym_settings.min_expected_rr = float(cfg["min_rr"])
+            updated += 1
+
+            if symbol not in settings.trading.enabled_symbols:
+                settings.trading.enabled_symbols.append(symbol)
+
+        try:
+            if self.app:
+                self.app.settings_service.save(settings)
+            else:
+                self.controller.settings_service.save(settings)
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi", f"Không lưu được Settings:\n{exc}")
+            return
+
+        dlg.accept()
+        QMessageBox.information(
+            self, "Đã áp dụng",
+            f"Đã cập nhật {updated} cặp vào Settings.\n\n"
+            "Các thay đổi đã được lưu. Vào mục Cài đặt > MT5 để xem lại.\n"
+            "Lần quét tiếp theo sẽ dùng cấu hình mới."
         )
 
     def _build_analysis_prompt(self) -> str:
