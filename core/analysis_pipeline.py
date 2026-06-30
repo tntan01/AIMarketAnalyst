@@ -306,6 +306,7 @@ class AnalysisPipeline:
                 market_regime=self._market_regime,
                 correlation_adjustment=self._buy_corr_adj,
                 macro_context=self._macro_alignment,
+                entry_context=None,
             ),
             "sell": score_scenario(
                 "sell", self._technical, self._smc, self._risk_score,
@@ -314,14 +315,12 @@ class AnalysisPipeline:
                 market_regime=self._market_regime,
                 correlation_adjustment=self._sell_corr_adj,
                 macro_context=self._macro_alignment,
+                entry_context=None,
             ),
         }
 
-        # Entry quality bonus (Phase 5 / Phase 1 backtest) — always 0
         self._buy_smc_flags = extract_smc_trade_flags(self._smc, "buy")
         self._sell_smc_flags = extract_smc_trade_flags(self._smc, "sell")
-        self._scores["buy"]["entry_quality_bonus"] = 0
-        self._scores["sell"]["entry_quality_bonus"] = 0
 
         buy_sc = self._scores["buy"]
         sell_sc = self._scores["sell"]
