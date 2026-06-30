@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -1188,7 +1189,7 @@ class NewsService:
         if cache_key in cache:
             return cache[cache_key]
 
-        query = f"{currency} {event_name} {date_key} actual result vs forecast"
+        query = f"{currency} {event_name} {date_key} actual result"
         from services.forex_factory_client import ForexFactoryClient
         ff_client = ForexFactoryClient()
         results = ff_client._brave_search(query, api_key)
@@ -1198,62 +1199,24 @@ class NewsService:
             for r in results
         )
         all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
-        clean_text = re.sub(r"<[^>]+>", "", all_text)
 
-        actual = self._extract_actual_for_event(clean_text, currency, event_name)
+        actual = self._parse_actual_simple(all_text)
         cache[cache_key] = actual
         self._write_actual_cache(cache)
         return actual
 
-    def _extract_actual_for_event(self, text: str, currency: str, title: str) -> str:
-        raw_words = re.split(r"[^a-zA-Z/]+", title.lower()) if title else []
-        keywords: list[str] = []
-        for w in raw_words:
-            for part in re.split(r"[/-]", w):
-                part = part.strip()
-                if len(part) >= 3:
-                    keywords.append(part)
-        short_words = [w for w in raw_words if len(w) >= 3][:2]
-        if len(short_words) >= 2:
-            keywords.append(" ".join(short_words))
-        title_keywords = " ".join(keywords[:50])
-
-        verbs = r'(?:rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|actual|result|came in at)'
-
-        if title_keywords:
-            for kw in title_keywords.split()[:5]:
-                kw_esc = re.escape(kw)
-                m = re.search(
-                    rf'\b{kw_esc}\b.*?{verbs}\s+(?:by\s+)?(\d+\.?\d*%?)',
-                    text, re.IGNORECASE,
-                )
-                if m:
-                    val = m.group(1).strip()
-                    if "%" not in val:
-                        val = val + "%"
-                    return val
-
-                if len(kw) >= 4:
-                    m = re.search(
-                        rf'\b{kw_esc}\b[^.]*?(\d+\.?\d*%?)',
-                        text, re.IGNORECASE,
-                    )
-                    if m:
-                        val = m.group(1).strip()
-                        if "%" not in val:
-                            val = val + "%"
-                        return val
-
+    @staticmethod
+    def _parse_actual_simple(text: str) -> str:
+        clean = re.sub(r"<[^>]+>", "", text)
         m = re.search(
-            rf'{re.escape(currency)}.*?(?:actual|result)\s*:?\s*(\d+\.?\d*%?)',
-            text, re.IGNORECASE,
+            r'(?:actual|result|rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|came in at)\s+(?:by\s+)?(\d+\.?\d*%?)',
+            clean, re.IGNORECASE,
         )
         if m:
             val = m.group(1).strip()
             if "%" not in val:
                 val = val + "%"
             return val
-
         return ""
 
     def lookup_actuals_batch(self, events: list[dict[str, object]]) -> None:
@@ -1294,25 +1257,30 @@ class NewsService:
         if not missing:
             return
 
+        missing = missing[:15]
+
         from services.forex_factory_client import ForexFactoryClient
         ff_client = ForexFactoryClient()
         cache_updated = False
 
-        batch_size = 5
-        for i in range(0, len(missing), batch_size):
-            batch = missing[i:i + batch_size]
-            query_parts = []
-            for item in batch:
-                ev = item["ev"]
-                currency = str(ev.get("currency", ""))
-                title = str(ev.get("title", ""))
-                date_key = str(ev.get("time_utc", ""))[:10]
-                query_parts.append(f"{currency}:{title} ({date_key}) actual")
-            query = " | ".join(query_parts) + " economic data result"
+        for item in missing:
+            ev = item["ev"]
+            cache_key = item["cache_key"]
+            currency = str(ev.get("currency", ""))
+            title = str(ev.get("title", ""))
+            ev_time_str = str(ev.get("time_utc", ""))
+            date_key = ev_time_str[:10]
 
-            results = ff_client._brave_search(query, api_key)
+            query = f"{currency} {title} {date_key} actual result"
+            try:
+                results = ff_client._brave_search(query, api_key)
+            except Exception:
+                continue
+
             if not results:
                 continue
+
+            time.sleep(0.3)
 
             all_text = " ".join(
                 r.get("title", "") + " " + r.get("description", "")
@@ -1321,18 +1289,11 @@ class NewsService:
             all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
             clean_text = re.sub(r"<[^>]+>", "", all_text)
 
-            for item in batch:
-                ev = item["ev"]
-                cache_key = item["cache_key"]
-                currency = str(ev.get("currency", ""))
-                title = str(ev.get("title", ""))
-                actual = self._extract_actual_for_event(clean_text, currency, title)
-                cache[cache_key] = actual
-                if actual:
-                    ev["actual"] = actual
-                cache_updated = True
-
-        if cache_updated:
+            actual = self._parse_actual_simple(clean_text)
+            cache[cache_key] = actual
+            if actual:
+                ev["actual"] = actual
+            cache_updated = True
             self._write_actual_cache(cache)
 
 
