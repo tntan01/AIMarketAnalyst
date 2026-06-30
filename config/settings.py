@@ -76,6 +76,7 @@ class AdvancedSettings:
     sqlite_database_path: str = "./data/journal.db"
     settings_storage: str = "settings.json"
     block_high_impact_news: bool = True
+    brave_api_key: str = ""
 
 
 @dataclass(slots=True)

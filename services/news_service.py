@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -439,6 +440,11 @@ class NewsService:
             return (1, "")
 
         combined.sort(key=sort_key)
+        # Batch lookup actual for past events
+        try:
+            self.lookup_actuals_batch(combined)
+        except Exception:
+            pass
         return combined
 
     # ------------------------------------------------------------------
@@ -1133,6 +1139,201 @@ class NewsService:
         if any(term in lowered for term in ["ecb", "euro", "european union", "lagarde", "von der leyen"]):
             return "Có thể tác động tới EUR qua kỳ vọng chính sách ECB hoặc rủi ro chính trị châu Âu."
         return ""
+
+    # ------------------------------------------------------------------
+    # Actual value lookup (Brave Search)
+    # ------------------------------------------------------------------
+
+    def _get_brave_api_key(self) -> str:
+        try:
+            from config.paths import settings_path
+            from services.storage_service import JsonStorage
+            storage = JsonStorage(settings_path())
+            raw = storage.load() or {}
+            adv = raw.get("advanced", {})
+            return adv.get("brave_api_key", "")
+        except Exception:
+            return ""
+
+    def _actual_cache_file(self) -> Path:
+        return app_data_dir() / "cache" / "actual_cache.json"
+
+    def _read_actual_cache(self) -> dict[str, str]:
+        try:
+            cache_file = self._actual_cache_file()
+            if cache_file.exists():
+                data = json.loads(cache_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+        return {}
+
+    def _write_actual_cache(self, cache: dict[str, str]) -> None:
+        try:
+            cache_file = self._actual_cache_file()
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def lookup_actual_single(self, currency: str, event_name: str, ev_time_str: str) -> str:
+        api_key = self._get_brave_api_key()
+        if not api_key:
+            return ""
+
+        date_key = ev_time_str[:10]
+        cache_key = f"{currency}|{event_name}|{date_key}"
+        cache = self._read_actual_cache()
+        if cache_key in cache:
+            return cache[cache_key]
+
+        query = f"{currency} {event_name} {date_key} actual result vs forecast"
+        from services.forex_factory_client import ForexFactoryClient
+        ff_client = ForexFactoryClient()
+        results = ff_client._brave_search(query, api_key)
+
+        all_text = " ".join(
+            r.get("title", "") + " " + r.get("description", "")
+            for r in results
+        )
+        all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
+        clean_text = re.sub(r"<[^>]+>", "", all_text)
+
+        actual = self._extract_actual_for_event(clean_text, currency, event_name)
+        cache[cache_key] = actual
+        self._write_actual_cache(cache)
+        return actual
+
+    def _extract_actual_for_event(self, text: str, currency: str, title: str) -> str:
+        raw_words = re.split(r"[^a-zA-Z/]+", title.lower()) if title else []
+        keywords: list[str] = []
+        for w in raw_words:
+            for part in re.split(r"[/-]", w):
+                part = part.strip()
+                if len(part) >= 3:
+                    keywords.append(part)
+        short_words = [w for w in raw_words if len(w) >= 3][:2]
+        if len(short_words) >= 2:
+            keywords.append(" ".join(short_words))
+        title_keywords = " ".join(keywords[:50])
+
+        verbs = r'(?:rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|actual|result|came in at)'
+
+        if title_keywords:
+            for kw in title_keywords.split()[:5]:
+                kw_esc = re.escape(kw)
+                m = re.search(
+                    rf'\b{kw_esc}\b.*?{verbs}\s+(?:by\s+)?(\d+\.?\d*%?)',
+                    text, re.IGNORECASE,
+                )
+                if m:
+                    val = m.group(1).strip()
+                    if "%" not in val:
+                        val = val + "%"
+                    return val
+
+                if len(kw) >= 4:
+                    m = re.search(
+                        rf'\b{kw_esc}\b[^.]*?(\d+\.?\d*%?)',
+                        text, re.IGNORECASE,
+                    )
+                    if m:
+                        val = m.group(1).strip()
+                        if "%" not in val:
+                            val = val + "%"
+                        return val
+
+        m = re.search(
+            rf'{re.escape(currency)}.*?(?:actual|result)\s*:?\s*(\d+\.?\d*%?)',
+            text, re.IGNORECASE,
+        )
+        if m:
+            val = m.group(1).strip()
+            if "%" not in val:
+                val = val + "%"
+            return val
+
+        return ""
+
+    def lookup_actuals_batch(self, events: list[dict[str, object]]) -> None:
+        api_key = self._get_brave_api_key()
+        if not api_key:
+            return
+
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        cache = self._read_actual_cache()
+
+        missing = []
+        for ev in events:
+            if str(ev.get("type", "")) != "event":
+                continue
+            actual = str(ev.get("actual", "")).strip()
+            if actual:
+                continue
+            ev_time_str = str(ev.get("time_utc", ""))
+            if not ev_time_str:
+                continue
+            try:
+                ev_time = datetime.fromisoformat(ev_time_str.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if ev_time >= now:
+                continue
+            date_key = ev_time_str[:10]
+            cache_key = f"{str(ev.get('currency',''))}|{str(ev.get('title',''))}|{date_key}"
+            if cache_key in cache:
+                if cache[cache_key]:
+                    ev["actual"] = cache[cache_key]
+                continue
+            if now - ev_time < timedelta(minutes=30):
+                continue
+            missing.append({"ev": ev, "cache_key": cache_key})
+
+        if not missing:
+            return
+
+        from services.forex_factory_client import ForexFactoryClient
+        ff_client = ForexFactoryClient()
+        cache_updated = False
+
+        batch_size = 5
+        for i in range(0, len(missing), batch_size):
+            batch = missing[i:i + batch_size]
+            query_parts = []
+            for item in batch:
+                ev = item["ev"]
+                currency = str(ev.get("currency", ""))
+                title = str(ev.get("title", ""))
+                date_key = str(ev.get("time_utc", ""))[:10]
+                query_parts.append(f"{currency}:{title} ({date_key}) actual")
+            query = " | ".join(query_parts) + " economic data result"
+
+            results = ff_client._brave_search(query, api_key)
+            if not results:
+                continue
+
+            all_text = " ".join(
+                r.get("title", "") + " " + r.get("description", "")
+                for r in results
+            )
+            all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
+            clean_text = re.sub(r"<[^>]+>", "", all_text)
+
+            for item in batch:
+                ev = item["ev"]
+                cache_key = item["cache_key"]
+                currency = str(ev.get("currency", ""))
+                title = str(ev.get("title", ""))
+                actual = self._extract_actual_for_event(clean_text, currency, title)
+                cache[cache_key] = actual
+                if actual:
+                    ev["actual"] = actual
+                cache_updated = True
+
+        if cache_updated:
+            self._write_actual_cache(cache)
 
 
 # ------------------------------------------------------------------

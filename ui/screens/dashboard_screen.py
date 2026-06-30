@@ -60,6 +60,25 @@ class NewsWorker(QThread):
             self.error.emit(str(e))
 
 
+class ActualLookupWorker(QThread):
+    result_ready = pyqtSignal(str)
+
+    def __init__(self, currency: str, event_name: str, ev_time_str: str, news_service):
+        super().__init__()
+        self.currency = currency
+        self.event_name = event_name
+        self.ev_time_str = ev_time_str
+        self.news_service = news_service
+
+    def run(self):
+        result = self.news_service.lookup_actual_single(
+            self.currency,
+            self.event_name,
+            self.ev_time_str,
+        )
+        self.result_ready.emit(result)
+
+
 class DashboardScreen(QWidget):
     def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
@@ -285,8 +304,8 @@ class DashboardScreen(QWidget):
         # Table
         self.news_table = QTableWidget()
         self.news_table.setObjectName("EconTable")
-        self.news_table.setColumnCount(5)
-        self.news_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung", "Nguồn", ""])
+        self.news_table.setColumnCount(8)
+        self.news_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung", "Kỳ trước", "Dự báo", "Thực tế", "Nguồn", ""])
         self.news_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.news_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.news_table.setAlternatingRowColors(True)
@@ -302,10 +321,16 @@ class DashboardScreen(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         self.news_table.setColumnWidth(0, 185)
         self.news_table.setColumnWidth(1, 55)
-        self.news_table.setColumnWidth(3, 115)
-        self.news_table.setColumnWidth(4, 50)
+        self.news_table.setColumnWidth(3, 85)
+        self.news_table.setColumnWidth(4, 85)
+        self.news_table.setColumnWidth(5, 85)
+        self.news_table.setColumnWidth(6, 115)
+        self.news_table.setColumnWidth(7, 50)
 
         layout.addWidget(self.news_table)
 
@@ -656,18 +681,61 @@ class DashboardScreen(QWidget):
             style_item(content_item)
             table.setItem(i, 2, content_item)
 
-            # Column 3: Source
+            # Column 3: Previous
+            if row_type == "event":
+                previous = str(row.get("previous", ""))
+            else:
+                previous = "—"
+            prev_item = QTableWidgetItem(previous if previous else "—")
+            prev_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            style_item(prev_item)
+            table.setItem(i, 3, prev_item)
+
+            # Column 4: Forecast
+            if row_type == "event":
+                forecast = str(row.get("forecast", ""))
+            else:
+                forecast = "—"
+            fore_item = QTableWidgetItem(forecast if forecast else "—")
+            fore_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            style_item(fore_item)
+            table.setItem(i, 4, fore_item)
+
+            # Column 5: Actual (bold, colored if deviates from forecast)
+            if row_type == "event":
+                actual = str(row.get("actual", ""))
+            else:
+                actual = "—"
+            actual_item = QTableWidgetItem(actual if actual else "—")
+            actual_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if actual and actual not in ("", "—"):
+                f = actual_item.font()
+                f.setBold(True)
+                actual_item.setFont(f)
+                try:
+                    av = float(actual.replace("%", "").replace(",", ""))
+                    fv = float(forecast.replace("%", "").replace(",", ""))
+                    if av > fv:
+                        actual_item.setForeground(QColor("#137333" if self._light else "#10b981"))
+                    elif av < fv:
+                        actual_item.setForeground(QColor("#b91c1c" if self._light else "#f87171"))
+                except (ValueError, TypeError):
+                    pass
+            style_item(actual_item)
+            table.setItem(i, 5, actual_item)
+
+            # Column 6: Source
             source_text = str(row.get("source", ""))
             short_source = source_text.split(" ")[0][:12] if source_text else "—"
             src_item = QTableWidgetItem(short_source)
             src_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             style_item(src_item)
-            table.setItem(i, 3, src_item)
+            table.setItem(i, 6, src_item)
 
-            # Column 4: Action button / link
+            # Column 7: Action button / link
             action_item = QTableWidgetItem()
             style_item(action_item)
-            table.setItem(i, 4, action_item)
+            table.setItem(i, 7, action_item)
 
             if row_type == "event":
                 link_color, link_hover = self._zone_link_colors(zone)
@@ -692,7 +760,7 @@ class DashboardScreen(QWidget):
                     f"QPushButton:hover {{ color:{link_hover}; }}"
                 )
                 detail_btn.clicked.connect(lambda checked, r=row: self._show_news_event_detail(r, tz))
-                table.setCellWidget(i, 4, detail_btn)
+                table.setCellWidget(i, 7, detail_btn)
             else:
                 url = str(row.get("url", ""))
                 title = str(row.get("title", ""))
@@ -713,7 +781,7 @@ class DashboardScreen(QWidget):
                         f"QPushButton:hover {{ color:{link_hover}; }}"
                     )
                     detail_btn.clicked.connect(lambda checked, r=row: self._show_headline_detail(r, tz))
-                    table.setCellWidget(i, 4, detail_btn)
+                    table.setCellWidget(i, 7, detail_btn)
 
             table.setRowHeight(i, 32)
 
@@ -1407,8 +1475,11 @@ QUAN TRỌNG:
             ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📈</span> Dự báo", forecast),
             ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📉</span> Kỳ trước", previous),
         ]
+        actual_val_label = None
         if actual:
             right_items.append(("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>✅</span> Kết quả", actual))
+        elif ev_time < now_utc:
+            right_items.append(("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🔄</span> Kết quả", "Đang tra cứu..."))
 
         for row_idx, (label_text, value_text) in enumerate(left_items):
             lbl = QLabel(label_text)
@@ -1437,8 +1508,19 @@ QUAN TRỌNG:
             val.setWordWrap(True)
             info_layout.addWidget(lbl, row_idx, 2)
             info_layout.addWidget(val, row_idx, 3)
+            if value_text == "Đang tra cứu...":
+                actual_val_label = val
 
         root.addWidget(info_frame)
+
+        if actual_val_label is not None:
+            from services.news_service import NewsService
+            svc = NewsService()
+            worker = ActualLookupWorker(currency, event_name, ev_time.strftime("%Y-%m-%d"), svc)
+            worker.result_ready.connect(
+                lambda result, lbl=actual_val_label: lbl.setText(f"✅ {result}" if result else "❌ Không tìm thấy")
+            )
+            worker.start()
 
         # AI analysis area
         self._event_ai_response = QTextEdit()

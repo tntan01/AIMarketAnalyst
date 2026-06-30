@@ -505,33 +505,149 @@ class ForexFactoryClient:
         ]
         return sorted(important, key=lambda row: str(row.get("time_utc", "")))[:8]
 
+    @staticmethod
+    def _normalize_event_name(name: str) -> str:
+        n = name.lower()
+        n = re.sub(r"\([^)]*\)", "", n)
+        n = re.sub(r"[^a-z0-9 ]", " ", n)
+        n = re.sub(r"\s+", " ", n).strip()
+        return n
+
     def _merge_actual_from_html(self, json_rows: list[dict[str, object]], html_rows: list[dict[str, object]]) -> None:
         if not html_rows:
             return
         now = datetime.now(UTC)
+
+        def _norm(name: str) -> str:
+            return self._normalize_event_name(name)
+
+        # Build lookup with normalized event names
         html_lookup: dict[tuple[str, str, str], str] = {}
         for row in html_rows:
             currency = str(row.get("currency", "")).upper()
-            event = str(row.get("event", "")).strip().lower()
+            event = str(row.get("event", ""))
             actual = str(row.get("actual", "")).strip()
             ev_time = _event_time(row)
             date_key = ev_time.strftime("%Y%m%d") if ev_time else ""
-            if actual and currency and event:
-                html_lookup[(currency, event, date_key)] = actual
+            norm_event = _norm(event)
+            if actual and currency and norm_event:
+                html_lookup[(currency, norm_event, date_key)] = actual
 
         if not html_lookup:
             return
 
+        stale_count = 0
         for row in json_rows:
             ev_time = _event_time(row)
             if not ev_time or ev_time >= now:
                 continue
+            if not str(row.get("actual", "")).strip():
+                age_h = (now - ev_time).total_seconds() / 3600
+                if age_h > 1:
+                    stale_count += 1
+
             currency = str(row.get("currency", "")).upper()
-            event = str(row.get("event", "")).strip().lower()
+            event = str(row.get("event", ""))
             date_key = ev_time.strftime("%Y%m%d")
-            key = (currency, event, date_key)
+            norm_event = _norm(event)
+
+            # Step 1: Fuzzy match by normalized event name
+            key = (currency, norm_event, date_key)
             if key in html_lookup and not str(row.get("actual", "")).strip():
                 row["actual"] = html_lookup[key]
+                continue
+
+            # Step 3: Time-proximity match (±30 min, same currency)
+            if not str(row.get("actual", "")).strip():
+                for hrow in html_rows:
+                    h_currency = str(hrow.get("currency", "")).upper()
+                    if h_currency != currency:
+                        continue
+                    h_time = _event_time(hrow)
+                    if not h_time:
+                        continue
+                    if abs((ev_time - h_time).total_seconds()) <= 1800:
+                        h_actual = str(hrow.get("actual", "")).strip()
+                        if h_actual:
+                            row["actual"] = h_actual
+                            break
+
+        # Step 2: Re-fetch fresh HTML if many past events missing actual (stale cache)
+        if stale_count >= 3:
+            try:
+                fresh_html = self._fetch_html_events()
+                if fresh_html:
+                    # Build fresh lookup
+                    fresh_lookup: dict[tuple[str, str, str], str] = {}
+                    for row in fresh_html:
+                        currency = str(row.get("currency", "")).upper()
+                        event = str(row.get("event", ""))
+                        actual = str(row.get("actual", "")).strip()
+                        ev_time = _event_time(row)
+                        date_key = ev_time.strftime("%Y%m%d") if ev_time else ""
+                        norm_event = _norm(event)
+                        if actual and currency and norm_event:
+                            fresh_lookup[(currency, norm_event, date_key)] = actual
+
+                    for row in json_rows:
+                        ev_time = _event_time(row)
+                        if not ev_time or ev_time >= now:
+                            continue
+                        if str(row.get("actual", "")).strip():
+                            continue
+                        currency = str(row.get("currency", "")).upper()
+                        event = str(row.get("event", ""))
+                        date_key = ev_time.strftime("%Y%m%d")
+                        norm_event = _norm(event)
+                        key = (currency, norm_event, date_key)
+                        if key in fresh_lookup:
+                            row["actual"] = fresh_lookup[key]
+                            continue
+                        # Time-proximity match with fresh HTML
+                        for hrow in fresh_html:
+                            h_currency = str(hrow.get("currency", "")).upper()
+                            if h_currency != currency:
+                                continue
+                            h_time = _event_time(hrow)
+                            if not h_time:
+                                continue
+                            if abs((ev_time - h_time).total_seconds()) <= 1800:
+                                h_actual = str(hrow.get("actual", "")).strip()
+                                if h_actual:
+                                    row["actual"] = h_actual
+                                    break
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # Brave Search
+    # ------------------------------------------------------------------
+
+    def _brave_search(self, query: str, api_key: str) -> list[dict[str, str]]:
+        import json
+        import requests
+        from urllib.parse import quote_plus
+
+        url = f"https://api.search.brave.com/res/v1/web/search?q={quote_plus(query)}&count=10"
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": api_key,
+        }
+        try:
+            resp = requests.get(url, headers=headers, timeout=8)
+            resp.raise_for_status()
+            data = resp.json()
+            results: list[dict[str, str]] = []
+            for item in data.get("web", {}).get("results", []):
+                results.append({
+                    "title": item.get("title", ""),
+                    "description": item.get("description", ""),
+                    "url": item.get("url", ""),
+                })
+            return results
+        except Exception:
+            return []
 
     # ------------------------------------------------------------------
     # Caching
