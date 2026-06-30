@@ -26,7 +26,7 @@ STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
 REGIME_SL_MULTIPLIER: dict[str, float] = {
     "trend_up":   0.65,
     "trend_down": 0.65,
-    "range":      0.40,
+    "range":      0.70,
     "volatile":   0.85,
     "unknown":    0.50,
 }
@@ -34,6 +34,7 @@ _DEFAULT_SL_MULT = 0.50
 _ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
 _ZONE_SL_CAP_RATIO = 1.5     # SL cannot exceed 1.5× ATR-based width
 ENTRY_ZONE_ATR_MULT = 0.20   # half-width of entry zone in ATR multiples
+_ENTRY_AGGRESSIVENESS = 0.0  # 0.0=nearest edge (best RR), 1.0=farthest edge (old behavior)
 _SWING_SL_BUFFER_ATR = 0.15  # buffer beyond swing level for SL placement
 _MIN_SL_DISTANCE_ATR = 0.5   # reject plans with SL tighter than this × ATR
 _EQ_TP_MAX_RR = 3.0          # max R:R for equal-highs/lows TP1 (cap distance)
@@ -342,12 +343,13 @@ def build_trade_plan(
     quote_to_usd_rate: float | None = None,
     spread_price: float = 0.0,
     market_regime: dict[str, Any] | None = None,
+    entry_aggressiveness: float = _ENTRY_AGGRESSIVENESS,
 ) -> dict[str, Any] | None:
     price = technical["price"]
     atr_value = technical["atr_h4"] or technical["atr_d1"] or 0.0
     if atr_value <= 0:
         return None
-    min_stop_distance = max(atr_value * 0.20, price * 0.0002)
+    min_stop_distance = max(atr_value * 0.20, spread_price * 3)
     regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
     sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
     h4_smc = smc.get("H4", {}) if isinstance(smc, dict) else {}
@@ -384,7 +386,7 @@ def build_trade_plan(
         # Guard: skip plan if SL is too tight (noise would sweep it)
         if abs(level - stop_loss) < atr_value * _MIN_SL_DISTANCE_ATR:
             return None
-        entry_for_rr = entry_high
+        entry_for_rr = entry_low + (entry_high - entry_low) * entry_aggressiveness
         # TP1: try equal highs (liquidity cluster), then S/R zone, then Fib
         tp1 = _find_nearest_equal_level(smc, "buy", entry_for_rr)
         if tp1 is not None and (tp1 - entry_for_rr) > (entry_for_rr - stop_loss) * _EQ_TP_MAX_RR:
@@ -425,7 +427,7 @@ def build_trade_plan(
         # Guard: skip plan if SL is too tight (noise would sweep it)
         if abs(level - stop_loss) < atr_value * _MIN_SL_DISTANCE_ATR:
             return None
-        entry_for_rr = entry_low
+        entry_for_rr = entry_high + (entry_low - entry_high) * entry_aggressiveness
         # TP1: try equal lows (liquidity cluster), then S/R zone, then Fib
         tp1 = _find_nearest_equal_level(smc, "sell", entry_for_rr)
         if tp1 is not None and (entry_for_rr - tp1) > (stop_loss - entry_for_rr) * _EQ_TP_MAX_RR:
@@ -474,6 +476,7 @@ def build_trade_plan(
 
     return {
         "entry_zone": entry_zone,
+        "entry_price": round_price(entry_for_rr),
         "watch_zone": watch_zone,
         "stop_loss": round_price(stop_loss),
         "take_profit": [round_price(value) for value in (tp1, tp2) if value is not None],

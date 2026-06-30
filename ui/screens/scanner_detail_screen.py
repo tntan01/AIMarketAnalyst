@@ -818,6 +818,9 @@ class ScannerDetailScreen(QWidget):
         items = []
         best = int(self.row.get("best_score", 0) or 0)
         gap = int(self.row.get("score_gap", 0) or 0)
+        buy_s = int(self.row.get("buy_score", 0) or 0)
+        sell_s = int(self.row.get("sell_score", 0) or 0)
+        stronger = "Buy" if buy_s > sell_s else "Sell" if sell_s > buy_s else "Ngang"
         perm = str(self.row.get("trade_permission", ""))
         entry = str(self.row.get("entry_status", ""))
         m15 = str(self.row.get("m15_quality", "")).lower()
@@ -846,7 +849,7 @@ class ScannerDetailScreen(QWidget):
         # 3. Score Gap
         items.append({
             "pass": gap >= 10,
-            "label": f"Chênh lệch Buy/Sell: {gap}/10 — {'rõ hướng' if gap >= 10 else 'chưa rõ hướng'}"
+            "label": f"Chênh lệch Buy/Sell: Buy {buy_s} vs Sell {sell_s} → cách {gap} điểm (cần ≥10) → {'rõ hướng (' + stronger + ')' if gap >= 10 else 'chưa rõ hướng'}"
         })
 
         # 4. Entry confirmed

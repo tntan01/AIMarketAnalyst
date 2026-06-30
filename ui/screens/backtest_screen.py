@@ -6,30 +6,29 @@ from pathlib import Path
 
 from PyQt6.QtCore import QDate, QEvent, QLocale, Qt
 from PyQt6.QtWidgets import (
-    QComboBox,
+    QAbstractSpinBox,
+    QButtonGroup,
     QDateEdit,
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpinBox,
     QDoubleSpinBox,
-        QAbstractSpinBox,
-        QDialog,
-        QDialogButtonBox,
-        QFileDialog,
-        QFrame,
-        QGridLayout,
-        QHBoxLayout,
-        QHeaderView,
-        QLabel,
-        QMessageBox,
-        QProgressBar,
-        QPushButton,
-        QCheckBox,
-        QScrollArea,
-        QSizePolicy,
-        QSpinBox,
-        QTableWidget,
-        QTableWidgetItem,
-        QTextEdit,
-        QVBoxLayout,
-        QWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from config.constants import SUPPORTED_SYMBOLS
@@ -40,35 +39,23 @@ from ui.screens.shared import action_button, card, page_header
 class BacktestScreen(QWidget):
     TRADE_COLUMNS = [
         ("stt", "STT"),
-        ("symbol", "Mã"),
         ("entry_time", "Thời gian vào"),
         ("side", "Hướng"),
         ("result", "Kết quả"),
         ("result_r", "R"),
-        ("entry_price", "Entry"),
-        ("stop_loss", "SL"),
-        ("take_profit", "TP"),
-        ("final_score", "Điểm tổng"),
-        ("signal_score", "Tín hiệu"),
-        ("m15_quality", "M15"),
+        ("final_score", "Điểm"),
         ("market_regime", "Regime"),
-        ("selected_zone_score", "Zone"),
+        ("expected_effective_rr", "RR kỳ vọng"),
     ]
     TRADE_COLUMN_WEIGHTS = {
-        "stt": 0.40,
-        "symbol": 0.68,
-        "entry_time": 1.55,
-        "side": 0.60,
-        "result": 0.70,
-        "result_r": 0.48,
-        "entry_price": 0.78,
-        "stop_loss": 0.78,
-        "take_profit": 0.78,
-        "final_score": 0.64,
-        "signal_score": 0.64,
-        "m15_quality": 0.58,
-        "market_regime": 0.82,
-        "selected_zone_score": 0.48,
+        "stt": 4,
+        "entry_time": 22,
+        "side": 8,
+        "result": 10,
+        "result_r": 8,
+        "final_score": 8,
+        "market_regime": 14,
+        "expected_effective_rr": 12,
     }
 
     def __init__(self, navigate=None, *, app=None) -> None:
@@ -81,7 +68,7 @@ class BacktestScreen(QWidget):
         self.backtest_thread = None
         self.backtest_worker = None
         self.result: dict[str, object] | None = None
-        self.selected_symbols = ["EUR/USD"]
+        self.selected_symbol: str = "EUR/USD"
         self.setObjectName("FormScreen")
         self._build_ui()
 
@@ -103,58 +90,48 @@ class BacktestScreen(QWidget):
         frame = card(None)
         self.settings_frame = frame
         self.settings_frame.setStyleSheet(self._backtest_form_stylesheet())
-        frame.layout().setContentsMargins(12, 10, 12, 4)
-        frame.layout().setSpacing(2)
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(12)
-        frame.layout().addLayout(top_row)
+        frame.layout().setContentsMargins(12, 8, 12, 8)
+        frame.layout().setSpacing(6)
 
-        market_box = self._section_box("Dữ liệu")
-        market_grid = QGridLayout()
-        market_grid.setContentsMargins(0, 0, 0, 0)
-        market_grid.setHorizontalSpacing(0)
-        market_grid.setVerticalSpacing(6)
-        market_box.layout().addLayout(market_grid)
+        # Row 1: Inputs and Execution Controls
+        inputs_row = QHBoxLayout()
+        inputs_row.setContentsMargins(0, 0, 0, 0)
+        inputs_row.setSpacing(8)
+        frame.layout().addLayout(inputs_row)
 
-        account_box = self._section_box("Tài khoản")
-        account_grid = QGridLayout()
-        account_grid.setContentsMargins(0, 0, 0, 0)
-        account_grid.setHorizontalSpacing(0)
-        account_grid.setVerticalSpacing(6)
-        account_box.layout().addLayout(account_grid)
+        def create_form_label(text: str) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setObjectName("FormLabel")
+            lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+            return lbl
 
-        simulation_box = self._section_box("Mô phỏng")
-        simulation_grid = QGridLayout()
-        simulation_grid.setContentsMargins(0, 0, 0, 0)
-        simulation_grid.setHorizontalSpacing(6)
-        simulation_grid.setVerticalSpacing(6)
-        simulation_grid.setColumnMinimumWidth(0, 76)
-        simulation_grid.setColumnStretch(1, 1)
-        simulation_grid.setColumnMinimumWidth(2, 68)
-        simulation_grid.setColumnStretch(3, 1)
-        simulation_box.layout().addLayout(simulation_grid)
-
-        self.symbol_summary = QLabel("")
+        self.symbol_summary = QLabel("EUR/USD")
         self.symbol_summary.setObjectName("BacktestSymbolSummary")
         self.symbol_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.symbol_button = action_button("🔍 Chọn mã", primary=True, color="info")
+        self.symbol_summary.setFixedWidth(65)
+        self.symbol_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.symbol_button = action_button("🔍 Chọn", primary=True, color="info")
         self.symbol_button.clicked.connect(self._show_symbol_dialog)
-        self._update_symbol_summary()
+        self.symbol_button.setFixedWidth(60)
 
         today = QDate.currentDate()
         self.start_date = QDateEdit(today.addMonths(-6))
         self.start_date.setCalendarPopup(True)
         self.start_date.setDisplayFormat("dd/MM/yyyy")
+        self.start_date.setFixedWidth(110)
+
         self.end_date = QDateEdit(today)
         self.end_date.setCalendarPopup(True)
         self.end_date.setDisplayFormat("dd/MM/yyyy")
+        self.end_date.setFixedWidth(110)
 
         self.balance_input = QDoubleSpinBox()
         self._apply_number_format(self.balance_input)
         self.balance_input.setRange(100, 100_000_000)
         self.balance_input.setDecimals(2)
         self.balance_input.setValue(10_000)
+        self.balance_input.setFixedWidth(95)
 
         self.risk_input = QDoubleSpinBox()
         self._apply_number_format(self.risk_input)
@@ -162,142 +139,86 @@ class BacktestScreen(QWidget):
         self.risk_input.setDecimals(2)
         self.risk_input.setValue(1.0)
         self.risk_input.setSuffix(" %")
+        self.risk_input.setFixedWidth(65)
 
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Strict", "strict")
-        self.mode_combo.addItem("Balanced", "balanced")
-        self.mode_combo.addItem("Legacy", "legacy")
-        self.mode_combo.addItem("Research", "research")
-        self.mode_combo.addItem("Kiểm thử (nới lỏng nhất)", "backtest")
-
-        self.spread_input = QDoubleSpinBox()
-        self._apply_number_format(self.spread_input)
-        self.spread_input.setRange(0.0, 10.0)
-        self.spread_input.setDecimals(5)
-
-        self.slippage_input = QDoubleSpinBox()
-        self._apply_number_format(self.slippage_input)
-        self.slippage_input.setRange(0.0, 10.0)
-        self.slippage_input.setDecimals(5)
-
-        self.max_holding_input = QSpinBox()
-        self._apply_number_format(self.max_holding_input)
-        self.max_holding_input.setRange(1, 2000)
-        self.max_holding_input.setValue(96)
-        self.max_holding_input.setFixedWidth(72)
-
-        self.min_score_input = QSpinBox()
-        self._apply_number_format(self.min_score_input)
-        self.min_score_input.setRange(0, 100)
-        self.min_score_input.setValue(0)
-        self.min_score_input.setToolTip("Điểm final_score tối thiểu để vào lệnh. 0 = không lọc.")
-        self.min_score_input.setFixedWidth(64)
-
-        self.guard_checkbox = QCheckBox("Bảo vệ tài khoản")
-        self.guard_checkbox.setObjectName("BacktestField")
-        self.guard_checkbox.setToolTip("Bật giới hạn thua lỗ thực tế (daily loss, consecutive losses)")
-
-        self.max_daily_loss_input = QDoubleSpinBox()
-        self._apply_number_format(self.max_daily_loss_input)
-        self.max_daily_loss_input.setRange(0.1, 100.0)
-        self.max_daily_loss_input.setDecimals(1)
-        self.max_daily_loss_input.setValue(2.0)
-        self.max_daily_loss_input.setSuffix(" %")
-        self.max_daily_loss_input.setEnabled(False)
-
-        self.max_consecutive_loss_input = QSpinBox()
-        self._apply_number_format(self.max_consecutive_loss_input)
-        self.max_consecutive_loss_input.setRange(1, 100)
-        self.max_consecutive_loss_input.setValue(3)
-        self.max_consecutive_loss_input.setEnabled(False)
-
-        self.guard_checkbox.toggled.connect(self._on_guard_toggled)
-
-        self.macro_checkbox = QCheckBox("Dùng macro/correlation thật")
-        self.macro_checkbox.setObjectName("BacktestField")
-        self.macro_checkbox.setToolTip("Lấy dữ liệu DXY/VIX/US10Y và macro alignment hiện tại thay vì neutral. Làm backtest thực tế hơn.")
-
-        for field in (
-            self.start_date,
-            self.end_date,
-            self.balance_input,
-            self.risk_input,
-            self.mode_combo,
-            self.max_holding_input,
-            self.min_score_input,
-            self.spread_input,
-            self.slippage_input,
-            self.max_daily_loss_input,
-            self.max_consecutive_loss_input,
-        ):
+        for field in (self.start_date, self.end_date, self.balance_input, self.risk_input):
             field.setObjectName("BacktestField")
 
-        market_grid.addWidget(self._symbol_cell(), 0, 0)
-        market_grid.addWidget(self._field_cell("Từ ngày", self.start_date, 58), 1, 0)
-        market_grid.addWidget(self._field_cell("Đến ngày", self.end_date, 58), 2, 0)
-        market_grid.addWidget(self._field_cell("Chế độ", self.mode_combo, 58), 3, 0)
+        inputs_row.addWidget(create_form_label("Mã:"))
+        inputs_row.addWidget(self.symbol_summary)
+        inputs_row.addWidget(self.symbol_button)
+        
+        inputs_row.addWidget(self._vertical_separator())
+        
+        inputs_row.addWidget(create_form_label("Từ:"))
+        inputs_row.addWidget(self.start_date)
+        inputs_row.addWidget(create_form_label("Đến:"))
+        inputs_row.addWidget(self.end_date)
+        
+        inputs_row.addWidget(self._vertical_separator())
+        
+        inputs_row.addWidget(create_form_label("Vốn:"))
+        inputs_row.addWidget(self.balance_input)
+        inputs_row.addWidget(create_form_label("Rủi ro:"))
+        inputs_row.addWidget(self.risk_input)
 
-        params_label_width = 76
-        account_grid.addWidget(self._field_cell("Số dư", self.balance_input, params_label_width), 0, 0)
-        account_grid.addWidget(self._field_cell("Rủi ro", self.risk_input, params_label_width), 1, 0)
-        account_grid.addWidget(self.guard_checkbox, 2, 0)
-        account_grid.addWidget(self._field_cell("Lỗ ngày tối đa", self.max_daily_loss_input, 104), 3, 0)
-        account_grid.addWidget(self._field_cell("Chuỗi thua tối đa", self.max_consecutive_loss_input, 104), 4, 0)
-        simulation_grid.addWidget(self._grid_label("Số nến"), 0, 0)
-        simulation_grid.addWidget(self.max_holding_input, 0, 1)
-        simulation_grid.addWidget(self._grid_label("Min Score"), 0, 2)
-        simulation_grid.addWidget(self.min_score_input, 0, 3)
-        simulation_grid.addWidget(self._grid_label("Spread"), 1, 0)
-        simulation_grid.addWidget(self.spread_input, 1, 1, 1, 3)
-        simulation_grid.addWidget(self._grid_label("Slippage"), 2, 0)
-        simulation_grid.addWidget(self.slippage_input, 2, 1, 1, 3)
-        simulation_grid.addWidget(self.macro_checkbox, 3, 0, 1, 4)
+        inputs_row.addWidget(self._vertical_separator())
 
-        summary_box = self._section_box("Kết quả")
-        self.summary_row = QGridLayout()
-        self.summary_row.setHorizontalSpacing(8)
-        self.summary_row.setVerticalSpacing(6)
-        self.summary_row.setContentsMargins(0, 0, 0, 0)
-        self.summary_row.setColumnStretch(0, 1)
-        self.summary_row.setColumnStretch(1, 1)
-        self.summary_row.setColumnStretch(2, 1)
-        summary_box.layout().addLayout(self.summary_row)
-        self._set_summary({})
-
-        top_row.addWidget(market_box, 2, Qt.AlignmentFlag.AlignTop)
-        top_row.addWidget(self._vertical_separator())
-        top_row.addWidget(account_box, 2, Qt.AlignmentFlag.AlignTop)
-        top_row.addWidget(self._vertical_separator())
-        top_row.addWidget(simulation_box, 2, Qt.AlignmentFlag.AlignTop)
-        top_row.addWidget(self._vertical_separator())
-        top_row.addWidget(summary_box, 3, Qt.AlignmentFlag.AlignTop)
-
-        run_bar = QWidget()
-        controls = QHBoxLayout(run_bar)
-        controls.setContentsMargins(0, 10, 0, 10)
-        controls.setSpacing(10)
-        self.run_button = action_button("▶️ Chạy backtest", primary=True, color="success")
+        self.run_button = action_button("▶️ Chạy", primary=True, color="success")
         self.run_button.clicked.connect(self._run_backtest)
-        self.help_button = action_button("❓ Giải thích", primary=True, color="info")
-        self.help_button.clicked.connect(self._show_input_help)
+        self.run_button.setFixedWidth(75)
+        
+        self.apply_config_btn = action_button("📋 Áp dụng cấu hình", primary=True, color="warning")
+        self.apply_config_btn.clicked.connect(self._apply_scanner_config)
+        self.apply_config_btn.setToolTip("Phân tích kết quả backtest và áp dụng cấu hình đề xuất vào Scanner settings.")
+        btn_width = self.apply_config_btn.fontMetrics().horizontalAdvance(self.apply_config_btn.text()) + 60
+        self.apply_config_btn.setFixedWidth(btn_width)
+        self.apply_config_btn.hide()
+
+
         self.progress = QProgressBar()
         self.progress.setObjectName("BacktestProgress")
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(10)
+        self.progress.setTextVisible(True)
+        self.progress.setFixedHeight(16)
+
         self.status_label = QLabel("Sẵn sàng")
         self.status_label.setObjectName("HelperText")
-        self.status_label.setMinimumWidth(180)
+        self.status_label.setMinimumWidth(100)
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        controls.addWidget(self.run_button)
-        controls.addWidget(self.help_button)
-        controls.addWidget(self.progress, 1)
-        controls.addWidget(self.status_label)
-        frame.layout().addWidget(run_bar)
+
+        inputs_row.addWidget(self.run_button)
+        inputs_row.addWidget(self.apply_config_btn)
+
+        # Row 2: Progress and Status Bar
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 2, 0, 2)
+        progress_row.setSpacing(10)
+        frame.layout().addLayout(progress_row)
+        
+        progress_row.addWidget(self.progress, 1)
+        progress_row.addWidget(self.status_label)
+
+        # Row 2: Results Display
+        results_row = QHBoxLayout()
+        results_row.setContentsMargins(0, 2, 0, 0)
+        results_row.setSpacing(8)
+        frame.layout().addLayout(results_row)
+
+        results_label = create_form_label("Kết quả:")
+        results_label.setStyleSheet("font-weight: 800; color: #ea580c;")
+        results_row.addWidget(results_label)
+
+        self.summary_row = QHBoxLayout()
+        self.summary_row.setContentsMargins(0, 0, 0, 0)
+        self.summary_row.setSpacing(6)
+        results_row.addLayout(self.summary_row)
+        self._set_summary({})
+
         self.snapshot_label = QLabel("")
         self.snapshot_label.setObjectName("HelperText")
-        self.snapshot_label.setFixedHeight(24)
+        self.snapshot_label.setFixedHeight(16)
         self.snapshot_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.snapshot_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.snapshot_label.hide()
@@ -330,39 +251,6 @@ class BacktestScreen(QWidget):
         layout.addWidget(field, 1)
         return cell
 
-    def _grid_label(self, text: str) -> QLabel:
-        label = QLabel(text)
-        label.setObjectName("FormLabel")
-        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        return label
-
-    def _two_small_fields_cell(
-        self,
-        first_label: str,
-        first_field: QWidget,
-        second_label: str,
-        second_field: QWidget,
-        *,
-        first_label_width: int,
-        second_label_width: int,
-    ) -> QWidget:
-        cell = QWidget()
-        layout = QHBoxLayout(cell)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        for label_text, field, width in (
-            (first_label, first_field, first_label_width),
-            (second_label, second_field, second_label_width),
-        ):
-            title = QLabel(label_text)
-            title.setObjectName("FormLabel")
-            title.setFixedWidth(width)
-            title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            layout.addWidget(title)
-            layout.addWidget(field)
-        layout.addStretch(1)
-        return cell
-
     def _symbol_cell(self) -> QWidget:
         cell = QWidget()
         layout = QHBoxLayout(cell)
@@ -379,15 +267,14 @@ class BacktestScreen(QWidget):
 
     def _stat_cell(self, title: str, value: str) -> QFrame:
         frame = QFrame()
-        frame.setObjectName("MiniStat")
-        frame.setFixedHeight(50)
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(2)
-        title_label = QLabel(title)
-        title_label.setObjectName("MiniStatTitle")
+        frame.setObjectName("MiniStatCompact")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(4)
+        title_label = QLabel(f"{title}:")
+        title_label.setObjectName("MiniStatTitleCompact")
         value_label = QLabel(value)
-        value_label.setObjectName("MiniStatValue")
+        value_label.setObjectName("MiniStatValueCompact")
         layout.addWidget(title_label)
         layout.addWidget(value_label)
         return frame
@@ -433,14 +320,8 @@ class BacktestScreen(QWidget):
         analyze_btn.clicked.connect(self._analyze_loaded_result)
         self.analyze_btn = analyze_btn
 
-        self.recommend_btn = action_button("📋 Đề xuất cấu hình", primary=True, color="warning")
-        self.recommend_btn.clicked.connect(self._recommend_scanner_configs)
-        self.recommend_btn.setToolTip("Phân tích backtest để đề xuất cấu hình Scanner cho từng cặp.")
-
-
         header.addWidget(load_btn)
         header.addWidget(analyze_btn)
-        header.addWidget(self.recommend_btn)
         layout.addLayout(header)
 
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
@@ -448,7 +329,7 @@ class BacktestScreen(QWidget):
         self.table.setHorizontalHeaderLabels([label for _, label in self.TRADE_COLUMNS])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setAlternatingRowColors(False)
+        self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
@@ -475,6 +356,7 @@ class BacktestScreen(QWidget):
             self._set_summary(summary)
             self._set_trades(trades)
             self._update_verdict()
+            self.apply_config_btn.show()
             self.status_label.setText(f"Đã tải: {len(trades)} lệnh")
             self.snapshot_label.setText(f"File: {path}")
             self.snapshot_label.show()
@@ -516,43 +398,50 @@ class BacktestScreen(QWidget):
 
             dlg = QDialog(self)
             dlg.setWindowTitle("Phân tích kết quả backtest")
-            dlg.setMinimumSize(740, 560)
+            dlg.setMinimumSize(800, 600)
             if light:
                 dlg.setStyleSheet("QDialog { background: #FAF9F5; }")
             else:
                 dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
             layout = QVBoxLayout(dlg)
-            layout.setContentsMargins(20, 18, 20, 16)
+            layout.setContentsMargins(16, 14, 16, 12)
+            layout.setSpacing(0)
+
             text = QTextEdit()
             text.setReadOnly(True)
             if light:
                 text.setStyleSheet(
-                    "QTextEdit { background: #ffffff; color: #111827; font-size: 13px; border: 1px solid #D6D2C8; border-radius: 6px; padding: 16px; }"
+                    "QTextEdit { background: #ffffff; color: #1e293b; font-size: 13px; "
+                    "border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }"
+                    "QScrollBar:vertical { width: 8px; background: transparent; }"
                 )
             else:
                 text.setStyleSheet(
-                    "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: 1px solid #2b3545; border-radius: 6px; padding: 16px; }"
+                    "QTextEdit { background: #0f172a; color: #e2e8f0; font-size: 13px; "
+                    "border: 1px solid #1e293b; border-radius: 8px; padding: 14px 16px; }"
+                    "QScrollBar:vertical { width: 8px; background: transparent; }"
                 )
-            
+
             stats_html = self._generate_stats_html()
             ai_html = self._format_ai_to_html(response, light)
-            
+
             hr_color = "#cbd5e1" if light else "#334155"
             header_color = "#c2410c" if light else "#f59e0b"
             final_html = (
                 f"{stats_html}"
-                f"<hr style='border: 0; border-top: 1px dashed {hr_color}; margin: 24px 0;' />"
-                f"<div style='font-family:-apple-system,Segoe UI,sans-serif;'>"
-                f"<h2 style='color:{header_color}; margin-bottom: 12px; font-size: 16px;'>🤖 AI NHẬN XÉT & ĐÁNH GIÁ</h2>"
+                f"<div style='margin:20px 0;border-top:1px dashed {hr_color};'></div>"
+                f"<h2 style='color:{header_color};margin:0 0 10px 0;font-size:15px;'>AI Nhận xét & Khuyến nghị</h2>"
                 f"{ai_html}"
-                f"</div>"
             )
-            
+
             text.setHtml(final_html)
             layout.addWidget(text, 1)
-            close_btn = action_button("❌ Đóng")
+            layout.addSpacing(8)
+
+            close_btn = action_button("Đóng")
             close_btn.clicked.connect(dlg.accept)
             btn_row = QHBoxLayout()
+            btn_row.setContentsMargins(0, 0, 0, 0)
             btn_row.addStretch()
             btn_row.addWidget(close_btn)
             layout.addLayout(btn_row)
@@ -563,13 +452,13 @@ class BacktestScreen(QWidget):
             self.analyze_btn.setText("🤖 Phân tích")
             self.analyze_btn.setEnabled(True)
 
-    def _recommend_scanner_configs(self) -> None:
-        """Analyze backtest result and recommend per-symbol scanner configs."""
+    def _apply_scanner_config(self) -> None:
+        """Show current vs recommended scanner config with checkboxes to apply."""
         if not self.result:
             QMessageBox.information(self, "Đề xuất", "Chưa có dữ liệu backtest. Hãy chạy backtest hoặc tải file trước.")
             return
 
-        from core.backtest_to_scanner_config import recommend_scanner_configs, summarize_recommendations
+        from core.backtest_to_scanner_config import recommend_scanner_configs
 
         try:
             recs = recommend_scanner_configs(self.result)
@@ -578,143 +467,238 @@ class BacktestScreen(QWidget):
             return
 
         try:
-            light = (self.app.settings_service.load().display.theme == "light" 
+            settings = (
+                self.app.settings_service.load()
+                if self.app else self.controller.settings_service.load()
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi", f"Không đọc được Settings:\n{exc}")
+            return
+
+        try:
+            light = (self.app.settings_service.load().display.theme == "light"
                      if self.app else self.controller.settings_service.load().display.theme == "light")
         except Exception:
             light = False
 
         if light:
-            text_color = "#111827"
-            muted_color = "#57534E"
-            border_color = "#cbd5e1"
-            title_color = "#b45309"
+            text_color = "#1c1917"
+            muted_color = "#78716c"
+            border_color = "#e7e5e4"
+            title_color = "#c2410c"
+            current_color = "#57534e"
+            proposed_color = "#ea580c"
+            evidence_color = "#78716c"
+            bg_color = "#faf8f5"
         else:
-            text_color = "#cbd5e1"
-            muted_color = "#94a3b8"
-            border_color = "#334155"
-            title_color = "#f59e0b"
-
-        # Build HTML table
-        rows_html = ""
-        for symbol, cfg in sorted(recs.items()):
-            if cfg is None:
-                rows_html += (
-                    f"<tr>"
-                    f"<td style='padding:6px 10px;color:{text_color};'>{symbol}</td>"
-                    f"<td colspan='4' style='padding:6px 10px;color:{muted_color};'>Không đủ dữ liệu</td>"
-                    f"</tr>"
-                )
-            else:
-                evidence = cfg.get("_evidence", "")
-                rows_html += (
-                    f"<tr>"
-                    f"<td style='padding:6px 10px;color:{text_color};font-weight:700;'>{symbol}</td>"
-                    f"<td style='padding:6px 10px;color:#10b981;'>{cfg['regime']}</td>"
-                    f"<td style='padding:6px 10px;color:#ea580c;'>{cfg['side'].upper()}</td>"
-                    f"<td style='padding:6px 10px;color:#f59e0b;'>≥ {cfg['min_score']}</td>"
-                    f"<td style='padding:6px 10px;color:#fb923c;'>≥ {cfg['min_rr']}</td>"
-                    f"<td style='padding:6px 10px;color:{muted_color};font-size:12px;'>{evidence}</td>"
-                    f"</tr>"
-                )
-
-        html = (
-            "<div style='font-family:-apple-system,Segoe UI,sans-serif;font-size:13px;'>"
-            f"<h2 style='color:{title_color};margin:0 0 4px;font-size:16px;'>Đề xuất cấu hình Scanner từ Backtest</h2>"
-            f"<p style='color:{muted_color};font-size:11px;margin:0 0 12px;'>"
-            "Dựa trên kết quả backtest, hệ thống đề xuất cấu hình cho từng cặp. "
-            "Cấu hình này có thể dùng trong Settings để tự động nâng setup đủ điều kiện."
-            "</p>"
-            "<table style='width:100%;border-collapse:collapse;margin-bottom:16px;'>"
-            "<tr>"
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Mã</th>"
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Regime</th>"
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Hướng</th>"
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Min Score</th>"
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Min RR</th>"
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};'>Bằng chứng</th>"
-            "</tr>"
-            + rows_html +
-            "</table>"
-            f"<p style='color:{muted_color};font-size:11px;'>"
-            "Tiêu chí: ≥ 10 lệnh tổng, ≥ 8 lệnh sau lọc, kỳ vọng > +0.10R, PF > 1.2. "
-            "Chọn chế độ <b>Backtest</b> hoặc <b>Research</b> để có nhiều lệnh phân tích hơn."
-            "</p>"
-            "</div>"
-        )
+            text_color = "#ebdcd0"
+            muted_color = "#a8a29e"
+            border_color = "#3f2c25"
+            title_color = "#f97316"
+            current_color = "#d6d3d1"
+            proposed_color = "#fb923c"
+            evidence_color = "#a8a29e"
+            bg_color = "#17120f"
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Đề xuất cấu hình Scanner")
-        dlg.setMinimumSize(800, 400)
-        if light:
-            dlg.setStyleSheet("QDialog { background: #FAF9F5; }")
-        else:
-            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
-        layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(20, 18, 20, 16)
+        dlg.setWindowTitle("Áp dụng cấu hình Scanner từ Backtest")
+        dlg.setMinimumSize(820, 260)
+        dlg.setStyleSheet(f"QDialog {{ background: {bg_color}; }}")
+        
+        dlg_layout = QVBoxLayout(dlg)
+        dlg_layout.setContentsMargins(24, 20, 24, 20)
+        dlg_layout.setSpacing(16)
 
-        text = QTextEdit()
-        text.setReadOnly(True)
-        if light:
-            text.setStyleSheet(
-                "QTextEdit { background: #ffffff; color: #111827; font-size: 13px; border: 1px solid #D6D2C8; border-radius: 6px; padding: 12px; }"
+        title_widget = QLabel("")
+        title_widget.setTextFormat(Qt.TextFormat.RichText)
+        title_widget.setText(
+            f"<h2 style='color:{title_color};margin:0 0 6px;font-size:18px;'>"
+            f"Cấu hình Scanner cho {self.selected_symbol}</h2>"
+            f"<p style='color:{muted_color};font-size:12px;margin:0;'>"
+            "So sánh cấu hình hiện tại trong Settings với đề xuất từ kết quả backtest."
+            "</p>"
+        )
+        dlg_layout.addWidget(title_widget)
+
+        symbol = self.selected_symbol
+        existing = settings.trading.symbol_settings.get(symbol)
+        cfg = recs.get(symbol)
+
+        if cfg is None:
+            no_data = QLabel(
+                f"<span style='color:{muted_color};font-size:13px;'>"
+                f"{symbol}: không đủ dữ liệu để đề xuất "
+                f"(cần ≥10 lệnh, kỳ vọng &gt;+0.10R, PF &gt;1.2)</span>"
             )
+            no_data.setTextFormat(Qt.TextFormat.RichText)
+            dlg_layout.addWidget(no_data)
         else:
-            text.setStyleSheet(
-                "QTextEdit { background: #171c24; color: #e5e7eb; font-size: 13px; border: 1px solid #2b3545; border-radius: 6px; padding: 12px; }"
+            evidence = cfg.get("_evidence", "")
+            current_regime = existing.auto_trade_regime if existing else "--"
+            current_side = existing.auto_trade_side if existing else "--"
+            current_score = str(existing.min_score) if existing else "--"
+            current_rr = f"{existing.min_expected_rr:.1f}" if existing else "--"
+
+            table = QTableWidget(3, 2)
+            table.setObjectName("LuuTrungHoaTable")
+            table.verticalHeader().setVisible(False)
+            table.horizontalHeader().setVisible(False)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+            table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            table.setShowGrid(False)
+            table.setWordWrap(True)
+            table.setMinimumHeight(140)
+            
+            table.setStyleSheet(
+                f"QTableWidget#LuuTrungHoaTable {{"
+                f"  background: transparent;"
+                f"  border: 1px solid {border_color};"
+                f"  border-radius: 8px;"
+                f"  outline: none;"
+                f"}}"
+                f"QTableWidget#LuuTrungHoaTable::item {{"
+                f"  border-bottom: 1px solid {border_color};"
+                f"  padding: 12px 16px;"
+                f"}}"
             )
-        text.setHtml(html)
-        layout.addWidget(text, 1)
+
+            rows = [
+                ("Cấu hình hiện tại",
+                 f"<span style='color:{current_color}; font-size: 13px;'>"
+                 f"<b>Regime:</b> {current_regime} &nbsp;&nbsp;&nbsp; "
+                 f"<b>Side:</b> {current_side} &nbsp;&nbsp;&nbsp; "
+                 f"<b>MinScore:</b> {current_score} &nbsp;&nbsp;&nbsp; "
+                 f"<b>MinRR:</b> {current_rr}</span>"),
+                 
+                ("Đề xuất từ backtest",
+                 f"<span style='color:{proposed_color}; font-size: 14px;'>"
+                 f"<b>Regime:</b> {cfg['regime']} &nbsp;&nbsp;&nbsp; "
+                 f"<b>Side:</b> {cfg['side'].upper()} &nbsp;&nbsp;&nbsp; "
+                 f"<b>MinScore:</b> {cfg['min_score']} &nbsp;&nbsp;&nbsp; "
+                 f"<b>MinRR:</b> {cfg['min_rr']}</span>"),
+                 
+                ("Bằng chứng", 
+                 f"<span style='color:{evidence_color}; font-size: 12px; font-style: italic; line-height: 1.4;'>"
+                 f"{evidence}</span>"),
+            ]
+            
+            for row_idx, (label, html_value) in enumerate(rows):
+                lbl_title = QLabel(label)
+                lbl_title.setStyleSheet(f"color: {text_color}; font-weight: bold; font-size: 13px; padding-left: 8px;")
+                table.setCellWidget(row_idx, 0, lbl_title)
+                
+                lbl_val = QLabel(html_value)
+                lbl_val.setTextFormat(Qt.TextFormat.RichText)
+                lbl_val.setWordWrap(True)
+                lbl_val.setStyleSheet("padding-right: 8px; background: transparent;")
+                table.setCellWidget(row_idx, 1, lbl_val)
+                
+                table.setRowHeight(row_idx, 48)
+
+            table.resizeRowsToContents()
+
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(0, 180)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+
+            dlg_layout.addWidget(table, 1)
 
         btn_row = QHBoxLayout()
-        apply_btn = action_button("✅ Áp dụng vào Settings", primary=True, color="success")
-        apply_btn.setToolTip("Ghi trực tiếp cấu hình đề xuất vào Settings, không cần copy/paste")
-        apply_btn.clicked.connect(lambda: self._apply_recommendations_to_settings(recs, dlg))
-        copy_btn = action_button("📋 Sao chép", color="info")
-        copy_btn.clicked.connect(lambda: self._copy_recommendations_to_clipboard(recs))
-        close_btn = action_button("❌ Đóng")
-        close_btn.clicked.connect(dlg.accept)
-        btn_row.addWidget(apply_btn)
-        btn_row.addWidget(copy_btn)
+        btn_row.setContentsMargins(0, 8, 0, 0)
+        apply_btn = action_button("🔥 Áp dụng cấu hình", primary=True)
+        apply_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background-color: {proposed_color};"
+            f"  color: white;"
+            f"  border: none;"
+            f"  border-radius: 6px;"
+            f"  font-weight: bold;"
+            f"  padding: 4px 16px;"
+            f"  min-height: 26px;"
+            f"  max-height: 26px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: {title_color};"
+            f"}}"
+        )
+        apply_btn.setEnabled(cfg is not None)
+        apply_btn.clicked.connect(lambda: self._do_apply_config_direct(cfg, dlg))
+        
+        cancel_btn = action_button("Hủy")
+        cancel_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background-color: transparent;"
+            f"  color: {muted_color};"
+            f"  border: 1px solid {border_color};"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 16px;"
+            f"  min-height: 26px;"
+            f"  max-height: 26px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: rgba(120, 113, 108, 0.1);"
+            f"  color: {text_color};"
+            f"}}"
+        )
+        cancel_btn.clicked.connect(dlg.reject)
+        
         btn_row.addStretch()
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(apply_btn)
+        dlg_layout.addLayout(btn_row)
         dlg.exec()
 
-    def _copy_recommendations_to_clipboard(self, recs: dict) -> None:
-        """Copy recommendations as JSON to clipboard for pasting into Settings."""
-        import json
-
-        configs = {}
-        for symbol, cfg in recs.items():
-            if cfg is None:
-                continue
-            configs[symbol] = {
-                "regime": cfg["regime"],
-                "side": cfg["side"],
-                "min_score": cfg["min_score"],
-                "min_rr": cfg["min_rr"],
-            }
-
-        if not configs:
-            QMessageBox.information(self, "Sao chép", "Không có đề xuất nào để sao chép.")
+    def _do_apply_config_direct(self, cfg: dict | None, dlg: QDialog) -> None:
+        """Apply recommendation directly (single symbol, no checkbox)."""
+        if cfg is None:
             return
+        try:
+            settings = (
+                self.app.settings_service.load()
+                if self.app else self.controller.settings_service.load()
+            )
 
-        text = json.dumps(configs, ensure_ascii=False, indent=2)
-        from PyQt6.QtWidgets import QApplication
-        QApplication.clipboard().setText(text)
-        QMessageBox.information(
-            self, "Đã sao chép",
-            f"Đã sao chép cấu hình {len(configs)} cặp vào clipboard.\n\n"
-            "Cách dán:\n"
-            "1. Vào Cài đặt > Nguồn dữ liệu > bảng MT5\n"
-            "2. Nhấn nút '📋 Dán cấu hình Backtest' phía trên bảng\n"
-            "3. Hoặc điền thủ công: tick cột 'Kiểm thử', chọn Regime/Hướng/RR"
-        )
+            symbol = self.selected_symbol
+            sym_settings = settings.trading.symbol_settings.get(symbol)
+            if sym_settings is None:
+                from config.settings import SymbolScanSettings
+                sym_settings = SymbolScanSettings()
+                settings.trading.symbol_settings[symbol] = sym_settings
 
-    def _apply_recommendations_to_settings(self, recs: dict, dlg: QDialog) -> None:
-        """Apply recommended configs directly to Settings (no copy/paste needed)."""
+            sym_settings.backtest = True
+            sym_settings.auto_trade_regime = cfg["regime"]
+            sym_settings.auto_trade_side = cfg["side"]
+            sym_settings.min_score = int(cfg["min_score"])
+            sym_settings.min_expected_rr = float(cfg["min_rr"])
+
+            if symbol not in settings.trading.enabled_symbols:
+                settings.trading.enabled_symbols.append(symbol)
+
+            if self.app:
+                self.app.settings_service.save(settings)
+            else:
+                self.controller.settings_service.save(settings)
+
+            dlg.accept()
+            QMessageBox.information(
+                self, "Đã áp dụng",
+                f"Đã cập nhật cấu hình Scanner cho {symbol}.\n\n"
+                f"Regime: {cfg['regime']}    Side: {cfg['side'].upper()}\n"
+                f"MinScore: {cfg['min_score']}    MinRR: {cfg['min_rr']}\n\n"
+                "Lần quét tiếp theo sẽ dùng cấu hình mới."
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Lỗi áp dụng", f"Không thể lưu cấu hình:\n{exc}")
+
+    def _do_apply_config(self, recs: dict, checkboxes: dict, dlg: QDialog) -> None:
+        """Apply checked recommendations to settings."""
         configs = {}
-        for symbol, cfg in recs.items():
+        for symbol, cb in checkboxes.items():
+            if not cb.isChecked():
+                continue
+            cfg = recs.get(symbol)
             if cfg is None:
                 continue
             configs[symbol] = {
@@ -725,7 +709,7 @@ class BacktestScreen(QWidget):
             }
 
         if not configs:
-            QMessageBox.information(self, "Áp dụng", "Không có đề xuất nào để áp dụng.")
+            QMessageBox.information(self, "Áp dụng", "Không có đề xuất nào được chọn để áp dụng.")
             return
 
         try:
@@ -767,76 +751,154 @@ class BacktestScreen(QWidget):
         dlg.accept()
         QMessageBox.information(
             self, "Đã áp dụng",
-            f"Đã cập nhật {updated} cặp vào Settings.\n\n"
-            "Các thay đổi đã được lưu. Vào mục Cài đặt > MT5 để xem lại.\n"
+            f"Đã cập nhật cấu hình Scanner cho {updated} mã.\n\n"
             "Lần quét tiếp theo sẽ dùng cấu hình mới."
         )
 
     def _build_analysis_prompt(self) -> str:
         summary = self.result.get("summary", {}) if isinstance(self.result.get("summary"), dict) else {}
         breakdowns = self.result.get("breakdowns", {}) if isinstance(self.result.get("breakdowns"), dict) else {}
-        by_symbol = breakdowns.get("by_symbol", {}) if isinstance(breakdowns, dict) else {}
         diagnostics = self.result.get("diagnostics", {}) if isinstance(self.result.get("diagnostics"), dict) else {}
 
+        def fmt_stats(s, prefix=""):
+            if not isinstance(s, dict):
+                return "N/A"
+            return (
+                f"{prefix}{s.get('total_trades', 0)} lệnh, "
+                f"thắng {s.get('win_rate', 0):.1f}%, "
+                f"kỳ vọng {s.get('expectancy_r', 0):+.2f}R, "
+                f"PF {s.get('profit_factor', 0):.2f}, "
+                f"DD {s.get('max_drawdown_r', 0):.1f}R, "
+                f"tổng {s.get('total_r', 0):+.1f}R"
+            )
+
         lines = [
-            "Dựa vào các số liệu backtest sau, hãy đưa ra NHẬN XÉT VÀ ĐÁNH GIÁ (không cần lặp lại số liệu):",
+            "=== BÁO CÁO PHÂN TÍCH BACKTEST ===",
             "",
-            "TỔNG HỢP TẤT CẢ MÃ:",
-            f"  Tổng số lệnh: {summary.get('total_trades', 'N/A')}",
-            f"  Tỷ lệ thắng: {summary.get('win_rate', 'N/A')}%",
-            f"  Kỳ vọng: {summary.get('expectancy_r', 'N/A')}R",
-            f"  Hệ số lợi nhuận: {summary.get('profit_factor', 'N/A')}",
-            f"  Drawdown tối đa: {summary.get('max_drawdown_r', 'N/A')}R",
-            f"  Tổng R: {summary.get('total_r', 'N/A')}R",
+            "TỔNG QUAN:",
+            f"  {fmt_stats(summary)}",
+            f"  Thắng: {summary.get('wins', 0)} | Thua: {summary.get('losses', 0)} | "
+            f"Hết hạn: {summary.get('expired', 0)} | Hòa: {summary.get('breakeven', 0)}",
+            f"  Chuỗi thắng tối đa: {summary.get('max_consecutive_wins', 0)} | "
+            f"Chuỗi thua tối đa: {summary.get('max_consecutive_losses', 0)}",
+            f"  Trung bình R thắng: {summary.get('average_win_r', 0):+.2f}R | "
+            f"Trung bình R thua: {summary.get('average_loss_r', 0):+.2f}R",
+            f"  Số nến giữ lệnh TB: {summary.get('average_holding_bars', 0):.0f} nến",
         ]
 
-        if by_symbol:
+        # ---- By Regime ----
+        by_regime = breakdowns.get("by_market_regime", {})
+        if by_regime:
             lines.append("")
-            lines.append("PHÂN TÍCH THEO TỪNG CẶP:")
-            for symbol, sym_stats in by_symbol.items():
-                if not isinstance(sym_stats, dict):
-                    continue
-                lines.append(f"  {symbol}:")
-                lines.append(f"    Số lệnh: {sym_stats.get('total_trades', 'N/A')}")
-                lines.append(f"    Tỷ lệ thắng: {sym_stats.get('win_rate', 'N/A')}%")
-                lines.append(f"    Kỳ vọng: {sym_stats.get('expectancy_r', 'N/A')}R")
-                lines.append(f"    Hệ số lợi nhuận: {sym_stats.get('profit_factor', 'N/A')}")
-                lines.append(f"    Drawdown tối đa: {sym_stats.get('max_drawdown_r', 'N/A')}R")
-                lines.append(f"    Tổng R: {sym_stats.get('total_r', 'N/A')}R")
+            lines.append("PHÂN TÍCH THEO REGIME:")
+            for regime in sorted(by_regime, key=lambda r: by_regime[r].get('profit_factor', 0), reverse=True):
+                lines.append(f"  [{regime}] {fmt_stats(by_regime[regime])}")
 
-        # Include pipeline diagnostics
-        pipeline_stats = diagnostics.get("pipeline_stats", {})
-        gate_fail_counts = diagnostics.get("gate_fail_counts", {})
-        if pipeline_stats or gate_fail_counts:
+        # ---- By Side ----
+        by_side = breakdowns.get("by_side", {})
+        if by_side:
             lines.append("")
-            lines.append("CHẨN ĐOÁN PIPELINE (thống kê từng bước phân tích):")
-            lines.append(f"  Tổng snapshot đã phân tích: {diagnostics.get('snapshots_evaluated', 'N/A')}")
-            lines.append(f"  Số setup phát hiện: {diagnostics.get('setups_detected', 'N/A')}")
-            lines.append(f"  Số lệnh bị gate chặn: {diagnostics.get('blocked_by_gate', 'N/A')}")
-            lines.append(f"  Số snapshot điểm <50: {diagnostics.get('score_below_50_count', 'N/A')}")
+            lines.append("PHÂN TÍCH THEO HƯỚNG (BUY/SELL):")
+            for side in sorted(by_side, key=lambda s: by_side[s].get('profit_factor', 0), reverse=True):
+                lines.append(f"  [{side}] {fmt_stats(by_side[side])}")
 
-            if pipeline_stats:
-                lines.append("  Thống kê pass/fail/warning từng bước:")
-                for step in ["validate", "correlation", "score", "scenarios", "direction", "gate", "final_score"]:
-                    stats = pipeline_stats.get(step, {})
-                    if stats:
-                        lines.append(f"    {step}: pass={stats.get('pass', 0)}, fail={stats.get('fail', 0)}, warning={stats.get('warning', 0)}")
+        # ---- By Decision ----
+        by_decision = breakdowns.get("by_decision", {})
+        if by_decision:
+            lines.append("")
+            lines.append("PHÂN TÍCH THEO LOẠI QUYẾT ĐỊNH:")
+            for dec in sorted(by_decision, key=lambda d: by_decision[d].get('profit_factor', 0), reverse=True):
+                lines.append(f"  [{dec}] {fmt_stats(by_decision[dec])}")
 
-            if gate_fail_counts:
-                lines.append("  Số lần mỗi gate chặn/cảnh báo:")
-                for gate_name, count in sorted(gate_fail_counts.items(), key=lambda x: -x[1]):
-                    lines.append(f"    {gate_name}: {count} lần")
+        # ---- By Score Bucket ----
+        by_score = breakdowns.get("by_final_score_bucket", {})
+        if by_score:
+            lines.append("")
+            lines.append("PHÂN TÍCH THEO ĐIỂM SỐ (FINAL SCORE):")
+            for bucket in sorted(by_score):
+                lines.append(f"  [Score {bucket}] {fmt_stats(by_score[bucket])}")
+
+        # ---- By Entry Zone Score ----
+        by_entry_zone = breakdowns.get("by_entry_zone_score", {})
+        if by_entry_zone:
+            lines.append("")
+            lines.append("PHÂN TÍCH THEO ĐIỂM ENTRY ZONE:")
+            for bucket in sorted(by_entry_zone):
+                lines.append(f"  [EntryZone {bucket}] {fmt_stats(by_entry_zone[bucket])}")
+
+        # ---- By RR bucket ----
+        by_rr = breakdowns.get("by_expected_effective_rr", {})
+        if by_rr:
+            lines.append("")
+            lines.append("PHÂN TÍCH THEO RR KỲ VỌNG:")
+            for bucket in sorted(by_rr):
+                lines.append(f"  [RR {bucket}] {fmt_stats(by_rr[bucket])}")
+
+        # ---- By SMC Zone Score ----
+        by_smc = breakdowns.get("by_smc_zone_score", {})
+        if by_smc:
+            lines.append("")
+            lines.append("PHÂN TÍCH THEO CHẤT LƯỢNG VÙNG SMC:")
+            for bucket in sorted(by_smc):
+                lines.append(f"  [SMC {bucket}] {fmt_stats(by_smc[bucket])}")
+
+        # ---- Best combinations (top 5 by profit factor) ----
+        lines.append("")
+        lines.append("CÁC TỔ HỢP TỐT NHẤT (theo Profit Factor, có ít nhất 5 lệnh):")
+        combos = []
+        for dim_name, dim_data in [
+            ("Regime", by_regime), ("Hướng", by_side), ("Điểm số", by_score),
+            ("RR", by_rr), ("SMC Zone", by_smc),
+        ]:
+            for key, stats in dim_data.items():
+                if isinstance(stats, dict) and stats.get('total_trades', 0) >= 5:
+                    combos.append((dim_name, key, stats))
+        combos.sort(key=lambda x: x[2].get('profit_factor', 0), reverse=True)
+        for dim, key, stats in combos[:10]:
+            lines.append(f"  {dim}={key}: {fmt_stats(stats)}")
+
+        # ---- Funnel diagnostics ----
+        funnel = diagnostics.get("gate_funnel", {})
+        if funnel:
+            lines.append("")
+            lines.append("CHẨN ĐOÁN PHỄU GIAO DỊCH:")
+            lines.append(f"  Snapshots: {funnel.get('snapshots_evaluated', 0)}")
+            lines.append(f"  Setup phát hiện: {funnel.get('setup_detected', 0)} "
+                         f"(fallback: {funnel.get('fallback_scenario', 0)})")
+            lines.append(f"  Lệnh mở: {funnel.get('trade_opened', 0)}")
+            blocked = []
+            for k, v in funnel.items():
+                if k.startswith("blocked_") and v > 0:
+                    blocked.append(f"{k}={v}")
+            if blocked:
+                lines.append(f"  Bị chặn: {', '.join(blocked)}")
+            other_skip = []
+            for k in ("no_trade_scenario", "entry_zone_not_touched", "invalid_trade_plan"):
+                v = funnel.get(k, 0)
+                if v > 0:
+                    other_skip.append(f"{k}={v}")
+            if other_skip:
+                lines.append(f"  Khác: {', '.join(other_skip)}")
 
         lines.extend([
             "",
-            "Yêu cầu Đánh giá:",
-            "1. Hệ thống này có edge (lợi thế) không?",
-            "2. Rủi ro chính là gì?",
-            "3. Có nên trade live không? Nếu có thì cần điều kiện gì?",
-            "4. So sánh hiệu suất giữa các cặp (nếu có nhiều cặp), cặp nào tốt nhất/tệ nhất?",
-            "5. Dựa vào chẩn đoán pipeline, bước nào đang lọc nhiều nhất? Gate nào chặn nhiều nhất? Có bất thường không?",
+            "===",
             "",
-            "Trả lời ngắn gọn, bullet point, KHÔNG dùng ký tự * hay markdown. KHÔNG CẦN CHÉP LẠI BẢNG THỐNG KÊ, CHỈ ĐƯA RA NHẬN XÉT.",
+            "Dựa trên số liệu trên, hãy phân tích và trả lời các câu hỏi sau:",
+            "",
+            "1. REGIME nào cho kết quả tốt nhất? Regime nào tệ nhất? Có nên lọc theo regime không, nếu có thì chọn regime nào?",
+            "2. HƯỚNG (BUY/SELL) nào có lợi thế? Có nên chỉ trade 1 hướng không?",
+            "3. NGƯỠNG ĐIỂM (min_score) tối ưu là bao nhiêu? Ở mỗi khoảng điểm, hiệu suất thay đổi thế nào? Điểm càng cao có thực sự càng tốt không?",
+            "4. NGƯỠNG RR (min_rr) tối ưu là bao nhiêu? Lọc RR cao hơn có cải thiện kỳ vọng không?",
+            "5. CHẤT LƯỢNG VÙNG (SMC zone score, entry zone score) ảnh hưởng thế nào đến kết quả? Vùng điểm cao có thực sự cho lệnh tốt hơn không?",
+            "6. Hệ thống có EDGE (lợi thế thống kê) không? Bằng chứng cụ thể?",
+            "7. RỦI RO chính là gì? Drawdown, chuỗi thua, tỉ lệ hết hạn?",
+            "8. KHUYẾN NGHỊ CỤ THỂ: Nếu trade live, nên cấu hình thế nào? Đưa ra bộ tham số tối ưu (regime + side + min_score + min_rr) kèm lý do.",
+            "9. Có điểm gì BẤT THƯỜNG trong dữ liệu không? (vd: quá nhiều lệnh hết hạn, phân bố lệnh không đều, thiếu dữ liệu ở 1 chiều...)",
+            "",
+            "Trả lời bằng tiếng Việt, ngắn gọn theo bullet point, KHÔNG dùng markdown (*, **, __).",
+            "Mỗi bullet point là 1 câu hoàn chỉnh, có số liệu cụ thể để dẫn chứng.",
+            "Ưu tiên đưa ra KHUYẾN NGHỊ CÓ THỂ HÀNH ĐỘNG NGAY (chọn regime nào, side nào, min_score bao nhiêu, min_rr bao nhiêu).",
         ])
         return "\n".join(lines)
 
@@ -1134,123 +1196,109 @@ class BacktestScreen(QWidget):
     def _format_ai_to_html(raw: str, light: bool = False) -> str:
         lines = raw.splitlines()
         html_lines: list[str] = []
-        in_ul = False
-        in_ol = False
 
         if light:
-            heading_color = "#0f172a"
-            italic_color = "#475569"
-            text_color = "#334155"
+            h_color = "#0f172a"
+            t_color = "#334155"
+            m_color = "#64748b"
+            acc_color = "#c2410c"
+            b_color = "#f1f5f9"
+            b_border = "#e2e8f0"
         else:
-            heading_color = "#f8fafc"
-            italic_color = "#cbd5e1"
-            text_color = "#d1d5db"
+            h_color = "#f8fafc"
+            t_color = "#cbd5e1"
+            m_color = "#94a3b8"
+            acc_color = "#f59e0b"
+            b_color = "#1e293b"
+            b_border = "#334155"
 
-        def _close_lists():
-            nonlocal in_ul, in_ol
-            if in_ul:
-                html_lines.append("</ul>")
-                in_ul = False
-            if in_ol:
-                html_lines.append("</ol>")
-                in_ol = False
+        def _highlight_numbers(text: str) -> str:
+            """Wrap numbers and key metrics in styled spans."""
+            import re as _re
+            # Highlight R values: +0.15R, -1.0R, 2.54R
+            text = _re.sub(r'([+-]?\d+\.?\d*R)', r'<b style="color:' + acc_color + r';">\1</b>', text)
+            # Highlight percentages: 45.5%
+            text = _re.sub(r'(\d+\.?\d*%)', r'<b style="color:' + acc_color + r';">\1</b>', text)
+            # Highlight profit factor numbers: PF 1.5, PF=2.54
+            text = _re.sub(r'(PF\s*=?\s*)(\d+\.?\d*)',
+                          r'\1<b style="color:' + acc_color + r';">\2</b>', text)
+            return text
 
-        i = 0
-        while i < len(lines):
-            line = lines[i]
+        in_list = False
+        list_type = None
 
-            # Strip ** markers
-            line = line.replace("**", "")
+        def _end_list():
+            nonlocal in_list, list_type
+            if in_list:
+                html_lines.append("</ul>" if list_type == "ul" else "</ol>")
+                in_list = False
+                list_type = None
 
+        for line in lines:
             stripped = line.strip()
 
-            # Empty line -> close lists, add paragraph break
             if not stripped:
-                _close_lists()
-                html_lines.append("<br>")
-                i += 1
+                _end_list()
                 continue
 
-            # Bold heading-like lines (all caps or ending with colon, short)
-            is_heading = (
-                stripped.isupper()
-                or (stripped.endswith(":") and len(stripped) < 80 and not stripped.startswith(("-", "•", "*", "1.", "2.", "3.", "4.", "5.")))
-            )
+            # Detect heading: ends with colon, or is UPPERCASE, or starts with number+dot+space pattern like "1."
+            is_heading = False
+            if stripped.endswith(":") and len(stripped) < 100:
+                is_heading = True
+            elif stripped.isupper() and len(stripped) > 5:
+                is_heading = True
 
             if is_heading:
-                _close_lists()
-                html_lines.append(f"<p style='margin:14px 0 6px;font-weight:700;color:{heading_color};font-size:14px;'>{stripped}</p>")
-                i += 1
+                _end_list()
+                clean = stripped.replace("*", "").replace("#", "")
+                html_lines.append(
+                    f"<div style='font-weight:700;font-size:14px;color:{h_color};"
+                    f"margin:16px 0 4px 0;padding-bottom:4px;"
+                    f"border-bottom:1px solid {b_border};'>{clean}</div>"
+                )
                 continue
 
-            # Bullet lines: -, *, •, or numbered 1. 2. etc.
-            bullet_match = False
-            prefix = ""
-
-            m = re.match(r"^(\s*)([-*•])\s+(.*)", stripped)
+            # Numbered items: "1. text" or "1) text"
+            m = re.match(r"^(\d+)[.)]\s+(.*)", stripped)
             if m:
-                bullet_match = True
-                prefix = "ul"
-                content = m.group(3)
-            else:
-                m = re.match(r"^(\s*)(\d+)[.)]\s+(.*)", stripped)
-                if m:
-                    bullet_match = True
-                    prefix = "ol"
-                    content = m.group(3)
-                else:
-                    # Check for bare * at start (italic marker)
-                    m = re.match(r"^\*\s*(.*?)\*$", stripped)
-                    if m:
-                        # *text* -> italic
-                        _close_lists()
-                        html_lines.append(f"<p style='margin:4px 0;font-style:italic;color:{italic_color};'>{m.group(1)}</p>")
-                        i += 1
-                        continue
-                    # Line starting with * but not a bullet - strip leading *
-                    if stripped.startswith("*") and not stripped.startswith("* "):
-                        stripped = stripped.lstrip("*")
-
-            if bullet_match:
-                if prefix == "ul" and not in_ul:
-                    _close_lists()
-                    html_lines.append(f"<ul style='margin-top:8px; margin-bottom:8px; padding-left:24px; color:{text_color};'>")
-                    in_ul = True
-                elif prefix == "ol" and not in_ol:
-                    _close_lists()
-                    html_lines.append(f"<ol style='margin-top:8px; margin-bottom:8px; padding-left:24px; color:{text_color};'>")
-                    in_ol = True
-                # Strip remaining * in content
-                content = content.replace("*", "")
-                html_lines.append(f"<li style='margin-top:8px; margin-bottom:8px;'>{content}</li>")
-                i += 1
+                if not in_list or list_type != "ol":
+                    _end_list()
+                    html_lines.append(f"<ol style='margin:4px 0;padding-left:20px;color:{t_color};font-size:13px;line-height:1.55;'>")
+                    in_list = True
+                    list_type = "ol"
+                content = _highlight_numbers(m.group(2))
+                html_lines.append(f"<li style='margin:2px 0;'>{content}</li>")
                 continue
 
-            # Regular paragraph line
-            _close_lists()
-            # Strip any remaining standalone * markers
-            clean = stripped.replace("*", "")
-            html_lines.append(f"<p style='margin-top:8px; margin-bottom:8px; color:{text_color};'>{clean}</p>")
-            i += 1
+            # Bullet items: "- text", "* text", "• text"
+            m = re.match(r"^[-*•]\s+(.*)", stripped)
+            if m:
+                if not in_list or list_type != "ul":
+                    _end_list()
+                    html_lines.append(f"<ul style='margin:4px 0;padding-left:20px;color:{t_color};font-size:13px;line-height:1.55;'>")
+                    in_list = True
+                    list_type = "ul"
+                content = _highlight_numbers(m.group(1))
+                html_lines.append(f"<li style='margin:2px 0;'>{content}</li>")
+                continue
 
-        _close_lists()
+            # Regular text
+            _end_list()
+            clean = _highlight_numbers(stripped.replace("*", ""))
+            html_lines.append(
+                f"<p style='margin:4px 0;color:{t_color};font-size:13px;line-height:1.55;'>{clean}</p>"
+            )
 
+        _end_list()
         body = "\n".join(html_lines)
         return (
-            "<div style='font-family:-apple-system,Segoe UI,sans-serif; font-size:13px;'>"
-            + body
-            + "</div>"
+            f"<div style='font-family:-apple-system,Segoe UI,Helvetica,sans-serif;font-size:13px;'>"
+            f"{body}</div>"
         )
 
     def _show_input_help(self) -> None:
         dialog = BacktestInputHelpDialog(self)
         dialog.exec()
-
-    def _show_symbol_dialog(self) -> None:
-        dialog = SymbolSelectionDialog(self.selected_symbols, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.selected_symbols = dialog.selected_symbols()
-            self._update_symbol_summary()
 
     def eventFilter(self, watched: object, event: QEvent) -> bool:
         if hasattr(self, "table") and watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
@@ -1260,26 +1308,18 @@ class BacktestScreen(QWidget):
     def _run_backtest(self) -> None:
         try:
             requests = self.controller.build_requests(
-                symbols=self._selected_symbols(),
+                symbols=[self.selected_symbol],
                 start=self._qdate_to_utc_start(self.start_date.date()),
                 end=self._qdate_to_utc_end(self.end_date.date()),
                 initial_balance=self.balance_input.value(),
                 risk_percent=self.risk_input.value(),
-                mode=str(self.mode_combo.currentData()),
-                spread_price=self.spread_input.value(),
-                slippage_price=self.slippage_input.value(),
-                max_holding_bars=self.max_holding_input.value(),
-                min_final_score=self.min_score_input.value(),
-                account_guard_enabled=self.guard_checkbox.isChecked(),
-                max_daily_loss_pct=self.max_daily_loss_input.value(),
-                max_consecutive_losses=self.max_consecutive_loss_input.value(),
-                allow_macro=self.macro_checkbox.isChecked(),
             )
         except Exception as exc:
             QMessageBox.warning(self, "Không tạo được request", str(exc))
             return
 
         self.run_button.setEnabled(False)
+        self.apply_config_btn.hide()
         self.progress.setValue(0)
         self.status_label.setText("Đang chạy backtest...")
         self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(requests)
@@ -1293,9 +1333,12 @@ class BacktestScreen(QWidget):
         self.progress.setValue(percent)
         self.status_label.setText(message)
 
-    def _on_guard_toggled(self, checked: bool) -> None:
-        self.max_daily_loss_input.setEnabled(checked)
-        self.max_consecutive_loss_input.setEnabled(checked)
+    def _show_symbol_dialog(self) -> None:
+        dialog = SymbolSelectionDialog(self.selected_symbol, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.selected_symbol = dialog.selected_symbol()
+            self.symbol_summary.setText(self.selected_symbol)
+            self.symbol_summary.setToolTip(self.selected_symbol)
 
     def _on_success(self, result: dict) -> None:
         self.result = result
@@ -1303,6 +1346,7 @@ class BacktestScreen(QWidget):
         self._set_summary(result.get("summary", {}) if isinstance(result.get("summary"), dict) else {})
         self._set_trades(result.get("trades", []) if isinstance(result.get("trades"), list) else [])
         self._update_verdict()
+        self.apply_config_btn.show()
         self.snapshot_label.setText(f"File kết quả: {result.get('snapshot_path', '')}")
         self.snapshot_label.show()
 
@@ -1317,18 +1361,19 @@ class BacktestScreen(QWidget):
             if widget:
                 widget.deleteLater()
         items = [
-            ("Số lệnh", self._format_integer(summary.get("total_trades", 0))),
-            ("Tỷ lệ thắng", self._format_decimal(summary.get("win_rate", 0), 2, "%")),
+            ("Lệnh", self._format_integer(summary.get("total_trades", 0))),
+            ("Thắng", self._format_decimal(summary.get("win_rate", 0), 1, "%")),
             ("Kỳ vọng", self._format_decimal(summary.get("expectancy_r", 0), 2, "R")),
             ("Hệ số LN", self._format_decimal(summary.get("profit_factor", 0), 2)),
-            ("DD tối đa", self._format_decimal(summary.get("max_drawdown_r", 0), 2, "R")),
-            ("Tổng R", self._format_decimal(summary.get("total_r", 0), 2, "R")),
-            ("R thắng TB", self._format_decimal(summary.get("average_win_r", 0), 2, "R")),
-            ("R thua TB", self._format_decimal(summary.get("average_loss_r", 0), 2, "R")),
-            ("Chuỗi thua max", str(int(summary.get("max_consecutive_losses", 0) or 0))),
+            ("DD tối đa", self._format_decimal(summary.get("max_drawdown_r", 0), 1, "R")),
+            ("Tổng R", self._format_decimal(summary.get("total_r", 0), 1, "R")),
+            ("Thắng TB", self._format_decimal(summary.get("average_win_r", 0), 2, "R")),
+            ("Thua TB", self._format_decimal(summary.get("average_loss_r", 0), 2, "R")),
+            ("Thua max", str(int(summary.get("max_consecutive_losses", 0) or 0))),
         ]
-        for index, (title, value) in enumerate(items):
-            self.summary_row.addWidget(self._stat_cell(str(title), str(value)), index // 3, index % 3)
+        for title, value in items:
+            self.summary_row.addWidget(self._stat_cell(str(title), str(value)))
+        self.summary_row.addStretch(1)
 
     def _set_trades(self, trades: list[dict[str, object]]) -> None:
         self.trades = trades
@@ -1340,7 +1385,7 @@ class BacktestScreen(QWidget):
                 else:
                     value = self._format_trade_value(key, trade.get(key, "--"))
                 item = QTableWidgetItem(value)
-                if key in {"stt", "result_r", "final_score", "signal_score", "selected_zone_score"}:
+                if key in {"stt", "result_r", "final_score", "expected_effective_rr"}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table.setItem(row, col, item)
         self._refresh_trade_table_style()
@@ -1369,42 +1414,42 @@ class BacktestScreen(QWidget):
 
         if light:
             if total == 0:
-                icon, accent, bg, border, separator, text = "⚪", "#475569", "#f1f5f9", "#cbd5e1", "#cbd5e1", "#334155"
+                accent, bg, border, separator, text = "#475569", "#f1f5f9", "#cbd5e1", "#cbd5e1", "#334155"
                 line = "Chưa có lệnh nào"
             elif has_edge and good_pf:
-                icon, accent, bg, border, separator, text = "🟢", "#047857", "#d1fae5", "#a7f3d0", "#a7f3d0", "#065f46"
+                accent, bg, border, separator, text = "#047857", "#d1fae5", "#a7f3d0", "#a7f3d0", "#065f46"
                 line = f"CÓ LỢI THẾ · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif has_edge and not good_pf:
-                icon, accent, bg, border, separator, text = "🟡", "#b45309", "#fef3c7", "#fde68a", "#fde68a", "#78350f"
+                accent, bg, border, separator, text = "#b45309", "#fef3c7", "#fde68a", "#fde68a", "#78350f"
                 line = f"LỢI THẾ YẾU · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif positive_total and not has_edge:
-                icon, accent, bg, border, separator, text = "🟠", "#ea580c", "#ffedd5", "#fed7aa", "#fed7aa", "#7c2d12"
+                accent, bg, border, separator, text = "#ea580c", "#ffedd5", "#fed7aa", "#fed7aa", "#7c2d12"
                 line = f"CHƯA RÕ · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             else:
-                icon, accent, bg, border, separator, text = "🔴", "#be123c", "#ffe4e6", "#fecdd3", "#fecdd3", "#9f1239"
+                accent, bg, border, separator, text = "#be123c", "#ffe4e6", "#fecdd3", "#fecdd3", "#9f1239"
                 line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
         else:
             if total == 0:
-                icon, accent, bg, border, separator, text = "⚪", "#94a3b8", "#0f172a", "#1e293b", "#334155", "#cbd5e1"
+                accent, bg, border, separator, text = "#94a3b8", "#0f172a", "#1e293b", "#334155", "#cbd5e1"
                 line = "Chưa có lệnh nào"
             elif has_edge and good_pf:
-                icon, accent, bg, border, separator, text = "🟢", "#10b981", "#064e3b", "#065f46", "#334155", "#cbd5e1"
+                accent, bg, border, separator, text = "#10b981", "#064e3b", "#065f46", "#334155", "#cbd5e1"
                 line = f"CÓ LỢI THẾ · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif has_edge and not good_pf:
-                icon, accent, bg, border, separator, text = "🟡", "#f59e0b", "#451a03", "#78350f", "#334155", "#cbd5e1"
+                accent, bg, border, separator, text = "#f59e0b", "#451a03", "#78350f", "#334155", "#cbd5e1"
                 line = f"LỢI THẾ YẾU · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif positive_total and not has_edge:
-                icon, accent, bg, border, separator, text = "🟠", "#fb923c", "#431407", "#7c2d12", "#334155", "#cbd5e1"
+                accent, bg, border, separator, text = "#fb923c", "#431407", "#7c2d12", "#334155", "#cbd5e1"
                 line = f"CHƯA RÕ · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             else:
-                icon, accent, bg, border, separator, text = "🔴", "#e11d48", "#4c0519", "#881337", "#334155", "#cbd5e1"
+                accent, bg, border, separator, text = "#e11d48", "#4c0519", "#881337", "#334155", "#cbd5e1"
                 line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
 
         self.verdict_banner.setText(
-            f"<span style='display:inline-block;padding:4px 12px;border-radius:6px;background:{bg};"
+            f"<span style='display:inline-block;padding:6px 16px;border-radius:16px;background:{bg};"
             f"border: 1px solid {border};"
-            f"font-size:12px;font-family:-apple-system,Segoe UI,sans-serif;white-space:nowrap;'>"
-            f"<b style='color:{accent};'>{icon} {line}</b>"
+            f"font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;white-space:nowrap;'>"
+            f"<b style='color:{accent};'>{line}</b>"
             f"<span style='color:{separator};'>&nbsp;&nbsp;│&nbsp;&nbsp;</span>"
             f"<span style='color:{text};font-weight:500;'>"
             f"{total} lệnh &nbsp;·&nbsp; TL thắng {wr:.1f}% &nbsp;·&nbsp; DD {dd:.1f}R"
@@ -1412,6 +1457,7 @@ class BacktestScreen(QWidget):
             f"</span>"
         )
         self.verdict_banner.show()
+
 
     def _is_light_theme(self) -> bool:
         try:
@@ -1430,16 +1476,22 @@ class BacktestScreen(QWidget):
             bg_color = "#e2e8f0"
             border_color = "#cbd5e1"
             chunk_color = "#ea580c"
+            text_color = "#1f2937"
         else:
             bg_color = "#0f172a"
             border_color = "#334155"
             chunk_color = "#ea580c"
+            text_color = "#f9fafb"
             
         self.progress.setStyleSheet(
             f"QProgressBar#BacktestProgress {{"
             f"background: {bg_color};"
             f"border: 1px solid {border_color};"
             f"border-radius: 5px;"
+            f"color: {text_color};"
+            f"font-size: 11px;"
+            f"font-weight: bold;"
+            f"text-align: center;"
             f"}}"
             f"QProgressBar#BacktestProgress::chunk {{"
             f"background: {chunk_color};"
@@ -1451,47 +1503,60 @@ class BacktestScreen(QWidget):
         if not hasattr(self, "trades") or not self.trades:
             return
         
-        light = self._is_light_theme()
+        from PyQt6.QtGui import QBrush, QColor
         
         for row, trade in enumerate(self.trades):
-            result = str(trade.get("result", "")).lower()
-            
-            # Decide colors based on theme
-            if light:
-                if result == "win":
-                    bg = "#d1fae5"      # soft pastel green
-                    fg = "#065f46"      # dark green text
-                elif result == "loss":
-                    bg = "#ffe4e6"      # soft pastel red
-                    fg = "#9f1239"      # dark red text
-                elif result == "breakeven":
-                    bg = "#f1f5f9"      # soft pastel gray
-                    fg = "#334155"      # dark gray text
-                else:
-                    bg = "#faf9f5"      # default light background
-                    fg = "#111827"
-            else:
-                if result == "win":
-                    bg = "#064e3b"      # dark green
-                    fg = "#34d399"      # light green text
-                elif result == "loss":
-                    bg = "#881337"      # dark red
-                    fg = "#f87171"      # light red text
-                elif result == "breakeven":
-                    bg = "#1e293b"      # dark gray
-                    fg = "#cbd5e1"      # light gray text
-                else:
-                    bg = "#171c24"      # default dark
-                    fg = "#cbd5e1"
-                    
-            from PyQt6.QtGui import QColor
-            row_bg_color = QColor(bg)
-            row_fg_color = QColor(fg)
-            for col in range(len(self.TRADE_COLUMNS)):
+            for col, (key, _label) in enumerate(self.TRADE_COLUMNS):
                 cell = self.table.item(row, col)
-                if cell:
-                    cell.setBackground(row_bg_color)
-                    cell.setForeground(row_fg_color)
+                if not cell:
+                    continue
+                
+                # Reset background to let alternating colors show
+                cell.setBackground(QBrush())
+                
+                # Apply foreground (text) color based on column and value
+                fg_color = None
+                
+                if key == "stt":
+                    fg_color = QColor("#9ca3af")
+                elif key == "side":
+                    side = str(trade.get("side", "")).lower()
+                    if side == "buy": fg_color = QColor("#ea580c")
+                    elif side == "sell": fg_color = QColor("#f43f5e")
+                elif key in ("result", "result_r", "expected_effective_rr"):
+                    val_str = str(trade.get(key, "")).lower()
+                    if key == "result":
+                        if val_str == "win": fg_color = QColor("#10b981")
+                        elif val_str == "loss": fg_color = QColor("#e11d48")
+                        elif val_str == "breakeven": fg_color = QColor("#f59e0b")
+                    else:
+                        try:
+                            val_num = float(val_str.replace("r", "").strip())
+                            if val_num > 0: fg_color = QColor("#10b981")
+                            elif val_num < 0: fg_color = QColor("#e11d48")
+                            else: fg_color = QColor("#9ca3af")
+                        except ValueError:
+                            fg_color = QColor("#9ca3af")
+                elif key == "final_score":
+                    try:
+                        score = int(trade.get("final_score", 0))
+                        if score >= 65: fg_color = QColor("#10b981")
+                        elif score >= 50: fg_color = QColor("#f59e0b")
+                        else: fg_color = QColor("#9ca3af")
+                    except (TypeError, ValueError):
+                        fg_color = QColor("#9ca3af")
+                elif key == "market_regime":
+                    regime = str(trade.get("market_regime", "")).lower()
+                    if regime == "aligned": fg_color = QColor("#10b981")
+                    elif regime == "divergent": fg_color = QColor("#e11d48")
+                    elif regime == "neutral": fg_color = QColor("#f59e0b")
+                    else: fg_color = QColor("#9ca3af")
+                
+                if fg_color:
+                    cell.setForeground(fg_color)
+                else:
+                    cell.setForeground(QBrush())
+
 
     def _refresh_theme_styles(self) -> None:
         self._refresh_progress_bar_style()
@@ -1507,57 +1572,24 @@ class BacktestScreen(QWidget):
         super().showEvent(event)
         self._refresh_theme_styles()
 
-    def _selected_symbols(self) -> list[str]:
-        return list(self.selected_symbols)
-
-    def _update_symbol_summary(self) -> None:
-        count = len(self.selected_symbols)
-        if count <= 3:
-            text = ", ".join(self.selected_symbols)
-        else:
-            text = f"{count} mã: " + ", ".join(self.selected_symbols[:3]) + "..."
-        self.symbol_summary.setText(text or "Chưa chọn mã")
-        self.symbol_summary.setToolTip(", ".join(self.selected_symbols))
-
     def _apply_trade_table_layout(self) -> None:
         header = self.table.horizontalHeader()
-        header.setStretchLastSection(False)
+        header.setStretchLastSection(True)
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         for column, (_key, _label) in enumerate(self.TRADE_COLUMNS):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
         self._resize_trade_columns_to_viewport()
 
     def _resize_trade_columns_to_viewport(self) -> None:
         viewport_width = self.table.viewport().width()
         if viewport_width <= 0:
-            viewport_width = self.table.width()
-        if viewport_width <= 0:
             return
 
         weights = [self.TRADE_COLUMN_WEIGHTS[key] for key, _label in self.TRADE_COLUMNS]
         total_weight = sum(weights)
-        exact_widths = [viewport_width * weight / total_weight for weight in weights]
-        widths = [max(1, int(width)) for width in exact_widths]
-        remaining = viewport_width - sum(widths)
-
-        fractions = sorted(
-            enumerate(width - int(width) for width in exact_widths),
-            key=lambda item: item[1],
-            reverse=True,
-        )
-        if remaining > 0:
-            for index, _fraction in fractions[:remaining]:
-                widths[index] += 1
-        elif remaining < 0:
-            for index, _width in sorted(enumerate(widths), key=lambda item: item[1], reverse=True):
-                if remaining == 0:
-                    break
-                reducible = min(widths[index] - 1, -remaining)
-                if reducible > 0:
-                    widths[index] -= reducible
-                    remaining += reducible
-
-        for column, width in enumerate(widths):
+        # Last column gets the remainder via stretch
+        for column in range(len(self.TRADE_COLUMNS) - 1):
+            width = max(20, int(viewport_width * weights[column] / total_weight))
             self.table.setColumnWidth(column, width)
 
     @staticmethod
@@ -1569,19 +1601,70 @@ class BacktestScreen(QWidget):
     def _backtest_form_stylesheet(self) -> str:
         light = self._is_light_theme()
         if light:
-            color = "#111827"
-            border = "#cbd5e1"
+            text_color = "#1f2937"
+            title_color = "#111827"
+            border_color = "#cbd5e1"
+            input_bg = "#ffffff"
+            input_border = "#d1d5db"
+            stat_bg = "#f3f4f6"
+            stat_border = "#e5e7eb"
+            stat_title = "#4b5563"
+            stat_val = "#111827"
         else:
-            color = "#f8fafc"
-            border = "#334155"
+            text_color = "#e5e7eb"
+            title_color = "#f9fafb"
+            border_color = "#334155"
+            input_bg = "#111827"
+            input_border = "#475569"
+            stat_bg = "#1e293b"
+            stat_border = "#334155"
+            stat_title = "#94a3b8"
+            stat_val = "#f8fafc"
             
         return f"""
-        QLabel#BacktestSectionTitle {{
-            color: {color};
-            font-size: 13px;
+        QFrame#MiniStatCompact {{
+            background-color: {stat_bg};
+            border: 1px solid {stat_border};
+            border-radius: 4px;
+        }}
+        QLabel#MiniStatTitleCompact {{
+            color: {stat_title};
+            font-size: 11px;
+            font-weight: 600;
+        }}
+        QLabel#MiniStatValueCompact {{
+            color: {stat_val};
+            font-size: 11px;
             font-weight: 800;
-            padding-bottom: 2px;
-            border-bottom: 1px solid {border};
+        }}
+        #BacktestField {{
+            background: {input_bg};
+            border: 1px solid {input_border};
+            border-radius: 4px;
+            color: {text_color};
+            padding: 1px 6px;
+            min-height: 18px;
+            max-height: 18px;
+            font-size: 11px;
+        }}
+        #BacktestField:hover {{
+            border: 1px solid {"#94a3b8" if light else "#64748b"};
+            background: {"#f9fafb" if light else "#151f2e"};
+        }}
+        #BacktestField:focus {{
+            border: 1px solid #38bdf8;
+            background: {input_bg};
+        }}
+        #BacktestSymbolSummary {{
+            color: {title_color};
+            font-size: 11px;
+            font-weight: 700;
+            background: {"#e5e7eb" if light else "#0f172a"};
+            border: 1px solid {border_color};
+            border-radius: 4px;
+            padding: 1px 6px;
+            min-height: 18px;
+            max-height: 18px;
         }}
         """
 
@@ -1608,6 +1691,8 @@ class BacktestScreen(QWidget):
             return self._format_decimal(value, 5)
         if key == "result_r":
             return self._format_decimal(value, 2)
+        if key == "expected_effective_rr":
+            return self._format_decimal(value, 1)
         if key in {"final_score", "signal_score", "selected_zone_score"}:
             return self._format_integer(value)
         return str(value)
@@ -1622,7 +1707,7 @@ class BacktestScreen(QWidget):
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             gmt7 = parsed.astimezone(timezone(timedelta(hours=7)))
-            return gmt7.strftime("%d-%m-%Y %H:%M:%S")
+            return gmt7.strftime("%d/%m/%Y %H:%M")
         except ValueError:
             return str(value)
 
@@ -1765,27 +1850,20 @@ class BacktestInputHelpDialog(QDialog):
 
 
 class SymbolSelectionDialog(QDialog):
-    def __init__(self, selected_symbols: list[str], parent: QWidget | None = None) -> None:
+    def __init__(self, selected_symbol: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Chọn mã kiểm thử")
         self.setObjectName("ScannerHelpDialog")
         self.setModal(True)
-        self.setMinimumSize(520, 620)
-        self.checkboxes: dict[str, QCheckBox] = {}
+        self.setMinimumSize(360, 400)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 16)
         root.setSpacing(12)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
-        self.select_all_button = action_button("✅ Chọn tất cả", primary=True, color="success")
-        self.clear_button = action_button("❌ Bỏ chọn", primary=True, color="danger")
-        self.forex_button = action_button("💱 Forex", primary=True, color="info")
-        self.metal_crypto_button = action_button("🪙 Kim loại/Crypto", primary=True, color="info")
-        for button in (self.select_all_button, self.clear_button, self.forex_button, self.metal_crypto_button):
-            controls.addWidget(button)
-        root.addLayout(controls)
+        label = QLabel("Chọn một mã để backtest:")
+        label.setObjectName("FormLabel")
+        root.addWidget(label)
 
         scroll = QScrollArea()
         scroll.setObjectName("SymbolSelectionScroll")
@@ -1796,13 +1874,15 @@ class SymbolSelectionDialog(QDialog):
         grid.setContentsMargins(4, 4, 4, 4)
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(8)
-        selected_set = set(selected_symbols)
+
+        self._button_group = QButtonGroup(self)
         symbols = sorted(SUPPORTED_SYMBOLS)
         for index, symbol in enumerate(symbols):
-            checkbox = QCheckBox(symbol)
-            checkbox.setChecked(symbol in selected_set)
-            self.checkboxes[symbol] = checkbox
-            grid.addWidget(checkbox, index // 3, index % 3)
+            radio = QRadioButton(symbol)
+            if symbol == selected_symbol:
+                radio.setChecked(True)
+            self._button_group.addButton(radio)
+            grid.addWidget(radio, index // 3, index % 3)
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
 
@@ -1811,35 +1891,14 @@ class SymbolSelectionDialog(QDialog):
         buttons_layout.setSpacing(8)
         buttons_layout.addStretch(1)
         cancel_btn = action_button("❌ Hủy", primary=False, color="danger")
-        ok_btn = action_button("✅ Áp dụng", primary=True, color="success")
+        ok_btn = action_button("✅ Chọn", primary=True, color="success")
         buttons_layout.addWidget(cancel_btn)
         buttons_layout.addWidget(ok_btn)
         root.addLayout(buttons_layout)
 
-        self.select_all_button.clicked.connect(lambda: self._set_all(True))
-        self.clear_button.clicked.connect(lambda: self._set_all(False))
-        self.forex_button.clicked.connect(self._select_forex)
-        self.metal_crypto_button.clicked.connect(self._select_metal_crypto)
-        ok_btn.clicked.connect(self._accept_if_valid)
+        ok_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
 
-    def selected_symbols(self) -> list[str]:
-        return [symbol for symbol, checkbox in self.checkboxes.items() if checkbox.isChecked()]
-
-    def _set_all(self, checked: bool) -> None:
-        for checkbox in self.checkboxes.values():
-            checkbox.setChecked(checked)
-
-    def _select_forex(self) -> None:
-        for symbol, checkbox in self.checkboxes.items():
-            checkbox.setChecked(symbol not in {"XAU/USD", "XAG/USD", "BTC/USD"})
-
-    def _select_metal_crypto(self) -> None:
-        for symbol, checkbox in self.checkboxes.items():
-            checkbox.setChecked(symbol in {"XAU/USD", "XAG/USD", "BTC/USD"})
-
-    def _accept_if_valid(self) -> None:
-        if not self.selected_symbols():
-            QMessageBox.warning(self, "Chưa chọn mã", "Cần chọn ít nhất một mã để backtest.")
-            return
-        self.accept()
+    def selected_symbol(self) -> str:
+        checked = self._button_group.checkedButton()
+        return checked.text() if checked else "EUR/USD"

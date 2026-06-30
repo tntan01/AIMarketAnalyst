@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from statistics import median
 from typing import Any
 
@@ -17,6 +17,7 @@ BACKTEST_FUNNEL_KEYS = (
     "snapshots_evaluated",
     "no_trade_scenario",
     "setup_detected",
+    "fallback_scenario",
     "blocked_by_trade_gate",
     "blocked_by_permission",
     "blocked_by_decision",
@@ -48,7 +49,6 @@ class BacktestRequest:
     max_holding_bars: int = 96
     setup_expiry_bars: int = 12
     step_timeframe: str = "H1"
-    mode: str = "strict"
     allow_macro: bool = False
     conservative_same_bar: bool = True
     store_analysis_snapshots: bool = False
@@ -158,7 +158,12 @@ def run_system_backtest(
         if next_allowed_time is not None and candle.time <= next_allowed_time:
             continue
         percent = 10 + int(ordinal / total_steps * 75)
-        progress(percent, f"Đang backtest {request.symbol} tại {candle.time.isoformat()}")
+        t = candle.time
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        gmt7 = t.astimezone(timezone(timedelta(hours=7)))
+        time_str = gmt7.strftime("%d/%m/%Y %H:%M")
+        progress(percent, f"Đang backtest {request.symbol} tại {time_str}")
 
         snapshot = slice_candles_until(candles_by_timeframe, candle.time)
         if not has_minimum_analysis_data(snapshot):
@@ -188,6 +193,10 @@ def run_system_backtest(
             score_fail_count += 1
 
         scenario = select_trade_scenario(analysis)
+        is_fallback = False
+        if not scenario:
+            scenario = build_fallback_scenario(analysis, candle)
+            is_fallback = scenario is not None
         if not scenario:
             funnel["no_trade_scenario"] += 1
             skipped.append(
@@ -202,7 +211,9 @@ def run_system_backtest(
 
         setups_detected += 1
         funnel["setup_detected"] += 1
-        block_reason = trade_open_block_reason(analysis, scenario, request.mode, request.min_final_score)
+        if is_fallback:
+            funnel["fallback_scenario"] += 1
+        block_reason = trade_open_block_reason(analysis, scenario, request.min_final_score)
         if block_reason is not None:
             if _gate_blocked(analysis):
                 blocked_by_gate += 1
@@ -357,74 +368,98 @@ def select_trade_scenario(analysis: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def should_open_trade(analysis: dict[str, Any], scenario: dict[str, Any], mode: str = "strict") -> bool:
-    return trade_open_block_reason(analysis, scenario, mode) is None
+def build_fallback_scenario(analysis: dict[str, Any], candle: Any) -> dict[str, Any] | None:
+    """Synthetic scenario when analysis engine produces no tradeable plan.
+
+    Uses current price + ATR to construct entry zone, SL, TP.
+    Only used in backtest when the normal analysis pipeline is too conservative
+    (e.g. support/resistance zones too far from price, M15 insufficient).
+    """
+    summary = analysis.get("decision_summary", {}) if isinstance(analysis.get("decision_summary"), dict) else {}
+    best_side = summary.get("best_side") or summary.get("best_scenario")
+    if best_side not in ("buy", "sell"):
+        return None
+
+    try:
+        price = float(candle.close)
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    technical = analysis.get("technical", {}) if isinstance(analysis.get("technical"), dict) else {}
+    atr = float(technical.get("atr_h4") or technical.get("atr_d1") or 0)
+    if atr <= 0:
+        atr = price * 0.003  # fallback ~0.3% of price
+
+    market_regime = analysis.get("market_regime", {}) if isinstance(analysis.get("market_regime"), dict) else {}
+    regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
+
+    # Build zone / SL / TP from ATR
+    zone_half = atr * 0.25
+    entry_low = price - zone_half
+    entry_high = price + zone_half
+
+    if best_side == "buy":
+        stop_loss = price - atr * 1.2
+        take_profit = price + atr * 2.4  # 1:2 RR
+    else:
+        stop_loss = price + atr * 1.2
+        take_profit = price - atr * 2.4
+
+    # Guard: ensure SL and TP are on the correct side of price
+    if best_side == "buy" and (stop_loss >= price or take_profit <= price):
+        return None
+    if best_side == "sell" and (stop_loss <= price or take_profit >= price):
+        return None
+
+    return {
+        "type": best_side,
+        "entry_zone": [round(entry_low, 5), round(entry_high, 5)],
+        "stop_loss": round(stop_loss, 5),
+        "take_profit": [round(take_profit, 5)],
+        "entry_status": "watch_zone",
+        "m15_quality": None,
+        "expected_effective_rr": 1.5,
+        "entry_zone_score": 50,
+        "entry_zone_source": "fallback",
+        "ready_to_trade": False,
+        "_fallback": True,
+        "_regime": regime_primary,
+    }
 
 
-def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], mode: str = "strict", min_final_score: int = 0) -> str | None:
-    mode = str(mode or "strict").lower()
+def should_open_trade(analysis: dict[str, Any], scenario: dict[str, Any], min_final_score: int = 0) -> bool:
+    return trade_open_block_reason(analysis, scenario, min_final_score) is None
+
+
+def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], min_final_score: int = 0) -> str | None:
+    """Standard backtest entry filter — single unified logic.
+
+    Pipeline: trade_gate.allowed → permission allowed/caution →
+    decision READY_TO_TRADE/WAITING_CONFIRMATION/AGGRESSIVE_SETUP/WATCH_ONLY →
+    entry confirmed/waiting/watch_zone → optional min_score filter.
+    """
     trade_permission = analysis.get("trade_permission", {}) if isinstance(analysis.get("trade_permission"), dict) else {}
     gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
     decision_engine = analysis.get("decision_engine", {}) if isinstance(analysis.get("decision_engine"), dict) else {}
-    decision_summary = analysis.get("decision_summary", {}) if isinstance(analysis.get("decision_summary"), dict) else {}
 
     if gate.get("allowed") is not True:
         return "blocked_by_trade_gate"
-    permission_status = trade_permission.get("status")
 
-    if mode == "legacy":
-        if permission_status != "allowed":
-            return "blocked_by_permission"
-        return None if decision_summary.get("action") == "ready" else "blocked_by_decision"
-    if mode == "balanced":
-        if permission_status not in {"allowed", "caution"}:
-            return "blocked_by_permission"
-        decision = decision_engine.get("decision")
-        if decision not in {"READY_TO_TRADE", "WAITING_CONFIRMATION"}:
-            return "blocked_by_decision"
-        if scenario.get("entry_status") != "confirmed_entry":
-            return "blocked_by_entry_status"
-        if scenario.get("m15_quality") != "strict":
-            return "blocked_by_m15"
-        if _safe_int(analysis.get("final_score")) is None or int(analysis.get("final_score") or 0) < 68:
-            return "blocked_by_score"
-        signal_score = _scenario_signal_score(analysis, scenario)
-        if signal_score is None or signal_score < 65:
-            return "blocked_by_score"
-        expected_rr = optional_float(scenario.get("expected_effective_rr"))
-        if expected_rr is None or expected_rr < 1.2:
-            return "blocked_by_rr"
-        return None
-    if mode == "research":
-        allowed_research = decision_engine.get("decision") in {
-            "READY_TO_TRADE",
-            "WAITING_CONFIRMATION",
-            "WATCH_ONLY",
-            "AGGRESSIVE_SETUP",
-        } and scenario.get("entry_status") in {"confirmed_entry", "waiting_confirmation", "watch_zone"}
-        return None if allowed_research else "blocked_by_decision"
-    if mode == "backtest":
-        if permission_status not in {"allowed", "caution"}:
-            return "blocked_by_permission"
-        decision = decision_engine.get("decision")
-        if decision not in {"READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP"}:
-            return "blocked_by_decision"
-        if scenario.get("entry_status") not in {"confirmed_entry", "waiting_confirmation", "watch_zone"}:
-            return "blocked_by_entry_status"
-        if min_final_score > 0 and _safe_int(analysis.get("final_score")) is not None:
-            if int(analysis.get("final_score") or 0) < min_final_score:
-                return "blocked_by_score"
-        return None
-    if permission_status != "allowed":
+    permission_status = trade_permission.get("status")
+    if permission_status not in {"allowed", "caution"}:
         return "blocked_by_permission"
-    if decision_engine.get("decision") != "READY_TO_TRADE":
+
+    decision = decision_engine.get("decision")
+    if decision not in {"READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP", "WATCH_ONLY"}:
         return "blocked_by_decision"
-    if scenario.get("ready_to_trade") is not True:
-        return "blocked_by_decision"
-    if scenario.get("entry_status") != "confirmed_entry":
+
+    if scenario.get("entry_status") not in {"confirmed_entry", "waiting_confirmation", "watch_zone"}:
         return "blocked_by_entry_status"
-    if scenario.get("m15_quality") != "strict":
-        return "blocked_by_m15"
+
+    if min_final_score > 0 and _safe_int(analysis.get("final_score")) is not None:
+        if int(analysis.get("final_score") or 0) < min_final_score:
+            return "blocked_by_score"
+
     return None
 
 
@@ -872,11 +907,11 @@ def _skip_reason(analysis: dict[str, Any], scenario: dict[str, Any], block_reaso
     reason_labels = {
         "blocked_by_trade_gate": "Gate hoặc trade_permission chặn giao dịch.",
         "blocked_by_permission": "Trade permission chưa cho phép giao dịch.",
-        "blocked_by_decision": "Decision chưa đạt ngưỡng mở lệnh của mode backtest.",
-        "blocked_by_score": "Final score hoặc signal score chưa đạt ngưỡng mode backtest.",
-        "blocked_by_entry_status": "Entry status chưa đạt ngưỡng mode backtest.",
-        "blocked_by_m15": "M15 quality chưa đạt ngưỡng mode backtest.",
-        "blocked_by_rr": "Expected RR chưa đạt ngưỡng mode backtest.",
+        "blocked_by_decision": "Decision chưa đạt ngưỡng mở lệnh.",
+        "blocked_by_score": "Final score chưa đạt ngưỡng tối thiểu.",
+        "blocked_by_entry_status": "Entry status chưa đạt yêu cầu.",
+        "blocked_by_m15": "M15 quality chưa đạt yêu cầu.",
+        "blocked_by_rr": "Expected RR chưa đạt yêu cầu.",
     }
     if block_reason in reason_labels:
         return reason_labels[block_reason]

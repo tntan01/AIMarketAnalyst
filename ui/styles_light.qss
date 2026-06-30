@@ -962,6 +962,47 @@ QDialog#ScannerHelpDialog QScrollArea QWidget {
   background: #EDEBE4;
 }
 
+QDialog#ScannerHelpDialog QRadioButton {
+  color: #111827;
+  padding: 6px 10px;
+  spacing: 8px;
+  border: 1px solid #D6D2C8;
+  border-radius: 6px;
+  background-color: #f5f3ed;
+  font-size: 13px;
+}
+
+QDialog#ScannerHelpDialog QRadioButton:hover {
+  background-color: #fff7ed;
+  border-color: #ea580c;
+  color: #ea580c;
+}
+
+QDialog#ScannerHelpDialog QRadioButton:checked {
+  background-color: #fff7ed;
+  border-color: #ea580c;
+  color: #ea580c;
+  font-weight: bold;
+}
+
+QDialog#ScannerHelpDialog QRadioButton::indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  border: 1px solid #c8c2b7;
+  background-color: #ffffff;
+}
+
+QDialog#ScannerHelpDialog QRadioButton::indicator:checked {
+  border: 4px solid #ea580c;
+  background-color: #f5f3ed;
+}
+
+QDialog#ScannerHelpDialog QRadioButton::indicator:unchecked:hover {
+  border-color: #ea580c;
+}
+
+
 QDialog#ScannerHelpDialog QCheckBox {
   color: #111827;
   spacing: 8px;

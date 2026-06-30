@@ -1201,7 +1201,8 @@ class ScannerScreen (QWidget ):
             if isinstance(entry_zone, list) and len(entry_zone) >= 2:
                 entry_low = float(entry_zone[0])
                 entry_high = float(entry_zone[1])
-                entry_price = entry_high if best_side == "buy" else entry_low
+                ep = scenario.get("entry_price")
+                entry_price = float(ep) if ep is not None else (entry_high if best_side == "buy" else entry_low)
             else:
                 entry_low = entry_high = 0.0
                 entry_price = None
