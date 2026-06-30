@@ -124,8 +124,6 @@ def evaluate_entry(
         reason = "Thiếu dữ liệu giá, ATR hoặc vùng vào lệnh."
         if not m15_available:
             reason += " | M15 data unavailable"
-        elif m15_quality:
-            reason += f" | M15: {_M15_QUALITY_LABELS.get(m15_quality, m15_quality)}"
         return _result("no_setup", "none", 0, reason,
                        m15_available=m15_available)
 
@@ -138,8 +136,6 @@ def evaluate_entry(
         reason = "Giá đã phá vùng vào lệnh dự kiến."
         if not m15_available:
             reason += " | M15 data unavailable"
-        elif m15_quality:
-            reason += f" | M15: {_M15_QUALITY_LABELS.get(m15_quality, m15_quality)}"
         return _result("invalidated", "zone_broken", 0, reason,
                        m15_available=m15_available,
                        warning_codes=[ZONE_BROKEN])
@@ -159,7 +155,6 @@ def evaluate_entry(
     # --- M15 confirmation layer ---
     m15_structure = None
     m15_displacement = None
-    m15_quality = None
     m15_score_multiplier = None
     if m15_available:
         m15_structure = _confirm_m15_structure(m15_candles, side)

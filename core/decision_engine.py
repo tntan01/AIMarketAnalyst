@@ -465,7 +465,7 @@ def make_final_decision(
         }
 
     # ---- G. Entry confirmed — score-based ----
-    if score >= t.get("ready", 80):
+    if score >= t.get("ready", DEFAULT_DECISION_THRESHOLDS["ready"]):
         reason_codes = [DECISION_READY_TO_TRADE, DECISION_FINAL_SCORE_STRONG]
         return {
             "decision": READY_TO_TRADE,

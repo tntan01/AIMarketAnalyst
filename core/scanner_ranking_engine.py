@@ -134,41 +134,6 @@ _GROUP_REASON_CODES: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def parse_risk_reward(value: object) -> float:
-    """Parse a risk/reward ratio string.
-
-    - ``"1:1.8"`` → 1.8
-    - ``"1:2"`` → 2.0
-    - ``"2.5"`` → 2.5
-    - None or dirty → 0.0
-    - Never raises.
-    """
-    if value is None:
-        return 0.0
-    if isinstance(value, (int, float)):
-        f = float(value)
-        return max(f, 0.0) if f == f else 0.0
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return 0.0
-        if ":" in s:
-            parts = s.split(":", 1)
-            try:
-                risk = float(parts[0].strip())
-                reward = float(parts[1].strip())
-                if risk == 0:
-                    return 0.0
-                return max(reward / risk, 0.0)
-            except (ValueError, OverflowError):
-                pass
-        try:
-            f = float(s)
-            return max(f, 0.0) if f == f else 0.0
-        except (ValueError, OverflowError):
-            pass
-    return 0.0
-
 
 _PROXIMITY_ALIASES: dict[str, str] = {
     "in_zone": "in_zone",
@@ -540,7 +505,13 @@ def enrich_scanner_row_with_ranking(row: dict[str, Any] | None) -> dict[str, Any
         if "expected_effective_rr" not in enriched:
             scenarios = ar.get("scenarios")
             if isinstance(scenarios, list) and len(scenarios) > 0:
+                best_side = ar.get("decision_summary", {}).get("best_side")
                 best = scenarios[0]
+                if best_side:
+                    for s in scenarios:
+                        if isinstance(s, dict) and s.get("side") == best_side:
+                            best = s
+                            break
                 if isinstance(best, dict):
                     e_rr = best.get("expected_effective_rr")
                     if e_rr is not None:
