@@ -37,6 +37,17 @@ REGIME_ZONE_DISTANCE_MULT: dict[str, float] = {
     "volatile":   3.0,
     "unknown":    2.0,
 }
+# Dynamic TP fallback multiplier by market regime.
+# Used by backtest fallback_scenario only (NOT by build_trade_plan).
+# build_trade_plan returns None for RR/TP when no structural target is found.
+REGIME_TP_FALLBACK_MULT: dict[str, float] = {
+    "trend_up":   2.0,
+    "trend_down": 2.0,
+    "range":      1.5,
+    "volatile":   1.8,
+    "unknown":    1.5,
+}
+_DEFAULT_TP_FALLBACK_MULT = 2.0
 _DEFAULT_SL_MULT = 0.50
 _DEFAULT_ZONE_DISTANCE_MULT = 1.5
 _ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
@@ -315,6 +326,47 @@ def calc_trade_permission(data_quality: dict[str, Any], risk_score: int, best_sc
     return {"status": "allowed", "reason": "Dữ liệu ổn, không có cảnh báo rủi ro chính.", "resume_after": None, "min_score": min_score}
 
 
+def _find_nearest_swing_for_tp(
+    smc: dict[str, Any] | None,
+    side: str,
+    price: float,
+    min_distance: float,
+) -> float | None:
+    """Find nearest swing high (buy) or swing low (sell) for TP target.
+
+    Only returns swings that are at least *min_distance* away from *price*
+    to ensure minimum R:R.  Searches H4 first, then H1.
+    """
+    if not isinstance(smc, dict):
+        return None
+    for tf in ("H4", "H1"):
+        tf_data = smc.get(tf, {})
+        if not isinstance(tf_data, dict):
+            continue
+        swings = tf_data.get("swings", {})
+        if not isinstance(swings, dict):
+            continue
+        # BUY → swing highs above price; SELL → swing lows below price
+        swing_list = swings.get("highs" if side == "buy" else "lows", [])
+        if not isinstance(swing_list, list):
+            continue
+        candidates: list[float] = []
+        for s in swing_list:
+            if not isinstance(s, dict):
+                continue
+            level = s.get("level")
+            if isinstance(level, (int, float)):
+                lv = float(level)
+                if side == "buy" and lv > price + min_distance:
+                    candidates.append(lv)
+                elif side == "sell" and lv < price - min_distance:
+                    candidates.append(lv)
+        if candidates:
+            # Nearest qualifying swing
+            return min(candidates) if side == "buy" else max(candidates)
+    return None
+
+
 def build_scenarios(
     request: AnalysisInput,
     technical: dict[str, Any],
@@ -388,13 +440,17 @@ def build_trade_plan(
     resistance_zones = list(technical["resistance_zones"]) + smc_resistances
 
     # Try preferred SMC zone first (from get_preferred_zone)
+    # Must be on the correct side of price AND within reasonable distance.
+    # Without distance check, stale zones far from price produce meaningless plans.
     use_preferred = False
     if isinstance(preferred_zone, dict) and preferred_zone.get("low") is not None and preferred_zone.get("high") is not None:
         pz_level = preferred_zone["level"]
-        if side == "buy" and pz_level < price:
-            use_preferred = True
-        elif side == "sell" and pz_level > price:
-            use_preferred = True
+        on_correct_side = (side == "buy" and pz_level < price) or (side == "sell" and pz_level > price)
+        if on_correct_side:
+            pz_distance = abs(price - pz_level)
+            max_zone_distance = atr_value * zone_dist_mult
+            if pz_distance <= max_zone_distance:
+                use_preferred = True
 
     if side == "buy":
         if use_preferred:
@@ -417,20 +473,26 @@ def build_trade_plan(
         watch_high = level + atr_value * watch_zone_atr_mult
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
-        # SL: prefer nearest swing low from H4/H1, fallback to zone/ATR-based
-        swing_sl = _find_nearest_swing_for_sl(smc, "buy", level)
-        if swing_sl is not None:
-            stop_loss = swing_sl - atr_value * _SWING_SL_BUFFER_ATR
+        # SL: SMC zone natural low = invalidation point; fallback to swing/ATR
+        if use_preferred:
+            stop_loss = preferred_zone["low"] - atr_value * 0.10
             if abs(level - stop_loss) < min_stop_distance:
                 stop_loss = level - min_stop_distance
         else:
-            stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
+            swing_sl = _find_nearest_swing_for_sl(smc, "buy", level)
+            if swing_sl is not None:
+                stop_loss = swing_sl - atr_value * _SWING_SL_BUFFER_ATR
+                if abs(level - stop_loss) < min_stop_distance:
+                    stop_loss = level - min_stop_distance
+            else:
+                stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
         # Guard: SL must be strictly below the entry zone
         sl_floor = entry_low - atr_value * 0.10
         if stop_loss >= sl_floor:
             stop_loss = sl_floor
-        # Guard: skip plan if SL is too tight (noise would sweep it)
-        if abs(level - stop_loss) < atr_value * _MIN_SL_DISTANCE_ATR:
+        # Guard: skip plan if SL is too tight (relaxed for SMC zones)
+        _min_sl = atr_value * 0.20 if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
+        if abs(level - stop_loss) < _min_sl:
             return None
         entry_for_rr = entry_low + (entry_high - entry_low) * entry_aggressiveness
         # TP1: try equal highs (liquidity cluster), then S/R zone, then Fib
@@ -442,13 +504,22 @@ def build_trade_plan(
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             if regime_primary != "range":
                 tp1 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP1)
+        # Swing-based TP: find nearest swing high as target
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
-            return None
-        # TP2: next S/R zone, fallback to Fib 0.618
-        tp2 = next_target(resistance_zones, tp1, above=True)
-        if tp2 is None:
-            if regime_primary != "range":
-                tp2 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP2)
+            tp1 = _find_nearest_swing_for_tp(smc, "buy", entry_for_rr, entry_for_rr - stop_loss)
+        if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
+            if use_preferred:
+                tp1 = None   # không có TP thật → để trống, không dùng fallback nhân tạo
+                tp2 = None
+            else:
+                return None
+        # TP2: next S/R zone, fallback to Fib 0.618 (only when tp1 is real)
+        tp2 = None
+        if tp1 is not None:
+            tp2 = next_target(resistance_zones, tp1, above=True)
+            if tp2 is None:
+                if regime_primary != "range":
+                    tp2 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP2)
         condition = _build_buy_condition(h4_smc)
         invalidation = _build_buy_invalidation(stop_loss, h4_smc)
     else:
@@ -472,20 +543,26 @@ def build_trade_plan(
         watch_high = level + atr_value * 0.10
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
-        # SL: prefer nearest swing high from H4/H1, fallback to zone/ATR-based
-        swing_sl = _find_nearest_swing_for_sl(smc, "sell", level)
-        if swing_sl is not None:
-            stop_loss = swing_sl + atr_value * _SWING_SL_BUFFER_ATR
+        # SL: SMC zone natural high = invalidation point; fallback to swing/ATR
+        if use_preferred:
+            stop_loss = preferred_zone["high"] + atr_value * 0.10
             if abs(level - stop_loss) < min_stop_distance:
                 stop_loss = level + min_stop_distance
         else:
-            stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
+            swing_sl = _find_nearest_swing_for_sl(smc, "sell", level)
+            if swing_sl is not None:
+                stop_loss = swing_sl + atr_value * _SWING_SL_BUFFER_ATR
+                if abs(level - stop_loss) < min_stop_distance:
+                    stop_loss = level + min_stop_distance
+            else:
+                stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
         # Guard: SL must be strictly above the entry zone
         sl_ceiling = entry_high + atr_value * 0.10
         if stop_loss <= sl_ceiling:
             stop_loss = sl_ceiling
-        # Guard: skip plan if SL is too tight (noise would sweep it)
-        if abs(level - stop_loss) < atr_value * _MIN_SL_DISTANCE_ATR:
+        # Guard: skip plan if SL is too tight (relaxed for SMC zones)
+        _min_sl = atr_value * 0.20 if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
+        if abs(level - stop_loss) < _min_sl:
             return None
         entry_for_rr = entry_high + (entry_low - entry_high) * entry_aggressiveness
         # TP1: try equal lows (liquidity cluster), then S/R zone, then Fib
@@ -497,13 +574,22 @@ def build_trade_plan(
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             if regime_primary != "range":
                 tp1 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP1)
+        # Swing-based TP: find nearest swing low as target
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
-            return None
-        # TP2: next S/R zone, fallback to Fib 0.618
-        tp2 = next_target(support_zones, tp1, above=False)
-        if tp2 is None:
-            if regime_primary != "range":
-                tp2 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP2)
+            tp1 = _find_nearest_swing_for_tp(smc, "sell", entry_for_rr, stop_loss - entry_for_rr)
+        if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
+            if use_preferred:
+                tp1 = None   # không có TP thật → để trống, không dùng fallback nhân tạo
+                tp2 = None
+            else:
+                return None
+        # TP2: next S/R zone, fallback to Fib 0.618 (only when tp1 is real)
+        tp2 = None
+        if tp1 is not None:
+            tp2 = next_target(support_zones, tp1, above=False)
+            if tp2 is None:
+                if regime_primary != "range":
+                    tp2 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP2)
         condition = _build_sell_condition(h4_smc)
         invalidation = _build_sell_invalidation(stop_loss, h4_smc)
 
@@ -537,20 +623,28 @@ def build_trade_plan(
         corr_warnings = get_correlation_warnings(request.symbol, side, dxy_candles=corr_dxy, us10y_candles=corr_us10y, us2y_candles=corr_us2y, vix_candles=corr_vix)
         corr_context = summarize_correlation_context(request.symbol, side, dxy_candles=corr_dxy, us10y_candles=corr_us10y, us2y_candles=corr_us2y, vix_candles=corr_vix)
 
+    # Build RR strings only when TP is real (not fallback)
+    if tp1 is not None:
+        risk_reward_str = f"1:{reward_risk(entry_for_rr, stop_loss, tp1):.1f}"
+        effective_rr = calculate_expected_effective_rr(
+            direction=side,
+            entry=entry_for_rr,
+            stop_loss=stop_loss,
+            take_profit=tp1,
+            spread_price=spread_price,
+        )
+    else:
+        risk_reward_str = None
+        effective_rr = None
+
     return {
         "entry_zone": entry_zone,
         "entry_price": round_price(entry_for_rr),
         "watch_zone": watch_zone,
         "stop_loss": round_price(stop_loss),
         "take_profit": [round_price(value) for value in (tp1, tp2) if value is not None],
-        "risk_reward": f"1:{reward_risk(entry_for_rr, stop_loss, tp1):.1f}",
-        "expected_effective_rr": calculate_expected_effective_rr(
-            direction=side,
-            entry=entry_for_rr,
-            stop_loss=stop_loss,
-            take_profit=tp1,
-            spread_price=spread_price,
-        ),
+        "risk_reward": risk_reward_str,
+        "expected_effective_rr": effective_rr,
         "condition": condition,
         "invalidation": invalidation,
         "position_sizing": sizing,

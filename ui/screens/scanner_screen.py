@@ -41,6 +41,9 @@ class ScannerTableModel (QAbstractTableModel ):
     ("scanner_action","Hành động"),
     ("direction_bias","Hướng"),
     ("price_vs_zone","Entry"),
+    ("entry_zone","Giá vào"),
+    ("stop_loss","SL"),
+    ("take_profit","TP"),
     ("trade_permission","Quyền"),
     ("opportunity_score","Điểm"),
     ("risk_reward","R:R"),
@@ -89,7 +92,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"rank","scanner_action","direction_bias","price_vs_zone","trade_permission","opportunity_score","risk_reward","macro_bias","detail_action"}:
+            if key in {"rank","scanner_action","direction_bias","price_vs_zone","entry_zone","stop_loss","take_profit","trade_permission","opportunity_score","risk_reward","macro_bias","detail_action"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .ForegroundRole :
@@ -152,6 +155,20 @@ class ScannerTableModel (QAbstractTableModel ):
             return self .MACRO_BIAS_TEXT .get (str (value ),str (value or "--"))
         if key =="risk_reward":
             return str (value or "-")
+        if key =="entry_zone":
+            if isinstance (value ,list )and len (value )==2 :
+                return f"{value[0]:.5f}–{value[1]:.5f}"
+            return "--"
+        if key =="stop_loss":
+            if isinstance (value ,(int ,float )):
+                return f"{value:.5f}"
+            return "--"
+        if key =="take_profit":
+            if isinstance (value ,list )and value :
+                return f"{value[0]:.5f}"
+            if isinstance (value ,(int ,float )):
+                return f"{value:.5f}"
+            return "--"
         if key =="journal_sample_size":
             return str (int (value ))if isinstance (value ,(int ,float ))else "0"
         if key =="journal_expectancy_r":
@@ -344,9 +361,9 @@ class ScannerTableModel (QAbstractTableModel ):
 
 class ScannerScreen (QWidget ):
     # Dynamically resolved from COLUMNS
-    SHORT_REASON_COL =8  # overridden in __init__
+    SHORT_REASON_COL =12  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
-    TABLE_EXTRA_COLUMN_PADDING ={1 :18 ,2 :18 ,5 :18 ,7 :18 ,9 :24}
+    TABLE_EXTRA_COLUMN_PADDING ={1 :18 ,2 :18 ,8 :18 ,10 :18 ,12 :24}
     TABLE_REASON_HORIZONTAL_PADDING =30
     TABLE_MIN_REASON_WIDTH =150
 

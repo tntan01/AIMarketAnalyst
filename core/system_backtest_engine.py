@@ -8,7 +8,7 @@ from typing import Any
 
 from core.analysis_engine import analyze_symbol
 from core.market_models import Candle
-from core.risk_engine import AnalysisInput
+from core.risk_engine import AnalysisInput, REGIME_TP_FALLBACK_MULT
 from core.safe_types import optional_float
 
 
@@ -398,12 +398,13 @@ def build_fallback_scenario(analysis: dict[str, Any], candle: Any) -> dict[str, 
     entry_low = price - zone_half
     entry_high = price + zone_half
 
+    tp_mult = REGIME_TP_FALLBACK_MULT.get(regime_primary, 2.0)
     if best_side == "buy":
         stop_loss = price - atr * 1.2
-        take_profit = price + atr * 2.4  # 1:2 RR
+        take_profit = price + atr * 1.2 * tp_mult
     else:
         stop_loss = price + atr * 1.2
-        take_profit = price - atr * 2.4
+        take_profit = price - atr * 1.2 * tp_mult
 
     # Guard: ensure SL and TP are on the correct side of price
     if best_side == "buy" and (stop_loss >= price or take_profit <= price):

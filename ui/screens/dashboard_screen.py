@@ -374,12 +374,15 @@ class DashboardScreen(QWidget):
         to_date = (this_monday + timedelta(days=14)).astimezone(timezone.utc)
 
         if hasattr(self, 'news_worker') and self.news_worker is not None:
-            if self.news_worker.isRunning():
-                if btn is not None:
-                    btn.setText("🔄 Làm mới")
-                    btn.setEnabled(True)
-                return
-            self.news_worker.deleteLater()
+            try:
+                if self.news_worker.isRunning():
+                    if btn is not None:
+                        btn.setText("🔄 Làm mới")
+                        btn.setEnabled(True)
+                    return
+            except RuntimeError:
+                pass
+            self.news_worker = None
         self.news_worker = NewsWorker(currencies=[], from_date=from_date, to_date=to_date)
         self.news_worker.finished.connect(self._on_news_data_ready)
         self.news_worker.error.connect(lambda e: self._show_news_empty(f"Lỗi: {e}"))
@@ -1625,6 +1628,13 @@ QUAN TRỌNG:
         if actual_val_label is not None:
             from services.news_service import NewsService
             svc = NewsService()
+            if hasattr(self, '_actual_lookup_worker') and self._actual_lookup_worker is not None:
+                try:
+                    if self._actual_lookup_worker.isRunning():
+                        return
+                except RuntimeError:
+                    pass
+                self._actual_lookup_worker = None
             self._actual_lookup_worker = ActualLookupWorker(currency, event_name, ev_time.strftime("%Y-%m-%d"), svc, forecast, previous)
             self._actual_lookup_worker.result_ready.connect(
                 lambda result, lbl=actual_val_label: lbl.setText(f"✅ {result}" if result else "❌ Không tìm thấy")
@@ -1782,9 +1792,12 @@ QUAN TRỌNG:
     def _refresh_market_overview(self) -> None:
         """Fetch market overview data using MarketWorker to avoid freezing UI."""
         if hasattr(self, 'market_worker') and self.market_worker is not None:
-            if self.market_worker.isRunning():
-                return
-            self.market_worker.deleteLater()
+            try:
+                if self.market_worker.isRunning():
+                    return
+            except RuntimeError:
+                pass
+            self.market_worker = None
         self.market_worker = MarketWorker()
         self.market_worker.finished.connect(self._on_market_data_ready)
         self.market_worker.finished.connect(self.market_worker.deleteLater)

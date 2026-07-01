@@ -159,8 +159,12 @@
       });
       _candleSeries.setData(candles);
 
-      // Price scale margin for levels
-      _candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+      // Price scale margin for levels (SL/TP lines can be far from price)
+      var margin = 0.1;
+      if (_payload.levels && _payload.levels.length > 0) {
+        margin = 0.2;
+      }
+      _candleSeries.priceScale().applyOptions({ scaleMargins: { top: margin, bottom: margin } });
 
       // EMA lines
       if (tfData.indicators && tfData.indicators.length > 0) {
@@ -306,6 +310,59 @@
       }
     }
 
+    function _fitPriceScale() {
+      if (!_chart || !_candleSeries || !_payload) return;
+
+      // Collect all price levels that should be visible
+      var prices = [];
+
+      // From levels (SL/TP)
+      var levels = _payload.levels || [];
+      for (var i = 0; i < levels.length; i++) {
+        if (typeof levels[i].price === 'number' && isFinite(levels[i].price)) {
+          prices.push(levels[i].price);
+        }
+      }
+
+      // From zones (Entry)
+      var zones = _payload.zones || [];
+      for (var j = 0; j < zones.length; j++) {
+        if (typeof zones[j].from === 'number' && isFinite(zones[j].from)) {
+          prices.push(zones[j].from);
+        }
+        if (typeof zones[j].to === 'number' && isFinite(zones[j].to)) {
+          prices.push(zones[j].to);
+        }
+      }
+
+      // Current price
+      if (typeof _payload.current_price === 'number' && isFinite(_payload.current_price)) {
+        prices.push(_payload.current_price);
+      }
+
+      if (prices.length === 0) return;
+
+      var minPrice = Math.min.apply(null, prices);
+      var maxPrice = Math.max.apply(null, prices);
+      var range = maxPrice - minPrice;
+      if (range <= 0) return;
+
+      // Expand by 5% margin
+      var margin = range * 0.05;
+      try {
+        _candleSeries.priceScale().applyOptions({
+          autoScale: false,
+        });
+        _chart.timeScale().subscribeVisibleLogicalRangeChange(function(logicalRange) {
+          if (logicalRange) {
+            _candleSeries.priceScale().applyOptions({
+              autoScale: false,
+            });
+          }
+        });
+      } catch(e) {}
+    }
+
     // === Public API ===
 
     function setChartData(payload) {
@@ -349,6 +406,7 @@
         _renderLevels();
         _renderEntryZone();
         _renderCurrentPrice();
+        _fitPriceScale();
         _updateActiveButton();
 
         // Legend
@@ -376,6 +434,7 @@
       _renderLevels();
       _renderEntryZone();
       _renderCurrentPrice();
+      _fitPriceScale();
       _updateActiveButton();
     }
 
@@ -389,6 +448,7 @@
       _renderLevels();
       _renderEntryZone();
       _renderCurrentPrice();
+      _fitPriceScale();
       _updateActiveButton();
     }
 

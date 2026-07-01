@@ -188,22 +188,21 @@ def evaluate_entry(
         has_sweep = bool(sweeps.get("swept_highs"))
 
     # Without M15 data, fall back to legacy (can't classify sub-zone quality).
-    # Backtest: treat as watch_zone so decision engine can evaluate the setup.
+    # Backtest: simulate loose M15 confirmation so sub-zone logic can run.
     if in_zone and trigger_valid and score_passed and not m15_available:
         if is_backtest:
-            return _result("watch_zone", trigger_type, confirmation_score,
-                           "Backtest — không có dữ liệu M15, giả định theo dõi vùng.",
+            m15_available = True
+            m15_quality = "backtest_fallback"
+            m15_score_multiplier = 0.85
+            confirmation_score = int(confirmation_score * m15_score_multiplier)
+        else:
+            return _result("waiting_confirmation", trigger_type, confirmation_score,
+                           "Thiếu dữ liệu M15, không xác nhận entry.",
                            in_zone, False,
                            m15_structure=m15_structure, m15_displacement=m15_displacement,
-                           m15_available=m15_available, m15_quality="backtest_fallback",
-                           m15_score_multiplier=m15_score_multiplier)
-        return _result("waiting_confirmation", trigger_type, confirmation_score,
-                       "Thiếu dữ liệu M15, không xác nhận entry.",
-                       in_zone, False,
-                       m15_structure=m15_structure, m15_displacement=m15_displacement,
-                       m15_available=m15_available, m15_quality=m15_quality,
-                       m15_score_multiplier=m15_score_multiplier,
-                       warning_codes=[M15_DATA_UNAVAILABLE])
+                           m15_available=False, m15_quality=m15_quality,
+                           m15_score_multiplier=m15_score_multiplier,
+                           warning_codes=[M15_DATA_UNAVAILABLE])
 
     if in_zone and trigger_valid and score_passed:
         sub_zone, depth_pct = _classify_sub_zone(price, low, high, side)
@@ -216,7 +215,7 @@ def evaluate_entry(
 
         if sub_zone == "top":
             # Top zone: only need M15 (loose or strict), smallest size
-            if m15_available and m15_quality in ("strict", "loose"):
+            if m15_available and m15_quality in ("strict", "loose", "backtest_fallback"):
                 return _result("confirmed_entry", trigger_type, confirmation_score,
                                f"Top zone entry, size=40%. {_LADDER_LABELS['top']}",
                                in_zone, True,

@@ -365,6 +365,7 @@ class MT5Service(DataProvider):
     def symbol_data_quality(self, display_symbol: str, broker_symbol: str) -> dict[str, Any]:
         status = self.mt5_connection_status()
         spread_points = None
+        spread_price = None
         spread_status = "unknown"
         contract_size = None
         warning = None
@@ -375,6 +376,9 @@ class MT5Service(DataProvider):
             if info:
                 spread_points = getattr(info, "spread", None)
                 contract_size = getattr(info, "trade_contract_size", None)
+                point_val = getattr(info, "point", None)
+                if spread_points is not None and point_val is not None:
+                    spread_price = spread_points * point_val
                 spread_status = "normal" if spread_points is not None and spread_points <= 50 else "abnormal"
         except Exception as exc:  # pragma: no cover - defensive around MT5 native API.
             warning = str(exc)
@@ -387,6 +391,7 @@ class MT5Service(DataProvider):
             "display_symbol": display_symbol,
             "broker_symbol": broker_symbol,
             "spread_points": spread_points,
+            "spread_price": spread_price,
             "spread_status": spread_status,
             "contract_size": contract_size,
             "warning": warning,

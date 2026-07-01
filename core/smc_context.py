@@ -511,20 +511,69 @@ def _find_best_zone_for_direction(tf: dict[str, Any], direction: str) -> dict[st
     return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
 
 
-def get_preferred_zone(smc_context: dict[str, Any] | None, direction: str) -> dict[str, Any] | None:
+def get_preferred_zone(smc_context: dict[str, Any] | None, direction: str, price: float | None = None) -> dict[str, Any] | None:
     """Tra ve zone SMC tot nhat cho huong giao dich, dung de truyen vao build_trade_plan.
 
     Tra ve dict co low, high, level, zone_score, source="smc_selected",
     hoac None neu khong tim thay zone phu hop.
+
+    Khi price duoc cung cap, uu tien zone nam dung phia so voi gia:
+    - buy: zone level < price (support)
+    - sell: zone level > price (resistance)
     """
     if not isinstance(smc_context, dict):
         return None
     h4 = smc_context.get("H4", {})
     if not isinstance(h4, dict):
         return None
-    zone = _find_best_zone_for_direction(h4, direction)
-    if zone is None:
+
+    # Gather all valid candidates (same logic as _find_best_zone_for_direction)
+    if direction == "buy":
+        zone_keys = ["demand_zones", "order_blocks", "fvg"]
+    else:
+        zone_keys = ["supply_zones", "order_blocks", "fvg"]
+
+    candidates: list[dict[str, Any]] = []
+    for key in zone_keys:
+        zones = h4.get(key, [])
+        if not isinstance(zones, list):
+            continue
+        for zone in zones:
+            if not isinstance(zone, dict) or zone.get("broken"):
+                continue
+            zone_type = str(zone.get("type", ""))
+            if direction == "buy" and any(term in zone_type for term in ("bearish", "supply")):
+                continue
+            if direction == "sell" and any(term in zone_type for term in ("bullish", "demand")):
+                continue
+            candidates.append(zone)
+
+    if not candidates:
         return None
+
+    # Sort by zone_score descending
+    candidates.sort(key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)
+
+    # Pick the best zone on the correct side of price (if price provided)
+    zone = None
+    if price is not None:
+        for candidate in candidates:
+            low = candidate.get("low")
+            high = candidate.get("high")
+            if low is None or high is None:
+                continue
+            level = (float(low) + float(high)) / 2
+            if direction == "buy" and level < price:
+                zone = candidate
+                break
+            if direction == "sell" and level > price:
+                zone = candidate
+                break
+
+    # Fallback: use the highest-scored zone regardless of position
+    if zone is None:
+        zone = candidates[0]
+
     low = zone.get("low")
     high = zone.get("high")
     if low is None or high is None:

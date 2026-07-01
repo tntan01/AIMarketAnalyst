@@ -33,6 +33,9 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
     - levels: SL/TP price lines
     - zones: entry zone rectangles
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     from core.indicators import ema
 
     chart_payload = result.get("chart_payload", {})
@@ -86,7 +89,14 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
     trade_plan = {"side": "neutral", "entry_zone": None, "stop_loss": None, "take_profit": None, "entry_status": "no_setup"}
     scenarios = result.get("scenarios", [])
     if isinstance(scenarios, list) and scenarios:
+        # Prefer the best-side scenario (first buy/sell entry), not just scenarios[0]
+        best_side = result.get("decision_summary", {}).get("best_side")
         primary = scenarios[0]
+        if best_side in ("buy", "sell"):
+            for sc in scenarios:
+                if isinstance(sc, dict) and sc.get("type") == best_side:
+                    primary = sc
+                    break
         if isinstance(primary, dict):
             trade_plan["side"] = primary.get("type", "neutral")
             trade_plan["entry_zone"] = primary.get("entry_zone")
@@ -137,6 +147,15 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
     current_price = None
     if isinstance(technical, dict):
         current_price = technical.get("price")
+
+    # Diagnostic: warn if we have entry zone but no levels (SL/TP missing from chart)
+    if zones and not levels:
+        _log.warning(
+            "Chart has entry zone but NO SL/TP levels — "
+            "stop_loss=%s, take_profit=%s, trade_plan_side=%s, scenarios_count=%d",
+            trade_plan.get("stop_loss"), trade_plan.get("take_profit"),
+            trade_plan.get("side"), len(scenarios),
+        )
 
     return {
         "symbol": symbol,

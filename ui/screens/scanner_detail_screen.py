@@ -324,6 +324,8 @@ class ScannerDetailScreen(QWidget):
             ("Chênh lệch", self._dialog_card_gap(), "#f59e0b"),
             ("Điểm vĩ mô", self._dialog_card_macro(), "#38bdf8"),
             ("Tỷ lệ R:R", self._dialog_card_rr(), "#ea580c"),
+            ("Stop Loss", self._dialog_card_sl(), "#e11d48"),
+            ("Take Profit", self._dialog_card_tp(), "#10b981"),
             ("Vùng vào lệnh", self._dialog_card_entry(), "#10b981"),
             ("Vị trí giá", self._dialog_card_position(), "#f59e0b"),
             ("Khung M15", self._dialog_card_m15(), "#f59e0b"),
@@ -461,6 +463,22 @@ class ScannerDetailScreen(QWidget):
         eff_rr = self.row.get("expected_effective_rr")
         detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
         return str(rr), detail, "#ea580c"
+
+    def _dialog_card_sl(self) -> tuple[str, str, str]:
+        sl = self.row.get("stop_loss")
+        if isinstance(sl, (int, float)):
+            return f"{sl:.5f}", "", "#e11d48"
+        return "--", "", "#94a3b8"
+
+    def _dialog_card_tp(self) -> tuple[str, str, str]:
+        tp = self.row.get("take_profit")
+        if isinstance(tp, list) and tp:
+            tp1 = f"{tp[0]:.5f}"
+            tp2 = f"TP2: {tp[1]:.5f}" if len(tp) > 1 else ""
+            return tp1, tp2, "#10b981"
+        if isinstance(tp, (int, float)):
+            return f"{tp:.5f}", "", "#10b981"
+        return "--", "", "#94a3b8"
 
     def _dialog_card_entry(self) -> tuple[str, str, str]:
         val = self._entry_status_display()

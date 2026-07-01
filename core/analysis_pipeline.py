@@ -364,11 +364,11 @@ class AnalysisPipeline:
             m15_candles=self._m15_candles,
             correlation_context=self._correlation_context,
             quote_to_usd_rate=self._quote_to_usd_rate,
-            spread_price=float(self._data_quality.get("spread_points") or 0),
+            spread_price=float(self._data_quality.get("spread_price") or 0),
             market_regime=self._market_regime,
             preferred_zones={
-                "buy": get_preferred_zone(self._smc, "buy"),
-                "sell": get_preferred_zone(self._smc, "sell"),
+                "buy": get_preferred_zone(self._smc, "buy", price=self._technical.get("price")),
+                "sell": get_preferred_zone(self._smc, "sell", price=self._technical.get("price")),
             },
             is_backtest=self._is_backtest,
         )
@@ -841,6 +841,52 @@ class AnalysisPipeline:
         best_score = self._best_score
         primary_scenario = self._primary_scenario
 
+        atr = (self._technical.get("atr_h4") or self._technical.get("atr_d1") or 0.0)
+        price = float(self._technical.get("price", 0.0))
+        if not self._scenarios and atr > 0 and price > 0 and best_side in ("buy", "sell"):
+            if best_side == "buy":
+                sl = round(price - atr * 1.2, 5)
+                tp = round(price + atr * 2.4, 5)
+            else:
+                sl = round(price + atr * 1.2, 5)
+                tp = round(price - atr * 2.4, 5)
+            zone_half = round(atr * 0.25, 5)
+            entry_low = round(price - zone_half, 5)
+            entry_high = round(price + zone_half, 5)
+            fallback_scenarios = [{
+                "type": best_side,
+                "priority": "primary",
+                "entry_zone": [entry_low, entry_high],
+                "stop_loss": sl,
+                "take_profit": [tp],
+                "entry_zone_score": 50,
+                "entry_zone_source": "fallback",
+                "entry_status": "watch_zone",
+                "m15_quality": None,
+                "expected_effective_rr": 2.0,
+                "risk_reward": "1:2.0",
+                "ready_to_trade": False,
+                "trigger_type": "none",
+                "price_in_entry_zone": entry_low <= price <= entry_high,
+                "condition": "Chưa có SMC zone rõ ràng, cân nhắc thêm xác nhận.",
+                "invalidation": f"H1 đóng {'dưới' if best_side == 'buy' else 'trên'} {sl:.5f} hoặc spread giãn bất thường.",
+                "position_sizing": {
+                    "suggested_lot": 0.01,
+                    "risk_amount_usd": 0.0,
+                    "entry_price": (entry_low + entry_high) / 2,
+                    "stop_loss": sl,
+                },
+            }]
+        else:
+            fallback_scenarios = [{
+                "type": "stand_aside",
+                "priority": "primary",
+                "reason": (
+                    "No clean setup / đứng ngoài tốt hơn vì điểm "
+                    "kịch bản hoặc dữ liệu chưa đủ sạch."
+                ),
+            }]
+
         return {
             "symbol": self._request.symbol,
             "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -891,16 +937,7 @@ class AnalysisPipeline:
                 "macro_confidence": self._macro_confidence_in,
             },
             "economic_events": [],
-            "scenarios": self._scenarios or [
-                {
-                    "type": "stand_aside",
-                    "priority": "primary",
-                    "reason": (
-                        "No clean setup / đứng ngoài tốt hơn vì điểm "
-                        "kịch bản hoặc dữ liệu chưa đủ sạch."
-                    ),
-                }
-            ],
+            "scenarios": self._scenarios or fallback_scenarios,
             "entry_checklist": _build_entry_checklist(
                 primary_scenario,
                 self._market_regime,
