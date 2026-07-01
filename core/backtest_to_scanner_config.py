@@ -238,8 +238,8 @@ def _summarize(trades: list[dict]) -> dict[str, Any]:
         return {"total_trades": 0, "win_rate": 0.0, "expectancy_r": 0.0,
                 "profit_factor": 0.0, "total_r": 0.0}
 
-    wins = [t for t in trades if t["result"] == "win"]
-    losses = [t for t in trades if t["result"] == "loss"]
+    wins = [t for t in trades if t["result_r"] > 0]
+    losses = [t for t in trades if t["result_r"] <= 0]
     results = [t["result_r"] for t in trades]
 
     total_r = sum(results)

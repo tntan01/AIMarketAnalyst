@@ -113,6 +113,7 @@ def evaluate_entry(
     h1_candles: list[Candle],
     entry_zone: list[float],
     m15_candles: list[Candle] | None = None,
+    is_backtest: bool = False,
 ) -> dict[str, Any]:
     price = float(technical.get("price", 0.0))
     atr_value = float(technical.get("atr_h4") or technical.get("atr_d1") or 0.0)
@@ -187,7 +188,15 @@ def evaluate_entry(
         has_sweep = bool(sweeps.get("swept_highs"))
 
     # Without M15 data, fall back to legacy (can't classify sub-zone quality).
+    # Backtest: treat as watch_zone so decision engine can evaluate the setup.
     if in_zone and trigger_valid and score_passed and not m15_available:
+        if is_backtest:
+            return _result("watch_zone", trigger_type, confirmation_score,
+                           "Backtest — không có dữ liệu M15, giả định theo dõi vùng.",
+                           in_zone, False,
+                           m15_structure=m15_structure, m15_displacement=m15_displacement,
+                           m15_available=m15_available, m15_quality="backtest_fallback",
+                           m15_score_multiplier=m15_score_multiplier)
         return _result("waiting_confirmation", trigger_type, confirmation_score,
                        "Thiếu dữ liệu M15, không xác nhận entry.",
                        in_zone, False,

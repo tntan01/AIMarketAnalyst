@@ -511,6 +511,33 @@ def _find_best_zone_for_direction(tf: dict[str, Any], direction: str) -> dict[st
     return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
 
 
+def get_preferred_zone(smc_context: dict[str, Any] | None, direction: str) -> dict[str, Any] | None:
+    """Tra ve zone SMC tot nhat cho huong giao dich, dung de truyen vao build_trade_plan.
+
+    Tra ve dict co low, high, level, zone_score, source="smc_selected",
+    hoac None neu khong tim thay zone phu hop.
+    """
+    if not isinstance(smc_context, dict):
+        return None
+    h4 = smc_context.get("H4", {})
+    if not isinstance(h4, dict):
+        return None
+    zone = _find_best_zone_for_direction(h4, direction)
+    if zone is None:
+        return None
+    low = zone.get("low")
+    high = zone.get("high")
+    if low is None or high is None:
+        return None
+    return {
+        "low": float(low),
+        "high": float(high),
+        "level": (float(low) + float(high)) / 2,
+        "zone_score": zone.get("zone_score", 0),
+        "source": "smc_selected",
+    }
+
+
 def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) -> dict[str, Any]:
     """Trich xuat cac flag SMC an toan cho trade gate.
 

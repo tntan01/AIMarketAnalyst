@@ -34,6 +34,7 @@ def analyze_symbol(
     trade_date: datetime | None = None,
     execution_quality_score: int | float | str | None = None,
     thresholds: dict[str, int] | None = None,
+    is_backtest: bool = False,
 ) -> dict[str, Any]:
     """Orchestrate the full market analysis pipeline.
 
@@ -62,4 +63,5 @@ def analyze_symbol(
         trade_date=trade_date,
         execution_quality_score=execution_quality_score,
         thresholds=thresholds,
+        is_backtest=is_backtest,
     )

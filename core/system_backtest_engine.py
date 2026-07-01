@@ -855,6 +855,7 @@ def _run_analysis_snapshot(
         open_trades=[],
         account_guard_settings=_account_guard_settings(request),
         trade_date=current_time,
+        is_backtest=True,
     )
 
 

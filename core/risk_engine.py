@@ -31,11 +31,11 @@ REGIME_SL_MULTIPLIER: dict[str, float] = {
     "unknown":    0.50,
 }
 REGIME_ZONE_DISTANCE_MULT: dict[str, float] = {
-    "trend_up":   2.0,
-    "trend_down": 2.0,
-    "range":      1.5,
-    "volatile":   2.5,
-    "unknown":    1.5,
+    "trend_up":   3.5,
+    "trend_down": 3.5,
+    "range":      2.5,
+    "volatile":   3.0,
+    "unknown":    2.0,
 }
 _DEFAULT_SL_MULT = 0.50
 _DEFAULT_ZONE_DISTANCE_MULT = 1.5
@@ -327,13 +327,16 @@ def build_scenarios(
     quote_to_usd_rate: float | None = None,
     spread_price: float = 0.0,
     market_regime: dict[str, Any] | None = None,
+    preferred_zones: dict[str, dict[str, Any] | None] | None = None,
+    is_backtest: bool = False,
 ) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
+    preferred = preferred_zones or {}
     for side in ("buy", "sell"):
         side_total = scores[side].get("signal_score", scores[side].get("total", 0))
         if side_total < 50 or trade_permission["status"] == "blocked":
             continue
-        plan = build_trade_plan(side, request, technical, smc, h1_candles or [], m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=spread_price, market_regime=market_regime)
+        plan = build_trade_plan(side, request, technical, smc, h1_candles or [], m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=spread_price, market_regime=market_regime, preferred_zone=preferred.get(side), is_backtest=is_backtest)
         if not plan:
             continue
         plan.update({
@@ -358,6 +361,8 @@ def build_trade_plan(
     spread_price: float = 0.0,
     market_regime: dict[str, Any] | None = None,
     entry_aggressiveness: float = _ENTRY_AGGRESSIVENESS,
+    preferred_zone: dict[str, Any] | None = None,
+    is_backtest: bool = False,
 ) -> dict[str, Any] | None:
     price = technical["price"]
     atr_value = technical["atr_h4"] or technical["atr_d1"] or 0.0
@@ -382,10 +387,20 @@ def build_trade_plan(
     support_zones = list(technical["support_zones"]) + smc_supports
     resistance_zones = list(technical["resistance_zones"]) + smc_resistances
 
-    # Entry Ladder Phase 1: narrow zone for precise positioning
+    # Try preferred SMC zone first (from get_preferred_zone)
+    use_preferred = False
+    if isinstance(preferred_zone, dict) and preferred_zone.get("low") is not None and preferred_zone.get("high") is not None:
+        pz_level = preferred_zone["level"]
+        if side == "buy" and pz_level < price:
+            use_preferred = True
+        elif side == "sell" and pz_level > price:
+            use_preferred = True
 
     if side == "buy":
-        support = select_best_level(support_zones, price, atr_value * zone_dist_mult, below=True)
+        if use_preferred:
+            support = preferred_zone
+        else:
+            support = select_best_level(support_zones, price, atr_value * zone_dist_mult, below=True)
         if not support:
             return None
         level = support["level"]
@@ -437,7 +452,10 @@ def build_trade_plan(
         condition = _build_buy_condition(h4_smc)
         invalidation = _build_buy_invalidation(stop_loss, h4_smc)
     else:
-        resistance = select_best_level(resistance_zones, price, atr_value * zone_dist_mult, below=False)
+        if use_preferred:
+            resistance = preferred_zone
+        else:
+            resistance = select_best_level(resistance_zones, price, atr_value * zone_dist_mult, below=False)
         if not resistance:
             return None
         level = resistance["level"]
@@ -498,6 +516,7 @@ def build_trade_plan(
         h1_candles=h1_candles or [],
         entry_zone=entry_zone,
         m15_candles=m15_candles,
+        is_backtest=is_backtest,
     )
     # Entry Ladder Phase 1: scale size by price position within zone
     entry_ladder = entry_state.get("entry_ladder", {})

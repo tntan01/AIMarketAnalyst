@@ -39,7 +39,7 @@ from core.reason_codes import (
     codes_to_messages,
     normalize_codes,
 )
-from core.smc_context import build_smc_context, extract_smc_trade_flags
+from core.smc_context import build_smc_context, extract_smc_trade_flags, get_preferred_zone
 from core.technical_context import build_technical_snapshot, detect_market_regime
 from core.trade_gate_engine import check_trade_gates
 
@@ -92,6 +92,7 @@ class AnalysisPipeline:
         trade_date: datetime | None = None,
         execution_quality_score: int | float | str | None = None,
         thresholds: dict[str, int] | None = None,
+        is_backtest: bool = False,
     ) -> dict[str, Any]:
         # ---- Step 0: stash inputs ------------------------------------------
         self._request = request
@@ -113,6 +114,7 @@ class AnalysisPipeline:
         self._trade_date = trade_date
         self._execution_quality_score_in = execution_quality_score
         self._thresholds = thresholds
+        self._is_backtest = is_backtest
 
         # ---- Pipeline diagnostics ------------------------------------------
         self._diag: list[dict[str, Any]] = []
@@ -364,6 +366,11 @@ class AnalysisPipeline:
             quote_to_usd_rate=self._quote_to_usd_rate,
             spread_price=float(self._data_quality.get("spread_points") or 0),
             market_regime=self._market_regime,
+            preferred_zones={
+                "buy": get_preferred_zone(self._smc, "buy"),
+                "sell": get_preferred_zone(self._smc, "sell"),
+            },
+            is_backtest=self._is_backtest,
         )
         self._has_ready_plan = any(
             item.get("ready_to_trade") for item in self._scenarios
