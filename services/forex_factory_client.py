@@ -192,6 +192,14 @@ class ForexFactoryClient:
                 seen.add(k)
                 deduped.append(ev)
 
+        # Merge actual from HTML for past events before caching
+        try:
+            html_rows = self._fetch_html_events()
+            if html_rows:
+                self._merge_actual_from_html(deduped, html_rows)
+        except Exception:
+            pass
+
         # Store combined results to cache for future fallback
         if deduped and sources and "Disk cache" not in sources:
             try:

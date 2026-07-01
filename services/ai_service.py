@@ -201,7 +201,7 @@ class AIService:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=45) as response:
+            with urlopen(request, timeout=120) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")

@@ -1160,16 +1160,23 @@ class DashboardScreen(QWidget):
         if actual_count > 0:
             badge_parts = [f"📊 Actual: {actual_count} sự kiện"]
             if better_count > 0:
-                badge_parts.append(f"🟢 {better_count} tốt hơn")
+                badge_parts.append(f"{better_count} tốt hơn")
             if same_count > 0:
-                badge_parts.append(f"⚪ {same_count} đúng dự báo")
+                badge_parts.append(f"{same_count} đúng dự báo")
+            
+            green_text = " — ".join(badge_parts)
+            green_color = "#059669" if _light else "#34d399"
+            red_color = "#BE123C" if _light else "#e11d48"
+            
             if worse_count > 0:
-                badge_parts.append(f"🔴 {worse_count} xấu hơn")
-            badge_text = " — ".join(badge_parts)
+                badge_text = f"<div style='line-height: 140%;'><span style='color: {green_color}; font-weight: 600;'>{green_text} — </span><span style='color: {red_color}; font-weight: 600;'>{worse_count} xấu hơn</span></div>"
+            else:
+                badge_text = f"<div style='line-height: 140%;'><span style='color: {green_color}; font-weight: 600;'>{green_text}</span></div>"
+                
             badge = QLabel(badge_text)
             badge.setObjectName("CardDetail")
             badge.setWordWrap(True)
-            badge.setStyleSheet("color: #059669; font-weight: 600;" if _light else "color: #34d399; font-weight: 600;")
+            badge.setStyleSheet("padding: 4px 0px;")
             root.addWidget(badge)
 
         # Summary of items to be evaluated (using a QTableWidget for professional look)
@@ -1185,10 +1192,9 @@ class DashboardScreen(QWidget):
         preview_table.setWordWrap(True)
         preview_table.setMaximumHeight(160)
         preview_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-
+ 
         if scope_items:
             preview_table.setRowCount(len(scope_items))
-            impact_dots = {"high": "🔴", "medium": "🟡", "low": "⚪"}
             for idx, it in enumerate(scope_items):
                 it_type = it.get("type", "")
                 it_title = str(it.get("title", ""))
@@ -1208,7 +1214,7 @@ class DashboardScreen(QWidget):
                         4: "Thứ 6",
                         5: "Thứ 7",
                         6: "Chủ Nhật"
-                    }.get(w_day, "")
+                     }.get(w_day, "")
                     time_text = f"{w_name} {local_dt.strftime('%d/%m %H:%M')}"
                 else:
                     time_text = "—"
@@ -1242,8 +1248,11 @@ class DashboardScreen(QWidget):
                 preview_table.setItem(idx, 0, time_item)
                 
                 # Col 1: Type
-                type_icon = "📰" if it_type == "headline" else impact_dots.get(it_impact, "⚪")
-                type_item = QTableWidgetItem(type_icon)
+                if it_type == "headline":
+                    type_text = "Tin"
+                else:
+                    type_text = {"high": "Mạnh", "medium": "Vừa", "low": "Yếu"}.get(it_impact, "Yếu")
+                type_item = QTableWidgetItem(type_text)
                 type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 style_cell(type_item)
                 preview_table.setItem(idx, 1, type_item)
@@ -1254,7 +1263,7 @@ class DashboardScreen(QWidget):
                 style_cell(content_item)
                 preview_table.setItem(idx, 2, content_item)
                 
-                preview_table.setRowHeight(idx, 28)
+                preview_table.setRowHeight(idx, 34)
         else:
             preview_table.setRowCount(1)
             preview_table.setSpan(0, 0, 1, 3)
@@ -1269,8 +1278,8 @@ class DashboardScreen(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        preview_table.setColumnWidth(0, 140)
-        preview_table.setColumnWidth(1, 50)
+        preview_table.setColumnWidth(0, 130)
+        preview_table.setColumnWidth(1, 70)
         
         root.addWidget(preview_table)
 
@@ -1789,6 +1798,16 @@ QUAN TRỌNG:
         else:
             self.us2y_label.setText("US2Y: Không có dữ liệu")
 
+        self._market_values = {}
+        if "DXY" in data:
+            self._market_values["DXY"] = (data["DXY"][0], data["DXY"][1])
+        if "VIX" in data:
+            self._market_values["VIX"] = (data["VIX"][0], data["VIX"][1])
+        if "US10Y" in data:
+            self._market_values["US10Y"] = (data["US10Y"][0], data["US10Y"][1])
+        if "US2Y" in data:
+            self._market_values["US2Y"] = (data["US2Y"][0], data["US2Y"][1])
+
     def _format_market_label(self, tag: str, close: float, change_pct: float, label: QLabel) -> None:
         self._light = self._is_light_theme()
         arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else ""
@@ -1820,84 +1839,222 @@ QUAN TRỌNG:
         self._light = self._is_light_theme()
         dlg = QDialog(self)
         dlg.setWindowTitle("Ý nghĩa các chỉ số thị trường")
-        dlg.setMinimumSize(900, 540)
-        dlg.resize(960, 580)
+        dlg.setMinimumSize(900, 640)
+        dlg.resize(960, 680)
 
         root_layout = QVBoxLayout(dlg)
         root_layout.setContentsMargins(24, 24, 24, 24)
-        root_layout.setSpacing(18)
+        root_layout.setSpacing(14)
 
         _title_color = "#111827" if self._light else "#f8fafc"
         title = QLabel(f"<b style='font-size:17px;color:{_title_color};'>📊 Hướng dẫn đọc chỉ số thị trường</b>")
         root_layout.addWidget(title)
 
-        table = QTableWidget()
-        table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["", "Chỉ số", "Màu sắc", "Ý nghĩa"])
-        table.setRowCount(10)
+        # Current market values line (colored like dashboard)
+        neutral = "#374151" if self._light else "#e5e7eb"
+        green = "#059669" if self._light else "#10b981"
+        red = "#BE123C" if self._light else "#e11d48"
+        yellow = "#B45309" if self._light else "#f59e0b"
 
-        data = [
-            ["📈", "DXY", "🟢 Xanh", "USD mạnh lên so với hôm qua — tốt cho USD, xấu cho vàng"],
-            ["📈", "DXY", "🔴 Đỏ", "USD yếu đi so với hôm qua — tốt cho vàng, EUR, GBP..."],
-            ["😱", "VIX", "🟢 Xanh (< 20)", "Thị trường ổn định, ít sợ hãi — giao dịch bình thường"],
-            ["😱", "VIX", "🟡 Vàng (20-25)", "Cảnh báo, bắt đầu bất ổn — giao dịch cẩn thận"],
-            ["😱", "VIX", "🔴 Đỏ (> 25)", "Rủi ro cao, thị trường hoảng loạn — hạn chế giao dịch"],
-            ["💰", "US10Y", "🟢 Xanh", "Lợi suất giảm → tiền rẻ hơn, tốt cho thị trường"],
-            ["💰", "US10Y", "🔴 Đỏ", "Lợi suất tăng → tiền đắt hơn, áp lực lên thị trường"],
-            ["💰", "US2Y", "🟢 Xanh", "Lợi suất giảm → phản ánh kỳ vọng FED giảm lãi suất"],
-            ["💰", "US2Y", "🔴 Đỏ", "Lợi suất tăng → phản ánh kỳ vọng FED giữ/tăng lãi suất"],
-            ["", "", "⚪ Xám/Trắng", "Không có dữ liệu hoặc không thay đổi (Xám ở nền sáng, Trắng ở nền tối)"],
-        ]
+        mv = getattr(self, "_market_values", None) or {}
+        spans = []
+        for tag in ("DXY", "VIX", "US10Y", "US2Y"):
+            pair = mv.get(tag)
+            if pair:
+                close, change_pct = pair
+                if tag == "DXY":
+                    arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else ""
+                    color = green if change_pct > 0 else red if change_pct < 0 else neutral
+                    spans.append(f"<span style='color:{color};'>{tag}: {close:.2f} ({arrow} {abs(change_pct):.1f}%)</span>")
+                elif tag == "VIX":
+                    if close > 25:
+                        color = red
+                    elif close >= 20:
+                        color = yellow
+                    else:
+                        color = green
+                    spans.append(f"<span style='color:{color};'>VIX: {close:.1f}</span>")
+                else:
+                    arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else ""
+                    color = red if change_pct > 0 else green if change_pct < 0 else neutral
+                    spans.append(f"<span style='color:{color};'>{tag}: {close:.2f}% {arrow}</span>")
+            else:
+                spans.append(f"<span style='color:{neutral};'>{tag}: —</span>")
+        vals_html = "  |  ".join(spans)
+        vals_label = QLabel(vals_html)
+        vals_label.setObjectName("CardValue")
+        vals_label.setWordWrap(True)
+        vals_label.setTextFormat(Qt.TextFormat.RichText)
+        root_layout.addWidget(vals_label)
 
-        for r, row_data in enumerate(data):
-            for c, val in enumerate(row_data):
-                item = QTableWidgetItem(val)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter if c < 2 else Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-                if c == 2:
-                    if "Đỏ" in val:
-                        item.setForeground(QColor("#BE123C" if self._light else "#e11d48"))
-                    elif "Vàng" in val:
-                        item.setForeground(QColor("#B45309" if self._light else "#f59e0b"))
-                    elif "Xanh" in val:
-                        item.setForeground(QColor("#059669" if self._light else "#10b981"))
-                table.setItem(r, c, item)
-
-        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        table.verticalHeader().setVisible(False)
-
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setStretchLastSection(True)
-
-        table.setMinimumHeight(280)
-        if self._light:
-            table.setStyleSheet(
-                "QTableWidget { background: #FAF9F5; border: 1px solid #D6D2C8; border-radius: 6px; }"
-                "QTableWidget::item { color: #111827; font-size: 13px; padding: 8px 10px; }"
-                "QHeaderView::section { background: #EAE6DF; color: #57534E; font-size: 12px; font-weight: 700; padding: 8px 10px; border: none; border-bottom: 1px solid #D6D2C8; }"
-            )
-        else:
-            table.setStyleSheet(
-                "QTableWidget { background: #171c24; border: 1px solid #2b3545; border-radius: 6px; }"
-                "QTableWidget::item { color: #e5e7eb; font-size: 13px; padding: 8px 10px; }"
-                "QHeaderView::section { background: #1e293b; color: #94a3b8; font-size: 12px; font-weight: 700; padding: 8px 10px; border: none; border-bottom: 1px solid #334155; }"
-            )
-        root_layout.addWidget(table)
-
-        _note_color = "#57534E" if self._light else "#94a3b8"
-        note = QLabel(f"<span style='color:{_note_color};font-size:12px;'><b>Ghi chú:</b> DXY tăng = xanh (USD mạnh). US10Y, US2Y tăng = đỏ (ngược với DXY vì lợi suất tăng gây áp lực lên thị trường).</span>")
-        note.setWordWrap(True)
-        root_layout.addWidget(note)
+        # AI analysis area
+        ai_response = QTextEdit()
+        ai_response.setObjectName("ReadonlyText")
+        ai_response.setReadOnly(True)
+        ai_response.setMinimumHeight(150)
+        ai_response.setPlaceholderText("Bấm \"🤖 Phân tích AI\" để AI đánh giá ảnh hưởng của các chỉ số hiện tại đến thị trường...")
+        root_layout.addWidget(ai_response, 1)
 
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        ai_btn = action_button("🤖 Phân tích AI", primary=True)
+        active_bg = "#D94625" if self._light else "#ea580c"
+        active_hover = "#E0533C" if self._light else "#f97316"
+        disabled_bg = "#DEDAD0" if self._light else "#1f2937"
+        disabled_border = "#D6D2C8" if self._light else "#273244"
+        disabled_fg = "#736B60" if self._light else "#6b7280"
+
+        ai_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size:12px; font-weight:700; padding:0 16px;"
+            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px;"
+            f"  min-height:24px; max-height:24px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background:{active_hover};"
+            f"}}"
+            f"QPushButton:disabled {{"
+            f"  background:{disabled_bg};"
+            f"  color:{disabled_fg};"
+            f"  border:1px solid {disabled_border};"
+            f"}}"
+        )
+        btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
+
         close_btn = action_button("❌ Đóng")
+        close_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size:12px; font-weight:500; padding:0 16px;"
+            f"  background:transparent;"
+            f"  color:{'#4b5563' if self._light else '#9ca3af'};"
+            f"  border:1px solid {'#d1d5db' if self._light else '#4b5563'};"
+            f"  border-radius:6px; min-height:24px; max-height:24px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background:{'#fce8e5' if self._light else '#2c1910'};"
+            f"  color:{'#D94625' if self._light else '#ea580c'};"
+            f"  border:1px solid {'#D94625' if self._light else '#ea580c'};"
+            f"}}"
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         root_layout.addLayout(btn_layout)
+
+        def request_analysis():
+            ai_btn.setEnabled(False)
+            ai_btn.setText("⏳ Đang phân tích...")
+            QApplication.processEvents()
+
+            try:
+                settings = self.settings_service.load()
+                active = settings.ai.active_provider()
+                if not active or not (active.api_key or active.api_key_ref):
+                    ai_response.setHtml(
+                        "<p style='color:#e11d48;font-size:13px;'>"
+                        "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
+                        "</p>"
+                    )
+                    return
+
+                from services.ai_service import AIService, AIProviderConfig
+                ai_config = AIProviderConfig(
+                    provider=active.provider,
+                    model=active.model,
+                    api_key=active.api_key,
+                )
+                ai = AIService(ai_config)
+
+                mv = getattr(self, "_market_values", None) or {}
+
+                def _fmt_val(tag):
+                    pair = mv.get(tag)
+                    if pair:
+                        close, change_pct = pair
+                        arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else "—"
+                        if tag in ("US10Y", "US2Y"):
+                            return f"{close:.2f}% (thay đổi: {arrow} {abs(change_pct):.1f}%)"
+                        elif tag == "VIX":
+                            return f"{close:.1f} (thay đổi: {arrow} {abs(change_pct):.1f}%)"
+                        else:
+                            return f"{close:.2f} (thay đổi: {arrow} {abs(change_pct):.1f}%)"
+                    return "—"
+
+                prompt = f"""Bạn là chuyên gia phân tích thị trường tài chính. Dựa trên số liệu hiện tại:
+- DXY: {_fmt_val("DXY")}
+- VIX: {_fmt_val("VIX")}
+- US10Y: {_fmt_val("US10Y")}
+- US2Y: {_fmt_val("US2Y")}
+
+Hãy phân tích CHI TIẾT từng chỉ số và ĐÁNH GIÁ MỨC ĐỘ ẢNH HƯỞNG đến các đồng tiền/cặp tiền sau:
+- EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, NZD/USD
+- Vàng (XAU/USD), Bạc (XAG/USD), Bitcoin
+
+Trả lời bằng tiếng Việt, định dạng markdown. Cấu trúc BẮT BUỘC:
+
+## Phân tích từng chỉ số
+
+### DXY — Chỉ số sức mạnh USD ({_fmt_val("DXY")})
+- **Diễn biến**: (DXY hiện tại đang ở mức cao/thấp/trung bình? Xu hướng ngắn hạn?)
+- **Nguyên nhân**: (Yếu tố nào đang chi phối — chính sách FED, dữ liệu kinh tế Mỹ, dòng vốn, rủi ro toàn cầu?)
+- **Ảnh hưởng đến Forex**: (USD mạnh/yếu ảnh hưởng cụ thể đến EUR, GBP, JPY, AUD, CAD, NZD ra sao?)
+- **Ảnh hưởng đến Vàng & Crypto**: (DXY tác động đến XAU, XAG, BTC như thế nào?)
+
+### VIX — Chỉ số sợ hãi ({_fmt_val("VIX")})
+- **Diễn biến**: (VIX đang ở vùng thấp/trung bình/cao? Thị trường đang bình tĩnh hay lo lắng?)
+- **Nguyên nhân**: (Sự kiện nào gây biến động — địa chính trị, kinh tế, chính sách tiền tệ?)
+- **Ảnh hưởng**: (VIX cao → dòng tiền chạy vào tài sản trú ẩn nào? Ngược lại VIX thấp → risk-on không?)
+- **Chiến lược**: (Trader nên làm gì với mức VIX hiện tại?)
+
+### US10Y — Lợi suất trái phiếu Mỹ 10 năm ({_fmt_val("US10Y")})
+- **Diễn biến**: (Lợi suất đang ở mức nào so với lịch sử gần đây? Xu hướng tăng/giảm?)
+- **Nguyên nhân**: (Kỳ vọng lạm phát, tăng trưởng, nợ công, phát hành trái phiếu?)
+- **Ảnh hưởng**: (US10Y thay đổi tác động đến USD, chứng khoán, Vàng như thế nào?)
+- **So sánh với US2Y**: (Đường cong lợi suất đang steepening hay flattening? Ý nghĩa?)
+
+### US2Y — Lợi suất trái phiếu Mỹ 2 năm ({_fmt_val("US2Y")})
+- **Diễn biến**: (US2Y phản ánh kỳ vọng FED ra sao? Thị trường đang định giá mấy lần cắt/tăng lãi suất?)
+- **Nguyên nhân**: (Phát biểu của FED, dữ liệu việc làm, CPI, PCE ảnh hưởng thế nào?)
+- **Ảnh hưởng**: (US2Y thay đổi → tác động trực tiếp đến USD/JPY, USD/CAD, Vàng?)
+- **Chênh lệch 2Y-10Y**: (Spread hiện tại bao nhiêu? Dương hay âm? Nguy cơ suy thoái?)
+
+## Đánh giá ảnh hưởng đến từng cặp tiền/tài sản
+(Với mỗi cặp, ghi rõ mức độ: Tích cực / Tiêu cực / Trung tính — kèm 1-2 câu lý do)
+- EUR/USD
+- GBP/USD
+- USD/JPY
+- AUD/USD
+- USD/CAD
+- NZD/USD
+- Vàng (XAU/USD)
+- Bạc (XAG/USD)
+- Bitcoin
+
+## Tổng quan & Khuyến nghị
+- **Xu hướng chung của USD**: (tăng/giảm/đi ngang — lý do chính)
+- **Rủi ro chính cần theo dõi**: (1-2 rủi ro)
+- **Khuyến nghị cho trader**: (2-3 câu cụ thể, có thể hành động được)
+
+QUAN TRỌNG:
+- Phân tích ĐẦY ĐỦ cả 4 chỉ số, mỗi chỉ số một mục riêng
+- KHÔNG viết chung chung. Phải dựa TRÊN SỐ LIỆU THỰC TẾ được cung cấp
+- KHÔNG gộp US2Y với US10Y — đây là 2 chỉ số KHÁC NHAU"""
+
+                result = ai.analyze(prompt, max_tokens=4000)
+                ai_response.setMarkdown(result)
+
+            except Exception as e:
+                ai_response.setHtml(
+                    f"<p style='color:#e11d48;font-size:13px;'>"
+                    f"❌ Lỗi phân tích: {e}"
+                    f"</p>"
+                )
+            finally:
+                ai_btn.setText("🤖 Phân tích AI")
+                ai_btn.setEnabled(True)
+
+        ai_btn.clicked.connect(request_analysis)
 
         if self._light:
             dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
