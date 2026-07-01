@@ -63,18 +63,22 @@ class NewsWorker(QThread):
 class ActualLookupWorker(QThread):
     result_ready = pyqtSignal(str)
 
-    def __init__(self, currency: str, event_name: str, ev_time_str: str, news_service):
+    def __init__(self, currency: str, event_name: str, ev_time_str: str, news_service, forecast: str = "", previous: str = ""):
         super().__init__()
         self.currency = currency
         self.event_name = event_name
         self.ev_time_str = ev_time_str
         self.news_service = news_service
+        self.forecast = forecast
+        self.previous = previous
 
     def run(self):
         result = self.news_service.lookup_actual_single(
             self.currency,
             self.event_name,
             self.ev_time_str,
+            self.forecast,
+            self.previous,
         )
         self.result_ready.emit(result)
 
@@ -1130,6 +1134,44 @@ class DashboardScreen(QWidget):
         sub.setWordWrap(True)
         root.addWidget(sub)
 
+        # Badge summary actual
+        actual_count = 0
+        better_count = 0
+        worse_count = 0
+        same_count = 0
+        for it in scope_items:
+            if it.get("type") == "event":
+                actual = str(it.get("actual", "")).strip()
+                forecast = str(it.get("forecast", "")).strip()
+                if actual and forecast:
+                    actual_count += 1
+                    try:
+                        av = float(actual.replace("%","").replace("M","").replace("B","").replace("K","").replace("$","").replace(",","").strip())
+                        fv = float(forecast.replace("%","").replace("M","").replace("B","").replace("K","").replace("$","").replace(",","").strip())
+                        if av > fv:
+                            better_count += 1
+                        elif av < fv:
+                            worse_count += 1
+                        else:
+                            same_count += 1
+                    except ValueError:
+                        pass
+
+        if actual_count > 0:
+            badge_parts = [f"📊 Actual: {actual_count} sự kiện"]
+            if better_count > 0:
+                badge_parts.append(f"🟢 {better_count} tốt hơn")
+            if same_count > 0:
+                badge_parts.append(f"⚪ {same_count} đúng dự báo")
+            if worse_count > 0:
+                badge_parts.append(f"🔴 {worse_count} xấu hơn")
+            badge_text = " — ".join(badge_parts)
+            badge = QLabel(badge_text)
+            badge.setObjectName("CardDetail")
+            badge.setWordWrap(True)
+            badge.setStyleSheet("color: #059669; font-weight: 600;" if _light else "color: #34d399; font-weight: 600;")
+            root.addWidget(badge)
+
         # Summary of items to be evaluated (using a QTableWidget for professional look)
         preview_table = QTableWidget()
         preview_table.setObjectName("EconTable")
@@ -1325,20 +1367,33 @@ Hãy đánh giá các tin tức & sự kiện kinh tế {scope_label} ({scope_da
 {data_context}
 
 === YÊU CẦU ===
-Trả lời bằng tiếng Việt, định dạng MARKDOWN, CỰC KỲ NGẮN GỌN. Tối đa 5-7 gạch đầu dòng. Không viết đoạn văn dài.
+Trả lời bằng tiếng Việt, định dạng MARKDOWN, CỰC KỲ NGẮN GỌN. Tối đa 8-10 gạch đầu dòng. Không viết đoạn văn dài.
 
 Cấu trúc bắt buộc:
 
 ## Biến động {scope_label}
 - **Mức biến động chung**: [Thấp / Trung bình / Cao / Rất cao] — (1 câu ngắn)
-- **Các ngày cần chú ý**: (liệt kê ngày cụ thể kèm lý do, ưu tiên ngày có sự kiện tác động cao)
-- **Cặp tiền/tài sản dự kiến TĂNG**: (liệt kê cụ thể + lý do ngắn)
-- **Cặp tiền/tài sản dự kiến GIẢM**: (liệt kê cụ thể + lý do ngắn)
+
+## Sự kiện đã diễn ra (đánh giá thực tế)
+- Dựa vào phần "SO SÁNH THỰC TẾ vs DỰ BÁO", phân tích:
+  + Currency nào có nhiều actual TỐT HƠN dự báo → nền kinh tế mạnh hơn kỳ vọng → bullish
+  + Currency nào có nhiều actual XẤU HƠN dự báo → nền kinh tế yếu hơn kỳ vọng → bearish
+  + Nếu actual == forecast → phản ứng trung tính, thị trường đã priced in
+
+## Sự kiện sắp diễn ra (dự báo)
+- Liệt kê các sự kiện quan trọng SẮP diễn ra (ưu tiên tác động cao)
+- Dự báo tác động nếu forecast đúng / tốt hơn / xấu hơn
+
+## Tổng hợp xu hướng
+- **Cặp tiền/tài sản dự kiến TĂNG**: (liệt kê + lý do dựa trên actual + forecast)
+- **Cặp tiền/tài sản dự kiến GIẢM**: (liệt kê + lý do)
 - **Khuyến nghị**: (1-2 câu ngắn cho trader)
 
 QUAN TRỌNG:
+- SO SÁNH actual vs forecast để đánh giá sức khỏe nền kinh tế từng currency
+- Nếu currency có nhiều actual tích cực → xu hướng tăng giá
 - Không bịa số liệu. Chỉ dựa trên dữ liệu được cung cấp.
-- Nếu không có dữ liệu, ghi rõ "Không đủ dữ liệu".
+- Nếu không có dữ liệu actual, ghi rõ "Chưa có dữ liệu thực tế để so sánh"
 - Tuyệt đối không viết dài dòng."""
 
                 summary_text = ai.analyze(prompt, max_tokens=2500)
@@ -1407,6 +1462,44 @@ QUAN TRỌNG:
                     lines.append(f"[{time_s}] {title} (Nguồn: {source})")
                 else:
                     lines.append(f"[{time_s}] {title}")
+
+        # Comparison section: actual vs forecast
+        def _parse_num(val: str) -> float | None:
+            val = val.strip().replace(",", "")
+            for suffix in ["%", "M", "B", "K", "$"]:
+                if val.endswith(suffix):
+                    val = val[:-len(suffix)]
+                    break
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return None
+
+        lines.append("--- SO SÁNH THỰC TẾ vs DỰ BÁO ---")
+        cmp_events: list[tuple] = []
+        for ev in events:
+            actual = str(ev.get("actual", "")).strip()
+            forecast = str(ev.get("forecast", "")).strip()
+            if actual and forecast:
+                a_val = _parse_num(actual)
+                f_val = _parse_num(forecast)
+                if a_val is not None and f_val is not None:
+                    cmp_events.append((ev, actual, forecast, a_val, f_val))
+
+        if cmp_events:
+            lines.append(f"({len(cmp_events)} sự kiện đã có actual)")
+            for ev, actual, forecast, a_val, f_val in cmp_events:
+                currency = str(ev.get("currency", ""))
+                title = str(ev.get("title", ""))
+                if a_val > f_val:
+                    result = "TỐT HƠN dự báo 📈"
+                elif a_val < f_val:
+                    result = "XẤU HƠN dự báo 📉"
+                else:
+                    result = "ĐÚNG dự báo ➡️"
+                lines.append(f"{currency} {title}: Thực tế {actual} / Dự báo {forecast} → {result}")
+        else:
+            lines.append("Không có sự kiện nào đã có actual để so sánh")
 
         return "\n".join(lines)
 
@@ -1516,7 +1609,7 @@ QUAN TRỌNG:
         if actual_val_label is not None:
             from services.news_service import NewsService
             svc = NewsService()
-            worker = ActualLookupWorker(currency, event_name, ev_time.strftime("%Y-%m-%d"), svc)
+            worker = ActualLookupWorker(currency, event_name, ev_time.strftime("%Y-%m-%d"), svc, forecast, previous)
             worker.result_ready.connect(
                 lambda result, lbl=actual_val_label: lbl.setText(f"✅ {result}" if result else "❌ Không tìm thấy")
             )

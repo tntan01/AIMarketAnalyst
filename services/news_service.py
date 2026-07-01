@@ -23,6 +23,8 @@ from services.forex_factory_client import (
     clean_text,
     parse_event_time,
 )
+from services.ai_service import AIService, AIProviderConfig
+from services.settings_service import SettingsService
 
 # ---------------------------------------------------------------------------
 # Re-export for backward compatibility
@@ -1221,7 +1223,7 @@ class NewsService:
         except Exception:
             pass
 
-    def lookup_actual_single(self, currency: str, event_name: str, ev_time_str: str) -> str:
+    def lookup_actual_single(self, currency: str, event_name: str, ev_time_str: str, forecast: str = "", previous: str = "") -> str:
         api_key = self._get_brave_api_key()
         if not api_key:
             return ""
@@ -1243,62 +1245,54 @@ class NewsService:
         )
         all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
 
-        actual = self._parse_actual_simple(all_text)
+        actual = self._parse_with_ai(all_text, event_name, forecast, previous)
         cache[cache_key] = actual
         self._write_actual_cache(cache)
         return actual
 
-    @staticmethod
-    def _parse_actual_simple(text: str) -> str:
-        clean = re.sub(r"<[^>]+>", "", text)
+    def _parse_with_ai(self, text: str, event_name: str, forecast: str, previous: str) -> str:
+        try:
+            settings = SettingsService().load()
+            active = settings.ai.active_provider()
+            if not active or not active.api_key:
+                return self._parse_fallback_regex(text)
 
-        # Primary: verbs that carry economic meaning on their own
-        m = re.search(
-            r'(?:actual|result|rose|fell|increased|decreased|expanded|expands|declined|contracted|shrunk|grew|advanced|dropped|came in at|unchanged at)\s+(?:by\s+)?(\d+\.?\d*)\s*(%|million|billion|thousand|[MBK])?',
-            clean, re.IGNORECASE,
-        )
-        # Fallback: "at" only when followed by number WITH a unit
-        if not m:
-            m = re.search(
-                r'(?:was\s+|remained\s+|stood\s+)?at\s+(\d+\.?\d*)\s*(%|million|billion|thousand|[MBK])',
-                clean, re.IGNORECASE,
+            config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key)
+            ai = AIService(config)
+
+            prompt = (
+                "Extract actual economic data value from search results.\n"
+                f"Event: {event_name}\n"
+                f"Forecast: {forecast} | Previous: {previous}\n\n"
+                "Rules:\n"
+                "- Return ONLY the number with unit: e.g. '0.1%', '7.6M', '122K', '-2.5B', '50.2'\n"
+                "- If this is a speech/meeting/holiday with no data → return 'NONE'\n"
+                "- Distinguish ACTUAL from forecast/previous/estimate\n"
+                "- If actual not found → return 'NONE'\n\n"
+                f"Search results:\n{text[:3000]}"
             )
+            result = ai.analyze(prompt, max_tokens=100).strip()
+            if not result or result.upper() == "NONE":
+                return ""
+            return result
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _parse_fallback_regex(text: str) -> str:
+        clean = re.sub(r"<[^>]+>", "", text)
+        m = re.search(r'(\d+\.?\d*)\s*(%|[MBK])', clean)
         if not m:
             return ""
-        num = m.group(1).strip()
-        unit = (m.group(2) or "").strip()
-
-        unit_lower = unit.lower()
-        if unit_lower == "million":
-            unit = "M"
-        elif unit_lower == "billion":
-            unit = "B"
-        elif unit_lower == "thousand":
-            unit = "K"
-
-        val = num + unit
-
-        has_pct = unit == "%"
-        has_suffix = unit in ("K", "M", "B")
-        if has_suffix:
-            return val
-
-        num_str = num.replace(",", "")
+        num = m.group(1)
+        unit = m.group(2)
         try:
-            f = float(num_str)
+            f = float(num)
         except (ValueError, TypeError):
             return ""
-
-        if has_pct:
-            if not (-100.0 <= f <= 100.0):
-                return ""
-        else:
-            if not (-10000.0 <= f <= 10000.0):
-                return ""
-
-        if not has_pct:
-            val = val + "%"
-        return val
+        if unit == "%" and not (-100.0 <= f <= 100.0):
+            return ""
+        return num + unit
 
     def lookup_actuals_batch(self, events: list[dict[str, object]]) -> None:
         api_key = self._get_brave_api_key()
@@ -1368,9 +1362,10 @@ class NewsService:
                 for r in results
             )
             all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
-            clean_text = re.sub(r"<[^>]+>", "", all_text)
 
-            actual = self._parse_actual_simple(clean_text)
+            forecast = str(ev.get("forecast", ""))
+            previous = str(ev.get("previous", ""))
+            actual = self._parse_with_ai(all_text, title, forecast, previous)
             cache[cache_key] = actual
             if actual:
                 ev["actual"] = actual
