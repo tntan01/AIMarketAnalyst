@@ -1267,6 +1267,8 @@ class ScannerScreen (QWidget ):
             scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
             if not scenario:
                 continue
+            if scenario.get("entry_zone_source") == "fallback":
+                continue
 
             entry_zone = scenario.get("entry_zone")
             if isinstance(entry_zone, list) and len(entry_zone) >= 2:

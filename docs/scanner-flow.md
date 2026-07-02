@@ -585,6 +585,7 @@ Với mỗi row:
    - `scanner_group != "blocked"`
    - `trade_permission != "blocked"`
    - `journal_feedback.decision_cap` không phải `TRADE_BLOCKED` hoặc `WATCH_ONLY`
+   - **`entry_zone_source != "fallback"`** — fallback scenario (zone ATR giả, RR=1:2.0) bị chặn khỏi auto-trade và Hiển thị lệnh
 
    **Nhánh 1 — `at_cfg is not None` (backtest=true):**
    - Nếu `auto_trade_regime` được set → row's `market_regime` phải khớp
@@ -679,6 +680,8 @@ Với mỗi row:
   - `waiting_confirmation`: vàng
   - `watch_zone`: xám
   - `blocked`: đỏ
+
+- **Fallback scenario**: Khi pipeline không tìm được SMC/technical zone thật, `_assemble_result()` tạo fallback với `entry_zone_source = "fallback"`, `entry_zone_score = 50`, `RR = 1:2.0` (SL = price - ATR×1.2, TP = price + ATR×2.4). Fallback **vẫn hiển thị trong bảng** để trader tham khảo, nhưng **bị chặn** khỏi "Hiển thị lệnh", auto-trade, và Telegram alerts.
 
 ### Khi click vào 1 row
 - Mở `ScannerDetailScreen` → gọi `_refresh_chart()`:

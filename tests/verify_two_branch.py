@@ -159,11 +159,15 @@ def _best_scenario(row, force_side=None):
     side = force_side or row.get("best_side")
     for sc in scenarios:
         if isinstance(sc, dict) and sc.get("type") == side:
+            if sc.get("entry_zone_source") == "fallback":
+                continue
             return sc
     if force_side:
         fallback = row.get("best_side")
         for sc in scenarios:
             if isinstance(sc, dict) and sc.get("type") == fallback:
+                if sc.get("entry_zone_source") == "fallback":
+                    continue
                 return sc
     return {}
 
@@ -281,7 +285,7 @@ row_n1_test["scanner_group"] = "watch_zone"
 
 n1_result = simulate_is_candidate(row_n1_test, at_cfg_n1)
 print(f"\n  Nhanh 1: scanner_action='watch', best_score=80, min_score=55")
-print(f"  Nhanh 1 candidate = {n1_result} (should be True — bypasses scanner_action)")
+print(f"  Nhanh 1 candidate = {n1_result} (should be False — fallback scenario bi chan)")
 
 # Nhanh 2: without at_cfg, requires scanner_action == "ready"
 row_n2_test = dict(row_n2)
@@ -291,7 +295,7 @@ n2_result = simulate_is_candidate(row_n2_test, None)
 print(f"\n  Nhanh 2: scanner_action='watch', best_score=80")
 print(f"  Nhanh 2 candidate = {n2_result} (should be False — requires ready)")
 
-check("N3.1: Nhanh 1 bypasses scanner_action", n1_result is True)
+check("N3.1: Nhanh 1 blocks fallback scenario", n1_result is False)
 check("N3.2: Nhanh 2 requires scanner_action==ready", n2_result is False)
 
 # Verify Nhanh 1 checks regime when configured
@@ -302,13 +306,13 @@ print(f"\n  Nhanh 1: regime mismatch (row=trend_up, cfg=trend_down)")
 print(f"  Nhanh 1 candidate = {n1_regime_fail} (should be False)")
 check("N3.3: Nhanh 1 rejects regime mismatch", n1_regime_fail is False)
 
-# Verify Nhanh 1 checks side when configured
+# Verify Nhanh 1 checks side: force_side=cfg_side; if not found, falls back to best_side plan
 at_cfg_n1_side = {"regime": "", "side": "sell", "min_score": 55}
 row_n1_test["best_side"] = "buy"
 n1_side_fail = simulate_is_candidate(row_n1_test, at_cfg_n1_side)
 print(f"\n  Nhanh 1: side mismatch (row=buy, cfg=sell)")
-print(f"  Nhanh 1 candidate = {n1_side_fail} (should be False)")
-check("N3.4: Nhanh 1 rejects side mismatch", n1_side_fail is False)
+print(f"  Nhanh 1 candidate = {n1_side_fail} (should be True — _best_scenario falls back to best_side=buy plan)")
+check("N3.4: Nhanh 1 side mismatch + both fallback blocked", n1_side_fail is False)
 
 # Verify Nhanh 1 checks min_score
 at_cfg_n1_score = {"regime": "", "side": "", "min_score": 90}

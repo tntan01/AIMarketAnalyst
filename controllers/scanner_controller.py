@@ -465,12 +465,16 @@ class ScannerController:
         side = force_side or row.get("best_side")
         for scenario in scenarios:
             if isinstance(scenario, dict) and scenario.get("type") == side:
+                if scenario.get("entry_zone_source") == "fallback":
+                    continue
                 return scenario
         # Fallback: if forced side not found, try best_side
         if force_side:
             fallback_side = row.get("best_side")
             for scenario in scenarios:
                 if isinstance(scenario, dict) and scenario.get("type") == fallback_side:
+                    if scenario.get("entry_zone_source") == "fallback":
+                        continue
                     return scenario
         return {}
 
@@ -541,6 +545,8 @@ class ScannerController:
                 continue
             scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
             if not scenario:
+                continue
+            if scenario.get("entry_zone_source") == "fallback":
                 continue
 
             entry_zone = scenario.get("entry_zone")

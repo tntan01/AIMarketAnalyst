@@ -1177,3 +1177,12 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 - Auto-entry status should be displayed or logged with these counts when surfaced in UI: attempted, opened, skipped, and errors.
 - A skipped auto-entry is not a UI failure when the reason is "already has position/order"; it is the intended one-order-per-symbol guard.
 - Telegram summary should remain short: scanned count, ready count, ready symbol list with Entry/SL/TP. Watch-only symbols are intentionally omitted from Telegram summary.
+
+### Fallback Scenario Filtering
+
+- Khi pipeline không tìm được SMC/technical zone thật, `_assemble_result()` tạo fallback scenario với `entry_zone_source = "fallback"`, `entry_zone_score = 50`, `RR = 1:2.0`.
+- Fallback scenario **vẫn hiển thị trong bảng scanner** (để trader tham khảo), nhưng bị chặn khỏi:
+  - **"Hiển thị lệnh" dialog** (`_build_order_rows` skip `entry_zone_source == "fallback"`)
+  - **Auto-trade** (`_best_scenario` skip fallback → `_is_auto_trade_candidate` trả về False)
+  - **Telegram alerts** (`_get_alert_order_candidates` skip fallback)
+- Logic này áp dụng cho cả Nhánh 1 (backtest=true) và Nhánh 2 (backtest=false).
