@@ -1467,30 +1467,39 @@ class ScannerScreen (QWidget ):
                 # Try with slash: 'USDCAD' -> 'USD/CAD'
                 slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
                 cfg = settings.trading.symbol_settings.get(slash_symbol)
-            if cfg:
-                # Use min_score if set, otherwise fall back to decision_ready
-                eff_min_score = cfg.min_score if cfg.min_score > 0 else cfg.decision_ready
+            if cfg and cfg.backtest:
+                # Nhanh 1: backtest=true — ghi de toan bo bang min_score
+                ready = cfg.min_score if cfg.min_score > 0 else cfg.decision_ready
                 thresholds[symbol] = {
-                    "ready": eff_min_score,
-                    "watch": cfg.decision_watch,
-                    "wait": cfg.decision_wait,
+                    "ready": ready,
+                    "watch": 999,
+                    "wait": 999,
                     "min_score_gap": 10,
                     "min_rr": cfg.min_expected_rr or 0,
                 }
+            elif cfg:
+                # Nhanh 2: backtest=false — dung decision_ready/watch/wait
+                thresholds[symbol] = {
+                    "ready": cfg.decision_ready,
+                    "watch": cfg.decision_watch,
+                    "wait": cfg.decision_wait,
+                    "min_score_gap": 10,
+                    "min_rr": cfg.min_expected_rr or 1.3,
+                }
+            # else: khong config -> DEFAULT_DECISION_THRESHOLDS (65/60/55)
         symbol_auto_trade: dict[str, dict] = {}
         for symbol in symbols:
             cfg = settings.trading.symbol_settings.get(symbol)
+            if cfg is None:
+                slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
+                cfg = settings.trading.symbol_settings.get(slash_symbol)
             if cfg and cfg.backtest:
-                regime = (cfg.auto_trade_regime or "").strip()
-                side = (cfg.auto_trade_side or "").strip()
-                min_rr = cfg.min_expected_rr or 0.0
-                if regime or side in ("buy", "sell") or min_rr:
-                    symbol_auto_trade[symbol] = {
-                        "regime": cfg.auto_trade_regime,
-                        "side": cfg.auto_trade_side,
-                        "min_rr": cfg.min_expected_rr or 0,
-                        "min_score": cfg.min_score if cfg.min_score > 0 else cfg.decision_ready,
-                    }
+                ready = cfg.min_score if cfg.min_score > 0 else cfg.decision_ready
+                symbol_auto_trade[symbol] = {
+                    "regime": cfg.auto_trade_regime,
+                    "side": cfg.auto_trade_side,
+                    "min_score": ready,
+                }
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,

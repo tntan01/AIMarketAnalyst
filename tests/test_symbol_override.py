@@ -223,22 +223,30 @@ def test_branch_b_scanner_group_blocked():
 
 
 # ---------------------------------------------------------------------------
-# Test 13: Branch B — empty config returns None → Branch A fallback
+# Test 13: symbol not in symbol_auto_trade -> None -> Nhanh 2
 # ---------------------------------------------------------------------------
 
-def test_empty_config_falls_to_branch_a():
+def test_symbol_not_in_auto_trade_returns_none():
     from core.scanner import ScannerRequest
     ctrl = _make_controller()
 
-    # No filters set → _auto_trade_config returns None
+    # Symbol NOT in symbol_auto_trade -> _auto_trade_config returns None -> Nhanh 2
     req = ScannerRequest(
         symbols=["EUR/USD"], account_balance=10000, risk_percent=1.0,
         timezone_name="Asia/Ho_Chi_Minh",
-        symbol_auto_trade={"EUR/USD": {"regime": "", "side": "", "min_rr": 0}},
+        symbol_auto_trade={
+            "GBP/USD": {"regime": "range", "side": "buy", "min_score": 70},
+        },
         thresholds={}, min_scores={},
     )
+    # EUR/USD is NOT in symbol_auto_trade -> Branch 2
     at_cfg = ctrl._auto_trade_config(req, "EUR/USD")
-    assert at_cfg is None, "Empty filters → should return None → Branch A"
+    assert at_cfg is None, "Symbol not in symbol_auto_trade -> should return None -> Nhanh 2"
+    # GBP/USD IS in symbol_auto_trade -> Branch 1
+    at_cfg2 = ctrl._auto_trade_config(req, "GBP/USD")
+    assert at_cfg2 is not None, "Symbol in symbol_auto_trade -> should return config -> Nhanh 1"
+    assert at_cfg2.get("regime") == "range"
+    assert at_cfg2.get("min_score") == 70
     print("  PASS")
 
 
@@ -261,7 +269,7 @@ def run_all_tests():
         ("Branch B: score too low", test_branch_b_score_too_low),
         ("Branch B: blocked permission", test_branch_b_blocked_fails),
         ("Branch B: scanner_group blocked", test_branch_b_scanner_group_blocked),
-        ("Empty config -> Branch A", test_empty_config_falls_to_branch_a),
+        ("Symbol not in auto_trade -> None", test_symbol_not_in_auto_trade_returns_none),
     ]
 
     print("=" * 60)

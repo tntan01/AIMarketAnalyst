@@ -202,7 +202,7 @@ class ScannerController:
         rows = sort_scanner_rows(rows)
 
         progress(78, "Đang lọc setup theo cấu hình symbol...")
-        rows = self._apply_scanner_filters(rows, settings)
+        rows = self._apply_scanner_filters(rows, request)
 
         # AI Market Brief (1 call, after all individual audits)
         market_brief = ""
@@ -240,152 +240,63 @@ class ScannerController:
 
     @staticmethod
     def _auto_trade_config(request: ScannerRequest, symbol: str) -> dict[str, object] | None:
-        """Return per-symbol auto-trade config, or None if not configured."""
+        """Return per-symbol auto-trade config, or None if not configured.
+
+        Only symbols with backtest=true appear in symbol_auto_trade
+        (built by scanner_screen).  Every entry is a valid Nhanh-1 config.
+        """
         if not request.symbol_auto_trade:
             return None
         # Normalize symbol format: rows use "USDCHF", settings use "USD/CHF"
         cfg = request.symbol_auto_trade.get(symbol)
         if cfg is None and "/" not in symbol and len(symbol) == 6:
-            # Try slash format: "USDCHF" → "USD/CHF"
+            # Try slash format: "USDCHF" -> "USD/CHF"
             slash_key = symbol[:3] + "/" + symbol[3:]
             cfg = request.symbol_auto_trade.get(slash_key)
-        if cfg is None:
-            return None
-        regime = str(cfg.get("regime", "")).strip().lower()
-        side = str(cfg.get("side", "")).strip().lower()
-        min_rr = float(cfg.get("min_rr", 0) or 0)
-        # Return config if ANY auto-trade filter is explicitly configured
-        if not regime and side not in ("buy", "sell") and not min_rr:
-            return None
         return cfg
 
-    # ------------------------------------------------------------------
-    # Symbol-config filter — applies backtest-proven gate to scanner rows.
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _resolve_symbol_config(settings, symbol: str):
-        """Return (SymbolScanSettings | None, has_backtest_config: bool).
-
-        *has_backtest_config* is True only when the symbol has an explicit
-        backtest configuration in settings (backtest=True + at least one
-        filter criterion).  Rows without config still receive *default*
-        filtering.
-        """
-        sym_cfg = None
-        has_bt = False
-        if settings is not None:
-            sym_cfg = settings.trading.symbol_settings.get(symbol)
-            if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
-                slash_key = symbol[:3] + "/" + symbol[3:]
-                sym_cfg = settings.trading.symbol_settings.get(slash_key)
-            if sym_cfg and sym_cfg.backtest:
-                has_bt = True
-        return sym_cfg, has_bt
-
-    @staticmethod
-    def _check_row_filters(
-        row: dict[str, Any],
-        sym_cfg,
-        has_backtest_config: bool,
-    ) -> tuple[bool, str]:
-        """Return (passed, reason).
-
-        For symbols WITH backtest config, applies all configured gates
-        (regime / side / min_rr / min_score).  For symbols WITHOUT config,
-        a sensible default filter removes setups with no real trade plan.
-        """
-        # --- Universal checks (applied to EVERY symbol) --------------------
-        if not isinstance(row.get("analysis_result"), dict):
-            return False, "không có dữ liệu phân tích"
-
-        best_side = str(row.get("best_side", ""))
-        if best_side not in ("buy", "sell"):
-            return False, "không có hướng rõ ràng"
-
-        best_score = int(row.get("best_score", 0) or 0)
-        if best_score < 50:
-            return False, f"điểm quá thấp ({best_score}/100)"
-
-        # Must have a valid scenario for best_side
-        analysis = row.get("analysis_result", {})
-        scenarios = analysis.get("scenarios", []) if isinstance(analysis, dict) else []
-        scenario = None
-        if isinstance(scenarios, list):
-            for sc in scenarios:
-                if isinstance(sc, dict) and sc.get("type") == best_side:
-                    scenario = sc
-                    break
-        if not scenario:
-            return False, "không có kế hoạch giao dịch hợp lệ"
-
-        # Entry zone and SL must exist (real structural levels)
-        if not isinstance(scenario.get("entry_zone"), list) or len(scenario.get("entry_zone", [])) != 2:
-            return False, "thiếu vùng vào lệnh"
-        if scenario.get("stop_loss") is None:
-            return False, "thiếu stop loss"
-
-        # Must have a real TP target (not a fallback/synthetic RR)
-        if row.get("risk_reward") is None:
-            return False, "không có TP thực tế từ cấu trúc giá"
-
-        # --- Backtest-config gates (only when explicitly configured) -------
-        if has_backtest_config and sym_cfg is not None:
-            cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
-            if cfg_regime:
-                row_regime = str(row.get("market_regime", "")).strip().lower()
-                if row_regime and row_regime != cfg_regime:
-                    return False, f"chế độ TT {row_regime} không khớp yêu cầu {cfg_regime}"
-
-            cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
-            if cfg_side in ("buy", "sell") and best_side != cfg_side:
-                return False, f"hướng {best_side} không khớp yêu cầu {cfg_side}"
-
-            cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
-            if cfg_min_rr > 0:
-                row_rr = row.get("expected_effective_rr")
-                try:
-                    row_rr_f = float(row_rr) if row_rr is not None else 0.0
-                except (TypeError, ValueError):
-                    row_rr_f = 0.0
-                if row_rr_f < cfg_min_rr:
-                    return False, f"RR thực tế {row_rr_f:.1f} thấp hơn yêu cầu {cfg_min_rr:.1f}"
-
-            cfg_min_score = int(sym_cfg.min_score or 0)
-            if cfg_min_score > 0 and best_score < cfg_min_score:
-                return False, f"điểm {best_score} thấp hơn yêu cầu {cfg_min_score}"
-
-        return True, ""
-
-    @staticmethod
     def _apply_scanner_filters(
+        self,
         rows: list[dict[str, Any]],
-        settings,
+        request: ScannerRequest,
     ) -> list[dict[str, Any]]:
-        """Filter scanner rows through symbol config gates (or defaults).
+        """Loc rows dung chung logic 2 nhanh cua _is_auto_trade_candidate.
 
-        Rows that fail are re-marked as *skip* and pushed to the bottom.
-        The returned list is re-sorted so the table still has correct ranks.
+        Nhanh 1 (backtest=true): dung regime/side/min_score tu config.
+        Nhanh 2 (khong config): yeu cau scanner_action == "ready".
+        min_expected_rr la gate chung cho ca 2 nhanh.
+        Row khong dat -> scanner_action="skip", scanner_group="blocked".
         """
         passed: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
 
         for row in rows:
             symbol = str(row.get("symbol", ""))
-            sym_cfg, has_bt = ScannerController._resolve_symbol_config(settings, symbol)
-            ok, reason = ScannerController._check_row_filters(row, sym_cfg, has_bt)
-            if ok:
+            at_cfg = self._auto_trade_config(request, symbol)
+            if self._is_auto_trade_candidate(row, at_cfg):
                 passed.append(row)
             else:
                 row["scanner_action"] = "skip"
                 row["scanner_group"] = "blocked"
-                current_reason = str(row.get("short_reason", ""))
-                if reason not in current_reason:
-                    row["short_reason"] = f"{current_reason} [Lọc: {reason}]".strip()
+                reason = str(row.get("short_reason", ""))
+                if at_cfg is not None:
+                    regime = str(at_cfg.get("regime", "") or "").strip()
+                    side = str(at_cfg.get("side", "") or "").strip()
+                    min_sc = int(at_cfg.get("min_score", 0) or 0)
+                    parts = []
+                    if regime:
+                        parts.append(f"regime={regime}")
+                    if side in ("buy", "sell"):
+                        parts.append(f"side={side}")
+                    if min_sc > 0:
+                        parts.append(f"min_score={min_sc}")
+                    tag = f"[Loc: khong dat backtest — can {', '.join(parts)}]" if parts else "[Loc: khong dat backtest]"
+                else:
+                    tag = "[Loc: chua dat ready]"
+                if tag not in reason:
+                    row["short_reason"] = f"{reason} {tag}".strip()
                 failed.append(row)
 
-        # Re-sort: passed rows keep priority order, failed rows go to bottom
-        from core.scanner import sort_scanner_rows
         return sort_scanner_rows(passed + failed)
 
     def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:

@@ -1,0 +1,669 @@
+# Scanner Flow — Luồng chạy chi tiết của hệ thống quét thị trường
+
+## Tổng quan kiến trúc
+
+```
+ScannerScreen (UI)
+  → build ScannerRequest (thresholds, symbol_auto_trade)
+  → ScannerWorker (thread)
+    → ScannerController.run()
+      → _analyze_one_symbol() × N symbols (ThreadPoolExecutor)
+        → analyze_symbol() → AnalysisPipeline.execute()  [9 bước]
+        → scanner_row_from_analysis()
+      → sort_scanner_rows()
+      → _apply_scanner_filters()  [2 nhánh: backtest=true / false]
+      → build_scanner_output()
+  → ScannerScreen._scan_finished()
+    → ScannerTableModel.set_rows()
+    → hiển thị bảng kết quả
+```
+
+---
+
+## Bước 1: ScannerScreen — Build ScannerRequest
+
+**File:** `ui/screens/scanner_screen.py` — hàm `_start_scan()`
+
+### Input
+- Danh sách symbols đã chọn từ giao diện
+- `Settings` từ `SettingsService` (chứa `TradingSettings.symbol_settings`)
+
+### Xử lý
+
+#### 1a. Build `thresholds` (ngưỡng quyết định cho Decision Engine)
+
+Với mỗi symbol, đọc `SymbolScanSettings` từ `settings.trading.symbol_settings`:
+
+**Nhánh 1 — `backtest = true`:**
+```
+thresholds = {
+    "ready": min_score (nếu > 0) hoặc decision_ready,
+    "watch": 999,    // vô hiệu hóa phân loại WATCH
+    "wait": 999,     // vô hiệu hóa phân loại WAIT
+    "min_score_gap": 10,
+    "min_rr": min_expected_rr hoặc 0,
+}
+```
+→ Decision Engine chỉ phân được 2 trạng thái: READY_TO_TRADE hoặc STAND_ASIDE.
+  Không có trạng thái trung gian WATCH_ONLY / WAITING_CONFIRMATION.
+
+**Nhánh 2 — `backtest = false` (có config):**
+```
+thresholds = {
+    "ready": decision_ready (mặc định 65),
+    "watch": decision_watch (mặc định 60),
+    "wait": decision_wait (mặc định 55),
+    "min_score_gap": 10,
+    "min_rr": min_expected_rr hoặc 1.3,
+}
+```
+→ Decision Engine phân loại 3 mức: READY / WATCH / WAIT.
+
+**Không có config:**
+→ Dùng `DEFAULT_DECISION_THRESHOLDS = {ready: 65, watch: 60, wait: 55}`.
+
+#### 1b. Build `symbol_auto_trade` (cấu hình cho Nhánh 1)
+
+Chỉ symbol có `backtest = true` mới được thêm vào:
+
+```
+symbol_auto_trade[symbol] = {
+    "regime": auto_trade_regime,   // "", "trend_up", "range", ...
+    "side": auto_trade_side,       // "", "buy", "sell"
+    "min_score": min_score hoặc decision_ready,
+}
+```
+
+### Output
+- `ScannerRequest` object chứa: `thresholds`, `symbol_auto_trade`, `symbols`, `account_balance`, `risk_percent`, `min_scores`, `auto_trade_enabled`
+
+---
+
+## Bước 2: ScannerController.run() — Điều phối quét
+
+**File:** `controllers/scanner_controller.py`
+
+### Input
+- `ScannerRequest` từ Bước 1
+- Data provider (MT5) đã kết nối
+- Progress callback để cập nhật UI
+
+### Xử lý
+
+#### 2a. Chuẩn bị dữ liệu (8% → 49% progress)
+- Kiểm tra kết nối MT5, lấy account balance
+- Với mỗi symbol: resolve broker_symbol, load candles (D1/H4/H1/M15), lấy macro context
+- Build `_analyze_one_symbol` arguments
+
+#### 2b. Quét song song (49% → 74% progress)
+- `ThreadPoolExecutor` chạy `_analyze_one_symbol()` cho từng symbol
+- Mỗi symbol trả về 1 row dict (có `analysis_result` bên trong)
+- Gán `auto_trade_branch = "B"` nếu symbol có backtest config, `"A"` nếu không
+
+#### 2c. Sắp xếp (74% progress)
+- Gọi `sort_scanner_rows(rows)` — sắp xếp theo scanner_group > opportunity_score > final_score > RR > symbol
+
+#### 2d. Lọc theo 2 nhánh (78% progress)
+- Gọi `_apply_scanner_filters(rows, request)` — xem chi tiết ở Bước 7
+
+#### 2e. Build output (94% progress)
+- Gọi `build_scanner_output(rows, request, ai_called=0)` — xem chi tiết ở Bước 8
+
+### Output
+- `output` dict: `{mode, timestamp, symbols_scanned, summary, rows, market_brief}`
+
+---
+
+## Bước 3: _analyze_one_symbol() → AnalysisPipeline — Pipeline phân tích
+
+**File:** `controllers/scanner_controller.py` → `core/analysis_engine.py` → `core/analysis_pipeline.py`
+
+### Input
+- `AnalysisInput`: symbol, broker_symbol, account_balance, risk_percent, ...
+- Candles: D1 (≥60), H4 (≥60), H1 (≥30), M15
+- `data_quality`: spread, terminal status, news
+- `macro_alignment`: điểm macro cho buy/sell (mặc định 15/15)
+- `thresholds`: ngưỡng quyết định từ Bước 1
+
+### Pipeline 9 bước
+
+#### Step 1: Validate & Build Context
+- Kiểm tra đủ candles (D1≥60, H4≥60, H1≥30)
+- `build_technical_snapshot(D1, H4, H1)`:
+  - Tính EMA(20,50,200) cho D1, H4, H1
+  - Tính RSI(14) cho H4
+  - Tính MACD histogram cho H4
+  - Tính ATR(14) cho H4, D1
+  - Phát hiện support/resistance zones (pivot-based)
+  - Xác định structure (HH/HL, LH/LL) cho D1, H4
+- `build_smc_context(D1, H4, H1)`:
+  - Với mỗi timeframe: swing points, BOS/CHOCH, displacement
+  - Supply/Demand zones, Order Blocks, FVG
+  - Liquidity pools (equal highs/lows), Liquidity sweeps
+  - Premium/Discount classification
+  - Mỗi zone được chấm `zone_score` (0-100) dựa trên:
+    - Số lần test và giữ được (+0 đến +20)
+    - Độ mới (freshness) (+0 đến +10)
+    - Displacement multiple (+0 đến +15)
+    - Liquidity sweep (+10)
+    - Vị trí premium/discount (-8 đến +12)
+- `detect_market_regime()`: xác định `trend_up`, `trend_down`, `range`, `volatile`
+
+**Output Step 1:** `technical` (EMA, RSI, MACD, ATR, S/R zones, structure), `smc` (BOS/CHOCH, zones, sweeps), `market_regime`, `risk_score`
+
+#### Step 2: Correlation Adjustments
+- Tính DXY/VIX/US10Y correlation → điều chỉnh buy/sell score
+- Nếu DXY tăng → penalty cho buy EUR/USD, bonus cho sell
+- `correlation_adjustment` là số điểm cộng/thêm vào macro score
+
+**Output Step 2:** `buy_corr_adj`, `sell_corr_adj`
+
+#### Step 3: Score Scenarios
+- Gọi `score_scenario("buy", ...)` và `score_scenario("sell", ...)` từ `signal_engine.py`
+- **Công thức tính signal_score (0-100):**
+
+  **a) 6 thành phần với trọng số động theo regime:**
+
+  | Regime | Trend | Momentum | Location | SMC | Risk | Macro |
+  |---|---|---|---|---|---|---|
+  | trending_up/down | 25 | 15 | 15 | 15 | 15 | 15 |
+  | range | 10 | 10 | 25 | 25 | 15 | 15 |
+  | volatile | 10 | 5 | 15 | 10 | 40 | 20 |
+  | unknown | 18 | 14 | 17 | 15 | 16 | 20 |
+
+  **b) Trend Alignment (0-25):**
+  - BUY: EMA50>EMA200 (D1) = +8, price>EMA200 = +5, price>EMA50 = +5, H4 HH/HL = +5, D1+H4 HH/HL = +2
+  - SELL: ngược lại
+
+  **c) Momentum Alignment (0-20):**
+  - Kết hợp RSI(14) H4 + MACD histogram H4
+  - BUY: RSI 30-50 rising = +8, MACD rising above 0 = +10
+  - SELL: RSI 50-70 falling = +8, MACD falling below 0 = +10
+
+  **d) Location Quality (0-25):**
+  - BUY: giá trong vùng support = +15, gần support (≤0.5 ATR) = +10
+  - Bonus: confluence ≥3 = +5, round number = +3
+  - Penalty: test_count ≥3 = -5, test_count ≥5 = -3
+
+  **e) SMC Quality (0-15):**
+  - H4 BOS đúng hướng = +3, H1 BOS/CHOCH đúng hướng = +3
+  - Zone score ≥75 = +4, ≥55 = +3, <55 = +1
+  - Zone ở đúng premium/discount = +3, equilibrium = +1, ngược = -2
+  - Liquidity sweep = +1, cross-validate technical swing = +2
+  - Cap: H4 CHOCH ngược hướng = max 4 điểm, H1 CHOCH ngược = max 6 điểm
+
+  **f) Risk Condition (0-15 scale, scaled to risk weight):**
+  - ATR ổn định (0.8-1.2× trung bình 14 ngày) = +6
+  - Không có news trong 3h = +6
+  - Spread bình thường = +3
+
+  **g) Macro Alignment (0-30 scale, scaled to macro weight):**
+  - macro_score × macro_confidence × macro_weight / 30
+  - Cộng correlation_adjustment
+
+  **h) Tổng hợp — Normalized Scoring:**
+  ```
+  non_macro_score = trend_scaled + momentum_scaled + location_scaled + smc_scaled + risk_scaled
+  available_budget = 100 - macro_effective
+  normalized_non_macro = non_macro_score * available_budget / non_macro_max
+  total = normalized_non_macro + macro_effective
+  ```
+
+  **i) Macro modifier:**
+  - Macro aligned → +5 × macro_confidence
+  - Macro conflict → -15 × macro_confidence
+  - Macro unclear → 0
+
+  **j) CHOCH cap:** Nếu CHOCH ngược hướng → cap total ≤ 60
+
+  **k) Final signal_score = total (clamp 0-100)**
+
+**Output Step 3:** `scores = {buy: {signal_score, trend_alignment, momentum_alignment, ...}, sell: {...}}`
+
+#### Step 4: Build Trade Scenarios
+- `calc_trade_permission()`: kiểm tra MT5 status, spread, news → `allowed` / `caution` / `blocked`
+- `get_preferred_zone(smc, side, price)`: tìm SMC zone tốt nhất cho mỗi hướng
+- `build_scenarios()` → gọi `build_trade_plan()` cho mỗi side (buy/sell)
+
+  **build_trade_plan() — Tính Entry, SL, TP:**
+
+  **a) Chọn zone:**
+  - Nếu có `preferred_zone` (SMC) VÀ zone cách giá ≤ `atr × zone_dist_mult`:
+    → `use_preferred = True`, dùng SMC zone làm entry
+  - Ngược lại: `select_best_level(support/resistance_zones, price, max_distance, below/above)`
+
+  **b) Tính Entry Zone (xung quanh zone level):**
+  ```
+  entry_zone_atr_mult = clamp(zone_width / atr * 0.5, 0.10, 0.30)
+  entry_low  = level - atr × entry_zone_atr_mult
+  entry_high = level + atr × entry_zone_atr_mult
+  entry_for_rr = entry_low  (BUY, aggressiveness=0 → cạnh gần nhất)
+  entry_for_rr = entry_high (SELL)
+  ```
+
+  **c) Tính Stop Loss:**
+  - `use_preferred`: SL = zone_low - atr × 0.10 (BUY) hoặc zone_high + atr × 0.10 (SELL)
+  - Không có preferred: tìm swing gần nhất → nếu không có → ATR-based SL
+  - Guard: SL phải nằm ngoài entry zone ít nhất `atr × 0.10`
+
+  **d) Tính Take Profit (cascade 5 bước, dừng ở bước đầu tiên tìm được):**
+  1. **Equal Highs/Lows** (liquidity clusters từ H4/H1)
+  2. **S/R Zones** (nearest_target từ resistance/support zones)
+  3. **Fibonacci Extension** (0.382 từ impulse swing H4, trừ range)
+  4. **Swing-based TP** (swing high/low gần nhất)
+  5. Nếu `use_preferred` → **KHÔNG dùng fallback nhân tạo** → `tp1 = None` (RR để trống)
+  6. Nếu KHÔNG `use_preferred` → `return None` (không tạo plan)
+
+  **e) TP2:** next S/R zone sau TP1, hoặc Fib 0.618
+
+  **f) R:R calculation:**
+  ```
+  risk_reward = "1:{reward_risk(entry, sl, tp1):.1f}"  nếu tp1 tồn tại
+  risk_reward = None                                     nếu tp1 = None
+  expected_effective_rr = (|tp - entry| - spread) / (|entry - sl| + spread)
+  ```
+
+  **g) evaluate_entry()** — Xác nhận entry (xem Step 4 detail bên dưới)
+
+  **h) Position Sizing:**
+  ```
+  risk_amount = balance × risk_percent / 100 × size_multiplier
+  loss_per_lot = |entry - sl| × contract_size × quote_to_usd_rate
+  suggested_lot = round_lot(risk_amount / loss_per_lot)
+  ```
+
+**Output Step 4:** `scenarios = [{type, entry_zone, stop_loss, take_profit, risk_reward, ...}, ...]`
+  - Sắp xếp theo score giảm dần
+  - Mỗi scenario có `entry_status` từ `evaluate_entry()`
+
+#### Step 4 detail: evaluate_entry() — Xác nhận entry với M15
+
+**File:** `core/entry_engine.py`
+
+**Input:** side, technical, smc, H1 candles, entry_zone, M15 candles
+
+**Xử lý:**
+
+**a) Phân loại vị trí giá so với entry zone:**
+- `in_zone`: giá đang nằm trong zone
+- `near_zone`: giá cách zone ≤ atr × 0.5
+- `far`: giá còn xa zone
+- `broken` (invalidated): giá đã phá qua zone (BUY: close < zone_low - atr×0.25)
+
+**b) H1 Confirmation (0-35 điểm):**
+- BUY: engulfing tăng = 35, rejection tail dài (lower wick ≥ body×0.8) = 30, micro break = 25
+- SELL: engulfing giảm = 35, rejection tail dài (upper wick ≥ body×0.8) = 30, micro break = 25
+- Không có → 0 điểm, trigger_type = "none"
+
+**c) SMC Confirmation (0-30 điểm):**
+- H1 BOS/CHOCH đúng hướng = 20
+- H4 BOS đúng hướng = 10
+- Liquidity sweep đúng hướng = 10
+
+**d) Location Score (0-15 điểm):**
+- BUY ở discount zone = 15, equilibrium = 8, premium = 0
+- SELL ở premium zone = 15, equilibrium = 8, discount = 0
+
+**e) Tổng confirmation score:**
+```
+score = (in_zone? 25 : near_zone? 15 : 0) + h1_score + smc_score + location_score
+```
+
+**f) M15 Layer — đánh giá structure + displacement trên M15:**
+- `_confirm_m15_structure()`: tìm higher low (BUY) hoặc lower high (SELL) → passed
+- `_confirm_m15_displacement()`: nến M15 có body > 0.3×ATR đúng hướng → passed
+- Cả 2 passed → `m15_quality = "strict"`, multiplier = 1.0
+- 1 passed → `m15_quality = "loose"`, multiplier = 0.85
+- 0 passed → `m15_quality = "none"`, multiplier = 0.7
+- `confirmation_score *= m15_score_multiplier`
+
+**g) Entry Ladder — phân loại sub-zone (top/mid/bottom):**
+```
+depth_pct = (high - price) / zone_width  (BUY)
+depth_pct = (price - low) / zone_width   (SELL)
+top    (0-33%):  size_multiplier=0.4, cần M15 loose+
+mid    (33-66%): size_multiplier=0.7, cần M15 strict
+bottom (66-100%): size_multiplier=1.0, cần M15 strict + SMC sweep
+```
+
+**h) Quyết định entry_status:**
+| Điều kiện | entry_status |
+|---|---|
+| In zone + trigger + score ≥70 + sub-zone confirm | `confirmed_entry` |
+| In zone + trigger + score ≥70 + chưa đủ M15 | `waiting_confirmation` |
+| In zone nhưng thiếu trigger hoặc score <70 | `waiting_confirmation` |
+| Near zone | `watch_zone` |
+| Far | `watch_zone` |
+| Zone broken | `invalidated` |
+| Thiếu dữ liệu | `no_setup` |
+
+**Output evaluate_entry:** `{entry_status, trigger_type, confirmation_score, m15_quality, ready_to_trade, entry_ladder, ...}`
+
+#### Step 5: Determine Direction
+- `calculate_direction_bias(buy_scores, sell_scores, min_gap=10)`:
+  - `best_side = "buy"` nếu buy_score > sell_score
+  - `best_side = "sell"` nếu sell_score > buy_score
+  - `is_clear_bias = True` nếu `score_gap ≥ 10`
+- Chọn `primary_scenario` khớp với `best_side`
+- Chọn `smc_trade_flags` khớp với `best_side`
+
+**Output Step 5:** `direction_bias, best_side, best_score, primary_scenario, smc_trade_flags`
+
+#### Step 6: Apply Gates
+
+- `calc_trade_permission()` — kiểm tra MT5, spread, news, risk_score, best_score → `allowed/caution/blocked`
+- `check_account_guard()` — kiểm tra daily loss, weekly loss, consecutive losses
+- `build_journal_feedback()` — thống kê từ nhật ký giao dịch cũ
+- `check_trade_gates()` — chạy qua 11 gate checks:
+
+  | # | Gate | Điều kiện | Nếu fail |
+  |---|---|---|---|
+  | 1 | MT5 | terminal_connected + broker_logged_in | BLOCK |
+  | 2 | Spread | spread_status != "abnormal" | BLOCK |
+  | 3 | DataQuality | không có warning | BLOCK |
+  | 4 | News | không có high_impact_event trong 30m | BLOCK |
+  | 5 | DailyWeeklyLoss | không vượt daily/weekly loss limit | BLOCK |
+  | 6 | AccountGuard | check_account_guard không block | BLOCK |
+  | 7 | Journal | journal_feedback không có blocks | BLOCK/WARN |
+  | 8 | M15 | m15_quality đạt yêu cầu | WARN |
+  | 9 | ExpectedRR | expected_effective_rr ≥ min_expected_rr | WARN |
+  | 10 | ScoreGap | score_gap ≥ min_score_gap (10) | WARN |
+  | 11 | ZoneBroken | entry zone chưa bị phá | WARN |
+
+  - Gate block → `decision_cap = TRADE_BLOCKED` → `scanner_action = stand_aside`
+  - Gate warning → `decision_cap = WATCH_ONLY` hoặc `WAITING_CONFIRMATION`
+
+**Output Step 6:** `trade_permission, gate_result, journal_feedback`
+
+#### Step 7: Compute Final Score
+
+- `calculate_final_score()`:
+  ```
+  final_score = signal_score × 0.5 + evidence_score × 0.25 + execution_quality × 0.25
+  ```
+  - `signal_score`: điểm từ Step 3
+  - `evidence_score`: từ nhật ký giao dịch cũ (nếu có)
+  - `execution_quality`: từ execution quality score
+
+- `make_final_decision()` — **Decision Engine**:
+
+  **Thứ tự ưu tiên (layer A → G):**
+
+  | Layer | Điều kiện | Decision |
+  |---|---|---|
+  | A | Gate không allowed hoặc trade_permission blocked | TRADE_BLOCKED |
+  | B | decision_cap == TRADE_BLOCKED | TRADE_BLOCKED |
+  | C | decision_cap == WATCH_ONLY | WATCH_ONLY |
+  | D | decision_cap == WAITING_CONFIRMATION | WAITING_CONFIRMATION |
+  | E | score_gap < min_score_gap (=10) | WAITING_CONFIRMATION |
+  | F | entry_status = watch_zone | WATCH_ONLY |
+  | F | entry_status = invalidated/no_setup | STAND_ASIDE |
+  | F | entry_status = waiting_confirmation | WAITING_CONFIRMATION |
+  | G | entry confirmed + score ≥ ready | **READY_TO_TRADE** |
+  | G | entry confirmed + score ≥ watch | WATCH_ONLY |
+  | G | entry confirmed + score ≥ wait | WAITING_CONFIRMATION |
+  | G | entry confirmed + score < wait | STAND_ASIDE |
+
+  - Với **Nhánh 1** (watch=999, wait=999): Layer G chỉ cho READY_TO_TRADE (score ≥ min_score) hoặc STAND_ASIDE (score < min_score). Layer F vẫn áp dụng nếu entry chưa confirmed.
+  - Với **Nhánh 2**: Phân loại đủ 3 mức + STAND_ASIDE.
+
+  `legacy_action = decision_to_legacy_action(decision)`:
+  - READY_TO_TRADE → `"ready"`
+  - WATCH_ONLY → `"watch"`
+  - WAITING_CONFIRMATION → `"wait_for_confirmation"`
+  - TRADE_BLOCKED / STAND_ASIDE → `"stand_aside"`
+
+**Output Step 7:** `final_score, decision_engine, legacy_action`
+
+#### Step 8: Enrich
+- Build `main_view` (text mô tả)
+- Tính `pattern_feedback` (H1 pattern backtest confidence)
+- Tổng hợp `reason_codes`, `warning_codes`, `block_codes` từ tất cả layers
+
+#### Step 9: Assemble Result
+Tổng hợp tất cả output thành 1 dict với các key chính:
+```
+{symbol, data_quality, market_regime, direction_bias, trade_permission,
+ decision_summary, trade_gate, journal_feedback, technical, smc,
+ smc_trade_flags, scenario_scores, scenarios, entry_checklist,
+ chart_payload, final_score, decision_engine, pipeline_diagnostics, ...}
+```
+
+### Output Bước 3
+- `result` dict — full pipeline output cho 1 symbol
+
+---
+
+## Bước 4: scanner_row_from_analysis() — Chuyển pipeline result thành scanner row
+
+**File:** `core/scanner.py`
+
+### Input
+- `result` dict từ AnalysisPipeline
+- `broker_symbol`
+
+### Xử lý
+- Trích xuất các trường từ `result`:
+  - `buy_score`, `sell_score` từ `scenario_scores`
+  - `best_side = "buy"` nếu buy_score ≥ sell_score
+  - `best_score = max(buy_score, sell_score)`
+  - `best_plan`: scenario đầu tiên khớp `best_side`
+  - `scanner_action`: từ `decision_engine.legacy_action`
+  - `risk_reward`, `stop_loss`, `take_profit`, `entry_zone`: từ `best_plan`
+  - `price_vs_zone`: `in_zone` / `near_zone` / `far` dựa trên giá vs entry_zone
+  - `macro_score`, `macro_bias`, `macro_confidence`
+  - `final_score`, `score_gap`, `m15_quality`, `expected_effective_rr`
+  - `journal_feedback`: `sample_size`, `expectancy_r`, `evidence_score`
+- Gán `analysis_result = result` (full pipeline output, dùng cho màn hình chi tiết)
+- Gọi `enrich_scanner_row_with_ranking(row)` → tính `opportunity_score` + `scanner_group`
+
+### Output
+- `row` dict với ~35 trường, bao gồm cả `analysis_result`
+
+---
+
+## Bước 5: Scanner Ranking Engine — Xếp hạng và phân nhóm
+
+**File:** `core/scanner_ranking_engine.py`
+
+### Input
+- `row` dict từ Bước 4
+
+### Xử lý
+
+#### 5a. Tính opportunity_score (0-100)
+```
+opportunity_score = final_score × 0.55 + proximity_score × 0.25 + rr_score × 0.15 + readiness_score × 0.05
+```
+Trừ penalty:
+- News trong 3h → -15
+- Spread bất thường → -15
+
+| Thành phần | Cách tính |
+|---|---|
+| final_score (×0.55) | Từ pipeline |
+| proximity_score (×0.25) | in_zone=100, near_zone=60, far=20, unknown=0 |
+| rr_score (×0.15) | RR≥2.0=100, RR≥1.5=75, RR≥1.3=50, RR≥1.0=30, else=10 |
+| readiness (×0.05) | confirmed_entry=100, waiting=50, watch=20, else=0 |
+
+#### 5b. Phân loại scanner_group
+
+| Điều kiện | scanner_group |
+|---|---|
+| Gate block + trade_permission blocked | `blocked` |
+| Gate warning + score < 50 | `blocked` |
+| Entry confirmed + gate allows + final_score đạt ready | `ready_now` |
+| Gate cho phép + entry gần đạt | `waiting_confirmation` |
+| Còn lại (theo dõi) | `watch_zone` |
+
+### Output
+- Row được thêm: `opportunity_score`, `scanner_group`, `proximity_score`, `rr_score`
+
+---
+
+## Bước 6: sort_scanner_rows() — Sắp xếp kết quả
+
+**File:** `core/scanner.py`
+
+### Xử lý
+Sắp xếp theo thứ tự ưu tiên (từ cao xuống thấp):
+1. **scanner_group**: `ready_now` (0) > `waiting_confirmation` (1) > `watch_zone` (2) > `blocked` (3)
+2. **opportunity_score**: giảm dần (cao nhất trước)
+3. **final_score** (hoặc best_score): giảm dần
+4. **expected_effective_rr** (hoặc risk_reward): giảm dần
+5. **symbol**: alphabet
+
+Sau khi sắp xếp, gán `rank` từ 1 → N.
+
+### Output
+- `rows` đã sắp xếp, mỗi row có `rank`
+
+---
+
+## Bước 7: _apply_scanner_filters() — Lọc theo 2 nhánh
+
+**File:** `controllers/scanner_controller.py`
+
+### Input
+- `rows` đã sắp xếp từ Bước 6
+- `ScannerRequest` (chứa `symbol_auto_trade`)
+
+### Xử lý
+Với mỗi row:
+1. Gọi `_auto_trade_config(request, symbol)`:
+   - Symbol có trong `symbol_auto_trade` → trả về config dict → **Nhánh 1**
+   - Symbol không có → trả về None → **Nhánh 2**
+
+2. Gọi `_is_auto_trade_candidate(row, at_cfg)`:
+
+   **Guard chung (cả 2 nhánh):**
+   - Phải có `analysis_result`
+   - `scanner_group != "blocked"`
+   - `trade_permission != "blocked"`
+   - `journal_feedback.decision_cap` không phải `TRADE_BLOCKED` hoặc `WATCH_ONLY`
+
+   **Nhánh 1 — `at_cfg is not None` (backtest=true):**
+   - Nếu `auto_trade_regime` được set → row's `market_regime` phải khớp
+   - `best_score` phải ≥ `min_score` (hoặc 65 nếu min_score=0)
+   - Nếu `auto_trade_side` được set → phải có scenario cho side đó
+   - **Không** check `scanner_action == "ready"` — ghi đè toàn bộ
+
+   **Nhánh 2 — `at_cfg is None` (backtest=false hoặc không config):**
+   - `scanner_action == "ready"` (từ Decision Engine dùng `decision_ready`)
+   - `trade_permission == "allowed"`
+   - Có scenario hợp lệ cho `best_side`
+
+3. Row không pass → đánh dấu:
+   - `scanner_action = "skip"`
+   - `scanner_group = "blocked"`
+   - Thêm tag vào `short_reason`:
+     - Nhánh 1: `[Loc: khong dat backtest — can regime=X, side=Y, min_score=Z]`
+     - Nhánh 2: `[Loc: chua dat ready]`
+
+4. Re-sort: pass rows trước, fail rows cuối bảng
+
+### Output
+- `rows` đã lọc + sắp xếp lại
+
+---
+
+## Bước 8: build_scanner_output() — Đóng gói kết quả
+
+**File:** `core/scanner.py`
+
+### Input
+- `rows` đã lọc + sắp xếp
+- `ScannerRequest`
+
+### Xử lý
+- `scanner_summary(rows)`: đếm số lượng theo `scanner_group` + tính `top_opportunity_score`, `average_opportunity_score`
+
+### Output
+```python
+{
+    "mode": "scanner",
+    "timestamp": "2026-07-02T...",
+    "symbols_scanned": N,
+    "ai_details_limit": 3,
+    "ai_called": 0,
+    "summary": {
+        "ready_now_count": X,
+        "waiting_confirmation_count": Y,
+        "watch_zone_count": Z,
+        "blocked_count": W,
+        "top_opportunity_score": S,
+        "average_opportunity_score": A,
+    },
+    "rows": [...],  # danh sách row đã sắp xếp
+}
+```
+
+---
+
+## Bước 9: ScannerTableModel — Hiển thị bảng kết quả
+
+**File:** `ui/screens/scanner_screen.py`
+
+### Input
+- `output` dict từ Bước 8
+
+### Xử lý
+- `ScannerTableModel.set_rows(output["rows"])` — cập nhật model
+- Bảng hiển thị các cột:
+
+| Cột | Key | Cách hiển thị |
+|---|---|---|
+| STT | rank | Số thứ tự sau sắp xếp |
+| Mã | symbol | Tên symbol |
+| Hành động | scanner_action | "Sẵn sàng" / "Theo dõi" / "Chờ đợi" / "Bỏ qua" |
+| Hướng | direction_bias | "MUA rõ 75/47 Gap 28" |
+| Điểm | best_score | "75/100" |
+| R:R | risk_reward | "1:2.0" hoặc "-" nếu None |
+| Vị trí | price_vs_zone | "Trong vùng" / "Gần vùng" / "Còn xa" |
+| M15 | m15_quality | "Chặt chẽ" / "Lỏng lẻo" / "Chưa xác nhận" |
+| Nhóm | scanner_group | "Sẵn sàng ngay" / "Chờ xác nhận" / "Theo dõi" / "Bị chặn" |
+| Lý do | short_reason | Text mô tả ngắn + tag filter |
+
+- Màu sắc hàng dựa trên `scanner_group`:
+  - `ready_now`: xanh lá
+  - `waiting_confirmation`: vàng
+  - `watch_zone`: xám
+  - `blocked`: đỏ
+
+### Khi click vào 1 row
+- Mở `ScannerDetailScreen` → gọi `_refresh_chart()`:
+  - `build_full_chart_payload(symbol, analysis_result)` → tạo dữ liệu cho biểu đồ Lightweight Charts
+  - Hiển thị: nến (H1 mặc định) + EMA + SMC zones + Entry zone + SL + TP lines
+  - Hiển thị cards: best_score, buy/sell, final_score, gap, macro, RR, entry_status, position, M15, regime, permission, journal
+
+---
+
+## Tổng kết luồng dữ liệu
+
+```
+Settings (symbol_settings)
+  │
+  ├── thresholds[ symbol ] → AnalysisPipeline → make_final_decision() → scanner_action
+  │
+  └── symbol_auto_trade[ symbol ] → _auto_trade_config() → _is_auto_trade_candidate()
+                                                                  │
+                    ┌─────────────────────────────────────────────┤
+                    │                                             │
+              Nhánh 1 (at_cfg not None)                    Nhánh 2 (at_cfg is None)
+              backtest=true                                backtest=false / no config
+                    │                                             │
+              Check: regime + side + min_score             Check: scanner_action == "ready"
+              (ghi đè toàn bộ)                             (từ decision_ready/watch/wait)
+                    │                                             │
+                    └─────────────────────────────────────────────┤
+                                                                  │
+                                                    _apply_scanner_filters()
+                                                          │
+                                                    ┌─────┴─────┐
+                                                    │             │
+                                                  PASS          FAIL
+                                                    │             │
+                                              hiển thị       scanner_action="skip"
+                                              bình thường    scanner_group="blocked"
+                                                             đẩy xuống cuối bảng
+```
