@@ -569,37 +569,41 @@ Last Scan Time (thời gian quét gần nhất): 2026-05-29 14:35 VN
 SCANNER RESULT TABLE (BẢNG KẾT QUẢ QUÉT)
 --------------------------------------------------
 
-| Rank (xếp hạng) | Symbol (mã) | Action (hành động) | Bias (thiên hướng) | Permission (quyền giao dịch) | Best Score (điểm tốt nhất) | Buy Score (điểm mua) | Sell Score (điểm bán) | R:R (tỷ lệ rủi ro/lợi nhuận) | Main Reason (lý do chính) | View (xem) |
-|---:|---|---|---|---|---:|---:|---:|---|---|---|
-| 1 | XAU/USD | Watch (theo dõi) | Buy (mua) | Caution (cẩn trọng) | 78 | 78 | 42 | 1:2.1 | Gần Support Zone (vùng hỗ trợ) mạnh | View Detail (xem chi tiết) |
-| 2 | EUR/USD | Wait (chờ) | Neutral (trung lập) | Allowed (được phép) | 66 | 61 | 66 | - | Giá đang ở giữa vùng | View Detail (xem chi tiết) |
-| 3 | USD/JPY | Skip (bỏ qua) | Sell (bán) | Blocked (bị chặn) | 48 | 35 | 48 | - | Có tin đỏ gần giờ | View Detail (xem chi tiết) |
+| Rank (xếp hạng) | Symbol (mã) | Nhóm | Bias (thiên hướng) | Chế độ TT | Entry | Giá vào | SL | TP | M15 | Điểm | R:R thực | Vĩ mô | Lý do | Xem |
+|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|:---|
+| 1 | XAU/USD | Sẵn sàng ngay | Buy (mua) | trend_up | Trong vùng | 2645.00–2652.00 | 2640.00 | 2665.00 | Chặt | 115 | 2.1 | Thuận | Gần demand zone H4 mạnh | Xem |
+| 2 | EUR/USD | Chờ xác nhận | Neutral (trung lập) | range | Gần vùng | 1.0850–1.0875 | 1.0820 | 1.0920 | Lỏng | 88 | 1.6 | Trung tính | Giá đang ở giữa vùng | Xem |
+| 3 | USD/JPY | Bị chặn | Sell (bán) | trend_down | Còn xa | — | — | — | Không đạt | 42 | — | Ngược | Có tin đỏ gần giờ | Xem |
 
 --------------------------------------------------
-ACTION MEANING (Ý NGHĨA HÀNH ĐỘNG)
+NHÓM (SCANNER GROUP)
 --------------------------------------------------
 
-Ready (sẵn sàng): Có thể xem xét vào lệnh nếu đủ xác nhận.
-Watch (theo dõi): Đáng theo dõi, nhưng còn thiếu điều kiện vào lệnh.
-Wait (chờ): Chờ thêm, setup (thiết lập giao dịch) chưa rõ.
-Skip (bỏ qua): Bỏ qua vì điểm thấp hoặc rủi ro cao.
+Sẵn sàng ngay (ready_now): Entry đã xác nhận, gate cho phép, có thể xem xét vào lệnh.
+Chờ xác nhận (waiting_confirmation): Setup thú vị, đang chờ thêm tín hiệu xác nhận.
+Theo dõi (watch_zone): Đáng theo dõi, nhưng chưa thể hành động.
+Bị chặn (blocked): Bị gate hoặc dữ liệu chặn, không nên giao dịch.
 ```
 
 ### Cột bắt buộc trong bảng Scanner (bảng quét thị trường)
 
 | Cột | Ý nghĩa |
 |---|---|
-| Rank (xếp hạng) | Thứ tự ưu tiên theo Best Score (điểm tốt nhất) |
+| Rank (xếp hạng) | Thứ tự ưu tiên theo scanner_group > opportunity_score |
 | Symbol (mã giao dịch) | Mã được quét |
-| Action (hành động) | Ready (sẵn sàng), Watch (theo dõi), Wait (chờ), Skip (bỏ qua) |
-| Bias (thiên hướng) | Buy (mua), Sell (bán), Neutral (trung lập), Stand Aside (đứng ngoài) |
-| Permission (quyền giao dịch) | Allowed (được phép), Caution (cẩn trọng), Blocked (bị chặn) |
-| Best Score (điểm tốt nhất) | Điểm cao nhất giữa Buy Score (điểm mua) và Sell Score (điểm bán) |
-| Buy Score (điểm mua) | Điểm chất lượng kịch bản mua |
-| Sell Score (điểm bán) | Điểm chất lượng kịch bản bán |
-| R:R (tỷ lệ rủi ro/lợi nhuận) | Risk/Reward (tỷ lệ rủi ro/lợi nhuận), nếu có kế hoạch giao dịch |
-| Main Reason (lý do chính) | Lý do mã được xếp hạng như vậy |
-| View Detail (xem chi tiết) | Mở màn hình Scanner Detail (chi tiết mã từ quét thị trường) |
+| Nhóm | ready_now / waiting_confirmation / watch_zone / blocked |
+| Bias (thiên hướng) | Buy (mua), Sell (bán), Neutral (trung lập) |
+| Chế độ TT | trend_up / trend_down / range / volatile — bối cảnh thị trường |
+| Entry | Vị trí giá so với vùng: Trong vùng / Gần vùng / Còn xa (+ tooltip entry_status) |
+| Giá vào | Vùng entry [low–high] |
+| SL | Stop Loss |
+| TP | Take Profit (TP1) |
+| M15 | Chất lượng xác nhận M15: Chặt / Lỏng / Không đạt |
+| Điểm | opportunity_score (0-120) — điểm xếp hạng cơ hội (+ tooltip final_score breakdown) |
+| R:R thực | expected_effective_rr — R:R sau khi trừ spread, thực tế hơn risk_reward danh nghĩa |
+| Vĩ mô | Thuận / Trung tính / Ngược — mức độ đồng thuận của vĩ mô với hướng trade |
+| Lý do | Lý do mã được xếp hạng như vậy |
+| Xem | Mở màn hình Scanner Detail (chi tiết mã từ quét thị trường) |
 
 ### Logic gọi AI trong Scanner (màn hình quét thị trường)
 

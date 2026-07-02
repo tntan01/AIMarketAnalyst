@@ -660,14 +660,19 @@ Với mỗi row:
 |---|---|---|
 | STT | rank | Số thứ tự sau sắp xếp |
 | Mã | symbol | Tên symbol |
-| Hành động | scanner_action | "Sẵn sàng" / "Theo dõi" / "Chờ đợi" / "Bỏ qua" |
-| Hướng | direction_bias | "MUA rõ 75/47 Gap 28" |
-| Điểm | best_score | "75/100" |
-| R:R | risk_reward | "1:2.0" hoặc "-" nếu None |
-| Vị trí | price_vs_zone | "Trong vùng" / "Gần vùng" / "Còn xa" |
-| M15 | m15_quality | "Chặt chẽ" / "Lỏng lẻo" / "Chưa xác nhận" |
 | Nhóm | scanner_group | "Sẵn sàng ngay" / "Chờ xác nhận" / "Theo dõi" / "Bị chặn" |
+| Hướng | direction_bias | "BUY rõ · Gap 28" |
+| Chế độ TT | market_regime | "trend_up" / "trend_down" / "range" / "volatile" |
+| Entry | price_vs_zone | "Trong vùng" / "Gần vùng" / "Còn xa" (+ tooltip entry_status) |
+| Giá vào | entry_zone | "[1.08500–1.08750]" |
+| SL | stop_loss | "1.08200" |
+| TP | take_profit | "1.09200" |
+| M15 | m15_quality | "Chặt" / "Lỏng" / "Không đạt" |
+| Điểm | opportunity_score | "105" (+ tooltip final_score + breakdown) |
+| R:R thực | expected_effective_rr | "1.8" (R:R sau spread) |
+| Vĩ mô | macro_bias | "Thuận" / "Trung tính" / "Ngược" |
 | Lý do | short_reason | Text mô tả ngắn + tag filter |
+| Chi tiết | detail_action | "Xem" |
 
 - Màu sắc hàng dựa trên `scanner_group`:
   - `ready_now`: xanh lá

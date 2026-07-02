@@ -38,17 +38,18 @@ class ScannerTableModel (QAbstractTableModel ):
     COLUMNS =[
     ("rank","STT"),
     ("symbol","Mã"),
-    ("scanner_action","Hành động"),
+    ("scanner_group","Nhóm"),
     ("direction_bias","Hướng"),
+    ("market_regime","Chế độ TT"),
     ("price_vs_zone","Entry"),
     ("entry_zone","Giá vào"),
     ("stop_loss","SL"),
     ("take_profit","TP"),
-    ("trade_permission","Quyền"),
+    ("m15_quality","M15"),
     ("opportunity_score","Điểm"),
-    ("risk_reward","R:R"),
+    ("expected_effective_rr","R:R thực"),
     ("macro_bias","Vĩ mô"),
-    ("short_reason","Lý do chính"),
+    ("short_reason","Lý do"),
     ("detail_action","Chi tiết"),
     ]
 
@@ -92,7 +93,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"rank","scanner_action","direction_bias","price_vs_zone","entry_zone","stop_loss","take_profit","trade_permission","opportunity_score","risk_reward","macro_bias","detail_action"}:
+            if key in {"rank","scanner_group","direction_bias","market_regime","price_vs_zone","entry_zone","stop_loss","take_profit","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .ForegroundRole :
@@ -102,6 +103,11 @@ class ScannerTableModel (QAbstractTableModel ):
                 return self ._direction_bias_tooltip (value )
             if key =="entry_status":
                 return self ._entry_status_tooltip (value ,row )
+            if key =="price_vs_zone":
+                entry_status_val =row .get ("entry_status")if row else None
+                return self ._entry_status_tooltip (entry_status_val ,row )
+            if key =="opportunity_score":
+                return self ._opportunity_score_tooltip (row )
             if key in {"journal_sample_size","journal_expectancy_r"}:
                 feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
                 reasons = feedback.get("reasons", []) if isinstance(feedback, dict) else []
@@ -137,15 +143,12 @@ class ScannerTableModel (QAbstractTableModel ):
         return None 
 
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
-        if key =="scanner_action":
-            action =row .get ("display_action",value )if row else value
-            return self .ACTION_TEXT .get (str (action ),str (action or "--"))
         if key =="direction_bias":
             return self ._format_direction_bias (value )
-        if key =="trade_permission":
-            return self .PERMISSION_TEXT .get (str (value ),str (value or "--"))
         if key =="price_vs_zone":
             return self .ENTRY_ZONE_TEXT .get (str (value ),str (value or "--"))
+        if key =="market_regime":
+            return str (value or "--")
         if key =="macro_score":
             score_val =int (value )if isinstance (value ,(int ,float ))else 15 
             conf =float (row .get ("macro_confidence",1.0 ))if row else 1.0 
@@ -153,8 +156,10 @@ class ScannerTableModel (QAbstractTableModel ):
             return f"{quality_dot } {score_val }"
         if key =="macro_bias":
             return self .MACRO_BIAS_TEXT .get (str (value ),str (value or "--"))
-        if key =="risk_reward":
-            return str (value or "-")
+        if key =="expected_effective_rr":
+            if isinstance (value ,(int ,float )):
+                return f"{value:.1f}"
+            return "-"
         if key =="entry_zone":
             if isinstance (value ,list )and len (value )==2 :
                 return f"{value[0]:.5f}–{value[1]:.5f}"
@@ -192,7 +197,8 @@ class ScannerTableModel (QAbstractTableModel ):
                 str (value or "").strip ().lower (),str (value or "--")
             )
         if key =="m15_quality":
-            return str (value or "--")
+            m15_map ={"strict":"Chặt","loose":"Lỏng","none":"Không đạt","backtest_fallback":"Mô phỏng"}
+            return m15_map .get (str (value ),str (value or "--"))
         if key =="score_gap":
             return str (int (value ))if isinstance (value ,(int ,float ))else "--"
         if key =="detail_action":
@@ -205,23 +211,44 @@ class ScannerTableModel (QAbstractTableModel ):
         return str (value if value is not None else "--")
 
     def _foreground (self ,row :dict [str ,object ],key :str ):
-        if key =="scanner_action":
-            action =str (row .get ("display_action")or row .get (key ))
+        if key =="scanner_group":
+            group =str (row .get ("scanner_group",""))
             return {
-            "ready":QColor ("#10b981"),
-            "watch":QColor ("#f59e0b"),
-            "wait":QColor ("#ea580c"),
-            "skip":QColor ("#e11d48"),
-            }.get (action )
+            "ready_now":QColor ("#10b981"),
+            "waiting_confirmation":QColor ("#f59e0b"),
+            "watch_zone":QColor ("#ea580c"),
+            "blocked":QColor ("#e11d48"),
+            }.get (group )
         if key =="direction_bias":
             side =self ._direction_bias_side (row .get (key ))
             return {"buy":QColor ("#ea580c"),"sell":QColor ("#f43f5e")}.get (side )
-        if key =="trade_permission":
+        if key =="market_regime":
+            regime =str (row .get (key ,""))
             return {
-            "allowed":QColor ("#10b981"),
-            "caution":QColor ("#f59e0b"),
-            "blocked":QColor ("#e11d48"),
-            }.get (str (row .get (key )))
+            "trend_up":QColor ("#10b981"),
+            "trend_down":QColor ("#e11d48"),
+            "range":QColor ("#f59e0b"),
+            "volatile":QColor ("#ea580c"),
+            "unknown":QColor ("#94a3b8"),
+            }.get (regime )
+        if key =="m15_quality":
+            quality =str (row .get (key ,""))
+            return {
+            "strict":QColor ("#10b981"),
+            "loose":QColor ("#f59e0b"),
+            "none":QColor ("#e11d48"),
+            "backtest_fallback":QColor ("#94a3b8"),
+            }.get (quality )
+        if key =="expected_effective_rr":
+            try:
+                val =float (row .get (key ))
+            except (TypeError ,ValueError ):
+                return QColor ("#94a3b8")
+            if val >=2.0 :
+                return QColor ("#10b981")
+            if val >=1.3 :
+                return QColor ("#f59e0b")
+            return QColor ("#e11d48")
         if key =="price_vs_zone":
             return {
             "in_zone":QColor ("#10b981"),
@@ -309,6 +336,33 @@ class ScannerTableModel (QAbstractTableModel ):
         if raw:
             return f"Trang thai entry: {display} | Ma ky thuat: {raw}"
         return f"Trang thai entry: {display}"
+
+    @staticmethod
+    def _opportunity_score_tooltip(row: dict[str, object] | None) -> str:
+        """Tooltip showing final_score + opportunity breakdown."""
+        if not row:
+            return "--"
+        final = row.get("final_score")
+        if not isinstance(final, (int, float)):
+            analysis = row.get("analysis_result")
+            if isinstance(analysis, dict):
+                final = analysis.get("final_score")
+        final_str = f"{int(final)}" if isinstance(final, (int, float)) else "--"
+        breakdown = row.get("ranking_score_breakdown")
+        if isinstance(breakdown, dict):
+            base = breakdown.get("base_final_score", "?")
+            prox = breakdown.get("proximity_bonus", 0)
+            ready = breakdown.get("readiness_bonus", 0)
+            rr = breakdown.get("rr_bonus", 0)
+            spread = breakdown.get("spread_penalty", 0)
+            news = breakdown.get("news_penalty", 0)
+            return (
+                f"Final Score: {final_str}\n"
+                f"  + Proximity: {prox:+d}  |  Readiness: {ready:+d}  |  RR bonus: {rr:+d}\n"
+                f"  - Spread: {spread}  |  News: {news}\n"
+                f"Base: {base}"
+            )
+        return f"Final Score: {final_str}"
 
     @staticmethod
     def _direction_bias_side(value: object) -> str | None:
