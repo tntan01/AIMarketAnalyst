@@ -1219,9 +1219,9 @@ QTableWidget#DataTable QScrollBar::sub-line:horizontal {
 QTableView#DataTable QScrollBar:vertical,
 QTableWidget#DataTable QScrollBar:vertical {
   background: #0b1220;
-  width: 14px;
+  width: 12px;
   border-radius: 4px;
-  margin: 8px 4px 8px 2px;
+  margin: 4px 2px 4px 2px;
 }
 QTableView#DataTable QScrollBar::handle:vertical,
 QTableWidget#DataTable QScrollBar::handle:vertical {

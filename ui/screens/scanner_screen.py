@@ -92,6 +92,8 @@ class ScannerTableModel (QAbstractTableModel ):
             if key in {"rank","scanner_group","direction_bias","market_regime","price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
+        if role ==Qt .ItemDataRole .BackgroundRole :
+            return self ._row_background (row )
         if role ==Qt .ItemDataRole .ForegroundRole :
             return self ._foreground (row ,key )
         if role ==Qt .ItemDataRole .ToolTipRole :
@@ -138,7 +140,24 @@ class ScannerTableModel (QAbstractTableModel ):
             return self .rows [row ]
         return None 
 
+    def _is_fallback_row(self, row: dict[str, object] | None) -> bool:
+        """Check if a scanner row contains only fallback scenarios."""
+        if not row:
+            return False
+        analysis = row.get("analysis_result")
+        if not isinstance(analysis, dict):
+            return False
+        scenarios = analysis.get("scenarios", [])
+        if not isinstance(scenarios, list) or not scenarios:
+            return False
+        return all(
+            isinstance(s, dict) and s.get("entry_zone_source") == "fallback"
+            for s in scenarios
+        )
+
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
+        if self._is_fallback_row(row) and key in {"price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
+            return "--"
         if key =="direction_bias":
             return self ._format_direction_bias (value )
         if key =="price_vs_zone":
@@ -288,6 +307,11 @@ class ScannerTableModel (QAbstractTableModel ):
             if raw in ("invalidated","no_setup","data_unavailable","","none"):
                 return QColor ("#94a3b8")
             return None
+        return None
+
+    @staticmethod
+    def _row_background(row: dict[str, object]) -> QColor | None:
+        """Return row background color — all rows use Qt default alternating colors."""
         return None
 
     @staticmethod
@@ -1679,7 +1703,9 @@ class ScannerScreen (QWidget ):
     def _open_row_detail (self ,row_index :int )->None :
         row =self .table_model .row_at (row_index )
         if not row or not self .navigate :
-            return 
+            return
+        if self .table_model ._is_fallback_row (row ):
+            return
         self .navigate ("scanner_detail",{"scanner_row":row ,"scanner_result":self .scan_result or {}})
 
     def _show_market_brief(self) -> None:
@@ -1896,10 +1922,9 @@ class ScannerScreen (QWidget ):
         sum_min_widths = sum(min_widths)
         sum_weights = sum(weights)
 
-        viewport_width = max(
-            self.table.viewport().width(),
-            self.table.contentsRect().width(),
-        )
+        viewport_width = self.table.viewport().width()
+        if viewport_width < 100:
+            viewport_width = self.table.contentsRect().width()
         if viewport_width < 100:
             viewport_width = sum_min_widths
 

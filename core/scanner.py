@@ -174,14 +174,39 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
     return enrich_scanner_row_with_ranking(row)
 
 
+def _is_fallback_row(row: dict[str, Any]) -> bool:
+    """Check if a scanner row contains only fallback scenarios."""
+    if not isinstance(row, dict):
+        return False
+    analysis = row.get("analysis_result")
+    if not isinstance(analysis, dict):
+        return False
+    scenarios = analysis.get("scenarios", [])
+    if not isinstance(scenarios, list) or not scenarios:
+        return False
+    return all(
+        isinstance(s, dict) and s.get("entry_zone_source") == "fallback"
+        for s in scenarios
+    )
+
+
+def _sort_priority(row: dict[str, Any]) -> int:
+    """Sort priority: 0=ready_now or backtest candidate, 1=non-fallback, 2=fallback."""
+    if str(row.get("scanner_group")) == READY_NOW:
+        return 0
+    # Nhánh 1 (backtest=true): auto_trade_branch="B" + not blocked -> top group
+    if str(row.get("auto_trade_branch")) == "B" and str(row.get("scanner_group")) != BLOCKED:
+        return 0
+    if _is_fallback_row(row):
+        return 2
+    return 1
+
+
 def sort_scanner_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sorted_rows = sorted(
         rows,
         key=lambda row: (
-            GROUP_PRIORITY_NEW.get(
-                str(row.get("scanner_group")),
-                ACTION_PRIORITY.get(str(row.get("scanner_action")), 99),
-            ),
+            _sort_priority(row),
             -int(row.get("opportunity_score", 0)),
             -int(row.get("final_score", row.get("best_score", 0))),
             -_safe_rr(row),
