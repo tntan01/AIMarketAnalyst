@@ -37,6 +37,9 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
             "choch": False,
             "displacement": "neutral",
             "swings": {"highs": [], "lows": []},
+            "external_swings": {"highs": [], "lows": []},
+            "internal_swings": {"highs": [], "lows": []},
+            "leg_count": 0,
             "supply_zones": [],
             "demand_zones": [],
             "order_blocks": [],
@@ -48,6 +51,9 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
         }
     swings = swing_points(candles, lookback=5)
     swings = _filter_swings_by_atr(candles, swings)
+    external_swings = swings
+    internal_swings = _detect_internal_structure(candles, external_swings)
+    leg_count = max(len(external_swings["highs"]), len(external_swings["lows"])) - 1
     bos = detect_bos_choch(swings, candles)
     liquidity = detect_liquidity_pools(candles, swings)
     premium_discount = classify_premium_discount(candles[-1].close, swings)
@@ -66,6 +72,9 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
         "choch": bos.get("choch", False),
         "displacement": bos.get("displacement", "neutral"),
         "swings": swings,
+        "external_swings": external_swings,
+        "internal_swings": internal_swings,
+        "leg_count": leg_count,
         "supply_zones": supply_zones,
         "demand_zones": demand_zones,
         "order_blocks": order_blocks,
@@ -113,6 +122,44 @@ def _filter_swings_by_atr(candles: list[Candle], swings: dict[str, list[dict[str
         if not filtered_lows or abs(lo["level"] - filtered_lows[-1]["level"]) >= min_distance:
             filtered_lows.append(lo)
     return {"highs": filtered_highs, "lows": filtered_lows}
+
+
+def _detect_internal_structure(candles: list[Candle], external_swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    """Detect internal (minor) swings within each leg between external swings.
+
+    For each consecutive pair of external swing points, extracts the candle
+    segment between them and runs swing_points(lookback=2) to find minor
+    swings used for entry refinement.
+    """
+    if not candles:
+        return {"highs": [], "lows": []}
+    external_highs = external_swings.get("highs", [])
+    external_lows = external_swings.get("lows", [])
+    all_external = sorted(external_highs + external_lows, key=lambda s: s["index"])
+    if len(all_external) < 2:
+        return {"highs": [], "lows": []}
+
+    internal_highs: list[dict[str, Any]] = []
+    internal_lows: list[dict[str, Any]] = []
+    for i in range(len(all_external) - 1):
+        start_idx = all_external[i]["index"]
+        end_idx = all_external[i + 1]["index"]
+        if end_idx - start_idx < 6:
+            continue
+        segment = candles[start_idx:end_idx + 1]
+        seg_swings = swing_points(segment, lookback=2)
+        offset = start_idx
+        for h in seg_swings["highs"]:
+            h_copy = dict(h)
+            h_copy["index"] = h["index"] + offset
+            h_copy["leg"] = i
+            internal_highs.append(h_copy)
+        for lo in seg_swings["lows"]:
+            lo_copy = dict(lo)
+            lo_copy["index"] = lo["index"] + offset
+            lo_copy["leg"] = i
+            internal_lows.append(lo_copy)
+    return {"highs": internal_highs, "lows": internal_lows}
 
 
 def detect_bos_choch(swings: dict[str, list[dict[str, Any]]], candles: list[Candle]) -> dict[str, Any]:

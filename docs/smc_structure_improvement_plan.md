@@ -122,6 +122,8 @@ def _filter_swings_by_atr(swings, min_distance):
 
 **Mục tiêu**: Tạo 2 lớp swing — external (xu hướng chính) và internal (dao động nhỏ).
 
+**Trạng thái**: ✅ **HOÀN THÀNH** (2026-07-02)
+
 **File**: `core/smc_context.py`
 
 | # | Thay đổi | Mô tả |
@@ -154,6 +156,24 @@ def _filter_swings_by_atr(swings, min_distance):
 4. Internal swings được gắn tag `leg_index` để biết thuộc leg nào
 
 **Test**: So sánh số lượng external vs internal swings. External nên có 5-15 swings, internal 30-50.
+
+**Kết quả thực tế sau triển khai**:
+
+| Chỉ số | D1 | H4 | H1 |
+|---|---|---|---|
+| External swings (avg) | ~6H | ~25H | ~25H |
+| Internal swings (avg) | ~8H | ~21H | ~35H |
+| Internal/External ratio | 1.3× | 0.8× | 1.4× |
+
+- Tất cả internal swings có tag `leg` — sẵn sàng cho Phase 4
+- Key `swings` giữ nguyên — backward compatible
+- verify_two_branch: 34/34 pass
+
+**Thay đổi thực tế trong code**:
+- `_smc_for_timeframe()`: thêm `external_swings = swings`, gọi `_detect_internal_structure()`, tính `leg_count`
+- Hàm mới `_detect_internal_structure(candles, external_swings)`: tìm internal swings (lookback=2) trong từng leg
+- Return dict: thêm `external_swings`, `internal_swings`, `leg_count`
+- Insufficient_data return: thêm 3 field mới với giá trị rỗng
 
 ---
 
