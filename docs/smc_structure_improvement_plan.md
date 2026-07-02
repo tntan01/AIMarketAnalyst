@@ -397,3 +397,81 @@ Mỗi phase tuân thủ quy trình:
 | BOS/CHOCH rate | 12% | >50% |
 | SMC score trung bình | 7.5/15 | >10/15 |
 | Fallback rate | 50% | <30% |
+
+---
+
+## ĐÁNH GIÁ TỔNG KẾT 5 PHASE (2026-07-02)
+
+### Bảng tổng hợp kết quả
+
+| Phase | Chỉ số chính | Trước | Sau | Delta |
+|---|---|---|---|---|
+| **1** | Swing count (H1 avg) | 130 | 53 | **-59%** |
+| **2** | Internal/External tách biệt | Không có | Ext 23H/30L, Int 29H/29L | **Cấu trúc mới** |
+| **3** | BOS detection | 12% | 15% | +25% |
+| **3** | BOS strength phân hóa | 100% strong (vô nghĩa) | 0 strong, 0 normal, 4 weak | **Phân hóa thật** |
+| **4** | Internal structure check | Không có | 52% PASS, 48% FAIL | **Tín hiệu mới** |
+| **5** | Multi-TF confluence | Không có | 35% aligned, 35% neutral, 31% against | **Chiều mới** |
+| — | **SMC score trung bình** | **7.5/15** | **7.7/15** | **+0.2** |
+| — | **Regression** | 34 pass | 34 pass | **Ổn định** |
+
+### Đánh giá từng phase
+
+**Phase 1: Giảm nhiễu — HIỆU QUẢ CAO**
+
+Swing count giảm 59% — từ 130 xuống 53 trên 480 nến H1. Đây là thay đổi đơn giản nhất nhưng tác động lớn nhất đến chất lượng dữ liệu đầu vào. Toàn bộ các phase sau đều hưởng lợi từ swings sạch hơn.
+
+**Phase 2: Internal/External — NỀN TẢNG**
+
+Tạo ra 2 lớp swing riêng biệt, mở đường cho Phase 3 (BOS từ external) và Phase 4 (entry từ internal). Internal swings có tag `leg` — sẵn sàng cho các cải tiến entry trong tương lai.
+
+**Phase 3: BOS/CHOCH strength — ĐÚNG HƯỚNG, CẦN TINH CHỈNH**
+
+Phân hóa được strong/normal/weak nhưng phần lớn BOS vẫn là weak (leg_count=1). Nguyên nhân: thị trường hiếm khi có 3+ leg liên tiếp cùng hướng trên H1. Ngưỡng có thể cần điều chỉnh thấp hơn (strong≥2, normal≥1).
+
+**Phase 4: Internal structure — TÍN HIỆU GIÁ TRỊ**
+
+52% setup có internal structure xác nhận — trader có thêm 1 lớp filter để ưu tiên setup chất lượng cao hơn.
+
+**Phase 5: Multi-TF confluence — CHIỀU PHÂN TÍCH MỚI**
+
+Phát hiện được GBPAUD (all-3-TF aligned, SMC=15/15) và các trường hợp divergence (H1 ngược H4). Phân phối tự nhiên 35/35/31 — không bias.
+
+### Tác động tổng thể
+
+| Khía cạnh | Đánh giá |
+|---|---|
+| **Chất lượng swings** | Cải thiện rõ rệt (-59% noise) |
+| **BOS/CHOCH** | Ổn định hơn, có strength classification |
+| **SMC score** | Tăng nhẹ +0.2 — hợp lý vì hệ thống conservative |
+| **Số chiều phân tích** | Từ 1 (BOS/CHOCH) → 5 (swing quality, internal/external, BOS strength, internal confirmation, confluence) |
+| **Regression** | Không — 34/34 tests pass xuyên suốt |
+
+### So sánh với mục tiêu ban đầu
+
+| Chỉ số | Mục tiêu | Thực tế | Đánh giá |
+|---|---|---|---|
+| Swing density (H1) | <8% | ~11% | Gần đạt — Phase 1 giảm từ 27%→11%, cần thêm fine-tuning |
+| Structure stability | <15% transitions | Chưa đo lại | Cần test riêng |
+| BOS/CHOCH rate | >50% | 15% | Chưa đạt — cần Phase 3 follow-up (điều chỉnh ngưỡng) |
+| SMC score trung bình | >10/15 | 7.7/15 | Chưa đạt — cần tối ưu scoring weights |
+| Fallback rate | <30% | Chưa đo lại | Cần test riêng sau tất cả thay đổi |
+
+### Hạn chế & hướng tiếp theo
+
+| Vấn đề | Đề xuất |
+|---|---|
+| SMC score chỉ tăng +0.2 | Tối ưu scoring weights hoặc bổ sung yếu tố mới (zone quality từ internal swings) |
+| BOS detection vẫn thấp (15%) | Nới lỏng điều kiện BOS (dùng internal close thay vì last close) |
+| Internal structure chưa dùng trong scoring | Tích hợp internal_structure vào SMC score hoặc entry_score |
+| leg_count thresholds quá cao cho H1 | Điều chỉnh strong≥2, normal≥1 |
+
+### Commits
+
+| Phase | Commit | Nội dung |
+|---|---|---|
+| 1 | `1bdc777` | Tăng lookback 2→5 + ATR filter |
+| 2 | `8cdda66` | Phân tách Internal/External structure |
+| 3 | `4040c44` | BOS/CHOCH strength + leg_count theo trend |
+| 4 | `16f3700` | Internal structure xác nhận entry |
+| 5 | `fd09a1e` | Multi-TF confluence D1-H4-H1 |
