@@ -130,7 +130,7 @@ symbol_auto_trade[symbol] = {
 #### Step 1: Validate & Build Context
 - Kiểm tra đủ candles (D1≥60, H4≥60, H1≥30)
 - `build_technical_snapshot(D1, H4, H1)`:
-  - Tính EMA(20,50,200) cho D1, H4, H1
+  - Tính EMA(50) cho D1 và H4, EMA(200) cho D1
   - Tính RSI(14) cho H4
   - Tính MACD histogram cho H4
   - Tính ATR(14) cho H4, D1
@@ -177,19 +177,38 @@ symbol_auto_trade[symbol] = {
 
   **c) Momentum Alignment (0-20):**
   - Kết hợp RSI(14) H4 + MACD histogram H4
-  - BUY: RSI 30-50 rising = +8, MACD rising above 0 = +10
-  - SELL: RSI 50-70 falling = +8, MACD falling below 0 = +10
+  - BUY — RSI (`_choose_one` lấy điều kiện đầu tiên khớp):
+    - RSI 30-50 và đang tăng = +8
+    - RSI 40-60 và không giảm = +6
+    - RSI 60-70 và không giảm = +3
+    - RSI > 75 = 0
+  - BUY — MACD:
+    - MACD > 0 và rising (now > prev > prev2) = +10
+    - MACD < 0 và rising (now > prev > prev2) = +6
+    - MACD > prev = +3
+    - MACD > 0 nhưng falling = +5
+  - SELL — RSI:
+    - RSI 50-70 và đang giảm = +8
+    - RSI 40-60 và không tăng = +6
+    - RSI 30-40 và không tăng = +3
+    - RSI < 25 = 0
+  - SELL — MACD:
+    - MACD < 0 và falling (now < prev < prev2) = +10
+    - MACD > 0 và falling (now < prev < prev2) = +6
+    - MACD < prev = +3
+    - MACD < 0 nhưng rising = +5
+  - Tổng = clamp(RSI score + MACD score, 0, 20)
 
   **d) Location Quality (0-25):**
   - BUY: giá trong vùng support = +15, gần support (≤0.5 ATR) = +10
   - Bonus: confluence ≥3 = +5, round number = +3
-  - Penalty: test_count ≥3 = -5, test_count ≥5 = -3
+  - Penalty: test_count ≥3 = -5; nếu ≥5 thì cộng dồn thêm -3 (tổng -8)
 
   **e) SMC Quality (0-15):**
   - H4 BOS đúng hướng = +3, H1 BOS/CHOCH đúng hướng = +3
   - Zone score ≥75 = +4, ≥55 = +3, <55 = +1
   - Zone ở đúng premium/discount = +3, equilibrium = +1, ngược = -2
-  - Liquidity sweep = +1, cross-validate technical swing = +2
+  - Zone-level liquidity sweep = +1, H1-level swept_lows/swept_highs = +2, cross-validate technical swing = +2
   - Cap: H4 CHOCH ngược hướng = max 4 điểm, H1 CHOCH ngược = max 6 điểm
 
   **f) Risk Condition (0-15 scale, scaled to risk weight):**
@@ -379,7 +398,7 @@ bottom (66-100%): size_multiplier=1.0, cần M15 strict + SMC sweep
 
 - `calculate_final_score()`:
   ```
-  final_score = signal_score × 0.5 + evidence_score × 0.25 + execution_quality × 0.25
+  final_score = signal_score × 0.65 + evidence_score × 0.20 + execution_quality × 0.15
   ```
   - `signal_score`: điểm từ Step 3
   - `evidence_score`: từ nhật ký giao dịch cũ (nếu có)
@@ -396,6 +415,7 @@ bottom (66-100%): size_multiplier=1.0, cần M15 strict + SMC sweep
   | C | decision_cap == WATCH_ONLY | WATCH_ONLY |
   | D | decision_cap == WAITING_CONFIRMATION | WAITING_CONFIRMATION |
   | E | score_gap < min_score_gap (=10) | WAITING_CONFIRMATION |
+  | E2 | allow_aggressive_setup + entry waiting_confirmation + score ≥ ready + không có cap | AGGRESSIVE_SETUP |
   | F | entry_status = watch_zone | WATCH_ONLY |
   | F | entry_status = invalidated/no_setup | STAND_ASIDE |
   | F | entry_status = waiting_confirmation | WAITING_CONFIRMATION |
@@ -471,30 +491,54 @@ Tổng hợp tất cả output thành 1 dict với các key chính:
 
 ### Xử lý
 
-#### 5a. Tính opportunity_score (0-100)
+#### 5a. Tính opportunity_score (0-120)
+
+Công thức cộng điểm (additive bonus):
 ```
-opportunity_score = final_score × 0.55 + proximity_score × 0.25 + rr_score × 0.15 + readiness_score × 0.05
+opportunity = final_score
+            + proximity_bonus    (+8 in_zone, +4 near, 0 far)
+            + readiness_bonus    (+10 ready_now, +3 waiting_confirmation, 0 còn lại)
+            + rr_bonus           (+5 RR≥2.0, +3 RR≥1.5, +1 RR≥1.3, 0 còn lại)
+            - spread_penalty     (-8 abnormal, -4 caution, 0 normal)
+            - news_penalty       (-10 high-impact trong 30m, -5 news trong 3h)
+            - journal_penalty    (từ journal_feedback nếu sample ≥ 8)
 ```
-Trừ penalty:
-- News trong 3h → -15
-- Spread bất thường → -15
+- Kết quả clamp về 0–120.
+- Row bị BLOCKED: cap ở mức tối đa 20 điểm.
 
 | Thành phần | Cách tính |
 |---|---|
-| final_score (×0.55) | Từ pipeline |
-| proximity_score (×0.25) | in_zone=100, near_zone=60, far=20, unknown=0 |
-| rr_score (×0.15) | RR≥2.0=100, RR≥1.5=75, RR≥1.3=50, RR≥1.0=30, else=10 |
-| readiness (×0.05) | confirmed_entry=100, waiting=50, watch=20, else=0 |
+| final_score (base) | Từ pipeline |
+| proximity_bonus | in_zone=+8, near_zone=+4, far=0 |
+| readiness_bonus | ready_now=+10, waiting_confirmation=+3, khác=0 |
+| rr_bonus | RR≥2.0=+5, RR≥1.5=+3, RR≥1.3=+1, thấp hơn=0 |
+| spread_penalty | abnormal=-8, caution=-4, normal=0 |
+| news_penalty | high_impact_30m=-10, news_in_3h=-5, không có=0 |
+| journal_penalty | Từ `journal_feedback.opportunity_penalty` nếu sample ≥ 8 |
 
 #### 5b. Phân loại scanner_group
 
-| Điều kiện | scanner_group |
-|---|---|
-| Gate block + trade_permission blocked | `blocked` |
-| Gate warning + score < 50 | `blocked` |
-| Entry confirmed + gate allows + final_score đạt ready | `ready_now` |
-| Gate cho phép + entry gần đạt | `waiting_confirmation` |
-| Còn lại (theo dõi) | `watch_zone` |
+`classify_scanner_group()` phân loại theo **6 lớp ưu tiên** (lớp trên ghi đè lớp dưới):
+
+| Ưu tiên | Lớp | Điều kiện | scanner_group |
+|---|---|---|---|
+| 1 | Hard block | `decision == TRADE_BLOCKED` hoặc `trade_permission.status == blocked` | `blocked` |
+| 2 | Decision engine | `READY_TO_TRADE` | `ready_now` |
+| 2 | Decision engine | `WAITING_CONFIRMATION` / `AGGRESSIVE_SETUP` | `waiting_confirmation` |
+| 2 | Decision engine | `WATCH_ONLY` / `STAND_ASIDE` | `watch_zone` |
+| 3 | Legacy fallback | `scanner_action == "ready"` + `ready_to_trade` truthy | `ready_now` |
+| 3 | Legacy fallback | `scanner_action == "wait"` / `"wait_for_confirmation"` | `waiting_confirmation` |
+| 3 | Legacy fallback | `scanner_action == "watch"` | `watch_zone` |
+| 4 | Entry status | `waiting_confirmation` | `waiting_confirmation` |
+| 4 | Entry status | `watch_zone` | `watch_zone` |
+| 4 | Entry status | `invalidated` / `no_setup` / `data_unavailable` | `blocked` |
+| 5 | Legacy skip | `scanner_action == "skip"` / `"stand_aside"` | `blocked` |
+| 6 | Fallback | Không khớp lớp nào ở trên | `watch_zone` |
+
+Ngoài ra, `journal_feedback.decision_cap` (nếu sample ≥ 8) có thể override:
+- `TRADE_BLOCKED` → `blocked`
+- `WATCH_ONLY` → hạ `ready_now` và `waiting_confirmation` xuống `watch_zone`
+- `WAITING_CONFIRMATION` → hạ `ready_now` xuống `waiting_confirmation`
 
 ### Output
 - Row được thêm: `opportunity_score`, `scanner_group`, `proximity_score`, `rr_score`
@@ -546,6 +590,7 @@ Với mỗi row:
    - Nếu `auto_trade_regime` được set → row's `market_regime` phải khớp
    - `best_score` phải ≥ `min_score` (hoặc 65 nếu min_score=0)
    - Nếu `auto_trade_side` được set → phải có scenario cho side đó
+   - Nếu `min_expected_rr > 0` → `expected_effective_rr` phải ≥ `min_expected_rr`
    - **Không** check `scanner_action == "ready"` — ghi đè toàn bộ
 
    **Nhánh 2 — `at_cfg is None` (backtest=false hoặc không config):**
@@ -652,7 +697,7 @@ Settings (symbol_settings)
               Nhánh 1 (at_cfg not None)                    Nhánh 2 (at_cfg is None)
               backtest=true                                backtest=false / no config
                     │                                             │
-              Check: regime + side + min_score             Check: scanner_action == "ready"
+              Check: regime + side + min_score + min_rr   Check: scanner_action == "ready"
               (ghi đè toàn bộ)                             (từ decision_ready/watch/wait)
                     │                                             │
                     └─────────────────────────────────────────────┤
