@@ -569,11 +569,11 @@ Last Scan Time (thời gian quét gần nhất): 2026-05-29 14:35 VN
 SCANNER RESULT TABLE (BẢNG KẾT QUẢ QUÉT)
 --------------------------------------------------
 
-| Rank (xếp hạng) | Symbol (mã) | Nhóm | Bias (thiên hướng) | Chế độ TT | Entry | Giá vào | SL | TP | M15 | Điểm | R:R thực | Vĩ mô | Lý do | Xem |
-|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|:---|
-| 1 | XAU/USD | Sẵn sàng ngay | Buy (mua) | trend_up | Trong vùng | 2645.00–2652.00 | 2640.00 | 2665.00 | Chặt | 115 | 2.1 | Thuận | Gần demand zone H4 mạnh | Xem |
-| 2 | EUR/USD | Chờ xác nhận | Neutral (trung lập) | range | Gần vùng | 1.0850–1.0875 | 1.0820 | 1.0920 | Lỏng | 88 | 1.6 | Trung tính | Giá đang ở giữa vùng | Xem |
-| 3 | USD/JPY | Bị chặn | Sell (bán) | trend_down | Còn xa | — | — | — | Không đạt | 42 | — | Ngược | Có tin đỏ gần giờ | Xem |
+| Rank (xếp hạng) | Symbol (mã) | Nhóm | Bias (thiên hướng) | Chế độ TT | Entry | M15 | Điểm | R:R thực | Vĩ mô | Xem |
+|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|
+| 1 | XAU/USD | Sẵn sàng ngay | Buy (mua) | trend_up | Trong vùng | Chặt | 115 | 2.1 | Thuận | Xem |
+| 2 | EUR/USD | Chờ xác nhận | Neutral (trung lập) | range | Gần vùng | Lỏng | 88 | 1.6 | Trung tính | Xem |
+| 3 | USD/JPY | Bị chặn | Sell (bán) | trend_down | Còn xa | Không đạt | 42 | — | Ngược | Xem |
 
 --------------------------------------------------
 NHÓM (SCANNER GROUP)
@@ -595,14 +595,10 @@ Bị chặn (blocked): Bị gate hoặc dữ liệu chặn, không nên giao d�
 | Bias (thiên hướng) | Buy (mua), Sell (bán), Neutral (trung lập) |
 | Chế độ TT | trend_up / trend_down / range / volatile — bối cảnh thị trường |
 | Entry | Vị trí giá so với vùng: Trong vùng / Gần vùng / Còn xa (+ tooltip entry_status) |
-| Giá vào | Vùng entry [low–high] |
-| SL | Stop Loss |
-| TP | Take Profit (TP1) |
 | M15 | Chất lượng xác nhận M15: Chặt / Lỏng / Không đạt |
 | Điểm | opportunity_score (0-120) — điểm xếp hạng cơ hội (+ tooltip final_score breakdown) |
 | R:R thực | expected_effective_rr — R:R sau khi trừ spread, thực tế hơn risk_reward danh nghĩa |
 | Vĩ mô | Thuận / Trung tính / Ngược — mức độ đồng thuận của vĩ mô với hướng trade |
-| Lý do | Lý do mã được xếp hạng như vậy |
 | Xem | Mở màn hình Scanner Detail (chi tiết mã từ quét thị trường) |
 
 ### Logic gọi AI trong Scanner (màn hình quét thị trường)

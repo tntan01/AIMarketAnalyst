@@ -42,14 +42,10 @@ class ScannerTableModel (QAbstractTableModel ):
     ("direction_bias","Hướng"),
     ("market_regime","Chế độ TT"),
     ("price_vs_zone","Entry"),
-    ("entry_zone","Giá vào"),
-    ("stop_loss","SL"),
-    ("take_profit","TP"),
     ("m15_quality","M15"),
     ("opportunity_score","Điểm"),
     ("expected_effective_rr","R:R thực"),
     ("macro_bias","Vĩ mô"),
-    ("short_reason","Lý do"),
     ("detail_action","Chi tiết"),
     ]
 
@@ -93,7 +89,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"rank","scanner_group","direction_bias","market_regime","price_vs_zone","entry_zone","stop_loss","take_profit","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
+            if key in {"rank","scanner_group","direction_bias","market_regime","price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .ForegroundRole :
@@ -439,7 +435,7 @@ class ScannerScreen (QWidget ):
         self .table_model =ScannerTableModel ()
         # Resolve SHORT_REASON_COL dynamically from COLUMNS
         reason_keys =[k for k,_ in self .table_model .COLUMNS]
-        self .SHORT_REASON_COL =reason_keys .index ("short_reason")if "short_reason"in reason_keys else 18
+        self .SHORT_REASON_COL =reason_keys .index ("short_reason")if "short_reason"in reason_keys else -1
         self .auto_scan_active =False
         self .auto_scan_timer =QTimer (self )
         self .auto_scan_timer .setSingleShot (True )
@@ -1880,21 +1876,22 @@ class ScannerScreen (QWidget ):
             header .resizeSection (col ,width )
             fixed_total +=width
 
-        reason_content_width =self ._content_width_for_column (
-        self .SHORT_REASON_COL ,
-        self .TABLE_REASON_HORIZONTAL_PADDING ,
-        )
-        viewport_width =max (
-        self .table .viewport ().width (),
-        self .table .contentsRect ().width (),
-        )
-        remaining_width =viewport_width -fixed_total
-        reason_width =max (
-        self .TABLE_MIN_REASON_WIDTH ,
-        reason_content_width ,
-        remaining_width ,
-        )
-        header .resizeSection (self .SHORT_REASON_COL ,reason_width )
+        if self.SHORT_REASON_COL >= 0:
+            reason_content_width = self._content_width_for_column(
+            self.SHORT_REASON_COL,
+            self.TABLE_REASON_HORIZONTAL_PADDING,
+            )
+            viewport_width = max(
+            self.table.viewport().width(),
+            self.table.contentsRect().width(),
+            )
+            remaining_width = viewport_width - fixed_total
+            reason_width = max(
+            self.TABLE_MIN_REASON_WIDTH,
+            reason_content_width,
+            remaining_width,
+            )
+            header.resizeSection(self.SHORT_REASON_COL, reason_width)
 
     def _content_width_for_column (self ,col :int ,padding :int )->int :
         header =self .table .horizontalHeader ()
