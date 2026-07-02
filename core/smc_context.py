@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.indicators import atr
 from core.market_models import Candle
 
 
@@ -16,7 +17,7 @@ def build_smc_context(d1: list[Candle], h4: list[Candle], h1: list[Candle]) -> d
 def summarize_structure(candles: list[Candle]) -> dict[str, Any]:
     if len(candles) < 3:
         return {"structure": "insufficient_data"}
-    swings = swing_points(candles, lookback=2)
+    swings = swing_points(candles, lookback=5)
     bos_choch = detect_bos_choch(swings, candles)
     structure = bos_choch.get("structure", "unknown")
     return {
@@ -29,7 +30,7 @@ def summarize_structure(candles: list[Candle]) -> dict[str, Any]:
 
 
 def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
-    if len(candles) < 6:
+    if len(candles) < 11:
         return {
             "structure": "insufficient_data",
             "bos": False,
@@ -45,7 +46,8 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
             "premium_discount": "unknown",
             "premium_discount_range": {"status": "unknown"},
         }
-    swings = swing_points(candles, lookback=2)
+    swings = swing_points(candles, lookback=5)
+    swings = _filter_swings_by_atr(candles, swings)
     bos = detect_bos_choch(swings, candles)
     liquidity = detect_liquidity_pools(candles, swings)
     premium_discount = classify_premium_discount(candles[-1].close, swings)
@@ -86,6 +88,31 @@ def swing_points(candles: list[Candle], lookback: int = 2) -> dict[str, list[dic
         if candle.low == min(item.low for item in window) and sum(candle.low == item.low for item in window) == 1:
             lows.append({"level": candle.low, "index": index, "time": candle.time.isoformat()})
     return {"highs": highs, "lows": lows}
+
+
+def _filter_swings_by_atr(candles: list[Candle], swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    """Filter swing points: keep only those at least 0.2×ATR from previous swing."""
+    if len(candles) < 15:
+        return swings
+    closes = [c.close for c in candles]
+    highs_atr = [c.high for c in candles]
+    lows_atr = [c.low for c in candles]
+    atr_values = atr(highs_atr, lows_atr, closes, 14)
+    atr_now = atr_values[-1] if atr_values and atr_values[-1] is not None else 0.0
+    if atr_now <= 0:
+        return swings
+    min_distance = atr_now * 0.2
+    highs = swings["highs"]
+    lows = swings["lows"]
+    filtered_highs: list[dict[str, Any]] = []
+    filtered_lows: list[dict[str, Any]] = []
+    for h in highs:
+        if not filtered_highs or abs(h["level"] - filtered_highs[-1]["level"]) >= min_distance:
+            filtered_highs.append(h)
+    for lo in lows:
+        if not filtered_lows or abs(lo["level"] - filtered_lows[-1]["level"]) >= min_distance:
+            filtered_lows.append(lo)
+    return {"highs": filtered_highs, "lows": filtered_lows}
 
 
 def detect_bos_choch(swings: dict[str, list[dict[str, Any]]], candles: list[Candle]) -> dict[str, Any]:

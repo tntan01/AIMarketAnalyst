@@ -137,7 +137,9 @@ symbol_auto_trade[symbol] = {
   - Phát hiện support/resistance zones (pivot-based)
   - Xác định structure (HH/HL, LH/LL) cho D1, H4
 - `build_smc_context(D1, H4, H1)`:
-  - Với mỗi timeframe: swing points, BOS/CHOCH, displacement
+  - Với mỗi timeframe: `swing_points(candles, lookback=5)` — cửa sổ 11 nến (giảm nhiễu so với lookback=2)
+  - `_filter_swings_by_atr()` — lọc swing có khoảng cách < 0.2×ATR so với swing trước đó
+  - `detect_bos_choch(swings, candles)` — phát hiện BOS/CHOCH từ 2 swing cuối
   - Supply/Demand zones, Order Blocks, FVG
   - Liquidity pools (equal highs/lows), Liquidity sweeps
   - Premium/Discount classification
