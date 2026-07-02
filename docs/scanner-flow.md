@@ -363,7 +363,9 @@ bottom (66-100%): size_multiplier=1.0, cần M15 strict + SMC sweep
 | Zone broken | `invalidated` |
 | Thiếu dữ liệu | `no_setup` |
 
-**Output evaluate_entry:** `{entry_status, trigger_type, confirmation_score, m15_quality, ready_to_trade, entry_ladder, ...}`
+**Output evaluate_entry:** `{entry_status, trigger_type, confirmation_score, m15_quality, ready_to_trade, entry_ladder, internal_structure, ...}`
+
+- `internal_structure`: kiểm tra H1 internal swings xác nhận hướng trade (BUY → internal higher low, SELL → internal lower high). Chứa `passed`, `reason`, `last_level`, `prev_level`.
 
 #### Step 5: Determine Direction
 - `calculate_direction_bias(buy_scores, sell_scores, min_gap=10)`:

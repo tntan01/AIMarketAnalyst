@@ -105,6 +105,41 @@ def _confirm_m15_displacement(candles: list[Candle], side: str, threshold_atr: f
     return {"passed": False, "reason": "M15 chưa có nến displacement đủ mạnh cùng hướng."}
 
 
+def _confirm_internal_structure(smc: dict[str, Any], side: str) -> dict[str, Any]:
+    """Check if H1 internal swings confirm the trade direction.
+
+    For BUY: last 2 internal swing lows should form a higher low (HL).
+    For SELL: last 2 internal swing highs should form a lower high (LH).
+    Returns dict with passed, reason, and the relevant swing levels.
+    """
+    h1 = smc.get("H1", {}) if isinstance(smc, dict) else {}
+    internal = h1.get("internal_swings", {})
+    if not isinstance(internal, dict):
+        return {"passed": False, "reason": "Không có dữ liệu internal structure."}
+    if side == "buy":
+        ilows = internal.get("lows", [])
+        if len(ilows) < 2:
+            return {"passed": False, "reason": "Chưa đủ 2 internal swing low để đánh giá."}
+        last_low = ilows[-1]["level"]
+        prev_low = ilows[-2]["level"]
+        if last_low > prev_low:
+            return {"passed": True, "reason": "Internal higher low xác nhận BUY.",
+                    "last_level": last_low, "prev_level": prev_low}
+        return {"passed": False, "reason": "Internal swing lows chưa tạo higher low.",
+                "last_level": last_low, "prev_level": prev_low}
+    else:
+        ihighs = internal.get("highs", [])
+        if len(ihighs) < 2:
+            return {"passed": False, "reason": "Chưa đủ 2 internal swing high để đánh giá."}
+        last_high = ihighs[-1]["level"]
+        prev_high = ihighs[-2]["level"]
+        if last_high < prev_high:
+            return {"passed": True, "reason": "Internal lower high xác nhận SELL.",
+                    "last_level": last_high, "prev_level": prev_high}
+        return {"passed": False, "reason": "Internal swing highs chưa tạo lower high.",
+                "last_level": last_high, "prev_level": prev_high}
+
+
 def evaluate_entry(
     *,
     side: str,
@@ -126,7 +161,7 @@ def evaluate_entry(
         if not m15_available:
             reason += " | M15 data unavailable"
         return _result("no_setup", "none", 0, reason,
-                       m15_available=m15_available)
+                       m15_available=m15_available, internal_structure=internal_structure)
 
     low, high = min(entry_zone), max(entry_zone)
     in_zone = low <= price <= high
@@ -139,7 +174,7 @@ def evaluate_entry(
             reason += " | M15 data unavailable"
         return _result("invalidated", "zone_broken", 0, reason,
                        m15_available=m15_available,
-                       warning_codes=[ZONE_BROKEN])
+                       warning_codes=[ZONE_BROKEN], internal_structure=internal_structure)
 
     candle_signal = _h1_confirmation(side, h1_candles)
     smc_signal = _smc_confirmation(side, smc)
@@ -174,6 +209,10 @@ def evaluate_entry(
         confirmation_score = int(confirmation_score * m15_score_multiplier)
     # ------------------------------
 
+    # --- Internal structure confirmation ---
+    internal_structure = _confirm_internal_structure(smc, side)
+    # -------------------------------------
+
     # --- Phase 8 + Entry Ladder: sub-zone-aware entry decision ---
     trigger_valid = trigger_type != "none"
     score_passed = confirmation_score >= 70
@@ -202,7 +241,7 @@ def evaluate_entry(
                            m15_structure=m15_structure, m15_displacement=m15_displacement,
                            m15_available=False, m15_quality=m15_quality,
                            m15_score_multiplier=m15_score_multiplier,
-                           warning_codes=[M15_DATA_UNAVAILABLE])
+                           warning_codes=[M15_DATA_UNAVAILABLE], internal_structure=internal_structure)
 
     if in_zone and trigger_valid and score_passed:
         sub_zone, depth_pct = _classify_sub_zone(price, low, high, side)
@@ -223,7 +262,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                reason_codes=[M15_STRICT_CONFIRMED] if m15_quality == "strict" else [M15_LOOSE_CONFIRMATION],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             else:
                 entry_ladder["size_multiplier"] = 0.0
                 return _result("waiting_confirmation", trigger_type, confirmation_score,
@@ -233,7 +272,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_NOT_CONFIRMED] if m15_quality == "none" else [M15_LOOSE_CONFIRMATION],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
 
         elif sub_zone == "mid":
             # Mid zone: need H1 trigger + M15 strict, medium size
@@ -245,7 +284,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                reason_codes=[M15_STRICT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             elif m15_available and m15_quality == "loose":
                 entry_ladder["size_multiplier"] = 0.0
                 return _result("waiting_confirmation", trigger_type, confirmation_score,
@@ -255,7 +294,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_LOOSE_CONFIRMATION],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             else:
                 entry_ladder["size_multiplier"] = 0.0
                 return _result("watch_zone", trigger_type, confirmation_score,
@@ -265,7 +304,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_NOT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
 
         elif sub_zone == "bottom":
             # Bottom zone: need H1 trigger + M15 strict + SMC sweep, full size
@@ -277,13 +316,13 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                reason_codes=[M15_STRICT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             elif m15_available and m15_quality == "strict" and not has_sweep:
                 # Bottom zone without sweep — degrade: treat like mid zone
                 entry_ladder["size_multiplier"] = _LADDER_SIZES["mid"]
                 entry_ladder["degraded"] = True
                 return _result("confirmed_entry", trigger_type, confirmation_score,
-                               "Bottom zone — thiếu SMC sweep, degrade xuống mid (70% size).",
+                               "Bottom zone — thiếu SMC sweep, degrade xuống mid (70% size, internal_structure=internal_structure).",
                                in_zone, True,
                                m15_structure=m15_structure, m15_displacement=m15_displacement,
                                m15_available=m15_available, m15_quality=m15_quality,
@@ -299,7 +338,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_LOOSE_CONFIRMATION],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             else:
                 entry_ladder["size_multiplier"] = 0.0
                 return _result("watch_zone", trigger_type, confirmation_score,
@@ -309,7 +348,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_NOT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
 
         # Unknown sub-zone — fall through to legacy behavior
         if m15_available:
@@ -319,7 +358,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                reason_codes=[M15_STRICT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             elif m15_quality == "loose":
                 return _result("waiting_confirmation", trigger_type, confirmation_score,
                                "M15 xác nhận lỏng, chờ xác nhận chặt trước khi vào lệnh.",
@@ -328,7 +367,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_LOOSE_CONFIRMATION],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             else:
                 return _result("watch_zone", trigger_type, confirmation_score,
                                "M15 chưa xác nhận, chỉ theo dõi vùng giá.",
@@ -337,7 +376,7 @@ def evaluate_entry(
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                warning_codes=[M15_NOT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
         else:
             return _result("waiting_confirmation", trigger_type, confirmation_score,
                            "Thiếu dữ liệu M15, không xác nhận entry.",
@@ -346,7 +385,7 @@ def evaluate_entry(
                            m15_available=m15_available, m15_quality=m15_quality,
                            m15_score_multiplier=m15_score_multiplier,
                            warning_codes=[M15_DATA_UNAVAILABLE],
-                           entry_ladder=entry_ladder)
+                           entry_ladder=entry_ladder, internal_structure=internal_structure)
 
     if in_zone:
         reason = "Giá đã vào vùng nhưng chưa đủ xác nhận H1/SMC."
@@ -363,8 +402,7 @@ def evaluate_entry(
             False,
             m15_structure=m15_structure, m15_displacement=m15_displacement,
             m15_available=m15_available, m15_quality=m15_quality,
-            m15_score_multiplier=m15_score_multiplier,
-        )
+            m15_score_multiplier=m15_score_multiplier, internal_structure=internal_structure)
     if near_zone:
         reason = "Giá đang gần vùng theo dõi, chưa vào đúng vùng."
         if not m15_available:
@@ -380,8 +418,7 @@ def evaluate_entry(
             False,
             m15_structure=m15_structure, m15_displacement=m15_displacement,
             m15_available=m15_available, m15_quality=m15_quality,
-            m15_score_multiplier=m15_score_multiplier,
-        )
+            m15_score_multiplier=m15_score_multiplier, internal_structure=internal_structure)
     reason = "Giá còn xa vùng vào lệnh."
     if not m15_available:
         reason += " | M15 data unavailable"
@@ -390,7 +427,7 @@ def evaluate_entry(
     return _result("watch_zone", "none", confirmation_score, reason, False, False,
                    m15_structure=m15_structure, m15_displacement=m15_displacement,
                    m15_available=m15_available, m15_quality=m15_quality,
-                   m15_score_multiplier=m15_score_multiplier)
+                   m15_score_multiplier=m15_score_multiplier, internal_structure=internal_structure)
 
 
 def _result(
@@ -410,6 +447,7 @@ def _result(
     warning_codes: list[str] | None = None,
     block_codes: list[str] | None = None,
     entry_ladder: dict[str, Any] | None = None,
+    internal_structure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "entry_status": status,
@@ -427,6 +465,8 @@ def _result(
     }
     if entry_ladder is not None:
         result["entry_ladder"] = entry_ladder
+    if internal_structure is not None:
+        result["internal_structure"] = internal_structure
     if m15_structure is not None:
         result["m15_structure"] = m15_structure
     if m15_displacement is not None:

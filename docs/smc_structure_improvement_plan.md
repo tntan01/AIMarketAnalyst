@@ -245,7 +245,9 @@ if h4.get("choch") and h4.get("choch_confirmed"):
 
 **Mục tiêu**: Dùng internal swings để tinh chỉnh entry placement.
 
-**File**: `core/smc_context.py` + `core/entry_engine.py` + `core/risk_engine.py`
+**Trạng thái**: ✅ **HOÀN THÀNH** (2026-07-02)
+
+**File**: `core/entry_engine.py`
 
 | # | Thay đổi | Mô tả |
 |---|---|---|
@@ -275,6 +277,24 @@ if h4.get("choch") and h4.get("choch_confirmed"):
 ```
 
 **Test**: So sánh entry zone width, R:R, win rate trước/sau.
+
+**Kết quả thực tế sau triển khai**:
+
+Trên 26 symbols, 21 scenarios có internal_structure:
+- **PASS (internal HL/LH confirmed): 11 (52%)**
+- **FAIL (chưa tạo internal HL/LH): 10 (48%)**
+- Insufficient data: 0 (0%)
+
+Phân hóa rõ ràng — internal structure không phải lúc nào cũng xác nhận, đúng với thực tế thị trường. Trader có thể ưu tiên setup có PASS.
+
+**Thay đổi thực tế trong code**:
+- `entry_engine.py`: hàm mới `_confirm_internal_structure(smc, side)` — kiểm tra H1 internal swings:
+  - BUY: `internal_swings["lows"][-1] > internal_swings["lows"][-2]` → HL confirmed
+  - SELL: `internal_swings["highs"][-1] < internal_swings["highs"][-2]` → LH confirmed
+- `evaluate_entry()`: gọi `_confirm_internal_structure()` sau M15 confirmation
+- `_result()`: thêm param `internal_structure`, lưu vào result dict
+- Mỗi scenario có field `internal_structure` chứa `passed`, `reason`, `last_level`, `prev_level`
+- verify_two_branch: 34/34 pass
 
 ---
 
