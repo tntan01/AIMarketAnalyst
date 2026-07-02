@@ -1863,35 +1863,71 @@ class ScannerScreen (QWidget ):
         self .table .setWordWrap (False )
         self .table .setTextElideMode (Qt .TextElideMode .ElideNone )
 
-        fixed_total =0
-        for col in range (self .table_model .columnCount ()):
-            if col ==self .SHORT_REASON_COL :
-                header .setSectionResizeMode (col ,QHeaderView .ResizeMode .Interactive )
-                continue
-            header .setSectionResizeMode (col ,QHeaderView .ResizeMode .Fixed )
-            width =self ._content_width_for_column (
-            col ,
-            self .TABLE_CELL_HORIZONTAL_PADDING +self .TABLE_EXTRA_COLUMN_PADDING .get (col ,0 ),
-            )
-            header .resizeSection (col ,width )
-            fixed_total +=width
+        column_configs = {
+            "rank": {"weight": 0, "min_width": 45},
+            "symbol": {"weight": 1, "min_width": 75},
+            "scanner_group": {"weight": 3, "min_width": 110},
+            "direction_bias": {"weight": 4, "min_width": 110},
+            "market_regime": {"weight": 3, "min_width": 95},
+            "price_vs_zone": {"weight": 3, "min_width": 100},
+            "m15_quality": {"weight": 2, "min_width": 80},
+            "opportunity_score": {"weight": 0, "min_width": 60},
+            "expected_effective_rr": {"weight": 0, "min_width": 75},
+            "macro_bias": {"weight": 0, "min_width": 70},
+            "detail_action": {"weight": 0, "min_width": 65},
+        }
 
-        if self.SHORT_REASON_COL >= 0:
-            reason_content_width = self._content_width_for_column(
-            self.SHORT_REASON_COL,
-            self.TABLE_REASON_HORIZONTAL_PADDING,
-            )
-            viewport_width = max(
+        col_count = self.table_model.columnCount()
+        min_widths = []
+        weights = []
+
+        for col in range(col_count):
+            col_key = self.table_model.COLUMNS[col][0]
+            config = column_configs.get(col_key, {"weight": 1, "min_width": 80})
+            
+            # Compute dynamic content width
+            padding = self.TABLE_CELL_HORIZONTAL_PADDING
+            content_w = self._content_width_for_column(col, padding)
+            
+            min_w = max(config["min_width"], content_w)
+            min_widths.append(min_w)
+            weights.append(config["weight"])
+
+        sum_min_widths = sum(min_widths)
+        sum_weights = sum(weights)
+
+        viewport_width = max(
             self.table.viewport().width(),
             self.table.contentsRect().width(),
-            )
-            remaining_width = viewport_width - fixed_total
-            reason_width = max(
-            self.TABLE_MIN_REASON_WIDTH,
-            reason_content_width,
-            remaining_width,
-            )
-            header.resizeSection(self.SHORT_REASON_COL, reason_width)
+        )
+        if viewport_width < 100:
+            viewport_width = sum_min_widths
+
+        if viewport_width <= sum_min_widths or sum_weights == 0:
+            for col in range(col_count):
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+                header.resizeSection(col, min_widths[col])
+        else:
+            extra_space = viewport_width - sum_min_widths
+            widths = []
+            current_total = 0
+            
+            stretch_indices = [i for i, w in enumerate(weights) if w > 0]
+            
+            for col in range(col_count):
+                w = min_widths[col]
+                if weights[col] > 0:
+                    w += (extra_space * weights[col]) // sum_weights
+                widths.append(w)
+                current_total += w
+                
+            diff = viewport_width - current_total
+            if diff > 0 and stretch_indices:
+                widths[stretch_indices[-1]] += diff
+                
+            for col in range(col_count):
+                header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+                header.resizeSection(col, widths[col])
 
     def _content_width_for_column (self ,col :int ,padding :int )->int :
         header =self .table .horizontalHeader ()
