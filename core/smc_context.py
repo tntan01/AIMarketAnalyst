@@ -36,6 +36,8 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
             "bos": False,
             "choch": False,
             "displacement": "neutral",
+            "bos_strength": "weak",
+            "choch_confirmed": False,
             "swings": {"highs": [], "lows": []},
             "external_swings": {"highs": [], "lows": []},
             "internal_swings": {"highs": [], "lows": []},
@@ -53,8 +55,8 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
     swings = _filter_swings_by_atr(candles, swings)
     external_swings = swings
     internal_swings = _detect_internal_structure(candles, external_swings)
-    leg_count = max(len(external_swings["highs"]), len(external_swings["lows"])) - 1
-    bos = detect_bos_choch(swings, candles)
+    leg_count = _count_trend_legs(external_swings)
+    bos = detect_bos_choch(swings, candles, leg_count)
     liquidity = detect_liquidity_pools(candles, swings)
     premium_discount = classify_premium_discount(candles[-1].close, swings)
     premium_discount_range = premium_discount_bounds(swings)
@@ -71,6 +73,8 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
         "bos": bos.get("bos", False),
         "choch": bos.get("choch", False),
         "displacement": bos.get("displacement", "neutral"),
+        "bos_strength": bos.get("bos_strength", "weak"),
+        "choch_confirmed": bos.get("choch_confirmed", False),
         "swings": swings,
         "external_swings": external_swings,
         "internal_swings": internal_swings,
@@ -124,6 +128,44 @@ def _filter_swings_by_atr(candles: list[Candle], swings: dict[str, list[dict[str
     return {"highs": filtered_highs, "lows": filtered_lows}
 
 
+def _count_trend_legs(swings: dict[str, list[dict[str, Any]]]) -> int:
+    """Count consecutive legs in the current trend direction.
+
+    For HH/HL (uptrend): count consecutive pairs where high[i] > high[i-1]
+    AND low[i] > low[i-1] going backwards from the most recent.
+    For LH/LL (downtrend): count consecutive pairs where high[i] < high[i-1]
+    AND low[i] < low[i-1].
+    Returns 0 for mixed/unknown structure.
+    """
+    highs = swings["highs"]
+    lows = swings["lows"]
+    if len(highs) < 2 or len(lows) < 2:
+        return 0
+    last_h = highs[-1]["level"]
+    prev_h = highs[-2]["level"]
+    last_l = lows[-1]["level"]
+    prev_l = lows[-2]["level"]
+    if last_h > prev_h and last_l > prev_l:
+        count = 1
+        max_i = min(len(highs), len(lows))
+        for i in range(2, max_i):
+            if highs[-i]["level"] > highs[-(i + 1)]["level"] and lows[-i]["level"] > lows[-(i + 1)]["level"]:
+                count += 1
+            else:
+                break
+        return count
+    elif last_h < prev_h and last_l < prev_l:
+        count = 1
+        max_i = min(len(highs), len(lows))
+        for i in range(2, max_i):
+            if highs[-i]["level"] < highs[-(i + 1)]["level"] and lows[-i]["level"] < lows[-(i + 1)]["level"]:
+                count += 1
+            else:
+                break
+        return count
+    return 0
+
+
 def _detect_internal_structure(candles: list[Candle], external_swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
     """Detect internal (minor) swings within each leg between external swings.
 
@@ -162,11 +204,12 @@ def _detect_internal_structure(candles: list[Candle], external_swings: dict[str,
     return {"highs": internal_highs, "lows": internal_lows}
 
 
-def detect_bos_choch(swings: dict[str, list[dict[str, Any]]], candles: list[Candle]) -> dict[str, Any]:
+def detect_bos_choch(swings: dict[str, list[dict[str, Any]]], candles: list[Candle], leg_count: int = 0) -> dict[str, Any]:
     highs = swings["highs"]
     lows = swings["lows"]
     if len(highs) < 2 or len(lows) < 2 or not candles:
-        return {"structure": "unknown", "bos": False, "choch": False, "displacement": "neutral"}
+        return {"structure": "unknown", "bos": False, "choch": False, "displacement": "neutral",
+                "bos_strength": "weak", "choch_confirmed": False}
 
     last_high = highs[-1]["level"]
     prev_high = highs[-2]["level"]
@@ -201,7 +244,14 @@ def detect_bos_choch(swings: dict[str, list[dict[str, Any]]], candles: list[Cand
         choch = True
         displacement = "bullish"
 
-    return {"structure": structure, "bos": bos, "choch": choch, "displacement": displacement}
+    if bos:
+        bos_strength = "strong" if leg_count >= 3 else "normal" if leg_count >= 2 else "weak"
+    else:
+        bos_strength = "weak"
+    choch_confirmed = choch and leg_count >= 3
+
+    return {"structure": structure, "bos": bos, "choch": choch, "displacement": displacement,
+            "bos_strength": bos_strength, "choch_confirmed": choch_confirmed}
 
 
 def detect_fvg(candles: list[Candle]) -> list[dict[str, Any]]:

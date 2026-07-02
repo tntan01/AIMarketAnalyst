@@ -355,11 +355,17 @@ def smc_quality_score(side: str, smc: dict[str, Any], technical: dict[str, Any])
     reasons: list[str] = []
 
     if h4.get("displacement") == expected and h4.get("bos"):
-        score += 3
-        reasons.append(f"H4 BOS {expected}")
+        h4_strength = str(h4.get("bos_strength", "weak"))
+        bos_points = 5 if h4_strength == "strong" else 4 if h4_strength == "normal" else 3
+        score += bos_points
+        reasons.append(f"H4 BOS {expected} ({h4_strength})")
     if h1.get("displacement") == expected and (h1.get("bos") or h1.get("choch")):
-        score += 3
-        reasons.append(f"H1 {'BOS' if h1.get('bos') else 'CHOCH'} {expected}")
+        h1_strength = str(h1.get("bos_strength", "weak"))
+        signal_points = 4 if h1_strength == "strong" else 3 if h1_strength == "normal" else 2
+        score += signal_points
+        h1_signal = "BOS" if h1.get("bos") else "CHOCH"
+        h1_confirmed = " confirmed" if h1.get("choch_confirmed") else ""
+        reasons.append(f"H1 {h1_signal} {expected} ({h1_strength}{h1_confirmed})")
 
     zone = _best_smc_zone(side, h4, h1)
     if zone:

@@ -209,7 +209,10 @@ symbol_auto_trade[symbol] = {
   - Penalty: test_count ≥3 = -5; nếu ≥5 thì cộng dồn thêm -3 (tổng -8)
 
   **e) SMC Quality (0-15):**
-  - H4 BOS đúng hướng = +3, H1 BOS/CHOCH đúng hướng = +3
+  - H4 BOS đúng hướng: +5 (strong, legs≥3) / +4 (normal, legs≥2) / +3 (weak, legs=1)
+  - H1 BOS/CHOCH đúng hướng: +4 (strong) / +3 (normal) / +2 (weak)
+  - `leg_count` = số cặp HH/HL hoặc LH/LL liên tiếp cùng hướng xu hướng (từ `_count_trend_legs()`)
+  - CHOCH confirmed (legs≥3) → tín hiệu đảo chiều mạnh hơn
   - Zone score ≥75 = +4, ≥55 = +3, <55 = +1
   - Zone ở đúng premium/discount = +3, equilibrium = +1, ngược = -2
   - Zone-level liquidity sweep = +1, H1-level swept_lows/swept_highs = +2, cross-validate technical swing = +2

@@ -181,6 +181,8 @@ def _filter_swings_by_atr(swings, min_distance):
 
 **Mục tiêu**: Dùng external swings cho BOS/CHOCH — tín hiệu mạnh, ổn định.
 
+**Trạng thái**: ✅ **HOÀN THÀNH** (2026-07-02)
+
 **File**: `core/smc_context.py` + `core/signal_engine.py`
 
 | # | Thay đổi | Mô tả |
@@ -213,6 +215,29 @@ if h4.get("choch") and h4.get("choch_confirmed"):
 ```
 
 **Test**: BOS/CHOCH rate, phân phối strong/normal/weak.
+
+**Kết quả thực tế sau triển khai**:
+
+| Chỉ số | Trước Phase 3 | Sau Phase 3 (legs tổng) | Sau Phase 3.1 (legs theo trend) |
+|---|---|---|---|
+| BOS strong | — | 6 (100%) | 0 |
+| BOS normal | — | 0 | 1 (XAUUSD) |
+| BOS weak | — | 0 | 5 |
+| BOS total | 5/26 (19%) | 6/26 (23%) | 6/26 (23%) |
+| CHOCH confirmed | — | 1 | 0 |
+
+**Phát hiện & điều chỉnh**:
+- Ban đầu dùng `leg_count = max(len(highs), len(lows)) - 1` → H1 luôn >20, mọi BOS đều "strong" → **vô nghĩa**
+- Sửa thành `_count_trend_legs()`: đếm số cặp HH/HL hoặc LH/LL **liên tiếp cùng hướng xu hướng**
+- Kết quả: leg_count phân bố 0-2, phản ánh đúng sức mạnh xu hướng thực tế
+
+**Thay đổi thực tế trong code**:
+- `detect_bos_choch()`: thêm param `leg_count=0`, trả về `bos_strength` + `choch_confirmed`
+- `_smc_for_timeframe()`: truyền `leg_count` vào `detect_bos_choch()`
+- Hàm mới `_count_trend_legs(swings)`: đếm leg liên tiếp cùng hướng
+- Return dict: thêm `bos_strength`, `choch_confirmed`
+- `signal_engine.py` — `smc_quality_score()`: scoring theo strength (strong=5, normal=4, weak=3) + CHOCH confirmed
+- verify_two_branch: 34/34 pass
 
 ---
 
