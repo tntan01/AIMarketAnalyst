@@ -367,6 +367,15 @@ def smc_quality_score(side: str, smc: dict[str, Any], technical: dict[str, Any])
         h1_confirmed = " confirmed" if h1.get("choch_confirmed") else ""
         reasons.append(f"H1 {h1_signal} {expected} ({h1_strength}{h1_confirmed})")
 
+    confluence = smc.get("confluence", {}) if isinstance(smc, dict) else {}
+    confluence_score = int(confluence.get("confluence_score", 0) or 0)
+    if confluence_score != 0:
+        score += confluence_score
+        if confluence_score > 0:
+            reasons.append(f"Multi-TF confluence +{confluence_score}")
+        else:
+            reasons.append(f"Multi-TF divergence {confluence_score}")
+
     zone = _best_smc_zone(side, h4, h1)
     if zone:
         zone_score_scanner = int(zone.get("zone_score", 0) or 0)

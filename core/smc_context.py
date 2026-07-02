@@ -6,11 +6,64 @@ from core.indicators import atr
 from core.market_models import Candle
 
 
-def build_smc_context(d1: list[Candle], h4: list[Candle], h1: list[Candle]) -> dict[str, Any]:
+def _cross_validate_structure(d1_smc: dict[str, Any], h4_smc: dict[str, Any], h1_smc: dict[str, Any]) -> dict[str, Any]:
+    """Cross-validate structure alignment across D1, H4, H1 timeframes.
+
+    Returns confluence dict with alignment flags and a confluence_score (0-5).
+    """
+    d1_struct = str(d1_smc.get("structure", "unknown"))
+    h4_struct = str(h4_smc.get("structure", "unknown"))
+    h4_up = h4_struct == "HH/HL"
+    h4_down = h4_struct == "LH/LL"
+    d1_up = d1_struct == "HH/HL"
+    d1_down = d1_struct == "LH/LL"
+
+    h1_aligns_h4 = False
+    h1_against_h4 = False
+    if h4_up and h1_smc.get("structure") == "HH/HL":
+        h1_aligns_h4 = True
+    elif h4_down and h1_smc.get("structure") == "LH/LL":
+        h1_aligns_h4 = True
+    if h4_up and h1_smc.get("structure") == "LH/LL":
+        h1_against_h4 = True
+    elif h4_down and h1_smc.get("structure") == "HH/HL":
+        h1_against_h4 = True
+
+    h4_aligns_d1 = False
+    if d1_up and h4_up:
+        h4_aligns_d1 = True
+    elif d1_down and h4_down:
+        h4_aligns_d1 = True
+
+    score = 0
+    if h1_aligns_h4:
+        score += 2
+    if h4_aligns_d1:
+        score += 2
+    if h1_aligns_h4 and h4_aligns_d1:
+        score += 1
+    if h1_against_h4:
+        score -= 3
+
     return {
-        "D1": _smc_for_timeframe(d1),
-        "H4": _smc_for_timeframe(h4),
-        "H1": _smc_for_timeframe(h1),
+        "h1_aligns_h4": h1_aligns_h4,
+        "h4_aligns_d1": h4_aligns_d1,
+        "h1_against_h4": h1_against_h4,
+        "all_aligned": h1_aligns_h4 and h4_aligns_d1,
+        "confluence_score": max(-3, min(5, score)),
+    }
+
+
+def build_smc_context(d1: list[Candle], h4: list[Candle], h1: list[Candle]) -> dict[str, Any]:
+    d1_smc = _smc_for_timeframe(d1)
+    h4_smc = _smc_for_timeframe(h4)
+    h1_smc = _smc_for_timeframe(h1)
+    confluence = _cross_validate_structure(d1_smc, h4_smc, h1_smc)
+    return {
+        "D1": d1_smc,
+        "H4": h4_smc,
+        "H1": h1_smc,
+        "confluence": confluence,
     }
 
 

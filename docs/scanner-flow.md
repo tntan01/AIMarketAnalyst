@@ -141,7 +141,8 @@ symbol_auto_trade[symbol] = {
   - `_filter_swings_by_atr()` — lọc swing có khoảng cách < 0.2×ATR so với swing trước đó
   - `_detect_internal_structure()` — tìm internal swings (lookback=2) trong từng leg giữa các external swings
   - `detect_bos_choch(swings, candles)` — phát hiện BOS/CHOCH từ 2 swing cuối
-  - Kết quả lưu: `external_swings`, `internal_swings` (có tag `leg`), `leg_count`
+  - `_cross_validate_structure(d1, h4, h1)` — cross-validate D1→H4→H1, tính `confluence_score` (-3 đến +5)
+  - Kết quả lưu: `external_swings`, `internal_swings` (có tag `leg`), `leg_count`, `confluence`
   - Supply/Demand zones, Order Blocks, FVG
   - Liquidity pools (equal highs/lows), Liquidity sweeps
   - Premium/Discount classification
@@ -213,6 +214,7 @@ symbol_auto_trade[symbol] = {
   - H1 BOS/CHOCH đúng hướng: +4 (strong) / +3 (normal) / +2 (weak)
   - `leg_count` = số cặp HH/HL hoặc LH/LL liên tiếp cùng hướng xu hướng (từ `_count_trend_legs()`)
   - CHOCH confirmed (legs≥3) → tín hiệu đảo chiều mạnh hơn
+  - **Multi-TF Confluence**: H1∥H4=+2, H4∥D1=+2, all-3-TF=+1 (tổng +5), H1⟂H4=-3
   - Zone score ≥75 = +4, ≥55 = +3, <55 = +1
   - Zone ở đúng premium/discount = +3, equilibrium = +1, ngược = -2
   - Zone-level liquidity sweep = +1, H1-level swept_lows/swept_highs = +2, cross-validate technical swing = +2

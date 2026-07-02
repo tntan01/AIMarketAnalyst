@@ -302,6 +302,8 @@ Phân hóa rõ ràng — internal structure không phải lúc nào cũng xác n
 
 **Mục tiêu**: Cross-validate structure giữa D1, H4, H1.
 
+**Trạng thái**: ✅ **HOÀN THÀNH** (2026-07-02)
+
 **File**: `core/smc_context.py` + `core/signal_engine.py`
 
 | # | Thay đổi | Mô tả |
@@ -334,6 +336,26 @@ Phân hóa rõ ràng — internal structure không phải lúc nào cũng xác n
 ```
 
 **Test**: Phân phối confluence score, tương quan với win rate.
+
+**Kết quả thực tế sau triển khai**:
+
+Trên 26 symbols:
+| Loại | Count | % |
+|---|---|---|
+| Aligned (score > 0) | 9 | 35% |
+| Neutral (score = 0) | 9 | 35% |
+| Against (score < 0) | 8 | 31% |
+
+- GBPAUD: D1=HH/HL, H4=HH/HL, H1=HH/HL → +5 (duy nhất all-3-TF aligned, SMC=15/15)
+- EURJPY, EURNZD, CADJPY: H1 ngược H4 → -3 penalty
+- SMC score trung bình: 7.5 → 7.7
+- Phân phối tự nhiên, không bias
+
+**Thay đổi thực tế trong code**:
+- `smc_context.py`: hàm mới `_cross_validate_structure()`, `build_smc_context()` trả về field `confluence`
+- `signal_engine.py` — `smc_quality_score()`: đọc `confluence.confluence_score`, cộng/trừ vào SMC score
+- Confluence scoring: H1∥H4=+2, H4∥D1=+2, all-3=+1, H1⟂H4=-3
+- verify_two_branch: 34/34 pass
 
 ---
 
