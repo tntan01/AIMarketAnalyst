@@ -59,6 +59,7 @@ _ENTRY_AGGRESSIVENESS = 0.0  # 0.0=nearest edge (best RR), 1.0=farthest edge (ol
 _SWING_SL_BUFFER_ATR = 0.15  # buffer beyond swing level for SL placement
 _MIN_SL_DISTANCE_ATR = 0.5   # reject plans with SL tighter than this × ATR
 _EQ_TP_MAX_RR = 3.0          # max R:R for equal-highs/lows TP1 (cap distance)
+_TP2_MIN_GAP_ATR = 0.15     # minimum gap between TP1 and TP2 as fraction of ATR
 
 # Fibonacci extension levels for TP fallback when no S/R zones available
 _FIB_TP1 = 0.382
@@ -510,6 +511,9 @@ def build_trade_plan(
         # Swing-based TP: find nearest swing high as target
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             tp1 = _find_nearest_swing_for_tp(smc, "buy", entry_for_rr, entry_for_rr - stop_loss)
+        # Guard: TP1 must be strictly above entry zone
+        if tp1 is not None and tp1 <= entry_high:
+            tp1 = None
         if tp1 is None or (tp1 - entry_for_rr) < (entry_for_rr - stop_loss):
             if use_preferred:
                 tp1 = None   # không có TP thật → để trống, không dùng fallback nhân tạo
@@ -523,6 +527,9 @@ def build_trade_plan(
             if tp2 is None:
                 if regime_primary != "range":
                     tp2 = _fib_extension_target(smc, "buy", atr_value, _FIB_TP2)
+            # Guard: TP2 must be at least _TP2_MIN_GAP_ATR * ATR above TP1
+            if tp2 is not None and (tp2 - tp1) < atr_value * _TP2_MIN_GAP_ATR:
+                tp2 = None
         condition = _build_buy_condition(h4_smc)
         invalidation = _build_buy_invalidation(stop_loss, h4_smc)
     else:
@@ -580,6 +587,9 @@ def build_trade_plan(
         # Swing-based TP: find nearest swing low as target
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             tp1 = _find_nearest_swing_for_tp(smc, "sell", entry_for_rr, stop_loss - entry_for_rr)
+        # Guard: TP1 must be strictly below entry zone
+        if tp1 is not None and tp1 >= entry_low:
+            tp1 = None
         if tp1 is None or (entry_for_rr - tp1) < (stop_loss - entry_for_rr):
             if use_preferred:
                 tp1 = None   # không có TP thật → để trống, không dùng fallback nhân tạo
@@ -593,6 +603,9 @@ def build_trade_plan(
             if tp2 is None:
                 if regime_primary != "range":
                     tp2 = _fib_extension_target(smc, "sell", atr_value, _FIB_TP2)
+            # Guard: TP2 must be at least _TP2_MIN_GAP_ATR * ATR below TP1
+            if tp2 is not None and (tp1 - tp2) < atr_value * _TP2_MIN_GAP_ATR:
+                tp2 = None
         condition = _build_sell_condition(h4_smc)
         invalidation = _build_sell_invalidation(stop_loss, h4_smc)
 
