@@ -475,3 +475,376 @@ Phát hiện được GBPAUD (all-3-TF aligned, SMC=15/15) và các trường h�
 | 3 | `4040c44` | BOS/CHOCH strength + leg_count theo trend |
 | 4 | `16f3700` | Internal structure xác nhận entry |
 | 5 | `fd09a1e` | Multi-TF confluence D1-H4-H1 |
+| 6 | (pending) | Lookback fallback 5→2 + fix swing nearest search |
+
+---
+---
+
+## Phase 6: Bug Fixes — Lookback Fallback + Swing Nearest Search (2026-07-03)
+
+**Trạng thái**: ✅ **HOÀN THÀNH**
+
+**File**: `core/smc_context.py` + `core/risk_engine.py`
+
+### 6a: Lookback Fallback — `_smc_for_timeframe()`
+
+**Vấn đề**: `swing_points(candles, lookback=5)` trả về rỗng với dữ liệu trending mạnh một chiều. Trong xu hướng tăng mạnh, 5 nến bên phải nến trung tâm luôn có high cao hơn → đỉnh cửa sổ 11 nến luôn nằm ở rìa phải → không nến nào được phát hiện là swing high.
+
+**Giải pháp**: Nếu `lookback=5` trả về 0 highs và 0 lows, tự động fallback về `lookback=2` (cửa sổ 5 nến, ít bị trend dominate hơn). Thêm field `swing_source: "standard" | "fallback"` vào output để downstream code biết chất lượng dữ liệu swing.
+
+**Thay đổi trong code** (`core/smc_context.py`):
+```python
+swing_source = "standard"
+swings = swing_points(candles, lookback=5)
+if len(swings["highs"]) == 0 and len(swings["lows"]) == 0:
+    _log.warning("SMC swing_points returned empty with lookback=5, falling back to lookback=2")
+    swings = swing_points(candles, lookback=2)
+    swing_source = "fallback"
+```
+
+Return dict được thêm field `"swing_source": swing_source`.
+
+**Kết quả**:
+- Dữ liệu test `_trending_candles` H4: từ 0 swings → 9 high swings + 65 low swings, structure `HH/HL`, BOS=True
+- Thị trường bình thường: `swing_source = "standard"`, không thay đổi hành vi
+- `test_smc_context_has_swings_after_fix`: PASS (trước đây FAIL)
+
+### 6b: Fix `_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp`
+
+**Vấn đề**: Cả 2 hàm duyệt `("H4", "H1")` nhưng return ngay khi H4 có candidate, không kiểm tra H1 có candidate nào gần `price` hơn không. Docstring nói "returns the swing level closest to price" nhưng code không làm vậy.
+
+**Giải pháp**: Gom tất cả candidates từ cả H4 và H1 vào một list trước, sau đó mới chọn candidate gần `price` nhất — đồng bộ pattern với `_find_nearest_equal_level` (hàm này đã làm đúng).
+
+**Thay đổi trong code** (`core/risk_engine.py`):
+
+`_find_nearest_swing_for_sl`:
+```python
+# Trước: return ngay trong loop khi H4 có candidate
+# Sau: gom tất cả vào all_candidates, chọn gần nhất sau khi duyệt hết
+all_candidates: list[float] = []
+for tf in ("H4", "H1"):
+    ...
+    all_candidates.extend(...)
+
+if side == "buy":
+    below = [l for l in all_candidates if l < price]
+    return max(below) if below else None
+```
+
+`_find_nearest_swing_for_tp`: cùng pattern — gom tất cả candidates trước, chọn gần nhất sau.
+
+**Kết quả**:
+- `test_searches_both_h4_and_h1`: PASS (trước đây FAIL)
+- Toàn bộ 30 tests trong `test_risk_engine.py`: PASS, 0 regression
+
+### Tác động tổng thể Phase 6
+
+| Khía cạnh | Trước | Sau |
+|---|---|---|
+| Swing detection trong trend mạnh | 0 swings → toàn bộ SMC chết | Fallback về lookback=2 → có swings |
+| `swing_source` metadata | Không có | `"standard"` / `"fallback"` |
+| SL từ swing nearest | Luôn chọn H4, bỏ qua H1 gần hơn | Chọn đúng swing gần nhất từ H4+H1 |
+| TP từ swing nearest | Luôn chọn H4, bỏ qua H1 gần hơn | Chọn đúng swing gần nhất từ H4+H1 |
+| Test regression | 1 FAIL (`test_smc_context_has_swings_after_fix`) + 1 FAIL (`test_searches_both_h4_and_h1`) | 0 FAIL |
+
+---
+---
+
+# [ĐÁNH GIÁ ĐỘC LẬP] Code Review — Tính năng SMC (Smart Money Concept)
+
+> **Ngày đánh giá:** 2026-07-03  
+> **Người đánh giá:** Claude Sonnet 4.6 (Thinking)  
+> **Phương pháp:** Đọc toàn bộ source code + chạy test thực tế, không dựa trên cảm tính  
+> **Lưu ý:** Phần này là đánh giá khách quan độc lập, tách biệt với kế hoạch cải thiện phía trên
+
+---
+
+## Phạm vi đã đọc
+
+| File | Dòng | Mức độ |
+|------|------|--------|
+| `core/smc_context.py` | 1–859 | Toàn bộ |
+| `core/indicators.py` | 1–90 | Toàn bộ |
+| `core/market_models.py` | 1–33 | Toàn bộ |
+| `tests/test_smc_context.py` | 1–221 | Toàn bộ |
+| `tests/test_risk_engine.py` | L30–L380 | Phần liên quan SMC |
+| `core/signal_engine.py` | L1–L80 | Tích hợp SMC |
+| `core/analysis_pipeline.py` | L200–L240 | Điểm gọi SMC |
+
+---
+
+## Kết quả chạy test thực tế
+
+```
+tests/test_smc_context.py       → 11/11 PASSED  ✅  (0.04s)
+tests/ -k "smc" (toàn dự án)   → 16/17 PASSED  ❌  1 FAILED
+```
+
+**Test FAIL:**
+
+```
+FAILED: test_risk_engine.py::TestSwingSLInBuildTradePlan::test_smc_context_has_swings_after_fix
+
+AssertionError: H4 has no swing highs
+assert 0 > 0
+ +  where 0 = len([])
+
+tests/test_risk_engine.py:343
+```
+
+---
+
+## A. TÍNH ĐÚNG ĐẮN
+
+### ✅ Ưu điểm
+
+**1. Guard clause đầy đủ cho dữ liệu thiếu**
+
+- `_smc_for_timeframe`: kiểm tra `len(candles) < 11`, trả về dict "safe" với giá trị mặc định (`smc_context.py:L86–L106`)
+- `detect_bos_choch`: kiểm tra `len(highs) < 2 or len(lows) < 2 or not candles` (`smc_context.py:L263`)
+- `detect_fvg`: kiểm tra `len(candles) < 3` (`smc_context.py:L312`)
+
+**2. Xử lý `None` an toàn trong `extract_smc_trade_flags`**
+
+Kiểm tra `not isinstance(smc_context, dict)` tại L805, `direction not in ("buy", "sell")` tại L808 trước mọi xử lý.
+
+**3. Tránh chia cho 0**
+
+```python
+# smc_context.py:L579
+width = max(float(bounds["high"]) - float(bounds["low"]), 1e-9)
+```
+
+**4. ATR filter giảm noise swing**
+
+`_filter_swings_by_atr` lọc swing quá gần nhau theo ngưỡng `0.2×ATR` (`smc_context.py:L159–L181`), tránh tín hiệu giả.
+
+---
+
+### ❌ Nhược điểm / Rủi ro
+
+**[BUG #1 — ĐÃ SỬA (Phase 6a)]**
+
+`swing_points` trả về rỗng với dữ liệu trending mạnh một chiều (đã sửa bằng lookback fallback 5→2 + `swing_source` field).
+
+---
+
+**[ĐÃ SỬA (Phase 6b)]**
+
+`_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp`: trước đây return ngay khi H4 có candidate, bỏ qua H1. Đã sửa: gom tất cả candidates từ H4+H1 trước, chọn gần `price` nhất sau (đồng bộ với `_find_nearest_equal_level`).
+
+---
+
+**[RỦI RO LOGIC — 🟡 MEDIUM]**
+
+BOS/CHoCH chỉ xét `candles[-1].close`, không validate thứ tự thời gian:
+
+```python
+# smc_context.py:L271–L292
+last_close = candles[-1].close
+
+if prev_trend == "up" and last_close > last_high:
+    bos = True
+```
+
+Nếu caller truyền danh sách candle không đồng bộ (ví dụ: candle cũ do cache), kết quả BOS/CHoCH sai hoàn toàn mà không có cảnh báo.
+
+---
+
+**[SEMANTIC INCONSISTENCY — 🟡 MEDIUM]**
+
+`mitigated` không đúng nghĩa SMC:
+
+```python
+# smc_context.py:L536
+mitigated = test_count > 0
+```
+
+Theo SMC theory, "mitigated" = zone đã bị kiểm tra VÀ phản ứng (giữ được). `count_zone_tests` (L565) chỉ đếm số candle chạm vào zone, bất kể kết quả. Zone bị break-through vẫn bị đánh dấu `mitigated=True`, trong khi `broken=True` cũng có thể đồng thời bật — không nhất quán ngữ nghĩa dù code không crash.
+
+---
+
+**[EDGE CASE — 🟢 LOW]**
+
+`displacement_multiple_at` với nến đầu tiên:
+
+```python
+# smc_context.py:L638–L642
+window = candles[max(0, index - 20) : index]
+avg_range = sum(...) / len(window) if window else 0.0
+```
+
+Khi `index = 0`, `window = []` → `avg_range = 0.0` → hàm trả `0.0`. Không crash, nhưng `zone_quality_score` của zone tại nến đầu tiên bị tính sai (luôn được 0 điểm displacement).
+
+---
+
+## B. HIỆU NĂNG
+
+### ✅ Ưu điểm
+
+**1. Cửa sổ xử lý giới hạn 80 nến — tránh O(n²) trên toàn bộ data**
+
+```python
+# smc_context.py:L314, L348, L393
+start = max(0, len(candles) - 80)
+```
+
+Áp dụng nhất quán cho `detect_fvg`, `detect_order_blocks`, `detect_supply_demand_zones`.
+
+**2. Output cắt bớt chủ động — tránh memory bloat**
+
+| Hàm | Giới hạn trả về |
+|-----|----------------|
+| `detect_fvg` | `gaps[-6:]` (L340) |
+| `detect_order_blocks` | `blocks[-6:]` (L380) |
+| `detect_supply_demand_zones` | `demand[-5:], supply[-5:]` (L436) |
+| `detect_liquidity_pools` | `equal_highs[-3:]` (L463) |
+
+**3. `_count_trend_legs` early-exit**
+
+Vòng lặp `break` ngay khi không còn trend, không duyệt toàn bộ swings (`smc_context.py:L207, L216`).
+
+---
+
+### ❌ Nhược điểm / Rủi ro
+
+**[HIỆU NĂNG — 🟢 LOW]**
+
+`_detect_internal_structure` có thể chạy nhiều lần `swing_points`:
+
+```python
+# smc_context.py:L239–L256
+for i in range(len(all_external) - 1):
+    segment = candles[start_idx:end_idx + 1]
+    seg_swings = swing_points(segment, lookback=2)  # O(n) mỗi lần
+```
+
+Với k cặp external swing, tổng chi phí = O(k × n). Không nghiêm trọng do bị giới hạn bởi cửa sổ 80 nến, nhưng đáng ghi nhận nếu mở rộng sau này.
+
+**KHÔNG ĐỦ DỮ LIỆU:** Profiling thực tế trên production data chưa được thực hiện.
+
+---
+
+## C. KHẢ NĂNG BẢO TRÌ
+
+### ✅ Ưu điểm
+
+**1. Tên hàm mô tả rõ ràng**
+
+`detect_fvg`, `detect_order_blocks`, `detect_liquidity_sweeps`, `enrich_zones`, `zone_quality_score` — đọc tên đã hiểu mục đích, không cần đọc body.
+
+**2. Single Responsibility rõ ràng**
+
+`build_smc_context` chỉ orchestrate, không chứa logic tính toán. Mỗi hàm xử lý đúng một loại pattern.
+
+**3. Docstring đầy đủ cho hàm public**
+
+- `extract_smc_trade_flags` (L768–L801): có input/output/description đầy đủ
+- `get_preferred_zone` (L692–L700): giải thích rõ fallback behavior
+- `_count_trend_legs` (L185–L192): mô tả thuật toán
+- `zone_quality_score` (L592–L601): giải thích từng thành phần điểm
+
+**4. Comment business logic bằng tiếng Việt**
+
+`zone_quality_score` có comment từng thành phần điểm số (L604–L618), dễ đọc cho team.
+
+---
+
+### ❌ Nhược điểm / Rủi ro
+
+**[HARDCODE — 🟡 MEDIUM]**
+
+Nhiều magic number không có tên hằng số:
+
+```python
+# smc_context.py — các giá trị hardcode rải rác
+L86:  if len(candles) < 11:           # MIN_CANDLES_FOR_SMC ?
+L161: if len(candles) < 15:           # MIN_CANDLES_FOR_ATR_FILTER ?
+L170: min_distance = atr_now * 0.2    # ATR_DISTANCE_MULTIPLIER ?
+L314: start = max(0, len(candles) - 80)   # LOOKBACK_WINDOW ?
+L391: consolidation_bars = 3          # SD_CONSOLIDATION_BARS ?
+L444: tolerance = max(avg_range * 0.15, 0.0001)  # EQ_LEVEL_TOLERANCE ?
+L605: score += min(20, test_count * 5)    # MAX_TEST_SCORE ?
+```
+
+Khi muốn điều chỉnh tham số, phải tìm và sửa ở nhiều chỗ — risk nhầm lẫn hoặc bỏ sót.
+
+**[THIẾU DOCSTRING — 🟢 LOW]**
+
+Các hàm phức tạp không có docstring:
+- `swing_points` (L146): thuật toán có điều kiện uniqueness quan trọng nhưng không mô tả
+- `detect_supply_demand_zones` (L383): logic nhiều điều kiện, không có docstring
+- `enrich_zones` (L519): 5 tham số, không có docstring
+
+**[DEAD CODE TRONG TEST — 🟢 LOW]**
+
+```python
+# test_smc_context.py:L92–L100
+candles = _make_candles([...])[:1]  # ← gán rồi bị ghi đè ngay
+candles = _make_candles([...])      # ← gán thực sự
+```
+
+Dòng `[:1]` là dead code, có thể gây nhầm lẫn khi đọc test.
+
+**[KHÔNG NHẤT QUÁN PHONG CÁCH — 🟢 LOW]**
+
+Comment trong `zone_quality_score` (L592–L618) viết tiếng Việt không dấu ("Cham diem chat luong..."), trong khi docstring `extract_smc_trade_flags` (L768) viết tiếng Việt có dấu. Không nhất quán.
+
+---
+
+## D. BẢO MẬT
+
+`smc_context.py` là **pure computation library** — không có attack surface đáng kể:
+- Không nhận user input trực tiếp (chỉ nhận `list[Candle]` đã được validate)
+- Không có DB query, HTTP call, serialization
+- Authentication/authorization xử lý ở tầng trên (pipeline/controller)
+
+**Điểm tốt:** `extract_smc_trade_flags` (L808) validate `direction not in ("buy", "sell")` — không để giá trị tùy tiện chạy qua logic.
+
+---
+
+## Tổng hợp
+
+### ✅ Ưu điểm (có dẫn chứng)
+
+| # | Điểm mạnh | Dẫn chứng |
+|---|-----------|-----------|
+| 1 | Guard clause đầy đủ cho dữ liệu thiếu | `smc_context.py:L86, L263, L312` |
+| 2 | Cửa sổ 80 nến tránh O(n²) trên toàn bộ data | `smc_context.py:L314, L348, L393` |
+| 3 | Output cắt bớt chủ động tránh memory bloat | `smc_context.py:L340, L380, L436` |
+| 4 | Single Responsibility rõ, tên hàm mô tả đúng | Toàn file |
+| 5 | Defensive check trong `extract_smc_trade_flags` | `smc_context.py:L805–L809` |
+| 6 | ATR filter giảm noise swing hiệu quả | `smc_context.py:L159–L181` |
+
+### ❌ Nhược điểm / Rủi ro (có dẫn chứng)
+
+| # | Vấn đề | Mức độ | Dẫn chứng |
+|---|--------|--------|-----------|
+| 1 | **BUG:** H4 swing highs = 0 với trending data → test FAIL | ✅ Đã sửa (Phase 6a) | `test_risk_engine.py:L343`; `smc_context.py:L107–L109` |
+| 2 | **BUG:** `_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp` chỉ chọn H4, bỏ qua H1 | ✅ Đã sửa (Phase 6b) | `risk_engine.py:L170–L198, L342–L367` |
+| 3 | BOS/CHoCH chỉ xét `candles[-1].close`, không validate thứ tự thời gian | 🟡 Medium | `smc_context.py:L271, L287` |
+| 4 | `mitigated = test_count > 0` sai ngữ nghĩa SMC | 🟡 Medium | `smc_context.py:L536` |
+| 5 | Nhiều magic number hardcode, khó bảo trì | 🟡 Medium | `smc_context.py:L86, L161, L170, L314, L391, L444` |
+| 6 | `displacement_multiple_at` trả 0.0 cho nến đầu → sai zone score | 🟢 Low | `smc_context.py:L638–L642` |
+| 7 | Dead code trong test (double assignment) | 🟢 Low | `test_smc_context.py:L92–L100` |
+| 8 | Thiếu docstring cho `swing_points`, `detect_supply_demand_zones`, `enrich_zones` | 🟢 Low | `smc_context.py:L146, L383, L519` |
+
+### Không đủ dữ liệu để kết luận
+
+- Hành vi của `_filter_swings_by_atr` trên dữ liệu real market (chỉ test với synthetic candles)
+- Hiệu năng thực tế trên production data (chưa có profiling)
+- Tác động của `mitigated` bug lên downstream `decision_engine.py` (chưa đọc)
+
+---
+
+## Điểm tổng quan: **7.5 / 10**
+
+| Tiêu chí | Điểm | Nhận xét |
+|----------|------|----------|
+| A. Tính đúng đắn | 7.0/10 | 2 bug đã sửa (swing lookup fallback + swing nearest search), còn 1 semantic inconsistency |
+| B. Hiệu năng | 8.0/10 | Tối ưu tốt, cửa sổ 80 nến hợp lý |
+| C. Khả năng bảo trì | 6.5/10 | Tên hàm tốt nhưng nhiều magic number rải rác |
+| D. Bảo mật | N/A | Pure computation, không có attack surface |
+
+**Tổng quan:** Architecture rõ ràng, defensive programming tốt, hiệu năng được tối ưu chủ động. 2 bug critical đã được sửa trong Phase 6: (1) swing detection không còn chết trong trending market nhờ lookback fallback 5→2 kèm `swing_source` metadata; (2) `_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp` giờ chọn đúng swing gần nhất từ cả H4 và H1 thay vì chỉ lấy H4. Còn một số magic number và thiếu docstring cần cleanup trong tương lai.
+

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from core.indicators import atr
 from core.market_models import Candle
+
+_log = logging.getLogger(__name__)
 
 
 def _cross_validate_structure(d1_smc: dict[str, Any], h4_smc: dict[str, Any], h1_smc: dict[str, Any]) -> dict[str, Any]:
@@ -104,7 +107,12 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
             "premium_discount": "unknown",
             "premium_discount_range": {"status": "unknown"},
         }
+    swing_source = "standard"
     swings = swing_points(candles, lookback=5)
+    if len(swings["highs"]) == 0 and len(swings["lows"]) == 0:
+        _log.warning("SMC swing_points returned empty with lookback=5, falling back to lookback=2")
+        swings = swing_points(candles, lookback=2)
+        swing_source = "fallback"
     swings = _filter_swings_by_atr(candles, swings)
     external_swings = swings
     internal_swings = _detect_internal_structure(candles, external_swings)
@@ -140,6 +148,7 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
         "liquidity_sweeps": liquidity_sweeps,
         "premium_discount": premium_discount,
         "premium_discount_range": premium_discount_range,
+        "swing_source": swing_source,
     }
 
 

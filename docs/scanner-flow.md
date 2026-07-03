@@ -138,11 +138,12 @@ symbol_auto_trade[symbol] = {
   - Xác định structure (HH/HL, LH/LL) cho D1, H4
 - `build_smc_context(D1, H4, H1)`:
   - Với mỗi timeframe: `swing_points(candles, lookback=5)` — cửa sổ 11 nến (external swings)
+  - **Fallback:** Nếu `lookback=5` trả về 0 swings (cả highs và lows), tự động thử lại với `lookback=2` và đặt `swing_source = "fallback"`
   - `_filter_swings_by_atr()` — lọc swing có khoảng cách < 0.2×ATR so với swing trước đó
   - `_detect_internal_structure()` — tìm internal swings (lookback=2) trong từng leg giữa các external swings
   - `detect_bos_choch(swings, candles)` — phát hiện BOS/CHOCH từ 2 swing cuối
   - `_cross_validate_structure(d1, h4, h1)` — cross-validate D1→H4→H1, tính `confluence_score` (-3 đến +5)
-  - Kết quả lưu: `external_swings`, `internal_swings` (có tag `leg`), `leg_count`, `confluence`
+  - Kết quả lưu: `external_swings`, `internal_swings` (có tag `leg`), `leg_count`, `confluence`, `swing_source` (`"standard"` hoặc `"fallback"`)
   - Supply/Demand zones, Order Blocks, FVG
   - Liquidity pools (equal highs/lows), Liquidity sweeps
   - Premium/Discount classification
@@ -271,14 +272,15 @@ symbol_auto_trade[symbol] = {
 
   **c) Tính Stop Loss:**
   - `use_preferred`: SL = zone_low - atr × 0.10 (BUY) hoặc zone_high + atr × 0.10 (SELL)
-  - Không có preferred: tìm swing gần nhất → nếu không có → ATR-based SL
+  - Không có preferred: tìm swing gần nhất từ **cả H4 và H1** (gom tất cả candidates, chọn swing gần `price` nhất)
+  - Nếu không có swing → ATR-based SL
   - Guard: SL phải nằm ngoài entry zone ít nhất `atr × 0.10`
 
   **d) Tính Take Profit (cascade 5 bước, dừng ở bước đầu tiên tìm được):**
   1. **Equal Highs/Lows** (liquidity clusters từ H4/H1)
   2. **S/R Zones** (nearest_target từ resistance/support zones)
   3. **Fibonacci Extension** (0.382 từ impulse swing H4, trừ range)
-  4. **Swing-based TP** (swing high/low gần nhất)
+  4. **Swing-based TP** (swing high/low gần nhất từ cả H4+H1)
   5. Nếu `use_preferred` → **KHÔNG dùng fallback nhân tạo** → `tp1 = None` (RR để trống)
   6. Nếu KHÔNG `use_preferred` → `return None` (không tạo plan)
 

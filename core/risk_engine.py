@@ -167,6 +167,7 @@ def _find_nearest_swing_for_sl(
     if not isinstance(smc, dict):
         return None
 
+    all_candidates: list[float] = []
     for tf in ("H4", "H1"):
         tf_data = smc.get(tf, {})
         if not isinstance(tf_data, dict):
@@ -177,27 +178,22 @@ def _find_nearest_swing_for_sl(
         swing_list = swings.get("lows" if side == "buy" else "highs", [])
         if not isinstance(swing_list, list):
             continue
-        candidates: list[float] = []
         for s in swing_list:
             if not isinstance(s, dict):
                 continue
             level = s.get("level")
             if isinstance(level, (int, float)):
-                candidates.append(float(level))
+                all_candidates.append(float(level))
 
-        if not candidates:
-            continue
+    if not all_candidates:
+        return None
 
-        if side == "buy":
-            below = [l for l in candidates if l < price]
-            if below:
-                return max(below)
-        else:
-            above = [h for h in candidates if h > price]
-            if above:
-                return min(above)
-
-    return None
+    if side == "buy":
+        below = [l for l in all_candidates if l < price]
+        return max(below) if below else None
+    else:
+        above = [h for h in all_candidates if h > price]
+        return min(above) if above else None
 
 
 def _find_nearest_equal_level(
@@ -339,6 +335,7 @@ def _find_nearest_swing_for_tp(
     """
     if not isinstance(smc, dict):
         return None
+    all_candidates: list[float] = []
     for tf in ("H4", "H1"):
         tf_data = smc.get(tf, {})
         if not isinstance(tf_data, dict):
@@ -350,7 +347,6 @@ def _find_nearest_swing_for_tp(
         swing_list = swings.get("highs" if side == "buy" else "lows", [])
         if not isinstance(swing_list, list):
             continue
-        candidates: list[float] = []
         for s in swing_list:
             if not isinstance(s, dict):
                 continue
@@ -358,12 +354,11 @@ def _find_nearest_swing_for_tp(
             if isinstance(level, (int, float)):
                 lv = float(level)
                 if side == "buy" and lv > price + min_distance:
-                    candidates.append(lv)
+                    all_candidates.append(lv)
                 elif side == "sell" and lv < price - min_distance:
-                    candidates.append(lv)
-        if candidates:
-            # Nearest qualifying swing
-            return min(candidates) if side == "buy" else max(candidates)
+                    all_candidates.append(lv)
+    if all_candidates:
+        return min(all_candidates) if side == "buy" else max(all_candidates)
     return None
 
 
