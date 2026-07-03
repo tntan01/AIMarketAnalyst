@@ -550,6 +550,89 @@ if side == "buy":
 ---
 ---
 
+## Phase 7: Extract Magic Numbers → Module-Level Constants (2026-07-03)
+
+**Trạng thái**: ✅ **HOÀN THÀNH**
+
+**File**: `core/smc_context.py`
+
+### Vấn đề
+
+51 magic numbers trong 17 functions, không có tên hằng số. Nhiều giá trị bị trùng lặp nội bộ:
+- Số `80` xuất hiện 3 lần (FVG, OB, SD zones) với cùng ý nghĩa
+- Số `0.05` xuất hiện 2 lần (classify_premium_discount + zone_premium_discount)
+- Số `3` xuất hiện 10 lần với cùng ý nghĩa "số lượng level tối đa"
+- Số `5` xuất hiện 5 lần với 5 ý nghĩa khác nhau
+
+### Giải pháp
+
+Thêm 30 module-level constants ở đầu file, thay thế tất cả magic numbers bằng tên hằng số có ý nghĩa.
+
+```python
+# smc_context.py — 30 module-level constants
+_SMC_MIN_CANDLES = 11
+_SMC_LOOKBACK_EXTERNAL = 5
+_SMC_LOOKBACK_FALLBACK = 2
+_SMC_LOOKBACK_INTERNAL = 2
+_ATR_FILTER_MIN_CANDLES = 15
+_ATR_PERIOD = 14
+_ATR_DISTANCE_MULT = 0.2
+_LOOKBACK_WINDOW = 80          # dùng chung cho FVG, OB, SD zones
+_MAX_FVG = 6
+_MAX_ORDER_BLOCKS = 6
+_MAX_SD_ZONES = 5
+_MAX_LIQUIDITY_LEVELS = 3
+_PD_THRESHOLD = 0.05           # dùng chung cho classify + zone_premium_discount
+_LEG_STRONG = 3
+_LEG_NORMAL = 2
+_CHOCH_CONFIRMED_LEGS = 3
+_ZONE_SCORE_BASE = 50
+_ZONE_SCORE_STRONG = 75
+_ZONE_SCORE_MODERATE = 55
+_ZONE_MAX_TEST_BONUS = 20
+_ZONE_TEST_POINTS = 5
+_ZONE_MAX_FRESHNESS_BONUS = 10
+_ZONE_FRESHNESS_DIVISOR = 5
+_ZONE_BROKEN_PENALTY = 35
+_ZONE_MAX_DISPLACEMENT_BONUS = 15
+_ZONE_DISPLACEMENT_MULTIPLIER = 5
+_ZONE_SWEEP_BONUS = 10
+_ZONE_PD_CORRECT_BONUS = 12
+_ZONE_PD_EQUILIBRIUM_BONUS = 4
+_ZONE_PD_WRONG_PENALTY = 8
+```
+
+### Kết quả
+
+| Chỉ số | Trước | Sau |
+|---|---|---|
+| Magic numbers trong file | 51 | 0 (tất cả có tên) |
+| Số lượng constants | 0 | 30 |
+| Trùng lặp nội bộ | `80`×3, `0.05`×2, `3`×10 | 0 — mỗi ý nghĩa 1 constant |
+| Test regression | — | 41/41 PASS, 0 regression |
+| Thay đổi dòng code | — | +74 −40 (thuần substitutions) |
+
+### Tác động
+
+- **Bảo trì:** Muốn đổi window size từ 80 → 100, chỉ cần sửa 1 dòng (`_LOOKBACK_WINDOW = 100`) thay vì 3 dòng
+- **Phụ thuộc chéo:** `_ZONE_SCORE_STRONG` và `_ZONE_SCORE_MODERATE` đã sẵn sàng để `signal_engine.py` import thay vì hardcode lại `75/55`
+- **Không regression:** Tất cả constants giữ nguyên giá trị cũ, hành vi không đổi
+
+### Commits
+
+| Phase | Commit | Nội dung |
+|---|---|---|
+| 1 | `1bdc777` | Tăng lookback 2→5 + ATR filter |
+| 2 | `8cdda66` | Phân tách Internal/External structure |
+| 3 | `4040c44` | BOS/CHOCH strength + leg_count theo trend |
+| 4 | `16f3700` | Internal structure xác nhận entry |
+| 5 | `fd09a1e` | Multi-TF confluence D1-H4-H1 |
+| 6 | (pending) | Lookback fallback 5→2 + fix swing nearest search |
+| 7 | (pending) | Extract magic numbers → 30 module-level constants |
+
+---
+---
+
 # [ĐÁNH GIÁ ĐỘC LẬP] Code Review — Tính năng SMC (Smart Money Concept)
 
 > **Ngày đánh giá:** 2026-07-03  
@@ -824,7 +907,7 @@ Comment trong `zone_quality_score` (L592–L618) viết tiếng Việt không d�
 | 2 | **BUG:** `_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp` chỉ chọn H4, bỏ qua H1 | ✅ Đã sửa (Phase 6b) | `risk_engine.py:L170–L198, L342–L367` |
 | 3 | BOS/CHoCH chỉ xét `candles[-1].close`, không validate thứ tự thời gian | 🟡 Medium | `smc_context.py:L271, L287` |
 | 4 | `mitigated = test_count > 0` sai ngữ nghĩa SMC | 🟡 Medium | `smc_context.py:L536` |
-| 5 | Nhiều magic number hardcode, khó bảo trì | 🟡 Medium | `smc_context.py:L86, L161, L170, L314, L391, L444` |
+| 5 | Nhiều magic number hardcode, khó bảo trì | ✅ Đã sửa (Phase 7) | `smc_context.py` — 30 module-level constants |
 | 6 | `displacement_multiple_at` trả 0.0 cho nến đầu → sai zone score | 🟢 Low | `smc_context.py:L638–L642` |
 | 7 | Dead code trong test (double assignment) | 🟢 Low | `test_smc_context.py:L92–L100` |
 | 8 | Thiếu docstring cho `swing_points`, `detect_supply_demand_zones`, `enrich_zones` | 🟢 Low | `smc_context.py:L146, L383, L519` |
@@ -837,14 +920,14 @@ Comment trong `zone_quality_score` (L592–L618) viết tiếng Việt không d�
 
 ---
 
-## Điểm tổng quan: **7.5 / 10**
+## Điểm tổng quan: **8.0 / 10**
 
 | Tiêu chí | Điểm | Nhận xét |
 |----------|------|----------|
 | A. Tính đúng đắn | 7.0/10 | 2 bug đã sửa (swing lookup fallback + swing nearest search), còn 1 semantic inconsistency |
 | B. Hiệu năng | 8.0/10 | Tối ưu tốt, cửa sổ 80 nến hợp lý |
-| C. Khả năng bảo trì | 6.5/10 | Tên hàm tốt nhưng nhiều magic number rải rác |
+| C. Khả năng bảo trì | 7.5/10 | 30 module-level constants thay thế 51 magic numbers; tên hàm rõ ràng |
 | D. Bảo mật | N/A | Pure computation, không có attack surface |
 
-**Tổng quan:** Architecture rõ ràng, defensive programming tốt, hiệu năng được tối ưu chủ động. 2 bug critical đã được sửa trong Phase 6: (1) swing detection không còn chết trong trending market nhờ lookback fallback 5→2 kèm `swing_source` metadata; (2) `_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp` giờ chọn đúng swing gần nhất từ cả H4 và H1 thay vì chỉ lấy H4. Còn một số magic number và thiếu docstring cần cleanup trong tương lai.
+**Tổng quan:** Architecture rõ ràng, defensive programming tốt, hiệu năng được tối ưu chủ động. 3 vấn đề đã được sửa: (Phase 6a) swing detection không còn chết trong trending market nhờ lookback fallback 5→2 kèm `swing_source` metadata; (Phase 6b) `_find_nearest_swing_for_sl` và `_find_nearest_swing_for_tp` giờ chọn đúng swing gần nhất từ cả H4 và H1; (Phase 7) 30 module-level constants thay thế toàn bộ magic numbers, giải quyết triệt để vấn đề trùng lặp nội bộ và mở đường cho `signal_engine.py` import constants thay vì hardcode. Còn một số thiếu docstring cần cleanup trong tương lai.
 

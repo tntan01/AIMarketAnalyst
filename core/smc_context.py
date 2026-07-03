@@ -8,6 +8,40 @@ from core.market_models import Candle
 
 _log = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+_SMC_MIN_CANDLES = 11
+_SMC_LOOKBACK_EXTERNAL = 5
+_SMC_LOOKBACK_FALLBACK = 2
+_SMC_LOOKBACK_INTERNAL = 2
+_ATR_FILTER_MIN_CANDLES = 15
+_ATR_PERIOD = 14
+_ATR_DISTANCE_MULT = 0.2
+_LOOKBACK_WINDOW = 80
+_MAX_FVG = 6
+_MAX_ORDER_BLOCKS = 6
+_MAX_SD_ZONES = 5
+_MAX_LIQUIDITY_LEVELS = 3
+_PD_THRESHOLD = 0.05
+_LEG_STRONG = 3
+_LEG_NORMAL = 2
+_CHOCH_CONFIRMED_LEGS = 3
+_ZONE_SCORE_BASE = 50
+_ZONE_SCORE_STRONG = 75
+_ZONE_SCORE_MODERATE = 55
+_ZONE_MAX_TEST_BONUS = 20
+_ZONE_TEST_POINTS = 5
+_ZONE_MAX_FRESHNESS_BONUS = 10
+_ZONE_FRESHNESS_DIVISOR = 5
+_ZONE_BROKEN_PENALTY = 35
+_ZONE_MAX_DISPLACEMENT_BONUS = 15
+_ZONE_DISPLACEMENT_MULTIPLIER = 5
+_ZONE_SWEEP_BONUS = 10
+_ZONE_PD_CORRECT_BONUS = 12
+_ZONE_PD_EQUILIBRIUM_BONUS = 4
+_ZONE_PD_WRONG_PENALTY = 8
+
 
 def _cross_validate_structure(d1_smc: dict[str, Any], h4_smc: dict[str, Any], h1_smc: dict[str, Any]) -> dict[str, Any]:
     """Cross-validate structure alignment across D1, H4, H1 timeframes.
@@ -73,7 +107,7 @@ def build_smc_context(d1: list[Candle], h4: list[Candle], h1: list[Candle]) -> d
 def summarize_structure(candles: list[Candle]) -> dict[str, Any]:
     if len(candles) < 3:
         return {"structure": "insufficient_data"}
-    swings = swing_points(candles, lookback=5)
+    swings = swing_points(candles, lookback=_SMC_LOOKBACK_EXTERNAL)
     bos_choch = detect_bos_choch(swings, candles)
     structure = bos_choch.get("structure", "unknown")
     return {
@@ -86,7 +120,7 @@ def summarize_structure(candles: list[Candle]) -> dict[str, Any]:
 
 
 def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
-    if len(candles) < 11:
+    if len(candles) < _SMC_MIN_CANDLES:
         return {
             "structure": "insufficient_data",
             "bos": False,
@@ -108,10 +142,10 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
             "premium_discount_range": {"status": "unknown"},
         }
     swing_source = "standard"
-    swings = swing_points(candles, lookback=5)
+    swings = swing_points(candles, lookback=_SMC_LOOKBACK_EXTERNAL)
     if len(swings["highs"]) == 0 and len(swings["lows"]) == 0:
         _log.warning("SMC swing_points returned empty with lookback=5, falling back to lookback=2")
-        swings = swing_points(candles, lookback=2)
+        swings = swing_points(candles, lookback=_SMC_LOOKBACK_FALLBACK)
         swing_source = "fallback"
     swings = _filter_swings_by_atr(candles, swings)
     external_swings = swings
@@ -167,16 +201,16 @@ def swing_points(candles: list[Candle], lookback: int = 2) -> dict[str, list[dic
 
 def _filter_swings_by_atr(candles: list[Candle], swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
     """Filter swing points: keep only those at least 0.2×ATR from previous swing."""
-    if len(candles) < 15:
+    if len(candles) < _ATR_FILTER_MIN_CANDLES:
         return swings
     closes = [c.close for c in candles]
     highs_atr = [c.high for c in candles]
     lows_atr = [c.low for c in candles]
-    atr_values = atr(highs_atr, lows_atr, closes, 14)
+    atr_values = atr(highs_atr, lows_atr, closes, _ATR_PERIOD)
     atr_now = atr_values[-1] if atr_values and atr_values[-1] is not None else 0.0
     if atr_now <= 0:
         return swings
-    min_distance = atr_now * 0.2
+    min_distance = atr_now * _ATR_DISTANCE_MULT
     highs = swings["highs"]
     lows = swings["lows"]
     filtered_highs: list[dict[str, Any]] = []
@@ -251,7 +285,7 @@ def _detect_internal_structure(candles: list[Candle], external_swings: dict[str,
         if end_idx - start_idx < 6:
             continue
         segment = candles[start_idx:end_idx + 1]
-        seg_swings = swing_points(segment, lookback=2)
+        seg_swings = swing_points(segment, lookback=_SMC_LOOKBACK_INTERNAL)
         offset = start_idx
         for h in seg_swings["highs"]:
             h_copy = dict(h)
@@ -307,10 +341,10 @@ def detect_bos_choch(swings: dict[str, list[dict[str, Any]]], candles: list[Cand
         displacement = "bullish"
 
     if bos:
-        bos_strength = "strong" if leg_count >= 3 else "normal" if leg_count >= 2 else "weak"
+        bos_strength = "strong" if leg_count >= _LEG_STRONG else "normal" if leg_count >= _LEG_NORMAL else "weak"
     else:
         bos_strength = "weak"
-    choch_confirmed = choch and leg_count >= 3
+    choch_confirmed = choch and leg_count >= _CHOCH_CONFIRMED_LEGS
 
     return {"structure": structure, "bos": bos, "choch": choch, "displacement": displacement,
             "bos_strength": bos_strength, "choch_confirmed": choch_confirmed}
@@ -320,7 +354,7 @@ def detect_fvg(candles: list[Candle]) -> list[dict[str, Any]]:
     gaps: list[dict[str, Any]] = []
     if len(candles) < 3:
         return gaps
-    start = max(0, len(candles) - 80)
+    start = max(0, len(candles) - _LOOKBACK_WINDOW)
     for index in range(start + 2, len(candles)):
         first = candles[index - 2]
         third = candles[index]
@@ -346,7 +380,7 @@ def detect_fvg(candles: list[Candle]) -> list[dict[str, Any]]:
                     "displacement_multiple": displacement_multiple_at(candles, index),
                 }
             )
-    return gaps[-6:]
+    return gaps[-_MAX_FVG:]
 
 
 def detect_order_blocks(candles: list[Candle], fvg: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -354,7 +388,7 @@ def detect_order_blocks(candles: list[Candle], fvg: list[dict[str, Any]]) -> lis
     if len(candles) < 4:
         return blocks
     fvg_indices = {item["index"]: item for item in fvg}
-    start = max(0, len(candles) - 80)
+    start = max(0, len(candles) - _LOOKBACK_WINDOW)
     for index in range(start + 1, len(candles) - 1):
         candle = candles[index]
         nxt = candles[index + 1]
@@ -386,7 +420,7 @@ def detect_order_blocks(candles: list[Candle], fvg: list[dict[str, Any]]) -> lis
                     "displacement_multiple": displacement_multiple_at(candles, index + 1),
                 }
             )
-    return blocks[-6:]
+    return blocks[-_MAX_ORDER_BLOCKS:]
 
 
 def detect_supply_demand_zones(candles: list[Candle]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -399,7 +433,7 @@ def detect_supply_demand_zones(candles: list[Candle]) -> tuple[list[dict[str, An
     impulse_threshold = avg_range * 1.5 if avg_range > 0 else 0.0
     consolidation_bars = 3
 
-    start = max(consolidation_bars, len(candles) - 80)
+    start = max(consolidation_bars, len(candles) - _LOOKBACK_WINDOW)
     for index in range(start, len(candles) - 1):
         impulse = candles[index]
         impulse_size = impulse.high - impulse.low
@@ -442,7 +476,7 @@ def detect_supply_demand_zones(candles: list[Candle]) -> tuple[list[dict[str, An
                     "liquidity_sweep": swept_recent_high(impulse, candles[:index]),
                 }
             )
-    return demand[-5:], supply[-5:]
+    return demand[-_MAX_SD_ZONES:], supply[-_MAX_SD_ZONES:]
 
 
 def detect_liquidity_pools(candles: list[Candle], swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[float]]:
@@ -469,16 +503,16 @@ def detect_liquidity_pools(candles: list[Candle], swings: dict[str, list[dict[st
                 break
 
     return {
-        "equal_highs": equal_highs[-3:],
-        "equal_lows": equal_lows[-3:],
-        "swing_highs": swing_highs[-3:],
-        "swing_lows": swing_lows[-3:],
+        "equal_highs": equal_highs[-_MAX_LIQUIDITY_LEVELS:],
+        "equal_lows": equal_lows[-_MAX_LIQUIDITY_LEVELS:],
+        "swing_highs": swing_highs[-_MAX_LIQUIDITY_LEVELS:],
+        "swing_lows": swing_lows[-_MAX_LIQUIDITY_LEVELS:],
     }
 
 
 def classify_premium_discount(price: float, swings: dict[str, list[dict[str, Any]]]) -> str:
-    highs = [item["level"] for item in swings["highs"][-3:]]
-    lows = [item["level"] for item in swings["lows"][-3:]]
+    highs = [item["level"] for item in swings["highs"][-_MAX_LIQUIDITY_LEVELS:]]
+    lows = [item["level"] for item in swings["lows"][-_MAX_LIQUIDITY_LEVELS:]]
     if not highs or not lows:
         return "unknown"
     high = max(highs)
@@ -486,16 +520,16 @@ def classify_premium_discount(price: float, swings: dict[str, list[dict[str, Any
     if high == low:
         return "equilibrium"
     midpoint = (high + low) / 2
-    if price >= midpoint + (high - low) * 0.05:
+    if price >= midpoint + (high - low) * _PD_THRESHOLD:
         return "premium"
-    if price <= midpoint - (high - low) * 0.05:
+    if price <= midpoint - (high - low) * _PD_THRESHOLD:
         return "discount"
     return "equilibrium"
 
 
 def premium_discount_bounds(swings: dict[str, list[dict[str, Any]]]) -> dict[str, float | str]:
-    highs = [item["level"] for item in swings["highs"][-3:]]
-    lows = [item["level"] for item in swings["lows"][-3:]]
+    highs = [item["level"] for item in swings["highs"][-_MAX_LIQUIDITY_LEVELS:]]
+    lows = [item["level"] for item in swings["lows"][-_MAX_LIQUIDITY_LEVELS:]]
     if not highs or not lows:
         return {"status": "unknown"}
     high = max(highs)
@@ -522,7 +556,7 @@ def detect_liquidity_sweeps(candles: list[Candle], swings: dict[str, list[dict[s
             if candle.low < level and candle.close > level:
                 swept_lows.append({"level": level, "time": candle.time.isoformat()})
                 break
-    return {"swept_highs": swept_highs[-3:], "swept_lows": swept_lows[-3:]}
+    return {"swept_highs": swept_highs[-_MAX_LIQUIDITY_LEVELS:], "swept_lows": swept_lows[-_MAX_LIQUIDITY_LEVELS:]}
 
 
 def enrich_zones(
@@ -586,9 +620,9 @@ def zone_premium_discount(low: float, high: float, bounds: dict[str, float | str
     midpoint = float(bounds["midpoint"])
     center = (low + high) / 2
     width = max(float(bounds["high"]) - float(bounds["low"]), 1e-9)
-    if center <= midpoint - width * 0.05:
+    if center <= midpoint - width * _PD_THRESHOLD:
         return "discount"
-    if center >= midpoint + width * 0.05:
+    if center >= midpoint + width * _PD_THRESHOLD:
         return "premium"
     return "equilibrium"
 
@@ -608,34 +642,34 @@ def zone_quality_score(zone: dict[str, Any], side: str) -> int:
     - Quet liquidity (+10)
     - Nam dung vi tri premium/discount (+12)
     """
-    score = 50
+    score = _ZONE_SCORE_BASE
     test_count = int(zone.get("test_count", 0))
     # Zone da test nhieu lan + giu duoc = tin cay cao
-    score += min(20, test_count * 5)
+    score += min(_ZONE_MAX_TEST_BONUS, test_count * _ZONE_TEST_POINTS)
     # Zone con moi: bonus nhe (moi la tin hieu tot nhung chua duoc kiem chung)
     freshness = int(zone.get("freshness_bars", 999))
-    score += max(0, 10 - freshness // 5)
+    score += max(0, _ZONE_MAX_FRESHNESS_BONUS - freshness // _ZONE_FRESHNESS_DIVISOR)
     # Zone da bi broken = khong con gia tri
-    score -= 35 if zone.get("broken") else 0
+    score -= _ZONE_BROKEN_PENALTY if zone.get("broken") else 0
     # Displacement impulse: move cang manh → zone cang quan trong
-    score += min(15, int(float(zone.get("displacement_multiple", 0)) * 5))
+    score += min(_ZONE_MAX_DISPLACEMENT_BONUS, int(float(zone.get("displacement_multiple", 0)) * _ZONE_DISPLACEMENT_MULTIPLIER))
     # Liquidity sweep: quet stop-loss truoc khi dao chieu = tin hieu manh
-    score += 10 if zone.get("liquidity_sweep") else 0
+    score += _ZONE_SWEEP_BONUS if zone.get("liquidity_sweep") else 0
     # Vi tri trong cau truc premium/discount
     location = zone.get("zone_location")
     if (side == "buy" and location == "discount") or (side == "sell" and location == "premium"):
-        score += 12
+        score += _ZONE_PD_CORRECT_BONUS
     elif location == "equilibrium":
-        score += 4
+        score += _ZONE_PD_EQUILIBRIUM_BONUS
     elif location in {"premium", "discount"}:
-        score -= 8
+        score -= _ZONE_PD_WRONG_PENALTY
     return max(0, min(100, int(score)))
 
 
 def score_to_strength(score: int) -> str:
-    if score >= 75:
+    if score >= _ZONE_SCORE_STRONG:
         return "strong"
-    if score >= 55:
+    if score >= _ZONE_SCORE_MODERATE:
         return "moderate"
     return "weak"
 
