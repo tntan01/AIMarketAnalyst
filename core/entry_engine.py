@@ -28,6 +28,15 @@ _LADDER_LABELS = {
     "bottom": "Bottom zone (100% size, cần H1+M15+sweep)",
 }
 
+_NEAR_ZONE_ATR_MULT = 0.5              # distance <= this * ATR = "near zone"
+_ZONE_BROKEN_ATR_MULT = 0.25           # price beyond this * ATR from zone = "broken"
+_M15_DISPLACEMENT_THRESHOLD = 0.3      # min candle body as fraction of ATR for displacement
+_H1_REJECTION_BODY_RATIO = 0.8         # lower/upper wick >= body * this for rejection
+_H1_REJECTION_RANGE_RATIO = 0.25       # lower/upper wick >= range * this for rejection
+_H1_MICRO_BREAK_WINDOW = 3             # number of previous candles for micro break
+_M15_MIN_STRUCTURE_CANDLES = 12        # min M15 candles for structure check
+_M15_MIN_DISPLACEMENT_CANDLES = 15     # min M15 candles for displacement check
+
 
 def _classify_sub_zone(price: float, low: float, high: float, side: str) -> tuple[str | None, float]:
     """Classify price position within entry zone into top/mid/bottom sub-zone.
@@ -70,7 +79,7 @@ def _find_swings_m15(candles: list[Candle], lookback: int = 5) -> tuple[list[flo
 
 
 def _confirm_m15_structure(candles: list[Candle], side: str) -> dict[str, Any]:
-    if len(candles) < 12:
+    if len(candles) < _M15_MIN_STRUCTURE_CANDLES:
         return {"passed": False, "reason": "Không đủ nến M15 để đánh giá cấu trúc."}
     highs, lows = _find_swings_m15(candles)
     if side == "buy":
@@ -83,8 +92,8 @@ def _confirm_m15_structure(candles: list[Candle], side: str) -> dict[str, Any]:
         return {"passed": False, "reason": "M15 chưa có lower high rõ"}
 
 
-def _confirm_m15_displacement(candles: list[Candle], side: str, threshold_atr: float = 0.3) -> dict[str, Any]:
-    if len(candles) < 15:
+def _confirm_m15_displacement(candles: list[Candle], side: str, threshold_atr: float = _M15_DISPLACEMENT_THRESHOLD) -> dict[str, Any]:
+    if len(candles) < _M15_MIN_DISPLACEMENT_CANDLES:
         return {"passed": False, "reason": "Không đủ nến M15 để đánh giá displacement."}
     highs_atr = [c.high for c in candles]
     lows_atr = [c.low for c in candles]
@@ -155,6 +164,7 @@ def evaluate_entry(
 
     m15_available = m15_candles is not None and len(m15_candles) >= 10
     m15_quality = None
+    internal_structure = None
 
     if len(entry_zone) != 2 or price <= 0 or atr_value <= 0:
         reason = "Thiếu dữ liệu giá, ATR hoặc vùng vào lệnh."
@@ -166,8 +176,8 @@ def evaluate_entry(
     low, high = min(entry_zone), max(entry_zone)
     in_zone = low <= price <= high
     distance = _distance_to_zone(price, low, high)
-    near_zone = distance <= atr_value * 0.5
-    broken = price < low - atr_value * 0.25 if side == "buy" else price > high + atr_value * 0.25
+    near_zone = distance <= atr_value * _NEAR_ZONE_ATR_MULT
+    broken = price < low - atr_value * _ZONE_BROKEN_ATR_MULT if side == "buy" else price > high + atr_value * _ZONE_BROKEN_ATR_MULT
     if broken:
         reason = "Giá đã phá vùng vào lệnh dự kiến."
         if not m15_available:
@@ -322,13 +332,13 @@ def evaluate_entry(
                 entry_ladder["size_multiplier"] = _LADDER_SIZES["mid"]
                 entry_ladder["degraded"] = True
                 return _result("confirmed_entry", trigger_type, confirmation_score,
-                               "Bottom zone — thiếu SMC sweep, degrade xuống mid (70% size, internal_structure=internal_structure).",
+                               "Bottom zone — thiếu SMC sweep, degrade xuống mid (70% size).",
                                in_zone, True,
                                m15_structure=m15_structure, m15_displacement=m15_displacement,
                                m15_available=m15_available, m15_quality=m15_quality,
                                m15_score_multiplier=m15_score_multiplier,
                                reason_codes=[M15_STRICT_CONFIRMED],
-                               entry_ladder=entry_ladder)
+                               entry_ladder=entry_ladder, internal_structure=internal_structure)
             elif m15_available and m15_quality == "loose":
                 entry_ladder["size_multiplier"] = 0.0
                 return _result("waiting_confirmation", trigger_type, confirmation_score,
@@ -500,8 +510,8 @@ def _h1_confirmation(side: str, candles: list[Candle]) -> dict[str, Any]:
     if side == "buy":
         bullish = last.close > last.open
         engulfing = bullish and last.close > prev.high and last.open <= prev.close
-        rejection = bullish and lower_wick >= max(body * 0.8, candle_range * 0.25)
-        micro_break = last.close > max(item.high for item in candles[-3:-1])
+        rejection = bullish and lower_wick >= max(body * _H1_REJECTION_BODY_RATIO, candle_range * _H1_REJECTION_RANGE_RATIO)
+        micro_break = last.close > max(item.high for item in candles[-_H1_MICRO_BREAK_WINDOW:-1])
         if engulfing:
             return {"score": 35, "trigger_type": "h1_bullish_engulfing"}
         if rejection:
@@ -511,8 +521,8 @@ def _h1_confirmation(side: str, candles: list[Candle]) -> dict[str, Any]:
     else:
         bearish = last.close < last.open
         engulfing = bearish and last.close < prev.low and last.open >= prev.close
-        rejection = bearish and upper_wick >= max(body * 0.8, candle_range * 0.25)
-        micro_break = last.close < min(item.low for item in candles[-3:-1])
+        rejection = bearish and upper_wick >= max(body * _H1_REJECTION_BODY_RATIO, candle_range * _H1_REJECTION_RANGE_RATIO)
+        micro_break = last.close < min(item.low for item in candles[-_H1_MICRO_BREAK_WINDOW:-1])
         if engulfing:
             return {"score": 35, "trigger_type": "h1_bearish_engulfing"}
         if rejection:

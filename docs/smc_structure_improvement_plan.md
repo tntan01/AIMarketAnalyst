@@ -633,6 +633,83 @@ _ZONE_PD_WRONG_PENALTY = 8
 ---
 ---
 
+## Phase 8: Fix Entry Engine Bugs + Extract Constants in risk_engine & entry_engine (2026-07-03)
+
+**Trạng thái**: ✅ **HOÀN THÀNH**
+
+**File**: `core/entry_engine.py` + `core/risk_engine.py`
+
+### 8a: Fix `UnboundLocalError` + missing kwarg trong `evaluate_entry()`
+
+**Vấn đề 1**: `internal_structure` được gán ở dòng 213 nhưng 2 early-return path (dòng 159: `no_setup`, dòng 171: `broken`) tham chiếu đến biến này trước khi nó được gán → `UnboundLocalError` crash. 2 tests fail.
+
+**Giải pháp**: Thêm `internal_structure = None` ở đầu `evaluate_entry()` (dòng 158). Python pattern chuẩn cho "variable might not be assigned".
+
+**Vấn đề 2**: Trong `_result()` call ở bottom-zone degrade path (dòng 324-331), `internal_structure=internal_structure` bị đưa nhầm vào trong string thay vì làm keyword argument → key `internal_structure` bị thiếu trong result dict.
+
+**Giải pháp**: Đưa text ra khỏi string, thêm `internal_structure=internal_structure` làm kwarg thực sự.
+
+**Kết quả**:
+- `test_entry_engine.py`: 4/4 PASS (2 test trước fail nay pass)
+- `test_risk_engine.py`: 30/30 PASS, 0 regression
+
+### 8b: Extract magic numbers trong `risk_engine.py` và `entry_engine.py`
+
+**Vấn đề**: 20+ magic numbers trong Entry/SL/TP. Đặc biệt giá trị `0.10` xuất hiện 5 lần với 3 ý nghĩa khác nhau (SL buffer, watch zone offset, SL floor guard).
+
+**Giải pháp**: Thêm 16 module-level constants thay thế toàn bộ magic numbers:
+
+`risk_engine.py` — 8 constants:
+```python
+_MIN_STOP_DISTANCE_ATR_MULT = 0.20   # min stop as fraction of ATR
+_MIN_STOP_SPREAD_MULT = 3            # min stop as multiple of spread
+_ENTRY_ZONE_WIDTH_MULT = 0.5         # zone_width/atr multiplier for entry width
+_WATCH_ZONE_OFFSET_ATR = 0.10        # watch zone extends this fraction of ATR from level
+_SL_FLOOR_BUFFER_ATR = 0.10          # SL must be at least this far from entry zone edge
+_WATCH_ZONE_ATR_VOLATILE = 0.70      # watch zone ATR multiplier for volatile regime
+_WATCH_ZONE_ATR_TREND = 0.40         # watch zone ATR multiplier for trend regime
+_WATCH_ZONE_ATR_RANGE = 0.50         # watch zone ATR multiplier for range/unknown regime
+```
+
+`entry_engine.py` — 8 constants:
+```python
+_NEAR_ZONE_ATR_MULT = 0.5            # distance <= this * ATR = "near zone"
+_ZONE_BROKEN_ATR_MULT = 0.25         # price beyond this * ATR from zone = "broken"
+_M15_DISPLACEMENT_THRESHOLD = 0.3    # min candle body as fraction of ATR
+_H1_REJECTION_BODY_RATIO = 0.8       # lower/upper wick >= body * this for rejection
+_H1_REJECTION_RANGE_RATIO = 0.25     # lower/upper wick >= range * this for rejection
+_H1_MICRO_BREAK_WINDOW = 3           # number of previous candles for micro break
+_M15_MIN_STRUCTURE_CANDLES = 12      # min M15 candles for structure check
+_M15_MIN_DISPLACEMENT_CANDLES = 15   # min M15 candles for displacement check
+```
+
+### Kết quả
+
+| Chỉ số | Trước | Sau |
+|---|---|---|
+| Bug UnboundLocalError | 2 tests FAIL | 0 FAIL |
+| Missing kwarg | key `internal_structure` thiếu | Đã sửa |
+| Magic numbers trong risk_engine Entry/SL/TP | 14 | 0 |
+| Magic numbers trong entry_engine | 10 | 0 |
+| Vấn đề `0.10` trùng lặp | 1 giá trị, 3 ngữ cảnh | 3 tên riêng: `_ZONE_SL_BUFFER_ATR`, `_WATCH_ZONE_OFFSET_ATR`, `_SL_FLOOR_BUFFER_ATR` |
+| Test regression | 2 FAIL | 34/34 PASS |
+
+### Commits
+
+| Phase | Commit | Nội dung |
+|---|---|---|
+| 1 | `1bdc777` | Tăng lookback 2→5 + ATR filter |
+| 2 | `8cdda66` | Phân tách Internal/External structure |
+| 3 | `4040c44` | BOS/CHOCH strength + leg_count theo trend |
+| 4 | `16f3700` | Internal structure xác nhận entry |
+| 5 | `fd09a1e` | Multi-TF confluence D1-H4-H1 |
+| 6 | (pending) | Lookback fallback 5→2 + fix swing nearest search |
+| 7 | (pending) | Extract magic numbers → 30 module-level constants |
+| 8 | (pending) | Fix entry engine bugs + extract constants in risk/entry engine |
+
+---
+---
+
 # [ĐÁNH GIÁ ĐỘC LẬP] Code Review — Tính năng SMC (Smart Money Concept)
 
 > **Ngày đánh giá:** 2026-07-03  

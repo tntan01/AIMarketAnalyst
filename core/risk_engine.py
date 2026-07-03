@@ -63,6 +63,14 @@ _EQ_TP_MAX_RR = 3.0          # max R:R for equal-highs/lows TP1 (cap distance)
 # Fibonacci extension levels for TP fallback when no S/R zones available
 _FIB_TP1 = 0.382
 _FIB_TP2 = 0.618
+_MIN_STOP_DISTANCE_ATR_MULT = 0.20   # min stop as fraction of ATR
+_MIN_STOP_SPREAD_MULT = 3            # min stop as multiple of spread
+_ENTRY_ZONE_WIDTH_MULT = 0.5         # zone_width/atr multiplier for entry width
+_WATCH_ZONE_OFFSET_ATR = 0.10        # watch zone extends this fraction of ATR from level
+_SL_FLOOR_BUFFER_ATR = 0.10          # SL must be at least this far from entry zone edge
+_WATCH_ZONE_ATR_VOLATILE = 0.70      # watch zone ATR multiplier for volatile regime
+_WATCH_ZONE_ATR_TREND = 0.40         # watch zone ATR multiplier for trend regime
+_WATCH_ZONE_ATR_RANGE = 0.50         # watch zone ATR multiplier for range/unknown regime
 
 
 def _find_impulse_swing(
@@ -415,18 +423,18 @@ def build_trade_plan(
     atr_value = technical["atr_h4"] or technical["atr_d1"] or 0.0
     if atr_value <= 0:
         return None
-    min_stop_distance = max(atr_value * 0.20, spread_price * 3)
+    min_stop_distance = max(atr_value * _MIN_STOP_DISTANCE_ATR_MULT, spread_price * _MIN_STOP_SPREAD_MULT)
     regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
     sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
     zone_dist_mult = REGIME_ZONE_DISTANCE_MULT.get(regime_primary, _DEFAULT_ZONE_DISTANCE_MULT)
     if regime_primary == "volatile":
-        watch_zone_atr_mult = 0.70
+        watch_zone_atr_mult = _WATCH_ZONE_ATR_VOLATILE
     elif "trend" in regime_primary:
-        watch_zone_atr_mult = 0.40
+        watch_zone_atr_mult = _WATCH_ZONE_ATR_TREND
     elif regime_primary == "range":
-        watch_zone_atr_mult = 0.50
+        watch_zone_atr_mult = _WATCH_ZONE_ATR_RANGE
     else:
-        watch_zone_atr_mult = 0.50
+        watch_zone_atr_mult = _WATCH_ZONE_ATR_RANGE
     h4_smc = smc.get("H4", {}) if isinstance(smc, dict) else {}
     smc_supports = _smc_zones_to_levels(h4_smc.get("demand_zones", []))
     smc_resistances = _smc_zones_to_levels(h4_smc.get("supply_zones", []))
@@ -461,16 +469,16 @@ def build_trade_plan(
         zone_high = support.get("high")
         if zone_low is not None and zone_high is not None and zone_high > zone_low:
             zone_width_atr = (zone_high - zone_low) / atr_value
-            entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * 0.5))
+            entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * _ENTRY_ZONE_WIDTH_MULT))
         else:
             entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
-        watch_low = level - atr_value * 0.10
+        watch_low = level - atr_value * _WATCH_ZONE_OFFSET_ATR
         watch_high = level + atr_value * watch_zone_atr_mult
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
         # SL: SMC zone natural low = invalidation point; fallback to swing/ATR
         if use_preferred:
-            stop_loss = preferred_zone["low"] - atr_value * 0.10
+            stop_loss = preferred_zone["low"] - atr_value * _ZONE_SL_BUFFER_ATR
             if abs(level - stop_loss) < min_stop_distance:
                 stop_loss = level - min_stop_distance
         else:
@@ -482,11 +490,11 @@ def build_trade_plan(
             else:
                 stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, support)
         # Guard: SL must be strictly below the entry zone
-        sl_floor = entry_low - atr_value * 0.10
+        sl_floor = entry_low - atr_value * _SL_FLOOR_BUFFER_ATR
         if stop_loss >= sl_floor:
             stop_loss = sl_floor
         # Guard: skip plan if SL is too tight (relaxed for SMC zones)
-        _min_sl = atr_value * 0.20 if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
+        _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
         if abs(level - stop_loss) < _min_sl:
             return None
         entry_for_rr = entry_low + (entry_high - entry_low) * entry_aggressiveness
@@ -531,16 +539,16 @@ def build_trade_plan(
         zone_high = resistance.get("high")
         if zone_low is not None and zone_high is not None and zone_high > zone_low:
             zone_width_atr = (zone_high - zone_low) / atr_value
-            entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * 0.5))
+            entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * _ENTRY_ZONE_WIDTH_MULT))
         else:
             entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
         watch_low = level - atr_value * watch_zone_atr_mult
-        watch_high = level + atr_value * 0.10
+        watch_high = level + atr_value * _WATCH_ZONE_OFFSET_ATR
         entry_low = level - atr_value * entry_zone_atr_mult
         entry_high = level + atr_value * entry_zone_atr_mult
         # SL: SMC zone natural high = invalidation point; fallback to swing/ATR
         if use_preferred:
-            stop_loss = preferred_zone["high"] + atr_value * 0.10
+            stop_loss = preferred_zone["high"] + atr_value * _ZONE_SL_BUFFER_ATR
             if abs(level - stop_loss) < min_stop_distance:
                 stop_loss = level + min_stop_distance
         else:
@@ -552,11 +560,11 @@ def build_trade_plan(
             else:
                 stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, resistance)
         # Guard: SL must be strictly above the entry zone
-        sl_ceiling = entry_high + atr_value * 0.10
+        sl_ceiling = entry_high + atr_value * _SL_FLOOR_BUFFER_ATR
         if stop_loss <= sl_ceiling:
             stop_loss = sl_ceiling
         # Guard: skip plan if SL is too tight (relaxed for SMC zones)
-        _min_sl = atr_value * 0.20 if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
+        _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
         if abs(level - stop_loss) < _min_sl:
             return None
         entry_for_rr = entry_high + (entry_low - entry_high) * entry_aggressiveness
