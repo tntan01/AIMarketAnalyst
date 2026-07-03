@@ -24,6 +24,8 @@ Tài liệu phải giúp đạt 3 mục tiêu:
 4. `installation_guide.md` — Hướng dẫn cài môi trường, chạy app, đóng gói và checklist an toàn trước khi bật auto trade.
 5. `mvp_coding_guide.md` — Thứ tự code MVP theo từng giai đoạn và quy tắc triển khai auto trade/Telegram.
 6. `workflow_guide.md` — Hướng dẫn người dùng: quy trình backtest → cấu hình ngưỡng quyết định (decision_ready/watch/wait) → quét thị trường → auto trade.
+7. `evaluate_backtest_analysis_feature.md` — Đánh giá độc lập tính năng "Nhận định" kết quả Backtest: tính chính xác, tính đúng đắn, hiệu năng, khả năng bảo trì. Gồm danh sách bug đã phát hiện và trạng thái sửa.
+8. `bug_tracker.md` — Theo dõi toàn bộ bug đã phát hiện trong dự án, gồm trạng thái (đã fix / chưa fix), mức độ, file liên quan, và test tái hiện.
 
 ## Nguyên tắc cập nhật
 

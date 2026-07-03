@@ -76,6 +76,7 @@ ai-market-analyst/
     base_worker.py
     scanner_worker.py
     backtest_worker.py
+    analyze_worker.py
 
   services/
     mt5_service.py

@@ -424,6 +424,14 @@ class BacktestScreen(QWidget):
         self._ai_thread.start()
 
     def _on_ai_analysis_done(self, response: str) -> None:
+        if not response or not response.strip():
+            QMessageBox.warning(self, "Phân tích", "AI không trả về nội dung phân tích. Vui lòng thử lại.")
+            self.analyze_btn.setText("🤖 Phân tích")
+            self.analyze_btn.setEnabled(True)
+            self._ai_thread.quit()
+            self._ai_thread.wait()
+            return
+
         try:
             light = getattr(self, '_analysis_light', False)
 
@@ -1433,6 +1441,7 @@ class BacktestScreen(QWidget):
             return
 
         self.run_button.setEnabled(False)
+        self.analyze_btn.setEnabled(False)
         self.apply_config_btn.hide()
         self.progress.setValue(0)
         self.status_label.setText("Đang chạy backtest...")
@@ -1441,6 +1450,7 @@ class BacktestScreen(QWidget):
         self.backtest_worker.succeeded.connect(self._on_success)
         self.backtest_worker.failed.connect(self._on_failed)
         self.backtest_worker.finished.connect(lambda: self.run_button.setEnabled(True))
+        self.backtest_worker.finished.connect(lambda: self.analyze_btn.setEnabled(True))
         self.backtest_thread.start()
 
     def _on_progress(self, percent: int, message: str) -> None:
