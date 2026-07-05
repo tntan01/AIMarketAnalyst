@@ -139,7 +139,7 @@ Tiêu chí đạt:
 * `smc_context.py` phải gắn metadata chất lượng cho supply/demand, order block và FVG: `zone_score`, `freshness_bars`, `mitigated`, `broken`, `test_count`, `displacement_multiple`, `liquidity_sweep`, `zone_location`.
 * Rule Engine ưu tiên vùng chưa broken, còn fresh, ít bị test, có displacement rõ, có liquidity sweep và đúng premium/discount theo hướng lệnh.
 * `core/backtest_engine.py` phải replay trade plan trên H1 và trả về `win_rate`, `expectancy_r`, `average_r`, `average_mfe_r`, `average_mae_r`, `max_drawdown_r`, `by_symbol`, `by_session`.
-* Dashboard Market Overview dùng `yfinance` lấy DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`) — không phụ thuộc MT5. Cập nhật bằng `QTimer` hoặc `refresh_status`.
+* Dashboard Market Overview dùng `yfinance` lấy DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`2YY=F`). Có fallback qua `requests` gọi thẳng Yahoo Finance chart API nếu yfinance lỗi. Cache 30 phút. Không phụ thuộc MT5. Cập nhật bằng `QTimer` hoặc `refresh_status`.
 * Màn hình kết quả phải hiển thị checklist entry gồm: Xu hướng, Vùng POI, Xác nhận H1, Tin tức, Spread, R:R, Lot. Mỗi mục phải có trạng thái đạt/chờ và ghi chú ngắn.
 * Auto-scan trong Scanner phải dùng `QTimer` để hẹn lần quét tiếp theo sau khi worker hiện tại kết thúc; không chạy song song hai worker scan. Nút `Dừng quét tự động` phải dừng timer và không hủy ngang worker đang chạy.
 * Telegram alert chỉ gửi cho setup thật sự sẵn sàng (`ready` + `allowed`). Tin nhắn phải dùng lot tính theo vốn MT5 hiện tại, không dùng vốn nhập tay nếu MT5 có balance hợp lệ.
@@ -263,3 +263,28 @@ Một task chỉ được coi là xong khi:
 - Telegram detail alert chi gui setup that su ready.
 - Summary alert chi hien thi tong so ma da quet va danh sach ma san sang vao lenh kem Entry/SL/TP. Khong hien thi danh sach theo doi.
 - Thoi gian summary phai dung dinh dang `dd-mm-yyyy HH:MM:SS`.
+
+## Macro Upgrade (2026-07-05)
+
+### 1. Market data resilience — yfinance fallback
+- `services/market_data_service.py`: cơ chế 2 tầng `yfinance` → `requests` thẳng Yahoo Finance chart API.
+- Hàm `_fetch_via_requests()` parse JSON → `list[Candle]`, trả `None` nếu lỗi, không raise exception.
+- Cache TTL 30 phút (tăng từ 15 phút).
+- Log `logger.warning` khi dùng fallback.
+
+### 2. Correlation expansion — mở rộng XXX/USD
+- `core/correlation_check.py._us10y_score()` và `_us2y_score()` hỗ trợ thêm EUR/USD, GBP/USD, AUD/USD, NZD/USD, CAD/USD.
+- Hệ số ±1.5 (US10Y) / ±1.0 (US2Y) — chỉ Tier 1 Directional, không áp dụng Tier 2, 3.
+- XAU/XAG/JPY giữ nguyên logic 3 tầng.
+
+### 3. FRED API — tự động cập nhật lãi suất
+- `services/interest_rate_service.py` (file mới): fetch lãi suất 8 tiền tệ từ FRED API.
+- `news_service.py._load_interest_rates()` gọi `get_latest_rates()` thay vì đọc file JSON tĩnh.
+- `fred_api_key` trong `AdvancedSettings` — để trống để dùng fallback `interest_rates.json`.
+- Cache 6 giờ. Trend tính từ chênh lệch 2 kỳ gần nhất (hike/cut/hold).
+
+### 4. AI stance — phân tích hawkish/dovish bằng AI
+- `news_service.py._ai_currency_stance()`: AI đọc headline → "hawkish" / "dovish" / "neutral".
+- Fallback về keyword matching nếu không có AI hoặc AI lỗi.
+- Cache stance 30 phút theo `currency + hash(5 headlines)`.
+- `scanner_controller` tạo `AIService` từ settings, truyền qua `data_quality_flags()` → `latest_macro_context()` → `_compute_macro_tiers()`.

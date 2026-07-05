@@ -77,6 +77,7 @@ class AdvancedSettings:
     settings_storage: str = "settings.json"
     block_high_impact_news: bool = True
     brave_api_key: str = ""
+    fred_api_key: str = ""
 
 
 @dataclass(slots=True)

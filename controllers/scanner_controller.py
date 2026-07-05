@@ -126,6 +126,15 @@ class ScannerController:
         progress(19, "Đang tải dữ liệu giá từ MT5...")
         total = max(1, len(request.symbols))
 
+        active_ai = settings.ai.active_provider()
+        ai_svc = None
+        if active_ai and active_ai.api_key:
+            ai_svc = AIService(AIProviderConfig(
+                provider=active_ai.provider,
+                model=active_ai.model,
+                api_key=active_ai.api_key,
+            ))
+
         analysis_input_kwargs: dict[str, Any] = {
             "account_balance": mt5_balance,
             "risk_percent": request.risk_percent,
@@ -147,6 +156,7 @@ class ScannerController:
                     bars_by_timeframe=bars_by_timeframe,
                     news_service=self.news_service,
                     freshness=freshness,
+                    ai_service=ai_svc,
                 )
             except Exception:
                 pkt = None
@@ -705,6 +715,7 @@ def _scan_one_symbol(
     closed_trades: list[dict[str, Any]],
     account_guard_settings: dict[str, Any],
     thresholds: dict[str, int] | None = None,
+    ai_service: object | None = None,
 ) -> dict[str, Any]:
     """Process a single symbol — safe for ThreadPoolExecutor (each thread inits its own MT5)."""
     import MetaTrader5 as _mt5
@@ -789,6 +800,7 @@ def _fetch_one_symbol_mt5(
     bars_by_timeframe: dict[str, int],
     news_service: Any,
     freshness: dict[str, Any],
+    ai_service: object | None = None,
 ) -> dict[str, Any] | None:
     """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
     consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved."""
@@ -800,7 +812,7 @@ def _fetch_one_symbol_mt5(
         broker_symbol, {**bars_by_timeframe, "M15": 100},
     )
     data_quality = data_provider.symbol_data_quality(symbol, broker_symbol)
-    news_flags = news_service.data_quality_flags(symbol)
+    news_flags = news_service.data_quality_flags(symbol, ai_service=ai_service)
     macro_context = news_flags.pop("macro_context", {"events": []})
     data_quality.update(news_flags)
     data_quality["macro_freshness"] = freshness

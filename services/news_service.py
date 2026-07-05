@@ -65,6 +65,7 @@ class NewsService:
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
+        self._stance_cache: dict[str, tuple[str, datetime]] = {}
 
     # ------------------------------------------------------------------
     # Interest rate config
@@ -73,12 +74,14 @@ class NewsService:
     def _load_interest_rates(cls) -> dict[str, object]:
         if cls._interest_rates is not None:
             return cls._interest_rates
+        from services.interest_rate_service import get_latest_rates
+        from services.settings_service import SettingsService
         try:
-            path = Path(__file__).resolve().parents[1] / "config" / "interest_rates.json"
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            cls._interest_rates = raw.get("currencies", {})
+            settings = SettingsService().load()
+            fred_key = getattr(settings.advanced, "fred_api_key", "") or ""
         except Exception:
-            cls._interest_rates = {}
+            fred_key = ""
+        cls._interest_rates = get_latest_rates(fred_api_key=fred_key or None)
         return cls._interest_rates
 
     def rate_info(self, currency: str) -> dict[str, object]:
@@ -95,7 +98,7 @@ class NewsService:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def latest_macro_context(self, symbol: str, *, include_latest_statements: bool = True) -> dict[str, object]:
+    def latest_macro_context(self, symbol: str, *, include_latest_statements: bool = True, ai_service: object | None = None) -> dict[str, object]:
         cache_key = f"{symbol}_{include_latest_statements}"
         if cache_key in self._tier_scores_cache and self._tier_scores_cache[cache_key] is not None:
             return self._tier_scores_cache[cache_key]
@@ -111,7 +114,7 @@ class NewsService:
         hotspots = self._geopolitical_hotspots(headlines + latest_statements)
 
         # Three-tier macro scoring (0-30 scale)
-        tier_scores = self._compute_macro_tiers(symbol, currencies, headlines, events, themes, hotspots)
+        tier_scores = self._compute_macro_tiers(symbol, currencies, headlines, events, themes, hotspots, ai_service=ai_service)
         data_quality = self._macro_data_quality(headlines, events)
         # Khong set _last_fetch_time neu dang preload (tranh ghi de thoi gian thuc)
         if not hasattr(self, '_preloading') or not self._preloading:
@@ -145,8 +148,9 @@ class NewsService:
         *,
         buffer_minutes: int = 30,
         include_latest_statements: bool = True,
+        ai_service: object | None = None,
     ) -> dict[str, object]:
-        context = self.latest_macro_context(symbol, include_latest_statements=include_latest_statements)
+        context = self.latest_macro_context(symbol, include_latest_statements=include_latest_statements, ai_service=ai_service)
         events = context.get("events", [])
         if not isinstance(events, list):
             events = []
@@ -628,19 +632,15 @@ class NewsService:
         events: list[dict[str, object]],
         themes: list[dict[str, object]],
         hotspots: list[dict[str, object]],
+        *,
+        ai_service: object | None = None,
     ) -> dict[str, object]:
         base = currencies[0] if currencies else ""
         quote = currencies[1] if len(currencies) > 1 else ""
-        base_stance = currency_stance(
-            [str(item.get("title", "")) for item in headlines if self._matches_currency(item, base)],
-            self.HAWKISH_TERMS,
-            self.DOVISH_TERMS,
-        )
-        quote_stance = currency_stance(
-            [str(item.get("title", "")) for item in headlines if self._matches_currency(item, quote)],
-            self.HAWKISH_TERMS,
-            self.DOVISH_TERMS,
-        )
+        base_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, base)]
+        quote_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, quote)]
+        base_stance = self._ai_currency_stance(base, base_headlines, ai_service)
+        quote_stance = self._ai_currency_stance(quote, quote_headlines, ai_service)
 
         tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(base, quote, base_stance, quote_stance)
         tier2_buy, tier2_sell, tier2_detail = self._macro_tier2(base, quote, events)
@@ -660,6 +660,47 @@ class NewsService:
                 "sell": self._build_macro_reason(base, quote, base_stance, quote_stance, "sell", tier1_detail, tier2_detail, tier3_detail),
             },
         }
+
+    def _ai_currency_stance(
+        self,
+        currency: str,
+        headlines: list[str],
+        ai_service: object | None = None,
+    ) -> str:
+        """Dùng AI đánh giá hawkish/dovish cho 1 tiền tệ từ danh sách headline.
+        Trả về: "hawkish" | "dovish" | "neutral"
+        Fallback về keyword matching nếu AI không khả dụng.
+        """
+        if not ai_service or not headlines:
+            return currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
+
+        cache_key = f"{currency}_{hash(tuple(headlines[:5]))}"
+        cached = self._stance_cache.get(cache_key)
+        if cached and (datetime.now(UTC) - cached[1]).total_seconds() < 1800:
+            return cached[0]
+
+        prompt = f"""Bạn là chuyên gia phân tích vĩ mô forex.
+Đọc các headline dưới đây liên quan đến {currency} và đánh giá xu hướng chính sách tiền tệ.
+Trả lời DUY NHẤT 1 từ: hawkish, dovish, hoặc neutral. Không giải thích.
+
+Headlines:
+{chr(10).join(f'- {h}' for h in headlines[:8])}
+
+Trả lời:"""
+
+        try:
+            response = ai_service.analyze(prompt, max_tokens=10)
+            result = response.strip().lower().split()[0]
+            if result in ("hawkish", "dovish", "neutral"):
+                self._stance_cache[cache_key] = (result, datetime.now(UTC))
+                return result
+        except Exception:
+            pass
+
+        # Fallback nếu AI lỗi hoặc trả về không hợp lệ
+        fallback = currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
+        self._stance_cache[cache_key] = (fallback, datetime.now(UTC))
+        return fallback
 
     # --- Tier 1: Interest Rate & Monetary Policy (0-12) ---
     def _macro_tier1(self, base: str, quote: str, base_stance: str, quote_stance: str) -> tuple[int, int, dict[str, object]]:

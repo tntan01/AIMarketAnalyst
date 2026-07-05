@@ -431,7 +431,8 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
     # Chỉ áp dụng cho kim loại quý và JPY pairs
     sym_upper = symbol.upper()
     if not any(code in sym_upper for code in ("XAU", "XAG", "JPY")):
-        return 0.0
+        if not sym_upper.endswith("/USD"):
+            return 0.0
 
     current = us10y_candles[-1].close
     prev_day = us10y_candles[-2].close
@@ -454,6 +455,15 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
             directional = 2.0 if y_up else -2.0
         else:
             directional = 2.0 if not y_up else -2.0
+    elif sym_upper.endswith("/USD"):
+        # Các cặp XXX/USD (EUR, GBP, AUD, NZD, CAD):
+        # US10Y tăng → USD mạnh → SELL XXX/USD thuận, BUY XXX/USD ngược
+        if (side == "buy" and not y_up) or (side == "sell" and y_up):
+            directional = 1.5
+        else:
+            directional = -1.5
+        total = directional
+        return round(total, 1)
 
     # --- Tầng 2: Absolute Level (25%) ---
     level_score = 0.0
@@ -503,7 +513,8 @@ def _us2y_score(side: str, symbol: str, us2y_candles: list | None) -> float:
 
     sym_upper = symbol.upper()
     if not any(code in sym_upper for code in ("XAU", "XAG", "JPY")):
-        return 0.0
+        if not sym_upper.endswith("/USD"):
+            return 0.0
 
     current = us2y_candles[-1].close
     prev_day = us2y_candles[-2].close
@@ -524,6 +535,15 @@ def _us2y_score(side: str, symbol: str, us2y_candles: list | None) -> float:
             directional = 2.0 if y_up else -2.0
         else:
             directional = 2.0 if not y_up else -2.0
+    elif sym_upper.endswith("/USD"):
+        # Các cặp XXX/USD (EUR, GBP, AUD, NZD, CAD):
+        # US2Y tăng → USD mạnh → SELL XXX/USD thuận, BUY XXX/USD ngược
+        if (side == "buy" and not y_up) or (side == "sell" and y_up):
+            directional = 1.0
+        else:
+            directional = -1.0
+        total = directional
+        return round(total, 1)
 
     # --- Tầng 2: Absolute Level (25%) ---
     level_score = 0.0

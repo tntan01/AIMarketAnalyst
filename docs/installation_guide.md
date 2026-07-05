@@ -50,6 +50,17 @@ yfinance
   cache/
 ```
 
+## API Keys (tùy chọn)
+
+| Key | Dùng cho | Để trống |
+|---|---|---|
+| `fred_api_key` (trong settings → advanced) | Tự động cập nhật lãi suất từ FRED API | Dùng `config/interest_rates.json` tĩnh |
+| `brave_api_key` (trong settings → advanced) | Tìm kiếm tin tức qua Brave Search API | Dùng RSS feed công khai |
+
+Các API key được lưu trong `settings.json` tại thư mục user data. Không có key, app vẫn chạy bình thường với dữ liệu fallback.
+  cache/
+```
+
 Không lưu database, settings hoặc log vào thư mục cài đặt sau khi đóng gói.
 
 ## Chạy ứng dụng khi phát triển

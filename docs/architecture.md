@@ -82,6 +82,8 @@ ai-market-analyst/
     mt5_service.py
     ai_service.py
     news_service.py
+    market_data_service.py
+    interest_rate_service.py
     storage_service.py
     settings_service.py
     logging_service.py
@@ -221,13 +223,26 @@ Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nh
 * Lịch kinh tế theo chuỗi fallback: Forex Factory JSON, Forex Factory HTML scrape nhẹ, file cache gần nhất, cuối cùng là `Calendar unavailable` kèm warning.
 * Headline macro mới nhất từ RSS/search feed công khai.
 * Phát biểu đáng chú ý trong 24h qua từ RSS/search feed công khai: Truth Social/Trump, quan chức Mỹ/Fed, thủ tướng Nhật, thủ tướng Anh và quan chức EU.
-* Macro theme theo từng đồng tiền: hawkish, dovish hoặc neutral.
+* Macro theme theo từng đồng tiền: hawkish, dovish hoặc neutral — xác định qua AI (có fallback keyword matching) hoặc keyword matching thuần nếu không có AI service.
 * Macro theme cho XAU, XAG và BTC dựa trên real yields, DXY, risk sentiment, ETF/flow và catalyst liên quan từng tài sản.
 * Điểm nóng thế giới liên quan risk-off, dầu, chiến sự, trừng phạt, tariff.
-* **Macro alignment score 3 tầng (0-30):** T1 lãi suất & chính sách tiền tệ (0-12) dùng `config/interest_rates.json` + stance từ headline; T2 lịch kinh tế (0-10) dùng calendar events 72h; T3 tâm lý rủi ro & địa chính trị (0-8) dùng sentiment + hotspot count. Score được điều chỉnh theo `macro_confidence` (0.10-1.0) dựa trên chất lượng dữ liệu.
+* **Macro alignment score 3 tầng (0-30):** T1 lãi suất & chính sách tiền tệ (0-12) — lãi suất tự động cập nhật từ FRED API (fallback về `config/interest_rates.json` nếu không có API key) + stance từ AI hoặc keyword; T2 lịch kinh tế (0-10) dùng calendar events 72h; T3 tâm lý rủi ro & địa chính trị (0-8) dùng sentiment + hotspot count. Score được điều chỉnh theo `macro_confidence` (0.10-1.0) dựa trên chất lượng dữ liệu.
 * AI chỉ được dịch, tóm tắt và nhận định tác động dựa trên dữ liệu app đã lấy, không tự bịa headline, phát biểu hoặc sự kiện.
 
 Nếu lịch kinh tế bị rate limit, ví dụ HTTP 429 từ Forex Factory, app không được làm mất toàn bộ macro context. `news_service.py` phải thử HTML calendar, sau đó dùng cache lịch kinh tế gần nhất nếu có, và ghi warning rõ ràng. Khi không có cache, `events` để rỗng nhưng `latest_headlines`, `latest_statements`, `macro_themes`, `geopolitical_hotspots` và `macro_alignment_scores` vẫn được trả về nếu nguồn headline còn hoạt động.
+
+`services/market_data_service.py` chịu trách nhiệm cung cấp dữ liệu thị trường Mỹ cho correlation checking:
+
+* Fetch DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`2YY=F`) qua cơ chế 2 tầng: `yfinance` → nếu lỗi/rỗng → gọi thẳng Yahoo Finance chart API bằng `requests`.
+* Cache 30 phút để giảm số lần gọi mạng.
+* Parse response thành `list[Candle]` chuẩn hóa cho `core/correlation_check.py`.
+
+`services/interest_rate_service.py` chịu trách nhiệm cập nhật lãi suất ngân hàng trung ương:
+
+* Tự động fetch từ FRED API (miễn phí, cần API key) cho 8 loại tiền tệ: USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF.
+* Fallback về `config/interest_rates.json` nếu không có API key hoặc FRED lỗi.
+* Cache 6 giờ để giới hạn 4 lần gọi/ngày.
+* Tính trend (hike/cut/hold) từ 2 observation gần nhất.
 
 Mọi lịch kinh tế hiển thị cho người dùng phải ưu tiên mẫu: `ngày-tháng-năm thời gian: nội dung tiếng Việt -> ảnh hưởng tới đồng tiền đang xét`. Mục Tin mới nhất chỉ giữ headline/phát biểu trong 24h trước và dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm phần `-> ảnh hưởng...` khi có nhận định tác động cụ thể từ AI hoặc rule heuristic. Nếu không xác định được tác động, không thêm câu chung chung.
 
@@ -488,3 +503,30 @@ Không code tất cả trong một lần.
   - The order comment is prefixed with `AMA`.
 - Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
 - Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, and `risk_percent`.
+
+## Macro Upgrade (2026-07-05)
+
+### 1. yfinance fallback — market data resilience
+- `services/market_data_service.py` sử dụng cơ chế 2 tầng: `yfinance.download()` → nếu lỗi hoặc trả về empty → gọi thẳng Yahoo Finance chart API qua `requests`.
+- `_fetch_via_requests()` parse JSON response từ `query1.finance.yahoo.com/v8/finance/chart/{ticker}` → `list[Candle]`.
+- Cache TTL tăng từ 15 phút lên 30 phút để giảm tần suất gọi mạng.
+- Log `logger.warning` rõ ràng mỗi khi dùng fallback.
+
+### 2. Correlation expansion — XXX/USD pairs
+- `core/correlation_check.py`: `_us10y_score()` và `_us2y_score()` mở rộng từ XAU/XAG/JPY sang tất cả cặp `XXX/USD` (EUR, GBP, AUD, NZD, CAD).
+- Logic: US10Y/US2Y tăng → USD mạnh → SELL XXX/USD được thưởng (+1.5 với US10Y, +1.0 với US2Y); BUY bị phạt (-1.5 / -1.0).
+- Chỉ áp dụng Tier 1 Directional, bỏ qua Tier 2 (absolute level) và Tier 3 (momentum) cho XXX/USD pairs.
+- XAU/XAG/JPY giữ nguyên logic 3 tầng.
+
+### 3. FRED API — auto-update interest rates
+- `services/interest_rate_service.py` (file mới): tự động fetch lãi suất từ FRED API cho 8 loại tiền tệ.
+- `news_service.py._load_interest_rates()` chuyển từ đọc file JSON tĩnh → gọi `get_latest_rates()`.
+- `config.settings.AdvancedSettings` thêm `fred_api_key: str = ""` — để trống để dùng fallback JSON.
+- Cache 6 giờ, tính trend (hike/cut/hold) từ chênh lệch 2 kỳ gần nhất.
+
+### 4. AI stance analysis — hawkish/dovish
+- `news_service.py._ai_currency_stance()`: dùng AI đọc headline và trả về "hawkish" / "dovish" / "neutral".
+- Fallback về keyword matching (`currency_stance()` cũ) nếu không có AI service hoặc AI lỗi.
+- Cache stance 30 phút theo `currency + hash(5 headlines đầu)` để tránh gọi AI lặp.
+- `_compute_macro_tiers()` truyền `ai_service` xuống `_ai_currency_stance()`.
+- `scanner_controller.run_market_scan()` tạo `AIService` từ settings và truyền qua `_fetch_one_symbol_mt5()` → `data_quality_flags()` → `latest_macro_context()`.

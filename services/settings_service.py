@@ -155,6 +155,8 @@ class SettingsService:
             sqlite_database_path=data.get("sqlite_database_path", "./data/journal.db"),
             settings_storage=data.get("settings_storage", "settings.json"),
             block_high_impact_news=bool(data.get("block_high_impact_news", True)),
+            brave_api_key=data.get("brave_api_key", ""),
+            fred_api_key=data.get("fred_api_key", ""),
         )
 
     def _load_notification_settings(self, data: dict | None) -> NotificationSettings:

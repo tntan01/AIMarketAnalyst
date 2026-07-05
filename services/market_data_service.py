@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any
@@ -7,6 +8,8 @@ from typing import Any
 import requests
 
 from core.market_models import Candle
+
+logger = logging.getLogger(__name__)
 
 
 MARKET_TICKERS: dict[str, str] = {
@@ -25,7 +28,7 @@ _CORRELATION_KEYS: dict[str, str] = {
 
 _CORRELATION_CACHE: dict[str, Any] | None = None
 _CORRELATION_CACHE_TIME: datetime | None = None
-_CORRELATION_CACHE_TTL = timedelta(minutes=15)
+_CORRELATION_CACHE_TTL = timedelta(minutes=30)
 
 
 def parse_yf_candles(data: Any) -> list[Candle] | None:
@@ -57,6 +60,62 @@ def parse_yf_candles(data: Any) -> list[Candle] | None:
     return candles or None
 
 
+def _fetch_via_requests(ticker: str, period: str = "10d") -> list[Candle] | None:
+    """Fallback: fetch candle data from Yahoo Finance chart API directly."""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    params = {"interval": "1d", "range": period}
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        if resp.status_code == 429:
+            import time
+
+            time.sleep(2)
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+        json_data = resp.json()
+        result = json_data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        timestamps = result[0].get("timestamp", [])
+        quotes = result[0].get("indicators", {}).get("quote", [])
+        if not quotes or not timestamps:
+            return None
+        q = quotes[0]
+        opens = q.get("open", [])
+        highs = q.get("high", [])
+        lows = q.get("low", [])
+        closes = q.get("close", [])
+        volumes = q.get("volume", [])
+
+        candles: list[Candle] = []
+        for i, ts in enumerate(timestamps):
+            try:
+                o = opens[i] if i < len(opens) and opens[i] is not None else None
+                h = highs[i] if i < len(highs) and highs[i] is not None else None
+                l = lows[i] if i < len(lows) and lows[i] is not None else None
+                c = closes[i] if i < len(closes) and closes[i] is not None else None
+                v = volumes[i] if i < len(volumes) and volumes[i] is not None else 0.0
+                if c is None:
+                    continue
+                candles.append(
+                    Candle(
+                        time=datetime.fromtimestamp(ts),
+                        open=float(o) if o is not None else float(c),
+                        high=float(h) if h is not None else float(c),
+                        low=float(l) if l is not None else float(c),
+                        close=float(c),
+                        volume=float(v) if v is not None else 0.0,
+                    )
+                )
+            except (TypeError, ValueError, OverflowError):
+                continue
+        return candles or None
+    except Exception:
+        return None
+
+
 def fetch_macro_correlation_context(
     *,
     period: str = "5d",
@@ -66,7 +125,7 @@ def fetch_macro_correlation_context(
 ) -> dict[str, list[Candle] | None]:
     """Fetch DXY/VIX/US10Y candles for correlation checks.
 
-    Results are cached for _CORRELATION_CACHE_TTL (15 min) to avoid
+    Results are cached for _CORRELATION_CACHE_TTL (30 min) to avoid
     redundant yfinance downloads on repeated scans.
     """
     global _CORRELATION_CACHE, _CORRELATION_CACHE_TIME
@@ -95,10 +154,17 @@ def fetch_macro_correlation_context(
         }
         for future in as_completed(futures):
             tag = futures[future]
+            key = _CORRELATION_KEYS[tag]
+            ticker = MARKET_TICKERS[tag]
             try:
-                context[_CORRELATION_KEYS[tag]] = parse_yf_candles(future.result())
+                candles = parse_yf_candles(future.result())
+                if candles is None:
+                    logger.warning("yfinance returned empty for %s, using requests fallback", ticker)
+                    candles = _fetch_via_requests(ticker, period=period)
+                context[key] = candles
             except Exception:
-                pass
+                logger.warning("yfinance failed for %s, using requests fallback", ticker)
+                context[key] = _fetch_via_requests(ticker, period=period)
 
     _CORRELATION_CACHE = context
     _CORRELATION_CACHE_TIME = now
