@@ -530,3 +530,15 @@ Không code tất cả trong một lần.
 - Cache stance 30 phút theo `currency + hash(5 headlines đầu)` để tránh gọi AI lặp.
 - `_compute_macro_tiers()` truyền `ai_service` xuống `_ai_currency_stance()`.
 - `scanner_controller.run_market_scan()` tạo `AIService` từ settings và truyền qua `_fetch_one_symbol_mt5()` → `data_quality_flags()` → `latest_macro_context()`.
+
+## Brave Search & Calendar Cache Fixes (2026-07-06)
+
+### 5. Persistent calendar cache — tích lũy event quá khứ
+- **Vấn đề:** `forex_factory_client._store_calendar_cache()` chỉ merge khi cùng ngày, ngày mới → overwrite toàn bộ cache. FF API `thisweek.json` chỉ trả event tương lai → `lookup_actuals_batch()` không bao giờ có event quá khứ để lookup actual.
+- **Fix:** `_store_calendar_cache()` luôn merge với cache cũ (bỏ điều kiện `date == today_key`), thêm cleanup tự động event > 7 ngày. `CALENDAR_CACHE_MAX_AGE` tăng 12h → 24h.
+- **Kết quả:** Event quá khứ được tích lũy qua các lần chạy → `lookup_actuals_batch()` có dữ liệu đầu vào → Brave Search tự động tra cứu actual values.
+
+### 6. AI parse fallback — chống reasoning text lọt vào actual
+- **Vấn đề:** `news_service._parse_with_ai()` trả về toàn bộ AI reasoning text (~500 ký tự) thay vì con số actual. DeepSeek model output thinking tokens trước answer → `_parse_fallback_regex()` không được gọi.
+- **Fix:** Nếu `len(result) > 20` → AI đang trả về reasoning → fallback về `_parse_fallback_regex()` trích xuất số từ raw search text.
+- **Kết quả:** Actual values được parse sạch (`-0.4%`, `-1.0%`, `-0.2%`) thay vì nguyên đoạn văn bản.

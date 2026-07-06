@@ -288,3 +288,13 @@ Một task chỉ được coi là xong khi:
 - Fallback về keyword matching nếu không có AI hoặc AI lỗi.
 - Cache stance 30 phút theo `currency + hash(5 headlines)`.
 - `scanner_controller` tạo `AIService` từ settings, truyền qua `data_quality_flags()` → `latest_macro_context()` → `_compute_macro_tiers()`.
+
+## Brave Search & Calendar Cache Fixes (2026-07-06)
+
+### 5. Persistent calendar cache — tích lũy event quá khứ
+- `forex_factory_client._store_calendar_cache()`: luôn merge với cache cũ (bỏ điều kiện `date == today_key`). Thêm cleanup event > 7 ngày. `CALENDAR_CACHE_MAX_AGE` 12h → 24h.
+- Event quá khứ được tích lũy qua các lần chạy → `lookup_actuals_batch()` có input → Brave Search tự động tra actual.
+
+### 6. AI parse fallback — chống reasoning text lọt vào actual
+- `news_service._parse_with_ai()`: nếu AI response > 20 ký tự → fallback về `_parse_fallback_regex()` trích xuất số từ raw search text.
+- Khắc phục DeepSeek model output thinking tokens khiến actual value bị nhiễu.

@@ -1315,6 +1315,8 @@ Trả lời:"""
             result = ai.analyze(prompt, max_tokens=100).strip()
             if not result or result.upper() == "NONE":
                 return ""
+            if len(result) > 20:
+                return self._parse_fallback_regex(text)
             return result
         except Exception:
             return ""

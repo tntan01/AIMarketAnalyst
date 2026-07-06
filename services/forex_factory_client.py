@@ -67,7 +67,7 @@ class ForexFactoryClient:
     FOREX_FACTORY_NEXTWEEK_URL = "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
     FOREX_FACTORY_HTML_URL = "https://www.forexfactory.com/calendar?week=this"
     FOREX_FACTORY_NEXTWEEK_HTML_URL = "https://www.forexfactory.com/calendar?week=next"
-    CALENDAR_CACHE_MAX_AGE = timedelta(hours=12)
+    CALENDAR_CACHE_MAX_AGE = timedelta(hours=24)
     CALENDAR_CACHE_FILE: Path | None = None
 
     def __init__(self) -> None:
@@ -666,10 +666,11 @@ class ForexFactoryClient:
             return
         now = datetime.now(UTC)
         today_key = now.strftime("%Y%m%d")
+        cutoff = now - timedelta(days=7)
         snapshot = [dict(row) for row in rows]
 
         existing = self._read_calendar_cache_file()
-        if existing and existing.get("date") == today_key:
+        if existing:
             old_rows = existing.get("rows", [])
             existing_keys = set()
             for r in old_rows:
@@ -684,6 +685,14 @@ class ForexFactoryClient:
                 if (t, c, e) not in existing_keys:
                     old_rows.append(r)
             snapshot = old_rows
+
+        # Cleanup: remove events older than 7 days
+        cleaned: list[dict[str, object]] = []
+        for r in snapshot:
+            ev_time = _event_time(r)
+            if ev_time is None or ev_time >= cutoff:
+                cleaned.append(r)
+        snapshot = cleaned
 
         self._calendar_cache["global"] = (now, snapshot)
         try:
