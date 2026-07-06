@@ -6,9 +6,10 @@
   <title>AI Market Analyst Chart</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; background: #101214; color: #f3f4f6; font-family: Arial, sans-serif; overflow: hidden; }
-    #chart-wrapper { position: relative; width: 100%; height: 100%; }
-    #chart-container { width: 100%; height: 100%; }
+    html, body { width: 100%; height: 100%; background: transparent !important; color: #f3f4f6; font-family: Arial, sans-serif; overflow: hidden; }
+    #chart-wrapper { position: relative; width: 100%; height: 100%; background: transparent !important; }
+    #chart-container { width: 100%; height: 100%; background: transparent !important; }
+    #chart-container table, #chart-container td, #chart-container canvas { border: none !important; outline: none !important; }
     #timeframe-selector { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; z-index: 10; }
     #timeframe-selector button { background: #1e2227; color: #9ca3af; border: 1px solid #374151; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: Arial, sans-serif; }
     #timeframe-selector button:hover { background: #2d3238; color: #e5e7eb; }
@@ -17,11 +18,13 @@
     #watermark { position: absolute; bottom: 8px; left: 10px; color: #6b7280; font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
     
     /* Light theme styles */
-    body.light-theme { background: #ffffff; color: #111827; }
+    html.light-theme, body.light-theme { background: transparent !important; color: #111827; }
+    body.light-theme #chart-wrapper, body.light-theme #chart-container { background: transparent !important; }
     body.light-theme #timeframe-selector button { background: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
     body.light-theme #timeframe-selector button:hover { background: #e5e7eb; color: #1f2937; }
     body.light-theme #timeframe-selector button.active { background: #D94625; color: #ffffff; border-color: #D94625; }
     body.light-theme #empty-state, body.light-theme #error-state, body.light-theme #watermark { color: #9ca3af; }
+    ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
   </style>
 </head>
 <body>
@@ -381,6 +384,7 @@
         // Theme configuration
         var isLight = payload.theme === 'light';
         document.body.classList.toggle('light-theme', isLight);
+        document.documentElement.classList.toggle('light-theme', isLight);
         if (isLight) {
           COLORS.bg = '#ffffff';
           COLORS.text = '#111827';

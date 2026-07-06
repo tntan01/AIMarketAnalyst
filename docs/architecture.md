@@ -547,3 +547,15 @@ Không code tất cả trong một lần.
 - `ui/screens/scanner_detail_screen.py`: xóa `_cards_container` + 14 `InfoCard` ẩn (108 dòng) — widget được tạo từ `_build_ui()` nhưng không bao giờ hiển thị.
 - Xóa `_refresh_cards()` method — populate card ẩn vô ích. Dialog `_show_scan_detail_dialog()` tạo card riêng bằng `_dialog_card_*()`.
 - Chuyển `_refresh_entry_checklist()` thành lời gọi trực tiếp từ `_render()`, không qua `_refresh_cards()` trung gian.
+
+### 8. Tab Tổng quan redesign — hiển thị trực tiếp không cần mở dialog
+- **Hero bar mở rộng**: thêm 5 chỉ số inline (Điểm, R:R, Buy/Sell, Gap, Vĩ mô) ngay trên hero bar.
+- **Panel "Số liệu giao dịch"** (`_refresh_trade_panel()`): QFrame cố định ở cột phải, hiển thị Entry zone, SL, TP, R:R, Vĩ mô, Chế độ TT — tái sử dụng `_dialog_card_*()`.
+- **Panel "Điểm phân tích"** (`_refresh_score_panel()`): QFrame cố định ở cột phải, hiển thị Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD.
+- Cả 2 panel đều có guard `if not self.row` → hiển thị `"—"`, không crash.
+
+### 9. Dialog "Xem đầy đủ" upgrade — bỏ trùng lặp, thêm tooltip
+- Bỏ 10 ô trùng lặp với tab Tổng quan (Điểm, Mua/Bán, Gap, R:R, SL, TP, Entry, Chế độ TT, Quyền GD, Vĩ mô).
+- Giữ 6 ô còn lại, nhóm thành 2 khu vực có tiêu đề: "🔎 Ngữ cảnh mở rộng" (Vị trí giá, Nhóm scanner, M15, Vĩ mô) và "📔 Thống kê nhật ký" (Mẫu NK, Kỳ vọng NK).
+- Thêm `setToolTip()` giải thích thuật ngữ cho từng ô.
+- Cảnh báo `⚠️ Mẫu quá ít, kỳ vọng chưa đáng tin` khi sample_size < 20.

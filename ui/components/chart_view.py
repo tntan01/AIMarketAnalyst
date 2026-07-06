@@ -43,14 +43,20 @@ class AnalysisChartView(QWidget):
 
         from PyQt6.QtWebEngineCore import QWebEngineSettings
 
+        from PyQt6.QtGui import QColor
+
+        self.setStyleSheet("background: transparent; border: none;")
         self._webview = QWebEngineView()
         self._webview.setMinimumHeight(200)
+        self._webview.page().setBackgroundColor(QColor(0, 0, 0, 0))
+        self._webview.setStyleSheet("background: transparent; border: none; margin: 0px; padding: 0px;")
         layout.addWidget(self._webview)
 
         # Bat quyen truy cap file local cho WebEngine (bat buoc de load JS local)
         settings = self._webview.settings()
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, False)
 
         # Load chart HTML voi base path de load duoc JS tu cung thu muc
         chart_html = Path(__file__).parent.parent.parent / "assets" / "chart" / "index.html"

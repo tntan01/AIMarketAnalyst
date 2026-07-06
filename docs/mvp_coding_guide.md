@@ -303,3 +303,12 @@ Một task chỉ được coi là xong khi:
 - `ui/screens/scanner_detail_screen.py`: xóa `_cards_container` + 14 `InfoCard` ẩn (108 dòng dead code).
 - Xóa `_refresh_cards()` — populate card không hiển thị. Dialog dùng `_dialog_card_*()` riêng.
 - `_refresh_entry_checklist()` gọi trực tiếp từ `_render()`.
+
+### 8. Tab Tổng quan redesign — hiển thị trực tiếp
+- Hero bar mở rộng: thêm Điểm, R:R, Buy/Sell, Gap, Vĩ mô inline.
+- Panel "Số liệu giao dịch" + "Điểm phân tích" cố định cột phải, tái sử dụng `_dialog_card_*()`.
+- Có guard `if not self.row` → `"—"`, không crash.
+
+### 9. Dialog "Xem đầy đủ" upgrade
+- Bỏ 10 ô trùng tab Tổng quan, giữ 6 ô nhóm 2 khu vực có tiêu đề + tooltip.
+- Cảnh báo khi mẫu nhật ký < 20 lệnh.
