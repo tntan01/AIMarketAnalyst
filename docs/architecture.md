@@ -542,3 +542,8 @@ Không code tất cả trong một lần.
 - **Vấn đề:** `news_service._parse_with_ai()` trả về toàn bộ AI reasoning text (~500 ký tự) thay vì con số actual. DeepSeek model output thinking tokens trước answer → `_parse_fallback_regex()` không được gọi.
 - **Fix:** Nếu `len(result) > 20` → AI đang trả về reasoning → fallback về `_parse_fallback_regex()` trích xuất số từ raw search text.
 - **Kết quả:** Actual values được parse sạch (`-0.4%`, `-1.0%`, `-0.2%`) thay vì nguyên đoạn văn bản.
+
+### 7. Scanner Detail cleanup — xóa dead code tab Tổng quan
+- `ui/screens/scanner_detail_screen.py`: xóa `_cards_container` + 14 `InfoCard` ẩn (108 dòng) — widget được tạo từ `_build_ui()` nhưng không bao giờ hiển thị.
+- Xóa `_refresh_cards()` method — populate card ẩn vô ích. Dialog `_show_scan_detail_dialog()` tạo card riêng bằng `_dialog_card_*()`.
+- Chuyển `_refresh_entry_checklist()` thành lời gọi trực tiếp từ `_render()`, không qua `_refresh_cards()` trung gian.

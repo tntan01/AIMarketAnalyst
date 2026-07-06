@@ -298,3 +298,8 @@ Một task chỉ được coi là xong khi:
 ### 6. AI parse fallback — chống reasoning text lọt vào actual
 - `news_service._parse_with_ai()`: nếu AI response > 20 ký tự → fallback về `_parse_fallback_regex()` trích xuất số từ raw search text.
 - Khắc phục DeepSeek model output thinking tokens khiến actual value bị nhiễu.
+
+### 7. Scanner Detail cleanup — xóa dead code tab Tổng quan
+- `ui/screens/scanner_detail_screen.py`: xóa `_cards_container` + 14 `InfoCard` ẩn (108 dòng dead code).
+- Xóa `_refresh_cards()` — populate card không hiển thị. Dialog dùng `_dialog_card_*()` riêng.
+- `_refresh_entry_checklist()` gọi trực tiếp từ `_render()`.

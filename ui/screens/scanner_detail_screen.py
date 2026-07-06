@@ -13,7 +13,6 @@ from controllers.journal_controller import JournalController
 from services.storage_service import JsonStorage
 
 from ui.components.chart_view import AnalysisChartView
-from ui.components.info_card import InfoCard
 from ui.screens.shared import action_button, card, page_header
 
 
@@ -171,44 +170,6 @@ class ScannerDetailScreen(QWidget):
         right_col.addWidget(self.right_scroll, 1)
 
         ov.addLayout(right_col, 3)
-
-        # -- Hidden container: InfoCards populated by _refresh_cards(), shown in dialog only --
-        self._cards_container = QWidget()
-        self._cards_container.setVisible(False)
-        _hidden_grid = QGridLayout(self._cards_container)
-        _hidden_grid.setHorizontalSpacing(6)
-        _hidden_grid.setVerticalSpacing(6)
-        _hidden_grid.setContentsMargins(0, 0, 0, 0)
-
-        self.card_best = InfoCard("Điểm tốt nhất", "--", "", accent="#ea580c")
-        self.card_buysell = InfoCard("Mua / Bán", "--", "", accent="#fb7185")
-        self.card_final = InfoCard("Điểm cuối", "--", "", accent="#10b981")
-        self.card_gap = InfoCard("Chênh lệch", "--", "", accent="#f59e0b")
-        self.card_macro_score = InfoCard("Điểm vĩ mô", "--", "", accent="#38bdf8")
-        self.card_rr = InfoCard("Tỷ lệ R:R", "--", "", accent="#ea580c")
-        self.card_entry = InfoCard("Vùng vào lệnh", "--", "", accent="#10b981")
-        self.card_position = InfoCard("Vị trí giá", "--", "", accent="#f59e0b")
-        self.card_m15 = InfoCard("Khung M15", "--", "", accent="#f59e0b")
-        self.card_scanner_group = InfoCard("Nhóm scanner", "--", "", accent="#a78bfa")
-        self.card_regime = InfoCard("Chế độ TT", "--", "", accent="#fb7185")
-        self.card_permission = InfoCard("Quyền giao dịch", "--", "", accent="#e11d48")
-        self.card_journal_sample = InfoCard("Mẫu nhật ký", "--", "", accent="#9ca3af")
-        self.card_journal_expectancy = InfoCard("Kỳ vọng NK", "--", "", accent="#38bdf8")
-
-        _hidden_grid.addWidget(self.card_best, 0, 0)
-        _hidden_grid.addWidget(self.card_buysell, 0, 1)
-        _hidden_grid.addWidget(self.card_final, 1, 0)
-        _hidden_grid.addWidget(self.card_gap, 1, 1)
-        _hidden_grid.addWidget(self.card_macro_score, 2, 0)
-        _hidden_grid.addWidget(self.card_rr, 2, 1)
-        _hidden_grid.addWidget(self.card_entry, 3, 0)
-        _hidden_grid.addWidget(self.card_position, 3, 1)
-        _hidden_grid.addWidget(self.card_m15, 4, 0)
-        _hidden_grid.addWidget(self.card_scanner_group, 4, 1)
-        _hidden_grid.addWidget(self.card_regime, 5, 0)
-        _hidden_grid.addWidget(self.card_permission, 5, 1)
-        _hidden_grid.addWidget(self.card_journal_sample, 6, 0)
-        _hidden_grid.addWidget(self.card_journal_expectancy, 6, 1)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 
@@ -576,7 +537,7 @@ class ScannerDetailScreen(QWidget):
             )
 
         self._refresh_hero()
-        self._refresh_cards()
+        self._refresh_entry_checklist()
         self._refresh_chart()
         self._refresh_diagnostics()
         self._refresh_ai_audit()
@@ -666,114 +627,6 @@ class ScannerDetailScreen(QWidget):
             f"</tr></table>"
         )
         self.hero_bar.show()
-
-    def _refresh_cards(self) -> None:
-        """Populate the 10 info cards with scanner row data."""
-        if not self.row:
-            return
-
-        # Row 1: scores
-        best = self.row.get("best_score", "--")
-        self.card_best.set_value(f"{best}/100")
-        rating = self._score_rating(int(best) if str(best).isdigit() else 0)
-        self.card_best.set_detail(rating)
-
-        buy_s = self.row.get("buy_score", "--")
-        sell_s = self.row.get("sell_score", "--")
-        bias = self.row.get("direction_bias", {})
-        side_label = ""
-        if isinstance(bias, dict):
-            side = str(bias.get("best_side", ""))
-            clarity = "rõ" if bias.get("is_clear_bias") else "TB"
-            side_label = f"{'MUA' if side == 'buy' else 'BÁN' if side == 'sell' else '?'} {clarity}"
-        self.card_buysell.set_value(f"{buy_s} / {sell_s}")
-        self.card_buysell.set_detail(side_label)
-
-        final_v = self.row.get("final_score", "--")
-        self.card_final.set_value(f"{final_v}/100")
-        self.card_final.set_detail(self._score_rating(int(final_v) if str(final_v).isdigit() else 0))
-
-        gap = self.row.get("score_gap", "--")
-        min_gap = "10"
-        if isinstance(bias, dict):
-            min_gap = str(bias.get("min_gap", "10"))
-        self.card_gap.set_value(f"{self._compact_number(gap)}")
-        self.card_gap.set_detail(f"tối thiểu {min_gap}")
-
-        rr = self.row.get("risk_reward") or "--"
-        self.card_rr.set_value(str(rr))
-        eff_rr = self.row.get("expected_effective_rr")
-        rr_detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
-        self.card_rr.set_detail(rr_detail)
-
-        # Row 2: context
-        entry_raw = str(self.row.get("entry_status") or "--")
-        self.card_entry.set_value(self._entry_status_display(),
-                                   accent="#22c55e" if "Đã xác nhận" in self._entry_status_display() else "#fbbf24")
-
-        price_zone = str(self.row.get("price_vs_zone") or "").lower()
-        zone_map = {"in_zone": "Trong vùng", "near_zone": "Gần vùng", "far": "Còn xa", "unknown": "Chưa rõ"}
-        pz_val = zone_map.get(price_zone)
-        if not pz_val:
-            pz_val = "Chưa rõ" if price_zone in ("unknown", "--", "") else price_zone.title()
-        self.card_position.set_value(pz_val)
-
-        m15_raw = self._m15_text().lower()
-        m15_map = {"strict": "Chặt chẽ", "loose": "Lỏng lẻo", "chưa xác nhận": "Chưa xác nhận"}
-        m15_val = m15_map.get(m15_raw, m15_raw.title())
-        m15_accent = "#10b981" if m15_raw == "strict" else ("#f59e0b" if m15_raw == "loose" else "#e11d48")
-        self.card_m15.set_value(m15_val, accent=m15_accent)
-
-        regime = str(self.row.get("market_regime") or "--").lower()
-        regime_map = {"trend_up": "Tăng", "trend_down": "Giảm", "range": "Đi ngang",
-                       "volatile": "Biến động", "unknown": "Chưa rõ", "--": "--"}
-        self.card_regime.set_value(regime_map.get(regime, regime.title()))
-
-        perm = str(self.row.get("trade_permission") or "--").lower()
-        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
-        perm_accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#e11d48"}.get(perm, "#94a3b8")
-        self.card_permission.set_value(perm_map.get(perm, perm.title()), accent=perm_accent)
-
-        # Row 3: removed-from-overview columns now shown here
-        macro_val = self.row.get("macro_score", "--")
-        try:
-            macro_num = int(macro_val)
-        except (TypeError, ValueError):
-            macro_num = 15
-        conf = float(self.row.get("macro_confidence", 1.0))
-        quality_dot = "●" if conf >= 0.8 else ("○" if conf >= 0.5 else "◌")
-        macro_accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
-        self.card_macro_score.set_value(f"{quality_dot} {macro_num}/30", accent=macro_accent)
-        macro_detail = self.row.get("macro_bias", "--")
-        if isinstance(macro_detail, str):
-            self.card_macro_score.set_detail(macro_detail.title())
-
-        group_raw = str(self.row.get("scanner_group") or "--")
-        group_map = {"ready_now": "Sẵn sàng ngay", "waiting_confirmation": "Chờ xác nhận",
-                     "watch_zone": "Theo dõi", "blocked": "Bị chặn"}
-        group_accent = {"ready_now": "#10b981", "waiting_confirmation": "#f59e0b",
-                       "watch_zone": "#f59e0b", "blocked": "#e11d48"}.get(group_raw, "#94a3b8")
-        self.card_scanner_group.set_value(group_map.get(group_raw, group_raw), accent=group_accent)
-
-        sample = self.row.get("journal_sample_size", 0)
-        try:
-            sample_num = int(sample)
-        except (TypeError, ValueError):
-            sample_num = 0
-        self.card_journal_sample.set_value(str(sample_num))
-
-        exp_r = self.row.get("journal_expectancy_r")
-        try:
-            exp_num = float(exp_r)
-            exp_text = f"{exp_num:.2f}R"
-            exp_accent = "#10b981" if exp_num > 0 else ("#e11d48" if exp_num < 0 else "#94a3b8")
-        except (TypeError, ValueError):
-            exp_text = "--"
-            exp_accent = "#94a3b8"
-        self.card_journal_expectancy.set_value(exp_text, accent=exp_accent)
-
-        # Entry checklist
-        self._refresh_entry_checklist()
 
     def _refresh_entry_checklist(self) -> None:
         """Show what conditions are met / missing for trade entry."""
