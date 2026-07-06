@@ -913,14 +913,16 @@ QTableView#DataTable {
 
 QTableWidget#DataTable::item:hover,
 QTableView#DataTable::item:hover,
-QTableWidget#EconTable::item:hover {
+QTableWidget#EconTable::item:hover,
+QTableView#EconTable::item:hover {
   background: #1c2533; /* Soft dark hover background */
   color: #e5e7eb;
 }
 
 QTableWidget#DataTable::item:selected,
 QTableView#DataTable::item:selected,
-QTableWidget#EconTable::item:selected {
+QTableWidget#EconTable::item:selected,
+QTableView#EconTable::item:selected {
   background: #143735; /* Soft selected background */
   color: #e5e7eb;
 }
@@ -1475,49 +1477,59 @@ QLabel#CardValue[impact="low"] { color: #9ca3af; }
 
 
 
-QTableWidget#EconTable {
+QTableWidget#EconTable,
+QTableView#EconTable {
   background: #161a22;
   border: 1px solid #2b3545;
   border-radius: 8px;
   color: #e5e7eb;
   alternate-background-color: #191e28;
 }
-QTableWidget#EconTable::item {
+QTableWidget#EconTable::item,
+QTableView#EconTable::item {
   font-size: 13px;
-  padding: 6px 8px;
+  padding: 4px 8px;
   border: none;
 }
-QTableWidget#EconTable QHeaderView::section {
+QTableWidget#EconTable QHeaderView::section,
+QTableView#EconTable QHeaderView::section {
   background: #11151d;
   color: #64748b;
   font-size: 11px;
   font-weight: 700;
-  padding: 8px 8px;
+  padding: 4px 8px;
   border: none;
   border-bottom: 2px solid #ea580c;
   text-transform: uppercase;
 }
 
 /* Thanh cuộn dọc cho bảng Lịch kinh tế (EconTable) */
-QTableWidget#EconTable QScrollBar:vertical {
+QTableWidget#EconTable QScrollBar:vertical,
+QTableView#EconTable QScrollBar:vertical {
   background: #11151d;
   width: 14px;
   border-radius: 4px;
   margin: 8px 4px 8px 2px;
 }
-QTableWidget#EconTable QScrollBar::handle:vertical {
+QTableWidget#EconTable QScrollBar::handle:vertical,
+QTableView#EconTable QScrollBar::handle:vertical {
   background: #334155;
   border-radius: 4px;
   min-height: 30px;
 }
-QTableWidget#EconTable QScrollBar::handle:vertical:hover {
+QTableWidget#EconTable QScrollBar::handle:vertical:hover,
+QTableView#EconTable QScrollBar::handle:vertical:hover {
   background: #475569;
 }
 QTableWidget#EconTable QScrollBar::add-line:vertical,
-QTableWidget#EconTable QScrollBar::sub-line:vertical {
+QTableWidget#EconTable QScrollBar::sub-line:vertical,
+QTableView#EconTable QScrollBar::add-line:vertical,
+QTableView#EconTable QScrollBar::sub-line:vertical {
   height: 0px;
 }
 QTableWidget#EconTable QScrollBar::add-page:vertical,
-QTableWidget#EconTable QScrollBar::sub-page:vertical {
+QTableWidget#EconTable QScrollBar::sub-page:vertical,
+QTableView#EconTable QScrollBar::add-page:vertical,
+QTableView#EconTable QScrollBar::sub-page:vertical {
   background: transparent;
 }

@@ -115,7 +115,7 @@ class ScannerDetailScreen(QWidget):
         right_col.setSpacing(8)
         right_col.setContentsMargins(0, 0, 0, 0)
 
-        self.show_detail_btn = action_button("📋 Xem đầy đủ (16 chỉ số)", primary=True, color="warning")
+        self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
         self.show_detail_btn.setObjectName("ShowScanDetailBtn")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.show_detail_btn.setToolTip("Xem toàn bộ 16 chỉ số phân tích chi tiết")
@@ -161,14 +161,6 @@ class ScannerDetailScreen(QWidget):
         score_panel_layout.setContentsMargins(8, 6, 8, 6)
         score_panel_layout.setSpacing(2)
         right_col.addWidget(self.score_panel)
-
-        # -- Panel: Điều kiện vào lệnh --
-        self.entry_checklist_card = QFrame()
-        self.entry_checklist_card.setObjectName("EntryChecklistCard")
-        self.entry_checklist_layout = QVBoxLayout(self.entry_checklist_card)
-        self.entry_checklist_layout.setContentsMargins(8, 6, 8, 6)
-        self.entry_checklist_layout.setSpacing(2)
-        right_col.addWidget(self.entry_checklist_card)
         right_col.addStretch(1)
 
         ov.addLayout(right_col, 1)
@@ -585,7 +577,6 @@ class ScannerDetailScreen(QWidget):
         self._refresh_hero()
         self._refresh_trade_panel()
         self._refresh_score_panel()
-        self._refresh_entry_checklist()
         self._refresh_chart()
         self._refresh_diagnostics()
         self._refresh_ai_audit()
@@ -758,9 +749,9 @@ class ScannerDetailScreen(QWidget):
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
+            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {accent};")
+            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
@@ -820,82 +811,14 @@ class ScannerDetailScreen(QWidget):
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
+            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {accent};")
+            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
             row_l.addWidget(val, 1)
             layout.addWidget(row_w)
-
-    def _refresh_entry_checklist(self) -> None:
-        """Show what conditions are met / missing for trade entry."""
-        if not self.row:
-            return
-
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-
-        bg = "#ffffff" if light else "#1a1f2e"
-        border = "#d1d5db" if light else "#2b3545"
-        text_color = "#111827" if light else "#cbd5e1"
-        green = "#10b981"
-        red = "#e11d48"
-        yellow = "#f59e0b"
-        gray = "#94a3b8"
-
-        items = self._build_entry_checklist()
-
-        # Clear existing
-        while self.entry_checklist_layout.count():
-            child = self.entry_checklist_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # Title
-        title = QLabel("🔍 Điều kiện vào lệnh")
-        title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {text_color}; margin-bottom: 2px;")
-        self.entry_checklist_layout.addWidget(title)
-
-        self.entry_checklist_card.setStyleSheet(
-            f"QFrame#EntryChecklistCard {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
-        )
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-
-        content_widget = QWidget()
-        content_widget.setStyleSheet("background: transparent;")
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(0, 0, 4, 0)
-        content_layout.setSpacing(4)
-
-        for item in items:
-            icon = "✅" if item["pass"] else "❌"
-            color = green if item["pass"] else red
-            row_w = QWidget()
-            row_l = QHBoxLayout(row_w)
-            row_l.setContentsMargins(0, 0, 0, 0)
-            row_l.setSpacing(4)
-            row_l.setAlignment(Qt.AlignmentFlag.AlignTop)
-            icon_lbl = QLabel(icon)
-            icon_lbl.setStyleSheet(f"font-size: 11px;")
-            icon_lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
-            row_l.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignTop)
-            text_lbl = QLabel(item["label"])
-            text_lbl.setStyleSheet(f"font-size: 11px; color: {color};")
-            text_lbl.setWordWrap(True)
-            row_l.addWidget(text_lbl, 1)
-            content_layout.addWidget(row_w)
-            
-        content_layout.addStretch(1)
-        scroll_area.setWidget(content_widget)
-        self.entry_checklist_layout.addWidget(scroll_area)
 
     def _build_entry_checklist(self) -> list[dict]:
         """Build a list of {pass: bool, label: str} for entry conditions."""
@@ -1284,12 +1207,12 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:14px;background:{bg_color};border-radius:6px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
-            f"<td style='padding:10px 12px;color:{text_color};width:120px;font-size:13px;'>Kết luận</td>",
-            f"<td style='padding:10px 12px;color:{color};font-weight:bold;font-size:13px;'>{label}</td>",
-            f"<td style='padding:10px 12px;color:{text_color};width:90px;font-size:13px;'>Tin cậy</td>",
-            f"<td style='padding:10px 12px;color:{value_color};font-weight:bold;font-size:13px;'>{confidence}/100</td>",
-            f"<td style='padding:10px 12px;color:{text_color};width:110px;font-size:13px;'>Chất lượng plan</td>",
-            f"<td style='padding:10px 12px;color:{value_color};font-weight:bold;font-size:13px;'>{quality}/100</td>",
+            f"<td style='padding:4px 12px;color:{text_color};width:120px;font-size:13px;'>Kết luận</td>",
+            f"<td style='padding:4px 12px;color:{color};font-weight:bold;font-size:13px;'>{label}</td>",
+            f"<td style='padding:4px 12px;color:{text_color};width:90px;font-size:13px;'>Tin cậy</td>",
+            f"<td style='padding:4px 12px;color:{value_color};font-weight:bold;font-size:13px;'>{confidence}/100</td>",
+            f"<td style='padding:4px 12px;color:{text_color};width:110px;font-size:13px;'>Chất lượng plan</td>",
+            f"<td style='padding:4px 12px;color:{value_color};font-weight:bold;font-size:13px;'>{quality}/100</td>",
             "</tr>",
             "</table>",
         ]
@@ -1390,20 +1313,20 @@ class ScannerDetailScreen(QWidget):
                 f"<table style='width:100%;border-collapse:collapse;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;"
                 f"background:{sub_bg};border:1px solid {sub_border};border-radius:6px;margin-bottom:8px;'>"
                 f"<tr>"
-                f"<td style='padding:6px 10px;color:{sc};width:140px;font-size:13px;'>Chế độ thị trường:</td>"
-                f"<td style='padding:6px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{regime_text}</td>"
+                f"<td style='padding:4px 10px;color:{sc};width:140px;font-size:13px;'>Chế độ thị trường:</td>"
+                f"<td style='padding:4px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{regime_text}</td>"
                 f"</tr>"
                 f"<tr>"
-                f"<td style='padding:6px 10px;color:{sc};font-size:13px;'>Hướng vào lệnh:</td>"
-                f"<td style='padding:6px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{side_text}</td>"
+                f"<td style='padding:4px 10px;color:{sc};font-size:13px;'>Hướng vào lệnh:</td>"
+                f"<td style='padding:4px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{side_text}</td>"
                 f"</tr>"
                 f"<tr>"
-                f"<td style='padding:6px 10px;color:{sc};font-size:13px;'>Điểm tối thiểu:</td>"
-                f"<td style='padding:6px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{min_score_val} điểm <span style='font-weight:normal;color:{sc};'>{score_desc}</span></td>"
+                f"<td style='padding:4px 10px;color:{sc};font-size:13px;'>Điểm tối thiểu:</td>"
+                f"<td style='padding:4px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{min_score_val} điểm <span style='font-weight:normal;color:{sc};'>{score_desc}</span></td>"
                 f"</tr>"
                 f"<tr>"
-                f"<td style='padding:6px 10px;color:{sc};font-size:13px;'>R:R tối thiểu:</td>"
-                f"<td style='padding:6px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{rr_text}</td>"
+                f"<td style='padding:4px 10px;color:{sc};font-size:13px;'>R:R tối thiểu:</td>"
+                f"<td style='padding:4px 10px;color:{text_color};font-weight:bold;font-size:13px;'>{rr_text}</td>"
                 f"</tr>"
                 f"</table>"
             )
@@ -1411,7 +1334,7 @@ class ScannerDetailScreen(QWidget):
             return (
                 f"<table style='width:100%;border-collapse:collapse;background:{bg};border-left:4px solid {accent};margin:8px 0 12px;'>"
                 f"<tr>"
-                f"<td style='padding:12px 16px;'>"
+                f"<td style='padding:4px 16px;'>"
                 f"<div style='font-size:16px;font-weight:bold;color:{accent};margin-bottom:8px;'>"
                 f"✅ Nhánh B — Có cấu hình Backtest</div>"
                 f"{config_table_html}"
@@ -1511,10 +1434,10 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;' title='Thành phần được chấm điểm'>Thành phần</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:55px;font-size:13px;font-weight:bold;' title='Điểm tối đa của thành phần này'>Max</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:55px;font-size:13px;font-weight:bold;' title='Điểm kịch bản MUA'>MUA</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:55px;font-size:13px;font-weight:bold;' title='Điểm kịch bản BÁN'>BÁN</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;' title='Thành phần được chấm điểm'>Thành phần</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:55px;font-size:13px;font-weight:bold;' title='Điểm tối đa của thành phần này'>Max</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:55px;font-size:13px;font-weight:bold;' title='Điểm kịch bản MUA'>MUA</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:55px;font-size:13px;font-weight:bold;' title='Điểm kịch bản BÁN'>BÁN</th>",
             "</tr>",
         ]
 
@@ -1532,19 +1455,19 @@ class ScannerDetailScreen(QWidget):
             eff_max = max_v if max_v is not None else max(int(bv), int(sv), 1)
             rows.append(
                 f"<tr>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='{tooltip}'>{label}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>{eff_max}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{_color(int(bv), eff_max)};font-weight:bold;font-size:13px;'>{int(bv)}</td>"
-                f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{_color(int(sv), eff_max)};font-weight:bold;font-size:13px;'>{int(sv)}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='{tooltip}'>{label}</td>"
+                f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>{eff_max}</td>"
+                f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{_color(int(bv), eff_max)};font-weight:bold;font-size:13px;'>{int(bv)}</td>"
+                f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{_color(int(sv), eff_max)};font-weight:bold;font-size:13px;'>{int(sv)}</td>"
                 f"</tr>"
             )
 
         rows.append(
             f"<tr style='border-top:2px solid {border_color};'>"
-            f"<td style='padding:8px 10px;color:{label_color};font-weight:bold;font-size:13px;' title='Tổng điểm tín hiệu sau khi chuẩn hóa (0-100)'>TỔNG</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:{desc_color};font-size:13px;'>100</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#ea580c;font-weight:bold;font-size:13px;'>{buy_total}</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#f43f5e;font-weight:bold;font-size:13px;'>{sell_total}</td>"
+            f"<td style='padding:4px 10px;color:{label_color};font-weight:bold;font-size:13px;' title='Tổng điểm tín hiệu sau khi chuẩn hóa (0-100)'>TỔNG</td>"
+            f"<td style='text-align:center;padding:4px 10px;color:{desc_color};font-size:13px;'>100</td>"
+            f"<td style='text-align:center;padding:4px 10px;color:#ea580c;font-weight:bold;font-size:13px;'>{buy_total}</td>"
+            f"<td style='text-align:center;padding:4px 10px;color:#f43f5e;font-weight:bold;font-size:13px;'>{sell_total}</td>"
             f"</tr>"
         )
         rows.append("</table>")
@@ -1553,42 +1476,42 @@ class ScannerDetailScreen(QWidget):
         rows.append(
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:14px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;background:{bg_color};border-radius:6px;'>"
             "<tr>"
-            f"<td style='padding:6px 12px;color:{muted_color};width:110px;font-size:13px;'>Đánh giá MUA</td>"
-            f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'>{_rating(buy_total)}</td>"
-            f"<td style='padding:6px 12px;color:{muted_color};width:110px;font-size:13px;'>Tương quan MUA</td>"
-            f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'><b>{buy_corr:+.0f}</b></td>"
+            f"<td style='padding:4px 12px;color:{muted_color};width:110px;font-size:13px;'>Đánh giá MUA</td>"
+            f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'>{_rating(buy_total)}</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};width:110px;font-size:13px;'>Tương quan MUA</td>"
+            f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{buy_corr:+.0f}</b></td>"
             "</tr>"
             "<tr>"
-            f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Đánh giá BÁN</td>"
-            f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'>{_rating(sell_total)}</td>"
-            f"<td style='padding:6px 12px;color:{muted_color};width:110px;font-size:13px;'>Tương quan BÁN</td>"
-            f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'><b>{sell_corr:+.0f}</b></td>"
+            f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Đánh giá BÁN</td>"
+            f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'>{_rating(sell_total)}</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};width:110px;font-size:13px;'>Tương quan BÁN</td>"
+            f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{sell_corr:+.0f}</b></td>"
             "</tr>"
         )
 
         if buy_macro_status or sell_macro_status:
             rows.append(
                 "<tr>"
-                f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Vĩ mô MUA</td>"
-                f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'><b>{buy_macro_status or 'trung lập'}</b></td>"
-                f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Vĩ mô BÁN</td>"
-                f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'><b>{sell_macro_status or 'trung lập'}</b></td>"
+                f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Vĩ mô MUA</td>"
+                f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{buy_macro_status or 'trung lập'}</b></td>"
+                f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Vĩ mô BÁN</td>"
+                f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{sell_macro_status or 'trung lập'}</b></td>"
                 "</tr>"
             )
         rows.append(
             "<tr>"
-            f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Phạt MUA</td>"
-            f"<td style='padding:6px 12px;color:{desc_color};font-size:13px;'>{buy_penalty}</td>"
-            f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Phạt BÁN</td>"
-            f"<td style='padding:6px 12px;color:{desc_color};font-size:13px;'>{sell_penalty}</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Phạt MUA</td>"
+            f"<td style='padding:4px 12px;color:{desc_color};font-size:13px;'>{buy_penalty}</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Phạt BÁN</td>"
+            f"<td style='padding:4px 12px;color:{desc_color};font-size:13px;'>{sell_penalty}</td>"
             "</tr>"
         )
         rows.append(
             "<tr>"
-            f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Lý do MUA</td>"
-            f"<td style='padding:6px 12px;color:{desc_color};font-size:13px;'>{buy_reason}</td>"
-            f"<td style='padding:6px 12px;color:{muted_color};font-size:13px;'>Lý do BÁN</td>"
-            f"<td style='padding:6px 12px;color:{desc_color};font-size:13px;'>{sell_reason}</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Lý do MUA</td>"
+            f"<td style='padding:4px 12px;color:{desc_color};font-size:13px;'>{buy_reason}</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Lý do BÁN</td>"
+            f"<td style='padding:4px 12px;color:{desc_color};font-size:13px;'>{sell_reason}</td>"
             "</tr>"
         )
 
@@ -1673,9 +1596,9 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;font-size:13px;font-weight:bold;'>Gate</th>",
-            f"<th colspan='2' style='text-align:left;padding:8px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;font-size:13px;font-weight:bold;'>Kết quả</th>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Ý nghĩa / Chi tiết</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;font-size:13px;font-weight:bold;'>Gate</th>",
+            f"<th colspan='2' style='text-align:left;padding:4px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;font-size:13px;font-weight:bold;'>Kết quả</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Ý nghĩa / Chi tiết</th>",
             "</tr>",
         ]
 
@@ -1703,10 +1626,10 @@ class ScannerDetailScreen(QWidget):
 
             rows.append(
                 f"<tr>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='{g_explain}'>{g_label}</td>"
-                f"<td style='width:24px;text-align:right;padding:6px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
-                f"<td style='width:71px;text-align:left;padding:6px 0 6px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:bold;font-size:13px;'>{text}</td>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:13px;'>{g_explain} &mdash; {g_detail}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='{g_explain}'>{g_label}</td>"
+                f"<td style='width:24px;text-align:right;padding:4px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
+                f"<td style='width:71px;text-align:left;padding:4px 0 4px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:bold;font-size:13px;'>{text}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:13px;'>{g_explain} &mdash; {g_detail}</td>"
                 f"</tr>"
             )
         rows.append("</table>")
@@ -1827,10 +1750,10 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;font-size:13px;font-weight:bold;'>Điều kiện</th>",
-            f"<th colspan='2' style='text-align:left;padding:8px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;font-size:13px;font-weight:bold;'>Trạng thái</th>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:160px;font-size:13px;font-weight:bold;'>Giá trị</th>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Ghi chú</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;font-size:13px;font-weight:bold;'>Điều kiện</th>",
+            f"<th colspan='2' style='text-align:left;padding:4px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;font-size:13px;font-weight:bold;'>Trạng thái</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:160px;font-size:13px;font-weight:bold;'>Giá trị</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Ghi chú</th>",
             "</tr>",
         ]
 
@@ -1848,11 +1771,11 @@ class ScannerDetailScreen(QWidget):
 
             rows.append(
                 f"<tr>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;'>{label}</td>"
-                f"<td style='width:24px;text-align:right;padding:6px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
-                f"<td style='width:71px;text-align:left;padding:6px 0 6px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:bold;font-size:13px;'>{status_text}</td>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:13px;'>{value}</td>"
-                f"<td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>{note}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;'>{label}</td>"
+                f"<td style='width:24px;text-align:right;padding:4px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
+                f"<td style='width:71px;text-align:left;padding:4px 0 4px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:bold;font-size:13px;'>{status_text}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:13px;'>{value}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>{note}</td>"
                 f"</tr>"
             )
         rows.append("</table>")
@@ -1891,9 +1814,9 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:120px;font-size:13px;font-weight:bold;'>Bước</th>",
-            f"<th colspan='2' style='text-align:left;padding:6px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;font-size:13px;font-weight:bold;'>Kết quả</th>",
-            f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Diễn giải / Tóm tắt</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:120px;font-size:13px;font-weight:bold;'>Bước</th>",
+            f"<th colspan='2' style='text-align:left;padding:4px 10px;padding-left:10px;border-bottom:2px solid {border_color};color:{muted_color};width:95px;font-size:13px;font-weight:bold;'>Kết quả</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Diễn giải / Tóm tắt</th>",
             "</tr>",
         ]
 
@@ -1931,10 +1854,10 @@ class ScannerDetailScreen(QWidget):
             explain = STEP_EXPLAIN.get(step, "")
             rows.append(
                 f"<tr>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='{explain}'>{label}</td>"
-                f"<td style='width:24px;text-align:right;padding:5px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
-                f"<td style='width:71px;text-align:left;padding:5px 0 5px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:bold;font-size:13px;'>{text}</td>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:13px;'>{summary}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='{explain}'>{label}</td>"
+                f"<td style='width:24px;text-align:right;padding:4px 0;border-bottom:1px solid {row_border_color};font-family:\"Segoe UI Emoji\",\"Apple Color Emoji\",\"Segoe UI\";font-size:13px;'>{icon}</td>"
+                f"<td style='width:71px;text-align:left;padding:4px 0 4px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color};font-weight:bold;font-size:13px;'>{text}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{muted_color};font-size:13px;'>{summary}</td>"
                 f"</tr>"
             )
         rows.append("</table>")
@@ -1974,23 +1897,23 @@ class ScannerDetailScreen(QWidget):
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
-            f"<th style='text-align:left;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Thành phần</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:60px;font-size:13px;font-weight:bold;' title='Trọng lượng trong công thức'>TL</th>",
-            f"<th style='text-align:center;padding:8px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:60px;font-size:13px;font-weight:bold;' title='Điểm thành phần'>Điểm</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};font-size:13px;font-weight:bold;'>Thành phần</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:60px;font-size:13px;font-weight:bold;' title='Trọng lượng trong công thức'>TL</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:60px;font-size:13px;font-weight:bold;' title='Điểm thành phần'>Điểm</th>",
             "</tr>",
-            f"<tr><td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='Điểm tín hiệu từ bước chấm điểm (0-100)'>Tín hiệu</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>65%</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{signal_s}</td></tr>",
-            f"<tr><td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='Điểm từ nhật ký giao dịch cũ (setup tương tự từng thắng không)'>Bằng chứng (NK)</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>20%</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{evidence_s}</td></tr>",
-            f"<tr><td style='padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='Điểm chất lượng thực thi lệnh (tỷ lệ khớp lệnh thành công)'>Chất lượng thực thi</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>15%</td>"
-            f"<td style='text-align:center;padding:6px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{exec_s}</td></tr>",
+            f"<tr><td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='Điểm tín hiệu từ bước chấm điểm (0-100)'>Tín hiệu</td>"
+            f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>65%</td>"
+            f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{signal_s}</td></tr>",
+            f"<tr><td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='Điểm từ nhật ký giao dịch cũ (setup tương tự từng thắng không)'>Bằng chứng (NK)</td>"
+            f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>20%</td>"
+            f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{evidence_s}</td></tr>",
+            f"<tr><td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-size:13px;' title='Điểm chất lượng thực thi lệnh (tỷ lệ khớp lệnh thành công)'>Chất lượng thực thi</td>"
+            f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>15%</td>"
+            f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{exec_s}</td></tr>",
             f"<tr style='border-top:2px solid {border_color};'>"
-            f"<td style='padding:8px 10px;color:{label_color};font-weight:bold;font-size:13px;' title='Điểm cuối cùng = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>ĐIỂM CUỐI</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:{desc_color};font-size:13px;'>100%</td>"
-            f"<td style='text-align:center;padding:8px 10px;color:#22c55e;font-weight:bold;font-size:13px;'>{final_score}</td></tr>",
+            f"<td style='padding:4px 10px;color:{label_color};font-weight:bold;font-size:13px;' title='Điểm cuối cùng = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>ĐIỂM CUỐI</td>"
+            f"<td style='text-align:center;padding:4px 10px;color:{desc_color};font-size:13px;'>100%</td>"
+            f"<td style='text-align:center;padding:4px 10px;color:#22c55e;font-weight:bold;font-size:13px;'>{final_score}</td></tr>",
             "</table>",
         ]
 
@@ -2009,8 +1932,8 @@ class ScannerDetailScreen(QWidget):
         rows.append(
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;background:{bg_color};border-radius:6px;'>"
             "<tr>"
-            f"<td style='padding:6px 12px;color:{muted_color};width:110px;font-size:13px;'>Quyết định</td>"
-            f"<td style='padding:6px 12px;color:{text_color};font-size:13px;'><b>{dec_decision}</b>"
+            f"<td style='padding:4px 12px;color:{muted_color};width:110px;font-size:13px;'>Quyết định</td>"
+            f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{dec_decision}</b>"
             + (f" <span style='color:{desc_color};font-size:13px;'>({dec_explain})</span>" if dec_explain else "")
             + f" → hành động: <b>{dec_action}</b></td>"
             "</tr>"

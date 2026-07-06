@@ -474,7 +474,7 @@ class ScannerScreen (QWidget ):
         root .addWidget (
         page_header (
         'Quét thị trường',
-        'Chọn mã và quét setup đủ điều kiện.',
+        "",
         "",
         )
         )
@@ -1400,7 +1400,8 @@ class ScannerScreen (QWidget ):
             frame .layout ().insertWidget (0 ,header )
 
         self .table =QTableView ()
-        self .table .setObjectName ("DataTable")
+        self .table .setObjectName ("EconTable")
+        self .table .setShowGrid (False )
         self .table .setModel (self .table_model )
         self .table .setWordWrap (True )
         self .table .verticalHeader ().setSectionResizeMode (QHeaderView .ResizeMode .ResizeToContents )
@@ -2430,6 +2431,10 @@ def parse_market_brief(raw: str) -> list[dict]:
             if keyword in upper:
                 # Extract the heading text: strip leading numbers, bullets, markdown
                 cleaned = re.sub(r"^[\d\s.)\-•*#]+\s*", "", line)
+                # Take only the part before the colon (heading keyword only, not AI commentary)
+                colon_idx = cleaned.find(":")
+                if colon_idx > 0:
+                    cleaned = cleaned[:colon_idx]
                 cleaned = cleaned.strip().rstrip(":").strip()
                 # Keep the heading concise (first 60 chars)
                 if len(cleaned) > 60:
@@ -2438,16 +2443,15 @@ def parse_market_brief(raw: str) -> list[dict]:
         return None
 
     def looks_like_heading(line: str) -> bool:
-        """Quick check if a line is likely a heading (short, starts with number/marker)."""
+        """Quick check if a line is likely a heading (starts with number prefix like 1. or 2))."""
         stripped = line.strip()
         if len(stripped) > 80:
             return False
+        # Must start with a number prefix: "1.", "2)", "3." etc.
+        if not re.match(r"^\d+[.)]\s+", stripped):
+            return False
         upper = stripped.upper()
-        # Starts with optional number/marker + keyword
-        if re.match(r"^[\d\s.)\-•*#]+\s*", stripped):
-            return any(kw in upper for kw, _ in SECTION_PATTERNS)
-        # Or the entire line is just a heading keyword phrase
-        return any(kw in upper and len(stripped) < 60 for kw, _ in SECTION_PATTERNS)
+        return any(kw in upper for kw, _ in SECTION_PATTERNS)
 
     lines = raw.splitlines()
     sections: list[dict] = []

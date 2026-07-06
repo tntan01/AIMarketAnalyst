@@ -612,6 +612,10 @@ Trade Permission (quyền cho phép giao dịch) != Blocked (bị chặn)
 
 Nếu có nhiều mã đạt điều kiện, MVP (phiên bản khả dụng tối thiểu) chỉ gọi AI cho tối đa 3 mã có điểm cao nhất.
 
+### Lưu ý về Giao diện & Styling
+- **Tiêu đề phụ (Subtitle):** Phần tiêu đề phụ dưới "Quét thị trường" được để trống để giữ giao diện tối giản và hiện đại.
+- **Chiều cao dòng (Row Height):** Để hiển thị được tối đa số lượng cơ hội quét đồng thời trên một màn hình, vertical padding của các ô bảng (`::item`) và tiêu đề cột (`QHeaderView::section`) thuộc bảng kết quả quét (`#EconTable`) được cấu hình tối ưu ở mức `4px` (giữ nguyên horizontal padding là `8px`).
+
 ---
 
 ## Màn hình 5: Scanner Detail (Màn hình chi tiết mã từ quét thị trường)
@@ -666,6 +670,9 @@ FULL ANALYSIS (PHÂN TÍCH ĐẦY ĐỦ)
 [Export JSON (Xuất dữ liệu JSON)]
 [Run Full Analysis Again (Chạy lại phân tích đầy đủ)]
 ```
+
+### Lưu ý về Giao diện & Styling
+- **Bảng HTML nội bộ (Inline HTML Tables):** Toàn bộ các bảng hiển thị chi tiết (bảng chấm điểm kịch bản, bảng kiểm tra gate, bảng điều kiện vào lệnh, bảng chẩn đoán 7 bước, bảng điểm cuối cùng) đều có padding dọc cho thẻ `<td>` và `<th>` được đặt cố định ở mức `4px` để tối ưu hóa không gian hiển thị theo chiều dọc, tránh việc người dùng phải cuộn chuột quá nhiều.
 
 ---
 
