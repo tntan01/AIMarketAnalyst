@@ -90,6 +90,7 @@ Thêm các file mới:
 
 ```text
 core/system_backtest_engine.py
+core/monte_carlo.py
 controllers/backtest_controller.py
 workers/backtest_worker.py
 ui/screens/backtest_screen.py
@@ -1445,6 +1446,17 @@ Gọi `analyze_symbol()` mỗi H1 bar có thể chậm. MVP chấp nhận cho 1 
 ### Overfitting
 
 Nếu dùng backtest để sửa quá nhiều ngưỡng, kết quả sẽ bị overfit. Bắt buộc cần out-of-sample.
+
+### Monte Carlo Simulation
+
+Sau khi có kết quả backtest, dùng `core/monte_carlo.py` để đánh giá độ ổn định:
+
+- `run_monte_carlo(trades, num_simulations=5000)` — shuffle ngẫu nhiên thứ tự `result_r` 5000 lần, tính phân phối expectancy, max drawdown, profit factor, win rate, max consecutive losses.
+- Output mỗi metric gồm `{mean, median, p95_low, p95_high}` — khoảng tin cậy 95%.
+- Trả về `prob_negative_expectancy` (% xác suất kỳ vọng âm) và `prob_dd_exceed_10r` (% xác suất drawdown > 10R).
+- Xử lý edge case: trades rỗng hoặc thiếu win/loss → tất cả metric = None; num_simulations < 10 → tự động set = 10.
+
+Monte Carlo giúp trả lời: nếu thứ tự lệnh khác đi, kết quả có còn tốt không? Nếu p95_low của expectancy vẫn > 0, hệ thống có edge thực sự.
 
 ## Quy Tắc Chống Lỗi Dấu
 

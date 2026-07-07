@@ -55,6 +55,7 @@ ai-market-analyst/
     backtest_engine.py
     backtest_feedback.py
     system_backtest_engine.py
+    monte_carlo.py
     smc_context.py
     risk_engine.py
     technical_context.py
@@ -213,6 +214,8 @@ Core không render chart và không sinh widget. Core chỉ trả dữ liệu s�
 `core/backtest_feedback.py` đánh giá độ tin cậy của pattern nến (trigger_type) bằng cách quét lịch sử H1 tìm pattern tương tự. Dùng ATR để forward-test mỗi tín hiệu (3 nến tiếp theo), trả về `win_rate` và `confidence_adjustment` (+0.10 nếu win_rate >= 65%, -0.10 nếu < 40%).
 
 `core/system_backtest_engine.py` là engine backtest cấp hệ thống — replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử. Module này cắt dữ liệu thành từng snapshot không có future leak, gọi `analyze_symbol()` với snapshot đó, rồi giả lập khớp lệnh qua M15. Hỗ trợ 5 chế độ vào lệnh: Strict, Balanced, Legacy, Research, Backtest. Kết quả trả về `BacktestResult` gồm summary, danh sách trade, equity curve, breakdowns theo 13 chiều (symbol, side, decision, month, score bucket, M15 quality, market regime, SMC zone score, liquidity sweep, displacement, CHOCH, RR bucket) và diagnostics funnel. Từ Phase 2, engine còn thu thập **pipeline diagnostics** từ mỗi snapshot qua `_aggregate_pipeline_diag()` — gom thống kê pass/fail/warning từng bước pipeline (validate, correlation, score, scenarios, direction, gate, final_score) và đếm số lần mỗi gate chặn/cảnh báo.
+
+`core/monte_carlo.py` phân tích độ ổn định của kết quả backtest bằng Monte Carlo simulation. Shuffle ngẫu nhiên thứ tự `result_r` của tất cả trade qua `num_simulations` lần (mặc định 5000), tính phân phối expectancy, max drawdown, profit factor, win rate, max consecutive losses với khoảng tin cậy 95%. Trả về `prob_negative_expectancy` (xác suất kỳ vọng âm) và `prob_dd_exceed_10r` (xác suất drawdown > 10R) để đánh giá rủi ro đuôi.
 
 `core/technical_context.py` chứa `detect_market_regime()` — hàm phát hiện chế độ thị trường dùng hệ thống chấm điểm 3 thành phần (EMA alignment 0-40, structure 0-30, price position 0-30, tổng 0-100). Khắc phục vấn đề 80% lệnh rơi vào "unknown" của code cũ bằng cách chấp nhận mixed structure khi EMA đã rõ hướng, và nới lỏng ngưỡng phát hiện range.
 
