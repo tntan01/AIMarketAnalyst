@@ -90,6 +90,7 @@ Thêm các file mới:
 
 ```text
 core/system_backtest_engine.py
+core/walk_forward_engine.py
 core/monte_carlo.py
 controllers/backtest_controller.py
 workers/backtest_worker.py
@@ -970,19 +971,19 @@ trade count quá ít
 
 ## Walk-Forward Và Out-Of-Sample
 
-Nên chia dữ liệu thành 2 phần:
+`core/walk_forward_engine.py` cung cấp `run_walk_forward()` để kiểm tra tính ổn định của hệ thống qua thời gian:
 
-```text
-In-sample: dùng để nghiên cứu rule và ngưỡng.
-Out-of-sample: dùng để xác nhận rule sau khi đã chọn.
-```
+- **Cửa sổ cuốn chiếu**: IS (in-sample) `is_months` tháng, OOS (out-of-sample) `oos_months` tháng, bước cuốn `step_months` tháng.
+- Mỗi window: chạy `run_system_backtest()` cho cả IS và OOS, lưu summary từng window.
+- **Tổng hợp**: gộp tất cả IS trades → aggregate_is, gộp OOS trades → aggregate_oos.
+- **oos_is_expectancy_ratio** = OOS.expectancy_r / IS.expectancy_r (IS ≤ 0 → 0).
+- **robustness_score** (0-100): ratio ≥ 1.0 → 100 điểm; ratio < 0.3 → 0 điểm; còn lại nội suy tuyến tính.
+- **Verdict**: ROBUST (≥70), SUSPECT (40-70), OVERFITTING (<40), INCONCLUSIVE (không đủ dữ liệu/window).
 
-Ví dụ:
-
-```text
-2024-01-01 -> 2024-12-31: in-sample
-2025-01-01 -> 2025-06-30: out-of-sample
-```
+Output dict:
+- `windows`: list các window {is_start, is_end, oos_start, oos_end, is_summary, oos_summary}
+- `aggregate_is`, `aggregate_oos`: summary gộp
+- `oos_is_expectancy_ratio`, `robustness_score`, `verdict`, `window_count`
 
 Không nên tối ưu ngưỡng bằng out-of-sample. Nếu đã nhìn out-of-sample để sửa rule, cần tạo một giai đoạn test mới hơn.
 
@@ -1387,7 +1388,7 @@ Closed trade TP/SL
 
 - Tạo `core/system_backtest_engine.py`.
 - Tạo `BacktestRequest`, `BacktestTrade`, `BacktestResult`.
-- Viết walk-forward loop.
+- Viết walk-forward loop. (Đã triển khai: `core/walk_forward_engine.py`)
 - Gọi `analyze_symbol()`.
 - Giả lập entry tại close hiện tại.
 - Giả lập SL/TP bằng M15.
