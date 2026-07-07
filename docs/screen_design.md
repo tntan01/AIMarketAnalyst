@@ -46,6 +46,7 @@ Quyết định thiết kế bắt buộc:
 - Dùng `QMainWindow` làm khung chính.
 - Khi mở chương trình, cửa sổ chính phải tự động chiếm toàn bộ vùng làm việc của màn hình bằng `showMaximized()`. Yêu cầu này áp dụng cho mọi kích thước màn hình và mọi mức Windows scaling như 100%, 125%, 150%. Đây là chế độ maximized desktop window, không phải borderless game fullscreen, để người dùng vẫn dùng được taskbar, Alt+Tab và window controls bình thường.
 - Dùng sidebar hoặc top navigation để chuyển giữa 5 khu vực chính: Bảng điều khiển, Phân tích, Quét thị trường, Nhật ký, Cài đặt.
+- Sidebar footer hiển thị dòng "Dữ liệu: MT5..." và nút "🔄 Khởi động lại" (font 11px, màu accent #0d9488 ở giao diện tối / #D94625 ở giao diện sáng, nền trong suốt, không border, hover: chữ sáng #2dd4bf ở giao diện tối / #E0533C ở giao diện sáng + underline, không đổi nền ở tất cả các trạng thái — phân biệt rõ với NavButton có background khi hover). Khi bấm: xác nhận Yes/No → shutdown MT5 → khởi chạy process mới → quit process hiện tại.
 - Dùng `QStackedWidget` hoặc router tương đương để quản lý 8 màn hình chính.
 - Dùng `QSplitter`, `QGridLayout`, `QHBoxLayout`, `QVBoxLayout` và stretch factor để giao diện co giãn tốt trên màn hình 1366x768 trở lên.
 - Dùng `QTableView` + `QAbstractTableModel` cho bảng Scanner và Journal; không dựng bảng bằng nhiều label thủ công.
@@ -205,10 +206,10 @@ Cấu hình AI Provider (nhà cung cấp AI), Data Source (nguồn dữ liệu),
 
 ### Thành phần bắt buộc
 
-- Card (thẻ thông tin) MT5 Status (trạng thái MT5).
-- Card (thẻ thông tin) Broker Login (trạng thái đăng nhập sàn giao dịch).
-- Card (thẻ thông tin) AI Provider (nhà cung cấp AI).
-- Card (thẻ thông tin) Data Source (nguồn dữ liệu).
+- Card (thẻ thông tin) MT5 Status (trạng thái MT5) đã thiết kế lại chuyên nghiệp (chiều cao cố định 44px, padding 8px dọc và 10px ngang, border 1px solid và chấm tròn màu 8px ở bên trái tương ứng với state: connected/success/ok=#10b981, disconnected/error/danger=#ef4444, warning=#f59e0b; tiêu đề 11px và giá trị 13px bold xếp dọc bên phải chấm tròn, nền transparent, không có dòng detail thứ 3).
+- Card (thẻ thông tin) Broker Login (trạng thái đăng nhập sàn giao dịch) đã thiết kế lại chuyên nghiệp tương tự.
+- Card (thẻ thông tin) AI Provider (nhà cung cấp AI) đã thiết kế lại chuyên nghiệp tương tự.
+- Card (thẻ thông tin) Data Source (nguồn dữ liệu) đã thiết kế lại chuyên nghiệp tương tự.
 - Nút Retry MT5 Connection (thử kết nối lại MT5).
 - Nút Single Analysis Mode (chế độ phân tích một mã).
 - Nút Scanner Mode (chế độ quét thị trường).

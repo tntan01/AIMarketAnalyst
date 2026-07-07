@@ -333,7 +333,7 @@ Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 
 * `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5/AI.
 * `scanner_screen.py`: Quét thị trường, bảng xếp hạng, auto-trade.
-* `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Hiển thị bảng trade với màu sắc (xanh=thắng, đỏ=thua, xám=hòa), banner kết luận nhanh (có edge/không), KPI 9 ô, dialog phân tích với bảng thống kê mở rộng, pipeline diagnostics, và AI nhận xét.
+* `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Sử dụng QTabWidget 3 tab: (1) "📊 Kết quả" — HTML thống kê tổng hợp + pipeline diagnostics, (2) "📈 Đường cong vốn" — QWebEngineView + Lightweight Charts hiển thị cumulative R (line xanh) và drawdown R (vùng đỏ), (3) "📋 Danh sách lệnh" — bảng trade với màu sắc (xanh=thắng, đỏ=thua, xám=hòa). Có banner kết luận nhanh (có edge/không), KPI 9 ô, dialog phân tích với bảng thống kê mở rộng, pipeline diagnostics, và AI nhận xét.
 * `journal_screen.py`: Nhật ký giao dịch.
 * `settings_screen.py`: Cài đặt AI, MT5, giao dịch, auto-trade theo cặp.
 
@@ -475,6 +475,7 @@ Không code tất cả trong một lần.
 - `config.settings.SymbolScanSettings` stores per-symbol decision thresholds: `decision_ready` (default 80), `decision_watch` (default 65), `decision_wait` (default 50). These are loaded from JSON by `services.settings_service.SettingsService` with backward-compatible fallback to defaults when fields are missing.
 - `core.risk_engine.build_trade_plan()` includes a **TP1 zone guard** after the 4-tier cascade: TP1 must be strictly outside the entry zone (`> entry_high` for BUY, `< entry_low` for SELL). Without this guard, a resistance/support zone inside the entry zone could be selected as TP1 when `entry_aggressiveness < ~0.32` — producing a take-profit target that hasn't left the entry zone. The guard rejects TP1 and allows the cascade to fall through; if no valid TP is found, the plan is cancelled rather than created with a bogus target.
 - `core.risk_engine.build_trade_plan()` includes a **TP2 minimum gap guard**: TP2 must be at least `_TP2_MIN_GAP_ATR` (0.15 × ATR) away from TP1. `next_target()` finds the nearest S/R zone but previously had no distance floor, so a resistance/support zone just 0.4 pips from TP1 could be selected as TP2 — producing two take-profit targets that are effectively identical. The guard runs after both `next_target` and the Fib 0.618 fallback; if the gap is too small, TP2 is set to None (plan proceeds with TP1 only).
+- `ui.main_window.MainWindow` có nút "🔄 Khởi động lại" trong sidebar footer (dưới dòng "Dữ liệu: MT5..."). Khi bấm: hiện QMessageBox xác nhận Yes/No; nếu Yes → shutdown MT5, khởi chạy process mới bằng `subprocess.Popen` (hỗ trợ cả PyInstaller `sys.executable` và `python main.py`), `QApplication.quit()`. Logic nằm trong `_restart_app()`. Tham khảo `docs/screen_design.md` phần Sidebar để biết vị trí UI.
 
 ## Current Implementation Addendum
 

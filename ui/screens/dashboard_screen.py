@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from config.constants import SUPPORTED_SYMBOLS
 from datetime import datetime, timedelta, timezone
-from PyQt6.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal, QEvent, QObject
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -83,6 +83,50 @@ class ActualLookupWorker(QThread):
         self.result_ready.emit(result)
 
 
+class StatusCardEventFilter(QObject):
+    def __init__(self, screen, dot, value_label, parent=None):
+        super().__init__(parent)
+        self.screen = screen
+        self.dot = dot
+        self.value_label = value_label
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Type.DynamicPropertyChange, QEvent.Type.StyleChange):
+            if event.type() == QEvent.Type.DynamicPropertyChange and event.propertyName() != b"state":
+                return super().eventFilter(obj, event)
+                
+            state = obj.property("state") or "warning"
+            
+            # Cập nhật màu chấm và border của card theo state
+            color = "#f59e0b"
+            if state == "ok":
+                color = "#10b981"
+            elif state in ("danger", "error"):
+                color = "#ef4444"
+                
+            self.dot.setStyleSheet(f"background-color: {color}; border-radius: 4px; border: none;")
+            
+            # Đọc lại theme mới nhất
+            is_light = self.screen._is_light_theme()
+            self.screen._light = is_light
+            
+            val_color = "#111827" if is_light else "#f1f5f9"
+            title_color = "#736B60" if is_light else "#94a3b8"
+            
+            obj.setStyleSheet(
+                f"QFrame#StatusCard {{"
+                f"  border: 1px solid {color}; border-radius: 6px; background: transparent;"
+                f"}}"
+                f"QLabel#CardTitle {{"
+                f"  color: {title_color}; font-size: 11px; border: none; background: transparent;"
+                f"}}"
+                f"QLabel#CardValue {{"
+                f"  color: {val_color}; font-weight: bold; font-size: 13px; border: none; background: transparent;"
+                f"}}"
+            )
+        return super().eventFilter(obj, event)
+
+
 class DashboardScreen(QWidget):
     def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
@@ -130,10 +174,7 @@ class DashboardScreen(QWidget):
         title_box = QVBoxLayout()
         title = QLabel("Bảng điều khiển")
         title.setObjectName("PageTitle")
-        subtitle = QLabel("Kiểm tra trạng thái hệ thống và bắt đầu phân tích thị trường.")
-        subtitle.setObjectName("PageSubtitle")
         title_box.addWidget(title)
-        title_box.addWidget(subtitle)
         coverage = QLabel(f"{len(SUPPORTED_SYMBOLS)} mã")
         coverage.setObjectName("HeaderBadge")
         coverage.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -161,22 +202,70 @@ class DashboardScreen(QWidget):
         frame.setObjectName("StatusCard")
         frame.setProperty("state", state)
         frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout = QVBoxLayout(frame)
+        frame.setFixedHeight(44)
+        
+        layout = QHBoxLayout(frame)
         layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(3)
-        value_label = None
-        detail_label = None
-        for text, name in [(title, "CardTitle"), (value, "CardValue"), (detail, "CardDetail")]:
-            label = QLabel(text)
-            label.setObjectName(name)
-            label.setWordWrap(True)
-            layout.addWidget(label)
-            if name == "CardValue":
-                value_label = label
-            elif name == "CardDetail":
-                detail_label = label
-        if value_label and detail_label:
-            self.status_cards[title] = (frame, value_label, detail_label)
+        layout.setSpacing(8)
+        
+        # Chấm tròn 8px bên trái
+        dot = QFrame()
+        dot.setObjectName("StatusDot")
+        dot.setFixedSize(8, 8)
+        
+        # Tiêu đề + giá trị bên phải
+        right_widget = QWidget()
+        right_widget.setStyleSheet("background: transparent; border: none;")
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(1)
+        
+        title_label = QLabel(title)
+        title_label.setObjectName("CardTitle")
+        
+        value_label = QLabel(value)
+        value_label.setObjectName("CardValue")
+        
+        right_layout.addWidget(title_label)
+        right_layout.addWidget(value_label)
+        
+        layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(right_widget, 1)
+        
+        # Thiết lập style ban đầu theo state
+        color = "#f59e0b"
+        if state == "ok":
+            color = "#10b981"
+        elif state in ("danger", "error"):
+            color = "#ef4444"
+            
+        dot.setStyleSheet(f"background-color: {color}; border-radius: 4px; border: none;")
+        
+        is_light = self._light
+        val_color = "#111827" if is_light else "#f1f5f9"
+        title_color = "#736B60" if is_light else "#94a3b8"
+        
+        frame.setStyleSheet(
+            f"QFrame#StatusCard {{"
+            f"  border: 1px solid {color}; border-radius: 6px; background: transparent;"
+            f"}}"
+            f"QLabel#CardTitle {{"
+            f"  color: {title_color}; font-size: 11px; border: none; background: transparent;"
+            f"}}"
+            f"QLabel#CardValue {{"
+            f"  color: {val_color}; font-weight: bold; font-size: 13px; border: none; background: transparent;"
+            f"}}"
+        )
+        
+        # Detail label ẩn để không hiển thị nhưng vẫn giữ logic cập nhật
+        detail_label = QLabel(detail)
+        detail_label.hide()
+        
+        # Install event filter to dynamically update dot color and frame border on state change
+        event_filter = StatusCardEventFilter(self, dot, value_label, frame)
+        frame.installEventFilter(event_filter)
+        
+        self.status_cards[title] = (frame, value_label, detail_label)
         return frame
 
     def _build_mt5_warning(self) -> QFrame:

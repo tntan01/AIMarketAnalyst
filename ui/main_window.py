@@ -103,6 +103,10 @@ class MainWindow(QMainWindow):
         if style_path.exists():
             self.setStyleSheet(style_path.read_text(encoding="utf-8"))
             
+        # Cập nhật style nút Khởi động lại khi đổi theme
+        if hasattr(self, "restart_btn") and self.restart_btn:
+            self._update_restart_btn_style(theme)
+
         if hasattr(self, "screens"):
             for screen in self.screens.values():
                 if hasattr(screen, "refresh_theme_styles"):
@@ -166,6 +170,42 @@ class MainWindow(QMainWindow):
         footer.setObjectName("SidebarFooter")
         footer.setWordWrap(True)
         layout.addWidget(footer)
+
+        # Nút khởi động lại
+        restart_btn = QPushButton("🔄 Khởi động lại")
+        self.restart_btn = restart_btn
+        restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Test requirements: color: #94a3b8, #e2e8f0, background: transparent, border: none, padding: 4px 8px, margin-top: 12px, text-decoration: underline
+        
+        # Xác định theme hiện tại để khởi tạo style tương ứng
+        theme = "dark"
+        if hasattr(self, "app") and self.app:
+            try:
+                settings = self.app.settings_service.load()
+                theme = settings.display.theme
+            except Exception:
+                pass
+
+        if theme == "light":
+            restart_btn.setStyleSheet(
+                "QPushButton {"
+                "  font-size: 11px; color: #D94625; background: transparent;"
+                "  border: none; padding: 4px 8px; margin-top: 12px;"
+                "}"
+                "QPushButton:hover { color: #E0533C; text-decoration: underline; background: transparent; }"
+            )
+        else:
+            restart_btn.setStyleSheet(
+                "QPushButton {"
+                "  font-size: 11px; color: #0d9488; background: transparent;"
+                "  border: none; padding: 4px 8px; margin-top: 12px;"
+                "}"
+                "QPushButton:hover { color: #2dd4bf; text-decoration: underline; background: transparent; }"
+            )
+        restart_btn.clicked.connect(self._restart_app)
+        layout.addWidget(restart_btn)
+
         return sidebar
 
     def _set_sidebar_open(self, open_: bool) -> None:
@@ -187,6 +227,38 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._position_sidebar()
 
+    def _restart_app(self) -> None:
+        """Xác nhận và khởi động lại ứng dụng."""
+        from PyQt6.QtWidgets import QMessageBox
+        import subprocess, sys, os
+
+        reply = QMessageBox.question(
+            self, "Khởi động lại",
+            "Khởi động lại ứng dụng?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Shutdown MT5
+        try:
+            import MetaTrader5 as mt5
+            if mt5.initialize():
+                mt5.shutdown()
+        except Exception:
+            pass
+
+        # Launch new process
+        if getattr(sys, 'frozen', False):
+            cmd = [sys.executable]
+        else:
+            cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'main.py')]
+        subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
+
+        from PyQt6.QtWidgets import QApplication
+        QApplication.quit()
+
     def _nav_key_for_route(self, route: str) -> str:
         if route.startswith("scanner"):
             return "scanner"
@@ -195,6 +267,27 @@ class MainWindow(QMainWindow):
         if route.startswith("journal"):
             return "journal"
         return route
+
+    def _update_restart_btn_style(self, theme: str) -> None:
+        if theme == "light":
+            color = "#D94625"
+            hover_color = "#E0533C"
+        else:
+            color = "#0d9488"
+            hover_color = "#2dd4bf"
+
+        self.restart_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size: 11px; color: {color}; background: transparent;"
+            f"  border: none; padding: 4px 8px; margin-top: 12px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  color: {hover_color}; text-decoration: underline; background: transparent;"
+            f"}}"
+            f"QPushButton:pressed {{"
+            f"  color: {hover_color}; background: transparent;"
+            f"}}"
+        )
 
 
 def nav_route(key: str) -> str:

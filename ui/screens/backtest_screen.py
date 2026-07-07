@@ -4,8 +4,9 @@ import html
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import os
 
-from PyQt6.QtCore import QDate, QEvent, QLocale, QObject, QThread, Qt, pyqtSignal
+from PyQt6.QtCore import QDate, QEvent, QLocale, QObject, QThread, Qt, QUrl, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
@@ -27,6 +28,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -35,6 +37,15 @@ from PyQt6.QtWidgets import (
 from config.constants import SUPPORTED_SYMBOLS
 from controllers.backtest_controller import BacktestController
 from ui.screens.shared import action_button, card, page_header
+
+if os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen":
+    HAS_WEBENGINE = False
+else:
+    try:
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        HAS_WEBENGINE = True
+    except ImportError:
+        HAS_WEBENGINE = False
 
 
 class _AIAnalyzeWorker(QObject):
@@ -318,7 +329,7 @@ class BacktestScreen(QWidget):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
-        title = QLabel("Danh sách lệnh")
+        title = QLabel("Kết quả")
         title.setObjectName("PanelTitle")
         header.addWidget(title)
 
@@ -343,6 +354,21 @@ class BacktestScreen(QWidget):
         header.addWidget(analyze_btn)
         layout.addLayout(header)
 
+        # --- Tab widget: Kết quả | Đường cong vốn | Danh sách lệnh ---
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("BacktestTabs")
+
+        # Tab 0: Kết quả (HTML)
+        self.result_text = QTextEdit()
+        self.result_text.setReadOnly(True)
+        self.result_text.setObjectName("BacktestResultText")
+        self.tabs.addTab(self.result_text, "📊 Kết quả")
+
+        # Tab 1: Đường cong vốn
+        self._setup_equity_tab()
+        self.tabs.addTab(self._equity_tab, "📈 Đường cong vốn")
+
+        # Tab 2: Danh sách lệnh
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
         self.table.setObjectName("DataTable")
         self.table.setHorizontalHeaderLabels([label for _, label in self.TRADE_COLUMNS])
@@ -355,8 +381,142 @@ class BacktestScreen(QWidget):
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
-        layout.addWidget(self.table, 1)
+        self.tabs.addTab(self.table, "📋 Danh sách lệnh")
+
+        layout.addWidget(self.tabs, 1)
         return frame
+
+    def _setup_equity_tab(self) -> None:
+        self._equity_tab = QWidget()
+        layout = QVBoxLayout(self._equity_tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        if not HAS_WEBENGINE:
+            fallback = QLabel("Biểu đồ yêu cầu PyQt6-WebEngine.\nCài: pip install PyQt6-WebEngine")
+            fallback.setObjectName("EmptyText")
+            fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            fallback.setWordWrap(True)
+            layout.addWidget(fallback)
+            self._equity_view = None
+            return
+        from PyQt6.QtWebEngineCore import QWebEngineSettings
+        self._equity_view = QWebEngineView()
+        self._equity_view.setMinimumHeight(200)
+        self._equity_view.setStyleSheet("background: transparent; border: none;")
+        settings = self._equity_view.settings()
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, False)
+        layout.addWidget(self._equity_view)
+
+    def _build_equity_curve_html(self, equity_curve: list) -> str:
+        import json as _json
+        data_json = _json.dumps(equity_curve, ensure_ascii=False)
+        is_light = "true" if self._is_light_theme() else "false"
+        return """<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; font-family: Arial, sans-serif; }
+#chart-container { width: 100%; height: 100%; }
+#empty-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="chart-container"></div>
+<div id="empty-state">Không đủ dữ liệu để vẽ biểu đồ</div>
+<script src="lightweight-charts.standalone.production.js"></script>
+<script>
+(function() {
+  var DATA = __EQUITY_DATA__;
+  if (!DATA || DATA.length < 2) {
+    document.getElementById('empty-state').style.display = 'block';
+    return;
+  }
+  var isLight = __IS_LIGHT__;
+  var bg = isLight ? '#ffffff' : '#101214';
+  var textColor = isLight ? '#111827' : '#f3f4f6';
+  var gridColor = isLight ? '#f3f4f6' : '#1e2227';
+  var borderColor = isLight ? '#e5e7eb' : '#2d3238';
+  var container = document.getElementById('chart-container');
+  var chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth || 800,
+    height: container.clientHeight || 400,
+    layout: { background: { type: 'solid', color: bg }, textColor: textColor },
+    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+    rightPriceScale: { borderColor: borderColor },
+    timeScale: { borderColor: borderColor, timeVisible: true },
+    crosshair: { mode: 0 },
+    autoSize: true,
+  });
+  var cumData = [];
+  var ddData = [];
+  for (var i = 0; i < DATA.length; i++) {
+    var d = DATA[i];
+    var t = d.time;
+    if (typeof t === 'string') {
+      t = Math.floor(new Date(t).getTime() / 1000);
+      if (isNaN(t)) t = d.time;
+    }
+    cumData.push({ time: t, value: d.cumulative_r });
+    ddData.push({ time: t, value: d.drawdown_r });
+  }
+  var cumSeries = chart.addLineSeries({
+    color: '#2196F3',
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+  });
+  cumSeries.setData(cumData);
+  var ddSeries = chart.addAreaSeries({
+    lineColor: 'rgba(244, 67, 54, 0.6)',
+    topColor: 'rgba(244, 67, 54, 0.10)',
+    bottomColor: 'rgba(244, 67, 54, 0.22)',
+    priceLineVisible: false,
+    lastValueVisible: false,
+  });
+  ddSeries.setData(ddData);
+  chart.timeScale().fitContent();
+  if (window.ResizeObserver) {
+    new ResizeObserver(function() {
+      var w = container.clientWidth;
+      var h = container.clientHeight;
+      if (w > 0 && h > 0) chart.resize(w, h);
+    }).observe(container);
+  }
+})();
+</script>
+</body>
+</html>""".replace("__EQUITY_DATA__", data_json).replace("__IS_LIGHT__", is_light)
+
+    def _refresh_equity_curve(self) -> None:
+        if not hasattr(self, '_equity_view') or self._equity_view is None:
+            return
+        if not self.result:
+            self._equity_view.setHtml("<p style='color:#888;text-align:center;padding:40px;'>Chưa có dữ liệu backtest.</p>")
+            return
+        equity_curve = self.result.get("equity_curve", [])
+        if not isinstance(equity_curve, list):
+            equity_curve = []
+        html = self._build_equity_curve_html(equity_curve)
+        chart_dir = Path(__file__).parent.parent.parent / "assets" / "chart"
+        base_url = QUrl.fromLocalFile(str(chart_dir) + '/')
+        self._equity_view.setHtml(html, base_url)
+
+    def _refresh_result_text(self) -> None:
+        if not self.result:
+            self.result_text.setHtml("")
+            return
+        self._analysis_light = self._is_light_theme()
+        self._refresh_result_text_style()
+        try:
+            html = self._generate_stats_html()
+            self.result_text.setHtml(html)
+        except Exception:
+            self.result_text.setHtml("<p style='color:#888;text-align:center;padding:40px;'>Không thể hiển thị kết quả.</p>")
 
     def _load_backtest_file(self) -> None:
         from PyQt6.QtWidgets import QApplication
@@ -382,6 +542,8 @@ class BacktestScreen(QWidget):
             self.status_label.setText(f"Đã tải: {len(trades)} lệnh")
             self.snapshot_label.setText(f"File: {path}")
             self.snapshot_label.show()
+            self._refresh_result_text()
+            self._refresh_equity_curve()
         except Exception as exc:
             QMessageBox.warning(self, "Lỗi đọc file", f"Không đọc được file:\n{exc}")
 
@@ -1473,6 +1635,8 @@ class BacktestScreen(QWidget):
         self.apply_config_btn.show()
         self.snapshot_label.setText(f"File kết quả: {result.get('snapshot_path', '')}")
         self.snapshot_label.show()
+        self._refresh_result_text()
+        self._refresh_equity_curve()
 
     def _on_failed(self, message: str) -> None:
         self.status_label.setText("Kiểm thử thất bại.")
@@ -1688,6 +1852,67 @@ class BacktestScreen(QWidget):
         self._refresh_trade_table_style()
         if hasattr(self, "settings_frame") and self.settings_frame:
             self.settings_frame.setStyleSheet(self._backtest_form_stylesheet())
+        self._refresh_tab_styles()
+        self._refresh_result_text_style()
+
+    def _refresh_tab_styles(self) -> None:
+        if not hasattr(self, 'tabs'):
+            return
+        light = self._is_light_theme()
+        if light:
+            pane_bg = "#faf8f5"
+            tab_bg = "#f3f4f6"
+            tab_selected_bg = "#ffffff"
+            tab_text = "#4b5563"
+            tab_selected_text = "#111827"
+            tab_border = "#e5e7eb"
+        else:
+            pane_bg = "#0f172a"
+            tab_bg = "#1e293b"
+            tab_selected_bg = "#0f172a"
+            tab_text = "#94a3b8"
+            tab_selected_text = "#f8fafc"
+            tab_border = "#334155"
+        self.tabs.setStyleSheet(f"""
+            QTabWidget#BacktestTabs::pane {{
+                border: none;
+                background: {pane_bg};
+                border-radius: 6px;
+            }}
+            QTabBar::tab {{
+                background: {tab_bg};
+                color: {tab_text};
+                border: 1px solid {tab_border};
+                padding: 6px 18px;
+                margin-right: 2px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                font-size: 12px;
+            }}
+            QTabBar::tab:selected {{
+                background: {tab_selected_bg};
+                color: {tab_selected_text};
+                border-bottom: 2px solid #ea580c;
+            }}
+            QTabBar::tab:hover {{
+                color: {tab_selected_text};
+            }}
+        """)
+
+    def _refresh_result_text_style(self) -> None:
+        if not hasattr(self, 'result_text'):
+            return
+        light = self._is_light_theme()
+        if light:
+            self.result_text.setStyleSheet(
+                "QTextEdit#BacktestResultText { background: #ffffff; color: #1e293b; font-size: 13px; "
+                "border: none; border-radius: 6px; padding: 8px; }"
+            )
+        else:
+            self.result_text.setStyleSheet(
+                "QTextEdit#BacktestResultText { background: #0f172a; color: #e2e8f0; font-size: 13px; "
+                "border: none; border-radius: 6px; padding: 8px; }"
+            )
 
     def _refresh_verdict_banner_style(self) -> None:
         self._update_verdict()
