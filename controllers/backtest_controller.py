@@ -112,6 +112,9 @@ class BacktestController:
         progress(35, "Đang replay hệ thống phân tích...")
         result = run_system_backtest(request, candles, progress_callback=progress)
         payload = result.to_dict()
+        from core.monte_carlo import run_monte_carlo
+        monte_result = run_monte_carlo(result.trades, num_simulations=2000)
+        payload["monte_carlo"] = monte_result
         payload["timestamp"] = datetime.now().astimezone().isoformat(timespec="seconds")
         payload["snapshot_path"] = str(self.save_snapshot(payload))
         return payload

@@ -995,6 +995,7 @@ Không nên tối ưu ngưỡng bằng out-of-sample. Nếu đã nhìn out-of-sa
 - Tải dữ liệu lịch sử từ MT5.
 - Thêm warmup period.
 - Gọi `run_system_backtest()`.
+- Gọi `run_monte_carlo()` và gắn kết quả vào payload dưới key `"monte_carlo"`.
 - Lưu snapshot kết quả.
 
 API đề xuất:
@@ -1449,12 +1450,13 @@ Nếu dùng backtest để sửa quá nhiều ngưỡng, kết quả sẽ bị o
 
 ### Monte Carlo Simulation
 
-Sau khi có kết quả backtest, dùng `core/monte_carlo.py` để đánh giá độ ổn định:
+Sau khi có kết quả backtest, `controllers/backtest_controller.py` tự động gọi `core/monte_carlo.py` để đánh giá độ ổn định:
 
-- `run_monte_carlo(trades, num_simulations=5000)` — shuffle ngẫu nhiên thứ tự `result_r` 5000 lần, tính phân phối expectancy, max drawdown, profit factor, win rate, max consecutive losses.
+- `run_monte_carlo(trades, num_simulations=2000)` — shuffle ngẫu nhiên thứ tự `result_r` 2000 lần, tính phân phối expectancy, max drawdown, profit factor, win rate, max consecutive losses.
 - Output mỗi metric gồm `{mean, median, p95_low, p95_high}` — khoảng tin cậy 95%.
 - Trả về `prob_negative_expectancy` (% xác suất kỳ vọng âm) và `prob_dd_exceed_10r` (% xác suất drawdown > 10R).
 - Xử lý edge case: trades rỗng hoặc thiếu win/loss → tất cả metric = None; num_simulations < 10 → tự động set = 10.
+- Kết quả được gắn vào payload JSON dưới key `"monte_carlo"`.
 
 Monte Carlo giúp trả lời: nếu thứ tự lệnh khác đi, kết quả có còn tốt không? Nếu p95_low của expectancy vẫn > 0, hệ thống có edge thực sự.
 
