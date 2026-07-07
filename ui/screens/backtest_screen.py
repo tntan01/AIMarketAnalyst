@@ -10,6 +10,7 @@ from PyQt6.QtCore import QDate, QEvent, QLocale, QObject, QThread, Qt, QUrl, pyq
 from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
+    QCheckBox,
     QDateEdit,
     QDialog,
     QFileDialog,
@@ -219,6 +220,12 @@ class BacktestScreen(QWidget):
 
         inputs_row.addWidget(self.run_button)
         inputs_row.addWidget(self.apply_config_btn)
+
+        self.walk_forward_checkbox = QCheckBox("Walk-Forward")
+        self.walk_forward_checkbox.setObjectName("BacktestField")
+        self.walk_forward_checkbox.setToolTip("Bật Walk-Forward Analysis để kiểm tra tính ổn định qua thời gian (IS/OOS cuốn chiếu).")
+        inputs_row.addWidget(self.walk_forward_checkbox)
+
         inputs_row.addStretch(1)
 
         # Row 2: Progress and Status Bar
@@ -1262,7 +1269,43 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                     f"</div>"
                 )
             html.append("</div>")
- 
+
+        # --- Walk-Forward Analysis ---
+        wf = (self.result or {}).get("walk_forward")
+        if wf and isinstance(wf, dict) and wf.get("aggregate_is") is not None:
+            is_agg = wf.get("aggregate_is", {})
+            oos_agg = wf.get("aggregate_oos", {})
+            is_exp = float(is_agg.get("expectancy_r", 0) or 0)
+            oos_exp = float(oos_agg.get("expectancy_r", 0) or 0)
+            ratio = float(wf.get("oos_is_expectancy_ratio", 0) or 0)
+            score = float(wf.get("robustness_score", 0) or 0)
+            verdict = str(wf.get("verdict", ""))
+            v_color = "#10b981" if verdict == "ROBUST" else ("#f59e0b" if verdict == "SUSPECT" else "#e11d48")
+            v_text = {
+                "ROBUST": "ROBUST — Hệ thống ổn định qua thời gian",
+                "SUSPECT": "SUSPECT — Cần kiểm tra thêm",
+                "OVERFITTING": "OVERFITTING — Hệ thống có dấu hiệu overfit",
+                "INCONCLUSIVE": "INCONCLUSIVE — Không đủ dữ liệu để kết luận",
+            }.get(verdict, verdict)
+
+            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 16px;'>🔄 Walk-Forward Analysis</h2>")
+            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;'>")
+            row = lambda label, value, clr=None: (
+                f"<tr>"
+                f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>{label}</td>"
+                f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {clr or text_color}; font-weight: 600;'>{value}</td>"
+                f"</tr>"
+            )
+            html.append(row("Số window", str(wf.get("window_count", 0))))
+            html.append(row("Tổng lệnh IS (In-Sample — dữ liệu học)", f"{is_agg.get('total_trades', 0)} lệnh"))
+            html.append(row("Tổng lệnh OOS (Out-of-Sample — dữ liệu kiểm tra)", f"{oos_agg.get('total_trades', 0)} lệnh"))
+            html.append(row("Kỳ vọng IS", f"{is_exp:+.2f}R/lệnh"))
+            html.append(row("Kỳ vọng OOS", f"{oos_exp:+.2f}R/lệnh"))
+            html.append(row("Tỷ lệ OOS/IS", f"{ratio:.2f} (càng gần 1 càng tốt)"))
+            html.append(row("Điểm robustness", f"{score:.0f}/100"))
+            html.append(row("Kết luận", v_text, v_color))
+            html.append("</table>")
+
         diagnostics = self.result.get("diagnostics", {}) if isinstance(self.result.get("diagnostics"), dict) else {}
         html.extend(self._build_stats_diagnostics_html(
             diagnostics,
@@ -1755,7 +1798,9 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
         self.apply_config_btn.hide()
         self.progress.setValue(0)
         self.status_label.setText("Đang chạy backtest...")
-        self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(requests)
+        self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(
+            requests, walk_forward_enabled=self.walk_forward_checkbox.isChecked()
+        )
         self.backtest_worker.progress.connect(self._on_progress)
         self.backtest_worker.succeeded.connect(self._on_success)
         self.backtest_worker.failed.connect(self._on_failed)

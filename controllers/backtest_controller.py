@@ -27,13 +27,13 @@ class BacktestController:
         self.settings_service = settings_service or SettingsService()
         self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
 
-    def create_backtest_worker(self, request: BacktestRequest | list[BacktestRequest]) -> tuple[QThread, BacktestWorker]:
+    def create_backtest_worker(self, request: BacktestRequest | list[BacktestRequest], walk_forward_enabled: bool = False) -> tuple[QThread, BacktestWorker]:
         thread = QThread()
         if isinstance(request, list):
             req = request[0] if len(request) == 1 else request
         else:
             req = request
-        worker = BacktestWorker(self.run_backtest, {"request": req})
+        worker = BacktestWorker(self.run_backtest, {"request": req, "walk_forward_enabled": walk_forward_enabled})
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
@@ -99,6 +99,7 @@ class BacktestController:
         self,
         *,
         request: BacktestRequest,
+        walk_forward_enabled: bool = False,
         _progress_callback: Callable[[int, str], None] | None = None,
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
@@ -115,6 +116,10 @@ class BacktestController:
         from core.monte_carlo import run_monte_carlo
         monte_result = run_monte_carlo(result.trades, num_simulations=2000)
         payload["monte_carlo"] = monte_result
+        if walk_forward_enabled:
+            from core.walk_forward_engine import run_walk_forward
+            wf_result = run_walk_forward(request, candles, progress_callback=progress)
+            payload["walk_forward"] = wf_result
         payload["timestamp"] = datetime.now().astimezone().isoformat(timespec="seconds")
         payload["snapshot_path"] = str(self.save_snapshot(payload))
         return payload

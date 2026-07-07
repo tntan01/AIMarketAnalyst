@@ -985,6 +985,8 @@ Output dict:
 - `aggregate_is`, `aggregate_oos`: summary gộp
 - `oos_is_expectancy_ratio`, `robustness_score`, `verdict`, `window_count`
 
+**Tích hợp UI**: Checkbox "Walk-Forward" trong form backtest. Khi bật, `backtest_controller.run_backtest()` gọi `run_walk_forward()` sau Monte Carlo, gắn kết quả vào `payload["walk_forward"]`. Tab "📊 Kết quả" hiển thị bảng "🔄 Walk-Forward Analysis" với số window, lệnh IS/OOS, kỳ vọng IS/OOS, tỷ lệ OOS/IS, điểm robustness, và verdict (ROBUST xanh / SUSPECT vàng / OVERFITTING đỏ).
+
 Không nên tối ưu ngưỡng bằng out-of-sample. Nếu đã nhìn out-of-sample để sửa rule, cần tạo một giai đoạn test mới hơn.
 
 ## Controller
@@ -997,19 +999,21 @@ Không nên tối ưu ngưỡng bằng out-of-sample. Nếu đã nhìn out-of-sa
 - Thêm warmup period.
 - Gọi `run_system_backtest()`.
 - Gọi `run_monte_carlo()` và gắn kết quả vào payload dưới key `"monte_carlo"`.
+- Nếu `walk_forward_enabled=True`, gọi `run_walk_forward()` và gắn vào `"walk_forward"`.
 - Lưu snapshot kết quả.
 
 API đề xuất:
 
 ```python
 class BacktestController:
-    def create_backtest_worker(self, request: BacktestRequest) -> tuple[QThread, BacktestWorker]:
+    def create_backtest_worker(self, request: BacktestRequest, walk_forward_enabled: bool = False) -> tuple[QThread, BacktestWorker]:
         ...
 
     def run_backtest(
         self,
         *,
         request: BacktestRequest,
+        walk_forward_enabled: bool = False,
         _progress_callback=None,
     ) -> dict[str, Any]:
         ...
@@ -1088,8 +1092,8 @@ Không nên làm như landing page. Đây là màn hình công cụ, cần rõ r
 | 📊 Kết quả | 📈 Đường cong vốn | 📋 Danh sách lệnh             |
 +---------------------------------------------------------------+
 | Tab "📊 Kết quả": HTML thống kê + bảng nhiệt lời/lỗ theo    |
-|   tháng (heatmap) + khoảng tin cậy Monte Carlo + pipeline    |
-|   diagnostics                                                |
+|   tháng (heatmap) + khoảng tin cậy Monte Carlo +             |
+|   Walk-Forward Analysis + pipeline diagnostics               |
 | Tab "📈 Đường cong vốn": QWebEngineView + Lightweight Charts  |
 |   - Line xanh (#2196F3): cumulative_r theo thời gian          |
 |   - Area đỏ (#F44336, opacity 0.2): drawdown_r từ y=0        |
