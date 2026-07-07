@@ -1451,6 +1451,87 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                     row.append(f"<td style='text-align: center; padding: 4px 6px; border-bottom: 1px solid {row_border}; color: {yc}; font-weight: 700; font-size: 11px;'>{yearly_total:+.1f}R</td>")
                     html.append("<tr>" + "".join(row) + "</tr>")
                 html.append("</table>")
+
+        # --- Monte Carlo confidence intervals ---
+        mc = (self.result or {}).get("monte_carlo")
+        if mc and isinstance(mc, dict) and mc.get("expectancy_r", {}).get("mean") is not None:
+            def _mc_color(low, high):
+                if low is not None and low > 0:
+                    return "#10b981"
+                if high is not None and high < 0:
+                    return "#e11d48"
+                return "#f59e0b"
+
+            def _mc_fmt(val, suffix):
+                if val is None:
+                    return "--"
+                return f"+{val:.2f}{suffix}" if val >= 0 else f"{val:.2f}{suffix}"
+
+            def _mc_row(label, data, suffix="R"):
+                mean_v = data.get("mean")
+                low_v = data.get("p95_low")
+                high_v = data.get("p95_high")
+                clr = _mc_color(low_v, high_v)
+                return (
+                    f"<td style='padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {text_color}; font-size: 11px;'>{label}</td>"
+                    f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; font-weight: 600; font-size: 11px;'>{_mc_fmt(mean_v, suffix)}</td>"
+                    f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; font-size: 11px;'>{_mc_fmt(low_v, suffix)} → {_mc_fmt(high_v, suffix)}</td>"
+                )
+
+            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 16px;'>🎲 Khoảng tin cậy Monte Carlo</h2>")
+            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
+            html.append(
+                f"<tr>"
+                f"<th style='text-align: left; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chỉ số</th>"
+                f"<th style='text-align: right; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Giá trị TB</th>"
+                f"<th style='text-align: right; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Khoảng 95%</th>"
+                f"</tr>"
+            )
+
+            html.append("<tr>" + _mc_row("Kỳ vọng", mc.get("expectancy_r", {})) + "</tr>")
+
+            # Drawdown row with P(DD > 10R) note
+            dd = mc.get("max_drawdown_r", {})
+            dd_clr = _mc_color(dd.get("p95_low"), dd.get("p95_high"))
+            prob_dd = mc.get("prob_dd_exceed_10r")
+            dd_note = f" <span style='font-size:10px;color:{muted_color};'>(P(DD&gt;10R)={prob_dd}%)</span>" if prob_dd is not None else ""
+            html.append(
+                f"<tr>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border};color:{text_color};font-size:11px;'>Drawdown tối đa</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{dd_clr};font-weight:600;font-size:11px;'>{_mc_fmt(dd.get('mean'), 'R')}{dd_note}</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{dd_clr};font-size:11px;'>{_mc_fmt(dd.get('p95_low'), 'R')} → {_mc_fmt(dd.get('p95_high'), 'R')}</td>"
+                f"</tr>"
+            )
+
+            html.append("<tr>" + _mc_row("Hệ số lợi nhuận", mc.get("profit_factor", {}), "") + "</tr>")
+            html.append("<tr>" + _mc_row("Tỷ lệ thắng", mc.get("win_rate", {}), "%") + "</tr>")
+
+            # Max consecutive losses: mean (max: p95_high)
+            cl = mc.get("max_consecutive_losses", {})
+            cl_mean = cl.get("mean")
+            cl_high = cl.get("p95_high")
+            cl_clr = "#10b981" if (cl_mean or 0) <= 3 else ("#f59e0b" if (cl_mean or 0) <= 6 else "#e11d48")
+            html.append(
+                f"<tr>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border};color:{text_color};font-size:11px;'>Chuỗi thua dài nhất</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{cl_clr};font-weight:600;font-size:11px;'>{cl_mean:.0f} lệnh (tối đa: {cl_high:.0f})</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{muted_color};font-size:11px;'>—</td>"
+                f"</tr>"
+            )
+
+            # Bottom row: P(expectancy < 0)
+            prob_neg = mc.get("prob_negative_expectancy")
+            if prob_neg is not None:
+                pn_color = "#10b981" if prob_neg < 20 else ("#f59e0b" if prob_neg <= 50 else "#e11d48")
+                html.append(
+                    f"<tr>"
+                    f"<td colspan='3' style='padding:6px 10px;border-bottom:1px solid {row_border};color:{pn_color};font-weight:700;font-size:12px;text-align:center;'>"
+                    f"P(kỳ vọng &lt; 0) = {prob_neg}%"
+                    f"</td>"
+                    f"</tr>"
+                )
+
+            html.append("</table>")
         return html
 
     def _build_stats_diagnostics_html(
