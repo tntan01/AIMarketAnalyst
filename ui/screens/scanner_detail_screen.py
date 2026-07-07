@@ -110,9 +110,9 @@ class ScannerDetailScreen(QWidget):
 
         ov.addLayout(left_col, 3)
 
-        # -- Right Col: button + entry checklist (InfoCards moved to dialog) --
+        # -- Right Col: button + trade panel + score panel + checklist ----
         right_col = QVBoxLayout()
-        right_col.setSpacing(8)
+        right_col.setSpacing(4)
         right_col.setContentsMargins(0, 0, 0, 0)
 
         self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
@@ -150,17 +150,25 @@ class ScannerDetailScreen(QWidget):
         self.trade_panel = QFrame()
         self.trade_panel.setObjectName("TradePanelCard")
         trade_panel_layout = QVBoxLayout(self.trade_panel)
-        trade_panel_layout.setContentsMargins(8, 6, 8, 6)
-        trade_panel_layout.setSpacing(2)
+        trade_panel_layout.setContentsMargins(6, 4, 6, 4)
+        trade_panel_layout.setSpacing(1)
         right_col.addWidget(self.trade_panel)
 
         # -- Panel: Điểm phân tích --
         self.score_panel = QFrame()
         self.score_panel.setObjectName("ScorePanelCard")
         score_panel_layout = QVBoxLayout(self.score_panel)
-        score_panel_layout.setContentsMargins(8, 6, 8, 6)
-        score_panel_layout.setSpacing(2)
+        score_panel_layout.setContentsMargins(6, 4, 6, 4)
+        score_panel_layout.setSpacing(1)
         right_col.addWidget(self.score_panel)
+
+        # -- Panel: Điều kiện vào lệnh --
+        self.checklist_panel = QFrame()
+        self.checklist_panel.setObjectName("ChecklistPanelCard")
+        checklist_panel_layout = QVBoxLayout(self.checklist_panel)
+        checklist_panel_layout.setContentsMargins(6, 4, 6, 4)
+        checklist_panel_layout.setSpacing(1)
+        right_col.addWidget(self.checklist_panel)
         right_col.addStretch(1)
 
         ov.addLayout(right_col, 1)
@@ -577,6 +585,7 @@ class ScannerDetailScreen(QWidget):
         self._refresh_hero()
         self._refresh_trade_panel()
         self._refresh_score_panel()
+        self._refresh_checklist_panel()
         self._refresh_chart()
         self._refresh_diagnostics()
         self._refresh_ai_audit()
@@ -749,9 +758,9 @@ class ScannerDetailScreen(QWidget):
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
+            lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
+            val.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
@@ -811,14 +820,104 @@ class ScannerDetailScreen(QWidget):
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
+            lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
+            val.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
             row_l.addWidget(val, 1)
             layout.addWidget(row_w)
+
+    def _refresh_checklist_panel(self) -> None:
+        """Fill the checklist panel with 7 compact entry condition items."""
+        if not hasattr(self, "checklist_panel"):
+            return
+
+        layout = self.checklist_panel.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        try:
+            light = self.settings_service.load().display.theme == "light"
+        except Exception:
+            light = False
+
+        bg = "#ffffff" if light else "#1a1f2e"
+        border_color = "#d1d5db" if light else "#2b3545"
+        label_color = "#475569" if light else "#94a3b8"
+        val_color = "#0f172a" if light else "#f1f5f9"
+
+        self.checklist_panel.setStyleSheet(
+            f"QFrame#ChecklistPanelCard {{ background: {bg}; border: 1px solid {border_color}; border-radius: 6px; }}"
+        )
+
+        title = QLabel("🔍 Điều kiện vào lệnh")
+        title.setStyleSheet(f"font-weight: bold; font-size: 11px; color: {val_color}; margin-bottom: 1px;")
+        layout.addWidget(title)
+
+        if not self.row:
+            layout.addWidget(QLabel("—"))
+            return
+
+        items = self._build_entry_checklist()
+        if not items:
+            layout.addWidget(QLabel("—"))
+            return
+
+        SHORT_NAMES = [
+            "Quyền GD", "Gate", "Chênh lệch", "Entry",
+            "Vị trí", "M15", "R:R",
+        ]
+
+        green = "#10b981"
+        red = "#e11d48"
+
+        # 2-column grid for compact display
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(1)
+        for i, item_data in enumerate(items[:7]):
+            passed = item_data["pass"]
+            full_label = item_data["label"]
+            short_name = SHORT_NAMES[i] if i < len(SHORT_NAMES) else full_label[:12]
+            icon = "✅" if passed else "❌"
+            color = green if passed else red
+            row_i, col_i = divmod(i, 2) if i < 6 else (3, 0)
+            # Last item (index 6, R:R) spans full width in row 3 col 0-1
+            if i == 6:
+                item_w = QWidget()
+                item_w.setStyleSheet("background: transparent;")
+                item_l = QHBoxLayout(item_w)
+                item_l.setContentsMargins(0, 0, 0, 0)
+                item_l.setSpacing(3)
+                icon_lbl = QLabel(icon)
+                icon_lbl.setStyleSheet("font-size: 11px;")
+                name_lbl = QLabel(short_name)
+                name_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color};")
+                item_l.addWidget(icon_lbl)
+                item_l.addWidget(name_lbl)
+                item_l.addStretch()
+                item_w.setToolTip(full_label)
+                grid.addWidget(item_w, row_i, col_i, 1, 2)
+            else:
+                item_w = QWidget()
+                item_w.setStyleSheet("background: transparent;")
+                item_l = QHBoxLayout(item_w)
+                item_l.setContentsMargins(0, 0, 0, 0)
+                item_l.setSpacing(3)
+                icon_lbl = QLabel(icon)
+                icon_lbl.setStyleSheet("font-size: 11px;")
+                name_lbl = QLabel(short_name)
+                name_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color};")
+                item_l.addWidget(icon_lbl)
+                item_l.addWidget(name_lbl)
+                item_l.addStretch()
+                item_w.setToolTip(full_label)
+                grid.addWidget(item_w, row_i, col_i)
+        layout.addLayout(grid)
 
     def _build_entry_checklist(self) -> list[dict]:
         """Build a list of {pass: bool, label: str} for entry conditions."""

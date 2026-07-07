@@ -626,41 +626,17 @@ Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra kh
 
 ### Bố cục màn hình
 
-```text
-Scanner Detail (Chi tiết mã từ Scanner - quét thị trường)
+**Tab Tổng quan** — chia 2 cột (75%/25%):
+- Cột trái: Hero verdict bar + Chart (OHLCV, indicator, SMC zones)
+- Cột phải (font 11px, padding 6/4, spacing 1px để vừa không scroll):
+  - Nút "📋 Xem đầy đủ" — mở dialog 16 chỉ số chi tiết
+  - Card "🎯 Số liệu giao dịch" — 6 dòng (Vùng vào lệnh, SL, TP, R:R, Vĩ mô, Chế độ TT)
+  - Card "📊 Điểm phân tích" — 6 dòng (Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD)
+  - Card "🔍 Điều kiện vào lệnh" — 7 checklist items dạng grid 2 cột (Quyền GD, Gate, Chênh lệch, Entry, Vị trí, M15, R:R), mỗi item hiển thị icon ✅/❌ + tên ngắn, tooltip chứa text đầy đủ
 
-Symbol (mã giao dịch): XAU/USD (vàng giao ngay so với USD)
-Rank in Scanner (xếp hạng trong bảng quét): #1
-Scanner Action (hành động từ quét thị trường): Watch (theo dõi)
-Best Score (điểm tốt nhất): 78 / 100
-Trade Permission (quyền cho phép giao dịch): Caution (cẩn trọng)
+**Tab Chẩn đoán** — ô tóm tắt lý do chính → Điểm cuối & Quyết định → Gate kiểm tra → Phân rã điểm số, kèm khối "Chi tiết kỹ thuật nâng cao" (ẩn mặc định, có nút bấm để mở)
 
-[Back to Scanner (Quay lại màn hình quét thị trường)]
-
---------------------------------------------------
-SCANNER SUMMARY (TÓM TẮT TỪ MÀN HÌNH QUÉT)
---------------------------------------------------
-
-Lý do mã này được xếp hạng cao:
-- Buy Score (điểm mua) cao hơn Sell Score (điểm bán).
-- Giá gần Support Zone (vùng hỗ trợ) mạnh.
-- Risk/Reward — R:R (tỷ lệ rủi ro/lợi nhuận) đạt yêu cầu.
-- Tuy nhiên có yếu tố tin tức nên Trade Permission (quyền giao dịch) là Caution (cẩn trọng).
-
---------------------------------------------------
-FULL ANALYSIS (PHÂN TÍCH ĐẦY ĐỦ)
---------------------------------------------------
-
-1. Decision Summary (tóm tắt quyết định)
-2. Market Regime (trạng thái thị trường)
-3. Direction Bias (thiên hướng giao dịch)
-4. Setup Quality Score (điểm chất lượng kịch bản)
-5. Trade Plan (kế hoạch giao dịch)
-6. Position Sizing (tính khối lượng vào lệnh)
-7. Data Quality (chất lượng dữ liệu)
-8. AI Commentary (nhận định AI)
-9. Actions (thao tác)
-```
+**Tab Kiểm định AI** — nút chạy kiểm định + kết quả AI audit
 
 ### Nút chức năng
 
