@@ -664,11 +664,33 @@ def summarize_backtest_trades(trades: list[BacktestTrade]) -> dict[str, Any]:
     }
 
 
+def build_monthly_breakdown(trades: list[BacktestTrade]) -> dict[str, dict[str, Any]]:
+    groups: dict[str, list[BacktestTrade]] = {}
+    for trade in trades:
+        try:
+            parsed = datetime.fromisoformat(trade.entry_time.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        month_key = parsed.strftime("%Y-%m")
+        groups.setdefault(month_key, []).append(trade)
+    result: dict[str, dict[str, Any]] = {}
+    for month_key in sorted(groups):
+        month_trades = groups[month_key]
+        base = summarize_backtest_trades(month_trades)
+        r_values = [t.result_r for t in month_trades]
+        base["trades_count"] = base["total_trades"]
+        base["best_trade_r"] = round(max(r_values), 4) if r_values else 0.0
+        base["worst_trade_r"] = round(min(r_values), 4) if r_values else 0.0
+        result[month_key] = base
+    return result
+
+
 def build_breakdowns(trades: list[BacktestTrade]) -> dict[str, Any]:
     return {
         "by_symbol": breakdown_by(trades, lambda trade: trade.symbol),
         "by_side": breakdown_by(trades, lambda trade: trade.side),
         "by_decision": breakdown_by(trades, lambda trade: trade.decision or "unknown"),
+        "by_month": build_monthly_breakdown(trades),
         "by_score_bucket": breakdown_by(trades, lambda trade: score_bucket(trade.signal_score)),
         "by_final_score_bucket": breakdown_by(trades, lambda trade: score_bucket(trade.final_score)),
         "by_m15_quality": breakdown_by(trades, lambda trade: trade.m15_quality or "missing"),

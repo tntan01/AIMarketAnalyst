@@ -51,7 +51,7 @@ Mỗi cặp có thể được cấu hình ngưỡng quyết định riêng (`de
 
 ### 3.2 Backtest
 
-Backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge của hệ thống. Hỗ trợ 5 chế độ (Strict, Balanced, Legacy, Research, Backtest), multi-symbol batch, và breakdown 12 chiều (side, regime, score, M15 quality, SMC, R:R...).
+Backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge của hệ thống. Hỗ trợ 5 chế độ (Strict, Balanced, Legacy, Research, Backtest), multi-symbol batch, và breakdown 13 chiều (symbol, side, decision, month, regime, score, M15 quality, SMC, R:R...).
 
 Kết quả backtest dùng để xác định bộ lọc auto-trade tối ưu cho từng cặp, cấu hình trong Settings > MT5.
 
@@ -286,7 +286,7 @@ Tính năng chính:
 - 5 chế độ vào lệnh: Strict, Balanced, Legacy, Research, Backtest.
 - Multi-symbol batch backtest.
 - Funnel diagnostics: snapshot → setup → gate → entry → trade.
-- Breakdown 12 chiều: symbol, side, decision, score bucket, final score, M15 quality, regime, SMC zone, entry zone, liquidity sweep, displacement, CHOCH, R:R.
+- Breakdown 13 chiều: symbol, side, decision, month, score bucket, final score, M15 quality, regime, SMC zone, entry zone, liquidity sweep, displacement, CHOCH, R:R.
 - Equity curve, drawdown tracking, account guard mô phỏng.
 - Dữ liệu M15 load theo chunk 180 ngày, tự fallback sang H1 khi không có.
 

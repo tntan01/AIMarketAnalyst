@@ -1265,6 +1265,7 @@ Group selector:
 - Symbol
 - Side
 - Decision
+- Month
 - Score bucket
 - Final score bucket
 - M15 quality
