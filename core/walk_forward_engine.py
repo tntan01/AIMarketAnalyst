@@ -62,8 +62,8 @@ def run_walk_forward(
         oos_request = replace(request, start=oos_start, end=oos_end)
 
         try:
-            is_result = run_system_backtest(is_request, candles_by_timeframe)
-            oos_result = run_system_backtest(oos_request, candles_by_timeframe)
+            is_result = run_system_backtest(is_request, candles_by_timeframe, progress_callback=progress)
+            oos_result = run_system_backtest(oos_request, candles_by_timeframe, progress_callback=progress)
         except Exception as exc:
             windows.append({
                 "is_start": is_start.isoformat(),

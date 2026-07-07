@@ -389,6 +389,7 @@ class BacktestScreen(QWidget):
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
         self.tabs.addTab(self.table, "📋 Danh sách lệnh")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self.tabs, 1)
         return frame
@@ -398,23 +399,24 @@ class BacktestScreen(QWidget):
         layout = QVBoxLayout(self._equity_tab)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        if not HAS_WEBENGINE:
-            fallback = QLabel("Biểu đồ yêu cầu PyQt6-WebEngine.\nCài: pip install PyQt6-WebEngine")
+        try:
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.figure import Figure
+        except ImportError:
+            fallback = QLabel("Biểu đồ yêu cầu matplotlib.\nCài: pip install matplotlib")
             fallback.setObjectName("EmptyText")
             fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
             fallback.setWordWrap(True)
             layout.addWidget(fallback)
-            self._equity_view = None
+            self._equity_canvas = None
             return
-        from PyQt6.QtWebEngineCore import QWebEngineSettings
-        self._equity_view = QWebEngineView()
-        self._equity_view.setMinimumHeight(200)
-        self._equity_view.setStyleSheet("background: transparent; border: none;")
-        settings = self._equity_view.settings()
-        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, False)
-        layout.addWidget(self._equity_view)
+        self._equity_figure = Figure(tight_layout=True)
+        self._equity_canvas = FigureCanvas(self._equity_figure)
+        self._equity_canvas.setMinimumHeight(200)
+        layout.addWidget(self._equity_canvas)
+
+    def _on_tab_changed(self, index: int) -> None:
+        pass
 
     def _build_equity_curve_html(self, equity_curve: list) -> str:
         import json as _json
@@ -429,12 +431,14 @@ class BacktestScreen(QWidget):
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; background: transparent; overflow: hidden; font-family: Arial, sans-serif; }
 #chart-container { width: 100%; height: 100%; }
-#empty-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; }
+#empty-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; text-align: center; }
+#error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #e11d48; font-size: 14px; display: none; z-index: 5; pointer-events: none; text-align: center; }
 </style>
 </head>
 <body>
 <div id="chart-container"></div>
 <div id="empty-state">Không đủ dữ liệu để vẽ biểu đồ</div>
+<div id="error-state"></div>
 <script src="lightweight-charts.standalone.production.js"></script>
 <script>
 (function() {
@@ -443,56 +447,69 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
     document.getElementById('empty-state').style.display = 'block';
     return;
   }
-  var isLight = __IS_LIGHT__;
-  var bg = isLight ? '#ffffff' : '#101214';
-  var textColor = isLight ? '#111827' : '#f3f4f6';
-  var gridColor = isLight ? '#f3f4f6' : '#1e2227';
-  var borderColor = isLight ? '#e5e7eb' : '#2d3238';
-  var container = document.getElementById('chart-container');
-  var chart = LightweightCharts.createChart(container, {
-    width: container.clientWidth || 800,
-    height: container.clientHeight || 400,
-    layout: { background: { type: 'solid', color: bg }, textColor: textColor },
-    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
-    rightPriceScale: { borderColor: borderColor },
-    timeScale: { borderColor: borderColor, timeVisible: true },
-    crosshair: { mode: 0 },
-    autoSize: true,
-  });
-  var cumData = [];
-  var ddData = [];
-  for (var i = 0; i < DATA.length; i++) {
-    var d = DATA[i];
-    var t = d.time;
-    if (typeof t === 'string') {
-      t = Math.floor(new Date(t).getTime() / 1000);
-      if (isNaN(t)) t = d.time;
+  try {
+    if (typeof LightweightCharts === 'undefined') {
+      throw new Error('Thu vien LightweightCharts khong load duoc.');
     }
-    cumData.push({ time: t, value: d.cumulative_r });
-    ddData.push({ time: t, value: d.drawdown_r });
-  }
-  var cumSeries = chart.addLineSeries({
-    color: '#2196F3',
-    lineWidth: 2,
-    priceLineVisible: false,
-    lastValueVisible: true,
-  });
-  cumSeries.setData(cumData);
-  var ddSeries = chart.addAreaSeries({
-    lineColor: 'rgba(244, 67, 54, 0.6)',
-    topColor: 'rgba(244, 67, 54, 0.10)',
-    bottomColor: 'rgba(244, 67, 54, 0.22)',
-    priceLineVisible: false,
-    lastValueVisible: false,
-  });
-  ddSeries.setData(ddData);
-  chart.timeScale().fitContent();
-  if (window.ResizeObserver) {
-    new ResizeObserver(function() {
-      var w = container.clientWidth;
-      var h = container.clientHeight;
-      if (w > 0 && h > 0) chart.resize(w, h);
-    }).observe(container);
+    var isLight = __IS_LIGHT__;
+    var bg = isLight ? '#ffffff' : '#101214';
+    var textColor = isLight ? '#111827' : '#f3f4f6';
+    var gridColor = isLight ? '#f3f4f6' : '#1e2227';
+    var borderColor = isLight ? '#e5e7eb' : '#2d3238';
+    var container = document.getElementById('chart-container');
+    var w = container.clientWidth || container.offsetWidth || 800;
+    var h = container.clientHeight || container.offsetHeight || 400;
+    if (w < 10) w = 800;
+    if (h < 10) h = 400;
+    var chart = LightweightCharts.createChart(container, {
+      width: w,
+      height: h,
+      layout: { background: { type: 'solid', color: bg }, textColor: textColor },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+      rightPriceScale: { borderColor: borderColor },
+      timeScale: { borderColor: borderColor, timeVisible: true },
+      crosshair: { mode: 0 },
+      autoSize: true,
+    });
+    var cumData = [];
+    var ddData = [];
+    for (var i = 0; i < DATA.length; i++) {
+      var d = DATA[i];
+      var t = d.time;
+      if (typeof t === 'string') {
+        t = Math.floor(new Date(t).getTime() / 1000);
+        if (isNaN(t)) t = d.time;
+      }
+      cumData.push({ time: t, value: d.cumulative_r });
+      ddData.push({ time: t, value: d.drawdown_r });
+    }
+    var cumSeries = chart.addSeries(LightweightCharts.LineSeries, {
+      color: '#2196F3',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+    cumSeries.setData(cumData);
+    var ddSeries = chart.addSeries(LightweightCharts.AreaSeries, {
+      lineColor: 'rgba(244, 67, 54, 0.6)',
+      topColor: 'rgba(244, 67, 54, 0.10)',
+      bottomColor: 'rgba(244, 67, 54, 0.22)',
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    ddSeries.setData(ddData);
+    chart.timeScale().fitContent();
+    if (window.ResizeObserver) {
+      new ResizeObserver(function() {
+        var cw = container.clientWidth || container.offsetWidth || w;
+        var ch = container.clientHeight || container.offsetHeight || h;
+        if (cw > 0 && ch > 0) chart.resize(cw, ch);
+      }).observe(container);
+    }
+  } catch(e) {
+    var err = document.getElementById('error-state');
+    err.textContent = 'Loi bieu do: ' + (e && e.message ? e.message : e);
+    err.style.display = 'block';
   }
 })();
 </script>
@@ -500,18 +517,57 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
 </html>""".replace("__EQUITY_DATA__", data_json).replace("__IS_LIGHT__", is_light)
 
     def _refresh_equity_curve(self) -> None:
-        if not hasattr(self, '_equity_view') or self._equity_view is None:
+        if not hasattr(self, '_equity_canvas') or self._equity_canvas is None:
             return
         if not self.result:
-            self._equity_view.setHtml("<p style='color:#888;text-align:center;padding:40px;'>Chưa có dữ liệu backtest.</p>")
+            self._equity_figure.clear()
+            self._equity_canvas.draw()
             return
         equity_curve = self.result.get("equity_curve", [])
         if not isinstance(equity_curve, list):
             equity_curve = []
-        html = self._build_equity_curve_html(equity_curve)
-        chart_dir = Path(__file__).parent.parent.parent / "assets" / "chart"
-        base_url = QUrl.fromLocalFile(str(chart_dir) + '/')
-        self._equity_view.setHtml(html, base_url)
+        self._equity_figure.clear()
+        ax = self._equity_figure.add_subplot(111)
+        light = self._is_light_theme()
+        bg = '#ffffff' if light else '#101214'
+        fg = '#111827' if light else '#f3f4f6'
+        grid_c = '#e5e7eb' if light else '#1e2227'
+        self._equity_figure.set_facecolor(bg)
+        ax.set_facecolor(bg)
+        if len(equity_curve) < 2:
+            ax.text(0.5, 0.5, 'Không đủ dữ liệu để vẽ biểu đồ',
+                    transform=ax.transAxes, ha='center', va='center',
+                    color='#6b7280', fontsize=12)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        else:
+            from datetime import datetime
+            times = []
+            cum_r = []
+            dd_r = []
+            for d in equity_curve:
+                t = d.get("time", "")
+                try:
+                    times.append(datetime.fromisoformat(t.replace("Z", "+00:00")))
+                except (ValueError, TypeError):
+                    times.append(t)
+                cum_r.append(d.get("cumulative_r", 0))
+                dd_r.append(d.get("drawdown_r", 0))
+            ax.plot(times, cum_r, color='#2196F3', linewidth=2, label='Cumulative R')
+            ax.fill_between(times, [0] * len(dd_r), dd_r,
+                            color='#F44336', alpha=0.2, label='Drawdown R')
+            ax.axhline(y=0, color=grid_c, linewidth=0.5)
+            ax.legend(loc='upper left', fontsize=9)
+        ax.tick_params(colors=fg, labelsize=9)
+        for spine in ax.spines.values():
+            spine.set_color(grid_c)
+        ax.set_ylabel('R', color=fg)
+        ax.grid(True, color=grid_c, linewidth=0.5, alpha=0.5)
+        self._equity_figure.autofmt_xdate()
+        self._equity_canvas.draw()
+
+    def set_equity_chart_visible(self, visible: bool) -> None:
+        pass
 
     def _refresh_result_text(self) -> None:
         if not self.result:

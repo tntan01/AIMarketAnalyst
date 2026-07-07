@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -23,6 +24,8 @@ def main() -> int:
     if sys.platform == "win32":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("AIMarketAnalyst")
+
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
 
     try:
         from PyQt6.QtGui import QIcon

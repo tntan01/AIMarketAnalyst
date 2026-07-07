@@ -1094,9 +1094,9 @@ Không nên làm như landing page. Đây là màn hình công cụ, cần rõ r
 | Tab "📊 Kết quả": HTML thống kê + bảng nhiệt lời/lỗ theo    |
 |   tháng (heatmap) + khoảng tin cậy Monte Carlo +             |
 |   Walk-Forward Analysis + pipeline diagnostics               |
-| Tab "📈 Đường cong vốn": QWebEngineView + Lightweight Charts  |
+| Tab "📈 Đường cong vốn": matplotlib FigureCanvas               |
 |   - Line xanh (#2196F3): cumulative_r theo thời gian          |
-|   - Area đỏ (#F44336, opacity 0.2): drawdown_r từ y=0        |
+|   - Area đỏ (#F44336, alpha 0.2): drawdown_r từ y=0           |
 | Tab "📋 Danh sách lệnh": Bảng trade với màu sắc               |
 +---------------------------------------------------------------+
 ```
@@ -1159,19 +1159,19 @@ Banner hiển thị kèm các chỉ số chính: số lệnh, win rate, drawdown
 
 ### Equity Curve
 
-Tab "📈 Đường cong vốn" hiển thị biểu đồ equity curve bằng QWebEngineView nhúng Lightweight Charts v5.
+Tab "📈 Đường cong vốn" hiển thị biểu đồ equity curve bằng matplotlib `FigureCanvasQTAgg` (thay thế QWebEngineView để tránh xung đột z-order với native Chromium window).
 
 Biểu đồ gồm 2 đường dùng chung trục R bên trái và trục thời gian bên dưới:
 
-- **Cumulative R** — Line chart màu xanh dương (#2196F3), dày 2px, hiển thị tổng R tích lũy theo thời gian.
-- **Drawdown R** — Area chart màu đỏ (#F44336), độ mờ 0.2, shade từ y=0 xuống mức drawdown hiện tại.
+- **Cumulative R** — `ax.plot()` màu xanh dương (#2196F3), linewidth 2, hiển thị tổng R tích lũy theo thời gian.
+- **Drawdown R** — `ax.fill_between()` màu đỏ (#F44336), alpha 0.2, shade từ y=0 xuống mức drawdown hiện tại.
 
 Dữ liệu lấy từ `result["equity_curve"]`, mỗi phần tử có:
 - `time`: chuỗi ISO datetime (vd: "2025-03-10T08:00:00Z")
 - `cumulative_r`: số thực (tổng R tích lũy)
 - `drawdown_r`: số thực (mức sụt giảm, luôn ≤ 0)
 
-Lightweight Charts standalone JS được load từ `assets/chart/`. Theme dark/light tự động theo cài đặt hiển thị. Khi equity_curve rỗng hoặc chỉ có 1 điểm, hiển thị text "Không đủ dữ liệu để vẽ biểu đồ" thay vì báo lỗi. Khi thiếu PyQt6-WebEngine, hiển thị fallback text hướng dẫn cài đặt.
+Theme dark/light tự động theo cài đặt hiển thị (facecolor Figure + ax). Khi equity_curve rỗng hoặc chỉ có 1 điểm, hiển thị text "Không đủ dữ liệu để vẽ biểu đồ" thay vì báo lỗi. Khi thiếu matplotlib, hiển thị fallback QLabel hướng dẫn cài đặt.
 
 ### Diagnostics Panel
 

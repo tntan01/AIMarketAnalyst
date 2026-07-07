@@ -485,7 +485,7 @@ def simulate_trade_from_analysis(
     try:
         stop_loss = float(scenario["stop_loss"])
         take_profit_raw = scenario.get("take_profit")
-        take_profit = float(take_profit_raw[0] if isinstance(take_profit_raw, list) else take_profit_raw)
+        take_profit = float(take_profit_raw[0] if isinstance(take_profit_raw, list) and len(take_profit_raw) > 0 else take_profit_raw)
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -567,7 +567,7 @@ def trade_plan_skip_reason(scenario: dict[str, Any]) -> tuple[str, str]:
     try:
         float(scenario["stop_loss"])
         take_profit_raw = scenario.get("take_profit")
-        float(take_profit_raw[0] if isinstance(take_profit_raw, list) else take_profit_raw)
+        float(take_profit_raw[0] if isinstance(take_profit_raw, list) and len(take_profit_raw) > 0 else take_profit_raw)
     except (KeyError, TypeError, ValueError):
         return "invalid_trade_plan", "Thiếu SL/TP hợp lệ."
     return "entry_zone_not_touched", "Giá M15 chưa chạm entry zone trong thời hạn setup."

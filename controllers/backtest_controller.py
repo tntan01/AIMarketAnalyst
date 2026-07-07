@@ -116,7 +116,7 @@ class BacktestController:
         from core.monte_carlo import run_monte_carlo
         monte_result = run_monte_carlo(result.trades, num_simulations=2000)
         payload["monte_carlo"] = monte_result
-        if walk_forward_enabled:
+        if walk_forward_enabled and len(result.trades) > 0:
             from core.walk_forward_engine import run_walk_forward
             wf_result = run_walk_forward(request, candles, progress_callback=progress)
             payload["walk_forward"] = wf_result
