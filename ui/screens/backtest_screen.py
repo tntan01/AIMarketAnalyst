@@ -1384,6 +1384,73 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             f"</tr>"
             f"</table>"
         )
+
+        # --- Monthly heatmap ---
+        by_month = (self.result or {}).get("breakdowns", {}).get("by_month")
+        if by_month and isinstance(by_month, dict) and len(by_month) > 0:
+            years: dict[str, dict[int, float]] = {}
+            max_abs = 0.0
+            for key, val in by_month.items():
+                if not isinstance(val, dict):
+                    continue
+                try:
+                    y_str, m_str = key.split("-")
+                    yr = y_str
+                    mo = int(m_str)
+                except (ValueError, AttributeError):
+                    continue
+                total_r = float(val.get("total_r", 0) or 0)
+                years.setdefault(yr, {})[mo] = total_r
+                max_abs = max(max_abs, abs(total_r))
+            if years and max_abs > 0:
+                light_theme = self._is_light_theme()
+                no_data_bg = "#f3f4f6" if light_theme else "#1f2937"
+                head_bg = "#e5e7eb" if light_theme else "#1e293b"
+                head_text = "#374151" if light_theme else "#9ca3af"
+                def _heat_bg(value, max_v):
+                    if value is None:
+                        return no_data_bg
+                    ratio = min(1.0, abs(value) / max_v) if max_v > 0 else 0
+                    if value > 0:
+                        r = int(209 - ratio * 203)
+                        g = int(250 - ratio * 204)
+                        b = int(229 - ratio * 210)
+                    elif value < 0:
+                        r = int(254 - ratio * 127)
+                        g = int(226 - ratio * 195)
+                        b = int(226 - ratio * 195)
+                    else:
+                        return no_data_bg
+                    return f"#{max(0,min(255,r)):02x}{max(0,min(255,g)):02x}{max(0,min(255,b)):02x}"
+                def _text(value, max_v):
+                    if value is None:
+                        return "-", text_color
+                    ratio = min(1.0, abs(value) / max_v) if max_v > 0 else 0
+                    txt = f"+{value:.2f}" if value > 0 else f"{value:.2f}"
+                    clr = "#ffffff" if ratio > 0.65 else text_color
+                    return txt, clr
+                html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 16px;'>📅 Bảng nhiệt lời/lỗ theo tháng</h2>")
+                html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
+                hdr = [f"<th style='text-align: left; padding: 6px 8px; border-bottom: 2px solid {border_color}; color: {head_text}; background: {head_bg};'>Năm</th>"]
+                for m in range(1, 13):
+                    hdr.append(f"<th style='text-align: center; padding: 4px 3px; border-bottom: 2px solid {border_color}; color: {head_text}; background: {head_bg}; width: 44px;'>T{m}</th>")
+                hdr.append(f"<th style='text-align: center; padding: 6px 8px; border-bottom: 2px solid {border_color}; color: {head_text}; background: {head_bg};'>Cả năm</th>")
+                html.append("<tr>" + "".join(hdr) + "</tr>")
+                for year in sorted(years.keys()):
+                    month_data = years[year]
+                    yearly_total = 0.0
+                    row = [f"<td style='padding: 4px 8px; border-bottom: 1px solid {row_border}; color: {text_color}; font-weight: 600;'>{year}</td>"]
+                    for m in range(1, 13):
+                        val = month_data.get(m)
+                        bg = _heat_bg(val, max_abs)
+                        t, tc = _text(val, max_abs)
+                        if val is not None:
+                            yearly_total += val
+                        row.append(f"<td style='text-align: center; padding: 3px 2px; border-bottom: 1px solid {row_border}; background: {bg}; color: {tc}; font-size: 10px;'>{t}</td>")
+                    yc = "#10b981" if yearly_total > 0 else ("#e11d48" if yearly_total < 0 else text_color)
+                    row.append(f"<td style='text-align: center; padding: 4px 6px; border-bottom: 1px solid {row_border}; color: {yc}; font-weight: 700; font-size: 11px;'>{yearly_total:+.1f}R</td>")
+                    html.append("<tr>" + "".join(row) + "</tr>")
+                html.append("</table>")
         return html
 
     def _build_stats_diagnostics_html(

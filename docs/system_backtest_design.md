@@ -1084,7 +1084,8 @@ Không nên làm như landing page. Đây là màn hình công cụ, cần rõ r
 | QTabWidget (3 tabs)                                           |
 | 📊 Kết quả | 📈 Đường cong vốn | 📋 Danh sách lệnh             |
 +---------------------------------------------------------------+
-| Tab "📊 Kết quả": HTML thống kê + pipeline diagnostics        |
+| Tab "📊 Kết quả": HTML thống kê + bảng nhiệt lời/lỗ theo    |
+|   tháng (heatmap) + pipeline diagnostics                     |
 | Tab "📈 Đường cong vốn": QWebEngineView + Lightweight Charts  |
 |   - Line xanh (#2196F3): cumulative_r theo thời gian          |
 |   - Area đỏ (#F44336, opacity 0.2): drawdown_r từ y=0        |
