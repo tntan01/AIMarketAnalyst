@@ -47,6 +47,7 @@ class ScannerController:
         journal_service: JournalService | None = None,
         # Backward compat: accept mt5_service kwarg and use it as data_provider
         mt5_service: MT5Service | None = None,
+        orders_screen = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
@@ -54,6 +55,7 @@ class ScannerController:
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
+        self.orders_screen = orders_screen
 
     def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
         thread = QThread()
@@ -436,6 +438,23 @@ class ScannerController:
                 results.append(payload)
                 if payload.get("success"):
                     opened += 1
+                    # Auto-enable BE+trailing tracking for this position
+                    if self.orders_screen is not None:
+                        try:
+                            pos_id = int(payload.get("position_id") or payload.get("ticket") or 0)
+                            if pos_id > 0:
+                                entry_price = (entry_low + entry_high) / 2 if entry_low > 0 and entry_high > 0 else 0.0
+                                atr_h1 = 0.0
+                                analysis = row.get("analysis_result", {})
+                                if isinstance(analysis, dict):
+                                    technical = analysis.get("technical", {})
+                                    if isinstance(technical, dict):
+                                        atr_h1 = float(technical.get("atr_h1") or 0)
+                                self.orders_screen.auto_enable_tracking(
+                                    pos_id, symbol, trade_side, entry_price, stop_loss, atr_h1,
+                                )
+                        except Exception:
+                            pass
                 else:
                     skipped += 1
                     errors.append(f"{symbol}: {payload.get('message') or 'MT5 từ chối lệnh.'}")

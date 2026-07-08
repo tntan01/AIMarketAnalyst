@@ -39,15 +39,6 @@ from config.constants import SUPPORTED_SYMBOLS
 from controllers.backtest_controller import BacktestController
 from ui.screens.shared import action_button, card, page_header
 
-if os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen":
-    HAS_WEBENGINE = False
-else:
-    try:
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
-        HAS_WEBENGINE = True
-    except ImportError:
-        HAS_WEBENGINE = False
-
 
 class _AIAnalyzeWorker(QObject):
     finished = pyqtSignal(object)
@@ -377,12 +368,18 @@ class BacktestScreen(QWidget):
 
         # Tab 2: Danh sách lệnh
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
-        self.table.setObjectName("DataTable")
+        self.table.setObjectName("EconTable")
         self.table.setHorizontalHeaderLabels([label for _, label in self.TRADE_COLUMNS])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.horizontalHeader().setHighlightSections(False)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)

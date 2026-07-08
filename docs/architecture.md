@@ -513,6 +513,21 @@ Không code tất cả trong một lần.
 - Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
 - Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, and `risk_percent`.
 
+### Order Management — BE & Trailing Stop (Design 2026-07-08)
+
+- `ui/screens/orders_screen.py` contains the full order management UI: open positions table, pending orders table, close single/all, and a real-time trailing stop engine running on a 1.5-second QTimer.
+- The trailing stop engine (`_trailing_tick()`) is being upgraded from manual pips-based trailing to an automatic 3-stage BE + ATR-based trailing system.
+- **Stage 1 — BE (Breakeven):** When profit reaches 1R (distance equal to initial SL), SL is moved to entry + 2 pips. This is a one-time operation per position.
+- **Stage 2 — Wide Trail (2.5×ATR H1):** After BE, SL trails the extreme price using ATR(H1) × 2.5 as the trail distance. SL never moves backward.
+- **Stage 3 — Tight Trail (1.5×ATR H1):** When profit reaches 2R, the trail multiplier tightens to 1.5×ATR to lock in profits more aggressively.
+- `_trailing_configs[position_id]` stores per-position state: `be_done`, `be_trigger_price`, `entry_price`, `initial_sl`, `atr_h1`, `trail_mode` ("wide"/"tight"), `extreme_price`.
+- When the scanner auto-opens a position, `scanner_controller` calls `orders_screen.auto_enable_tracking(pos_id, symbol, side, entry, sl, atr)` to automatically register the position for BE + trailing management.
+- The orders_screen timers run even when the tab is not active, ensuring BE/trailing operates regardless of which screen the user is viewing.
+- SL modifications are performed via `modify_position_sltp(pos_id, new_sl, new_tp=None)`, preserving the original TP.
+- Only positions opened by the system are managed; manual positions are ignored.
+- Configuration lives in `settings.json` under `order_management` with defaults: `be_trigger_r=1.0`, `be_plus_pips=2`, `trail_wide_atr_multiplier=2.5`, `trail_tight_atr_multiplier=1.5`, `trail_tight_trigger_r=2.0`, `poll_interval_seconds=5`.
+- Full design document: `docs/order_management.md`.
+
 ## Macro Upgrade (2026-07-05)
 
 ### 1. yfinance fallback — market data resilience

@@ -19,6 +19,7 @@ Phần mềm nên gồm **8 màn hình chính**:
 | 6 | Journal (Màn hình nhật ký phân tích) | Xem danh sách các phân tích đã lưu |
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI (trí tuệ nhân tạo), MT5 (MetaTrader 5), giao dịch và hiển thị |
+| 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
 
 Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **12 màn hình/tabs chức năng**:
 
@@ -34,6 +35,7 @@ Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài �
 10. Settings - Trading (Cài đặt giao dịch)
 11. Settings - Display (Cài đặt hiển thị)
 12. Settings - Advanced (Cài đặt nâng cao)
+13. Orders (Quản lý lệnh) — tab riêng trong sidebar
 
 ---
 
@@ -1167,3 +1169,38 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
   - **Auto-trade** (`_best_scenario` skip fallback → `_is_auto_trade_candidate` trả về False)
   - **Telegram alerts** (`_get_alert_order_candidates` skip fallback)
 - Logic này áp dụng cho cả Nhánh 1 (backtest=true) và Nhánh 2 (backtest=false).
+
+---
+
+## Orders Screen (Quản lý lệnh) — BE & Trailing Stop
+
+> Thiết kế mới 2026-07-08. Xem `docs/order_management.md` để biết chi tiết đầy đủ.
+
+### Tổng quan
+
+Màn hình Quản lý lệnh cho phép theo dõi tất cả vị thế đang mở và lệnh chờ trên MT5, kèm tính năng tự động BE (Breakeven) và Trailing Stop theo ATR.
+
+### Bố cục
+
+- **Status bar:** 5 card mini — BALANCE, LỆNH MỞ, LỆNH CHỜ, P/L, TRAILING
+- **Tab bar:** "Vị thế đang mở" | "Lệnh chờ"
+- **Bảng lệnh:** 10 cột — Mã, Hướng, KL, Entry, Hiện tại, SL, TP, P/L, Trailing (trạng thái BE/trail), Action
+- **Action bar:** Làm mới, Trailing Stop (manual), Xóa trailing, Đóng lệnh đã chọn, Đóng tất cả
+
+### BE & Trailing tự động
+
+Khi scanner mở lệnh qua auto-trade, hệ thống tự động đăng ký BE + Trailing:
+
+1. **Chờ BE:** Hiển thị "⏳ Chờ BE (còn X pips)" — màu xám
+2. **Đã BE:** Profit ≥ 1R → SL dời về entry + 2 pips → hiển thị "✅ BE" — màu xanh lá
+3. **Trail rộng:** Sau BE, SL dời theo extreme - 2.5×ATR(H1) → hiển thị "🟢 Wide" — xanh dương
+4. **Trail chặt:** Profit ≥ 2R → multiplier giảm còn 1.5×ATR → hiển thị "🔒 Tight" — cam
+
+### Nguyên tắc
+
+- SL **không bao giờ lùi** xa hơn vị trí cũ
+- BE chỉ dời **1 lần** duy nhất
+- Trail chỉ chạy **sau khi BE**
+- TP **giữ nguyên**, không can thiệp
+- Chỉ quản lý lệnh **do hệ thống mở** (comment prefix "AMA")
+- Timer chạy **ngay cả khi tab không active**

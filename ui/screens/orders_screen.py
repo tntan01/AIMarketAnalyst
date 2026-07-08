@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -86,6 +87,12 @@ class OrdersScreen(QWidget):
         self._trail_timer.timeout.connect(self._trailing_tick)
         self._trail_timer.start()
 
+        self._save_debounce = QTimer(self)
+        self._save_debounce.setSingleShot(True)
+        self._save_debounce.setInterval(2000)
+        self._save_debounce.timeout.connect(self._save_trailing_state)
+        self._load_trailing_state()
+
     def _is_light_theme(self) -> bool:
         try:
             return self.settings_service.load().display.theme == "light"
@@ -104,7 +111,7 @@ class OrdersScreen(QWidget):
         root.setSpacing(10)
         root.addWidget(page_header(
             "Quản lý lệnh",
-            "Theo dõi và quản lý các vị thế đang mở, lệnh chờ, đóng lệnh, trailing stop.",
+            "",
             "",
         ))
         root.addWidget(self._build_status_bar())
@@ -123,30 +130,30 @@ class OrdersScreen(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.balance_card = labeled_value("BALANCE", "--")
+        self.balance_card = labeled_value("💰 Số dư", "--")
         self.balance_label = self.balance_card.findChild(QLabel, "MiniStatValue")
 
-        self.position_count_card = labeled_value("LỆNH MỞ", "0")
+        self.position_count_card = labeled_value("📊 Đang mở", "0")
         self.position_count_label = self.position_count_card.findChild(QLabel, "MiniStatValue")
 
-        self.pending_count_card = labeled_value("LỆNH CHỜ", "0")
+        self.pending_count_card = labeled_value("⏳ Lệnh chờ", "0")
         self.pending_count_label = self.pending_count_card.findChild(QLabel, "MiniStatValue")
 
-        self.pl_card = labeled_value("P/L", "--")
+        self.pl_card = labeled_value("💵 Lãi/lỗ", "--")
         self.pl_label = self.pl_card.findChild(QLabel, "MiniStatValue")
 
-        self.trail_count_card = labeled_value("TRAILING", "0")
+        self.trail_count_card = labeled_value("🎯 Trail", "0")
         self.trail_count_label = self.trail_count_card.findChild(QLabel, "MiniStatValue")
 
         for card_widget in (self.balance_card, self.position_count_card, self.pending_count_card, self.pl_card, self.trail_count_card):
-            card_widget.setMinimumHeight(62)
+            card_widget.setMinimumHeight(50)
             card_layout = card_widget.layout()
             if card_layout:
-                card_layout.setContentsMargins(14, 8, 14, 8)
-                card_layout.setSpacing(4)
+                card_layout.setContentsMargins(10, 4, 10, 4)
+                card_layout.setSpacing(2)
             val_lbl = card_widget.findChild(QLabel, "MiniStatValue")
             if val_lbl:
-                val_lbl.setStyleSheet("padding-top: 2px; padding-bottom: 2px;")
+                val_lbl.setStyleSheet("padding-top: 1px; padding-bottom: 1px;")
 
         layout.addWidget(self.balance_card)
         layout.addWidget(self.position_count_card)
@@ -174,9 +181,9 @@ class OrdersScreen(QWidget):
     def _build_order_table(self) -> QTableWidget:
         table = QTableWidget()
         table.setObjectName("EconTable")
-        table.setColumnCount(10)
+        table.setColumnCount(11)
         table.setHorizontalHeaderLabels([
-            "Mã", "Hướng", "KL", "Entry", "Hiện tại", "SL", "TP", "P/L", "Trailing", ""
+            "Mã", "Hướng", "KL", "Entry", "Hiện tại", "SL", "TP", "P/L", "R", "Trailing", ""
         ])
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -197,6 +204,7 @@ class OrdersScreen(QWidget):
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
         header.setStretchLastSection(True)
         table.setColumnWidth(0, 80)
         table.setColumnWidth(1, 60)
@@ -205,8 +213,9 @@ class OrdersScreen(QWidget):
         table.setColumnWidth(4, 85)
         table.setColumnWidth(5, 85)
         table.setColumnWidth(6, 85)
-        table.setColumnWidth(7, 90)
-        table.setColumnWidth(8, 90)
+        table.setColumnWidth(7, 85)
+        table.setColumnWidth(8, 45)
+        table.setColumnWidth(9, 90)
 
         self.order_table = table
         table.itemSelectionChanged.connect(self._update_clear_trail_visibility)
@@ -421,18 +430,63 @@ class OrdersScreen(QWidget):
         pl_item.setForeground(buy_color if profit >= 0 else sell_color)
         table.setItem(idx, 7, pl_item)
 
-        # Trailing status
+        # R column: profit / risk
+        open_p = float(row.get("open_price", 0) or row.get("price", 0) or 0)
+        cur_p = float(row.get("current_price", 0) or 0)
+        sl_for_r = float(row.get("sl", 0) or 0)
+        cfg_r = self._trailing_configs.get(pos_id)
+        if cfg_r:
+            open_p = float(cfg_r.get("entry_price", open_p) or open_p)
+            sl_for_r = float(cfg_r.get("initial_sl", sl_for_r) or sl_for_r)
+        if open_p and sl_for_r:
+            risk = abs(open_p - sl_for_r)
+            if is_buy:
+                pnl_price = cur_p - open_p
+            else:
+                pnl_price = open_p - cur_p
+            if risk > 0:
+                r_val = pnl_price / risk
+                r_item = sitem(f"{r_val:+.1f}R")
+                r_item.setForeground(buy_color if r_val >= 0 else sell_color)
+            else:
+                r_item = sitem("--")
+        else:
+            r_item = sitem("--")
+            r_item.setForeground(QColor("#9ca3af"))
+        table.setItem(idx, 8, r_item)
+
+        # Trailing / BE status
         cfg = self._trailing_configs.get(pos_id)
         if cfg and cfg.get("enabled"):
-            trail_text = f"🟢 {cfg.get('trail_pips', 0)}pip"
+            be_done = cfg.get("be_done", False)
+            trail_mode = str(cfg.get("trail_mode", "wide"))
+            if not be_done:
+                trail_text = "⏳ Chờ BE"
+                trail_color = QColor("#9ca3af")
+            else:
+                entry = float(cfg.get("entry_price", 0) or 0)
+                current_sl_val = float(cfg.get("current_sl", 0) or 0)
+                pip_m = float(cfg.get("pip_multiplier", 10000) or 10000)
+                be_sl = entry + (2.0 / pip_m) if cfg.get("side") == "buy" else entry - (2.0 / pip_m)
+                if abs(current_sl_val - be_sl) < (1.0 / pip_m):
+                    trail_text = "✅ BE"
+                    trail_color = QColor("#10b981")
+                elif trail_mode == "tight":
+                    trail_text = "🔒 Tight"
+                    trail_color = QColor("#f59e0b")
+                else:
+                    trail_text = "🟢 Wide"
+                    trail_color = QColor("#3b82f6")
         elif cfg and not cfg.get("enabled"):
             trail_text = "⏸️ Tạm dừng"
+            trail_color = QColor("#9ca3af")
         else:
             trail_text = "--"
+            trail_color = QColor("#9ca3af")
         trail_item = sitem(trail_text)
-        if cfg and cfg.get("enabled"):
-            trail_item.setForeground(buy_color)
-        table.setItem(idx, 8, trail_item)
+        if cfg:
+            trail_item.setForeground(trail_color)
+        table.setItem(idx, 9, trail_item)
 
     def _render_pending_row(self, table, idx, row, buy_color, sell_color, neutral_fg) -> None:
         def sitem(text, align=Qt.AlignmentFlag.AlignCenter):
@@ -470,6 +524,7 @@ class OrdersScreen(QWidget):
 
         table.setItem(idx, 7, sitem("--"))
         table.setItem(idx, 8, sitem("--"))
+        table.setItem(idx, 9, sitem("--"))
 
     # ------------------------------------------------------------------
     # Trailing stop engine
@@ -479,6 +534,8 @@ class OrdersScreen(QWidget):
         stale = [pid for pid in self._trailing_configs if pid not in open_ids]
         for pid in stale:
             del self._trailing_configs[pid]
+        if stale:
+            self._debounce_save()
 
     def _trailing_tick(self) -> None:
         """Called every 1.5s: update extreme price & adjust SL if needed."""
@@ -495,8 +552,6 @@ class OrdersScreen(QWidget):
             symbol = str(cfg.get("symbol", ""))
             side = str(cfg.get("side", ""))
             trail_pips = int(cfg.get("trail_pips", 20))
-            if trail_pips <= 0:
-                continue
 
             try:
                 tick = mt5.symbol_info_tick(symbol)
@@ -506,7 +561,57 @@ class OrdersScreen(QWidget):
             except Exception:
                 continue
 
-            trail_price = _pips_to_price(trail_pips, symbol)
+            # --- BE (Breakeven) logic ---
+            if not cfg.get("be_done"):
+                be_trigger = cfg.get("be_trigger_price")
+                entry_price = cfg.get("entry_price")
+                if be_trigger is None or entry_price is None:
+                    entry_price = float(cfg.get("entry_price", 0) or 0)
+                    initial_sl = float(cfg.get("initial_sl", 0) or 0)
+                    be_trigger = 2.0 * entry_price - initial_sl
+                    cfg["be_trigger_price"] = be_trigger
+                    cfg["entry_price"] = entry_price
+                    cfg["initial_sl"] = initial_sl
+                if entry_price and be_trigger:
+                    triggered = (side == "buy" and current >= be_trigger) or \
+                                (side == "sell" and current <= be_trigger)
+                    if triggered:
+                        pip_m = float(cfg.get("pip_multiplier", 10000) or 10000)
+                        be_plus = 2.0 / pip_m
+                        be_sl = entry_price + be_plus if side == "buy" else entry_price - be_plus
+                        result = self.data_provider.modify_position_sltp(pos_id, sl=be_sl)
+                        if result.get("success"):
+                            cfg["current_sl"] = be_sl
+                        cfg["be_done"] = True
+                        cfg["extreme_price"] = current
+                        self._debounce_save()
+                        continue
+
+            if trail_pips <= 0:
+                continue
+
+            # --- ATR-based trail distance ---
+            atr_h1 = float(cfg.get("atr_h1", 0) or 0)
+            entry_price = float(cfg.get("entry_price", 0) or 0)
+            initial_sl = float(cfg.get("initial_sl", 0) or 0)
+            one_r = abs(entry_price - initial_sl) if entry_price and initial_sl else 0.0
+
+            # Switch trail_mode when profit >= 2R (only for ATR modes, not fixed)
+            trail_mode = str(cfg.get("trail_mode", "wide"))
+            if trail_mode != "fixed" and one_r > 0:
+                profit = (current - entry_price) if side == "buy" else (entry_price - current)
+                if profit >= 2.0 * one_r and trail_mode != "tight":
+                    cfg["trail_mode"] = "tight"
+                    trail_mode = "tight"
+
+            if trail_mode == "fixed":
+                trail_price = _pips_to_price(trail_pips, symbol)
+            elif atr_h1 > 0:
+                multiplier = 2.5 if trail_mode == "wide" else 1.5
+                trail_price = atr_h1 * multiplier
+            else:
+                trail_price = _pips_to_price(trail_pips, symbol)
+
             extreme = float(cfg.get("extreme_price", 0) or 0)
             if extreme == 0:
                 extreme = current
@@ -619,6 +724,62 @@ class OrdersScreen(QWidget):
         settings_card.layout().setContentsMargins(16, 12, 16, 12)
         settings_card.layout().setSpacing(10)
 
+        # Cache ATR H1 once for preview
+        _dlg_atr_h1 = 0.0
+        try:
+            import MetaTrader5 as _mt5
+            _rates = _mt5.copy_rates_from_pos(symbol, _mt5.TIMEFRAME_H1, 0, 30)
+            if _rates is not None and len(_rates) >= 14:
+                _highs = [float(r[2]) for r in _rates[-14:]]
+                _lows = [float(r[3]) for r in _rates[-14:]]
+                _closes = [float(r[4]) for r in _rates[-15:-1]]
+                _trs = []
+                for _i in range(14):
+                    _trs.append(max(_highs[_i] - _lows[_i], abs(_highs[_i] - _closes[_i]), abs(_lows[_i] - _closes[_i])))
+                _dlg_atr_h1 = sum(_trs) / len(_trs)
+        except Exception:
+            pass
+
+        entry_price = float(pos.get("open_price", 0) or pos.get("price", 0) or 0)
+        initial_sl_raw = current_sl if current_sl > 0 else float(pos.get("sl", 0) or 0)
+        pip_m = 100.0 if "JPY" in symbol.upper() else 10000.0
+
+        # Row 0: Trail mode radio buttons
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(12)
+        mode_row.addWidget(QLabel("Chế độ:"))
+        self._dlg_mode_group = QButtonGroup(dlg)
+        self._dlg_mode_wide = QRadioButton("Wide (2.5× ATR)")
+        self._dlg_mode_tight = QRadioButton("Tight (1.5× ATR)")
+        self._dlg_mode_fixed = QRadioButton("Cố định (pip)")
+        existing_mode = existing.get("trail_mode", "wide") if existing else "wide"
+        self._dlg_mode_wide.setChecked(existing_mode == "wide")
+        self._dlg_mode_tight.setChecked(existing_mode == "tight")
+        self._dlg_mode_fixed.setChecked(existing_mode == "fixed")
+        self._dlg_mode_group.addButton(self._dlg_mode_wide, 0)
+        self._dlg_mode_group.addButton(self._dlg_mode_tight, 1)
+        self._dlg_mode_group.addButton(self._dlg_mode_fixed, 2)
+        for rb in (self._dlg_mode_wide, self._dlg_mode_tight, self._dlg_mode_fixed):
+            mode_row.addWidget(rb)
+        mode_row.addStretch()
+        settings_card.layout().addLayout(mode_row)
+
+        def _on_mode_changed():
+            is_fixed = self._dlg_mode_fixed.isChecked()
+            self._dlg_pip_spin.setEnabled(is_fixed)
+            # Update preview with new mode
+            if self._dlg_mode_wide.isChecked():
+                self._dlg_ai_trail_mode = "wide"
+            elif self._dlg_mode_tight.isChecked():
+                self._dlg_ai_trail_mode = "tight"
+            else:
+                self._dlg_ai_trail_mode = "fixed"
+            _update_preview()
+
+        self._dlg_mode_wide.toggled.connect(_on_mode_changed)
+        self._dlg_mode_tight.toggled.connect(_on_mode_changed)
+        self._dlg_mode_fixed.toggled.connect(_on_mode_changed)
+
         # Row 1: spinbox + presets
         pip_layout = QHBoxLayout()
         pip_layout.setSpacing(8)
@@ -628,6 +789,7 @@ class OrdersScreen(QWidget):
         self._dlg_pip_spin.setSuffix(" pip")
         self._dlg_pip_spin.setMinimumWidth(100)
         self._dlg_pip_spin.setMinimumHeight(32)
+        self._dlg_pip_spin.setEnabled(existing_mode == "fixed")
         pip_layout.addWidget(self._dlg_pip_spin)
         pip_layout.addWidget(QLabel("Nhanh:"))
         for pips in [10, 20, 30, 50]:
@@ -666,6 +828,53 @@ class OrdersScreen(QWidget):
 
         root.addWidget(settings_card)
 
+        # 3. Preview card: BE + Trail distance (live update with spinbox)
+        preview_card = card("Xem trước BE + Trail")
+        preview_card.layout().setContentsMargins(16, 10, 16, 10)
+        preview_card.layout().setSpacing(4)
+        self._dlg_be_label = QLabel("")
+        self._dlg_be_label.setObjectName("CardDetail")
+        self._dlg_be_label.setWordWrap(True)
+        self._dlg_trail_label = QLabel("")
+        self._dlg_trail_label.setObjectName("CardDetail")
+        self._dlg_trail_label.setWordWrap(True)
+        preview_card.layout().addWidget(self._dlg_be_label)
+        preview_card.layout().addWidget(self._dlg_trail_label)
+
+        def _update_preview(pips_val=None):
+            if pips_val is None:
+                pips_val = self._dlg_pip_spin.value()
+            # BE preview
+            be_trigger = 2.0 * entry_price - initial_sl_raw if entry_price and initial_sl_raw else 0
+            be_sl = entry_price + (2.0 / pip_m) if is_buy else entry_price - (2.0 / pip_m)
+            if be_trigger:
+                self._dlg_be_label.setText(
+                    f"BE sẽ dời về: {be_sl:.5f} (khi giá chạm {be_trigger:.5f})"
+                )
+            else:
+                self._dlg_be_label.setText("BE: chưa đủ dữ liệu entry/SL")
+            # Trail distance preview
+            trail_price = _pips_to_price(pips_val, symbol) if not _dlg_atr_h1 else (
+                _dlg_atr_h1 * (2.5 if getattr(self, "_dlg_ai_trail_mode", None) == "wide" else 1.5)
+            )
+            if _dlg_atr_h1 > 0:
+                mode = getattr(self, "_dlg_ai_trail_mode", None) or "wide"
+                mult = 2.5 if mode == "wide" else 1.5
+                trail_price = _dlg_atr_h1 * mult
+                trail_pip = _price_to_pips(trail_price, symbol)
+                self._dlg_trail_label.setText(
+                    f"Khoảng cách trail: {trail_price:.5f} ({trail_pip:.0f} pip) — ATR {mode}"
+                )
+            else:
+                trail_pip = pips_val
+                self._dlg_trail_label.setText(
+                    f"Khoảng cách trail: {pips_val} pip (thủ công, không có ATR)"
+                )
+
+        _update_preview(default_pips)
+        self._dlg_pip_spin.valueChanged.connect(_update_preview)
+        root.addWidget(preview_card)
+
         # --- Buttons ---
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
@@ -703,6 +912,30 @@ class OrdersScreen(QWidget):
 
     def _apply_trailing(self, pos_id: int, symbol: str, side: str, dlg: QDialog) -> None:
         trail_pips = self._dlg_pip_spin.value()
+        pos = self._get_selected_position()
+        entry_price = float(pos.get("open_price", 0) or pos.get("price", 0) or 0) if pos else 0.0
+        initial_sl = float(pos.get("sl", 0) or 0) if pos else 0.0
+        pip_multiplier = 100.0 if "JPY" in symbol.upper() else 10000.0
+        if side == "buy":
+            be_trigger_price = 2.0 * entry_price - initial_sl
+        else:
+            be_trigger_price = 2.0 * entry_price - initial_sl
+        trail_mode = getattr(self, "_dlg_ai_trail_mode", None) or "wide"
+        # Lấy ATR H1 thực từ MT5
+        atr_h1 = 0.0
+        try:
+            import MetaTrader5 as mt5
+            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
+            if rates is not None and len(rates) >= 14:
+                highs = [float(r[2]) for r in rates[-14:]]
+                lows = [float(r[3]) for r in rates[-14:]]
+                closes = [float(r[4]) for r in rates[-15:-1]]
+                trs = []
+                for i in range(14):
+                    trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
+                atr_h1 = sum(trs) / len(trs)
+        except Exception:
+            pass
         self._trailing_configs[pos_id] = {
             "position_id": pos_id,
             "symbol": symbol,
@@ -711,8 +944,16 @@ class OrdersScreen(QWidget):
             "trail_pips": trail_pips,
             "extreme_price": 0.0,
             "current_sl": 0.0,
+            "be_done": False,
+            "be_trigger_price": be_trigger_price,
+            "entry_price": entry_price,
+            "initial_sl": initial_sl,
+            "atr_h1": atr_h1,
+            "trail_mode": trail_mode,
+            "pip_multiplier": pip_multiplier,
         }
         dlg.accept()
+        self._debounce_save()
         self._render_table()
 
     def _toggle_trailing(self, pos_id: int, enabled: bool, dlg: QDialog) -> None:
@@ -723,7 +964,33 @@ class OrdersScreen(QWidget):
                 cfg["extreme_price"] = 0.0
                 cfg["current_sl"] = 0.0
         dlg.accept()
+        self._debounce_save()
         self._render_table()
+
+    def auto_enable_tracking(self, pos_id: int, symbol: str, side: str,
+                             entry: float, sl: float, atr_h1: float) -> None:
+        pip_multiplier = 100.0 if "JPY" in symbol.upper() else 10000.0
+        self._trailing_configs[pos_id] = {
+            "position_id": pos_id,
+            "symbol": symbol,
+            "side": side,
+            "enabled": True,
+            "trail_pips": 20,
+            "extreme_price": 0.0,
+            "current_sl": sl,
+            "be_done": False,
+            "be_trigger_price": 2.0 * entry - sl,
+            "entry_price": entry,
+            "initial_sl": sl,
+            "atr_h1": atr_h1,
+            "trail_mode": "wide",
+            "pip_multiplier": pip_multiplier,
+        }
+        self._debounce_save()
+        try:
+            self._render_table()
+        except Exception:
+            pass
 
     def _clear_trailing(self) -> None:
         pos = self._get_selected_position()
@@ -732,6 +999,7 @@ class OrdersScreen(QWidget):
         pos_id = int(pos.get("position_id", 0))
         if pos_id in self._trailing_configs:
             del self._trailing_configs[pos_id]
+            self._debounce_save()
         self._render_table()
 
     def _update_clear_trail_visibility(self) -> None:
@@ -785,24 +1053,65 @@ class OrdersScreen(QWidget):
                     api_key=active.api_key,
                 )
                 ai = AIService(ai_config)
-                atr_pips = _price_to_pips(atr_h4, symbol) if atr_h4 > 0 else "N/A"
+                atr_h4_pips = _price_to_pips(atr_h4, symbol) if atr_h4 > 0 else "N/A"
                 profit_sign = "+" if profit_pips >= 0 else ""
-                formula_pips = suggest_trail_pips(symbol, atr_h4, regime, profit_pips)
+
+                # Get additional context: ATR H1, spread
+                atr_h1 = 0.0
+                spread_pips = "N/A"
+                try:
+                    import MetaTrader5 as mt5
+                    rates_h1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
+                    if rates_h1 is not None and len(rates_h1) >= 14:
+                        highs = [float(r[2]) for r in rates_h1[-14:]]
+                        lows = [float(r[3]) for r in rates_h1[-14:]]
+                        closes = [float(r[4]) for r in rates_h1[-15:-1]]
+                        trs = []
+                        for i in range(14):
+                            trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
+                        atr_h1 = sum(trs) / len(trs)
+                    info = mt5.symbol_info(symbol)
+                    if info:
+                        spread_pips = str(round((info.ask - info.bid) / (0.0001 if "JPY" not in symbol.upper() else 0.01), 1))
+                except Exception:
+                    pass
+                atr_h1_pips = _price_to_pips(atr_h1, symbol) if atr_h1 > 0 else "N/A"
+
+                # Volatility regime
+                if atr_h4 > 0:
+                    vol_ratio = atr_h1 / atr_h4 if atr_h1 > 0 else 1.0
+                    if vol_ratio > 1.3:
+                        vol_regime = "cao (H1 ATR > 1.3x H4 ATR)"
+                    elif vol_ratio < 0.7:
+                        vol_regime = "thấp (H1 ATR < 0.7x H4 ATR)"
+                    else:
+                        vol_regime = "bình thường"
+                else:
+                    vol_regime = "không xác định"
+
                 prompt = (
-                    f"Cho vị thế {symbol} {side.upper()} entry={entry_price:.5f} "
-                    f"current={current_price:.5f} pnl={profit_sign}{profit_pips:.0f}pip "
-                    f"atr_h4={atr_pips}pip.\n"
-                    f"Hãy gợi ý khoảng cách trailing stop (pip) phù hợp.\n"
+                    f"Bạn là chuyên gia quản lý rủi ro Forex. Phân tích vị thế sau và đề xuất "
+                    f"khoảng cách trailing stop tối ưu:\n\n"
+                    f"- Mã: {symbol}\n"
+                    f"- Hướng: {side.upper()}\n"
+                    f"- Entry: {entry_price:.5f}\n"
+                    f"- Giá hiện tại: {current_price:.5f}\n"
+                    f"- Lợi nhuận hiện tại: {profit_sign}{profit_pips:.0f} pip\n"
+                    f"- ATR(H4): {atr_h4_pips} pip\n"
+                    f"- ATR(H1): {atr_h1_pips} pip\n"
+                    f"- Volatility regime: {vol_regime}\n"
+                    f"- Spread: {spread_pips} pip\n\n"
                     f"Trả lời CHỈ một dòng JSON, không thêm gì khác:\n"
-                    f'{{"trail_pips":{formula_pips},"confidence":"medium","reason":"..."}}'
+                    f'{{"trail_pips":<số pip>,"confidence":"high/medium/low","trail_mode":"wide/tight","reason":"<lý do tiếng Việt>"}}'
                 )
-                raw = ai.analyze(prompt, max_tokens=200)
+                raw = ai.analyze(prompt, max_tokens=500)
 
                 # Parse JSON from response
                 import json as _json
 
                 trail_pips = None
                 confidence = "medium"
+                trail_mode = "wide"
                 reason = ""
 
                 # Clean response: strip markdown fences, collapse whitespace
@@ -824,6 +1133,7 @@ class OrdersScreen(QWidget):
                         parsed = _json.loads(candidate)
                         trail_pips = int(parsed.get("trail_pips", 0) or 0)
                         confidence = str(parsed.get("confidence", "medium")).lower()
+                        trail_mode = str(parsed.get("trail_mode", "wide")).lower()
                         reason = str(parsed.get("reason", ""))
                     except (_json.JSONDecodeError, ValueError):
                         pass
@@ -836,7 +1146,8 @@ class OrdersScreen(QWidget):
                         reason = "(số từ AI)"
 
                 if trail_pips and trail_pips > 0:
-                    ai_result = {"trail_pips": trail_pips, "confidence": confidence, "reason": reason}
+                    ai_result = {"trail_pips": trail_pips, "confidence": confidence,
+                                 "trail_mode": trail_mode, "reason": reason}
                 else:
                     ai_error = raw[:150].replace("\n", " ") if raw else "(AI không trả về kết quả)"
             else:
@@ -847,16 +1158,20 @@ class OrdersScreen(QWidget):
         if ai_result and ai_result.get("trail_pips"):
             trail = int(ai_result["trail_pips"])
             confidence = str(ai_result.get("confidence", "medium"))
+            trail_mode = str(ai_result.get("trail_mode", "wide"))
             reason = str(ai_result.get("reason", ""))
+            self._dlg_ai_trail_mode = trail_mode
             conf_icon = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "🟡")
+            mode_text = {"wide": "rộng", "tight": "chặt"}.get(trail_mode, trail_mode)
             self._dlg_ai_label.setText(
-                f"🧠 AI gợi ý: {trail} pip ({conf_icon} {confidence.upper()})"
+                f"🧠 AI gợi ý: {trail} pip — trail {mode_text} ({conf_icon} {confidence.upper()})"
             )
             self._dlg_ai_text.setMarkdown(
-                f"**AI gợi ý: {trail} pip** ({conf_icon} {confidence.upper()})\n\n{reason}"
+                f"**AI gợi ý: {trail} pip** — trail {mode_text} ({conf_icon} {confidence.upper()})\n\n{reason}"
             )
         else:
             trail = suggest_trail_pips(symbol, atr_h4, regime, profit_pips)
+            self._dlg_ai_trail_mode = None
             note = ai_error if ai_error else "AI không khả dụng"
             self._dlg_ai_label.setText(f"📐 Công thức: {trail} pip")
             self._dlg_ai_text.setPlainText(
@@ -868,6 +1183,50 @@ class OrdersScreen(QWidget):
         self._dlg_pip_spin.setValue(trail)
         self._dlg_ai_refresh_btn.setText("🤖 AI gợi ý")
         self._dlg_ai_refresh_btn.setEnabled(True)
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def _state_path(self):
+        from pathlib import Path
+        from config.paths import app_data_dir
+        d = app_data_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        return d / "be_trailing_state.json"
+
+    def _save_trailing_state(self) -> None:
+        import json as _json
+        try:
+            if not self._trailing_configs:
+                p = self._state_path()
+                if p.exists():
+                    p.unlink()
+                return
+            data = {"positions": {str(k): v for k, v in self._trailing_configs.items()}}
+            self._state_path().write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load_trailing_state(self) -> None:
+        import json as _json
+        try:
+            p = self._state_path()
+            if not p.exists():
+                return
+            data = _json.loads(p.read_text(encoding="utf-8"))
+            positions = data.get("positions", {})
+            if not isinstance(positions, dict):
+                return
+            for key, cfg in positions.items():
+                pos_id = int(key)
+                if pos_id not in self._trailing_configs:
+                    self._trailing_configs[pos_id] = cfg
+        except Exception:
+            pass
+
+    def _debounce_save(self) -> None:
+        if hasattr(self, "_save_debounce"):
+            self._save_debounce.start()
 
     # ------------------------------------------------------------------
     # Actions
