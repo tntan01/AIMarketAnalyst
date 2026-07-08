@@ -267,7 +267,9 @@ Chứa kết nối bên ngoài:
 
 ### Auto-scan và Telegram Alert
 
-Scanner hỗ trợ chạy một lần hoặc chạy theo khoảng thời gian do người dùng chọn: 1 phút, 5 phút, 15 phút, 30 phút, 1 giờ, 4 giờ, 1 ngày. Interval mặc định lưu trong `settings.notifications.auto_scan_interval_minutes`; màn hình Scanner có thể override cho phiên quét hiện tại.
+Scanner hỗ trợ chạy một lần hoặc chạy theo khoảng thời gian do người dùng chọn: M5, M15, H1, H4. Interval mặc định lưu trong `settings.notifications.auto_scan_interval_minutes`; màn hình Scanner có thể override cho phiên quét hiện tại.
+
+Khi mở tab Scanner lần đầu trong phiên, hệ thống tự động chọn tất cả mã (`SUPPORTED_SYMBOLS`), đặt chế độ quét tự động với interval M5, và chạy quét đầu tiên sau 1.5 giây. Auto-trade (tự động vào lệnh MT5) luôn mặc định OFF. Cờ `_auto_scanned_this_session` đảm bảo chỉ auto-scan đúng 1 lần mỗi phiên.
 
 `services/telegram_alert_service.py` chỉ gửi alert khi row scanner có `scanner_action = ready`, `trade_permission = allowed` và còn `analysis_result` với trade plan tương ứng. Nội dung alert phải gồm mã giao dịch, broker symbol, hướng BUY/SELL, Entry, Stop loss, Take profit, lot gợi ý, R:R, điểm setup, lý do và vốn MT5 nếu có trong `position_sizing`.
 
@@ -337,8 +339,8 @@ Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 
 5 màn hình chính trong ứng dụng:
 
-* `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5/AI.
-* `scanner_screen.py`: Quét thị trường, bảng xếp hạng, auto-trade.
+* `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5/AI/Broker/Nguồn dữ liệu dạng card 1 dòng với emoji (✅/🔴) và chấm tròn màu.
+* `scanner_screen.py`: Quét thị trường, bảng xếp hạng, auto-trade. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5, auto-trade OFF).
 * `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Sử dụng QTabWidget 3 tab: (1) "📊 Kết quả" — HTML thống kê tổng hợp + bảng nhiệt lời/lỗ theo tháng + khoảng tin cậy Monte Carlo + Walk-Forward Analysis + pipeline diagnostics, (2) "📈 Đường cong vốn" — matplotlib FigureCanvas hiển thị cumulative R (line xanh) và drawdown R (vùng đỏ), (3) "📋 Danh sách lệnh" — bảng trade với màu sắc (xanh=thắng, đỏ=thua, xám=hòa). Có banner kết luận nhanh (có edge/không), KPI 9 ô, checkbox Walk-Forward, dialog phân tích với bảng thống kê mở rộng, Walk-Forward Analysis, Monte Carlo, pipeline diagnostics, và AI nhận xét.
 * `journal_screen.py`: Nhật ký giao dịch.
 * `settings_screen.py`: Cài đặt AI, MT5, giao dịch, auto-trade theo cặp.

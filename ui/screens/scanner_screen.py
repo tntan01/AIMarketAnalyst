@@ -448,6 +448,8 @@ class ScannerScreen (QWidget ):
         self .settings_service =app .settings_service if app else SettingsService ()
         self .data_provider =app .data_provider if app else MT5Service ()
         self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,data_provider=self .data_provider )
+        # Session flag: chỉ auto-scan 1 lần khi mới mở tab Scanner
+        self ._auto_scanned_this_session =False
         self .scan_thread =None 
         self .scan_worker =None 
         self .scan_result :dict [str ,object ]|None =None
@@ -482,6 +484,12 @@ class ScannerScreen (QWidget ):
         root .addWidget (self ._settings_card ())
         root .addWidget (self ._table_card (),1 )
         self .refresh_status ()
+        # Luôn auto-scan lần đầu khi mở tab Scanner trong phiên
+        def _auto_scan_once ():
+            if not self ._auto_scanned_this_session:
+                self ._auto_scanned_this_session =True
+                self ._run_scan ()
+        QTimer .singleShot (1500 ,_auto_scan_once )
 
     def _settings_card (self )->QFrame :
         frame =card (None )
@@ -491,6 +499,11 @@ class ScannerScreen (QWidget ):
         settings = self.settings_service.load()
         self .scan_symbols =self ._configured_scan_symbols (settings )
         self .selected_scan_symbols =list (self .scan_symbols )
+
+        # Lần đầu mở tab Scanner trong phiên: chọn tất cả mã
+        if not self ._auto_scanned_this_session:
+            self .scan_symbols =list (SUPPORTED_SYMBOLS )
+            self .selected_scan_symbols =list (SUPPORTED_SYMBOLS )
 
         symbol_row =QHBoxLayout ()
         symbol_row .setSpacing (10 )
@@ -518,6 +531,10 @@ class ScannerScreen (QWidget ):
         tf_seconds =old_to_tf .get (settings .notifications .auto_scan_interval_minutes ,900 )
         interval_index =self .scan_interval_combo .findData (tf_seconds )
         self .scan_interval_combo .setCurrentIndex (interval_index if interval_index >=0 else 1 )
+        if not self ._auto_scanned_this_session:
+            self .scan_mode_combo .setCurrentIndex (1 )   # "Quét theo khoảng thời gian"
+            m5_idx =self .scan_interval_combo .findData (300 )
+            self .scan_interval_combo .setCurrentIndex (m5_idx if m5_idx >=0 else 0 )
         self.auto_trade_check = QPushButton("🤖 Tự động vào lệnh MT5")
         self.auto_trade_check.setObjectName("AutoTradeToggle")
         self.auto_trade_check.setCheckable(True)
@@ -768,6 +785,31 @@ class ScannerScreen (QWidget ):
                 btn.setText("⚡ Vào lệnh")
                 btn.setStyleSheet(active_btn_style)
                 return
+
+            # Tính lại lot ngay trước khi vào lệnh (không dùng volume cũ từ lúc scan)
+            try:
+                settings = self.settings_service.load()
+                entry_zone = order_info.get("entry_zone")
+                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+                    entry_price = (float(entry_zone[0]) + float(entry_zone[1])) / 2
+                else:
+                    entry_price = float(order_info.get("entry_price") or 0)
+                if entry_price <= 0:
+                    current = self.data_provider.current_price(symbol, side)
+                    entry_price = float(current) if current else 0.0
+                balance = float(settings.trading.account_balance or 0)
+                risk_pct = float(settings.trading.default_risk_percent or 1.0)
+                contract = float(settings.trading.contract_size_override.get(symbol, 100000))
+                lot_step = float(settings.trading.lot_step or 0.01)
+                min_lot = float(settings.trading.minimum_lot or 0.01)
+                if entry_price > 0 and sl_f > 0:
+                    stop_distance = abs(entry_price - sl_f)
+                    if stop_distance > 0:
+                        raw_lot = (balance * (risk_pct / 100.0)) / (stop_distance * contract)
+                        vol_f = int(raw_lot / lot_step) * lot_step
+                        vol_f = max(vol_f, min_lot)
+            except Exception:
+                pass  # giữ nguyên vol_f từ bước validate
 
             if not broker_symbol:
                 try:
@@ -1513,6 +1555,9 @@ class ScannerScreen (QWidget ):
         if self .scan_thread is not None :
             return 
         symbols =self ._selected_symbols ()
+        # Lần đầu scan: MT5 có thể chưa kết nối → market_watch_symbols rỗng → dùng trực tiếp selected_scan_symbols
+        if not symbols and not self ._auto_scanned_this_session and self .selected_scan_symbols:
+            symbols =list (self .selected_scan_symbols )
         if not symbols :
             QMessageBox .warning (self ,'Không thể quét','Chọn ít nhất một mã giao dịch trước khi quét.')
             return 

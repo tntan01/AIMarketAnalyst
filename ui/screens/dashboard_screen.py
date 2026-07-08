@@ -117,11 +117,8 @@ class StatusCardEventFilter(QObject):
                 f"QFrame#StatusCard {{"
                 f"  border: 1px solid {color}; border-radius: 6px; background: transparent;"
                 f"}}"
-                f"QLabel#CardTitle {{"
-                f"  color: {title_color}; font-size: 11px; border: none; background: transparent;"
-                f"}}"
                 f"QLabel#CardValue {{"
-                f"  color: {val_color}; font-weight: bold; font-size: 13px; border: none; background: transparent;"
+                f"  color: {val_color}; font-weight: 600; font-size: 13px; border: none; background: transparent;"
                 f"}}"
             )
         return super().eventFilter(obj, event)
@@ -201,36 +198,26 @@ class DashboardScreen(QWidget):
         frame = QFrame()
         frame.setObjectName("StatusCard")
         frame.setProperty("state", state)
-        frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        frame.setFixedHeight(44)
-        
+        frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        frame.setFixedHeight(40)
+
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setContentsMargins(12, 0, 12, 0)
         layout.setSpacing(8)
-        
+
         # Chấm tròn 8px bên trái
         dot = QFrame()
         dot.setObjectName("StatusDot")
         dot.setFixedSize(8, 8)
-        
-        # Tiêu đề + giá trị bên phải
-        right_widget = QWidget()
-        right_widget.setStyleSheet("background: transparent; border: none;")
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(1)
-        
-        title_label = QLabel(title)
-        title_label.setObjectName("CardTitle")
-        
+
+        # Text hiển thị 1 dòng duy nhất (không wrap)
         value_label = QLabel(value)
         value_label.setObjectName("CardValue")
-        
-        right_layout.addWidget(title_label)
-        right_layout.addWidget(value_label)
-        
+        value_label.setWordWrap(False)
+        value_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+
         layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(right_widget, 1)
+        layout.addWidget(value_label, 1, Qt.AlignmentFlag.AlignVCenter)
         
         # Thiết lập style ban đầu theo state
         color = "#f59e0b"
@@ -240,20 +227,16 @@ class DashboardScreen(QWidget):
             color = "#ef4444"
             
         dot.setStyleSheet(f"background-color: {color}; border-radius: 4px; border: none;")
-        
+
         is_light = self._light
         val_color = "#111827" if is_light else "#f1f5f9"
-        title_color = "#736B60" if is_light else "#94a3b8"
-        
+
         frame.setStyleSheet(
             f"QFrame#StatusCard {{"
             f"  border: 1px solid {color}; border-radius: 6px; background: transparent;"
             f"}}"
-            f"QLabel#CardTitle {{"
-            f"  color: {title_color}; font-size: 11px; border: none; background: transparent;"
-            f"}}"
             f"QLabel#CardValue {{"
-            f"  color: {val_color}; font-weight: bold; font-size: 13px; border: none; background: transparent;"
+            f"  color: {val_color}; font-weight: 600; font-size: 13px; border: none; background: transparent;"
             f"}}"
         )
         
@@ -2195,30 +2178,30 @@ QUAN TRỌNG:
         has_key = bool(active and (active.api_key or active.api_key_ref))
         if active and active.provider and active.model and has_key:
             detail = f"{active.provider} / {active.model}"
-            self._set_status_card("AI", "Đã cấu hình", detail, "ok")
+            self._set_status_card("AI", "✅ AI đã cấu hình", detail, "ok")
         else:
-            self._set_status_card("AI", "Chưa cấu hình", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
+            self._set_status_card("AI", "⚙️ Chưa cấu hình AI", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
 
         # Update data source card
         source = settings.data_source
         source_name = "cTrader" if source == "ctrader" else "MetaTrader 5"
-        self._set_status_card("Nguồn dữ liệu", source_name, f"Đang dùng {source_name}", "ok")
+        self._set_status_card("Nguồn dữ liệu", f"\U0001f4ca {source_name}", f"Đang dùng {source_name}", "ok")
 
     def _apply_connection_status(self, status: ConnectionStatus) -> None:
         provider = status.provider_name or "Dữ liệu"
         if status.initialized and status.connected:
-            self._set_status_card("Kết nối", "Đã kết nối", f"{provider}: {status.message}", "ok")
+            self._set_status_card("Kết nối", "✅ Đã kết nối", f"{provider}: {status.message}", "ok")
         else:
             detail = status.message
             if status.error_code is not None:
                 detail = f"{detail} ({status.error_code})"
-            self._set_status_card("Kết nối", "Chưa kết nối", detail, "danger")
+            self._set_status_card("Kết nối", "🔴 Mất kết nối", detail, "danger")
 
         if status.logged_in:
             account = f"{status.login} - {status.server}" if status.login else str(status.server)
-            self._set_status_card("Broker", "Đã đăng nhập", account, "ok")
+            self._set_status_card("Broker", "✅ Đã đăng nhập", account, "ok")
         else:
-            self._set_status_card("Broker", "Chưa đăng nhập", f"Cần đăng nhập tài khoản trên {provider}", "warning")
+            self._set_status_card("Broker", "🔴 Chưa đăng nhập", f"Cần đăng nhập tài khoản trên {provider}", "warning")
 
         ready = status.initialized and status.connected and status.logged_in
         self.mt5_warning.setVisible(not ready)

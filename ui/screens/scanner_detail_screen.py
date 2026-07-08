@@ -86,35 +86,10 @@ class ScannerDetailScreen(QWidget):
         overview_tab.layout().addLayout(ov)
 
         left_col = QVBoxLayout()
-        left_col.setSpacing(8)
+        left_col.setSpacing(4)
+        left_col.setContentsMargins(0, 0, 0, 0)
 
-        # -- Hero verdict bar --
-        self.hero_bar = QLabel("")
-        self.hero_bar.setObjectName("ScannerDetailHero")
-        self.hero_bar.setWordWrap(True)
-        self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
-        self.hero_bar.setStyleSheet(
-            "QLabel#ScannerDetailHero { min-height: 36px; max-height: 36px; border-radius: 6px; padding: 0 12px; font-size: 14px; background: #1e293b; border: 1px solid #334155; }"
-        )
-        left_col.addWidget(self.hero_bar)
-
-        # -- Chart --
-        self.chart = AnalysisChartView()
-        self.chart_frame = QFrame()
-        self.chart_frame.setObjectName("AnalysisChartFrame")
-        cl = QVBoxLayout(self.chart_frame)
-        cl.setContentsMargins(4, 4, 4, 4)
-        cl.setSpacing(0)
-        cl.addWidget(self.chart)
-        left_col.addWidget(self.chart_frame, 1)
-
-        ov.addLayout(left_col, 3)
-
-        # -- Right Col: button + trade panel + score panel + checklist ----
-        right_col = QVBoxLayout()
-        right_col.setSpacing(4)
-        right_col.setContentsMargins(0, 0, 0, 0)
-
+        # -- Button + Trade Panel + Score Panel + Checklist Panel --
         self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
         self.show_detail_btn.setObjectName("ShowScanDetailBtn")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -144,7 +119,7 @@ class ScannerDetailScreen(QWidget):
             "}"
         )
         self.show_detail_btn.clicked.connect(self._show_scan_detail_dialog)
-        right_col.addWidget(self.show_detail_btn)
+        left_col.addWidget(self.show_detail_btn)
 
         # -- Panel: Số liệu giao dịch --
         self.trade_panel = QFrame()
@@ -152,7 +127,7 @@ class ScannerDetailScreen(QWidget):
         trade_panel_layout = QVBoxLayout(self.trade_panel)
         trade_panel_layout.setContentsMargins(6, 4, 6, 4)
         trade_panel_layout.setSpacing(1)
-        right_col.addWidget(self.trade_panel)
+        left_col.addWidget(self.trade_panel)
 
         # -- Panel: Điểm phân tích --
         self.score_panel = QFrame()
@@ -160,7 +135,7 @@ class ScannerDetailScreen(QWidget):
         score_panel_layout = QVBoxLayout(self.score_panel)
         score_panel_layout.setContentsMargins(6, 4, 6, 4)
         score_panel_layout.setSpacing(1)
-        right_col.addWidget(self.score_panel)
+        left_col.addWidget(self.score_panel)
 
         # -- Panel: Điều kiện vào lệnh --
         self.checklist_panel = QFrame()
@@ -168,10 +143,36 @@ class ScannerDetailScreen(QWidget):
         checklist_panel_layout = QVBoxLayout(self.checklist_panel)
         checklist_panel_layout.setContentsMargins(6, 4, 6, 4)
         checklist_panel_layout.setSpacing(1)
-        right_col.addWidget(self.checklist_panel)
-        right_col.addStretch(1)
+        left_col.addWidget(self.checklist_panel)
+        left_col.addStretch(1)
 
-        ov.addLayout(right_col, 1)
+        ov.addLayout(left_col, 1)
+
+        # -- Right Col (80%): Hero bar + Chart --
+        right_col = QVBoxLayout()
+        right_col.setSpacing(8)
+
+        # -- Hero verdict bar --
+        self.hero_bar = QLabel("")
+        self.hero_bar.setObjectName("ScannerDetailHero")
+        self.hero_bar.setWordWrap(True)
+        self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
+        self.hero_bar.setStyleSheet(
+            "QLabel#ScannerDetailHero { min-height: 36px; max-height: 36px; border-radius: 6px; padding: 0 12px; font-size: 14px; background: #1e293b; border: 1px solid #334155; }"
+        )
+        right_col.addWidget(self.hero_bar)
+
+        # -- Chart --
+        self.chart = AnalysisChartView()
+        self.chart_frame = QFrame()
+        self.chart_frame.setObjectName("AnalysisChartFrame")
+        cl = QVBoxLayout(self.chart_frame)
+        cl.setContentsMargins(4, 4, 4, 4)
+        cl.setSpacing(0)
+        cl.addWidget(self.chart)
+        right_col.addWidget(self.chart_frame, 1)
+
+        ov.addLayout(right_col, 4)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 
@@ -556,7 +557,7 @@ class ScannerDetailScreen(QWidget):
         self.header_slot.addWidget(
             page_header(
                 "Chi tiết từ quét thị trường",
-                "Tóm tắt mã được chọn từ bảng Scanner; chạy phân tích đầy đủ khi cần trade plan chi tiết.",
+                "",
                 symbol,
             )
         )

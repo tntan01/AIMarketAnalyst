@@ -58,7 +58,8 @@ Quyết định thiết kế bắt buộc:
 - Kết quả phân tích phải có phần Replay/Backtest tóm tắt: số lệnh replay, win rate, expectancy R, average R, MFE/MAE trung bình, max drawdown và hiệu quả theo phiên. Phần này không thay thế quyết định vào lệnh realtime, chỉ dùng để kiểm chứng setup có lịch sử hợp lý hay không.
 - Kết quả phân tích phải có phần Vĩ mô hiển thị: điểm vĩ mô mua/bán, macro theme theo từng đồng tiền, Tin mới nhất, điểm nóng thế giới và lịch kinh tế. Nếu không có dữ liệu, phải hiển thị rõ “không có dữ liệu” thay vì để trống.
 - Mục Tin mới nhất chỉ hiển thị headline thị trường và phát biểu đáng chú ý trong 24h qua, mỗi dòng riêng. Dòng tin mới nhất dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm `-> ảnh hưởng tới đồng tiền đang xét` khi đã có nhận định tác động cụ thể. Lịch kinh tế vẫn hiển thị tác động vì bản thân event có mức impact.
-- Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ 1 phút, 5 phút, 15 phút, 30 phút, 1 giờ, 4 giờ, 1 ngày. Khi đang auto-scan phải có nút `Dừng quét tự động`.
+- Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ M5, M15, H1, H4. Khi đang auto-scan phải có nút `Dừng quét tự động`.
+- Khi mở tab Scanner lần đầu trong phiên, tự động chọn tất cả mã, đặt chế độ quét tự động M5, và chạy quét lần đầu sau 1.5 giây. KHÔNG tự động bật chế độ vào lệnh (auto-trade luôn unchecked).
 - Settings > Nâng cao có cấu hình Telegram gồm bot token, danh sách chat ID nhận alert và interval auto-scan mặc định. Chat ID có thể nhập nhiều giá trị, cách nhau bằng dấu phẩy.
 - Các phần dài như nhận định AI, điểm thành phần, raw JSON, log kỹ thuật phải đưa vào tab, panel phụ hoặc dialog.
 - Mọi tác vụ nặng như lấy dữ liệu MT5, gọi AI, quét 31 mã, tính indicator phải chạy qua worker/thread; UI không được bị đơ.
@@ -206,7 +207,7 @@ Cấu hình AI Provider (nhà cung cấp AI), Data Source (nguồn dữ liệu),
 
 ### Thành phần bắt buộc
 
-- Card (thẻ thông tin) MT5 Status (trạng thái MT5) đã thiết kế lại chuyên nghiệp (chiều cao cố định 44px, padding 8px dọc và 10px ngang, border 1px solid và chấm tròn màu 8px ở bên trái tương ứng với state: connected/success/ok=#10b981, disconnected/error/danger=#ef4444, warning=#f59e0b; tiêu đề 11px và giá trị 13px bold xếp dọc bên phải chấm tròn, nền transparent, không có dòng detail thứ 3).
+- Card (thẻ thông tin) MT5 Status (trạng thái MT5) dạng 1 dòng ngang: chấm tròn màu 8px bên trái + text có emoji trạng thái (✅/🔴) và font 13px semi-bold, border 1px solid theo state (ok=#10b981, danger=#ef4444, warning=#f59e0b), chiều cao cố định 40px, nền transparent, không wrap text.
 - Card (thẻ thông tin) Broker Login (trạng thái đăng nhập sàn giao dịch) đã thiết kế lại chuyên nghiệp tương tự.
 - Card (thẻ thông tin) AI Provider (nhà cung cấp AI) đã thiết kế lại chuyên nghiệp tương tự.
 - Card (thẻ thông tin) Data Source (nguồn dữ liệu) đã thiết kế lại chuyên nghiệp tương tự.
@@ -627,13 +628,13 @@ Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra kh
 
 ### Bố cục màn hình
 
-**Tab Tổng quan** — chia 2 cột (75%/25%):
-- Cột trái: Hero verdict bar + Chart (OHLCV, indicator, SMC zones)
-- Cột phải (font 11px, padding 6/4, spacing 1px để vừa không scroll):
+**Tab Tổng quan** — chia 2 cột (20%/80%):
+- Cột trái (20%, font 11px, padding 6/4, spacing 1px):
   - Nút "📋 Xem đầy đủ" — mở dialog 16 chỉ số chi tiết
   - Card "🎯 Số liệu giao dịch" — 6 dòng (Vùng vào lệnh, SL, TP, R:R, Vĩ mô, Chế độ TT)
   - Card "📊 Điểm phân tích" — 6 dòng (Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD)
   - Card "🔍 Điều kiện vào lệnh" — 7 checklist items dạng grid 2 cột (Quyền GD, Gate, Chênh lệch, Entry, Vị trí, M15, R:R), mỗi item hiển thị icon ✅/❌ + tên ngắn, tooltip chứa text đầy đủ
+- Cột phải (80%): Hero verdict bar + Chart (OHLCV, indicator, SMC zones) full height
 
 **Tab Chẩn đoán** — ô tóm tắt lý do chính → Điểm cuối & Quyết định → Gate kiểm tra → Phân rã điểm số, kèm khối "Chi tiết kỹ thuật nâng cao" (ẩn mặc định, có nút bấm để mở)
 

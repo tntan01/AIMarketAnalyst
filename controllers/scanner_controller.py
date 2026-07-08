@@ -332,13 +332,42 @@ class ScannerController:
             first_tp = take_profit[0] if isinstance(take_profit, list) and take_profit else take_profit
 
             try:
-                volume = float(sizing.get("suggested_lot") or 0.0)
                 stop_loss = float(scenario.get("stop_loss"))
                 tp = float(first_tp)
             except (TypeError, ValueError):
                 skipped += 1
                 errors.append(f"{symbol}: thiếu lot/SL/TP hợp lệ, bỏ qua auto trade.")
                 continue
+
+            # Tính lại lot ngay trước khi vào lệnh (không dùng suggested_lot cũ từ lúc scan)
+            try:
+                settings = self.settings_service.load()
+                entry_zone = scenario.get("entry_zone")
+                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+                    entry_price = (float(entry_zone[0]) + float(entry_zone[1])) / 2
+                else:
+                    entry_price = 0.0
+                if entry_price <= 0:
+                    current = self.data_provider.current_price(symbol, trade_side)
+                    entry_price = float(current) if current else 0.0
+                balance = float(settings.trading.account_balance or 0)
+                risk_pct = float(getattr(request, 'risk_percent', None) or settings.trading.default_risk_percent or 1.0)
+                contract = float(settings.trading.contract_size_override.get(symbol, 100000))
+                lot_step = float(settings.trading.lot_step or 0.01)
+                min_lot = float(settings.trading.minimum_lot or 0.01)
+                if entry_price > 0 and stop_loss > 0:
+                    stop_distance = abs(entry_price - stop_loss)
+                    if stop_distance > 0:
+                        raw_lot = (balance * (risk_pct / 100.0)) / (stop_distance * contract)
+                        volume = int(raw_lot / lot_step) * lot_step
+                        volume = max(volume, min_lot)
+                    else:
+                        volume = float(sizing.get("suggested_lot") or 0.0)
+                else:
+                    volume = float(sizing.get("suggested_lot") or 0.0)
+            except Exception:
+                volume = float(sizing.get("suggested_lot") or 0.0)
+            # ----------------------------------------------------------------
 
             if not broker_symbol:
                 skipped += 1
