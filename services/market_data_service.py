@@ -16,7 +16,7 @@ MARKET_TICKERS: dict[str, str] = {
     "DXY": "DX-Y.NYB",
     "VIX": "^VIX",
     "US10Y": "^TNX",
-    "US2Y": "2YY=F",
+    "US2Y": "^IRX",
 }
 
 _CORRELATION_KEYS: dict[str, str] = {
@@ -183,7 +183,7 @@ def latest_change(candles: list[Candle] | None) -> tuple[float, float] | None:
 
 def fetch_market_overview(
     *,
-    period: str = "1mo",
+    period: str = "5d",
     interval: str = "1d",
     downloader: Any | None = None,
 ) -> dict[str, tuple[float, float]]:
@@ -213,38 +213,25 @@ def fetch_market_overview_from_yahoo_chart(
     timeout: int = 10,
 ) -> dict[str, tuple[float, float]]:
     """Fallback dashboard fetch using Yahoo chart HTTP endpoint."""
+    from services.yahoo_chart_fetcher import fetch_single_yahoo_chart
+
     skip = skip_tags or set()
     overview: dict[str, tuple[float, float]] = {}
-    headers = {"User-Agent": "Mozilla/5.0"}
 
-    for tag, ticker in MARKET_TICKERS.items():
-        if tag in skip:
-            continue
-        try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1mo&interval=1d"
-            resp = requests.get(url, headers=headers, timeout=timeout)
-            if resp.status_code == 429:
-                import time
-
-                time.sleep(2)
-                resp = requests.get(url, headers=headers, timeout=timeout)
-            if resp.status_code != 200:
-                continue
-            json_data = resp.json()
-            result = json_data.get("chart", {}).get("result", [])
-            if not result:
-                continue
-            quotes = result[0].get("indicators", {}).get("quote", [])
-            if not quotes:
-                continue
-            closes = [float(c) for c in quotes[0].get("close", []) if c is not None]
-            if len(closes) < 2:
-                continue
-            close = closes[-1]
-            prev = closes[-2]
-            overview[tag] = (close, (close - prev) / prev * 100 if prev != 0 else 0.0)
-        except Exception:
-            pass
+    with ThreadPoolExecutor(max_workers=len(MARKET_TICKERS)) as ex:
+        futures = {
+            ex.submit(fetch_single_yahoo_chart, tag, ticker, timeout=timeout): tag
+            for tag, ticker in MARKET_TICKERS.items()
+            if tag not in skip
+        }
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result is not None:
+                    tag, change = result
+                    overview[tag] = change
+            except Exception:
+                pass
 
     return overview
 

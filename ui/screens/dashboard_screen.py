@@ -3,7 +3,7 @@ from __future__ import annotations
 from config.constants import SUPPORTED_SYMBOLS
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal, QEvent, QObject
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QTextCursor
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -135,6 +135,8 @@ class DashboardScreen(QWidget):
         self._light = self._is_light_theme()
         self._news_tab = "this_week"
         self._news_data: dict = {}
+        self._ai_last_snapshot: str = ""
+        self._ai_cached_response: str = ""
         self.setObjectName("DashboardScreen")
         self._build_ui()
         self.refresh_status()
@@ -163,7 +165,7 @@ class DashboardScreen(QWidget):
         root.addWidget(self.market_overview)
         self.news_section = self._build_news_section()
         root.addWidget(self.news_section)
-        QTimer.singleShot(3000, self._refresh_market_overview)
+        self._refresh_market_overview()
 
     def _build_header(self) -> QHBoxLayout:
         layout = QHBoxLayout()
@@ -2041,6 +2043,12 @@ QUAN TRỌNG:
         root_layout.addLayout(btn_layout)
 
         def request_analysis():
+            mv = getattr(self, "_market_values", None) or {}
+            snapshot = str(mv)
+            if snapshot and snapshot == self._ai_last_snapshot and self._ai_cached_response:
+                ai_response.setMarkdown(self._ai_cached_response)
+                return
+
             ai_btn.setEnabled(False)
             ai_btn.setText("⏳ Đang phân tích...")
             QApplication.processEvents()
@@ -2063,8 +2071,6 @@ QUAN TRỌNG:
                     api_key=active.api_key,
                 )
                 ai = AIService(ai_config)
-
-                mv = getattr(self, "_market_values", None) or {}
 
                 def _fmt_val(tag):
                     pair = mv.get(tag)
@@ -2139,8 +2145,17 @@ QUAN TRỌNG:
 - KHÔNG viết chung chung. Phải dựa TRÊN SỐ LIỆU THỰC TẾ được cung cấp
 - KHÔNG gộp US2Y với US10Y — đây là 2 chỉ số KHÁC NHAU"""
 
-                result = ai.analyze(prompt, max_tokens=4000)
-                ai_response.setMarkdown(result)
+                ai_response.clear()
+                accumulated = ""
+                for chunk in ai.analyze_stream(prompt, max_tokens=2500):
+                    accumulated += chunk
+                    cursor = ai_response.textCursor()
+                    cursor.movePosition(QTextCursor.MoveOperation.End)
+                    cursor.insertText(chunk)
+                    QApplication.processEvents()
+                ai_response.setMarkdown(accumulated)
+                self._ai_last_snapshot = snapshot
+                self._ai_cached_response = accumulated
 
             except Exception as e:
                 ai_response.setHtml(

@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import requests
+
 from config.constants import DEEPSEEK_MODELS
+
+# Minimum max_tokens for reasoning models.  DeepSeek v4 counts reasoning
+# tokens toward the budget; small values cause content to be starved.
+_REASONING_MODEL_MIN_TOKENS: dict[str, int] = {
+    "deepseek-v4-pro": 4000,
+    "deepseek-v4-flash": 4000,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +51,43 @@ class AIService:
         if "gemini" in provider or "google" in provider:
             return self._gemini_generate_content(prompt)
         return self._chat_completion("https://api.openai.com/v1/chat/completions", prompt, max_tokens)
+
+    def analyze_stream(self, prompt: str, *, max_tokens: int = 1800) -> Generator[str, None, None]:
+        """Stream AI response chunks via SSE (chat completion providers only).
+
+        Yields plain-text content chunks as they arrive.  Falls back to a
+        single-chunk yield for providers that do not support streaming
+        (Anthropic, Gemini, OpenAI Responses API).
+        """
+        effective = self._effective_max_tokens(max_tokens)
+        provider = self.config.provider.lower()
+        if "openai" in provider:
+            # OpenAI Responses API does not support streaming — fall back
+            yield self._openai_response(prompt, effective)
+            return
+        if "deepseek" in provider:
+            if self.config.model not in DEEPSEEK_MODELS:
+                raise RuntimeError(
+                    "Model DeepSeek không hợp lệ. Hãy chọn deepseek-v4-flash hoặc deepseek-v4-pro trong Settings."
+                )
+            yield from self._chat_completion_stream(
+                "https://api.deepseek.com/chat/completions", prompt, effective
+            )
+            return
+        if "anthropic" in provider or "claude" in provider:
+            yield self._anthropic_message(prompt, effective)
+            return
+        if "gemini" in provider or "google" in provider:
+            yield self._gemini_generate_content(prompt)
+            return
+        yield from self._chat_completion_stream(
+            "https://api.openai.com/v1/chat/completions", prompt, effective
+        )
+
+    def _effective_max_tokens(self, requested: int) -> int:
+        """Return a safe max_tokens floor for reasoning-heavy models."""
+        floor = _REASONING_MODEL_MIN_TOKENS.get(self.config.model, 0)
+        return max(requested, floor)
 
     def _openai_response(self, prompt: str, max_tokens: int = 1800) -> str:
         payload = {
@@ -83,6 +130,41 @@ class AIService:
         if content:
             return content
         raise RuntimeError(self._chat_completion_empty_reason(data))
+
+    def _chat_completion_stream(self, url: str, prompt: str, max_tokens: int = 1800) -> Generator[str, None, None]:
+        """Stream chat completion chunks via SSE."""
+        from services.sse_parser import iter_chat_completion_chunks
+
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Bạn là AI Writer của AI Market Analyst. Không tự bịa số liệu; chỉ diễn giải dữ liệu do app cung cấp.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.config.api_key}",
+                },
+                stream=True,
+                timeout=120,
+            )
+            if response.status_code != 200:
+                detail = response.text[:300]
+                raise RuntimeError(f"AI API lỗi HTTP {response.status_code}: {detail}")
+            yield from iter_chat_completion_chunks(response)
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Không kết nối được AI API: {exc}") from exc
 
     def _extract_chat_completion_text(self, data: dict[str, object]) -> str:
         choices = data.get("choices", [])
