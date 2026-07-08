@@ -3,9 +3,6 @@ from __future__ import annotations
 import os
 import sys
 
-# Phai dat TRUOC tat ca import PyQt6 / ui de QWebEngineView khong crash GPU
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-software-rasterizer --no-sandbox"
-
 from pathlib import Path
 
 from config.paths import ensure_runtime_dirs

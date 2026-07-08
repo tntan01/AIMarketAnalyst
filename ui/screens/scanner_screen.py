@@ -799,7 +799,13 @@ class ScannerScreen (QWidget ):
                     entry_price = float(current) if current else 0.0
                 balance = float(settings.trading.account_balance or 0)
                 risk_pct = float(settings.trading.default_risk_percent or 1.0)
-                contract = float(settings.trading.contract_size_override.get(symbol, 100000))
+                contract_override = settings.trading.contract_size_override
+                if isinstance(contract_override, dict):
+                    contract = float(contract_override.get(symbol, 100000))
+                elif isinstance(contract_override, (int, float)) and contract_override > 0:
+                    contract = float(contract_override)
+                else:
+                    contract = 100000.0
                 lot_step = float(settings.trading.lot_step or 0.01)
                 min_lot = float(settings.trading.minimum_lot or 0.01)
                 if entry_price > 0 and sl_f > 0:

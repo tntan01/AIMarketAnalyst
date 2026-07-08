@@ -350,23 +350,29 @@ class ScannerController:
                 if entry_price <= 0:
                     current = self.data_provider.current_price(symbol, trade_side)
                     entry_price = float(current) if current else 0.0
+                if entry_price <= 0 or stop_loss <= 0 or abs(entry_price - stop_loss) <= 0:
+                    skipped += 1
+                    errors.append(f"{symbol}: không tính được entry_price/stop_distance, bỏ qua auto trade.")
+                    continue
                 balance = float(settings.trading.account_balance or 0)
                 risk_pct = float(getattr(request, 'risk_percent', None) or settings.trading.default_risk_percent or 1.0)
-                contract = float(settings.trading.contract_size_override.get(symbol, 100000))
+                contract_override = settings.trading.contract_size_override
+                if isinstance(contract_override, dict):
+                    contract = float(contract_override.get(symbol, 100000))
+                elif isinstance(contract_override, (int, float)) and contract_override > 0:
+                    contract = float(contract_override)
+                else:
+                    contract = 100000.0
                 lot_step = float(settings.trading.lot_step or 0.01)
                 min_lot = float(settings.trading.minimum_lot or 0.01)
-                if entry_price > 0 and stop_loss > 0:
-                    stop_distance = abs(entry_price - stop_loss)
-                    if stop_distance > 0:
-                        raw_lot = (balance * (risk_pct / 100.0)) / (stop_distance * contract)
-                        volume = int(raw_lot / lot_step) * lot_step
-                        volume = max(volume, min_lot)
-                    else:
-                        volume = float(sizing.get("suggested_lot") or 0.0)
-                else:
-                    volume = float(sizing.get("suggested_lot") or 0.0)
+                stop_distance = abs(entry_price - stop_loss)
+                raw_lot = (balance * (risk_pct / 100.0)) / (stop_distance * contract)
+                volume = int(raw_lot / lot_step) * lot_step
+                volume = max(volume, min_lot)
             except Exception:
-                volume = float(sizing.get("suggested_lot") or 0.0)
+                skipped += 1
+                errors.append(f"{symbol}: lỗi khi tính lot, bỏ qua auto trade.")
+                continue
             # ----------------------------------------------------------------
 
             if not broker_symbol:
