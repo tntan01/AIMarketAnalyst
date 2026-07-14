@@ -1285,34 +1285,141 @@ QTableWidget#DataTable QHeaderView::section:hover {
   color: #ffffff;
 }
 
-QTabWidget#ContentTabs::pane {
+QTabWidget#ContentTabs::pane,
+QTabWidget#BacktestTabs::pane {
   border: 1px solid #2b3545;
   background: #171c24;
   border-radius: 8px;
+  margin-top: 8px;
   padding: 12px;
 }
 
+/* ====================================================================
+   TAB STYLES — Reusable tab appearance classes
+   ====================================================================
+
+   Usage (Python):
+     # RoundedTab variant — set on the QTabBar (or QTabWidget) widget:
+     tab_widget.tabBar().setProperty("tabStyle", "RoundedTab")
+     tab_widget.tabBar().style().unpolish(tab_widget.tabBar())
+     tab_widget.tabBar().style().polish(tab_widget.tabBar())
+
+     # PillTab — QPushButton-based tab bar (e.g. order screen):
+     btn.setProperty("tabStyle", "PillTab")
+     btn.setProperty("active", True)   # for the active/selected tab
+     btn.style().unpolish(btn)
+     btn.style().polish(btn)
+   ==================================================================== */
+
+/* ── Default QTabBar::tab (applied globally to all QTabBars) ──────────── */
 QTabBar::tab {
   background: #1f2937;
   border: 1px solid #475569;
+  border-radius: 16px;
   color: #e5e7eb;
   font-size: 13px;
   font-weight: 700;
-  min-width: 88px;
-  padding: 10px 16px;
+  min-width: 120px;
+  padding: 10px 20px;
   margin-right: 4px;
 }
 
 QTabBar::tab:selected {
   background: #0f766e;
   border: 1px solid #5eead4;
+  border-radius: 16px;
   color: #ffffff;
 }
 
 QTabBar::tab:hover {
   background: #334155;
   border-color: #94a3b8;
+  border-radius: 16px;
   color: #ffffff;
+}
+
+/* ── QTabBar[tabStyle="RoundedTab"] — reusable rounded-tab variant ─────── */
+QTabBar[tabStyle="RoundedTab"]::tab {
+  background: #1f2937;
+  border: 1px solid #475569;
+  border-radius: 24px;
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 120px;
+  padding: 10px 20px;
+  margin-right: 4px;
+}
+
+QTabBar[tabStyle="RoundedTab"]::tab:selected {
+  background: #0f766e;
+  border: 1px solid #5eead4;
+  border-radius: 24px;
+  color: #ffffff;
+}
+
+QTabBar[tabStyle="RoundedTab"]::tab:hover {
+  background: #334155;
+  border-color: #94a3b8;
+  border-radius: 24px;
+  color: #ffffff;
+}
+
+QTabWidget#ContentTabs QTabBar::tab,
+QTabWidget#BacktestTabs QTabBar::tab {
+  background: #1f2937;
+  border: 1px solid #475569;
+  border-radius: 20px;
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 100px;
+  padding: 6px 16px;
+  margin-right: 6px;
+}
+
+QTabWidget#ContentTabs QTabBar::tab:selected,
+QTabWidget#BacktestTabs QTabBar::tab:selected {
+  background: #0f766e;
+  border: 1px solid #5eead4;
+  border-radius: 20px;
+  color: #ffffff;
+}
+
+QTabWidget#ContentTabs QTabBar::tab:hover,
+QTabWidget#BacktestTabs QTabBar::tab:hover {
+  background: #334155;
+  border-color: #94a3b8;
+  border-radius: 20px;
+  color: #ffffff;
+}
+
+/* ── QPushButton[tabStyle="PillTab"] — pill-shaped tab button ──────────── */
+QPushButton[tabStyle="PillTab"] {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border: 1px solid #475569;
+  border-radius: 16px;
+  background: #1f2937;
+  color: #94a3b8;
+}
+
+QPushButton[tabStyle="PillTab"]:hover {
+  background: #334155;
+  color: #e5e7eb;
+  border-color: #94a3b8;
+}
+
+QPushButton[tabStyle="PillTab"][active="true"] {
+  background: #0f766e;
+  border: 1px solid #5eead4;
+  color: #ffffff;
+}
+
+QPushButton[tabStyle="PillTab"][active="true"]:hover {
+  background: #14b8a6;
+  border-color: #99f6e4;
 }
 
 QTabWidget#ContentTabs QTabBar::scroller {

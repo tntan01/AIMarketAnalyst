@@ -2106,42 +2106,59 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             return
         light = self._is_light_theme()
         if light:
-            pane_bg = "#faf8f5"
-            tab_bg = "#f3f4f6"
-            tab_selected_bg = "#ffffff"
-            tab_text = "#4b5563"
-            tab_selected_text = "#111827"
-            tab_border = "#e5e7eb"
+            pane_bg = "#FAF9F5"
+            pane_border = "#D6D2C8"
+            tab_bg = "#f1f5f9"
+            tab_border = "#d1d5db"
+            tab_text = "#334155"
+            tab_selected_bg = "#ea580c"
+            tab_selected_border = "#ea580c"
+            tab_selected_text = "#ffffff"
+            tab_hover_bg = "#ea580c"
+            tab_hover_border = "#ea580c"
+            tab_hover_text = "#ffffff"
         else:
-            pane_bg = "#0f172a"
-            tab_bg = "#1e293b"
-            tab_selected_bg = "#0f172a"
-            tab_text = "#94a3b8"
-            tab_selected_text = "#f8fafc"
-            tab_border = "#334155"
+            pane_bg = "#171c24"
+            pane_border = "#2b3545"
+            tab_bg = "#1f2937"
+            tab_border = "#475569"
+            tab_text = "#e5e7eb"
+            tab_selected_bg = "#0f766e"
+            tab_selected_border = "#5eead4"
+            tab_selected_text = "#ffffff"
+            tab_hover_bg = "#334155"
+            tab_hover_border = "#94a3b8"
+            tab_hover_text = "#ffffff"
         self.tabs.setStyleSheet(f"""
             QTabWidget#BacktestTabs::pane {{
-                border: none;
+                border: 1px solid {pane_border};
                 background: {pane_bg};
-                border-radius: 6px;
+                border-radius: 8px;
+                margin-top: 8px;
+                padding: 12px;
             }}
             QTabBar::tab {{
                 background: {tab_bg};
                 color: {tab_text};
                 border: 1px solid {tab_border};
-                padding: 6px 18px;
-                margin-right: 2px;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
+                border-radius: 20px;
+                padding: 6px 16px;
+                margin-right: 6px;
+                min-width: 100px;
                 font-size: 12px;
             }}
             QTabBar::tab:selected {{
                 background: {tab_selected_bg};
+                border: 1px solid {tab_selected_border};
+                border-radius: 20px;
                 color: {tab_selected_text};
-                border-bottom: 2px solid #ea580c;
+                font-weight: 700;
             }}
             QTabBar::tab:hover {{
-                color: {tab_selected_text};
+                background: {tab_hover_bg};
+                border: 1px solid {tab_hover_border};
+                border-radius: 20px;
+                color: {tab_hover_text};
             }}
         """)
 
