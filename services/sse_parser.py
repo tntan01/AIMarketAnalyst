@@ -13,11 +13,9 @@ from collections.abc import Generator
 def iter_chat_completion_chunks(response, *, content_key: str = "content") -> Generator[str, None, None]:
     """Yield delta text chunks from a streaming chat completion response.
 
-    For reasoning models (e.g. DeepSeek v4) the thinking phase emits
-    ``reasoning_content`` chunks while ``content`` stays ``None``.
-    This parser yields the *first available* text — ``content`` if
-    present, otherwise ``reasoning_content`` — so the user sees
-    progressive output immediately instead of a blank screen.
+    Only yields actual ``content`` delta text — reasoning/thinking tokens
+    are skipped to prevent internal model instructions from appearing in
+    the user-visible output.
 
     Args:
         response: A ``requests.Response`` object with ``stream=True``.
@@ -38,8 +36,6 @@ def iter_chat_completion_chunks(response, *, content_key: str = "content") -> Ge
             except json.JSONDecodeError:
                 continue
             delta_text = _extract_delta_text(data, content_key=content_key)
-            if not delta_text and content_key == "content":
-                delta_text = _extract_delta_text(data, content_key="reasoning_content")
             if delta_text:
                 yield delta_text
 

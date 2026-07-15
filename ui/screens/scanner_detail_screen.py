@@ -155,10 +155,10 @@ class ScannerDetailScreen(QWidget):
         # -- Hero verdict bar --
         self.hero_bar = QLabel("")
         self.hero_bar.setObjectName("ScannerDetailHero")
-        self.hero_bar.setWordWrap(True)
+        self.hero_bar.setWordWrap(False)
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
         self.hero_bar.setStyleSheet(
-            "QLabel#ScannerDetailHero { min-height: 36px; max-height: 36px; border-radius: 6px; padding: 0 12px; font-size: 14px; background: #1e293b; border: 1px solid #334155; }"
+            "QLabel#ScannerDetailHero { min-height: 36px; border-radius: 6px; padding: 0 12px; font-size: 14px; background: #1e293b; border: 1px solid #334155; }"
         )
         right_col.addWidget(self.hero_bar)
 
@@ -654,7 +654,6 @@ class ScannerDetailScreen(QWidget):
         self.hero_bar.setStyleSheet(
             f"QLabel#ScannerDetailHero {{"
             f"  min-height: 36px;"
-            f"  max-height: 36px;"
             f"  background-color: {bg};"
             f"  border: 1px solid {border};"
             f"  border-radius: 6px;"
@@ -676,25 +675,25 @@ class ScannerDetailScreen(QWidget):
 
         self.hero_bar.setText(
             f"<table width='100%' style='margin:0;padding:0;border:none;'><tr>"
-            f"<td width='110' style='vertical-align:middle;'>"
+            f"<td width='110' style='vertical-align:middle;white-space:nowrap;'>"
             f"<span style='color:{accent};font-size:15px;font-weight:bold;letter-spacing:1px;'>{icon} {action_text.upper()}</span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};'>"
+            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
             f"<span style='color:{text_color};font-size:12px;'>Điểm <b style='color:{bold_color};'>{best_score}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};'>"
+            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
             f"<span style='color:{text_color};font-size:12px;'>R:R <b style='color:#f59e0b;'>{rr}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};'>"
+            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
             f"<span style='color:{text_color};font-size:12px;'>B/S <b style='color:{bold_color};'>{buy_s}/{sell_s}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};'>"
+            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
             f"<span style='color:{text_color};font-size:12px;'>Gap <b style='color:{bold_color};'>{gap_str}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};'>"
+            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
             f"<span style='color:{text_color};font-size:12px;'>Vĩ mô <b style='color:{bold_color};'>{macro_vn}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;text-align:right;'>"
+            f"<td style='vertical-align:middle;text-align:right;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;'>"
             f"<span style='color:{text_color};font-size:13px;'>"
             f"Hạng <b style='color:{bold_color};'>#{rank}</b> &nbsp;&bull;&nbsp; {reason}"
             f"</span>"
