@@ -106,10 +106,21 @@ def score_scenario(
     location = location_quality_score(side, technical)
     smc_quality, smc_reason = smc_quality_score(side, smc or {}, technical)
 
-    weights = DYNAMIC_WEIGHTS.get(
+    base_weights = DYNAMIC_WEIGHTS.get(
         _resolve_regime_key(market_regime or {}),
         DYNAMIC_WEIGHTS["unknown"],
     )
+    macro_cap = int(base_weights["macro"])
+    conf = clamp(macro_confidence, 0.0, 1.0)
+    effective_macro_weight = int(macro_cap * conf)
+    surplus = macro_cap - effective_macro_weight
+    weights = dict(base_weights)
+    weights["macro"] = effective_macro_weight
+    tech_keys = ["trend", "momentum", "location", "smc", "risk"]
+    surplus_each = surplus // len(tech_keys)
+    remainder = surplus % len(tech_keys)
+    for i, k in enumerate(tech_keys):
+        weights[k] = weights[k] + surplus_each + (1 if i < remainder else 0)
 
     trend_scaled = int(clamp(trend, 0, 25) * weights["trend"] / 25)
     momentum_scaled = int(clamp(momentum, 0, 20) * weights["momentum"] / 20)
@@ -119,9 +130,8 @@ def score_scenario(
     technical_scaled = int(trend_scaled + momentum_scaled + location_scaled + smc_scaled)
 
     macro_raw = int(clamp(macro_score, 0, 30))
-    macro_cap = int(weights["macro"])
-    macro_effective = int(macro_raw * clamp(macro_confidence, 0.0, 1.0) * macro_cap / 30)
-    macro_effective = int(clamp(macro_effective + int(correlation_adjustment), 0, macro_cap))
+    macro_effective = int(macro_raw * effective_macro_weight / 30)
+    macro_effective = int(clamp(macro_effective + int(correlation_adjustment), 0, effective_macro_weight))
 
     risk_scaled = int(clamp(risk_score, 0, 15) * weights["risk"] / 15)
 

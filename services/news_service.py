@@ -18,6 +18,7 @@ from xml.etree import ElementTree
 from config.paths import app_data_dir
 from services.forex_factory_client import (
     ForexFactoryClient,
+    _clean_economic_value,
     _event_time,
     _is_high_impact,
     clean_text,
@@ -25,6 +26,7 @@ from services.forex_factory_client import (
 )
 from services.ai_service import AIService, AIProviderConfig
 from services.settings_service import SettingsService
+import yfinance as yf
 
 # ---------------------------------------------------------------------------
 # Re-export for backward compatibility
@@ -644,7 +646,7 @@ class NewsService:
 
         tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(base, quote, base_stance, quote_stance)
         tier2_buy, tier2_sell, tier2_detail = self._macro_tier2(base, quote, events)
-        tier3_buy, tier3_sell, tier3_detail = self._macro_tier3(currencies, headlines, hotspots)
+        tier3_buy, tier3_sell, tier3_detail = self._macro_tier3(currencies, headlines, hotspots, ai_service=ai_service)
 
         raw_buy = tier1_buy + tier2_buy + tier3_buy
         raw_sell = tier1_sell + tier2_sell + tier3_sell
@@ -703,52 +705,96 @@ Trả lời:"""
         return fallback
 
     # --- Tier 1: Interest Rate & Monetary Policy (0-12) ---
+
+    @staticmethod
+    def _fetch_yield_spread() -> dict[str, object]:
+        try:
+            tnx = yf.download("^TNX", period="5d", interval="1d", progress=False)
+            fvx = yf.download("^FVX", period="5d", interval="1d", progress=False)
+            if tnx.empty or fvx.empty:
+                return {"spread": None, "tnx": None, "fvx": None}
+            import pandas as pd
+            if isinstance(tnx.columns, pd.MultiIndex):
+                tnx_close = float(tnx.iloc[-1, 0])
+                fvx_close = float(fvx.iloc[-1, 0])
+            else:
+                tnx_close = float(tnx["Close"].iloc[-1])
+                fvx_close = float(fvx["Close"].iloc[-1])
+            spread = tnx_close - fvx_close
+            steepening = False
+            if len(tnx) >= 2 and len(fvx) >= 2:
+                if isinstance(tnx.columns, pd.MultiIndex):
+                    prev_tnx = float(tnx.iloc[-2, 0])
+                    prev_fvx = float(fvx.iloc[-2, 0])
+                else:
+                    prev_tnx = float(tnx["Close"].iloc[-2])
+                    prev_fvx = float(fvx["Close"].iloc[-2])
+                prev_spread = prev_tnx - prev_fvx
+                steepening = spread > prev_spread
+            return {"spread": round(spread, 2), "tnx": tnx_close, "fvx": fvx_close, "steepening": steepening}
+        except Exception:
+            return {"spread": None, "tnx": None, "fvx": None}
+
     def _macro_tier1(self, base: str, quote: str, base_stance: str, quote_stance: str) -> tuple[int, int, dict[str, object]]:
         rates = self._load_interest_rates()
         base_info = rates.get(base, {})
         quote_info = rates.get(quote, {})
 
-        # Rate differential score (0-2)
+        # Rate differential score (0-4) — linear scale
+        MAX_DIFF = 5.0
         rate_diff = self.rate_differential(base, quote)
-        if rate_diff > 2.0:
-            diff_buy, diff_sell = 2, 0
-        elif rate_diff > 0.5:
-            diff_buy, diff_sell = 1, 0
-        elif rate_diff > -0.5:
-            diff_buy, diff_sell = 1, 1
-        elif rate_diff > -2.0:
-            diff_buy, diff_sell = 0, 1
+        diff_score = round(4 * abs(rate_diff) / MAX_DIFF)
+        diff_score = max(0, min(4, diff_score))
+        if rate_diff >= 0:
+            diff_buy, diff_sell = diff_score, 0
         else:
-            diff_buy, diff_sell = 0, 2
+            diff_buy, diff_sell = 0, diff_score
 
-        # Rate trend score (0-5)
-        trend_score_map = {"hike": 5, "hold": 2, "cut": 0}
+        # Rate trend score (0-4)
+        trend_score_map = {"hike": 4, "hold": 2, "cut": 0}
         base_trend = int(trend_score_map.get(str(base_info.get("trend", "hold")), 2))
         quote_trend = int(trend_score_map.get(str(quote_info.get("trend", "hold")), 2))
         trend_diff = base_trend - quote_trend
         if trend_diff >= 3:
-            trend_buy, trend_sell = 5, 0
+            trend_buy, trend_sell = 4, 0
         elif trend_diff in (1, 2):
-            trend_buy, trend_sell = 3, 2
+            trend_buy, trend_sell = 3, 1
         elif trend_diff == 0:
             trend_buy, trend_sell = 2, 2
         elif trend_diff in (-1, -2):
-            trend_buy, trend_sell = 2, 3
+            trend_buy, trend_sell = 1, 3
         else:
-            trend_buy, trend_sell = 0, 5
+            trend_buy, trend_sell = 0, 4
 
-        # Stance score from headlines (0-5)
+        # Stance score from headlines (0-4)
         stance_delta = stance_value(base_stance) - stance_value(quote_stance)
         if stance_delta >= 2:
-            stance_buy, stance_sell = 5, 0
+            stance_buy, stance_sell = 4, 0
         elif stance_delta == 1:
-            stance_buy, stance_sell = 4, 1
+            stance_buy, stance_sell = 3, 1
         elif stance_delta == 0:
             stance_buy, stance_sell = 2, 2
         elif stance_delta == -1:
-            stance_buy, stance_sell = 1, 4
+            stance_buy, stance_sell = 1, 3
         else:
-            stance_buy, stance_sell = 0, 5
+            stance_buy, stance_sell = 0, 4
+
+        # Yield spread 2s10s adjustment (USD pairs only)
+        yield_adj_buy = 0
+        yield_adj_sell = 0
+        yield_spread_data = self._fetch_yield_spread()
+        spread_val = yield_spread_data.get("spread")
+        if spread_val is not None and "USD" in (base, quote):
+            if spread_val < 0:
+                if base == "USD":
+                    yield_adj_buy, yield_adj_sell = -2, 2
+                else:
+                    yield_adj_buy, yield_adj_sell = 2, -2
+            elif spread_val > 0.5 and yield_spread_data.get("steepening"):
+                if base == "USD":
+                    yield_adj_buy, yield_adj_sell = 1, -1
+                else:
+                    yield_adj_buy, yield_adj_sell = -1, 1
 
         detail = {
             "base_rate": base_info.get("rate_label", "--"),
@@ -758,17 +804,29 @@ Trả lời:"""
             "quote_trend": quote_info.get("trend", "hold"),
             "base_stance": base_stance,
             "quote_stance": quote_stance,
+            "yield_spread_2s10s": spread_val,
+            "yield_spread_tnx": yield_spread_data.get("tnx"),
+            "yield_spread_fvx": yield_spread_data.get("fvx"),
+            "yield_spread_steepening": yield_spread_data.get("steepening"),
+            "yield_spread_adj": {"buy": yield_adj_buy, "sell": yield_adj_sell},
             "components": {
                 "rate_diff": {"buy": diff_buy, "sell": diff_sell},
                 "rate_trend": {"buy": trend_buy, "sell": trend_sell},
                 "stance": {"buy": stance_buy, "sell": stance_sell},
             },
         }
-        return (diff_buy + trend_buy + stance_buy, diff_sell + trend_sell + stance_sell, detail)
+        return (diff_buy + trend_buy + stance_buy + yield_adj_buy,
+                diff_sell + trend_sell + stance_sell + yield_adj_sell, detail)
 
     # --- Tier 2: Economic Calendar Impact (0-10) ---
     def _macro_tier2(self, base: str, quote: str, events: list[dict[str, object]]) -> tuple[int, int, dict[str, object]]:
-        whitelist = self._high_impact_whitelist()
+        EVENT_SEVERITY = {
+            "nonfarm payrolls": 3, "nfp": 3, "fomc": 3, "cpi": 3, "core cpi": 3,
+            "pce": 3, "gdp": 3, "interest rate decision": 3, "unemployment": 3,
+            "fed": 3,
+            "ism manufacturing": 2, "ism services": 2, "retail sales": 2,
+            "ppi": 2, "consumer confidence": 2, "durable goods": 2,
+        }
         now = datetime.now(UTC)
         cutoff = now + timedelta(hours=72)
 
@@ -776,51 +834,107 @@ Trả lời:"""
         quote_quality = 0
         base_total = 0
         quote_total = 0
+        base_events_detail: list[dict[str, object]] = []
+        quote_events_detail: list[dict[str, object]] = []
 
         for event in events:
             currency = str(event.get("currency", ""))
-            impact = str(event.get("impact", "")).lower()
             title = str(event.get("event", "")).lower()
             event_time = _event_time(event)
             if not event_time or event_time > cutoff:
                 continue
-            is_high = _is_high_impact(impact) or any(
-                keyword.lower() in title for keyword in whitelist
-            )
+
+            hours_until = max(0.0, (event_time - now).total_seconds() / 3600.0)
+            if hours_until < 6:
+                time_weight = 3.0
+            elif hours_until < 24:
+                time_weight = 2.0
+            elif hours_until < 48:
+                time_weight = 1.5
+            else:
+                time_weight = 1.0
+
+            severity = 1
+            for key, sev in EVENT_SEVERITY.items():
+                if key in title:
+                    severity = sev
+                    break
+
+            quality_raw = severity * time_weight
+            quality = int(quality_raw)
+            if quality_raw > quality:
+                quality += 1
+            event_info = {
+                "title": str(event.get("event", "")),
+                "time": event_time.isoformat(),
+                "hours_until": round(hours_until, 1),
+                "severity": severity,
+                "time_weight": time_weight,
+                "quality": quality,
+            }
+
             if currency == base:
                 base_total += 1
-                if is_high:
-                    base_quality += 1
+                base_quality += quality
+                base_events_detail.append(event_info)
             elif currency == quote:
                 quote_total += 1
-                if is_high:
-                    quote_quality += 1
+                quote_quality += quality
+                quote_events_detail.append(event_info)
 
-        buy_cal = 5 - min(2, base_quality) + min(2, quote_quality)
-        sell_cal = 5 - min(2, quote_quality) + min(2, base_quality)
+        buy_cal = 5 - base_quality
+        sell_cal = 5 - quote_quality
         buy_cal = max(1, min(9, buy_cal))
         sell_cal = max(1, min(9, sell_cal))
 
         detail = {
             "base_event_count": base_total,
             "quote_event_count": quote_total,
-            "base_high_impact": base_quality,
-            "quote_high_impact": quote_quality,
+            "base_quality": base_quality,
+            "quote_quality": quote_quality,
             "next_72h_events": len(events),
+            "base_events": base_events_detail,
+            "quote_events": quote_events_detail,
         }
         return (buy_cal, sell_cal, detail)
 
-    # --- Tier 3: Risk Sentiment & Geopolitical (0-8) ---
+    # --- Tier 3: Risk Sentiment & Geopolitical (0-12) ---
+
+    @staticmethod
+    def _fetch_vix() -> dict[str, object]:
+        try:
+            vix = yf.download("^VIX", period="5d", interval="1d", progress=False)
+            if vix.empty:
+                return {"vix": None}
+            import pandas as pd
+            if isinstance(vix.columns, pd.MultiIndex):
+                vix_close = float(vix.iloc[-1, 0])
+            else:
+                vix_close = float(vix["Close"].iloc[-1])
+            return {"vix": vix_close}
+        except Exception:
+            return {"vix": None}
+
     def _macro_tier3(
-        self, currencies: list[str], headlines: list[dict[str, object]], hotspots: list[dict[str, object]]
+        self, currencies: list[str], headlines: list[dict[str, object]], hotspots: list[dict[str, object]],
+        ai_service: object | None = None,
     ) -> tuple[int, int, dict[str, object]]:
+        SENTIMENT_LEXICON = {
+            "soft landing": 3, "dovish pivot": 3, "rate cuts confirmed": 3,
+            "dovish": 2, "rate cut": 2, "stimulus": 2, "optimism": 2, "breakout": 2, "goldilocks": 2,
+            "rally": 1, "bullish": 1, "recovery": 1, "easing": 1, "upside": 1,
+            "momentum": 1, "rotation": 1, "accommodative": 1, "expansion": 1, "rebound": 1,
+            "recession": -3, "crash": -3, "default": -3, "contagion": -3, "financial crisis": -3,
+            "hawkish": -2, "rate hike": -2, "tightening": -2, "collapse": -2, "turmoil": -2,
+            "sell-off": -2, "panic": -2,
+            "bearish": -1, "fear": -1, "downturn": -1, "pessimism": -1, "downside": -1,
+            "correction": -1, "overvalued": -1, "flight to safety": -1, "stagnation": -1,
+            "slowdown": -1, "bear market": -1, "debt ceiling": -1,
+        }
+        NEGATION_WORDS = {"no", "not", "fade", "fades", "fading", "diminish", "diminishes",
+                          "ease", "eases", "eased", "subside", "subsides"}
+
         all_text = " ".join(str(item.get("title", "")) for item in headlines).lower()
-
-        risk_on_terms = ["risk-on", "rally", "bullish", "soft landing", "goldilocks", "stimulus", "recovery"]
-        risk_off_terms = ["risk-off", "sell-off", "bearish", "recession", "crash", "fear", "panic", "flight to safety"]
-
-        risk_on_count = sum(1 for t in risk_on_terms if t in all_text)
-        risk_off_count = sum(1 for t in risk_off_terms if t in all_text)
 
         base = currencies[0] if currencies else ""
         quote = currencies[1] if len(currencies) > 1 else ""
@@ -832,34 +946,107 @@ Trả lời:"""
         base_is_risk = base in risk_currencies
         quote_is_risk = quote in risk_currencies
 
-        # Base risk sentiment (0-4)
-        if risk_off_count > risk_on_count:
-            sentiment = "risk_off"
-            if base_is_safe and not quote_is_safe:
-                risk_buy, risk_sell = 4, 0
-            elif base_is_risk and not quote_is_risk:
-                risk_buy, risk_sell = 0, 4
-            elif quote_is_safe and not base_is_safe:
-                risk_buy, risk_sell = 0, 4
-            elif quote_is_risk and not base_is_risk:
-                risk_buy, risk_sell = 4, 0
+        # --- AI stance (if available) ---
+        ai_sentiment_score = None
+        if ai_service is not None:
+            try:
+                base_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, base)]
+                quote_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, quote)]
+                base_stance = self._ai_currency_stance(base, base_headlines, ai_service)
+                quote_stance = self._ai_currency_stance(quote, quote_headlines, ai_service)
+                stance_map = {"hawkish": -2, "dovish": 2, "neutral": 0}
+                ai_sentiment_score = stance_map.get(base_stance, 0) + stance_map.get(quote_stance, 0)
+            except Exception:
+                ai_sentiment_score = None
+
+        # --- Keyword lexicon scoring ---
+        raw_sentiment = 0
+        matched_terms: list[dict[str, object]] = []
+        sorted_terms = sorted(SENTIMENT_LEXICON.items(), key=lambda x: -len(x[0]))
+        scanned_positions: set[int] = set()
+        for term, weight in sorted_terms:
+            idx = 0
+            while True:
+                idx = all_text.find(term, idx)
+                if idx == -1:
+                    break
+                end = idx + len(term)
+                if any(idx <= p < end for p in scanned_positions):
+                    idx += 1
+                    continue
+                for p in range(idx, end):
+                    scanned_positions.add(p)
+                pre_text = all_text[max(0, idx - 50):idx].strip()
+                pre_words = pre_text.split()
+                post_text = all_text[end:end + 50].strip()
+                post_words = post_text.split()
+                negated = any(w in NEGATION_WORDS for w in pre_words[-3:]) or \
+                          any(w in NEGATION_WORDS for w in post_words[:3])
+                effective_weight = -weight if negated else weight
+                raw_sentiment += effective_weight
+                matched_terms.append({"term": term, "weight": weight, "effective": effective_weight, "negated": negated})
+                idx = end
+
+        # --- Combine AI + lexicon ---
+        if ai_sentiment_score is not None and ai_sentiment_score != 0:
+            raw_sentiment = ai_sentiment_score * 3 + raw_sentiment
+        ai_used = ai_sentiment_score is not None and ai_sentiment_score != 0
+
+        # --- VIX adjustment ---
+        vix_data = self._fetch_vix()
+        vix_level = vix_data.get("vix")
+        vix_adj = 0
+        if vix_level is not None:
+            if vix_level < 15:
+                vix_adj = 2
+            elif vix_level < 20:
+                vix_adj = 0
+            elif vix_level < 25:
+                vix_adj = -1
+            elif vix_level < 30:
+                vix_adj = -2
             else:
-                risk_buy, risk_sell = 2, 2
-        elif risk_on_count > risk_off_count:
-            sentiment = "risk_on"
+                vix_adj = -3
+        raw_sentiment += vix_adj
+
+        # --- Map raw sentiment to 0-8 ---
+        MAX_ABS = 12.0
+        raw_clamped = max(-MAX_ABS, min(MAX_ABS, raw_sentiment))
+        sentiment_0_8 = int(round(4.0 + raw_clamped * 4.0 / MAX_ABS))
+        sentiment_0_8 = max(0, min(8, sentiment_0_8))
+
+        # --- Convert sentiment to buy/sell (0-8) ---
+        deviation = sentiment_0_8 - 4
+        abs_dev = abs(deviation) / 4.0
+        if deviation > 0:
+            sentiment_label = "risk_on"
             if base_is_risk and not quote_is_risk:
-                risk_buy, risk_sell = 4, 0
+                risk_buy = int(round(2 + abs_dev * 6)); risk_sell = int(round(2 - abs_dev * 2))
             elif base_is_safe and not quote_is_safe:
-                risk_buy, risk_sell = 0, 4
+                risk_buy = int(round(2 - abs_dev * 2)); risk_sell = int(round(2 + abs_dev * 6))
             elif quote_is_risk and not base_is_risk:
-                risk_buy, risk_sell = 0, 4
+                risk_buy = int(round(2 - abs_dev * 2)); risk_sell = int(round(2 + abs_dev * 6))
             elif quote_is_safe and not base_is_safe:
-                risk_buy, risk_sell = 4, 0
+                risk_buy = int(round(2 + abs_dev * 6)); risk_sell = int(round(2 - abs_dev * 2))
             else:
-                risk_buy, risk_sell = 2, 2
+                risk_buy = 4; risk_sell = 4
+        elif deviation < 0:
+            sentiment_label = "risk_off"
+            if base_is_safe and not quote_is_safe:
+                risk_buy = int(round(2 + abs_dev * 6)); risk_sell = int(round(2 - abs_dev * 2))
+            elif base_is_risk and not quote_is_risk:
+                risk_buy = int(round(2 - abs_dev * 2)); risk_sell = int(round(2 + abs_dev * 6))
+            elif quote_is_safe and not base_is_safe:
+                risk_buy = int(round(2 - abs_dev * 2)); risk_sell = int(round(2 + abs_dev * 6))
+            elif quote_is_risk and not base_is_risk:
+                risk_buy = int(round(2 + abs_dev * 6)); risk_sell = int(round(2 - abs_dev * 2))
+            else:
+                risk_buy = 4; risk_sell = 4
         else:
-            sentiment = "neutral"
-            risk_buy, risk_sell = 2, 2
+            sentiment_label = "neutral"
+            risk_buy, risk_sell = 4, 4
+        risk_buy = max(0, min(8, risk_buy))
+        risk_sell = max(0, min(8, risk_sell))
 
         # Geopolitical score (0-4)
         hotspot_severity = 0
@@ -891,9 +1078,14 @@ Trả lời:"""
             geo_buy, geo_sell = 2, 2
 
         detail = {
-            "risk_sentiment": sentiment,
-            "risk_on_terms": risk_on_count,
-            "risk_off_terms": risk_off_count,
+            "risk_sentiment": sentiment_label,
+            "sentiment_score_0_8": sentiment_0_8,
+            "raw_sentiment": raw_sentiment,
+            "ai_sentiment_used": ai_used,
+            "ai_sentiment_score": ai_sentiment_score,
+            "matched_terms": matched_terms,
+            "vix_level": vix_level,
+            "vix_adjustment": vix_adj,
             "hotspot_count": len(hotspots),
             "hotspot_severity": hotspot_severity,
             "components": {
@@ -1251,7 +1443,10 @@ Trả lời:"""
             if cache_file.exists():
                 data = json.loads(cache_file.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
-                    return data
+                    return {
+                        k: _clean_economic_value(v) if isinstance(v, str) else v
+                        for k, v in data.items()
+                    }
         except Exception:
             pass
         return {}
@@ -1309,7 +1504,9 @@ Trả lời:"""
                 "- Return ONLY the number with unit: e.g. '0.1%', '7.6M', '122K', '-2.5B', '50.2'\n"
                 "- If this is a speech/meeting/holiday with no data → return 'NONE'\n"
                 "- Distinguish ACTUAL from forecast/previous/estimate\n"
-                "- If actual not found → return 'NONE'\n\n"
+                "- If actual not found → return 'NONE'\n"
+                "- WRONG formats to REJECT: dates like '2026', 'July', years with letters like '2026M',\n"
+                "  '2026B', text like 'higher than expected' or 'unchanged'\n\n"
                 f"Search results:\n{text[:3000]}"
             )
             result = ai.analyze(prompt, max_tokens=100).strip()
@@ -1317,7 +1514,10 @@ Trả lời:"""
                 return ""
             if len(result) > 20:
                 return self._parse_fallback_regex(text)
-            return result
+            cleaned = _clean_economic_value(result)
+            if cleaned == "—":
+                return ""
+            return cleaned
         except Exception:
             return ""
 
@@ -1366,7 +1566,8 @@ Trả lời:"""
             cache_key = f"{str(ev.get('currency',''))}|{str(ev.get('title',''))}|{date_key}"
             if cache_key in cache:
                 if cache[cache_key]:
-                    ev["actual"] = cache[cache_key]
+                    cached_val = _clean_economic_value(cache[cache_key])
+                    ev["actual"] = cached_val if cached_val != "—" else ""
                 continue
             if now - ev_time < timedelta(minutes=30):
                 continue

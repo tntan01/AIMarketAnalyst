@@ -78,7 +78,7 @@ class TestMacroTier1:
     def test_returns_valid_range(self):
         service = self._make_service()
         buy, sell, detail = service._macro_tier1("USD", "EUR", "hawkish", "hawkish")
-        # Tier 1 max is 12 (rate_diff 0-2 + trend 0-5 + stance 0-5)
+        # Tier 1 max is 12 (rate_diff 0-4 + trend 0-4 + stance 0-4)
         assert 0 <= buy <= 12
         assert 0 <= sell <= 12
 

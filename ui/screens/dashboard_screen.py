@@ -201,7 +201,7 @@ class DashboardScreen(QWidget):
         frame.setObjectName("StatusCard")
         frame.setProperty("state", state)
         frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        frame.setFixedHeight(40)
+        frame.setFixedHeight(54)
 
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(12, 0, 12, 0)
@@ -212,14 +212,31 @@ class DashboardScreen(QWidget):
         dot.setObjectName("StatusDot")
         dot.setFixedSize(8, 8)
 
+        # Vertical layout for text (value + detail)
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(1)
+        text_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
         # Text hiển thị 1 dòng duy nhất (không wrap)
         value_label = QLabel(value)
         value_label.setObjectName("CardValue")
         value_label.setWordWrap(False)
         value_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
+        detail_label = QLabel(detail)
+        detail_label.setObjectName("CardDetailLabel")
+        detail_label.setWordWrap(False)
+        detail_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        detail_label.setStyleSheet(
+            "color: #888888; font-size: 11px; border: none; background: transparent;"
+        )
+
+        text_layout.addWidget(value_label)
+        text_layout.addWidget(detail_label)
+
         layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(value_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        layout.addLayout(text_layout, 1)
         
         # Thiết lập style ban đầu theo state
         color = "#f59e0b"
@@ -241,10 +258,6 @@ class DashboardScreen(QWidget):
             f"  color: {val_color}; font-weight: 600; font-size: 13px; border: none; background: transparent;"
             f"}}"
         )
-        
-        # Detail label ẩn để không hiển thị nhưng vẫn giữ logic cập nhật
-        detail_label = QLabel(detail)
-        detail_label.hide()
         
         # Install event filter to dynamically update dot color and frame border on state change
         event_filter = StatusCardEventFilter(self, dot, value_label, frame)
@@ -354,21 +367,6 @@ class DashboardScreen(QWidget):
         self.news_scroll_btn.setToolTip("Chuyển sang tuần này và kéo tới tin sắp tới gần nhất")
         self.news_scroll_btn.clicked.connect(self._go_to_nearest)
         tab_layout.addWidget(self.news_scroll_btn)
-
-        self.eval_today_btn = action_button("📊 Đánh giá hôm nay", primary=True, color="info")
-        self.eval_today_btn.setToolTip("AI nhận định & đánh giá tin tức hôm nay")
-        self.eval_today_btn.clicked.connect(lambda: self._show_ai_evaluation("today"))
-        tab_layout.addWidget(self.eval_today_btn)
-
-        self.eval_week_btn = action_button("📈 Đánh giá tuần này", primary=True, color="info")
-        self.eval_week_btn.setToolTip("AI nhận định & đánh giá tin tức tuần này")
-        self.eval_week_btn.clicked.connect(lambda: self._show_ai_evaluation("week"))
-        tab_layout.addWidget(self.eval_week_btn)
-
-        self.eval_next_week_btn = action_button("🔮 Đánh giá tuần tới", primary=True, color="info")
-        self.eval_next_week_btn.setToolTip("AI nhận định & đánh giá tin tức tuần tới")
-        self.eval_next_week_btn.clicked.connect(lambda: self._show_ai_evaluation("next_week"))
-        tab_layout.addWidget(self.eval_next_week_btn)
 
         tab_layout.addStretch()
 
@@ -1140,462 +1138,6 @@ class DashboardScreen(QWidget):
         ai_btn.clicked.connect(request_summary)
         dlg.exec()
 
-    def _show_ai_evaluation(self, scope: str) -> None:
-        """Show AI evaluation dialog for today's or this week's news.
-
-        Args:
-            scope: 'today' or 'week'
-        """
-        from zoneinfo import ZoneInfo
-        try:
-            try:
-                settings = self.settings_service.load()
-                tz_str = settings.display.timezone
-            except Exception:
-                tz_str = "Asia/Ho_Chi_Minh"
-            tz = ZoneInfo(tz_str)
-        except Exception:
-            tz = ZoneInfo("Asia/Ho_Chi_Minh")
-
-        now_utc = datetime.now(timezone.utc)
-        now_local = datetime.now(tz)
-
-        if scope == "today":
-            start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_local = start_local + timedelta(days=1)
-            scope_label = "hôm nay"
-            scope_date = now_local.strftime("%d/%m/%Y")
-        elif scope == "week":
-            weekday = now_local.weekday()
-            start_local = (now_local - timedelta(days=weekday)).replace(hour=0, minute=0, second=0, microsecond=0)
-            end_local = start_local + timedelta(days=7)
-            scope_label = "tuần này"
-            scope_date = f"{start_local.strftime('%d/%m')} — {now_local.strftime('%d/%m/%Y')}"
-        else:  # next_week
-            weekday = now_local.weekday()
-            this_monday = (now_local - timedelta(days=weekday)).replace(hour=0, minute=0, second=0, microsecond=0)
-            start_local = this_monday + timedelta(days=7)
-            end_local = start_local + timedelta(days=7)
-            scope_label = "tuần tới"
-            scope_date = f"{start_local.strftime('%d/%m')} — {(end_local - timedelta(days=1)).strftime('%d/%m/%Y')}"
-
-        start_utc = start_local.astimezone(timezone.utc)
-        end_utc = end_local.astimezone(timezone.utc)
-
-        # Gather items in scope
-        combined = self._news_data.get("combined", [])
-        if not isinstance(combined, list):
-            combined = []
-
-        scope_items: list[dict] = []
-        for item in combined:
-            dt_val = item.get("display_time")
-            if isinstance(dt_val, datetime):
-                if start_utc <= dt_val < end_utc:
-                    scope_items.append(item)
-
-        # Build dialog
-        _light = self._light
-        scope_icon = {"today": "📊", "week": "📈", "next_week": "🔮"}.get(scope, "📈")
-        dlg = QDialog(self)
-        dlg.setWindowTitle(f"{scope_icon} Đánh giá {scope_label} — {scope_date}")
-        dlg.setMinimumSize(800, 580)
-        dlg.resize(850, 640)
-        dlg.setObjectName("AnalysisDetailDialog")
-
-        root = QVBoxLayout(dlg)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(14)
-
-        # Title
-        title = QLabel(f"{scope_icon} Đánh giá tin tức {scope_label}")
-        title.setObjectName("ActionTitle")
-        title.setWordWrap(True)
-        root.addWidget(title)
-
-        sub = QLabel(f"Khoảng thời gian: {scope_date}  •  {len(scope_items)} mục tin tức & sự kiện")
-        sub.setObjectName("CardDetail")
-        sub.setWordWrap(True)
-        root.addWidget(sub)
-
-        # Badge summary actual
-        actual_count = 0
-        better_count = 0
-        worse_count = 0
-        same_count = 0
-        for it in scope_items:
-            if it.get("type") == "event":
-                actual = str(it.get("actual", "")).strip()
-                forecast = str(it.get("forecast", "")).strip()
-                if actual and forecast:
-                    actual_count += 1
-                    try:
-                        av = float(actual.replace("%","").replace("M","").replace("B","").replace("K","").replace("$","").replace(",","").strip())
-                        fv = float(forecast.replace("%","").replace("M","").replace("B","").replace("K","").replace("$","").replace(",","").strip())
-                        if av > fv:
-                            better_count += 1
-                        elif av < fv:
-                            worse_count += 1
-                        else:
-                            same_count += 1
-                    except ValueError:
-                        pass
-
-        if actual_count > 0:
-            badge_parts = [f"📊 Actual: {actual_count} sự kiện"]
-            if better_count > 0:
-                badge_parts.append(f"{better_count} tốt hơn")
-            if same_count > 0:
-                badge_parts.append(f"{same_count} đúng dự báo")
-            
-            green_text = " — ".join(badge_parts)
-            green_color = "#059669" if _light else "#34d399"
-            red_color = "#BE123C" if _light else "#e11d48"
-            
-            if worse_count > 0:
-                badge_text = f"<div style='line-height: 140%;'><span style='color: {green_color}; font-weight: 600;'>{green_text} — </span><span style='color: {red_color}; font-weight: 600;'>{worse_count} xấu hơn</span></div>"
-            else:
-                badge_text = f"<div style='line-height: 140%;'><span style='color: {green_color}; font-weight: 600;'>{green_text}</span></div>"
-                
-            badge = QLabel(badge_text)
-            badge.setObjectName("CardDetail")
-            badge.setWordWrap(True)
-            badge.setStyleSheet("padding: 4px 0px;")
-            root.addWidget(badge)
-
-        # Summary of items to be evaluated (using a QTableWidget for professional look)
-        preview_table = QTableWidget()
-        preview_table.setObjectName("EconTable")
-        preview_table.setColumnCount(3)
-        preview_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung"])
-        preview_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        preview_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        preview_table.setAlternatingRowColors(True)
-        preview_table.verticalHeader().setVisible(False)
-        preview_table.setShowGrid(False)
-        preview_table.setWordWrap(True)
-        preview_table.setMaximumHeight(160)
-        preview_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
- 
-        if scope_items:
-            preview_table.setRowCount(len(scope_items))
-            for idx, it in enumerate(scope_items):
-                it_type = it.get("type", "")
-                it_title = str(it.get("title", ""))
-                it_currency = str(it.get("currency", ""))
-                it_impact = str(it.get("impact", "")).lower()
-                dt_val = it.get("display_time")
-                
-                # Format Time: Thứ 2 28/06 19:30
-                if isinstance(dt_val, datetime):
-                    local_dt = dt_val.astimezone(tz) if dt_val.tzinfo else dt_val.replace(tzinfo=timezone.utc).astimezone(tz)
-                    w_day = local_dt.weekday()
-                    w_name = {
-                        0: "Thứ 2",
-                        1: "Thứ 3",
-                        2: "Thứ 4",
-                        3: "Thứ 5",
-                        4: "Thứ 6",
-                        5: "Thứ 7",
-                        6: "Chủ Nhật"
-                     }.get(w_day, "")
-                    time_text = f"{w_name} {local_dt.strftime('%d/%m %H:%M')}"
-                else:
-                    time_text = "—"
-                
-                # Row coloring variables
-                bg_color = None
-                fg_color = None
-                
-                # Color code impacts and mute past items
-                if isinstance(dt_val, datetime) and dt_val < now_utc:
-                    fg_color = QColor("#6b7280" if _light else "#8b949e")
-                else:
-                    if it_type == "event":
-                        if it_impact == "high":
-                            fg_color = QColor("#b91c1c" if _light else "#f87171")
-                            bg_color = QColor("#fdf2f2" if _light else "#2a0d11")
-                        elif it_impact == "medium":
-                            fg_color = QColor("#b45309" if _light else "#fbbf24")
-                            bg_color = QColor("#fffbeb" if _light else "#251608")
-                
-                def style_cell(cell_item):
-                    if fg_color:
-                        cell_item.setForeground(fg_color)
-                    if bg_color:
-                        cell_item.setBackground(bg_color)
-                
-                # Col 0: Time
-                time_item = QTableWidgetItem(time_text)
-                time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                style_cell(time_item)
-                preview_table.setItem(idx, 0, time_item)
-                
-                # Col 1: Type
-                if it_type == "headline":
-                    type_text = "Tin"
-                else:
-                    type_text = {"high": "Mạnh", "medium": "Vừa", "low": "Yếu"}.get(it_impact, "Yếu")
-                type_item = QTableWidgetItem(type_text)
-                type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                style_cell(type_item)
-                preview_table.setItem(idx, 1, type_item)
-                
-                # Col 2: Content
-                content_text = it_title if it_type == "headline" else f"{it_currency}: {it_title}"
-                content_item = QTableWidgetItem(content_text)
-                style_cell(content_item)
-                preview_table.setItem(idx, 2, content_item)
-                
-                preview_table.setRowHeight(idx, 34)
-        else:
-            preview_table.setRowCount(1)
-            preview_table.setSpan(0, 0, 1, 3)
-            empty_item = QTableWidgetItem("(Không có tin tức/sự kiện nào trong khoảng thời gian này)")
-            empty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_item.setForeground(QColor("#78716C" if _light else "#94a3b8"))
-            preview_table.setItem(0, 0, empty_item)
-            preview_table.setRowHeight(0, 40)
-
-        # Header adjustments
-        header = preview_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        preview_table.setColumnWidth(0, 130)
-        preview_table.setColumnWidth(1, 70)
-        
-        root.addWidget(preview_table)
-
-        # AI response area
-        ai_response = QTextEdit()
-        ai_response.setObjectName("ReadonlyText")
-        ai_response.setReadOnly(True)
-        ai_response.setMinimumHeight(200)
-        ai_response.setPlaceholderText("Bấm \"Phân tích ngay\" để AI đánh giá...")
-        root.addWidget(ai_response, 1)
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-
-        ai_btn = action_button("🤖 Phân tích ngay", primary=True)
-        # Apply Lư Trung Hỏa styling to the action button
-        active_bg = "#D94625" if self._light else "#ea580c"
-        active_hover = "#E0533C" if self._light else "#f97316"
-        disabled_bg = "#DEDAD0" if self._light else "#1f2937"
-        disabled_border = "#D6D2C8" if self._light else "#273244"
-        disabled_fg = "#736B60" if self._light else "#6b7280"
-        
-        ai_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:700; padding:0 16px;"
-            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px;"
-            f"  min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{active_hover};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  background:{disabled_bg};"
-            f"  color:{disabled_fg};"
-            f"  border:1px solid {disabled_border};"
-            f"}}"
-        )
-        btn_layout.addWidget(ai_btn)
-        btn_layout.addStretch()
-
-        close_btn = action_button("❌ Đóng")
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:0 16px;"
-            f"  background:transparent;"
-            f"  color:{'#4b5563' if self._light else '#9ca3af'};"
-            f"  border:1px solid {'#d1d5db' if self._light else '#4b5563'};"
-            f"  border-radius:6px; min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{'#fce8e5' if self._light else '#2c1910'};"
-            f"  color:{'#D94625' if self._light else '#ea580c'};"
-            f"  border:1px solid {'#D94625' if self._light else '#ea580c'};"
-            f"}}"
-        )
-        close_btn.clicked.connect(dlg.accept)
-        btn_layout.addWidget(close_btn)
-        root.addLayout(btn_layout)
-
-        # --- AI request handler ---
-        def request_evaluation():
-            ai_btn.setEnabled(False)
-            ai_btn.setText("⏳ Đang phân tích...")
-            QApplication.processEvents()
-
-            try:
-                settings = self.settings_service.load()
-                active = settings.ai.active_provider()
-                if not active or not (active.api_key or active.api_key_ref):
-                    ai_response.setHtml(
-                        "<p style='color:#e11d48;font-size:13px;'>"
-                        "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
-                        "</p>"
-                    )
-                    return
-
-                from services.ai_service import AIService, AIProviderConfig
-                ai_config = AIProviderConfig(
-                    provider=active.provider,
-                    model=active.model,
-                    api_key=active.api_key,
-                )
-                ai = AIService(ai_config)
-
-                # Build data context for AI
-                data_context = self._build_eval_context(scope_items, tz)
-
-                prompt = f"""Bạn là chuyên gia phân tích thị trường tài chính (Forex, Vàng, Crypto).
-Hãy đánh giá các tin tức & sự kiện kinh tế {scope_label} ({scope_date}) dưới đây.
-{"Đây là các sự kiện SẮP DIỄN RA. Hãy dự báo tác động." if scope == "next_week" else ""}
-
-=== DỮ LIỆU ===
-{data_context}
-
-=== YÊU CẦU ===
-Trả lời bằng tiếng Việt, định dạng MARKDOWN, CỰC KỲ NGẮN GỌN. Tối đa 8-10 gạch đầu dòng. Không viết đoạn văn dài.
-
-Cấu trúc bắt buộc:
-
-## Biến động {scope_label}
-- **Mức biến động chung**: [Thấp / Trung bình / Cao / Rất cao] — (1 câu ngắn)
-
-## Sự kiện đã diễn ra (đánh giá thực tế)
-- Dựa vào phần "SO SÁNH THỰC TẾ vs DỰ BÁO", phân tích:
-  + Currency nào có nhiều actual TỐT HƠN dự báo → nền kinh tế mạnh hơn kỳ vọng → bullish
-  + Currency nào có nhiều actual XẤU HƠN dự báo → nền kinh tế yếu hơn kỳ vọng → bearish
-  + Nếu actual == forecast → phản ứng trung tính, thị trường đã priced in
-
-## Sự kiện sắp diễn ra (dự báo)
-- Liệt kê các sự kiện quan trọng SẮP diễn ra (ưu tiên tác động cao)
-- Dự báo tác động nếu forecast đúng / tốt hơn / xấu hơn
-
-## Tổng hợp xu hướng
-- **Cặp tiền/tài sản dự kiến TĂNG**: (liệt kê + lý do dựa trên actual + forecast)
-- **Cặp tiền/tài sản dự kiến GIẢM**: (liệt kê + lý do)
-- **Khuyến nghị**: (1-2 câu ngắn cho trader)
-
-QUAN TRỌNG:
-- SO SÁNH actual vs forecast để đánh giá sức khỏe nền kinh tế từng currency
-- Nếu currency có nhiều actual tích cực → xu hướng tăng giá
-- Không bịa số liệu. Chỉ dựa trên dữ liệu được cung cấp.
-- Nếu không có dữ liệu actual, ghi rõ "Chưa có dữ liệu thực tế để so sánh"
-- Tuyệt đối không viết dài dòng."""
-
-                summary_text = ai.analyze(prompt, max_tokens=2500)
-                ai_response.setMarkdown(summary_text)
-
-            except Exception as e:
-                ai_response.setHtml(
-                    f"<p style='color:#e11d48;font-size:13px;'>"
-                    f"❌ Lỗi phân tích: {e}"
-                    f"</p>"
-                )
-            finally:
-                ai_btn.setText("🤖 Phân tích ngay")
-                ai_btn.setEnabled(True)
-
-        ai_btn.clicked.connect(request_evaluation)
-        dlg.exec()
-
-    @staticmethod
-    def _build_eval_context(items: list[dict], tz) -> str:
-        """Build a structured text context from news items for the AI evaluation prompt."""
-        if not items:
-            return "(Không có tin tức/sự kiện nào trong khoảng thời gian này)"
-
-        def _fmt_time(dt_val) -> str:
-            if isinstance(dt_val, datetime):
-                local_dt = dt_val.astimezone(tz) if dt_val.tzinfo else dt_val.replace(tzinfo=timezone.utc).astimezone(tz)
-                w_day = local_dt.weekday()
-                w_name = {0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ Nhật"}.get(w_day, "")
-                return f"{w_name} {local_dt.strftime('%d/%m/%Y %H:%M')}"
-            return ""
-
-        lines: list[str] = []
-        lines.append(f"Tổng số: {len(items)} mục\n")
-
-        events = [it for it in items if it.get("type") == "event"]
-        headlines = [it for it in items if it.get("type") == "headline"]
-
-        if events:
-            lines.append("--- SỰ KIỆN KINH TẾ ---")
-            for ev in events:
-                currency = str(ev.get("currency", ""))
-                title = str(ev.get("title", ""))
-                impact = str(ev.get("impact", "low")).upper()
-                forecast = str(ev.get("forecast", ""))
-                previous = str(ev.get("previous", ""))
-                actual = str(ev.get("actual", ""))
-                time_s = _fmt_time(ev.get("display_time"))
-                parts = [f"[{time_s}] {currency}: {title} (Tác động: {impact})"]
-                if forecast:
-                    parts.append(f"  Dự báo: {forecast}")
-                if previous:
-                    parts.append(f"  Kỳ trước: {previous}")
-                if actual:
-                    parts.append(f"  Thực tế: {actual}")
-                lines.extend(parts)
-            lines.append("")
-
-        if headlines:
-            lines.append("--- TIN TỨC ---")
-            for h in headlines:
-                title = str(h.get("title", ""))
-                source = str(h.get("source", ""))
-                time_s = _fmt_time(h.get("display_time"))
-                if source:
-                    lines.append(f"[{time_s}] {title} (Nguồn: {source})")
-                else:
-                    lines.append(f"[{time_s}] {title}")
-
-        # Comparison section: actual vs forecast
-        def _parse_num(val: str) -> float | None:
-            val = val.strip().replace(",", "")
-            for suffix in ["%", "M", "B", "K", "$"]:
-                if val.endswith(suffix):
-                    val = val[:-len(suffix)]
-                    break
-            try:
-                return float(val)
-            except (ValueError, TypeError):
-                return None
-
-        lines.append("--- SO SÁNH THỰC TẾ vs DỰ BÁO ---")
-        cmp_events: list[tuple] = []
-        for ev in events:
-            actual = str(ev.get("actual", "")).strip()
-            forecast = str(ev.get("forecast", "")).strip()
-            if actual and forecast:
-                a_val = _parse_num(actual)
-                f_val = _parse_num(forecast)
-                if a_val is not None and f_val is not None:
-                    cmp_events.append((ev, actual, forecast, a_val, f_val))
-
-        if cmp_events:
-            lines.append(f"({len(cmp_events)} sự kiện đã có actual)")
-            for ev, actual, forecast, a_val, f_val in cmp_events:
-                currency = str(ev.get("currency", ""))
-                title = str(ev.get("title", ""))
-                if a_val > f_val:
-                    result = "TỐT HƠN dự báo 📈"
-                elif a_val < f_val:
-                    result = "XẤU HƠN dự báo 📉"
-                else:
-                    result = "ĐÚNG dự báo ➡️"
-                lines.append(f"{currency} {title}: Thực tế {actual} / Dự báo {forecast} → {result}")
-        else:
-            lines.append("Không có sự kiện nào đã có actual để so sánh")
-
-        return "\n".join(lines)
-
     def _show_news_empty(self, message: str) -> None:
         self._light = self._is_light_theme()
         table = self.news_table
@@ -1784,84 +1326,121 @@ QUAN TRỌNG:
         btn.setText("⏳ Đang phân tích...")
         QApplication.processEvents()
 
-        try:
-            settings = self.settings_service.load()
-            active = settings.ai.active_provider()
-            if not active or not (active.api_key or active.api_key_ref):
-                text_widget.setHtml(
-                    "<p style='color:#e11d48;font-size:13px;'>"
-                    "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
-                    "</p>"
-                )
-                btn.setText("🤖 Xem tác động")
-                btn.setEnabled(True)
-                return
-
-            from services.ai_service import AIService, AIProviderConfig
-
-            ai_config = AIProviderConfig(
-                provider=active.provider,
-                model=active.model,
-                api_key=active.api_key,
+        settings = self.settings_service.load()
+        active = settings.ai.active_provider()
+        if not active or not (active.api_key or active.api_key_ref):
+            text_widget.setHtml(
+                "<p style='color:#e11d48;font-size:13px;'>"
+                "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
+                "</p>"
             )
-            ai = AIService(ai_config)
+            btn.setText("🤖 Xem tác động")
+            btn.setEnabled(True)
+            return
 
-            currency = str(ev.get("currency", ""))
-            event_name = str(ev.get("event", ""))
-            impact = str(ev.get("impact", ""))
-            forecast = str(ev.get("forecast", "--"))
-            previous = str(ev.get("previous", "--"))
-            actual = str(ev.get("actual", ""))
+        from services.ai_service import AIService, AIProviderConfig
 
-            prompt_lines = [
-                f"Phân tích ngắn gọn bằng tiếng Việt sự kiện kinh tế sau:",
-                f"- Sự kiện: {event_name}",
-                f"- Tiền tệ: {currency}",
-                f"- Mức tác động: {impact}",
-                f"- Dự báo: {forecast}",
-                f"- Kỳ trước: {previous}",
-            ]
-            if actual:
-                prompt_lines.append(f"- Kết quả thực tế: {actual}")
-                prompt_lines.append("(Đây là tin đã ra — phân tích dựa trên kết quả thực tế này)")
-            prompt_lines.extend([
-                "",
-                "Trả lời theo cấu trúc sau (dùng markdown, ngắn gọn):",
-                "### 📌 Tin này là gì?",
-                "(Giải thích 1-2 câu)",
-                "",
-                "### 📈 Tác động đến các cặp tiền và tài sản:",
-                f"- Nêu cụ thể từng cặp tiền/tài sản bị ảnh hưởng nếu có ({currency} là chính)",
-                "- Với vàng (XAU), bạc (XAG), BTC: nêu rõ nếu có liên quan",
-                "- Dùng bullet point, mỗi dòng 1 ý",
-                "",
-                "### ⚡ Mức độ ảnh hưởng:",
-                "(Cao/Trung bình/Thấp — kèm lý do ngắn)",
-            ])
-            prompt = "\n".join(prompt_lines)
+        ai_config = AIProviderConfig(
+            provider=active.provider,
+            model=active.model,
+            api_key=active.api_key,
+        )
+        ai = AIService(ai_config)
 
-            response = ai.analyze(prompt)
+        currency = str(ev.get("currency", ""))
+        event_name = str(ev.get("event", ""))
+        impact = str(ev.get("impact", ""))
+        forecast = str(ev.get("forecast", "--"))
+        previous = str(ev.get("previous", "--"))
+        actual = str(ev.get("actual", ""))
 
-            # Convert markdown to plain text for consistent display
-            lines: list[str] = []
-            for line in response.split("\n"):
+        prompt_lines = [
+            f"Phân tích ngắn gọn bằng tiếng Việt sự kiện kinh tế sau:",
+            f"- Sự kiện: {event_name}",
+            f"- Tiền tệ: {currency}",
+            f"- Mức tác động: {impact}",
+            f"- Dự báo: {forecast}",
+            f"- Kỳ trước: {previous}",
+        ]
+        if actual:
+            prompt_lines.append(f"- Kết quả thực tế: {actual}")
+            prompt_lines.append("(Đây là tin đã ra — phân tích dựa trên kết quả thực tế này)")
+        prompt_lines.extend([
+            "",
+            "Trả lời theo cấu trúc sau (dùng markdown, ngắn gọn):",
+            "### 📌 Tin này là gì?",
+            "(Giải thích 1-2 câu)",
+            "",
+            "### 📈 Tác động đến các cặp tiền và tài sản:",
+            f"- Nêu cụ thể từng cặp tiền/tài sản bị ảnh hưởng nếu có ({currency} là chính)",
+            "- Với vàng (XAU), bạc (XAG), BTC: nêu rõ nếu có liên quan",
+            "- Dùng bullet point, mỗi dòng 1 ý",
+            "",
+            "### ⚡ Mức độ ảnh hưởng:",
+            "(Cao/Trung bình/Thấp — kèm lý do ngắn)",
+        ])
+        prompt = "\n".join(prompt_lines)
+
+        text_widget.setPlainText("⏳ Đang chờ AI phản hồi...")
+
+        # Stop any running worker first
+        _prev = getattr(self, '_impact_worker', None)
+        if _prev is not None and _prev.isRunning():
+            _prev.stop_flag = True
+            _prev.quit()
+            _prev.wait(3000)
+
+        class ImpactWorker(QThread):
+            finished = pyqtSignal(str)
+            error = pyqtSignal(str)
+
+            def __init__(self, ai_service, prompt_text):
+                super().__init__()
+                self.ai_service = ai_service
+                self.prompt_text = prompt_text
+                self.stop_flag = False
+
+            def run(self):
+                try:
+                    result = self.ai_service.analyze(self.prompt_text)
+                    if not self.stop_flag:
+                        self.finished.emit(result)
+                except Exception as exc:
+                    if not self.stop_flag:
+                        self.error.emit(str(exc))
+
+        worker = ImpactWorker(ai, prompt)
+        self._impact_worker = worker
+
+        def on_finished(text):
+            lines_out: list[str] = []
+            for line in text.split("\n"):
                 stripped = line.strip()
                 stripped = stripped.replace("**", "").replace("*", "").replace("### ", "").replace("- ", "  • ")
                 if not stripped:
-                    lines.append("")
+                    lines_out.append("")
                 else:
-                    lines.append(stripped)
-            text_widget.setPlainText("\n".join(lines))
-
-        except Exception as exc:
-            text_widget.setHtml(
-                f"<p style='color:#e11d48;font-size:13px;'>"
-                f"❌ Lỗi khi gọi AI: {exc}"
-                f"</p>"
-            )
-        finally:
+                    lines_out.append(stripped)
+            text_widget.setPlainText("\n".join(lines_out))
             btn.setText("🤖 Xem tác động")
             btn.setEnabled(True)
+            self._impact_worker = None
+
+        def on_error(err_msg):
+            text_widget.setHtml(
+                f"<p style='color:#e11d48;font-size:13px;'>"
+                f"❌ Lỗi khi gọi AI: {err_msg}"
+                f"</p>"
+            )
+            btn.setText("🤖 Xem tác động")
+            btn.setEnabled(True)
+            self._impact_worker = None
+
+        worker.finished.connect(on_finished)
+        worker.error.connect(on_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        worker.start()
 
     def _refresh_market_overview(self) -> None:
         """Fetch market overview data using MarketWorker to avoid freezing UI."""
@@ -2049,43 +1628,38 @@ QUAN TRỌNG:
                 ai_response.setMarkdown(self._ai_cached_response)
                 return
 
-            ai_btn.setEnabled(False)
-            ai_btn.setText("⏳ Đang phân tích...")
-            QApplication.processEvents()
-
-            try:
-                settings = self.settings_service.load()
-                active = settings.ai.active_provider()
-                if not active or not (active.api_key or active.api_key_ref):
-                    ai_response.setHtml(
-                        "<p style='color:#e11d48;font-size:13px;'>"
-                        "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
-                        "</p>"
-                    )
-                    return
-
-                from services.ai_service import AIService, AIProviderConfig
-                ai_config = AIProviderConfig(
-                    provider=active.provider,
-                    model=active.model,
-                    api_key=active.api_key,
+            settings = self.settings_service.load()
+            active = settings.ai.active_provider()
+            if not active or not (active.api_key or active.api_key_ref):
+                ai_response.setHtml(
+                    "<p style='color:#e11d48;font-size:13px;'>"
+                    "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
+                    "</p>"
                 )
-                ai = AIService(ai_config)
+                return
 
-                def _fmt_val(tag):
-                    pair = mv.get(tag)
-                    if pair:
-                        close, change_pct = pair
-                        arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else "—"
-                        if tag in ("US10Y", "US2Y"):
-                            return f"{close:.2f}% (thay đổi: {arrow} {abs(change_pct):.1f}%)"
-                        elif tag == "VIX":
-                            return f"{close:.1f} (thay đổi: {arrow} {abs(change_pct):.1f}%)"
-                        else:
-                            return f"{close:.2f} (thay đổi: {arrow} {abs(change_pct):.1f}%)"
-                    return "—"
+            from services.ai_service import AIService, AIProviderConfig
+            ai_config = AIProviderConfig(
+                provider=active.provider,
+                model=active.model,
+                api_key=active.api_key,
+            )
+            ai = AIService(ai_config)
 
-                prompt = f"""Bạn là chuyên gia phân tích thị trường tài chính. Dựa trên số liệu hiện tại:
+            def _fmt_val(tag):
+                pair = mv.get(tag)
+                if pair:
+                    close, change_pct = pair
+                    arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else "—"
+                    if tag in ("US10Y", "US2Y"):
+                        return f"{close:.2f}% (thay đổi: {arrow} {abs(change_pct):.1f}%)"
+                    elif tag == "VIX":
+                        return f"{close:.1f} (thay đổi: {arrow} {abs(change_pct):.1f}%)"
+                    else:
+                        return f"{close:.2f} (thay đổi: {arrow} {abs(change_pct):.1f}%)"
+                return "—"
+
+            prompt = f"""Bạn là chuyên gia phân tích thị trường tài chính. Dựa trên số liệu hiện tại:
 - DXY: {_fmt_val("DXY")}
 - VIX: {_fmt_val("VIX")}
 - US10Y: {_fmt_val("US10Y")}
@@ -2145,27 +1719,77 @@ QUAN TRỌNG:
 - KHÔNG viết chung chung. Phải dựa TRÊN SỐ LIỆU THỰC TẾ được cung cấp
 - KHÔNG gộp US2Y với US10Y — đây là 2 chỉ số KHÁC NHAU"""
 
-                ai_response.clear()
-                accumulated = ""
-                for chunk in ai.analyze_stream(prompt, max_tokens=2500):
-                    accumulated += chunk
-                    cursor = ai_response.textCursor()
-                    cursor.movePosition(QTextCursor.MoveOperation.End)
-                    cursor.insertText(chunk)
-                    QApplication.processEvents()
-                ai_response.setMarkdown(accumulated)
-                self._ai_last_snapshot = snapshot
-                self._ai_cached_response = accumulated
+            ai_btn.setEnabled(False)
+            ai_btn.setText("⏳ Đang phân tích...")
+            ai_response.clear()
+            ai_response.insertPlainText("⏳ Đang chờ AI phản hồi...\n\n")
 
-            except Exception as e:
-                ai_response.setHtml(
-                    f"<p style='color:#e11d48;font-size:13px;'>"
-                    f"❌ Lỗi phân tích: {e}"
-                    f"</p>"
-                )
-            finally:
+            # Stop any running worker
+            _prev = getattr(self, '_market_help_worker', None)
+            if _prev is not None and _prev.isRunning():
+                _prev.stop_flag = True
+                _prev.quit()
+                _prev.wait(3000)
+
+            class MarketHelpWorker(QThread):
+                finished = pyqtSignal(str)
+                error = pyqtSignal(str)
+                chunk_ready = pyqtSignal(str)
+
+                def __init__(self, ai_service, prompt_text, max_tokens):
+                    super().__init__()
+                    self.ai_service = ai_service
+                    self.prompt_text = prompt_text
+                    self.max_tokens = max_tokens
+                    self.stop_flag = False
+
+                def run(self):
+                    try:
+                        full_text = ""
+                        for chunk in self.ai_service.analyze_stream(self.prompt_text, max_tokens=self.max_tokens):
+                            if self.stop_flag:
+                                return
+                            full_text += chunk
+                            self.chunk_ready.emit(chunk)
+                        if not self.stop_flag:
+                            self.finished.emit(full_text)
+                    except Exception as exc:
+                        if not self.stop_flag:
+                            self.error.emit(str(exc))
+
+            worker = MarketHelpWorker(ai, prompt, 6000)
+            self._market_help_worker = worker
+
+            def on_chunk(text):
+                ai_response.insertPlainText(text)
+                scrollbar = ai_response.verticalScrollBar()
+                if scrollbar:
+                    scrollbar.setValue(scrollbar.maximum())
+
+            def on_finished(text):
+                ai_response.setMarkdown(text)
                 ai_btn.setText("🤖 Phân tích AI")
                 ai_btn.setEnabled(True)
+                self._ai_last_snapshot = snapshot
+                self._ai_cached_response = text
+                self._market_help_worker = None
+
+            def on_error(err_msg):
+                ai_response.setHtml(
+                    f"<p style='color:#e11d48;font-size:13px;'>"
+                    f"❌ Lỗi phân tích: {err_msg}"
+                    f"</p>"
+                )
+                ai_btn.setText("🤖 Phân tích AI")
+                ai_btn.setEnabled(True)
+                self._market_help_worker = None
+
+            worker.chunk_ready.connect(on_chunk)
+            worker.finished.connect(on_finished)
+            worker.error.connect(on_error)
+            worker.finished.connect(worker.deleteLater)
+            worker.error.connect(worker.deleteLater)
+            worker.start()
 
         ai_btn.clicked.connect(request_analysis)
 
@@ -2174,6 +1798,14 @@ QUAN TRỌNG:
         else:
             dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
         dlg.exec()
+
+        # Cleanup worker if still running after dialog closes
+        _w = getattr(self, '_market_help_worker', None)
+        if _w is not None and _w.isRunning():
+            _w.stop_flag = True
+            _w.quit()
+            _w.wait(3000)
+            self._market_help_worker = None
 
     def set_analysis_result(self, result: dict[str, object]) -> None:
         self.refresh_mt5_status()
@@ -2193,30 +1825,30 @@ QUAN TRỌNG:
         has_key = bool(active and (active.api_key or active.api_key_ref))
         if active and active.provider and active.model and has_key:
             detail = f"{active.provider} / {active.model}"
-            self._set_status_card("AI", "✅ AI đã cấu hình", detail, "ok")
+            self._set_status_card("AI", "Trí tuệ nhân tạo", detail, "ok")
         else:
-            self._set_status_card("AI", "⚙️ Chưa cấu hình AI", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
+            self._set_status_card("AI", "Trí tuệ nhân tạo", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
 
         # Update data source card
         source = settings.data_source
         source_name = "cTrader" if source == "ctrader" else "MetaTrader 5"
-        self._set_status_card("Nguồn dữ liệu", f"\U0001f4ca {source_name}", f"Đang dùng {source_name}", "ok")
+        self._set_status_card("Nguồn dữ liệu", "Nguồn dữ liệu", f"Đang dùng {source_name}", "ok")
 
     def _apply_connection_status(self, status: ConnectionStatus) -> None:
         provider = status.provider_name or "Dữ liệu"
         if status.initialized and status.connected:
-            self._set_status_card("Kết nối", "✅ Đã kết nối", f"{provider}: {status.message}", "ok")
+            self._set_status_card("Kết nối", "Kết nối dữ liệu", f"{provider}: {status.message}", "ok")
         else:
             detail = status.message
             if status.error_code is not None:
                 detail = f"{detail} ({status.error_code})"
-            self._set_status_card("Kết nối", "🔴 Mất kết nối", detail, "danger")
+            self._set_status_card("Kết nối", "Kết nối dữ liệu", detail, "danger")
 
         if status.logged_in:
             account = f"{status.login} - {status.server}" if status.login else str(status.server)
-            self._set_status_card("Broker", "✅ Đã đăng nhập", account, "ok")
+            self._set_status_card("Broker", "Tài khoản giao dịch", account, "ok")
         else:
-            self._set_status_card("Broker", "🔴 Chưa đăng nhập", f"Cần đăng nhập tài khoản trên {provider}", "warning")
+            self._set_status_card("Broker", "Tài khoản giao dịch", f"Cần đăng nhập tài khoản trên {provider}", "warning")
 
         ready = status.initialized and status.connected and status.logged_in
         self.mt5_warning.setVisible(not ready)

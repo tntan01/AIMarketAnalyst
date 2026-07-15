@@ -55,6 +55,34 @@ def _is_high_impact(value: str) -> bool:
     return normalized in HIGH_IMPACT_VALUES or "high" in normalized or "red" in normalized
 
 
+_VALID_ECON_VALUE_RE = re.compile(r'^-?\d+(?:\.\d+)?[%KMB]?$')
+
+
+def _clean_economic_value(raw: object) -> str:
+    """Return *raw* if it looks like a valid economic number, else '—'.
+
+    Filters out corrupted values like dates masquerading as data (e.g. ``"2026M"``).
+    """
+    v = str(raw).strip() if raw is not None else ""
+    if not v:
+        return ""
+    if not _VALID_ECON_VALUE_RE.match(v):
+        return "—"
+    num_part = v.rstrip("%KMB")
+    if len(num_part) >= 4 and (num_part.startswith("19") or num_part.startswith("20")):
+        return "—"
+    return v
+
+
+def _sanitize_event_fields(row: dict[str, object]) -> dict[str, object]:
+    """Clean stale cache entries that may contain corrupted economic values."""
+    for field in ("forecast", "previous", "actual"):
+        raw = row.get(field)
+        if raw is not None and raw != "":
+            row[field] = _clean_economic_value(raw)
+    return row
+
+
 # ---------------------------------------------------------------------------
 # ForexFactoryClient
 # ---------------------------------------------------------------------------
@@ -358,9 +386,9 @@ class ForexFactoryClient:
                     "impact": item.get("impact", ""),
                     "time_utc": event_time.isoformat(timespec="minutes").replace("+00:00", "Z") if event_time else "",
                     "hours_until": round(hours_until, 2) if hours_until is not None else None,
-                    "forecast": item.get("forecast", ""),
-                    "previous": item.get("previous", ""),
-                    "actual": item.get("actual", ""),
+                    "forecast": _clean_economic_value(item.get("forecast", "")),
+                    "previous": _clean_economic_value(item.get("previous", "")),
+                    "actual": _clean_economic_value(item.get("actual", "")),
                 }
             )
         return rows
@@ -405,9 +433,9 @@ class ForexFactoryClient:
                     "impact": self._html_impact(block),
                     "time_utc": event_time.isoformat(timespec="minutes").replace("+00:00", "Z") if event_time else "",
                     "hours_until": round(hours_until, 2) if hours_until is not None else None,
-                    "forecast": self._html_cell_text(block, "calendar__forecast"),
-                    "previous": self._html_cell_text(block, "calendar__previous"),
-                    "actual": self._html_cell_text(block, "calendar__actual"),
+                    "forecast": _clean_economic_value(self._html_cell_text(block, "calendar__forecast")),
+                    "previous": _clean_economic_value(self._html_cell_text(block, "calendar__previous")),
+                    "actual": _clean_economic_value(self._html_cell_text(block, "calendar__actual")),
                 }
             )
         return rows
@@ -719,7 +747,7 @@ class ForexFactoryClient:
         if cached:
             timestamp, rows = cached
             if datetime.now(UTC) - timestamp <= self.CALENDAR_CACHE_MAX_AGE:
-                return [dict(row) for row in rows]
+                return [_sanitize_event_fields(row) for row in rows]
 
         raw = self._read_calendar_cache_file()
         if raw and isinstance(raw, dict):
@@ -728,6 +756,7 @@ class ForexFactoryClient:
             if stored and datetime.now(UTC) - stored <= self.CALENDAR_CACHE_MAX_AGE and isinstance(rows, list):
                 clean_rows = [dict(row) for row in rows if isinstance(row, dict)]
                 if clean_rows:
+                    clean_rows = [_sanitize_event_fields(row) for row in clean_rows]
                     self._calendar_cache["global"] = (stored, clean_rows)
                     return clean_rows
         return []

@@ -52,7 +52,7 @@ _DEFAULT_SL_MULT = 0.50
 _DEFAULT_ZONE_DISTANCE_MULT = 1.5
 _ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
 _ZONE_SL_CAP_RATIO = 1.5     # SL cannot exceed 1.5× ATR-based width
-ENTRY_ZONE_ATR_MULT = 0.20   # fallback half-width of entry zone in ATR multiples
+ENTRY_ZONE_ATR_MULT = 0.35   # fallback half-width of entry zone in ATR multiples
 _ENTRY_ZONE_ATR_MIN = 0.10   # min half-width when S/R zone is very narrow
 _ENTRY_ZONE_ATR_MAX = 0.30   # max half-width when S/R zone is very wide
 _ENTRY_AGGRESSIVENESS = 0.0  # 0.0=nearest edge (best RR), 1.0=farthest edge (old behavior)
