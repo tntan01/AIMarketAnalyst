@@ -91,31 +91,22 @@ class ScannerDetailScreen(QWidget):
 
         # -- Button + Trade Panel + Score Panel + Checklist Panel --
         self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
-        self.show_detail_btn.setObjectName("ShowScanDetailBtn")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.show_detail_btn.setToolTip("Xem toàn bộ 16 chỉ số phân tích chi tiết")
         self.show_detail_btn.setStyleSheet(
-            "QPushButton#ShowScanDetailBtn {"
-            "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            "    stop:0 #d97706, stop:1 #ea580c);"
-            "  border: 1px solid #f59e0b;"
+            "QPushButton {"
+            "  padding: 4px 12px;"
             "  border-radius: 6px;"
-            "  color: #ffffff;"
-            "  font-size: 13px;"
+            "  font-size: 11px;"
             "  font-weight: bold;"
-            "  min-height: 36px;"
-            "  max-height: 36px;"
-            "  padding: 0 14px;"
-            "  letter-spacing: 0.3px;"
+            "  background: #D97706;"
+            "  border: 1px solid #D97706;"
+            "  color: #ffffff;"
             "}"
-            "QPushButton#ShowScanDetailBtn:hover {"
-            "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            "    stop:0 #f59e0b, stop:1 #f97316);"
-            "  border-color: #fbbf24;"
-            "}"
-            "QPushButton#ShowScanDetailBtn:pressed {"
-            "  background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            "    stop:0 #b45309, stop:1 #c2410c);"
+            "QPushButton:hover, QPushButton:pressed {"
+            "  background: #F59E0B;"
+            "  border-color: #B45309;"
+            "  color: #ffffff;"
             "}"
         )
         self.show_detail_btn.clicked.connect(self._show_scan_detail_dialog)
@@ -150,7 +141,7 @@ class ScannerDetailScreen(QWidget):
 
         # -- Right Col (80%): Hero bar + Chart --
         right_col = QVBoxLayout()
-        right_col.setSpacing(8)
+        right_col.setSpacing(4)
 
         # -- Hero verdict bar --
         self.hero_bar = QLabel("")
@@ -158,7 +149,7 @@ class ScannerDetailScreen(QWidget):
         self.hero_bar.setWordWrap(False)
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
         self.hero_bar.setStyleSheet(
-            "QLabel#ScannerDetailHero { min-height: 36px; border-radius: 6px; padding: 0 12px; font-size: 14px; background: #1e293b; border: 1px solid #334155; }"
+            "QLabel#ScannerDetailHero { border-radius: 6px; padding: 4px 12px; font-size: 11px; background: #1e293b; border: 1px solid #334155; }"
         )
         right_col.addWidget(self.hero_bar)
 
@@ -661,11 +652,11 @@ class ScannerDetailScreen(QWidget):
 
         self.hero_bar.setStyleSheet(
             f"QLabel#ScannerDetailHero {{"
-            f"  min-height: 36px;"
             f"  background-color: {bg};"
             f"  border: 1px solid {border};"
             f"  border-radius: 6px;"
-            f"  padding: 0 12px;"
+            f"  padding: 4px 12px;"
+            f"  font-size: 11px;"
             f"}}"
         )
 
@@ -687,31 +678,33 @@ class ScannerDetailScreen(QWidget):
         macro_vn = {"aligned": "Thuận", "conflict": "Xung đột", "neutral": "Trung lập", "unclear": "Chưa rõ"}.get(macro_raw, "—")
 
         self.hero_bar.setText(
-            f"<table width='100%' style='margin:0;padding:0;border:none;'><tr>"
-            f"<td width='110' style='vertical-align:middle;white-space:nowrap;'>"
-            f"<span style='color:{accent};font-size:15px;font-weight:bold;letter-spacing:1px;'>{icon} {action_text.upper()}</span>"
+            f"<body style='margin:0;padding:0;'>"
+            f"<table width='100%' style='margin:0;padding:0;border:none;border-collapse:collapse;border-spacing:0;'><tr>"
+            f"<td width='90' style='vertical-align:middle;white-space:nowrap;padding:0 8px;'>"
+            f"<span style='color:{accent};font-size:11px;font-weight:bold;letter-spacing:1px;'>{icon} {action_text.upper()}</span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:12px;'>Điểm <b style='color:{bold_color};'>{best_score}</b></span>"
+            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
+            f"<span style='color:{text_color};font-size:11px;'>Điểm <b style='color:{bold_color};'>{best_score}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:12px;'>R:R <b style='color:#f59e0b;'>{rr_display}</b></span>"
+            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
+            f"<span style='color:{text_color};font-size:11px;'>R:R <b style='color:#f59e0b;'>{rr_display}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:12px;'>B/S <b style='color:{bold_color};'>{buy_s}/{sell_s}</b></span>"
+            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
+            f"<span style='color:{text_color};font-size:11px;'>B/S <b style='color:{bold_color};'>{buy_s}/{sell_s}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:12px;'>Gap <b style='color:{bold_color};'>{gap_str}</b></span>"
+            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
+            f"<span style='color:{text_color};font-size:11px;'>Gap <b style='color:{bold_color};'>{gap_str}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:12px;'>Vĩ mô <b style='color:{bold_color};'>{macro_vn}</b></span>"
+            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
+            f"<span style='color:{text_color};font-size:11px;'>Vĩ mô <b style='color:{bold_color};'>{macro_vn}</b></span>"
             f"</td>"
-            f"<td style='vertical-align:middle;text-align:right;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;'>"
-            f"<span style='color:{text_color};font-size:13px;'>"
+            f"<td style='vertical-align:middle;text-align:right;white-space:nowrap;padding:0 8px;'>"
+            f"<span style='color:{text_color};font-size:11px;'>"
             f"Hạng <b style='color:{bold_color};'>#{rank}</b> &nbsp;&bull;&nbsp; {reason}"
             f"</span>"
             f"</td>"
             f"</tr></table>"
+            f"</body>"
         )
         self.hero_bar.show()
 
@@ -755,11 +748,22 @@ class ScannerDetailScreen(QWidget):
         entry_ok = self.row.get("entry_status") == "confirmed_entry" if self.row else False
         entry_accent = "#22c55e" if entry_ok else "#f59e0b"
 
+        rr_range = self.row.get("risk_reward_range")
+        rr_range_str = ""
+        if rr_range and isinstance(rr_range, dict):
+            worst = rr_range.get("worst")
+            if worst is not None:
+                rr_range_str = f" ({worst:.1f}–{rr_range.get('best', '?'):.1f})"
+
+        eff_rr = self.row.get("expected_effective_rr")
+        eff_rr_str = f"~{eff_rr:.1f}" if eff_rr is not None else "—"
+
         rows = [
             ("Vùng vào lệnh", entry_val, entry_accent),
             ("Stop Loss", sl_val, "#e11d48"),
             ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "#10b981"),
-            ("R:R", f"{rr_val}{' (' + rr_detail + ')' if rr_detail else ''}", "#f59e0b"),
+            ("R:R", f"{rr_val}{rr_range_str}", "#f59e0b"),
+            ("R:R (thực)", eff_rr_str, "#f59e0b"),
             ("Vĩ mô", f"{macro_val} {macro_detail}".strip(), "#38bdf8"),
             ("Chế độ TT", regime_val, val_color),
         ]
