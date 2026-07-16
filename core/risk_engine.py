@@ -4,10 +4,23 @@ from dataclasses import dataclass
 from math import floor
 from typing import Any
 
+import json
+from pathlib import Path
+
 from core.entry_engine import evaluate_entry
 from core.market_models import Candle
 from core.signal_engine import clamp
 from core.correlation_check import get_correlation_warnings, summarize_correlation_context
+
+
+def _load_risk_params() -> dict:
+    params_file = Path(__file__).resolve().parents[1] / "config" / "risk_params.json"
+    if params_file.exists():
+        return json.loads(params_file.read_text())
+    return {}
+
+
+_rp = _load_risk_params()
 
 
 # SYMBOL_CONFIG chỉ chứa symbol có contract_size khác mặc định 100,000 (forex standard).
@@ -21,62 +34,45 @@ SYMBOL_CONFIG: dict[str, dict[str, Any]] = {
 
 STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
 
+# ── Risk params loaded from config/risk_params.json ──
 # Dynamic SL multiplier by market regime — wider stops in trends/volatile,
 # tighter stops in ranges.
-REGIME_SL_MULTIPLIER: dict[str, float] = {
-    "trend_up":   0.65,
-    "trend_down": 0.65,
-    "range":      0.70,
-    "volatile":   0.85,
-    "unknown":    0.50,
-}
-REGIME_ZONE_DISTANCE_MULT: dict[str, float] = {
-    "trend_up":   3.5,
-    "trend_down": 3.5,
-    "range":      2.5,
-    "volatile":   3.0,
-    "unknown":    2.0,
-}
+REGIME_SL_MULTIPLIER: dict[str, float] = _rp.get("regime_sl_multiplier", {
+    "trend_up": 0.65, "trend_down": 0.65, "range": 0.70, "volatile": 0.85, "unknown": 0.50,
+})
+REGIME_ZONE_DISTANCE_MULT: dict[str, float] = _rp.get("regime_zone_distance_mult", {
+    "trend_up": 3.5, "trend_down": 3.5, "range": 2.5, "volatile": 3.0, "unknown": 2.0,
+})
 # Dynamic TP fallback multiplier by market regime.
 # Used by backtest fallback_scenario only (NOT by build_trade_plan).
 # build_trade_plan returns None for RR/TP when no structural target is found.
-REGIME_TP_FALLBACK_MULT: dict[str, float] = {
-    "trend_up":   2.0,
-    "trend_down": 2.0,
-    "range":      1.5,
-    "volatile":   1.8,
-    "unknown":    1.5,
-}
+REGIME_TP_FALLBACK_MULT: dict[str, float] = _rp.get("regime_tp_fallback_mult", {
+    "trend_up": 2.0, "trend_down": 2.0, "range": 1.5, "volatile": 1.8, "unknown": 1.5,
+})
 _DEFAULT_TP_FALLBACK_MULT = 2.0
-_DEFAULT_SL_MULT = 0.50
-_DEFAULT_ZONE_DISTANCE_MULT = 1.5
-_ZONE_SL_BUFFER_ATR = 0.10   # small buffer below/above zone low/high
-_ZONE_SL_CAP_RATIO = 1.5     # SL cannot exceed 1.5× ATR-based width
-ENTRY_ZONE_ATR_MULT = 0.35   # fallback half-width of entry zone in ATR multiples
-_ENTRY_ZONE_ATR_MIN = 0.10   # min half-width when S/R zone is very narrow
-_ENTRY_ZONE_ATR_MAX = 0.30   # max half-width when S/R zone is very wide
-_ENTRY_AGGRESSIVENESS = 0.0  # 0.0=nearest edge (best RR), 1.0=farthest edge (old behavior)
-# _TP_SELECTION_AGGRESSIVENESS dùng để duyệt/chọn TP (entry cho RR check khi tìm target).
-# Dùng trung điểm zone (0.5) thận trọng hơn mép gần (0.0) — TP được chọn phải đạt RR>=1
-# ngay cả khi lệnh khớp ở giữa zone, không chỉ ở mép tốt nhất.
-# _ENTRY_AGGRESSIVENESS vẫn dùng để tính entry_price/risk_reward HIỂN THỊ (mép gần).
-_TP_SELECTION_AGGRESSIVENESS = 0.5
-_SWING_SL_BUFFER_ATR = 0.15  # buffer beyond swing level for SL placement
-_MIN_SL_DISTANCE_ATR = 0.5   # reject plans with SL tighter than this × ATR
-_EQ_TP_MAX_RR = 3.0          # max R:R for equal-highs/lows TP1 (cap distance)
-_TP2_MIN_GAP_ATR = 0.15     # minimum gap between TP1 and TP2 as fraction of ATR
-
-# Fibonacci extension levels for TP fallback when no S/R zones available
-_FIB_TP1 = 0.382
-_FIB_TP2 = 0.618
-_MIN_STOP_DISTANCE_ATR_MULT = 0.20   # min stop as fraction of ATR
-_MIN_STOP_SPREAD_MULT = 3            # min stop as multiple of spread
-_ENTRY_ZONE_WIDTH_MULT = 0.5         # zone_width/atr multiplier for entry width
-_WATCH_ZONE_OFFSET_ATR = 0.10        # watch zone extends this fraction of ATR from level
-_SL_FLOOR_BUFFER_ATR = 0.10          # SL must be at least this far from entry zone edge
-_WATCH_ZONE_ATR_VOLATILE = 0.70      # watch zone ATR multiplier for volatile regime
-_WATCH_ZONE_ATR_TREND = 0.40         # watch zone ATR multiplier for trend regime
-_WATCH_ZONE_ATR_RANGE = 0.50         # watch zone ATR multiplier for range/unknown regime
+_DEFAULT_SL_MULT = _rp.get("default_sl_mult", 0.50)
+_DEFAULT_ZONE_DISTANCE_MULT = _rp.get("default_zone_distance_mult", 1.5)
+_ZONE_SL_BUFFER_ATR = _rp.get("zone_sl_buffer_atr", 0.10)
+_ZONE_SL_CAP_RATIO = _rp.get("zone_sl_cap_ratio", 1.5)
+ENTRY_ZONE_ATR_MULT = _rp.get("entry_zone_atr_mult", 0.35)
+_ENTRY_ZONE_ATR_MIN = _rp.get("entry_zone_atr_min", 0.10)
+_ENTRY_ZONE_ATR_MAX = _rp.get("entry_zone_atr_max", 0.30)
+_ENTRY_AGGRESSIVENESS = _rp.get("entry_aggressiveness", 0.0)   # 0.0=nearest edge (display), 1.0=farthest
+_MIN_SL_DISTANCE_ATR = _rp.get("min_sl_distance_atr", 0.5)
+_SWING_SL_BUFFER_ATR = _rp.get("swing_sl_buffer_atr", 0.15)
+_TP_SELECTION_AGGRESSIVENESS = _rp.get("tp_selection_aggressiveness", 0.5)  # midpoint anchor for TP validation
+_EQ_TP_MAX_RR = _rp.get("eq_tp_max_rr", 3.0)
+_TP2_MIN_GAP_ATR = _rp.get("tp2_min_gap_atr", 0.15)
+_FIB_TP1 = _rp.get("fib_tp1", 0.382)
+_FIB_TP2 = _rp.get("fib_tp2", 0.618)
+_MIN_STOP_DISTANCE_ATR_MULT = _rp.get("min_stop_distance_atr_mult", 0.20)
+_MIN_STOP_SPREAD_MULT = _rp.get("min_stop_spread_mult", 3)
+_ENTRY_ZONE_WIDTH_MULT = _rp.get("entry_zone_width_mult", 0.5)
+_WATCH_ZONE_OFFSET_ATR = _rp.get("watch_zone_offset_atr", 0.10)
+_SL_FLOOR_BUFFER_ATR = _rp.get("sl_floor_buffer_atr", 0.10)
+_WATCH_ZONE_ATR_VOLATILE = _rp.get("watch_zone_atr_volatile", 0.70)
+_WATCH_ZONE_ATR_TREND = _rp.get("watch_zone_atr_trend", 0.40)
+_WATCH_ZONE_ATR_RANGE = _rp.get("watch_zone_atr_range", 0.50)
 
 
 def _find_impulse_swing(

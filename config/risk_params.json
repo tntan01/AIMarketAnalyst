@@ -1,0 +1,53 @@
+{
+  "_comment": "ATR-multiplier & risk parameters for Step 4 trade-plan builder. Edit values here instead of risk_engine.py. After running param_sensitivity.py, review the optimized recommendations in risk_params_optimized.json and copy accepted values here.",
+
+  "min_sl_distance_atr": 0.5,
+  "min_sl_distance_atr_mult": 0.20,
+  "min_stop_spread_mult": 3,
+  "zone_sl_buffer_atr": 0.10,
+  "zone_sl_cap_ratio": 1.5,
+  "swing_sl_buffer_atr": 0.15,
+  "sl_floor_buffer_atr": 0.10,
+  "default_sl_mult": 0.50,
+
+  "entry_zone_atr_mult": 0.35,
+  "entry_zone_atr_min": 0.10,
+  "entry_zone_atr_max": 0.30,
+  "entry_zone_width_mult": 0.5,
+  "entry_aggressiveness": 0.0,
+  "tp_selection_aggressiveness": 0.5,
+
+  "eq_tp_max_rr": 3.0,
+  "tp2_min_gap_atr": 0.15,
+  "default_zone_distance_mult": 1.5,
+
+  "watch_zone_offset_atr": 0.10,
+  "watch_zone_atr_volatile": 0.70,
+  "watch_zone_atr_trend": 0.40,
+  "watch_zone_atr_range": 0.50,
+
+  "fib_tp1": 0.382,
+  "fib_tp2": 0.618,
+
+  "regime_sl_multiplier": {
+    "trend_up": 0.65,
+    "trend_down": 0.65,
+    "range": 0.70,
+    "volatile": 0.85,
+    "unknown": 0.50
+  },
+  "regime_zone_distance_mult": {
+    "trend_up": 3.5,
+    "trend_down": 3.5,
+    "range": 2.5,
+    "volatile": 3.0,
+    "unknown": 2.0
+  },
+  "regime_tp_fallback_mult": {
+    "trend_up": 2.0,
+    "trend_down": 2.0,
+    "range": 1.5,
+    "volatile": 1.8,
+    "unknown": 1.5
+  }
+}

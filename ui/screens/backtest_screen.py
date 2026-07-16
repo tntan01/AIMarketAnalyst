@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QAbstractSpinBox,
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QDateEdit,
     QDialog,
     QFileDialog,
@@ -37,6 +38,14 @@ from PyQt6.QtWidgets import (
 
 from config.constants import SUPPORTED_SYMBOLS
 from controllers.backtest_controller import BacktestController
+from core.param_sensitivity import (
+    DEFAULT_PERIODS,
+    DEFAULT_SWEEP_CONFIGS,
+    SECONDARY_SWEEP_CONFIGS,
+    MarketPeriod,
+    ParamSweepConfig,
+    export_results,
+)
 from ui.screens.shared import action_button, card, page_header
 
 
@@ -386,6 +395,11 @@ class BacktestScreen(QWidget):
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
         self.tabs.addTab(self.table, "📋 Danh sách lệnh")
+
+        # Tab 3: Điều chỉnh tham số (Param Sensitivity)
+        self._build_param_tuning_tab()
+        self.tabs.addTab(self._sweep_tab, "🔧 Điều chỉnh tham số")
+
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         layout.addWidget(self.tabs, 1)
@@ -414,6 +428,307 @@ class BacktestScreen(QWidget):
 
     def _on_tab_changed(self, index: int) -> None:
         pass
+
+    # ── Param Tuning Tab ─────────────────────────────────────────────────
+
+    def _build_param_tuning_tab(self) -> None:
+        """Dựng tab Điều chỉnh tham số với form chọn + progress + kết quả."""
+        self._sweep_tab = QWidget()
+        layout = QVBoxLayout(self._sweep_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        # ── Form row ──
+        form_row = QHBoxLayout()
+        form_row.setSpacing(10)
+
+        # Nhãn + combobox chọn bộ tham số
+        params_label = QLabel("Tham số:")
+        params_label.setObjectName("FormLabel")
+        form_row.addWidget(params_label)
+
+        self.sweep_params_combo = QComboBox()
+        self.sweep_params_combo.setObjectName("BacktestField")
+        self.sweep_params_combo.setMinimumWidth(200)
+        self.sweep_params_combo.addItem("4 tham số ưu tiên", "priority4")
+        self.sweep_params_combo.addItem("6 tham số ưu tiên", "priority6")
+        self.sweep_params_combo.addItem("Tất cả (10 tham số)", "all")
+        self.sweep_params_combo.setCurrentIndex(0)
+        form_row.addWidget(self.sweep_params_combo)
+
+        form_row.addWidget(self._help_button(
+            "Chọn bộ tham số cần quét:\n"
+            "• 4 tham số ưu tiên: SL distance, Zone SL buffer, Entry aggressiveness, TP selection\n"
+            "• 6 tham số: thêm Swing SL buffer, SL Floor buffer\n"
+            "• Tất cả: bao gồm cả secondary params (EQ TP max RR, TP2 min gap, Entry zone ATR, Min stop distance)"
+        ))
+
+        # Nhãn + combobox chọn giai đoạn
+        period_label = QLabel("Giai đoạn:")
+        period_label.setObjectName("FormLabel")
+        form_row.addWidget(period_label)
+
+        self.sweep_period_combo = QComboBox()
+        self.sweep_period_combo.setObjectName("BacktestField")
+        self.sweep_period_combo.setMinimumWidth(180)
+        self.sweep_period_combo.addItem("Tất cả giai đoạn", "all")
+        for p in DEFAULT_PERIODS:
+            self.sweep_period_combo.addItem(p.name, p.name)
+        self.sweep_period_combo.setCurrentIndex(0)
+        form_row.addWidget(self.sweep_period_combo)
+
+        form_row.addWidget(self._help_button(
+            "Chọn giai đoạn thị trường để test:\n"
+            "• Trending 2023: thị trường có xu hướng rõ ràng\n"
+            "• Range 2024: thị trường đi ngang, ít xu hướng\n"
+            "• Volatile 2025: thị trường biến động cao (tariff news)\n"
+            "• Mixed Full 2024: cả năm, đủ mọi chế độ\n"
+            "• Tất cả: quét qua tất cả giai đoạn"
+        ))
+
+        form_row.addStretch(1)
+
+        # Nút chạy
+        self.sweep_run_btn = action_button("▶️ Chạy quét", primary=True, color="success")
+        self.sweep_run_btn.setFixedWidth(110)
+        self.sweep_run_btn.clicked.connect(self._run_param_sweep)
+        form_row.addWidget(self.sweep_run_btn)
+
+        # Nút mở báo cáo HTML
+        self.sweep_report_btn = action_button("📂 Mở báo cáo", primary=True, color="info")
+        self.sweep_report_btn.setFixedWidth(120)
+        self.sweep_report_btn.clicked.connect(self._open_sweep_report)
+        self.sweep_report_btn.hide()
+        form_row.addWidget(self.sweep_report_btn)
+
+        form_row.addWidget(self._help_button(
+            "Quét (sweep) từng hằng số ATR qua nhiều giá trị khác nhau, "
+            "chạy backtest trên mỗi tổ hợp để đo độ ổn định.\n\n"
+            "STABLE = giá trị hiện tại tốt trên mọi giai đoạn.\n"
+            "OVERFIT = mỗi giai đoạn tối ưu ở 1 giá trị khác nhau → cần chọn giá trị an toàn.\n"
+            "INSENSITIVE = tham số ít ảnh hưởng → không cần ưu tiên."
+        ))
+
+        layout.addLayout(form_row)
+
+        # ── Progress ──
+        progress_row = QHBoxLayout()
+        progress_row.setSpacing(8)
+        self.sweep_progress = QProgressBar()
+        self.sweep_progress.setRange(0, 100)
+        self.sweep_progress.setValue(0)
+        self.sweep_progress.setFixedHeight(16)
+        self.sweep_progress.setObjectName("BacktestProgress")
+        progress_row.addWidget(self.sweep_progress, 1)
+
+        self.sweep_status = QLabel("Sẵn sàng")
+        self.sweep_status.setObjectName("HelperText")
+        progress_row.addWidget(self.sweep_status)
+        layout.addLayout(progress_row)
+
+        # ── Results ──
+        self.sweep_result_text = QTextEdit()
+        self.sweep_result_text.setReadOnly(True)
+        self.sweep_result_text.setObjectName("BacktestResultText")
+        self.sweep_result_text.setHtml(
+            '<p style="color:#94a3b8;text-align:center;padding:32px">'
+            'Chọn tham số và bấm <b>▶️ Chạy quét</b> để bắt đầu.</p>'
+        )
+        layout.addWidget(self.sweep_result_text, 1)
+
+    @staticmethod
+    def _help_button(tooltip: str) -> QPushButton:
+        """Tạo nút '?' tròn nhỏ — bấm vào hiện popup giải thích."""
+        btn = QPushButton("?")
+        btn.setFixedSize(20, 20)
+        btn.setStyleSheet("""
+            QPushButton {
+                background: #e2e8f0; color: #475569; border: none;
+                border-radius: 10px; font-size: 12px; font-weight: 700;
+                padding: 0; margin: 0;
+            }
+            QPushButton:hover { background: #f39c12; color: #fff; }
+        """)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        def _show_tip():
+            from PyQt6.QtWidgets import QToolTip
+            QToolTip.showText(btn.mapToGlobal(btn.rect().bottomRight()), tooltip, btn)
+
+        btn.clicked.connect(_show_tip)
+        return btn
+
+    def _get_sweep_settings(self) -> dict:
+        """Lấy cấu hình backtest từ form chính để dùng cho sweep."""
+        try:
+            if hasattr(self, 'app') and self.app:
+                s = self.app.settings_service.load()
+            else:
+                s = self.controller.settings_service.load()
+            return {
+                "initial_balance": self.balance_input.value(),
+                "risk_percent": self.risk_input.value(),
+                "account_currency": s.trading.account_currency,
+                "lot_step": s.trading.lot_step,
+                "minimum_lot": s.trading.minimum_lot,
+                "contract_size_override": s.trading.contract_size_override,
+            }
+        except Exception:
+            return {
+                "initial_balance": 10000, "risk_percent": 1.0,
+                "account_currency": "USD", "lot_step": 0.01,
+                "minimum_lot": 0.01, "contract_size_override": None,
+            }
+
+    def _run_param_sweep(self) -> None:
+        """Bắt đầu quét tham số trên background thread."""
+        try:
+            # Chọn configs
+            mode = self.sweep_params_combo.currentData()
+            if mode == "priority4":
+                configs = list(DEFAULT_SWEEP_CONFIGS[:4])
+            elif mode == "priority6":
+                configs = list(DEFAULT_SWEEP_CONFIGS[:6])
+            else:
+                configs = list(DEFAULT_SWEEP_CONFIGS) + list(SECONDARY_SWEEP_CONFIGS)
+
+            # Chọn periods
+            period_key = self.sweep_period_combo.currentData()
+            if period_key == "all":
+                periods = list(DEFAULT_PERIODS)
+            else:
+                periods = [p for p in DEFAULT_PERIODS if p.name == period_key]
+
+            # Symbol từ form chính
+            symbols = [self.selected_symbol]
+
+            # Settings
+            settings = self._get_sweep_settings()
+
+            # UI state
+            self.sweep_run_btn.setEnabled(False)
+            self.sweep_report_btn.hide()
+            self.sweep_progress.setValue(0)
+            self.sweep_status.setText("Đang khởi động...")
+            self.sweep_result_text.setHtml(
+                '<p style="color:#94a3b8;text-align:center;padding:32px">'
+                'Đang chạy... vui lòng đợi.</p>'
+            )
+
+            # Worker + thread
+            from workers.param_sweep_worker import ParamSweepThread
+
+            self._sweep_thread = ParamSweepThread(configs, periods, symbols, settings)
+            self._sweep_thread.progress.connect(self._on_sweep_progress)
+            self._sweep_thread.succeeded.connect(self._on_sweep_success)
+            self._sweep_thread.failed.connect(self._on_sweep_failed)
+            self._sweep_thread.finished.connect(lambda: self.sweep_run_btn.setEnabled(True))
+            self._sweep_thread.finished.connect(self._sweep_thread.deleteLater)
+
+            self._sweep_thread.start()
+
+        except Exception as exc:
+            import traceback
+            self.sweep_status.setText(f"Lỗi khởi động: {exc}")
+            self.sweep_run_btn.setEnabled(True)
+            QMessageBox.critical(
+                self, "Lỗi quét tham số",
+                f"Không thể khởi động quét tham số:\n\n{exc}\n\n{traceback.format_exc()}",
+            )
+
+    def _on_sweep_progress(self, percent: int, message: str) -> None:
+        self.sweep_progress.setValue(percent)
+        self.sweep_status.setText(message)
+
+    def _on_sweep_success(self, results: list) -> None:
+        self._sweep_results = results
+        self.sweep_status.setText("Hoàn tất quét tham số.")
+        html = self._build_sweep_results_html(results)
+        self.sweep_result_text.setHtml(html)
+
+        # Export báo cáo ra file
+        try:
+            report_path = export_results(results)
+            self._sweep_report_path = str(report_path)
+            self.sweep_report_btn.show()
+        except Exception:
+            self._sweep_report_path = None
+
+    def _on_sweep_failed(self, error_msg: str) -> None:
+        self.sweep_status.setText(f"Lỗi: {error_msg}")
+        self.sweep_result_text.setHtml(
+            f'<p style="color:#e74c3c;text-align:center;padding:32px">'
+            f'<b>Lỗi khi quét tham số:</b><br>{html.escape(error_msg)}</p>'
+        )
+
+    def _open_sweep_report(self) -> None:
+        """Mở báo cáo HTML đã export bằng browser."""
+        if getattr(self, '_sweep_report_path', None):
+            import webbrowser
+            webbrowser.open(self._sweep_report_path)
+
+    def _build_sweep_results_html(self, results: list) -> str:
+        """Tạo bảng HTML tổng quan kết quả sweep."""
+        verdict_colors = {
+            "STABLE": "#2ecc71", "OVERFIT": "#e74c3c",
+            "SUSPECT": "#f39c12", "INSENSITIVE": "#95a5a6",
+            "INCONCLUSIVE": "#95a5a6", "UNKNOWN": "#95a5a6",
+        }
+
+        rows_html = ""
+        for r in results:
+            vc = verdict_colors.get(r.verdict, "#95a5a6")
+            score = f"{r.stability_score:.0f}" if r.stability_score is not None else "—"
+
+            # Tìm giá trị hiện tại
+            import core.risk_engine as _re
+            current = getattr(_re, r.attr_name, "N/A")
+
+            # Tìm best value
+            valid_runs = [run for run in r.runs if run.error is None and run.total_trades > 0]
+            best_val = "—"
+            if valid_runs:
+                from collections import defaultdict
+                by_val: dict[float, list[float]] = defaultdict(list)
+                for run in valid_runs:
+                    by_val[run.param_value].append(run.expectancy_r)
+                if by_val:
+                    avg_by_val = {v: sum(exs)/len(exs) for v, exs in by_val.items()}
+                    best_val = f"{max(avg_by_val, key=avg_by_val.get):.3f}"
+
+            rec_text = html.escape(r.recommendation or "—")
+
+            rows_html += f"""
+            <tr>
+                <td style="white-space:nowrap"><code>{r.attr_name}</code></td>
+                <td style="white-space:nowrap"><code>{r.json_key}</code></td>
+                <td style="text-align:center"><code>{current}</code></td>
+                <td style="text-align:center"><code>{best_val}</code></td>
+                <td style="text-align:center;color:{vc};font-weight:700">{r.verdict}</td>
+                <td style="text-align:center">{score}</td>
+                <td style="max-width:420px;font-size:12px">{rec_text}</td>
+            </tr>"""
+
+        return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head><body style="font-family:-apple-system,'Segoe UI',sans-serif;margin:0;color:#1f2937">
+<h3 style="margin:0 0 8px;font-size:16px">Kết quả quét tham số</h3>
+<table style="border-collapse:collapse;width:100%;font-size:13px">
+<thead><tr style="background:#f5f5f5">
+    <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">Biến</th>
+    <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">JSON Key</th>
+    <th style="padding:6px 10px;text-align:center;border:1px solid #ddd">Hiện tại</th>
+    <th style="padding:6px 10px;text-align:center;border:1px solid #ddd">Đề xuất</th>
+    <th style="padding:6px 10px;text-align:center;border:1px solid #ddd">Đánh giá</th>
+    <th style="padding:6px 10px;text-align:center;border:1px solid #ddd">Ổn định</th>
+    <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">Khuyến nghị</th>
+</tr></thead><tbody>{rows_html}</tbody></table>
+<p style="color:#94a3b8;font-size:12px;margin-top:12px">
+<b>STABLE</b> = giữ nguyên &nbsp;|&nbsp;
+<b>OVERFIT</b> = đổi sang giá trị an toàn &nbsp;|&nbsp;
+<b>INSENSITIVE</b> = không cần tối ưu<br>
+Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị × từng giai đoạn.
+</p>
+</body></html>"""
 
     def _build_equity_curve_html(self, equity_curve: list) -> str:
         import json as _json
