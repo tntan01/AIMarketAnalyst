@@ -30,7 +30,7 @@ if sys.platform == "win32":
         pass
 
 # Project bootstrap
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.param_sensitivity import (
     DEFAULT_PERIODS,

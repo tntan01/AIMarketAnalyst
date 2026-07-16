@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 # -- project bootstrap -------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.paths import journal_db_path
 
 DB_PATH = journal_db_path()
