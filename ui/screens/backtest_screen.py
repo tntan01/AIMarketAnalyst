@@ -109,7 +109,7 @@ class BacktestScreen(QWidget):
         root.addWidget(
             page_header(
                 "Backtest",
-                "Chạy lại pipeline phân tích trên dữ liệu lịch sử để đo kỳ vọng, drawdown và lợi thế theo nhóm.",
+                "",
             )
         )
         root.addWidget(self._settings_card())
@@ -142,8 +142,8 @@ class BacktestScreen(QWidget):
         self.symbol_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.symbol_button = action_button("🔍 Chọn", primary=True, color="info")
+        self.symbol_button.setProperty("btnSize", "small")
         self.symbol_button.clicked.connect(self._show_symbol_dialog)
-        self.symbol_button.setFixedWidth(60)
 
         today = QDate.currentDate()
         self.start_date = QDateEdit(today.addMonths(-6))
@@ -195,14 +195,13 @@ class BacktestScreen(QWidget):
         inputs_row.addWidget(self._vertical_separator())
 
         self.run_button = action_button("▶️ Chạy", primary=True, color="success")
+        self.run_button.setProperty("btnSize", "small")
         self.run_button.clicked.connect(self._run_backtest)
-        self.run_button.setFixedWidth(75)
         
         self.apply_config_btn = action_button("📋 Áp dụng cấu hình", primary=True, color="warning")
+        self.apply_config_btn.setProperty("btnSize", "small")
         self.apply_config_btn.clicked.connect(self._apply_scanner_config)
         self.apply_config_btn.setToolTip("Phân tích kết quả backtest và áp dụng cấu hình đề xuất vào Scanner settings.")
-        btn_width = self.apply_config_btn.fontMetrics().horizontalAdvance(self.apply_config_btn.text()) + 60
-        self.apply_config_btn.setFixedWidth(btn_width)
         self.apply_config_btn.hide()
 
 
@@ -215,8 +214,6 @@ class BacktestScreen(QWidget):
 
         self.status_label = QLabel("Sẵn sàng")
         self.status_label.setObjectName("HelperText")
-        self.status_label.setMinimumWidth(100)
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         inputs_row.addWidget(self.run_button)
         inputs_row.addWidget(self.apply_config_btn)
@@ -225,6 +222,13 @@ class BacktestScreen(QWidget):
         self.walk_forward_checkbox.setObjectName("BacktestField")
         self.walk_forward_checkbox.setToolTip("Bật Walk-Forward Analysis để kiểm tra tính ổn định qua thời gian (IS/OOS cuốn chiếu).")
         inputs_row.addWidget(self.walk_forward_checkbox)
+        
+        self.wf_help_btn = self._help_button(
+            "Walk-Forward Analysis (WFA) là phương pháp tối ưu hóa cuốn chiếu:\n"
+            "• Chia dữ liệu lịch sử thành nhiều đoạn In-Sample (tối ưu hóa) và Out-of-Sample (kiểm thử thực tế).\n"
+            "• Giúp phát hiện hiện tượng quá khớp (overfitting) và đánh giá khả năng sinh lời thực tế của chiến thuật."
+        )
+        inputs_row.addWidget(self.wf_help_btn)
 
         inputs_row.addStretch(1)
 
@@ -333,37 +337,37 @@ class BacktestScreen(QWidget):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(8)
-        title = QLabel("Kết quả")
-        title.setObjectName("PanelTitle")
-        header.addWidget(title)
-
-        # --- Verdict banner inline in header (hidden until backtest) ---
+        # --- Verdict banner (hidden until backtest) ---
         self.verdict_banner = QLabel("")
         self.verdict_banner.setObjectName("BacktestVerdict")
         self.verdict_banner.setWordWrap(False)
         self.verdict_banner.setTextFormat(Qt.TextFormat.RichText)
         self.verdict_banner.hide()
-        header.addWidget(self.verdict_banner, 1)
-
-        header.addStretch(1)
-
-        load_btn = action_button("📂 Xem lại kết quả", primary=True, color="success")
-        load_btn.clicked.connect(self._load_backtest_file)
-
-        analyze_btn = action_button("🤖 Phân tích", primary=True, color="info")
-        analyze_btn.clicked.connect(self._analyze_loaded_result)
-        self.analyze_btn = analyze_btn
-
-        header.addWidget(load_btn)
-        header.addWidget(analyze_btn)
-        layout.addLayout(header)
+        layout.addWidget(self.verdict_banner)
 
         # --- Tab widget: Kết quả | Đường cong vốn | Danh sách lệnh ---
         self.tabs = QTabWidget()
         self.tabs.setObjectName("BacktestTabs")
+        self.tabs.tabBar().setObjectName("BacktestTabBar")
+
+        # Corner widget containing load_btn and analyze_btn
+        corner_widget = QWidget()
+        corner_layout = QHBoxLayout(corner_widget)
+        corner_layout.setContentsMargins(0, 0, 0, 0)
+        corner_layout.setSpacing(6)
+
+        load_btn = action_button("📂 Xem lại kết quả", primary=True, color="success")
+        load_btn.setProperty("btnSize", "small")
+        load_btn.clicked.connect(self._load_backtest_file)
+
+        analyze_btn = action_button("🤖 Phân tích", primary=True, color="info")
+        analyze_btn.setProperty("btnSize", "small")
+        analyze_btn.clicked.connect(self._analyze_loaded_result)
+        self.analyze_btn = analyze_btn
+
+        corner_layout.addWidget(load_btn)
+        corner_layout.addWidget(analyze_btn)
+        self.tabs.setCornerWidget(corner_widget, Qt.Corner.TopRightCorner)
 
         # Tab 0: Kết quả (HTML)
         self.result_text = QTextEdit()
@@ -435,12 +439,13 @@ class BacktestScreen(QWidget):
         """Dựng tab Điều chỉnh tham số với form chọn + progress + kết quả."""
         self._sweep_tab = QWidget()
         layout = QVBoxLayout(self._sweep_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         # ── Form row ──
         form_row = QHBoxLayout()
-        form_row.setSpacing(10)
+        form_row.setContentsMargins(0, 0, 0, 0)
+        form_row.setSpacing(8)
 
         # Nhãn + combobox chọn bộ tham số
         params_label = QLabel("Tham số:")
@@ -449,7 +454,7 @@ class BacktestScreen(QWidget):
 
         self.sweep_params_combo = QComboBox()
         self.sweep_params_combo.setObjectName("BacktestField")
-        self.sweep_params_combo.setMinimumWidth(200)
+        self.sweep_params_combo.setFixedWidth(200)
         self.sweep_params_combo.addItem("4 tham số ưu tiên", "priority4")
         self.sweep_params_combo.addItem("6 tham số ưu tiên", "priority6")
         self.sweep_params_combo.addItem("Tất cả (10 tham số)", "all")
@@ -470,7 +475,7 @@ class BacktestScreen(QWidget):
 
         self.sweep_period_combo = QComboBox()
         self.sweep_period_combo.setObjectName("BacktestField")
-        self.sweep_period_combo.setMinimumWidth(180)
+        self.sweep_period_combo.setFixedWidth(180)
         self.sweep_period_combo.addItem("Tất cả giai đoạn", "all")
         for p in DEFAULT_PERIODS:
             self.sweep_period_combo.addItem(p.name, p.name)
@@ -486,16 +491,15 @@ class BacktestScreen(QWidget):
             "• Tất cả: quét qua tất cả giai đoạn"
         ))
 
-        form_row.addStretch(1)
-
         # Nút chạy
         self.sweep_run_btn = action_button("▶️ Chạy quét", primary=True, color="success")
-        self.sweep_run_btn.setFixedWidth(110)
+        self.sweep_run_btn.setProperty("btnSize", "small")
         self.sweep_run_btn.clicked.connect(self._run_param_sweep)
         form_row.addWidget(self.sweep_run_btn)
 
         # Nút mở báo cáo HTML
         self.sweep_report_btn = action_button("📂 Mở báo cáo", primary=True, color="info")
+        self.sweep_report_btn.setProperty("btnSize", "small")
         self.sweep_report_btn.setFixedWidth(120)
         self.sweep_report_btn.clicked.connect(self._open_sweep_report)
         self.sweep_report_btn.hide()
@@ -509,10 +513,12 @@ class BacktestScreen(QWidget):
             "INSENSITIVE = tham số ít ảnh hưởng → không cần ưu tiên."
         ))
 
+        form_row.addStretch(1)
         layout.addLayout(form_row)
 
         # ── Progress ──
         progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
         progress_row.setSpacing(8)
         self.sweep_progress = QProgressBar()
         self.sweep_progress.setRange(0, 100)
@@ -706,13 +712,13 @@ class BacktestScreen(QWidget):
                 <td style="text-align:center"><code>{best_val}</code></td>
                 <td style="text-align:center;color:{vc};font-weight:700">{r.verdict}</td>
                 <td style="text-align:center">{score}</td>
-                <td style="max-width:420px;font-size:12px">{rec_text}</td>
+                <td style="max-width:420px;font-size:11px">{rec_text}</td>
             </tr>"""
 
         return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head><body style="font-family:-apple-system,'Segoe UI',sans-serif;margin:0;color:#1f2937">
-<h3 style="margin:0 0 8px;font-size:16px">Kết quả quét tham số</h3>
-<table style="border-collapse:collapse;width:100%;font-size:13px">
+<h3 style="margin:0 0 8px;font-size:12px">Quét tham số</h3>
+<table style="border-collapse:collapse;width:100%;font-size:11px">
 <thead><tr style="background:#f5f5f5">
     <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">Biến</th>
     <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">JSON Key</th>
@@ -722,7 +728,7 @@ class BacktestScreen(QWidget):
     <th style="padding:6px 10px;text-align:center;border:1px solid #ddd">Ổn định</th>
     <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">Khuyến nghị</th>
 </tr></thead><tbody>{rows_html}</tbody></table>
-<p style="color:#94a3b8;font-size:12px;margin-top:12px">
+<p style="color:#94a3b8;font-size:11px;margin-top:12px">
 <b>STABLE</b> = giữ nguyên &nbsp;|&nbsp;
 <b>OVERFIT</b> = đổi sang giá trị an toàn &nbsp;|&nbsp;
 <b>INSENSITIVE</b> = không cần tối ưu<br>
@@ -1598,7 +1604,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
 
         html = [
             "<div style='font-family:-apple-system,Segoe UI,sans-serif;'>",
-            f"<h2 style='color:{panel_title_color}; margin-top: 0; margin-bottom: 12px; font-size: 16px;'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
+            f"<h2 style='color:{panel_title_color}; margin-top: 0; margin-bottom: 12px; font-size: 12px;'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
         ]
         
         html.extend(self._build_stats_overview_html(
@@ -1609,7 +1615,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
 
         symbol_stats = self.result.get("symbol_stats", {})
         if isinstance(symbol_stats, dict) and len(symbol_stats) > 1:
-            html.append(f"<h2 style='color:{details_title_color}; margin-bottom: 16px; margin-top: 24px; font-size: 16px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
+            html.append(f"<h2 style='color:{details_title_color}; margin-bottom: 16px; margin-top: 24px; font-size: 12px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
             html.append("<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;'>")
             for symbol, sym_stats in sorted(symbol_stats.items()):
                 if not isinstance(sym_stats, dict):
@@ -1619,8 +1625,8 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 
                 html.append(
                     f"<div style='background-color: {card_bg}; border-radius: 8px; padding: 14px; width: calc(50% - 6px); box-sizing: border-box; border-left: 4px solid #ea580c; border: 1px solid {border_color};'>"
-                    f"<div style='font-size: 15px; font-weight: bold; color: {card_title}; margin-bottom: 10px;'>✨ {symbol}</div>"
-                    f"<table style='width: 100%; border-collapse: collapse; font-size: 13px;'>"
+                    f"<div style='font-size: 11px; font-weight: bold; color: {card_title}; margin-bottom: 10px;'>✨ {symbol}</div>"
+                    f"<table style='width: 100%; border-collapse: collapse; font-size: 11px;'>"
                     f"<tr>"
                     f"<td style='padding: 4px 0;'><span style='color: {muted_color};'>Lệnh:</span> <span style='color: {text_color}; font-weight: bold;'>{get_stat(sym_stats, 'total_trades', '0')}</span></td>"
                     f"<td style='padding: 4px 0;'><span style='color: {muted_color};'>Kỳ vọng:</span> <span style='color: {text_color}; font-weight: bold;'>{get_stat(sym_stats, 'expectancy_r')}R</span></td>"
@@ -1656,8 +1662,8 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 "INCONCLUSIVE": "INCONCLUSIVE — Không đủ dữ liệu để kết luận",
             }.get(verdict, verdict)
 
-            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 16px;'>🔄 Walk-Forward Analysis</h2>")
-            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;'>")
+            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 12px;'>🔄 Walk-Forward Analysis</h2>")
+            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
             row = lambda label, value, clr=None: (
                 f"<tr>"
                 f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>{label}</td>"
@@ -1695,47 +1701,47 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
         dd = float(summary.get("max_drawdown_r", 0) or 0)
 
         html.append(
-            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px;'>"
+            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>"
             f"<tr>"
-            f"<th style='text-align: left; padding: 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chỉ số</th>"
-            f"<th style='text-align: right; padding: 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Giá trị</th>"
-            f"<th style='text-align: right; padding: 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Đánh giá</th>"
+            f"<th style='text-align: left; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chỉ số</th>"
+            f"<th style='text-align: right; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Giá trị</th>"
+            f"<th style='text-align: right; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Đánh giá</th>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>🔢 Tổng số lệnh</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'total_trades', '0')}</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {muted_color};'>-</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>🔢 Tổng số lệnh</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'total_trades', '0')}</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {muted_color};'>-</td>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>🎯 Tỷ lệ thắng</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'win_rate')}%</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border};'>{eval_winrate(wr)}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>🎯 Tỷ lệ thắng</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'win_rate')}%</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border};'>{eval_winrate(wr)}</td>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>💎 Hệ số lợi nhuận</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'profit_factor')}</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border};'>{eval_profit_factor(pf)}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>💎 Hệ số lợi nhuận</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'profit_factor')}</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border};'>{eval_profit_factor(pf)}</td>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>🚀 Kỳ vọng</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'expectancy_r')}R</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {muted_color};'>-</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>🚀 Kỳ vọng</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'expectancy_r')}R</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {muted_color};'>-</td>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>📉 Drawdown tối đa</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'max_drawdown_r')}R</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border};'>{eval_drawdown(dd)}</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>📉 Drawdown tối đa</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {value_color}; font-weight: bold;'>{get_stat(summary, 'max_drawdown_r')}R</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border};'>{eval_drawdown(dd)}</td>"
             f"</tr>"
 
             f"<tr>"
-            f"<td style='padding: 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>💰 Tổng R</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: #10b981; font-weight: bold;'>{get_stat(summary, 'total_r')}R</td>"
-            f"<td style='text-align: right; padding: 10px; border-bottom: 1px solid {row_border}; color: {muted_color};'>-</td>"
+            f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>💰 Tổng R</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: #10b981; font-weight: bold;'>{get_stat(summary, 'total_r')}R</td>"
+            f"<td style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {muted_color};'>-</td>"
             f"</tr>"
             f"</table>"
         )
@@ -1751,7 +1757,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
         avg_holding = float(summary.get("average_holding_bars", 0) or 0)
 
         html.append(
-            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px;'>"
+            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>"
             f"<tr>"
             f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chi tiết thắng/thua</th>"
             f"<th style='text-align: right; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: {muted_color}; width: 60px;'>Số lượng</th>"
@@ -1840,7 +1846,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                     txt = f"+{value:.2f}" if value > 0 else f"{value:.2f}"
                     clr = "#ffffff" if ratio > 0.65 else text_color
                     return txt, clr
-                html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 16px;'>📅 Bảng nhiệt lời/lỗ theo tháng</h2>")
+                html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 12px;'>📅 Bảng nhiệt lời/lỗ theo tháng</h2>")
                 html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
                 hdr = [f"<th style='text-align: left; padding: 6px 8px; border-bottom: 2px solid {border_color}; color: {head_text}; background: {head_bg};'>Năm</th>"]
                 for m in range(1, 13):
@@ -1889,7 +1895,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                     f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; font-size: 11px;'>{_mc_fmt(low_v, suffix)} → {_mc_fmt(high_v, suffix)}</td>"
                 )
 
-            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 16px;'>🎲 Khoảng tin cậy Monte Carlo</h2>")
+            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 12px;'>🎲 Khoảng tin cậy Monte Carlo</h2>")
             html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
             html.append(
                 f"<tr>"
@@ -1936,7 +1942,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 pn_color = "#10b981" if prob_neg < 20 else ("#f59e0b" if prob_neg <= 50 else "#e11d48")
                 html.append(
                     f"<tr>"
-                    f"<td colspan='3' style='padding:6px 10px;border-bottom:1px solid {row_border};color:{pn_color};font-weight:700;font-size:12px;text-align:center;'>"
+                    f"<td colspan='3' style='padding:6px 10px;border-bottom:1px solid {row_border};color:{pn_color};font-weight:700;font-size:11px;text-align:center;'>"
                     f"P(kỳ vọng &lt; 0) = {prob_neg}%"
                     f"</td>"
                     f"</tr>"
@@ -1954,9 +1960,9 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
         pipeline_stats = diagnostics.get("pipeline_stats", {})
         gate_fail_counts = diagnostics.get("gate_fail_counts", {})
         if pipeline_stats:
-            html.append(f"<h2 style='color:{pipeline_title_color}; margin-bottom: 12px; margin-top: 24px; font-size: 16px;'>🔬 CHẨN ĐOÁN PIPELINE</h2>")
+            html.append(f"<h2 style='color:{pipeline_title_color}; margin-bottom: 12px; margin-top: 24px; font-size: 12px;'>🔬 CHẨN ĐOÁN PIPELINE</h2>")
             html.append(
-                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px;'>"
+                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 11px;'>"
                 f"<tr>"
                 f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Bước</th>"
                 f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: #10b981;'>Pass</th>"
@@ -2008,7 +2014,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             blk = diagnostics.get("blocked_by_gate", 0)
             low = diagnostics.get("score_below_50_count", 0)
             html.append(
-                f"<div style='display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: {muted_color};'>"
+                f"<div style='display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; font-size: 11px; color: {muted_color};'>"
                 f"<span>📊 Tổng snapshot: <b style='color:{text_color};'>{ev}</b></span>"
                 f"<span>🚫 Bị gate chặn: <b style='color:#e11d48;'>{blk}</b></span>"
                 f"<span>⚠️ Điểm {'<'}50: <b style='color:#f59e0b;'>{low}</b></span>"
@@ -2016,9 +2022,9 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             )
 
         if gate_fail_counts:
-            html.append(f"<h3 style='color:{pipeline_title_color}; margin-bottom: 8px; margin-top: 16px; font-size: 14px;'>🚧 Chi tiết Gate</h3>")
+            html.append(f"<h3 style='color:{pipeline_title_color}; margin-bottom: 8px; margin-top: 16px; font-size: 12px;'>🚧 Chi tiết Gate</h3>")
             html.append(
-                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 12px;'>"
+                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px;'>"
                 f"<tr>"
                 f"<th style='text-align: left; padding: 6px 10px; border-bottom: 1px solid {border_color}; color: {muted_color};'>Gate</th>"
                 f"<th style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {border_color}; color: {muted_color};'>Số lần chặn/cảnh báo</th>"
@@ -2294,10 +2300,17 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 accent, bg, border, separator, text = "#e11d48", "#4c0519", "#881337", "#334155", "#cbd5e1"
                 line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
 
+        self.verdict_banner.setStyleSheet(
+            f"QLabel#BacktestVerdict {{"
+            f"  background: {bg};"
+            f"  border: 1px solid {border};"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 10px;"
+            f"}}"
+        )
+
         self.verdict_banner.setText(
-            f"<span style='display:inline-block;padding:6px 16px;border-radius:16px;background:{bg};"
-            f"border: 1px solid {border};"
-            f"font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;white-space:nowrap;'>"
+            f"<span style='font-size:11px;font-family:-apple-system,Segoe UI,sans-serif;white-space:nowrap;'>"
             f"<b style='color:{accent};'>{line}</b>"
             f"<span style='color:{separator};'>&nbsp;&nbsp;│&nbsp;&nbsp;</span>"
             f"<span style='color:{text};font-weight:500;'>"
@@ -2320,33 +2333,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             return False
 
     def _refresh_progress_bar_style(self) -> None:
-        light = self._is_light_theme()
-        if light:
-            bg_color = "#e2e8f0"
-            border_color = "#cbd5e1"
-            chunk_color = "#ea580c"
-            text_color = "#1f2937"
-        else:
-            bg_color = "#0f172a"
-            border_color = "#334155"
-            chunk_color = "#ea580c"
-            text_color = "#f9fafb"
-            
-        self.progress.setStyleSheet(
-            f"QProgressBar#BacktestProgress {{"
-            f"background: {bg_color};"
-            f"border: 1px solid {border_color};"
-            f"border-radius: 5px;"
-            f"color: {text_color};"
-            f"font-size: 11px;"
-            f"font-weight: bold;"
-            f"text-align: center;"
-            f"}}"
-            f"QProgressBar#BacktestProgress::chunk {{"
-            f"background: {chunk_color};"
-            f"border-radius: 4px;"
-            f"}}"
-        )
+        pass
 
     def _refresh_trade_table_style(self) -> None:
         if not hasattr(self, "trades") or not self.trades:
@@ -2407,6 +2394,9 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                     cell.setForeground(QBrush())
 
 
+    def refresh_theme_styles(self) -> None:
+        self._refresh_theme_styles()
+
     def _refresh_theme_styles(self) -> None:
         self._refresh_progress_bar_style()
         self._refresh_verdict_banner_style()
@@ -2417,80 +2407,25 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
         self._refresh_result_text_style()
 
     def _refresh_tab_styles(self) -> None:
-        if not hasattr(self, 'tabs'):
-            return
-        light = self._is_light_theme()
-        if light:
-            pane_bg = "#FAF9F5"
-            pane_border = "#D6D2C8"
-            tab_bg = "#f1f5f9"
-            tab_border = "#d1d5db"
-            tab_text = "#334155"
-            tab_selected_bg = "#ea580c"
-            tab_selected_border = "#ea580c"
-            tab_selected_text = "#ffffff"
-            tab_hover_bg = "#ea580c"
-            tab_hover_border = "#ea580c"
-            tab_hover_text = "#ffffff"
-        else:
-            pane_bg = "#171c24"
-            pane_border = "#2b3545"
-            tab_bg = "#1f2937"
-            tab_border = "#475569"
-            tab_text = "#e5e7eb"
-            tab_selected_bg = "#0f766e"
-            tab_selected_border = "#5eead4"
-            tab_selected_text = "#ffffff"
-            tab_hover_bg = "#334155"
-            tab_hover_border = "#94a3b8"
-            tab_hover_text = "#ffffff"
-        self.tabs.setStyleSheet(f"""
-            QTabWidget#BacktestTabs::pane {{
-                border: 1px solid {pane_border};
-                background: {pane_bg};
-                border-radius: 8px;
-                margin-top: 8px;
-                padding: 12px;
-            }}
-            QTabBar::tab {{
-                background: {tab_bg};
-                color: {tab_text};
-                border: 1px solid {tab_border};
-                border-radius: 20px;
-                padding: 6px 16px;
-                margin-right: 6px;
-                min-width: 100px;
-                font-size: 12px;
-            }}
-            QTabBar::tab:selected {{
-                background: {tab_selected_bg};
-                border: 1px solid {tab_selected_border};
-                border-radius: 20px;
-                color: {tab_selected_text};
-                font-weight: 700;
-            }}
-            QTabBar::tab:hover {{
-                background: {tab_hover_bg};
-                border: 1px solid {tab_hover_border};
-                border-radius: 20px;
-                color: {tab_hover_text};
-            }}
-        """)
+        pass
 
     def _refresh_result_text_style(self) -> None:
         if not hasattr(self, 'result_text'):
             return
         light = self._is_light_theme()
         if light:
-            self.result_text.setStyleSheet(
-                "QTextEdit#BacktestResultText { background: #ffffff; color: #1e293b; font-size: 13px; "
+            style = (
+                "QTextEdit#BacktestResultText { background: #ffffff; color: #1e293b; font-size: 11px; "
                 "border: none; border-radius: 6px; padding: 8px; }"
             )
         else:
-            self.result_text.setStyleSheet(
-                "QTextEdit#BacktestResultText { background: #0f172a; color: #e2e8f0; font-size: 13px; "
+            style = (
+                "QTextEdit#BacktestResultText { background: #0f172a; color: #e2e8f0; font-size: 11px; "
                 "border: none; border-radius: 6px; padding: 8px; }"
             )
+        self.result_text.setStyleSheet(style)
+        if hasattr(self, 'sweep_result_text'):
+            self.sweep_result_text.setStyleSheet(style)
 
     def _refresh_verdict_banner_style(self) -> None:
         self._update_verdict()
@@ -2581,6 +2516,26 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
         #BacktestField:focus {{
             border: 1px solid #38bdf8;
             background: {input_bg};
+        }}
+        QComboBox#BacktestField {{
+            padding: 1px 22px 1px 6px;
+        }}
+        QComboBox#BacktestField::drop-down {{
+            subcontrol-origin: padding;
+            subcontrol-position: top right;
+            width: 18px;
+            border-left: 1px solid {input_border};
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
+            background: transparent;
+        }}
+        QComboBox#BacktestField::drop-down:hover {{
+            background: {"#e5e7eb" if light else "#1e293b"};
+        }}
+        QComboBox#BacktestField::down-arrow {{
+            image: url(assets/icons/chevron-down.svg);
+            width: 10px;
+            height: 10px;
         }}
         #BacktestSymbolSummary {{
             color: {title_color};
@@ -2818,7 +2773,9 @@ class SymbolSelectionDialog(QDialog):
         buttons_layout.setSpacing(8)
         buttons_layout.addStretch(1)
         cancel_btn = action_button("❌ Hủy", primary=False, color="danger")
+        cancel_btn.setProperty("btnSize", "small")
         ok_btn = action_button("✅ Chọn", primary=True, color="success")
+        ok_btn.setProperty("btnSize", "small")
         buttons_layout.addWidget(cancel_btn)
         buttons_layout.addWidget(ok_btn)
         root.addLayout(buttons_layout)

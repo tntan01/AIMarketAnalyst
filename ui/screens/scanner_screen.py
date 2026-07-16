@@ -585,7 +585,7 @@ class ScannerScreen (QWidget ):
         self .progress_bar .setValue (0 )
         self .progress_bar .setTextVisible (True )
         self .progress_bar .setFormat ("%p%")
-        self .progress_bar .setFixedHeight (22 )
+        self .progress_bar .setFixedHeight (16 )
         self .progress_bar .setVisible (False )
 
         progress_container =QWidget ()
@@ -633,39 +633,17 @@ class ScannerScreen (QWidget ):
     # ------------------------------------------------------------------
     def _dim_show_orders_button(self) -> None:
         """Dim the 'Hiển thị lệnh' button to indicate no scan data available."""
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-        muted_fg = "#9ca3af" if light else "#6b7280"
-        muted_border = "#d1d5db" if light else "#374151"
-        self.show_orders_button.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:0px 6px;"
-            f"  min-height:24px; max-height:24px;"
-            f"  background:transparent; color:{muted_fg};"
-            f"  border:1px solid {muted_border}; border-radius:6px;"
-            f"}}"
-        )
+        self.show_orders_button.setProperty("btnState", "dimmed")
+        self.show_orders_button.style().unpolish(self.show_orders_button)
+        self.show_orders_button.style().polish(self.show_orders_button)
+        self.show_orders_button.update()
 
     def _highlight_show_orders_button(self) -> None:
         """Highlight the 'Hiển thị lệnh' button after a scan completes."""
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-        accent_bg = "#D94625" if light else "#ea580c"
-        accent_hover = "#E0533C" if light else "#f97316"
-        self.show_orders_button.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:700; padding:0px 6px;"
-            f"  min-height:24px; max-height:24px;"
-            f"  background:{accent_bg}; color:#ffffff; border:none; border-radius:6px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{accent_hover};"
-            f"}}"
-        )
+        self.show_orders_button.setProperty("btnState", "highlighted")
+        self.show_orders_button.style().unpolish(self.show_orders_button)
+        self.show_orders_button.style().polish(self.show_orders_button)
+        self.show_orders_button.update()
 
     def _show_orders_dialog(self) -> None:
         """Show a dialog listing trade orders (actual or would-be)."""
@@ -706,49 +684,8 @@ class ScannerScreen (QWidget ):
         dlg.resize(980, 620)
         dlg.setObjectName("AnalysisDetailDialog")
 
-        # Lư Trung Hỏa theme color variables
-        lth_bg = "#D94625" if light else "#ea580c"
-        lth_hover = "#E0533C" if light else "#f97316"
-        disabled_bg = "#e5e7eb" if light else "#1f2937"
-        disabled_fg = "#9ca3af" if light else "#4b5563"
-        disabled_border = "#d1d5db" if light else "#374151"
-
-        active_btn_style = f"""
-            QPushButton {{
-                font-size: 11px;
-                font-weight: bold;
-                padding-left: 12px;
-                padding-right: 8px;
-                padding-top: 0px;
-                padding-bottom: 0px;
-                min-height: 22px;
-                max-height: 22px;
-                border-radius: 4px;
-                background-color: {lth_bg};
-                color: #ffffff;
-                border: none;
-            }}
-            QPushButton:hover {{
-                background-color: {lth_hover};
-            }}
-        """
-
-        disabled_btn_style = f"""
-            QPushButton {{
-                font-size: 11px;
-                font-weight: bold;
-                padding-left: 12px;
-                padding-right: 8px;
-                padding-top: 0px;
-                padding-bottom: 0px;
-                min-height: 22px;
-                max-height: 22px;
-                border-radius: 4px;
-                background-color: {disabled_bg};
-                color: {disabled_fg};
-                border: 1px solid {disabled_border};
-            }}
-        """
+        active_btn_style = ""
+        disabled_btn_style = ""
 
         # Action button helper for manual trade execution
         def execute_manual_order(order_info: dict, btn: QPushButton) -> None:
@@ -1222,23 +1159,7 @@ class ScannerScreen (QWidget ):
         btn_layout.setSpacing(10)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng")
-        active_bg = "#D94625" if light else "#ea580c"
-        active_hover = "#E0533C" if light else "#f97316"
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:0px 16px 0px 20px;"
-            f"  background:transparent;"
-            f"  color:{'#4b5563' if light else '#9ca3af'};"
-            f"  border:1px solid {'#d1d5db' if light else '#4b5563'};"
-            f"  border-radius:6px; min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{'#fce8e5' if light else '#2c1910'};"
-            f"  color:{active_bg};"
-            f"  border:1px solid {active_bg};"
-            f"}}"
-        )
+        close_btn = action_button("❌ Đóng", primary=False, color="danger")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         root.addLayout(btn_layout)

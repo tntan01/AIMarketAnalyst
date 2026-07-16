@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QTabBar,
 )
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
@@ -165,15 +166,18 @@ class OrdersScreen(QWidget):
 
     def _build_tab_bar(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        layout.setSpacing(4)
-        self.tab_buttons: dict[str, QPushButton] = {}
-        for tab_key, tab_label in [("positions", "Vị thế đang mở"), ("pending", "Lệnh chờ")]:
-            btn = QPushButton(tab_label)
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda checked, k=tab_key: self._switch_tab(k))
-            self.tab_buttons[tab_key] = btn
-            layout.addWidget(btn)
+        layout.setSpacing(10)
+
+        self.orders_tab_bar = QTabBar()
+        self.orders_tab_bar.setStyleSheet("background: transparent; border: none;")
+        self.orders_tab_bar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.orders_tab_keys = ["positions", "pending"]
+        self.orders_tab_bar.addTab("Vị thế đang mở")
+        self.orders_tab_bar.addTab("Lệnh chờ")
+        self.orders_tab_bar.setCurrentIndex(0) # Default to positions
+        self.orders_tab_bar.currentChanged.connect(self._on_orders_tab_changed)
+        layout.addWidget(self.orders_tab_bar)
+
         layout.addStretch(1)
         self._update_tab_styles()
         return layout
@@ -256,39 +260,24 @@ class OrdersScreen(QWidget):
     # ------------------------------------------------------------------
     # Tab switching
     # ------------------------------------------------------------------
+    def _on_orders_tab_changed(self, index: int) -> None:
+        if 0 <= index < len(self.orders_tab_keys):
+            self._switch_tab(self.orders_tab_keys[index])
+
     def _switch_tab(self, tab_key: str) -> None:
         self._active_tab = tab_key
         self._update_tab_styles()
         self._render_table()
 
     def _update_tab_styles(self) -> None:
-        active_bg = "#D94625" if self._light else "#ea580c"
-        active_hover = "#E0533C" if self._light else "#f97316"
-        inactive_fg = "#4b5563" if self._light else "#9ca3af"
-        inactive_border = "#d1d5db" if self._light else "#4b5563"
-        inactive_hover_bg = "#fce8e5" if self._light else "#2c1910"
-        inactive_hover_fg = "#D94625" if self._light else "#ea580c"
-        inactive_hover_border = "#D94625" if self._light else "#ea580c"
-
-        active_style = (
-            f"QPushButton {{ font-size:12px; font-weight:700; padding:6px 14px;"
-            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px; }}"
-            f"QPushButton:hover {{ background:{active_hover}; }}"
-        )
-        inactive_style = (
-            f"QPushButton {{ font-size:12px; font-weight:500; padding:6px 14px;"
-            f"  background:transparent; color:{inactive_fg};"
-            f"  border:1px solid {inactive_border}; border-radius:6px; }}"
-            f"QPushButton:hover {{ background:{inactive_hover_bg};"
-            f"  color:{inactive_hover_fg}; border:1px solid {inactive_hover_border}; }}"
-        )
-        for key, btn in self.tab_buttons.items():
-            if key == self._active_tab:
-                btn.setStyleSheet(active_style)
-                btn.setChecked(True)
-            else:
-                btn.setStyleSheet(inactive_style)
-                btn.setChecked(False)
+        if hasattr(self, "orders_tab_bar"):
+            try:
+                idx = self.orders_tab_keys.index(self._active_tab)
+                self.orders_tab_bar.blockSignals(True)
+                self.orders_tab_bar.setCurrentIndex(idx)
+                self.orders_tab_bar.blockSignals(False)
+            except ValueError:
+                pass
 
     # ------------------------------------------------------------------
     # Data refresh
@@ -889,16 +878,7 @@ class OrdersScreen(QWidget):
             enable_btn.clicked.connect(lambda: self._apply_trailing(pos_id, symbol, side, dlg))
             btn_layout.addWidget(enable_btn)
 
-        close_btn = action_button("❌ Đóng")
-        active_bg = "#D94625" if light else "#ea580c"
-        close_btn.setStyleSheet(
-            f"QPushButton {{ font-size:12px; font-weight:500; padding:0 16px;"
-            f"  background:transparent; color:{'#4b5563' if light else '#9ca3af'};"
-            f"  border:1px solid {'#d1d5db' if light else '#4b5563'};"
-            f"  border-radius:6px; min-height:24px; max-height:24px; }}"
-            f"QPushButton:hover {{ background:{'#fce8e5' if light else '#2c1910'};"
-            f"  color:{active_bg}; border:1px solid {active_bg}; }}"
-        )
+        close_btn = action_button("❌ Đóng", primary=False, color="danger")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         

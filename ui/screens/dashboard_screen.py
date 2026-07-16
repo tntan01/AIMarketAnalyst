@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QTabBar,
 )
 from ui.screens.shared import action_button
 from services.data_provider import ConnectionStatus
@@ -346,22 +347,20 @@ class DashboardScreen(QWidget):
 
         # Tab bar
         tab_layout = QHBoxLayout()
-        tab_layout.setSpacing(4)
+        tab_layout.setSpacing(10)
 
-        self.tab_buttons: dict[str, QPushButton] = {}
-        tab_configs = [
-            ("last_week", "📅 Tuần trước"),
-            ("this_week", "📅 Tuần này"),
-            ("next_week", "📅 Tuần sau"),
-        ]
-        for tab_key, tab_label in tab_configs:
-            btn = QPushButton(tab_label)
-            btn.setCheckable(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setProperty("newsTab", tab_key)
-            btn.clicked.connect(lambda checked, k=tab_key: self._switch_news_tab(k))
-            self.tab_buttons[tab_key] = btn
-            tab_layout.addWidget(btn)
+        self.news_tab_bar = QTabBar()
+        self.news_tab_bar.setDrawBase(False)   # tắt native base bar (nguyên nhân nền trắng)
+        self.news_tab_bar.setExpanding(False)  # không stretch tab ra đầy chiều rộng
+        self.news_tab_bar.setStyleSheet("background: transparent; border: none;")
+        self.news_tab_bar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.news_tab_keys = ["last_week", "this_week", "next_week"]
+        self.news_tab_bar.addTab("📅 Tuần trước")
+        self.news_tab_bar.addTab("📅 Tuần này")
+        self.news_tab_bar.addTab("📅 Tuần sau")
+        self.news_tab_bar.setCurrentIndex(1) # Default to this week
+        self.news_tab_bar.currentChanged.connect(self._on_news_tab_changed)
+        tab_layout.addWidget(self.news_tab_bar)
 
         self.news_scroll_btn = action_button("📍 Xem tin sắp tới", primary=True, color="info")
         self.news_scroll_btn.setToolTip("Chuyển sang tuần này và kéo tới tin sắp tới gần nhất")
@@ -558,6 +557,10 @@ class DashboardScreen(QWidget):
                 filtered.append(r)
         return filtered
 
+    def _on_news_tab_changed(self, index: int) -> None:
+        if 0 <= index < len(self.news_tab_keys):
+            self._switch_news_tab(self.news_tab_keys[index])
+
     def _switch_news_tab(self, tab_key: str) -> None:
         self._news_tab = tab_key
         self._update_tab_styles()
@@ -580,46 +583,14 @@ class DashboardScreen(QWidget):
             )
 
     def _update_tab_styles(self) -> None:
-        # Lư Trung Hỏa theme color variables
-        active_bg = "#D94625" if self._light else "#ea580c"
-        active_hover = "#E0533C" if self._light else "#f97316"
-        
-        inactive_fg = "#4b5563" if self._light else "#9ca3af"
-        inactive_border = "#d1d5db" if self._light else "#4b5563"
-        inactive_hover_bg = "#fce8e5" if self._light else "#2c1910"
-        inactive_hover_fg = "#D94625" if self._light else "#ea580c"
-        inactive_hover_border = "#D94625" if self._light else "#ea580c"
-
-        active_style = (
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:700; padding:6px 14px;"
-            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{active_hover};"
-            f"}}"
-        )
-        inactive_style = (
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:6px 14px;"
-            f"  background:transparent;"
-            f"  color:{inactive_fg};"
-            f"  border:1px solid {inactive_border};"
-            f"  border-radius:6px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{inactive_hover_bg};"
-            f"  color:{inactive_hover_fg};"
-            f"  border:1px solid {inactive_hover_border};"
-            f"}}"
-        )
-        for key, btn in self.tab_buttons.items():
-            if key == self._news_tab:
-                btn.setStyleSheet(active_style)
-                btn.setChecked(True)
-            else:
-                btn.setStyleSheet(inactive_style)
-                btn.setChecked(False)
+        if hasattr(self, "news_tab_bar"):
+            try:
+                idx = self.news_tab_keys.index(self._news_tab)
+                self.news_tab_bar.blockSignals(True)
+                self.news_tab_bar.setCurrentIndex(idx)
+                self.news_tab_bar.blockSignals(False)
+            except ValueError:
+                pass
 
     def _render_news_rows(self, rows: list, tz, now_utc: datetime, tab_key: str = "this_week") -> None:
         self._light = self._is_light_theme()
@@ -1071,21 +1042,7 @@ class DashboardScreen(QWidget):
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng")
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:0 16px;"
-            f"  background:transparent;"
-            f"  color:{'#4b5563' if self._light else '#9ca3af'};"
-            f"  border:1px solid {'#d1d5db' if self._light else '#4b5563'};"
-            f"  border-radius:6px; min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{'#fce8e5' if self._light else '#2c1910'};"
-            f"  color:{'#D94625' if self._light else '#ea580c'};"
-            f"  border:1px solid {'#D94625' if self._light else '#ea580c'};"
-            f"}}"
-        )
+        close_btn = action_button("❌ Đóng", primary=False, color="danger")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
 
@@ -1296,21 +1253,7 @@ class DashboardScreen(QWidget):
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng")
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:0 16px;"
-            f"  background:transparent;"
-            f"  color:{'#4b5563' if self._light else '#9ca3af'};"
-            f"  border:1px solid {'#d1d5db' if self._light else '#4b5563'};"
-            f"  border-radius:6px; min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{'#fce8e5' if self._light else '#2c1910'};"
-            f"  color:{'#D94625' if self._light else '#ea580c'};"
-            f"  border:1px solid {'#D94625' if self._light else '#ea580c'};"
-            f"}}"
-        )
+        close_btn = action_button("❌ Đóng", primary=False, color="danger")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
 
@@ -1602,21 +1545,7 @@ class DashboardScreen(QWidget):
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng")
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:500; padding:0 16px;"
-            f"  background:transparent;"
-            f"  color:{'#4b5563' if self._light else '#9ca3af'};"
-            f"  border:1px solid {'#d1d5db' if self._light else '#4b5563'};"
-            f"  border-radius:6px; min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{'#fce8e5' if self._light else '#2c1910'};"
-            f"  color:{'#D94625' if self._light else '#ea580c'};"
-            f"  border:1px solid {'#D94625' if self._light else '#ea580c'};"
-            f"}}"
-        )
+        close_btn = action_button("❌ Đóng", primary=False, color="danger")
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         root_layout.addLayout(btn_layout)
