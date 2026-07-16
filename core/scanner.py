@@ -105,6 +105,7 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "entry_status": best_plan.get("entry_status") if best_plan else "waiting_for_confirmation",
         "price_vs_zone": price_vs_zone,
         "risk_reward": risk_reward,
+        "risk_reward_range": best_plan.get("risk_reward_range") if best_plan else None,
         "macro_score": macro_score,
         "macro_bias": macro_bias,
         "macro_confidence": round(macro_confidence, 2),

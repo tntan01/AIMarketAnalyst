@@ -137,10 +137,10 @@ def test_resolve_quote_to_usd_rate_shuts_down_when_mt5_errors(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_entry_zone_atr_mult_is_020():
-    """The module-level constant must be 0.20 (changed from 0.40)."""
-    assert ENTRY_ZONE_ATR_MULT == 0.20, (
-        f"ENTRY_ZONE_ATR_MULT = {ENTRY_ZONE_ATR_MULT}, expected 0.20"
+def test_entry_zone_atr_mult_is_035():
+    """The module-level constant must be 0.35 (changed from 0.20)."""
+    assert ENTRY_ZONE_ATR_MULT == 0.35, (
+        f"ENTRY_ZONE_ATR_MULT = {ENTRY_ZONE_ATR_MULT}, expected 0.35"
     )
 
 

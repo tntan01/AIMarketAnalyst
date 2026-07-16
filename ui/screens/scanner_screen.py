@@ -1178,9 +1178,20 @@ class ScannerScreen (QWidget ):
             vol_text = f"{float(vol):.2f}" if vol is not None else "--"
             table.setItem(idx, 6, styled_item(vol_text))
 
-            # R:R
+            # R:R — show range if available: "5.6 (2.9–5.6)"
             rr = order.get("risk_reward")
-            rr_text = str(rr) if rr else "--"
+            rr_range = order.get("risk_reward_range")
+            if rr_range and isinstance(rr_range, dict):
+                best = rr_range.get("best")
+                worst = rr_range.get("worst")
+                if best is not None and worst is not None and best != worst:
+                    rr_text = f"{best:.1f} ({worst:.1f}–{best:.1f})"
+                elif best is not None:
+                    rr_text = f"{best:.1f}"
+                else:
+                    rr_text = str(rr) if rr else "--"
+            else:
+                rr_text = str(rr) if rr else "--"
             table.setItem(idx, 7, styled_item(rr_text))
 
             # Note
@@ -1262,6 +1273,7 @@ class ScannerScreen (QWidget ):
                     "take_profit": o.get("take_profit") or o.get("tp"),
                     "volume": o.get("volume"),
                     "risk_reward": o.get("risk_reward", ""),
+                    "risk_reward_range": o.get("risk_reward_range"),
                     "note": str(o.get("message", o.get("status", ""))),
                 })
             return result
@@ -1379,6 +1391,7 @@ class ScannerScreen (QWidget ):
             vol = sizing.get("suggested_lot")
 
             rr = scenario.get("risk_reward", "")
+            rr_range = scenario.get("risk_reward_range") or row.get("risk_reward_range")
 
             action = str(row.get("scanner_action", ""))
             note = {
@@ -1397,6 +1410,7 @@ class ScannerScreen (QWidget ):
                 "take_profit": tp,
                 "volume": vol,
                 "risk_reward": rr,
+                "risk_reward_range": rr_range,
                 "note": note,
                 "entry_zone": entry_zone,
                 "market_regime": str(row.get("market_regime", "")),
@@ -2320,7 +2334,7 @@ class ScannerColumnsHelpDialog (QDialog ):
         {"icon":"🎯","column":"Entry","meaning":"Entry (vùng vào lệnh): vị trí giá hiện tại so với vùng vào lệnh dự kiến.","cases":"Trong vùng = có thể theo sát; Gần vùng = chuẩn bị quan sát; Còn xa = chưa vội; -- = thiếu dữ liệu."},
         {"icon":"🛡️","column":"Quyền","meaning":"Trạng thái cho phép giao dịch dựa trên dữ liệu và rủi ro.","cases":"Được phép = dữ liệu ổn, có thể xem xét; Cẩn trọng = có rủi ro phụ như tin tức hoặc spread (chênh lệch giá); Bị chặn = không nên vào lệnh."},
         {"icon":"🔍","column":"Điểm","meaning":"Điểm xếp hạng cơ hội giao dịch tổng hợp trong scanner (bộ quét thị trường).","cases":">= 100 = cơ hội cao; 80-99 = khá; < 50 = thấp. Ưu tiên setup (thiết lập) gần vùng, rõ hướng, ít bị chặn. Xem chi tiết các điểm thành phần trong trang Chi tiết."},
-        {"icon":"⚖️","column":"R:R","meaning":"R:R (rủi ro/lợi nhuận): tỷ lệ rủi ro so với lợi nhuận dự kiến của kế hoạch.","cases":"1:2.0 = lợi nhuận kỳ vọng gấp 2 lần rủi ro; >= 1:1.5 = chấp nhận được; < 1:1.0 = quá thấp, thường bị bỏ qua."},
+        {"icon":"⚖️","column":"R:R","meaning":"R:R (rủi ro/lợi nhuận): hiển thị dải ước tính từ mép xa nhất (worst) đến mép gần nhất (best) của vùng entry. Số đầu là best case, trong ngoặc là dải worst–best.","cases":"VD: 5.6 (2.9–5.6) = RR đạt 5.6 nếu khớp mép gần, tệ nhất 2.9 nếu khớp mép xa; >= 1:1.5 = chấp nhận được; < 1:1.0 = quá thấp, thường bị bỏ qua."},
         {"icon":"🤝","column":"Vĩ mô","meaning":"Mức độ đồng thuận của vĩ mô (lãi suất, DXY, tin tức) với xu hướng kỹ thuật.","cases":"Thuận = vĩ mô cùng chiều với kỹ thuật; Trung tính = chưa rõ; Ngược = mâu thuẫn, cảnh báo nên thận trọng. Điểm vĩ mô chi tiết có trong trang Chi tiết."},
         {"icon":"💡","column":"Lý do chính","meaning":"Tóm tắt ngắn vì sao mã được xếp hạng như vậy.","cases":"Tiền tố AI (trí tuệ nhân tạo): = nhận định do AI viết; không có AI = rule engine (bộ luật chấm điểm) sinh. Luôn đọc kèm trạng thái entry và quyền."},
         {"icon":"🧐","column":"Chi tiết","meaning":"Mở màn hình chi tiết của mã được chọn.","cases":"Bấm ô Xem trên dòng hoặc chọn dòng rồi bấm nút Xem chi tiết để mở Scanner Detail (màn hình chi tiết quét) với đầy đủ điểm thành phần, gate, chẩn đoán và AI kiểm định."},

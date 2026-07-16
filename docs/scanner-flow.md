@@ -302,7 +302,7 @@ symbol_auto_trade[symbol] = {
   suggested_lot = round_lot(risk_amount / loss_per_lot)
   ```
 
-**Output Step 4:** `scenarios = [{type, entry_zone, stop_loss, take_profit, risk_reward, ...}, ...]`
+**Output Step 4:** `scenarios = [{type, entry_zone, stop_loss, take_profit, risk_reward, risk_reward_range, ...}, ...]`
   - Sắp xếp theo score giảm dần
   - Mỗi scenario có `entry_status` từ `evaluate_entry()`
 
@@ -482,7 +482,7 @@ Tổng hợp tất cả output thành 1 dict với các key chính:
   - `best_score = max(buy_score, sell_score)`
   - `best_plan`: scenario đầu tiên khớp `best_side`
   - `scanner_action`: từ `decision_engine.legacy_action`
-  - `risk_reward`, `stop_loss`, `take_profit`, `entry_zone`: từ `best_plan`
+  - `risk_reward`, `risk_reward_range`, `stop_loss`, `take_profit`, `entry_zone`: từ `best_plan`
   - `price_vs_zone`: `in_zone` / `near_zone` / `far` dựa trên giá vs entry_zone
   - `macro_score`, `macro_bias`, `macro_confidence`
   - `final_score`, `score_gap`, `m15_quality`, `expected_effective_rr`
@@ -680,7 +680,7 @@ Với mỗi row:
 | Entry | price_vs_zone | "Trong vùng" / "Gần vùng" / "Còn xa" (+ tooltip entry_status) |
 | M15 | m15_quality | "Chặt" / "Lỏng" / "Không đạt" |
 | Điểm | opportunity_score | "105" (+ tooltip final_score + breakdown) |
-| R:R thực | expected_effective_rr | "1.8" (R:R sau spread) |
+| R:R | risk_reward / risk_reward_range | "1:5.6 (2.9–5.6)" (best + dải worst–best) |
 | Vĩ mô | macro_bias | "Thuận" / "Trung tính" / "Ngược" |
 | Chi tiết | detail_action | "Xem" |
 

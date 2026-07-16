@@ -311,7 +311,7 @@ Mỗi entry trong `pipeline_diagnostics` có dạng:
 | **validate** | Số lượng candle D1/H4/H1, market regime, risk_score, ATR, spread_status | Fail nếu < 60 D1 hoặc < 60 H4 hoặc < 30 H1 |
 | **correlation** | DXY/VIX/US10Y availability, buy/sell adjustment values | Luôn pass (dùng neutral nếu thiếu data) |
 | **score** | 6 components (T/M/L/S/R/Ma) cho BUY và SELL, signal_score tổng | Luôn pass (chỉ tính toán) |
-| **scenarios** | Số lượng scenario, entry_status, M15 quality, R:R, ready_to_trade | Warning nếu không có scenario nào |
+| **scenarios** | Số lượng scenario, entry_status, M15 quality, R:R (kèm `risk_reward_range`), ready_to_trade | Warning nếu không có scenario nào |
 | **direction** | buy_score vs sell_score, score_gap, best_side, is_clear_bias | Warning nếu best_side = neutral |
 | **gate** | **11 gate checks riêng lẻ** (MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken) — mỗi gate có pass/block/warning + detail | Fail nếu allowed=false; Warning nếu có warning_codes |
 | **final_score** | signal_score, evidence_score, execution_quality, final_score, decision, action | Warning nếu final_score < 65 |

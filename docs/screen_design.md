@@ -601,7 +601,7 @@ Bị chặn (blocked): Bị gate hoặc dữ liệu chặn, không nên giao d�
 | Entry | Vị trí giá so với vùng: Trong vùng / Gần vùng / Còn xa (+ tooltip entry_status) |
 | M15 | Chất lượng xác nhận M15: Chặt / Lỏng / Không đạt |
 | Điểm | opportunity_score (0-120) — điểm xếp hạng cơ hội (+ tooltip final_score breakdown) |
-| R:R thực | expected_effective_rr — R:R sau khi trừ spread, thực tế hơn risk_reward danh nghĩa |
+| R:R | risk_reward (best case) + risk_reward_range (dải worst–best) — hiển thị dạng "5.6 (2.9–5.6)" |
 | Vĩ mô | Thuận / Trung tính / Ngược — mức độ đồng thuận của vĩ mô với hướng trade |
 | Xem | Mở màn hình Scanner Detail (chi tiết mã từ quét thị trường) |
 
@@ -633,9 +633,9 @@ Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra kh
 **Tab Tổng quan** — chia 2 cột (20%/80%):
 - Cột trái (20%, font 11px, padding 6/4, spacing 1px):
   - Nút "📋 Xem đầy đủ" — mở dialog 16 chỉ số chi tiết
-  - Card "🎯 Số liệu giao dịch" — 6 dòng (Vùng vào lệnh, SL, TP, R:R, Vĩ mô, Chế độ TT)
+  - Card "🎯 Số liệu giao dịch" — 6 dòng (Vùng vào lệnh, SL, TP, R:R kèm dải worst–best, Vĩ mô, Chế độ TT)
   - Card "📊 Điểm phân tích" — 6 dòng (Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD)
-  - Card "🔍 Điều kiện vào lệnh" — 7 checklist items dạng grid 2 cột (Quyền GD, Gate, Chênh lệch, Entry, Vị trí, M15, R:R), mỗi item hiển thị icon ✅/❌ + tên ngắn, tooltip chứa text đầy đủ
+  - Card "🔍 Điều kiện vào lệnh" — 7 checklist items dạng grid 2 cột (Quyền GD, Gate, Chênh lệch, Entry, Vị trí, M15, R:R kèm dải), mỗi item hiển thị icon ✅/❌ + tên ngắn, tooltip chứa text đầy đủ
 - Cột phải (80%): Hero verdict bar + Chart (OHLCV, indicator, SMC zones) full height
 
 **Tab Chẩn đoán** — ô tóm tắt lý do chính → Điểm cuối & Quyết định → Gate kiểm tra → Phân rã điểm số, kèm khối "Chi tiết kỹ thuật nâng cao" (ẩn mặc định, có nút bấm để mở)

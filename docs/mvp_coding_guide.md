@@ -135,12 +135,12 @@ Tiêu chí đạt:
 * Lịch kinh tế hiển thị theo mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt -> ảnh hưởng tới đồng tiền đang xét`. AI chỉ được dịch/nhận định tác động từ dữ liệu app đã fetch, không tự tạo tin hoặc giờ công bố.
 * `resume_after` do code tính, mặc định bằng thời điểm tin tác động cao cộng 30 phút. AI không được tự đặt hoặc tự sửa thời điểm này.
 * `core/entry_engine.py` là nơi duy nhất xác nhận trạng thái entry. Module này trả về `entry_status`, `trigger_type`, `confirmation_score`, `invalid_reason`, `price_in_entry_zone`, `h1_confirmation`, `ready_to_trade`.
-* `risk_engine.build_trade_plan()` chỉ coi lệnh là ready khi `ready_to_trade = true`. Nếu chưa xác nhận, vẫn có thể hiển thị `entry_zone` dưới dạng vùng theo dõi, nhưng không được trình bày như lệnh sẵn sàng.
+* `risk_engine.build_trade_plan()` trả về `risk_reward_range` (best/base/worst) và chỉ coi lệnh là ready khi `ready_to_trade = true`. Nếu chưa xác nhận, vẫn có thể hiển thị `entry_zone` dưới dạng vùng theo dõi, nhưng không được trình bày như lệnh sẵn sàng.
 * `smc_context.py` phải gắn metadata chất lượng cho supply/demand, order block và FVG: `zone_score`, `freshness_bars`, `mitigated`, `broken`, `test_count`, `displacement_multiple`, `liquidity_sweep`, `zone_location`.
 * Rule Engine ưu tiên vùng chưa broken, còn fresh, ít bị test, có displacement rõ, có liquidity sweep và đúng premium/discount theo hướng lệnh.
 * `core/backtest_engine.py` phải replay trade plan trên H1 và trả về `win_rate`, `expectancy_r`, `average_r`, `average_mfe_r`, `average_mae_r`, `max_drawdown_r`, `by_symbol`, `by_session`.
 * Dashboard Market Overview dùng `yfinance` lấy DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`2YY=F`). Có fallback qua `requests` gọi thẳng Yahoo Finance chart API nếu yfinance lỗi. Cache 30 phút. Không phụ thuộc MT5. Cập nhật bằng `QTimer` hoặc `refresh_status`.
-* Màn hình kết quả phải hiển thị checklist entry gồm: Xu hướng, Vùng POI, Xác nhận H1, Tin tức, Spread, R:R, Lot. Mỗi mục phải có trạng thái đạt/chờ và ghi chú ngắn.
+* Màn hình kết quả phải hiển thị checklist entry gồm: Xu hướng, Vùng POI, Xác nhận H1, Tin tức, Spread, R:R (kèm dải best–worst), Lot. Mỗi mục phải có trạng thái đạt/chờ và ghi chú ngắn.
 * Auto-scan trong Scanner phải dùng `QTimer` để hẹn lần quét tiếp theo sau khi worker hiện tại kết thúc; không chạy song song hai worker scan. Nút `Dừng quét tự động` phải dừng timer và không hủy ngang worker đang chạy.
 * Telegram alert chỉ gửi cho setup thật sự sẵn sàng (`ready` + `allowed`). Tin nhắn phải dùng lot tính theo vốn MT5 hiện tại, không dùng vốn nhập tay nếu MT5 có balance hợp lệ.
 
@@ -305,7 +305,7 @@ Một task chỉ được coi là xong khi:
 - `_refresh_entry_checklist()` gọi trực tiếp từ `_render()`.
 
 ### 8. Tab Tổng quan redesign — hiển thị trực tiếp
-- Hero bar mở rộng: thêm Điểm, R:R, Buy/Sell, Gap, Vĩ mô inline.
+- Hero bar mở rộng: thêm Điểm, R:R (kèm dải worst–best), Buy/Sell, Gap, Vĩ mô inline.
 - Panel "Số liệu giao dịch" + "Điểm phân tích" cố định cột phải, tái sử dụng `_dialog_card_*()`.
 - Có guard `if not self.row` → `"—"`, không crash.
 

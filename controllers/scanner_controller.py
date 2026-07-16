@@ -654,6 +654,7 @@ class ScannerController:
             vol = sizing.get("suggested_lot")
 
             rr = scenario.get("risk_reward", row.get("risk_reward", ""))
+            rr_range = scenario.get("risk_reward_range") or row.get("risk_reward_range")
 
             candidates.append({
                 "symbol": symbol,
@@ -664,6 +665,7 @@ class ScannerController:
                 "take_profit": tp,
                 "volume": vol,
                 "risk_reward": rr,
+                "risk_reward_range": rr_range,
                 "entry_zone": entry_zone,
                 "entry_low": entry_low,
                 "entry_high": entry_high,

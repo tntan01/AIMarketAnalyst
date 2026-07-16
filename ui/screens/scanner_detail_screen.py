@@ -469,6 +469,14 @@ class ScannerDetailScreen(QWidget):
     def _dialog_card_rr(self) -> tuple[str, str, str]:
         rr = self.row.get("risk_reward") or "--"
         eff_rr = self.row.get("expected_effective_rr")
+        rr_range = self.row.get("risk_reward_range")
+        if rr_range and isinstance(rr_range, dict):
+            worst = rr_range.get("worst")
+            if worst is not None:
+                detail = f"dải {worst:.1f}–{rr_range.get('best', '?'):.1f}"
+                if eff_rr is not None:
+                    detail += f" | thực ~{eff_rr:.1f}"
+                return str(rr), detail, "#ea580c"
         detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
         return str(rr), detail, "#ea580c"
 
@@ -666,6 +674,11 @@ class ScannerDetailScreen(QWidget):
 
         best_score = self.row.get("best_score", "--")
         rr = self.row.get("risk_reward", "--")
+        rr_range = self.row.get("risk_reward_range")
+        if rr_range and isinstance(rr_range, dict) and rr_range.get("worst") is not None:
+            rr_display = f"{rr} <span style='color:{text_color};font-size:10px;'>({rr_range['worst']:.1f}–{rr_range['best']:.1f})</span>"
+        else:
+            rr_display = str(rr)
         buy_s = self.row.get("buy_score", "--")
         sell_s = self.row.get("sell_score", "--")
         gap_num, _ = self._gap_numbers()
@@ -682,7 +695,7 @@ class ScannerDetailScreen(QWidget):
             f"<span style='color:{text_color};font-size:12px;'>Điểm <b style='color:{bold_color};'>{best_score}</b></span>"
             f"</td>"
             f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:12px;'>R:R <b style='color:#f59e0b;'>{rr}</b></span>"
+            f"<span style='color:{text_color};font-size:12px;'>R:R <b style='color:#f59e0b;'>{rr_display}</b></span>"
             f"</td>"
             f"<td style='vertical-align:middle;padding:0 10px;border-left:1px solid {border};white-space:nowrap;'>"
             f"<span style='color:{text_color};font-size:12px;'>B/S <b style='color:{bold_color};'>{buy_s}/{sell_s}</b></span>"
@@ -1111,6 +1124,19 @@ class ScannerDetailScreen(QWidget):
         except (TypeError, ValueError):
             return str(value)
         return str(int(number)) if number.is_integer() else f"{number:.1f}"
+
+    @staticmethod
+    def _rr_range_compact(rr_range: object) -> str:
+        """Format risk_reward_range as compact string: '2.9–5.6' or '—'."""
+        if not isinstance(rr_range, dict):
+            return "—"
+        best = rr_range.get("best")
+        worst = rr_range.get("worst")
+        if best is None or worst is None:
+            return "—"
+        if best == worst:
+            return f"{best:.1f}"
+        return f"{worst:.1f}–{best:.1f}"
 
     def _permission_text(self, value: str) -> str:
         return {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}.get(value, value)
@@ -1819,7 +1845,7 @@ class ScannerDetailScreen(QWidget):
             {"gate": "M15", "status": _st(M15_NOT_CONFIRMED) if _st(M15_NOT_CONFIRMED) != "pass" else _st(M15_LOOSE_CONFIRMATION),
              "detail": f"M15={primary.get('m15_quality', '?')}"},
             {"gate": "ExpectedRR", "status": _st(EXPECTED_RR_TOO_LOW),
-             "detail": f"R:R={primary.get('expected_effective_rr', '?')} sau spread (danh nghĩa {primary.get('risk_reward', '?')})"},
+             "detail": f"R:R={primary.get('expected_effective_rr', '?')} sau spread (danh nghĩa {primary.get('risk_reward', '?')}, dải {ScannerDetailScreen._rr_range_compact(primary.get('risk_reward_range'))})"},
             {"gate": "ScoreGap", "status": _st(BUY_SELL_SCORE_GAP_LOW),
              "detail": f"chênh lệch={direction.get('score_gap', '?')} (tối thiểu {direction.get('min_gap', 10)})"},
             {"gate": "ZoneBroken", "status": _st(ZONE_BROKEN),

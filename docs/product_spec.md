@@ -37,7 +37,7 @@ Scanner là chế độ phân tích chính, quét danh sách mã đã chọn tro
 
 - Market regime, direction bias, buy/sell score, final score.
 - Trade permission, decision engine, scanner group.
-- Trade plan (entry zone, SL, TP, R:R, position sizing).
+- Trade plan (entry zone, SL, TP, R:R + risk_reward_range best/base/worst, position sizing).
 - Entry checklist, M15 quality, SMC flags.
 - Macro/news context, macro alignment scores.
 - AI commentary (nếu có cấu hình AI).
@@ -136,7 +136,7 @@ Các cột Ready, Watch, Wait **luôn hiển thị và có thể chỉnh sửa**
 
 Mỗi cặp khi quét đều chạy qua 2 lớp trong pipeline `AnalysisPipeline`:
 
-**Lớp 1 — Chấm điểm (Step 1→5):** Phân tích kỹ thuật (trend, momentum, location, SMC, risk, macro) → cho điểm BUY/SELL (0-100). Tạo scenario với Entry/SL/TP/R:R.
+**Lớp 1 — Chấm điểm (Step 1→5):** Phân tích kỹ thuật (trend, momentum, location, SMC, risk, macro) → cho điểm BUY/SELL (0-100). Tạo scenario với Entry/SL/TP/R:R (kèm dải risk_reward_range best/base/worst).
 
 **Lớp 2 — Gate (Step 6):** 11 gate kiểm tra an toàn tuần tự: MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken. Gate có thể Block (chặn cứng), Warning (hạ cap xuống WATCH_ONLY/WAITING_CONFIRMATION), hoặc Pass.
 
