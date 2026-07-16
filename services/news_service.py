@@ -1538,15 +1538,11 @@ Trả lời:"""
         return num + unit
 
     def lookup_actuals_batch(self, events: list[dict[str, object]]) -> None:
-        api_key = self._get_brave_api_key()
-        if not api_key:
-            return
-
         from datetime import datetime, timezone, timedelta
         now = datetime.now(timezone.utc)
         cache = self._read_actual_cache()
 
-        missing = []
+        missing: list[dict[str, object]] = []
         for ev in events:
             if str(ev.get("type", "")) != "event":
                 continue
@@ -1565,10 +1561,10 @@ Trả lời:"""
             date_key = ev_time_str[:10]
             cache_key = f"{str(ev.get('currency',''))}|{str(ev.get('title',''))}|{date_key}"
             if cache_key in cache:
-                if cache[cache_key]:
-                    cached_val = _clean_economic_value(cache[cache_key])
-                    ev["actual"] = cached_val if cached_val != "—" else ""
-                continue
+                cached_val = _clean_economic_value(cache[cache_key])
+                if cached_val and cached_val != "—":
+                    ev["actual"] = cached_val
+                    continue
             if now - ev_time < timedelta(minutes=30):
                 continue
             missing.append({"ev": ev, "cache_key": cache_key})
@@ -1576,44 +1572,47 @@ Trả lời:"""
         if not missing:
             return
 
-        missing = missing[:15]
-
+        # Fetch HTML from ForexFactory (this week + last week)
         from services.forex_factory_client import ForexFactoryClient
         ff_client = ForexFactoryClient()
-        cache_updated = False
+        html_rows: list[dict[str, object]] = []
+        original_url = ff_client.FOREX_FACTORY_HTML_URL
+        for week_url in (original_url, "https://www.forexfactory.com/calendar?week=last"):
+            try:
+                ff_client.FOREX_FACTORY_HTML_URL = week_url
+                html_rows.extend(ff_client._fetch_html_events())
+            except Exception:
+                continue
+        ff_client.FOREX_FACTORY_HTML_URL = original_url
 
+        if not html_rows:
+            return
+
+        html_lookup: dict[tuple[str, str], str] = {}
+        for r in html_rows:
+            curr = str(r.get("currency", "")).strip()
+            evt = str(r.get("event", "")).strip().lower()
+            act = str(r.get("actual", "")).strip()
+            if curr and evt and act:
+                key = (curr, evt)
+                if key not in html_lookup:
+                    html_lookup[key] = act
+
+        cache_updated = False
         for item in missing:
             ev = item["ev"]
             cache_key = item["cache_key"]
-            currency = str(ev.get("currency", ""))
-            title = str(ev.get("title", ""))
-            ev_time_str = str(ev.get("time_utc", ""))
-            date_key = ev_time_str[:10]
+            curr = str(ev.get("currency", "")).strip()
+            title = str(ev.get("title", "")).strip().lower()
+            matched = html_lookup.get((curr, title), "")
+            if matched:
+                cleaned = _clean_economic_value(matched)
+                if cleaned and cleaned != "—":
+                    ev["actual"] = cleaned
+                    cache[cache_key] = cleaned
+                    cache_updated = True
 
-            query = self._build_search_query(currency, title, date_key)
-            try:
-                results = ff_client._brave_search(query, api_key)
-            except Exception:
-                continue
-
-            if not results:
-                continue
-
-            time.sleep(0.3)
-
-            all_text = " ".join(
-                r.get("title", "") + " " + r.get("description", "")
-                for r in results
-            )
-            all_text = all_text.replace("&#x27;", "'").replace("&amp;", "&")
-
-            forecast = str(ev.get("forecast", ""))
-            previous = str(ev.get("previous", ""))
-            actual = self._parse_with_ai(all_text, title, forecast, previous)
-            cache[cache_key] = actual
-            if actual:
-                ev["actual"] = actual
-            cache_updated = True
+        if cache_updated:
             self._write_actual_cache(cache)
 
 

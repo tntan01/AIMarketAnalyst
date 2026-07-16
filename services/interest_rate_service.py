@@ -1,5 +1,5 @@
-"""Tự động cập nhật lãi suất từ FRED API (miễn phí).
-Fallback về interest_rates.json nếu FRED không khả dụng.
+"""Tự động cập nhật lãi suất từ ForexFactory HTML + FRED API (miễn phí).
+Fallback về interest_rates.json nếu không có nguồn nào khả dụng.
 """
 
 from __future__ import annotations
@@ -25,31 +25,131 @@ FRED_SERIES: dict[str, str] = {
     "CHF": "SNPOLICYR",          # SNB Policy Rate
 }
 
+# Map tiền tệ → event name patterns trên ForexFactory
+_FOREX_RATE_EVENTS: dict[str, list[str]] = {
+    "USD": ["federal funds rate", "fed funds rate"],
+    "EUR": ["ecb deposit rate", "ecb interest rate", "ecb refinancing rate"],
+    "GBP": ["boe official bank rate", "mpc official bank rate", "boe interest rate"],
+    "JPY": ["boj policy rate", "boj interest rate"],
+    "AUD": ["cash rate"],
+    "NZD": ["official cash rate"],
+    "CAD": ["overnight rate"],
+    "CHF": ["snb policy rate", "snb interest rate"],
+}
+
 _CACHE: dict[str, object] | None = None
 _CACHE_TIME: datetime | None = None
 _CACHE_TTL = timedelta(hours=6)  # cập nhật tối đa 4 lần/ngày
 _FALLBACK_PATH = Path(__file__).resolve().parents[1] / "config" / "interest_rates.json"
+_FF_LAST_SCAN: datetime | None = None
+_FF_SCAN_TTL = timedelta(hours=3)
 
 
 def get_latest_rates(fred_api_key: str | None = None) -> dict[str, object]:
-    """Trả về dict lãi suất. Ưu tiên FRED nếu có API key, fallback về JSON."""
+    """Trả về dict lãi suất. Ưu tiên FRED, sau đó ForexFactory HTML, fallback JSON."""
     global _CACHE, _CACHE_TIME
 
     now = datetime.now(UTC)
     if _CACHE and _CACHE_TIME and (now - _CACHE_TIME) < _CACHE_TTL:
         return _CACHE
 
+    rates = _load_fallback()
+
     if fred_api_key:
         try:
-            rates = _fetch_from_fred(fred_api_key)
-            if rates:
-                _CACHE = rates
-                _CACHE_TIME = now
-                return _CACHE
+            fred_rates = _fetch_from_fred(fred_api_key)
+            if fred_rates:
+                rates = fred_rates
         except Exception as e:
-            logger.warning("FRED fetch failed: %s, dùng fallback JSON", e)
+            logger.warning("FRED fetch failed: %s", e)
 
-    return _load_fallback()
+    updated = _update_from_forexfactory(rates)
+    if updated:
+        rates = updated
+        _save_fallback(rates)
+
+    _CACHE = rates
+    _CACHE_TIME = now
+    return _CACHE
+
+
+def _update_from_forexfactory(current_rates: dict[str, object]) -> dict[str, object] | None:
+    """Scan ForexFactory HTML for central bank rate decisions. Returns updated rates or None."""
+    global _FF_LAST_SCAN
+    now = datetime.now(UTC)
+    if _FF_LAST_SCAN and (now - _FF_LAST_SCAN) < _FF_SCAN_TTL:
+        return None
+
+    try:
+        from urllib.request import Request, urlopen
+        from services.forex_factory_client import ForexFactoryClient
+        ff = ForexFactoryClient()
+        all_rows: list[dict[str, object]] = []
+        for week_url in (
+            "https://www.forexfactory.com/calendar?week=this",
+            "https://www.forexfactory.com/calendar?week=last",
+        ):
+            try:
+                ff.FOREX_FACTORY_HTML_URL = week_url
+                all_rows.extend(ff._fetch_html_events())
+            except Exception:
+                continue
+        if not all_rows:
+            return None
+
+        _FF_LAST_SCAN = now
+        updated = dict(current_rates)
+        changed = False
+
+        for r in all_rows:
+            currency = str(r.get("currency", "")).strip()
+            if currency not in _FOREX_RATE_EVENTS:
+                continue
+            event_name = str(r.get("event", "")).strip().lower()
+            patterns = _FOREX_RATE_EVENTS[currency]
+            if not any(p in event_name for p in patterns):
+                continue
+            actual = str(r.get("actual", "")).strip()
+            if not actual:
+                continue
+            try:
+                new_rate = float(actual.replace("%", ""))
+            except (ValueError, TypeError):
+                continue
+
+            old = updated.get(currency, {})
+            old_rate = float(old.get("rate", 0)) if isinstance(old, dict) else 0.0
+            if new_rate != old_rate:
+                trend = "hike" if new_rate > old_rate + 0.01 else "cut" if new_rate < old_rate - 0.01 else "hold"
+                existing = dict(old) if isinstance(old, dict) else {}
+                existing.update({
+                    "rate": new_rate,
+                    "rate_label": actual if "%" in actual else f"{new_rate:.2f}%",
+                    "trend": trend,
+                    "_source": "ForexFactory",
+                    "_updated": str(r.get("time_utc", ""))[:10] or now.strftime("%Y-%m-%d"),
+                })
+                updated[currency] = existing
+                changed = True
+
+        return updated if changed else None
+
+    except Exception:
+        _FF_LAST_SCAN = now
+        return None
+
+
+def _save_fallback(rates: dict[str, object]) -> None:
+    """Ghi rates vào interest_rates.json."""
+    try:
+        raw = json.loads(_FALLBACK_PATH.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raw = {}
+        raw["currencies"] = rates
+        raw["_last_updated"] = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
+        _FALLBACK_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _fetch_from_fred(api_key: str) -> dict[str, object] | None:

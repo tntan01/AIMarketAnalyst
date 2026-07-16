@@ -74,12 +74,23 @@ def _clean_economic_value(raw: object) -> str:
     return v
 
 
+_NON_NUMERIC_EVENT_PATTERNS = [
+    "testifies", "speaks", "speech", "press conference", "statement",
+    "minutes", "report", "hearing", "panel", "discussion",
+]
+
+
 def _sanitize_event_fields(row: dict[str, object]) -> dict[str, object]:
     """Clean stale cache entries that may contain corrupted economic values."""
+    evt = str(row.get("event", "")).lower()
+    is_speech = any(p in evt for p in _NON_NUMERIC_EVENT_PATTERNS)
     for field in ("forecast", "previous", "actual"):
         raw = row.get(field)
         if raw is not None and raw != "":
-            row[field] = _clean_economic_value(raw)
+            cleaned = _clean_economic_value(raw)
+            if is_speech and field == "actual" and cleaned not in ("", "—"):
+                cleaned = ""
+            row[field] = cleaned
     return row
 
 
@@ -136,7 +147,7 @@ class ForexFactoryClient:
             self._store_calendar_cache(rows)
             return {
                 "source": source,
-                "events": self._select_calendar_events(currencies, rows),
+                "events": [_sanitize_event_fields(r) for r in self._select_calendar_events(currencies, rows)],
                 "warning": "",
             }
 
@@ -237,6 +248,7 @@ class ForexFactoryClient:
 
         # Filter by date window AND currencies
         filtered = self._select_calendar_events_window(currencies, deduped, from_date, to_date)
+        filtered = [_sanitize_event_fields(r) for r in filtered]
 
         return {
             "source": ", ".join(sources) if sources else "Calendar unavailable",
@@ -695,7 +707,7 @@ class ForexFactoryClient:
         now = datetime.now(UTC)
         today_key = now.strftime("%Y%m%d")
         cutoff = now - timedelta(days=7)
-        snapshot = [dict(row) for row in rows]
+        snapshot = [_sanitize_event_fields(dict(row)) for row in rows]
 
         existing = self._read_calendar_cache_file()
         if existing:
@@ -713,6 +725,20 @@ class ForexFactoryClient:
                 if (t, c, e) not in existing_keys:
                     old_rows.append(r)
             snapshot = old_rows
+
+        # Dedup: merge duplicates by (currency, event), keep the row with actual data
+        best_by_key: dict[tuple[str, str], dict[str, object]] = {}
+        for r in snapshot:
+            key = (str(r.get("currency", "")).strip(), str(r.get("event", "")).strip())
+            if key not in best_by_key:
+                best_by_key[key] = r
+            else:
+                existing_r = best_by_key[key]
+                if str(r.get("actual", "")) and not str(existing_r.get("actual", "")):
+                    best_by_key[key] = r
+                elif str(r.get("time_utc", "")) and not str(existing_r.get("time_utc", "")):
+                    best_by_key[key] = r
+        snapshot = list(best_by_key.values())
 
         # Cleanup: remove events older than 7 days
         cleaned: list[dict[str, object]] = []
