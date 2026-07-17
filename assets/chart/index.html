@@ -36,8 +36,8 @@
       <button data-tf="H1">H1</button>
       <button data-tf="M15">M15</button>
     </div>
-    <div id="empty-state">Chua co du lieu bieu do</div>
-    <div id="error-state">Khong the tai bieu do</div>
+    <div id="empty-state">Chưa có dữ liệu biểu đồ</div>
+    <div id="error-state">Không thể tải biểu đồ</div>
     <div id="watermark">AI Market Analyst</div>
   </div>
 
@@ -418,7 +418,7 @@
           _chart.applyOptions({ watermark: { visible: false } });
         }
       } catch(e) {
-        showError('Khong the tai bieu do: ' + (e && e.message ? e.message : e));
+        showError('Không thể tải biểu đồ: ' + (e && e.message ? e.message : e));
       }
     }
 

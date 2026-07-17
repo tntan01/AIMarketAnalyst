@@ -545,24 +545,8 @@ class BacktestScreen(QWidget):
     @staticmethod
     def _help_button(tooltip: str) -> QPushButton:
         """Tạo nút '?' tròn nhỏ — bấm vào hiện popup giải thích."""
-        btn = QPushButton("?")
-        btn.setFixedSize(20, 20)
-        btn.setStyleSheet("""
-            QPushButton {
-                background: #e2e8f0; color: #475569; border: none;
-                border-radius: 10px; font-size: 12px; font-weight: 700;
-                padding: 0; margin: 0;
-            }
-            QPushButton:hover { background: #f39c12; color: #fff; }
-        """)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        def _show_tip():
-            from PyQt6.QtWidgets import QToolTip
-            QToolTip.showText(btn.mapToGlobal(btn.rect().bottomRight()), tooltip, btn)
-
-        btn.clicked.connect(_show_tip)
-        return btn
+        from ui.screens.shared import HelpButton
+        return HelpButton(tooltip)
 
     def _get_sweep_settings(self) -> dict:
         """Lấy cấu hình backtest từ form chính để dùng cho sweep."""
@@ -767,7 +751,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
   }
   try {
     if (typeof LightweightCharts === 'undefined') {
-      throw new Error('Thu vien LightweightCharts khong load duoc.');
+      throw new Error('Thư viện LightweightCharts không load được.');
     }
     var isLight = __IS_LIGHT__;
     var bg = isLight ? '#ffffff' : '#101214';

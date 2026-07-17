@@ -5,4 +5,4 @@ from PyQt6.QtWidgets import QLabel
 
 class EmptyState(QLabel):
     def __init__(self) -> None:
-        super().__init__("Chua co du lieu")
+        super().__init__("Chưa có dữ liệu")

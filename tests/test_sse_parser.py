@@ -45,7 +45,7 @@ def test_skip_reasoning_content():
     chunks = list(iter_chat_completion_chunks(response))
 
     reasoning_in_output = any("Can dam bao" in c or "Cau truc bai" in c for c in chunks)
-    content_present = any("Phan tich" in c for c in chunks)
+    content_present = any("Phân tích" in c for c in chunks)
 
     if not reasoning_in_output:
         print(f"  [TEST 1a] PASS: reasoning_content skipped")

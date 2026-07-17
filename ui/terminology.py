@@ -9,13 +9,13 @@ TERMS = {
     "AI Provider": "Nhà cung cấp AI",
     "Model": "Mô hình",
     "API Key": "Khóa API",
-    "Entry Zone": "Vung vao lenh",
-    "Stop Loss": "Cat lo",
-    "Take Profit": "Chot loi",
-    "Direction Bias": "Thien huong",
-    "Trade Permission": "Quyen giao dich",
-    "Risk/Reward": "Rui ro/loi nhuan",
-    "Position Sizing": "Khoi luong vao lenh",
+    "Entry Zone": "Vùng vào lệnh",
+    "Stop Loss": "Cắt lỗ",
+    "Take Profit": "Chốt lời",
+    "Direction Bias": "Thiên hướng",
+    "Trade Permission": "Quyền giao dịch",
+    "Risk/Reward": "Rủi ro/Lợi nhuận",
+    "Position Sizing": "Khối lượng vào lệnh",
 }
 
 

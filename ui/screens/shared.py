@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QObject, QEvent, QPoint
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -9,6 +9,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QToolTip,
+    QApplication,
 )
 
 
@@ -104,3 +106,45 @@ def chart_placeholder(title: str = "Biểu đồ") -> QFrame:
     layout.addWidget(title_label)
     layout.addWidget(empty, 1)
     return frame
+
+
+class ToolTipEventFilter(QObject):
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            if HelpButton._active_btn and obj != HelpButton._active_btn:
+                HelpButton._active_btn = None
+        return super().eventFilter(obj, event)
+
+
+_global_tooltip_filter = None
+
+
+class HelpButton(QPushButton):
+    _active_btn = None
+
+    def __init__(self, tooltip_text: str, parent=None):
+        super().__init__("?", parent)
+        self.tooltip_text = tooltip_text
+        self.setFixedSize(20, 20)
+        self.setObjectName("HelpButton")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(self.toggle_tooltip)
+        
+        # Register global filter once
+        global _global_tooltip_filter
+        if _global_tooltip_filter is None:
+            app = QApplication.instance()
+            if app:
+                _global_tooltip_filter = ToolTipEventFilter()
+                app.installEventFilter(_global_tooltip_filter)
+
+    def toggle_tooltip(self):
+        if HelpButton._active_btn == self:
+            QToolTip.hideText()
+            HelpButton._active_btn = None
+        else:
+            if HelpButton._active_btn:
+                QToolTip.hideText()
+            pos = self.mapToGlobal(self.rect().bottomRight())
+            QToolTip.showText(pos, self.tooltip_text, self)
+            HelpButton._active_btn = self

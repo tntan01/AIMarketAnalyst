@@ -268,12 +268,12 @@ class ScannerController:
         rows: list[dict[str, Any]],
         request: ScannerRequest,
     ) -> list[dict[str, Any]]:
-        """Loc rows dung chung logic 2 nhanh cua _is_auto_trade_candidate.
+        """Lọc rows dùng chung logic 2 nhánh của _is_auto_trade_candidate.
 
-        Nhanh 1 (backtest=true): dung regime/side/min_score tu config.
-        Nhanh 2 (khong config): yeu cau scanner_action == "ready".
-        min_expected_rr la gate chung cho ca 2 nhanh.
-        Row khong dat -> scanner_action="skip", scanner_group="blocked".
+        Nhánh 1 (backtest=true): dùng regime/side/min_score từ config.
+        Nhánh 2 (không config): yêu cầu scanner_action == "ready".
+        min_expected_rr là gate chung cho cả 2 nhánh.
+        Row không đạt -> scanner_action="skip", scanner_group="blocked".
         """
         passed: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []

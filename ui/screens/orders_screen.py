@@ -30,24 +30,7 @@ from services.settings_service import SettingsService
 from ui.screens.shared import action_button, card, page_header, labeled_value
 
 
-# ------------------------------------------------------------------
-# Trailing stop fallback formula
-# ------------------------------------------------------------------
-def suggest_trail_pips(symbol: str, atr_h4: float, regime: str, profit_pips: float) -> int:
-    """Compute a suggested trailing stop distance in pips (no AI required)."""
-    base_atr = max(atr_h4 or 0.0020, 0.0010) * _pip_multiplier(symbol)
 
-    if regime in ("trend_up", "trend_down", "trending"):
-        trail = base_atr * 0.8
-    elif regime == "volatile":
-        trail = base_atr * 0.5
-    else:
-        trail = base_atr * 0.6  # range / unknown
-
-    if profit_pips > base_atr * 2:
-        trail *= 0.7  # tighten when deep in profit
-
-    return max(round(trail), 5)
 
 
 def _pip_multiplier(symbol: str) -> float:
@@ -396,7 +379,7 @@ class OrdersScreen(QWidget):
         table.setItem(idx, 0, sitem(symbol))
         f = table.item(idx, 0).font(); f.setBold(True); table.item(idx, 0).setFont(f)
 
-        dir_item = sitem("MUA" if is_buy else "BAN")
+        dir_item = sitem("MUA" if is_buy else "BÁN")
         dir_item.setForeground(buy_color if is_buy else sell_color)
         f = dir_item.font(); f.setBold(True); dir_item.setFont(f)
         table.setItem(idx, 1, dir_item)
@@ -644,13 +627,42 @@ class OrdersScreen(QWidget):
         symbol = str(pos.get("symbol", "--"))
         side = str(pos.get("side", ""))
         is_buy = side == "buy"
-        current_price = float(pos.get("current_price", 0))
         current_sl = float(pos.get("sl", 0) or 0)
         volume = float(pos.get("volume", 0))
         profit = float(pos.get("profit", 0) or 0) + float(pos.get("swap", 0) or 0)
 
+        # ---- Fetch live Bid/Ask ----
+        _dlg_bid = 0.0
+        _dlg_ask = 0.0
+        try:
+            import MetaTrader5 as _mt5
+            _tick = _mt5.symbol_info_tick(symbol)
+            if _tick is not None:
+                _dlg_bid = float(_tick.bid)
+                _dlg_ask = float(_tick.ask)
+        except Exception:
+            pass
+        current_price = _dlg_bid if side == "sell" else _dlg_ask if side == "buy" else 0.0
+
         existing = self._trailing_configs.get(pos_id)
         default_pips = existing.get("trail_pips", 20) if existing else 20
+        trail_enabled = bool(existing and existing.get("enabled"))
+
+        # ---- Dirty state: snapshot initial config for change detection ----
+        self._dlg_trail_mode = existing.get("trail_mode", "wide") if existing else "wide"
+        _initial_snapshot = {
+            "trail_mode": self._dlg_trail_mode,
+            "trail_pips": default_pips,
+        }
+
+        def _current_snapshot():
+            return {
+                "trail_mode": getattr(self, "_dlg_trail_mode", "wide"),
+                "trail_pips": self._dlg_pip_spin.value(),
+            }
+
+        def _is_dirty():
+            return _current_snapshot() != _initial_snapshot
 
         try:
             light = self.settings_service.load().display.theme == "light"
@@ -658,7 +670,7 @@ class OrdersScreen(QWidget):
             light = False
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"🎯 Trailing Stop — {symbol} ({'MUA' if is_buy else 'BAN'} {volume:.2f})")
+        dlg.setWindowTitle(f"🎯 Trailing Stop — {symbol} ({'MUA' if is_buy else 'BÁN'} {volume:.2f})")
         dlg.setMinimumWidth(650)
         dlg.setObjectName("AnalysisDetailDialog")
 
@@ -674,43 +686,102 @@ class OrdersScreen(QWidget):
         # 1. Position summary card
         summary_card = card("Thông tin lệnh")
         summary_card.layout().setContentsMargins(16, 12, 16, 12)
-        summary_layout = QHBoxLayout()
-        summary_layout.setSpacing(20)
-        
-        entry_price = current_price - (profit / (volume * _pip_multiplier(symbol))) if volume > 0 else 0
-        
-        info_sym = labeled_value("MÃ GIAO DỊCH", symbol)
-        info_dir = labeled_value("HƯỚNG", "MUA" if is_buy else "BÁN")
-        info_vol = labeled_value("KHỐI LƯỢNG", f"{volume:.2f}")
-        info_entry = labeled_value("ENTRY", f"{entry_price:.5f}")
-        info_sl = labeled_value("SL HIỆN TẠI", f"{current_sl:.5f}" if current_sl else "Chưa đặt")
+
+        entry_price = float(pos.get("open_price", 0) or 0)
+
+        # ---- Single Source of Truth: effective initial SL ----
+        # Priority: cfg["initial_sl"] (set when trailing was enabled)
+        # Fallback: current_sl from MT5 (valid when trailing not yet enabled)
+        _cfg_for_sl = existing if isinstance(existing, dict) else {}
+        _cfg_initial_sl = _cfg_for_sl.get("initial_sl")
+        if _cfg_initial_sl is not None and float(_cfg_initial_sl) > 0:
+            effective_initial_sl = float(_cfg_initial_sl)
+        else:
+            effective_initial_sl = current_sl if current_sl > 0 else float(pos.get("sl", 0) or 0)
+
+        risk_1r = abs(entry_price - effective_initial_sl) if entry_price and effective_initial_sl else 0.0
+
+        # Helpers for live-updating labels
+        def _profit_pips(cp: float) -> float:
+            p = _price_to_pips(abs(entry_price - cp), symbol)
+            return p if (is_buy and cp >= entry_price) or (not is_buy and cp <= entry_price) else -p
+
+        def _r_multiple(cp: float) -> float:
+            r = (abs(entry_price - cp) / risk_1r) if risk_1r > 0 else 0.0
+            return r if _profit_pips(cp) >= 0 else -r
+
+        profit_pips_signed = _profit_pips(current_price)
+        r_multiple_signed = _r_multiple(current_price)
+
+        # Row 1: static info
+        row1 = QHBoxLayout()
+        row1.setSpacing(20)
+        row1.addWidget(labeled_value("MÃ GIAO DỊCH", symbol))
+        row1.addWidget(labeled_value("HƯỚNG", "MUA" if is_buy else "BÁN"))
+        row1.addWidget(labeled_value("KHỐI LƯỢNG", f"{volume:.2f}"))
+        row1.addWidget(labeled_value("ENTRY", f"{entry_price:.5f}"))
+        row1.addWidget(labeled_value("SL HIỆN TẠI", f"{current_sl:.5f}" if current_sl else "Chưa đặt"))
+        row1.addStretch()
+        summary_card.layout().addLayout(row1)
+
+        # Row 2: live-updating data — store labels for timer refresh
+        row2 = QHBoxLayout()
+        row2.setSpacing(20)
+
+        info_cp = labeled_value("GIÁ HIỆN TẠI", f"{current_price:.5f}" if current_price > 0 else "--")
+        self._dlg_cp_label = info_cp.findChild(QLabel, "MiniStatValue")
+        row2.addWidget(info_cp)
+
         info_pl = labeled_value("P/L", f"${profit:+,.2f}")
-        
-        pl_val = info_pl.findChild(QLabel, "MiniStatValue")
-        if pl_val:
-            pl_color = "#059669" if light else "#10b981"
-            if profit < 0:
-                pl_color = "#b91c1c" if light else "#f87171"
-            pl_val.setStyleSheet(f"font-weight:700; color:{pl_color};")
-            
-        dir_val = info_dir.findChild(QLabel, "MiniStatValue")
-        if dir_val:
-            dir_color = "#059669" if light and is_buy else "#10b981" if is_buy else "#dc2626" if light else "#ef4444"
-            dir_val.setStyleSheet(f"font-weight:700; color:{dir_color};")
-            
-        summary_layout.addWidget(info_sym)
-        summary_layout.addWidget(info_dir)
-        summary_layout.addWidget(info_vol)
-        summary_layout.addWidget(info_entry)
-        summary_layout.addWidget(info_sl)
-        summary_layout.addWidget(info_pl)
-        summary_layout.addStretch()
-        
-        summary_card.layout().addLayout(summary_layout)
+        self._dlg_pl_label = info_pl.findChild(QLabel, "MiniStatValue")
+        row2.addWidget(info_pl)
+
+        info_pips = labeled_value("P/L PIP", f"{profit_pips_signed:+.1f} pip")
+        self._dlg_pips_label = info_pips.findChild(QLabel, "MiniStatValue")
+        row2.addWidget(info_pips)
+
+        info_r = labeled_value("R", f"{r_multiple_signed:+.2f}R")
+        self._dlg_r_label = info_r.findChild(QLabel, "MiniStatValue")
+        row2.addWidget(info_r)
+
+        row2.addStretch()
+        summary_card.layout().addLayout(row2)
+
+        def _refresh_live_labels(cp: float, prof: float, pips_signed: float, r_signed: float) -> None:
+            """Update labels in real-time. Safe to call from timer."""
+            green = "#059669" if light else "#10b981"
+            red = "#b91c1c" if light else "#f87171"
+
+            if self._dlg_cp_label and cp > 0:
+                self._dlg_cp_label.setText(f"{cp:.5f}")
+                self._dlg_cp_label.setStyleSheet(f"font-weight:700; color:{green};")
+
+            if self._dlg_pl_label:
+                self._dlg_pl_label.setText(f"${prof:+,.2f}")
+                self._dlg_pl_label.setStyleSheet(f"font-weight:700; color:{green if prof >= 0 else red};")
+
+            if self._dlg_pips_label:
+                self._dlg_pips_label.setText(f"{pips_signed:+.1f} pip")
+                self._dlg_pips_label.setStyleSheet(f"font-weight:700; color:{green if pips_signed >= 0 else red};")
+
+            if self._dlg_r_label:
+                self._dlg_r_label.setText(f"{r_signed:+.2f}R")
+                if r_signed >= 1.0:
+                    r_c = green
+                elif r_signed >= 0.5:
+                    r_c = "#f59e0b"
+                elif r_signed < 0:
+                    r_c = red
+                else:
+                    r_c = green
+                self._dlg_r_label.setStyleSheet(f"font-weight:700; color:{r_c};")
+
+        _refresh_live_labels(current_price, profit, profit_pips_signed, r_multiple_signed)
+
         root.addWidget(summary_card)
 
         # 2. Settings card -- unified manual + AI
-        settings_card = card("Cai dat khoang cach")
+        settings_card = card("Cài đặt khoảng cách")
         settings_card.layout().setContentsMargins(16, 12, 16, 12)
         settings_card.layout().setSpacing(10)
 
@@ -730,8 +801,7 @@ class OrdersScreen(QWidget):
         except Exception:
             pass
 
-        entry_price = float(pos.get("open_price", 0) or pos.get("price", 0) or 0)
-        initial_sl_raw = current_sl if current_sl > 0 else float(pos.get("sl", 0) or 0)
+        initial_sl_raw = effective_initial_sl
         pip_m = 100.0 if "JPY" in symbol.upper() else 10000.0
 
         # Row 0: Trail mode radio buttons
@@ -817,11 +887,11 @@ class OrdersScreen(QWidget):
             self._dlg_pip_spin.setEnabled(is_fixed)
             # Update preview with new mode
             if self._dlg_mode_wide.isChecked():
-                self._dlg_ai_trail_mode = "wide"
+                self._dlg_trail_mode = "wide"
             elif self._dlg_mode_tight.isChecked():
-                self._dlg_ai_trail_mode = "tight"
+                self._dlg_trail_mode = "tight"
             else:
-                self._dlg_ai_trail_mode = "fixed"
+                self._dlg_trail_mode = "fixed"
             _update_preview()
 
         self._dlg_mode_wide.toggled.connect(_on_mode_changed)
@@ -849,98 +919,233 @@ class OrdersScreen(QWidget):
         pip_layout.addStretch()
         settings_card.layout().addLayout(pip_layout)
 
-        # Row 2: AI button + compact response area
-        ai_row = QHBoxLayout()
-        ai_row.setSpacing(8)
-        self._dlg_ai_refresh_btn = action_button("🤖 AI gợi ý", primary=True, color="info")
-        self._dlg_ai_refresh_btn.setToolTip("Gọi DeepSeek/Gemini để nhận gợi ý trailing stop")
-        self._dlg_ai_refresh_btn.clicked.connect(lambda: self._ai_suggest_trail(
-            symbol, side, current_price, pos, light, dlg,
-        ))
-        ai_row.addWidget(self._dlg_ai_refresh_btn)
-        self._dlg_ai_label = QLabel("")
-        self._dlg_ai_label.setObjectName("CardDetail")
-        self._dlg_ai_label.setWordWrap(True)
-        self._dlg_ai_label.setMinimumHeight(20)
-        ai_row.addWidget(self._dlg_ai_label, 1)
-        settings_card.layout().addLayout(ai_row)
-
-        # Row 3: AI reasoning text box
-        self._dlg_ai_text = QTextEdit()
-        self._dlg_ai_text.setObjectName("ReadonlyText")
-        self._dlg_ai_text.setReadOnly(True)
-        self._dlg_ai_text.setMinimumHeight(80)
-        self._dlg_ai_text.setMaximumHeight(120)
-        self._dlg_ai_text.setPlaceholderText("Bấm '🤖 AI gợi ý' để nhận phân tích từ AI...")
-        settings_card.layout().addWidget(self._dlg_ai_text)
-
         root.addWidget(settings_card)
 
-        # 3. Preview card: BE + Trail distance (live update with spinbox)
-        preview_card = card("Xem trước BE + Trail")
+        # 3. Preview card: BE + Trail (live update)
+        preview_card = card("Xem trước")
         preview_card.layout().setContentsMargins(16, 10, 16, 10)
-        preview_card.layout().setSpacing(4)
-        self._dlg_be_label = QLabel("")
-        self._dlg_be_label.setObjectName("CardDetail")
-        self._dlg_be_label.setWordWrap(True)
-        self._dlg_trail_label = QLabel("")
-        self._dlg_trail_label.setObjectName("CardDetail")
-        self._dlg_trail_label.setWordWrap(True)
-        preview_card.layout().addWidget(self._dlg_be_label)
-        preview_card.layout().addWidget(self._dlg_trail_label)
+        preview_card.layout().setSpacing(5)
+
+        # BE section
+        self._dlg_be_title = QLabel("🎯 Break Even")
+        self._dlg_be_title.setObjectName("CardDetail")
+        be_font = self._dlg_be_title.font(); be_font.setBold(True); self._dlg_be_title.setFont(be_font)
+        preview_card.layout().addWidget(self._dlg_be_title)
+
+        self._dlg_be_sl_label = QLabel("")
+        self._dlg_be_sl_label.setObjectName("CardDetail")
+        preview_card.layout().addWidget(self._dlg_be_sl_label)
+
+        self._dlg_be_trigger_label = QLabel("")
+        self._dlg_be_trigger_label.setObjectName("CardDetail")
+        preview_card.layout().addWidget(self._dlg_be_trigger_label)
+
+        self._dlg_be_status_label = QLabel("")
+        self._dlg_be_status_label.setObjectName("CardDetail")
+        preview_card.layout().addWidget(self._dlg_be_status_label)
+
+        self._dlg_be_distance_label = QLabel("")
+        self._dlg_be_distance_label.setObjectName("CardDetail")
+        preview_card.layout().addWidget(self._dlg_be_distance_label)
+
+        # Separator
+        sep = QLabel("")
+        sep.setObjectName("CardDetail")
+        preview_card.layout().addWidget(sep)
+
+        # Trail section
+        self._dlg_trail_title = QLabel("📐 Trailing Stop")
+        self._dlg_trail_title.setObjectName("CardDetail")
+        tr_font = self._dlg_trail_title.font(); tr_font.setBold(True); self._dlg_trail_title.setFont(tr_font)
+        preview_card.layout().addWidget(self._dlg_trail_title)
+
+        self._dlg_trail_mode_label = QLabel("")
+        self._dlg_trail_mode_label.setObjectName("CardDetail")
+        preview_card.layout().addWidget(self._dlg_trail_mode_label)
+
+        self._dlg_trail_dist_label = QLabel("")
+        self._dlg_trail_dist_label.setObjectName("CardDetail")
+        preview_card.layout().addWidget(self._dlg_trail_dist_label)
 
         def _update_preview(pips_val=None):
             if pips_val is None:
                 pips_val = self._dlg_pip_spin.value()
-            # BE preview
+
+            # ---- Break Even ----
             be_trigger = 2.0 * entry_price - initial_sl_raw if entry_price and initial_sl_raw else 0
             be_sl = entry_price + (2.0 / pip_m) if is_buy else entry_price - (2.0 / pip_m)
+
             if be_trigger:
-                self._dlg_be_label.setText(
-                    f"BE sẽ dời về: {be_sl:.5f} (khi giá chạm {be_trigger:.5f})"
-                )
+                self._dlg_be_sl_label.setText(f"SL sẽ dời về:  {be_sl:.5f}")
+                self._dlg_be_trigger_label.setText(f"Điểm kích hoạt:  {be_trigger:.5f}")
             else:
-                self._dlg_be_label.setText("BE: chưa đủ dữ liệu entry/SL")
-            # Trail distance preview
-            trail_price = _pips_to_price(pips_val, symbol) if not _dlg_atr_h1 else (
-                _dlg_atr_h1 * (2.5 if getattr(self, "_dlg_ai_trail_mode", None) == "wide" else 1.5)
-            )
-            if _dlg_atr_h1 > 0:
-                mode = getattr(self, "_dlg_ai_trail_mode", None) or "wide"
+                self._dlg_be_sl_label.setText("SL sẽ dời về:  chưa đủ dữ liệu entry/SL")
+                self._dlg_be_trigger_label.setText("")
+
+            # ---- Trailing ----
+            mode = getattr(self, "_dlg_trail_mode", None) or "wide"
+            mode_labels = {"wide": "Wide (2.5× ATR)", "tight": "Tight (1.5× ATR)", "fixed": "Cố định (pip)"}
+            self._dlg_trail_mode_label.setText(f"Chế độ:  {mode_labels.get(mode, mode)}")
+
+            if _dlg_atr_h1 > 0 and mode != "fixed":
                 mult = 2.5 if mode == "wide" else 1.5
                 trail_price = _dlg_atr_h1 * mult
                 trail_pip = _price_to_pips(trail_price, symbol)
-                self._dlg_trail_label.setText(
-                    f"Khoảng cách trail: {trail_price:.5f} ({trail_pip:.0f} pip) — ATR {mode}"
+                self._dlg_trail_dist_label.setText(
+                    f"Khoảng cách trail:  {trail_price:.5f}  (~{trail_pip:.0f} pip)"
                 )
             else:
-                trail_pip = pips_val
-                self._dlg_trail_label.setText(
-                    f"Khoảng cách trail: {pips_val} pip (thủ công, không có ATR)"
-                )
+                self._dlg_trail_dist_label.setText(f"Khoảng cách trail:  {pips_val} pip  (thủ công)")
+
+        def _update_be_live(cp: float, live_sl: float = 0.0) -> None:
+            """Update only the BE status & distance labels. Called by timer.
+
+            If be_done=True but MT5 SL no longer equals BE SL (e.g. user moved
+            it manually), show a mild warning instead of claiming BE is active.
+            """
+            be_trigger = 2.0 * entry_price - initial_sl_raw if entry_price and initial_sl_raw else 0
+            if not be_trigger or cp <= 0:
+                return
+
+            be_sl = entry_price + (2.0 / pip_m) if is_buy else entry_price - (2.0 / pip_m)
+            sl_tolerance = 1.0 / pip_m  # 0.1 pip
+
+            # Check if BE has already been activated (source: trailing config)
+            be_already_done = bool(_cfg_for_sl.get("be_done", False)) if _cfg_for_sl else False
+            # Verify MT5 SL still matches BE SL (may differ if user moved SL manually)
+            sl_matches_be = live_sl > 0 and abs(live_sl - be_sl) < sl_tolerance
+
+            if is_buy:
+                dist = be_trigger - cp
+            else:
+                dist = cp - be_trigger
+
+            dist_pips = dist * pip_m
+            green = "#059669" if light else "#10b981"
+            orange = "#f59e0b"
+            neutral = "#9ca3af"
+
+            if be_already_done and sl_matches_be:
+                self._dlg_be_status_label.setText("✅ Đã kích hoạt Break Even")
+                self._dlg_be_status_label.setStyleSheet(f"color:{green};font-weight:700;")
+                self._dlg_be_distance_label.setText("")
+            elif be_already_done and not sl_matches_be:
+                self._dlg_be_status_label.setText("⚠️ Break Even đã kích hoạt trước đó — SL hiện tại không còn ở vị trí BE")
+                self._dlg_be_status_label.setStyleSheet(f"color:{orange};font-weight:700;")
+                self._dlg_be_distance_label.setText("")
+            elif dist <= 0:
+                self._dlg_be_status_label.setText("🟢 Đã sẵn sàng kích hoạt Break Even")
+                self._dlg_be_status_label.setStyleSheet(f"color:{green};font-weight:700;")
+                self._dlg_be_distance_label.setText("")
+            else:
+                self._dlg_be_status_label.setText("🟡 Chưa kích hoạt Break Even")
+                self._dlg_be_status_label.setStyleSheet(f"color:{orange};font-weight:700;")
+                dist_color = orange if dist_pips < 3 else neutral
+                self._dlg_be_distance_label.setText(f"Còn:  {dist_pips:.1f} pip")
+                self._dlg_be_distance_label.setStyleSheet(f"color:{dist_color};font-weight:700;")
 
         _update_preview(default_pips)
+        _update_be_live(current_price, current_sl)
         self._dlg_pip_spin.valueChanged.connect(_update_preview)
         root.addWidget(preview_card)
+
+        # ---- Auto-refresh timer: update live data every 2s ----
+        _live_timer = QTimer(dlg)
+        _live_timer.setInterval(2000)
+
+        def _on_live_tick():
+            """Fetch fresh tick + position, update live labels and BE status."""
+            try:
+                import MetaTrader5 as _mt5
+                _t = _mt5.symbol_info_tick(symbol)
+                if _t is None:
+                    return
+                _cp = float(_t.bid) if side == "sell" else float(_t.ask)
+                if _cp <= 0:
+                    return
+
+                # Re-read position for updated P/L and SL
+                _positions = _mt5.positions_get(ticket=pos_id)
+                if _positions and len(_positions) > 0:
+                    _p = _positions[0]
+                    _prof = float(getattr(_p, "profit", 0) or 0) + float(getattr(_p, "swap", 0) or 0)
+                    _live_sl = float(getattr(_p, "sl", 0) or 0)
+                else:
+                    return
+
+                _pips = _profit_pips(_cp)
+                _r = _r_multiple(_cp)
+                _refresh_live_labels(_cp, _prof, _pips, _r)
+                _update_be_live(_cp, _live_sl)
+            except Exception:
+                pass
+
+        _live_timer.timeout.connect(_on_live_tick)
+        _live_timer.start()
+        dlg.finished.connect(_live_timer.stop)
 
         # --- Buttons ---
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
         btn_layout.addStretch()
 
-        if existing and existing.get("enabled"):
-            disable_btn = action_button("⏹️ Tắt Trailing Stop", primary=True, color="danger")
-            disable_btn.clicked.connect(lambda: self._toggle_trailing(pos_id, False, dlg))
-            btn_layout.addWidget(disable_btn)
-        else:
-            enable_btn = action_button("✅ Bật Trailing Stop", primary=True)
-            enable_btn.clicked.connect(lambda: self._apply_trailing(pos_id, symbol, side, dlg))
-            btn_layout.addWidget(enable_btn)
+        # Store button refs and original texts for loading-state management
+        self._dlg_btns: list[tuple[QPushButton, str]] = []
+
+        def _begin_op(*btns: QPushButton):
+            """Disable buttons & change text during an operation."""
+            self._dlg_btns.clear()
+            for b in btns:
+                self._dlg_btns.append((b, b.text()))
+                b.setEnabled(False)
+
+        def _end_op():
+            """Restore all buttons to their pre-operation state."""
+            for b, old_text in self._dlg_btns:
+                b.setEnabled(True)
+                b.setText(old_text)
+            self._dlg_btns.clear()
 
         close_btn = action_button("❌ Đóng", primary=False, color="danger")
         close_btn.clicked.connect(dlg.accept)
+
+        if trail_enabled:
+            # Trailing is active → show Update + Disable
+            self._dlg_update_btn = action_button("🔄 Cập nhật Trailing Stop", primary=True, color="success")
+            self._dlg_update_btn.setEnabled(False)
+            self._dlg_update_btn.setToolTip("Chưa có thay đổi để cập nhật.")
+            self._dlg_update_btn.clicked.connect(
+                lambda: self._handle_update_trailing(pos_id, dlg, _current_snapshot, _initial_snapshot, _begin_op, _end_op, close_btn))
+            btn_layout.addWidget(self._dlg_update_btn)
+
+            self._dlg_disable_btn = action_button("⏹️ Tắt Trailing Stop", primary=True, color="danger")
+            self._dlg_disable_btn.clicked.connect(
+                lambda: self._handle_disable_trailing(pos_id, dlg, _begin_op, _end_op, self._dlg_update_btn, close_btn))
+            btn_layout.addWidget(self._dlg_disable_btn)
+
+            # ---- Dirty state: enable/disable update button based on changes ----
+            def _refresh_dirty_state():
+                dirty = _is_dirty()
+                self._dlg_update_btn.setEnabled(dirty)
+                if dirty:
+                    self._dlg_update_btn.setToolTip("Áp dụng cấu hình trailing mới ngay lập tức.")
+                else:
+                    self._dlg_update_btn.setToolTip("Chưa có thay đổi để cập nhật.")
+
+            _refresh_dirty_state()
+            self._dlg_pip_spin.valueChanged.connect(lambda v: _refresh_dirty_state())
+            self._dlg_mode_wide.toggled.connect(lambda: _refresh_dirty_state())
+            self._dlg_mode_tight.toggled.connect(lambda: _refresh_dirty_state())
+            self._dlg_mode_fixed.toggled.connect(lambda: _refresh_dirty_state())
+        else:
+            # Trailing not active → show Enable
+            self._dlg_enable_btn = action_button("✅ Bật Trailing Stop", primary=True)
+            self._dlg_enable_btn.clicked.connect(
+                lambda: self._handle_enable_trailing(pos_id, symbol, side, dlg, _begin_op, _end_op, close_btn))
+            btn_layout.addWidget(self._dlg_enable_btn)
+
         btn_layout.addWidget(close_btn)
-        
+
         root.addLayout(btn_layout)
 
         if light:
@@ -949,62 +1154,200 @@ class OrdersScreen(QWidget):
             dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
         dlg.exec()
 
-    def _apply_trailing(self, pos_id: int, symbol: str, side: str, dlg: QDialog) -> None:
-        trail_pips = self._dlg_pip_spin.value()
-        pos = self._get_selected_position()
-        entry_price = float(pos.get("open_price", 0) or pos.get("price", 0) or 0) if pos else 0.0
-        initial_sl = float(pos.get("sl", 0) or 0) if pos else 0.0
-        pip_multiplier = 100.0 if "JPY" in symbol.upper() else 10000.0
-        if side == "buy":
-            be_trigger_price = 2.0 * entry_price - initial_sl
-        else:
-            be_trigger_price = 2.0 * entry_price - initial_sl
-        trail_mode = getattr(self, "_dlg_ai_trail_mode", None) or "wide"
-        # Lấy ATR H1 thực từ MT5
-        atr_h1 = 0.0
-        try:
-            import MetaTrader5 as mt5
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
-            if rates is not None and len(rates) >= 14:
-                highs = [float(r[2]) for r in rates[-14:]]
-                lows = [float(r[3]) for r in rates[-14:]]
-                closes = [float(r[4]) for r in rates[-15:-1]]
-                trs = []
-                for i in range(14):
-                    trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
-                atr_h1 = sum(trs) / len(trs)
-        except Exception:
-            pass
-        self._trailing_configs[pos_id] = {
-            "position_id": pos_id,
-            "symbol": symbol,
-            "side": side,
-            "enabled": True,
-            "trail_pips": trail_pips,
-            "extreme_price": 0.0,
-            "current_sl": 0.0,
-            "be_done": False,
-            "be_trigger_price": be_trigger_price,
-            "entry_price": entry_price,
-            "initial_sl": initial_sl,
-            "atr_h1": atr_h1,
-            "trail_mode": trail_mode,
-            "pip_multiplier": pip_multiplier,
-        }
-        dlg.accept()
-        self._debounce_save()
-        self._render_table()
+    # ------------------------------------------------------------------
+    # Trailing Stop operation handlers (unified feedback)
+    # ------------------------------------------------------------------
 
-    def _toggle_trailing(self, pos_id: int, enabled: bool, dlg: QDialog) -> None:
+    def _handle_enable_trailing(self, pos_id: int, symbol: str, side: str,
+                                  dlg: QDialog, _begin_op, _end_op,
+                                  close_btn: QPushButton) -> None:
+        """Bật Trailing Stop mới — có loading state + feedback."""
+        enable_btn = self._dlg_enable_btn
+        _begin_op(enable_btn, close_btn)
+        enable_btn.setText("Đang bật...")
+        pip_m = 100.0 if "JPY" in symbol.upper() else 10000.0
+
+        try:
+            trail_pips = self._dlg_pip_spin.value()
+            pos = self._get_selected_position()
+            if not pos:
+                raise ValueError("Không tìm thấy vị thế đã chọn (có thể đã bị đóng).")
+
+            entry_price = float(pos.get("open_price", 0) or pos.get("price", 0) or 0)
+            initial_sl = float(pos.get("sl", 0) or 0)
+            if entry_price <= 0:
+                raise ValueError("Không xác định được giá entry.")
+            if initial_sl <= 0:
+                raise ValueError("Vị thế chưa có Stop Loss — cần đặt SL trước khi bật Trailing Stop.")
+
+            trail_mode = getattr(self, "_dlg_trail_mode", None) or "wide"
+            be_trigger_price = 2.0 * entry_price - initial_sl
+
+            atr_h1 = 0.0
+            try:
+                import MetaTrader5 as mt5
+                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
+                if rates is not None and len(rates) >= 14:
+                    highs = [float(r[2]) for r in rates[-14:]]
+                    lows = [float(r[3]) for r in rates[-14:]]
+                    closes = [float(r[4]) for r in rates[-15:-1]]
+                    trs = []
+                    for i in range(14):
+                        trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
+                    atr_h1 = sum(trs) / len(trs)
+            except Exception:
+                pass
+
+            self._trailing_configs[pos_id] = {
+                "position_id": pos_id, "symbol": symbol, "side": side,
+                "enabled": True, "trail_pips": trail_pips,
+                "extreme_price": 0.0, "current_sl": 0.0, "be_done": False,
+                "be_trigger_price": be_trigger_price,
+                "entry_price": entry_price, "initial_sl": initial_sl,
+                "atr_h1": atr_h1, "trail_mode": trail_mode,
+                "pip_multiplier": pip_m,
+            }
+            self._debounce_save()
+            self._render_table()
+
+            mode_labels = {"wide": "Wide (2.5× ATR)", "tight": "Tight (1.5× ATR)", "fixed": "Cố định"}
+            mode_display = mode_labels.get(trail_mode, trail_mode)
+            detail = (f"Đã bật Trailing Stop cho {symbol}.\n\n"
+                      f"Chế độ: {mode_display}\n"
+                      f"Khoảng cách: {trail_pips} pip\n"
+                      f"BE tại: {be_trigger_price:.5f}")
+            QMessageBox.information(dlg, "Đã bật Trailing Stop", detail)
+            dlg.accept()
+
+        except Exception as exc:
+            QMessageBox.warning(dlg, "Lỗi bật Trailing Stop",
+                                f"Không thể bật Trailing Stop cho {symbol}.\n\nChi tiết: {exc}")
+            _end_op()
+
+    def _handle_update_trailing(self, pos_id: int, dlg: QDialog,
+                                  _get_snapshot, _initial_snapshot,
+                                  _begin_op, _end_op,
+                                  close_btn: QPushButton) -> None:
+        """Cập nhật Trailing Stop đang chạy — có guard no-change + loading state + feedback."""
         cfg = self._trailing_configs.get(pos_id)
-        if cfg:
-            cfg["enabled"] = enabled
-            if not enabled:
-                cfg["extreme_price"] = 0.0
-                cfg["current_sl"] = 0.0
-        dlg.accept()
-        self._debounce_save()
-        self._render_table()
+        if not cfg:
+            QMessageBox.warning(dlg, "Lỗi cập nhật",
+                                "Trailing Stop không còn tồn tại (có thể lệnh đã bị đóng).")
+            return
+
+        # Guard: no actual change
+        new_snapshot = _get_snapshot()
+        if new_snapshot == _initial_snapshot:
+            QMessageBox.information(dlg, "Không có thay đổi",
+                                    "Cấu hình Trailing Stop không thay đổi so với hiện tại.")
+            return
+
+        update_btn = self._dlg_update_btn
+        disable_btn = self._dlg_disable_btn
+        _begin_op(update_btn, disable_btn, close_btn)
+        update_btn.setText("Đang cập nhật...")
+
+        try:
+            trail_pips = self._dlg_pip_spin.value()
+            trail_mode = getattr(self, "_dlg_trail_mode", None) or "wide"
+            symbol = str(cfg.get("symbol", ""))
+
+            old_mode = str(cfg.get("trail_mode", "wide"))
+            old_pips = int(cfg.get("trail_pips", 20))
+
+            # Tính lại ATR H1
+            atr_h1 = float(cfg.get("atr_h1", 0) or 0)
+            try:
+                import MetaTrader5 as mt5
+                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
+                if rates is not None and len(rates) >= 14:
+                    highs = [float(r[2]) for r in rates[-14:]]
+                    lows = [float(r[3]) for r in rates[-14:]]
+                    closes = [float(r[4]) for r in rates[-15:-1]]
+                    trs = []
+                    for i in range(14):
+                        trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
+                    atr_h1 = sum(trs) / len(trs)
+            except Exception:
+                pass
+
+            # Cập nhật config in-place — giữ nguyên runtime state
+            cfg["trail_pips"] = trail_pips
+            cfg["trail_mode"] = trail_mode
+            cfg["atr_h1"] = atr_h1
+
+            # Đồng bộ snapshot
+            _initial_snapshot["trail_mode"] = trail_mode
+            _initial_snapshot["trail_pips"] = trail_pips
+
+            self._debounce_save()
+            self._render_table()
+
+            # Restore buttons
+            _end_op()
+            update_btn.setEnabled(False)
+            update_btn.setToolTip("Chưa có thay đổi để cập nhật.")
+
+            mode_labels = {"wide": "Wide (2.5× ATR)", "tight": "Tight (1.5× ATR)", "fixed": "Cố định"}
+            old_mode_disp = mode_labels.get(old_mode, old_mode)
+            new_mode_disp = mode_labels.get(trail_mode, trail_mode)
+
+            changed_parts = []
+            if old_mode != trail_mode:
+                changed_parts.append(f"Chế độ: {old_mode_disp} → {new_mode_disp}")
+            if old_pips != trail_pips:
+                changed_parts.append(f"Khoảng cách: {old_pips} pip → {trail_pips} pip")
+
+            detail = f"Đã cập nhật Trailing Stop cho {symbol}.\n\n" + "\n".join(changed_parts)
+            QMessageBox.information(dlg, "Đã cập nhật", detail)
+
+        except Exception as exc:
+            QMessageBox.warning(dlg, "Lỗi cập nhật",
+                                f"Không thể cập nhật Trailing Stop.\n\nChi tiết: {exc}")
+            _end_op()
+            # Re-evaluate dirty state
+            is_dirty = _get_snapshot() != _initial_snapshot
+            self._dlg_update_btn.setEnabled(is_dirty)
+            if is_dirty:
+                self._dlg_update_btn.setToolTip("Áp dụng cấu hình trailing mới ngay lập tức.")
+            else:
+                self._dlg_update_btn.setToolTip("Chưa có thay đổi để cập nhật.")
+
+    def _handle_disable_trailing(self, pos_id: int, dlg: QDialog,
+                                   _begin_op, _end_op,
+                                   update_btn: QPushButton,
+                                   close_btn: QPushButton) -> None:
+        """Tắt Trailing Stop — có loading state + feedback."""
+        cfg = self._trailing_configs.get(pos_id)
+        if not cfg:
+            QMessageBox.warning(dlg, "Lỗi", "Trailing Stop không còn tồn tại.")
+            return
+
+        disable_btn = self._dlg_disable_btn
+        _begin_op(update_btn, disable_btn, close_btn)
+        disable_btn.setText("Đang tắt...")
+        symbol = str(cfg.get("symbol", "--"))
+
+        try:
+            cfg["enabled"] = False
+            cfg["extreme_price"] = 0.0
+            cfg["current_sl"] = 0.0
+            self._debounce_save()
+            self._render_table()
+
+            QMessageBox.information(dlg, "Đã tắt Trailing Stop",
+                                    f"Đã tắt Trailing Stop cho {symbol}.\n"
+                                    f"Cấu hình vẫn được lưu — có thể bật lại sau.")
+            dlg.accept()
+
+        except Exception as exc:
+            QMessageBox.warning(dlg, "Lỗi tắt Trailing Stop",
+                                f"Không thể tắt Trailing Stop cho {symbol}.\n\nChi tiết: {exc}")
+            _end_op()
+
+    # ------------------------------------------------------------------
+    # Legacy methods (kept for backward compatibility with auto-trade)
+    # ------------------------------------------------------------------
 
     def auto_enable_tracking(self, pos_id: int, symbol: str, side: str,
                              entry: float, sl: float, atr_h1: float) -> None:
@@ -1046,182 +1389,7 @@ class OrdersScreen(QWidget):
         has_trail = bool(pos and int(pos.get("position_id", 0)) in self._trailing_configs)
         self.clear_trail_btn.setVisible(has_trail)
 
-    def _ai_suggest_trail(self, symbol: str, side: str, current_price: float,
-                          pos: dict, light: bool, dlg: QDialog) -> None:
-        """Call AI for trailing stop suggestion, fallback to formula."""
-        self._dlg_ai_refresh_btn.setEnabled(False)
-        self._dlg_ai_refresh_btn.setText("⏳ Đang gọi AI...")
-        QApplication.processEvents()
 
-        entry_price = float(pos.get("open_price", 0))
-        # Signed profit: positive = in profit, negative = in loss
-        if side == "buy":
-            profit_pips = _price_to_pips(current_price - entry_price, symbol)
-        else:
-            profit_pips = _price_to_pips(entry_price - current_price, symbol)
-        regime = "unknown"
-
-        # Try to get ATR from MT5
-        atr_h4 = 0.0
-        try:
-            import MetaTrader5 as mt5
-            rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H4, 0, 30)
-            if rates is not None and len(rates) >= 14:
-                highs = [float(r[2]) for r in rates[-14:]]
-                lows = [float(r[3]) for r in rates[-14:]]
-                closes = [float(r[4]) for r in rates[-15:-1]]
-                trs = []
-                for i in range(14):
-                    trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
-                atr_h4 = sum(trs) / len(trs)
-        except Exception:
-            pass
-
-        # Try AI first, fallback to formula
-        ai_result = None
-        ai_error = ""
-        try:
-            settings = self.settings_service.load()
-            active = settings.ai.active_provider()
-            if active and (active.api_key or active.api_key_ref):
-                from services.ai_service import AIService, AIProviderConfig
-
-                ai_config = AIProviderConfig(
-                    provider=active.provider,
-                    model=active.model,
-                    api_key=active.api_key,
-                )
-                ai = AIService(ai_config)
-                atr_h4_pips = _price_to_pips(atr_h4, symbol) if atr_h4 > 0 else "N/A"
-                profit_sign = "+" if profit_pips >= 0 else ""
-
-                # Get additional context: ATR H1, spread
-                atr_h1 = 0.0
-                spread_pips = "N/A"
-                try:
-                    import MetaTrader5 as mt5
-                    rates_h1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
-                    if rates_h1 is not None and len(rates_h1) >= 14:
-                        highs = [float(r[2]) for r in rates_h1[-14:]]
-                        lows = [float(r[3]) for r in rates_h1[-14:]]
-                        closes = [float(r[4]) for r in rates_h1[-15:-1]]
-                        trs = []
-                        for i in range(14):
-                            trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
-                        atr_h1 = sum(trs) / len(trs)
-                    info = mt5.symbol_info(symbol)
-                    if info:
-                        spread_pips = str(round((info.ask - info.bid) / (0.0001 if "JPY" not in symbol.upper() else 0.01), 1))
-                except Exception:
-                    pass
-                atr_h1_pips = _price_to_pips(atr_h1, symbol) if atr_h1 > 0 else "N/A"
-
-                # Volatility regime
-                if atr_h4 > 0:
-                    vol_ratio = atr_h1 / atr_h4 if atr_h1 > 0 else 1.0
-                    if vol_ratio > 1.3:
-                        vol_regime = "cao (H1 ATR > 1.3x H4 ATR)"
-                    elif vol_ratio < 0.7:
-                        vol_regime = "thấp (H1 ATR < 0.7x H4 ATR)"
-                    else:
-                        vol_regime = "bình thường"
-                else:
-                    vol_regime = "không xác định"
-
-                prompt = (
-                    f"Bạn là chuyên gia quản lý rủi ro Forex. Phân tích vị thế sau và đề xuất "
-                    f"khoảng cách trailing stop tối ưu:\n\n"
-                    f"- Mã: {symbol}\n"
-                    f"- Hướng: {side.upper()}\n"
-                    f"- Entry: {entry_price:.5f}\n"
-                    f"- Giá hiện tại: {current_price:.5f}\n"
-                    f"- Lợi nhuận hiện tại: {profit_sign}{profit_pips:.0f} pip\n"
-                    f"- ATR(H4): {atr_h4_pips} pip\n"
-                    f"- ATR(H1): {atr_h1_pips} pip\n"
-                    f"- Volatility regime: {vol_regime}\n"
-                    f"- Spread: {spread_pips} pip\n\n"
-                    f"Trả lời CHỈ một dòng JSON, không thêm gì khác:\n"
-                    f'{{"trail_pips":<số pip>,"confidence":"high/medium/low","trail_mode":"wide/tight","reason":"<lý do tiếng Việt>"}}'
-                )
-                raw = ai.analyze(prompt, max_tokens=500)
-
-                # Parse JSON from response
-                import json as _json
-
-                trail_pips = None
-                confidence = "medium"
-                trail_mode = "wide"
-                reason = ""
-
-                # Clean response: strip markdown fences, collapse whitespace
-                json_text = raw.strip()
-                for fence in ("```json", "```"):
-                    json_text = json_text.removeprefix(fence).removesuffix(fence).strip()
-                json_text = " ".join(json_text.split())
-
-                # Extract and fix JSON
-                import re
-                start = json_text.find("{")
-                end = json_text.rfind("}")
-                if start >= 0 and end > start:
-                    candidate = json_text[start:end + 1]
-                    # Fix common AI JSON mistakes
-                    candidate = re.sub(r",\s*}", "}", candidate)
-                    candidate = re.sub(r",\s*\]", "]", candidate)
-                    try:
-                        parsed = _json.loads(candidate)
-                        trail_pips = int(parsed.get("trail_pips", 0) or 0)
-                        confidence = str(parsed.get("confidence", "medium")).lower()
-                        trail_mode = str(parsed.get("trail_mode", "wide")).lower()
-                        reason = str(parsed.get("reason", ""))
-                    except (_json.JSONDecodeError, ValueError):
-                        pass
-
-                # Regex fallback: extract number near trail/pip
-                if not trail_pips:
-                    nums = re.findall(r"(?<!\d)(\d{1,3})(?!\d)", raw)
-                    if nums:
-                        trail_pips = int(nums[0])
-                        reason = "(số từ AI)"
-
-                if trail_pips and trail_pips > 0:
-                    ai_result = {"trail_pips": trail_pips, "confidence": confidence,
-                                 "trail_mode": trail_mode, "reason": reason}
-                else:
-                    ai_error = raw[:150].replace("\n", " ") if raw else "(AI không trả về kết quả)"
-            else:
-                ai_error = "Chưa cấu hình API key"
-        except Exception as exc:
-            ai_error = str(exc)[:120]
-
-        if ai_result and ai_result.get("trail_pips"):
-            trail = int(ai_result["trail_pips"])
-            confidence = str(ai_result.get("confidence", "medium"))
-            trail_mode = str(ai_result.get("trail_mode", "wide"))
-            reason = str(ai_result.get("reason", ""))
-            self._dlg_ai_trail_mode = trail_mode
-            conf_icon = {"high": "🟢", "medium": "🟡", "low": "🔴"}.get(confidence, "🟡")
-            mode_text = {"wide": "rộng", "tight": "chặt"}.get(trail_mode, trail_mode)
-            self._dlg_ai_label.setText(
-                f"🧠 AI gợi ý: {trail} pip — trail {mode_text} ({conf_icon} {confidence.upper()})"
-            )
-            self._dlg_ai_text.setMarkdown(
-                f"**AI gợi ý: {trail} pip** — trail {mode_text} ({conf_icon} {confidence.upper()})\n\n{reason}"
-            )
-        else:
-            trail = suggest_trail_pips(symbol, atr_h4, regime, profit_pips)
-            self._dlg_ai_trail_mode = None
-            note = ai_error if ai_error else "AI không khả dụng"
-            self._dlg_ai_label.setText(f"📐 Công thức: {trail} pip")
-            self._dlg_ai_text.setPlainText(
-                f"📐 Công thức: {trail} pip\n\n"
-                f"AI không trả về kết quả hợp lệ. Dùng công thức tính từ ATR.\n"
-                f"Phản hồi thô từ AI: {note}"
-            )
-
-        self._dlg_pip_spin.setValue(trail)
-        self._dlg_ai_refresh_btn.setText("🤖 AI gợi ý")
-        self._dlg_ai_refresh_btn.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Persistence

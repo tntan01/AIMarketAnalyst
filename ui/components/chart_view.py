@@ -66,7 +66,7 @@ class AnalysisChartView(QWidget):
             self._webview.loadFinished.connect(self._on_load_finished)
             self._webview.setHtml(html_content, base_url)
         else:
-            self._webview.setHtml("<p style='color:#888;text-align:center;padding:40px;'>Khong tim thay file bieu do.</p>")
+            self._webview.setHtml("<p style='color:#888;text-align:center;padding:40px;'>Không tìm thấy file biểu đồ.</p>")
 
     def set_payload(self, payload: dict) -> None:
         """Set chart data from build_full_chart_payload()."""

@@ -22,6 +22,7 @@ QPushButton {
   border-radius: 6px;
   color: #e5e7eb;
   padding: 4px 12px;
+  font-size: 13px;
   font-family: "Segoe UI", "Arial", sans-serif;
 }
 
@@ -616,6 +617,8 @@ QTextEdit {
   border-radius: 6px;
   color: #e5e7eb;
   padding: 7px 9px;
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
   selection-background-color: #0d9488;
   selection-color: #ffffff;
 }
@@ -817,6 +820,14 @@ QTextEdit#ReadonlyText {
 QCheckBox {
   color: #e5e7eb;
   spacing: 8px;
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QRadioButton {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
 }
 
 QCheckBox::indicator {
@@ -1057,45 +1068,10 @@ QMessageBox {
 QDialog#AnalysisDetailDialog {
   background: #0f1216;
   color: #e5e7eb;
-  font-family: "Segoe UI", "Arial", sans-serif;
 }
 
 QDialog#AnalysisDetailDialog QLabel {
   color: #e5e7eb;
-  font-size: 13px;
-}
-
-QDialog#AnalysisDetailDialog QLabel#ActionTitle {
-  font-size: 18px;
-  font-weight: 700;
-  color: #f9fafb;
-}
-
-QDialog#AnalysisDetailDialog QLabel#PanelTitle {
-  font-size: 16px;
-  font-weight: 700;
-  color: #f9fafb;
-}
-
-QDialog#AnalysisDetailDialog QLabel#MiniStatTitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: #9ca3af;
-}
-
-QDialog#AnalysisDetailDialog QLabel#MiniStatValue {
-  font-size: 15px;
-  font-weight: 700;
-  color: #f9fafb;
-}
-
-QDialog#AnalysisDetailDialog QRadioButton {
-  font-size: 13px;
-  color: #cbd5e1;
-}
-
-QDialog#AnalysisDetailDialog QPushButton {
-  font-size: 11px;
 }
 
 QDialog#AnalysisDetailDialog QTextEdit#ReadonlyText {
@@ -1104,7 +1080,6 @@ QDialog#AnalysisDetailDialog QTextEdit#ReadonlyText {
   border-radius: 6px;
   color: #e5e7eb;
   padding: 10px;
-  font-size: 13px;
 }
 
 QDialog#AnalysisDetailDialog QFrame#PanelCard {
@@ -1120,23 +1095,23 @@ QDialog#AnalysisDetailDialog QTabWidget#ContentTabs::pane {
 }
 
 QPushButton#HelpButton {
-  background: #1b2028;
-  border: 1px solid #334155;
-  border-radius: 9px;
-  color: #cbd5f5;
+  background: #e2e8f0;
+  color: #475569;
+  border: none;
+  border-radius: 10px;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 12px;
   padding: 0px;
-  min-width: 18px;
-  max-width: 18px;
-  min-height: 18px;
-  max-height: 18px;
+  margin: 0px;
+  min-width: 20px;
+  max-width: 20px;
+  min-height: 20px;
+  max-height: 20px;
 }
 
 QPushButton#HelpButton:hover {
-  background: #263142;
-  border-color: #38bdf8;
-  color: #38bdf8;
+  background: #ea580c;
+  color: #ffffff;
 }
 
 QToolTip {

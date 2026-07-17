@@ -243,7 +243,7 @@ def run_all_tests():
             traceback.print_exc()
 
     print(f"\n{'=' * 60}")
-    print(f"Ket qua: {passed} passed, {failed} failed")
+    print(f"Kết quả: {passed} passed, {failed} failed")
     if failed == 0:
         print("PASS — All Task 6 tests passed")
     else:

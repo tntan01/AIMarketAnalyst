@@ -154,7 +154,7 @@ class TestTp2MinGapGuard(unittest.TestCase):
     @patch("core.risk_engine._resolve_quote_to_usd_rate")
     @patch("core.risk_engine.contract_size_for")
     def test_no_tp1_guard_skipped(self, mock_cs, mock_qusd, mock_eval):
-        """Khong co TP1 → tp2=None, guard khong gay crash."""
+        """Không có TP1 → tp2=None, guard khong gay crash."""
         from core.risk_engine import build_trade_plan
 
         mock_cs.return_value = 100000

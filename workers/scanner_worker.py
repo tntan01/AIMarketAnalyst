@@ -30,7 +30,7 @@ class ScannerWorker(QObject):
 
             initialized = mt5.initialize()
             if not initialized:
-                raise RuntimeError("Khong khoi tao duoc ket noi MT5 cho scanner.")
+                raise RuntimeError("Không khởi tạo được kết nối MT5 cho scanner.")
             self.progress.emit(5, "Đang chuẩn bị quét thị trường...")
             result = self.task(**self.request, _progress_callback=self._emit_progress)
         except Exception as exc:

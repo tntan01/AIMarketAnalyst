@@ -211,22 +211,22 @@ class AIService:
     def _chat_completion_empty_reason(self, data: dict[str, object]) -> str:
         choices = data.get("choices", [])
         if not isinstance(choices, list) or not choices:
-            return "AI khong tra ve lua chon phan hoi. Hay thu lai hoac kiem tra model trong Settings."
+            return "AI không trả về lựa chọn phản hồi. Hãy thử lại hoặc kiểm tra model trong Settings."
         choice = choices[0] if choices else {}
         if not isinstance(choice, dict):
-            return "AI tra ve phan hoi khong dung dinh dang."
+            return "AI trả về phản hồi không đúng định dạng."
         finish_reason = str(choice.get("finish_reason") or "").strip()
         if finish_reason == "content_filter":
-            return "AI da chan noi dung phan hoi theo bo loc an toan."
+            return "AI đã chặn nội dung phản hồi theo bộ lọc an toàn."
         if finish_reason == "length":
-            return "AI het gioi han token truoc khi tao duoc noi dung. Hay thu lai voi model deepseek-v4-pro hoac giam do dai du lieu phan tich."
+            return "AI hết giới hạn token trước khi tạo được nội dung. Hãy thử lại với model deepseek-v4-pro hoặc giảm độ dài dữ liệu phân tích."
         if finish_reason == "insufficient_system_resource":
-            return "DeepSeek bao thieu tai nguyen suy luan tam thoi. Hay thu lai sau it phut."
+            return "DeepSeek báo thiếu tài nguyên suy luận tạm thời. Hãy thử lại sau ít phút."
         if finish_reason == "tool_calls":
-            return "AI yeu cau tool call nhung ung dung khong bat che do tool cho nhan dinh."
+            return "AI yêu cầu tool call nhưng ứng dụng không bật chế độ tool cho nhận định."
         if finish_reason:
-            return f"AI khong tra ve noi dung phan tich. finish_reason={finish_reason}."
-        return "AI khong tra ve noi dung phan tich."
+            return f"AI không trả về nội dung phân tích. finish_reason={finish_reason}."
+        return "AI không trả về nội dung phân tích."
 
     def _anthropic_message(self, prompt: str, max_tokens: int = 1800) -> str:
         payload = {

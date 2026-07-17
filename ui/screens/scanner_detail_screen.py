@@ -612,7 +612,7 @@ class ScannerDetailScreen(QWidget):
             
             self.chart.set_payload(payload)
         except Exception:
-            self.chart.show_error("Khong the tao du lieu bieu do tu ket qua quet.")
+            self.chart.show_error("Không thể tạo dữ liệu biểu đồ từ kết quả quét.")
 
     def _refresh_hero(self) -> None:
         """Render the colored verdict bar at the top of the overview."""

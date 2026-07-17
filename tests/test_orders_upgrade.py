@@ -24,16 +24,15 @@ def check(name, condition, detail=""):
 
 # ===== Task 1: Fix AI prompt =====
 print("=" * 60)
-print("TASK 1: Fix AI prompt (no formula injection, real context)")
+print("TASK 1: Verify AI Suggestion features are completely removed")
 print("=" * 60)
-ai_section = code.split("def _ai_suggest_trail")[1].split("def _get_selected_position")[0]
 t1 = 0
 
-check("Prompt không chứa formula_pips trong JSON template", "{formula_pips}" not in ai_section); t1 += 1
-check("max_tokens >= 400", "max_tokens=500" in ai_section or "max_tokens = 500" in ai_section); t1 += 1
-check("Prompt có context volatility/trend", any(w in ai_section.lower() for w in ["regime", "xu hướng", "volatility", "biến động", "atr_h1"])); t1 += 1
-check("Prompt yêu cầu trail_mode trong JSON response", "trail_mode" in ai_section.lower()); t1 += 1
-check("Prompt yêu cầu reason trong JSON response", "reason" in ai_section.lower()); t1 += 1
+check("Hàm _ai_suggest_trail không còn tồn tại", "_ai_suggest_trail" not in code); t1 += 1
+check("Hàm suggest_trail_pips không còn tồn tại", "suggest_trail_pips" not in code); t1 += 1
+check("Nút AI gợi ý không còn xuất hiện trong UI", "AI gợi ý" not in code); t1 += 1
+check("Hộp phân tích AI không còn trong UI", "_dlg_ai_text" not in code); t1 += 1
+check("Không còn dùng biến AI trail mode", "_dlg_ai_trail_mode" not in code); t1 += 1
 task_results["1. Fix AI prompt"] = t1
 
 # ===== Task 2: Fix _apply_trailing =====
