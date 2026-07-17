@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from config.constants import SUPPORTED_SYMBOLS
 from controllers .scanner_controller import ScannerController 
-from core .scanner import ScannerRequest 
+from core .scanner import ScannerRequest
+from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot
 from PyQt6 .QtCore import QAbstractTableModel ,QEvent ,QModelIndex ,QRect ,QSize ,Qt ,QTimer
 from PyQt6 .QtGui import QColor ,QIcon
 from PyQt6 .QtWidgets import (
@@ -28,9 +29,8 @@ QTextEdit ,
 QVBoxLayout ,
 QWidget ,
 )
-from services .mt5_service import MT5Service 
-from services .data_provider import DataProvider
-from services .settings_service import SettingsService 
+from services .mt5_service import MT5Service
+from services .settings_service import SettingsService
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header 
 
 
@@ -446,8 +446,8 @@ class ScannerScreen (QWidget ):
         self .navigate =navigate
         self .app =app
         self .settings_service =app .settings_service if app else SettingsService ()
-        self .data_provider =app .data_provider if app else MT5Service ()
-        self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,data_provider=self .data_provider )
+        self .mt5 =app .mt5 if app else MT5Service ()
+        self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,mt5=self .mt5 )
         # Session flag: chỉ auto-scan 1 lần khi mới mở tab Scanner
         self ._auto_scanned_this_session =False
         self .scan_thread =None 
@@ -723,7 +723,9 @@ class ScannerScreen (QWidget ):
                 btn.setStyleSheet(active_btn_style)
                 return
 
-            # Tính lại lot ngay trước khi vào lệnh (không dùng volume cũ từ lúc scan)
+            # Tính lại lot ngay trước khi vào lệnh.
+            # Dùng quote_to_usd_rate mới nhất; nếu không lấy được thì fallback
+            # về volume từ scan (đã được tính đúng lúc MT5 còn kết nối).
             try:
                 settings = self.settings_service.load()
                 entry_zone = order_info.get("entry_zone")
@@ -732,7 +734,7 @@ class ScannerScreen (QWidget ):
                 else:
                     entry_price = float(order_info.get("entry_price") or 0)
                 if entry_price <= 0:
-                    current = self.data_provider.current_price(symbol, side)
+                    current = self.mt5.current_price(symbol, side)
                     entry_price = float(current) if current else 0.0
                 balance = float(settings.trading.account_balance or 0)
                 risk_pct = float(settings.trading.default_risk_percent or 1.0)
@@ -748,16 +750,29 @@ class ScannerScreen (QWidget ):
                 if entry_price > 0 and sl_f > 0:
                     stop_distance = abs(entry_price - sl_f)
                     if stop_distance > 0:
-                        raw_lot = (balance * (risk_pct / 100.0)) / (stop_distance * contract)
-                        vol_f = int(raw_lot / lot_step) * lot_step
-                        vol_f = max(vol_f, min_lot)
+                        quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+                        quote_to_usd = self.mt5.quote_to_usd_rate(quote_currency)
+                        vol_f = recalc_execution_lot(
+                            symbol=symbol,
+                            broker_symbol=broker_symbol or symbol,
+                            account_balance=balance,
+                            risk_percent=risk_pct,
+                            account_currency=getattr(settings.trading, 'account_currency', 'USD'),
+                            lot_step=lot_step,
+                            minimum_lot=min_lot,
+                            contract_size_override=contract,
+                            entry_price=entry_price,
+                            stop_loss=sl_f,
+                            quote_to_usd_rate=quote_to_usd,
+                            fallback_lot=float(volume or 0.0),
+                        )
             except Exception:
                 pass  # giữ nguyên vol_f từ bước validate
 
             if not broker_symbol:
                 try:
-                    available = self.data_provider.available_symbols()
-                    broker_symbol = self.data_provider.resolve_symbol(symbol, available)
+                    available = self.mt5.available_symbols()
+                    broker_symbol = self.mt5.resolve_symbol(symbol, available)
                 except Exception:
                     broker_symbol = None
 
@@ -864,13 +879,13 @@ class ScannerScreen (QWidget ):
                 except Exception:
                     pass  # terminal_info() not available, proceed anyway
 
-                if self.data_provider.has_open_position_or_order(broker_symbol):
+                if self.mt5.has_open_position_or_order(broker_symbol):
                     QMessageBox.information(dlg, "Thông báo", f"Đã có lệnh/position cho {symbol} ({broker_symbol}).")
                     btn.setText("Đã có lệnh")
                     btn.setStyleSheet(disabled_btn_style)
                     return
 
-                order_res = self.data_provider.place_market_order(
+                order_res = self.mt5.place_market_order(
                     symbol=symbol,
                     broker_symbol=broker_symbol,
                     side=side,
@@ -926,7 +941,7 @@ class ScannerScreen (QWidget ):
             has_existing = False
             if broker_symbol:
                 try:
-                    if self.data_provider.has_open_position_or_order(broker_symbol):
+                    if self.mt5.has_open_position_or_order(broker_symbol):
                         has_existing = True
                 except Exception:
                     pass
@@ -1420,7 +1435,7 @@ class ScannerScreen (QWidget ):
         dialog .exec ()
 
     def refresh_status (self )->None :
-        status =self .data_provider .connection_status ()
+        status =self .mt5 .connection_status ()
         self .status_labels ["MT5"].setText ('Đã kết nối'if status .connected and status .logged_in else 'Chưa kết nối đầy đủ')
         self ._refresh_symbol_availability (status )
         self ._refresh_scan_button_state ()
@@ -1431,7 +1446,7 @@ class ScannerScreen (QWidget ):
         return [symbol for symbol in self .selected_scan_symbols if symbol in allowed]
 
     def _refresh_symbol_availability (self ,status )->None :
-        matches =self .data_provider .configured_symbols_in_market_watch ()if status .connected else []
+        matches =self .mt5 .configured_symbols_in_market_watch ()if status .connected else []
         self .market_watch_symbols ={symbol for symbol ,_broker_symbol in matches }
         settings =self .settings_service .load ()
         self .scan_symbols =self ._configured_scan_symbols (settings )
@@ -1600,7 +1615,7 @@ class ScannerScreen (QWidget ):
             return 900
 
     def _compute_next_candle_delay_ms (self ,timeframe_seconds :int )->int :
-        server_time =self .data_provider .server_time_utc ()
+        server_time =self .mt5 .server_time_utc ()
         if server_time is None :
             return timeframe_seconds *1000
         now_ms =int (server_time .timestamp ()*1000 )

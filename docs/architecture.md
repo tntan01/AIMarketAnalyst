@@ -10,7 +10,7 @@ Mục tiêu kiến trúc:
 
 * UI có độ hoàn thiện cao như một phần mềm desktop thật.
 * Logic nghiệp vụ có thể test độc lập, không phụ thuộc PyQt6.
-* Dễ thêm màn hình, thêm data provider, thêm AI provider và thêm loại tài sản sau này.
+* Dễ thêm màn hình, thêm loại phân tích, thêm AI provider và thêm loại tài sản sau này.
 * Dễ đóng gói thành bản cài đặt Windows và chuyển sang máy khác.
 
 ## Phạm vi symbol được hỗ trợ
@@ -71,8 +71,11 @@ ai-market-analyst/
     reason_codes.py
 
   controllers/
+    app_controller.py
     backtest_controller.py
     scanner_controller.py
+    journal_controller.py
+    settings_controller.py
 
   workers/
     base_worker.py
@@ -90,11 +93,6 @@ ai-market-analyst/
     settings_service.py
     logging_service.py
     scanner_worker.py
-
-  controllers/
-    app_controller.py
-    analysis_controller.py
-    settings_controller.py
 
   ui/
     theme.py
@@ -256,7 +254,7 @@ Mọi lịch kinh tế hiển thị cho người dùng phải ưu tiên mẫu: `
 
 Chứa kết nối bên ngoài:
 
-* Nguồn dữ liệu thị trường (MT5 & cTrader qua BaseDataProvider).
+* Nguồn dữ liệu thị trường (MT5 qua DataProvider).
 * AI API.
 * Tin tức.
 * Telegram alert.
@@ -339,11 +337,11 @@ Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 
 5 màn hình chính trong ứng dụng:
 
-* `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5/AI/Broker/Nguồn dữ liệu dạng card 1 dòng với emoji (✅/🔴) và chấm tròn màu.
+* `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5, AI, Broker dạng card.
 * `scanner_screen.py`: Quét thị trường, bảng xếp hạng, auto-trade. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5, auto-trade OFF).
 * `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Sử dụng QTabWidget 3 tab: (1) "📊 Kết quả" — HTML thống kê tổng hợp + bảng nhiệt lời/lỗ theo tháng + khoảng tin cậy Monte Carlo + Walk-Forward Analysis + pipeline diagnostics, (2) "📈 Đường cong vốn" — matplotlib FigureCanvas hiển thị cumulative R (line xanh) và drawdown R (vùng đỏ), (3) "📋 Danh sách lệnh" — bảng trade với màu sắc (xanh=thắng, đỏ=thua, xám=hòa). Có banner kết luận nhanh (có edge/không), KPI 9 ô, checkbox Walk-Forward, dialog phân tích với bảng thống kê mở rộng, Walk-Forward Analysis, Monte Carlo, pipeline diagnostics, và AI nhận xét.
 * `journal_screen.py`: Nhật ký giao dịch.
-* `settings_screen.py`: Cài đặt AI, MT5, giao dịch, auto-trade theo cặp.
+* `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.
 
@@ -470,7 +468,7 @@ Không code tất cả trong một lần.
 
 - `risk_engine.build_trade_plan()` returns a wider `watch_zone` for monitoring and a narrower `entry_zone` for confirmation. Only the narrow `entry_zone` is passed to `core/entry_engine.py`; UI, controller and AI must not use `watch_zone` to set `ready_to_trade`.
 - `core/backtest_engine.py` applies `cooldown_bars` after a trade exits before replaying another touch of the same setup zone, reducing duplicate trades during sideways price action.
-- `controllers.analysis_controller.AnalysisController` passes `entry_context` into the technical prompt payload so AI commentary can reference current price versus entry zone, stop loss, take profit and entry status.
+- `core.analysis_pipeline.AnalysisPipeline` passes `entry_context` into the technical prompt payload so AI commentary can reference current price versus entry zone, stop loss, take profit and entry status.
 - `core.scanner.scanner_row_from_analysis()` computes `price_vs_zone` for Scanner UI table visibility; Detail still keeps full `entry_status`.
 - `core.analysis_engine.build_entry_checklist()` evaluates trend compatibility by scenario side and allows range setups only when the POI/location quality is strong enough.
 - `core.smc_context._smc_for_timeframe()` uses `lookback=5` for swing detection. If no swings are found (common in strongly trending markets), it automatically falls back to `lookback=2` and sets `swing_source = "fallback"` in the output. Normal markets use `swing_source = "standard"`.

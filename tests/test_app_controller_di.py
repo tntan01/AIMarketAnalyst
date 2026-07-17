@@ -10,9 +10,9 @@ def test_app_controller_services_are_singletons():
     app = AppController()
 
     assert app.settings_service is app.settings_service
-    assert app.mt5_service is app.mt5_service
+    assert app.mt5 is app.mt5
     assert app.scanner_controller is app.scanner_controller
-    assert app.scanner_controller.mt5_service is app.mt5_service
+    assert app.scanner_controller.mt5 is app.mt5
 
 
 def test_app_controller_creates_configured_ai_service():

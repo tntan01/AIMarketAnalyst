@@ -130,7 +130,7 @@ class DashboardScreen(QWidget):
         super().__init__()
         self.navigate = navigate
         self.app = app
-        self.data_provider = app.data_provider if app else MT5Service()
+        self.mt5 = app.mt5 if app else MT5Service()
         self.settings_service = app.settings_service if app else SettingsService()
         self.status_cards: dict[str, tuple[QFrame, QLabel, QLabel]] = {}
         self._light = self._is_light_theme()
@@ -1745,7 +1745,7 @@ QUAN TRỌNG:
         self.refresh_ai_status()
 
     def refresh_mt5_status(self) -> None:
-        status = self.data_provider.connection_status()
+        status = self.mt5.connection_status()
         self._apply_connection_status(status)
 
     def refresh_ai_status(self) -> None:
@@ -1759,8 +1759,7 @@ QUAN TRỌNG:
             self._set_status_card("AI", "Trí tuệ nhân tạo", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
 
         # Update data source card
-        source = settings.data_source
-        source_name = "cTrader" if source == "ctrader" else "MetaTrader 5"
+        source_name = "MetaTrader 5"
         self._set_status_card("Nguồn dữ liệu", "Nguồn dữ liệu", f"Đang dùng {source_name}", "ok")
 
     def _apply_connection_status(self, status: ConnectionStatus) -> None:

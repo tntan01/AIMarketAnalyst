@@ -67,7 +67,7 @@ class OrdersScreen(QWidget):
         super().__init__()
         self.navigate = navigate
         self.app = app
-        self.data_provider = app.data_provider if app else MT5Service()
+        self.mt5 = app.mt5 if app else MT5Service()
         self.settings_service = app.settings_service if app else SettingsService()
         self._light = self._is_light_theme()
         self._active_tab = "positions"
@@ -285,15 +285,15 @@ class OrdersScreen(QWidget):
     def refresh_orders(self) -> None:
         self._light = self._is_light_theme()
         try:
-            balance = self.data_provider.account_balance()
+            balance = self.mt5.account_balance()
             if self.balance_label:
                 self.balance_label.setText(f"${balance:,.2f}" if balance is not None else "--")
         except Exception:
             if getattr(self, "balance_label", None):
                 self.balance_label.setText("--")
 
-        self._positions = self.data_provider.get_open_positions() if hasattr(self.data_provider, "get_open_positions") else []
-        self._pending_orders = self.data_provider.get_pending_orders() if hasattr(self.data_provider, "get_pending_orders") else []
+        self._positions = self.mt5.get_open_positions() if hasattr(self.mt5, "get_open_positions") else []
+        self._pending_orders = self.mt5.get_pending_orders() if hasattr(self.mt5, "get_pending_orders") else []
         self._cleanup_trailing()
 
         if getattr(self, "position_count_label", None):
@@ -528,7 +528,7 @@ class OrdersScreen(QWidget):
 
     def _trailing_tick(self) -> None:
         """Called every 1.5s: update extreme price & adjust SL if needed."""
-        if not hasattr(self.data_provider, "modify_position_sltp"):
+        if not hasattr(self.mt5, "modify_position_sltp"):
             return
         try:
             import MetaTrader5 as mt5
@@ -568,7 +568,7 @@ class OrdersScreen(QWidget):
                         pip_m = float(cfg.get("pip_multiplier", 10000) or 10000)
                         be_plus = 2.0 / pip_m
                         be_sl = entry_price + be_plus if side == "buy" else entry_price - be_plus
-                        result = self.data_provider.modify_position_sltp(pos_id, sl=be_sl)
+                        result = self.mt5.modify_position_sltp(pos_id, sl=be_sl)
                         if result.get("success"):
                             cfg["current_sl"] = be_sl
                         cfg["be_done"] = True
@@ -629,7 +629,7 @@ class OrdersScreen(QWidget):
                             (side == "sell" and new_sl < current_sl - trail_price * 0.2)
 
             if should_update:
-                result = self.data_provider.modify_position_sltp(pos_id, sl=new_sl)
+                result = self.mt5.modify_position_sltp(pos_id, sl=new_sl)
                 if result.get("success"):
                     cfg["current_sl"] = new_sl
 
@@ -1235,8 +1235,8 @@ class OrdersScreen(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        if hasattr(self.data_provider, "close_position"):
-            result = self.data_provider.close_position(pos_id)
+        if hasattr(self.mt5, "close_position"):
+            result = self.mt5.close_position(pos_id)
             # Clean up trailing config
             self._trailing_configs.pop(pos_id, None)
             if result.get("success"):
@@ -1261,7 +1261,7 @@ class OrdersScreen(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        if not hasattr(self.data_provider, "close_position"):
+        if not hasattr(self.mt5, "close_position"):
             QMessageBox.warning(self, "Không hỗ trợ", "Data provider không hỗ trợ đóng lệnh.")
             return
 
@@ -1271,7 +1271,7 @@ class OrdersScreen(QWidget):
             pos_id = int(pos.get("position_id", 0))
             if not pos_id:
                 continue
-            result = self.data_provider.close_position(pos_id)
+            result = self.mt5.close_position(pos_id)
             self._trailing_configs.pop(pos_id, None)
             if result.get("success"):
                 closed += 1

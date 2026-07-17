@@ -12,7 +12,6 @@ from config.settings import (
     AISettings,
     DisplaySettings,
     NotificationSettings,
-    CTraderSettings,
     SymbolScanSettings,
     TradingSettings,
     default_settings,
@@ -35,8 +34,6 @@ class SettingsService:
             display=self._load_display_settings(data.get("display", {}), data.get("language", "vi")),
             advanced=self._load_advanced_settings(data.get("advanced", {})),
             notifications=self._load_notification_settings(data.get("notifications", {})),
-            ctrader=self._load_ctrader_settings(data.get("ctrader", {})),
-            data_source=str(data.get("data_source", "mt5")),
             default_symbol=data.get("default_symbol", "EUR/USD"),
             default_timeframe=data.get("default_timeframe", "H1"),
             language=data.get("language", "vi"),
@@ -178,22 +175,3 @@ class SettingsService:
             auto_scan_interval_minutes=interval,
         )
 
-
-    def _load_ctrader_settings(self, data: dict | None) -> CTraderSettings:
-        data = data or {}
-        env = str(data.get("environment", "demo")).strip().lower()
-        if env not in ("demo", "live"):
-            env = "demo"
-            
-        try:
-            account_id = int(data.get("account_id", 0) or 0)
-        except (ValueError, TypeError):
-            account_id = 0
-            
-        return CTraderSettings(
-            client_id=str(data.get("client_id", "")).strip(),
-            client_secret=str(data.get("client_secret", "")).strip(),
-            access_token=str(data.get("access_token", "")).strip(),
-            account_id=account_id,
-            environment=env,
-        )

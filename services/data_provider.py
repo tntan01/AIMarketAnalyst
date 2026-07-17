@@ -1,6 +1,6 @@
 """Abstract data-provider interface for market data and trading.
 
-Every concrete provider (MT5, cTrader, …) implements this ABC so that
+Every concrete provider implements this ABC so that
 controllers can work with *any* data source without caring which one
 is active.
 """
@@ -16,18 +16,18 @@ from core.market_models import Candle
 
 
 # ---------------------------------------------------------------------------
-# Shared data-classes (provider-agnostic)
+# Shared data-classes
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True, slots=True)
 class ConnectionStatus:
-    """Unified connection/account status returned by every provider."""
+    """Connection/account status."""
 
     initialized: bool
     connected: bool
     logged_in: bool
     trade_allowed: bool
-    provider_name: str = ""       # "MT5" / "cTrader"
+    provider_name: str = ""
     broker: str = ""
     server: str = ""
     login: int | str | None = None
@@ -47,7 +47,7 @@ class ConnectionStatus:
 
 @dataclass(frozen=True, slots=True)
 class OrderResult:
-    """Unified order result returned by every provider."""
+    """Order result."""
 
     success: bool
     symbol: str
@@ -67,12 +67,7 @@ class OrderResult:
 # ---------------------------------------------------------------------------
 
 class DataProvider(ABC):
-    """Unified interface for market-data retrieval and trade execution.
-
-    Each method mirrors what ``MT5Service`` currently exposes, but is
-    provider-agnostic so that ``CTraderService`` (or any future provider)
-    can implement the same contract.
-    """
+    """Interface for market-data retrieval and trade execution."""
 
     # -- connection --------------------------------------------------------
 

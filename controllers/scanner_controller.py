@@ -24,9 +24,8 @@ from core.scanner_ai_auditor import (
 )
 from core.scanner_session_review import build_market_brief_prompt
 from core.analysis_engine import analyze_symbol
-from core.risk_engine import AnalysisInput, contract_size_override_for_symbol
+from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot
 from services.ai_service import AIProviderConfig, AIService
-from services.data_provider import DataProvider
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
@@ -41,17 +40,14 @@ class ScannerController:
     def __init__(
         self,
         settings_service: SettingsService | None = None,
-        data_provider: DataProvider | None = None,
+        mt5: MT5Service | None = None,
         news_service: NewsService | None = None,
         telegram_service: TelegramAlertService | None = None,
         journal_service: JournalService | None = None,
-        # Backward compat: accept mt5_service kwarg and use it as data_provider
-        mt5_service: MT5Service | None = None,
         orders_screen = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
-        self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
-        self.mt5_service = self.data_provider
+        self.mt5: MT5Service = mt5 or MT5Service()
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
@@ -81,10 +77,10 @@ class ScannerController:
         )
         request = replace(request, risk_percent=effective_risk_percent)
         progress(8, "Đang kiểm tra kết nối dữ liệu...")
-        status = self.data_provider.connection_status()
+        status = self.mt5.connection_status()
         if not status.connected or not status.logged_in:
             raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
-        mt5_balance = self.data_provider.account_balance()
+        mt5_balance = self.mt5.account_balance()
         if mt5_balance is None:
             raise RuntimeError("Không lấy được số dư từ tài khoản.")
 
@@ -104,7 +100,7 @@ class ScannerController:
             )
 
             progress(12, "Đang đọc danh sách mã giao dịch...")
-            available_symbols = self.data_provider.available_symbols(market_watch_only=True)
+            available_symbols = self.mt5.available_symbols(market_watch_only=True)
 
             # Wait for background I/O to complete before proceeding
             progress(14, "Đang tải dữ liệu thị trường Mỹ...")
@@ -153,7 +149,7 @@ class ScannerController:
             try:
                 pkt = _fetch_one_symbol_mt5(
                     symbol,
-                    data_provider=self.data_provider,
+                    mt5=self.mt5,
                     available_symbols=available_symbols,
                     bars_by_timeframe=bars_by_timeframe,
                     news_service=self.news_service,
@@ -341,7 +337,9 @@ class ScannerController:
                 errors.append(f"{symbol}: thiếu lot/SL/TP hợp lệ, bỏ qua auto trade.")
                 continue
 
-            # Tính lại lot ngay trước khi vào lệnh (không dùng suggested_lot cũ từ lúc scan)
+            # Tính lại lot ngay trước khi vào lệnh.
+            # Dùng quote_to_usd_rate mới nhất; nếu không lấy được thì fallback
+            # về suggested_lot từ scan (đã được tính đúng lúc MT5 còn kết nối).
             try:
                 settings = self.settings_service.load()
                 entry_zone = scenario.get("entry_zone")
@@ -350,7 +348,7 @@ class ScannerController:
                 else:
                     entry_price = 0.0
                 if entry_price <= 0:
-                    current = self.data_provider.current_price(symbol, trade_side)
+                    current = self.mt5.current_price(symbol, trade_side)
                     entry_price = float(current) if current else 0.0
                 if entry_price <= 0 or stop_loss <= 0 or abs(entry_price - stop_loss) <= 0:
                     skipped += 1
@@ -367,10 +365,22 @@ class ScannerController:
                     contract = 100000.0
                 lot_step = float(settings.trading.lot_step or 0.01)
                 min_lot = float(settings.trading.minimum_lot or 0.01)
-                stop_distance = abs(entry_price - stop_loss)
-                raw_lot = (balance * (risk_pct / 100.0)) / (stop_distance * contract)
-                volume = int(raw_lot / lot_step) * lot_step
-                volume = max(volume, min_lot)
+                quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+                quote_to_usd = self.mt5.quote_to_usd_rate(quote_currency)
+                volume = recalc_execution_lot(
+                    symbol=symbol,
+                    broker_symbol=broker_symbol or symbol,
+                    account_balance=balance,
+                    risk_percent=risk_pct,
+                    account_currency=settings.trading.account_currency,
+                    lot_step=lot_step,
+                    minimum_lot=min_lot,
+                    contract_size_override=contract,
+                    entry_price=entry_price,
+                    stop_loss=stop_loss,
+                    quote_to_usd_rate=quote_to_usd,
+                    fallback_lot=float(sizing.get("suggested_lot", 0.0)),
+                )
             except Exception:
                 skipped += 1
                 errors.append(f"{symbol}: lỗi khi tính lot, bỏ qua auto trade.")
@@ -383,7 +393,7 @@ class ScannerController:
                 continue
 
             try:
-                if self.data_provider.has_open_position_or_order(broker_symbol):
+                if self.mt5.has_open_position_or_order(broker_symbol):
                     skipped += 1
                     results.append({
                         "success": False,
@@ -425,7 +435,7 @@ class ScannerController:
                         )
                         continue
 
-                order = self.data_provider.place_market_order(
+                order = self.mt5.place_market_order(
                     symbol=symbol,
                     broker_symbol=broker_symbol,
                     side=trade_side,
@@ -778,18 +788,18 @@ def _scan_one_symbol(
 
     _mt5_ok = _mt5.initialize()
     try:
-        data_provider = MT5Service()
-        broker_symbol = data_provider.resolve_symbol(symbol, available_symbols)
+        mt5_svc = MT5Service()
+        broker_symbol = mt5_svc.resolve_symbol(symbol, available_symbols)
         if not broker_symbol:
             return blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
 
-        all_candles = data_provider.load_primary_timeframes(
+        all_candles = mt5_svc.load_primary_timeframes(
             broker_symbol,
             {**bars_by_timeframe, "M15": 200},
         )
         candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
         m15_candles = all_candles["M15"]
-        data_quality = data_provider.symbol_data_quality(symbol, broker_symbol)
+        data_quality = mt5_svc.symbol_data_quality(symbol, broker_symbol)
         news_flags = news_service.data_quality_flags(symbol)
         macro_context = news_flags.pop("macro_context", {"events": []})
         data_quality.update(news_flags)
@@ -810,7 +820,7 @@ def _scan_one_symbol(
         macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
         macro_confidence = macro_confidence * freshness_multiplier
         quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-        quote_to_usd = data_provider.quote_to_usd_rate(quote_currency)
+        quote_to_usd = mt5_svc.quote_to_usd_rate(quote_currency)
 
         result = analyze_symbol(
             analysis_input,
@@ -851,7 +861,7 @@ def _scan_one_symbol(
 
 def _fetch_one_symbol_mt5(
     symbol: str,
-    data_provider: Any,
+    mt5: Any,
     available_symbols: list[str],
     bars_by_timeframe: dict[str, int],
     news_service: Any,
@@ -860,20 +870,20 @@ def _fetch_one_symbol_mt5(
 ) -> dict[str, Any] | None:
     """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
     consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved."""
-    broker_symbol = data_provider.resolve_symbol(symbol, available_symbols)
+    broker_symbol = mt5.resolve_symbol(symbol, available_symbols)
     if not broker_symbol:
         return None
 
-    all_candles = data_provider.load_primary_timeframes(
+    all_candles = mt5.load_primary_timeframes(
         broker_symbol, {**bars_by_timeframe, "M15": 100},
     )
-    data_quality = data_provider.symbol_data_quality(symbol, broker_symbol)
+    data_quality = mt5.symbol_data_quality(symbol, broker_symbol)
     news_flags = news_service.data_quality_flags(symbol, ai_service=ai_service)
     macro_context = news_flags.pop("macro_context", {"events": []})
     data_quality.update(news_flags)
     data_quality["macro_freshness"] = freshness
     quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-    quote_to_usd = data_provider.quote_to_usd_rate(quote_currency)
+    quote_to_usd = mt5.quote_to_usd_rate(quote_currency)
 
     return {
         "symbol": symbol,

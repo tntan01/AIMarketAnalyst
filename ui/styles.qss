@@ -46,7 +46,6 @@ QLabel#SidebarFooter,
 QLabel#PageSubtitle,
 QLabel#CardDetail,
 QLabel#ActionDetail,
-QLabel#ActionMeta,
 QLabel#MiniStatTitle,
 QLabel#WarningDetail,
 QLabel#EmptyText,
@@ -573,9 +572,6 @@ QPushButton#SecondaryButton[btnColor="warning"]:hover { background: #78350f; }
 QPushButton#SecondaryButton[btnColor="info"] { border-color: #3b82f6; color: #3b82f6; }
 QPushButton#SecondaryButton[btnColor="info"]:hover { background: #1e3a8a; }
 
-QLabel#ActionMeta {
-  font-size: 12px;
-}
 
 QLabel#ConditionBadge {
   background: #12352f;

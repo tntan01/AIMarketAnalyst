@@ -102,7 +102,7 @@ def test_all():
     dp.resolve_symbol.return_value = "EURUSD"
     dp.symbol_data_quality.return_value = {}
 
-    ctrl = BacktestController(settings_service=svc, data_provider=dp)
+    ctrl = BacktestController(settings_service=svc, mt5=dp)
     reqs = ctrl.build_requests(symbols=["EUR/USD"], start=now, end=now,
                                initial_balance=10000, risk_percent=1.0)
     check("build_requests returns 1", len(reqs) == 1)

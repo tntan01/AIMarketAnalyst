@@ -248,7 +248,7 @@ Một task chỉ được coi là xong khi:
 - UI phai truyen `ScannerRequest.auto_trade_enabled=True` chi khi scan mode la auto va nut auto-entry dang bat.
 - Controller phai cap `risk_percent` theo `settings.trading.max_risk_percent` truoc khi goi analysis va truoc khi dat lenh.
 - Chi auto trade row `ready` + `allowed` + co `analysis_result` + co scenario khop `best_side`.
-- Lot dat lenh phai lay tu `position_sizing.suggested_lot`. Khong tinh lot rieng trong UI, khong tang lot len minimum neu viec do co the vuot risk.
+- Lot dat lenh duoc tinh lai ngay truoc khi goi `place_market_order()` qua `recalc_execution_lot()` (wrapper cua `position_sizing()` trong `core/risk_engine.py`). Ham nay su dung `quote_to_usd_rate` moi nhat tu MT5 de quy doi dung lot cho cac cap JPY/CHF/CAD. Neu khong lay duoc ty gia, fallback ve `suggested_lot` tu scan.
 - Moi broker symbol chi duoc co mot lenh dang ton tai. Phai kiem tra ca `positions_get(symbol=...)` va `orders_get(symbol=...)` truoc khi goi `order_send`.
 - Neu da co position/order cho symbol, ghi ket qua skipped va khong dat lenh moi.
 - Market order:

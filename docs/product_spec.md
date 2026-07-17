@@ -2,19 +2,19 @@
 
 > Phiên bản tài liệu: 2026-06-11
 > Trạng thái: cập nhật theo chương trình hiện tại
-> Phạm vi: ứng dụng desktop PyQt6 phân tích Forex/XAU/USD/XAG/USD/BTC/USD bằng MT5/cTrader, rule engine, AI commentary, scanner, backtest và auto-trade
+> Phạm vi: ứng dụng desktop PyQt6 phân tích Forex/XAU/USD/XAG/USD/BTC/USD bằng MT5, rule engine, AI commentary, scanner, backtest và auto-trade
 
 ## 1. Mục tiêu sản phẩm
 
 AI Market Analyst là công cụ cá nhân hỗ trợ trader phân tích thị trường Forex, kim loại quý và BTC/USD. Sản phẩm tập trung vào:
 
-- Lấy dữ liệu thật từ broker (MT5, cTrader) thông qua kiến trúc Multi-Provider.
+- Lấy dữ liệu thật từ broker (MT5).
 - Tự tính indicator, market regime, direction bias, SMC context, macro context và risk.
 - Tạo trade plan có Entry, SL, TP, R:R và lot theo risk settings.
 - Quét nhiều mã để tìm setup đủ điều kiện.
 - Backtest hệ thống trên dữ liệu lịch sử để đo lường edge.
 - Gửi Telegram alert cho setup sẵn sàng.
-- Tự động vào lệnh (MT5/cTrader) khi người dùng bật auto-entry trong Scanner auto-scan, với bộ lọc riêng cho từng cặp dựa trên kết quả backtest.
+- Tự động vào lệnh (MT5) khi người dùng bật auto-entry trong Scanner auto-scan, với bộ lọc riêng cho từng cặp dựa trên kết quả backtest.
 
 AI chỉ dùng để diễn giải dữ liệu đã tính và viết nhận định dễ hiểu. AI không được tự bịa giá, entry, SL, TP, lot hoặc trạng thái ready.
 
@@ -33,7 +33,7 @@ Broker symbol trong MT5 có thể có hậu tố như `m`, `c`, `.r`. Code phả
 
 ### 3.1 Scanner (chính)
 
-Scanner là chế độ phân tích chính, quét danh sách mã đã chọn trong danh sách Symbol hệ thống (MT5/cTrader). Mỗi mã được phân tích đầy đủ qua pipeline `analyze_symbol()`, trả về kết quả gồm:
+Scanner là chế độ phân tích chính, quét danh sách mã đã chọn trong danh sách Symbol hệ thống (MT5). Mỗi mã được phân tích đầy đủ qua pipeline `analyze_symbol()`, trả về kết quả gồm:
 
 - Market regime, direction bias, buy/sell score, final score.
 - Trade permission, decision engine, scanner group.
@@ -53,7 +53,7 @@ Mỗi cặp có thể được cấu hình ngưỡng quyết định riêng (`de
 
 Backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge của hệ thống. Hỗ trợ 5 chế độ (Strict, Balanced, Legacy, Research, Backtest), multi-symbol batch, và breakdown 13 chiều (symbol, side, decision, month, regime, score, M15 quality, SMC, R:R...).
 
-Kết quả backtest dùng để xác định bộ lọc auto-trade tối ưu cho từng cặp, cấu hình trong Settings > MT5.
+Kết quả backtest dùng để xác định bộ lọc auto-trade tối ưu cho từng cặp, cấu hình trong Settings > Dữ liệu.
 
 ## 4. Trạng thái entry và hành động scanner
 
@@ -99,17 +99,15 @@ Controller phải cap `risk_percent` theo `max_risk_percent` trước khi phân 
 
 Auto-entry không được tự tăng lot lên broker minimum nếu điều đó có thể làm vượt mức rủi ro đã tính. Nếu lot sau chuẩn hóa theo broker `volume_step` thấp hơn `volume_min`, hệ thống phải bỏ qua lệnh.
 
-## 6. Data và Execution (Multi-Provider)
+## 6. Data và Execution (MT5)
 
-Hệ thống kết nối thị trường qua giao diện `BaseDataProvider`:
+Hệ thống kết nối thị trường qua `MT5Service`:
 
-- **MT5 (Local)**:
+- **MT5**:
   - Lấy OHLCV, tick bid/ask qua MetaTrader5 Python API.
   - Account balance và lệnh market order gửi qua MT5 terminal đang đăng nhập.
-- **cTrader (Cloud API)**:
-  - Lấy OHLCV, báo giá và đặt lệnh qua cTrader Open API v2.
 
-Nếu provider chưa kết nối, thiếu symbol, không lấy được OHLCV hoặc spread bất thường, hệ thống phải chặn trạng thái ready/action thực chiến.
+Nếu MT5 chưa kết nối, thiếu symbol, không lấy được OHLCV hoặc spread bất thường, hệ thống phải chặn trạng thái ready/action thực chiến.
 
 ## 7. Auto-entry
 
@@ -195,12 +193,12 @@ Cả 4 đạt → nâng `scanner_action` lên `ready`. Cơ chế này cho phép 
 
 1. Controller quét xong toàn bộ danh sách.
 2. Với mỗi row, gọi `_apply_symbol_override` → gọi `_is_auto_trade_candidate`.
-3. Nếu candidate pass, gọi `DataProvider.has_open_position_or_order()`.
-4. Nếu chưa có lệnh, gọi `DataProvider.place_market_order()`.
+3. Nếu candidate pass, gọi `self.mt5.has_open_position_or_order()`.
+4. Nếu chưa có lệnh, gọi `self.mt5.place_market_order()`.
 5. BUY dùng giá `ask`; SELL dùng giá `bid`.
 6. SL lấy từ `scenario.stop_loss`.
 7. TP dùng TP đầu tiên trong `scenario.take_profit`.
-8. Volume dùng `scenario.position_sizing.suggested_lot` sau khi chuẩn hóa theo broker step.
+8. Volume được tính lại qua `recalc_execution_lot()` với `quote_to_usd_rate` mới nhất từ MT5, fallback về `suggested_lot` từ scan nếu không lấy được tỷ giá.
 9. Kết quả trả về trong `output["auto_trade_results"]`.
 
 `auto_trade_results` gồm: `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`.
@@ -252,7 +250,7 @@ Summary alert không hiển thị danh sách theo dõi.
 - Scanner — quét thị trường, bảng xếp hạng cơ hội, auto-trade.
 - Backtest — replay hệ thống trên dữ liệu lịch sử, phân tích edge.
 - Journal — nhật ký giao dịch, xem lại phân tích đã lưu.
-- Settings — cấu hình AI, MT5, giao dịch, auto-trade cho từng cặp.
+- Settings — cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao.
 
 Yêu cầu UI:
 
@@ -290,11 +288,11 @@ Tính năng chính:
 - Equity curve, drawdown tracking, account guard mô phỏng.
 - Dữ liệu M15 load theo chunk 180 ngày, tự fallback sang H1 khi không có.
 
-Kết quả backtest là cơ sở để cấu hình bộ lọc auto-trade cho từng cặp trong Settings > MT5.
+Kết quả backtest là cơ sở để cấu hình bộ lọc auto-trade cho từng cặp trong Settings > Dữ liệu.
 
 ## 12. Cấu hình auto-trade theo cặp
 
-Mỗi cặp có thể được cấu hình auto-trade riêng trong Settings > MT5:
+Mỗi cặp có thể được cấu hình auto-trade riêng trong Settings > Dữ liệu:
 
 | Trường | Ý nghĩa |
 |---|---|

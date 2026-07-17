@@ -802,6 +802,50 @@ def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float
     }
 
 
+def recalc_execution_lot(
+    *,
+    symbol: str,
+    broker_symbol: str,
+    account_balance: float,
+    risk_percent: float,
+    account_currency: str,
+    lot_step: float,
+    minimum_lot: float,
+    contract_size_override: float | None,
+    entry_price: float,
+    stop_loss: float,
+    quote_to_usd_rate: float | None,
+    fallback_lot: float,
+) -> float:
+    """Tính lại lot ngay trước khi vào lệnh, có quote_to_usd_rate.
+
+    Nếu không lấy được tỷ giá quy đổi cho non-USD quote, fallback về
+    *fallback_lot* (suggested_lot từ scan đã được tính đúng trước đó).
+    """
+    if quote_to_usd_rate is None:
+        quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+        if quote_currency != "USD":
+            if fallback_lot <= 0:
+                fallback_lot = minimum_lot
+            return fallback_lot
+    sizing = position_sizing(
+        AnalysisInput(
+            symbol=symbol,
+            broker_symbol=broker_symbol,
+            account_balance=account_balance,
+            risk_percent=risk_percent,
+            account_currency=account_currency,
+            lot_step=lot_step,
+            minimum_lot=minimum_lot,
+            contract_size_override=contract_size_override,
+        ),
+        entry_price,
+        stop_loss,
+        quote_to_usd_rate=quote_to_usd_rate,
+    )
+    return sizing["suggested_lot"]
+
+
 def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
     """Try to get quote-currency to USD conversion rate from MT5."""
     if "/" not in symbol:

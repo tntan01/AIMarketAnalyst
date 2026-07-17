@@ -18,7 +18,7 @@ Phần mềm nên gồm **8 màn hình chính**:
 | 5 | Scanner Detail (Màn hình chi tiết mã từ quét thị trường) | Xem phân tích chi tiết của một mã được chọn từ Scanner (màn hình quét thị trường) |
 | 6 | Journal (Màn hình nhật ký phân tích) | Xem danh sách các phân tích đã lưu |
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
-| 8 | Settings (Màn hình cài đặt) | Cấu hình AI (trí tuệ nhân tạo), MT5 (MetaTrader 5), giao dịch và hiển thị |
+| 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
 
 Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **12 màn hình/tabs chức năng**:
@@ -30,8 +30,8 @@ Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài �
 5. Scanner Detail (Màn hình chi tiết mã từ quét thị trường)
 6. Journal (Màn hình nhật ký phân tích)
 7. Journal Detail (Màn hình chi tiết nhật ký)
-8. Settings - AI Provider (Cài đặt nhà cung cấp AI)
-9. Settings - Data Source (Cài đặt nguồn dữ liệu)
+8. Settings - AI (Cài đặt AI)
+9. Settings - Dữ liệu (Cài đặt dữ liệu MT5)
 10. Settings - Trading (Cài đặt giao dịch)
 11. Settings - Display (Cài đặt hiển thị)
 12. Settings - Advanced (Cài đặt nâng cao)
@@ -104,7 +104,7 @@ Trong code UI nên có file từ điển thuật ngữ dùng chung, ví dụ `co
 | Phân tích | Single Analysis Input, Single Analysis Result |
 | Quét thị trường | Scanner, Scanner Detail |
 | Nhật ký | Journal, Journal Detail |
-| Cài đặt | Settings với các tab AI, MT5, Giao dịch, Hiển thị, Nâng cao |
+| Cài đặt | Settings với các tab AI, Dữ liệu, Giao dịch, Hiển thị, Nâng cao |
 
 Tên file UI đề xuất:
 
@@ -159,7 +159,6 @@ Người dùng cần thấy rõ:
 - MT5 Status (trạng thái MT5).
 - Broker Login (trạng thái đăng nhập sàn giao dịch).
 - AI Provider (nhà cung cấp AI) đã cấu hình hay chưa.
-- Data Source (nguồn dữ liệu) đang dùng.
 - Các nút vào Single Analysis Mode (chế độ phân tích một mã), Scanner Mode (chế độ quét thị trường), Journal (nhật ký) và Settings (cài đặt).
 
 ### Bố cục màn hình
@@ -175,7 +174,6 @@ SYSTEM STATUS (TRẠNG THÁI HỆ THỐNG)
 MT5 Status (trạng thái MT5): Connected (đã kết nối) / Not Connected (chưa kết nối)
 Broker Login (trạng thái đăng nhập sàn giao dịch): Logged In (đã đăng nhập) / Not Logged In (chưa đăng nhập)
 AI Provider (nhà cung cấp AI): Configured (đã cấu hình) / Not Configured (chưa cấu hình)
-Data Source (nguồn dữ liệu): MetaTrader5 (MetaTrader 5)
 Timezone (múi giờ): Asia/Ho_Chi_Minh (giờ Việt Nam)
 
 Nếu MT5 (MetaTrader 5) chưa kết nối:
@@ -204,7 +202,7 @@ Dùng khi muốn quét nhanh toàn bộ 28 cặp Forex + XAU/USD + XAG/USD + BTC
 Xem lại các phân tích đã lưu.
 
 [Settings (Cài đặt)]
-Cấu hình AI Provider (nhà cung cấp AI), Data Source (nguồn dữ liệu), Trading Settings (cài đặt giao dịch) và Display Settings (cài đặt hiển thị).
+Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
 ```
 
 ### Thành phần bắt buộc
@@ -212,7 +210,6 @@ Cấu hình AI Provider (nhà cung cấp AI), Data Source (nguồn dữ liệu),
 - Card (thẻ thông tin) MT5 Status (trạng thái MT5) dạng 1 dòng ngang: chấm tròn màu 8px bên trái + text có emoji trạng thái (✅/🔴) và font 13px semi-bold, border 1px solid theo state (ok=#10b981, danger=#ef4444, warning=#f59e0b), chiều cao cố định 40px, nền transparent, không wrap text.
 - Card (thẻ thông tin) Broker Login (trạng thái đăng nhập sàn giao dịch) đã thiết kế lại chuyên nghiệp tương tự.
 - Card (thẻ thông tin) AI Provider (nhà cung cấp AI) đã thiết kế lại chuyên nghiệp tương tự.
-- Card (thẻ thông tin) Data Source (nguồn dữ liệu) đã thiết kế lại chuyên nghiệp tương tự.
 - Nút Retry MT5 Connection (thử kết nối lại MT5).
 - Nút Single Analysis Mode (chế độ phân tích một mã).
 - Nút Scanner Mode (chế độ quét thị trường).
@@ -818,8 +815,8 @@ Settings (Màn hình cài đặt) nên chia thành 5 tab (thẻ chức năng):
 Settings (Cài đặt)
 
 Tabs (các thẻ chức năng):
-[AI Provider (Nhà cung cấp AI)]
-[Data Source (Nguồn dữ liệu)]
+[AI (Trí tuệ nhân tạo)]
+[Dữ liệu (MT5)]
 [Trading (Giao dịch)]
 [Display (Hiển thị)]
 [Advanced (Nâng cao)]
@@ -827,7 +824,7 @@ Tabs (các thẻ chức năng):
 
 ---
 
-## 8.1. Tab AI Provider (Nhà cung cấp AI)
+## 8.1. Tab AI (Trí tuệ nhân tạo)
 
 ### Mục tiêu
 
@@ -898,87 +895,31 @@ Không đưa các trường này ra giao diện người dùng phổ thông.
 
 ---
 
-## 8.2. Tab Data Source (Nguồn dữ liệu)
+## 8.2. Tab Dữ liệu (MT5)
 
 ### Bố cục
 
 ```text
-Data Source Settings (Cài đặt nguồn dữ liệu)
-
 --------------------------------------------------
-NGUỒN DỮ LIỆU (DATA SOURCE)
+TRẠNG THÁI KẾT NỐI
 --------------------------------------------------
 
-Nguồn dữ liệu: [ MetaTrader 5 ▼ ] / [ cTrader ▼ ]
+MT5 đã kết nối | Broker | Server | Login
 
-Nếu chọn MetaTrader 5:
-- Tự động kết nối qua MetaTrader5 Python API.
-
-Nếu chọn cTrader:
-- Môi trường: [ Live ▼ ] / [ Demo ▼ ]
-- Account ID: [ Ví dụ: 12345678 ]
-- Client ID: [ •••••••••••• ]
-- Client Secret: [ •••••••••••• ]
-- Access Token: [ •••••••••••• ]
-
-[Lưu cấu hình nguồn (Save Credentials)]
-[Khởi động lại (Restart App)]
+[💾 Lưu cấu hình] [🔄 Khởi động lại] [🔄 Thử kết nối lại]
 
 --------------------------------------------------
-CONNECTION STATUS (TRẠNG THÁI KẾT NỐI)
+BẢNG CẤU HÌNH MÃ QUÉT
 --------------------------------------------------
 
-Provider Status (trạng thái kết nối): Connected (đã kết nối) / Not Connected (chưa kết nối)
-Account (tài khoản): Logged In (đã đăng nhập)
-Broker Name (tên sàn giao dịch): Broker name
+| STT | Mã hiển thị | Mã MT5 | Trạng thái | Kiểm tra | Backtest | Min Score | Regime | Hướng | RR tối thiểu | Ready | Watch | Wait |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | EUR/USD | EURUSDm | OK | -- | [x] | 65 | range | best | 1.3 | 65 | 60 | 55 |
 
-[Retry Connection (Thử kết nối lại)]
+Bảng hỗ trợ đầy đủ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD.
 
---------------------------------------------------
-SYMBOL MAPPING (ÁNH XẠ MÃ GIAO DỊCH)
---------------------------------------------------
-
-| Display Symbol (mã hiển thị) | Broker Symbol (mã trên broker) | Status (trạng thái) | Test (kiểm tra) |
-|---|---|---|---|
-| EUR/USD (Euro so với đô la Mỹ) | EURUSDm | OK (đạt) | Test (kiểm tra) |
-| GBP/USD (Bảng Anh so với đô la Mỹ) | GBPUSDm | OK (đạt) | Test (kiểm tra) |
-| AUD/USD (đô la Úc so với đô la Mỹ) | AUDUSDm | OK (đạt) | Test (kiểm tra) |
-| NZD/USD (đô la New Zealand so với đô la Mỹ) | NZDUSDm hoặc NZDUSDc | OK (đạt) | Test (kiểm tra) |
-| USD/JPY (đô la Mỹ so với Yên Nhật) | USDJPYm | OK (đạt) | Test (kiểm tra) |
-| USD/CHF (đô la Mỹ so với Franc Thụy Sĩ) | USDCHFm | OK (đạt) | Test (kiểm tra) |
-| USD/CAD (đô la Mỹ so với đô la Canada) | USDCADm hoặc USDCADc | OK (đạt) | Test (kiểm tra) |
-| EUR/GBP (Euro so với Bảng Anh) | EURGBPm hoặc EURGBPc | OK (đạt) | Test (kiểm tra) |
-| GBP/JPY (Bảng Anh so với Yên Nhật) | GBPJPYm hoặc GBPJPYc | OK (đạt) | Test (kiểm tra) |
-| AUD/NZD (đô la Úc so với đô la New Zealand) | AUDNZDm hoặc AUDNZDc | OK (đạt) | Test (kiểm tra) |
-| XAU/USD (vàng giao ngay so với USD) | XAUUSDm | OK (đạt) | Test (kiểm tra) |
-| XAG/USD (bạc giao ngay so với USD) | XAGUSDm hoặc XAGUSDc | OK (đạt) | Test (kiểm tra) |
-| BTC/USD (Bitcoin so với USD) | BTCUSDm hoặc BTCUSDc | OK (đạt) | Test (kiểm tra) |
-
-Lưu ý: bảng mapping phải hỗ trợ đầy đủ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD. Nhiều broker MT5 thêm hậu tố `m` hoặc `c` vào symbol, ví dụ `USDCADm`, `USDCADc`, `NZDUSDm`, `NZDUSDc`; code không được giả định symbol luôn là dạng không hậu tố.
-
-[Add Custom Mapping (Thêm ánh xạ tùy chỉnh)]
-[Auto Detect Broker Symbols (Tự động phát hiện mã broker)]
-[Save Mapping (Lưu ánh xạ)]
-
---------------------------------------------------
-SPREAD THRESHOLD (NGƯỠNG CHÊNH LỆCH GIÁ MUA-BÁN)
---------------------------------------------------
-
-| Symbol (mã) | Max Normal Spread (spread bình thường tối đa) | Current Spread (spread hiện tại) | Status (trạng thái) |
-|---|---:|---:|---|
-| XAU/USD (vàng giao ngay so với USD) | 30 points | 22 points | Normal (bình thường) |
-| XAG/USD (bạc giao ngay so với USD) | 40 points | 28 points | Normal (bình thường) |
-| BTC/USD (Bitcoin so với USD) | 500 points | 320 points | Normal (bình thường) |
-| EUR/USD (Euro so với đô la Mỹ) | 20 points | 8 points | Normal (bình thường) |
-
---------------------------------------------------
-MARKET WATCH (BẢNG THEO DÕI THỊ TRƯỜNG)
---------------------------------------------------
-
-Auto-select symbol in Market Watch (tự động chọn mã trong bảng theo dõi thị trường):
-[ On (bật) / Off (tắt) ]
-
-[Save Data Settings (Lưu cài đặt dữ liệu)]
+Nút chức năng:
+[🔍 Tự phát hiện mã broker] [📋 Dán cấu hình Backtest] [💾 Lưu cấu hình mã quét]
 ```
 
 ### Cảnh báo bắt buộc
@@ -1122,8 +1063,8 @@ AI Market Analyst (Nhà phân tích thị trường AI)
 │   └── Journal Detail (Chi tiết nhật ký)
 │
 └── Settings (Cài đặt)
-    ├── AI Provider (Nhà cung cấp AI)
-    ├── MT5 Data (Dữ liệu MT5)
+    ├── AI (Trí tuệ nhân tạo)
+    ├── Dữ liệu (MT5)
     ├── Trading (Giao dịch)
     ├── Display (Hiển thị)
     └── Advanced (Nâng cao)

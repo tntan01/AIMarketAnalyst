@@ -9,7 +9,6 @@ from PyQt6.QtCore import QThread
 
 from config.paths import app_data_dir
 from core.system_backtest_engine import BacktestRequest, run_system_backtest
-from services.data_provider import DataProvider
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
 from services.storage_service import JsonStorage
@@ -20,12 +19,10 @@ class BacktestController:
     def __init__(
         self,
         settings_service: SettingsService | None = None,
-        data_provider: DataProvider | None = None,
-        # Backward compat
-        mt5_service: MT5Service | None = None,
+        mt5: MT5Service | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
-        self.data_provider: DataProvider = data_provider or mt5_service or MT5Service()
+        self.mt5: MT5Service = mt5 or MT5Service()
 
     def create_backtest_worker(self, request: BacktestRequest | list[BacktestRequest], walk_forward_enabled: bool = False) -> tuple[QThread, BacktestWorker]:
         thread = QThread()
@@ -71,9 +68,9 @@ class BacktestController:
         risk_percent: float,
     ) -> BacktestRequest:
         settings = self.settings_service.load()
-        available = self.data_provider.available_symbols(market_watch_only=True)
-        broker_symbol = self.data_provider.resolve_symbol(symbol, available) or symbol.replace("/", "")
-        data_quality = self.data_provider.symbol_data_quality(symbol, broker_symbol)
+        available = self.mt5.available_symbols(market_watch_only=True)
+        broker_symbol = self.mt5.resolve_symbol(symbol, available) or symbol.replace("/", "")
+        data_quality = self.mt5.symbol_data_quality(symbol, broker_symbol)
         from core.risk_engine import contract_size_override_for_symbol
 
         contract_override = contract_size_override_for_symbol(
@@ -104,7 +101,7 @@ class BacktestController:
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
         progress(8, "Đang kiểm tra kết nối dữ liệu...")
-        status = self.data_provider.connection_status()
+        status = self.mt5.connection_status()
         if not status.connected or not status.logged_in:
             raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
 
@@ -139,7 +136,7 @@ class BacktestController:
                     request.broker_symbol, start, end,
                 )
             else:
-                result[timeframe] = self.data_provider.load_ohlcv_range(
+                result[timeframe] = self.mt5.load_ohlcv_range(
                     request.broker_symbol, timeframe, start, end,
                 )
         return result
@@ -162,7 +159,7 @@ class BacktestController:
 
         # Fast path: try the full range in one call first
         try:
-            candles = self.data_provider.load_ohlcv_range(
+            candles = self.mt5.load_ohlcv_range(
                 broker_symbol, "M15", start, end,
             )
             if candles:
@@ -186,7 +183,7 @@ class BacktestController:
         for i, cs in enumerate(chunk_starts):
             ce = min(cs + timedelta(days=max_chunk_days), end)
             try:
-                chunk = self.data_provider.load_ohlcv_range(
+                chunk = self.mt5.load_ohlcv_range(
                     broker_symbol, "M15", cs, ce, skip_select=(i > 0),
                 )
             except RuntimeError:

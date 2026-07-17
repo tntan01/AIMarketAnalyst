@@ -43,7 +43,7 @@ Ba mức ngưỡng cần xác định cho mỗi cặp:
 
 ---
 
-## Bước 2: Cấu hình ngưỡng quyết định trong Settings → MT5
+## Bước 2: Cấu hình ngưỡng quyết định trong Settings → Dữ liệu
 
 Sau khi đã có ngưỡng cho từng cặp từ backtest, lưu vào cấu hình.
 
