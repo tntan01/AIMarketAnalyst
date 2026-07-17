@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QTabBar,
+    QToolTip,
 )
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
@@ -208,18 +209,18 @@ class OrdersScreen(QWidget):
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)
-        header.setStretchLastSection(True)
-        table.setColumnWidth(0, 80)
-        table.setColumnWidth(1, 60)
-        table.setColumnWidth(2, 55)
-        table.setColumnWidth(3, 85)
-        table.setColumnWidth(4, 85)
-        table.setColumnWidth(5, 85)
-        table.setColumnWidth(6, 85)
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(0, 105)
+        table.setColumnWidth(1, 75)
+        table.setColumnWidth(2, 65)
+        table.setColumnWidth(3, 105)
+        table.setColumnWidth(4, 105)
+        table.setColumnWidth(5, 105)
+        table.setColumnWidth(6, 105)
         table.setColumnWidth(7, 85)
-        table.setColumnWidth(8, 45)
-        table.setColumnWidth(9, 90)
+        table.setColumnWidth(8, 65)
+        table.setColumnWidth(10, 0)
 
         self.order_table = table
         table.itemSelectionChanged.connect(self._update_clear_trail_visibility)
@@ -735,7 +736,7 @@ class OrdersScreen(QWidget):
 
         # Row 0: Trail mode radio buttons
         mode_row = QHBoxLayout()
-        mode_row.setSpacing(12)
+        mode_row.setSpacing(6)
         mode_row.addWidget(QLabel("Chế độ:"))
         self._dlg_mode_group = QButtonGroup(dlg)
         self._dlg_mode_wide = QRadioButton("Wide (2.5× ATR)")
@@ -748,8 +749,66 @@ class OrdersScreen(QWidget):
         self._dlg_mode_group.addButton(self._dlg_mode_wide, 0)
         self._dlg_mode_group.addButton(self._dlg_mode_tight, 1)
         self._dlg_mode_group.addButton(self._dlg_mode_fixed, 2)
-        for rb in (self._dlg_mode_wide, self._dlg_mode_tight, self._dlg_mode_fixed):
-            mode_row.addWidget(rb)
+
+        # Tooltips content for each mode
+        help_wide_txt = (
+            "Wide (2.5× ATR)\n\n"
+            "Sử dụng khoảng cách Trailing Stop bằng khoảng 2.5 lần ATR.\n\n"
+            "Ưu điểm:\n"
+            "• Ít bị quét Stop Loss.\n"
+            "• Phù hợp thị trường biến động mạnh.\n"
+            "• Giữ lệnh lâu hơn.\n\n"
+            "Nhược điểm:\n"
+            "• Chốt lời chậm hơn.\n"
+            "• Khoảng lỗ tạm thời có thể lớn hơn.\n\n"
+            "Khuyến nghị:\n"
+            "Swing Trading hoặc xu hướng mạnh."
+        )
+        
+        help_tight_txt = (
+            "Tight (1.5× ATR)\n\n"
+            "Trailing Stop gần giá hơn.\n\n"
+            "Ưu điểm:\n"
+            "• Khóa lợi nhuận nhanh.\n"
+            "• Phù hợp thị trường ổn định.\n\n"
+            "Nhược điểm:\n"
+            "• Dễ bị đá khỏi lệnh khi giá rung.\n\n"
+            "Khuyến nghị:\n"
+            "Scalping hoặc Intraday."
+        )
+        
+        help_fixed_txt = (
+            "Cố định (pip)\n\n"
+            "Khoảng cách Trailing Stop do người dùng nhập.\n\n"
+            "Ưu điểm:\n"
+            "• Chủ động.\n"
+            "• Phù hợp khi đã có chiến lược riêng.\n\n"
+            "Lưu ý:\n"
+            "Khoảng cách quá nhỏ có thể làm lệnh đóng sớm."
+        )
+
+        def create_help_btn(tooltip_text: str) -> QPushButton:
+            btn = QPushButton("?")
+            btn.setObjectName("HelpButton")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(tooltip_text)
+            btn.clicked.connect(lambda: QToolTip.showText(QCursor.pos(), tooltip_text, btn))
+            return btn
+
+        self._dlg_help_wide = create_help_btn(help_wide_txt)
+        self._dlg_help_tight = create_help_btn(help_tight_txt)
+        self._dlg_help_fixed = create_help_btn(help_fixed_txt)
+
+        # Add to layout
+        mode_row.addWidget(self._dlg_mode_wide)
+        mode_row.addWidget(self._dlg_help_wide)
+        mode_row.addSpacing(10)
+        mode_row.addWidget(self._dlg_mode_tight)
+        mode_row.addWidget(self._dlg_help_tight)
+        mode_row.addSpacing(10)
+        mode_row.addWidget(self._dlg_mode_fixed)
+        mode_row.addWidget(self._dlg_help_fixed)
+
         mode_row.addStretch()
         settings_card.layout().addLayout(mode_row)
 

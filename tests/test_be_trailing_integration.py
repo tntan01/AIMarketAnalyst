@@ -33,7 +33,12 @@ print("=" * 60)
 
 # Read orders_screen.py to verify the _apply_trailing and auto_enable_tracking methods
 # contain all required fields
-with open("/mnt/d/Projects/AIMarketAnalyst/ui/screens/orders_screen.py", "r", encoding="utf-8") as f:
+from pathlib import Path
+_src_path = Path("/mnt/d/Projects/AIMarketAnalyst/ui/screens/orders_screen.py")
+if not _src_path.exists():
+    _src_path = Path(__file__).resolve().parent.parent / "ui" / "screens" / "orders_screen.py"
+
+with open(_src_path, "r", encoding="utf-8") as f:
     code = f.read()
 
 required_fields = [
@@ -104,7 +109,11 @@ print("\n" + "=" * 60)
 print("TASK 4: Auto-enable tracking from scanner")
 print("=" * 60)
 
-with open("/mnt/d/Projects/AIMarketAnalyst/controllers/scanner_controller.py", "r", encoding="utf-8") as f:
+_scanner_path = Path("/mnt/d/Projects/AIMarketAnalyst/controllers/scanner_controller.py")
+if not _scanner_path.exists():
+    _scanner_path = Path(__file__).resolve().parent.parent / "controllers" / "scanner_controller.py"
+
+with open(_scanner_path, "r", encoding="utf-8") as f:
     scanner_code = f.read()
 
 check("auto_enable_tracking method exists in orders_screen",
@@ -123,7 +132,11 @@ print("\n" + "=" * 60)
 print("TASK 5: orders_screen created at startup")
 print("=" * 60)
 
-with open("/mnt/d/Projects/AIMarketAnalyst/ui/main_window.py", "r", encoding="utf-8") as f:
+_main_path = Path("/mnt/d/Projects/AIMarketAnalyst/ui/main_window.py")
+if not _main_path.exists():
+    _main_path = Path(__file__).resolve().parent.parent / "ui" / "main_window.py"
+
+with open(_main_path, "r", encoding="utf-8") as f:
     main_code = f.read()
 
 check("OrdersScreen imported",

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Test tất cả 6 task nâng cấp Quản lý lệnh (Orders Screen)."""
 
-with open("/mnt/d/Projects/AIMarketAnalyst/ui/screens/orders_screen.py", "r", encoding="utf-8") as f:
+from pathlib import Path
+_src_path = Path("/mnt/d/Projects/AIMarketAnalyst/ui/screens/orders_screen.py")
+if not _src_path.exists():
+    _src_path = Path(__file__).resolve().parent.parent / "ui" / "screens" / "orders_screen.py"
+
+with open(_src_path, "r", encoding="utf-8") as f:
     code = f.read()
 
 passed = 0

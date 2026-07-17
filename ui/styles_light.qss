@@ -1061,6 +1061,40 @@ QDialog#AnalysisDetailDialog {
 
 QDialog#AnalysisDetailDialog QLabel {
   color: #111827;
+  font-size: 13px;
+}
+
+QDialog#AnalysisDetailDialog QLabel#ActionTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+QDialog#AnalysisDetailDialog QLabel#PanelTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+}
+
+QDialog#AnalysisDetailDialog QLabel#MiniStatTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+QDialog#AnalysisDetailDialog QLabel#MiniStatValue {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+}
+
+QDialog#AnalysisDetailDialog QRadioButton {
+  font-size: 13px;
+  color: #111827;
+}
+
+QDialog#AnalysisDetailDialog QPushButton {
+  font-size: 11px;
 }
 
 QDialog#AnalysisDetailDialog QTextEdit#ReadonlyText {
@@ -1069,6 +1103,7 @@ QDialog#AnalysisDetailDialog QTextEdit#ReadonlyText {
   border-radius: 6px;
   color: #111827;
   padding: 10px;
+  font-size: 13px;
 }
 
 QDialog#AnalysisDetailDialog QFrame#PanelCard {
@@ -1081,6 +1116,36 @@ QDialog#AnalysisDetailDialog QTabWidget#ContentTabs::pane {
   background: #FAF9F5;
   border: 1px solid #D6D2C8;
   border-radius: 8px;
+}
+
+QPushButton#HelpButton {
+  background: #EDEBE4;
+  border: 1px solid #D6D2C8;
+  border-radius: 9px;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 0px;
+  min-width: 18px;
+  max-width: 18px;
+  min-height: 18px;
+  max-height: 18px;
+}
+
+QPushButton#HelpButton:hover {
+  background: #FAF9F5;
+  border-color: #ea580c;
+  color: #ea580c;
+}
+
+QToolTip {
+  background-color: #f3f4f6;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 6px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  font-size: 12px;
 }
 
 QMessageBox QLabel {
