@@ -52,16 +52,28 @@ yfinance
 
 ## API Keys (tùy chọn)
 
-| Key | Dùng cho | Để trống |
+AI Provider API Key được lưu an toàn qua **Windows Credential Manager** (thư viện `keyring`), không lưu plaintext trong `settings.json`.
+
+| Key | Dùng cho | Lưu ở đâu |
 |---|---|---|
-| `fred_api_key` (trong settings → advanced) | Tự động cập nhật lãi suất từ FRED API | Dùng `config/interest_rates.json` tĩnh |
-| `brave_api_key` (trong settings → advanced) | Tìm kiếm tin tức qua Brave Search API | Dùng RSS feed công khai |
+| AI Provider API Key (DeepSeek, OpenAI, Anthropic, Gemini) | Gọi AI phân tích, market brief, audit | Windows Credential Manager (qua `services/credential_service.py`) |
+| `fred_api_key` (trong settings → advanced) | Tự động cập nhật lãi suất từ FRED API | `settings.json` (plaintext trong advanced section) |
+| `brave_api_key` (trong settings → advanced) | Tìm kiếm tin tức qua Brave Search API | `settings.json` (plaintext trong advanced section) |
 
-Các API key được lưu trong `settings.json` tại thư mục user data. Không có key, app vẫn chạy bình thường với dữ liệu fallback.
-  cache/
-```
+### Cấu hình AI Provider
 
-Không lưu database, settings hoặc log vào thư mục cài đặt sau khi đóng gói.
+1. Mở **Settings → AI**.
+2. Chọn provider từ danh sách bên trái.
+3. Nhập API Key vào ô password.
+4. Chọn Model từ combobox (hoặc gõ model tùy chỉnh).
+5. Bấm **Kiểm tra** để xác thực.
+6. Bấm **Lưu** — API Key được lưu vào Windows Credential Manager.
+
+### Migration từ phiên bản cũ
+
+Nếu `settings.json` đang chứa API Key dạng plaintext (phiên bản cũ), hệ thống sẽ **tự động migrate** sang Windows Credential Manager ở lần lưu đầu tiên sau khi nâng cấp. Không cần nhập lại API Key.
+
+Không có key, app vẫn chạy bình thường với dữ liệu fallback.
 
 ## Chạy ứng dụng khi phát triển
 

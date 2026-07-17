@@ -116,25 +116,26 @@ class SettingsScreen(QWidget):
         self.ai_api_key_input = QLineEdit()
         self.ai_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.ai_api_key_input.setPlaceholderText("Nhập khóa API")
+        self.ai_api_key_input.setFixedWidth(200)
         self.ai_api_key_input.textChanged.connect(self._update_ai_button_state)
         right_layout.addWidget(self.ai_api_key_input)
 
-        # Model row: combobox + small refresh icon
+        # Model row: combobox + sync button
         right_layout.addWidget(QLabel("Model"))
         model_row = QHBoxLayout()
-        model_row.setSpacing(4)
+        model_row.setSpacing(6)
         self.ai_model_combo = QComboBox()
         self.ai_model_combo.setEditable(True)
+        self.ai_model_combo.setFixedWidth(200)
         self.ai_model_combo.lineEdit().setPlaceholderText("Chọn hoặc nhập model")
         self.ai_model_combo.currentTextChanged.connect(self._update_ai_button_state)
-        model_row.addWidget(self.ai_model_combo, 1)
-        self.ai_refresh_models_btn = QPushButton("↻")
-        self.ai_refresh_models_btn.setFixedSize(28, 28)
-        self.ai_refresh_models_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        model_row.addWidget(self.ai_model_combo)
+        self.ai_refresh_models_btn = action_button("↻ Đồng bộ model", primary=True, color="info")
         self.ai_refresh_models_btn.setToolTip("Lấy model mới nhất từ API")
         self.ai_refresh_models_btn.clicked.connect(self._refresh_provider_models)
         self.ai_refresh_models_btn.setVisible(False)
         model_row.addWidget(self.ai_refresh_models_btn)
+        model_row.addStretch(1)
         right_layout.addLayout(model_row)
 
         # Buttons

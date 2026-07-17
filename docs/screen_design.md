@@ -828,56 +828,47 @@ Tabs (các thẻ chức năng):
 
 ### Mục tiêu
 
-Màn hình cấu hình AI phải cực kỳ đơn giản. Người dùng không cần hiểu Base URL, API format, timeout, token hoặc retry.
+Màn hình cấu hình AI dùng kiến trúc Provider-Centric. Người dùng làm 4 việc:
 
-Người dùng chỉ làm 4 việc:
+1. Chọn nhà cung cấp từ danh sách bên trái.
+2. Xem capabilities của provider (Streaming, Vision, Model Discovery, ...).
+3. Nhập API Key và chọn Model (combobox editable, tự động populate từ catalog).
+4. Bấm "Kiểm tra" — nếu thành công, tự động fetch model mới nhất từ API.
 
-1. Chọn nhà cung cấp.
-2. Chọn model.
-3. Nhập API key.
-4. Bấm kiểm tra API key.
+API Key được lưu an toàn qua Windows Credential Manager (không plaintext trong settings.json).
 
-Toàn bộ cấu hình kỹ thuật khác chạy ngầm theo default trong code.
-
-### Bố cục
+### Bố cục (hiện tại — Provider-Centric)
 
 ```text
-Cài đặt AI
+Cài đặt → AI
 
-AI Enabled (bật AI):
-[ On (bật) / Off (tắt) ]
-
-Nhà cung cấp AI:
-[ DeepSeek ▼ ]
-
-Options:
-- DeepSeek
-- OpenAI
-- Anthropic
-- Claude
-
-Model:
-[ deepseek-v4-flash ▼ ]
-
-API Key:
-[ •••••••••••••••••••••••••••••••• ]
-
-API Key đã lưu:
-sk-****abcd
-
-[Test API Key (Kiểm tra khóa API)]
-[Save (Lưu)]
+┌──────────────────────┬────────────────────────────────────────┐
+│ Nhà cung cấp         │  Gemini                                │
+│                      │  Chat · Model Discovery · Vision       │
+│  DeepSeek            │                                        │
+│  OpenAI              │  [x] Đặt làm nhà cung cấp mặc định     │
+│  Anthropic           │                                        │
+│  Gemini              │  API Key                               │
+│                      │  [••••••••••••••••••••••••••••••••]   │
+│                      │                                        │
+│                      │  Model                                 │
+│                      │  [gemini-3.5-flash          ▼] [↻]    │
+│                      │                                        │
+│                      │  [🧪 Kiểm tra]  [💾 Lưu]              │
+│                      │                                        │
+│                      │  Đã cập nhật 3 model.                  │
+└──────────────────────┴────────────────────────────────────────┘
 ```
 
 ### Hành vi UI
 
-- Khi đổi nhà cung cấp, dropdown Model tự đổi theo danh sách model của provider đó.
-- API Key luôn nhập bằng ô password/masked.
-- Nếu đã lưu API key, chỉ hiện preview dạng `sk-****abcd`.
-- Không hiển thị Base URL, API Format, Temperature, Max Tokens, Timeout, Retry Count ở UI chính.
-- Nút `Test API Key` bị disabled nếu thiếu provider, model hoặc API key.
-- Khi test thành công, hiển thị: `Kết nối AI thành công`.
-- Khi test thất bại, hiển thị lỗi ngắn: `Không kiểm tra được API key. Kiểm tra lại khóa, model hoặc kết nối mạng.`
+- Panel trái: danh sách provider từ `ProviderCatalog` (QListWidget).
+- Panel phải: hiển thị capabilities tự động từ `ProviderCapability` IntFlag (không hard-code).
+- Nút ↻ (Đồng bộ model) chỉ hiển thị với provider có `MODEL_DISCOVERY` capability. Gọi API của provider đó để lấy model mới nhất. Cache 30 phút trong memory + disk.
+- API Key lưu qua `CredentialService` (Windows Credential Manager), không lưu plaintext trong `settings.json`.
+- Model combobox editable — user có thể chọn từ danh sách hoặc gõ model tùy chỉnh.
+- Khi test API Key thành công → tự động fetch model mới nhất.
+- Nếu discovery lỗi → hiển thị lỗi rõ ràng, không crash.
 
 ### Cấu hình chạy ngầm
 

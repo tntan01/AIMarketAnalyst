@@ -529,12 +529,17 @@ Không code tất cả trong một lần.
 ### Gemini API Migration (2026-07-17)
 
 - **Lý do:** Google đã chuyển đổi model Gemini. `gemini-2.5-flash` và `gemini-2.5-pro` không còn khả dụng cho API Key mới (scheduled shutdown: October 16, 2026). Google khuyến nghị dùng `gemini-3.5-flash` (Stable) và `gemini-3.1-pro-preview`.
-- **Model Discovery:** `AIService.list_gemini_models(api_key)` — lấy danh sách model Gemini mới nhất từ REST API (`GET /v1beta/models`). Cache 30 phút. Chỉ giữ model text-generation, tự động lọc model image/audio/embedding/veo/lyria/robotics.
-- **Catalog Refresh:** `AIProviderCatalogService.refresh_gemini_models(api_key)` — thay thế toàn bộ model Gemini trong catalog bằng kết quả từ API. Fallback về `_GEMINI_FALLBACK_MODELS` nếu API lỗi.
-- **Settings UI:** Nút "Làm mới model Gemini" trong tab AI của Settings — fetch model mới nhất từ Google API chỉ với 1 click.
-- **Error Messages:** `_gemini_friendly_error()` — parse lỗi Gemini REST API và hiển thị thông báo tiếng Việt rõ ràng cho HTTP 404 (model deprecated), 403 (API Key sai), 401, 429 (quota).
-- **systemInstruction:** Gemini API call giờ dùng `systemInstruction` field thay vì ghép system prompt vào user content.
-- **Backward Compatible:** API Key cũ vẫn hoạt động. Cấu hình cũ (model 2.5) vẫn được chấp nhận trong settings (chỉ lỗi khi gọi API). File `ai_providers.json` có thêm model mới, không xóa cấu trúc cũ.
+- **Model Discovery:** Mỗi provider tự implement `discover_models()` trong adapter. Gemini gọi `GET /v1beta/models`, OpenAI gọi `GET /v1/models`. Chỉ lọc model có `generateContent` (Gemini) hoặc `gpt-*/o*` prefix (OpenAI). Cache 30 phút trong memory + disk (`cache/provider_runtime/{provider}.json`).
+- **Error Messages:** Mỗi adapter tự implement `friendly_error()` — parse lỗi REST API và hiển thị thông báo tiếng Việt rõ ràng cho HTTP 404 (model deprecated), 403 (API Key sai), 401, 429 (quota).
+- **systemInstruction:** Gemini API call dùng `systemInstruction` field thay vì ghép system prompt vào user content.
+- **Backward Compatible:** API Key cũ vẫn hoạt động. Cấu hình cũ (model 2.5) vẫn được chấp nhận trong settings (chỉ lỗi khi gọi API).
+
+### Credential Service (2026-07-17)
+
+- **API Key Storage:** API Key không còn lưu plaintext trong `settings.json`. Thay vào đó dùng `services/credential_service.py` — wrapper quanh `keyring` (Windows Credential Manager / WinVaultKeyring).
+- **Transparent:** `SettingsService._load_ai_settings()` tự động populate `api_key` từ credential store khi load. `SettingsService.save()` tự động lưu key vào credential store và serialize bản sao không có plaintext ra disk.
+- **Migration:** Settings cũ chứa `api_key` plaintext được tự động migrate sang credential store ở lần save đầu tiên sau khi nâng cấp. Không cần user can thiệp.
+- **In-memory preserved:** `SettingsService.save()` tạo bản sao settings để serialize, không xóa `api_key` khỏi memory — runtime consumer không bị ảnh hưởng.
 
 ### Provider Runtime Architecture (2026-07-17)
 

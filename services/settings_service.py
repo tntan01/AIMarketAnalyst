@@ -40,7 +40,26 @@ class SettingsService:
         )
 
     def save(self, settings: AppSettings) -> None:
-        self.storage.save(asdict(settings))
+        # Persist API keys to OS credential store, then save WITHOUT plaintext
+        # keys to disk.  In-memory settings are NOT modified — runtime
+        # consumers continue to see api_key as usual.
+        from dataclasses import replace
+        from services.credential_service import credential_service
+
+        # Mirror API keys to credential store
+        for provider in settings.ai.providers:
+            if provider.api_key:
+                credential_service.save_api_key(provider.provider, provider.api_key)
+
+        # Build a safe copy with api_key cleared for disk serialization
+        safe_providers = [
+            replace(p, api_key="") if p.api_key else p
+            for p in settings.ai.providers
+        ]
+        safe_ai = replace(settings.ai, providers=safe_providers)
+        safe_settings = replace(settings, ai=safe_ai)
+
+        self.storage.save(asdict(safe_settings))
 
     def _load_ai_settings(self, data: dict | None) -> AISettings:
         data = data or {}
@@ -70,6 +89,15 @@ class SettingsService:
         if providers and active is None:
             providers[0].is_active = True
             active = providers[0]
+
+        # Populate API keys from OS credential store (transparent to consumers)
+        from services.credential_service import credential_service
+
+        for provider in providers:
+            if not provider.api_key:
+                stored = credential_service.get_api_key(provider.provider)
+                if stored:
+                    provider.api_key = stored
 
         return AISettings(
             provider=(active.provider if active else data.get("provider", "DeepSeek")),
