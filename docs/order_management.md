@@ -86,6 +86,25 @@ orders_screen.py._trailing_tick()  ← QTimer mỗi 1.5 giây
 
 ## Cấu trúc dữ liệu
 
+### `_position_original_sl` dict (2026-07-17)
+
+```python
+_position_original_sl: dict[int, float] = {
+    position_id: original_sl,  # SL ban đầu, ghi 1 lần, không bao giờ overwrite
+}
+```
+
+**Single Source of Truth cho SL gốc.** Được capture lần đầu khi position xuất hiện trong `refresh_orders()`, hoặc khi `auto_enable_tracking()` được gọi từ scanner. Sau khi ghi, không bao giờ bị overwrite.
+
+**Dùng cho:**
+- Tính R trong bảng Orders (`_render_position_row`)
+- Tính `effective_initial_sl` trong dialog Trailing Stop (`_show_trailing_dialog`)
+- Set `initial_sl` khi bật Trailing thủ công (`_handle_enable_trailing`)
+- Set `initial_sl` khi auto-enable từ scanner (`auto_enable_tracking`)
+
+**Persist:** Lưu trong `be_trailing_state.json` key `original_sl`.
+**Cleanup:** Xóa entry khi position đóng (`_cleanup_trailing`).
+
 ### `_trailing_configs` dict
 
 ```python
@@ -103,7 +122,7 @@ _trailing_configs: dict[int, dict] = {
         "be_done": bool,           # Đã dời BE chưa
         "be_trigger_price": float, # Giá trigger BE
         "entry_price": float,      # Giá entry
-        "initial_sl": float,       # SL ban đầu
+        "initial_sl": float,       # SL ban đầu (copy từ _position_original_sl)
         "atr_h1": float,           # ATR(H1) của symbol
         "trail_mode": str,         # "wide" | "tight"
         "pip_multiplier": float,   # 10000 hoặc 100
@@ -136,6 +155,7 @@ _trailing_configs: dict[int, dict] = {
 4. **Không can thiệp TP** — TP giữ nguyên
 5. **Chỉ quản lý lệnh do hệ thống mở** — bỏ qua lệnh manual
 6. **Auto-enable khi vào lệnh từ scanner** — không cần user bật thủ công
+7. **R luôn tính từ Initial SL gốc** — `_position_original_sl` ghi 1 lần, không overwrite. BE và Trailing chỉ update `current_sl`, không ảnh hưởng đến R.
 
 ## MT5 Integration
 

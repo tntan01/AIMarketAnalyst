@@ -526,6 +526,28 @@ Không code tất cả trong một lần.
 - Configuration lives in `settings.json` under `order_management` with defaults: `be_trigger_r=1.0`, `be_plus_pips=2`, `trail_wide_atr_multiplier=2.5`, `trail_tight_atr_multiplier=1.5`, `trail_tight_trigger_r=2.0`, `poll_interval_seconds=5`.
 - Full design document: `docs/order_management.md`.
 
+### Gemini API Migration (2026-07-17)
+
+- **Lý do:** Google đã chuyển đổi model Gemini. `gemini-2.5-flash` và `gemini-2.5-pro` không còn khả dụng cho API Key mới (scheduled shutdown: October 16, 2026). Google khuyến nghị dùng `gemini-3.5-flash` (Stable) và `gemini-3.1-pro-preview`.
+- **Model Discovery:** `AIService.list_gemini_models(api_key)` — lấy danh sách model Gemini mới nhất từ REST API (`GET /v1beta/models`). Cache 30 phút. Chỉ giữ model text-generation, tự động lọc model image/audio/embedding/veo/lyria/robotics.
+- **Catalog Refresh:** `AIProviderCatalogService.refresh_gemini_models(api_key)` — thay thế toàn bộ model Gemini trong catalog bằng kết quả từ API. Fallback về `_GEMINI_FALLBACK_MODELS` nếu API lỗi.
+- **Settings UI:** Nút "Làm mới model Gemini" trong tab AI của Settings — fetch model mới nhất từ Google API chỉ với 1 click.
+- **Error Messages:** `_gemini_friendly_error()` — parse lỗi Gemini REST API và hiển thị thông báo tiếng Việt rõ ràng cho HTTP 404 (model deprecated), 403 (API Key sai), 401, 429 (quota).
+- **systemInstruction:** Gemini API call giờ dùng `systemInstruction` field thay vì ghép system prompt vào user content.
+- **Backward Compatible:** API Key cũ vẫn hoạt động. Cấu hình cũ (model 2.5) vẫn được chấp nhận trong settings (chỉ lỗi khi gọi API). File `ai_providers.json` có thêm model mới, không xóa cấu trúc cũ.
+
+### Provider Runtime Architecture (2026-07-17)
+
+Toàn bộ subsystem AI đã được refactor từ Model-Centric sang Provider-Centric:
+
+- **Provider Catalog (`services/ai/provider_catalog.py`):** Static registry của tất cả provider. Mỗi provider có `ProviderInfo` (name, display_name, capabilities, default_models, locked_models, adapter_class). `ProviderCapability` IntFlag định nghĩa capability: CHAT, STREAM, MODEL_DISCOVERY, VISION, TOOL_CALLING, SYSTEM_PROMPT, REASONING, JSON_MODE, EMBEDDING, IMAGE_GEN. `capability_labels()` trả về nhãn tiếng Việt.
+- **Provider Adapter (`services/ai/provider_adapter.py`):** `BaseProviderAdapter` ABC — mỗi provider implement: `generate()`, `generate_stream()`, `discover_models()`, `friendly_error()`, `validate_model()`. Shared HTTP helpers: `_post_json()`, `_chat_completion_payload()`, `_extract_chat_completion_text()`.
+- **Concrete Adapters (`services/ai/providers/`):** `DeepSeekAdapter`, `OpenAIAdapter`, `AnthropicAdapter`, `GeminiAdapter`. Mỗi adapter tự đăng ký vào `provider_catalog` khi import.
+- **AIService (`services/ai_service.py`):** Thin dispatcher — nhận `AIProviderConfig`, lookup adapter từ `provider_catalog`, delegate mọi call. Không còn if/elif chain.
+- **Runtime Model Discovery:** Model không còn hard-code trong `ai_providers.json`. Mỗi provider có `MODEL_DISCOVERY` capability tự động fetch model từ API (Gemini: `GET /v1beta/models`, OpenAI: `GET /v1/models`). Cache 30 phút trong memory + disk (`cache/provider_runtime/{provider}.json`). Offline fallback: dùng disk cache khi API lỗi.
+- **Settings UI:** Panel trái — danh sách provider (QListWidget). Panel phải — tên provider, capabilities, API key, model (editable combobox + icon ↻ refresh), test/save buttons. Tự động discovery sau khi test API key thành công.
+- **Thêm provider mới:** Đăng ký `ProviderInfo` + import adapter → tự động xuất hiện trong UI. Không cần sửa `AIService`, `AIProviderCatalogService`, hay bất kỳ file nào khác.
+
 ## Macro Upgrade (2026-07-05)
 
 ### 1. yfinance fallback — market data resilience

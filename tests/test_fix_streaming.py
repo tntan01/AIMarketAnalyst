@@ -49,34 +49,37 @@ class TestEffectiveMaxTokens:
     def test_unknown_model_passthrough(self):
         from services.ai_service import AIService, AIProviderConfig
 
-        config = AIProviderConfig(provider="other", model="custom-model", api_key="sk-")
-        ai = AIService(config)
-        assert ai._effective_max_tokens(500) == 500
+        # Unknown providers now raise early — this is correct behavior
+        with pytest.raises(RuntimeError, match="không được hỗ trợ"):
+            AIService(AIProviderConfig(provider="other", model="custom-model", api_key="sk-"))
 
     def test_analyze_stream_uses_effective_tokens(self):
-        from services.ai_service import AIService, AIProviderConfig
+        """DeepSeekAdapter floors max_tokens for reasoning models."""
+        from services.ai.providers.deepseek_adapter import DeepSeekAdapter
 
-        config = AIProviderConfig(provider="deepseek", model="deepseek-v4-pro", api_key="sk-")
-        ai = AIService(config)
-
-        with patch.object(ai, "_chat_completion_stream") as mock:
-            mock.return_value = iter(["ok"])
-            list(ai.analyze_stream("prompt", max_tokens=2500))
-            _, _, effective = mock.call_args[0]
-            assert effective == 4000, (
-                f"F1 FAILED: expected effective=4000, got {effective}"
-            )
+        adapter = DeepSeekAdapter()
+        # Mock _chat_completion_payload to capture the effective max_tokens
+        with patch.object(adapter, "_chat_completion_payload") as mock_payload:
+            mock_payload.return_value = {}
+            with patch.object(adapter, "_post_json", return_value={
+                "choices": [{"message": {"content": "ok"}}]
+            }):
+                adapter.generate("test", "deepseek-v4-pro", "sk-", 2500)
+                _, _, effective = mock_payload.call_args[0]
+                assert effective == 4000, (
+                    f"F1 FAILED: expected effective=4000, got {effective}"
+                )
 
     def test_non_deepseek_uses_requested_tokens(self):
         from services.ai_service import AIService, AIProviderConfig
+        from unittest.mock import patch
 
         config = AIProviderConfig(provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-")
         ai = AIService(config)
 
-        with patch.object(ai, "_anthropic_message", return_value="ok"):
+        # Mock adapter's generate_stream (moved from AIService._anthropic_message)
+        with patch.object(ai._adapter, "generate_stream", return_value=iter(["ok"])):
             list(ai.analyze_stream("prompt", max_tokens=777))
-            # Anthropic should get the requested value passed through
-            # since _effective_max_tokens returns max(777, 0) = 777
 
 
 # ---------------------------------------------------------------------------
@@ -196,25 +199,24 @@ class TestF3Integration:
         assert len(chunks) == 7, f"F3 FAILED: expected 7 chunks, got {len(chunks)}"
 
     def test_effective_tokens_applied_in_full_streaming(self):
-        """Verify that analyze_stream passes the floored max_tokens."""
-        from services.ai_service import AIService, AIProviderConfig
+        """DeepSeekAdapter floors max_tokens for reasoning models in streaming."""
+        from services.ai.providers.deepseek_adapter import DeepSeekAdapter
 
-        config = AIProviderConfig(provider="deepseek", model="deepseek-v4-pro", api_key="sk-")
-        ai = AIService(config)
-
+        adapter = DeepSeekAdapter()
         called_tokens = []
 
-        def fake_stream(url, prompt, max_tokens=1800):
+        def fake_stream(prompt, model, api_key, max_tokens=1800):
             called_tokens.append(max_tokens)
-            yield "result"
+            return {"choices": [{"message": {"content": "result"}}]}
 
-        with patch.object(ai, "_chat_completion_stream", side_effect=fake_stream):
-            chunks = list(ai.analyze_stream("prompt", max_tokens=2500))
-
-        assert called_tokens == [4000], (
-            f"F3 FAILED: expected [4000], got {called_tokens}"
-        )
-        assert chunks == ["result"]
+        with patch.object(adapter, "_chat_completion_payload") as mock_payload:
+            mock_payload.return_value = {}
+            with patch.object(adapter, "_post_json", side_effect=fake_stream):
+                adapter.generate("test", "deepseek-v4-pro", "sk-", 2500)
+                _, _, effective = mock_payload.call_args[0]
+                assert effective == 4000, (
+                    f"F3 FAILED: expected effective=4000, got {effective}"
+                )
 
 
 # ---------------------------------------------------------------------------

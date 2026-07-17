@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-from config.constants import AI_PROVIDERS, DEFAULT_AI_MODELS, DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
+from config.constants import DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
 from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
 from PyQt6.QtCore import QThread, Qt, QEvent, QObject
-from PyQt6.QtGui import QIntValidator, QKeyEvent
+from PyQt6.QtGui import QIntValidator
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFrame,
-    QGridLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSizePolicy,
     QSplitter,
@@ -25,10 +27,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from services.ai_provider_catalog_service import AIProviderCatalogService, FIXED_AI_PROVIDERS
+from services.ai_provider_catalog_service import AIProviderCatalogService
 from services.ai_service import AIProviderConfig
+from services.ai.provider_catalog import ProviderCapability, capability_labels, provider_catalog
 from services.data_provider import ConnectionStatus
-from services.mt5_service import MT5ConnectionStatus, MT5Service
+from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
 from ui.screens.shared import action_button, card, form_row, page_header
 from workers.ai_test_worker import AITestWorker
@@ -41,7 +44,6 @@ class SettingsScreen(QWidget):
         self.settings_service = app.settings_service if app else SettingsService()
         self.ai_catalog_service = app.ai_catalog_service if app else AIProviderCatalogService()
         self.mt5: MT5Service = app.mt5 if app else MT5Service()
-        self.ai_model_catalog = self.ai_catalog_service.load() or dict(DEFAULT_AI_MODELS)
         self.app_settings = self.settings_service.load()
         self.ai_test_thread = None
         self.ai_test_worker = None
@@ -66,312 +68,312 @@ class SettingsScreen(QWidget):
         frame = card()
         frame.layout().setSpacing(14)
 
-        catalog_panel = QFrame()
-        catalog_panel.setObjectName("CompactFormPanel")
-        catalog_panel.setMinimumWidth(360)
-        catalog_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        catalog_layout = QVBoxLayout(catalog_panel)
-        catalog_layout.setContentsMargins(0, 0, 18, 0)
-        catalog_layout.setSpacing(8)
-        catalog_title = QLabel("1. Quản lý model theo nhà cung cấp")
-        catalog_title.setObjectName("PanelTitle")
-        catalog_layout.addWidget(catalog_title)
+        # -- Left panel: Provider list ---------------------------------------
+        left_panel = QFrame()
+        left_panel.setObjectName("CompactFormPanel")
+        left_panel.setMinimumWidth(220)
+        left_panel.setMaximumWidth(300)
+        left_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 14, 0)
+        left_layout.setSpacing(8)
+        left_layout.addWidget(QLabel("Nhà cung cấp"))
+        self.ai_provider_list = QListWidget()
+        self.ai_provider_list.setObjectName("DataTable")
+        self.ai_provider_list.setMinimumHeight(200)
+        self.ai_provider_list.currentRowChanged.connect(self._on_provider_list_changed)
+        self._populate_provider_list()
+        left_layout.addWidget(self.ai_provider_list, 1)
 
-        self.ai_catalog_table = QTableWidget(0, 2)
-        self.ai_catalog_table.setObjectName("DataTable")
-        self.ai_catalog_table.setHorizontalHeaderLabels(["Nhà cung cấp", "Mô hình"])
-        self.ai_catalog_table.verticalHeader().setVisible(False)
-        self.ai_catalog_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.ai_catalog_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.ai_catalog_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.ai_catalog_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.ai_catalog_table.verticalHeader().setDefaultSectionSize(28)
-        self.ai_catalog_table.setMinimumHeight(130)
-        catalog_layout.addWidget(self.ai_catalog_table)
+        # -- Right panel: Provider config ------------------------------------
+        right_panel = QFrame()
+        right_panel.setObjectName("CompactFormPanel")
+        right_panel.setMinimumWidth(380)
+        right_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(14, 0, 0, 0)
+        right_layout.setSpacing(10)
 
-        self.ai_catalog_provider_input = QComboBox()
-        self.ai_catalog_provider_input.addItems(FIXED_AI_PROVIDERS)
-        self.ai_catalog_provider_input.setEditable(False)
-        self.ai_catalog_model_input = QLineEdit()
-        self.ai_catalog_model_input.setPlaceholderText("Nhập model")
-        catalog_layout.addWidget(form_row("Nhà cung cấp", self.ai_catalog_provider_input))
-        catalog_layout.addWidget(form_row("Mô hình", self.ai_catalog_model_input))
+        # Provider name + capabilities
+        self.ai_detail_name = QLabel("")
+        self.ai_detail_name.setObjectName("PanelTitle")
+        right_layout.addWidget(self.ai_detail_name)
 
-        catalog_button_container, catalog_button_row = self._aligned_button_row()
-        self.ai_catalog_add_button = action_button("➕ Thêm", primary=True)
-        self.ai_catalog_update_button = action_button("✏️ Sửa")
-        self.ai_catalog_delete_button = action_button("🗑️ Xóa", primary=True, color="danger")
-        catalog_button_row.addWidget(self.ai_catalog_add_button)
-        catalog_button_row.addWidget(self.ai_catalog_update_button)
-        catalog_button_row.addWidget(self.ai_catalog_delete_button)
-        catalog_button_row.addStretch(1)
-        catalog_layout.addWidget(catalog_button_container)
+        self.ai_detail_caps = QLabel("")
+        self.ai_detail_caps.setObjectName("HelperText")
+        self.ai_detail_caps.setWordWrap(True)
+        right_layout.addWidget(self.ai_detail_caps)
 
-        api_panel = QFrame()
-        api_panel.setObjectName("CompactFormPanel")
-        api_panel.setMinimumWidth(420)
-        api_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        api_layout = QVBoxLayout(api_panel)
-        api_layout.setContentsMargins(18, 0, 0, 0)
-        api_layout.setSpacing(8)
-        api_title = QLabel("2. API key và cấu hình đang sử dụng")
-        api_title.setObjectName("PanelTitle")
-        api_layout.addWidget(api_title)
+        # Default provider toggle
+        self.ai_default_check = QCheckBox("Đặt làm nhà cung cấp mặc định")
+        self.ai_default_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        right_layout.addWidget(self.ai_default_check)
 
-        self.ai_search_input = QLineEdit()
-        self.ai_search_input.setPlaceholderText("Tìm nhà cung cấp, model hoặc khóa API")
-        api_layout.addWidget(form_row("Tìm kiếm", self.ai_search_input))
+        right_layout.addSpacing(6)
 
-        self.ai_table = QTableWidget(0, 4)
-        self.ai_table.setObjectName("DataTable")
-        self.ai_table.setHorizontalHeaderLabels(["Dùng", "Nhà cung cấp", "Mô hình", "Khóa API"])
-        self.ai_table.verticalHeader().setVisible(False)
-        self.ai_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.ai_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.ai_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.ai_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.ai_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.ai_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.ai_table.setMinimumHeight(150)
-        self.ai_table.verticalHeader().setDefaultSectionSize(28)
-        api_layout.addWidget(self.ai_table)
-
-        self.ai_provider_combo = QComboBox()
-        self.ai_provider_combo.addItems(self._ai_provider_names())
-        self.ai_provider_combo.setEditable(False)
-        self.ai_model_combo = QComboBox()
-        self.ai_model_combo.setEditable(False)
+        # API Key
+        right_layout.addWidget(QLabel("API Key"))
         self.ai_api_key_input = QLineEdit()
         self.ai_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.ai_api_key_input.setPlaceholderText("Nhập khóa API")
-        self._refresh_ai_models(self.app_settings.ai.provider, self.app_settings.ai.model)
-        api_layout.addWidget(form_row("Nhà cung cấp", self.ai_provider_combo))
-        api_layout.addWidget(form_row("Mô hình", self.ai_model_combo))
-        api_layout.addWidget(form_row("Khóa API", self.ai_api_key_input))
+        self.ai_api_key_input.textChanged.connect(self._update_ai_button_state)
+        right_layout.addWidget(self.ai_api_key_input)
 
-        api_button_container, api_button_row = self._aligned_button_row()
+        # Model row: combobox + small refresh icon
+        right_layout.addWidget(QLabel("Model"))
+        model_row = QHBoxLayout()
+        model_row.setSpacing(4)
+        self.ai_model_combo = QComboBox()
+        self.ai_model_combo.setEditable(True)
+        self.ai_model_combo.lineEdit().setPlaceholderText("Chọn hoặc nhập model")
+        self.ai_model_combo.currentTextChanged.connect(self._update_ai_button_state)
+        model_row.addWidget(self.ai_model_combo, 1)
+        self.ai_refresh_models_btn = QPushButton("↻")
+        self.ai_refresh_models_btn.setFixedSize(28, 28)
+        self.ai_refresh_models_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ai_refresh_models_btn.setToolTip("Lấy model mới nhất từ API")
+        self.ai_refresh_models_btn.clicked.connect(self._refresh_provider_models)
+        self.ai_refresh_models_btn.setVisible(False)
+        model_row.addWidget(self.ai_refresh_models_btn)
+        right_layout.addLayout(model_row)
+
+        # Buttons
+        btn_container, btn_row = self._aligned_button_row()
         self.ai_test_button = action_button("🧪 Kiểm tra", primary=True, color="info")
         self.ai_save_button = action_button("💾 Lưu", primary=True, color="success")
-        self.ai_delete_button = action_button("🗑️ Xóa", primary=True, color="danger")
-        api_button_row.addWidget(self.ai_test_button)
-        api_button_row.addWidget(self.ai_save_button)
-        api_button_row.addWidget(self.ai_delete_button)
-        api_button_row.addStretch(1)
-        api_layout.addWidget(api_button_container)
+        btn_row.addWidget(self.ai_test_button)
+        btn_row.addWidget(self.ai_save_button)
+        btn_row.addStretch(1)
+        right_layout.addWidget(btn_container)
 
+        # Status
         self.ai_status_label = QLabel("")
         self.ai_status_label.setObjectName("HelperText")
         self.ai_status_label.setWordWrap(True)
         self.ai_status_label.setVisible(False)
-        api_layout.addWidget(self.ai_status_label)
+        right_layout.addWidget(self.ai_status_label)
 
+        right_layout.addStretch(1)
+
+        # Connect actions
+        self.ai_test_button.clicked.connect(self._test_ai_key)
+        self.ai_save_button.clicked.connect(self._save_ai_provider)
+
+        # Splitter
         ai_splitter = QSplitter(Qt.Orientation.Horizontal)
         ai_splitter.setObjectName("SettingsAiSplitter")
         ai_splitter.setChildrenCollapsible(False)
-        ai_splitter.addWidget(catalog_panel)
-        ai_splitter.addWidget(api_panel)
-        ai_splitter.setStretchFactor(0, 1)
+        ai_splitter.addWidget(left_panel)
+        ai_splitter.addWidget(right_panel)
+        ai_splitter.setStretchFactor(0, 0)
         ai_splitter.setStretchFactor(1, 1)
-        ai_splitter.setSizes([520, 620])
+        ai_splitter.setSizes([250, 500])
 
         frame.layout().addWidget(ai_splitter, 1)
         frame.layout().addStretch(1)
 
-        self.ai_catalog_table.itemSelectionChanged.connect(self._load_selected_ai_catalog_item)
-        self.ai_catalog_provider_input.currentTextChanged.connect(self._update_ai_button_state)
-        self.ai_catalog_model_input.textChanged.connect(self._update_ai_button_state)
-        self.ai_catalog_add_button.clicked.connect(self._add_ai_catalog_item)
-        self.ai_catalog_update_button.clicked.connect(self._update_ai_catalog_item)
-        self.ai_catalog_delete_button.clicked.connect(self._delete_ai_catalog_item)
-        self.ai_provider_combo.currentTextChanged.connect(self._on_ai_provider_changed)
-        self.ai_api_key_input.textChanged.connect(self._update_ai_button_state)
-        self.ai_model_combo.currentTextChanged.connect(self._update_ai_button_state)
-        self.ai_search_input.textChanged.connect(self._refresh_ai_table)
-        self.ai_table.itemSelectionChanged.connect(self._load_selected_ai_provider)
-        self.ai_test_button.clicked.connect(self._test_ai_key)
-        self.ai_save_button.clicked.connect(self._save_ai_provider)
-        self.ai_delete_button.clicked.connect(self._delete_ai_provider)
-        self._refresh_ai_catalog_table()
-        self._refresh_ai_table()
+        # Select first provider
+        if self.ai_provider_list.count() > 0:
+            self.ai_provider_list.setCurrentRow(0)
+
         self._update_ai_button_state()
         return frame
 
-    def _aligned_button_row(self) -> tuple[QWidget, QHBoxLayout]:
-        container = QWidget()
-        row = QHBoxLayout(container)
-        row.setContentsMargins(0, 2, 0, 0)
-        row.setSpacing(10)
-        spacer = QWidget()
-        spacer.setMinimumWidth(150)
-        row.addWidget(spacer)
-        return container, row
+    # ------------------------------------------------------------------
+    # Provider list
+    # ------------------------------------------------------------------
 
-    def _set_compact_action_button(self, button: QPushButton) -> None:
-        button.setProperty("compactPrimary", True)
-        button.setProperty("compactSize", "add" if button.text() == "Thêm" else "save")
-        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        button.style().unpolish(button)
-        button.style().polish(button)
+    def _populate_provider_list(self) -> None:
+        """Fill the provider list from the catalog."""
+        self.ai_provider_list.clear()
+        for info in provider_catalog.list_infos():
+            item = QListWidgetItem(info.display_name)
+            item.setData(Qt.ItemDataRole.UserRole, info.name)
+            self.ai_provider_list.addItem(item)
 
-    def _compact_form_row(self, label: str, field: QWidget, label_width: int = 132, field_width: int = 220) -> QWidget:
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        label_widget = QLabel(label)
-        label_widget.setObjectName("FormLabel")
-        label_widget.setFixedWidth(label_width)
-        field.setFixedWidth(field_width)
-        layout.addWidget(label_widget)
-        layout.addWidget(field)
-        layout.addStretch(1)
-        return widget
+    def _on_provider_list_changed(self, row: int) -> None:
+        """Load provider details into right panel when selection changes."""
+        if row < 0:
+            return
+        item = self.ai_provider_list.item(row)
+        provider_key = item.data(Qt.ItemDataRole.UserRole) if item else ""
+        info = provider_catalog.get(provider_key)
+        if info is None:
+            return
 
-    def _on_ai_provider_changed(self, provider: str) -> None:
-        self._refresh_ai_models(provider)
+        # Provider name
+        self.ai_detail_name.setText(info.display_name)
+
+        # Capabilities — show all active flags from the enum (no hard-coding)
+        cap_labels = capability_labels(info.capabilities)
+        self.ai_detail_caps.setText(" · ".join(cap_labels) if cap_labels else "Chat")
+
+        # Refresh models button — only for providers with model discovery
+        self.ai_refresh_models_btn.setVisible(
+            ProviderCapability.MODEL_DISCOVERY in info.capabilities
+        )
+
+        # Load saved config for this provider (if any)
+        saved = self._saved_config_for(info.display_name)
+        if saved:
+            self.ai_api_key_input.setText(saved.api_key)
+            self.ai_default_check.setChecked(saved.is_active)
+        else:
+            self.ai_api_key_input.clear()
+            self.ai_default_check.setChecked(False)
+
+        # Populate model dropdown
+        self._refresh_ai_models(info.display_name, saved.model if saved else None)
+
         self._update_ai_button_state()
+
+    # ------------------------------------------------------------------
+    # Model helpers
+    # ------------------------------------------------------------------
 
     def _refresh_ai_models(self, provider: str, selected_model: str | None = None) -> None:
+        """Populate model dropdown with models for *provider* from catalog."""
         if not hasattr(self, "ai_model_combo"):
             return
+        catalog = self.ai_catalog_service.load()
+        models = catalog.get(provider, [])
         self.ai_model_combo.blockSignals(True)
+        current = self.ai_model_combo.currentText().strip()
         self.ai_model_combo.clear()
-        models = self.ai_model_catalog.get(provider, [])
         self.ai_model_combo.addItems(models)
-        if selected_model and selected_model in models:
-            self.ai_model_combo.setCurrentText(selected_model)
+        # Prefer explicit selected_model, then preserve user-typed text
+        target = selected_model or current
+        if target:
+            self.ai_model_combo.setCurrentText(target)
         self.ai_model_combo.blockSignals(False)
 
-    def _refresh_ai_catalog_table(self, select_provider: str | None = None, select_model: str | None = None) -> None:
-        rows = [
-            (provider, model)
-            for provider, models in sorted(self.ai_model_catalog.items(), key=lambda item: item[0].lower())
-            for model in sorted(models, key=str.lower)
-        ]
-        self.ai_catalog_table.blockSignals(True)
-        self.ai_catalog_table.setRowCount(len(rows))
-        selected_row = -1
-        for row, (provider, model) in enumerate(rows):
-            for col, value in enumerate([provider, model]):
-                item = QTableWidgetItem(value)
-                item.setData(Qt.ItemDataRole.UserRole, (provider, model))
-                self.ai_catalog_table.setItem(row, col, item)
-            if provider == select_provider and model == select_model:
-                selected_row = row
-        self.ai_catalog_table.blockSignals(False)
-        if selected_row >= 0:
-            self.ai_catalog_table.selectRow(selected_row)
-
-    def _selected_ai_catalog_item(self) -> tuple[str, str] | None:
-        if not hasattr(self, "ai_catalog_table"):
-            return None
-        row = self.ai_catalog_table.currentRow()
+    def _refresh_provider_models(self) -> None:
+        """Refresh models for the currently selected provider via its API."""
+        row = self.ai_provider_list.currentRow()
         if row < 0:
-            return None
-        item = self.ai_catalog_table.item(row, 0)
-        return item.data(Qt.ItemDataRole.UserRole) if item else None
-
-    def _load_selected_ai_catalog_item(self) -> None:
-        selected = self._selected_ai_catalog_item()
-        if selected:
-            provider, model = selected
-            self.ai_catalog_provider_input.setCurrentText(provider)
-            self.ai_catalog_model_input.setText(model)
-        self._update_ai_button_state()
-
-    def _add_ai_catalog_item(self) -> None:
-        provider = self.ai_catalog_provider_input.currentText().strip()
-        model = self.ai_catalog_model_input.text().strip()
-        if not provider or not model:
-            self._set_ai_status("Nhập nhà cung cấp và mô hình trước khi thêm.", "error")
             return
-        self.ai_catalog_table.clearSelection()
-        self.ai_model_catalog = self.ai_catalog_service.add_provider_model(provider, model)
-        provider = self._catalog_provider_key(provider)
-        self._refresh_after_catalog_change(provider, model)
-        self._set_ai_status("Đã thêm nhà cung cấp và model vào file JSON.", "ok")
+        item = self.ai_provider_list.item(row)
+        provider_key = item.data(Qt.ItemDataRole.UserRole) if item else ""
+        api_key = self.ai_api_key_input.text().strip()
 
-    def _update_ai_catalog_item(self) -> None:
-        selected = self._selected_ai_catalog_item()
-        provider = self.ai_catalog_provider_input.currentText().strip()
-        model = self.ai_catalog_model_input.text().strip()
-        if not selected:
-            self._set_ai_status("Chọn một dòng danh mục trước khi sửa.", "error")
+        if not api_key:
+            self._set_ai_status("Cần nhập API Key trước khi làm mới model.", "error")
             return
-        if not provider or not model:
-            self._set_ai_status("Nhập nhà cung cấp và mô hình trước khi sửa.", "error")
-            return
-        old_provider, old_model = selected
-        self.ai_model_catalog = self.ai_catalog_service.update_provider_model(old_provider, old_model, provider, model)
-        self._rename_ai_settings_provider_model(old_provider, old_model, provider, model)
-        provider = self._catalog_provider_key(provider)
-        self._refresh_after_catalog_change(provider, model)
-        self._set_ai_status("Đã sửa nhà cung cấp và model trong file JSON.", "ok")
 
-    def _delete_ai_catalog_item(self) -> None:
-        selected = self._selected_ai_catalog_item()
-        if not selected:
-            self._set_ai_status("Chọn một dòng danh mục trước khi xóa.", "error")
-            return
-        provider, model = selected
-        self.ai_model_catalog = self.ai_catalog_service.remove_provider_model(provider, model)
-        providers = [
-            item
-            for item in self.app_settings.ai.providers
-            if not (item.provider.lower() == provider.lower() and item.model.lower() == model.lower())
-        ]
-        if providers and not any(item.is_active for item in providers):
-            providers[0].is_active = True
-        self._save_ai_providers(providers)
-        self._refresh_after_catalog_change()
-        self._set_ai_status("Đã xóa nhà cung cấp/model và các API key liên quan.", "ok")
+        self.ai_refresh_models_btn.setEnabled(False)
+        self._set_ai_status("Đang lấy model từ API...", "ok")
+        QApplication.processEvents()
 
-    def _refresh_after_catalog_change(self, select_provider: str | None = None, select_model: str | None = None) -> None:
-        self._refresh_ai_catalog_table(select_provider, select_model)
-        self._refresh_ai_provider_options(select_provider)
-        self._refresh_ai_models(select_provider or self.ai_provider_combo.currentText(), select_model)
-        self._refresh_ai_table(select_provider, select_model)
-        self._update_ai_button_state()
+        try:
+            self.ai_catalog_service.refresh_models(provider_key, api_key)
+            info = provider_catalog.get(provider_key)
+            display = info.display_name if info else provider_key
+            self._refresh_ai_models(display)
+            models = self.ai_model_combo.count()
+            self._set_ai_status(f"Đã cập nhật {models} model.", "ok")
+        except Exception as exc:
+            self._set_ai_status(f"Lỗi: {exc}", "error")
+        finally:
+            self.ai_refresh_models_btn.setEnabled(True)
 
-    def _rename_ai_settings_provider_model(self, old_provider: str, old_model: str, new_provider: str, new_model: str) -> None:
+    # ------------------------------------------------------------------
+    # Persist
+    # ------------------------------------------------------------------
+
+    def _saved_config_for(self, provider_display: str) -> AIProviderSettings | None:
+        """Return the saved AIProviderSettings for *provider_display*, if any."""
         for item in self.app_settings.ai.providers:
-            if item.provider.lower() == old_provider.lower() and item.model.lower() == old_model.lower():
-                item.provider = new_provider
-                item.model = new_model
-        self._save_ai_providers(self.app_settings.ai.providers)
+            if item.provider.lower() == provider_display.lower():
+                return item
+        return None
 
-    def _update_ai_button_state(self) -> None:
-        if not hasattr(self, "ai_provider_combo"):
+    def _save_ai_provider(self) -> None:
+        provider = self._current_provider_display()
+        model = self.ai_model_combo.currentText().strip()
+        api_key = self.ai_api_key_input.text().strip()
+        if not provider:
             return
-        selected_api = self._selected_ai_provider()
-        has_key = bool(self.ai_api_key_input.text().strip() or (selected_api and selected_api.api_key))
-        has_provider_model = bool(self.ai_provider_combo.currentText().strip() and self.ai_model_combo.currentText().strip())
-        has_catalog_text = bool(self.ai_catalog_provider_input.currentText().strip() and self.ai_catalog_model_input.text().strip())
-        self.ai_test_button.setEnabled(has_provider_model and has_key and self.ai_test_thread is None)
-        self.ai_save_button.setEnabled(has_provider_model)
-        self.ai_delete_button.setEnabled(self.ai_table.currentRow() >= 0)
-        self.ai_catalog_add_button.setEnabled(has_catalog_text)
-        self.ai_catalog_update_button.setEnabled(has_catalog_text and self.ai_catalog_table.currentRow() >= 0)
-        self.ai_catalog_delete_button.setEnabled(self.ai_catalog_table.currentRow() >= 0)
+        if not model:
+            self._set_ai_status("Chọn model trước khi lưu.", "error")
+            return
+
+        providers = list(self.app_settings.ai.providers)
+        existing = self._saved_config_for(provider)
+
+        if api_key:
+            if existing:
+                existing.api_key = api_key
+                existing.model = model
+                existing.api_key_ref = self._mask_api_key(api_key)
+            else:
+                providers.append(AIProviderSettings(
+                    provider=provider,
+                    model=model,
+                    api_key=api_key,
+                    api_key_ref=self._mask_api_key(api_key),
+                    is_active=not providers,
+                ))
+        elif existing and not api_key:
+            # Keep existing config but update model
+            existing.model = model
+        else:
+            self._set_ai_status("Nhập API Key trước khi lưu.", "error")
+            return
+
+        # Apply default toggle
+        is_default = self.ai_default_check.isChecked()
+        if is_default:
+            for p in providers:
+                p.is_active = (p.provider.lower() == provider.lower())
+        elif existing and existing.is_active and len(providers) > 1:
+            # User unchecked default → pick first other provider as active
+            existing.is_active = False
+            first_other = next((p for p in providers if p is not existing), None)
+            if first_other:
+                first_other.is_active = True
+
+        self._save_ai_providers(providers)
+        self.ai_api_key_input.clear()
+        self._set_ai_status(f"Đã lưu cấu hình {provider}.", "ok")
+
+    def _save_ai_providers(self, providers: list[AIProviderSettings]) -> None:
+        active = next((item for item in providers if item.is_active), providers[0] if providers else None)
+        self.app_settings.ai = AISettings(
+            provider=active.provider if active else "DeepSeek",
+            model=active.model if active else DEFAULT_DEEPSEEK_MODEL,
+            api_key_ref=active.api_key_ref if active else None,
+            providers=providers,
+        )
+        self.settings_service.save(self.app_settings)
+
+    def _current_provider_display(self) -> str:
+        row = self.ai_provider_list.currentRow()
+        if row < 0:
+            return ""
+        item = self.ai_provider_list.item(row)
+        return item.text() if item else ""
+
+    # ------------------------------------------------------------------
+    # Test & Status
+    # ------------------------------------------------------------------
 
     def _test_ai_key(self) -> None:
         if self.ai_test_thread is not None:
             return
         api_key = self.ai_api_key_input.text().strip()
         if not api_key:
-            selected = self._selected_ai_provider()
-            api_key = selected.api_key if selected else ""
-        config = AIProviderConfig(
-            provider=self.ai_provider_combo.currentText().strip(),
-            model=self.ai_model_combo.currentText().strip(),
-            api_key=api_key,
-        )
-        if not config.provider or not config.model or not config.api_key:
-            self._set_ai_status("Thiếu nhà cung cấp, mô hình hoặc khóa API.", "error")
+            self._set_ai_status("Nhập API Key trước khi kiểm tra.", "error")
             return
+        provider = self._current_provider_display()
+        model = self.ai_model_combo.currentText().strip()
+        if not provider or not model:
+            self._set_ai_status("Chọn nhà cung cấp và model.", "error")
+            return
+
+        config = AIProviderConfig(provider=provider, model=model, api_key=api_key)
         self.ai_test_button.setEnabled(False)
         self.ai_test_button.setText("Đang kiểm tra...")
-        self._set_ai_status("Đang kiểm tra model AI...", "ok")
+        self._set_ai_status("Đang kiểm tra...", "ok")
 
         thread = QThread(self)
         worker = AITestWorker(config)
@@ -390,92 +392,38 @@ class SettingsScreen(QWidget):
         thread.start()
 
     def _ai_test_succeeded(self) -> None:
-        self._set_ai_status("Khóa API hợp lệ.", "ok")
+        self._set_ai_status("Kết nối thành công — API Key hợp lệ.", "ok")
+        # Auto-discover models after successful validation
+        row = self.ai_provider_list.currentRow()
+        if row >= 0:
+            item = self.ai_provider_list.item(row)
+            provider_key = item.data(Qt.ItemDataRole.UserRole) if item else ""
+            info = provider_catalog.get(provider_key)
+            if info and ProviderCapability.MODEL_DISCOVERY in info.capabilities:
+                self._refresh_provider_models()
 
     def _ai_test_failed(self, message: str) -> None:
-        self._set_ai_status(f"Không kiểm tra được khóa API: {message}", "error")
+        self._set_ai_status(f"Kiểm tra thất bại: {message}", "error")
 
     def _ai_test_finished(self) -> None:
-        self.ai_test_button.setText("Kiểm tra")
+        self.ai_test_button.setText("🧪 Kiểm tra")
         self.ai_test_thread = None
         self.ai_test_worker = None
         self._update_ai_button_state()
 
-    def _save_ai_provider(self) -> None:
-        provider = self.ai_provider_combo.currentText().strip()
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _update_ai_button_state(self) -> None:
+        if not hasattr(self, "ai_provider_list"):
+            return
+        provider = self._current_provider_display()
         model = self.ai_model_combo.currentText().strip()
-        api_key = self.ai_api_key_input.text().strip()
-        if not provider or not model:
-            self._set_ai_status("Chọn nhà cung cấp và mô hình trước khi lưu API key.", "error")
-            return
-        if not api_key and not self._selected_ai_provider():
-            self._set_ai_status("Nhập khóa API trước khi lưu cấu hình mới.", "error")
-            return
-
-        providers = list(self.app_settings.ai.providers)
-        existing = next(
-            (
-                item
-                for item in providers
-                if item.provider.lower() == provider.lower() and item.model.lower() == model.lower()
-            ),
-            None,
-        )
-        if existing:
-            if api_key:
-                existing.api_key = api_key
-                existing.api_key_ref = self._mask_api_key(api_key)
-        else:
-            providers.append(
-                AIProviderSettings(
-                    provider=provider,
-                    model=model,
-                    api_key=api_key,
-                    api_key_ref=self._mask_api_key(api_key),
-                    is_active=not providers,
-                )
-            )
-
-        self._save_ai_providers(providers)
-        self.ai_api_key_input.clear()
-        self._refresh_ai_table(select_provider=provider, select_model=model)
-        self._set_ai_status("Đã lưu API key theo nhà cung cấp và model.", "ok")
-
-    def _delete_ai_provider(self) -> None:
-        selected = self._selected_ai_provider()
-        if not selected:
-            return
-        providers = [item for item in self.app_settings.ai.providers if item is not selected]
-        if providers and not any(item.is_active for item in providers):
-            providers[0].is_active = True
-        self._save_ai_providers(providers)
-        self.ai_api_key_input.clear()
-        self._refresh_ai_table()
-        self._set_ai_status("Đã xóa API key khỏi danh sách cấu hình.", "ok")
-
-    def _save_ai_providers(self, providers: list[AIProviderSettings]) -> None:
-        active = next((item for item in providers if item.is_active), providers[0] if providers else None)
-        self.app_settings.ai = AISettings(
-            provider=active.provider if active else "DeepSeek",
-            model=active.model if active else DEFAULT_DEEPSEEK_MODEL,
-            api_key_ref=active.api_key_ref if active else None,
-            providers=providers,
-        )
-        self.settings_service.save(self.app_settings)
-
-    def _ai_provider_names(self) -> list[str]:
-        return list(FIXED_AI_PROVIDERS)
-
-    def _catalog_provider_key(self, provider: str) -> str:
-        return next((name for name in self.ai_model_catalog if name.lower() == provider.lower()), provider)
-
-    def _refresh_ai_provider_options(self, selected_provider: str | None = None) -> None:
-        self.ai_provider_combo.blockSignals(True)
-        self.ai_provider_combo.clear()
-        self.ai_provider_combo.addItems(self._ai_provider_names())
-        if selected_provider and selected_provider in self._ai_provider_names():
-            self.ai_provider_combo.setCurrentText(selected_provider)
-        self.ai_provider_combo.blockSignals(False)
+        has_key = bool(self.ai_api_key_input.text().strip())
+        has_cfg = bool(provider and model)
+        self.ai_test_button.setEnabled(has_cfg and has_key and self.ai_test_thread is None)
+        self.ai_save_button.setEnabled(has_cfg)
 
     def _mask_api_key(self, api_key: str) -> str | None:
         if not api_key:
@@ -484,103 +432,37 @@ class SettingsScreen(QWidget):
             return "****"
         return f"{api_key[:3]}-****{api_key[-4:]}"
 
-    def _refresh_ai_table(self, select_provider: str | None = None, select_model: str | None = None) -> None:
-        if not hasattr(self, "ai_table"):
-            return
-        query = self.ai_search_input.text().strip().lower() if hasattr(self, "ai_search_input") else ""
-        providers = [
-            item
-            for item in self.app_settings.ai.providers
-            if not query
-            or query in item.provider.lower()
-            or query in item.model.lower()
-            or query in (item.api_key_ref or "").lower()
-        ]
-
-        self.ai_table.blockSignals(True)
-        self.ai_table.setRowCount(len(providers))
-        selected_row = -1
-        for row, item in enumerate(providers):
-            active_item = QTableWidgetItem("")
-            active_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            active_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            active_item.setData(Qt.ItemDataRole.UserRole, item)
-            self.ai_table.setItem(row, 0, active_item)
-            self.ai_table.setCellWidget(row, 0, self._active_provider_cell(item))
-
-            values = [item.provider, item.model, item.api_key_ref or self._mask_api_key(item.api_key) or "Chưa có"]
-            for col, value in enumerate(values, start=1):
-                table_item = QTableWidgetItem(value)
-                table_item.setData(Qt.ItemDataRole.UserRole, item)
-                self.ai_table.setItem(row, col, table_item)
-
-            if select_provider == item.provider and select_model == item.model:
-                selected_row = row
-
-        self.ai_table.blockSignals(False)
-        if selected_row >= 0:
-            self.ai_table.selectRow(selected_row)
-        elif providers:
-            self.ai_table.selectRow(0)
-        self._update_ai_button_state()
-
-    def _selected_ai_provider(self) -> AIProviderSettings | None:
-        if not hasattr(self, "ai_table"):
-            return None
-        row = self.ai_table.currentRow()
-        if row < 0:
-            return None
-        item = self.ai_table.item(row, 0)
-        return item.data(Qt.ItemDataRole.UserRole) if item else None
-
-    def _load_selected_ai_provider(self) -> None:
-        selected = self._selected_ai_provider()
-        if not selected:
-            self._update_ai_button_state()
-            return
-        self.ai_provider_combo.blockSignals(True)
-        self.ai_provider_combo.setCurrentText(selected.provider)
-        self.ai_provider_combo.blockSignals(False)
-        self._refresh_ai_models(selected.provider, selected.model)
-        self.ai_api_key_input.clear()
-        self._update_ai_button_state()
-
-    def _active_provider_cell(self, provider: AIProviderSettings) -> QWidget:
-        cell = QWidget()
-        cell.setObjectName("ActiveProviderCell")
-        layout = QHBoxLayout(cell)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        button = QPushButton("✓")
-        button.setObjectName("ActiveProviderCheck")
-        button.setCheckable(True)
-        button.setChecked(provider.is_active)
-        button.setFixedSize(14, 14)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.clicked.connect(
-            lambda checked, selected=provider: self._activate_ai_provider(selected)
-            if checked
-            else self._refresh_ai_table(select_provider=selected.provider, select_model=selected.model)
-        )
-        layout.addStretch(1)
-        layout.addWidget(button)
-        layout.addStretch(1)
-        return cell
-
-    def _activate_ai_provider(self, selected: AIProviderSettings) -> None:
-        providers = self.app_settings.ai.providers
-        for provider in providers:
-            provider.is_active = provider is selected
-        self._save_ai_providers(providers)
-        self._refresh_ai_table(select_provider=selected.provider, select_model=selected.model)
-        self._set_ai_status(f"Đang sử dụng {selected.provider} / {selected.model}.", "ok")
-
     def _set_ai_status(self, text: str, state: str) -> None:
         self.ai_status_label.setText(text)
         self.ai_status_label.setProperty("state", state)
         self.ai_status_label.setVisible(bool(text))
         self.ai_status_label.style().unpolish(self.ai_status_label)
         self.ai_status_label.style().polish(self.ai_status_label)
+
+    # ------------------------------------------------------------------
+    # Shared layout helpers (used by other tabs)
+    # ------------------------------------------------------------------
+
+    def _aligned_button_row(self) -> tuple[QWidget, QHBoxLayout]:
+        container = QWidget()
+        row = QHBoxLayout(container)
+        row.setContentsMargins(0, 2, 0, 0)
+        row.setSpacing(10)
+        return container, row
+
+    def _compact_form_row(self, label: str, field: QWidget, label_width: int = 132, field_width: int = 220) -> QWidget:
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        label_widget = QLabel(label)
+        label_widget.setObjectName("FormLabel")
+        label_widget.setFixedWidth(label_width)
+        field.setFixedWidth(field_width)
+        layout.addWidget(label_widget)
+        layout.addWidget(field)
+        layout.addStretch(1)
+        return widget
 
     def _mt5_tab(self) -> QWidget:
         container = QWidget()

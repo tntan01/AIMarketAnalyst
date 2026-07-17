@@ -58,6 +58,7 @@ class OrdersScreen(QWidget):
         self._positions: list[dict] = []
         self._pending_orders: list[dict] = []
         self._trailing_configs: dict[int, dict] = {}  # key = position_id
+        self._position_original_sl: dict[int, float] = {}  # position_id -> original SL (captured once, never overwritten)
         self.setObjectName("FormScreen")
         self._build_ui()
         self.refresh_orders()
@@ -278,6 +279,15 @@ class OrdersScreen(QWidget):
 
         self._positions = self.mt5.get_open_positions() if hasattr(self.mt5, "get_open_positions") else []
         self._pending_orders = self.mt5.get_pending_orders() if hasattr(self.mt5, "get_pending_orders") else []
+
+        # Capture original SL for newly detected positions (once, never overwrite)
+        for pos in self._positions:
+            pos_id = int(pos.get("position_id", 0))
+            if pos_id and pos_id not in self._position_original_sl:
+                sl = float(pos.get("sl", 0) or 0)
+                if sl > 0:
+                    self._position_original_sl[pos_id] = sl
+
         self._cleanup_trailing()
 
         if getattr(self, "position_count_label", None):
@@ -407,10 +417,13 @@ class OrdersScreen(QWidget):
         open_p = float(row.get("open_price", 0) or row.get("price", 0) or 0)
         cur_p = float(row.get("current_price", 0) or 0)
         sl_for_r = float(row.get("sl", 0) or 0)
+        # Use captured original SL as Single Source of Truth for R
+        orig_sl = self._position_original_sl.get(pos_id)
+        if orig_sl is not None and orig_sl > 0:
+            sl_for_r = orig_sl
         cfg_r = self._trailing_configs.get(pos_id)
         if cfg_r:
             open_p = float(cfg_r.get("entry_price", open_p) or open_p)
-            sl_for_r = float(cfg_r.get("initial_sl", sl_for_r) or sl_for_r)
         if open_p and sl_for_r:
             risk = abs(open_p - sl_for_r)
             if is_buy:
@@ -507,7 +520,11 @@ class OrdersScreen(QWidget):
         stale = [pid for pid in self._trailing_configs if pid not in open_ids]
         for pid in stale:
             del self._trailing_configs[pid]
-        if stale:
+        # Also clean up original SL entries for closed positions
+        stale_sl = [pid for pid in self._position_original_sl if pid not in open_ids]
+        for pid in stale_sl:
+            del self._position_original_sl[pid]
+        if stale or stale_sl:
             self._debounce_save()
 
     def _trailing_tick(self) -> None:
@@ -693,8 +710,12 @@ class OrdersScreen(QWidget):
         # Priority: cfg["initial_sl"] (set when trailing was enabled)
         # Fallback: current_sl from MT5 (valid when trailing not yet enabled)
         _cfg_for_sl = existing if isinstance(existing, dict) else {}
+        # Priority: _position_original_sl > cfg.initial_sl > current MT5 SL
+        _orig_sl = self._position_original_sl.get(pos_id)
         _cfg_initial_sl = _cfg_for_sl.get("initial_sl")
-        if _cfg_initial_sl is not None and float(_cfg_initial_sl) > 0:
+        if _orig_sl is not None and _orig_sl > 0:
+            effective_initial_sl = _orig_sl
+        elif _cfg_initial_sl is not None and float(_cfg_initial_sl) > 0:
             effective_initial_sl = float(_cfg_initial_sl)
         else:
             effective_initial_sl = current_sl if current_sl > 0 else float(pos.get("sl", 0) or 0)
@@ -1174,7 +1195,7 @@ class OrdersScreen(QWidget):
                 raise ValueError("Không tìm thấy vị thế đã chọn (có thể đã bị đóng).")
 
             entry_price = float(pos.get("open_price", 0) or pos.get("price", 0) or 0)
-            initial_sl = float(pos.get("sl", 0) or 0)
+            initial_sl = self._position_original_sl.get(pos_id) or float(pos.get("sl", 0) or 0)
             if entry_price <= 0:
                 raise ValueError("Không xác định được giá entry.")
             if initial_sl <= 0:
@@ -1352,6 +1373,7 @@ class OrdersScreen(QWidget):
     def auto_enable_tracking(self, pos_id: int, symbol: str, side: str,
                              entry: float, sl: float, atr_h1: float) -> None:
         pip_multiplier = 100.0 if "JPY" in symbol.upper() else 10000.0
+        self._position_original_sl[pos_id] = sl
         self._trailing_configs[pos_id] = {
             "position_id": pos_id,
             "symbol": symbol,
@@ -1404,12 +1426,15 @@ class OrdersScreen(QWidget):
     def _save_trailing_state(self) -> None:
         import json as _json
         try:
-            if not self._trailing_configs:
+            if not self._trailing_configs and not self._position_original_sl:
                 p = self._state_path()
                 if p.exists():
                     p.unlink()
                 return
-            data = {"positions": {str(k): v for k, v in self._trailing_configs.items()}}
+            data = {
+                "positions": {str(k): v for k, v in self._trailing_configs.items()},
+                "original_sl": {str(k): v for k, v in self._position_original_sl.items()},
+            }
             self._state_path().write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
@@ -1422,12 +1447,17 @@ class OrdersScreen(QWidget):
                 return
             data = _json.loads(p.read_text(encoding="utf-8"))
             positions = data.get("positions", {})
-            if not isinstance(positions, dict):
-                return
-            for key, cfg in positions.items():
-                pos_id = int(key)
-                if pos_id not in self._trailing_configs:
-                    self._trailing_configs[pos_id] = cfg
+            if isinstance(positions, dict):
+                for key, cfg in positions.items():
+                    pos_id = int(key)
+                    if pos_id not in self._trailing_configs:
+                        self._trailing_configs[pos_id] = cfg
+            original_sl = data.get("original_sl", {})
+            if isinstance(original_sl, dict):
+                for key, sl in original_sl.items():
+                    pos_id = int(key)
+                    if pos_id not in self._position_original_sl:
+                        self._position_original_sl[pos_id] = float(sl)
         except Exception:
             pass
 
