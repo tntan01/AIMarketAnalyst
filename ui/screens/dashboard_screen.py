@@ -379,7 +379,7 @@ class DashboardScreen(QWidget):
         self.news_table = QTableWidget()
         self.news_table.setObjectName("EconTable")
         self.news_table.setColumnCount(8)
-        self.news_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung", "Kỳ trước", "Dự báo", "Thực tế", "Nguồn", ""])
+        self.news_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung", "Thực tế", "Dự báo", "Kỳ trước", "Nguồn", ""])
         self.news_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.news_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.news_table.setAlternatingRowColors(True)
@@ -737,31 +737,16 @@ class DashboardScreen(QWidget):
             style_item(content_item)
             table.setItem(i, 2, content_item)
 
-            # Column 3: Previous
-            if row_type == "event":
-                previous = str(row.get("previous", ""))
-            else:
-                previous = "—"
-            prev_item = QTableWidgetItem(previous if previous else "—")
-            prev_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            style_item(prev_item)
-            table.setItem(i, 3, prev_item)
-
-            # Column 4: Forecast
-            if row_type == "event":
-                forecast = str(row.get("forecast", ""))
-            else:
-                forecast = "—"
-            fore_item = QTableWidgetItem(forecast if forecast else "—")
-            fore_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            style_item(fore_item)
-            table.setItem(i, 4, fore_item)
-
-            # Column 5: Actual (bold, colored if deviates from forecast)
+            # Column 3: Actual (bold, colored if deviates from forecast)
             if row_type == "event":
                 actual = str(row.get("actual", ""))
             else:
                 actual = "—"
+            # Pre-compute forecast for color comparison below
+            if row_type == "event":
+                forecast = str(row.get("forecast", ""))
+            else:
+                forecast = "—"
             actual_item = QTableWidgetItem(actual if actual else "—")
             actual_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if actual and actual not in ("", "—"):
@@ -778,7 +763,23 @@ class DashboardScreen(QWidget):
                 except (ValueError, TypeError):
                     pass
             style_item(actual_item)
-            table.setItem(i, 5, actual_item)
+            table.setItem(i, 3, actual_item)
+
+            # Column 4: Forecast
+            fore_item = QTableWidgetItem(forecast if forecast else "—")
+            fore_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            style_item(fore_item)
+            table.setItem(i, 4, fore_item)
+
+            # Column 5: Previous
+            if row_type == "event":
+                previous = str(row.get("previous", ""))
+            else:
+                previous = "—"
+            prev_item = QTableWidgetItem(previous if previous else "—")
+            prev_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            style_item(prev_item)
+            table.setItem(i, 5, prev_item)
 
             # Column 6: Source
             source_text = str(row.get("source", ""))
