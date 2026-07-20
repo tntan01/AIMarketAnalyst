@@ -48,21 +48,23 @@ def test_store_cache_merges_with_existing_file():
         cache_file = Path(tmpdir) / "test_calendar.json"
         ff.CALENDAR_CACHE_FILE = cache_file
 
-        # Write initial cache with 2 events
+        now = datetime.now(UTC)
+
+        # Write initial cache with 2 events (3 and 5 days ago — within 7-day TTL)
         old_events = [
-            _make_event("USD", "Old Event 1", "2026-07-01T10:00:00Z"),
-            _make_event("EUR", "Old Event 2", "2026-07-02T12:00:00Z"),
+            _make_event("USD", "Old Event 1", (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")),
+            _make_event("EUR", "Old Event 2", (now - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")),
         ]
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump({
-                "date": "20260701",
-                "stored_utc": "2026-07-01T00:00:00+00:00",
+                "date": now.strftime("%Y%m%d"),
+                "stored_utc": now.isoformat(),
                 "rows": old_events,
             }, f)
 
         # Store new rows (should merge, not overwrite)
         new_events = [
-            _make_event("GBP", "New Event 1", "2026-07-05T14:00:00Z"),
+            _make_event("GBP", "New Event 1", (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")),
         ]
         ff._store_calendar_cache(new_events)
 
@@ -86,20 +88,23 @@ def test_store_cache_dedup_by_key():
         cache_file = Path(tmpdir) / "test_calendar.json"
         ff.CALENDAR_CACHE_FILE = cache_file
 
+        now = datetime.now(UTC)
+        event_time = (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
         # Initial cache
         old_events = [
-            _make_event("USD", "NFP", "2026-07-03T12:30:00Z"),
+            _make_event("USD", "NFP", event_time),
         ]
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump({
-                "date": "20260701",
-                "stored_utc": "2026-07-01T00:00:00+00:00",
+                "date": now.strftime("%Y%m%d"),
+                "stored_utc": now.isoformat(),
                 "rows": old_events,
             }, f)
 
         # Store same event again
         new_events = [
-            _make_event("USD", "NFP", "2026-07-03T12:30:00Z"),
+            _make_event("USD", "NFP", event_time),
         ]
         ff._store_calendar_cache(new_events)
 
@@ -193,18 +198,20 @@ def test_store_cache_preserves_events_without_time():
         cache_file = Path(tmpdir) / "test_calendar.json"
         ff.CALENDAR_CACHE_FILE = cache_file
 
+        now = datetime.now(UTC)
+
         old_events = [
             {"currency": "USD", "event": "No Time Event", "impact": "high"},
         ]
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump({
-                "date": "20260701",
-                "stored_utc": "2026-07-01T00:00:00+00:00",
+                "date": now.strftime("%Y%m%d"),
+                "stored_utc": now.isoformat(),
                 "rows": old_events,
             }, f)
 
         new_events = [
-            _make_event("GBP", "Has Time", "2026-07-06T10:00:00Z"),
+            _make_event("GBP", "Has Time", (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")),
         ]
         ff._store_calendar_cache(new_events)
 
@@ -221,8 +228,9 @@ def test_store_cache_no_existing_file_creates_new():
         cache_file = Path(tmpdir) / "test_calendar.json"
         ff.CALENDAR_CACHE_FILE = cache_file
 
+        now = datetime.now(UTC)
         new_events = [
-            _make_event("USD", "First Event", "2026-07-06T10:00:00Z"),
+            _make_event("USD", "First Event", (now - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")),
         ]
         ff._store_calendar_cache(new_events)
 
@@ -239,13 +247,14 @@ def test_store_cache_empty_rows_preserves_existing():
         cache_file = Path(tmpdir) / "test_calendar.json"
         ff.CALENDAR_CACHE_FILE = cache_file
 
+        now = datetime.now(UTC)
         old_events = [
-            _make_event("USD", "Existing", "2026-07-04T10:00:00Z"),
+            _make_event("USD", "Existing", (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")),
         ]
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump({
-                "date": "20260704",
-                "stored_utc": "2026-07-04T00:00:00+00:00",
+                "date": now.strftime("%Y%m%d"),
+                "stored_utc": now.isoformat(),
                 "rows": old_events,
             }, f)
 

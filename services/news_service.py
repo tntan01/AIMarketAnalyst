@@ -16,14 +16,14 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 from config.paths import app_data_dir
-from services.forex_factory_client import (
-    ForexFactoryClient,
+from services.calendar_helpers import (
     _clean_economic_value,
     _event_time,
     _is_high_impact,
     clean_text,
     parse_event_time,
 )
+from services.forex_factory_client import ForexFactoryClient
 from services.ai_service import AIService, AIProviderConfig
 from services.settings_service import SettingsService
 import yfinance as yf

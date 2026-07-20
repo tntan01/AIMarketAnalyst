@@ -9,7 +9,6 @@ import json
 import re
 import time
 from datetime import UTC, datetime, timedelta
-from html import unescape
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -17,81 +16,32 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from config.paths import app_data_dir
+from services.calendar_helpers import (
+    HIGH_IMPACT_VALUES,
+    _clean_economic_value,
+    _event_time,
+    _is_high_impact,
+    _is_valid_actual_value,
+    _sanitize_event_fields,
+    clean_text,
+    parse_event_time,
+)
 
 
 # ---------------------------------------------------------------------------
-# Module-level helpers (stateless, used by NewsService too)
+# Re-export for backward compatibility (used by news_service.py)
 # ---------------------------------------------------------------------------
 
-
-def parse_event_time(value: str) -> datetime | None:
-    if not value:
-        return None
-    normalized = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _event_time(event: object) -> datetime | None:
-    if not isinstance(event, dict):
-        return None
-    return parse_event_time(str(event.get("time_utc") or ""))
-
-
-def clean_text(value: str) -> str:
-    return " ".join(unescape(value or "").split())
-
-
-HIGH_IMPACT_VALUES: frozenset[str] = frozenset({"high", "red", "cao"})
-
-
-def _is_high_impact(value: str) -> bool:
-    normalized = value.strip().lower()
-    return normalized in HIGH_IMPACT_VALUES or "high" in normalized or "red" in normalized
-
-
-_VALID_ECON_VALUE_RE = re.compile(r'^-?\d+(?:\.\d+)?[%KMB]?$')
-
-
-def _clean_economic_value(raw: object) -> str:
-    """Return *raw* if it looks like a valid economic number, else '—'.
-
-    Filters out corrupted values like dates masquerading as data (e.g. ``"2026M"``).
-    """
-    v = str(raw).strip() if raw is not None else ""
-    if not v:
-        return ""
-    if not _VALID_ECON_VALUE_RE.match(v):
-        return "—"
-    num_part = v.rstrip("%KMB")
-    if len(num_part) >= 4 and (num_part.startswith("19") or num_part.startswith("20")):
-        return "—"
-    return v
-
-
-_NON_NUMERIC_EVENT_PATTERNS = [
-    "testifies", "speaks", "speech", "press conference", "statement",
-    "minutes", "report", "hearing", "panel", "discussion",
+__all__ = [
+    "ForexFactoryClient",
+    "parse_event_time",
+    "clean_text",
+    "_event_time",
+    "_is_high_impact",
+    "_clean_economic_value",
+    "_is_valid_actual_value",
+    "_sanitize_event_fields",
 ]
-
-
-def _sanitize_event_fields(row: dict[str, object]) -> dict[str, object]:
-    """Clean stale cache entries that may contain corrupted economic values."""
-    evt = str(row.get("event", "")).lower()
-    is_speech = any(p in evt for p in _NON_NUMERIC_EVENT_PATTERNS)
-    for field in ("forecast", "previous", "actual"):
-        raw = row.get(field)
-        if raw is not None and raw != "":
-            cleaned = _clean_economic_value(raw)
-            if is_speech and field == "actual" and cleaned not in ("", "—"):
-                cleaned = ""
-            row[field] = cleaned
-    return row
 
 
 # ---------------------------------------------------------------------------
@@ -409,45 +359,119 @@ class ForexFactoryClient:
     # HTML parser
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Row context for HTML rowspan inheritance
+    # ------------------------------------------------------------------
+
+    class _RowContext:
+        """Carries cell values forward when ForexFactory uses HTML rowspan.
+
+        ForexFactory frequently uses rowspan for cells like date and time
+        when consecutive events share the same value.  Without inheritance,
+        rows after the first would get empty strings for those cells.
+
+        _RowContext preserves the last seen value for each spanning cell
+        (date, time, currency, impact) so every parsed event receives a
+        complete context.  Per-event fields (event title, forecast,
+        previous, actual) are NEVER inherited.
+
+        """
+
+        __slots__ = ("date", "time_text", "currency", "impact")
+
+        def __init__(self) -> None:
+            self.date: str | None = None
+            self.time_text: str = ""
+            self.currency: str = ""
+            self.impact: str = ""
+
+        def update_date(self, new_date: str) -> None:
+            """Set a new date and reset time (times don't span across days)."""
+            self.date = new_date
+            self.time_text = ""
+
+    # ------------------------------------------------------------------
+    # HTML parser
+    # ------------------------------------------------------------------
+
+    _DATE_RE = re.compile(
+        r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}",
+        re.IGNORECASE,
+    )
+
     def _parse_html(self, html: str) -> list[dict[str, object]]:
         now = datetime.now(UTC)
         rows: list[dict[str, object]] = []
-        current_date: str | None = None
+        ctx = self._RowContext()
 
         html_tz = self._detect_html_timezone(html)
 
         row_blocks = re.findall(r"<tr[^>]*calendar__row[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL)
         for block in row_blocks:
+            # --- Date (rowspan-aware) ---
             date_text = self._html_cell_text(block, "calendar__date")
             if not date_text:
                 date_text = self._html_cell_text(block, "calendar__cell")
             if date_text:
                 date_clean = re.sub(r"<[^>]+>", "", date_text).strip()
                 date_clean = re.sub(r"\s+", " ", date_clean)
-                if re.search(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}", date_clean, re.IGNORECASE):
-                    current_date = date_clean
+                if self._DATE_RE.search(date_clean):
+                    ctx.update_date(date_clean)
+            # If no date cell in this row, inherit from context (rowspan)
 
-            currency = self._html_cell_text(block, "calendar__currency")
+            # --- Time (rowspan-aware) ---
+            time_raw = self._html_raw_cell(block, "calendar__time")
+            if time_raw:
+                # Cell exists in this row — read its value
+                time_text = re.sub(r"<[^>]+>", " ", time_raw).strip()
+                if time_text.lower() in ("all day", "tentative"):
+                    # Explicitly no specific time — reset context
+                    ctx.time_text = ""
+                    time_text = ""
+                else:
+                    ctx.time_text = time_text
+            else:
+                # No time cell in this row — inherit from context (rowspan)
+                time_text = ctx.time_text
+
+            # --- Currency (rowspan-aware) ---
+            currency_raw = self._html_cell_text(block, "calendar__currency")
+            if currency_raw:
+                ctx.currency = currency_raw
+            currency = ctx.currency
+
+            # --- Event (NEVER inherited -- per-event data) ---
             event = self._html_cell_text(block, "calendar__event-title") or self._html_cell_text(block, "calendar__event")
             if not currency or not event:
                 continue
 
-            time_text = self._html_raw_cell(block, "calendar__time")
-            time_text = re.sub(r"<[^>]+>", " ", time_text).strip() if time_text else ""
-            event_time = self._parse_html_time(time_text, current_date, html_tz)
+            # --- Impact (rowspan-aware) ---
+            impact_cell = self._html_raw_cell(block, "calendar__impact")
+            if impact_cell:
+                ctx.impact = self._html_impact(block)
+            impact = ctx.impact
+
+            # --- Per-event fields (NEVER inherited) ---
+            event_time = self._parse_html_time(time_text, ctx.date, html_tz)
 
             hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
+            actual_raw = self._html_cell_text(block, "calendar__actual")
+            forecast_raw = self._html_cell_text(block, "calendar__forecast")
+            previous_raw = self._html_cell_text(block, "calendar__previous")
+            actual_cleaned = _clean_economic_value(actual_raw)
+            forecast_cleaned = _clean_economic_value(forecast_raw)
+            previous_cleaned = _clean_economic_value(previous_raw)
             rows.append(
                 {
                     "source": "Forex Factory HTML",
                     "currency": currency,
                     "event": event,
-                    "impact": self._html_impact(block),
+                    "impact": impact,
                     "time_utc": event_time.isoformat(timespec="minutes").replace("+00:00", "Z") if event_time else "",
                     "hours_until": round(hours_until, 2) if hours_until is not None else None,
-                    "forecast": _clean_economic_value(self._html_cell_text(block, "calendar__forecast")),
-                    "previous": _clean_economic_value(self._html_cell_text(block, "calendar__previous")),
-                    "actual": _clean_economic_value(self._html_cell_text(block, "calendar__actual")),
+                    "forecast": forecast_cleaned,
+                    "previous": previous_cleaned,
+                    "actual": actual_cleaned,
                 }
             )
         return rows
@@ -562,6 +586,33 @@ class ForexFactoryClient:
         return n
 
     def _merge_actual_from_html(self, json_rows: list[dict[str, object]], html_rows: list[dict[str, object]]) -> None:
+        """Merge actual values from freshly-parsed HTML into JSON/cache rows.
+
+        This is the single point where actual values cross from HTML (the
+        most reliable source for past events) into the JSON/cache pipeline.
+
+        Trust hierarchy (highest first):
+          1. Fresh HTML (this session) — authoritative for past events
+          2. JSON API (nfs.faireconomy.media) — may lag on actuals
+          3. Disk cache — subject to drift from prior bad merges
+
+        Merge rules by confidence level:
+
+          HIGH confidence — (currency, norm_event, date) all match
+            → Fill empty actual
+            → Overwrite existing if HTML differs (self-heal corrupted cache)
+
+          LOW confidence — time proximity (±30 min, same currency)
+            → REMOVED.  Matching by time alone is provably incorrect when
+              multiple events for the same currency share a time slot
+              (e.g. CPI + Core CPI, NFP + Unemployment, 1-y LPR + 5-y LPR).
+
+        The removed Step 3 previously copied actual from the first HTML
+        event with matching currency within ±30 minutes, ignoring the
+        event name entirely.  This caused the CNY 5-y Loan Prime Rate bug
+        (actual 3.00% copied from 1-y instead of correct 3.50%).
+        """
+
         if not html_rows:
             return
         now = datetime.now(UTC)
@@ -578,7 +629,7 @@ class ForexFactoryClient:
             ev_time = _event_time(row)
             date_key = ev_time.strftime("%Y%m%d") if ev_time else ""
             norm_event = _norm(event)
-            if actual and currency and norm_event:
+            if _is_valid_actual_value(actual) and currency and norm_event:
                 html_lookup[(currency, norm_event, date_key)] = actual
 
         if not html_lookup:
@@ -599,33 +650,21 @@ class ForexFactoryClient:
             date_key = ev_time.strftime("%Y%m%d")
             norm_event = _norm(event)
 
-            # Step 1: Fuzzy match by normalized event name
+            # High Confidence match: (currency, norm_event, date)
             key = (currency, norm_event, date_key)
-            if key in html_lookup and not str(row.get("actual", "")).strip():
-                row["actual"] = html_lookup[key]
-                continue
+            if key in html_lookup:
+                current_actual = str(row.get("actual", "")).strip()
+                html_actual = html_lookup[key]
+                if not current_actual:
+                    row["actual"] = html_actual       # Fill empty
+                elif current_actual != html_actual:
+                    row["actual"] = html_actual       # Self-heal corrupted cache
 
-            # Step 3: Time-proximity match (±30 min, same currency)
-            if not str(row.get("actual", "")).strip():
-                for hrow in html_rows:
-                    h_currency = str(hrow.get("currency", "")).upper()
-                    if h_currency != currency:
-                        continue
-                    h_time = _event_time(hrow)
-                    if not h_time:
-                        continue
-                    if abs((ev_time - h_time).total_seconds()) <= 1800:
-                        h_actual = str(hrow.get("actual", "")).strip()
-                        if h_actual:
-                            row["actual"] = h_actual
-                            break
-
-        # Step 2: Re-fetch fresh HTML if many past events missing actual (stale cache)
+        # Re-fetch fresh HTML if many past events missing actual (stale cache)
         if stale_count >= 3:
             try:
                 fresh_html = self._fetch_html_events()
                 if fresh_html:
-                    # Build fresh lookup
                     fresh_lookup: dict[tuple[str, str, str], str] = {}
                     for row in fresh_html:
                         currency = str(row.get("currency", "")).upper()
@@ -650,20 +689,6 @@ class ForexFactoryClient:
                         key = (currency, norm_event, date_key)
                         if key in fresh_lookup:
                             row["actual"] = fresh_lookup[key]
-                            continue
-                        # Time-proximity match with fresh HTML
-                        for hrow in fresh_html:
-                            h_currency = str(hrow.get("currency", "")).upper()
-                            if h_currency != currency:
-                                continue
-                            h_time = _event_time(hrow)
-                            if not h_time:
-                                continue
-                            if abs((ev_time - h_time).total_seconds()) <= 1800:
-                                h_actual = str(hrow.get("actual", "")).strip()
-                                if h_actual:
-                                    row["actual"] = h_actual
-                                    break
             except Exception:
                 pass
 

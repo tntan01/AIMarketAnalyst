@@ -27,7 +27,6 @@ from ui.screens.shared import action_button
 from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
-from services.forex_factory_client import ForexFactoryClient
 from services.settings_service import SettingsService
 
 class MarketWorker(QThread):
