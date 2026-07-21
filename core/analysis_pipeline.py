@@ -310,7 +310,6 @@ class AnalysisPipeline:
                 market_regime=self._market_regime,
                 correlation_adjustment=self._buy_corr_adj,
                 macro_context=self._macro_alignment,
-                entry_context=None,
             ),
             "sell": score_scenario(
                 "sell", self._technical, self._smc, self._risk_score,
@@ -319,7 +318,6 @@ class AnalysisPipeline:
                 market_regime=self._market_regime,
                 correlation_adjustment=self._sell_corr_adj,
                 macro_context=self._macro_alignment,
-                entry_context=None,
             ),
         }
 

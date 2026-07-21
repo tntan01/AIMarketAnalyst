@@ -99,7 +99,6 @@ def score_scenario(
     market_regime: dict[str, Any] | None = None,
     correlation_adjustment: float = 0.0,
     macro_context: dict[str, Any] | None = None,
-    entry_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     trend = trend_alignment_score(side, technical)
     momentum = momentum_alignment_score(side, technical)
@@ -135,38 +134,22 @@ def score_scenario(
 
     risk_scaled = int(clamp(risk_score, 0, 15) * weights["risk"] / 15)
 
-    # ── Normalized scoring: scale technical+risk to fill budget not occupied by macro ──
-    # When macro data is unavailable (neutral 15/15), macro_effective only reaches
-    # ~50% of macro_cap. Without normalization, total scores are artificially depressed.
-    # This scales the non-macro portion so 0-100 means "best possible given available data".
-    non_macro_weight_keys = ["trend", "momentum", "location", "smc", "risk"]
-    non_macro_max = sum(int(weights[k]) for k in non_macro_weight_keys)
-    non_macro_score = technical_scaled + risk_scaled
-    available_budget = max(0, 100 - macro_effective)
+    # Direct sum — weights already sum to 100, no normalization needed.
+    # When macro data is weak or unavailable, the total naturally caps lower,
+    # which is correct for cross-pair comparison.
+    total = int(clamp(technical_scaled + risk_scaled + macro_effective, 0, 100))
 
-    if non_macro_max > 0:
-        normalized_non_macro = int(non_macro_score * available_budget / non_macro_max)
-    else:
-        normalized_non_macro = 0
-
-    total = int(clamp(normalized_non_macro + macro_effective, 0, 100))
-
-    # ---- Macro modifier (Phase 4 Prompt 2) ----
+    # ---- Macro status (display-only, does not affect score) ----
     macro_status = _detect_macro_status(macro_context, side)
     reason_codes: list[str] = []
     penalty_codes: list[str] = []
-    macro_modifier = 0
 
     if macro_status == "conflict":
-        macro_modifier = int(-15 * macro_confidence)
         append_code(penalty_codes, MACRO_CONFLICT)
     elif macro_status == "unclear":
         append_code(penalty_codes, MACRO_UNCLEAR)
     elif macro_status == "aligned":
-        macro_modifier = int(5 * macro_confidence)
         append_code(reason_codes, MACRO_ALIGNED)
-
-    total = int(clamp(total + macro_modifier, 0, 100))
 
     # ---- SMC CHOCH cap (Phase 5 Prompt 3) ----
     smc_flags = extract_smc_trade_flags(smc, side)
@@ -175,23 +158,6 @@ def score_scenario(
         total = min(total, 60)
         smc_score_cap = 60
         append_code(penalty_codes, CHOCH_AGAINST_DIRECTION)
-
-    entry_quality_bonus = 0
-    if isinstance(entry_context, dict):
-        sub_zone = entry_context.get("sub_zone")
-        if sub_zone == "bottom":
-            entry_quality_bonus += 3
-        elif sub_zone == "mid":
-            entry_quality_bonus += 2
-        elif sub_zone == "top":
-            entry_quality_bonus += 1
-        if entry_context.get("price_distance_to_zone_atr", 999) < 0.3:
-            entry_quality_bonus += 2
-        if entry_context.get("spread_vs_atr", 999) < 0.5:
-            entry_quality_bonus += 1
-        if entry_context.get("price_moving_toward_zone"):
-            entry_quality_bonus += 2
-        entry_quality_bonus = int(clamp(entry_quality_bonus * 12.5, 0, 100))
 
     return {
         "trend_alignment": int(clamp(trend, 0, 25)),
@@ -215,12 +181,10 @@ def score_scenario(
         "total": total,  # deprecated, kept for backward compatibility
         "rating": score_rating(total),
         "macro_status": macro_status,
-        "macro_modifier": macro_modifier,
         "reason_codes": normalize_codes(reason_codes),
         "penalty_codes": normalize_codes(penalty_codes),
         "smc_score_cap": smc_score_cap,
         "smc_flags": smc_flags,
-        "entry_quality_bonus": entry_quality_bonus,
     }
 
 
@@ -500,11 +464,18 @@ def _best_smc_zone(side: str, h4: dict[str, Any], h1: dict[str, Any] | None = No
 
 
 def calc_risk_condition(atr_current: float, atr_avg_14d: float, news_in_3h: bool, spread_status: str) -> int:
+    """Market risk gate — volatility, news, spread. Distinct from trade-level risk in risk_engine.py."""
     score = 0
-    if atr_avg_14d and 0.8 * atr_avg_14d <= atr_current <= 1.2 * atr_avg_14d:
-        score += 6
-    elif atr_avg_14d and atr_current <= 1.5 * atr_avg_14d:
-        score += 3
+    if atr_avg_14d and atr_current > 0:
+        ratio = atr_current / atr_avg_14d
+        if 0.9 <= ratio <= 1.1:
+            score += 6
+        elif 0.8 <= ratio <= 1.2:
+            score += 5
+        elif 0.7 <= ratio <= 1.3:
+            score += 3
+        elif ratio <= 1.5:
+            score += 1
     score += 0 if news_in_3h else 6
     score += 3 if spread_status == "normal" else 0
     return int(clamp(score, 0, 15))

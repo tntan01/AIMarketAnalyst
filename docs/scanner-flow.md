@@ -230,13 +230,12 @@ symbol_auto_trade[symbol] = {
   - macro_score × macro_confidence × macro_weight / 30
   - Cộng correlation_adjustment
 
-  **h) Tổng hợp — Normalized Scoring:**
+  **h) Tổng hợp — Direct Sum:**
   ```
-  non_macro_score = trend_scaled + momentum_scaled + location_scaled + smc_scaled + risk_scaled
-  available_budget = 100 - macro_effective
-  normalized_non_macro = non_macro_score * available_budget / non_macro_max
-  total = normalized_non_macro + macro_effective
+  total = technical_scaled + risk_scaled + macro_effective
   ```
+  Trọng số các thành phần đã sum = 100, không cần chuẩn hóa thêm.
+  Khi thiếu dữ liệu vĩ mô, điểm tổng tự nhiên thấp hơn → phản ánh đúng mức độ tin cậy.
 
   **i) Macro modifier:**
   - Macro aligned → +5 × macro_confidence

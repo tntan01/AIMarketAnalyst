@@ -107,7 +107,6 @@ def test_score_scenario_applies_macro_conflict_penalty():
 
     assert aligned["signal_score"] > conflict["signal_score"]
     assert conflict["macro_status"] == "conflict"
-    assert conflict["macro_modifier"] == -15
     assert MACRO_CONFLICT in conflict["penalty_codes"]
 
 

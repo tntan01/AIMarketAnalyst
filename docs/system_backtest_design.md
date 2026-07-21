@@ -389,31 +389,21 @@ Tổng điểm tối đa thực tế chỉ đạt ~92/100 thay vì 100. Các set
 `score_scenario()` trong `core/signal_engine.py` dùng công thức chuẩn hóa:
 
 ```python
-non_macro_max = sum(weights["trend"], weights["momentum"], weights["location"],
-                    weights["smc"], weights["risk"])
-non_macro_score = technical_scaled + risk_scaled
-available_budget = max(0, 100 - macro_effective)
-
-if non_macro_max > 0:
-    normalized_non_macro = int(non_macro_score * available_budget / non_macro_max)
-else:
-    normalized_non_macro = 0
-
-total = clamp(normalized_non_macro + macro_effective, 0, 100)
+total = clamp(technical_scaled + risk_scaled + macro_effective, 0, 100)
 ```
 
-**Nguyên lý:** Phần technical + risk được scale lên để lấp đầy khoảng trống mà macro không chiếm. 100 điểm luôn có nghĩa "tốt nhất có thể với dữ liệu hiện có".
+**Nguyên lý:** Trọng số các thành phần (trend, momentum, location, smc, risk, macro) đã sum = 100 theo từng regime. Tổng trực tiếp không cần chuẩn hóa. Khi thiếu dữ liệu vĩ mô (macro_effective thấp), điểm tổng tự nhiên thấp hơn — phản ánh đúng mức độ tin cậy, cho phép so sánh công bằng giữa các cặp.
 
 ### Ví Dụ
 
-| Macro | macro_effective | Technical+Risk (thô) | Code cũ | Code mới |
-|---|---|---|---|---|
-| Trung tính (15) | 7 | 45/85 | 52 | **56** |
-| Trung tính (15) | 7 | 85/85 (max) | 92 | **100** |
-| Đầy đủ (30) | 15 | 45/85 | 60 | 60 (không đổi) |
-| Không có (0) | 0 | 45/85 | 45 | **53** |
+| Macro | macro_effective | Technical+Risk (thô) | Điểm tổng |
+|---|---|---|---|
+| Trung tính (15) | 7 | 45/85 | **52** |
+| Trung tính (15) | 7 | 85/85 (max) | **92** |
+| Đầy đủ (30) | 15 | 45/85 | 60 |
+| Không có (0) | 0 | 45/85 | **45** |
 
-Khi macro đầy đủ, chuẩn hóa là no-op — điểm số giữ nguyên như code cũ.
+Điểm tối đa 100 chỉ đạt được khi cả technical, risk, và macro đều hoàn hảo.
 
 ## Điều Kiện Vào Lệnh
 
@@ -523,7 +513,7 @@ Ban đầu bonus được sửa thành đối xứng (cả buy và sell cùng đ
 - Trade được bonus có **win rate thấp hơn** trade không được bonus trong cùng bucket điểm
 - Score 70-79 (chủ yếu là trade được bonus) có win rate 22% vs 38% của score 60-69
 
-Code hiện tại không còn bonus. `entry_quality_bonus` luôn = 0, giữ lại trong schema để tương thích ngược.
+Code hiện tại không còn bonus.
 
 ### Giải Pháp 2: Sửa Neutral Tiebreaker (đã giữ lại)
 
@@ -620,8 +610,6 @@ Bonus cho setup có liquidity_sweep + displacement + M15 strict đã bị **bỏ
 1. Ban đầu: **+10** — gây lệch buy 76% và vùng 70-79 thua nặng (win rate 5.3%)
 2. Giảm còn **+5** — cải thiện nhưng vùng 70-79 vẫn tệ nhất (win rate 22.2%)
 3. **Bỏ hẳn** — các điều kiện bonus xác nhận entry quá muộn (cuối sóng), không có giá trị dự đoán
-
-`entry_quality_bonus` trong schema giữ lại = 0 để tương thích ngược.
 
 ## Giả Lập SL/TP
 

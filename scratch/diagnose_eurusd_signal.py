@@ -174,7 +174,6 @@ def step4_score(side: str, technical, smc, risk_score, macro_alignment, macro_co
         market_regime=market_regime,
         correlation_adjustment=corr_adj,
         macro_context=macro_context,
-        entry_context=None,
     )
     return {
         "signal_score": result.get("signal_score"),
@@ -187,12 +186,10 @@ def step4_score(side: str, technical, smc, risk_score, macro_alignment, macro_co
         "risk_condition": result.get("risk_condition"),
         "macro_alignment": result.get("macro_alignment"),
         "macro_status": result.get("macro_status"),
-        "macro_modifier": result.get("macro_modifier"),
         "rating": result.get("rating"),
         "reason_codes": result.get("reason_codes"),
         "penalty_codes": result.get("penalty_codes"),
         "smc_score_cap": result.get("smc_score_cap"),
-        "entry_quality_bonus": result.get("entry_quality_bonus"),
     }, result
 
 
@@ -485,14 +482,14 @@ def diagnose_eurusd():
     sell_summary, sell_full = step4_score("sell", technical, smc, risk_score, macro_alignment, macro_confidence, market_regime, corr_adj_sell, macro_alignment)
 
     print(f"  BUY  score={buy_summary['signal_score']}/100 (T={buy_summary['trend_alignment']} M={buy_summary['momentum_alignment']} L={buy_summary['location_quality']} S={buy_summary['smc_quality']} R={buy_summary['risk_condition']} Ma={buy_summary['macro_alignment']})")
-    print(f"       rating={buy_summary['rating']}, macro_status={buy_summary['macro_status']}, macro_modifier={buy_summary['macro_modifier']}")
+    print(f"       rating={buy_summary['rating']}, macro_status={buy_summary['macro_status']}")
     print(f"       smc_reason={buy_summary['smc_reason']}")
     print(f"       reason_codes={buy_summary['reason_codes']}, penalty_codes={buy_summary['penalty_codes']}")
     if buy_summary['smc_score_cap']:
         print(f"       ⚠️  SMC score cap: {buy_summary['smc_score_cap']}")
 
     print(f"  SELL score={sell_summary['signal_score']}/100 (T={sell_summary['trend_alignment']} M={sell_summary['momentum_alignment']} L={sell_summary['location_quality']} S={sell_summary['smc_quality']} R={sell_summary['risk_condition']} Ma={sell_summary['macro_alignment']})")
-    print(f"       rating={sell_summary['rating']}, macro_status={sell_summary['macro_status']}, macro_modifier={sell_summary['macro_modifier']}")
+    print(f"       rating={sell_summary['rating']}, macro_status={sell_summary['macro_status']}")
     print(f"       smc_reason={sell_summary['smc_reason']}")
     print(f"       reason_codes={sell_summary['reason_codes']}, penalty_codes={sell_summary['penalty_codes']}")
     if sell_summary['smc_score_cap']:
