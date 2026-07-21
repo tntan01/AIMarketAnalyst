@@ -235,7 +235,7 @@ def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
         take_profit="",
         risk_reward="",
         suggested_lot=None,
-        ai_commentary="Imported from MT5 history.",
+        ai_commentary="Đã nhập từ lịch sử MT5.",
         analysis_json=json.dumps(payload, ensure_ascii=False),
         user_action="",
         result=result,

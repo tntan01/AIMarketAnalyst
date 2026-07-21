@@ -5,8 +5,8 @@ from html import escape
 from config.paths import app_data_dir
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
+    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
+    QScrollArea, QSizePolicy, QSplitter, QTabWidget, QTextEdit, QVBoxLayout,
     QWidget,
 )
 from controllers.journal_controller import JournalController
@@ -80,12 +80,14 @@ class ScannerDetailScreen(QWidget):
 
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
         overview_tab = card()
-        ov = QHBoxLayout()
-        ov.setContentsMargins(0, 0, 0, 0)
-        ov.setSpacing(12)
-        overview_tab.layout().addLayout(ov)
 
-        left_col = QVBoxLayout()
+        ov = QSplitter(Qt.Orientation.Horizontal)
+        ov.setChildrenCollapsible(False)
+
+        # --- Left container: button + trade panel + score panel + checklist ---
+        left_container = QWidget()
+        left_container.setMinimumWidth(260)
+        left_col = QVBoxLayout(left_container)
         left_col.setSpacing(4)
         left_col.setContentsMargins(0, 0, 0, 0)
 
@@ -93,12 +95,13 @@ class ScannerDetailScreen(QWidget):
         self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.show_detail_btn.setToolTip("Xem toàn bộ 16 chỉ số phân tích chi tiết")
+        self.show_detail_btn.setFixedHeight(28)
         self.show_detail_btn.setStyleSheet(
             "QPushButton {"
             "  padding: 4px 12px;"
-            "  border-radius: 6px;"
-            "  font-size: 11px;"
-            "  font-weight: bold;"
+            "  border-radius: 8px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
             "  background: #D97706;"
             "  border: 1px solid #D97706;"
             "  color: #ffffff;"
@@ -116,8 +119,8 @@ class ScannerDetailScreen(QWidget):
         self.trade_panel = QFrame()
         self.trade_panel.setObjectName("TradePanelCard")
         trade_panel_layout = QVBoxLayout(self.trade_panel)
-        trade_panel_layout.setContentsMargins(6, 4, 6, 4)
-        trade_panel_layout.setSpacing(1)
+        trade_panel_layout.setContentsMargins(10, 6, 10, 6)
+        trade_panel_layout.setSpacing(2)
         left_col.addWidget(self.trade_panel)
 
         # -- Panel: Điểm phân tích --
@@ -125,7 +128,7 @@ class ScannerDetailScreen(QWidget):
         self.score_panel.setObjectName("ScorePanelCard")
         score_panel_layout = QVBoxLayout(self.score_panel)
         score_panel_layout.setContentsMargins(6, 4, 6, 4)
-        score_panel_layout.setSpacing(1)
+        score_panel_layout.setSpacing(2)
         left_col.addWidget(self.score_panel)
 
         # -- Panel: Điều kiện vào lệnh --
@@ -133,23 +136,28 @@ class ScannerDetailScreen(QWidget):
         self.checklist_panel.setObjectName("ChecklistPanelCard")
         checklist_panel_layout = QVBoxLayout(self.checklist_panel)
         checklist_panel_layout.setContentsMargins(6, 4, 6, 4)
-        checklist_panel_layout.setSpacing(1)
+        checklist_panel_layout.setSpacing(2)
         left_col.addWidget(self.checklist_panel)
         left_col.addStretch(1)
 
-        ov.addLayout(left_col, 1)
+        ov.addWidget(left_container)
 
-        # -- Right Col (80%): Hero bar + Chart --
-        right_col = QVBoxLayout()
+        # --- Right container: hero bar + chart ---
+        right_container = QWidget()
+        right_container.setMinimumWidth(360)
+        right_col = QVBoxLayout(right_container)
+        right_col.setContentsMargins(0, 0, 0, 0)
         right_col.setSpacing(4)
 
         # -- Hero verdict bar --
         self.hero_bar = QLabel("")
         self.hero_bar.setObjectName("ScannerDetailHero")
+        self.hero_bar.setFixedHeight(28)
         self.hero_bar.setWordWrap(False)
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
+        self.hero_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hero_bar.setStyleSheet(
-            "QLabel#ScannerDetailHero { border-radius: 6px; padding: 4px 12px; font-size: 11px; background: #1e293b; border: 1px solid #334155; }"
+            "QLabel#ScannerDetailHero { border-radius: 8px; padding: 4px 12px; font-size: 12px; background: #1e293b; border: 1px solid #334155; }"
         )
         right_col.addWidget(self.hero_bar)
 
@@ -163,7 +171,16 @@ class ScannerDetailScreen(QWidget):
         cl.addWidget(self.chart)
         right_col.addWidget(self.chart_frame, 1)
 
-        ov.addLayout(right_col, 4)
+        ov.addWidget(right_container)
+        ov.setStretchFactor(0, 1)
+        ov.setStretchFactor(1, 4)
+        ov.setSizes([280, 900])
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(ov)
+        overview_tab.layout().addWidget(scroll)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
 
@@ -243,22 +260,94 @@ class ScannerDetailScreen(QWidget):
         symbol = str(self.row.get("symbol", "--"))
         dlg = QDialog(self)
         dlg.setWindowTitle(f"📋 Chi tiết kết quả quét — {symbol}")
-        dlg.setMinimumSize(680, 560)
-        dlg.resize(720, 620)
-        dlg.setObjectName("AnalysisDetailDialog")
+        dlg.setMinimumSize(880, 580)
+        dlg.resize(980, 680)
+        dlg.setObjectName("ScanAnalysisDetailDialog")
 
         root = QVBoxLayout(dlg)
         root.setContentsMargins(20, 16, 20, 16)
         root.setSpacing(12)
 
-        # Header
+        # -----------------------------------------------------------------------
+        # Header Layout
+        # -----------------------------------------------------------------------
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
+        
         title_color = "#0f172a" if light else "#f8fafc"
-        sub_color = "#475569" if light else "#94a3b8"
-        title = QLabel(f"<b style='font-size:15px;color:{title_color};'>📋 Chi tiết kết quả quét — {symbol}</b>")
+        title = QLabel(f"<b style='font-size:18px;color:{title_color};'>📋 CHI TIẾT KẾT QUẢ QUÉT — {symbol}</b>")
         title.setTextFormat(Qt.TextFormat.RichText)
-        root.addWidget(title)
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
 
-        # Scrollable card grid
+        # Overview Pills
+        # 1. Signal Bias Pill
+        bias_val = self.row.get("direction_bias", {})
+        side = "buy"
+        bias_text = "TRUNG LẬP"
+        pill_side_obj = "SummaryPillNeutral"
+        side_color = "#f59e0b"
+        if isinstance(bias_val, dict):
+            side = str(bias_val.get("best_side", ""))
+            is_clear = bias_val.get("is_clear_bias", False)
+            if side == "buy":
+                bias_text = f"MUA {'RÕ' if is_clear else 'TB'}"
+                pill_side_obj = "SummaryPillBuy"
+                side_color = "#10b981"
+            elif side == "sell":
+                bias_text = f"BÁN {'RÕ' if is_clear else 'TB'}"
+                pill_side_obj = "SummaryPillSell"
+                side_color = "#f43f5e"
+
+        bias_pill = QFrame()
+        bias_pill.setObjectName(pill_side_obj)
+        bias_pill_layout = QHBoxLayout(bias_pill)
+        bias_pill_layout.setContentsMargins(8, 4, 8, 4)
+        bias_lbl = QLabel(bias_text)
+        bias_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {side_color}; background: transparent; border: none;")
+        bias_pill_layout.addWidget(bias_lbl)
+        header_layout.addWidget(bias_pill)
+
+        # 2. Final Score Pill
+        final_v = self.row.get("final_score", "--")
+        score_pill = QFrame()
+        score_pill.setObjectName("SummaryPillScore")
+        score_pill_layout = QHBoxLayout(score_pill)
+        score_pill_layout.setContentsMargins(8, 4, 8, 4)
+        score_lbl = QLabel(f"Điểm: {final_v}/100")
+        score_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {'#0f172a' if light else '#f8fafc'}; background: transparent; border: none;")
+        score_pill_layout.addWidget(score_lbl)
+        header_layout.addWidget(score_pill)
+
+        # 3. R:R Pill
+        rr = self.row.get("risk_reward") or "--"
+        rr_pill = QFrame()
+        rr_pill.setObjectName("SummaryPillRR")
+        rr_pill_layout = QHBoxLayout(rr_pill)
+        rr_pill_layout.setContentsMargins(8, 4, 8, 4)
+        rr_lbl = QLabel(f"R:R: {rr}")
+        rr_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #f59e0b; background: transparent; border: none;")
+        rr_pill_layout.addWidget(rr_lbl)
+        header_layout.addWidget(rr_pill)
+
+        # 4. Permission Pill
+        perm = str(self.row.get("trade_permission") or "--").lower()
+        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
+        perm_accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#f43f5e"}.get(perm, "#94a3b8")
+        perm_pill = QFrame()
+        perm_pill.setObjectName("SummaryPillPerm")
+        perm_pill_layout = QHBoxLayout(perm_pill)
+        perm_pill_layout.setContentsMargins(8, 4, 8, 4)
+        perm_lbl = QLabel(f"Quyền: {perm_map.get(perm, perm)}")
+        perm_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {perm_accent}; background: transparent; border: none;")
+        perm_pill_layout.addWidget(perm_lbl)
+        header_layout.addWidget(perm_pill)
+
+        root.addLayout(header_layout)
+
+        # -----------------------------------------------------------------------
+        # Scroll Area
+        # -----------------------------------------------------------------------
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -266,61 +355,219 @@ class ScannerDetailScreen(QWidget):
 
         content = QWidget()
         content.setStyleSheet("background: transparent;")
-
-        bg = "#ffffff" if light else "#1a1f2e"
-        border = "#e2e8f0" if light else "#2b3545"
+        
         label_color = "#475569" if light else "#94a3b8"
         value_color = "#0f172a" if light else "#f1f5f9"
 
-        content_layout = QVBoxLayout(content)
-        content_layout.setSpacing(10)
-        content_layout.setContentsMargins(0, 0, 0, 0)
+        # Main horizontal layout inside scroll area (2 columns)
+        body_layout = QHBoxLayout(content)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(16)
 
-        # ---- Nhóm A: Ngữ cảnh mở rộng ----
-        group_a_title = QLabel("🔎 Ngữ cảnh mở rộng")
-        group_a_title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {value_color}; background: transparent; border: none;")
-        content_layout.addWidget(group_a_title)
+        # Cột Trái (Technical & Macro)
+        left_col = QVBoxLayout()
+        left_col.setSpacing(12)
 
-        group_a_defs = [
-            ("Vị trí giá", self._dialog_card_position(), "#f59e0b",
-             "Giá hiện tại đang ở đâu so với vùng vào lệnh đã xác định"),
-            ("Nhóm scanner", self._dialog_card_group(), "#a78bfa",
-             "Phân loại mã theo mức độ sẵn sàng vào lệnh của bộ quét"),
-            ("Khung M15", self._dialog_card_m15(), "#f59e0b",
-             "Độ chặt chẽ của tín hiệu xác nhận ở khung thời gian 15 phút"),
-            ("Điểm vĩ mô", self._dialog_card_macro(), "#38bdf8",
-             "Điểm đánh giá tác động của yếu tố vĩ mô, độ tin cậy thể hiện qua dấu chấm"),
-        ]
-        group_a_grid = QGridLayout()
-        group_a_grid.setHorizontalSpacing(8)
-        group_a_grid.setVerticalSpacing(8)
-        for idx, (label_text, (value_text, detail_text, accent), _, tooltip_text) in enumerate(group_a_defs):
-            row_i, col_i = divmod(idx, 2)
-            cell = QFrame()
-            cell.setStyleSheet(f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}")
-            cell.setToolTip(tooltip_text)
-            cell_l = QVBoxLayout(cell)
-            cell_l.setContentsMargins(12, 8, 12, 8)
-            cell_l.setSpacing(2)
-            accent_used = accent if accent else "#ea580c"
-            lbl = QLabel(label_text)
+        # Cột Phải (Checklist & Journal)
+        right_col = QVBoxLayout()
+        right_col.setSpacing(12)
+
+        body_layout.addLayout(left_col, 1)
+        body_layout.addLayout(right_col, 1)
+
+        # Helper function to create standard small info cards
+        def create_info_card(obj_name, title_txt, val_txt, val_color, tooltip_txt):
+            card_widget = QFrame()
+            card_widget.setObjectName(obj_name)
+            card_w_layout = QVBoxLayout(card_widget)
+            card_w_layout.setContentsMargins(12, 10, 12, 10)
+            card_w_layout.setSpacing(2)
+            card_widget.setToolTip(tooltip_txt)
+
+            lbl = QLabel(title_txt)
             lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color}; background: transparent; border: none;")
-            lbl.setToolTip(tooltip_text)
-            val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {accent_used}; background: transparent; border: none;")
-            cell_l.addWidget(lbl)
-            cell_l.addWidget(val)
-            if detail_text:
-                det = QLabel(detail_text)
-                det.setStyleSheet(f"font-size: 11px; color: {label_color}; background: transparent; border: none;")
-                cell_l.addWidget(det)
-            group_a_grid.addWidget(cell, row_i, col_i)
-        content_layout.addLayout(group_a_grid)
+            lbl.setToolTip(tooltip_txt)
 
-        # ---- Nhóm B: Thống kê nhật ký ----
-        group_b_title = QLabel("📔 Thống kê nhật ký")
-        group_b_title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {value_color}; background: transparent; border: none;")
-        content_layout.addWidget(group_b_title)
+            val = QLabel(val_txt)
+            val.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {val_color}; background: transparent; border: none;")
+            val.setWordWrap(True)
+
+            card_w_layout.addWidget(lbl)
+            card_w_layout.addWidget(val)
+            return card_widget
+
+        # -----------------------------------------------------------------------
+        # CỘT TRÁI - PHẦN 1: BỐI CẢNH KỸ THUẬT
+        # -----------------------------------------------------------------------
+        tech_title = QLabel("🔍 BỐI CẢNH KỸ THUẬT")
+        tech_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        left_col.addWidget(tech_title)
+
+        tech_grid = QGridLayout()
+        tech_grid.setHorizontalSpacing(8)
+        tech_grid.setVerticalSpacing(8)
+
+        pos_val, _, pos_color = self._dialog_card_position()
+        grp_val, grp_detail, grp_color = self._dialog_card_group()
+        m15_val, _, m15_color = self._dialog_card_m15()
+
+        card_pos = create_info_card("PriceCard", "VỊ TRÍ GIÁ", pos_val, pos_color, "Giá hiện tại đang ở đâu so với vùng vào lệnh đã xác định")
+        card_grp = create_info_card("ScannerGroupCard", "TRẠNG THÁI QUÉT", grp_val, grp_color, grp_detail or "Phân loại mã theo mức độ sẵn sàng vào lệnh của bộ quét")
+        card_m15 = create_info_card("M15Card", "XÁC NHẬN M15", m15_val, m15_color, "Độ chặt chẽ của tín hiệu xác nhận ở khung thời gian 15 phút")
+
+        tech_grid.addWidget(card_pos, 0, 0)
+        tech_grid.addWidget(card_grp, 0, 1)
+        tech_grid.addWidget(card_m15, 0, 2)
+        left_col.addLayout(tech_grid)
+
+        # -----------------------------------------------------------------------
+        # CỘT TRÁI - PHẦN 2: BỐI CẢNH VĨ MÔ
+        # -----------------------------------------------------------------------
+        macro_title = QLabel("🌐 BỐI CẢNH VĨ MÔ")
+        macro_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        left_col.addWidget(macro_title)
+
+        macro_card = QFrame()
+        macro_card.setObjectName("MacroContextCard")
+        macro_card_layout = QVBoxLayout(macro_card)
+        macro_card_layout.setContentsMargins(14, 12, 14, 12)
+        macro_card_layout.setSpacing(10)
+
+        # Macro Score Header
+        macro_val_raw = self.row.get("macro_score", "--")
+        try:
+            macro_num = int(macro_val_raw)
+        except (TypeError, ValueError):
+            macro_num = 15
+        macro_accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
+        macro_conf = float(self.row.get("macro_confidence", 1.0))
+        macro_dot = "●" if macro_conf >= 0.8 else ("○" if macro_conf >= 0.5 else "◌")
+        macro_bias_raw = str(self.row.get("macro_bias", "") or "").lower()
+        macro_bias_text = {
+            "aligned": "Thuận",
+            "conflict": "Xung đột",
+            "divergent": "Xung đột",
+            "neutral": "Trung lập",
+            "unclear": "Chưa rõ"
+        }.get(macro_bias_raw, macro_bias_raw.title())
+
+        macro_hdr = QHBoxLayout()
+        macro_hdr_lbl = QLabel("Điểm số Vĩ mô")
+        macro_hdr_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color};")
+        macro_hdr_val = QLabel(f"{macro_dot} {macro_num}/30 ({macro_bias_text})")
+        macro_hdr_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {macro_accent};")
+        macro_hdr.addWidget(macro_hdr_lbl)
+        macro_hdr.addStretch(1)
+        macro_hdr.addWidget(macro_hdr_val)
+        macro_card_layout.addLayout(macro_hdr)
+
+        # Macro Tiers Progress Bars
+        md = self._get_macro_detail()
+        tiers = [
+            ("T1 · Lãi suất", md["t1"], 12, md["t1_reason"]),
+            ("T2 · Lịch kinh tế", md["t2"], 9, md["t2_reason"]),
+            ("T3 · Tâm lý", md["t3"], 12, md["t3_reason"]),
+        ]
+
+        for t_label, t_val, t_max, t_reason in tiers:
+            tier_row = QVBoxLayout()
+            tier_row.setSpacing(3)
+
+            tier_info = QHBoxLayout()
+            tier_lbl = QLabel(t_label)
+            tier_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {value_color};")
+            tier_score = QLabel(f"{t_val}/{t_max}")
+            tier_score.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {value_color};")
+            tier_info.addWidget(tier_lbl)
+            tier_info.addStretch(1)
+            tier_info.addWidget(tier_score)
+            tier_row.addLayout(tier_info)
+
+            # Styled QProgressBar
+            bar = QProgressBar()
+            bar.setRange(0, t_max)
+            bar.setValue(t_val)
+            bar.setTextVisible(False)
+            bar.setFixedHeight(6)
+            p_color = "#10b981" if t_val >= t_max * 0.7 else ("#f59e0b" if t_val >= t_max * 0.4 else "#94a3b8")
+            bg_color = "#1e293b" if not light else "#e2e8f0"
+            bar.setStyleSheet(f"""
+                QProgressBar {{ background-color: {bg_color}; border: none; border-radius: 3px; }}
+                QProgressBar::chunk {{ background-color: {p_color}; border-radius: 3px; }}
+            """)
+            tier_row.addWidget(bar)
+
+            if t_reason:
+                reason_lbl = QLabel(t_reason)
+                reason_lbl.setObjectName("MacroReasonLabel")
+                reason_lbl.setWordWrap(True)
+                tier_row.addWidget(reason_lbl)
+
+            macro_card_layout.addLayout(tier_row)
+
+        # Micro Indicators: Yield Spread & VIX
+        d1 = md["t1_detail"]
+        d3 = md["t3_detail"]
+        indicator_parts = []
+        if isinstance(d1, dict) and d1.get("yield_spread_2s10s") is not None:
+            ys = d1.get("yield_spread_2s10s")
+            steep = "dốc lên" if d1.get("yield_spread_steepening") else "phẳng"
+            indicator_parts.append(f"Đường cong LS: <b>{ys:+.2f}</b> ({steep})")
+        if isinstance(d3, dict) and d3.get("vix_level") is not None:
+            vix = d3.get("vix_level")
+            if vix < 15: vix_note = "thấp"
+            elif vix < 20: vix_note = "bình thường"
+            elif vix < 25: vix_note = "cao"
+            elif vix < 30: vix_note = "rất cao"
+            else: vix_note = "cực đoan"
+            indicator_parts.append(f"VIX: <b>{vix:.1f}</b> ({vix_note})")
+
+        if indicator_parts:
+            ind_lbl = QLabel(" &nbsp;&bull;&nbsp; ".join(indicator_parts))
+            ind_lbl.setStyleSheet(f"font-size: 11px; color: {label_color}; border-top: 1px solid {'#242b3d' if not light else '#e2e8f0'}; padding-top: 6px; margin-top: 4px;")
+            ind_lbl.setTextFormat(Qt.TextFormat.RichText)
+            macro_card_layout.addWidget(ind_lbl)
+
+        # Buy/Sell Reasons
+        reasons_dict = md["reasons"]
+        reasons_layout = QVBoxLayout()
+        reasons_layout.setSpacing(4)
+        has_reasons = False
+        if isinstance(reasons_dict, dict):
+            buy_r = reasons_dict.get("buy", "")
+            sell_r = reasons_dict.get("sell", "")
+            if buy_r:
+                buy_lbl = QLabel(f"🟢 <b style='color:#10b981;'>MUA:</b> {buy_r}")
+                buy_lbl.setStyleSheet("font-size: 11px; color: #cbd5e1;" if not light else "font-size: 11px; color: #475569;")
+                buy_lbl.setWordWrap(True)
+                buy_lbl.setTextFormat(Qt.TextFormat.RichText)
+                reasons_layout.addWidget(buy_lbl)
+                has_reasons = True
+            if sell_r:
+                sell_lbl = QLabel(f"🔴 <b style='color:#f43f5e;'>BÁN:</b> {sell_r}")
+                sell_lbl.setStyleSheet("font-size: 11px; color: #cbd5e1;" if not light else "font-size: 11px; color: #475569;")
+                sell_lbl.setWordWrap(True)
+                sell_lbl.setTextFormat(Qt.TextFormat.RichText)
+                reasons_layout.addWidget(sell_lbl)
+                has_reasons = True
+
+        if has_reasons:
+            reasons_container = QWidget()
+            reasons_container.setStyleSheet("background: transparent;")
+            reasons_container_layout = QVBoxLayout(reasons_container)
+            reasons_container_layout.setContentsMargins(0, 4, 0, 0)
+            reasons_container_layout.addLayout(reasons_layout)
+            macro_card_layout.addWidget(reasons_container)
+
+        left_col.addWidget(macro_card)
+        left_col.addStretch(1)
+
+        # -----------------------------------------------------------------------
+        # CỘT PHẢI - PHẦN 3: HIỆU SUẤT NHẬT KÝ
+        # -----------------------------------------------------------------------
+        journal_title = QLabel("📔 HIỆU SUẤT NHẬT KÝ")
+        journal_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        right_col.addWidget(journal_title)
 
         sample_val, _, sample_accent = self._dialog_card_journal_sample()
         exp_val, _, exp_accent = self._dialog_card_journal_exp()
@@ -329,76 +576,79 @@ class ScannerDetailScreen(QWidget):
         except (TypeError, ValueError):
             sample_num = 0
 
-        group_b_defs = [
-            ("Mẫu nhật ký", (sample_val, "", sample_accent),
-             "Số lệnh đã ghi nhật ký khớp với thiết lập tương tự"),
-            ("Kỳ vọng NK", (exp_val, "", exp_accent),
-             "Kỳ vọng lợi nhuận trung bình theo R, tính từ lịch sử nhật ký"),
-        ]
-        group_b_grid = QGridLayout()
-        group_b_grid.setHorizontalSpacing(8)
-        group_b_grid.setVerticalSpacing(8)
-        for idx, (label_text, (value_text, detail_text, accent), tooltip_text) in enumerate(group_b_defs):
-            row_i, col_i = divmod(idx, 2)
-            cell = QFrame()
-            cell.setStyleSheet(f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}")
-            cell.setToolTip(tooltip_text)
-            cell_l = QVBoxLayout(cell)
-            cell_l.setContentsMargins(12, 8, 12, 8)
-            cell_l.setSpacing(2)
-            accent_used = accent if accent else "#ea580c"
-            lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color}; background: transparent; border: none;")
-            lbl.setToolTip(tooltip_text)
-            val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {accent_used}; background: transparent; border: none;")
-            cell_l.addWidget(lbl)
-            cell_l.addWidget(val)
-            group_b_grid.addWidget(cell, row_i, col_i)
-        content_layout.addLayout(group_b_grid)
+        journal_grid = QGridLayout()
+        journal_grid.setHorizontalSpacing(8)
+        journal_grid.setVerticalSpacing(8)
 
-        # ---- Cảnh báo mẫu nhỏ ----
+        card_sample = create_info_card("JournalSampleCard", "MẪU NHẬT KÝ", f"{sample_val} mẫu", "#9ca3af", "Số lệnh đã ghi nhật ký khớp với thiết lập tương tự")
+        card_exp = create_info_card("JournalExpectancyCard", "KỲ VỌNG HỆ THỐNG", exp_val, exp_accent, "Kỳ vọng lợi nhuận trung bình theo R, tính từ lịch sử nhật ký")
+
+        journal_grid.addWidget(card_sample, 0, 0)
+        journal_grid.addWidget(card_exp, 0, 1)
+        right_col.addLayout(journal_grid)
+
+        # Warning Banner for small sample sizes
         if sample_num < 20:
-            warn_lbl = QLabel("⚠️ Mẫu quá ít, kỳ vọng chưa đáng tin")
-            warn_lbl.setStyleSheet("font-size: 12px; color: #f59e0b; background: transparent; border: none; font-weight: 600;")
-            content_layout.addWidget(warn_lbl)
+            warn_frame = QFrame()
+            warn_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {"rgba(245, 158, 11, 0.08)" if not light else "rgba(245, 158, 11, 0.05)"};
+                    border: 1px solid rgba(245, 158, 11, 0.2);
+                    border-radius: 6px;
+                }}
+            """)
+            warn_l = QHBoxLayout(warn_frame)
+            warn_l.setContentsMargins(10, 6, 10, 6)
+            warn_l.setSpacing(6)
+            
+            warn_icon = QLabel("⚠️")
+            warn_icon.setStyleSheet("font-size: 12px; background: transparent; border: none;")
+            warn_txt = QLabel("Mẫu quá ít, kỳ vọng chưa đáng tin cậy")
+            warn_txt.setStyleSheet("font-size: 11px; font-weight: 600; color: #f59e0b; background: transparent; border: none;")
+            warn_l.addWidget(warn_icon)
+            warn_l.addWidget(warn_txt)
+            warn_l.addStretch(1)
+            right_col.addWidget(warn_frame)
 
-        # Entry checklist section
-        checklist_frame = QFrame()
-        checklist_frame.setStyleSheet(
-            f"QFrame {{ background: {bg}; border: 1px solid {border}; border-radius: 6px; }}"
-        )
-        cl = QVBoxLayout(checklist_frame)
-        cl.setContentsMargins(14, 12, 14, 12)
-        cl.setSpacing(6)
+        # -----------------------------------------------------------------------
+        # CỘT PHẢI - PHẦN 4: ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)
+        # -----------------------------------------------------------------------
+        checklist_title = QLabel("🔍 ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)")
+        checklist_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        right_col.addWidget(checklist_title)
 
-        ck_title = QLabel("🔍 Điều kiện vào lệnh")
-        ck_title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {value_color}; background: transparent; border: none;")
-        cl.addWidget(ck_title)
+        checklist_card = QFrame()
+        checklist_card.setObjectName("ChecklistCard")
+        cl_layout = QVBoxLayout(checklist_card)
+        cl_layout.setContentsMargins(12, 12, 12, 12)
+        cl_layout.setSpacing(6)
 
-        green = "#10b981"
-        red = "#e11d48"
+        green_color = "#10b981"
+        red_color = "#f43f5e"
+
         for item in self._build_entry_checklist():
-            icon = "✅" if item["pass"] else "❌"
-            color = green if item["pass"] else red
-            row_w = QWidget()
-            row_w.setStyleSheet("background: transparent;")
-            row_l = QHBoxLayout(row_w)
-            row_l.setContentsMargins(0, 2, 0, 2)
+            row_card = QFrame()
+            row_card.setObjectName("ChecklistRowCardPass" if item["pass"] else "ChecklistRowCardFail")
+            
+            row_l = QHBoxLayout(row_card)
+            row_l.setContentsMargins(10, 6, 10, 6)
             row_l.setSpacing(8)
-            row_l.setAlignment(Qt.AlignmentFlag.AlignTop)
-            icon_lbl = QLabel(icon)
-            icon_lbl.setStyleSheet("font-size: 13px; background: transparent; border: none;")
-            icon_lbl.setAlignment(Qt.AlignmentFlag.AlignTop)
-            row_l.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignTop)
+            row_l.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+            icon_lbl = QLabel("✅" if item["pass"] else "❌")
+            icon_lbl.setStyleSheet("font-size: 11px; background: transparent; border: none;")
+            icon_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            row_l.addWidget(icon_lbl)
+
             text_lbl = QLabel(item["label"])
-            text_lbl.setStyleSheet(f"font-size: 13px; color: {color}; background: transparent; border: none;")
+            text_lbl.setStyleSheet(f"font-size: 11.5px; font-weight: 500; color: {green_color if item["pass"] else red_color}; background: transparent; border: none;")
             text_lbl.setWordWrap(True)
             row_l.addWidget(text_lbl, 1)
-            cl.addWidget(row_w)
 
-        content_layout.addWidget(checklist_frame)
-        content_layout.addStretch(1)
+            cl_layout.addWidget(row_card)
+
+        right_col.addWidget(checklist_card)
+        right_col.addStretch(1)
 
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
@@ -454,7 +704,100 @@ class ScannerDetailScreen(QWidget):
         conf = float(self.row.get("macro_confidence", 1.0))
         dot = "●" if conf >= 0.8 else ("○" if conf >= 0.5 else "◌")
         accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
-        detail = str(self.row.get("macro_bias", "--")).title()
+        macro_raw = str(self.row.get("macro_bias", "") or "").lower()
+        bias = {
+            "aligned": "Thuận",
+            "conflict": "Xung đột",
+            "divergent": "Xung đột",
+            "neutral": "Trung lập",
+            "unclear": "Chưa rõ"
+        }.get(macro_raw, macro_raw.title())
+
+        # Build detailed HTML for the full-detail dialog
+        md = self._get_macro_detail()
+        side = md["best_side"]
+        parts: list[str] = []
+
+        tiers = [
+            ("T1 · Lãi suất", md["t1"], 12, md["t1_reason"]),
+            ("T2 · Lịch kinh tế", md["t2"], 9, md["t2_reason"]),
+            ("T3 · Tâm lý", md["t3"], 12, md["t3_reason"]),
+        ]
+        for label, score_val, max_val, reason in tiers:
+            bar = self._tier_bar(score_val, max_val, True)  # light=True for HTML
+            parts.append(
+                f"<span style='font-size:10px;color:#6b7280;'>{label}</span> "
+                f"<span style='font-size:10px;'>{bar} {score_val}/{max_val}</span>"
+                f"<br><span style='font-size:9px;color:#9ca3af;margin-left:8px;'>{reason}</span>"
+            )
+
+        # --- Sub-components ---
+        d1 = md["t1_detail"]
+        if isinstance(d1, dict) and d1:
+            comps = d1.get("components", {})
+            if isinstance(comps, dict):
+                rd = comps.get("rate_diff", {})
+                rt = comps.get("rate_trend", {})
+                st = comps.get("stance", {})
+                for sub_label, sub_dict, sub_max in [
+                    ("Chênh lệch LS", rd, 4), ("Xu hướng", rt, 4), ("Lập trường", st, 4),
+                ]:
+                    sv = int(sub_dict.get(side, 0) or 0)
+                    parts.append(
+                        f"<span style='font-size:9px;color:#9ca3af;margin-left:8px;'>"
+                        f"  {sub_label} {self._tier_bar(sv, sub_max, True)} {sv}/{sub_max}</span>"
+                    )
+            ys = d1.get("yield_spread_2s10s")
+            if ys is not None:
+                steep = "dốc lên" if d1.get("yield_spread_steepening") else "phẳng"
+                parts.append(
+                    f"<span style='font-size:9px;color:#9ca3af;margin-left:8px;'>"
+                    f"Đường cong LS: {ys:+.2f} ({steep})</span>"
+                )
+
+        d3 = md["t3_detail"]
+        if isinstance(d3, dict) and d3:
+            comps = d3.get("components", {})
+            if isinstance(comps, dict):
+                rs = comps.get("risk_sentiment", {})
+                geo = comps.get("geopolitical", {})
+                for sub_label, sub_dict, sub_max in [
+                    ("Tâm lý TT", rs, 8), ("Địa chính trị", geo, 4),
+                ]:
+                    sv = int(sub_dict.get(side, 0) or 0)
+                    parts.append(
+                        f"<span style='font-size:9px;color:#9ca3af;margin-left:8px;'>"
+                        f"  {sub_label} {self._tier_bar(sv, sub_max, True)} {sv}/{sub_max}</span>"
+                    )
+            vix = d3.get("vix_level")
+            if vix is not None:
+                if vix < 15: vix_note = "thấp"
+                elif vix < 20: vix_note = "bình thường"
+                elif vix < 25: vix_note = "cao"
+                elif vix < 30: vix_note = "rất cao"
+                else: vix_note = "cực đoan"
+                parts.append(
+                    f"<span style='font-size:9px;color:#9ca3af;margin-left:8px;'>"
+                    f"VIX {vix:.1f} · {vix_note}</span>"
+                )
+
+        # --- BUY / SELL reasons ---
+        reasons = md["reasons"]
+        if isinstance(reasons, dict):
+            buy_r = reasons.get("buy", "")
+            sell_r = reasons.get("sell", "")
+            if buy_r:
+                parts.append(
+                    f"<br><span style='font-size:9px;font-weight:bold;color:#ea580c;'>MUA:</span> "
+                    f"<span style='font-size:9px;color:#9ca3af;'>{buy_r}</span>"
+                )
+            if sell_r:
+                parts.append(
+                    f"<span style='font-size:9px;font-weight:bold;color:#f43f5e;'>BÁN:</span> "
+                    f"<span style='font-size:9px;color:#9ca3af;'>{sell_r}</span>"
+                )
+
+        detail = f"{bias}<br><br>{'<br>'.join(parts)}" if parts else bias
         return f"{dot} {macro_num}/30", detail, accent
 
     def _dialog_card_rr(self) -> tuple[str, str, str]:
@@ -511,7 +854,15 @@ class ScannerDetailScreen(QWidget):
                      "watch_zone": "Theo dõi", "blocked": "Bị chặn"}
         accent = {"ready_now": "#10b981", "waiting_confirmation": "#f59e0b",
                   "watch_zone": "#f59e0b", "blocked": "#e11d48"}.get(group_raw, "#94a3b8")
-        return group_map.get(group_raw, group_raw), "", accent
+
+        detail = ""
+        if group_raw == "blocked":
+            analysis = self.row.get("analysis_result", {}) if isinstance(self.row.get("analysis_result"), dict) else {}
+            gate = analysis.get("trade_gate", {}) if isinstance(analysis, dict) else {}
+            reasons = gate.get("reasons", []) if isinstance(gate, dict) else []
+            if reasons:
+                detail = " | ".join(str(r) for r in reasons)
+        return group_map.get(group_raw, group_raw), detail, accent
 
     def _dialog_card_regime(self) -> tuple[str, str, str]:
         regime = str(self.row.get("market_regime") or "--").lower()
@@ -626,87 +977,164 @@ class ScannerDetailScreen(QWidget):
         except Exception:
             light = False
 
-        action_code = str(self.row.get("display_action") or self.row.get("scanner_action") or "--")
-        action_text = self._action_text(action_code)
-        rank = self.row.get("rank", "--")
-        reason = self._decision_reason()
+        # Xác định xu hướng giao dịch (buy/sell/neutral)
+        bias_val = self.row.get("direction_bias", {})
+        side = "neutral"
+        if isinstance(bias_val, dict):
+            side = str(bias_val.get("best_side", "neutral")).lower()
+        
+        # Xác định điểm số cao nhất để định lượng cường độ (mạnh hay không)
+        best_score_raw = self.row.get("best_score", 0)
+        try:
+            best_score = int(best_score_raw)
+        except (TypeError, ValueError):
+            best_score = 0
+
+        status_text = "TRUNG TÍNH"
+        status_color = "#f59e0b"
+        status_border = "#78350f"
+        status_bg = "#451a03"
 
         if light:
-            if action_code == "ready":
-                bg, border, accent, icon = "#d1fae5", "#10b981", "#047857", "✅"
-            elif action_code in ("watch", "wait"):
-                bg, border, accent, icon = "#fef3c7", "#f59e0b", "#b45309", "⏳"
-            elif action_code == "skip":
-                bg, border, accent, icon = "#ffe4e6", "#e11d48", "#be123c", "❌"
+            status_bg = "#fef3c7"
+            status_border = "#f59e0b"
+            status_color = "#b45309"
+
+        if side == "buy":
+            if best_score >= 80:
+                status_text = "MUA MẠNH"
+                status_color = "#10b981"  # xanh lá đậm
+                status_border = "#059669"
+                status_bg = "#064e3b"
+                if light:
+                    status_bg = "#d1fae5"
+                    status_border = "#10b981"
+                    status_color = "#047857"
+            elif best_score >= 65:
+                status_text = "MUA"
+                status_color = "#34d399"  # xanh lá vừa
+                status_border = "#059669"
+                status_bg = "#064e3b"
+                if light:
+                    status_bg = "#e6fcf5"
+                    status_border = "#34d399"
+                    status_color = "#059669"
             else:
-                bg, border, accent, icon = "#f1f5f9", "#cbd5e1", "#475569", "ℹ️"
-        else:
-            if action_code == "ready":
-                bg, border, accent, icon = "#064e3b", "#065f46", "#10b981", "✅"
-            elif action_code in ("watch", "wait"):
-                bg, border, accent, icon = "#451a03", "#78350f", "#f59e0b", "⏳"
-            elif action_code == "skip":
-                bg, border, accent, icon = "#4c0519", "#881337", "#e11d48", "❌"
+                status_text = "TRUNG TÍNH"
+        elif side == "sell":
+            if best_score >= 80:
+                status_text = "BÁN MẠNH"
+                status_color = "#f43f5e"  # đỏ đậm
+                status_border = "#e11d48"
+                status_bg = "#4c0519"
+                if light:
+                    status_bg = "#ffe4e6"
+                    status_border = "#f43f5e"
+                    status_color = "#be123c"
+            elif best_score >= 65:
+                status_text = "BÁN"
+                status_color = "#fb7185"  # đỏ vừa
+                status_border = "#e11d48"
+                status_bg = "#4c0519"
+                if light:
+                    status_bg = "#fff0f2"
+                    status_border = "#fb7185"
+                    status_color = "#e11d48"
             else:
-                bg, border, accent, icon = "#0f172a", "#1e293b", "#94a3b8", "ℹ️"
+                status_text = "TRUNG TÍNH"
 
         self.hero_bar.setStyleSheet(
             f"QLabel#ScannerDetailHero {{"
-            f"  background-color: {bg};"
-            f"  border: 1px solid {border};"
-            f"  border-radius: 6px;"
+            f"  background-color: {status_bg};"
+            f"  border: 1px solid {status_border};"
+            f"  border-radius: 8px;"
             f"  padding: 4px 12px;"
-            f"  font-size: 11px;"
+            f"  font-size: 13px;"
+            f"  font-weight: bold;"
+            f"  color: {status_color};"
             f"}}"
         )
 
-        text_color = "#1e293b" if light else "#cbd5e1"
-        bold_color = "#0f172a" if light else "#f8fafc"
-
-        best_score = self.row.get("best_score", "--")
-        rr = self.row.get("risk_reward", "--")
-        rr_range = self.row.get("risk_reward_range")
-        if rr_range and isinstance(rr_range, dict) and rr_range.get("worst") is not None:
-            rr_display = f"{rr} <span style='color:{text_color};font-size:10px;'>({rr_range['worst']:.1f}–{rr_range['best']:.1f})</span>"
-        else:
-            rr_display = str(rr)
-        buy_s = self.row.get("buy_score", "--")
-        sell_s = self.row.get("sell_score", "--")
-        gap_num, _ = self._gap_numbers()
-        gap_str = f"+{int(gap_num)}" if gap_num is not None and gap_num >= 0 else (str(int(gap_num)) if gap_num is not None else "--")
-        macro_raw = str(self.row.get("macro_bias", "") or "").lower()
-        macro_vn = {"aligned": "Thuận", "conflict": "Xung đột", "neutral": "Trung lập", "unclear": "Chưa rõ"}.get(macro_raw, "—")
-
-        self.hero_bar.setText(
-            f"<body style='margin:0;padding:0;'>"
-            f"<table width='100%' style='margin:0;padding:0;border:none;border-collapse:collapse;border-spacing:0;'><tr>"
-            f"<td width='90' style='vertical-align:middle;white-space:nowrap;padding:0 8px;'>"
-            f"<span style='color:{accent};font-size:11px;font-weight:bold;letter-spacing:1px;'>{icon} {action_text.upper()}</span>"
-            f"</td>"
-            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:11px;'>Điểm <b style='color:{bold_color};'>{best_score}</b></span>"
-            f"</td>"
-            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:11px;'>R:R <b style='color:#f59e0b;'>{rr_display}</b></span>"
-            f"</td>"
-            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:11px;'>B/S <b style='color:{bold_color};'>{buy_s}/{sell_s}</b></span>"
-            f"</td>"
-            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:11px;'>Gap <b style='color:{bold_color};'>{gap_str}</b></span>"
-            f"</td>"
-            f"<td style='vertical-align:middle;padding:0 8px;border-left:1px solid {border};white-space:nowrap;'>"
-            f"<span style='color:{text_color};font-size:11px;'>Vĩ mô <b style='color:{bold_color};'>{macro_vn}</b></span>"
-            f"</td>"
-            f"<td style='vertical-align:middle;text-align:right;white-space:nowrap;padding:0 8px;'>"
-            f"<span style='color:{text_color};font-size:11px;'>"
-            f"Hạng <b style='color:{bold_color};'>#{rank}</b> &nbsp;&bull;&nbsp; {reason}"
-            f"</span>"
-            f"</td>"
-            f"</tr></table>"
-            f"</body>"
-        )
+        self.hero_bar.setText(status_text)
         self.hero_bar.show()
+
+    # ------------------------------------------------------------------
+    # Macro section (trade panel)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tier_bar(value: int, max_val: int, light: bool) -> str:
+        """Segmented progress bar using Unicode block characters."""
+        ratio = max(0.0, min(1.0, value / max(max_val, 1)))
+        total_segs = 10
+        filled = max(0, min(total_segs, round(ratio * total_segs)))
+        empty = total_segs - filled
+        if value >= max_val * 0.7:
+            color = "#10b981"
+        elif value >= max_val * 0.4:
+            color = "#f59e0b"
+        else:
+            color = "#94a3b8"
+        fill = f"<span style='color:{color};'>{'█' * filled}</span>"
+        emp = f"<span style='color:{'#e5e7eb' if light else '#334155'};'>{'░' * empty}</span>"
+        return fill + emp
+
+    def _get_macro_detail(self) -> dict:
+        """Safely extract tier detail from analysis_result with defaults."""
+        default = {"buy": 5, "sell": 5, "detail": {}}
+        ar = (self.row or {}).get("analysis_result", {}) or {}
+        td = ar.get("macro", {}).get("macro_tier_detail", {})
+        dc = ar.get("macro", {}).get("driver_context", {})
+
+        t1 = td.get("tier1_interest_rate", default) if isinstance(td, dict) else default
+        t2 = td.get("tier2_calendar", default) if isinstance(td, dict) else default
+        t3 = td.get("tier3_sentiment", default) if isinstance(td, dict) else default
+        reasons = dc.get("macro_alignment_reasons", {}) if isinstance(dc, dict) else {}
+        side = (self.row or {}).get("best_side", "buy")
+
+        d1 = t1.get("detail", {}) if isinstance(t1, dict) else {}
+        d2 = t2.get("detail", {}) if isinstance(t2, dict) else {}
+        d3 = t3.get("detail", {}) if isinstance(t3, dict) else {}
+
+        # Tier 1 short reason
+        base = (self.row or {}).get("symbol", "EUR/USD").split("/")[0] if self.row else "BASE"
+        quote = (self.row or {}).get("symbol", "EUR/USD").split("/")[-1] if self.row else "QUOTE"
+        br = d1.get("base_rate", "--") if isinstance(d1, dict) else "--"
+        qr = d1.get("quote_rate", "--") if isinstance(d1, dict) else "--"
+        bs = d1.get("base_stance", "--") if isinstance(d1, dict) else "--"
+        qs = d1.get("quote_stance", "--") if isinstance(d1, dict) else "--"
+        
+        stance_map = {"hawkish": "Thắt chặt", "dovish": "Nới lỏng", "neutral": "Trung tính"}
+        bs_vn = stance_map.get(str(bs).lower(), bs)
+        qs_vn = stance_map.get(str(qs).lower(), qs)
+        t1_reason = f"{base} {br} ({bs_vn}) so với {quote} {qr} ({qs_vn})"
+
+        # Tier 2 short reason
+        bc = d2.get("base_event_count", 0) if isinstance(d2, dict) else 0
+        qc = d2.get("quote_event_count", 0) if isinstance(d2, dict) else 0
+        t2_reason = f"{base}: {bc} sự kiện · {quote}: {qc} sự kiện"
+
+        # Tier 3 short reason
+        sent = d3.get("risk_sentiment", "neutral") if isinstance(d3, dict) else "neutral"
+        sent_map = {"risk_on": "Chấp nhận rủi ro", "risk_off": "Né tránh rủi ro", "neutral": "Trung tính"}
+        vix = d3.get("vix_level") if isinstance(d3, dict) else None
+        hs = d3.get("hotspot_count", 0) if isinstance(d3, dict) else 0
+        vix_str = f"VIX {vix:.1f} · " if vix is not None else ""
+        t3_reason = f"{sent_map.get(sent, sent)} · {vix_str}{hs} điểm nóng"
+
+        return {
+            "best_side": side,
+            "t1": int(t1.get(side, 5)) if isinstance(t1, dict) else 5,
+            "t2": int(t2.get(side, 5)) if isinstance(t2, dict) else 5,
+            "t3": int(t3.get(side, 5)) if isinstance(t3, dict) else 5,
+            "t1_reason": t1_reason,
+            "t2_reason": t2_reason,
+            "t3_reason": t3_reason,
+            "t1_detail": d1,
+            "t2_detail": d2,
+            "t3_detail": d3,
+            "reasons": reasons,
+        }
 
     def _refresh_trade_panel(self) -> None:
         """Cập nhật panel Số liệu giao dịch ở cột phải tab Tổng quan."""
@@ -731,7 +1159,7 @@ class ScannerDetailScreen(QWidget):
         )
 
         title = QLabel("🎯 Số liệu giao dịch")
-        title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {val_color}; margin-bottom: 2px;")
+        title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {val_color}; margin-bottom: 4px;")
         layout.addWidget(title)
 
         if not self.row:
@@ -742,7 +1170,7 @@ class ScannerDetailScreen(QWidget):
         sl_val, _, _ = self._dialog_card_sl()
         tp_val, tp_detail, _ = self._dialog_card_tp()
         rr_val, rr_detail, _ = self._dialog_card_rr()
-        macro_val, macro_detail, _ = self._dialog_card_macro()
+        macro_val, _, _ = self._dialog_card_macro()
         regime_val, _, _ = self._dialog_card_regime()
 
         entry_ok = self.row.get("entry_status") == "confirmed_entry" if self.row else False
@@ -763,9 +1191,8 @@ class ScannerDetailScreen(QWidget):
             ("Stop Loss", sl_val, "#e11d48"),
             ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "#10b981"),
             ("R:R", f"{rr_val}{rr_range_str}", "#f59e0b"),
-            ("R:R (thực)", eff_rr_str, "#f59e0b"),
-            ("Vĩ mô", f"{macro_val} {macro_detail}".strip(), "#38bdf8"),
             ("Chế độ TT", regime_val, val_color),
+            ("Điểm vĩ mô", macro_val, "#38bdf8"),
         ]
 
         for label_text, value_text, accent in rows:
@@ -775,13 +1202,16 @@ class ScannerDetailScreen(QWidget):
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
+            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {accent};")
+            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
             row_l.addWidget(val, 1)
+            # R:R row: show effective RR as tooltip
+            if label_text == "R:R":
+                row_w.setToolTip(f"R:R thực tế ~{eff_rr_str}" if eff_rr_str != "—" else "")
             layout.addWidget(row_w)
 
     def _refresh_score_panel(self) -> None:
@@ -807,7 +1237,7 @@ class ScannerDetailScreen(QWidget):
         )
 
         title = QLabel("📊 Điểm phân tích")
-        title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {val_color}; margin-bottom: 2px;")
+        title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {val_color}; margin-bottom: 4px;")
         layout.addWidget(title)
 
         if not self.row:
@@ -822,24 +1252,29 @@ class ScannerDetailScreen(QWidget):
         perm_val, _, perm_accent = self._dialog_card_permission()
 
         rows = [
-            ("Điểm tốt nhất", f"{best_val} {best_detail}".strip(), best_accent),
-            ("Điểm cuối", f"{final_val} {final_detail}".strip(), final_accent),
-            ("Buy / Sell", f"{buysell_val} {buysell_detail}".strip(), val_color),
-            ("Gap", f"{gap_val} ({gap_detail})", gap_accent),
-            ("M15", m15_val, m15_accent),
-            ("Quyền GD", perm_val, perm_accent),
+            ("Điểm tốt nhất", f"{best_val} {best_detail}".strip(), best_accent, True),
+            ("Điểm cuối", f"{final_val} {final_detail}".strip(), final_accent, True),
+            ("Buy / Sell", f"{buysell_val} {buysell_detail}".strip(), val_color, False),
+            ("Gap", f"{gap_val} ({gap_detail})", gap_accent, False),
+            ("M15", m15_val, m15_accent, False),
+            ("Quyền GD", perm_val, perm_accent, False),
         ]
 
-        for label_text, value_text, accent in rows:
+        for label_text, value_text, accent, is_secondary in rows:
             row_w = QWidget()
             row_w.setStyleSheet("background: transparent;")
             row_l = QHBoxLayout(row_w)
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
-            val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {accent};")
+            if is_secondary:
+                lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
+                val = QLabel(value_text)
+                val.setStyleSheet(f"font-size: 11px; color: {label_color};")
+            else:
+                lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
+                val = QLabel(value_text)
+                val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
@@ -872,7 +1307,7 @@ class ScannerDetailScreen(QWidget):
         )
 
         title = QLabel("🔍 Điều kiện vào lệnh")
-        title.setStyleSheet(f"font-weight: bold; font-size: 11px; color: {val_color}; margin-bottom: 1px;")
+        title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {val_color}; margin-bottom: 4px;")
         layout.addWidget(title)
 
         if not self.row:
@@ -892,8 +1327,19 @@ class ScannerDetailScreen(QWidget):
         green = "#10b981"
         red = "#e11d48"
 
+        # Fail count summary
+        fail_count = sum(1 for it in items[:7] if not it["pass"])
+        if fail_count >= 1:
+            summary = QLabel(f"⚠️ {fail_count}/7 điều kiện chưa đạt")
+            summary.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {red}; padding: 2px 0;")
+            layout.addWidget(summary)
+
         # 2-column grid for compact display
         grid = QGridLayout()
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnMinimumWidth(0, 100)
+        grid.setColumnMinimumWidth(1, 100)
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(1)
         for i, item_data in enumerate(items[:7]):
@@ -946,7 +1392,7 @@ class ScannerDetailScreen(QWidget):
         gap = int(self.row.get("score_gap", 0) or 0)
         buy_s = int(self.row.get("buy_score", 0) or 0)
         sell_s = int(self.row.get("sell_score", 0) or 0)
-        stronger = "Buy" if buy_s > sell_s else "Sell" if sell_s > buy_s else "Ngang"
+        stronger = "MUA" if buy_s > sell_s else "BÁN" if sell_s > buy_s else "Cân bằng"
         perm = str(self.row.get("trade_permission", ""))
         entry = str(self.row.get("entry_status", ""))
         m15 = str(self.row.get("m15_quality", "")).lower()
@@ -957,44 +1403,46 @@ class ScannerDetailScreen(QWidget):
         gate = analysis.get("trade_gate", {}) if isinstance(analysis, dict) else {}
         gate_allowed = bool(gate.get("allowed", True)) if isinstance(gate, dict) else True
 
+        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
+        perm_vn = perm_map.get(perm.lower(), perm)
+
         # 1. Trade Permission
         items.append({
             "pass": perm == "allowed",
-            "label": f"Quyền giao dịch: {perm} (điểm {best}/{min_score})" if perm != "allowed"
-                     else f"Quyền giao dịch: allowed (điểm {best} >= {min_score})"
+            "label": f"Quyền giao dịch: Điểm {best}/{min_score} — {perm_vn}",
         })
 
         # 2. Gate
         gate_reasons = gate.get("reasons", []) if isinstance(gate, dict) else []
-        gate_text = "; ".join(gate_reasons[:2]) if gate_reasons else "không bị gate chặn"
+        gate_text = "; ".join(gate_reasons[:2]) if gate_reasons else "không bị cổng lọc chặn"
         items.append({
             "pass": gate_allowed,
-            "label": f"Gate: {'PASS' if gate_allowed else 'BLOCKED'} — {gate_text}"
+            "label": f"Cổng lọc (Gate): {'ĐẠT' if gate_allowed else 'BỊ CHẶN'} — {gate_text}"
         })
 
         # 3. Score Gap
         items.append({
             "pass": gap >= 10,
-            "label": f"Chênh lệch Buy/Sell: Buy {buy_s} vs Sell {sell_s} → cách {gap} điểm (cần ≥10) → {'rõ hướng (' + stronger + ')' if gap >= 10 else 'chưa rõ hướng'}"
+            "label": f"Chênh lệch Mua/Bán: Mua {buy_s} vs Bán {sell_s} → khoảng cách {gap} điểm (yêu cầu ≥10) → {'rõ hướng (' + stronger + ')' if gap >= 10 else 'chưa rõ hướng'}"
         })
 
         # 4. Entry confirmed
         entry_ok = entry in ("confirmed_entry", "ready", "ready_to_trade")
         entry_map = {
             "confirmed_entry": "đã xác nhận",
-            "watch_zone": "giá chưa vào zone hoặc chưa có nến xác nhận",
+            "watch_zone": "giá chưa vào vùng giá hoặc chưa có nến xác nhận",
             "waiting_confirmation": "chờ xác nhận H1/M15",
-            "no_setup": "chưa có setup",
+            "no_setup": "chưa có thiết lập giao dịch (setup)",
         }
         entry_label = entry_map.get(entry, entry)
         items.append({
             "pass": entry_ok,
-            "label": f"Xác nhận entry: {entry_label}"
+            "label": f"Xác nhận điểm vào lệnh (entry): {entry_label}"
         })
 
         # 5. Price in zone
         in_zone = price_zone == "in_zone"
-        zone_map = {"in_zone": "đang trong zone", "near_zone": "gần zone", "far": "còn xa zone"}
+        zone_map = {"in_zone": "đang trong vùng giá", "near_zone": "gần vùng giá", "far": "còn xa vùng giá"}
         items.append({
             "pass": in_zone,
             "label": f"Vị trí giá: {zone_map.get(price_zone, price_zone)}"
@@ -1002,7 +1450,9 @@ class ScannerDetailScreen(QWidget):
 
         # 6. M15
         m15_ok = m15 in ("strict",)
-        m15_label = {"strict": "chặt chẽ", "loose": "lỏng lẻo", "none": "chưa xác nhận", "": "chưa có dữ liệu"}
+        m15_label = {"strict": "chặt chẽ", "loose": "lỏng lel", "none": "chưa xác nhận", "": "chưa có dữ liệu"}
+        # Fix typo lỏng lel thành lỏng lẻo
+        m15_label["loose"] = "lỏng lẻo"
         items.append({
             "pass": m15_ok,
             "label": f"M15: {m15_label.get(m15, m15)}"
@@ -1021,7 +1471,7 @@ class ScannerDetailScreen(QWidget):
         rr_ok = rr_val >= min_rr
         items.append({
             "pass": rr_ok,
-            "label": f"R:R là {rr} — {'đạt' if rr_ok else f'dưới R:R tối thiểu là 1:{min_rr:.1f}'}"
+            "label": f"Tỷ lệ R:R là {rr} — {'đạt' if rr_ok else f'dưới tỷ lệ R:R tối thiểu là 1:{min_rr:.1f}'}"
         })
 
         return items

@@ -178,6 +178,34 @@ class JournalService:
         if filters.min_score > 0:
             query += " AND max(buy_score, sell_score) >= ?"
             params.append(filters.min_score)
+        # Advanced Search & Filter
+        if filters.search_text:
+            pattern = f"%{filters.search_text}%"
+            query += " AND (symbol LIKE ? OR note LIKE ? OR ai_commentary LIKE ?"
+            params.extend([pattern, pattern, pattern])
+            query += " OR manual_mistake_tags LIKE ? OR auto_mistake_tags LIKE ?)"
+            params.extend([pattern, pattern])
+        if filters.trade_status:
+            query += " AND trade_status = ?"
+            params.append(filters.trade_status)
+        if filters.result:
+            query += " AND result = ?"
+            params.append(filters.result)
+        if filters.min_execution_quality > 0:
+            query += " AND execution_quality_score >= ?"
+            params.append(filters.min_execution_quality)
+        if filters.max_execution_quality > 0:
+            query += " AND execution_quality_score <= ?"
+            params.append(filters.max_execution_quality)
+        if filters.session:
+            query += " AND session = ?"
+            params.append(filters.session)
+        if filters.setup_type:
+            query += " AND setup_type = ?"
+            params.append(filters.setup_type)
+        if filters.regime:
+            query += " AND regime = ?"
+            params.append(filters.regime)
         query += " ORDER BY timestamp_utc DESC, id DESC"
         with self._connect() as conn:
             return [entry_from_row(row) for row in conn.execute(query, params).fetchall()]
@@ -434,8 +462,23 @@ class JournalService:
         with self._connect() as conn:
             return [row[0] for row in conn.execute("SELECT DISTINCT symbol FROM journal_entries ORDER BY symbol").fetchall()]
 
-    def stats(self) -> dict[str, object]:
-        entries = self.list_entries()
+    def distinct_values(self, column: str) -> list[str]:
+        """Trả về danh sách giá trị distinct (khác NULL, khác rỗng) của một cột."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT {column} FROM journal_entries WHERE {column} IS NOT NULL AND {column} != '' ORDER BY {column}"
+            ).fetchall()
+            return [row[0] for row in rows]
+
+    def total_count(self) -> int:
+        """Tổng số bản ghi journal (không lọc)."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM journal_entries").fetchone()
+            return int(row[0]) if row else 0
+
+    def stats(self, entries: list[JournalEntry] | None = None) -> dict[str, object]:
+        if entries is None:
+            entries = self.list_entries()
         counts = {"ready": 0, "watch": 0, "wait": 0, "stand_aside": 0}
         symbol_counts: dict[str, int] = {}
         for entry in entries:
@@ -454,7 +497,7 @@ class JournalService:
         trades = self.list_closed_trades_for_account_guard(limit=limit)
         return build_performance_summary(trades)
 
-    def list_closed_trades_for_account_guard(self, limit: int = 500) -> list[dict[str, object]]:
+    def list_closed_trades_for_account_guard(self, limit: int = 500, symbol: str | None = None) -> list[dict[str, object]]:
         """Trả về danh sách closed trades phục vụ Account Guard và Phase 17 engines.
 
         Returns list of dict with keys:
@@ -467,6 +510,7 @@ class JournalService:
             manual_mistake_tags (list), auto_mistake_tags (list),
             execution_quality_score
         Only includes entries where closed_at is not null.
+        When symbol is provided, filters to that symbol only (unlimited rows).
         """
         select_cols = (
             "result_r", "result_pct", "closed_at", "exit_reason",
@@ -480,12 +524,20 @@ class JournalService:
         )
         cols_str = ", ".join(select_cols)
         with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT {cols_str} FROM journal_entries "
-                "WHERE closed_at IS NOT NULL AND closed_at != '' "
-                "ORDER BY closed_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if symbol:
+                rows = conn.execute(
+                    f"SELECT {cols_str} FROM journal_entries "
+                    "WHERE closed_at IS NOT NULL AND closed_at != '' AND symbol = ? "
+                    "ORDER BY closed_at DESC LIMIT ?",
+                    (symbol, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT {cols_str} FROM journal_entries "
+                    "WHERE closed_at IS NOT NULL AND closed_at != '' "
+                    "ORDER BY closed_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
 
         trades: list[dict[str, object]] = []
         for row in rows:

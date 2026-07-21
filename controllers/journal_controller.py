@@ -21,17 +21,27 @@ class JournalController:
     def list_entries(self, filters: JournalFilter | None = None) -> list[JournalEntry]:
         return self.journal_service.list_entries(filters)
 
+    def total_entries(self) -> int:
+        return self.journal_service.total_count()
+
     def get_entry(self, entry_id: int) -> JournalEntry | None:
         return self.journal_service.get_entry(entry_id)
 
     def symbols(self) -> list[str]:
         return self.journal_service.symbols()
 
-    def stats(self) -> dict[str, object]:
-        return self.journal_service.stats()
+    def distinct_values(self, column: str) -> list[str]:
+        return self.journal_service.distinct_values(column)
+
+    def stats(self, entries: list[JournalEntry] | None = None) -> dict[str, object]:
+        return self.journal_service.stats(entries)
 
     def performance_summary(self) -> dict[str, object]:
         return self.journal_service.performance_summary()
+
+    def closed_trades_by_symbol(self, symbol: str, limit: int = 10000) -> list[dict[str, object]]:
+        """Trả về toàn bộ lệnh đóng của một mã, dùng cho cross-filter bảng lịch sử lệnh."""
+        return self.journal_service.list_closed_trades_for_account_guard(symbol=symbol, limit=limit)
 
     def sync_mt5_history(self, days: int = 90) -> dict[str, object]:
         end = datetime.now(UTC)

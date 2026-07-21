@@ -558,6 +558,23 @@ QLabel#FormLabel {
   font-weight: 600;
 }
 
+QLabel#StatsLabel {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+}
+QLabel#StatsValue {
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: bold;
+}
+QLabel#StatsSeparator {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 0px 4px;
+}
+
 QPushButton#SecondaryButton { background: transparent; border: 1px solid #0f766e; color: #5eead4; }
 QPushButton#SecondaryButton:hover, QPushButton#SecondaryButton:pressed, QPushButton#SecondaryButton:checked { background: #134e4a; color: #ffffff; border-color: #0f766e; }
 
@@ -750,6 +767,8 @@ QLineEdit#FilterField {
   padding: 2px 28px 2px 8px;
   selection-background-color: #0d9488;
   selection-color: #ffffff;
+  min-height: 22px;
+  max-height: 22px;
 }
 
 QDoubleSpinBox#FilterField,
@@ -1270,7 +1289,7 @@ QTableWidget#DataTable QScrollBar::sub-line:horizontal {
 /* Thanh cuộn dọc cho bảng DataTable */
 QTableView#DataTable QScrollBar:vertical,
 QTableWidget#DataTable QScrollBar:vertical {
-  background: #0b1220;
+  background: #11151d;
   width: 12px;
   border-radius: 4px;
   margin: 4px 2px 4px 2px;
@@ -1647,9 +1666,9 @@ QTableView#EconTable QHeaderView::section {
 QTableWidget#EconTable QScrollBar:vertical,
 QTableView#EconTable QScrollBar:vertical {
   background: #11151d;
-  width: 14px;
+  width: 12px;
   border-radius: 4px;
-  margin: 8px 4px 8px 2px;
+  margin: 4px 2px 4px 2px;
 }
 QTableWidget#EconTable QScrollBar::handle:vertical,
 QTableView#EconTable QScrollBar::handle:vertical {
@@ -1673,3 +1692,90 @@ QTableView#EconTable QScrollBar::add-page:vertical,
 QTableView#EconTable QScrollBar::sub-page:vertical {
   background: transparent;
 }
+
+/* ==========================================================================
+   ScanAnalysisDetailDialog Custom Styles
+   ========================================================================== */
+QDialog#ScanAnalysisDetailDialog {
+  background: #0b0f19;
+}
+
+QDialog#ScanAnalysisDetailDialog QLabel {
+  font-family: "Segoe UI", "Arial", sans-serif;
+  color: #f8fafc;
+}
+
+QFrame#PriceCard, QFrame#ScannerGroupCard, QFrame#M15Card, QFrame#JournalSampleCard, QFrame#JournalExpectancyCard {
+  background: #161b26;
+  border: 1px solid #242b3d;
+  border-radius: 8px;
+}
+
+QFrame#MacroContextCard, QFrame#ChecklistCard {
+  background: #161b26;
+  border: 1px solid #242b3d;
+  border-radius: 8px;
+}
+
+QFrame#SummaryPillBuy, QFrame#SummaryPillSell, QFrame#SummaryPillNeutral, QFrame#SummaryPillScore, QFrame#SummaryPillRR, QFrame#SummaryPillPerm {
+  background: #161b26;
+  border: 1px solid #242b3d;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+QFrame#SummaryPillBuy {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+QFrame#SummaryPillSell {
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+QFrame#SummaryPillNeutral {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+QFrame#ChecklistRowCardPass {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: 6px;
+}
+
+QFrame#ChecklistRowCardFail {
+  background: rgba(244, 63, 94, 0.06);
+  border: 1px solid rgba(244, 63, 94, 0.15);
+  border-radius: 6px;
+}
+
+QFrame#MacroProgressBarBg {
+  background: #1e293b;
+  border-radius: 3px;
+}
+
+QFrame#MacroProgressBarFill {
+  border-radius: 3px;
+}
+
+QLabel#MacroReasonLabel {
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* ── NotePopup (Journal note popover) ─────────────────────────── */
+QFrame#NotePopup {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+QLabel#NotePopupText {
+  color: #cbd5e1;
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+

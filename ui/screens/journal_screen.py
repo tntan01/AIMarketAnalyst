@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from PyQt6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt, QTimer, QPoint
+from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -14,9 +15,11 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QHeaderView,
+    QScrollArea,
     QTableView,
     QTableWidget,
     QTableWidgetItem,
@@ -24,11 +27,323 @@ from PyQt6.QtWidgets import (
     QTextBrowser,
     QVBoxLayout,
     QWidget,
+    QStyle,
+    QStyleOptionViewItem,
+    QStyledItemDelegate,
+    QSizePolicy,
 )
 
 from controllers.journal_controller import JournalController
 from services.journal_service import JournalEntry, JournalFilter
 from ui.screens.shared import action_button, card, labeled_value, page_header
+from ui.theme import COLOR_UP, COLOR_DOWN
+
+try:
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.figure import Figure
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
+
+class PerformanceKPICard(QFrame):
+    """Thẻ hiển thị số liệu KPI với label nhỏ phía trên, giá trị lớn ở trung tâm, viền màu accent và badge status."""
+
+    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("PerformanceKPICard")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumHeight(82)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(2)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(4)
+
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("KPICardTitle")
+        self.title_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #94a3b8;")
+        header_layout.addWidget(self.title_label, 1)
+
+        self.badge_label = QLabel("")
+        self.badge_label.setObjectName("KPICardBadge")
+        self.badge_label.setStyleSheet("font-size: 11px; font-weight: 600;")
+        header_layout.addWidget(self.badge_label)
+        layout.addLayout(header_layout)
+
+        self.value_label = QLabel("--")
+        self.value_label.setObjectName("KPICardValue")
+        self.value_label.setStyleSheet("font-size: 20px; font-weight: 700; color: #f8fafc;")
+        layout.addWidget(self.value_label)
+
+        self.sub_label = QLabel("")
+        self.sub_label.setObjectName("KPICardSub")
+        self.sub_label.setStyleSheet("font-size: 11px; color: #64748b;")
+        self.sub_label.setWordWrap(True)
+        layout.addWidget(self.sub_label)
+
+        self.set_state("neutral")
+
+    def set_data(self, value: str, state: str = "neutral", sub_text: str = "", badge: str = "") -> None:
+        self.value_label.setText(value)
+        self.sub_label.setText(sub_text)
+        self.badge_label.setText(badge)
+        self.set_state(state)
+
+    def set_state(self, state: str) -> None:
+        is_dark = self.palette().base().color().lightness() < 128
+        bg_color = "#1e293b" if is_dark else "#ffffff"
+
+        styles = {
+            "positive": {
+                "border": "#10b981",
+                "val_color": "#34d399" if is_dark else "#059669",
+                "sub_color": "#10b981" if is_dark else "#047857",
+            },
+            "negative": {
+                "border": "#ef4444",
+                "val_color": "#f87171" if is_dark else "#dc2626",
+                "sub_color": "#ef4444" if is_dark else "#b91c1c",
+            },
+            "warning": {
+                "border": "#f59e0b",
+                "val_color": "#fbbf24" if is_dark else "#d97706",
+                "sub_color": "#f59e0b" if is_dark else "#b45309",
+            },
+            "neutral": {
+                "border": "#3b82f6",
+                "val_color": "#38bdf8" if is_dark else "#0284c7",
+                "sub_color": "#64748b" if is_dark else "#475569",
+            },
+            "muted": {
+                "border": "#475569" if is_dark else "#cbd5e1",
+                "val_color": "#64748b" if is_dark else "#94a3b8",
+                "sub_color": "#64748b" if is_dark else "#94a3b8",
+            },
+        }
+        style = styles.get(state, styles["neutral"])
+
+        self.setStyleSheet(f"""
+            QFrame#PerformanceKPICard {{
+                background-color: {bg_color};
+                border: 1px solid {"#334155" if is_dark else "#e2e8f0"};
+                border-left: 4px solid {style['border']};
+                border-radius: 8px;
+            }}
+        """)
+        self.value_label.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {style['val_color']};")
+        self.sub_label.setStyleSheet(f"font-size: 11px; color: {style['sub_color']};")
+
+
+class MissingRBanner(QFrame):
+    """Banner cảnh báo nổi bật khi phát hiện các lệnh đóng chưa có dữ liệu Result R."""
+
+    def __init__(self, on_cta_clicked, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("MissingRBanner")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(14, 8, 14, 8)
+        layout.setSpacing(12)
+
+        icon_label = QLabel("⚠️")
+        icon_label.setStyleSheet("font-size: 18px;")
+        layout.addWidget(icon_label)
+
+        self.text_label = QLabel("")
+        self.text_label.setStyleSheet("font-size: 12px; font-weight: 500; color: #fbbf24;")
+        self.text_label.setWordWrap(True)
+        layout.addWidget(self.text_label, 1)
+
+        self.cta_button = action_button("✏️ Điền Result R ngay", primary=True, color="warning")
+        self.cta_button.clicked.connect(on_cta_clicked)
+        layout.addWidget(self.cta_button)
+
+    def set_missing_info(self, missing_count: int, total_closed: int) -> None:
+        is_dark = self.palette().base().color().lightness() < 128
+        bg = "rgba(245, 158, 11, 0.15)" if is_dark else "#fef3c7"
+        border = "#f59e0b" if is_dark else "#d97706"
+        txt_color = "#fef08a" if is_dark else "#78350f"
+
+        self.setStyleSheet(f"""
+            QFrame#MissingRBanner {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: 8px;
+            }}
+        """)
+        self.text_label.setStyleSheet(f"font-size: 12px; font-weight: 500; color: {txt_color};")
+
+        if total_closed > 0 and missing_count > 0:
+            if missing_count == total_closed:
+                msg = f"<b>Chưa có dữ liệu Result R:</b> Tất cả {total_closed} lệnh đã đóng chưa điền SL / Entry. Các chỉ số Expectancy, Tổng R, DD tối đa chưa thể tính toán."
+            else:
+                msg = f"<b>Phát hiện thiếu Result R:</b> Có {missing_count} / {total_closed} lệnh đã đóng chưa điền SL / Entry. Hãy cập nhật Result R để kết quả thống kê R chính xác nhất."
+            self.text_label.setText(msg)
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
+
+
+class PerformanceChartWidget(QWidget):
+    """Widget vẽ 2 biểu đồ Matplotlib: Lãi/lỗ theo Mã (Bar chart) & Đường cong Lợi nhuận Lũy kế (Equity Curve)."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        if not HAS_MATPLOTLIB:
+            fallback = QLabel("Biểu đồ yêu cầu thư viện matplotlib.")
+            fallback.setObjectName("EmptyText")
+            fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(fallback)
+            self.canvas = None
+            return
+
+        self.figure = Figure(figsize=(10, 3.0), tight_layout=True)
+        self.canvas = FigureCanvas(self.figure)
+        self.canvas.setMinimumHeight(210)
+        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.canvas)
+
+    def update_charts(
+        self,
+        by_symbol: list[dict[str, object]],
+        recent_trades: list[dict[str, object]],
+        selected_symbol: str | None = None,
+    ) -> None:
+        if not HAS_MATPLOTLIB or self.canvas is None:
+            return
+
+        self.figure.clear()
+        is_dark = self.palette().window().color().lightness() < 128
+
+        bg_color = "#1e293b" if is_dark else "#ffffff"
+        text_color = "#cbd5e1" if is_dark else "#334155"
+        grid_color = "#334155" if is_dark else "#e2e8f0"
+
+        self.figure.patch.set_facecolor(bg_color)
+
+        # Plot 1: Horizontal Bar Chart - P/L theo Mã
+        ax1 = self.figure.add_subplot(121)
+        ax1.set_facecolor(bg_color)
+
+        symbols = []
+        pls = []
+        colors = []
+
+        filtered_symbol_data = [row for row in by_symbol if isinstance(row, dict) and row.get("label")]
+        for row in filtered_symbol_data[:8]:
+            sym = str(row.get("label", ""))
+            net = float(row.get("net_amount", 0) or 0)
+            symbols.append(sym)
+            pls.append(net)
+            if selected_symbol and sym == selected_symbol:
+                colors.append("#38bdf8")
+            else:
+                colors.append("#10b981" if net >= 0 else "#ef4444")
+
+        if symbols:
+            symbols.reverse()
+            pls.reverse()
+            colors.reverse()
+
+            bars = ax1.barh(symbols, pls, color=colors, height=0.55, edgecolor="none", alpha=0.85)
+            ax1.axvline(0, color=grid_color, linestyle="--", linewidth=1)
+
+            min_val = min(pls)
+            max_val = max(pls)
+            max_abs = max(abs(min_val), abs(max_val), 1.0)
+
+            # Tự động set giới hạn X rộng hơn 25% để không bị cắt hoặc đè số tiền P/L
+            x_margin = max_abs * 0.28
+            ax1.set_xlim(min(0, min_val) - x_margin, max(0, max_val) + x_margin)
+
+            for bar, val in zip(bars, pls):
+                offset = max_abs * 0.04
+                x_pos = val + offset if val >= 0 else val - offset
+                ha = "left" if val >= 0 else "right"
+                txt = f"+${val:,.0f}" if val >= 0 else f"-${abs(val):,.0f}"
+                ax1.text(
+                    x_pos,
+                    bar.get_y() + bar.get_height() / 2,
+                    txt,
+                    va="center",
+                    ha=ha,
+                    color=text_color,
+                    fontsize=8,
+                    fontweight="bold",
+                )
+
+            ax1.set_title("Lãi/Lỗ theo Mã ($)", color=text_color, fontsize=10, fontweight="bold", pad=8)
+        else:
+            ax1.text(0.5, 0.5, "Chưa có dữ liệu theo mã", ha="center", va="center", color=text_color, fontsize=9)
+            ax1.set_title("Lãi/Lỗ theo Mã ($)", color=text_color, fontsize=10, fontweight="bold", pad=8)
+
+        ax1.tick_params(colors=text_color, labelsize=8, pad=6)
+        ax1.spines["top"].set_visible(False)
+        ax1.spines["right"].set_visible(False)
+        ax1.spines["left"].set_color(grid_color)
+        ax1.spines["bottom"].set_color(grid_color)
+        ax1.xaxis.grid(True, linestyle=":", alpha=0.4, color=grid_color)
+
+        # Plot 2: Line / Area Chart - Equity Curve
+        ax2 = self.figure.add_subplot(122)
+        ax2.set_facecolor(bg_color)
+
+        valid_trades = [t for t in recent_trades if isinstance(t, dict) and t.get("closed_at")]
+        if selected_symbol:
+            valid_trades = [t for t in valid_trades if t.get("symbol") == selected_symbol]
+
+        valid_trades.sort(key=lambda x: str(x.get("closed_at", "")))
+
+        if valid_trades:
+            cum_pl = []
+            running = 0.0
+            for t in valid_trades:
+                pl = float(t.get("result_amount", 0) or 0)
+                running += pl
+                cum_pl.append(running)
+
+            x_indices = list(range(1, len(cum_pl) + 1))
+            line_color = "#38bdf8"
+            if cum_pl[-1] > 0:
+                line_color = "#10b981"
+            elif cum_pl[-1] < 0:
+                line_color = "#ef4444"
+
+            ax2.plot(x_indices, cum_pl, marker="o", markersize=3, color=line_color, linewidth=2, label="P/L Tích lũy")
+            ax2.fill_between(x_indices, 0, cum_pl, color=line_color, alpha=0.15)
+            ax2.axhline(0, color=grid_color, linestyle="--", linewidth=1)
+
+            title_suffix = f" [{selected_symbol}]" if selected_symbol else ""
+            ax2.set_title(
+                f"Đường cong P/L Lũy kế ($){title_suffix}",
+                color=text_color,
+                fontsize=10,
+                fontweight="bold",
+                pad=8,
+            )
+            ax2.set_xlabel("Số lệnh đóng", color=text_color, fontsize=8)
+        else:
+            ax2.text(0.5, 0.5, "Chưa có lịch sử lệnh đóng", ha="center", va="center", color=text_color, fontsize=9)
+            ax2.set_title("Đường cong P/L Lũy kế ($)", color=text_color, fontsize=10, fontweight="bold", pad=8)
+
+        ax2.tick_params(colors=text_color, labelsize=8)
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["right"].set_visible(False)
+        ax2.spines["left"].set_color(grid_color)
+        ax2.spines["bottom"].set_color(grid_color)
+        ax2.yaxis.grid(True, linestyle=":", alpha=0.4, color=grid_color)
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+
 
 
 DECISION_TEXT = {
@@ -41,6 +356,14 @@ DECISION_TEXT = {
     "skip": "Bỏ qua",
 }
 BIAS_TEXT = {"buy": "Mua", "sell": "Bán", "neutral": "Trung lập", "stand_aside": "Đứng ngoài"}
+REGIME_TEXT = {
+    "trend": "Xu hướng",
+    "range": "Đi ngang",
+    "volatile": "Biến động mạnh",
+    "breakout": "Bứt phá",
+    "pullback": "Hồi giá",
+    "unknown": "Chưa XĐ",
+}
 PERMISSION_TEXT = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}
 MODE_TEXT: dict[str, str] = {}
 
@@ -49,16 +372,15 @@ class JournalTableModel(QAbstractTableModel):
     COLUMNS = [
         ("timestamp_utc", "Thời gian"),
         ("symbol", "Mã"),
-        ("mode", "Chế độ"),
-        ("decision", "Kết luận"),
+        ("setup_type", "Setup"),
+        ("regime", "Regime"),
+        ("trade_status", "Trạng thái"),
         ("direction_bias", "Thiên hướng"),
-        ("buy_score", "Mua"),
-        ("sell_score", "Bán"),
-        ("trade_permission", "Quyền"),
-        ("result_r", "K.quả R"),
+        ("result_r", "R"),
         ("result_amount", "Lợi nhuận"),
+        ("execution_quality_score", "CL Thực thi"),
         ("note", "Ghi chú"),
-        ("open", "Mở"),
+        ("open", "Chi tiết"),
     ]
 
     def __init__(self) -> None:
@@ -79,25 +401,32 @@ class JournalTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return self._display(entry, key)
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if key in {"buy_score", "sell_score", "result_r", "result_amount", "open"}:
+            if key in {"trade_status", "direction_bias", "result_r", "execution_quality_score", "open", "note"}:
                 return Qt.AlignmentFlag.AlignCenter
+            if key == "result_amount":
+                return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
             return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         if role == Qt.ItemDataRole.ForegroundRole:
             if key == "open":
                 return QColor("#38bdf8")
-            if key == "decision":
-                return {"ready": QColor("#5eead4"), "watch": QColor("#93c5fd"), "wait_for_confirmation": QColor("#facc15")}.get(entry.decision)
-            if key == "trade_permission":
-                return {"allowed": QColor("#5eead4"), "caution": QColor("#facc15"), "blocked": QColor("#94a3b8")}.get(entry.trade_permission)
+            if key == "trade_status":
+                return {
+                    "planned": QColor("#cbd5e1"),
+                    "opened": QColor("#7dd3fc"),
+                    "closed": QColor("#34d399"),
+                    "cancelled": QColor("#f87171"),
+                    "missed": QColor("#fde047"),
+                }.get(entry.trade_status)
             if key == "direction_bias":
                 return {"buy": QColor("#22c55e"), "sell": QColor("#fb7185")}.get(entry.direction_bias)
-            if key in {"result_r", "result_amount"}:
-                val = getattr(entry, key)
+            if key == "result_r":
+                val = entry.result_r
                 if val is not None:
-                    if val > 0:
-                        return QColor("#5eead4")
-                    elif val < 0:
-                        return QColor("#fb7185")
+                    return QColor("#4ade80") if val > 0 else QColor("#f87171") if val < 0 else None
+            if key == "result_amount":
+                val = entry.result_amount
+                if val is not None:
+                    return QColor("#4ade80") if val > 0 else QColor("#f87171") if val < 0 else None
         if role == Qt.ItemDataRole.ToolTipRole:
             return entry.note or entry.ai_commentary
         return None
@@ -121,17 +450,25 @@ class JournalTableModel(QAbstractTableModel):
 
     def _display(self, entry: JournalEntry, key: str) -> str:
         if key == "open":
-            return "Chi tiết ↗"
+            return "Chi tiết"
         if key == "timestamp_utc":
             return format_time(entry.timestamp_utc)
-        if key == "mode":
-            return MODE_TEXT.get(entry.mode, entry.mode)
-        if key == "decision":
-            return DECISION_TEXT.get(entry.decision, entry.decision)
+        if key == "setup_type":
+            return entry.setup_type or "--"
+        if key == "regime":
+            val = str(entry.regime or "").lower()
+            return REGIME_TEXT.get(val, entry.regime or "Chưa XĐ")
+        if key == "trade_status":
+            status_map = {
+                "planned": "Kế hoạch",
+                "opened": "Đang mở",
+                "closed": "Đã đóng",
+                "cancelled": "Đã hủy",
+                "missed": "Bỏ lỡ",
+            }
+            return status_map.get(entry.trade_status, entry.trade_status or "Kế hoạch")
         if key == "direction_bias":
             return BIAS_TEXT.get(entry.direction_bias, entry.direction_bias)
-        if key == "trade_permission":
-            return PERMISSION_TEXT.get(entry.trade_permission, entry.trade_permission)
         if key == "result_r":
             if entry.result_r is not None:
                 return f"{entry.result_r:+.2f}R"
@@ -140,8 +477,150 @@ class JournalTableModel(QAbstractTableModel):
             if entry.result_amount is not None:
                 return f"{entry.result_amount:+.2f}"
             return "--"
+        if key == "execution_quality_score":
+            if entry.execution_quality_score is not None:
+                return f"{entry.execution_quality_score}"
+            return "--"
+        if key == "note":
+            # Hiển thị icon nếu có ghi chú, để trống nếu không
+            return "📝" if entry.note else ""
         value = getattr(entry, key)
         return str(value if value not in (None, "") else "--")
+
+
+class NotePopup(QFrame):
+    """Popup hiển thị ghi chú — neo vào vị trí click, đóng khi click ra ngoài hoặc ESC."""
+
+    _instance: NotePopup | None = None
+
+    @classmethod
+    def show_at(cls, text: str, global_pos: QPoint, parent: QWidget) -> None:
+        """Hiển thị popup với nội dung 'text' tại vị trí global."""
+        # Đóng popup cũ nếu đang mở
+        if cls._instance is not None:
+            cls._instance.close()
+            cls._instance = None
+
+        popup = cls(text, parent)
+        popup.move_near(global_pos)
+        popup.show()
+        popup.raise_()
+        cls._instance = popup
+
+    @classmethod
+    def close_active(cls) -> None:
+        if cls._instance is not None:
+            cls._instance.close()
+            cls._instance = None
+
+    def __init__(self, text: str, parent: QWidget) -> None:
+        # Qt.WindowType.ToolTip: tự đóng khi click ngoài, không xuất hiện trong taskbar
+        super().__init__(parent, Qt.WindowType.ToolTip)
+        self.setObjectName("NotePopup")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(0)
+
+        label = QLabel(text)
+        label.setObjectName("NotePopupText")
+        label.setWordWrap(True)
+        label.setMaximumWidth(360)
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        layout.addWidget(label)
+
+        self.adjustSize()
+
+    def move_near(self, global_pos: QPoint) -> None:
+        """Neo popup nhưa dưới global_pos, tuyến lại nếu ra khỏi màn hình."""
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = global_pos.x()
+        y = global_pos.y() + 6
+        w = self.sizeHint().width()
+        h = self.sizeHint().height()
+        if x + w > screen.right():
+            x = screen.right() - w - 4
+        if y + h > screen.bottom():
+            y = global_pos.y() - h - 6
+        self.move(x, y)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            NotePopup.close_active()
+        else:
+            super().keyPressEvent(event)
+
+
+class NoteIconDelegate(QStyledItemDelegate):
+    """Vẽ icon ghi chú 💬 với kích thước lớn, màu nổi bật và hover effect."""
+
+    _ICON_SIZE = 20  # px — to hơn font data thông thường
+    _ICON_CHAR = "💬"  # speech bubble — trực quan hơn 📝
+
+    def paint(self, painter, option, index):
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        # Vẽ nền mặc định (hover/selected row highlight)
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = ""
+        self.parent().style().drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget
+        )
+
+        if not text:
+            return
+
+        painter.save()
+        is_dark = option.palette.base().color().lightness() < 128
+        is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+
+        # Font to hơn font dữ liệu thông thường
+        font = option.font
+        font.setPixelSize(self._ICON_SIZE)
+        painter.setFont(font)
+
+        if is_hover:
+            color = QColor("#fbbf24")  # amber-400 — sáng lên khi hover
+        else:
+            color = QColor("#f59e0b") if is_dark else QColor("#d97706")  # amber-500/600
+
+        painter.setPen(color)
+        painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, self._ICON_CHAR)
+        painter.restore()
+
+
+
+class LinkDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        # Vẽ nền mặc định (hover/selected row) của table
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = "" # xóa text để vẽ background rỗng
+        self.parent().style().drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget
+        )
+
+        painter.save()
+        text = index.data(Qt.ItemDataRole.DisplayRole) or "Chi tiết"
+        
+        # Nhận diện theme động qua palette của table
+        is_dark = option.palette.base().color().lightness() < 128
+        is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+
+        # Kế thừa font size từ option (đồng nhất với các ô dữ liệu khác)
+        font = option.font
+        if is_hover:
+            font.setUnderline(True)
+            color = QColor("#7dd3fc") if is_dark else QColor("#0369a1")
+        else:
+            font.setUnderline(False)
+            color = QColor("#38bdf8") if is_dark else QColor("#0284c7")
+
+        painter.setFont(font)
+        painter.setPen(color)
+        painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
 
 
 class JournalScreen(QWidget):
@@ -153,107 +632,499 @@ class JournalScreen(QWidget):
             app.journal_controller if app else JournalController()
         )
         self.table_model = JournalTableModel()
+        self._sync_buttons: list[QPushButton] = []
+        self._selected_symbol_filter: str | None = None
+        self._cached_perf_data: dict[str, object] = {}
+        self.stat_labels: dict[str, QLabel] = {}
+        self.performance_labels: dict[str, QLabel] = {}
+        self.tabs: QTabWidget | None = None
         self.setObjectName("FormScreen")
         self._build_ui()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 14, 18, 14)
-        root.setSpacing(10)
-        root.addWidget(page_header("Nhật ký phân tích", "Lọc, mở lại và ghi chú các phân tích đã lưu.", "SQLite"))
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(8)
+        root.addWidget(page_header("Nhật ký phân tích", "", "SQLite"))
 
-        tabs = QTabWidget()
-        tabs.setObjectName("ContentTabs")
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("ContentTabs")
 
         tab1 = QWidget()
         tab1_layout = QVBoxLayout(tab1)
-        tab1_layout.setContentsMargins(0, 8, 0, 0)
-        tab1_layout.setSpacing(10)
+        tab1_layout.setContentsMargins(0, 4, 0, 0)
+        tab1_layout.setSpacing(8)
+        tab1_layout.addWidget(self._quick_filter_bar())
         tab1_layout.addWidget(self._filters())
         tab1_layout.addWidget(self._table_card(), 1)
-        tabs.addTab(tab1, "Nhật ký Phân tích")
+        self.tabs.addTab(tab1, "Nhật ký Phân tích")
 
         tab2 = QWidget()
         tab2_layout = QVBoxLayout(tab2)
-        tab2_layout.setContentsMargins(0, 8, 0, 0)
-        tab2_layout.setSpacing(10)
-        tab2_layout.addWidget(self._stats_bar())
+        tab2_layout.setContentsMargins(0, 4, 0, 0)
+        tab2_layout.setSpacing(8)
         tab2_layout.addWidget(self._performance_card(), 1)
-        tabs.addTab(tab2, "Thống kê Hiệu suất")
+        self.tabs.addTab(tab2, "Thống kê Hiệu suất")
 
-        root.addWidget(tabs, 1)
+        root.addWidget(self.tabs, 1)
         self.refresh_status()
 
     def _filters(self) -> QFrame:
-        frame = card()  # Không tiêu đề để giao diện thoáng đãng
-        frame.layout().setContentsMargins(12, 8, 12, 8)
-        layout = QHBoxLayout()
-        layout.setSpacing(10)
-        frame.layout().addLayout(layout)
+        frame = card()
+        frame.layout().setContentsMargins(12, 6, 12, 6)
+        frame_layout = QVBoxLayout()
+        frame_layout.setSpacing(4)
+        frame.layout().addLayout(frame_layout)
+
+        # Row 1: Ô tìm kiếm + nút mở rộng/thu gọn + xóa lọc
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Tìm theo mã, ghi chú, thẻ...")
+        self.search_input.setObjectName("FilterField")
+        self.search_input.setClearButtonEnabled(True)
+
+        self.filter_toggle_btn = action_button("▶ Bộ lọc")
+        self.filter_toggle_btn.setFixedWidth(90)
+        self.filter_toggle_btn.clicked.connect(self._toggle_filter_panel)
+
+        clear_btn = action_button("🧹 Xóa lọc")
+        clear_btn.clicked.connect(self._clear_filters)
+
+        search_row.addWidget(self.search_input, 1)
+        search_row.addWidget(self.filter_toggle_btn)
+        search_row.addWidget(clear_btn)
+        frame_layout.addLayout(search_row)
+
+        # Collapsible filter grid
+        self.filter_panel = QFrame()
+        self.filter_panel.setVisible(False)
+        grid = QGridLayout(self.filter_panel)
+        grid.setContentsMargins(0, 4, 0, 0)
+        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(6)
+
+        # Khởi tạo tất cả filter widgets
+        self.symbol_input = QComboBox()
+        self.symbol_input.setObjectName("FilterField")
+        self.symbol_input.addItem("Tất cả mã", None)
+
+        self.status_input = QComboBox()
+        self.status_input.setObjectName("FilterField")
+        self.status_input.addItem("Tất cả trạng thái", None)
+        self.status_input.addItem("Kế hoạch", "planned")
+        self.status_input.addItem("Đã mở", "opened")
+        self.status_input.addItem("Đã đóng", "closed")
+        self.status_input.addItem("Đã hủy", "cancelled")
+        self.status_input.addItem("Bỏ lỡ", "missed")
+
+        self.result_input = QComboBox()
+        self.result_input.setObjectName("FilterField")
+        self.result_input.addItem("Tất cả kết quả", None)
+        self.result_input.addItem("Thắng", "win")
+        self.result_input.addItem("Thua", "loss")
+        self.result_input.addItem("Hòa", "breakeven")
+
+        self.session_input = QComboBox()
+        self.session_input.setObjectName("FilterField")
+        self.session_input.addItem("Tất cả phiên", None)
+
+        self.decision_input = QComboBox()
+        self.decision_input.setObjectName("FilterField")
+        self.decision_input.addItems(["Tất cả", "Sẵn sàng", "Theo dõi", "Chờ", "Đứng ngoài"])
+
+        self.permission_input = QComboBox()
+        self.permission_input.setObjectName("FilterField")
+        self.permission_input.addItems(["Tất cả", "Được phép", "Cẩn trọng", "Bị chặn"])
+
+        self.setup_input = QComboBox()
+        self.setup_input.setObjectName("FilterField")
+        self.setup_input.addItem("Tất cả setup", None)
+
+        self.regime_input = QComboBox()
+        self.regime_input.setObjectName("FilterField")
+        self.regime_input.addItem("Tất cả regime", None)
 
         self.date_from_input = QDateEdit()
-        self.date_from_input.setMinimumWidth(135)
         self.date_from_input.setCalendarPopup(True)
         self.date_from_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
         self.date_from_input.setDate(QDate.currentDate().addMonths(-1))
         self.date_from_input.setDisplayFormat("dd/MM/yyyy")
+        self.date_from_input.setObjectName("FilterField")
+
         self.date_to_input = QDateEdit()
-        self.date_to_input.setMinimumWidth(135)
         self.date_to_input.setCalendarPopup(True)
         self.date_to_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
         self.date_to_input.setDate(QDate.currentDate())
         self.date_to_input.setDisplayFormat("dd/MM/yyyy")
-        self.symbol_input = QComboBox()
-        self.decision_input = QComboBox()
-        self.decision_input.addItems(["Tất cả", "Sẵn sàng", "Theo dõi", "Chờ", "Đứng ngoài"])
-        self.permission_input = QComboBox()
-        self.permission_input.addItems(["Tất cả", "Được phép", "Cẩn trọng", "Bị chặn"])
+        self.date_to_input.setObjectName("FilterField")
+
         self.min_score_input = QSpinBox()
         self.min_score_input.setRange(0, 100)
         self.min_score_input.setValue(0)
+        self.min_score_input.setObjectName("FilterField")
 
-        for field in [self.date_from_input, self.date_to_input, self.symbol_input, self.decision_input, self.permission_input, self.min_score_input]:
-            field.setObjectName("FilterField")
+        self.min_quality_input = QSpinBox()
+        self.min_quality_input.setRange(0, 100)
+        self.min_quality_input.setValue(0)
+        self.min_quality_input.setObjectName("FilterField")
 
-        layout.addWidget(self._compact_field_horizontal("Từ", self.date_from_input))
-        layout.addWidget(self._compact_field_horizontal("Đến", self.date_to_input))
-        layout.addWidget(self._compact_field_horizontal("Mã", self.symbol_input))
-        layout.addWidget(self._compact_field_horizontal("K.luận", self.decision_input))
-        layout.addWidget(self._compact_field_horizontal("Quyền", self.permission_input))
-        layout.addWidget(self._compact_field_horizontal("Điểm >=", self.min_score_input))
+        # Grid 2 hàng x 6 cột
+        grid.addWidget(self._filter_group("Mã", self.symbol_input), 0, 0)
+        grid.addWidget(self._filter_group("Trạng thái", self.status_input), 0, 1)
+        grid.addWidget(self._filter_group("Kết quả", self.result_input), 0, 2)
+        grid.addWidget(self._filter_group("Phiên", self.session_input), 0, 3)
+        grid.addWidget(self._filter_group("Kết luận", self.decision_input), 0, 4)
+        grid.addWidget(self._filter_group("Quyền", self.permission_input), 0, 5)
 
-        layout.addStretch(1)
+        grid.addWidget(self._filter_group("Setup", self.setup_input), 1, 0)
+        grid.addWidget(self._filter_group("Regime", self.regime_input), 1, 1)
+        grid.addWidget(self._filter_group("Từ ngày", self.date_from_input), 1, 2)
+        grid.addWidget(self._filter_group("Đến ngày", self.date_to_input), 1, 3)
+        grid.addWidget(self._filter_group("Điểm AI ≥", self.min_score_input), 1, 4)
+        grid.addWidget(self._filter_group("CL Thực thi ≥", self.min_quality_input), 1, 5)
 
-        apply_button = action_button("✅ Áp dụng", primary=True, color="success")
-        clear_button = action_button("🧹 Xóa lọc")
-        apply_button.clicked.connect(self._apply_filters)
-        clear_button.clicked.connect(self._clear_filters)
+        frame_layout.addWidget(self.filter_panel)
 
-        layout.addWidget(apply_button)
-        layout.addWidget(clear_button)
+        # Debounce timer cho ô tìm kiếm (300ms)
+        self._debounce_timer = QTimer()
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(300)
+        self._debounce_timer.timeout.connect(self._apply_filters)
+
+        self.search_input.textChanged.connect(lambda: self._debounce_timer.start())
+
+        # Các filter khác áp dụng ngay lập tức
+        for combo in [self.symbol_input, self.status_input, self.result_input,
+                      self.session_input, self.decision_input, self.permission_input,
+                      self.setup_input, self.regime_input]:
+            combo.currentTextChanged.connect(self._apply_filters)
+        self.date_from_input.dateChanged.connect(self._apply_filters)
+        self.date_to_input.dateChanged.connect(self._apply_filters)
+        self.min_score_input.valueChanged.connect(self._apply_filters)
+        self.min_quality_input.valueChanged.connect(self._apply_filters)
+
         return frame
 
-    def _compact_field_horizontal(self, label: str, field: QWidget) -> QWidget:
+    def _filter_group(self, label: str, widget: QWidget) -> QWidget:
+        """Nhóm label + widget theo chiều dọc, tiết kiệm không gian."""
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        lbl = QLabel(label)
+        lbl.setObjectName("FormLabel")
+        layout.addWidget(lbl)
+        layout.addWidget(widget)
+        return w
+
+    def _toggle_filter_panel(self) -> None:
+        visible = not self.filter_panel.isVisible()
+        self.filter_panel.setVisible(visible)
+        if visible:
+            self.filter_toggle_btn.setText("▼ Thu gọn")
+            self._refresh_filter_values()
+        else:
+            self.filter_toggle_btn.setText("▶ Bộ lọc")
+
+    # ------------------------------------------------------------------
+    # Quick Filter
+    # ------------------------------------------------------------------
+
+    # (label, group, filter_widget_attr, setter_lambda, resetter_lambda)
+    # setter: gọi khi nút được chọn.  resetter: gọi khi nút bỏ chọn.
+    _QUICK_FILTER_DEFS: list[tuple[str, str, str, object, object]] = [
+        # Thời gian
+        ("Hôm nay",    "time", "date", None, None),  # setter/resetter tính động theo days
+        ("7 ngày",     "time", "date", None, None),
+        ("30 ngày",    "time", "date", None, None),
+        # Kết quả
+        ("Lệnh thắng", "result", "result", "win", None),
+        ("Lệnh thua",  "result", "result", "loss", None),
+        # AI
+        ("Điểm AI ≥ 85",       "ai", "min_score", 85, 0),
+        ("Độ tin cậy AI ≥ 90", "ai", "min_score", 90, 0),
+        # Chất lượng thực thi
+        ("Thực thi tốt", "quality", "min_quality", 70, 0),
+        ("Thực thi kém", "quality", "max_quality", 40, 0),
+    ]
+
+    def _quick_filter_bar(self) -> QWidget:
+        """Thanh Lọc nhanh — các nút một chạm để thiết lập nhanh JournalFilter."""
+        self._quick_btns: dict[str, QPushButton] = {}
+        self._quick_groups: dict[str, list[str]] = {}  # group -> list of labels
+
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        lbl = QLabel(label)
+
+        lbl = QLabel("Lọc nhanh:")
         lbl.setObjectName("FormLabel")
         layout.addWidget(lbl)
-        layout.addWidget(field)
+
+        days_map = {"Hôm nay": 0, "7 ngày": 7, "30 ngày": 30}
+
+        for label, group, attr, set_val, reset_val in self._QUICK_FILTER_DEFS:
+            btn = action_button(label)
+            btn.setCheckable(True)
+            btn.setProperty("qf_group", group)
+            btn.setProperty("qf_attr", attr)
+            btn.toggled.connect(lambda checked, b=btn: self._on_quick_filter_toggled(b, checked))
+            self._quick_btns[label] = btn
+            self._quick_groups.setdefault(group, []).append(label)
+            layout.addWidget(btn)
+
+            # Gán setter/resetter cho nút thời gian (động theo days)
+            if attr == "date":
+                days = days_map[label]
+                btn.setProperty("qf_set_val", days)
+                btn.setProperty("qf_reset_val", 30)  # reset về "1 tháng trước"
+
+        layout.addStretch(1)
         return widget
 
+    def _on_quick_filter_toggled(self, btn: QPushButton, checked: bool) -> None:
+        """Xử lý khi một nút Quick Filter được bật/tắt."""
+        group: str = btn.property("qf_group") or ""
+        attr: str = btn.property("qf_attr") or ""
+
+        if checked:
+            # Bỏ chọn các nút khác trong cùng nhóm
+            for other_label in self._quick_groups.get(group, []):
+                other_btn = self._quick_btns.get(other_label)
+                if other_btn and other_btn is not btn and other_btn.isChecked():
+                    other_btn.blockSignals(True)
+                    other_btn.setChecked(False)
+                    other_btn.blockSignals(False)
+
+            # Áp dụng giá trị filter
+            self._apply_quick_filter_value(attr, btn.property("qf_set_val"))
+        else:
+            # Khôi phục giá trị mặc định
+            self._apply_quick_filter_value(attr, btn.property("qf_reset_val"))
+
+    def _apply_quick_filter_value(self, attr: str, value: object) -> None:
+        """Ghi giá trị vào widget Advanced Filter tương ứng và trigger làm mới."""
+        today = QDate.currentDate()
+
+        if attr == "date":
+            days = int(value) if value is not None else 30
+            self.date_from_input.blockSignals(True)
+            self.date_to_input.blockSignals(True)
+            self.date_from_input.setDate(today.addDays(-days))
+            self.date_to_input.setDate(today)
+            self.date_from_input.blockSignals(False)
+            self.date_to_input.blockSignals(False)
+            self._apply_filters()
+            return
+
+        if attr == "result":
+            target = "win" if value == "win" else "loss" if value == "loss" else None
+            self.result_input.blockSignals(True)
+            if target:
+                idx = self.result_input.findData(target)
+                self.result_input.setCurrentIndex(idx if idx >= 0 else 0)
+            else:
+                self.result_input.setCurrentIndex(0)
+            self.result_input.blockSignals(False)
+            return
+
+        if attr == "min_score":
+            self.min_score_input.blockSignals(True)
+            self.min_score_input.setValue(int(value) if value else 0)
+            self.min_score_input.blockSignals(False)
+            return
+
+        if attr == "min_quality":
+            self.min_quality_input.blockSignals(True)
+            self.min_quality_input.setValue(int(value) if value else 0)
+            self.min_quality_input.blockSignals(False)
+            return
+
+        if attr == "max_quality":
+            # Ghi trực tiếp vào JournalFilter vì không có widget UI riêng
+            self._apply_filters()
+            return
+
+    def _current_max_quality(self) -> int:
+        """Đọc giá trị max_execution_quality từ trạng thái nút Quick Filter."""
+        for label, group, attr, set_val, _ in self._QUICK_FILTER_DEFS:
+            if attr == "max_quality":
+                btn = self._quick_btns.get(label)
+                if btn and btn.isChecked():
+                    return int(set_val) if set_val else 0
+        return 0
+
+    def _filtered_stats_bar(self) -> QWidget:
+        """Widget thống kê nhanh nhúng vào Header của bảng Journal."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.total_lbl = QLabel("Tổng:")
+        self.total_lbl.setObjectName("StatsLabel")
+        self.total_val = QLabel()
+        self.total_val.setObjectName("StatsValue")
+
+        self.dot1 = QLabel("•")
+        self.dot1.setObjectName("StatsSeparator")
+
+        self.showing_lbl = QLabel("Hiển thị:")
+        self.showing_lbl.setObjectName("StatsLabel")
+        self.showing_val = QLabel()
+        self.showing_val.setObjectName("StatsValue")
+
+        self.dot2 = QLabel("•")
+        self.dot2.setObjectName("StatsSeparator")
+
+        self.winrate_lbl = QLabel("Win:")
+        self.winrate_lbl.setObjectName("StatsLabel")
+        self.winrate_val = QLabel()
+        self.winrate_val.setObjectName("StatsValue")
+
+        self.dot3 = QLabel("•")
+        self.dot3.setObjectName("StatsSeparator")
+
+        self.expectancy_lbl = QLabel("Kỳ vọng:")
+        self.expectancy_lbl.setObjectName("StatsLabel")
+        self.expectancy_val = QLabel()
+        self.expectancy_val.setObjectName("StatsValue")
+
+        self.dot4 = QLabel("•")
+        self.dot4.setObjectName("StatsSeparator")
+
+        self.pf_lbl = QLabel("PF:")
+        self.pf_lbl.setObjectName("StatsLabel")
+        self.pf_val = QLabel()
+        self.pf_val.setObjectName("StatsValue")
+
+        layout.addWidget(self.total_lbl)
+        layout.addWidget(self.total_val)
+        layout.addWidget(self.dot1)
+        layout.addWidget(self.showing_lbl)
+        layout.addWidget(self.showing_val)
+        layout.addWidget(self.dot2)
+        layout.addWidget(self.winrate_lbl)
+        layout.addWidget(self.winrate_val)
+        layout.addWidget(self.dot3)
+        layout.addWidget(self.expectancy_lbl)
+        layout.addWidget(self.expectancy_val)
+        layout.addWidget(self.dot4)
+        layout.addWidget(self.pf_lbl)
+        layout.addWidget(self.pf_val)
+        return widget
+
+    def _update_filtered_stats_bar(self, entries: list[JournalEntry]) -> None:
+        total = self.journal_controller.total_entries()
+        showing = len(entries)
+
+        closed = [e for e in entries if e.closed_at and e.result_r is not None]
+        if closed:
+            results = [e.result_r for e in closed]
+            wins = [r for r in results if r > 0]
+            losses = [r for r in results if r < 0]
+            win_rate = round(len(wins) / len(results) * 100, 1) if results else 0.0
+            expectancy = round(sum(results) / len(results), 3) if results else 0.0
+            gross_profit = sum(wins)
+            gross_loss = abs(sum(losses))
+            profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0.0
+            
+            self.winrate_val.setText(f"{win_rate}%")
+            self.expectancy_val.setText(f"{expectancy}R")
+            self.pf_val.setText(f"{profit_factor}")
+            
+            self.dot2.setVisible(True)
+            self.dot3.setVisible(True)
+            self.dot4.setVisible(True)
+            self.winrate_lbl.setVisible(True)
+            self.winrate_val.setVisible(True)
+            self.expectancy_lbl.setVisible(True)
+            self.expectancy_val.setVisible(True)
+            self.pf_lbl.setVisible(True)
+            self.pf_val.setVisible(True)
+        else:
+            self.winrate_val.setText("")
+            self.expectancy_val.setText("")
+            self.pf_val.setText("")
+            
+            self.dot2.setVisible(False)
+            self.dot3.setVisible(False)
+            self.dot4.setVisible(False)
+            self.winrate_lbl.setVisible(False)
+            self.winrate_val.setVisible(False)
+            self.expectancy_lbl.setVisible(False)
+            self.expectancy_val.setVisible(False)
+            self.pf_lbl.setVisible(False)
+            self.pf_val.setVisible(False)
+
+        self.total_val.setText(str(total))
+        self.showing_val.setText(str(showing))
+
     def _table_card(self) -> QFrame:
-        frame = card("Danh sách nhật ký")
+        frame = card()  # Không truyền tiêu đề tĩnh để custom header layout
+        frame.layout().setContentsMargins(12, 10, 12, 10)
+        frame.layout().setSpacing(8)
+
+        # Tạo custom header layout đưa nút Chi tiết lên cùng hàng với tiêu đề
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(10)
+
+        title_label = QLabel("Danh sách nhật ký")
+        title_label.setObjectName("PanelTitle")
+
+        # Khởi tạo stats widget và nhúng trực tiếp vào header
+        self.stats_widget = self._filtered_stats_bar()
+
+        self.open_button = action_button("🔍 Chi tiết", primary=True, color="warning")
+        self.open_button.setEnabled(False)
+        self.open_button.clicked.connect(self._open_selected)
+
+        self.sync_mt5_tab1_button = action_button("⬇️ Đồng bộ MT5", primary=True, color="info")
+        self.sync_mt5_tab1_button.setToolTip("Nhập các lệnh đã đóng từ lịch sử MT5 trong 90 ngày gần nhất.")
+        self.sync_mt5_tab1_button.clicked.connect(self._sync_mt5_history)
+        self._sync_buttons.append(self.sync_mt5_tab1_button)
+
+        header_layout.addWidget(title_label)
+        header_layout.addSpacing(14)
+        header_layout.addWidget(self.stats_widget)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.sync_mt5_tab1_button)
+        header_layout.addWidget(self.open_button)
+
+        frame.layout().addLayout(header_layout)
+
         self.table = QTableView()
         self.table.setObjectName("DataTable")
+        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.table.setShowGrid(False)
         self.table.setModel(self.table_model)
+        self.table.setWordWrap(False)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.horizontalHeader().setHighlightSections(False)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.horizontalHeader().setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.table.setHorizontalScrollMode(QTableView.ScrollMode.ScrollPerPixel)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.table.setMouseTracking(True)
         self.table.clicked.connect(self._table_clicked)
+        self.table.doubleClicked.connect(self._table_double_clicked)
+        self.table.entered.connect(self._table_entered)
+        # Delegate cho cột Ghi chú (📝) và cột Xem
+        note_col = next((i for i, (k, _) in enumerate(JournalTableModel.COLUMNS) if k == "note"), None)
+        open_col = len(JournalTableModel.COLUMNS) - 1
+        if note_col is not None:
+            self.table.setItemDelegateForColumn(note_col, NoteIconDelegate(self.table))
+        self.table.setItemDelegateForColumn(open_col, LinkDelegate(self.table))
         frame.layout().addWidget(self.table, 1)
 
         self.empty_label = QLabel("")
@@ -261,111 +1132,270 @@ class JournalScreen(QWidget):
         self.empty_label.setWordWrap(True)
         frame.layout().addWidget(self.empty_label)
 
-        actions = QHBoxLayout()
-        actions.addStretch(1)
-        self.open_button = action_button("🔍 Mở chi tiết", primary=True)
-        self.open_button.setEnabled(False)
-        self.open_button.clicked.connect(self._open_selected)
-        actions.addWidget(self.open_button)
-        frame.layout().addLayout(actions)
         return frame
 
-    def _stats_bar(self) -> QWidget:
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
-        self.stat_labels: dict[str, QLabel] = {}
-        for title in ["Tổng", "Sẵn sàng", "Theo dõi", "Chờ", "Đứng ngoài", "Mã nhiều nhất"]:
-            item = self._compact_metric(title, "--", is_stat=True)
-            layout.addWidget(item)
-        layout.addStretch(1)
-        return widget
-
     def _performance_card(self) -> QFrame:
-        frame = card("Bảng hiệu suất")
-        actions = QHBoxLayout()
-        self.performance_scope_label = QLabel("Chỉ tính lệnh đã đóng. Cần Result R để tính các chỉ số hiệu suất theo R.")
-        self.performance_scope_label.setObjectName("HelperText")
-        self.performance_scope_label.setWordWrap(True)
-        actions.addWidget(self.performance_scope_label, 1)
-        actions.addStretch(1)
-        
-        explain_button = action_button("📖 Giải thích")
+        frame = card()
+        frame.layout().setContentsMargins(14, 12, 14, 12)
+        frame.layout().setSpacing(10)
+
+        # ------------------------------------------------------------------
+        # 1. Header Action Bar
+        # ------------------------------------------------------------------
+        action_bar = QHBoxLayout()
+        action_bar.setContentsMargins(0, 0, 0, 0)
+        action_bar.setSpacing(10)
+
+        tab_title = QLabel(
+            'Thống kê hiệu suất giao dịch '
+            '<span style="font-weight: normal; color: #E57373;">'
+            '(Lần đồng bộ gần nhất: chưa đồng bộ)</span>'
+        )
+        tab_title.setObjectName("PanelTitle")
+        tab_title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        tab_title.setTextFormat(Qt.TextFormat.RichText)
+        self.performance_title_label = tab_title
+
+        action_bar.addWidget(tab_title, 1)
+
+        explain_button = action_button("📖 Giải thích", primary=False)
         explain_button.clicked.connect(self._show_explanation_dialog)
-        actions.addWidget(explain_button)
-        
-        refresh_button = action_button("🔄 Làm mới", primary=True)
+        action_bar.addWidget(explain_button)
+
+        refresh_button = action_button("🔄 Làm mới", primary=False)
         refresh_button.clicked.connect(self._refresh_performance)
-        actions.addWidget(refresh_button)
-        
+        action_bar.addWidget(refresh_button)
+
         self.sync_mt5_button = action_button("⬇️ Đồng bộ MT5", primary=True, color="info")
         self.sync_mt5_button.setToolTip("Nhập các lệnh đã đóng từ lịch sử MT5 trong 90 ngày gần nhất.")
         self.sync_mt5_button.clicked.connect(self._sync_mt5_history)
-        actions.addWidget(self.sync_mt5_button)
-        frame.layout().addLayout(actions)
+        self._sync_buttons.append(self.sync_mt5_button)
+        action_bar.addWidget(self.sync_mt5_button)
 
-        self.performance_labels: dict[str, QLabel] = {}
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(12)
-        metrics = [
-            ("Đã đóng", "0"),
-            ("Tỷ lệ thắng", "0%"),
-            ("Kỳ vọng", "0R"),
-            ("Tổng R", "0R"),
-            ("Lãi/lỗ ròng", "0"),
-            ("Hệ số lợi nhuận", "0"),
-            ("DD tối đa", "0R"),
-            ("Thắng TB", "0R"),
-            ("Thua TB", "0R"),
-            ("Chất lượng thực thi", "0"),
-        ]
-        for index, (title, value) in enumerate(metrics):
-            item = self._compact_metric(title, value, is_stat=False)
-            grid.addWidget(item, index // 5, index % 5)
-        frame.layout().addLayout(grid)
+        frame.layout().addLayout(action_bar)
 
-        tables = QHBoxLayout()
-        tables.setSpacing(10)
+        # ------------------------------------------------------------------
+        # 2. Sub-tabs Navigation Bar
+        # ------------------------------------------------------------------
+        self.sub_tabs = QTabWidget()
+        self.sub_tabs.setObjectName("PerformanceSubTabs")
+
+        # ==================================================================
+        # Sub-tab 1: 📊 Tổng quan & Biểu đồ
+        # ==================================================================
+        sub_tab1 = QWidget()
+        sub_tab1_layout = QVBoxLayout(sub_tab1)
+        sub_tab1_layout.setContentsMargins(4, 8, 4, 4)
+        sub_tab1_layout.setSpacing(10)
+
+        # KPI Cards Grid
+        kpi_container = QVBoxLayout()
+        kpi_container.setSpacing(10)
+
+        group1_lbl = QLabel("🟢 TỔNG QUAN HIỆU SUẤT TÀI CHÍNH")
+        group1_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; padding-bottom: 2px;")
+        kpi_container.addWidget(group1_lbl)
+
+        row1_layout = QHBoxLayout()
+        row1_layout.setSpacing(10)
+
+        self.kpi_cards = {
+            "net_amount": PerformanceKPICard("LÃI / LỖ RÒNG", self),
+            "profit_factor": PerformanceKPICard("HỆ SỐ LỢI NHUẬN", self),
+            "max_drawdown": PerformanceKPICard("DRAWDOWN TỐI ĐA", self),
+            "expectancy": PerformanceKPICard("KỲ VỌNG (EXPECTANCY)", self),
+            "total_r": PerformanceKPICard("TỔNG R NỔI BẬT", self),
+            "closed_trades": PerformanceKPICard("LỆNH ĐÃ ĐÓNG", self),
+            "win_rate": PerformanceKPICard("TỶ LỆ THẮNG", self),
+            "avg_win": PerformanceKPICard("THẮNG TRUNG BÌNH", self),
+            "avg_loss": PerformanceKPICard("THUA TRUNG BÌNH", self),
+            "execution_quality": PerformanceKPICard("CL THỰC THI TB", self),
+        }
+
+        row1_layout.addWidget(self.kpi_cards["net_amount"])
+        row1_layout.addWidget(self.kpi_cards["profit_factor"])
+        row1_layout.addWidget(self.kpi_cards["max_drawdown"])
+        row1_layout.addWidget(self.kpi_cards["expectancy"])
+        row1_layout.addWidget(self.kpi_cards["total_r"])
+        kpi_container.addLayout(row1_layout)
+
+        group2_lbl = QLabel("🔵 THỐNG KÊ LỆNH & KỶ LUẬT THỰC THI")
+        group2_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; margin-top: 8px; padding-bottom: 2px;")
+        kpi_container.addWidget(group2_lbl)
+
+        row2_layout = QHBoxLayout()
+        row2_layout.setSpacing(10)
+        row2_layout.addWidget(self.kpi_cards["closed_trades"])
+        row2_layout.addWidget(self.kpi_cards["win_rate"])
+        row2_layout.addWidget(self.kpi_cards["avg_win"])
+        row2_layout.addWidget(self.kpi_cards["avg_loss"])
+        row2_layout.addWidget(self.kpi_cards["execution_quality"])
+        kpi_container.addLayout(row2_layout)
+
+        sub_tab1_layout.addLayout(kpi_container)
+
+        # Missing Result R Banner
+        self.missing_r_banner = MissingRBanner(on_cta_clicked=self._on_fix_missing_r_clicked, parent=self)
+        self.missing_r_banner.setVisible(False)
+        sub_tab1_layout.addWidget(self.missing_r_banner)
+
+        # Matplotlib Charts Panel
+        self.performance_chart = PerformanceChartWidget(self)
+        sub_tab1_layout.addWidget(self.performance_chart, 1)
+
+        self.sub_tabs.addTab(sub_tab1, "📊 Tổng quan & Biểu đồ")
+
+        # ==================================================================
+        # Sub-tab 2: 📋 Chi tiết Lệnh & Nhóm
+        # ==================================================================
+        sub_tab2 = QWidget()
+        sub_tab2_layout = QVBoxLayout(sub_tab2)
+        sub_tab2_layout.setContentsMargins(4, 8, 4, 4)
+        sub_tab2_layout.setSpacing(8)
+
+        tables_layout = QHBoxLayout()
+        tables_layout.setSpacing(10)
+
+        # --- Left Box: Group Table ---
+        left_box = QVBoxLayout()
+        left_box.setSpacing(6)
+
+        left_header = QHBoxLayout()
+        left_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        left_header.setSpacing(8)
+        left_title = QLabel("📑 Phân bổ nhóm:")
+        left_title.setStyleSheet("font-size: 12px; font-weight: 600;")
+
+        self.group_view_combo = QComboBox()
+        self.group_view_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.group_view_combo.addItems(["Tất cả nhóm", "Theo Mã", "Theo Setup", "Theo Regime", "Theo Phiên", "Theo Hướng"])
+        self.group_view_combo.setCurrentIndex(1)  # Default: Theo Mã
+        self.group_view_combo.currentTextChanged.connect(self._on_group_view_changed)
+
+        left_header.addWidget(left_title)
+        left_header.addWidget(self.group_view_combo)
+        left_header.addStretch(1)
+        left_box.addLayout(left_header)
+
         self.performance_group_table = QTableWidget()
         self.performance_group_table.setObjectName("DataTable")
+        self.performance_group_table.setShowGrid(False)
         self.performance_group_table.setColumnCount(7)
         self.performance_group_table.setHorizontalHeaderLabels(["Nhóm", "Tên", "Lệnh", "Thắng %", "Kỳ vọng R", "Tổng R", "P/L"])
         self.performance_group_table.verticalHeader().setVisible(False)
+        self.performance_group_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.performance_group_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.performance_group_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.performance_group_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.performance_group_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.performance_group_table.setAlternatingRowColors(True)
+        self.performance_group_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.performance_group_table.horizontalHeader().setHighlightSections(False)
         self.performance_group_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.performance_group_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         for column in range(2, 7):
             self.performance_group_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        tables.addWidget(self.performance_group_table, 3)
+        self.performance_group_table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.performance_group_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.performance_group_table.itemClicked.connect(self._on_group_row_clicked)
+
+        left_box.addWidget(self.performance_group_table, 1)
+        tables_layout.addLayout(left_box, 1)
+
+        # --- Right Box: Recent Trades Table with Filter Bar ---
+        right_box = QVBoxLayout()
+        right_box.setSpacing(6)
+
+        right_header = QHBoxLayout()
+        right_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        right_header.setSpacing(8)
+        right_title = QLabel("📋 Lịch sử lệnh đóng")
+        right_title.setStyleSheet("font-size: 12px; font-weight: 600;")
+        right_header.addWidget(right_title)
+
+        self.recent_time_combo = QComboBox()
+        self.recent_time_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.recent_time_combo.addItems(["Tất cả thời gian", "7 ngày gần đây", "30 ngày gần đây", "90 ngày gần đây"])
+        self.recent_time_combo.currentTextChanged.connect(self._apply_recent_table_filters)
+        right_header.addWidget(self.recent_time_combo)
+
+        self.recent_result_combo = QComboBox()
+        self.recent_result_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.recent_result_combo.addItems(["Tất cả kết quả", "Lệnh thắng", "Lệnh thua", "Lệnh hòa"])
+        self.recent_result_combo.currentTextChanged.connect(self._apply_recent_table_filters)
+        right_header.addWidget(self.recent_result_combo)
+
+        self.clear_cross_filter_btn = action_button("✖ Bỏ lọc mã", primary=False)
+        self.clear_cross_filter_btn.setToolTip("Bỏ lọc mã hiện tại và xem tất cả lệnh đóng.")
+        self.clear_cross_filter_btn.setVisible(False)
+        self.clear_cross_filter_btn.clicked.connect(self._clear_cross_filter)
+        right_header.addWidget(self.clear_cross_filter_btn)
+        right_header.addStretch(1)
+
+        right_box.addLayout(right_header)
 
         self.recent_trade_table = QTableWidget()
         self.recent_trade_table.setObjectName("DataTable")
+        self.recent_trade_table.setShowGrid(False)
         self.recent_trade_table.setColumnCount(6)
         self.recent_trade_table.setHorizontalHeaderLabels(["Đóng lúc", "Mã", "Hướng", "R", "P/L", "CL"])
         self.recent_trade_table.verticalHeader().setVisible(False)
+        self.recent_trade_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.recent_trade_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.recent_trade_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.recent_trade_table.setAlternatingRowColors(True)
+        self.recent_trade_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.recent_trade_table.horizontalHeader().setHighlightSections(False)
         self.recent_trade_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.recent_trade_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         for column in (1, 2, 3, 5):
             self.recent_trade_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        tables.addWidget(self.recent_trade_table, 2)
-        frame.layout().addLayout(tables, 1)
+        self.recent_trade_table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.recent_trade_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+
+        right_box.addWidget(self.recent_trade_table, 1)
+        tables_layout.addLayout(right_box, 1)
+
+        frame.layout().addLayout(tables_layout, 1)
 
         self.performance_empty_label = QLabel("")
         self.performance_empty_label.setObjectName("HelperText")
         self.performance_empty_label.setWordWrap(True)
         frame.layout().addWidget(self.performance_empty_label)
-        self.performance_sync_label = QLabel("")
-        self.performance_sync_label.setObjectName("HelperText")
-        self.performance_sync_label.setWordWrap(True)
-        frame.layout().addWidget(self.performance_sync_label)
+
         return frame
+
+    def _on_fix_missing_r_clicked(self) -> None:
+        if hasattr(self, "tabs") and self.tabs:
+            self.tabs.setCurrentIndex(0)
+        idx = self.status_input.findData("closed")
+        if idx >= 0:
+            self.status_input.setCurrentIndex(idx)
+
+    def _on_group_view_changed(self) -> None:
+        if hasattr(self, "_cached_perf_data"):
+            self._fill_group_table(self._cached_perf_data)
+
+    def _on_group_row_clicked(self, item: QTableWidgetItem) -> None:
+        row = item.row()
+        group_item = self.performance_group_table.item(row, 0)
+        label_item = self.performance_group_table.item(row, 1)
+        if not group_item or not label_item:
+            return
+
+        group_name = group_item.text()
+        symbol = label_item.text()
+
+        if group_name == "Mã" and symbol and symbol != "--":
+            if self._selected_symbol_filter == symbol:
+                self._selected_symbol_filter = None
+            else:
+                self._selected_symbol_filter = symbol
+            self._apply_recent_table_filters()
+
+    def _clear_cross_filter(self) -> None:
+        self._selected_symbol_filter = None
+        self.performance_group_table.clearSelection()
+        self._apply_recent_table_filters()
 
     def _show_explanation_dialog(self) -> None:
         dialog = MetricsExplanationDialog(self)
@@ -373,22 +1403,47 @@ class JournalScreen(QWidget):
 
     def refresh_status(self) -> None:
         self._refresh_symbol_filter()
+        self._refresh_filter_values()
         self._apply_filters()
 
     def _refresh_symbol_filter(self) -> None:
-        current = self.symbol_input.currentText() if hasattr(self, "symbol_input") else "Tất cả"
+        current = self.symbol_input.currentData()
         self.symbol_input.blockSignals(True)
         self.symbol_input.clear()
-        self.symbol_input.addItem("Tất cả", None)
+        self.symbol_input.addItem("Tất cả mã", None)
         for symbol in self.journal_controller.symbols():
             self.symbol_input.addItem(symbol, symbol)
         if current:
-            index = self.symbol_input.findText(current)
+            index = self.symbol_input.findData(current)
             if index >= 0:
                 self.symbol_input.setCurrentIndex(index)
         self.symbol_input.blockSignals(False)
 
+    def _refresh_filter_values(self) -> None:
+        """Nạp danh sách giá trị distinct cho các combobox session/setup/regime."""
+        for combo, column in [
+            (self.session_input, "session"),
+            (self.setup_input, "setup_type"),
+            (self.regime_input, "regime"),
+        ]:
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(f"Tất cả {self._filter_label(column)}", None)
+            for value in self.journal_controller.distinct_values(column):
+                combo.addItem(str(value), str(value))
+            if current:
+                index = combo.findData(current)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+
+    @staticmethod
+    def _filter_label(column: str) -> str:
+        return {"session": "phiên", "setup_type": "setup", "regime": "regime"}.get(column, column)
+
     def _apply_filters(self) -> None:
+        search_text = self.search_input.text().strip() or None
         filters = JournalFilter(
             date_from=self.date_from_input.date().toString("yyyy-MM-dd"),
             date_to=self.date_to_input.date().toString("yyyy-MM-dd"),
@@ -396,22 +1451,44 @@ class JournalScreen(QWidget):
             decision=decision_value(self.decision_input.currentText()),
             permission=permission_value(self.permission_input.currentText()),
             min_score=int(self.min_score_input.value()),
+            search_text=search_text,
+            trade_status=self.status_input.currentData(),
+            result=self.result_input.currentData(),
+            min_execution_quality=int(self.min_quality_input.value()),
+            max_execution_quality=self._current_max_quality(),
+            session=self.session_input.currentData(),
+            setup_type=self.setup_input.currentData(),
+            regime=self.regime_input.currentData(),
         )
         entries = self.journal_controller.list_entries(filters)
         self.table_model.set_entries(entries)
         self.empty_label.setText("" if entries else "Chưa có bản ghi phù hợp bộ lọc.")
         self.open_button.setEnabled(False)
-        self._configure_table_columns()
+        QTimer.singleShot(0, self._recalculate_column_widths)
+        self._update_filtered_stats_bar(entries)
         self._refresh_stats()
         self._refresh_performance()
 
     def _clear_filters(self) -> None:
+        # Reset Quick Filter buttons
+        for btn in self._quick_btns.values():
+            btn.blockSignals(True)
+            btn.setChecked(False)
+            btn.blockSignals(False)
+        # Reset Advanced Filter widgets
+        self.search_input.clear()
         self.date_from_input.setDate(QDate.currentDate().addYears(-10))
         self.date_to_input.setDate(QDate.currentDate())
         self.symbol_input.setCurrentIndex(0)
+        self.status_input.setCurrentIndex(0)
+        self.result_input.setCurrentIndex(0)
+        self.session_input.setCurrentIndex(0)
         self.decision_input.setCurrentIndex(0)
         self.permission_input.setCurrentIndex(0)
+        self.setup_input.setCurrentIndex(0)
+        self.regime_input.setCurrentIndex(0)
         self.min_score_input.setValue(0)
+        self.min_quality_input.setValue(0)
         self._apply_filters()
 
     def _refresh_stats(self) -> None:
@@ -429,60 +1506,166 @@ class JournalScreen(QWidget):
 
     def _refresh_performance(self) -> None:
         data = self.journal_controller.performance_summary()
+        self._cached_perf_data = data
         summary = data.get("summary", {}) if isinstance(data.get("summary"), dict) else {}
-        values = {
-            "Đã đóng": summary.get("closed_trades", 0),
-            "Tỷ lệ thắng": format_metric(summary.get("win_rate"), "%"),
-            "Kỳ vọng": format_metric(summary.get("expectancy_r"), "R"),
-            "Tổng R": format_metric(summary.get("total_r"), "R"),
-            "Lãi/lỗ ròng": format_metric(summary.get("net_amount")),
-            "Hệ số lợi nhuận": format_metric(summary.get("profit_factor")),
-            "DD tối đa": format_metric(summary.get("max_drawdown_r"), "R"),
-            "Thắng TB": format_metric(summary.get("average_win_r"), "R"),
-            "Thua TB": format_metric(summary.get("average_loss_r"), "R"),
-            "Chất lượng thực thi": format_metric(summary.get("average_execution_quality")),
-        }
-        for title, label in self.performance_labels.items():
-            label.setText(str(values.get(title, "--")))
-            if title == "Lãi/lỗ ròng":
-                net_amount = summary.get("net_amount")
-                if isinstance(net_amount, (int, float)):
-                    if net_amount > 0:
-                        label.setStyleSheet("color: #10b981;")
-                    elif net_amount < 0:
-                        label.setStyleSheet("color: #ef4444;")
-                    else:
-                        label.setStyleSheet("")
-                else:
-                    label.setStyleSheet("")
-        self._fill_group_table(data)
-        recent = data.get("recent", []) if isinstance(data.get("recent"), list) else []
-        self._fill_recent_trade_table(recent)
-        closed = int(summary.get("closed_trades", 0) or 0)
+
+        closed_trades = int(summary.get("closed_trades", 0) or 0)
         r_trades = int(summary.get("r_trades", 0) or 0)
-        if not closed:
-            message = "Chưa có lệnh đã đóng. Hãy đóng một lệnh trong nhật ký hoặc dùng Đồng bộ MT5."
-        elif not r_trades:
-            message = "Đã có lệnh đóng, nhưng chưa có lệnh nào có Result R. Hãy điền SL/entry/giá thoát để tính kỳ vọng theo R."
+        net_amount = summary.get("net_amount")
+        profit_factor = summary.get("profit_factor")
+        max_dd = summary.get("max_drawdown_r")
+        expectancy = summary.get("expectancy_r")
+        total_r = summary.get("total_r")
+        win_rate = summary.get("win_rate")
+        avg_win = summary.get("average_win_r")
+        avg_loss = summary.get("average_loss_r")
+        avg_quality = summary.get("average_execution_quality")
+
+        # 1. Lãi/Lỗ ròng
+        net_val = format_metric(net_amount)
+        if net_amount is not None and isinstance(net_amount, (int, float)):
+            net_state = "positive" if net_amount > 0 else "negative" if net_amount < 0 else "neutral"
+            net_sub = "Lời ròng thực tế" if net_amount > 0 else "Thua lỗ ròng" if net_amount < 0 else "Hòa vốn"
+            net_badge = "▲" if net_amount > 0 else "▼" if net_amount < 0 else ""
         else:
-            message = ""
-        self.performance_empty_label.setText(message)
+            net_val = "0.00"
+            net_state = "neutral"
+            net_sub = "Chưa có lệnh"
+            net_badge = ""
+        self.kpi_cards["net_amount"].set_data(
+            f"${net_val}" if not net_val.startswith("-") else f"-${net_val[1:]}", net_state, net_sub, net_badge
+        )
+
+        # 2. Profit Factor
+        pf_val = format_metric(profit_factor)
+        if profit_factor is not None and isinstance(profit_factor, (int, float)):
+            pf_state = "positive" if profit_factor >= 1.5 else "warning" if profit_factor >= 1.0 else "negative"
+            pf_sub = "Hiệu quả cao (≥1.5)" if profit_factor >= 1.5 else "Sinh lời (≥1.0)" if profit_factor >= 1.0 else "Thua lỗ (<1.0)"
+            pf_badge = "🟢" if profit_factor >= 1.5 else "🟠" if profit_factor >= 1.0 else "⚠️"
+        else:
+            pf_val = "--"
+            pf_state = "muted"
+            pf_sub = "Chưa thể tính"
+            pf_badge = ""
+        self.kpi_cards["profit_factor"].set_data(pf_val, pf_state, pf_sub, pf_badge)
+
+        # 3. Max Drawdown
+        dd_val = format_metric(max_dd, "R")
+        if max_dd is not None and isinstance(max_dd, (int, float)):
+            dd_state = "negative" if max_dd < -5 else "warning" if max_dd < 0 else "neutral"
+            dd_sub = "Sụt giảm đỉnh-đáy"
+            dd_badge = "📉"
+        else:
+            dd_val = "--"
+            dd_state = "muted"
+            dd_sub = "Chưa có dữ liệu R"
+            dd_badge = ""
+        self.kpi_cards["max_drawdown"].set_data(dd_val, dd_state, dd_sub, dd_badge)
+
+        # 4. Expectancy
+        exp_val = format_metric(expectancy, "R")
+        if expectancy is not None and isinstance(expectancy, (int, float)) and r_trades > 0:
+            exp_state = "positive" if expectancy > 0 else "negative" if expectancy < 0 else "neutral"
+            exp_sub = "Lợi thế kỳ vọng / lệnh"
+            exp_badge = "📈" if expectancy > 0 else "📉"
+        else:
+            exp_val = "0R" if closed_trades > 0 else "--"
+            exp_state = "muted"
+            exp_sub = "Cần dữ liệu Result R"
+            exp_badge = "❓"
+        self.kpi_cards["expectancy"].set_data(exp_val, exp_state, exp_sub, exp_badge)
+
+        # 5. Tổng R
+        tr_val = format_metric(total_r, "R")
+        if total_r is not None and isinstance(total_r, (int, float)) and r_trades > 0:
+            tr_state = "positive" if total_r > 0 else "negative" if total_r < 0 else "neutral"
+            tr_sub = "Tổng đơn vị R tích lũy"
+            tr_badge = "🎯"
+        else:
+            tr_val = "0R" if closed_trades > 0 else "--"
+            tr_state = "muted"
+            tr_sub = "Cần dữ liệu Result R"
+            tr_badge = "❓"
+        self.kpi_cards["total_r"].set_data(tr_val, tr_state, tr_sub, tr_badge)
+
+        # 6. Đã đóng
+        self.kpi_cards["closed_trades"].set_data(
+            str(closed_trades),
+            "neutral" if closed_trades > 0 else "muted",
+            f"{r_trades}/{closed_trades} lệnh có Result R",
+            "📋",
+        )
+
+        # 7. Win rate
+        wr_val = format_metric(win_rate, "%")
+        if win_rate is not None and isinstance(win_rate, (int, float)):
+            wr_state = "positive" if win_rate >= 50 else "warning" if win_rate >= 40 else "negative"
+            wr_sub = "Tỷ lệ lệnh chiến thắng"
+            wr_badge = "⚠️" if win_rate < 40 else ""
+        else:
+            wr_val = "0%"
+            wr_state = "muted"
+            wr_sub = "Chưa có lệnh"
+            wr_badge = ""
+        self.kpi_cards["win_rate"].set_data(wr_val, wr_state, wr_sub, wr_badge)
+
+        # 8. Avg Win
+        aw_val = format_metric(avg_win, "R")
+        aw_state = "positive" if avg_win and float(avg_win) > 0 else "muted"
+        self.kpi_cards["avg_win"].set_data(aw_val if r_trades > 0 else "0R", aw_state, "R trung bình khi thắng", "📈")
+
+        # 9. Avg Loss
+        al_val = format_metric(avg_loss, "R")
+        al_state = "negative" if avg_loss and float(avg_loss) < 0 else "muted"
+        self.kpi_cards["avg_loss"].set_data(al_val if r_trades > 0 else "0R", al_state, "R trung bình khi thua", "📉")
+
+        # 10. Execution Quality
+        eq_val = format_metric(avg_quality)
+        if avg_quality is not None and isinstance(avg_quality, (int, float)):
+            eq_state = "positive" if avg_quality >= 70 else "warning" if avg_quality >= 50 else "negative"
+            eq_sub = "Điểm kỷ luật thực thi"
+            eq_badge = "🎯"
+        else:
+            eq_val = "--"
+            eq_state = "muted"
+            eq_sub = "Chưa có đánh giá"
+            eq_badge = ""
+        self.kpi_cards["execution_quality"].set_data(eq_val, eq_state, eq_sub, eq_badge)
+
+        # 2. Update Banner Alert
+        missing_count = closed_trades - r_trades
+        self.missing_r_banner.set_missing_info(missing_count, closed_trades)
+
+        # 3. Update Group Table & Recent Trades Table & Charts
+        self._fill_group_table(data)
+        self._apply_recent_table_filters()
 
     def _fill_group_table(self, data: dict[str, object]) -> None:
+        view = self.group_view_combo.currentText()
+        key_map = {
+            "Theo Mã": ("by_symbol", "Mã"),
+            "Theo Setup": ("by_setup", "Setup"),
+            "Theo Regime": ("by_regime", "Regime"),
+            "Theo Phiên": ("by_session", "Phiên"),
+            "Theo Hướng": ("by_direction", "Hướng"),
+        }
+
         rows: list[tuple[str, dict[str, object]]] = []
-        for group_key, title in [
-            ("by_symbol", "Mã"),
-            ("by_setup", "Setup"),
-            ("by_regime", "Regime"),
-            ("by_session", "Phiên"),
-            ("by_direction", "Hướng"),
-        ]:
+        if view == "Tất cả nhóm":
+            for group_key, title in key_map.values():
+                group_rows = data.get(group_key, [])
+                if isinstance(group_rows, list):
+                    for row in group_rows:
+                        if isinstance(row, dict):
+                            rows.append((title, row))
+        else:
+            group_key, title = key_map.get(view, ("by_symbol", "Mã"))
             group_rows = data.get(group_key, [])
-            if not isinstance(group_rows, list):
-                continue
-            for row in group_rows:
-                if isinstance(row, dict):
-                    rows.append((title, row))
+            if isinstance(group_rows, list):
+                for row in group_rows:
+                    if isinstance(row, dict):
+                        rows.append((title, row))
+
         self.performance_group_table.setRowCount(len(rows))
         for row_index, (group, row) in enumerate(rows):
             values = [
@@ -502,29 +1685,108 @@ class JournalScreen(QWidget):
                     color_item_by_number(item, str(value))
                 self.performance_group_table.setItem(row_index, column, item)
 
+    def _apply_recent_table_filters(self) -> None:
+        # Khi có filter theo symbol: query trực tiếp toàn bộ lệnh đóng của mã đó
+        # thay vì dùng "recent" từ cache (vốn bị giới hạn số lượng)
+        if self._selected_symbol_filter:
+            clean_rows = self.journal_controller.closed_trades_by_symbol(self._selected_symbol_filter)
+            self.clear_cross_filter_btn.setText(f"✖ Xóa lọc [{self._selected_symbol_filter}]")
+            self.clear_cross_filter_btn.setVisible(True)
+        else:
+            if not hasattr(self, "_cached_perf_data"):
+                return
+            data = self._cached_perf_data
+            recent = data.get("recent", []) if isinstance(data.get("recent"), list) else []
+            clean_rows = [row for row in recent if isinstance(row, dict)]
+            self.clear_cross_filter_btn.setVisible(False)
+
+        # Filter 2: Result combo
+        res_filter = self.recent_result_combo.currentText()
+        if res_filter == "Lệnh thắng":
+            clean_rows = [r for r in clean_rows if float(r.get("result_amount") or 0) > 0 or float(r.get("result_r") or 0) > 0]
+        elif res_filter == "Lệnh thua":
+            clean_rows = [r for r in clean_rows if float(r.get("result_amount") or 0) < 0 or float(r.get("result_r") or 0) < 0]
+        elif res_filter == "Lệnh hòa":
+            clean_rows = [
+                r for r in clean_rows if float(r.get("result_amount") or 0) == 0 and float(r.get("result_r") or 0) == 0
+            ]
+
+        # Filter 3: Time combo
+        time_filter = self.recent_time_combo.currentText()
+        if time_filter != "Tất cả thời gian" and clean_rows:
+            days = 7 if "7" in time_filter else 30 if "30" in time_filter else 90
+            cutoff = datetime.now() - timedelta(days=days)
+            filtered_by_time = []
+            for r in clean_rows:
+                closed_at = r.get("closed_at")
+                if closed_at:
+                    try:
+                        dt = datetime.fromisoformat(str(closed_at).replace("Z", "+00:00")).replace(tzinfo=None)
+                        if dt >= cutoff:
+                            filtered_by_time.append(r)
+                    except ValueError:
+                        filtered_by_time.append(r)
+                else:
+                    filtered_by_time.append(r)
+            clean_rows = filtered_by_time
+
+        self._fill_recent_trade_table(clean_rows)
+
+        # Draw Matplotlib Charts
+        data = self._cached_perf_data if hasattr(self, "_cached_perf_data") else {}
+        by_symbol = data.get("by_symbol", []) if isinstance(data.get("by_symbol"), list) else []
+        self.performance_chart.update_charts(by_symbol, clean_rows, selected_symbol=self._selected_symbol_filter)
+
     def _fill_recent_trade_table(self, rows: list[object]) -> None:
         clean_rows = [row for row in rows if isinstance(row, dict)]
         self.recent_trade_table.setRowCount(len(clean_rows))
         for row_index, row in enumerate(clean_rows):
+            r_val = row.get("result_r")
+            amt_val = row.get("result_amount")
+
+            r_str = format_metric(r_val, "R")
+            if r_val is not None and isinstance(r_val, (int, float)):
+                if r_val > 0:
+                    r_str = f"↑ +{r_str}"
+                elif r_val < 0:
+                    r_str = f"↓ {r_str}"
+
+            amt_str = format_metric(amt_val)
+            if amt_val is not None and isinstance(amt_val, (int, float)):
+                if amt_val > 0:
+                    amt_str = f"↑ +${amt_str}"
+                elif amt_val < 0:
+                    amt_str = f"↓ -${amt_str[1:] if amt_str.startswith('-') else amt_str}"
+
+            direction_raw = str(row.get("direction") or "--").strip()
+            direction_lower = direction_raw.lower()
+            if "buy" in direction_lower or direction_lower == "long" or direction_raw == "↑":
+                direction_str = "BUY"
+            elif "sell" in direction_lower or direction_lower == "short" or direction_raw == "↓":
+                direction_str = "SELL"
+            else:
+                direction_str = direction_raw
+
             values = [
                 format_short_time(str(row.get("closed_at") or "")),
                 row.get("symbol", "--"),
-                row.get("direction", "--"),
-                format_metric(row.get("result_r"), "R"),
-                format_metric(row.get("result_amount")),
+                direction_str,
+                r_str,
+                amt_str,
                 row.get("execution_quality_score") if row.get("execution_quality_score") is not None else "--",
             ]
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 if column in {2, 3, 5}:
                     item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
-                if column in {3, 4}:
+                if column in {2, 3, 4}:
                     color_item_by_number(item, str(value))
                 self.recent_trade_table.setItem(row_index, column, item)
 
     def _sync_mt5_history(self) -> None:
-        self.sync_mt5_button.setEnabled(False)
-        self.sync_mt5_button.setText("Đang đồng bộ...")
+        for btn in self._sync_buttons:
+            btn.setEnabled(False)
+            btn.setText("Đang đồng bộ...")
         try:
             result = self.journal_controller.sync_mt5_history(days=90)
         except Exception as exc:
@@ -536,11 +1798,15 @@ class JournalScreen(QWidget):
             msg_box.exec()
             return
         finally:
-            self.sync_mt5_button.setText("Đồng bộ MT5")
-            self.sync_mt5_button.setEnabled(True)
+            for btn in self._sync_buttons:
+                btn.setText("Đồng bộ MT5")
+                btn.setEnabled(True)
         self.refresh_status()
-        self.performance_sync_label.setText(
-            f"Lần đồng bộ MT5 gần nhất: nhận {result.get('received', 0)}, tạo mới {result.get('created', 0)}, cập nhật {result.get('updated', 0)}, bỏ qua {result.get('skipped', 0)}."
+        self.performance_title_label.setText(
+            'Thống kê hiệu suất giao dịch '
+            '<span style="font-weight: normal; color: #5C8DBC;">'
+            f'(Lần đồng bộ gần nhất: nhận {result.get("received", 0)}, tạo mới {result.get("created", 0)}, cập nhật {result.get("updated", 0)}, bỏ qua {result.get("skipped", 0)})'
+            '</span>'
         )
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Đồng bộ MT5 hoàn tất")
@@ -557,8 +1823,108 @@ class JournalScreen(QWidget):
 
     def _table_clicked(self, index: QModelIndex) -> None:
         self.open_button.setEnabled(index.isValid())
+        col = index.column()
+        col_key = JournalTableModel.COLUMNS[col][0] if index.isValid() else ""
+        # Cột Ghi chú (💬): mở NotePopup
+        if col_key == "note":
+            entry = self.table_model.entry_at(index.row())
+            if entry and entry.note:
+                rect = self.table.visualRect(index)
+                global_pos = self.table.viewport().mapToGlobal(rect.bottomLeft())
+                NotePopup.show_at(entry.note, global_pos, self)
+                return
         if index.column() == len(JournalTableModel.COLUMNS) - 1:
             self._open_row(index.row())
+
+    def _table_double_clicked(self, index: QModelIndex) -> None:
+        if index.isValid():
+            self._open_row(index.row())
+
+    def _table_entered(self, index: QModelIndex) -> None:
+        col_key = JournalTableModel.COLUMNS[index.column()][0] if index.isValid() else ""
+        if col_key != "note":
+            NotePopup.close_active()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, 'table'):
+            self._recalculate_column_widths()
+
+    # ------------------------------------------------------------------
+    # Column width — Weight-based proportional distribution (khong Stretch)
+    # ------------------------------------------------------------------
+
+    # (col_index, min_width, stretch_weight)
+    _COLUMN_WEIGHTS: list[tuple[int, int, int]] = [
+        (0, 110, 1),   # Thoi gian  ← co gian
+        (1,  80, 1),   # Ma         ← co gian
+        (2,  90, 0),   # Setup      ← co dinh
+        (3,  80, 0),   # Regime     ← co dinh
+        (4,  80, 0),   # Trang thai ← co dinh
+        (5,  80, 0),   # Thien huong← co dinh
+        (6,  45, 0),   # R          ← co dinh
+        (7,  90, 0),   # Loi nhuan  ← co dinh
+        (8,  90, 0),   # CL Thuc thi← co dinh
+        (9,  55, 0),   # Ghi chu    ← co dinh
+        (10, 70, 0),   # Chi tiet   ← co dinh
+    ]
+
+    def _recalculate_column_widths(self) -> None:
+        """Phan bo do rong cot theo trong so, khong dung Stretch cua Qt.
+
+        - Tat ca cot deu Interactive → user co the keo chinh neu muon.
+        - min_width = max(hardcoded_min, sectionSizeHint) → dam bao header
+          khong bi cat chu. sectionSizeHint tu Qt da bao gom QSS padding,
+          font weight, sort indicator.
+        - Phan du viewport duoc chia theo ty le weight cho cac cot weight > 0.
+        - Neu viewport qua nho → giu min_width, bang co thanh cuon ngang.
+        """
+        header = self.table.horizontalHeader()
+        header.setMinimumSectionSize(35)
+        header.setStretchLastSection(False)
+
+        for col in range(len(JournalTableModel.COLUMNS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+
+        viewport_w = self.table.viewport().width()
+        if viewport_w < 50:
+            return  # viewport chua san sang
+
+        # Dung sectionSizeHint cua Qt — da bao gom QSS padding, font bold, sort icon
+        effective: list[tuple[int, int, int]] = []
+        for idx, hard_min, weight in self._COLUMN_WEIGHTS:
+            hint = header.sectionSizeHint(idx)
+            effective.append((idx, max(hard_min, hint), weight))
+
+        total_min = sum(mw for _, mw, _ in effective)
+        total_weight = sum(w for _, _, w in effective)
+
+        if viewport_w <= total_min or total_weight == 0:
+            # Man hinh qua nho → dung min_width, de thanh cuon ngang
+            for idx, min_w, _ in effective:
+                self.table.setColumnWidth(idx, min_w)
+            return
+
+        extra = viewport_w - total_min
+        widths: dict[int, int] = {}
+
+        for idx, min_w, weight in effective:
+            w = min_w
+            if weight > 0:
+                w += (extra * weight) // total_weight
+            widths[idx] = w
+
+        # Phan du con sot lai (do chia nguyen) → don vao cot co weight cao nhat cuoi cung
+        allocated = sum(widths.values())
+        diff = viewport_w - allocated
+        if diff > 0:
+            stretchable = [(idx, wgt) for idx, _, wgt in effective if wgt > 0]
+            if stretchable:
+                stretchable.sort(key=lambda x: x[1])
+                widths[stretchable[-1][0]] += diff
+
+        for idx, w in widths.items():
+            self.table.setColumnWidth(idx, w)
 
     def _open_selected(self) -> None:
         selected = self.table.selectionModel().selectedRows()
@@ -569,28 +1935,6 @@ class JournalScreen(QWidget):
         entry = self.table_model.entry_at(row_index)
         if entry and self.navigate:
             self.navigate("journal_detail", {"journal_id": entry.id})
-
-    def _configure_table_columns(self) -> None:
-        header = self.table.horizontalHeader()
-        widths = {
-            0: 135,  # Thời gian
-            1: 75,   # Mã
-            2: 85,   # Chế độ
-            3: 90,   # Kết luận
-            4: 95,   # Thiên hướng
-            5: 48,   # Mua (score)
-            6: 48,   # Bán (score)
-            7: 90,   # Quyền
-            8: 85,   # Kết quả R
-            9: 90,   # Lợi nhuận
-            11: 80,  # Mở
-        }
-        for column, width in widths.items():
-            if column < len(JournalTableModel.COLUMNS):
-                header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-                self.table.setColumnWidth(column, width)
-        if len(JournalTableModel.COLUMNS) > 10:
-            header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)
 
     def _compact_field(self, label: str, field: QWidget) -> QWidget:
         widget = QWidget()
@@ -624,107 +1968,68 @@ class JournalScreen(QWidget):
 
 
 class MetricsExplanationDialog(QDialog):
+    HELP_ROWS = [
+        ("Đã đóng", "Tổng số lệnh giao dịch đã kết thúc và có kết quả cuối cùng.", "Xem tổng số lệnh để biết độ lớn mẫu thống kê."),
+        ("Tỷ lệ thắng (Win rate)", "Tỉ lệ phần trăm các lệnh mang lại lợi nhuận.", "Cần kết hợp với Kỳ vọng. Winrate < 40% vẫn có lời nếu R:R > 2.0."),
+        ("Kỳ vọng (Expectancy)", "Số R trung bình kiếm được trên MỖI LỆNH đặt cọc.", "Expectancy > 0.25R cho thấy hệ thống có lợi thế toán học tốt."),
+        ("Tổng R", "Tổng lợi nhuận quy đổi ra đơn vị Rủi ro (R).", "Thước đo chuẩn xác nhất về hiệu suất độc lập với quy mô vốn."),
+        ("Lãi/lỗ ròng (Net P/L)", "Tổng số tiền lợi nhuận hoặc thua lỗ thực tế thu về.", "Số tiền thực tế cộng/trừ vào tài khoản ($)."),
+        ("Hệ số lợi nhuận (Profit Factor)", "Tỉ lệ giữa tổng số tiền kiếm được và tổng số tiền thua lỗ.", "PF > 1.5 là chiến lược vững mạnh, < 1.0 là đang thua lỗ."),
+        ("DD tối đa (Max Drawdown)", "Chuỗi sụt giảm tài khoản sâu nhất từ mức đỉnh vốn.", "Đánh giá rủi ro hệ thống. Nên hạ % Risk khi DD > 15R."),
+        ("Thắng TB / Thua TB", "Số R trung bình khi thắng và số R trung bình khi thua.", "Tỉ lệ Reward/Risk thực tế đạt được."),
+        ("Chất lượng thực thi (CL)", "Điểm số kỷ luật tuân thủ Stoploss, TakeProfit và kế hoạch.", "CL >= 80 là kỷ luật tốt, < 60 là vi phạm nguyên tắc."),
+        ("Nhóm / Tên", "Tiêu chí dùng để phân loại và gom nhóm dữ liệu.", "Gom theo Mã giao dịch, Setup, Regime, Phiên..."),
+        ("Đóng lúc", "Thời gian thực tế lệnh giao dịch được thanh lý.", "Định dạng: Ngày/tháng/năm Giờ:phút."),
+        ("R / P/L", "Kết quả cuối cùng của lệnh tính theo tỉ lệ R và tiền mặt ($).", "Kèm ký hiệu ▲ lệnh thắng, ▼ lệnh thua."),
+    ]
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Giải thích các chỉ số")
-        self.setMinimumSize(800, 600)
-        self.setObjectName("AnalysisDetailDialog")
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
-        
-        browser = QTextBrowser()
-        browser.setOpenExternalLinks(False)
-        browser.setObjectName("ChartPanel")
-        
-        html = """
-        <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; font-size: 13px; color: #e5e7eb; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-            th { text-align: left; padding: 10px; border-bottom: 1px solid #38bdf8; color: #38bdf8; font-weight: normal; font-size: 14px;}
-            td { padding: 8px 10px; border-bottom: 1px solid #2b3545; vertical-align: top; }
-            .term { color: #5eead4; }
-            .highlight { color: #facc15; }
-            .section-title { color: #38bdf8; font-weight: normal; font-size: 16px; margin-top: 10px; margin-bottom: 10px; }
-        </style>
-        <body>
-            <div class='section-title'>Chỉ số hiệu suất (Performance Metrics)</div>
-            <table>
-                <tr>
-                    <th width="30%">Chỉ số</th>
-                    <th>Ý nghĩa & Ứng dụng</th>
-                </tr>
-                <tr>
-                    <td><span class="term">Đã đóng</span></td>
-                    <td>Tổng số lệnh giao dịch đã kết thúc và có kết quả cuối cùng.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Tỷ lệ thắng (Win rate)</span></td>
-                    <td>Tỉ lệ phần trăm các lệnh mang lại lợi nhuận. Chỉ số này cần được kết hợp với <span class="highlight">Kỳ vọng</span> để biết hệ thống có thực sự sinh lời hay không.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Kỳ vọng (Expectancy)</span></td>
-                    <td>Trung bình mỗi lệnh bạn mang về bao nhiêu <span class="highlight">đơn vị rủi ro (R)</span>. Nếu giá trị này lớn hơn 0, hệ thống của bạn có lợi thế toán học trong dài hạn.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Tổng R</span></td>
-                    <td>Tổng lợi nhuận được quy đổi ra <span class="highlight">đơn vị R</span>. Đây là thước đo chuẩn xác nhất về hiệu suất độc lập với quy mô vốn.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Lãi/lỗ ròng (Net P/L)</span></td>
-                    <td>Tổng số tiền lợi nhuận hoặc thua lỗ thực tế thu về tài khoản.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Hệ số lợi nhuận (Profit Factor)</span></td>
-                    <td>Tỉ lệ giữa tổng số tiền kiếm được và tổng số tiền mất đi. Giá trị <span class="highlight">trên 1.0</span> cho thấy chiến lược đang có lãi.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">DD tối đa (Max Drawdown)</span></td>
-                    <td>Chuỗi sụt giảm tài khoản sâu nhất từ mức đỉnh (tính theo R). Dùng để đánh giá <span class="highlight">mức độ rủi ro</span> của hệ thống.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Thắng TB / Thua TB</span></td>
-                    <td>Số R trung bình đạt được khi lệnh thắng, và số R trung bình mất đi khi lệnh thua (Reward/Risk Ratio thực tế).</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Chất lượng thực thi</span></td>
-                    <td>Điểm số đánh giá mức độ <span class="highlight">tuân thủ kỷ luật</span> và khả năng bám sát đúng kế hoạch giao dịch đã đề ra.</td>
-                </tr>
-            </table>
+        self.setWindowTitle("Giải thích các chỉ số hiệu suất")
+        self.setObjectName("ScannerHelpDialog")
+        self.setModal(True)
+        self.setMinimumSize(880, 560)
+        self.resize(920, 620)
 
-            <div class='section-title'>Các cột dữ liệu Bảng nhóm & Bảng lệnh</div>
-            <table>
-                <tr>
-                    <th width="30%">Tên cột</th>
-                    <th>Giải thích chi tiết</th>
-                </tr>
-                <tr>
-                    <td><span class="term">Nhóm / Tên</span></td>
-                    <td>Tiêu chí dùng để phân loại và gom nhóm dữ liệu (Ví dụ: theo Mã giao dịch, Setup, Phiên giao dịch...).</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Lệnh</span></td>
-                    <td>Khối lượng (số lượng) lệnh giao dịch thuộc về nhóm tương ứng.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">Đóng lúc</span></td>
-                    <td>Thời gian thực tế mà lệnh giao dịch được thanh lý (đóng).</td>
-                </tr>
-                <tr>
-                    <td><span class="term">R / P/L</span></td>
-                    <td>Kết quả cuối cùng của lệnh tính theo <span class="highlight">tỉ lệ rủi ro (R)</span> và theo <span class="highlight">tiền mặt (P/L)</span>.</td>
-                </tr>
-                <tr>
-                    <td><span class="term">CL (Chất lượng)</span></td>
-                    <td>Điểm chất lượng thực thi của riêng lệnh đó, giúp rà soát lại các lệnh có lỗi tâm lý hoặc vi phạm nguyên tắc.</td>
-                </tr>
-            </table>
-        </body>
-        """
-        browser.setHtml(html)
-        layout.addWidget(browser)
-        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(12)
+
+        intro = QLabel("Dialog này giải thích ý nghĩa các chỉ số thống kê hiệu suất giao dịch và các cột dữ liệu trong Bảng phân bổ & Lịch sử lệnh.")
+        intro.setObjectName("HelperText")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.table = QTableWidget(len(self.HELP_ROWS), 3)
+        self.table.setObjectName("EconTable")
+        self.table.setShowGrid(False)
+        self.table.setHorizontalHeaderLabels(["Chỉ số / Cột", "Ý nghĩa & Ứng dụng", "Mẹo & Hướng dẫn cho Trader"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setWordWrap(True)
+        self.table.setAlternatingRowColors(True)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.horizontalHeader().setHighlightSections(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+
+        for row, values in enumerate(self.HELP_ROWS):
+            for column, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+                self.table.setItem(row, column, item)
+
+        self.table.setColumnWidth(0, 220)
+        self.table.setColumnWidth(1, 340)
+
+        layout.addWidget(self.table, 1)
+
         btn_layout = QHBoxLayout()
         btn_layout.addStretch(1)
         close_btn = action_button("❌ Đóng")
@@ -742,9 +2047,11 @@ def permission_value(text: str) -> str | None:
 
 
 def format_time(value: str) -> str:
+    if not value or value == "--":
+        return "--"
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
-        return parsed.strftime("%d/%m/%Y %H:%M:%S")
+        return parsed.strftime("%d/%m/%Y %H:%M")
     except ValueError:
         return value
 
@@ -754,9 +2061,9 @@ def format_short_time(value: str) -> str:
         return "--"
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
-        return parsed.strftime("%m-%d %H:%M")
+        return parsed.strftime("%d/%m/%Y %H:%M")
     except ValueError:
-        return value[:16]
+        return value
 
 
 def format_metric(value: object, suffix: str = "") -> str:
@@ -769,11 +2076,31 @@ def format_metric(value: object, suffix: str = "") -> str:
 
 
 def color_item_by_number(item: QTableWidgetItem, value: str) -> None:
+    val_str = str(value).upper()
+    if "↑" in val_str or "▲" in val_str or "BUY" in val_str or "LONG" in val_str:
+        item.setForeground(QColor(COLOR_UP))
+        return
+    if "↓" in val_str or "▼" in val_str or "SELL" in val_str or "SHORT" in val_str:
+        item.setForeground(QColor(COLOR_DOWN))
+        return
+
+    clean_text = (
+        val_str.replace("R", "")
+        .replace("%", "")
+        .replace("$", "")
+        .replace("+", "")
+        .replace("▲", "")
+        .replace("▼", "")
+        .replace("↑", "")
+        .replace("↓", "")
+        .strip()
+    )
     try:
-        number = float(value.replace("R", "").replace("%", "").strip())
+        number = float(clean_text)
     except ValueError:
         return
+
     if number > 0:
-        item.setForeground(QColor("#5eead4"))
+        item.setForeground(QColor(COLOR_UP))
     elif number < 0:
-        item.setForeground(QColor("#fb7185"))
+        item.setForeground(QColor(COLOR_DOWN))

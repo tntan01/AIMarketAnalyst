@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDateTimeEdit,
     QDoubleSpinBox,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +18,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -24,8 +27,9 @@ from PyQt6.QtWidgets import (
 
 from controllers.journal_controller import JournalController
 from services.journal_service import JournalEntry
-from ui.screens.journal_screen import BIAS_TEXT, DECISION_TEXT, MODE_TEXT, PERMISSION_TEXT, format_time
-from ui.screens.shared import action_button, card, labeled_value, page_header
+from services.settings_service import SettingsService
+from ui.screens.journal_screen import BIAS_TEXT, DECISION_TEXT, PERMISSION_TEXT, format_time
+from ui.screens.shared import action_button, card, page_header
 
 
 class JournalDetailScreen(QWidget):
@@ -36,65 +40,202 @@ class JournalDetailScreen(QWidget):
         self.journal_controller = (
             app.journal_controller if app else JournalController()
         )
+        self.settings_service = app.settings_service if app else SettingsService()
         self.entry: JournalEntry | None = None
         self.setObjectName("FormScreen")
         self._build_ui()
 
+    def _is_light(self) -> bool:
+        try:
+            return self.settings_service.load().display.theme == "light"
+        except Exception:
+            return False
+
+    @property
+    def _bg(self) -> str:
+        return "#ffffff" if self._is_light() else "#1a1f2e"
+
+    @property
+    def _border_color(self) -> str:
+        return "#d1d5db" if self._is_light() else "#2b3545"
+
+    @property
+    def _label_color(self) -> str:
+        return "#475569" if self._is_light() else "#94a3b8"
+
+    @property
+    def _val_color(self) -> str:
+        return "#0f172a" if self._is_light() else "#f1f5f9"
+
+    @property
+    def _card_bg(self) -> str:
+        return "#f1f5f9" if self._is_light() else "#1e293b"
+
+    @property
+    def _accent(self) -> str:
+        return "#0284c7" if self._is_light() else "#38bdf8"
+
+    @property
+    def _orange_accent(self) -> str:
+        return "#ea580c" if self._is_light() else "#f97316"
+
     def _build_ui(self) -> None:
         self.root = QVBoxLayout(self)
-        self.root.setContentsMargins(18, 14, 18, 14)
-        self.root.setSpacing(10)
+        self.root.setContentsMargins(12, 6, 12, 6)
+        self.root.setSpacing(6)
+
         self.header_slot = QVBoxLayout()
         self.root.addLayout(self.header_slot)
 
-        self.general_grid = QGridLayout()
-        self.general_grid.setSpacing(10)
-        self.general_labels = {}
-        for index, title in enumerate(["Thời gian lưu", "Mã", "Mã broker", "Chế độ", "Nguồn dữ liệu", "Quyền"]):
-            item = labeled_value(title, "--")
-            self.general_labels[title] = item.findChildren(__import__("PyQt6.QtWidgets").QtWidgets.QLabel)[1]
-            self.general_grid.addWidget(item, index // 3, index % 3)
+        # Hero Summary Banner
+        self.hero_summary = self._hero_summary_card()
+        self.root.addWidget(self.hero_summary)
 
-        left_col = QVBoxLayout()
-        left_col.setSpacing(10)
-        left_col.addLayout(self.general_grid)
-        
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(10)
-        cards_row.addWidget(self._saved_analysis(), 1)
-        
-        note_col = QVBoxLayout()
-        note_col.setSpacing(10)
-        note_col.addWidget(self._mt5_card(), 0)
-        note_col.addWidget(self._note_card(), 1)
-        cards_row.addLayout(note_col, 1)
-        
-        left_col.addLayout(cards_row, 1)
+        # Main Scroll Area to fit all content nicely without extra blank spaces
+        self.main_scroll = QScrollArea()
+        self.main_scroll.setObjectName("MainDetailScroll")
+        self.main_scroll.setWidgetResizable(True)
+        self.main_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.main_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        body = QHBoxLayout()
-        body.setSpacing(10)
-        body.addLayout(left_col, 2)
-        
-        side = QVBoxLayout()
-        side.setSpacing(10)
-        side.addWidget(self._lifecycle_card(), 1)
-        body.addLayout(side, 1)
-        self.root.addLayout(body, 1)
+        scroll_widget = QWidget()
+        scroll_widget.setObjectName("MainDetailScrollWidget")
+        scroll_widget.setStyleSheet("#MainDetailScrollWidget { background: transparent; }")
 
+        main_vbox = QVBoxLayout(scroll_widget)
+        main_vbox.setContentsMargins(0, 0, 0, 0)
+        main_vbox.setSpacing(8)
+
+        # 1. Full-width 3 Analysis Cards (Kết luận, Kế hoạch, AI)
+        main_vbox.addWidget(self._saved_analysis())
+
+        # 2. Bottom Row: Vòng đời giao dịch (Left 60%) & Ghi chú cá nhân (Right 40%)
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(12)
+
+        lifecycle_card = self._lifecycle_card()
+        note_card = self._note_and_mt5_card()
+
+        bottom_row.addWidget(lifecycle_card, 60)
+        bottom_row.addWidget(note_card, 40)
+
+        main_vbox.addLayout(bottom_row)
+
+        self.main_scroll.setWidget(scroll_widget)
+        self.root.addWidget(self.main_scroll, 1)
+
+        # Bottom Actions Bar
         actions = QHBoxLayout()
-        self.back_button = action_button("⬅️ Quay lại")
-        self.export_button = action_button("📤 Xuất JSON")
+        actions.setSpacing(10)
+
+        self.back_button = action_button("⬅️ Quay lại Nhật ký")
+        self.export_button = action_button("📤 Xuất JSON", primary=False)
         self.delete_button = action_button("🗑️ Xóa bản ghi", primary=True, color="danger")
+
         if self.navigate:
             self.back_button.clicked.connect(lambda: self.navigate("journal"))
         self.export_button.clicked.connect(self._export_json)
         self.delete_button.clicked.connect(self._delete_entry)
+
         actions.addWidget(self.back_button)
         actions.addStretch(1)
         actions.addWidget(self.export_button)
         actions.addWidget(self.delete_button)
         self.root.addLayout(actions)
+
         self._render()
+
+    def _hero_summary_card(self) -> QFrame:
+        card_frame = QFrame()
+        card_frame.setObjectName("HeroSummaryCard")
+        card_frame.setStyleSheet(
+            f"""
+            QFrame#HeroSummaryCard {{
+                background-color: {self._bg};
+                border: 1px solid {self._border_color};
+                border-radius: 8px;
+                padding: 4px 10px;
+            }}
+            """
+        )
+        layout = QHBoxLayout(card_frame)
+        layout.setContentsMargins(12, 6, 12, 6)
+
+        self.hero_text_lbl = QLabel("--")
+        self.hero_text_lbl.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {self._val_color}; "
+            "font-family: -apple-system, 'Segoe UI', sans-serif;"
+        )
+        self.hero_text_lbl.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(self.hero_text_lbl)
+        layout.addStretch(1)
+
+        return card_frame
+
+    def _update_hero_summary(self) -> None:
+        if not self.entry:
+            return
+
+        symbol = self.entry.symbol or "--"
+        bias = (self.entry.direction_bias or "").lower()
+        val = self._val_color
+        label = self._label_color
+        sep = f'<span style="color: {label};">|</span>'
+
+        # Time + Direction + Symbol
+        saved = format_time(self.entry.saved_at_utc)
+        if bias == "buy":
+            dir_text = f'<span style="color: #10b981; font-weight: 700;">MUA</span>'
+        elif bias == "sell":
+            dir_text = f'<span style="color: #ef4444; font-weight: 700;">BÁN</span>'
+        else:
+            dir_text = ""
+
+        sym_part = f'{dir_text} <span style="font-weight: 700;">{symbol}</span>' if dir_text else f'<span style="font-weight: 700;">{symbol}</span>'
+        parts = [sym_part]
+
+        # P/L Amount
+        amt = self.entry.result_amount
+        if amt is not None:
+            if amt > 0:
+                parts.append(f'<span style="color: #10b981; font-weight: 700;">+${amt:,.2f}</span>')
+            elif amt < 0:
+                parts.append(f'<span style="color: #ef4444; font-weight: 700;">-${abs(amt):,.2f}</span>')
+            else:
+                parts.append(f'<span style="color: {val};">$0.00</span>')
+        else:
+            parts.append(f'<span style="color: {label};">--</span>')
+
+        # Result R
+        res_r = self.entry.result_r
+        if isinstance(res_r, (int, float)):
+            r_color = "#10b981" if res_r > 0 else ("#ef4444" if res_r < 0 else val)
+            parts.append(f'<span style="color: {r_color}; font-weight: 600;">{res_r:+.2f}R</span>')
+        else:
+            parts.append(f'<span style="color: {label};">--</span>')
+
+        # Status
+        status = self.entry.trade_status or "planned"
+        status_txt = {
+            "planned": "ĐÃ LẬP KẾ HOẠCH",
+            "opened": "ĐÃ MỞ LỆNH",
+            "closed": "ĐÃ ĐÓNG LỆNH",
+            "cancelled": "ĐÃ HỦY",
+            "missed": "BỎ LỠ",
+        }.get(status, status.upper())
+        parts.append(f'<span style="color: {val}; font-weight: 600;">{status_txt}</span>')
+
+        # Quality score
+        quality = self.entry.execution_quality_score
+        if quality is not None:
+            parts.append(f'<span style="color: {self._accent}; font-weight: 600;">CL: {quality}/100</span>')
+        else:
+            parts.append(f'<span style="color: {label};">CL: --</span>')
+
+        # Timestamp
+        parts.append(f'<span style="color: {label};">{saved}</span>')
+
+        self.hero_text_lbl.setText(f" {sep} ".join(parts))
 
     def set_analysis_result(self, payload: dict[str, object]) -> None:
         entry_id = payload.get("journal_id")
@@ -102,48 +243,104 @@ class JournalDetailScreen(QWidget):
         self._render()
 
     def _saved_analysis(self):
-        frame = card("Phân tích đã lưu")
-        self.analysis_text = QTextEdit()
-        self.analysis_text.setObjectName("ReadonlyText")
-        self.analysis_text.setReadOnly(True)
-        frame.layout().addWidget(self.analysis_text)
-        return frame
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
-    def _mt5_card(self):
-        from ui.screens.shared import card
-        frame = card("Thông tin đồng bộ MT5")
-        
-        self.mt5_deal_id_edit = QLineEdit()
-        self.mt5_deal_id_edit.setReadOnly(True)
-        self.mt5_order_id_edit = QLineEdit()
-        self.mt5_order_id_edit.setReadOnly(True)
-        self.mt5_position_id_edit = QLineEdit()
-        self.mt5_position_id_edit.setReadOnly(True)
+        title_style = f"color: {self._orange_accent}; font-size: 12px; font-weight: 700;"
 
-        layout = QGridLayout()
-        layout.setSpacing(6)
-        layout.addWidget(QLabel("Deal ID"), 0, 0)
-        layout.addWidget(self.mt5_deal_id_edit, 0, 1)
-        layout.addWidget(QLabel("Order ID"), 0, 2)
-        layout.addWidget(self.mt5_order_id_edit, 0, 3)
-        layout.addWidget(QLabel("Position ID"), 1, 0)
-        layout.addWidget(self.mt5_position_id_edit, 1, 1, 1, 3)
+        card1 = card("📊 Kết luận phân tích")
+        card1.layout().setContentsMargins(8, 6, 8, 6)
+        card1.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+        card1.layout().setSpacing(4)
+        c1_title = card1.findChild(QLabel, "CardTitle")
+        if c1_title:
+            c1_title.setStyleSheet(title_style)
 
-        frame.layout().addLayout(layout)
-        return frame
+        card2 = card("🎯 Kế hoạch giao dịch")
+        card2.layout().setContentsMargins(8, 6, 8, 6)
+        card2.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+        card2.layout().setSpacing(4)
+        c2_title = card2.findChild(QLabel, "CardTitle")
+        if c2_title:
+            c2_title.setStyleSheet(title_style)
 
-    def _note_card(self):
-        frame = card("Ghi chú cá nhân")
+        card3 = card("🤖 Nhận định của AI")
+        card3.layout().setContentsMargins(8, 6, 8, 6)
+        card3.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+        card3.layout().setSpacing(4)
+        c3_title = card3.findChild(QLabel, "CardTitle")
+        if c3_title:
+            c3_title.setStyleSheet(title_style)
+
+        self.analysis_dec_text = QTextEdit()
+        self.analysis_plan_text = QTextEdit()
+        self.analysis_ai_text = QTextEdit()
+
+        for txt in (self.analysis_dec_text, self.analysis_plan_text, self.analysis_ai_text):
+            txt.setObjectName("ReadonlyText")
+            txt.setReadOnly(True)
+            txt.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+            txt.setMinimumHeight(55)
+            txt.setMaximumHeight(75)
+            txt.document().setDocumentMargin(0)
+            txt.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            txt.setStyleSheet(
+                "QTextEdit#ReadonlyText { background: transparent; border: none; font-family: -apple-system, 'Segoe UI', sans-serif; text-align: left; padding: 0px; margin: 0px; }"
+            )
+
+        card1.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        card2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        card3.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        card1.layout().addWidget(self.analysis_dec_text)
+        card1.layout().addStretch(1)
+
+        card2.layout().addWidget(self.analysis_plan_text)
+        card2.layout().addStretch(1)
+
+        card3.layout().addWidget(self.analysis_ai_text)
+        card3.layout().addStretch(1)
+
+        layout.addWidget(card1, 1)
+        layout.addWidget(card2, 1)
+        layout.addWidget(card3, 1)
+
+        self.analysis_text = self.analysis_dec_text
+        return container
+
+    def _note_and_mt5_card(self):
+        frame = card("📝 Ghi chú cá nhân")
+        frame.layout().setContentsMargins(8, 6, 8, 6)
+        frame.layout().setSpacing(4)
+        c_title = frame.findChild(QLabel, "CardTitle")
+        if c_title:
+            c_title.setStyleSheet(f"color: {self._orange_accent}; font-size: 12px; font-weight: 700;")
+
         self.note_input = QTextEdit()
         self.note_input.setObjectName("ReadonlyText")
+        self.note_input.setMinimumHeight(80)
+        self.note_input.setStyleSheet(
+            f"QTextEdit {{ background: {self._card_bg}; border: 1px solid {self._border_color}; border-radius: 6px; color: {self._val_color}; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 11.5px; padding: 4px; }}"
+        )
         frame.layout().addWidget(self.note_input, 1)
+
         self.save_note_button = action_button("💾 Lưu ghi chú", primary=True, color="success")
         self.save_note_button.clicked.connect(self._save_note)
         frame.layout().addWidget(self.save_note_button)
+
         return frame
 
     def _lifecycle_card(self):
-        frame = card("Vòng đời giao dịch")
+        frame = card("📈 Vòng đời giao dịch")
+        frame.layout().setContentsMargins(10, 8, 10, 8)
+        frame.layout().setSpacing(6)
+        c_title = frame.findChild(QLabel, "CardTitle")
+        if c_title:
+            c_title.setStyleSheet(f"color: {self._orange_accent}; font-size: 13px; font-weight: 700;")
 
         # Status input (Planned, Opened, Closed, Cancelled, Missed)
         self.status_input = QComboBox()
@@ -159,59 +356,56 @@ class JournalDetailScreen(QWidget):
         def create_section(title_text, is_grid=True):
             group = QWidget()
             vbox = QVBoxLayout(group)
-            vbox.setContentsMargins(0, 16, 0, 0)
-            vbox.setSpacing(8)
-            
+            vbox.setContentsMargins(0, 4, 0, 0)
+            vbox.setSpacing(4)
+
             title = QLabel(title_text)
-            title.setStyleSheet("color: #38bdf8; font-size: 13px; font-weight: bold; border-bottom: 1px solid #334155; padding-bottom: 6px;")
+            title.setStyleSheet(f"color: #38bdf8; font-size: 12px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px solid {self._border_color}; margin-bottom: 2px;")
             vbox.addWidget(title)
-            
+
             inner = QWidget()
-            layout = QGridLayout(inner) if is_grid else QVBoxLayout(inner)
-            layout.setContentsMargins(2, 2, 2, 4)
-            layout.setSpacing(6)
+            if is_grid:
+                layout = QGridLayout(inner)
+                layout.setContentsMargins(0, 2, 0, 2)
+                layout.setVerticalSpacing(4)
+                layout.setHorizontalSpacing(6)
+            else:
+                layout = QVBoxLayout(inner)
+                layout.setContentsMargins(0, 2, 0, 2)
+                layout.setSpacing(4)
             vbox.addWidget(inner)
-            
+
             return group, layout
 
-        # Group 1: Kế hoạch (Planned - Read-only)
-        planned_group, planned_layout = create_section("KẾ HOẠCH PHÂN TÍCH", True)
-
-        self.planned_lot_edit = QLineEdit()
-        self.planned_lot_edit.setReadOnly(True)
-        self.planned_entry_edit = QLineEdit()
-        self.planned_entry_edit.setReadOnly(True)
-        self.planned_sl_edit = QLineEdit()
-        self.planned_sl_edit.setReadOnly(True)
-        self.planned_tp_edit = QLineEdit()
-        self.planned_tp_edit.setReadOnly(True)
-
-        planned_layout.addWidget(QLabel("Lot"), 0, 0)
-        planned_layout.addWidget(self.planned_lot_edit, 0, 1)
-        planned_layout.addWidget(QLabel("Entry"), 0, 2)
-        planned_layout.addWidget(self.planned_entry_edit, 0, 3)
-        planned_layout.addWidget(QLabel("SL"), 1, 0)
-        planned_layout.addWidget(self.planned_sl_edit, 1, 1)
-        planned_layout.addWidget(QLabel("TP"), 1, 2)
-        planned_layout.addWidget(self.planned_tp_edit, 1, 3)
-
-        # Group 2: Thực tế & Kết quả (Execution & Results)
+        # Group 1: Thực tế & Kết quả (Execution & Results)
         exec_group, exec_layout = create_section("THỰC TẾ & KẾT QUẢ", True)
+        exec_layout.setColumnStretch(0, 0)
+        exec_layout.setColumnStretch(1, 1)
+        exec_layout.setColumnStretch(2, 0)
+        exec_layout.setColumnStretch(3, 1)
+        exec_layout.setHorizontalSpacing(8)
+        exec_layout.setVerticalSpacing(4)
+
+        chk_style = "QCheckBox::indicator { width: 16px; height: 16px; }"
 
         self.opened_at_chk = QCheckBox()
+        self.opened_at_chk.setMinimumSize(20, 20)
+        self.opened_at_chk.setStyleSheet(chk_style)
         self.opened_at_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.opened_at_edit.setCalendarPopup(True)
         self.opened_at_edit.setDisplayFormat("dd/MM/yyyy HH:mm:ss")
         self.opened_at_edit.setEnabled(False)
-        self.opened_at_edit.setFixedWidth(145)
+        self.opened_at_edit.setMinimumWidth(175)
         self.opened_at_chk.toggled.connect(self.opened_at_edit.setEnabled)
 
         self.closed_at_chk = QCheckBox()
+        self.closed_at_chk.setMinimumSize(20, 20)
+        self.closed_at_chk.setStyleSheet(chk_style)
         self.closed_at_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.closed_at_edit.setCalendarPopup(True)
         self.closed_at_edit.setDisplayFormat("dd/MM/yyyy HH:mm:ss")
         self.closed_at_edit.setEnabled(False)
-        self.closed_at_edit.setFixedWidth(145)
+        self.closed_at_edit.setMinimumWidth(175)
         self.closed_at_chk.toggled.connect(self.closed_at_edit.setEnabled)
 
         self.actual_lot_edit = QDoubleSpinBox()
@@ -245,49 +439,68 @@ class JournalDetailScreen(QWidget):
         for spin in [self.actual_lot_edit, self.actual_entry_edit, self.actual_sl_edit, self.actual_tp_edit, self.actual_exit_edit, self.result_amount_edit]:
             spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
 
-        exec_layout.addWidget(QLabel("TG mở"), 0, 0)
+        lbl_style = f"color: {self._label_color}; font-size: 11px; font-weight: 600;"
+
+        l_topen = QLabel("TG mở")
+        l_topen.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_topen, 0, 0)
         opened_layout = QHBoxLayout()
         opened_layout.setContentsMargins(0, 0, 0, 0)
         opened_layout.setSpacing(6)
-        self.opened_at_chk.setFixedWidth(20)
         opened_layout.addWidget(self.opened_at_chk)
-        opened_layout.addWidget(self.opened_at_edit)
-        opened_layout.addStretch(1)
+        opened_layout.addWidget(self.opened_at_edit, 1)
         exec_layout.addLayout(opened_layout, 0, 1, 1, 3)
 
-        exec_layout.addWidget(QLabel("TG đóng"), 1, 0)
+        l_tclose = QLabel("TG đóng")
+        l_tclose.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_tclose, 1, 0)
         closed_layout = QHBoxLayout()
         closed_layout.setContentsMargins(0, 0, 0, 0)
         closed_layout.setSpacing(6)
-        self.closed_at_chk.setFixedWidth(20)
         closed_layout.addWidget(self.closed_at_chk)
-        closed_layout.addWidget(self.closed_at_edit)
-        closed_layout.addStretch(1)
+        closed_layout.addWidget(self.closed_at_edit, 1)
         exec_layout.addLayout(closed_layout, 1, 1, 1, 3)
 
-        exec_layout.addWidget(QLabel("Lot"), 2, 0)
+        l_lot = QLabel("Lot")
+        l_lot.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_lot, 2, 0)
         exec_layout.addWidget(self.actual_lot_edit, 2, 1)
-        exec_layout.addWidget(QLabel("Entry"), 2, 2)
+
+        l_entry = QLabel("Entry")
+        l_entry.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_entry, 2, 2)
         exec_layout.addWidget(self.actual_entry_edit, 2, 3)
-        
-        exec_layout.addWidget(QLabel("SL"), 3, 0)
+
+        l_sl = QLabel("SL")
+        l_sl.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_sl, 3, 0)
         exec_layout.addWidget(self.actual_sl_edit, 3, 1)
-        exec_layout.addWidget(QLabel("TP"), 3, 2)
+
+        l_tp = QLabel("TP")
+        l_tp.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_tp, 3, 2)
         exec_layout.addWidget(self.actual_tp_edit, 3, 3)
-        
-        exec_layout.addWidget(QLabel("Thoát"), 4, 0)
+
+        l_exit = QLabel("Thoát")
+        l_exit.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_exit, 4, 0)
         exec_layout.addWidget(self.actual_exit_edit, 4, 1)
-        exec_layout.addWidget(QLabel("Lãi/lỗ"), 4, 2)
+
+        l_pl = QLabel("Lãi/lỗ")
+        l_pl.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_pl, 4, 2)
         exec_layout.addWidget(self.result_amount_edit, 4, 3)
-        
-        exec_layout.addWidget(QLabel("Lý do thoát"), 5, 0)
+
+        l_reason = QLabel("Lý do thoát")
+        l_reason.setStyleSheet(lbl_style)
+        exec_layout.addWidget(l_reason, 5, 0)
         exec_layout.addWidget(self.exit_reason_edit, 5, 1, 1, 3)
 
         # Group 4: Mistake Tags Selector (Chips)
         tags_group, tags_layout = create_section("SAI LẦM GIAO DỊCH (TAGS)", False)
 
         tags_chips_layout = QGridLayout()
-        tags_chips_layout.setSpacing(6)
+        tags_chips_layout.setSpacing(4)
 
         self.tag_buttons = {}
         row, col = 0, 0
@@ -303,21 +516,22 @@ class JournalDetailScreen(QWidget):
             btn.setCheckable(True)
             btn.setObjectName("TagChip")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton#TagChip {
-                    background-color: #1e293b;
-                    border: 1px solid #334155;
-                    border-radius: 12px;
-                    padding: 4px 10px;
-                    color: #94a3b8;
+            btn.setStyleSheet(f"""
+                QPushButton#TagChip {{
+                    background-color: {self._card_bg};
+                    border: 1px solid {self._border_color};
+                    border-radius: 10px;
+                    padding: 3px 8px;
+                    color: {self._label_color};
                     font-size: 11px;
-                }
-                QPushButton#TagChip:checked {
-                    background-color: rgba(251, 113, 133, 0.2);
-                    border: 1px solid #fb7185;
-                    color: #fb7185;
+                    font-family: -apple-system, 'Segoe UI', sans-serif;
+                }}
+                QPushButton#TagChip:checked {{
+                    background-color: rgba(239, 68, 68, 0.15);
+                    border: 1px solid #ef4444;
+                    color: #ef4444;
                     font-weight: bold;
-                }
+                }}
             """)
             tags_chips_layout.addWidget(btn, row, col)
             self.tag_buttons[tag_code] = btn
@@ -330,14 +544,16 @@ class JournalDetailScreen(QWidget):
 
         # Assemble layout
         card_layout = QVBoxLayout()
-        card_layout.setSpacing(8)
+        card_layout.setSpacing(4)
 
         status_row = QHBoxLayout()
-        status_row.addWidget(QLabel("Trạng thái"))
+        status_row.setSpacing(6)
+        status_lbl = QLabel("Trạng thái lệnh:")
+        status_lbl.setStyleSheet(f"color: {self._val_color}; font-size: 12px; font-weight: 600;")
+        status_row.addWidget(status_lbl)
         status_row.addWidget(self.status_input, 1)
         card_layout.addLayout(status_row)
 
-        card_layout.addWidget(planned_group)
         card_layout.addWidget(exec_group)
         card_layout.addWidget(tags_group)
 
@@ -349,21 +565,10 @@ class JournalDetailScreen(QWidget):
         helper = QLabel("Result R được tính khi có hướng lệnh, entry, SL và giá thoát. Thời gian đóng sẽ tự điền khi trạng thái là Đã đóng lệnh.")
         helper.setObjectName("HelperText")
         helper.setWordWrap(True)
+        helper.setStyleSheet(f"color: {self._label_color}; font-size: 11px;")
         card_layout.addWidget(helper)
 
-        scroll_area = __import__("PyQt6.QtWidgets").QtWidgets.QScrollArea()
-        scroll_area.setObjectName("LifecycleScroll")
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(__import__("PyQt6.QtWidgets").QtWidgets.QFrame.Shape.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(__import__("PyQt6.QtCore").QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        
-        scroll_widget = QWidget()
-        scroll_widget.setObjectName("LifecycleScrollWidget")
-        scroll_widget.setStyleSheet("#LifecycleScrollWidget { background: transparent; }")
-        scroll_widget.setLayout(card_layout)
-        scroll_area.setWidget(scroll_widget)
-
-        frame.layout().addWidget(scroll_area)
+        frame.layout().addLayout(card_layout)
 
         self.save_lifecycle_button = action_button("💾 Lưu kết quả lệnh", primary=True, color="success")
         self.save_lifecycle_button.clicked.connect(self._save_lifecycle)
@@ -379,72 +584,88 @@ class JournalDetailScreen(QWidget):
                 widget.deleteLater()
         symbol = self.entry.symbol if self.entry else "--"
         self.header_slot.addWidget(
-            page_header("Chi tiết nhật ký", "Bản chụp phân tích tại thời điểm đã lưu.", symbol)
+            page_header("Chi tiết nhật ký", "", symbol)
         )
         if not self.entry:
-            self.analysis_text.setHtml("<div style='color: #94a3b8; font-size: 13px;'>Chọn một bản ghi trong màn Nhật ký để xem chi tiết.</div>")
+            empty_html = f"<div style='color: {self._label_color}; font-size: 12px;'>Chọn một bản ghi trong màn Nhật ký để xem chi tiết.</div>"
+            self.analysis_dec_text.setHtml(empty_html)
+            self.analysis_plan_text.setHtml(empty_html)
+            self.analysis_ai_text.setHtml(empty_html)
             self.note_input.setPlainText("")
             self._clear_lifecycle_form()
+            if hasattr(self, "hero_summary"):
+                self.hero_summary.setVisible(False)
             return
-        values = {
-            "Thời gian lưu": format_time(self.entry.saved_at_utc),
-            "Mã": self.entry.symbol,
-            "Mã broker": self.entry.broker_symbol or "--",
-            "Chế độ": MODE_TEXT.get(self.entry.mode, self.entry.mode),
-            "Nguồn dữ liệu": self.entry.data_source,
-            "Quyền": PERMISSION_TEXT.get(self.entry.trade_permission, self.entry.trade_permission),
-        }
-        for title, label in self.general_labels.items():
-            label.setText(str(values.get(title, "--")))
-        self.analysis_text.setHtml(self._analysis_html())
+
+        if hasattr(self, "hero_summary"):
+            self.hero_summary.setVisible(True)
+            self._update_hero_summary()
+        dec_html, plan_html, ai_html = self._analysis_html_parts()
+        self.analysis_dec_text.setHtml(dec_html)
+        self.analysis_plan_text.setHtml(plan_html)
+        self.analysis_ai_text.setHtml(ai_html)
+        self.analysis_ai_text.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.note_input.setPlainText(self.entry.note)
         self._load_lifecycle_form()
 
     def _analysis_html(self) -> str:
+        dec, plan, ai = self._analysis_html_parts()
+        return dec + plan + ai
+
+    def _analysis_html_parts(self) -> tuple[str, str, str]:
         entry = self.entry
         if not entry:
-            return ""
+            return "", "", ""
 
-        decision_val = entry.decision
-        decision_txt = DECISION_TEXT.get(decision_val, decision_val)
+        decision_val = entry.decision or ""
+        decision_txt = DECISION_TEXT.get(decision_val, decision_val).upper()
         decision_color = {
-            "ready": "#5eead4",
-            "watch": "#93c5fd",
-            "wait": "#facc15",
-            "wait_for_confirmation": "#facc15",
-        }.get(decision_val, "#94a3b8")
+            "ready": "#10b981",
+            "watch": self._accent,
+            "wait": "#fbbf24",
+            "wait_for_confirmation": "#fbbf24",
+        }.get(decision_val, self._label_color)
 
-        bias_val = entry.direction_bias
-        bias_txt = BIAS_TEXT.get(bias_val, bias_val)
+        bias_val = entry.direction_bias or ""
+        bias_txt = BIAS_TEXT.get(bias_val, bias_val).upper()
         bias_color = {
-            "buy": "#5eead4",
-            "sell": "#fb7185",
-        }.get(bias_val, "#cbd5e1")
+            "buy": "#10b981",
+            "sell": "#ef4444",
+        }.get(bias_val, self._val_color)
 
-        perm_val = entry.trade_permission
-        perm_txt = PERMISSION_TEXT.get(perm_val, perm_val)
+        perm_val = entry.trade_permission or ""
+        perm_txt = {
+            "allowed": "ĐƯỢC PHÉP",
+            "caution": "THẬN TRỌNG",
+            "blocked": "CẤM GIAO DỊCH",
+        }.get(perm_val, PERMISSION_TEXT.get(perm_val, perm_val).upper()) if perm_val else "--"
         perm_color = {
-            "allowed": "#5eead4",
-            "caution": "#facc15",
-        }.get(perm_val, "#94a3b8")
+            "allowed": "#10b981",
+            "caution": "#fbbf24",
+        }.get(perm_val, "#ef4444")
 
         regime_val = entry.market_regime or ""
         regime_txt = {
-            "trend_up": "Xu hướng tăng",
-            "trend_down": "Xu hướng giảm",
-            "range": "Đi ngang (Range)",
-            "volatile": "Biến động mạnh",
-        }.get(regime_val, regime_val) if regime_val else "--"
+            "trend_up": "XU HƯỚNG TĂNG",
+            "trend_down": "XU HƯỚNG GIẢM",
+            "range": "ĐI NGANG (RANGE)",
+            "volatile": "BIẾN ĐỘNG MẠNH",
+            "trend": "XU HƯỚNG",
+            "breakout": "BỨT PHÁ",
+            "pullback": "HỒI GIÁ",
+        }.get(regime_val, regime_val.upper()) if regime_val else "--"
 
         scenario_val = entry.selected_scenario or ""
         scenario_txt = {
-            "buy_at_support": "Mua tại Hỗ trợ",
-            "sell_at_resistance": "Bán tại Kháng cự",
-            "breakout_buy": "Mua phá vỡ (Breakout)",
-            "breakout_sell": "Bán phá vỡ (Breakdown)",
-            "counter_trend_buy": "Mua ngược xu hướng",
-            "counter_trend_sell": "Bán ngược xu hướng"
-        }.get(scenario_val, scenario_val) if scenario_val else "--"
+            "buy_at_support": "MUA TẠI HỖ TRỢ",
+            "sell_at_resistance": "BÁN TẠI KHÁNG CỰ",
+            "breakout_buy": "MUA PHÁ VỠ (BREAKOUT)",
+            "breakout_sell": "BÁN PHÁ VỠ (BREAKDOWN)",
+            "counter_trend_buy": "MUA NGƯỢC XU HƯỚNG",
+            "counter_trend_sell": "BÁN NGƯỢC XU HƯỚNG",
+            "buy": "MUA",
+            "sell": "BÁN",
+        }.get(scenario_val, scenario_val.upper()) if scenario_val else "--"
 
         entry_zone_txt = format_json_text(entry.entry_zone)
         take_profit_txt = format_json_text(entry.take_profit)
@@ -469,17 +690,16 @@ class JournalDetailScreen(QWidget):
                         red_pct = 100 - green_pct
 
                     rr_bar_html = f"""
-                    <div style="margin: 8px 0; font-size: 11px; color: #94a3b8;">Trực quan R:R:</div>
-                    <table style="width: 100%; table-layout: fixed; height: 10px; border-collapse: collapse; margin-bottom: 2px;">
-                        <tr style="height: 10px;">
-                            <td style="background-color: #fb7185; width: {red_pct}%; border-radius: 5px 0 0 5px; height: 10px;"></td>
-                            <td style="background-color: #5eead4; width: {green_pct}%; border-radius: 0 5px 5px 0; height: 10px;"></td>
+                    <div style="margin: 6px 0 2px;">
+                    <table style="width: 100%; table-layout: fixed; height: 8px; border-collapse: collapse; margin-bottom: 2px;">
+                        <tr style="height: 8px;">
+                            <td style="background-color: #ef4444; width: {red_pct}%; border-radius: 4px 0 0 4px; height: 8px;"></td>
+                            <td style="background-color: #10b981; width: {green_pct}%; border-radius: 0 4px 4px 0; height: 8px;"></td>
                         </tr>
                     </table>
-                    <div style="display: flex; justify-content: space-between; font-size: 10px; color: #64748b; margin-top: 2px;">
-                        <span>SL ({sl:.5f})</span>
-                        <span>Entry ({entry_price:.5f})</span>
-                        <span>TP ({tp:.5f})</span>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; color: {self._label_color};">
+                        <span>SL</span><span>Entry</span><span>TP</span>
+                    </div>
                     </div>
                     """
         except Exception:
@@ -487,82 +707,75 @@ class JournalDetailScreen(QWidget):
 
         suggested_lot_txt = f"{entry.suggested_lot:.2f}" if entry.suggested_lot is not None else "--"
 
-        return f"""
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color: #e5e7eb; line-height: 1.5; font-size: 13px;">
-          <!-- Section 1: Decision & Score -->
-          <div style="background-color: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #334155;">
-            <h3 style="margin-top: 0; margin-bottom: 8px; color: #38bdf8; font-size: 13px; border-bottom: 1px solid #334155; padding-bottom: 6px;">KẾT LUẬN PHÂN TÍCH</h3>
-            <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
-              <tr>
-                <td style="color: #94a3b8; width: 45%; padding: 4px 0;">Kết luận:</td>
-                <td style="font-weight: bold; width: 55%; color: {decision_color}; padding: 4px 0;">{decision_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Thiên hướng:</td>
-                <td style="font-weight: bold; color: {bias_color}; padding: 4px 0;">{bias_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Trạng thái thị trường:</td>
-                <td style="font-weight: bold; color: #cbd5e1; padding: 4px 0;">{regime_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Quyền giao dịch:</td>
-                <td style="font-weight: bold; color: {perm_color}; padding: 4px 0;">{perm_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Điểm Mua / Bán:</td>
-                <td style="font-weight: bold; padding: 4px 0;"><span style="color: #5eead4;">{entry.buy_score}</span> / <span style="color: #fb7185;">{entry.sell_score}</span></td>
-              </tr>
-            </table>
-          </div>
+        label = self._label_color
+        val = self._val_color
 
-          <!-- Section 2: Trade Plan -->
-          <div style="background-color: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #334155;">
-            <h3 style="margin-top: 0; margin-bottom: 8px; color: #38bdf8; font-size: 13px; border-bottom: 1px solid #334155; padding-bottom: 6px;">KẾ HOẠCH GIAO DỊCH</h3>
-            <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
-              <tr>
-                <td style="color: #94a3b8; width: 45%; padding: 4px 0;">Kịch bản chọn:</td>
-                <td style="font-weight: bold; width: 55%; color: #cbd5e1; padding: 4px 0;">{scenario_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Vùng vào lệnh:</td>
-                <td style="color: #facc15; font-weight: bold; padding: 4px 0;">{entry_zone_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Stop Loss (SL):</td>
-                <td style="color: #fb7185; font-weight: bold; padding: 4px 0;">{entry.stop_loss or '--'}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Take Profit (TP):</td>
-                <td style="color: #5eead4; font-weight: bold; padding: 4px 0;">{take_profit_txt}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Tỷ lệ R:R:</td>
-                <td style="font-weight: bold; color: #cbd5e1; padding: 4px 0;">{entry.risk_reward or '--'}</td>
-              </tr>
-              <tr>
-                <td style="color: #94a3b8; padding: 4px 0;">Lot đề xuất:</td>
-                <td style="font-weight: bold; color: #cbd5e1; padding: 4px 0;">{suggested_lot_txt}</td>
-              </tr>
-            </table>
-            {rr_bar_html}
-          </div>
-
-          <!-- Section 3: AI Commentary -->
-          <div style="background-color: #0f172a; border-radius: 8px; padding: 12px; border: 1px solid #334155;">
-            <h3 style="margin-top: 0; margin-bottom: 8px; color: #38bdf8; font-size: 13px; border-bottom: 1px solid #334155; padding-bottom: 6px;">NHẬN ĐỊNH CỦA AI</h3>
-            <div style="color: #cbd5e1; white-space: pre-wrap; font-size: 12px; margin-top: 6px;">{entry.ai_commentary or '--'}</div>
-          </div>
+        dec_html = f"""
+        <div style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.25; font-size: 11px; color: {val};">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%;">
+            <tr>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Kết luận:</td>
+              <td width="30%" style="font-weight: bold; color: {decision_color}; padding: 1px 0;">{decision_txt}</td>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Thiên hướng:</td>
+              <td width="30%" style="font-weight: bold; color: {bias_color}; padding: 1px 0;">{bias_txt}</td>
+            </tr>
+            <tr>
+              <td width="20%" style="color: {label}; padding: 1px 0;">TT:</td>
+              <td width="30%" style="font-weight: bold; color: {val}; padding: 1px 0;">{regime_txt}</td>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Quyền GD:</td>
+              <td width="30%" style="font-weight: bold; color: {perm_color}; padding: 1px 0;">{perm_txt}</td>
+            </tr>
+            <tr>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Mua/Bán:</td>
+              <td width="30%" style="font-weight: bold; padding: 1px 0;"><span style="color: #10b981;">{entry.buy_score}</span> / <span style="color: #ef4444;">{entry.sell_score}</span></td>
+              <td width="20%">&nbsp;</td>
+              <td width="30%">&nbsp;</td>
+            </tr>
+          </table>
         </div>
         """
+
+        plan_html = f"""
+        <div style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.25; font-size: 11px; color: {val};">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%;">
+            <tr>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Kịch bản:</td>
+              <td width="30%" style="font-weight: bold; color: {val}; padding: 1px 0;">{scenario_txt}</td>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Vùng vào:</td>
+              <td width="30%" style="color: #fbbf24; font-weight: bold; padding: 1px 0;">{entry_zone_txt}</td>
+            </tr>
+            <tr>
+              <td width="20%" style="color: {label}; padding: 1px 0;">SL:</td>
+              <td width="30%" style="color: #ef4444; font-weight: bold; padding: 1px 0;">{entry.stop_loss or '--'}</td>
+              <td width="20%" style="color: {label}; padding: 1px 0;">TP:</td>
+              <td width="30%" style="color: #10b981; font-weight: bold; padding: 1px 0;">{take_profit_txt}</td>
+            </tr>
+            <tr>
+              <td width="20%" style="color: {label}; padding: 1px 0;">R:R:</td>
+              <td width="30%" style="font-weight: bold; color: {val}; padding: 1px 0;">{entry.risk_reward or '--'}</td>
+              <td width="20%" style="color: {label}; padding: 1px 0;">Lot:</td>
+              <td width="30%" style="font-weight: bold; color: {val}; padding: 1px 0;">{suggested_lot_txt}</td>
+            </tr>
+          </table>
+          {rr_bar_html}
+        </div>
+        """
+
+        ai_text = entry.ai_commentary or '--'
+        if "Imported from MT5 history" in ai_text:
+            ai_text = ai_text.replace("Imported from MT5 history.", "Đã nhập từ lịch sử MT5.").replace("Imported from MT5 history", "Đã nhập từ lịch sử MT5")
+
+        ai_html = f"""
+        <div align="left" style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.2; font-size: 11.5px; color: {val}; text-align: left; margin: 0; padding: 0;">
+          <p align="left" style="text-align: left; margin: 0; padding: 0;">{ai_text}</p>
+        </div>
+        """
+
+        return dec_html, plan_html, ai_html
 
     def _clear_lifecycle_form(self) -> None:
         if hasattr(self, "status_input"):
             self.status_input.setCurrentIndex(0)
-        self.planned_lot_edit.setText("")
-        self.planned_entry_edit.setText("")
-        self.planned_sl_edit.setText("")
-        self.planned_tp_edit.setText("")
         self.opened_at_chk.setChecked(False)
         self.closed_at_chk.setChecked(False)
         self.actual_lot_edit.setValue(0.0)
@@ -572,9 +785,6 @@ class JournalDetailScreen(QWidget):
         self.actual_exit_edit.setValue(0.0)
         self.result_amount_edit.setValue(0.0)
         self.exit_reason_edit.setText("")
-        self.mt5_deal_id_edit.setText("")
-        self.mt5_order_id_edit.setText("")
-        self.mt5_position_id_edit.setText("")
         for btn in self.tag_buttons.values():
             btn.setChecked(False)
         if hasattr(self, "lifecycle_result_label"):
@@ -588,12 +798,6 @@ class JournalDetailScreen(QWidget):
         status = entry.trade_status or "planned"
         index = self.status_input.findData(status)
         self.status_input.setCurrentIndex(index if index >= 0 else 0)
-
-        # Điền Kế hoạch (Read-only)
-        self.planned_lot_edit.setText("" if entry.planned_lot is None else f"{entry.planned_lot:.2f}")
-        self.planned_entry_edit.setText("" if entry.planned_entry is None else f"{entry.planned_entry:.5f}")
-        self.planned_sl_edit.setText("" if entry.planned_sl is None else f"{entry.planned_sl:.5f}")
-        self.planned_tp_edit.setText("" if entry.planned_tp is None else f"{entry.planned_tp:.5f}")
 
         # Điền Thời gian
         if entry.opened_at:
@@ -642,11 +846,6 @@ class JournalDetailScreen(QWidget):
         self.result_amount_edit.setValue(entry.result_amount or 0.0)
 
         self.exit_reason_edit.setText(entry.exit_reason or "")
-
-        # Điền MT5
-        self.mt5_deal_id_edit.setText("" if entry.mt5_deal_id is None else str(entry.mt5_deal_id))
-        self.mt5_order_id_edit.setText("" if entry.mt5_order_id is None else str(entry.mt5_order_id))
-        self.mt5_position_id_edit.setText("" if entry.mt5_position_id is None else str(entry.mt5_position_id))
 
         # Điền Tag lỗi
         from services.journal_service import tags_from_json

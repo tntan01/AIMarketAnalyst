@@ -8,4 +8,10 @@ APP_COLORS = {
     "muted": "#9ca3af",
     "accent": "#10b981",
     "danger": "#ef4444",
+    "arrow_up": "#00C853",
+    "arrow_down": "#D32F2F",
 }
+
+COLOR_UP = APP_COLORS["arrow_up"]
+COLOR_DOWN = APP_COLORS["arrow_down"]
+

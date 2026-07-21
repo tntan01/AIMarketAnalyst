@@ -82,3 +82,12 @@ class JournalFilter:
     decision: str | None = None
     permission: str | None = None
     min_score: int = 0
+    # Advanced Search & Filter
+    search_text: str | None = None
+    trade_status: str | None = None
+    result: str | None = None
+    min_execution_quality: int = 0
+    max_execution_quality: int = 0
+    session: str | None = None
+    setup_type: str | None = None
+    regime: str | None = None

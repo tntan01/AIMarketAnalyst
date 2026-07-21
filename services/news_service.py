@@ -815,8 +815,8 @@ Trả lời:"""
                 "stance": {"buy": stance_buy, "sell": stance_sell},
             },
         }
-        return (diff_buy + trend_buy + stance_buy + yield_adj_buy,
-                diff_sell + trend_sell + stance_sell + yield_adj_sell, detail)
+        return (max(0, min(12, diff_buy + trend_buy + stance_buy + yield_adj_buy)),
+                max(0, min(12, diff_sell + trend_sell + stance_sell + yield_adj_sell)), detail)
 
     # --- Tier 2: Economic Calendar Impact (0-10) ---
     def _macro_tier2(self, base: str, quote: str, events: list[dict[str, object]]) -> tuple[int, int, dict[str, object]]:
@@ -1148,10 +1148,19 @@ Trả lời:"""
         rates = self._load_interest_rates()
         base_rate = rates.get(base, {}).get("rate_label", "--")
         quote_rate = rates.get(quote, {}).get("rate_label", "--")
+        
+        stance_map = {"hawkish": "Thắt chặt", "dovish": "Nới lỏng", "neutral": "Trung tính"}
+        bs_vn = stance_map.get(str(base_stance).lower(), base_stance)
+        qs_vn = stance_map.get(str(quote_stance).lower(), quote_stance)
+        
+        sent_raw = str(tier3_detail.get('risk_sentiment', 'neutral')).lower()
+        sent_map = {"risk_on": "Chấp nhận rủi ro", "risk_off": "Né tránh rủi ro", "neutral": "Trung tính"}
+        sent_vn = sent_map.get(sent_raw, sent_raw)
+
         parts = [
-            f"[T1] {base}={base_rate}({base_stance}) vs {quote}={quote_rate}({quote_stance})",
-            f"[T2] Calendar events: base={tier2_detail.get('base_event_weight',0)}, quote={tier2_detail.get('quote_event_weight',0)}",
-            f"[T3] Sentiment={tier3_detail.get('risk_sentiment','neutral')}, hotspots={tier3_detail.get('hotspot_count',0)}",
+            f"[T1] {base}={base_rate}({bs_vn}) so với {quote}={quote_rate}({qs_vn})",
+            f"[T2] Sự kiện lịch KT: base={tier2_detail.get('base_event_weight',0)}, quote={tier2_detail.get('quote_event_weight',0)}",
+            f"[T3] Tâm lý TT={sent_vn}, điểm nóng={tier3_detail.get('hotspot_count',0)}",
         ]
         return " | ".join(parts)
 
