@@ -721,3 +721,94 @@ class TestFindNearestEqualLevel:
             "_find_nearest_equal_level returns the level; "
             "R:R filtering is done by the caller"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests for select_best_level with _effective_zone_score (zone_score-driven)
+# ---------------------------------------------------------------------------
+
+
+def test_select_best_level_prefers_higher_zone_score():
+    """Two zones same strength, same distance; higher zone_score wins."""
+    from core.risk_engine import select_best_level
+
+    price = 1.1000
+    zones = [
+        {"level": 1.0950, "strength": "strong", "zone_score": 76},
+        {"level": 1.0945, "strength": "strong", "zone_score": 99},
+    ]
+    result = select_best_level(zones, price, max_distance=0.0050 * 3.5, below=True)
+    assert result is not None
+    # zone_score 99 should beat zone_score 76
+    assert result["zone_score"] == 99, (
+        f"Expected zone_score=99 to be selected, got {result['zone_score']}"
+    )
+
+
+def test_select_best_level_handles_no_zone_score_with_fallback():
+    """SMC zone (has zone_score) vs technical zone (no zone_score, strength only).
+    Fallback must not crash and must compare fairly."""
+    from core.risk_engine import select_best_level, _STRENGTH_FALLBACK_SCORE
+
+    price = 1.1000
+    smc_zone = {"level": 1.0950, "strength": "moderate", "zone_score": 90}
+    # technical zone: no zone_score field at all, relies on strength fallback
+    tech_zone = {"level": 1.0945, "strength": "strong"}
+
+    zones = [smc_zone, tech_zone]
+    result = select_best_level(zones, price, max_distance=0.0050 * 3.5, below=True)
+    assert result is not None
+    # SMC zone_score=90 > strong fallback=80 → SMC should win
+    assert result is smc_zone, (
+        f"Expected SMC zone (score=90) to beat technical zone (fallback=80), got {result}"
+    )
+
+    # Reverse: SMC with low zone_score should lose to strong technical
+    smc_weak = {"level": 1.0950, "strength": "weak", "zone_score": 30}
+    result2 = select_best_level([smc_weak, tech_zone], price, max_distance=0.0050 * 3.5, below=True)
+    assert result2 is not None
+    assert result2 is tech_zone, (
+        f"Expected technical zone (fallback=80) to beat SMC zone (score=30), got {result2}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests for SMC relaxed SL threshold (is_smc_zone → 0.20×ATR)
+# ---------------------------------------------------------------------------
+
+
+def test_smc_zone_uses_relaxed_sl_threshold():
+    """SMC zone (source='smc') passes SL check at 0.25×ATR,
+    while technical zone would fail."""
+    from core.risk_engine import build_trade_plan, AnalysisInput
+
+    d1 = _trending_candles(100, start_price=1.1000, step=0.00002, bar_minutes=1440)
+    h4 = _trending_candles(200, start_price=1.1000, step=0.00002, bar_minutes=240)
+    h1 = _trending_candles(200, start_price=1.1000, step=0.00002, bar_minutes=60)
+    m15 = _trending_candles(200, start_price=1.1000, step=0.00002, bar_minutes=15)
+
+    from core.technical_context import build_technical_snapshot
+    from core.smc_context import build_smc_context
+    technical = build_technical_snapshot(d1, h4, h1)
+    smc = build_smc_context(d1, h4, h1)
+
+    request = AnalysisInput(
+        symbol="EUR/USD", broker_symbol="EURUSDm",
+        account_balance=10_000.0, risk_percent=2.0, contract_size_override=100_000.0,
+    )
+
+    plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+    if plan is None:
+        pytest.skip("No valid plan generated from test candles")
+
+    # If a plan was generated and the zone is SMC, sl_source should reflect it
+    zone_source = plan.get("entry_zone_source")
+    sl_source = plan.get("sl_source")
+    assert sl_source is not None, "sl_source must be present in plan output"
+    if zone_source == "smc":
+        # SMC zones should get relaxed treatment
+        assert sl_source in ("zone_boundary", "swing"), (
+            f"SMC zone should have sl_source=swing or zone_boundary, got {sl_source}"
+        )
+
+

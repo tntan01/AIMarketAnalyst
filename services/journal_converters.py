@@ -9,14 +9,9 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from config.paths import PROJECT_ROOT, journal_db_path
 from core.safe_types import optional_float
 from services.journal_models import JournalEntry, JournalFilter
 
-
-def _safe_float(value: object) -> float | None:
-    """Parse float safely, returning None for bad input."""
-    return optional_float(value)
 
 
 def _safe_int(value: object) -> int | None:
@@ -40,12 +35,12 @@ def _parse_utc(value: object) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
-def _parse_entry_from_zone(zone: object) -> float | None:
+def parse_entry_from_zone(zone: object) -> float | None:
     """Extract the mid-point of an entry zone like [1.0840, 1.0860]."""
     if not isinstance(zone, list) or len(zone) < 2:
         return None
-    lo = _safe_float(zone[0])
-    hi = _safe_float(zone[1])
+    lo = optional_float(zone[0])
+    hi = optional_float(zone[1])
     if lo is not None and hi is not None:
         return round((lo + hi) / 2, 6)
     return None
@@ -56,8 +51,8 @@ def _parse_take_profit_first(tp: object) -> float | None:
     if tp is None:
         return None
     if isinstance(tp, list):
-        return _safe_float(tp[0]) if tp else None
-    return _safe_float(tp)
+        return optional_float(tp[0]) if tp else None
+    return optional_float(tp)
 
 
 def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: str = "") -> JournalEntry:
@@ -75,14 +70,17 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
     sizing = scenario.get("position_sizing", {}) if isinstance(scenario.get("position_sizing"), dict) else {}
 
     # Phase 17 Đợt 2 — extract from analysis_result
-    planned_entry = _parse_entry_from_zone(scenario.get("entry_zone"))
-    planned_sl = _safe_float(scenario.get("stop_loss"))
+    planned_entry = parse_entry_from_zone(scenario.get("entry_zone"))
+    planned_sl = optional_float(scenario.get("stop_loss"))
     planned_tp = _parse_take_profit_first(scenario.get("take_profit"))
     setup_type = str(scenario.get("trigger_type") or scenario.get("type") or decision.get("best_scenario", ""))
     regime_val = str(market_regime.get("primary", ""))
     m15_qual = str(scenario.get("m15_quality") or "")
-    spread_at_entry = _safe_float(data_quality.get("spread_points") or data_quality.get("spread_price"))
-    expected_rr = _safe_float(scenario.get("expected_effective_rr"))
+    spread_at_entry = optional_float(data_quality.get("spread_points") or data_quality.get("spread_price"))
+    expected_rr = optional_float(scenario.get("expected_effective_rr"))
+    zone_score = _safe_int(scenario.get("entry_zone_score"))
+    zone_source = str(scenario.get("entry_zone_source") or "") or None
+    sub_zone = str(scenario.get("sub_zone") or "") or None
 
     eq = analysis.get("execution_quality")
     if not isinstance(eq, dict):
@@ -126,7 +124,7 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
         actual_tp=None,
         actual_exit=None,
         setup_type=setup_type,
-        regime=regime_val,
+        execution_regime=regime_val,
         session=None,
         m15_quality=m15_qual if m15_qual else None,
         spread_at_entry=spread_at_entry,
@@ -135,6 +133,9 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
         manual_mistake_tags=manual_tags if manual_tags != "[]" else None,
         auto_mistake_tags=auto_tags if auto_tags != "[]" else None,
         execution_quality_score=exec_qual_score,
+        entry_zone_score=zone_score,
+        entry_zone_source=zone_source,
+        sub_zone=sub_zone,
         trade_status="planned",
         opened_at=None,
         result_amount=None,
@@ -148,18 +149,21 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
     # Phase 17 Đợt 2 — extract from scanner row
     row_regime = str(row.get("market_regime", ""))
     row_m15 = str(row.get("m15_quality") or "")
-    row_expected_rr = _safe_float(row.get("expected_effective_rr"))
+    row_expected_rr = optional_float(row.get("expected_effective_rr"))
     row_setup_type = str(row.get("entry_status") or row.get("scanner_group") or "")
     row_exec_qual = int(row.get("execution_quality_score")) if row.get("execution_quality_score") is not None else None
     row_manual_tags = tags_to_json(row.get("manual_mistake_tags"))
     row_auto_tags = tags_to_json(row.get("auto_mistake_tags"))
-    row_planned_entry = _parse_entry_from_zone(row.get("entry_zone"))
-    row_planned_sl = _safe_float(row.get("stop_loss"))
+    row_planned_entry = parse_entry_from_zone(row.get("entry_zone"))
+    row_planned_sl = optional_float(row.get("stop_loss"))
     row_planned_tp = _parse_take_profit_first(row.get("take_profit"))
-    row_planned_lot = _safe_float(row.get("planned_lot"))
-    row_actual_lot = _safe_float(row.get("actual_lot"))
-    row_spread = _safe_float(row.get("spread_at_entry") or row.get("spread_points"))
+    row_planned_lot = optional_float(row.get("planned_lot"))
+    row_actual_lot = optional_float(row.get("actual_lot"))
+    row_spread = optional_float(row.get("spread_at_entry") or row.get("spread_points"))
     row_session = str(row.get("session") or "")
+    row_zone_score = _safe_int(row.get("entry_zone_score"))
+    row_zone_source = str(row.get("entry_zone_source") or "") or None
+    row_sub_zone = str(row.get("sub_zone") or "") or None
 
     return JournalEntry(
         id=None,
@@ -195,7 +199,7 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
         actual_tp=None,
         actual_exit=None,
         setup_type=row_setup_type if row_setup_type else None,
-        regime=row_regime if row_regime else None,
+        execution_regime=row_regime if row_regime else None,
         session=row_session if row_session else None,
         m15_quality=row_m15 if row_m15 else None,
         spread_at_entry=row_spread,
@@ -204,6 +208,9 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
         manual_mistake_tags=row_manual_tags if row_manual_tags != "[]" else None,
         auto_mistake_tags=row_auto_tags if row_auto_tags != "[]" else None,
         execution_quality_score=row_exec_qual,
+        entry_zone_score=row_zone_score,
+        entry_zone_source=row_zone_source,
+        sub_zone=row_sub_zone,
         trade_status="planned",
         opened_at=None,
         result_amount=None,
@@ -212,8 +219,8 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
 
 def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
     now = utc_now()
-    amount = _safe_float(trade.get("result_amount"))
-    result = "win" if amount and amount > 0 else "loss" if amount and amount < 0 else "breakeven"
+    amount = optional_float(trade.get("result_amount"))
+    result = _result_label(amount)
     payload = {"source": "mt5_history", "trade": trade}
     return JournalEntry(
         id=None,
@@ -244,17 +251,17 @@ def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
         result_pct=None,
         closed_at=str(trade.get("closed_at") or ""),
         exit_reason=str(trade.get("exit_reason") or "mt5_history"),
-        actual_lot=_safe_float(trade.get("actual_lot")),
+        actual_lot=optional_float(trade.get("actual_lot")),
         planned_lot=None,
         planned_entry=None,
-        actual_entry=_safe_float(trade.get("actual_entry")),
+        actual_entry=optional_float(trade.get("actual_entry")),
         planned_sl=None,
         actual_sl=None,
         planned_tp=None,
         actual_tp=None,
-        actual_exit=_safe_float(trade.get("actual_exit")),
+        actual_exit=optional_float(trade.get("actual_exit")),
         setup_type="mt5_history",
-        regime=None,
+        execution_regime=None,
         session=None,
         m15_quality=None,
         spread_at_entry=None,
@@ -263,6 +270,9 @@ def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
         manual_mistake_tags=None,
         auto_mistake_tags=None,
         execution_quality_score=None,
+        entry_zone_score=None,
+        entry_zone_source=None,
+        sub_zone=None,
         trade_status="closed",
         opened_at=str(trade.get("opened_at") or ""),
         result_amount=amount,
@@ -351,9 +361,9 @@ def tags_to_json(value: object) -> str:
     return json.dumps(tags, ensure_ascii=False)
 
 
-def tags_from_json(value: object) -> list[str]:
-    """Parse a tag JSON string back to a list; delegates to :func:`normalize_tag_list`."""
-    return normalize_tag_list(value)
+
+def _result_label(amount: float | None) -> str:
+    return "win" if amount and amount > 0 else "loss" if amount and amount < 0 else "breakeven"
 
 
 def normalize_trade_status(value: object) -> str:
@@ -383,13 +393,13 @@ def calculate_trade_outcome(trade: dict[str, object]) -> dict[str, float | str]:
     if side not in {"buy", "sell"}:
         return {}
 
-    entry = _safe_float(trade.get("actual_entry"))
+    entry = optional_float(trade.get("actual_entry"))
     if entry is None:
-        entry = _safe_float(trade.get("planned_entry"))
-    stop = _safe_float(trade.get("actual_sl"))
+        entry = optional_float(trade.get("planned_entry"))
+    stop = optional_float(trade.get("actual_sl"))
     if stop is None:
-        stop = _safe_float(trade.get("planned_sl"))
-    exit_price = _safe_float(trade.get("actual_exit"))
+        stop = optional_float(trade.get("planned_sl"))
+    exit_price = optional_float(trade.get("actual_exit"))
     if entry is None or stop is None or exit_price is None:
         return {}
 
@@ -410,10 +420,10 @@ def calculate_trade_outcome(trade: dict[str, object]) -> dict[str, float | str]:
 
 
 def build_performance_summary(trades: list[dict[str, object]]) -> dict[str, object]:
-    valid = [trade for trade in trades if _safe_float(trade.get("result_r")) is not None]
+    valid = [trade for trade in trades if optional_float(trade.get("result_r")) is not None]
     valid_for_curve = sorted(valid, key=lambda item: str(item.get("closed_at") or ""))
-    results = [float(_safe_float(trade.get("result_r")) or 0.0) for trade in valid_for_curve]
-    amounts = [float(value) for value in (_safe_float(trade.get("result_amount")) for trade in trades) if value is not None]
+    results = [float(optional_float(trade.get("result_r")) or 0.0) for trade in valid_for_curve]
+    amounts = [float(value) for value in (optional_float(trade.get("result_amount")) for trade in trades) if value is not None]
     outcome_values = results if results else amounts
     wins = [value for value in outcome_values if value > 0]
     losses = [value for value in outcome_values if value < 0]
@@ -424,7 +434,7 @@ def build_performance_summary(trades: list[dict[str, object]]) -> dict[str, obje
     gross_loss = abs(sum(losses))
     avg_quality_values = [
         float(score)
-        for score in (_safe_float(trade.get("execution_quality_score")) for trade in valid)
+        for score in (optional_float(trade.get("execution_quality_score")) for trade in valid)
         if score is not None
     ]
     summary = {
@@ -448,7 +458,7 @@ def build_performance_summary(trades: list[dict[str, object]]) -> dict[str, obje
         "summary": summary,
         "by_symbol": group_performance(trades, "symbol"),
         "by_setup": group_performance(trades, "setup_type"),
-        "by_regime": group_performance(trades, "regime"),
+        "by_regime": group_performance(trades, "execution_regime"),
         "by_session": group_performance(trades, "session"),
         "by_direction": group_performance(trades, "direction"),
         "recent": recent_trade_rows(trades, limit=12),
@@ -459,8 +469,8 @@ def group_performance(trades: list[dict[str, object]], key: str, *, limit: int =
     groups: dict[str, list[dict[str, float | None]]] = {}
     for trade in trades:
         label = str(trade.get(key) or "--").strip() or "--"
-        result = _safe_float(trade.get("result_r"))
-        amount = _safe_float(trade.get("result_amount"))
+        result = optional_float(trade.get("result_r"))
+        amount = optional_float(trade.get("result_amount"))
         if result is None and amount is None:
             continue
         groups.setdefault(label, []).append({"result_r": result, "amount": amount})
@@ -491,8 +501,8 @@ def recent_trade_rows(trades: list[dict[str, object]], *, limit: int = 12) -> li
             "closed_at": trade.get("closed_at") or "--",
             "symbol": trade.get("symbol") or "--",
             "direction": trade.get("direction") or "--",
-            "result_r": round(float(_safe_float(trade.get("result_r"))), 3) if _safe_float(trade.get("result_r")) is not None else None,
-            "result_amount": _safe_float(trade.get("result_amount")),
+            "result_r": round(float(optional_float(trade.get("result_r"))), 3) if optional_float(trade.get("result_r")) is not None else None,
+            "result_amount": optional_float(trade.get("result_amount")),
             "exit_reason": trade.get("exit_reason") or "--",
             "execution_quality_score": trade.get("execution_quality_score"),
         }

@@ -85,3 +85,50 @@ def test_enrich_scanner_row_uses_nested_analysis_without_mutating_original():
     assert enriched["final_score"] == 82
     assert enriched["scanner_group"] == READY_NOW
     assert enriched["display_action"] == "ready"
+
+
+def test_zone_quality_bonus_rewards_high_zone_score():
+    """Row with entry_zone_score=90 should rank higher than identical row with score=20."""
+    from core.scanner_ranking_engine import calculate_opportunity_score
+
+    base_row = {
+        "final_score": 70,
+        "scanner_decision": "watch",
+        "scanner_action": "watch",
+        "trade_permission": "allowed",
+        "price_in_entry_zone": True,
+        "expected_effective_rr": 2.0,
+        "spread_status": "normal",
+    }
+
+    row_good = dict(base_row, entry_zone_score=90)
+    row_bad = dict(base_row, entry_zone_score=20)
+
+    result_good = calculate_opportunity_score(row_good)
+    result_bad = calculate_opportunity_score(row_bad)
+
+    # zone_score=90: (90-50)/50=0.8 * 6 = 4.8 -> int=4
+    # zone_score=20: 20<50 -> max(0, ...)=0 -> 0
+    assert result_good["score_breakdown"]["zone_quality_bonus"] >= 4
+    assert result_bad["score_breakdown"]["zone_quality_bonus"] == 0
+    assert result_good["opportunity_score"] > result_bad["opportunity_score"], (
+        f"Good zone ({result_good['opportunity_score']}) should outrank bad zone ({result_bad['opportunity_score']})"
+    )
+
+
+def test_missing_zone_score_does_not_crash():
+    """Row without entry_zone_score should get zone_bonus=0, not crash."""
+    from core.scanner_ranking_engine import calculate_opportunity_score
+
+    row = {
+        "final_score": 70,
+        "scanner_decision": "watch",
+        "scanner_action": "watch",
+        "trade_permission": "allowed",
+        "price_in_entry_zone": True,
+        "expected_effective_rr": 2.0,
+        "spread_status": "normal",
+    }
+    result = calculate_opportunity_score(row)
+    assert result["score_breakdown"]["zone_quality_bonus"] == 0
+    assert result["opportunity_score"] >= 0

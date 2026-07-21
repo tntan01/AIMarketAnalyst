@@ -10,10 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from config.paths import PROJECT_ROOT, journal_db_path
+from core.safe_types import optional_float
 from services.journal_models import JournalEntry, JournalFilter, SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
 from services.journal_converters import (
     _parse_utc,
-    _safe_float,
+    _result_label,
     _safe_int,
     build_performance_summary,
     calculate_trade_outcome,
@@ -23,47 +24,14 @@ from services.journal_converters import (
     journal_entry_from_mt5_trade,
     journal_entry_from_scanner_row,
     normalize_trade_status,
-    tags_from_json,
+    normalize_tag_list,
     tags_to_json,
     utc_now,
 )
 
-
-# ---------------------------------------------------------------------------
-# Re-export for backward compatibility
-# ---------------------------------------------------------------------------
 __all__ = [
-    "JournalEntry",
-    "JournalFilter",
     "JournalService",
-    "SQLITE_TIMEOUT_SECONDS",
-    "SQLITE_BUSY_TIMEOUT_MS",
-    "journal_entry_from_analysis",
-    "journal_entry_from_scanner_row",
-    "journal_entry_from_mt5_trade",
-    "entry_to_record",
-    "entry_from_row",
-    "normalize_tag_list",
-    "tags_to_json",
-    "tags_from_json",
-    "normalize_trade_status",
-    "calculate_trade_outcome",
-    "build_performance_summary",
-    "group_performance",
-    "recent_trade_rows",
-    "utc_now",
-    "normalize_utc_timestamp",
-    "max_drawdown_r",
 ]
-
-# Re-import for external consumers that import from this module
-from services.journal_converters import (  # noqa: E402
-    group_performance,
-    max_drawdown_r,
-    normalize_tag_list,
-    normalize_utc_timestamp,
-    recent_trade_rows,
-)
 
 
 class JournalService:
@@ -93,11 +61,11 @@ class JournalService:
     def _safe_execute_migration(self, conn: sqlite3.Connection, sql: str) -> None:
         """Execute migration SQL, skipping ALTER TABLE ADD COLUMN for columns that already exist.
 
-        SQLite does not support IF NOT EXISTS for ADD COLUMN.  If a migration
-        is re-run on a database that already has the column (e.g. after a
-        backup restore or partial migration), the ALTER TABLE would fail with
-        a "duplicate column" error.  We guard against that by inspecting
-        PRAGMA table_info before each ADD COLUMN statement.
+        SQLite does not support IF NOT EXISTS for ADD COLUMN / RENAME COLUMN.
+        If a migration is re-run on a database that already has the column
+        (e.g. after a backup restore or partial migration), the ALTER TABLE
+        would fail.  We guard against that by inspecting PRAGMA table_info
+        before each ADD COLUMN or RENAME COLUMN statement.
         """
         # Strip -- style comments so they don't interfere with statement
         # splitting (comments have no trailing ; and would otherwise merge
@@ -105,31 +73,51 @@ class JournalService:
         lines = [line for line in sql.split("\n") if not line.strip().startswith("--")]
         clean_sql = "\n".join(lines)
 
-        existing_columns: set[str] = set()
-        _table_info_fetched = False
+        existing_columns: dict[str, set[str]] = {}
 
         statements = [s.strip() for s in clean_sql.split(";") if s.strip()]
 
         for stmt in statements:
-            match = re.match(
+            add_match = re.match(
                 r"ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)",
                 stmt,
                 re.IGNORECASE,
             )
-            if match:
-                table_name = match.group(1)
-                column_name = match.group(2)
+            rename_match = re.match(
+                r"ALTER\s+TABLE\s+(\w+)\s+RENAME\s+COLUMN\s+(\w+)\s+TO\s+(\w+)",
+                stmt,
+                re.IGNORECASE,
+            )
+            if add_match:
+                table_name = add_match.group(1)
+                column_name = add_match.group(2)
 
-                if not _table_info_fetched:
+                if table_name not in existing_columns:
                     rows = conn.execute(
                         f"PRAGMA table_info({table_name})"
                     ).fetchall()
-                    existing_columns = {row[1] for row in rows}
-                    _table_info_fetched = True
+                    existing_columns[table_name] = {row[1] for row in rows}
 
-                if column_name in existing_columns:
+                if column_name in existing_columns[table_name]:
                     continue  # already present — skip safely
-                existing_columns.add(column_name)  # track for later statements in same script
+                existing_columns[table_name].add(column_name)  # track for later statements in same script
+
+            elif rename_match:
+                table_name = rename_match.group(1)
+                old_name = rename_match.group(2)
+                new_name = rename_match.group(3)
+
+                if table_name not in existing_columns:
+                    rows = conn.execute(
+                        f"PRAGMA table_info({table_name})"
+                    ).fetchall()
+                    existing_columns[table_name] = {row[1] for row in rows}
+
+                # Skip if new column already exists or old column is gone
+                if new_name in existing_columns[table_name] or old_name not in existing_columns[table_name]:
+                    continue
+                existing_columns[table_name].discard(old_name)
+                existing_columns[table_name].add(new_name)
 
             conn.execute(stmt)
 
@@ -203,9 +191,9 @@ class JournalService:
         if filters.setup_type:
             query += " AND setup_type = ?"
             params.append(filters.setup_type)
-        if filters.regime:
-            query += " AND regime = ?"
-            params.append(filters.regime)
+        if filters.execution_regime:
+            query += " AND execution_regime = ?"
+            params.append(filters.execution_regime)
         query += " ORDER BY timestamp_utc DESC, id DESC"
         with self._connect() as conn:
             return [entry_from_row(row) for row in conn.execute(query, params).fetchall()]
@@ -386,8 +374,8 @@ class JournalService:
         return None
 
     def _mt5_trade_update_payload(self, trade: dict[str, object]) -> dict[str, object]:
-        amount = _safe_float(trade.get("result_amount"))
-        result = "win" if amount and amount > 0 else "loss" if amount and amount < 0 else "breakeven"
+        amount = optional_float(trade.get("result_amount"))
+        result = _result_label(amount)
         return {
             "trade_status": "closed",
             "opened_at": trade.get("opened_at") or "",
@@ -505,7 +493,7 @@ class JournalService:
             symbol, direction (selected_scenario)
         Phase 17 additions:
             planned_entry, actual_entry, planned_sl, actual_sl, planned_tp, actual_tp,
-            actual_exit, setup_type, regime, session, m15_quality, spread_at_entry,
+            actual_exit, setup_type, execution_regime, session, m15_quality, spread_at_entry,
             expected_effective_rr, realized_effective_rr,
             manual_mistake_tags (list), auto_mistake_tags (list),
             execution_quality_score
@@ -518,7 +506,7 @@ class JournalService:
             "trade_status", "opened_at", "result_amount",
             "planned_entry", "actual_entry", "planned_sl", "actual_sl",
             "planned_tp", "actual_tp", "actual_exit",
-            "setup_type", "regime", "session", "m15_quality",
+            "setup_type", "execution_regime", "session", "m15_quality",
             "spread_at_entry", "expected_effective_rr", "realized_effective_rr",
             "manual_mistake_tags", "auto_mistake_tags", "execution_quality_score",
         )
@@ -547,7 +535,7 @@ class JournalService:
                 "actual_lot", "planned_lot", "symbol", "trade_status", "opened_at", "result_amount",
                 "planned_entry", "actual_entry", "planned_sl", "actual_sl",
                 "planned_tp", "actual_tp", "actual_exit",
-                "setup_type", "regime", "session", "m15_quality",
+                "setup_type", "execution_regime", "session", "m15_quality",
                 "spread_at_entry", "expected_effective_rr", "realized_effective_rr",
                 "execution_quality_score",
             ):
@@ -561,10 +549,10 @@ class JournalService:
                 trade["direction"] = None
 
             # Parse tag JSON strings
-            trade["manual_mistake_tags"] = tags_from_json(
+            trade["manual_mistake_tags"] = normalize_tag_list(
                 row["manual_mistake_tags"] if "manual_mistake_tags" in row.keys() else None
             )
-            trade["auto_mistake_tags"] = tags_from_json(
+            trade["auto_mistake_tags"] = normalize_tag_list(
                 row["auto_mistake_tags"] if "auto_mistake_tags" in row.keys() else None
             )
 

@@ -440,9 +440,10 @@ def build_trade_plan(
     h4_smc = smc.get("H4", {}) if isinstance(smc, dict) else {}
     smc_supports = _smc_zones_to_levels(h4_smc.get("demand_zones", []))
     smc_resistances = _smc_zones_to_levels(h4_smc.get("supply_zones", []))
+    smc_order_blocks = _smc_zones_to_levels(h4_smc.get("order_blocks", []))
 
-    support_zones = list(technical["support_zones"]) + smc_supports
-    resistance_zones = list(technical["resistance_zones"]) + smc_resistances
+    support_zones = list(technical["support_zones"]) + smc_supports + smc_order_blocks
+    resistance_zones = list(technical["resistance_zones"]) + smc_resistances + smc_order_blocks
 
     # Try preferred SMC zone first (from get_preferred_zone)
     # Must be on the correct side of price AND within reasonable distance.
@@ -461,17 +462,20 @@ def build_trade_plan(
     zones = support_zones if side == "buy" else resistance_zones
     target_zones = resistance_zones if side == "buy" else support_zones
 
+    below = side == "buy"
     if use_preferred:
         zone = preferred_zone
     else:
-        below = side == "buy"
         zone = select_best_level(zones, price, atr_value * zone_dist_mult, below=below)
     if not zone:
         return None
 
+    alternate_zones_raw = select_top_levels(zones, price, atr_value * zone_dist_mult, below=below, top_n=3)
+
     level = zone["level"]
     entry_zone_score = zone.get("zone_score")
     entry_zone_source = zone.get("source", "technical")
+    is_smc_zone = entry_zone_source in ("smc", "smc_selected")
     zone_low = zone.get("low")
     zone_high = zone.get("high")
     if zone_low is not None and zone_high is not None and zone_high > zone_low:
@@ -490,17 +494,20 @@ def build_trade_plan(
     entry_high = level + atr_value * entry_zone_atr_mult
 
     # --- Stop Loss ---
+    sl_source = "atr"
     if use_preferred:
         sl_boundary = preferred_zone["low"] if side == "buy" else preferred_zone["high"]
         stop_loss = sl_boundary - sign * atr_value * _ZONE_SL_BUFFER_ATR
         if abs(level - stop_loss) < min_stop_distance:
             stop_loss = level - sign * min_stop_distance
+        sl_source = "zone_boundary"
     else:
         swing_sl = _find_nearest_swing_for_sl(smc, side, level)
         if swing_sl is not None:
             stop_loss = swing_sl - sign * atr_value * _SWING_SL_BUFFER_ATR
             if abs(level - stop_loss) < min_stop_distance:
                 stop_loss = level - sign * min_stop_distance
+            sl_source = "swing"
         elif side == "buy":
             stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, zone)
         else:
@@ -511,8 +518,11 @@ def build_trade_plan(
     if (stop_loss - sl_edge) * sign >= 0:
         stop_loss = sl_edge
 
-    # Guard: skip plan if SL is too tight (relaxed for SMC zones)
-    _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT if use_preferred else atr_value * _MIN_SL_DISTANCE_ATR
+    # Guard: skip plan if SL is too tight (relaxed for preferred/SMC zones)
+    if use_preferred or is_smc_zone:
+        _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT
+    else:
+        _min_sl = atr_value * _MIN_SL_DISTANCE_ATR
     if abs(level - stop_loss) < _min_sl:
         return None
 
@@ -551,8 +561,8 @@ def build_trade_plan(
         tp1 = None
 
     if tp1 is None or abs(tp1 - entry_for_selection) < sel_risk_distance:
-        if use_preferred:
-            tp1 = None   # không có TP thật → để trống, không dùng fallback nhân tạo
+        if use_preferred or is_smc_zone:
+            tp1 = None   # không có TP thật → để trống
             tp2 = None
         else:
             return None
@@ -656,8 +666,18 @@ def build_trade_plan(
         "correlation_context": corr_context,
         "entry_zone_score": entry_zone_score,
         "entry_zone_source": entry_zone_source,
+        "sl_source": sl_source,
+        "tp_source": "none" if tp1 is None else "structure",
         "entry_ladder": entry_ladder,
         "sub_zone": entry_ladder.get("sub_zone") if isinstance(entry_ladder, dict) else None,
+        "alternate_zones": [
+            {
+                "level": round_price(z["level"]),
+                "zone_score": z.get("zone_score", z.get("_effective_score")),
+                "source": z.get("source", "technical"),
+            }
+            for z in alternate_zones_raw
+        ],
         **entry_state,
     }
 
@@ -737,6 +757,18 @@ def _build_sell_invalidation(stop_loss: float, h4_smc: dict[str, Any]) -> str:
     return base
 
 
+_STRENGTH_FALLBACK_SCORE = {"strong": 80, "moderate": 60, "weak": 45}
+
+
+def _effective_zone_score(zone: dict[str, Any]) -> float:
+    """Lấy zone_score thực nếu có, fallback về ước lượng từ strength bucket
+    cho zone technical thường (không có zone_score gốc)."""
+    score = zone.get("zone_score")
+    if score is not None:
+        return float(score)
+    return float(_STRENGTH_FALLBACK_SCORE.get(zone.get("strength", "weak"), 45))
+
+
 def select_best_level(
     zones: list[dict[str, Any]], price: float, max_distance: float, *, below: bool
 ) -> dict[str, Any] | None:
@@ -754,8 +786,25 @@ def select_best_level(
         return None
     return sorted(
         candidates,
-        key=lambda zone: (-STRENGTH_RANK.get(zone.get("strength", "weak"), 0), abs(zone["level"] - price)),
+        key=lambda zone: (-_effective_zone_score(zone), abs(zone["level"] - price)),
     )[0]
+
+
+def select_top_levels(
+    zones: list[dict[str, Any]], price: float, max_distance: float, *,
+    below: bool, top_n: int = 3,
+) -> list[dict[str, Any]]:
+    """Giống select_best_level nhưng trả về top-N candidate đã sort theo
+    zone_score, dùng cho hiển thị 'plan B/C'. Không thay đổi hành vi chọn
+    zone chính trong select_best_level."""
+    if below:
+        candidates = [z for z in zones if z["level"] <= price and (price - z["level"]) <= max_distance]
+    else:
+        candidates = [z for z in zones if z["level"] >= price and (z["level"] - price) <= max_distance]
+    if not candidates:
+        return []
+    ranked = sorted(candidates, key=lambda z: (-_effective_zone_score(z), abs(z["level"] - price)))
+    return ranked[:top_n]
 
 
 def nearest_target(zones: list[dict[str, Any]], reference: float, *, above: bool) -> float | None:

@@ -55,11 +55,15 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         best_side = str(best_plan.get("type", best_side))
     risk_reward = best_plan.get("risk_reward") if best_plan else None
     technical = result.get("technical", {}) if isinstance(result.get("technical"), dict) else {}
-    price_vs_zone = price_vs_entry_zone(
-        technical.get("price"),
-        best_plan.get("entry_zone") if best_plan else None,
-        technical.get("atr_h4") or technical.get("atr_d1") or 0.0,
-    )
+    # Fallback plans have no real entry zone - don't compute fake distance
+    if best_plan and best_plan.get("entry_zone_source") == "fallback":
+        price_vs_zone = "unknown"
+    else:
+        price_vs_zone = price_vs_entry_zone(
+            technical.get("price"),
+            best_plan.get("entry_zone") if best_plan else None,
+            technical.get("atr_h4") or technical.get("atr_d1") or 0.0,
+        )
     # Decision engine result — single source of truth for action (CT-2).
     decision_engine = result.get("decision_engine", {})
     if not isinstance(decision_engine, dict):

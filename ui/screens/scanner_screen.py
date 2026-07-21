@@ -31,7 +31,8 @@ QWidget ,
 )
 from services .mt5_service import MT5Service
 from services .settings_service import SettingsService
-from ui .screens .shared import action_button ,card ,labeled_value ,page_header 
+from ui .screens .shared import action_button ,card ,labeled_value ,page_header
+from ui.translation import vi_term
 
 
 class ScannerTableModel (QAbstractTableModel ):
@@ -140,30 +141,69 @@ class ScannerTableModel (QAbstractTableModel ):
             return self .rows [row ]
         return None 
 
-    def _is_fallback_row(self, row: dict[str, object] | None) -> bool:
-        """Check if a scanner row contains only fallback scenarios."""
+    def _has_real_plan(self, row: dict[str, object] | None) -> bool:
+        """Check if at least one scenario has a real (non-fallback) trade plan."""
         if not row:
             return False
         analysis = row.get("analysis_result")
         if not isinstance(analysis, dict):
             return False
         scenarios = analysis.get("scenarios", [])
-        if not isinstance(scenarios, list) or not scenarios:
+        if not isinstance(scenarios, list):
             return False
-        return all(
-            isinstance(s, dict) and s.get("entry_zone_source") == "fallback"
+        return any(
+            isinstance(s, dict) and s.get("entry_zone_source") not in (None, "fallback")
             for s in scenarios
         )
 
+    def _zone_tier(self, row: dict[str, object] | None) -> str:
+        """Return zone quality tier by inspecting raw SMC/technical context.
+
+        Returns:
+            \"smc\"       — at least one SMC zone exists on H4
+            \"technical\" — only technical swing zones, no SMC
+            \"fallback\"  — no zones at all
+        """
+        if not row:
+            return "fallback"
+        analysis = row.get("analysis_result")
+        if not isinstance(analysis, dict):
+            return "fallback"
+
+        smc = analysis.get("smc")
+        if isinstance(smc, dict):
+            h4 = smc.get("H4", {})
+            if isinstance(h4, dict):
+                for key in ("demand_zones", "supply_zones", "order_blocks", "fvg"):
+                    zones = h4.get(key, [])
+                    if isinstance(zones, list) and len(zones) > 0:
+                        for z in zones:
+                            if isinstance(z, dict) and not z.get("broken") and z.get("zone_score", 0) >= 55:
+                                return "smc"
+
+        technical = analysis.get("technical")
+        if isinstance(technical, dict):
+            supports = technical.get("support_zones", [])
+            resistances = technical.get("resistance_zones", [])
+            if (isinstance(supports, list) and len(supports) > 0) or \
+               (isinstance(resistances, list) and len(resistances) > 0):
+                return "technical"
+
+        return "fallback"
+
+    def _is_fallback_row(self, row: dict[str, object] | None) -> bool:
+        """Row is low-confidence when no real trade plan exists."""
+        return not self._has_real_plan(row)
+
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
-        if self._is_fallback_row(row) and key in {"price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
+        if self._is_fallback_row(row) and key in {"price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias"}:
             return "--"
         if key =="direction_bias":
             return self ._format_direction_bias (value )
         if key =="price_vs_zone":
             return self .ENTRY_ZONE_TEXT .get (str (value ),str (value or "--"))
         if key =="market_regime":
-            return str (value or "--")
+            return vi_term(value)
         if key =="macro_score":
             score_val =int (value )if isinstance (value ,(int ,float ))else 15 
             conf =float (row .get ("macro_confidence",1.0 ))if row else 1.0 
@@ -1640,6 +1680,49 @@ class ScannerScreen (QWidget ):
     def _scan_finished (self ,result :dict [str ,object ])->None :
         self .scan_result =result
         rows =list (result .get ("rows",[]))
+
+        # Sort: Group A (plan) > Group B (SMC no plan) > Group C (no SMC)
+        # Within each group, sort by opportunity_score descending
+        def _sort_key(row):
+            analysis = row.get("analysis_result") if isinstance(row.get("analysis_result"), dict) else {}
+            scenarios = analysis.get("scenarios", [])
+            has_plan = any(
+                isinstance(s, dict) and s.get("entry_zone_source") not in (None, "fallback")
+                for s in scenarios
+            ) if isinstance(scenarios, list) else False
+
+            smc = analysis.get("smc")
+            has_smc = False
+            if isinstance(smc, dict):
+                h4 = smc.get("H4", {})
+                if isinstance(h4, dict):
+                    for key in ("demand_zones", "supply_zones", "order_blocks", "fvg"):
+                        for z in h4.get(key, []):
+                            if isinstance(z, dict) and not z.get("broken") and z.get("zone_score", 0) >= 55:
+                                has_smc = True
+                                break
+
+            # Group 0=A (plan), 1=B (SMC no plan), 2=C (no SMC)
+            if has_plan:
+                group = 0
+            elif has_smc:
+                group = 1
+            else:
+                group = 2
+
+            score = row.get("opportunity_score")
+            if not isinstance(score, (int, float)):
+                score = row.get("final_score", 0)
+                if not isinstance(score, (int, float)):
+                    score = 0
+            return (group, -score)
+
+        rows.sort(key=_sort_key)
+
+        # Re-assign rank after sorting
+        for i, row in enumerate(rows):
+            row["rank"] = i + 1
+
         self .table_model .set_rows (rows )
         self .status_labels ['Đã quét'].setText (f"{result .get ('symbols_scanned',0 )} / {len (self ._selected_symbols ())}")
         self.status_labels["AI đã gọi"].setText(f"{result.get('ai_called', 0)} mã")
@@ -1705,8 +1788,6 @@ class ScannerScreen (QWidget ):
     def _open_row_detail (self ,row_index :int )->None :
         row =self .table_model .row_at (row_index )
         if not row or not self .navigate :
-            return
-        if self .table_model ._is_fallback_row (row ):
             return
         self .navigate ("scanner_detail",{"scanner_row":row ,"scanner_result":self .scan_result or {}})
 

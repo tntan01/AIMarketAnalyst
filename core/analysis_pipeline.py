@@ -93,6 +93,7 @@ class AnalysisPipeline:
         execution_quality_score: int | float | str | None = None,
         thresholds: dict[str, int] | None = None,
         is_backtest: bool = False,
+        scan_interval_min: int = 15,
     ) -> dict[str, Any]:
         # ---- Step 0: stash inputs ------------------------------------------
         self._request = request
@@ -112,6 +113,7 @@ class AnalysisPipeline:
         self._open_trades = open_trades or []
         self._account_guard_settings = account_guard_settings
         self._trade_date = trade_date
+        self._scan_interval_min = scan_interval_min
         self._execution_quality_score_in = execution_quality_score
         self._thresholds = thresholds
         self._is_backtest = is_backtest
@@ -208,7 +210,7 @@ class AnalysisPipeline:
             raise ValueError("Không đủ dữ liệu D1/H4/H1 để phân tích.")
 
         self._technical = build_technical_snapshot(self._d1, self._h4, self._h1)
-        self._smc = build_smc_context(self._d1, self._h4, self._h1)
+        self._smc = build_smc_context(self._d1, self._h4, self._h1, scan_interval_min=self._scan_interval_min)
         self._data_quality = _build_data_quality(
             self._request, self._candles, self._data_quality_raw, self._technical,
         )
@@ -534,6 +536,10 @@ class AnalysisPipeline:
                     _gate_scenario.get("entry_status") == "invalidated"
                     or _gate_scenario.get("trigger_type") == "zone_broken"
                 ) if isinstance(_gate_scenario, dict) else False
+            ),
+            "zone_score": (
+                _gate_scenario.get("entry_zone_score")
+                if isinstance(_gate_scenario, dict) else None
             ),
             "daily_loss_limit_reached": self._data_quality.get("daily_loss_limit_reached"),
             "weekly_loss_limit_reached": self._data_quality.get("weekly_loss_limit_reached"),
@@ -863,11 +869,11 @@ class AnalysisPipeline:
                 "entry_zone_source": "fallback",
                 "entry_status": "watch_zone",
                 "m15_quality": None,
-                "expected_effective_rr": 2.0,
-                "risk_reward": "1:2.0",
+                "expected_effective_rr": None,
+                "risk_reward": None,
                 "ready_to_trade": False,
                 "trigger_type": "none",
-                "price_in_entry_zone": entry_low <= price <= entry_high,
+                "price_in_entry_zone": None,
                 "condition": "Chưa có SMC zone rõ ràng, cân nhắc thêm xác nhận.",
                 "invalidation": f"H1 đóng {'dưới' if best_side == 'buy' else 'trên'} {sl:.5f} hoặc spread giãn bất thường.",
                 "position_sizing": {

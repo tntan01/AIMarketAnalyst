@@ -95,6 +95,7 @@ DEFAULT_OPPORTUNITY_WEIGHTS: dict[str, float] = {
     "rr_bonus": 5.0,
     "spread_penalty": 8.0,
     "news_penalty": 10.0,
+    "zone_quality_bonus": 6.0,
 }
 
 # Proximity thresholds (in ATR units)
@@ -329,6 +330,7 @@ def calculate_opportunity_score(
                     + proximity_bonus  (+8 in_zone, +4 near, 0 far)
                     + readiness_bonus  (+10 ready, +3 waiting, 0 watch)
                     + rr_bonus         (+5 rr≥2.0, +3 rr≥1.5, +1 rr≥1.3)
+                    + zone_quality     (+6 zone≥100, +3 zone≥75, 0 zone≤50)
                     - spread_penalty   (-8 abnormal, -4 caution)
                     - news_penalty     (-10 high-impact 30m, -5 news in 3h)
 
@@ -423,8 +425,15 @@ def calculate_opportunity_score(
     # Chỉ trừ điểm journal khi đủ mẫu (≥ 8), nếu không penalty = 0
     journal_pen = int(safe_float(journal_feedback.get("opportunity_penalty"), 0.0)) if journal_sample >= 8 else 0
 
+    # ---- zone quality ----
+    entry_zone_score = row.get("entry_zone_score")
+    if entry_zone_score is not None:
+        zone_bonus = int(w.get("zone_quality_bonus", 6.0) * max(0.0, (float(entry_zone_score) - 50) / 50))
+    else:
+        zone_bonus = 0
+
     # ---- total ----
-    raw = float(base) + prox_bonus + readiness_bonus + rr_bonus + spread_pen + news_pen + journal_pen
+    raw = float(base) + prox_bonus + readiness_bonus + rr_bonus + zone_bonus + spread_pen + news_pen + journal_pen
     score = int(max(0, min(round(raw), 120)))
 
     # ---- block cap ----
@@ -466,6 +475,7 @@ def calculate_opportunity_score(
             "proximity_bonus": prox_bonus,
             "readiness_bonus": readiness_bonus,
             "rr_bonus": rr_bonus,
+            "zone_quality_bonus": zone_bonus,
             "spread_penalty": spread_pen,
             "news_penalty": news_pen,
             "journal_feedback_penalty": journal_pen,
@@ -516,6 +526,20 @@ def enrich_scanner_row_with_ranking(row: dict[str, Any] | None) -> dict[str, Any
                     e_rr = best.get("expected_effective_rr")
                     if e_rr is not None:
                         enriched["expected_effective_rr"] = e_rr
+        if "entry_zone_score" not in enriched:
+            scenarios = ar.get("scenarios")
+            if isinstance(scenarios, list) and len(scenarios) > 0:
+                best_side = ar.get("decision_summary", {}).get("best_side")
+                best = scenarios[0]
+                if best_side:
+                    for s in scenarios:
+                        if isinstance(s, dict) and s.get("side") == best_side:
+                            best = s
+                            break
+                if isinstance(best, dict):
+                    z_score = best.get("entry_zone_score")
+                    if z_score is not None:
+                        enriched["entry_zone_score"] = z_score
         if "entry_status" not in enriched:
             es = ar.get("entry_status")
             if es is not None:

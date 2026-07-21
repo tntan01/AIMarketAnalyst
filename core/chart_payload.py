@@ -98,11 +98,13 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
                     primary = sc
                     break
         if isinstance(primary, dict):
-            trade_plan["side"] = primary.get("type", "neutral")
-            trade_plan["entry_zone"] = primary.get("entry_zone")
-            trade_plan["stop_loss"] = primary.get("stop_loss")
-            trade_plan["take_profit"] = primary.get("take_profit")
-            trade_plan["entry_status"] = primary.get("entry_status", "no_setup")
+            # Skip fallback scenarios — no real entry/SL/TP
+            if primary.get("entry_zone_source") != "fallback":
+                trade_plan["side"] = primary.get("type", "neutral")
+                trade_plan["entry_zone"] = primary.get("entry_zone")
+                trade_plan["stop_loss"] = primary.get("stop_loss")
+                trade_plan["take_profit"] = primary.get("take_profit")
+                trade_plan["entry_status"] = primary.get("entry_status", "no_setup")
 
     def _to_float(value: Any) -> float | None:
         try:

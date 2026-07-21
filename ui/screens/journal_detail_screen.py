@@ -26,7 +26,8 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.journal_controller import JournalController
-from services.journal_service import JournalEntry
+from services.journal_converters import parse_entry_from_zone
+from services.journal_models import JournalEntry
 from services.settings_service import SettingsService
 from ui.screens.journal_screen import BIAS_TEXT, DECISION_TEXT, PERMISSION_TEXT, format_time
 from ui.screens.shared import action_button, card, page_header
@@ -670,14 +671,35 @@ class JournalDetailScreen(QWidget):
         entry_zone_txt = format_json_text(entry.entry_zone)
         take_profit_txt = format_json_text(entry.take_profit)
 
-        # Trực quan hóa R:R
+        rr_bar_html = self._build_rr_bar_html(entry, bias_val)
+
+        suggested_lot_txt = f"{entry.suggested_lot:.2f}" if entry.suggested_lot is not None else "--"
+
+        label = self._label_color
+        val = self._val_color
+
+        dec_html = self._build_decision_html(
+            entry, decision_txt, decision_color,
+            bias_txt, bias_color,
+            perm_txt, perm_color,
+            regime_txt, label, val,
+        )
+        plan_html = self._build_plan_html(
+            entry, scenario_txt, entry_zone_txt, take_profit_txt,
+            suggested_lot_txt, rr_bar_html, label, val,
+        )
+        ai_html = self._build_ai_html(entry, val)
+
+        return dec_html, plan_html, ai_html
+
+    def _build_rr_bar_html(self, entry: JournalEntry, bias_val: str) -> str:
         rr_bar_html = ""
         try:
             sl = float(entry.stop_loss) if entry.stop_loss else 0.0
             tp_list = json.loads(entry.take_profit) if entry.take_profit else []
             tp = float(tp_list[0]) if tp_list else 0.0
-            entry_zone_list = json.loads(entry.entry_zone) if entry.entry_zone else []
-            entry_price = float(entry_zone_list[0] + entry_zone_list[1]) / 2 if len(entry_zone_list) >= 2 else 0.0
+            entry_zone_list = json.loads(entry.entry_zone) if entry.entry_zone else None
+            entry_price = parse_entry_from_zone(entry_zone_list) or 0.0
 
             if sl > 0 and tp > 0 and entry_price > 0:
                 total_span = abs(tp - sl)
@@ -704,13 +726,16 @@ class JournalDetailScreen(QWidget):
                     """
         except Exception:
             pass
+        return rr_bar_html
 
-        suggested_lot_txt = f"{entry.suggested_lot:.2f}" if entry.suggested_lot is not None else "--"
-
-        label = self._label_color
-        val = self._val_color
-
-        dec_html = f"""
+    def _build_decision_html(
+        self, entry: JournalEntry,
+        decision_txt: str, decision_color: str,
+        bias_txt: str, bias_color: str,
+        perm_txt: str, perm_color: str,
+        regime_txt: str, label: str, val: str,
+    ) -> str:
+        return f"""
         <div style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.25; font-size: 11px; color: {val};">
           <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%;">
             <tr>
@@ -735,7 +760,12 @@ class JournalDetailScreen(QWidget):
         </div>
         """
 
-        plan_html = f"""
+    def _build_plan_html(
+        self, entry: JournalEntry,
+        scenario_txt: str, entry_zone_txt: str, take_profit_txt: str,
+        suggested_lot_txt: str, rr_bar_html: str, label: str, val: str,
+    ) -> str:
+        return f"""
         <div style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.25; font-size: 11px; color: {val};">
           <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%;">
             <tr>
@@ -761,17 +791,15 @@ class JournalDetailScreen(QWidget):
         </div>
         """
 
+    def _build_ai_html(self, entry: JournalEntry, val: str) -> str:
         ai_text = entry.ai_commentary or '--'
         if "Imported from MT5 history" in ai_text:
             ai_text = ai_text.replace("Imported from MT5 history.", "Đã nhập từ lịch sử MT5.").replace("Imported from MT5 history", "Đã nhập từ lịch sử MT5")
-
-        ai_html = f"""
+        return f"""
         <div align="left" style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.2; font-size: 11.5px; color: {val}; text-align: left; margin: 0; padding: 0;">
           <p align="left" style="text-align: left; margin: 0; padding: 0;">{ai_text}</p>
         </div>
         """
-
-        return dec_html, plan_html, ai_html
 
     def _clear_lifecycle_form(self) -> None:
         if hasattr(self, "status_input"):
@@ -848,8 +876,8 @@ class JournalDetailScreen(QWidget):
         self.exit_reason_edit.setText(entry.exit_reason or "")
 
         # Điền Tag lỗi
-        from services.journal_service import tags_from_json
-        tags = tags_from_json(entry.manual_mistake_tags)
+        from services.journal_converters import normalize_tag_list
+        tags = normalize_tag_list(entry.manual_mistake_tags)
         for tag_code, btn in self.tag_buttons.items():
             btn.setChecked(tag_code in tags)
 
@@ -888,7 +916,7 @@ class JournalDetailScreen(QWidget):
 
         # Xử lý Tag lỗi từ Chip buttons
         selected_tags = [tag_code for tag_code, btn in self.tag_buttons.items() if btn.isChecked()]
-        from services.journal_service import tags_to_json
+        from services.journal_converters import tags_to_json
         updates["manual_mistake_tags"] = tags_to_json(selected_tags)
 
         self.journal_controller.update_lifecycle(self.entry.id, updates)

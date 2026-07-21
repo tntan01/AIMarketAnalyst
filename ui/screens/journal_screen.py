@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime, timedelta
 
 from PyQt6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt, QTimer, QPoint
@@ -34,7 +35,8 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.journal_controller import JournalController
-from services.journal_service import JournalEntry, JournalFilter
+from services.journal_models import JournalEntry, JournalFilter
+from services.journal_converters import build_performance_summary
 from ui.screens.shared import action_button, card, labeled_value, page_header
 from ui.theme import COLOR_UP, COLOR_DOWN
 
@@ -365,7 +367,6 @@ REGIME_TEXT = {
     "unknown": "Chưa XĐ",
 }
 PERMISSION_TEXT = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}
-MODE_TEXT: dict[str, str] = {}
 
 
 class JournalTableModel(QAbstractTableModel):
@@ -373,7 +374,7 @@ class JournalTableModel(QAbstractTableModel):
         ("timestamp_utc", "Thời gian"),
         ("symbol", "Mã"),
         ("setup_type", "Setup"),
-        ("regime", "Regime"),
+        ("execution_regime", "Regime"),
         ("trade_status", "Trạng thái"),
         ("direction_bias", "Thiên hướng"),
         ("result_r", "R"),
@@ -455,9 +456,9 @@ class JournalTableModel(QAbstractTableModel):
             return format_time(entry.timestamp_utc)
         if key == "setup_type":
             return entry.setup_type or "--"
-        if key == "regime":
-            val = str(entry.regime or "").lower()
-            return REGIME_TEXT.get(val, entry.regime or "Chưa XĐ")
+        if key == "execution_regime":
+            val = str(entry.execution_regime or "").lower()
+            return REGIME_TEXT.get(val, entry.execution_regime or "Chưa XĐ")
         if key == "trade_status":
             status_map = {
                 "planned": "Kế hoạch",
@@ -550,6 +551,11 @@ class NotePopup(QFrame):
             NotePopup.close_active()
         else:
             super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if NotePopup._instance is self:
+            NotePopup._instance = None
+        super().closeEvent(event)
 
 
 class NoteIconDelegate(QStyledItemDelegate):
@@ -666,6 +672,8 @@ class JournalScreen(QWidget):
         tab2_layout.addWidget(self._performance_card(), 1)
         self.tabs.addTab(tab2, "Thống kê Hiệu suất")
 
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
         root.addWidget(self.tabs, 1)
         self.refresh_status()
 
@@ -744,7 +752,7 @@ class JournalScreen(QWidget):
 
         self.regime_input = QComboBox()
         self.regime_input.setObjectName("FilterField")
-        self.regime_input.addItem("Tất cả regime", None)
+        self.regime_input.addItem("Tất cả execution_regime", None)
 
         self.date_from_input = QDateEdit()
         self.date_from_input.setCalendarPopup(True)
@@ -1021,21 +1029,16 @@ class JournalScreen(QWidget):
         total = self.journal_controller.total_entries()
         showing = len(entries)
 
-        closed = [e for e in entries if e.closed_at and e.result_r is not None]
-        if closed:
-            results = [e.result_r for e in closed]
-            wins = [r for r in results if r > 0]
-            losses = [r for r in results if r < 0]
-            win_rate = round(len(wins) / len(results) * 100, 1) if results else 0.0
-            expectancy = round(sum(results) / len(results), 3) if results else 0.0
-            gross_profit = sum(wins)
-            gross_loss = abs(sum(losses))
-            profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0.0
-            
-            self.winrate_val.setText(f"{win_rate}%")
-            self.expectancy_val.setText(f"{expectancy}R")
-            self.pf_val.setText(f"{profit_factor}")
-            
+        closed_entries = [e for e in entries if e.closed_at and e.result_r is not None]
+        if closed_entries:
+            trade_dicts = [asdict(e) for e in closed_entries]
+            perf = build_performance_summary(trade_dicts)
+            summary = perf.get("summary", {}) if isinstance(perf.get("summary"), dict) else {}
+
+            self.winrate_val.setText(f"{summary.get('win_rate', 0)}%")
+            self.expectancy_val.setText(f"{summary.get('expectancy_r', 0)}R")
+            self.pf_val.setText(f"{summary.get('profit_factor', 0)}")
+
             self.dot2.setVisible(True)
             self.dot3.setVisible(True)
             self.dot4.setVisible(True)
@@ -1049,7 +1052,7 @@ class JournalScreen(QWidget):
             self.winrate_val.setText("")
             self.expectancy_val.setText("")
             self.pf_val.setText("")
-            
+
             self.dot2.setVisible(False)
             self.dot3.setVisible(False)
             self.dot4.setVisible(False)
@@ -1420,11 +1423,11 @@ class JournalScreen(QWidget):
         self.symbol_input.blockSignals(False)
 
     def _refresh_filter_values(self) -> None:
-        """Nạp danh sách giá trị distinct cho các combobox session/setup/regime."""
+        """Nạp danh sách giá trị distinct cho các combobox session/setup/execution_regime."""
         for combo, column in [
             (self.session_input, "session"),
             (self.setup_input, "setup_type"),
-            (self.regime_input, "regime"),
+            (self.regime_input, "execution_regime"),
         ]:
             current = combo.currentData()
             combo.blockSignals(True)
@@ -1440,7 +1443,7 @@ class JournalScreen(QWidget):
 
     @staticmethod
     def _filter_label(column: str) -> str:
-        return {"session": "phiên", "setup_type": "setup", "regime": "regime"}.get(column, column)
+        return {"session": "phiên", "setup_type": "setup", "execution_regime": "execution_regime"}.get(column, column)
 
     def _apply_filters(self) -> None:
         search_text = self.search_input.text().strip() or None
@@ -1458,7 +1461,7 @@ class JournalScreen(QWidget):
             max_execution_quality=self._current_max_quality(),
             session=self.session_input.currentData(),
             setup_type=self.setup_input.currentData(),
-            regime=self.regime_input.currentData(),
+            execution_regime=self.regime_input.currentData(),
         )
         entries = self.journal_controller.list_entries(filters)
         self.table_model.set_entries(entries)
@@ -1467,7 +1470,8 @@ class JournalScreen(QWidget):
         QTimer.singleShot(0, self._recalculate_column_widths)
         self._update_filtered_stats_bar(entries)
         self._refresh_stats()
-        self._refresh_performance()
+        if self.tabs and self.tabs.currentIndex() == 1:
+            self._refresh_performance()
 
     def _clear_filters(self) -> None:
         # Reset Quick Filter buttons
@@ -1503,6 +1507,10 @@ class JournalScreen(QWidget):
         }
         for title, label in self.stat_labels.items():
             label.setText(str(values.get(title, "--")))
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == 1:
+            self._refresh_performance()
 
     def _refresh_performance(self) -> None:
         data = self.journal_controller.performance_summary()
@@ -1768,7 +1776,7 @@ class JournalScreen(QWidget):
                 direction_str = direction_raw
 
             values = [
-                format_short_time(str(row.get("closed_at") or "")),
+                format_time(str(row.get("closed_at") or "")),
                 row.get("symbol", "--"),
                 direction_str,
                 r_str,
@@ -2047,16 +2055,6 @@ def permission_value(text: str) -> str | None:
 
 
 def format_time(value: str) -> str:
-    if not value or value == "--":
-        return "--"
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
-        return parsed.strftime("%d/%m/%Y %H:%M")
-    except ValueError:
-        return value
-
-
-def format_short_time(value: str) -> str:
     if not value or value == "--":
         return "--"
     try:

@@ -91,10 +91,13 @@ def _cross_validate_structure(d1_smc: dict[str, Any], h4_smc: dict[str, Any], h1
     }
 
 
-def build_smc_context(d1: list[Candle], h4: list[Candle], h1: list[Candle]) -> dict[str, Any]:
-    d1_smc = _smc_for_timeframe(d1)
-    h4_smc = _smc_for_timeframe(h4)
-    h1_smc = _smc_for_timeframe(h1)
+def build_smc_context(
+    d1: list[Candle], h4: list[Candle], h1: list[Candle],
+    *, scan_interval_min: int = 15,
+) -> dict[str, Any]:
+    d1_smc = _smc_for_timeframe(d1, tf_minutes=1440, scan_interval_min=scan_interval_min)
+    h4_smc = _smc_for_timeframe(h4, tf_minutes=240, scan_interval_min=scan_interval_min)
+    h1_smc = _smc_for_timeframe(h1, tf_minutes=60, scan_interval_min=scan_interval_min)
     confluence = _cross_validate_structure(d1_smc, h4_smc, h1_smc)
     return {
         "D1": d1_smc,
@@ -119,7 +122,12 @@ def summarize_structure(candles: list[Candle]) -> dict[str, Any]:
     }
 
 
-def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
+def _smc_for_timeframe(
+    candles: list[Candle],
+    *,
+    tf_minutes: int = 60,
+    scan_interval_min: int = 15,
+) -> dict[str, Any]:
     if len(candles) < _SMC_MIN_CANDLES:
         return {
             "structure": "insufficient_data",
@@ -159,10 +167,10 @@ def _smc_for_timeframe(candles: list[Candle]) -> dict[str, Any]:
     order_blocks = detect_order_blocks(candles, fvg)
     demand_zones, supply_zones = detect_supply_demand_zones(candles)
     liquidity_sweeps = detect_liquidity_sweeps(candles, swings)
-    demand_zones = enrich_zones(demand_zones, candles, "demand", liquidity_sweeps, premium_discount_range)
-    supply_zones = enrich_zones(supply_zones, candles, "supply", liquidity_sweeps, premium_discount_range)
-    order_blocks = enrich_zones(order_blocks, candles, "order_block", liquidity_sweeps, premium_discount_range)
-    fvg = enrich_zones(fvg, candles, "fvg", liquidity_sweeps, premium_discount_range)
+    demand_zones = enrich_zones(demand_zones, candles, "demand", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
+    supply_zones = enrich_zones(supply_zones, candles, "supply", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
+    order_blocks = enrich_zones(order_blocks, candles, "order_block", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
+    fvg = enrich_zones(fvg, candles, "fvg", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
     return {
         "structure": bos.get("structure", "unknown"),
         "bos": bos.get("bos", False),
@@ -424,59 +432,76 @@ def detect_order_blocks(candles: list[Candle], fvg: list[dict[str, Any]]) -> lis
 
 
 def detect_supply_demand_zones(candles: list[Candle]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    demand: list[dict[str, Any]] = []
-    supply: list[dict[str, Any]] = []
     if len(candles) < 8:
-        return demand, supply
+        return [], []
 
     avg_range = sum(candle.high - candle.low for candle in candles[-50:]) / max(1, min(50, len(candles)))
     impulse_threshold = avg_range * 1.5 if avg_range > 0 else 0.0
-    consolidation_bars = 3
 
-    start = max(consolidation_bars, len(candles) - _LOOKBACK_WINDOW)
-    for index in range(start, len(candles) - 1):
-        impulse = candles[index]
-        impulse_size = impulse.high - impulse.low
-        if impulse_size <= impulse_threshold:
-            continue
-        base = candles[index - consolidation_bars : index]
-        if not base:
-            continue
-        base_high = max(candle.high for candle in base)
-        base_low = min(candle.low for candle in base)
-        base_range = base_high - base_low
-        if avg_range > 0 and base_range > avg_range * 1.2:
-            continue
+    # Dict keyed by (index, "demand"|"supply") -> best zone for that impulse
+    best_by_impulse: dict[tuple[int, str], dict[str, Any]] = {}
 
-        is_bullish_impulse = impulse.close > impulse.open and impulse.close > base_high
-        is_bearish_impulse = impulse.close < impulse.open and impulse.close < base_low
-        if is_bullish_impulse:
-            demand.append(
-                {
-                    "type": "demand_zone",
+    for consolidation_bars in (3, 5, 7, 10):
+        if len(candles) < consolidation_bars + 2:
+            continue
+        max_base_range_mult = 1.2 + 0.06 * (consolidation_bars - 3)
+
+        start = max(consolidation_bars, len(candles) - _LOOKBACK_WINDOW)
+        for index in range(start, len(candles) - 1):
+            impulse = candles[index]
+            impulse_size = impulse.high - impulse.low
+            if impulse_size <= impulse_threshold:
+                continue
+            base = candles[index - consolidation_bars : index]
+            if not base:
+                continue
+            base_high = max(candle.high for candle in base)
+            base_low = min(candle.low for candle in base)
+            base_range = base_high - base_low
+            if avg_range > 0 and base_range > avg_range * max_base_range_mult:
+                continue
+
+            is_bullish = impulse.close > impulse.open and impulse.close > base_high
+            is_bearish = impulse.close < impulse.open and impulse.close < base_low
+            if not (is_bullish or is_bearish):
+                continue
+
+            direction = "demand" if is_bullish else "supply"
+            key = (index, direction)
+
+            # Keep the zone with tightest base_range per impulse
+            if key not in best_by_impulse or base_range < best_by_impulse[key]["_base_range"]:
+                best_by_impulse[key] = {
+                    "type": "demand_zone" if is_bullish else "supply_zone",
                     "low": base_low,
                     "high": base_high,
                     "index": index - 1,
                     "time": base[-1].time.isoformat(),
                     "consolidation_bars": consolidation_bars,
                     "displacement_multiple": round(impulse_size / avg_range, 2) if avg_range else 0,
-                    "liquidity_sweep": swept_recent_low(impulse, candles[:index]),
+                    "liquidity_sweep": (
+                        swept_recent_low(impulse, candles[:index])
+                        if is_bullish
+                        else swept_recent_high(impulse, candles[:index])
+                    ),
+                    "_base_range": base_range,
                 }
-            )
-        elif is_bearish_impulse:
-            supply.append(
-                {
-                    "type": "supply_zone",
-                    "low": base_low,
-                    "high": base_high,
-                    "index": index - 1,
-                    "time": base[-1].time.isoformat(),
-                    "consolidation_bars": consolidation_bars,
-                    "displacement_multiple": round(impulse_size / avg_range, 2) if avg_range else 0,
-                    "liquidity_sweep": swept_recent_high(impulse, candles[:index]),
-                }
-            )
-    return demand[-_MAX_SD_ZONES:], supply[-_MAX_SD_ZONES:]
+
+    # Split by type, sort by index descending, keep top _MAX_SD_ZONES
+    demand_candidates = sorted(
+        [z for z in best_by_impulse.values() if z["type"] == "demand_zone"],
+        key=lambda z: z["index"], reverse=True,
+    )[: _MAX_SD_ZONES]
+    supply_candidates = sorted(
+        [z for z in best_by_impulse.values() if z["type"] == "supply_zone"],
+        key=lambda z: z["index"], reverse=True,
+    )[: _MAX_SD_ZONES]
+
+    # Clean up internal field
+    for z in demand_candidates + supply_candidates:
+        z.pop("_base_range", None)
+
+    return demand_candidates, supply_candidates
 
 
 def detect_liquidity_pools(candles: list[Candle], swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[float]]:
@@ -565,8 +590,12 @@ def enrich_zones(
     family: str,
     liquidity_sweeps: dict[str, list[dict[str, Any]]],
     premium_discount_range: dict[str, float | str],
+    *,
+    tf_minutes: int = 60,
+    scan_interval_min: int = 15,
 ) -> list[dict[str, Any]]:
     enriched = []
+    stale_threshold = max(1, (scan_interval_min * 2) // tf_minutes)
     for zone in zones:
         item = dict(zone)
         index = int(item.get("index", len(candles) - 1))
@@ -578,10 +607,12 @@ def enrich_zones(
         broken = zone_broken(future, low, high, side)
         mitigated = test_count > 0
         freshness_bars = max(0, len(candles) - 1 - index)
+        stale = freshness_bars > stale_threshold
         zone_location = zone_premium_discount(low, high, premium_discount_range)
         item.update(
             {
                 "freshness_bars": freshness_bars,
+                "stale": stale,
                 "mitigated": mitigated,
                 "broken": broken,
                 "test_count": test_count,

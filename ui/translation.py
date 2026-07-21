@@ -37,6 +37,7 @@ TERM_TEXT = {
     "no_setup": "Không có thiết lập",
     "none": "Chưa có",
     "zone_broken": "Vùng giá đã bị phá",
+    "zone_quality_low": "Chất lượng vùng giá thấp",
     "h1_bullish_engulfing": "Nến H1 bao trùm tăng",
     "h1_bearish_engulfing": "Nến H1 bao trùm giảm",
     "h1_bullish_rejection": "Nến H1 rút chân tăng",

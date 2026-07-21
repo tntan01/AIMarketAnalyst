@@ -50,6 +50,14 @@ from core.safe_types import clamp_score
 DEFAULT_EVIDENCE_SCORE = 50
 MIN_SAMPLE_SIZE = 30
 STRONG_SAMPLE_SIZE = 50
+ZONE_BUCKET_SAMPLE_SIZE = 20
+
+ZONE_SCORE_BUCKETS = [
+    (0, 40, "weak"),
+    (40, 60, "fair"),
+    (60, 80, "good"),
+    (80, 101, "strong"),
+]
 
 # Values that should be treated as missing / unparseable
 _INVALID_STRINGS = frozenset({"", "nan", "none", "n/a", "null", "na"})
@@ -228,6 +236,59 @@ def normalize_regime(regime: object) -> str | None:
     return cleaned if len(cleaned) <= 30 else None
 
 
+def normalize_zone_bucket(zone_score: int | float | None) -> str | None:
+    """Normalise a zone_score value to a bucket label."""
+    if zone_score is None:
+        return None
+    try:
+        score = float(zone_score)
+    except (TypeError, ValueError):
+        return None
+    for low, high, label in ZONE_SCORE_BUCKETS:
+        if low <= score < high:
+            return label
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Zone-aware filtering
+# ---------------------------------------------------------------------------
+
+
+def filter_trades_by_symbol_direction_zone(
+    trades: list[dict[str, object]] | None,
+    symbol: str,
+    direction: str,
+    zone_bucket: str,
+) -> list[dict[str, object]]:
+    """Return trades matching symbol + direction + zone_score bucket."""
+    if not isinstance(trades, list):
+        return []
+
+    norm_symbol = normalize_symbol(symbol)
+    norm_direction = normalize_direction(direction)
+    if norm_symbol is None or norm_direction is None:
+        return []
+
+    matched: list[dict[str, object]] = []
+    for trade in trades:
+        if not isinstance(trade, dict):
+            continue
+        trade_symbol = normalize_symbol(
+            trade.get("symbol") if "symbol" in trade else trade.get("pair")
+        )
+        trade_direction = normalize_direction(
+            trade.get("direction") if "direction" in trade else trade.get("side")
+        )
+        if trade_symbol != norm_symbol or trade_direction != norm_direction:
+            continue
+        trade_zone_bucket = normalize_zone_bucket(trade.get("entry_zone_score"))
+        if trade_zone_bucket == zone_bucket:
+            matched.append(trade)
+
+    return matched
+
+
 def filter_trades_by_symbol_direction_regime(
     trades: list[dict[str, object]] | None,
     symbol: str,
@@ -243,7 +304,7 @@ def filter_trades_by_symbol_direction_regime(
     matched: list[dict[str, object]] = []
     for trade in by_symbol_dir:
         trade_regime = normalize_regime(
-            trade.get("regime") if "regime" in trade else trade.get("market_regime")
+            trade.get("execution_regime") if "execution_regime" in trade else trade.get("market_regime")
         )
         if trade_regime == norm_regime:
             matched.append(trade)
@@ -255,11 +316,14 @@ def select_evidence_group(
     symbol: str,
     direction: str,
     regime: str | None = None,
+    zone_bucket: str | None = None,
     min_group_size: int = STRONG_SAMPLE_SIZE,
 ) -> dict[str, Any]:
     """Choose the best available trade group for evidence scoring.
 
     Precedence:
+    0. symbol + direction + zone_bucket (if *zone_bucket* is provided
+       and the group has ≥ ZONE_BUCKET_SAMPLE_SIZE valid results).
     1. symbol + direction + regime (if *regime* is provided and the
        group has ≥ *min_group_size* valid closed results).
     2. symbol + direction (same threshold).
@@ -269,6 +333,19 @@ def select_evidence_group(
     *sample_size* always counts valid (filtered, closed) *result_r*
     values, not raw trade rows.
     """
+    # Tier 0: symbol + direction + zone_bucket
+    if zone_bucket is not None:
+        zone_trades = filter_trades_by_symbol_direction_zone(
+            trades, symbol, direction, zone_bucket
+        )
+        zone_rr = extract_closed_trade_results(zone_trades)
+        if len(zone_rr) >= ZONE_BUCKET_SAMPLE_SIZE:
+            return {
+                "group_used": "symbol_direction_zone",
+                "trades": zone_trades,
+                "sample_size": len(zone_rr),
+            }
+
     # Tier 1: symbol + direction + regime
     if regime is not None:
         regime_trades = filter_trades_by_symbol_direction_regime(
@@ -319,6 +396,7 @@ def calculate_evidence_score(
     symbol: str,
     direction: str,
     regime: str | None = None,
+    zone_score: int | float | None = None,
 ) -> dict[str, Any]:
     """Compute an evidence score for a symbol + direction (+ regime) group.
 
@@ -327,20 +405,25 @@ def calculate_evidence_score(
     evidence score that defaults to 50 (neutral) when data is
     insufficient.
 
+    If *zone_score* is provided, Tier 0 (symbol + direction + zone_bucket)
+    is attempted first before falling back to the broader tiers.
+
     Never raises — dirty journal data is silently filtered.
     """
     norm_symbol = normalize_symbol(symbol)
     norm_direction = normalize_direction(direction)
     norm_regime = normalize_regime(regime) if regime is not None else None
+    norm_zone_bucket = normalize_zone_bucket(zone_score)
 
     if norm_symbol is None or norm_direction is None:
         result = neutral_evidence_result("invalid_symbol_or_direction")
         result["normalized_symbol"] = norm_symbol
         result["normalized_direction"] = norm_direction
         result["normalized_regime"] = norm_regime
+        result["zone_bucket_used"] = None
         return result
 
-    group = select_evidence_group(trades, norm_symbol, norm_direction, norm_regime)
+    group = select_evidence_group(trades, norm_symbol, norm_direction, norm_regime, norm_zone_bucket)
 
     if group["group_used"] is None:
         # Insufficient data — run stats on best group for info, but cap score at 50
@@ -354,6 +437,7 @@ def calculate_evidence_score(
         edge["normalized_symbol"] = norm_symbol
         edge["normalized_direction"] = norm_direction
         edge["normalized_regime"] = norm_regime
+        edge["zone_bucket_used"] = group.get("zone_bucket_used")
         edge["group_used"] = group["group_used"]
         edge["sample_size"] = group["sample_size"]
         return edge
@@ -362,6 +446,7 @@ def calculate_evidence_score(
     edge["normalized_symbol"] = norm_symbol
     edge["normalized_direction"] = norm_direction
     edge["normalized_regime"] = norm_regime
+    edge["zone_bucket_used"] = norm_zone_bucket if group["group_used"] == "symbol_direction_zone" else None
     return edge
 
 

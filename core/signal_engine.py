@@ -388,24 +388,7 @@ def smc_quality_score(side: str, smc: dict[str, Any], technical: dict[str, Any])
 
     zone = _best_smc_zone(side, h4, h1)
     if zone:
-        zone_score_scanner = int(zone.get("zone_score", 0) or 0)
-        if zone_score_scanner < 50:
-            internal_points = 0
-            if not zone.get("broken"):
-                internal_points += 2
-            if not zone.get("mitigated"):
-                internal_points += 1
-            if int(zone.get("test_count", 0) or 0) <= 2:
-                internal_points += 1
-            if zone.get("liquidity_sweep"):
-                internal_points += 1
-            location = str(zone.get("zone_location", "unknown"))
-            if (side == "buy" and location == "discount") or (side == "sell" and location == "premium"):
-                internal_points += 1
-            internal_zone_score = min(100, internal_points * 20)
-            zone_score = max(zone_score_scanner, internal_zone_score)
-        else:
-            zone_score = zone_score_scanner
+        zone_score = int(zone.get("zone_score", 0) or 0)
 
         if zone_score >= 75:
             zone_points = 4

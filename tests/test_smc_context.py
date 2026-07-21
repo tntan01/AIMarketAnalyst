@@ -10,6 +10,7 @@ from core.smc_context import (
     detect_fvg,
     detect_liquidity_pools,
     detect_liquidity_sweeps,
+    enrich_zones,
     swing_points,
 )
 
@@ -218,3 +219,49 @@ class TestDetectLiquiditySweeps:
         }
         result = detect_liquidity_sweeps(candles, swings)
         assert result["swept_highs"] == []
+
+
+class TestEnrichZonesWithStale:
+    """Tests for stale flag added to enrich_zones()."""
+
+    def _make_candles(self, count: int) -> list[Candle]:
+        t = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        return [
+            Candle(time=t + timedelta(hours=4 * i), open=1.1000, high=1.1010,
+                   low=1.0990, close=1.1005, volume=1000)
+            for i in range(count)
+        ]
+
+    def _pd_range(self):
+        return {"status": "ok", "low": 1.0900, "high": 1.1100, "midpoint": 1.1000}
+
+    def test_stale_h4_default_interval(self):
+        """H4 zone 2 bars old, interval=15 -> stale_threshold=1, freshness=2 -> stale=True."""
+        candles = self._make_candles(100)
+        zone = {"type": "demand_zone", "low": 1.0950, "high": 1.0960, "index": 97}
+        enriched = enrich_zones([zone], candles, "demand", {}, self._pd_range(),
+                                tf_minutes=240, scan_interval_min=15)
+        assert enriched[0]["stale"] is True
+
+    def test_fresh_h1_short_interval(self):
+        """H1 zone 1 bar old, interval=15 -> threshold=1, freshness=1 -> stale=False."""
+        candles = self._make_candles(100)
+        zone = {"type": "demand_zone", "low": 1.0950, "high": 1.0960, "index": 98}
+        enriched = enrich_zones([zone], candles, "demand", {}, self._pd_range(),
+                                tf_minutes=60, scan_interval_min=15)
+        assert enriched[0]["stale"] is False
+
+    def test_stale_m15_long_interval(self):
+        """M15 zone 5 bars old, interval=30 -> threshold=4, freshness=5 -> stale=True."""
+        candles = self._make_candles(100)
+        zone = {"type": "demand_zone", "low": 1.0950, "high": 1.0960, "index": 94}
+        enriched = enrich_zones([zone], candles, "demand", {}, self._pd_range(),
+                                tf_minutes=15, scan_interval_min=30)
+        assert enriched[0]["stale"] is True
+
+    def test_stale_default_params(self):
+        """Call without new params -> still works, stale flag exists."""
+        candles = self._make_candles(100)
+        zone = {"type": "demand_zone", "low": 1.0950, "high": 1.0960, "index": 95}
+        enriched = enrich_zones([zone], candles, "demand", {}, self._pd_range())
+        assert "stale" in enriched[0]

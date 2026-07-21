@@ -54,7 +54,7 @@ class JournalEntry:
     actual_tp: float | None = None
     actual_exit: float | None = None
     setup_type: str | None = None
-    regime: str | None = None
+    execution_regime: str | None = None
     session: str | None = None
     m15_quality: str | None = None
     spread_at_entry: float | None = None
@@ -72,6 +72,9 @@ class JournalEntry:
     mt5_position_id: int | None = None
     synced_from: str | None = None
     synced_at_utc: str | None = None
+    entry_zone_score: int | None = None
+    entry_zone_source: str | None = None
+    sub_zone: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,4 +93,4 @@ class JournalFilter:
     max_execution_quality: int = 0
     session: str | None = None
     setup_type: str | None = None
-    regime: str | None = None
+    execution_regime: str | None = None

@@ -120,7 +120,7 @@ def _matching_trades(
         if trade_direction != norm_direction:
             continue
         if norm_regime:
-            trade_regime = str(trade.get("regime") or "").strip().lower()
+            trade_regime = str(trade.get("execution_regime") or "").strip().lower()
             if trade_regime and trade_regime != norm_regime:
                 continue
         if coerce_result_r(trade.get("result_r")) is None:

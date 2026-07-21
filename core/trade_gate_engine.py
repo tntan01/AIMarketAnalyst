@@ -14,12 +14,15 @@ from core.reason_codes import (
     SPREAD_ABNORMAL,
     WEEKLY_LOSS_LIMIT_REACHED,
     ZONE_BROKEN,
+    ZONE_QUALITY_LOW,
     append_code,
 )
 
 # ---------------------------------------------------------------------------
 # Gate check result dataclass-like keys (plain dict for zero-dependency)
 # ---------------------------------------------------------------------------
+
+MIN_ZONE_SCORE_FOR_ENTRY = 40
 
 # Cap priority: TRADE_BLOCKED > WATCH_ONLY > WAITING_CONFIRMATION
 _CAP_PRIORITY = {
@@ -157,6 +160,18 @@ def _gate_zone_broken(context: dict[str, Any], result: dict[str, Any]) -> None:
         result["reasons"].append("Vùng giá quan trọng đã bị phá vỡ.")
 
 
+def _gate_zone_quality(context: dict[str, Any], result: dict[str, Any]) -> None:
+    zone_score = context.get("zone_score")
+    if zone_score is None:
+        return
+    if zone_score < MIN_ZONE_SCORE_FOR_ENTRY:
+        append_code(result["warning_codes"], ZONE_QUALITY_LOW)
+        result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
+        result["reasons"].append(
+            f"Chất lượng vùng giá thấp (điểm {zone_score:.0f} dưới ngưỡng {MIN_ZONE_SCORE_FOR_ENTRY})."
+        )
+
+
 def _gate_account_guard(context: dict[str, Any], result: dict[str, Any]) -> None:
     """Merge account guard result into trade gate.
 
@@ -228,6 +243,7 @@ _GATES = [
     _gate_expected_effective_rr,
     _gate_score_gap,
     _gate_zone_broken,
+    _gate_zone_quality,
 ]
 
 

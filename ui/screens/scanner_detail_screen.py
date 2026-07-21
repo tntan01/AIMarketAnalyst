@@ -815,12 +815,16 @@ class ScannerDetailScreen(QWidget):
         return str(rr), detail, "#ea580c"
 
     def _dialog_card_sl(self) -> tuple[str, str, str]:
+        if self._has_no_entry_zone():
+            return "--", "", "#94a3b8"
         sl = self.row.get("stop_loss")
         if isinstance(sl, (int, float)):
             return f"{sl:.5f}", "", "#e11d48"
         return "--", "", "#94a3b8"
 
     def _dialog_card_tp(self) -> tuple[str, str, str]:
+        if self._has_no_entry_zone():
+            return "--", "", "#94a3b8"
         tp = self.row.get("take_profit")
         if isinstance(tp, list) and tp:
             tp1 = f"{tp[0]:.5f}"
