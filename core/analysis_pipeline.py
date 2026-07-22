@@ -848,39 +848,83 @@ class AnalysisPipeline:
         atr = (self._technical.get("atr_h4") or self._technical.get("atr_d1") or 0.0)
         price = float(self._technical.get("price", 0.0))
         if not self._scenarios and atr > 0 and price > 0 and best_side in ("buy", "sell"):
-            if best_side == "buy":
-                sl = round(price - atr * 1.2, 5)
-                tp = round(price + atr * 2.4, 5)
+            # Try to find the best SMC zone even beyond zone_dist_mult
+            # so the scanner shows real structure instead of fake ATR fallback.
+            distant_zone = get_preferred_zone(self._smc, best_side, price=None)
+            if distant_zone is not None:
+                zone_low = float(distant_zone["low"])
+                zone_high = float(distant_zone["high"])
+                zone_level = float(distant_zone["level"])
+                zone_score = distant_zone.get("zone_score", 0)
+                sl = round(zone_low - atr * 1.0, 5) if best_side == "buy" else round(zone_high + atr * 1.0, 5)
+                # Find nearest TP from opposite-side zones — must be outside entry zone
+                target_zones = self._technical.get("resistance_zones" if best_side == "buy" else "support_zones", [])
+                far_edge = zone_high if best_side == "buy" else zone_low
+                tp_candidates = [
+                    z["level"] for z in target_zones
+                    if (z["level"] > far_edge if best_side == "buy" else z["level"] < far_edge)
+                ]
+                tp = round(min(tp_candidates), 5) if best_side == "buy" and tp_candidates else \
+                     round(max(tp_candidates), 5) if best_side == "sell" and tp_candidates else None
+                fallback_scenarios = [{
+                    "type": best_side,
+                    "priority": "primary",
+                    "entry_zone": [round(zone_low, 5), round(zone_high, 5)],
+                    "stop_loss": round(sl, 5),
+                    "take_profit": [round(tp, 5)] if tp is not None else None,
+                    "entry_zone_score": zone_score,
+                    "entry_zone_source": "smc_distant",
+                    "entry_status": "watch_zone",
+                    "m15_quality": None,
+                    "expected_effective_rr": None,
+                    "risk_reward": None,
+                    "ready_to_trade": False,
+                    "trigger_type": "none",
+                    "price_in_entry_zone": None,
+                    "condition": f"Zone SMC cách giá {abs(price - zone_level) / atr:.1f} ATR — chỉ theo dõi, chưa vào lệnh.",
+                    "invalidation": f"H1 đóng {'dưới' if best_side == 'buy' else 'trên'} {sl:.5f} hoặc spread giãn bất thường.",
+                    "position_sizing": {
+                        "suggested_lot": 0.01,
+                        "risk_amount_usd": 0.0,
+                        "entry_price": round(zone_level, 5),
+                        "stop_loss": round(sl, 5),
+                    },
+                    "sl_source": "zone_boundary",
+                }]
             else:
-                sl = round(price + atr * 1.2, 5)
-                tp = round(price - atr * 2.4, 5)
-            zone_half = round(atr * 0.25, 5)
-            entry_low = round(price - zone_half, 5)
-            entry_high = round(price + zone_half, 5)
-            fallback_scenarios = [{
-                "type": best_side,
-                "priority": "primary",
-                "entry_zone": [entry_low, entry_high],
-                "stop_loss": sl,
-                "take_profit": [tp],
-                "entry_zone_score": 50,
-                "entry_zone_source": "fallback",
-                "entry_status": "watch_zone",
-                "m15_quality": None,
-                "expected_effective_rr": None,
-                "risk_reward": None,
-                "ready_to_trade": False,
-                "trigger_type": "none",
-                "price_in_entry_zone": None,
-                "condition": "Chưa có SMC zone rõ ràng, cân nhắc thêm xác nhận.",
-                "invalidation": f"H1 đóng {'dưới' if best_side == 'buy' else 'trên'} {sl:.5f} hoặc spread giãn bất thường.",
-                "position_sizing": {
-                    "suggested_lot": 0.01,
-                    "risk_amount_usd": 0.0,
-                    "entry_price": (entry_low + entry_high) / 2,
+                if best_side == "buy":
+                    sl = round(price - atr * 1.2, 5)
+                    tp = round(price + atr * 2.4, 5)
+                else:
+                    sl = round(price + atr * 1.2, 5)
+                    tp = round(price - atr * 2.4, 5)
+                zone_half = round(atr * 0.25, 5)
+                entry_low = round(price - zone_half, 5)
+                entry_high = round(price + zone_half, 5)
+                fallback_scenarios = [{
+                    "type": best_side,
+                    "priority": "primary",
+                    "entry_zone": [entry_low, entry_high],
                     "stop_loss": sl,
-                },
-            }]
+                    "take_profit": [tp],
+                    "entry_zone_score": 50,
+                    "entry_zone_source": "fallback",
+                    "entry_status": "watch_zone",
+                    "m15_quality": None,
+                    "expected_effective_rr": None,
+                    "risk_reward": None,
+                    "ready_to_trade": False,
+                    "trigger_type": "none",
+                    "price_in_entry_zone": None,
+                    "condition": "Chưa có SMC zone rõ ràng, cân nhắc thêm xác nhận.",
+                    "invalidation": f"H1 đóng {'dưới' if best_side == 'buy' else 'trên'} {sl:.5f} hoặc spread giãn bất thường.",
+                    "position_sizing": {
+                        "suggested_lot": 0.01,
+                        "risk_amount_usd": 0.0,
+                        "entry_price": (entry_low + entry_high) / 2,
+                        "stop_loss": sl,
+                    },
+                }]
         else:
             fallback_scenarios = [{
                 "type": "stand_aside",

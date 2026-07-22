@@ -2,7 +2,7 @@
   "_comment": "ATR-multiplier & risk parameters for Step 4 trade-plan builder. Edit values here instead of risk_engine.py. After running param_sensitivity.py, review the optimized recommendations in risk_params_optimized.json and copy accepted values here.",
 
   "min_sl_distance_atr": 0.5,
-  "min_sl_distance_atr_mult": 0.20,
+  "min_sl_distance_atr_mult": 0.35,
   "min_stop_spread_mult": 3,
   "zone_sl_buffer_atr": 0.10,
   "zone_sl_cap_ratio": 1.5,

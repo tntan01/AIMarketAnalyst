@@ -514,23 +514,22 @@ def build_trade_plan(
 
     # --- Stop Loss ---
     sl_source = "atr"
-    if use_preferred:
+    swing_sl = _find_nearest_swing_for_sl(smc, side, level)
+    if swing_sl is not None:
+        stop_loss = swing_sl - sign * atr_value * _SWING_SL_BUFFER_ATR
+        if abs(level - stop_loss) < min_stop_distance:
+            stop_loss = level - sign * min_stop_distance
+        sl_source = "swing"
+    elif use_preferred:
         sl_boundary = preferred_zone["low"] if side == "buy" else preferred_zone["high"]
         stop_loss = sl_boundary - sign * atr_value * _ZONE_SL_BUFFER_ATR
         if abs(level - stop_loss) < min_stop_distance:
             stop_loss = level - sign * min_stop_distance
         sl_source = "zone_boundary"
+    elif side == "buy":
+        stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, zone)
     else:
-        swing_sl = _find_nearest_swing_for_sl(smc, side, level)
-        if swing_sl is not None:
-            stop_loss = swing_sl - sign * atr_value * _SWING_SL_BUFFER_ATR
-            if abs(level - stop_loss) < min_stop_distance:
-                stop_loss = level - sign * min_stop_distance
-            sl_source = "swing"
-        elif side == "buy":
-            stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, zone)
-        else:
-            stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, zone)
+        stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, zone)
 
     # Guard: SL must be on the correct side of the entry zone
     sl_edge = (entry_low if side == "buy" else entry_high) - sign * atr_value * _SL_FLOOR_BUFFER_ATR

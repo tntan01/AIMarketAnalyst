@@ -91,12 +91,22 @@ class ScannerController:
         }
 
         # ---- Kick off background I/O immediately (runs while we do MT5 setup) ----
+        active_ai = settings.ai.active_provider()
+        ai_svc = None
+        if active_ai and active_ai.api_key:
+            ai_svc = AIService(AIProviderConfig(
+                provider=active_ai.provider,
+                model=active_ai.model,
+                api_key=active_ai.api_key,
+            ))
+
         with ThreadPoolExecutor(max_workers=2) as _bg:
             _corr_future = _bg.submit(fetch_macro_correlation_context)
             _preload_future = _bg.submit(
                 self.news_service.preload_macro_contexts,
                 request.symbols,
                 progress_callback=lambda p, m: progress(min(14 + p // 10, 18), m),
+                ai_service=ai_svc,
             )
 
             progress(12, "Đang đọc danh sách mã giao dịch...")
@@ -123,15 +133,6 @@ class ScannerController:
 
         progress(19, "Đang tải dữ liệu giá từ MT5...")
         total = max(1, len(request.symbols))
-
-        active_ai = settings.ai.active_provider()
-        ai_svc = None
-        if active_ai and active_ai.api_key:
-            ai_svc = AIService(AIProviderConfig(
-                provider=active_ai.provider,
-                model=active_ai.model,
-                api_key=active_ai.api_key,
-            ))
 
         analysis_input_kwargs: dict[str, Any] = {
             "account_balance": mt5_balance,

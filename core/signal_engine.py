@@ -265,7 +265,20 @@ def momentum_alignment_score(side: str, t: dict[str, Any]) -> int:
                 (now < 0 and now > prev, 5),
             ]
         )
-    return int(clamp(rsi_score + macd_score, 0, 20))
+    macd_direction = hist.get("direction", "flat")
+    macd_accel = macd_direction == "increasing"
+    accel_bonus = 0
+    if side == "buy":
+        if rsi_rising and macd_accel:
+            accel_bonus = 2
+        elif not rsi_rising and not macd_accel:
+            accel_bonus = -2
+    else:
+        if rsi_falling and not macd_accel:
+            accel_bonus = 2
+        elif not rsi_falling and macd_accel:
+            accel_bonus = -2
+    return int(clamp(rsi_score + macd_score + accel_bonus, 0, 20))
 
 
 def _choose_one(candidates: list[tuple[bool, int]]) -> int:

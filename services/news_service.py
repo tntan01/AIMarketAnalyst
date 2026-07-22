@@ -102,6 +102,8 @@ class NewsService:
     # ------------------------------------------------------------------
     def latest_macro_context(self, symbol: str, *, include_latest_statements: bool = True, ai_service: object | None = None) -> dict[str, object]:
         cache_key = f"{symbol}_{include_latest_statements}"
+        if ai_service is not None:
+            cache_key += "_ai"
         if cache_key in self._tier_scores_cache and self._tier_scores_cache[cache_key] is not None:
             return self._tier_scores_cache[cache_key]
 
@@ -186,7 +188,7 @@ class NewsService:
         "https://www.investing.com/rss/news_301.rss",
     ]
 
-    def preload_macro_contexts(self, symbols: list[str], progress_callback=None) -> None:
+    def preload_macro_contexts(self, symbols: list[str], progress_callback=None, *, ai_service: object | None = None) -> None:
         """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores.
 
         Results are cached for _preload_cache_ttl (5 min) to avoid redundant
@@ -222,7 +224,7 @@ class NewsService:
             for idx, symbol in enumerate(symbols):
                 progress(17 + int((idx + 1) / total * 2), f"Đang phân tích vĩ mô {symbol} ({idx + 1}/{total})...")
                 for include_stmts in (True,):
-                    ctx = self.latest_macro_context(symbol, include_latest_statements=include_stmts)
+                    ctx = self.latest_macro_context(symbol, include_latest_statements=include_stmts, ai_service=ai_service)
                     cache_key = f"{symbol}_{include_stmts}"
                     self._tier_scores_cache[cache_key] = ctx
         finally:

@@ -92,7 +92,7 @@ Một mã (ví dụ `EUR/USD`) đi qua **9 bước lớn**, trong đó Bước 3
 3. `build_trade_plan()` cho mỗi side:
    - **Chọn zone:** ưu tiên SMC zone nếu đủ gần (≤ `atr × zone_dist_mult`), không thì chọn support/resistance zone gần nhất.
    - **Entry zone:** vùng hẹp quanh mức zone, độ rộng = `clamp(zone_width/atr × 0.5, 0.10, 0.30) × ATR`.
-   - **Stop Loss:** dựa theo cạnh zone (nếu dùng SMC) hoặc swing gần nhất (gộp cả H4+H1), có guard đảm bảo SL nằm ngoài entry zone tối thiểu 0.10×ATR.
+   - **Stop Loss:** ưu tiên swing structural gần nhất (H4+H1) → fallback cạnh SMC zone → fallback ATR, có guard đảm bảo SL cách entry tối thiểu 0.20×ATR (SMC) hoặc 0.50×ATR (technical).
    - **Take Profit — cascade 5 bước**, dừng ở bước đầu tiên có kết quả: (1) Equal Highs/Lows → (2) S/R zone → (3) Fibonacci extension 0.382 → (4) Swing-based TP → (5) nếu vẫn không có và đang dùng SMC zone thì **để trống TP** (không tự bịa).
    - **R:R** và `expected_effective_rr` (đã trừ hao chi phí spread), kèm `risk_reward_range` (best/base/worst theo 3 vị trí khớp lệnh).
    - **Position sizing:** `risk_amount = balance × risk% × size_multiplier`, chia cho `loss_per_lot` để ra lot đề xuất, làm tròn theo bước lot của broker.
@@ -196,6 +196,7 @@ opportunity = final_score
             + proximity_bonus    (in_zone=+8, near_zone=+4, far=0)
             + readiness_bonus    (ready_now=+10, waiting_confirmation=+3, khác=0)
             + rr_bonus           (RR≥2.0=+5, RR≥1.5=+3, RR≥1.3=+1, thấp hơn=0)
+            + zone_quality_bonus (+0~6, từ entry_zone_score: 6×(score-50)/50)
             − spread_penalty     (abnormal=-8, caution=-4, normal=0)
             − news_penalty       (tin lớn trong 30m=-10, tin trong 3h=-5)
             − journal_penalty    (từ journal_feedback, chỉ áp dụng nếu sample ≥8)

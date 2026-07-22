@@ -269,11 +269,13 @@ symbol_auto_trade[symbol] = {
   entry_for_rr = entry_high (SELL)
   ```
 
-  **c) Tính Stop Loss:**
-  - `use_preferred`: SL = zone_low - atr × 0.10 (BUY) hoặc zone_high + atr × 0.10 (SELL)
-  - Không có preferred: tìm swing gần nhất từ **cả H4 và H1** (gom tất cả candidates, chọn swing gần `price` nhất)
-  - Nếu không có swing → ATR-based SL
-  - Guard: SL phải nằm ngoài entry zone ít nhất `atr × 0.10`
+  **c) Tính Stop Loss (ưu tiên: swing → zone boundary → ATR):**
+  1. **Luôn tìm swing trước** — `_find_nearest_swing_for_sl()` gom tất cả swing H4+H1, chọn swing gần `level` nhất
+     → SL = swing - atr × 0.15 (BUY) hoặc swing + atr × 0.15 (SELL)
+  2. Không có swing + có `use_preferred`: SL = zone_low - atr × 0.10 (BUY) hoặc zone_high + atr × 0.10 (SELL)
+  3. Không có swing + không có preferred: ATR-based SL (`_calc_stop_loss_buy/sell`)
+  - Floor guard: SL phải nằm ngoài entry zone ít nhất `atr × 0.20`
+  - Min distance guard: khoảng cách `entry_for_rr → SL` ≥ `atr × 0.20` (SMC) hoặc `atr × 0.50` (technical)
 
   **d) Tính Take Profit (cascade 5 bước, dừng ở bước đầu tiên tìm được):**
   1. **Equal Highs/Lows** (liquidity clusters từ H4/H1)
@@ -511,6 +513,7 @@ opportunity = final_score
             + proximity_bonus    (+8 in_zone, +4 near, 0 far)
             + readiness_bonus    (+10 ready_now, +3 waiting_confirmation, 0 còn lại)
             + rr_bonus           (+5 RR≥2.0, +3 RR≥1.5, +1 RR≥1.3, 0 còn lại)
+            + zone_quality_bonus (+0~6, tính từ entry_zone_score: 6×(score-50)/50)
             - spread_penalty     (-8 abnormal, -4 caution, 0 normal)
             - news_penalty       (-10 high-impact trong 30m, -5 news trong 3h)
             - journal_penalty    (từ journal_feedback nếu sample ≥ 8)
@@ -524,6 +527,7 @@ opportunity = final_score
 | proximity_bonus | in_zone=+8, near_zone=+4, far=0 |
 | readiness_bonus | ready_now=+10, waiting_confirmation=+3, khác=0 |
 | rr_bonus | RR≥2.0=+5, RR≥1.5=+3, RR≥1.3=+1, thấp hơn=0 |
+| zone_quality_bonus | 6 × max(0, (entry_zone_score - 50) / 50), không có zone_score → 0 |
 | spread_penalty | abnormal=-8, caution=-4, normal=0 |
 | news_penalty | high_impact_30m=-10, news_in_3h=-5, không có=0 |
 | journal_penalty | Từ `journal_feedback.opportunity_penalty` nếu sample ≥ 8 |
