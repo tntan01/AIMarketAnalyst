@@ -5,7 +5,7 @@ from html import escape
 from config.paths import app_data_dir
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QProgressBar,
+    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QProgressBar,
     QScrollArea, QSizePolicy, QSplitter, QTabWidget, QTextEdit, QVBoxLayout,
     QWidget,
 )
@@ -1143,10 +1143,7 @@ class ScannerDetailScreen(QWidget):
     def _refresh_trade_panel(self) -> None:
         """Cập nhật panel Số liệu giao dịch ở cột phải tab Tổng quan."""
         layout = self.trade_panel.layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_layout(layout)
 
         try:
             light = self.settings_service.load().display.theme == "light"
@@ -1221,10 +1218,7 @@ class ScannerDetailScreen(QWidget):
     def _refresh_score_panel(self) -> None:
         """Cập nhật panel Điểm phân tích ở cột phải tab Tổng quan."""
         layout = self.score_panel.layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_layout(layout)
 
         try:
             light = self.settings_service.load().display.theme == "light"
@@ -1285,16 +1279,29 @@ class ScannerDetailScreen(QWidget):
             row_l.addWidget(val, 1)
             layout.addWidget(row_w)
 
+    @staticmethod
+    def _clear_layout(layout: QLayout | None) -> None:
+        """Recursively clear a QLayout including child layouts and widgets."""
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            if item is None:
+                continue
+            if item.widget() is not None:
+                item.widget().deleteLater()
+            elif item.layout() is not None:
+                child_lay = item.layout()
+                ScannerDetailScreen._clear_layout(child_lay)
+                child_lay.deleteLater()
+
     def _refresh_checklist_panel(self) -> None:
         """Fill the checklist panel with 7 compact entry condition items."""
         if not hasattr(self, "checklist_panel"):
             return
 
         layout = self.checklist_panel.layout()
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_layout(layout)
 
         try:
             light = self.settings_service.load().display.theme == "light"
@@ -1498,11 +1505,7 @@ class ScannerDetailScreen(QWidget):
         return "Yếu"
 
     def _fill_pills(self, layout: QVBoxLayout, items: list[tuple[str, str]], fallback_state: str) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+        self._clear_layout(layout)
         if not items:
             items = [("Không có cảnh báo lớn từ scanner.", "ok")]
         for text, state in items:

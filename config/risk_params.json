@@ -7,7 +7,7 @@
   "zone_sl_buffer_atr": 0.10,
   "zone_sl_cap_ratio": 1.5,
   "swing_sl_buffer_atr": 0.15,
-  "sl_floor_buffer_atr": 0.10,
+  "sl_floor_buffer_atr": 0.20,
   "default_sl_mult": 0.50,
 
   "entry_zone_atr_mult": 0.35,
@@ -49,5 +49,11 @@
     "range": 1.5,
     "volatile": 1.8,
     "unknown": 1.5
+  },
+
+  "asset_class_sl_multiplier": {
+    "forex": 1.0,
+    "metals": 1.0,
+    "crypto": 1.0
   }
 }

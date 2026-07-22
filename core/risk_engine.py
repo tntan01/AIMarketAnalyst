@@ -27,9 +27,9 @@ _rp = _load_risk_params()
 # Với forex: contract_size luôn lấy từ controller (settings.trading.contract_size_override, mặc định 100,000),
 # không dùng trade_contract_size từ MT5 vì cent account trả về 100 gây sai lot.
 SYMBOL_CONFIG: dict[str, dict[str, Any]] = {
-    "XAU/USD": {"contract_size": 100.0, "quote_currency": "USD", "method": "price_distance_x_contract_size"},
-    "XAG/USD": {"contract_size": 5000.0, "quote_currency": "USD", "method": "price_distance_x_contract_size"},
-    "BTC/USD": {"contract_size": 1.0, "quote_currency": "USD", "method": "price_distance_x_contract_size"},
+    "XAU/USD": {"contract_size": 100.0, "quote_currency": "USD", "method": "price_distance_x_contract_size", "asset_class": "metals"},
+    "XAG/USD": {"contract_size": 5000.0, "quote_currency": "USD", "method": "price_distance_x_contract_size", "asset_class": "metals"},
+    "BTC/USD": {"contract_size": 1.0, "quote_currency": "USD", "method": "price_distance_x_contract_size", "asset_class": "crypto"},
 }
 
 STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
@@ -65,7 +65,7 @@ _EQ_TP_MAX_RR = _rp.get("eq_tp_max_rr", 3.0)
 _TP2_MIN_GAP_ATR = _rp.get("tp2_min_gap_atr", 0.15)
 _FIB_TP1 = _rp.get("fib_tp1", 0.382)
 _FIB_TP2 = _rp.get("fib_tp2", 0.618)
-_MIN_STOP_DISTANCE_ATR_MULT = _rp.get("min_stop_distance_atr_mult", 0.20)
+_MIN_STOP_DISTANCE_ATR_MULT = _rp.get("min_sl_distance_atr_mult", 0.20)
 _MIN_STOP_SPREAD_MULT = _rp.get("min_stop_spread_mult", 3)
 _ENTRY_ZONE_WIDTH_MULT = _rp.get("entry_zone_width_mult", 0.5)
 _WATCH_ZONE_OFFSET_ATR = _rp.get("watch_zone_offset_atr", 0.10)
@@ -73,6 +73,21 @@ _SL_FLOOR_BUFFER_ATR = _rp.get("sl_floor_buffer_atr", 0.10)
 _WATCH_ZONE_ATR_VOLATILE = _rp.get("watch_zone_atr_volatile", 0.70)
 _WATCH_ZONE_ATR_TREND = _rp.get("watch_zone_atr_trend", 0.40)
 _WATCH_ZONE_ATR_RANGE = _rp.get("watch_zone_atr_range", 0.50)
+
+# ── Asset class SL multiplier (applied on top of regime_sl_multiplier) ──
+ASSET_CLASS_SL_MULTIPLIER: dict[str, float] = _rp.get("asset_class_sl_multiplier", {
+    "forex": 1.0, "metals": 1.0, "crypto": 1.0,
+})
+
+
+def _asset_class_for(symbol: str) -> str:
+    """Return the asset class for a given symbol.
+
+    Looks up SYMBOL_CONFIG; returns "forex" for any symbol not explicitly listed
+    (i.e. all standard FX pairs).
+    """
+    cfg = SYMBOL_CONFIG.get(symbol, {})
+    return str(cfg.get("asset_class", "forex"))
 
 
 def _find_impulse_swing(
@@ -428,6 +443,10 @@ def build_trade_plan(
     min_stop_distance = max(atr_value * _MIN_STOP_DISTANCE_ATR_MULT, spread_price * _MIN_STOP_SPREAD_MULT)
     regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
     sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
+    # Apply asset-class multiplier on top of regime multiplier.
+    # Default multiplier is 1.0 for all classes — no-op until tuned separately.
+    asset_cls = _asset_class_for(request.symbol)
+    sl_mult *= ASSET_CLASS_SL_MULTIPLIER.get(asset_cls, 1.0)
     zone_dist_mult = REGIME_ZONE_DISTANCE_MULT.get(regime_primary, _DEFAULT_ZONE_DISTANCE_MULT)
     if regime_primary == "volatile":
         watch_zone_atr_mult = _WATCH_ZONE_ATR_VOLATILE
@@ -518,14 +537,6 @@ def build_trade_plan(
     if (stop_loss - sl_edge) * sign >= 0:
         stop_loss = sl_edge
 
-    # Guard: skip plan if SL is too tight (relaxed for preferred/SMC zones)
-    if use_preferred or is_smc_zone:
-        _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT
-    else:
-        _min_sl = atr_value * _MIN_SL_DISTANCE_ATR
-    if abs(level - stop_loss) < _min_sl:
-        return None
-
     # Entry price for DISPLAY (nearest edge = best-case RR shown to user)
     entry_for_rr = (
         entry_low + (entry_high - entry_low) * entry_aggressiveness
@@ -540,6 +551,19 @@ def build_trade_plan(
         entry_high + (entry_low - entry_high) * _TP_SELECTION_AGGRESSIVENESS
     )
     sel_risk_distance = abs(entry_for_selection - stop_loss)
+
+    # Guard: skip plan if SL is too tight (relaxed for preferred/SMC zones)
+    # Reference point: entry_for_rr (nearest edge, aggressiveness=0.0) — the
+    # actual entry price used for position sizing. This is closer to SL than
+    # entry_for_selection (midpoint), so the guard is stricter. A plan passing
+    # this check guarantees adequate SL buffer at ALL fill prices within the zone.
+    if use_preferred or is_smc_zone:
+        _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT
+    else:
+        _min_sl = atr_value * _MIN_SL_DISTANCE_ATR
+    rr_risk_distance = abs(entry_for_rr - stop_loss)
+    if rr_risk_distance < _min_sl - 1e-10:
+        return None
 
     # --- TP1 cascade: equal-level → S/R zone → Fib extension → swing ---
     # ALL RR checks use entry_for_selection (conservative anchor) for TP validity.

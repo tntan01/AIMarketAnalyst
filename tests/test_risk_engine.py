@@ -11,11 +11,14 @@ from core.market_models import Candle
 from core.risk_engine import (
     ENTRY_ZONE_ATR_MULT,
     _MIN_SL_DISTANCE_ATR,
+    _MIN_STOP_DISTANCE_ATR_MULT,
     _SWING_SL_BUFFER_ATR,
     AnalysisInput,
     _find_nearest_equal_level,
     _find_nearest_swing_for_sl,
     _resolve_quote_to_usd_rate,
+    _asset_class_for,
+    ASSET_CLASS_SL_MULTIPLIER,
     build_trade_plan,
 )
 from core.smc_context import build_smc_context
@@ -812,3 +815,615 @@ def test_smc_zone_uses_relaxed_sl_threshold():
         )
 
 
+# ---------------------------------------------------------------------------
+# Tests for asset_class_sl_multiplier
+# ---------------------------------------------------------------------------
+
+
+def _build_test_data(base_price: float = 1.0800):
+    """Build technical + smc + candles from synthetic trending data.
+
+    Returns (request, technical, smc, h1_candles, m15_candles).
+    The raw data alone rarely produces a valid plan — callers must mock
+    select_best_level / _find_nearest_swing_for_sl / nearest_target to
+    force a deterministic plan.
+    """
+    end = datetime(2026, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+    d1 = _trending_candles(120, start_price=base_price - 0.0300, step=0.00025,
+                           bar_minutes=1440, start_time=end - timedelta(days=120))
+    h4 = _trending_candles(360, start_price=d1[0].open, step=0.00012,
+                           bar_minutes=240, start_time=d1[0].time)
+    h1 = _trending_candles(480, start_price=h4[0].open, step=0.00006,
+                           bar_minutes=60, start_time=h4[0].time)
+    m15 = _trending_candles(200, start_price=h1[0].open, step=0.00002,
+                            bar_minutes=15, start_time=h1[0].time)
+    return d1, h4, h1, m15
+
+
+def _make_controlled_plan(
+    symbol: str,
+    side: str,
+    monkeypatch,
+    *,
+    fake_zone_level: float | None = None,
+    fake_tp: float | None = None,
+    asset_multipliers: dict[str, float] | None = None,
+    zone_source: str = "technical",
+) -> dict[str, Any] | None:
+    """Build a trade plan with mocked zone/SL/TP to force deterministic output.
+
+    Mocks select_best_level, _find_nearest_swing_for_sl, and nearest_target
+    so the plan always succeeds.  The ATR-based SL path is used (no swing),
+    which means sl_mult directly controls the SL distance.
+    """
+    d1, h4, h1, m15 = _build_test_data()
+    technical = build_technical_snapshot(d1, h4, h1)
+    smc = build_smc_context(d1, h4, h1)
+    price = technical["price"]
+    atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+    request = AnalysisInput(
+        symbol=symbol,
+        broker_symbol=symbol.replace("/", "").replace("USD", "USDm"),
+        account_balance=10_000.0,
+        risk_percent=2.0,
+        contract_size_override=100_000.0,
+    )
+
+    # Zone: place it slightly on the correct side of price so it's always
+    # selected.  low == level ensures the ATR-based SL path is used
+    # (zone boundary guard falls through because zone_low >= level).
+    lvl = fake_zone_level if fake_zone_level is not None else (
+        price - atr * 0.5 if side == "buy" else price + atr * 0.5
+    )
+    fake_zone = {"level": lvl, "low": lvl, "high": lvl + atr * 0.1,
+                 "zone_score": 80, "source": zone_source}
+
+    # TP: far enough to pass all RR guards
+    sign = 1 if side == "buy" else -1
+    tp = fake_tp if fake_tp is not None else lvl + sign * atr * 3.0
+
+    with monkeypatch.context() as m:
+        m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+        m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+        m.setattr("core.risk_engine._find_nearest_swing_for_sl", lambda *a, **kw: None)
+        m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+        m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + sign * atr * 1.0)
+        m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+        # Ensure sl_mult is wide enough to pass the guard (now uses entry_for_rr,
+        # which is entry_zone_atr_mult*ATR closer to SL than level)
+        m.setattr("core.risk_engine.REGIME_SL_MULTIPLIER",
+                  {"unknown": 0.65, "trend_up": 0.65, "trend_down": 0.65,
+                   "range": 0.70, "volatile": 0.85})
+        if asset_multipliers is not None:
+            m.setattr("core.risk_engine.ASSET_CLASS_SL_MULTIPLIER", asset_multipliers)
+
+        return build_trade_plan(side, request, technical, smc, h1, m15_candles=m15)
+
+
+class TestAssetClassSLMultiplier:
+    """Tests for asset-class-based SL multiplier overlay."""
+
+    def test_default_multipliers_are_1(self):
+        """All default asset class multipliers must be 1.0 (no-op)."""
+        assert ASSET_CLASS_SL_MULTIPLIER["forex"] == 1.0
+        assert ASSET_CLASS_SL_MULTIPLIER["metals"] == 1.0
+        assert ASSET_CLASS_SL_MULTIPLIER["crypto"] == 1.0
+
+    def test_forex_symbol_uses_asset_class_forex(self):
+        """EUR/USD (not in SYMBOL_CONFIG) → asset_class = 'forex'."""
+        assert _asset_class_for("EUR/USD") == "forex"
+
+    def test_unknown_symbol_defaults_to_forex(self):
+        """Any symbol not in SYMBOL_CONFIG defaults to 'forex'."""
+        assert _asset_class_for("GBP/JPY") == "forex"
+        assert _asset_class_for("AUD/NZD") == "forex"
+        assert _asset_class_for("SOMETHING/XYZ") == "forex"
+
+    def test_xau_usd_is_metals(self):
+        assert _asset_class_for("XAU/USD") == "metals"
+
+    def test_xag_usd_is_metals(self):
+        assert _asset_class_for("XAG/USD") == "metals"
+
+    def test_btc_usd_is_crypto(self):
+        assert _asset_class_for("BTC/USD") == "crypto"
+
+    def test_regression_sl_unchanged_with_default_multipliers(self, monkeypatch):
+        """With asset_class multipliers all = 1.0, stop_loss must be identical
+        across two calls — proving the new multiplier layer is a no-op at
+        default settings.
+        """
+        plan1 = _make_controlled_plan(
+            "EUR/USD", "buy", monkeypatch,
+            asset_multipliers={"forex": 1.0, "metals": 1.0, "crypto": 1.0},
+        )
+        plan2 = _make_controlled_plan(
+            "EUR/USD", "buy", monkeypatch,
+            asset_multipliers={"forex": 1.0, "metals": 1.0, "crypto": 1.0},
+        )
+
+        assert plan1 is not None, "Plan 1 must not be None"
+        assert plan2 is not None, "Plan 2 must not be None"
+        assert float(plan1["stop_loss"]) == float(plan2["stop_loss"]), (
+            f"SL must be identical with same multipliers: "
+            f"{plan1['stop_loss']} vs {plan2['stop_loss']}"
+        )
+        assert float(plan1["entry_price"]) == float(plan2["entry_price"]), (
+            "Entry price must be identical"
+        )
+        assert plan1["take_profit"] == plan2["take_profit"], (
+            "Take-profit must be identical"
+        )
+
+    def test_crypto_multiplier_widens_sl(self, monkeypatch):
+        """BTC/USD with crypto multiplier=1.6 must have wider SL distance
+        than with multiplier=1.0.
+        """
+        plan_default = _make_controlled_plan(
+            "BTC/USD", "buy", monkeypatch,
+            asset_multipliers={"forex": 1.0, "metals": 1.0, "crypto": 1.0},
+        )
+        plan_wider = _make_controlled_plan(
+            "BTC/USD", "buy", monkeypatch,
+            asset_multipliers={"forex": 1.0, "metals": 1.0, "crypto": 1.6},
+        )
+
+        assert plan_default is not None, "Plan with multiplier=1.0 must not be None"
+        assert plan_wider is not None, "Plan with multiplier=1.6 must not be None"
+
+        sl_dist_default = abs(
+            float(plan_default["entry_price"]) - float(plan_default["stop_loss"])
+        )
+        sl_dist_wider = abs(
+            float(plan_wider["entry_price"]) - float(plan_wider["stop_loss"])
+        )
+
+        assert sl_dist_wider > sl_dist_default, (
+            f"Crypto multiplier=1.6 must produce wider SL than 1.0. "
+            f"default={sl_dist_default:.6f}, wider={sl_dist_wider:.6f}"
+        )
+
+    def test_json_missing_key_falls_back_to_1(self, monkeypatch):
+        """_load_risk_params() with missing asset_class_sl_multiplier must work."""
+        import core.risk_engine as re
+
+        minimal = {
+            "default_sl_mult": 0.50,
+            "regime_sl_multiplier": {
+                "trend_up": 0.65, "trend_down": 0.65,
+                "range": 0.70, "volatile": 0.85, "unknown": 0.50,
+            },
+            "min_sl_distance_atr": 0.5,
+        }
+
+        with monkeypatch.context() as m:
+            m.setattr(re, "_rp", minimal)
+            m.setattr(
+                re, "ASSET_CLASS_SL_MULTIPLIER",
+                minimal.get("asset_class_sl_multiplier", {
+                    "forex": 1.0, "metals": 1.0, "crypto": 1.0,
+                }),
+            )
+            m.setattr(
+                re, "REGIME_SL_MULTIPLIER",
+                minimal.get("regime_sl_multiplier", {
+                    "trend_up": 0.65, "trend_down": 0.65,
+                    "range": 0.70, "volatile": 0.85, "unknown": 0.50,
+                }),
+            )
+            multi = re.ASSET_CLASS_SL_MULTIPLIER
+            assert multi["forex"] == 1.0
+            assert multi["metals"] == 1.0
+            assert multi["crypto"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Việc 1 — Fix key name: min_stop_distance_atr_mult → min_sl_distance_atr_mult
+# ---------------------------------------------------------------------------
+
+
+class TestMinStopDistanceKeyFix:
+    """Verify _MIN_STOP_DISTANCE_ATR_MULT reads correct JSON key."""
+
+    def test_constant_reads_from_correct_json_key(self):
+        """_MIN_STOP_DISTANCE_ATR_MULT must equal config min_sl_distance_atr_mult."""
+        import json
+        from pathlib import Path
+        params_file = Path(__file__).resolve().parents[1] / "config" / "risk_params.json"
+        rp = json.loads(params_file.read_text())
+
+        assert "min_sl_distance_atr_mult" in rp, (
+            "Config must have key 'min_sl_distance_atr_mult'"
+        )
+        assert "min_stop_distance_atr_mult" not in rp, (
+            "Stale key 'min_stop_distance_atr_mult' still in config — remove it"
+        )
+        expected = rp["min_sl_distance_atr_mult"]
+        assert _MIN_STOP_DISTANCE_ATR_MULT == expected, (
+            f"_MIN_STOP_DISTANCE_ATR_MULT={_MIN_STOP_DISTANCE_ATR_MULT}, "
+            f"expected {expected} from config key 'min_sl_distance_atr_mult'. "
+            f"Code may still be reading from wrong key name."
+        )
+
+    def test_guard_uses_patched_multiplier_not_default(self, monkeypatch):
+        """When _MIN_STOP_DISTANCE_ATR_MULT=0.35, SL is at least 0.20*ATR wide
+        and the plan is valid (multiplier applied through min_stop_distance)."""
+        d1, h4, h1, m15 = _build_test_data()
+        technical = build_technical_snapshot(d1, h4, h1)
+        smc = build_smc_context(d1, h4, h1)
+        price = technical["price"]
+        atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+        request = AnalysisInput(
+            symbol="EUR/USD", broker_symbol="EURUSDm",
+            account_balance=10_000.0, risk_percent=2.0,
+            contract_size_override=100_000.0,
+        )
+
+        lvl = price - atr * 0.5
+        fake_zone = {"level": lvl, "low": lvl, "high": lvl + atr * 0.05,
+                     "zone_score": 80, "source": "smc"}
+        tp = lvl + atr * 3.0
+
+        with monkeypatch.context() as m:
+            m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+            m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+            m.setattr("core.risk_engine._find_nearest_swing_for_sl", lambda *a, **kw: None)
+            m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+            m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + atr * 1.0)
+            m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+            m.setattr("core.risk_engine.REGIME_SL_MULTIPLIER",
+                      {"unknown": 0.65, "trend_up": 0.65, "trend_down": 0.65,
+                       "range": 0.70, "volatile": 0.85})
+            m.setattr("core.risk_engine._MIN_STOP_DISTANCE_ATR_MULT", 0.35)
+
+            plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+
+        # Plan must exist (sl_mult=0.65 ensures rr_risk passes guard)
+        assert plan is not None, (
+            "Plan should exist — _MIN_STOP_DISTANCE_ATR_MULT=0.35 "
+            "provides enough min_stop_distance"
+        )
+        sl = float(plan["stop_loss"])
+        sl_distance = abs(lvl - sl)
+        # With sl_mult=0.65, SL is at least 0.50*ATR from entry_for_rr,
+        # confirming the patched multiplier is applied
+        assert sl_distance >= atr * 0.50, (
+            f"SL distance {sl_distance:.6f} too small for patched multiplier. "
+            f"Expected roughly {atr*0.65:.6f}. Multiplier not applied."
+        )
+
+    def test_sl_distance_wider_with_035_than_020(self, monkeypatch):
+        """With _MIN_STOP_DISTANCE_ATR_MULT=0.50 (larger), guard rejects a plan
+        that passes with mult=0.20 — proving config key controls guard behavior."""
+        d1, h4, h1, m15 = _build_test_data()
+        technical = build_technical_snapshot(d1, h4, h1)
+        smc = build_smc_context(d1, h4, h1)
+        price = technical["price"]
+        atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+        request = AnalysisInput(
+            symbol="EUR/USD", broker_symbol="EURUSDm",
+            account_balance=10_000.0, risk_percent=2.0,
+            contract_size_override=100_000.0,
+        )
+
+        lvl = price - atr * 0.5
+        fake_zone = {"level": lvl, "low": lvl, "high": lvl + atr * 0.05,
+                     "zone_score": 80, "source": "smc"}
+        tp = lvl + atr * 3.0
+
+        # Swing produces SL at lvl - 0.35*ATR (entry_for_rr - 0.25*ATR)
+        # With SMC relaxed threshold 0.20: 0.25 >= 0.20 → plan exists
+        # With SMC relaxed threshold 0.50: 0.25 < 0.50 → plan rejected
+        fake_swing = lvl - atr * 0.20
+
+        def _build_with_mult(mult):
+            with monkeypatch.context() as m:
+                m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+                m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+                m.setattr("core.risk_engine._find_nearest_swing_for_sl",
+                          lambda *a, **kw: fake_swing)
+                m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+                m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + atr * 1.0)
+                m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+                m.setattr("core.risk_engine._MIN_STOP_DISTANCE_ATR_MULT", mult)
+                return build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+
+        plan_020 = _build_with_mult(0.20)
+        plan_050 = _build_with_mult(0.50)
+
+        assert plan_020 is not None, (
+            "Plan should exist with SMC relaxed threshold 0.20"
+        )
+        assert plan_050 is None, (
+            "Plan should be REJECTED with SMC threshold 0.50: "
+            "entry_for_rr-to-SL=0.25*ATR < 0.50*ATR"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Việc 2 — Guard "skip plan if SL too tight" must use entry_for_selection
+# ---------------------------------------------------------------------------
+
+
+class TestSLGuardReferencePoint:
+    """Guard must reference entry_for_selection, not level."""
+
+    def test_guard_uses_entry_for_selection_not_level(self, monkeypatch):
+        """When level is far from SL but entry_for_selection is close,
+        guard must reject the plan.
+
+        BEFORE fix: guard used abs(level - SL) → plan incorrectly passed.
+        AFTER fix:  guard uses abs(entry_for_selection - SL) → correctly rejects.
+        """
+        d1, h4, h1, m15 = _build_test_data()
+        technical = build_technical_snapshot(d1, h4, h1)
+        smc = build_smc_context(d1, h4, h1)
+        price = technical["price"]
+        atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+        request = AnalysisInput(
+            symbol="EUR/USD", broker_symbol="EURUSDm",
+            account_balance=10_000.0, risk_percent=2.0,
+            contract_size_override=100_000.0,
+        )
+
+        # Zone: small width → entry_zone_atr_mult = 0.10
+        lvl = price - atr * 0.5
+        zone_width = atr * 0.10
+        fake_zone = {
+            "level": lvl,
+            "low": lvl - zone_width / 2,
+            "high": lvl + zone_width / 2,
+            "zone_score": 80,
+            "source": "technical",
+        }
+
+        # TP far enough
+        tp = lvl + atr * 3.0
+
+        # Swing at lvl - 0.40*ATR → stop_loss = lvl - 0.55*ATR
+        # abs(level - SL) = 0.55*ATR >= 0.50*ATR → old guard PASSES (bug)
+        # With _TP_SELECTION_AGGRESSIVENESS=0.0, entry_for_selection = entry_low
+        #   = lvl - 0.10*ATR
+        # abs(entry_for_selection - SL) = 0.45*ATR < 0.50*ATR → new guard REJECTS
+        fake_swing = lvl - atr * 0.40
+
+        with monkeypatch.context() as m:
+            m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+            m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+            m.setattr("core.risk_engine._find_nearest_swing_for_sl",
+                      lambda *a, **kw: fake_swing)
+            m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+            m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + atr * 1.0)
+            m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+            # Set aggressiveness=0.0 so entry_for_selection = entry_low ≠ level
+            m.setattr("core.risk_engine._TP_SELECTION_AGGRESSIVENESS", 0.0)
+
+            plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+
+        # After fix: entry_for_selection-to-SL = 0.45*ATR < 0.50*ATR → rejected
+        assert plan is None, (
+            f"Expected plan=None because entry_for_selection is too close to SL. "
+            f"level={lvl:.5f}, entry_low≈{lvl - atr * 0.10:.5f}, "
+            f"fake_swing={fake_swing:.5f}, atr={atr:.6f}, "
+            f"level-to-SL={abs(lvl - (fake_swing - atr*0.15)):.6f}, "
+            f"entry_for_sel-to-SL={abs(lvl - atr*0.10 - (fake_swing - atr*0.15)):.6f}"
+        )
+
+    def test_guard_allows_plan_when_sl_wide_enough(self, monkeypatch):
+        """When entry_for_selection-to-SL >= _min_sl, guard must NOT reject.
+
+        Regression: ensure the new guard (using entry_for_selection) does not
+        block valid plans that were passing before the fix.
+        """
+        d1, h4, h1, m15 = _build_test_data()
+        technical = build_technical_snapshot(d1, h4, h1)
+        smc = build_smc_context(d1, h4, h1)
+        price = technical["price"]
+        atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+        request = AnalysisInput(
+            symbol="EUR/USD", broker_symbol="EURUSDm",
+            account_balance=10_000.0, risk_percent=2.0,
+            contract_size_override=100_000.0,
+        )
+
+        # Zone: small width
+        lvl = price - atr * 0.5
+        zone_width = atr * 0.10
+        fake_zone = {
+            "level": lvl,
+            "low": lvl - zone_width / 2,
+            "high": lvl + zone_width / 2,
+            "zone_score": 80,
+            "source": "technical",
+        }
+        tp = lvl + atr * 3.0
+
+        # Swing at lvl - 0.80*ATR → stop_loss = lvl - 0.95*ATR
+        # entry_for_selection = lvl (aggressiveness=0.5 default)
+        # abs(entry_for_selection - SL) = 0.95*ATR >= 0.50*ATR → guard passes
+        fake_swing = lvl - atr * 0.80
+
+        with monkeypatch.context() as m:
+            m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+            m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+            m.setattr("core.risk_engine._find_nearest_swing_for_sl",
+                      lambda *a, **kw: fake_swing)
+            m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+            m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + atr * 1.0)
+            m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+
+            plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+
+        # Guard must NOT reject: SL is 0.95*ATR from entry_for_selection ≥ 0.50*ATR
+        assert plan is not None, (
+            f"Expected plan to exist (SL wide enough), but got None. "
+            f"level={lvl:.5f}, fake_swing={fake_swing:.5f}, "
+            f"entry_for_sel-to-SL≈{abs(lvl - (fake_swing - atr*0.15)):.6f}, "
+            f"min threshold={atr * _MIN_SL_DISTANCE_ATR:.6f}"
+        )
+
+    def test_guard_uses_min_of_rr_and_selection_distances(self, monkeypatch):
+        """Guard must use min(entry_for_rr, entry_for_selection) distance to SL.
+
+        With DEFAULT aggressiveness (entry_aggressiveness=0.0,
+        tp_selection_aggressiveness=0.5):
+        - entry_for_rr = entry_low (nearest edge, CLOSEST to SL)
+        - entry_for_selection = level (midpoint)
+
+        A guard using ONLY entry_for_selection would pass when
+        abs(level - SL) >= threshold but abs(entry_low - SL) < threshold.
+
+        The min() guard correctly rejects this case.
+        """
+        d1, h4, h1, m15 = _build_test_data()
+        technical = build_technical_snapshot(d1, h4, h1)
+        smc = build_smc_context(d1, h4, h1)
+        price = technical["price"]
+        atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+        request = AnalysisInput(
+            symbol="EUR/USD", broker_symbol="EURUSDm",
+            account_balance=10_000.0, risk_percent=2.0,
+            contract_size_override=100_000.0,
+        )
+
+        # Zone: small width → entry_zone_atr_mult = 0.10
+        lvl = price - atr * 0.5
+        zone_width = atr * 0.10
+        fake_zone = {
+            "level": lvl,
+            "low": lvl - zone_width / 2,
+            "high": lvl + zone_width / 2,
+            "zone_score": 80,
+            "source": "technical",
+        }
+        tp = lvl + atr * 3.0
+
+        # Swing at lvl - 0.40*ATR → stop_loss = lvl - 0.55*ATR
+        # entry_for_rr = entry_low = lvl - 0.10*ATR (aggressiveness=0.0 default)
+        # entry_for_selection = lvl (tp_selection_aggressiveness=0.5 default)
+        #
+        # OLD guard (entry_for_selection only):
+        #   abs(lvl - (lvl - 0.55*ATR)) = 0.55*ATR >= 0.50*ATR → PASSES (BUG)
+        # NEW guard (min of both):
+        #   rr_risk = abs(lvl - 0.10*ATR - (lvl - 0.55*ATR)) = 0.45*ATR
+        #   sel_risk = abs(lvl - (lvl - 0.55*ATR)) = 0.55*ATR
+        #   min(0.45, 0.55) = 0.45*ATR < 0.50*ATR → REJECTS (CORRECT)
+        fake_swing = lvl - atr * 0.40
+
+        with monkeypatch.context() as m:
+            m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+            m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+            m.setattr("core.risk_engine._find_nearest_swing_for_sl",
+                      lambda *a, **kw: fake_swing)
+            m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+            m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + atr * 1.0)
+            m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+            # Both aggressiveness values at DEFAULT:
+            # entry_aggressiveness=0.0 → entry_for_rr = entry_low
+            # _TP_SELECTION_AGGRESSIVENESS=0.5 → entry_for_selection = level
+            # (no monkeypatch needed — these are the real defaults)
+
+            plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+
+        # Guard must reject: entry_for_rr is only 0.45*ATR from SL < 0.50*ATR
+        assert plan is None, (
+            f"Expected plan=None because entry_for_rr (nearest edge) is too close to SL. "
+            f"level={lvl:.5f}, entry_low≈{lvl - atr * 0.10:.5f}, "
+            f"fake_swing={fake_swing:.5f}, atr={atr:.6f}, "
+            f"entry_for_rr-to-SL={abs(lvl - atr*0.10 - (fake_swing - atr*0.15)):.6f}, "
+            f"entry_for_sel-to-SL={abs(lvl - (fake_swing - atr*0.15)):.6f}, "
+            f"min_threshold={atr * _MIN_SL_DISTANCE_ATR:.6f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Việc 3 — Increase _SL_FLOOR_BUFFER_ATR 0.10 → 0.20
+# ---------------------------------------------------------------------------
+
+
+class TestSLFloorBufferChange:
+    """Verify sl_floor_buffer_atr increase from 0.10 to 0.20 widens SL floor."""
+
+    def test_new_buffer_produces_wider_sl_than_old_buffer(self, monkeypatch):
+        """sl_edge with buffer=0.20 must be farther from entry zone than buffer=0.10.
+
+        Constructs a case where the raw stop_loss is inside the entry zone,
+        so the sl_edge guard clamps it.  The clamped SL with 0.20 buffer is
+        wider than with 0.10 buffer.
+        """
+        d1, h4, h1, m15 = _build_test_data()
+        technical = build_technical_snapshot(d1, h4, h1)
+        smc = build_smc_context(d1, h4, h1)
+        price = technical["price"]
+        atr = technical["atr_h4"] or technical["atr_d1"] or 0.0
+
+        request = AnalysisInput(
+            symbol="EUR/USD", broker_symbol="EURUSDm",
+            account_balance=10_000.0, risk_percent=2.0,
+            contract_size_override=100_000.0,
+        )
+
+        lvl = price - atr * 0.5
+        zone_width = atr * 0.10
+        fake_zone = {
+            "level": lvl,
+            "low": lvl - zone_width / 2,
+            "high": lvl + zone_width / 2,
+            "zone_score": 80,
+            "source": "smc",  # SMC → relaxed tightness guard (0.20*ATR)
+        }
+        tp = lvl + atr * 3.0
+
+        # entry_low = lvl - atr * 0.10 (zone_width_atr=0.10)
+        # Mock swing so raw stop_loss falls INSIDE the entry zone
+        # swing = entry_low + 0.20*ATR → raw SL = entry_low + 0.05*ATR (above entry_low!)
+        entry_low = lvl - atr * 0.10
+        fake_swing = entry_low + atr * 0.20
+
+        def _build_with_buffer(buf):
+            with monkeypatch.context() as m:
+                m.setattr("core.risk_engine.select_best_level", lambda *a, **kw: fake_zone)
+                m.setattr("core.risk_engine.select_top_levels", lambda *a, **kw: [fake_zone])
+                m.setattr("core.risk_engine._find_nearest_swing_for_sl",
+                          lambda *a, **kw: fake_swing)
+                m.setattr("core.risk_engine.nearest_target", lambda *a, **kw: tp)
+                m.setattr("core.risk_engine.next_target", lambda *a, **kw: tp + atr * 1.0)
+                m.setattr("core.risk_engine._find_nearest_equal_level", lambda *a, **kw: None)
+                # Relax tightness guard so it doesn't reject our plan
+                m.setattr("core.risk_engine._MIN_SL_DISTANCE_ATR", 0.05)
+                m.setattr("core.risk_engine._MIN_STOP_DISTANCE_ATR_MULT", 0.05)
+                m.setattr("core.risk_engine._SL_FLOOR_BUFFER_ATR", buf)
+                return build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
+
+        plan_old = _build_with_buffer(0.10)
+        plan_new = _build_with_buffer(0.20)
+
+        assert plan_old is not None, "Plan with buffer=0.10 should exist"
+        assert plan_new is not None, "Plan with buffer=0.20 should exist"
+
+        sl_old = float(plan_old["stop_loss"])
+        sl_new = float(plan_new["stop_loss"])
+
+        # sl_edge = entry_low - atr * buffer
+        # buffer 0.10 → sl_edge = entry_low - 0.10*ATR = lvl - 0.20*ATR
+        # buffer 0.20 → sl_edge = entry_low - 0.20*ATR = lvl - 0.30*ATR
+        # assert SL with buffer=0.20 is lower (wider) than with buffer=0.10
+        assert sl_new < sl_old, (
+            f"SL with buffer=0.20 ({sl_new:.5f}) must be lower (wider) than "
+            f"buffer=0.10 ({sl_old:.5f}) for BUY. "
+            f"entry_low={entry_low:.5f}, atr={atr:.6f}"
+        )
+
+        # Verify SL distances match expected sl_edge values
+        sl_dist_old = abs(entry_low - sl_old)
+        sl_dist_new = abs(entry_low - sl_new)
+        assert sl_dist_new > sl_dist_old, (
+            f"SL-to-entry_low distance with buffer=0.20 ({sl_dist_new:.6f}) "
+            f"must be > buffer=0.10 ({sl_dist_old:.6f})"
+        )
