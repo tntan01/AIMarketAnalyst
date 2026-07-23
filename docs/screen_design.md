@@ -634,6 +634,10 @@ R:R ưu tiên field top-level của scanner row và fallback sang scenario khớ
   execution guard.
 - `Source zone` phải được gắn nhãn tham khảo; không dùng màu hoặc wording làm
   người dùng hiểu nhầm đây là vùng có thể vào lệnh.
+- Trên chart chi tiết, source zone bị ẩn mặc định. Trader có thể bật
+  `Vùng cấu trúc` để xem hai biên nét thưa với một nhãn `Source zone`; control
+  phải ghi rõ đây là vùng tham khảo, không dùng để vào lệnh. Khi ẩn, source
+  zone không được ảnh hưởng đến price scale của chart.
 - Card/tooltip hiển thị đồng thời source zone, execution zone, width theo pip
   và ATR, cùng lý do `unchanged`, `trimmed`, `not_applicable_no_tp1` hoặc
   reject/empty.
