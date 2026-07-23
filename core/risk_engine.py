@@ -65,6 +65,12 @@ _EQ_TP_MAX_RR = _rp.get("eq_tp_max_rr", 3.0)
 _TP2_MIN_GAP_ATR = _rp.get("tp2_min_gap_atr", 0.15)
 _FIB_TP1 = _rp.get("fib_tp1", 0.382)
 _FIB_TP2 = _rp.get("fib_tp2", 0.618)
+_TP1_MIN_CLEARANCE_ATR = _rp.get("tp1_min_clearance_atr", 0.15)
+_TP1_MIN_EFFECTIVE_RR_BASE = _rp.get("tp1_min_effective_rr_base", 1.3)
+_TP_TARGET_BUFFER_ATR = _rp.get("tp_target_buffer_atr", 0.03)
+_ENTRY_ZONE_BUFFER_ATR = _rp.get("entry_zone_buffer_atr", 0.05)
+_ENTRY_ZONE_MAX_WIDTH_ATR = _rp.get("entry_zone_max_width_atr", 0.50)
+_ENTRY_ZONE_HALF_WIDTH_ATR = _rp.get("entry_zone_half_width_atr", 0.25)
 _MIN_STOP_DISTANCE_ATR_MULT = _rp.get("min_sl_distance_atr_mult", 0.20)
 _MIN_STOP_SPREAD_MULT = _rp.get("min_stop_spread_mult", 3)
 _ENTRY_ZONE_WIDTH_MULT = _rp.get("entry_zone_width_mult", 0.5)
@@ -497,20 +503,29 @@ def build_trade_plan(
     is_smc_zone = entry_zone_source in ("smc", "smc_selected")
     zone_low = zone.get("low")
     zone_high = zone.get("high")
+    # Phase 13D: entry zone from zone boundaries with buffer + cap
     if zone_low is not None and zone_high is not None and zone_high > zone_low:
-        zone_width_atr = (zone_high - zone_low) / atr_value
-        entry_zone_atr_mult = max(_ENTRY_ZONE_ATR_MIN, min(_ENTRY_ZONE_ATR_MAX, zone_width_atr * _ENTRY_ZONE_WIDTH_MULT))
+        buf = atr_value * _ENTRY_ZONE_BUFFER_ATR
+        max_w = atr_value * _ENTRY_ZONE_MAX_WIDTH_ATR
+        if side == "buy":
+            entry_high = round_price(zone_high)
+            entry_low_raw = round_price(zone_low + buf)
+            entry_low = round_price(max(entry_low_raw, entry_high - max_w))
+        else:
+            entry_low = round_price(zone_low)
+            entry_high_raw = round_price(zone_high - buf)
+            entry_high = round_price(min(entry_high_raw, entry_low + max_w))
     else:
-        entry_zone_atr_mult = ENTRY_ZONE_ATR_MULT
+        # Fallback: level ± half-width
+        half_w = atr_value * _ENTRY_ZONE_HALF_WIDTH_ATR
+        entry_low = round_price(level - half_w)
+        entry_high = round_price(level + half_w)
 
-    # Watch zone extends farther in trade direction; near side gets a small offset
+    # Watch zone extends farther in trade direction
     watch_near = level - sign * atr_value * _WATCH_ZONE_OFFSET_ATR
     watch_far = level + sign * atr_value * watch_zone_atr_mult
     watch_low = min(watch_near, watch_far)
     watch_high = max(watch_near, watch_far)
-
-    entry_low = level - atr_value * entry_zone_atr_mult
-    entry_high = level + atr_value * entry_zone_atr_mult
 
     # --- Stop Loss ---
     sl_source = "atr"
@@ -564,28 +579,108 @@ def build_trade_plan(
     if rr_risk_distance < _min_sl - 1e-10:
         return None
 
-    # --- TP1 cascade: equal-level → S/R zone → Fib extension → swing ---
-    # ALL RR checks use entry_for_selection (conservative anchor) for TP validity.
-    # TP targets are searched relative to entry_for_selection for consistency.
-    tp1 = _find_nearest_equal_level(smc, side, entry_for_selection)
-    if tp1 is not None and abs(tp1 - entry_for_selection) > sel_risk_distance * _EQ_TP_MAX_RR:
-        tp1 = None  # equal level too far, fall through
-    if tp1 is None or abs(tp1 - entry_for_selection) < sel_risk_distance:
-        tp1 = nearest_target(target_zones, entry_for_selection, above=(side == "buy"))
-    if tp1 is None or abs(tp1 - entry_for_selection) < sel_risk_distance:
-        if regime_primary != "range":
-            tp1 = _fib_extension_target(smc, side, atr_value, _FIB_TP1)
-    if tp1 is None or abs(tp1 - entry_for_selection) < sel_risk_distance:
-        tp1 = _find_nearest_swing_for_tp(smc, side, entry_for_selection, sel_risk_distance)
+    # --- TP1 cascade: equal-level → S/R zones (iterated) → Fib → swing ---
+    # Phase 13B: each candidate must pass quality validator.
+    # Phase 13B.1: diagnostic tracking of rejection reasons.
+    far_edge = entry_high if side == "buy" else entry_low
+    tp1_source = "none"
+    tp1 = None
+    tp1_val_result: dict[str, Any] | None = None
+    tp1_target_rank: int | None = None
+    diag_candidates_checked = 0
+    diag_rejected: dict[str, int] = {
+        "invalid_candidate": 0,
+        "wrong_direction": 0,
+        "not_past_far_edge": 0,
+        "clearance_too_low": 0,
+        "nominal_rr_too_low": 0,
+        "effective_rr_unavailable": 0,
+        "effective_rr_too_low": 0,
+        "equal_level_too_far": 0,
+    }
 
-    # Guard: TP1 must be strictly past the far edge of the entry zone
-    far_edge = level + sign * atr_value * entry_zone_atr_mult
-    if tp1 is not None and (tp1 - far_edge) * sign <= 0:
-        tp1 = None
+    # ── 1. equal-level ──
+    eq_tp = _find_nearest_equal_level(smc, side, entry_for_selection)
+    if eq_tp is not None:
+        if abs(eq_tp - entry_for_selection) > sel_risk_distance * _EQ_TP_MAX_RR:
+            diag_rejected["equal_level_too_far"] += 1
+        else:
+            diag_candidates_checked += 1
+            val = _validate_tp1_candidate(
+                side=side, candidate=eq_tp,
+                entry_for_selection=entry_for_selection, stop_loss=stop_loss,
+                far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+            )
+            if val["valid"]:
+                tp1 = eq_tp
+                tp1_source = "equal_level"
+                tp1_val_result = val
+            else:
+                _count_rejection(diag_rejected, val["rejection_reason"])
 
-    if tp1 is None or abs(tp1 - entry_for_selection) < sel_risk_distance:
+    # ── 2. target zones (iterate nearest to farthest, using zone boundary) ──
+    if tp1 is None:
+        above = (side == "buy")
+        sorted_zone_dicts = all_target_zones_sorted(
+            target_zones, entry_for_selection, above=above,
+            side=side, atr_value=atr_value,
+        )
+        for idx, z in enumerate(sorted_zone_dicts, start=1):
+            cand = _target_price_from_zone(z, side, atr_value)
+            if cand is None:
+                continue
+            diag_candidates_checked += 1
+            val = _validate_tp1_candidate(
+                side=side, candidate=cand,
+                entry_for_selection=entry_for_selection, stop_loss=stop_loss,
+                far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+            )
+            if val["valid"]:
+                tp1 = cand
+                tp1_source = "target_zone"
+                tp1_val_result = val
+                tp1_target_rank = idx
+                break
+            else:
+                _count_rejection(diag_rejected, val["rejection_reason"])
+
+    # ── 3. fib extension ──
+    if tp1 is None and regime_primary != "range":
+        fib_tp = _fib_extension_target(smc, side, atr_value, _FIB_TP1)
+        if fib_tp is not None:
+            diag_candidates_checked += 1
+            val = _validate_tp1_candidate(
+                side=side, candidate=fib_tp,
+                entry_for_selection=entry_for_selection, stop_loss=stop_loss,
+                far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+            )
+            if val["valid"]:
+                tp1 = fib_tp
+                tp1_source = "fib_extension"
+                tp1_val_result = val
+            else:
+                _count_rejection(diag_rejected, val["rejection_reason"])
+
+    # ── 4. swing ──
+    if tp1 is None:
+        sw_tp = _find_nearest_swing_for_tp(smc, side, entry_for_selection, sel_risk_distance)
+        if sw_tp is not None:
+            diag_candidates_checked += 1
+            val = _validate_tp1_candidate(
+                side=side, candidate=sw_tp,
+                entry_for_selection=entry_for_selection, stop_loss=stop_loss,
+                far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+            )
+            if val["valid"]:
+                tp1 = sw_tp
+                tp1_source = "swing"
+                tp1_val_result = val
+            else:
+                _count_rejection(diag_rejected, val["rejection_reason"])
+
+    if tp1 is None:
         if use_preferred or is_smc_zone:
-            tp1 = None   # không có TP thật → để trống
+            tp1_source = "none"
             tp2 = None
         else:
             return None
@@ -647,7 +742,13 @@ def build_trade_plan(
 
     # Build RR strings only when TP is real (not fallback)
     if tp1 is not None:
-        risk_reward_str = f"1:{reward_risk(entry_for_rr, stop_loss, tp1):.1f}"
+        rr_best = round(reward_risk(entry_for_rr, stop_loss, tp1), 1)
+        rr_base = round(reward_risk(entry_for_selection, stop_loss, tp1), 1)
+        entry_worst = (
+            entry_high if side == "buy" else entry_low
+        )
+        rr_worst = round(reward_risk(entry_worst, stop_loss, tp1), 1)
+        risk_reward_str = f"1:{rr_best:.1f}"
         effective_rr = calculate_expected_effective_rr(
             direction=side,
             entry=entry_for_rr,
@@ -655,23 +756,68 @@ def build_trade_plan(
             take_profit=tp1,
             spread_price=spread_price,
         )
+        effective_rr_base = calculate_expected_effective_rr(
+            direction=side,
+            entry=entry_for_selection,
+            stop_loss=stop_loss,
+            take_profit=tp1,
+            spread_price=spread_price,
+        )
+        effective_rr_worst = calculate_expected_effective_rr(
+            direction=side,
+            entry=entry_worst,
+            stop_loss=stop_loss,
+            take_profit=tp1,
+            spread_price=spread_price,
+        )
+        effective_rr_range = {
+            "best": effective_rr,
+            "base": effective_rr_base,
+            "worst": effective_rr_worst,
+        }
         # RR range across 3 fill positions within entry zone
         #   best  = mép gần nhất (aggressiveness 0.0) — same as risk_reward_str
         #   base  = trung điểm (aggressiveness 0.5)
         #   worst = mép xa nhất (aggressiveness 1.0)
         # All values are estimates, not verified against historical fill data.
-        entry_worst = (
-            entry_high if side == "buy" else entry_low
-        )
         rr_range = {
-            "best": round(reward_risk(entry_for_rr, stop_loss, tp1), 1),
-            "base": round(reward_risk(entry_for_selection, stop_loss, tp1), 1),
-            "worst": round(reward_risk(entry_worst, stop_loss, tp1), 1),
+            "best": rr_best,
+            "base": rr_base,
+            "worst": rr_worst,
         }
     else:
         risk_reward_str = None
         effective_rr = None
+        rr_base = None
+        rr_worst = None
+        effective_rr_base = None
+        effective_rr_worst = None
         rr_range = {"best": None, "base": None, "worst": None}
+        effective_rr_range = {"best": None, "base": None, "worst": None}
+
+    # Phase 13A: entry zone & TP1 quality diagnostics
+    ez_width = round_price(entry_high - entry_low) if entry_high > entry_low else 0.0
+    ez_width_atr = round(ez_width / atr_value, 4) if atr_value > 0 else None
+    if tp1 is not None:
+        # Directional clearance: positive if TP1 is past the far edge
+        if side == "buy":
+            raw_clearance = tp1 - entry_high
+        else:
+            raw_clearance = entry_low - tp1
+        if raw_clearance >= 0:
+            tp1_clearance = round_price(raw_clearance)
+            tp1_clearance_atr = round(tp1_clearance / atr_value, 4) if atr_value > 0 else None
+        else:
+            tp1_clearance = None
+            tp1_clearance_atr = None
+        tp1_eff_rr_base = (
+            tp1_val_result.get("effective_base_rr") if (tp1_val_result and tp1_val_result.get("valid"))
+            else effective_rr_base
+        )
+    else:
+        tp1_clearance = None
+        tp1_clearance_atr = None
+        tp1_eff_rr_base = None
 
     return {
         "entry_zone": entry_zone,
@@ -680,8 +826,13 @@ def build_trade_plan(
         "stop_loss": round_price(stop_loss),
         "take_profit": [round_price(value) for value in (tp1, tp2) if value is not None],
         "risk_reward": risk_reward_str,
+        "risk_reward_base": rr_base,
+        "risk_reward_worst": rr_worst,
         "expected_effective_rr": effective_rr,
+        "expected_effective_rr_base": effective_rr_base,
+        "expected_effective_rr_worst": effective_rr_worst,
         "risk_reward_range": rr_range,
+        "risk_reward_effective_range": effective_rr_range,
         "condition": condition,
         "invalidation": invalidation,
         "position_sizing": sizing,
@@ -690,9 +841,23 @@ def build_trade_plan(
         "entry_zone_score": entry_zone_score,
         "entry_zone_source": entry_zone_source,
         "sl_source": sl_source,
-        "tp_source": "none" if tp1 is None else "structure",
+        "tp_source": tp1_source,
         "entry_ladder": entry_ladder,
         "sub_zone": entry_ladder.get("sub_zone") if isinstance(entry_ladder, dict) else None,
+        # Phase 13A: entry zone & TP1 quality diagnostics
+        "entry_zone_width": ez_width,
+        "entry_zone_width_atr": ez_width_atr,
+        "tp1_source": tp1_source,
+        "tp1_clearance_from_far_edge": tp1_clearance,
+        "tp1_clearance_atr": tp1_clearance_atr,
+        "tp1_effective_rr_base": tp1_eff_rr_base,
+        # Phase 13B.1: TP1 selection diagnostic summary
+        "tp1_selection_diagnostics": {
+            "candidates_checked": diag_candidates_checked,
+            "rejected_by_reason": diag_rejected,
+            "selected_source": tp1_source if tp1 is not None else None,
+            "selected_target_rank": tp1_target_rank,
+        },
         "alternate_zones": [
             {
                 "level": round_price(z["level"]),
@@ -848,6 +1013,200 @@ def next_target(zones: list[dict[str, Any]], first_target: float, *, above: bool
         reverse=not above,
     )
     return levels[0] if levels else None
+
+
+def all_targets_sorted(
+    zones: list[dict[str, Any]], reference: float, *, above: bool,
+) -> list[float]:
+    """Return all target levels sorted by distance from *reference*.
+
+    Deduplicates equal levels.  Skips non-finite values.
+    """
+    levels: set[float] = set()
+    for zone in zones:
+        lv = zone.get("level") if isinstance(zone, dict) else None
+        if not isinstance(lv, (int, float)):
+            continue
+        f = float(lv)
+        if f == f and f != float("inf") and f != float("-inf"):
+            levels.add(f)
+    if not levels:
+        return []
+    if above:
+        return sorted([l for l in levels if l > reference])
+    return sorted([l for l in levels if l < reference], reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 13C: target zone boundary-based TP1
+# ---------------------------------------------------------------------------
+
+
+def _target_price_from_zone(
+    zone: dict[str, Any], side: str, atr_value: float,
+) -> float | None:
+    """Compute TP1 price from a zone's boundary with a small buffer.
+
+    BUY (resistance zone): target = zone.low - buffer, fallback zone.level.
+    SELL (support zone):    target = zone.high + buffer, fallback zone.level.
+    Returns None if zone has no valid level at all.
+    """
+    buffer = atr_value * _TP_TARGET_BUFFER_ATR
+    if side == "buy":
+        low = zone.get("low") if isinstance(zone, dict) else None
+        if isinstance(low, (int, float)) and low == low and low != float("inf"):
+            return round(float(low) - buffer, 5)
+    else:
+        high = zone.get("high") if isinstance(zone, dict) else None
+        if isinstance(high, (int, float)) and high == high and high != float("inf"):
+            return round(float(high) + buffer, 5)
+    # Fallback: zone level
+    lv = zone.get("level") if isinstance(zone, dict) else None
+    if isinstance(lv, (int, float)) and lv == lv and lv != float("inf"):
+        return float(lv)
+    return None
+
+
+def all_target_zones_sorted(
+    zones: list[dict[str, Any]], reference: float, *,
+    above: bool, side: str = "buy", atr_value: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Return zone dicts sorted by executable TP price (boundary ± buffer).
+
+    Phase 13C: sorts by ``_target_price_from_zone`` output, not zone["level"].
+    Deduplicates by executable TP.  Skips zones without valid executable TP.
+    """
+    seen: set[float] = set()
+    result: list[dict[str, Any]] = []
+    for z in zones:
+        if not isinstance(z, dict):
+            continue
+        tp = _target_price_from_zone(z, side, atr_value)
+        if tp is None:
+            continue
+        if tp != tp or tp == float("inf") or tp == float("-inf"):
+            continue
+        if tp in seen:
+            continue
+        seen.add(tp)
+        if (above and tp > reference) or (not above and tp < reference):
+            result.append((tp, z))
+    # Sort by executable TP
+    if above:
+        result.sort(key=lambda item: item[0])
+    else:
+        result.sort(key=lambda item: item[0], reverse=True)
+    return [z for _, z in result]
+
+
+# ---------------------------------------------------------------------------
+# Phase 13B: TP1 quality validator (shared by all TP1 sources)
+# ---------------------------------------------------------------------------
+
+
+def _validate_tp1_candidate(
+    *,
+    side: str,
+    candidate: float,
+    entry_for_selection: float,
+    stop_loss: float,
+    far_edge: float,
+    atr_value: float,
+    spread_price: float = 0.0,
+) -> dict[str, Any]:
+    """Validate a TP1 candidate against Phase 13B quality floors.
+
+    Returns a dict with ``valid``, ``nominal_base_rr``,
+    ``effective_base_rr``, ``clearance``, ``rejection_reason``.
+    Never raises.
+    """
+    result: dict[str, Any] = {
+        "valid": False,
+        "nominal_base_rr": None,
+        "effective_base_rr": None,
+        "clearance": None,
+        "rejection_reason": "",
+    }
+
+    try:
+        cand = float(candidate)
+    except (TypeError, ValueError):
+        result["rejection_reason"] = "non_finite_candidate"
+        return result
+    if cand != cand or cand == float("inf") or cand == float("-inf") or cand <= 0:
+        result["rejection_reason"] = "non_finite_candidate"
+        return result
+
+    # Directional check
+    if side == "buy" and cand <= entry_for_selection:
+        result["rejection_reason"] = "wrong_direction"
+        return result
+    if side == "sell" and cand >= entry_for_selection:
+        result["rejection_reason"] = "wrong_direction"
+        return result
+
+    # Far edge check (directional clearance)
+    if side == "buy":
+        clearance = round(cand - far_edge, 5)
+    else:
+        clearance = round(far_edge - cand, 5)
+    if clearance < 0:
+        result["rejection_reason"] = "not_past_far_edge"
+        return result
+
+    result["clearance"] = clearance
+
+    # Clearance floor
+    if atr_value > 0 and clearance < _TP1_MIN_CLEARANCE_ATR * atr_value - 1e-10:
+        result["rejection_reason"] = "clearance_below_min"
+        return result
+
+    # Nominal base RR (midpoint anchor)
+    risk_dist = abs(entry_for_selection - stop_loss)
+    if risk_dist <= 0:
+        result["rejection_reason"] = "zero_risk_distance"
+        return result
+    nominal_base_rr = round(abs(cand - entry_for_selection) / risk_dist, 4)
+    result["nominal_base_rr"] = nominal_base_rr
+    if nominal_base_rr < 1.0 - 1e-10:
+        result["rejection_reason"] = "nominal_rr_below_1.0"
+        return result
+
+    # Effective base RR (spread-adjusted)
+    effective_base_rr = calculate_expected_effective_rr(
+        direction=side,
+        entry=entry_for_selection,
+        stop_loss=stop_loss,
+        take_profit=cand,
+        spread_price=spread_price,
+    )
+    result["effective_base_rr"] = effective_base_rr
+    if effective_base_rr is None or effective_base_rr <= 0:
+        result["rejection_reason"] = "effective_rr_invalid"
+        return result
+    if effective_base_rr < _TP1_MIN_EFFECTIVE_RR_BASE - 1e-10:
+        result["rejection_reason"] = "effective_rr_below_min"
+        return result
+
+    result["valid"] = True
+    result["rejection_reason"] = ""
+    return result
+
+
+def _count_rejection(bucket: dict[str, int], reason: str) -> None:
+    """Map a validator rejection_reason to the diagnostic counter bucket."""
+    mapping = {
+        "non_finite_candidate": "invalid_candidate",
+        "wrong_direction": "wrong_direction",
+        "not_past_far_edge": "not_past_far_edge",
+        "clearance_below_min": "clearance_too_low",
+        "zero_risk_distance": "invalid_candidate",
+        "nominal_rr_below_1.0": "nominal_rr_too_low",
+        "effective_rr_invalid": "effective_rr_unavailable",
+        "effective_rr_below_min": "effective_rr_too_low",
+    }
+    key = mapping.get(reason, "invalid_candidate")
+    bucket[key] += 1
 
 
 def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float, *, quote_to_usd_rate: float | None = None, size_multiplier: float = 1.0) -> dict[str, Any]:
@@ -1070,3 +1429,101 @@ def calculate_expected_effective_rr(
         return 0.0
 
     return round(max(effective_reward / effective_risk, 0.0), 4)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5A: Current-price effective R:R (diagnostic only — does NOT block orders)
+# ---------------------------------------------------------------------------
+
+
+def calculate_current_effective_rr(
+    direction: str,
+    current_price: float | None,
+    stop_loss: float | None,
+    take_profit: float | None,
+    *,
+    spread_price: float | int | str | None = 0.0,
+    entry_zone: list[float] | None = None,
+) -> dict[str, Any]:
+    """Compute effective R:R using *current_price* instead of a zone anchor.
+
+    This is a **diagnostic helper** for Phase 5A.  It does NOT change any
+    trade-decision logic.  Callers use the returned dict to display or log
+    the current-price RR alongside best/base/worst for comparison.
+
+    Returns
+    -------
+    dict
+        {
+            "current_effective_rr": float | None,
+            "current_rr_source": str,        # "current_price" | fallback reason
+            "price_in_entry_zone": bool | None,
+        }
+    """
+    result: dict[str, Any] = {
+        "current_effective_rr": None,
+        "current_rr_source": "no_current_price",
+        "price_in_entry_zone": None,
+    }
+
+    # --- Guard: required inputs ---
+    try:
+        cp = float(current_price) if current_price is not None else None
+        sl = float(stop_loss) if stop_loss is not None else None
+        tp = float(take_profit) if take_profit is not None else None
+    except (TypeError, ValueError):
+        return result
+
+    if cp is None or cp <= 0:
+        result["current_rr_source"] = "no_current_price"
+        return result
+    if sl is None or sl <= 0:
+        result["current_rr_source"] = "no_stop_loss"
+        return result
+    if tp is None or tp <= 0:
+        result["current_rr_source"] = "no_take_profit"
+        return result
+
+    direction = str(direction).lower()
+    if direction not in ("buy", "sell"):
+        result["current_rr_source"] = "invalid_direction"
+        return result
+
+    # --- Price-in-zone check ---
+    if isinstance(entry_zone, list) and len(entry_zone) >= 2:
+        try:
+            zone_low = float(entry_zone[0])
+            zone_high = float(entry_zone[1])
+        except (TypeError, ValueError):
+            zone_low = zone_high = 0.0
+        if zone_low > 0 and zone_high > 0 and zone_high > zone_low:
+            result["price_in_entry_zone"] = zone_low <= cp <= zone_high
+        else:
+            result["price_in_entry_zone"] = None
+    else:
+        result["price_in_entry_zone"] = None
+
+    # --- Compute effective RR at current price ---
+    # Guard: price must be on correct side of SL
+    if direction == "buy" and cp <= sl:
+        result["current_rr_source"] = "price_behind_sl"
+        return result
+    if direction == "sell" and cp >= sl:
+        result["current_rr_source"] = "price_behind_sl"
+        return result
+
+    rr = calculate_expected_effective_rr(
+        direction=direction,
+        entry=cp,
+        stop_loss=sl,
+        take_profit=tp,
+        spread_price=spread_price,
+    )
+
+    if rr is not None and rr > 0:
+        result["current_effective_rr"] = rr
+        result["current_rr_source"] = "current_price"
+    else:
+        result["current_rr_source"] = "zero_or_invalid_rr"
+
+    return result

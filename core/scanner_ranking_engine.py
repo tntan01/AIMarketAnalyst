@@ -136,6 +136,68 @@ _GROUP_REASON_CODES: dict[str, str] = {
 
 
 
+def _scenario_side(scenario: dict[str, Any]) -> str | None:
+    """Return canonical BUY/SELL side for a scenario dict.
+
+    Normalises ``type`` and ``side`` keys (strip, lowercase).
+    ``type`` takes priority over ``side`` per contract.
+    Returns ``None`` when neither key resolves to buy or sell.
+    """
+    if not isinstance(scenario, dict):
+        return None
+
+    def _norm(v: object) -> str | None:
+        if not isinstance(v, str):
+            return None
+        s = v.strip().lower()
+        return s if s in ("buy", "sell") else None
+
+    t = _norm(scenario.get("type"))
+    if t is not None:
+        return t
+    return _norm(scenario.get("side"))
+
+
+def _find_scenario_for_side(scenarios: list[dict[str, Any]], best_side: str) -> dict[str, Any] | None:
+    """Find the scenario matching *best_side* by canonical type/side.
+
+    - Filters to valid trade scenarios (type or side resolves to buy/sell).
+    - type takes priority over side when both are present.
+    - Falls back to the first valid trade scenario when no match.
+    - Returns None when no valid trade scenario exists.
+    - Normalises best_side (strip, lowercase).
+    """
+    if not isinstance(scenarios, list) or len(scenarios) == 0:
+        return None
+
+    # Build filtered list of valid trade scenarios with canonical side
+    valid: list[tuple[dict[str, Any], str]] = []
+    for s in scenarios:
+        side = _scenario_side(s)
+        if side is not None:
+            valid.append((s, side))
+
+    if not valid:
+        return None
+
+    # Normalise best_side
+    if isinstance(best_side, str):
+        bs = best_side.strip().lower()
+        if bs not in ("buy", "sell"):
+            bs = ""
+    else:
+        bs = ""
+
+    # Match preferred side
+    if bs:
+        for scenario, side in valid:
+            if side == bs:
+                return scenario
+
+    # Fallback: first valid trade scenario
+    return valid[0][0]
+
+
 _PROXIMITY_ALIASES: dict[str, str] = {
     "in_zone": "in_zone",
     "in": "in_zone",
@@ -393,8 +455,8 @@ def calculate_opportunity_score(
     else:
         readiness_bonus = 0
 
-    # ---- R:R ----
-    rr_raw = row.get("expected_effective_rr") or row.get("risk_reward")
+    # ---- R:R (Phase 4A: base-case preferred, fallback best-case → risk_reward) ----
+    rr_raw = row.get("expected_effective_rr_base") or row.get("expected_effective_rr") or row.get("risk_reward")
     rr = parse_risk_reward(rr_raw)
     rr_code: str | None = None
     if rr >= _RR_STRONG:
@@ -513,33 +575,32 @@ def enrich_scanner_row_with_ranking(row: dict[str, Any] | None) -> dict[str, Any
             if isinstance(ds, dict) and "score_gap" in ds:
                 enriched["score_gap"] = ds["score_gap"]
         if "expected_effective_rr" not in enriched:
-            scenarios = ar.get("scenarios")
-            if isinstance(scenarios, list) and len(scenarios) > 0:
-                best_side = ar.get("decision_summary", {}).get("best_side")
-                best = scenarios[0]
-                if best_side:
-                    for s in scenarios:
-                        if isinstance(s, dict) and s.get("side") == best_side:
-                            best = s
-                            break
-                if isinstance(best, dict):
-                    e_rr = best.get("expected_effective_rr")
-                    if e_rr is not None:
-                        enriched["expected_effective_rr"] = e_rr
+            best = _find_scenario_for_side(
+                ar.get("scenarios"),
+                ar.get("decision_summary", {}).get("best_side", ""),
+            )
+            if isinstance(best, dict):
+                e_rr = best.get("expected_effective_rr")
+                if e_rr is not None:
+                    enriched["expected_effective_rr"] = e_rr
+        if "expected_effective_rr_base" not in enriched:
+            best = _find_scenario_for_side(
+                ar.get("scenarios"),
+                ar.get("decision_summary", {}).get("best_side", ""),
+            )
+            if isinstance(best, dict):
+                e_rr_base = best.get("expected_effective_rr_base")
+                if e_rr_base is not None:
+                    enriched["expected_effective_rr_base"] = e_rr_base
         if "entry_zone_score" not in enriched:
-            scenarios = ar.get("scenarios")
-            if isinstance(scenarios, list) and len(scenarios) > 0:
-                best_side = ar.get("decision_summary", {}).get("best_side")
-                best = scenarios[0]
-                if best_side:
-                    for s in scenarios:
-                        if isinstance(s, dict) and s.get("side") == best_side:
-                            best = s
-                            break
-                if isinstance(best, dict):
-                    z_score = best.get("entry_zone_score")
-                    if z_score is not None:
-                        enriched["entry_zone_score"] = z_score
+            best = _find_scenario_for_side(
+                ar.get("scenarios"),
+                ar.get("decision_summary", {}).get("best_side", ""),
+            )
+            if isinstance(best, dict):
+                z_score = best.get("entry_zone_score")
+                if z_score is not None:
+                    enriched["entry_zone_score"] = z_score
         if "entry_status" not in enriched:
             es = ar.get("entry_status")
             if es is not None:

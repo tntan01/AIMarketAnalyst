@@ -7,6 +7,7 @@ from typing import Any
 
 from core.scanner_ranking_engine import (
     enrich_scanner_row_with_ranking,
+    _find_scenario_for_side,
     READY_NOW,
     WAITING_CONFIRMATION,
     WATCH_ZONE,
@@ -47,12 +48,15 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     best_side = "buy" if buy_score >= sell_score else "sell"
     best_score = max(buy_score, sell_score)
     permission = str(result.get("trade_permission", {}).get("status", "blocked"))
-    scenarios = [item for item in result.get("scenarios", []) if item.get("type") in {"buy", "sell"}]
-    best_plan = next((item for item in scenarios if item.get("type") == best_side), None)
-    if best_plan is None and scenarios:
-        # Best side has no valid plan — use whatever plan exists and align side
-        best_plan = scenarios[0]
-        best_side = str(best_plan.get("type", best_side))
+    # Phase 13A.3: use shared helper matching both "type" and "side" keys
+    all_scenarios = result.get("scenarios", [])
+    best_plan = _find_scenario_for_side(all_scenarios, best_side) if isinstance(all_scenarios, list) else None
+    if best_plan is None:
+        best_side = "stand_aside"
+    else:
+        found_side = best_plan.get("type") or best_plan.get("side") or best_side
+        if found_side in ("buy", "sell"):
+            best_side = str(found_side)
     risk_reward = best_plan.get("risk_reward") if best_plan else None
     technical = result.get("technical", {}) if isinstance(result.get("technical"), dict) else {}
     # Fallback plans have no real entry zone - don't compute fake distance
@@ -109,7 +113,18 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "entry_status": best_plan.get("entry_status") if best_plan else "waiting_for_confirmation",
         "price_vs_zone": price_vs_zone,
         "risk_reward": risk_reward,
+        "risk_reward_base": best_plan.get("risk_reward_base") if best_plan else None,
+        "risk_reward_worst": best_plan.get("risk_reward_worst") if best_plan else None,
         "risk_reward_range": best_plan.get("risk_reward_range") if best_plan else None,
+        "risk_reward_effective_range": best_plan.get("risk_reward_effective_range") if best_plan else None,
+        # Phase 13A: entry zone & TP1 quality diagnostics
+        "entry_zone_width": best_plan.get("entry_zone_width") if best_plan else None,
+        "entry_zone_width_atr": best_plan.get("entry_zone_width_atr") if best_plan else None,
+        "entry_zone_source": best_plan.get("entry_zone_source") if best_plan else None,
+        "tp1_source": best_plan.get("tp1_source") if best_plan else None,
+        "tp1_clearance_from_far_edge": best_plan.get("tp1_clearance_from_far_edge") if best_plan else None,
+        "tp1_clearance_atr": best_plan.get("tp1_clearance_atr") if best_plan else None,
+        "tp1_effective_rr_base": best_plan.get("tp1_effective_rr_base") if best_plan else None,
         "macro_score": macro_score,
         "macro_bias": macro_bias,
         "macro_confidence": round(macro_confidence, 2),
@@ -129,6 +144,8 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "score_gap": score_gap,
         "m15_quality": m15_quality,
         "expected_effective_rr": expected_effective_rr,
+        "expected_effective_rr_base": best_plan.get("expected_effective_rr_base") if best_plan else None,
+        "expected_effective_rr_worst": best_plan.get("expected_effective_rr_worst") if best_plan else None,
         "stop_loss": best_plan.get("stop_loss") if best_plan else None,
         "take_profit": best_plan.get("take_profit") if best_plan else None,
         "entry_zone": best_plan.get("entry_zone") if best_plan else None,
@@ -224,7 +241,13 @@ def sort_scanner_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _safe_rr(row: dict[str, Any]) -> float:
-    """Get best available R:R value for sorting."""
+    """Get best available R:R value for sorting — base-case preferred (Phase 4A)."""
+    e_rr = row.get("expected_effective_rr_base")
+    if e_rr is not None:
+        try:
+            return float(e_rr)
+        except (ValueError, TypeError):
+            pass
     e_rr = row.get("expected_effective_rr")
     if e_rr is not None:
         try:

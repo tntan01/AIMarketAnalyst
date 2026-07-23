@@ -456,6 +456,26 @@ class MT5Service(DataProvider):
         orders = mt5.orders_get(symbol=broker_symbol)
         return bool(orders)
 
+    def get_live_price(self, broker_symbol: str, side: str) -> float | None:
+        """Return the current bid/ask tick price for *broker_symbol* and *side*.
+
+        Returns ``tick.ask`` for ``"buy"``, ``tick.bid`` for ``"sell"``,
+        or ``None`` if MT5 is unavailable or the tick cannot be fetched.
+        """
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return None
+        tick = mt5.symbol_info_tick(broker_symbol)
+        if not tick:
+            return None
+        side_lower = str(side).strip().lower()
+        if side_lower == "buy":
+            return float(tick.ask) if tick.ask else None
+        if side_lower == "sell":
+            return float(tick.bid) if tick.bid else None
+        return None
+
     def place_market_order(
         self,
         *,

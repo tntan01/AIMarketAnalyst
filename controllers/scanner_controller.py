@@ -24,7 +24,7 @@ from core.scanner_ai_auditor import (
 )
 from core.scanner_session_review import build_market_brief_prompt
 from core.analysis_engine import analyze_symbol
-from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot
+from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot, calculate_current_effective_rr
 from services.ai_service import AIProviderConfig, AIService
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
@@ -311,9 +311,30 @@ class ScannerController:
     def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         errors: list[str] = []
+        diagnostics: list[dict[str, Any]] = []
         attempted = 0
         opened = 0
         skipped = 0
+
+        # Phase 5D: diagnostic payload builder
+        def _diag(**overrides) -> dict[str, Any]:
+            d: dict[str, Any] = {
+                "symbol": None,
+                "broker_symbol": None,
+                "side": None,
+                "live_price": None,
+                "fallback_price": None,
+                "price_source": "none",
+                "entry_zone": None,
+                "current_price_in_entry_zone": None,
+                "current_effective_rr": None,
+                "current_rr_source": "none",
+                "min_rr": None,
+                "decision": "unknown",
+                "reason": "",
+            }
+            d.update(overrides)
+            return d
 
         for row in rows:
             at_cfg = self._auto_trade_config(request, str(row.get("symbol", "")))
@@ -336,6 +357,11 @@ class ScannerController:
             except (TypeError, ValueError):
                 skipped += 1
                 errors.append(f"{symbol}: thiếu lot/SL/TP hợp lệ, bỏ qua auto trade.")
+                diagnostics.append(_diag(
+                    symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                    decision="skip_missing_sl_tp",
+                    reason="thiếu SL/TP hợp lệ",
+                ))
                 continue
 
             # Tính lại lot ngay trước khi vào lệnh.
@@ -354,6 +380,11 @@ class ScannerController:
                 if entry_price <= 0 or stop_loss <= 0 or abs(entry_price - stop_loss) <= 0:
                     skipped += 1
                     errors.append(f"{symbol}: không tính được entry_price/stop_distance, bỏ qua auto trade.")
+                    diagnostics.append(_diag(
+                        symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                        decision="skip_missing_sl_tp",
+                        reason="không tính được entry_price/stop_distance",
+                    ))
                     continue
                 balance = float(settings.trading.account_balance or 0)
                 risk_pct = float(getattr(request, 'risk_percent', None) or settings.trading.default_risk_percent or 1.0)
@@ -385,12 +416,22 @@ class ScannerController:
             except Exception:
                 skipped += 1
                 errors.append(f"{symbol}: lỗi khi tính lot, bỏ qua auto trade.")
+                diagnostics.append(_diag(
+                    symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                    decision="skip_lot_error",
+                    reason="lỗi khi tính lot",
+                ))
                 continue
             # ----------------------------------------------------------------
 
             if not broker_symbol:
                 skipped += 1
                 errors.append(f"{symbol}: thiếu broker symbol, bỏ qua auto trade.")
+                diagnostics.append(_diag(
+                    symbol=symbol, broker_symbol="", side=trade_side,
+                    decision="skip_no_broker_symbol",
+                    reason="thiếu broker symbol",
+                ))
                 continue
 
             try:
@@ -404,9 +445,14 @@ class ScannerController:
                         "volume": volume,
                         "message": "Đã có lệnh/position cho mã này, không vào thêm.",
                     })
+                    diagnostics.append(_diag(
+                        symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                        decision="skip_existing_position",
+                        reason="đã có lệnh/position",
+                    ))
                     continue
 
-                # --- Entry zone check: price must be inside entry zone ---
+                # --- Phase 5B: live-price entry zone + current RR guard ---
                 entry_zone = scenario.get("entry_zone")
                 if isinstance(entry_zone, list) and len(entry_zone) >= 2:
                     try:
@@ -417,24 +463,98 @@ class ScannerController:
                 else:
                     entry_low = entry_high = 0.0
 
-                if entry_low > 0 and entry_high > 0:
+                # Current effective RR guard (Phase 5B) — cfg_min_rr computed early for diagnostics
+                cfg_min_rr = float(at_cfg.get("min_rr", 0) or 0) if at_cfg else 0.0
+                if cfg_min_rr <= 0:
+                    settings = self.settings_service.load()
+                    cfg_min_rr = float(getattr(settings.trading, "min_expected_rr", None) or 1.3)
+
+                # Get live price from MT5, fallback to scan technical.price
+                live_price = self.mt5.get_live_price(broker_symbol, trade_side)
+                if live_price is not None and live_price > 0:
+                    exec_price = live_price
+                    price_source = "live"
+                else:
                     analysis = row.get("analysis_result", {})
                     if isinstance(analysis, dict):
                         technical = analysis.get("technical", {})
                     else:
                         technical = {}
-                    if isinstance(technical, dict):
-                        current_price = float(technical.get("price", 0) or 0)
-                    else:
-                        current_price = 0.0
+                    exec_price = float(technical.get("price", 0) or 0) if isinstance(technical, dict) else 0.0
+                    price_source = "technical_fallback" if exec_price > 0 else "none"
 
-                    if current_price > 0 and not (entry_low <= current_price <= entry_high):
+                # Entry zone check with execution price
+                if entry_low > 0 and entry_high > 0:
+                    if exec_price <= 0:
+                        skipped += 1
+                        errors.append(f"{symbol}: không lấy được giá hiện tại, bỏ qua auto trade.")
+                        diagnostics.append(_diag(
+                            symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                            live_price=live_price, price_source=price_source,
+                            entry_zone=[entry_low, entry_high],
+                            min_rr=cfg_min_rr,
+                            decision="skip_outside_entry_zone",
+                            reason="không lấy được giá hiện tại",
+                        ))
+                        continue
+                    if not (entry_low <= exec_price <= entry_high):
                         skipped += 1
                         errors.append(
-                            f"{symbol}: giá {current_price:.5f} nằm ngoài vùng entry "
+                            f"{symbol}: giá live {exec_price:.5f} nằm ngoài vùng entry "
                             f"[{entry_low:.5f}–{entry_high:.5f}], bỏ qua."
                         )
+                        diagnostics.append(_diag(
+                            symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                            live_price=live_price, fallback_price=exec_price if price_source != "live" else None,
+                            price_source=price_source,
+                            entry_zone=[entry_low, entry_high],
+                            current_price_in_entry_zone=False,
+                            min_rr=cfg_min_rr,
+                            decision="skip_outside_entry_zone",
+                            reason=f"giá {exec_price:.5f} ngoài vùng entry [{entry_low:.5f}–{entry_high:.5f}]",
+                        ))
                         continue
+
+                # Current effective RR guard (Phase 5B + 5D)
+                # Get spread for current RR calc
+                spread_raw = 0.0
+                analysis = row.get("analysis_result", {})
+                if isinstance(analysis, dict):
+                    dq = analysis.get("data_quality", {})
+                    if isinstance(dq, dict):
+                        spread_raw = float(dq.get("spread_price", 0) or 0)
+                current_rr_check = calculate_current_effective_rr(
+                    direction=trade_side,
+                    current_price=exec_price,
+                    stop_loss=stop_loss,
+                    take_profit=tp,
+                    spread_price=spread_raw,
+                    entry_zone=entry_zone if entry_low > 0 and entry_high > 0 else None,
+                )
+                cur_rr = current_rr_check.get("current_effective_rr")
+                cur_rr_source = current_rr_check.get("current_rr_source", "")
+                cur_in_zone = current_rr_check.get("price_in_entry_zone")
+
+                if cur_rr_source == "current_price" and cur_rr is not None and cur_rr < cfg_min_rr:
+                    skipped += 1
+                    errors.append(
+                        f"{symbol}: current RR {cur_rr:.2f} < min_rr {cfg_min_rr:.1f} "
+                        f"(live price {exec_price:.5f}, source={price_source}), bỏ qua auto trade."
+                    )
+                    diagnostics.append(_diag(
+                        symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                        live_price=live_price,
+                        fallback_price=exec_price if price_source != "live" else None,
+                        price_source=price_source,
+                        entry_zone=[entry_low, entry_high] if entry_low > 0 and entry_high > 0 else None,
+                        current_price_in_entry_zone=cur_in_zone,
+                        current_effective_rr=cur_rr,
+                        current_rr_source=cur_rr_source,
+                        min_rr=cfg_min_rr,
+                        decision="skip_current_rr",
+                        reason=f"current RR {cur_rr:.2f} < min_rr {cfg_min_rr:.1f}",
+                    ))
+                    continue
 
                 order = self.mt5.place_market_order(
                     symbol=symbol,
@@ -449,6 +569,19 @@ class ScannerController:
                 results.append(payload)
                 if payload.get("success"):
                     opened += 1
+                    diagnostics.append(_diag(
+                        symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                        live_price=live_price,
+                        fallback_price=exec_price if price_source != "live" else None,
+                        price_source=price_source,
+                        entry_zone=[entry_low, entry_high] if entry_low > 0 and entry_high > 0 else None,
+                        current_price_in_entry_zone=cur_in_zone,
+                        current_effective_rr=cur_rr,
+                        current_rr_source=cur_rr_source,
+                        min_rr=cfg_min_rr,
+                        decision="place",
+                        reason="order placed",
+                    ))
                     # Auto-enable BE+trailing tracking for this position
                     if self.orders_screen is not None:
                         try:
@@ -469,9 +602,27 @@ class ScannerController:
                 else:
                     skipped += 1
                     errors.append(f"{symbol}: {payload.get('message') or 'MT5 từ chối lệnh.'}")
+                    diagnostics.append(_diag(
+                        symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                        live_price=live_price,
+                        fallback_price=exec_price if price_source != "live" else None,
+                        price_source=price_source,
+                        entry_zone=[entry_low, entry_high] if entry_low > 0 and entry_high > 0 else None,
+                        current_price_in_entry_zone=cur_in_zone,
+                        current_effective_rr=cur_rr,
+                        current_rr_source=cur_rr_source,
+                        min_rr=cfg_min_rr,
+                        decision="place_mt5_rejected",
+                        reason=payload.get('message', 'MT5 từ chối lệnh.'),
+                    ))
             except Exception as exc:
                 skipped += 1
                 errors.append(f"{symbol}: {exc}")
+                diagnostics.append(_diag(
+                    symbol=symbol, broker_symbol=broker_symbol, side=trade_side,
+                    decision="skip_exception",
+                    reason=str(exc)[:200],
+                ))
 
         return {
             "enabled": True,
@@ -480,6 +631,7 @@ class ScannerController:
             "skipped": skipped,
             "errors": errors,
             "orders": results,
+            "diagnostics": diagnostics,
             "risk_percent": request.risk_percent,
         }
 
@@ -667,6 +819,19 @@ class ScannerController:
             rr = scenario.get("risk_reward", row.get("risk_reward", ""))
             rr_range = scenario.get("risk_reward_range") or row.get("risk_reward_range")
 
+            # Phase 5A: compute current-price effective RR (diagnostic only)
+            spread_price_raw = analysis.get("data_quality", {}).get("spread_price", 0) if isinstance(analysis, dict) else 0
+            if not isinstance(spread_price_raw, (int, float)) or spread_price_raw is None:
+                spread_price_raw = 0
+            current_rr_diag = calculate_current_effective_rr(
+                direction=best_side,
+                current_price=current_price if current_price > 0 else None,
+                stop_loss=sl if sl else None,
+                take_profit=tp if tp else None,
+                spread_price=float(spread_price_raw),
+                entry_zone=entry_zone if isinstance(entry_zone, list) and len(entry_zone) == 2 else None,
+            )
+
             candidates.append({
                 "symbol": symbol,
                 "broker_symbol": str(row.get("broker_symbol") or "").strip(),
@@ -688,6 +853,11 @@ class ScannerController:
                 "short_reason": str(row.get("short_reason") or row.get("permission_reason") or ""),
                 "scanner_group": str(row.get("scanner_group", "")),
                 "analysis_result": analysis,
+                # Phase 5A: current-price RR diagnostic fields (read-only, do NOT skip)
+                "current_entry_price": current_price if current_price > 0 else None,
+                "current_effective_rr": current_rr_diag.get("current_effective_rr"),
+                "current_rr_source": current_rr_diag.get("current_rr_source"),
+                "current_price_in_entry_zone": current_rr_diag.get("price_in_entry_zone"),
             })
 
         return candidates

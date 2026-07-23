@@ -26,8 +26,8 @@ class TestTp1EntryZoneGuard(unittest.TestCase):
             "price": price,
             "atr_h4": atr,
             "atr_d1": atr,
-            "support_zones": [{"level": support_level, "low": support_level - 0.001, "high": support_level + 0.001, "source": "technical"}],
-            "resistance_zones": [{"level": resistance_level, "low": resistance_level - 0.001, "high": resistance_level + 0.001, "source": "technical"}],
+            "support_zones": [{"level": support_level, "low": support_level - 0.002, "high": support_level + 0.001, "source": "technical"}],
+            "resistance_zones": [{"level": resistance_level, "low": resistance_level - 0.002, "high": resistance_level + 0.001, "source": "technical"}],
         }
 
     @staticmethod
@@ -57,7 +57,7 @@ class TestTp1EntryZoneGuard(unittest.TestCase):
         technical = self._make_technical(price, atr, support_level, resistance_level)
         smc = self._make_smc()
 
-        plan = build_trade_plan("buy", request, technical, smc)
+        plan = build_trade_plan("buy", request, technical, smc, market_regime={"primary": "trend_up"})
 
         # Plan=None la DUNG: TP1 bi reject + khong co TP thay the → huy plan
         # Day la behavior mong muon — khong vao lenh voi TP ao
@@ -88,12 +88,13 @@ class TestTp1EntryZoneGuard(unittest.TestCase):
         atr = 0.00245
         support_level = 2.337015
         # Resistance zone NAM NGOAI entry zone (tren entry_high)
-        resistance_level = 2.34000
+        # Phase 13C: zone boundary TP = low - buffer → must still clear far_edge
+        resistance_level = 2.34300
 
         technical = self._make_technical(price, atr, support_level, resistance_level)
         smc = self._make_smc()
 
-        plan = build_trade_plan("buy", request, technical, smc)
+        plan = build_trade_plan("buy", request, technical, smc, market_regime={"primary": "trend_up"})
 
         self.assertIsNotNone(plan)
         tp_list = plan["take_profit"]
@@ -164,12 +165,12 @@ class TestTp1EntryZoneGuard(unittest.TestCase):
             "price": price,
             "atr_h4": atr,
             "atr_d1": atr,
-            "support_zones": [{"level": support_level, "low": support_level - 0.001, "high": support_level + 0.001, "source": "technical"}],
+            "support_zones": [{"level": support_level, "low": support_level - 0.002, "high": support_level + 0.001, "source": "technical"}],
             "resistance_zones": [],  # khong co resistance
         }
         smc = self._make_smc()
 
-        plan = build_trade_plan("buy", request, technical, smc)
+        plan = build_trade_plan("buy", request, technical, smc, market_regime={"primary": "trend_up"})
         # Co the la None (khong co TP) hoac co plan voi tp1=None
         if plan is not None:
             tp_list = plan["take_profit"]
@@ -208,7 +209,7 @@ class TestTp1EntryZoneGuard(unittest.TestCase):
         }
         smc = self._make_smc()
 
-        plan = build_trade_plan("buy", request, technical, smc)
+        plan = build_trade_plan("buy", request, technical, smc, market_regime={"primary": "trend_up"})
 
         # Plan=None la DUNG: TP1 2.33773 bi guard reject + cac tier khac
         # khong tim duoc TP hop le → huy plan. Khong vao lenh voi TP ao.

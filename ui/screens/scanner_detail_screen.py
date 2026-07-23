@@ -320,7 +320,7 @@ class ScannerDetailScreen(QWidget):
         header_layout.addWidget(score_pill)
 
         # 3. R:R Pill
-        rr = self.row.get("risk_reward") or "--"
+        rr = self._rr_main_text()
         rr_pill = QFrame()
         rr_pill.setObjectName("SummaryPillRR")
         rr_pill_layout = QHBoxLayout(rr_pill)
@@ -641,7 +641,7 @@ class ScannerDetailScreen(QWidget):
             row_l.addWidget(icon_lbl)
 
             text_lbl = QLabel(item["label"])
-            text_lbl.setStyleSheet(f"font-size: 11.5px; font-weight: 500; color: {green_color if item["pass"] else red_color}; background: transparent; border: none;")
+            text_lbl.setStyleSheet(f"font-size: 11.5px; font-weight: 500; color: {green_color if item['pass'] else red_color}; background: transparent; border: none;")
             text_lbl.setWordWrap(True)
             row_l.addWidget(text_lbl, 1)
 
@@ -801,9 +801,18 @@ class ScannerDetailScreen(QWidget):
         return f"{dot} {macro_num}/30", detail, accent
 
     def _dialog_card_rr(self) -> tuple[str, str, str]:
-        rr = self.row.get("risk_reward") or "--"
-        eff_rr = self.row.get("expected_effective_rr")
-        rr_range = self.row.get("risk_reward_range")
+        rr_ctx = self._rr_context()
+        rr = rr_ctx.get("risk_reward") or self._rr_main_text()
+        eff_rr = rr_ctx.get("expected_effective_rr")
+        rr_range = rr_ctx.get("risk_reward_range")
+        new_detail = self._rr_detail_text(
+            rr_range,
+            rr_ctx.get("risk_reward_effective_range"),
+            eff_rr,
+            rr_ctx.get("expected_effective_rr_base"),
+        )
+        if new_detail:
+            return str(rr), new_detail, "#ea580c"
         if rr_range and isinstance(rr_range, dict):
             worst = rr_range.get("worst")
             if worst is not None:
@@ -812,7 +821,71 @@ class ScannerDetailScreen(QWidget):
                     detail += f" | thực ~{eff_rr:.1f}"
                 return str(rr), detail, "#ea580c"
         detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
+        if not detail and self._has_entry_without_rr():
+            detail = "Chưa có TP1 hợp lệ nên chưa tính R:R."
         return str(rr), detail, "#ea580c"
+
+    def _best_detail_scenario(self) -> dict[str, object]:
+        analysis = self.row.get("analysis_result") if isinstance(self.row, dict) else None
+        if not isinstance(analysis, dict):
+            return {}
+        scenarios = analysis.get("scenarios")
+        if not isinstance(scenarios, list):
+            return {}
+        best_side = str(self.row.get("best_side") or "").strip().lower()
+        for scenario in scenarios:
+            if not isinstance(scenario, dict):
+                continue
+            side = str(scenario.get("type") or scenario.get("side") or "").strip().lower()
+            if best_side and side == best_side:
+                return scenario
+        for scenario in scenarios:
+            if isinstance(scenario, dict) and scenario.get("entry_zone"):
+                return scenario
+        for scenario in scenarios:
+            if isinstance(scenario, dict):
+                return scenario
+        return {}
+
+    def _rr_field(self, key: str) -> object:
+        value = self.row.get(key)
+        if value is not None and value != "":
+            return value
+        scenario = self._best_detail_scenario()
+        value = scenario.get(key)
+        if value is not None and value != "":
+            return value
+        return None
+
+    def _rr_context(self) -> dict[str, object]:
+        keys = (
+            "risk_reward",
+            "risk_reward_range",
+            "risk_reward_effective_range",
+            "expected_effective_rr",
+            "expected_effective_rr_base",
+        )
+        return {key: self._rr_field(key) for key in keys}
+
+    def _has_entry_without_rr(self) -> bool:
+        entry_zone = self.row.get("entry_zone") or self._best_detail_scenario().get("entry_zone")
+        return bool(entry_zone)
+
+    def _rr_main_text(self) -> str:
+        rr = self._rr_field("risk_reward")
+        if rr:
+            return str(rr)
+        rr_range = self._rr_field("risk_reward_range")
+        if isinstance(rr_range, dict):
+            try:
+                best = rr_range.get("best")
+                if best is not None:
+                    return f"1:{float(best):.1f}"
+            except (TypeError, ValueError):
+                pass
+        if self._has_entry_without_rr():
+            return "N/A"
+        return "--"
 
     def _dialog_card_sl(self) -> tuple[str, str, str]:
         if self._has_no_entry_zone():
@@ -1177,21 +1250,36 @@ class ScannerDetailScreen(QWidget):
         entry_ok = self.row.get("entry_status") == "confirmed_entry" if self.row else False
         entry_accent = "#22c55e" if entry_ok else "#f59e0b"
 
-        rr_range = self.row.get("risk_reward_range")
+        rr_ctx = self._rr_context()
+        rr_range = rr_ctx.get("risk_reward_range")
         rr_range_str = ""
         if rr_range and isinstance(rr_range, dict):
             worst = rr_range.get("worst")
             if worst is not None:
                 rr_range_str = f" ({worst:.1f}–{rr_range.get('best', '?'):.1f})"
 
-        eff_rr = self.row.get("expected_effective_rr")
+        eff_rr = rr_ctx.get("expected_effective_rr")
         eff_rr_str = f"~{eff_rr:.1f}" if eff_rr is not None else "—"
+
+        eff_rr_base = rr_ctx.get("expected_effective_rr_base")
+        rr_eff_suffix = ""
+        if eff_rr_base is not None:
+            try:
+                eff_rr_str = f"base ~{float(eff_rr_base):.1f}"
+                rr_eff_suffix = f" | {eff_rr_str}"
+            except (TypeError, ValueError):
+                pass
+        elif eff_rr is not None:
+            rr_eff_suffix = f" | {eff_rr_str}"
+
+        rr_val = f"{rr_val}{rr_range_str}{rr_eff_suffix}"
+        rr_range_str = ""
 
         rows = [
             ("Vùng vào lệnh", entry_val, entry_accent),
             ("Stop Loss", sl_val, "#e11d48"),
             ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "#10b981"),
-            ("R:R", f"{rr_val}{rr_range_str}", "#f59e0b"),
+            ("R:R", rr_val, "#f59e0b"),
             ("Chế độ TT", regime_val, val_color),
             ("Điểm vĩ mô", macro_val, "#38bdf8"),
         ]
@@ -1408,7 +1496,7 @@ class ScannerDetailScreen(QWidget):
         entry = str(self.row.get("entry_status", ""))
         m15 = str(self.row.get("m15_quality", "")).lower()
         price_zone = str(self.row.get("price_vs_zone", ""))
-        rr = str(self.row.get("risk_reward", ""))
+        rr = str(self._rr_field("risk_reward") or "")
         min_score = int(self.row.get("min_score", 65) or 65)
         analysis = self.row.get("analysis_result", {}) if isinstance(self.row.get("analysis_result"), dict) else {}
         gate = analysis.get("trade_gate", {}) if isinstance(analysis, dict) else {}
@@ -1480,6 +1568,14 @@ class ScannerDetailScreen(QWidget):
         except (ValueError, TypeError):
             pass
         rr_ok = rr_val >= min_rr
+        rr_extra = self._rr_detail_text(
+            self._rr_field("risk_reward_range"),
+            self._rr_field("risk_reward_effective_range"),
+            self._rr_field("expected_effective_rr"),
+            self._rr_field("expected_effective_rr_base"),
+        )
+        if rr_extra:
+            rr = f"{rr} ({rr_extra})"
         items.append({
             "pass": rr_ok,
             "label": f"Tỷ lệ R:R là {rr} — {'đạt' if rr_ok else f'dưới tỷ lệ R:R tối thiểu là 1:{min_rr:.1f}'}"
@@ -1530,7 +1626,7 @@ class ScannerDetailScreen(QWidget):
         gap, min_gap = self._gap_numbers()
         if gap is not None and min_gap is not None and gap < min_gap:
             items.append((f"Gap mua-bán đạt tối thiểu {self._compact_number(min_gap)}.", "wait"))
-        if not self.row.get("risk_reward"):
+        if not self._rr_field("risk_reward"):
             items.append(("Có R:R hợp lệ trước khi lập kế hoạch lệnh.", "wait"))
         return items
 
@@ -1585,6 +1681,63 @@ class ScannerDetailScreen(QWidget):
         except (TypeError, ValueError):
             return str(value)
         return str(int(number)) if number.is_integer() else f"{number:.1f}"
+
+    @staticmethod
+    def _rr_detail_text(
+        rr_range: object,
+        effective_range: object,
+        expected_effective_rr: object,
+        expected_effective_rr_base: object,
+    ) -> str:
+        return ScannerDetailScreen._rr_detail_text_ascii(
+            rr_range,
+            effective_range,
+            expected_effective_rr,
+            expected_effective_rr_base,
+        )
+
+    @staticmethod
+    def _rr_detail_text_ascii(
+        rr_range: object,
+        effective_range: object,
+        expected_effective_rr: object,
+        expected_effective_rr_base: object,
+    ) -> str:
+        parts: list[str] = []
+        nominal_range = ScannerDetailScreen._rr_range_ascii(rr_range)
+        if nominal_range:
+            parts.append(f"dai {nominal_range}")
+        effective_range_text = ScannerDetailScreen._rr_range_ascii(effective_range)
+        if effective_range_text:
+            parts.append(f"dai thuc {effective_range_text}")
+        try:
+            base = float(expected_effective_rr_base) if expected_effective_rr_base is not None else None
+        except (TypeError, ValueError):
+            base = None
+        try:
+            best = float(expected_effective_rr) if expected_effective_rr is not None else None
+        except (TypeError, ValueError):
+            best = None
+        if base is not None:
+            parts.append(f"base sau spread ~{base:.1f}")
+        elif best is not None:
+            parts.append(f"thuc ~{best:.1f}")
+        return " | ".join(parts)
+
+    @staticmethod
+    def _rr_range_ascii(value: object) -> str:
+        if not isinstance(value, dict):
+            return ""
+        try:
+            best = float(value["best"]) if value.get("best") is not None else None
+            worst = float(value["worst"]) if value.get("worst") is not None else None
+        except (TypeError, ValueError):
+            return ""
+        if best is None or worst is None:
+            return ""
+        if best == worst:
+            return f"{best:.1f}"
+        return f"{worst:.1f}-{best:.1f}"
 
     @staticmethod
     def _rr_range_compact(rr_range: object) -> str:

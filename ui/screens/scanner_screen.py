@@ -3,7 +3,13 @@ from __future__ import annotations
 from config.constants import SUPPORTED_SYMBOLS
 from controllers .scanner_controller import ScannerController 
 from core .scanner import ScannerRequest
-from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot
+from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot, calculate_current_effective_rr
+from ui.scanner_rr_formatters import (
+    format_order_rr_text,
+    format_order_rr_tooltip,
+    format_order_entry_tooltip,
+    enrich_order_note_with_current_rr,
+)
 from PyQt6 .QtCore import QAbstractTableModel ,QEvent ,QModelIndex ,QRect ,QSize ,Qt ,QTimer
 from PyQt6 .QtGui import QColor ,QIcon
 from PyQt6 .QtWidgets import (
@@ -892,6 +898,100 @@ class ScannerScreen (QWidget ):
                                     f"[{entry_low:.5f}–{entry_high:.5f}].\n\n"
                                     f"Chỉ vào lệnh khi giá nằm trong vùng entry.")
                                 gate_blocked = True
+
+                # Phase 5B: current effective RR guard (manual order)
+                if not gate_blocked:
+                    try:
+                        # Get fresh live price
+                        manual_side = str(order_info.get("side", "")).strip().lower()
+                        manual_sl = order_info.get("stop_loss")
+                        manual_tp = order_info.get("take_profit")
+                        manual_broker = str(order_info.get("broker_symbol") or "").strip()
+
+                        if manual_side in ("buy", "sell") and manual_sl is not None and manual_tp is not None:
+                            # Phase 5D.1: keep raw live separate from execution price
+                            raw_live_px = None
+                            try:
+                                raw_live_px = self.mt5.get_live_price(manual_broker or symbol, manual_side)
+                            except Exception:
+                                raw_live_px = None
+
+                            if raw_live_px is not None and raw_live_px > 0:
+                                exec_px = raw_live_px
+                                price_source = "live"
+                                fallback_px = None
+                            else:
+                                fallback_px = None
+                                try:
+                                    ep_val = order_info.get("entry_price")
+                                    fallback_px = float(ep_val) if ep_val is not None else None
+                                except (TypeError, ValueError):
+                                    fallback_px = None
+                                if fallback_px is not None and fallback_px > 0:
+                                    exec_px = fallback_px
+                                    price_source = "order_entry_fallback"
+                                else:
+                                    exec_px = 0.0
+                                    price_source = "none"
+                                    fallback_px = None
+
+                            if exec_px > 0:
+                                manual_ez = order_info.get("entry_zone")
+                                # Phase 5D: build execution guard diagnostic
+                                manual_diag = {
+                                    "symbol": symbol,
+                                    "broker_symbol": manual_broker or symbol,
+                                    "side": manual_side,
+                                    "live_price": raw_live_px if raw_live_px is not None and raw_live_px > 0 else None,
+                                    "fallback_price": fallback_px,
+                                    "price_source": price_source,
+                                    "entry_zone": manual_ez if isinstance(manual_ez, list) and len(manual_ez) == 2 else None,
+                                    "current_price_in_entry_zone": None,
+                                    "current_effective_rr": None,
+                                    "current_rr_source": "none",
+                                    "min_rr": manual_min_rr if 'manual_min_rr' in dir() else 1.3,
+                                    "decision": "manual_place",
+                                    "reason": "",
+                                }
+                                current_rr_check = calculate_current_effective_rr(
+                                    direction=manual_side,
+                                    current_price=exec_px,
+                                    stop_loss=float(manual_sl),
+                                    take_profit=float(manual_tp),
+                                    spread_price=0.0,
+                                    entry_zone=manual_ez if isinstance(manual_ez, list) and len(manual_ez) == 2 else None,
+                                )
+                                cur_rr = current_rr_check.get("current_effective_rr")
+                                cur_rr_src = current_rr_check.get("current_rr_source", "")
+                                cur_in_zone = current_rr_check.get("price_in_entry_zone")
+                                manual_diag["current_effective_rr"] = cur_rr
+                                manual_diag["current_rr_source"] = cur_rr_src
+                                manual_diag["current_price_in_entry_zone"] = cur_in_zone
+
+                                manual_min_rr = 1.3
+                                try:
+                                    st = self.settings_service.load()
+                                    manual_min_rr = float(getattr(st.trading, "min_expected_rr", None) or 1.3)
+                                except Exception:
+                                    pass
+                                manual_diag["min_rr"] = manual_min_rr
+
+                                if cur_rr_src == "current_price" and cur_rr is not None and cur_rr < manual_min_rr:
+                                    manual_diag["decision"] = "manual_block_current_rr"
+                                    manual_diag["reason"] = f"current RR {cur_rr:.2f} < min_rr {manual_min_rr:.1f}"
+                                    order_info["execution_guard"] = manual_diag
+                                    QMessageBox.warning(dlg, "R:R hiện tại quá thấp",
+                                        f"{symbol}: R:R tại giá hiện tại ({exec_px:.5f}) là {cur_rr:.2f}, "
+                                        f"thấp hơn ngưỡng tối thiểu {manual_min_rr:.1f}.\n\n"
+                                        f"Không nên vào lệnh khi R:R hiện tại không đạt.\n"
+                                        f"Chờ giá điều chỉnh về gần mép entry zone để có R:R tốt hơn.")
+                                    gate_blocked = True
+                                else:
+                                    manual_diag["decision"] = "manual_place"
+                                    manual_diag["reason"] = "manual order passed current RR guard"
+                                    order_info["execution_guard"] = manual_diag
+                    except Exception:
+                        pass  # current RR check failure → don't block, let the order through
             except Exception:
                 pass  # If gate check fails for any reason, allow the order
 
@@ -1149,7 +1249,11 @@ class ScannerScreen (QWidget ):
             # Entry
             entry = order.get("entry_price")
             entry_text = f"{float(entry):.5f}" if entry is not None else "--"
-            table.setItem(idx, 3, styled_item(entry_text))
+            entry_item = styled_item(entry_text)
+            entry_tip = format_order_entry_tooltip(order)
+            if entry_tip:
+                entry_item.setToolTip(entry_tip)
+            table.setItem(idx, 3, entry_item)
 
             # SL
             sl = order.get("stop_loss")
@@ -1171,23 +1275,15 @@ class ScannerScreen (QWidget ):
             table.setItem(idx, 6, styled_item(vol_text))
 
             # R:R — show range if available: "5.6 (2.9–5.6)"
-            rr = order.get("risk_reward")
-            rr_range = order.get("risk_reward_range")
-            if rr_range and isinstance(rr_range, dict):
-                best = rr_range.get("best")
-                worst = rr_range.get("worst")
-                if best is not None and worst is not None and best != worst:
-                    rr_text = f"{best:.1f} ({worst:.1f}–{best:.1f})"
-                elif best is not None:
-                    rr_text = f"{best:.1f}"
-                else:
-                    rr_text = str(rr) if rr else "--"
-            else:
-                rr_text = str(rr) if rr else "--"
-            table.setItem(idx, 7, styled_item(rr_text))
+            rr_text = format_order_rr_text(order)
+            rr_item = styled_item(rr_text)
+            rr_tooltip = format_order_rr_tooltip(order)
+            if rr_tooltip:
+                rr_item.setToolTip(rr_tooltip)
+            table.setItem(idx, 7, rr_item)
 
-            # Note
-            note = str(order.get("note", "") or order.get("message", ""))
+            # Note — with current RR diagnostic (Phase 9 shared formatter)
+            note = enrich_order_note_with_current_rr(order)
             note_item = QTableWidgetItem(note if note else "--")
             note_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             if note:
@@ -1369,6 +1465,19 @@ class ScannerScreen (QWidget ):
             rr = scenario.get("risk_reward", "")
             rr_range = scenario.get("risk_reward_range") or row.get("risk_reward_range")
 
+            # Phase 5A: compute current-price effective RR (diagnostic only)
+            spread_price_raw = row.get("spread_price", 0)
+            if not isinstance(spread_price_raw, (int, float)) or spread_price_raw is None:
+                spread_price_raw = 0
+            current_rr_diag = calculate_current_effective_rr(
+                direction=best_side,
+                current_price=current_price if current_price > 0 else None,
+                stop_loss=sl if sl else None,
+                take_profit=tp if tp else None,
+                spread_price=float(spread_price_raw),
+                entry_zone=entry_zone if isinstance(entry_zone, list) and len(entry_zone) == 2 else None,
+            )
+
             action = str(row.get("scanner_action", ""))
             note = {
                 "ready": "Sẵn sàng",
@@ -1392,6 +1501,11 @@ class ScannerScreen (QWidget ):
                 "market_regime": str(row.get("market_regime", "")),
                 "expected_effective_rr": row.get("expected_effective_rr"),
                 "best_score": row.get("best_score", 0),
+                # Phase 5A: current-price RR diagnostic fields (read-only, do NOT skip)
+                "current_entry_price": current_price if current_price > 0 else None,
+                "current_effective_rr": current_rr_diag.get("current_effective_rr"),
+                "current_rr_source": current_rr_diag.get("current_rr_source"),
+                "current_price_in_entry_zone": current_rr_diag.get("price_in_entry_zone"),
             })
 
         return result
