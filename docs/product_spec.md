@@ -134,9 +134,24 @@ Các cột Ready, Watch, Wait **luôn hiển thị và có thể chỉnh sửa**
 
 Mỗi cặp khi quét đều chạy qua 2 lớp trong pipeline `AnalysisPipeline`:
 
-**Lớp 1 — Chấm điểm (Step 1→5):** Phân tích kỹ thuật (trend, momentum, location, SMC, risk, macro) → cho điểm BUY/SELL (0-100). Tạo scenario với Entry/SL/TP/R:R (kèm dải risk_reward_range best/base/worst).
+**Lớp 1 — Chấm điểm (Step 1→5):** Phân tích kỹ thuật (trend, momentum, location, SMC, risk, macro) → cho điểm BUY/SELL (0-100). Tạo scenario với entry zone boundary-based, SL, TP1 đã qua quality validator và R:R best/base/worst.
 
-**Lớp 2 — Gate (Step 6):** 11 gate kiểm tra an toàn tuần tự: MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken. Gate có thể Block (chặn cứng), Warning (hạ cap xuống WATCH_ONLY/WAITING_CONFIRMATION), hoặc Pass.
+**Contract Phase 16 — chất lượng vùng vào lệnh:**
+
+- Source SMC phải đúng hướng: BUY chỉ dùng demand/bullish OB/bullish FVG;
+  SELL chỉ dùng supply/bearish OB/bearish FVG.
+- `source_zone` là vùng cấu trúc gốc để phân tích, không phải vùng cho phép
+  execution.
+- Hệ thống tạo proximal `structural_execution_zone` nằm trong source zone,
+  width mục tiêu hiện tại `0.25 ATR`.
+- Final `entry_zone`/`execution_zone` là phần structural zone đạt worst-edge
+  effective RR tối thiểu `1.3` sau spread.
+- Nếu giao RR-valid rỗng, scenario không có entry execution hợp lệ và phải
+  cung cấp reason code/diagnostic rõ ràng.
+- Stale/consumed zone có thể tồn tại dạng `watch_only_fallback`, nhưng không
+  được nâng thành preferred mạnh hoặc dùng source zone để đặt lệnh.
+
+**Lớp 2 — Gate (Step 6):** 11 gate kiểm tra an toàn tuần tự: MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken. ExpectedRR ưu tiên base effective RR và fallback best-case. Gate có thể Block, Warning hoặc Pass.
 
 **Decision Engine (Step 7):** Kết hợp score + gate + entry status để ra quyết định cuối cùng. Thứ tự ưu tiên: Gate block → Gate cap → Score gap → Entry status → Score so với thresholds. `ready` threshold được lấy từ `min_score` (nếu > 0) hoặc `decision_ready`.
 
@@ -162,14 +177,14 @@ Nếu row đang `stand_aside` (entry invalidated hoặc score < wait), kiểm tr
 1. Regime khớp `auto_trade_regime` (nếu được đặt)
 2. Side khớp `auto_trade_side` (nếu là buy/sell)
 3. Score ≥ `min_score`
-4. effective_rr ≥ `min_expected_rr`
+4. `expected_effective_rr` best-case ≥ `min_expected_rr` (legacy eligibility; ExpectedRR gate riêng ưu tiên base)
 
 Cả 4 đạt → nâng `scanner_action` lên `ready`. Cơ chế này cho phép backtest "phủ quyết" pipeline khi pipeline quá conservative.
 
 **Auto-trade (`_execute_auto_trades`):** Không cần `scanner_action == "ready"`. Dùng bộ lọc backtest riêng:
 - Không bị blocked (gate, permission, journal_feedback)
 - Regime khớp (nếu được đặt)
-- `expected_effective_rr >= min_expected_rr` (nếu > 0)
+- `expected_effective_rr >= min_expected_rr` (nếu > 0; eligibility dùng best effective RR)
 - `best_score >= min_score` (fallback 65 nếu min_score = 0)
 - Có scenario đúng hướng với Entry/SL/TP/Lot hợp lệ
 - Chưa có lệnh mở cho mã đó
@@ -199,9 +214,15 @@ Cả 4 đạt → nâng `scanner_action` lên `ready`. Cơ chế này cho phép 
 6. SL lấy từ `scenario.stop_loss`.
 7. TP dùng TP đầu tiên trong `scenario.take_profit`.
 8. Volume được tính lại qua `recalc_execution_lot()` với `quote_to_usd_rate` mới nhất từ MT5, fallback về `suggested_lot` từ scan nếu không lấy được tỷ giá.
-9. Kết quả trả về trong `output["auto_trade_results"]`.
+9. Lấy live ask/bid, xác nhận giá còn trong entry zone và current effective RR ≥ `min_rr`; nếu không đạt thì skip.
+10. Kết quả và execution diagnostics trả về trong `output["auto_trade_results"]`.
 
-`auto_trade_results` gồm: `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`.
+`entry zone` tại bước 9 luôn là final execution zone của đúng scenario đang
+cung cấp SL, TP và RR. `source_zone` chỉ được hiển thị tham khảo. Controller
+không được fallback sang source/watch zone hoặc scenario đối diện nếu final
+zone bị thiếu.
+
+`auto_trade_results` gồm: `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`, `diagnostics`.
 
 Manual/one-shot scan không được đặt lệnh MT5.
 

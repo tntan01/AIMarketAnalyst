@@ -263,23 +263,27 @@
 
       for (var z = 0; z < zones.length; z++) {
         var zn = zones[z];
+        var isSource = zn.type === 'source_zone';
+        var drawColor = isSource ? COLORS.neutral : zoneColor;
+        var upperTitle = isSource ? 'Source+' : 'Entry+';
+        var lowerTitle = isSource ? 'Source-' : 'Entry-';
         try {
           var pl = _candleSeries.createPriceLine({
             price: zn.to,
-            color: zoneColor,
+            color: drawColor,
             lineWidth: 1,
-            lineStyle: 2,
+            lineStyle: isSource ? 3 : 2,
             axisLabelVisible: true,
-            title: 'Entry+',
+            title: upperTitle,
           });
           _priceLines.push(pl);
           pl = _candleSeries.createPriceLine({
             price: zn.from,
-            color: zoneColor,
+            color: drawColor,
             lineWidth: 1,
-            lineStyle: 2,
+            lineStyle: isSource ? 3 : 2,
             axisLabelVisible: true,
-            title: 'Entry-',
+            title: lowerTitle,
           });
           _priceLines.push(pl);
         } catch(e) {}

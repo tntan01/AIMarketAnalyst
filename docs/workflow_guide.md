@@ -103,7 +103,11 @@ Sau khi đã có ngưỡng cho từng cặp từ backtest, lưu vào cấu hình
    - Quét toàn bộ mã đã bật auto trade.
    - **Nhánh B:** Dùng bộ lọc regime/side/RR từ Settings. Không cần `scanner_action == "ready"`, chỉ cần vượt bộ lọc backtest.
    - **Nhánh A:** Yêu cầu `scanner_action == "ready"` (pipeline phải ra READY_TO_TRADE).
-   - Kiểm tra gate (spread, news, account guard).
+   - Kiểm tra gate (spread, news, account guard); gate và ranking ưu tiên base-case effective RR.
+   - Ngay trước khi đặt lệnh, lấy giá live MT5 (BUY dùng ask, SELL dùng bid),
+     xác nhận giá còn trong **final execution zone** và tính current effective
+     RR. Source zone chỉ là vùng tham khảo.
+   - Nếu giá ngoài entry zone hoặc current RR thấp hơn `min_rr`, hệ thống bỏ qua lệnh và ghi rõ lý do.
    - Nếu tất cả pass → **tự động đặt lệnh Market Order qua MT5** với SL/TP tính sẵn.
 
 Kết quả auto trade hiển thị ở cuối màn hình Scanner: số lệnh đã mở, bị bỏ qua, và lỗi (nếu có).
@@ -132,6 +136,7 @@ Cấu hình Settings > Dữ liệu cho từng cặp:
     _is_auto_trade_candidate:
       Nhánh A → cần scanner_action == "ready"
       Nhánh B → chỉ cần vượt bộ lọc backtest
+    → Lấy live ask/bid, kiểm tra entry zone + current RR
     → Đặt lệnh Market Order nếu pass
 ```
 
@@ -144,3 +149,12 @@ Cấu hình Settings > Dữ liệu cho từng cặp:
 - **Account Guard:** Hệ thống luôn kiểm tra giới hạn thua lỗ ngày/tuần và số lệnh thua liên tiếp trước khi vào lệnh — bất kể score có đạt hay không.
 - **Kiểm tra MT5:** Đảm bảo MT5 desktop đang mở, đã đăng nhập broker, và các mã cần quét có trong Market Watch.
 - **Gate vẫn hoạt động:** Decision thresholds chỉ phân loại setup; gate layer (spread, news, M15, RR, account guard) vẫn có quyền chặn cứng bất kỳ setup nào.
+- **Ba mốc RR khác nhau:** RR best dùng để hiển thị/tương thích; RR base dùng cho gate và ranking; RR current tại giá live là lớp bảo vệ cuối trước khi khớp lệnh.
+- **Ba lớp zone:** Source zone là cấu trúc gốc; structural execution zone là
+  proximal sub-zone; final execution zone là phần còn lại sau RR-aware trim.
+  Chỉ final zone được phép dùng cho manual/auto execution.
+- **Zone đúng hướng:** BUY chỉ dùng demand/bullish OB/bullish FVG; SELL chỉ
+  dùng supply/bearish OB/bearish FVG. Zone sai hướng hoặc broken bị loại.
+- **Watch-only fallback:** Zone stale, mitigated hoặc bị test nhiều lần vẫn có
+  thể hiển thị để theo dõi. Không xem vùng này là tín hiệu vào lệnh nếu không
+  có final execution zone và RR hợp lệ.

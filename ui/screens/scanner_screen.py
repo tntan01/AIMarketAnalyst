@@ -1225,6 +1225,12 @@ class ScannerScreen (QWidget ):
 
         for idx, order in enumerate(order_rows):
             direction = str(order.get("side", "")).lower()
+            price_digits = order.get("price_digits")
+            if not isinstance(price_digits, int):
+                normalized_symbol = "".join(
+                    c for c in str(order.get("symbol", "")).upper() if c.isalpha()
+                )
+                price_digits = 3 if normalized_symbol.endswith("JPY") else 5
 
             def styled_item(text: str, align=Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
                 item = QTableWidgetItem(text)
@@ -1248,7 +1254,7 @@ class ScannerScreen (QWidget ):
 
             # Entry
             entry = order.get("entry_price")
-            entry_text = f"{float(entry):.5f}" if entry is not None else "--"
+            entry_text = f"{float(entry):.{price_digits}f}" if entry is not None else "--"
             entry_item = styled_item(entry_text)
             entry_tip = format_order_entry_tooltip(order)
             if entry_tip:
@@ -1257,14 +1263,14 @@ class ScannerScreen (QWidget ):
 
             # SL
             sl = order.get("stop_loss")
-            sl_text = f"{float(sl):.5f}" if sl is not None else "--"
+            sl_text = f"{float(sl):.{price_digits}f}" if sl is not None else "--"
             sl_item = styled_item(sl_text)
             sl_item.setForeground(sell_color)
             table.setItem(idx, 4, sl_item)
 
             # TP
             tp = order.get("take_profit")
-            tp_text = f"{float(tp):.5f}" if tp is not None else "--"
+            tp_text = f"{float(tp):.{price_digits}f}" if tp is not None else "--"
             tp_item = styled_item(tp_text)
             tp_item.setForeground(buy_color)
             table.setItem(idx, 5, tp_item)
@@ -1346,6 +1352,15 @@ class ScannerScreen (QWidget ):
                     "volume": o.get("volume"),
                     "risk_reward": o.get("risk_reward", ""),
                     "risk_reward_range": o.get("risk_reward_range"),
+                    "entry_zone": o.get("entry_zone"),
+                    "source_zone": o.get("source_zone"),
+                    "structural_execution_zone": o.get("structural_execution_zone"),
+                    "rr_trimmed": o.get("rr_trimmed", False),
+                    "rr_trim_diagnostics": o.get("rr_trim_diagnostics"),
+                    "entry_zone_width": o.get("entry_zone_width"),
+                    "entry_zone_width_atr": o.get("entry_zone_width_atr"),
+                    "price_digits": o.get("price_digits"),
+                    "expected_effective_rr_base": o.get("expected_effective_rr_base"),
                     "note": str(o.get("message", o.get("status", ""))),
                 })
             return result
@@ -1375,6 +1390,12 @@ class ScannerScreen (QWidget ):
                 continue
 
             symbol = str(row.get("symbol", "--"))
+            scenario = self.scanner_controller._best_scenario(row)
+            if not scenario:
+                continue
+            final_zone = self.scanner_controller._final_execution_zone(scenario)
+            if final_zone is None:
+                continue
 
             # --- Backtest config gate (same as _is_auto_trade_candidate) ---
             if settings:
@@ -1398,7 +1419,7 @@ class ScannerScreen (QWidget ):
                     # Min RR
                     cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
                     if cfg_min_rr > 0:
-                        row_rr = row.get("expected_effective_rr")
+                        row_rr = scenario.get("expected_effective_rr")
                         try:
                             row_rr_f = float(row_rr) if row_rr is not None else 0.0
                         except (TypeError, ValueError):
@@ -1413,24 +1434,14 @@ class ScannerScreen (QWidget ):
                         if best_score < cfg_min_score:
                             continue
 
-            scenarios = analysis.get("scenarios", [])
-            if not isinstance(scenarios, list):
-                continue
-            scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
-            if not scenario:
-                continue
-            if scenario.get("entry_zone_source") == "fallback":
-                continue
-
-            entry_zone = scenario.get("entry_zone")
-            if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                entry_low = float(entry_zone[0])
-                entry_high = float(entry_zone[1])
-                ep = scenario.get("entry_price")
-                entry_price = float(ep) if ep is not None else (entry_high if best_side == "buy" else entry_low)
-            else:
-                entry_low = entry_high = 0.0
-                entry_price = None
+            entry_low, entry_high = final_zone
+            entry_zone = [entry_low, entry_high]
+            ep = scenario.get("entry_price")
+            entry_price = (
+                float(ep)
+                if ep is not None
+                else (entry_high if best_side == "buy" else entry_low)
+            )
 
             # --- Entry zone check: price must be inside entry zone ---
             technical = analysis.get("technical", {}) if isinstance(analysis, dict) else {}
@@ -1499,7 +1510,17 @@ class ScannerScreen (QWidget ):
                 "note": note,
                 "entry_zone": entry_zone,
                 "market_regime": str(row.get("market_regime", "")),
-                "expected_effective_rr": row.get("expected_effective_rr"),
+                "expected_effective_rr": scenario.get("expected_effective_rr"),
+                "expected_effective_rr_base": scenario.get("expected_effective_rr_base"),
+                "expected_effective_rr_worst": scenario.get("expected_effective_rr_worst"),
+                "source_zone": scenario.get("source_zone"),
+                "structural_execution_zone": scenario.get("structural_execution_zone"),
+                "rr_trimmed": scenario.get("rr_trimmed", False),
+                "rr_trim_diagnostics": scenario.get("rr_trim_diagnostics"),
+                "entry_zone_width": scenario.get("entry_zone_width"),
+                "entry_zone_width_atr": scenario.get("entry_zone_width_atr"),
+                "price_digits": scenario.get("price_digits"),
+                "invalid_reason": scenario.get("invalid_reason"),
                 "best_score": row.get("best_score", 0),
                 # Phase 5A: current-price RR diagnostic fields (read-only, do NOT skip)
                 "current_entry_price": current_price if current_price > 0 else None,

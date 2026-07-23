@@ -24,9 +24,13 @@ Tài liệu phải giúp đạt 3 mục tiêu:
 4. `installation_guide.md` — Hướng dẫn cài môi trường, chạy app, đóng gói và checklist an toàn trước khi bật auto trade.
 5. `mvp_coding_guide.md` — Thứ tự code MVP theo từng giai đoạn và quy tắc triển khai auto trade/Telegram.
 6. `workflow_guide.md` — Hướng dẫn người dùng: quy trình backtest → cấu hình ngưỡng quyết định (decision_ready/watch/wait) → quét thị trường → auto trade.
-7. `evaluate_backtest_analysis_feature.md` — Đánh giá độc lập tính năng "Nhận định" kết quả Backtest: tính chính xác, tính đúng đắn, hiệu năng, khả năng bảo trì. Gồm danh sách bug đã phát hiện và trạng thái sửa.
-8. `bug_tracker.md` — Theo dõi toàn bộ bug đã phát hiện trong dự án, gồm trạng thái (đã fix / chưa fix), mức độ, file liên quan, và test tái hiện.
+7. `scanner-flow.md` — Luồng runtime chi tiết của Scanner từ request, pipeline, gate/ranking đến hiển thị và auto-trade.
+8. `technical-scoring-architecture.md` — Kiến trúc scoring, trade scenario, ranking và filter Scanner.
+9. `rr_anchor_semantics.md` — Contract RR best/base/worst/current, TP1 quality,
+   Phase 16 source/execution-zone semantics, RR-aware trimming và consumer
+   matrix.
+10. `system_backtest_design.md` — Thiết kế replay/backtest hệ thống và các chiều đánh giá.
 
 ## Nguyên tắc cập nhật
 
-Khi thay đổi kiến trúc, màn hình, database, quy trình cài đặt hoặc cách đóng gói, cập nhật trực tiếp vào một trong 5 file trên. Không tạo thêm file nhỏ nếu nội dung có thể đặt vào tài liệu hiện có.
+Khi thay đổi kiến trúc, màn hình, database, Scanner/RR contract, quy trình cài đặt hoặc cách đóng gói, cập nhật trực tiếp vào tài liệu tương ứng trong danh sách trên. Không tạo thêm file nhỏ nếu nội dung có thể đặt vào tài liệu hiện có.

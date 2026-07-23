@@ -480,7 +480,34 @@ Không code tất cả trong một lần.
 - `core.analysis_engine.confidence_reason()` includes component score breakdowns, SMC reason and macro/news context so score confidence is explainable from rule-engine data.
 - `core.decision_engine.make_final_decision()` accepts per-symbol `thresholds` (dict with keys `ready`, `watch`, `wait`, `min_score_gap`) that override `DEFAULT_DECISION_THRESHOLDS` (80/65/50/10). Custom thresholds flow from `config.settings.SymbolScanSettings.decision_ready/watch/wait` → `ui.screens.scanner_screen` builds per-symbol dict → `ScannerRequest.thresholds` → `scanner_controller` passes to `analyze_symbol(thresholds=...)` → `AnalysisPipeline.execute()` → `make_final_decision(thresholds=...)`.
 - `config.settings.SymbolScanSettings` stores per-symbol decision thresholds: `decision_ready` (default 80), `decision_watch` (default 65), `decision_wait` (default 50). These are loaded from JSON by `services.settings_service.SettingsService` with backward-compatible fallback to defaults when fields are missing.
-- `core.risk_engine.build_trade_plan()` includes a **TP1 zone guard** after the 4-tier cascade: TP1 must be strictly outside the entry zone (`> entry_high` for BUY, `< entry_low` for SELL). Without this guard, a resistance/support zone inside the entry zone could be selected as TP1 when `entry_aggressiveness < ~0.32` — producing a take-profit target that hasn't left the entry zone. The guard rejects TP1 and allows the cascade to fall through; if no valid TP is found, the plan is cancelled rather than created with a bogus target.
+- `core.risk_engine.build_trade_plan()` validates every TP1 candidate in the cascade equal-level → iterated target zones → Fib 0.382 → swing. A candidate must be past the far entry edge, have directional clearance ≥`0.15×ATR`, nominal midpoint RR ≥1.0 and spread-adjusted midpoint RR ≥1.3. Failed structural targets fall through to the next target instead of immediately jumping to Fib/swing.
+- Structural TP1 uses executable zone boundaries rather than the zone center: BUY targets `zone.low - 0.03×ATR`, SELL targets `zone.high + 0.03×ATR`; filtering, sorting and dedupe use this executable price.
+- Phase 16 separates three zone concepts. `source_zone` preserves the original
+  SMC/technical boundaries and quality metadata for analysis only.
+  `structural_execution_zone` is a proximal sub-zone fully contained inside
+  the source zone. The final `entry_zone`/`execution_zone` is the intersection
+  of that structural sub-zone and the price range satisfying the configured
+  worst-edge effective-RR floor.
+- SMC zone families are directional. BUY accepts only `demand_zone`,
+  `bullish_order_block`, and `bullish_fvg`; SELL accepts only `supply_zone`,
+  `bearish_order_block`, and `bearish_fvg`. The rule applies to preferred and
+  fallback selection. Technical support/resistance keeps its existing
+  directional collection semantics.
+- `get_preferred_zone()` ranks compatible SMC zones by
+  `effective_zone_score`, using freshness, stale/mitigated state, retests,
+  source width, displacement, liquidity sweep, and premium/discount location.
+  Broken zones are excluded. A stale/consumed or low-score zone can remain a
+  `watch_only_fallback`, but must not be treated as a strong preferred zone.
+- Execution sub-zone width is configured through
+  `execution_zone_width_atr_by_quality`. The current approved production
+  values are `0.25 ATR` for strong, moderate, and weak quality. BUY preserves
+  the source high edge; SELL preserves the source low edge. Price rounding is
+  directional and respects JPY/5-digit precision.
+- After SL and TP1 are known, the structural execution zone is trimmed so the
+  final worst-edge spread-adjusted RR is at least
+  `execution_zone_min_effective_rr` within
+  `execution_zone_rr_tolerance`. An empty intersection produces no valid
+  execution zone and the reason code `EXECUTION_ZONE_RR_EMPTY`.
 - `core.risk_engine.build_trade_plan()` includes a **TP2 minimum gap guard**: TP2 must be at least `_TP2_MIN_GAP_ATR` (0.15 × ATR) away from TP1. `next_target()` finds the nearest S/R zone but previously had no distance floor, so a resistance/support zone just 0.4 pips from TP1 could be selected as TP2 — producing two take-profit targets that are effectively identical. The guard runs after both `next_target` and the Fib 0.618 fallback; if the gap is too small, TP2 is set to None (plan proceeds with TP1 only).
 - `ui.main_window.MainWindow` có nút "🔄 Khởi động lại" trong sidebar footer (dưới dòng "Dữ liệu: MT5..."). Khi bấm: hiện QMessageBox xác nhận Yes/No; nếu Yes → shutdown MT5, khởi chạy process mới bằng `subprocess.Popen` (hỗ trợ cả PyInstaller `sys.executable` và `python main.py`), `QApplication.quit()`. Logic nằm trong `_restart_app()`. Tham khảo `docs/screen_design.md` phần Sidebar để biết vị trí UI.
 
@@ -490,6 +517,7 @@ Không code tất cả trong một lần.
 
 - `services/telegram_alert_service.py` sends detailed trade alerts only for scanner rows with `scanner_action == "ready"`, `trade_permission == "allowed"` and a matching trade plan in `analysis_result`.
 - The detailed trade alert is Vietnamese with accents and bullet icons. It includes symbol, broker symbol, side, Entry, Stop loss, Take profit, suggested lot, R:R, setup score, reason, MT5 balance if present, and source.
+- Detailed R:R uses base effective RR as the primary value when available, falls back to best effective RR, and keeps best nominal RR as a secondary reference. Current execution RR is not substituted into the alert.
 - The scanner summary alert no longer lists watch symbols. It shows only scan time, number of scanned symbols, number of ready symbols, and ready symbols with Entry/SL/TP.
 - Summary time is formatted as `dd-mm-yyyy HH:MM:SS`, for example `09-06-2026 10:30:07`.
 
@@ -499,10 +527,18 @@ Không code tất cả trong một lần.
 - `ui.screens.scanner_screen.ScannerScreen` exposes a visible auto-entry toggle button. The button is disabled in one-shot mode, enabled in auto-scan mode, and highlighted when active.
 - `ScannerScreen` sets `ScannerRequest.auto_trade_enabled=True` only when scan mode is auto and the auto-entry toggle button is on.
 - `controllers.scanner_controller.ScannerController` executes auto trades after all rows are scanned, sorted and enriched.
-- A row can be auto-traded only when it is a true ready setup: `scanner_action == "ready"`, `trade_permission == "allowed"`, `analysis_result` exists, and a scenario matching `best_side` exists.
+- Branch A requires a true ready setup (`scanner_action == "ready"`, allowed permission and a matching scenario). Branch B may use its backtest-config filters instead of requiring `ready`, but still respects blocked state and scenario validity.
 - Risk is still controlled by the normal sizing path. The controller caps `request.risk_percent` to `settings.trading.max_risk_percent` before analysis and before auto-entry.
-- Auto-entry uses `scenario.position_sizing.suggested_lot`, which is calculated from the MT5 account balance and configured risk percent.
+- Auto-entry recalculates volume from the latest MT5 balance, risk percent, entry/SL and quote-to-USD rate; `scenario.position_sizing.suggested_lot` is the fallback when execution-time conversion is unavailable.
 - For each broker symbol, `MT5Service.has_open_position_or_order()` checks both open positions and pending orders. If any existing position/order exists for that symbol, the system skips auto-entry for that symbol.
+- Immediately before execution, the controller retrieves live ask/bid with
+  `MT5Service.get_live_price()`, re-checks the final `entry_zone` from the
+  strict same-side scenario and calculates spread-adjusted current RR. Price
+  outside that zone or current RR below `min_rr` causes an explicit skip.
+  Manual order placement applies the same protection and blocks with a
+  warning. `source_zone`, `watch_zone`, and opposite-side scenarios are never
+  execution fallbacks.
+- Auto-trade results include a `diagnostics` list; manual order data includes an `execution_guard` dict with price source, live/fallback price, entry-zone state, current RR and decision reason.
 - `MT5Service.place_market_order()` sends a market order through the MetaTrader5 Python API:
   - BUY uses current `ask`.
   - SELL uses current `bid`.
@@ -510,7 +546,7 @@ Không code tất cả trong một lần.
   - TP uses the first item in `take_profit`.
   - The order comment is prefixed with `AMA`.
 - Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
-- Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, and `risk_percent`.
+- Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`, and `diagnostics`.
 
 ### Order Management — BE & Trailing Stop (Design 2026-07-08)
 
@@ -601,6 +637,7 @@ Toàn bộ subsystem AI đã được refactor từ Model-Centric sang Provider-
 ### 8. Tab Tổng quan redesign — hiển thị trực tiếp không cần mở dialog
 - **Hero bar mở rộng**: thêm 5 chỉ số inline (Điểm, R:R kèm dải worst–best, Buy/Sell, Gap, Vĩ mô) ngay trên hero bar. R:R hiển thị dạng `1:5.6 (2.9–5.6)` — best case + khoảng dao động.
 - **Panel "Số liệu giao dịch"** (`_refresh_trade_panel()`): QFrame cố định ở cột phải, hiển thị Entry zone, SL, TP, R:R (kèm dải worst–best từ `risk_reward_range`), Vĩ mô, Chế độ TT — tái sử dụng `_dialog_card_*()`.
+- Scanner Detail resolves RR from the flat row first and falls back to the scenario matching `best_side`. Entry without a real TP1 is displayed as `N/A` with an explanatory note, not a fabricated RR.
 - **Panel "Điểm phân tích"** (`_refresh_score_panel()`): QFrame cố định ở cột phải, hiển thị Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD.
 - Cả 2 panel đều có guard `if not self.row` → hiển thị `"—"`, không crash.
 

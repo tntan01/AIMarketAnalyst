@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from math import floor
 from typing import Any
 
@@ -11,6 +12,11 @@ from core.entry_engine import evaluate_entry
 from core.market_models import Candle
 from core.signal_engine import clamp
 from core.correlation_check import get_correlation_warnings, summarize_correlation_context
+from core.reason_codes import EXECUTION_ZONE_RR_EMPTY
+from core.smc_context import (
+    calculate_effective_zone_score,
+    zone_matches_direction,
+)
 
 
 def _load_risk_params() -> dict:
@@ -71,6 +77,20 @@ _TP_TARGET_BUFFER_ATR = _rp.get("tp_target_buffer_atr", 0.03)
 _ENTRY_ZONE_BUFFER_ATR = _rp.get("entry_zone_buffer_atr", 0.05)
 _ENTRY_ZONE_MAX_WIDTH_ATR = _rp.get("entry_zone_max_width_atr", 0.50)
 _ENTRY_ZONE_HALF_WIDTH_ATR = _rp.get("entry_zone_half_width_atr", 0.25)
+_EXECUTION_ZONE_WIDTH_ATR_BY_QUALITY = _rp.get(
+    "execution_zone_width_atr_by_quality",
+    {"strong": 0.25, "moderate": 0.25, "weak": 0.25},
+)
+_EXECUTION_ZONE_QUALITY_THRESHOLDS = _rp.get(
+    "execution_zone_quality_thresholds",
+    {"strong": 70, "moderate": 50},
+)
+_EXECUTION_ZONE_MIN_EFFECTIVE_RR = float(
+    _rp.get("execution_zone_min_effective_rr", 1.3)
+)
+_EXECUTION_ZONE_RR_TOLERANCE = float(
+    _rp.get("execution_zone_rr_tolerance", 0.0001)
+)
 _MIN_STOP_DISTANCE_ATR_MULT = _rp.get("min_sl_distance_atr_mult", 0.20)
 _MIN_STOP_SPREAD_MULT = _rp.get("min_stop_spread_mult", 3)
 _ENTRY_ZONE_WIDTH_MULT = _rp.get("entry_zone_width_mult", 0.5)
@@ -94,6 +114,171 @@ def _asset_class_for(symbol: str) -> str:
     """
     cfg = SYMBOL_CONFIG.get(symbol, {})
     return str(cfg.get("asset_class", "forex"))
+
+
+def _price_digits_for_request(request: AnalysisInput) -> int:
+    if isinstance(request.price_digits, int) and 0 <= request.price_digits <= 10:
+        return request.price_digits
+    normalized = "".join(
+        char for char in str(request.symbol).upper() if char.isalpha()
+    )
+    return 3 if normalized.endswith("JPY") else 5
+
+
+def _execution_zone_quality(effective_score: object) -> str:
+    try:
+        score = float(effective_score)
+    except (TypeError, ValueError):
+        score = 0.0
+    try:
+        strong = float(_EXECUTION_ZONE_QUALITY_THRESHOLDS.get("strong", 70))
+        moderate = float(
+            _EXECUTION_ZONE_QUALITY_THRESHOLDS.get("moderate", 50)
+        )
+    except (TypeError, ValueError):
+        strong, moderate = 70.0, 50.0
+    if score >= strong:
+        return "strong"
+    if score >= moderate:
+        return "moderate"
+    return "weak"
+
+
+def _execution_zone_width_atr(effective_score: object) -> tuple[str, float]:
+    quality = _execution_zone_quality(effective_score)
+    try:
+        width = float(
+            _EXECUTION_ZONE_WIDTH_ATR_BY_QUALITY.get(quality, 0.25)
+        )
+    except (TypeError, ValueError):
+        width = 0.25
+    return quality, max(0.0, width)
+
+
+def _build_execution_sub_zone(
+    *,
+    side: str,
+    source_low: float,
+    source_high: float,
+    atr_value: float,
+    effective_score: object,
+    price_digits: int,
+) -> dict[str, Any] | None:
+    """Build a proximal, precision-safe sub-zone inside source boundaries."""
+    if (
+        side not in {"buy", "sell"}
+        or source_high <= source_low
+        or atr_value <= 0
+    ):
+        return None
+    quality, width_atr_target = _execution_zone_width_atr(effective_score)
+    width = min(
+        source_high - source_low,
+        atr_value * width_atr_target,
+    )
+    if side == "buy":
+        raw_low = max(source_low, source_high - width)
+        raw_high = source_high
+    else:
+        raw_low = source_low
+        raw_high = min(source_high, source_low + width)
+
+    execution_low = round_price_up(raw_low, price_digits)
+    execution_high = round_price_down(raw_high, price_digits)
+    if execution_high <= execution_low:
+        return None
+    return {
+        "entry_zone": [execution_low, execution_high],
+        "quality": quality,
+        "width_atr_target": width_atr_target,
+    }
+
+
+def _trim_execution_zone_for_effective_rr(
+    *,
+    side: str,
+    structural_zone: list[float],
+    stop_loss: float,
+    take_profit: float | None,
+    spread_price: float,
+    min_effective_rr: float,
+    tolerance: float,
+    price_digits: int,
+) -> dict[str, Any]:
+    """Intersect a structural execution zone with its effective-RR-valid range."""
+    low, high = (float(structural_zone[0]), float(structural_zone[1]))
+    diagnostics: dict[str, Any] = {
+        "status": "not_applicable_no_tp1" if take_profit is None else "unchanged",
+        "trimmed": False,
+        "min_effective_rr": float(min_effective_rr),
+        "tolerance": float(tolerance),
+        "structural_zone": [low, high],
+        "rr_boundary": None,
+        "final_zone": [low, high],
+        "pre_trim_effective_rr_worst": None,
+        "post_trim_effective_rr_worst": None,
+    }
+    if take_profit is None:
+        return diagnostics
+    if side not in {"buy", "sell"} or high <= low or min_effective_rr <= 0:
+        diagnostics.update({"status": "empty", "final_zone": None})
+        return diagnostics
+
+    worst_entry = high if side == "buy" else low
+    diagnostics["pre_trim_effective_rr_worst"] = calculate_expected_effective_rr(
+        direction=side,
+        entry=worst_entry,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        spread_price=spread_price,
+    )
+    spread_cost = calculate_spread_cost(spread_price)
+    denominator = 1.0 + min_effective_rr
+    if side == "buy":
+        boundary = (
+            take_profit
+            + min_effective_rr * stop_loss
+            - denominator * spread_cost
+        ) / denominator
+        final_low = low
+        final_high = min(high, round_price_down(boundary, price_digits))
+    else:
+        boundary = (
+            take_profit
+            + min_effective_rr * stop_loss
+            + denominator * spread_cost
+        ) / denominator
+        final_low = max(low, round_price_up(boundary, price_digits))
+        final_high = high
+    diagnostics["rr_boundary"] = boundary
+
+    if final_high <= final_low:
+        diagnostics.update({"status": "empty", "final_zone": None})
+        return diagnostics
+
+    post_worst_entry = final_high if side == "buy" else final_low
+    post_worst_rr = calculate_expected_effective_rr(
+        direction=side,
+        entry=post_worst_entry,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        spread_price=spread_price,
+    )
+    diagnostics["post_trim_effective_rr_worst"] = post_worst_rr
+    if post_worst_rr is None or post_worst_rr + tolerance < min_effective_rr:
+        diagnostics.update({"status": "empty", "final_zone": None})
+        return diagnostics
+
+    final_zone = [final_low, final_high]
+    trimmed = final_low > low or final_high < high
+    diagnostics.update(
+        {
+            "status": "trimmed" if trimmed else "unchanged",
+            "trimmed": trimmed,
+            "final_zone": final_zone,
+        }
+    )
+    return diagnostics
 
 
 def _find_impulse_swing(
@@ -142,6 +327,7 @@ def _fib_extension_target(
     side: str,
     atr_value: float,
     fib_level: float,
+    price_digits: int = 5,
 ) -> float | None:
     """Calculate Fibonacci extension target from H4 swings.
 
@@ -176,12 +362,12 @@ def _fib_extension_target(
         # Sanity: TP must be above entry area and at least 0.3 ATR away
         if target <= end:
             return None
-        return round_price(target)
+        return _round_target_price(target, side, price_digits)
     else:
         target = end - impulse * fib_level
         if target >= end:
             return None
-        return round_price(target)
+        return _round_target_price(target, side, price_digits)
 
 
 def _find_nearest_swing_for_sl(
@@ -320,6 +506,7 @@ class AnalysisInput:
     minimum_lot: float = 0.01
     contract_size_override: float | None = None
     timezone_name: str = "Asia/Ho_Chi_Minh"
+    price_digits: int | None = None
 
 
 def reward_risk(entry: float, stop: float, target: float) -> float:
@@ -443,6 +630,7 @@ def build_trade_plan(
     is_backtest: bool = False,
 ) -> dict[str, Any] | None:
     price = technical["price"]
+    price_digits = _price_digits_for_request(request)
     atr_value = technical["atr_h4"] or technical["atr_d1"] or 0.0
     if atr_value <= 0:
         return None
@@ -467,14 +655,51 @@ def build_trade_plan(
     smc_resistances = _smc_zones_to_levels(h4_smc.get("supply_zones", []))
     smc_order_blocks = _smc_zones_to_levels(h4_smc.get("order_blocks", []))
 
-    support_zones = list(technical["support_zones"]) + smc_supports + smc_order_blocks
-    resistance_zones = list(technical["resistance_zones"]) + smc_resistances + smc_order_blocks
+    bullish_order_blocks = [
+        zone
+        for zone in smc_order_blocks
+        if zone_matches_direction(zone, "buy")
+    ]
+    bearish_order_blocks = [
+        zone
+        for zone in smc_order_blocks
+        if zone_matches_direction(zone, "sell")
+    ]
+
+    support_zones = (
+        list(technical["support_zones"])
+        + smc_supports
+        + bullish_order_blocks
+    )
+    resistance_zones = (
+        list(technical["resistance_zones"])
+        + smc_resistances
+        + bearish_order_blocks
+    )
 
     # Try preferred SMC zone first (from get_preferred_zone)
     # Must be on the correct side of price AND within reasonable distance.
     # Without distance check, stale zones far from price produce meaningless plans.
     use_preferred = False
-    if isinstance(preferred_zone, dict) and preferred_zone.get("low") is not None and preferred_zone.get("high") is not None:
+    preferred_zone_type = (
+        preferred_zone.get("zone_type") or preferred_zone.get("type")
+        if isinstance(preferred_zone, dict)
+        else None
+    )
+    preferred_direction_ok = (
+        zone_matches_direction(preferred_zone, side)
+        or (
+            isinstance(preferred_zone, dict)
+            and not preferred_zone_type
+            and preferred_zone.get("source") == "smc_selected"
+        )
+    )
+    if (
+        isinstance(preferred_zone, dict)
+        and preferred_direction_ok
+        and preferred_zone.get("low") is not None
+        and preferred_zone.get("high") is not None
+    ):
         pz_level = preferred_zone["level"]
         on_correct_side = (side == "buy" and pz_level < price) or (side == "sell" and pz_level > price)
         if on_correct_side:
@@ -500,26 +725,40 @@ def build_trade_plan(
     level = zone["level"]
     entry_zone_score = zone.get("zone_score")
     entry_zone_source = zone.get("source", "technical")
+    source_zone = build_source_zone_diagnostics(zone, atr_value, side)
+    effective_zone_score = (
+        source_zone.get("effective_zone_score")
+        if isinstance(source_zone, dict)
+        else None
+    )
+    execution_zone_quality, execution_zone_width_atr_target = (
+        _execution_zone_width_atr(effective_zone_score)
+    )
     is_smc_zone = entry_zone_source in ("smc", "smc_selected")
     zone_low = zone.get("low")
     zone_high = zone.get("high")
-    # Phase 13D: entry zone from zone boundaries with buffer + cap
+    # Phase 16D: proximal execution sub-zone contained by the source zone.
     if zone_low is not None and zone_high is not None and zone_high > zone_low:
-        buf = atr_value * _ENTRY_ZONE_BUFFER_ATR
-        max_w = atr_value * _ENTRY_ZONE_MAX_WIDTH_ATR
-        if side == "buy":
-            entry_high = round_price(zone_high)
-            entry_low_raw = round_price(zone_low + buf)
-            entry_low = round_price(max(entry_low_raw, entry_high - max_w))
-        else:
-            entry_low = round_price(zone_low)
-            entry_high_raw = round_price(zone_high - buf)
-            entry_high = round_price(min(entry_high_raw, entry_low + max_w))
+        execution_sub_zone = _build_execution_sub_zone(
+            side=side,
+            source_low=float(zone_low),
+            source_high=float(zone_high),
+            atr_value=atr_value,
+            effective_score=effective_zone_score,
+            price_digits=price_digits,
+        )
+        if execution_sub_zone is None:
+            return None
+        entry_low, entry_high = execution_sub_zone["entry_zone"]
+        execution_zone_quality = execution_sub_zone["quality"]
+        execution_zone_width_atr_target = execution_sub_zone[
+            "width_atr_target"
+        ]
     else:
         # Fallback: level ± half-width
         half_w = atr_value * _ENTRY_ZONE_HALF_WIDTH_ATR
-        entry_low = round_price(level - half_w)
-        entry_high = round_price(level + half_w)
+        entry_low = round_price(level - half_w, price_digits)
+        entry_high = round_price(level + half_w, price_digits)
 
     # Watch zone extends farther in trade direction
     watch_near = level - sign * atr_value * _WATCH_ZONE_OFFSET_ATR
@@ -550,6 +789,7 @@ def build_trade_plan(
     sl_edge = (entry_low if side == "buy" else entry_high) - sign * atr_value * _SL_FLOOR_BUFFER_ATR
     if (stop_loss - sl_edge) * sign >= 0:
         stop_loss = sl_edge
+    stop_loss = round_price(stop_loss, price_digits)
 
     # Entry price for DISPLAY (nearest edge = best-case RR shown to user)
     entry_for_rr = (
@@ -602,6 +842,7 @@ def build_trade_plan(
     # ── 1. equal-level ──
     eq_tp = _find_nearest_equal_level(smc, side, entry_for_selection)
     if eq_tp is not None:
+        eq_tp = _round_target_price(eq_tp, side, price_digits)
         if abs(eq_tp - entry_for_selection) > sel_risk_distance * _EQ_TP_MAX_RR:
             diag_rejected["equal_level_too_far"] += 1
         else:
@@ -623,10 +864,15 @@ def build_trade_plan(
         above = (side == "buy")
         sorted_zone_dicts = all_target_zones_sorted(
             target_zones, entry_for_selection, above=above,
-            side=side, atr_value=atr_value,
+            side=side, atr_value=atr_value, price_digits=price_digits,
         )
         for idx, z in enumerate(sorted_zone_dicts, start=1):
-            cand = _target_price_from_zone(z, side, atr_value)
+            cand = _target_price_from_zone(
+                z,
+                side,
+                atr_value,
+                price_digits,
+            )
             if cand is None:
                 continue
             diag_candidates_checked += 1
@@ -646,7 +892,13 @@ def build_trade_plan(
 
     # ── 3. fib extension ──
     if tp1 is None and regime_primary != "range":
-        fib_tp = _fib_extension_target(smc, side, atr_value, _FIB_TP1)
+        fib_tp = _fib_extension_target(
+            smc,
+            side,
+            atr_value,
+            _FIB_TP1,
+            price_digits,
+        )
         if fib_tp is not None:
             diag_candidates_checked += 1
             val = _validate_tp1_candidate(
@@ -665,6 +917,7 @@ def build_trade_plan(
     if tp1 is None:
         sw_tp = _find_nearest_swing_for_tp(smc, side, entry_for_selection, sel_risk_distance)
         if sw_tp is not None:
+            sw_tp = _round_target_price(sw_tp, side, price_digits)
             diag_candidates_checked += 1
             val = _validate_tp1_candidate(
                 side=side, candidate=sw_tp,
@@ -691,7 +944,15 @@ def build_trade_plan(
         tp2 = next_target(target_zones, tp1, above=(side == "buy"))
         if tp2 is None:
             if regime_primary != "range":
-                tp2 = _fib_extension_target(smc, side, atr_value, _FIB_TP2)
+                tp2 = _fib_extension_target(
+                    smc,
+                    side,
+                    atr_value,
+                    _FIB_TP2,
+                    price_digits,
+                )
+        if tp2 is not None:
+            tp2 = _round_target_price(tp2, side, price_digits)
         # Guard: TP2 must be on the correct side of TP1 (farther target)
         if tp2 is not None and (tp2 - tp1) * sign <= 0:
             tp2 = None
@@ -710,8 +971,122 @@ def build_trade_plan(
         condition = _build_sell_condition(h4_smc)
         invalidation = _build_sell_invalidation(stop_loss, h4_smc)
 
-    entry_zone = [round_price(entry_low), round_price(entry_high)]
-    watch_zone = [round_price(watch_low), round_price(watch_high)]
+    structural_execution_zone = [
+        round_price(entry_low, price_digits),
+        round_price(entry_high, price_digits),
+    ]
+    rr_trim_diagnostics = _trim_execution_zone_for_effective_rr(
+        side=side,
+        structural_zone=structural_execution_zone,
+        stop_loss=stop_loss,
+        take_profit=tp1,
+        spread_price=spread_price,
+        min_effective_rr=_EXECUTION_ZONE_MIN_EFFECTIVE_RR,
+        tolerance=_EXECUTION_ZONE_RR_TOLERANCE,
+        price_digits=price_digits,
+    )
+    watch_zone = [
+        round_price(watch_low, price_digits),
+        round_price(watch_high, price_digits),
+    ]
+    final_zone = rr_trim_diagnostics.get("final_zone")
+    if not isinstance(final_zone, list) or len(final_zone) != 2:
+        reason = (
+            "Execution zone không còn mức giá đạt effective R:R "
+            f"{_EXECUTION_ZONE_MIN_EFFECTIVE_RR:.2f} với TP1 đã chọn."
+        )
+        return {
+            "entry_zone": None,
+            "execution_zone": None,
+            "structural_execution_zone": structural_execution_zone,
+            "rr_valid_zone": None,
+            "rr_trimmed": False,
+            "rr_trim_diagnostics": rr_trim_diagnostics,
+            "execution_zone_quality": execution_zone_quality,
+            "execution_zone_width_atr_target": execution_zone_width_atr_target,
+            "price_digits": price_digits,
+            "entry_price": None,
+            "watch_zone": watch_zone,
+            "stop_loss": round_price(stop_loss, price_digits),
+            "take_profit": [
+                round_price(value, price_digits)
+                for value in (tp1, tp2)
+                if value is not None
+            ],
+            "risk_reward": None,
+            "risk_reward_base": None,
+            "risk_reward_worst": None,
+            "expected_effective_rr": None,
+            "expected_effective_rr_base": None,
+            "expected_effective_rr_worst": None,
+            "risk_reward_range": {"best": None, "base": None, "worst": None},
+            "risk_reward_effective_range": {
+                "best": None,
+                "base": None,
+                "worst": None,
+            },
+            "condition": condition,
+            "invalidation": invalidation,
+            "position_sizing": {
+                "account_balance": request.account_balance,
+                "risk_pct": request.risk_percent,
+                "risk_amount_usd": 0.0,
+                "entry_price": None,
+                "stop_loss": round_price(stop_loss, price_digits),
+                "price_distance": None,
+                "contract_size": contract_size_for(request),
+                "suggested_lot": 0.0,
+                "size_multiplier": 0.0,
+            },
+            "correlation_warnings": [],
+            "correlation_context": None,
+            "entry_zone_score": entry_zone_score,
+            "entry_zone_source": entry_zone_source,
+            "source_zone": source_zone,
+            "sl_source": sl_source,
+            "tp_source": tp1_source,
+            "entry_ladder": {},
+            "sub_zone": None,
+            "entry_zone_width": None,
+            "entry_zone_width_atr": None,
+            "tp1_source": tp1_source,
+            "tp1_clearance_from_far_edge": None,
+            "tp1_clearance_atr": None,
+            "tp1_effective_rr_base": None,
+            "tp1_selection_diagnostics": {
+                "candidates_checked": diag_candidates_checked,
+                "rejected_by_reason": diag_rejected,
+                "selected_source": tp1_source if tp1 is not None else None,
+                "selected_target_rank": tp1_target_rank,
+            },
+            "alternate_zones": [
+                {
+                    "level": round_price(z["level"], price_digits),
+                    "zone_score": z.get("zone_score", z.get("_effective_score")),
+                    "source": z.get("source", "technical"),
+                }
+                for z in alternate_zones_raw
+            ],
+            "entry_status": "watch_zone",
+            "ready_to_trade": False,
+            "invalid_reason": reason,
+            "reason_codes": [],
+            "warning_codes": [EXECUTION_ZONE_RR_EMPTY],
+            "block_codes": [],
+        }
+
+    entry_low, entry_high = float(final_zone[0]), float(final_zone[1])
+    entry_zone = [entry_low, entry_high]
+    entry_for_rr = (
+        entry_low + (entry_high - entry_low) * entry_aggressiveness
+        if side == "buy"
+        else entry_high + (entry_low - entry_high) * entry_aggressiveness
+    )
+    entry_for_selection = (
+        entry_low + (entry_high - entry_low) * _TP_SELECTION_AGGRESSIVENESS
+        if side == "buy"
+        else entry_high + (entry_low - entry_high) * _TP_SELECTION_AGGRESSIVENESS
+    )
     entry_state = evaluate_entry(
         side=side,
         technical=technical,
@@ -721,6 +1096,20 @@ def build_trade_plan(
         m15_candles=m15_candles,
         is_backtest=is_backtest,
     )
+    if use_preferred and preferred_zone.get("watch_only_fallback"):
+        entry_state = dict(entry_state)
+        entry_state["entry_status"] = "watch_zone"
+        entry_state["ready_to_trade"] = False
+        fallback_reason = str(
+            preferred_zone.get("selection_reason")
+            or "effective_zone_fallback"
+        )
+        current_reason = str(entry_state.get("invalid_reason") or "").strip()
+        entry_state["invalid_reason"] = (
+            f"{current_reason} | Zone fallback: {fallback_reason}"
+            if current_reason
+            else f"Zone fallback: {fallback_reason}"
+        )
     # Entry Ladder Phase 1: scale size by price position within zone
     entry_ladder = entry_state.get("entry_ladder", {})
     size_multiplier = float(entry_ladder.get("size_multiplier", 1.0)) if isinstance(entry_ladder, dict) else 1.0
@@ -796,7 +1185,11 @@ def build_trade_plan(
         effective_rr_range = {"best": None, "base": None, "worst": None}
 
     # Phase 13A: entry zone & TP1 quality diagnostics
-    ez_width = round_price(entry_high - entry_low) if entry_high > entry_low else 0.0
+    ez_width = (
+        round_price(entry_high - entry_low, price_digits)
+        if entry_high > entry_low
+        else 0.0
+    )
     ez_width_atr = round(ez_width / atr_value, 4) if atr_value > 0 else None
     if tp1 is not None:
         # Directional clearance: positive if TP1 is past the far edge
@@ -805,15 +1198,12 @@ def build_trade_plan(
         else:
             raw_clearance = entry_low - tp1
         if raw_clearance >= 0:
-            tp1_clearance = round_price(raw_clearance)
+            tp1_clearance = round_price(raw_clearance, price_digits)
             tp1_clearance_atr = round(tp1_clearance / atr_value, 4) if atr_value > 0 else None
         else:
             tp1_clearance = None
             tp1_clearance_atr = None
-        tp1_eff_rr_base = (
-            tp1_val_result.get("effective_base_rr") if (tp1_val_result and tp1_val_result.get("valid"))
-            else effective_rr_base
-        )
+        tp1_eff_rr_base = effective_rr_base
     else:
         tp1_clearance = None
         tp1_clearance_atr = None
@@ -821,10 +1211,22 @@ def build_trade_plan(
 
     return {
         "entry_zone": entry_zone,
-        "entry_price": round_price(entry_for_rr),
+        "execution_zone": entry_zone,
+        "structural_execution_zone": structural_execution_zone,
+        "rr_valid_zone": entry_zone if tp1 is not None else None,
+        "rr_trimmed": bool(rr_trim_diagnostics.get("trimmed")),
+        "rr_trim_diagnostics": rr_trim_diagnostics,
+        "execution_zone_quality": execution_zone_quality,
+        "execution_zone_width_atr_target": execution_zone_width_atr_target,
+        "price_digits": price_digits,
+        "entry_price": round_price(entry_for_rr, price_digits),
         "watch_zone": watch_zone,
-        "stop_loss": round_price(stop_loss),
-        "take_profit": [round_price(value) for value in (tp1, tp2) if value is not None],
+        "stop_loss": round_price(stop_loss, price_digits),
+        "take_profit": [
+            round_price(value, price_digits)
+            for value in (tp1, tp2)
+            if value is not None
+        ],
         "risk_reward": risk_reward_str,
         "risk_reward_base": rr_base,
         "risk_reward_worst": rr_worst,
@@ -840,6 +1242,7 @@ def build_trade_plan(
         "correlation_context": corr_context,
         "entry_zone_score": entry_zone_score,
         "entry_zone_source": entry_zone_source,
+        "source_zone": source_zone,
         "sl_source": sl_source,
         "tp_source": tp1_source,
         "entry_ladder": entry_ladder,
@@ -860,7 +1263,7 @@ def build_trade_plan(
         },
         "alternate_zones": [
             {
-                "level": round_price(z["level"]),
+                "level": round_price(z["level"], price_digits),
                 "zone_score": z.get("zone_score", z.get("_effective_score")),
                 "source": z.get("source", "technical"),
             }
@@ -891,6 +1294,7 @@ def _smc_zones_to_levels(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "consolidation_bars": zone.get("consolidation_bars", 0),
                 "zone_score": zone.get("zone_score", 50),
                 "freshness_bars": zone.get("freshness_bars"),
+                "stale": zone.get("stale"),
                 "mitigated": zone.get("mitigated", False),
                 "broken": zone.get("broken", False),
                 "test_count": zone.get("test_count", 0),
@@ -901,6 +1305,60 @@ def _smc_zones_to_levels(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return converted
+
+
+def build_source_zone_diagnostics(
+    zone: dict[str, Any] | None,
+    atr_value: float | int | None,
+    side: str | None = None,
+) -> dict[str, Any] | None:
+    """Return additive metadata for the structural zone behind an entry zone."""
+    if not isinstance(zone, dict):
+        return None
+
+    low = zone.get("low")
+    high = zone.get("high")
+    original_low = round_price(float(low)) if isinstance(low, (int, float)) else None
+    original_high = round_price(float(high)) if isinstance(high, (int, float)) else None
+    original_width = None
+    original_width_atr = None
+    if (
+        original_low is not None
+        and original_high is not None
+        and original_high > original_low
+    ):
+        original_width = round_price(original_high - original_low)
+        if isinstance(atr_value, (int, float)) and float(atr_value) > 0:
+            original_width_atr = round(original_width / float(atr_value), 4)
+
+    effective_score = calculate_effective_zone_score(
+        zone,
+        str(side or ""),
+        atr_value,
+    )
+    return {
+        "zone_type": zone.get("zone_type") or zone.get("type"),
+        "source": zone.get("source", "technical"),
+        "zone_score": zone.get("zone_score"),
+        **effective_score,
+        "selection_status": zone.get("selection_status"),
+        "selection_reason": zone.get("selection_reason"),
+        "watch_only_fallback": zone.get("watch_only_fallback"),
+        "selection_distance": zone.get("selection_distance"),
+        "strength": zone.get("strength"),
+        "stale": zone.get("stale"),
+        "mitigated": zone.get("mitigated"),
+        "broken": zone.get("broken"),
+        "test_count": zone.get("test_count"),
+        "freshness_bars": zone.get("freshness_bars"),
+        "displacement_multiple": zone.get("displacement_multiple"),
+        "liquidity_sweep": zone.get("liquidity_sweep"),
+        "zone_location": zone.get("zone_location"),
+        "original_low": original_low,
+        "original_high": original_high,
+        "original_width": original_width,
+        "original_width_atr": original_width_atr,
+    }
 
 
 def _build_buy_condition(h4_smc: dict[str, Any]) -> str:
@@ -1043,7 +1501,10 @@ def all_targets_sorted(
 
 
 def _target_price_from_zone(
-    zone: dict[str, Any], side: str, atr_value: float,
+    zone: dict[str, Any],
+    side: str,
+    atr_value: float,
+    price_digits: int = 5,
 ) -> float | None:
     """Compute TP1 price from a zone's boundary with a small buffer.
 
@@ -1055,21 +1516,32 @@ def _target_price_from_zone(
     if side == "buy":
         low = zone.get("low") if isinstance(zone, dict) else None
         if isinstance(low, (int, float)) and low == low and low != float("inf"):
-            return round(float(low) - buffer, 5)
+            return _round_target_price(
+                float(low) - buffer,
+                side,
+                price_digits,
+            )
     else:
         high = zone.get("high") if isinstance(zone, dict) else None
         if isinstance(high, (int, float)) and high == high and high != float("inf"):
-            return round(float(high) + buffer, 5)
+            return _round_target_price(
+                float(high) + buffer,
+                side,
+                price_digits,
+            )
     # Fallback: zone level
     lv = zone.get("level") if isinstance(zone, dict) else None
     if isinstance(lv, (int, float)) and lv == lv and lv != float("inf"):
-        return float(lv)
+        return _round_target_price(float(lv), side, price_digits)
     return None
 
 
 def all_target_zones_sorted(
     zones: list[dict[str, Any]], reference: float, *,
-    above: bool, side: str = "buy", atr_value: float = 0.0,
+    above: bool,
+    side: str = "buy",
+    atr_value: float = 0.0,
+    price_digits: int = 5,
 ) -> list[dict[str, Any]]:
     """Return zone dicts sorted by executable TP price (boundary ± buffer).
 
@@ -1081,7 +1553,12 @@ def all_target_zones_sorted(
     for z in zones:
         if not isinstance(z, dict):
             continue
-        tp = _target_price_from_zone(z, side, atr_value)
+        tp = _target_price_from_zone(
+            z,
+            side,
+            atr_value,
+            price_digits,
+        )
         if tp is None:
             continue
         if tp != tp or tp == float("inf") or tp == float("-inf"):
@@ -1210,6 +1687,7 @@ def _count_rejection(bucket: dict[str, int], reason: str) -> None:
 
 
 def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float, *, quote_to_usd_rate: float | None = None, size_multiplier: float = 1.0) -> dict[str, Any]:
+    price_digits = _price_digits_for_request(request)
     contract_size = contract_size_for(request)
     risk_amount = request.account_balance * request.risk_percent / 100 * size_multiplier
     price_distance = abs(entry_price - stop_loss)
@@ -1224,9 +1702,9 @@ def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float
         "account_balance": request.account_balance,
         "risk_pct": request.risk_percent,
         "risk_amount_usd": risk_amount,
-        "entry_price": round_price(entry_price),
-        "stop_loss": round_price(stop_loss),
-        "price_distance": round_price(price_distance),
+        "entry_price": round_price(entry_price, price_digits),
+        "stop_loss": round_price(stop_loss, price_digits),
+        "price_distance": round_price(price_distance, price_digits),
         "contract_size": contract_size,
         "suggested_lot": lot,
         "size_multiplier": size_multiplier,
@@ -1354,8 +1832,26 @@ def round_lot(value: float, step: float, minimum: float) -> float:
     return round(max(minimum, rounded), 2)
 
 
-def round_price(value: float) -> float:
-    return round(value, 5)
+def round_price(value: float, digits: int = 5) -> float:
+    return round(value, digits)
+
+
+def round_price_up(value: float, digits: int = 5) -> float:
+    quantum = Decimal(1).scaleb(-digits)
+    return float(
+        Decimal(str(value)).quantize(quantum, rounding=ROUND_CEILING)
+    )
+
+
+def round_price_down(value: float, digits: int = 5) -> float:
+    quantum = Decimal(1).scaleb(-digits)
+    return float(
+        Decimal(str(value)).quantize(quantum, rounding=ROUND_FLOOR)
+    )
+
+
+def _round_target_price(value: float, side: str, digits: int) -> float:
+    return round_price(value, digits)
 
 
 # ---------------------------------------------------------------------------

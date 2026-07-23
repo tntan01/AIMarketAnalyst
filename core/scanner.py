@@ -50,7 +50,15 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     permission = str(result.get("trade_permission", {}).get("status", "blocked"))
     # Phase 13A.3: use shared helper matching both "type" and "side" keys
     all_scenarios = result.get("scenarios", [])
-    best_plan = _find_scenario_for_side(all_scenarios, best_side) if isinstance(all_scenarios, list) else None
+    best_plan = (
+        _find_scenario_for_side(
+            all_scenarios,
+            best_side,
+            fallback_to_first=best_side not in {"buy", "sell"},
+        )
+        if isinstance(all_scenarios, list)
+        else None
+    )
     if best_plan is None:
         best_side = "stand_aside"
     else:
@@ -121,6 +129,7 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "entry_zone_width": best_plan.get("entry_zone_width") if best_plan else None,
         "entry_zone_width_atr": best_plan.get("entry_zone_width_atr") if best_plan else None,
         "entry_zone_source": best_plan.get("entry_zone_source") if best_plan else None,
+        "source_zone": best_plan.get("source_zone") if best_plan else None,
         "tp1_source": best_plan.get("tp1_source") if best_plan else None,
         "tp1_clearance_from_far_edge": best_plan.get("tp1_clearance_from_far_edge") if best_plan else None,
         "tp1_clearance_atr": best_plan.get("tp1_clearance_atr") if best_plan else None,
@@ -149,6 +158,14 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "stop_loss": best_plan.get("stop_loss") if best_plan else None,
         "take_profit": best_plan.get("take_profit") if best_plan else None,
         "entry_zone": best_plan.get("entry_zone") if best_plan else None,
+        "execution_zone": best_plan.get("execution_zone") if best_plan else None,
+        "structural_execution_zone": best_plan.get("structural_execution_zone") if best_plan else None,
+        "rr_valid_zone": best_plan.get("rr_valid_zone") if best_plan else None,
+        "rr_trimmed": best_plan.get("rr_trimmed") if best_plan else False,
+        "rr_trim_diagnostics": best_plan.get("rr_trim_diagnostics") if best_plan else None,
+        "execution_zone_quality": best_plan.get("execution_zone_quality") if best_plan else None,
+        "execution_zone_width_atr_target": best_plan.get("execution_zone_width_atr_target") if best_plan else None,
+        "price_digits": best_plan.get("price_digits") if best_plan else None,
         "journal_feedback": journal_feedback if isinstance(journal_feedback, dict) else {},
         "journal_sample_size": journal_feedback.get("sample_size") if isinstance(journal_feedback, dict) else 0,
         "journal_expectancy_r": journal_feedback.get("expectancy_r") if isinstance(journal_feedback, dict) else None,

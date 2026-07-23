@@ -158,7 +158,12 @@ def _scenario_side(scenario: dict[str, Any]) -> str | None:
     return _norm(scenario.get("side"))
 
 
-def _find_scenario_for_side(scenarios: list[dict[str, Any]], best_side: str) -> dict[str, Any] | None:
+def _find_scenario_for_side(
+    scenarios: list[dict[str, Any]],
+    best_side: str,
+    *,
+    fallback_to_first: bool = True,
+) -> dict[str, Any] | None:
     """Find the scenario matching *best_side* by canonical type/side.
 
     - Filters to valid trade scenarios (type or side resolves to buy/sell).
@@ -194,8 +199,9 @@ def _find_scenario_for_side(scenarios: list[dict[str, Any]], best_side: str) -> 
             if side == bs:
                 return scenario
 
-    # Fallback: first valid trade scenario
-    return valid[0][0]
+    # Display/ranking callers retain the legacy fallback by default. Execution
+    # callers disable it so one side can never consume the opposite plan.
+    return valid[0][0] if fallback_to_first else None
 
 
 _PROXIMITY_ALIASES: dict[str, str] = {

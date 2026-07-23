@@ -12,6 +12,13 @@ from PyQt6.QtWidgets import (
 from controllers.journal_controller import JournalController
 from services.storage_service import JsonStorage
 
+from core.scanner_ranking_engine import _find_scenario_for_side
+from ui.scanner_rr_formatters import (
+    format_execution_zone_text,
+    format_execution_zone_width,
+    format_rr_trim_reason,
+    format_source_zone_text,
+)
 from ui.components.chart_view import AnalysisChartView
 from ui.screens.shared import action_button, card, page_header
 
@@ -833,29 +840,32 @@ class ScannerDetailScreen(QWidget):
         if not isinstance(scenarios, list):
             return {}
         best_side = str(self.row.get("best_side") or "").strip().lower()
-        for scenario in scenarios:
-            if not isinstance(scenario, dict):
-                continue
-            side = str(scenario.get("type") or scenario.get("side") or "").strip().lower()
-            if best_side and side == best_side:
-                return scenario
-        for scenario in scenarios:
-            if isinstance(scenario, dict) and scenario.get("entry_zone"):
-                return scenario
-        for scenario in scenarios:
-            if isinstance(scenario, dict):
-                return scenario
-        return {}
+        scenario = _find_scenario_for_side(
+            scenarios,
+            best_side,
+            fallback_to_first=best_side not in {"buy", "sell"},
+        )
+        return scenario if isinstance(scenario, dict) else {}
 
     def _rr_field(self, key: str) -> object:
-        value = self.row.get(key)
-        if value is not None and value != "":
-            return value
         scenario = self._best_detail_scenario()
         value = scenario.get(key)
         if value is not None and value != "":
             return value
+        best_side = str(self.row.get("best_side") or "").strip().lower()
+        if best_side in {"buy", "sell"} and not scenario:
+            return None
+        value = self.row.get(key)
+        if value is not None and value != "":
+            return value
         return None
+
+    def _plan_field(self, key: str) -> object:
+        scenario = self._best_detail_scenario()
+        if scenario:
+            return scenario.get(key)
+        best_side = str(self.row.get("best_side") or "").strip().lower()
+        return None if best_side in {"buy", "sell"} else self.row.get(key)
 
     def _rr_context(self) -> dict[str, object]:
         keys = (
@@ -868,7 +878,7 @@ class ScannerDetailScreen(QWidget):
         return {key: self._rr_field(key) for key in keys}
 
     def _has_entry_without_rr(self) -> bool:
-        entry_zone = self.row.get("entry_zone") or self._best_detail_scenario().get("entry_zone")
+        entry_zone = self._plan_field("entry_zone")
         return bool(entry_zone)
 
     def _rr_main_text(self) -> str:
@@ -890,7 +900,7 @@ class ScannerDetailScreen(QWidget):
     def _dialog_card_sl(self) -> tuple[str, str, str]:
         if self._has_no_entry_zone():
             return "--", "", "#94a3b8"
-        sl = self.row.get("stop_loss")
+        sl = self._plan_field("stop_loss")
         if isinstance(sl, (int, float)):
             return f"{sl:.5f}", "", "#e11d48"
         return "--", "", "#94a3b8"
@@ -898,7 +908,7 @@ class ScannerDetailScreen(QWidget):
     def _dialog_card_tp(self) -> tuple[str, str, str]:
         if self._has_no_entry_zone():
             return "--", "", "#94a3b8"
-        tp = self.row.get("take_profit")
+        tp = self._plan_field("take_profit")
         if isinstance(tp, list) and tp:
             tp1 = f"{tp[0]:.5f}"
             tp2 = f"TP2: {tp[1]:.5f}" if len(tp) > 1 else ""
@@ -1275,7 +1285,19 @@ class ScannerDetailScreen(QWidget):
         rr_val = f"{rr_val}{rr_range_str}{rr_eff_suffix}"
         rr_range_str = ""
 
+        scenario = self._best_detail_scenario()
+        zone_context = dict(scenario) if scenario else {}
+        zone_context.setdefault("symbol", self.row.get("symbol"))
+        execution_zone_text = format_execution_zone_text(zone_context)
+        source_zone_text = format_source_zone_text(zone_context)
+        zone_width_text = format_execution_zone_width(zone_context)
+        trim_reason_text = format_rr_trim_reason(zone_context) or "Không cần điều chỉnh"
+
         rows = [
+            ("Execution zone", execution_zone_text, "#f59e0b"),
+            ("Source zone", source_zone_text, label_color),
+            ("Độ rộng execution", zone_width_text, label_color),
+            ("Điều chỉnh R:R", trim_reason_text, label_color),
             ("Vùng vào lệnh", entry_val, entry_accent),
             ("Stop Loss", sl_val, "#e11d48"),
             ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "#10b981"),
@@ -1781,7 +1803,7 @@ class ScannerDetailScreen(QWidget):
 
     def _has_no_entry_zone(self) -> bool:
         price_zone = str(self.row.get("price_vs_zone") or "").strip().lower() if self.row else ""
-        zones = self.row.get("entry_zone") or self.row.get("entry_zones") if self.row else None
+        zones = self._plan_field("entry_zone") if self.row else None
         return price_zone == "unknown" or (price_zone in {"", "--", "none"} and not zones)
 
     def _m15_text(self) -> str:

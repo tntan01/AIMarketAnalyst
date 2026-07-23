@@ -230,15 +230,15 @@ class TestCascadeIteratedTargets:
 
     def test_buy_nearest_fail_second_pass(self):
         atr = 0.0020
-        # Support zone level=1.0960, low=1.0945 → entry capped at 0.50 ATR
+        # Source zone is trimmed to the Phase 16D proximal execution sub-zone.
         # near target: low=1.0980 → boundary 1.09794 < far_edge → FAIL
-        # far target: low=1.1030 → boundary 1.10294 → PASS
+        # far target: low=1.1040 → boundary 1.10394 → PASS
         tech = _base_tech(1.1000, atr,
                           [_zone(1.0960, 1.0945, 1.0980, "strong", 75)],
                           [{"level": 1.0990, "low": 1.0980, "high": 1.1000, "source": "technical",
                             "strength": "moderate", "zone_score": 50, "confluence_count": 1,
                             "consolidation_bars": 0},
-                           {"level": 1.1040, "low": 1.1030, "high": 1.1050, "source": "technical",
+                           {"level": 1.1050, "low": 1.1040, "high": 1.1060, "source": "technical",
                             "strength": "strong", "zone_score": 70, "confluence_count": 1,
                             "consolidation_bars": 0}])
         smc = _base_smc()
@@ -678,7 +678,7 @@ class TestZoneBoundaryTarget:
         atr = 0.0020
         tech = _base_tech(1.1000, atr,
                           [_zone(1.0960, 1.0945, 1.0980, "strong", 75)],
-                          [{"level": 1.1040, "low": 1.1030, "high": 1.1050, "source": "technical",
+                          [{"level": 1.1050, "low": 1.1040, "high": 1.1060, "source": "technical",
                             "strength": "strong", "zone_score": 70, "confluence_count": 1,
                             "consolidation_bars": 0}])
         smc = _base_smc()
@@ -687,7 +687,7 @@ class TestZoneBoundaryTarget:
                                 market_regime={"primary": "trend_up"})
         assert plan is not None
         assert plan["tp1_source"] == "target_zone"
-        assert plan["take_profit"][0] < 1.1040  # boundary TP below zone level
+        assert plan["take_profit"][0] < 1.1050  # boundary TP below zone level
 
 
 class TestExecutablePriceOrdering:

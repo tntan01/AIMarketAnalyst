@@ -20,6 +20,7 @@ from core.signal_engine import clamp
 from core.risk_engine import (
     AnalysisInput,
     build_scenarios,
+    build_source_zone_diagnostics,
     calc_trade_permission,
     calculate_expected_effective_rr,
     contract_size_for,
@@ -368,8 +369,24 @@ class AnalysisPipeline:
             spread_price=float(self._data_quality.get("spread_price") or 0),
             market_regime=self._market_regime,
             preferred_zones={
-                "buy": get_preferred_zone(self._smc, "buy", price=self._technical.get("price")),
-                "sell": get_preferred_zone(self._smc, "sell", price=self._technical.get("price")),
+                "buy": get_preferred_zone(
+                    self._smc,
+                    "buy",
+                    price=self._technical.get("price"),
+                    atr_value=(
+                        self._technical.get("atr_h4")
+                        or self._technical.get("atr_d1")
+                    ),
+                ),
+                "sell": get_preferred_zone(
+                    self._smc,
+                    "sell",
+                    price=self._technical.get("price"),
+                    atr_value=(
+                        self._technical.get("atr_h4")
+                        or self._technical.get("atr_d1")
+                    ),
+                ),
             },
             is_backtest=self._is_backtest,
         )
@@ -500,11 +517,15 @@ class AnalysisPipeline:
         self._decision_action = "stand_aside"
 
         # --- gate context ---------------------------------------------------
-        # Find best available scenario for gate context (may differ from _primary_scenario)
-        _gate_scenario = self._primary_scenario if isinstance(self._primary_scenario, dict) and self._primary_scenario else {}
+        # Gate must consume the same-side scenario; never borrow the opposite plan.
+        _gate_scenario = _find_scenario(self._scenarios, self._best_side)
         if not _gate_scenario.get("expected_effective_rr"):
             for s in self._scenarios:
-                if isinstance(s, dict) and s.get("type") in ("buy", "sell") and s.get("expected_effective_rr"):
+                if (
+                    isinstance(s, dict)
+                    and s.get("type") == self._best_side
+                    and s.get("expected_effective_rr")
+                ):
                     _gate_scenario = s
                     break
 
@@ -909,7 +930,12 @@ class AnalysisPipeline:
         if not self._scenarios and atr > 0 and price > 0 and best_side in ("buy", "sell"):
             # Try to find the best SMC zone even beyond zone_dist_mult
             # so the scanner shows real structure instead of fake ATR fallback.
-            distant_zone = get_preferred_zone(self._smc, best_side, price=None)
+            distant_zone = get_preferred_zone(
+                self._smc,
+                best_side,
+                price=None,
+                atr_value=atr,
+            )
             if distant_zone is not None:
                 zone_low = float(distant_zone["low"])
                 zone_high = float(distant_zone["high"])
@@ -933,6 +959,11 @@ class AnalysisPipeline:
                     "take_profit": [round(tp, 5)] if tp is not None else None,
                     "entry_zone_score": zone_score,
                     "entry_zone_source": "smc_distant",
+                    "source_zone": build_source_zone_diagnostics(
+                        distant_zone,
+                        atr,
+                        best_side,
+                    ),
                     "entry_status": "watch_zone",
                     "m15_quality": None,
                     "expected_effective_rr": None,

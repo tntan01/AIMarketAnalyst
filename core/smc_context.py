@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from math import isfinite
 from typing import Any
 
 from core.indicators import atr
@@ -28,6 +29,52 @@ _LEG_STRONG = 3
 _LEG_NORMAL = 2
 _CHOCH_CONFIRMED_LEGS = 3
 _ZONE_SCORE_BASE = 50
+# Phase 16B shadow policy. Named constants keep every adjustment auditable;
+# they must be calibrated on production snapshots before any consumer uses it.
+_EFFECTIVE_ZONE_SCORE_BASE = 50
+_EFFECTIVE_ZONE_FRESHNESS_BONUSES = ((3, 10), (8, 6), (16, 3))
+_EFFECTIVE_ZONE_STALE_PENALTY = 12
+_EFFECTIVE_ZONE_MITIGATED_PENALTY = 6
+_EFFECTIVE_ZONE_MAX_RETEST_PENALTY = 20
+_EFFECTIVE_ZONE_RETEST_PENALTY_STEP = 4
+_EFFECTIVE_ZONE_NARROW_WIDTH_ATR = 0.35
+_EFFECTIVE_ZONE_WIDE_WIDTH_ATR = 0.75
+_EFFECTIVE_ZONE_NARROW_BONUS = 6
+_EFFECTIVE_ZONE_MAX_WIDTH_PENALTY = 20
+_EFFECTIVE_ZONE_WIDTH_PENALTY_PER_ATR = 12
+_EFFECTIVE_ZONE_MAX_DISPLACEMENT_BONUS = 15
+_EFFECTIVE_ZONE_LIQUIDITY_SWEEP_BONUS = 10
+_EFFECTIVE_ZONE_LOCATION_CORRECT_BONUS = 12
+_EFFECTIVE_ZONE_LOCATION_EQUILIBRIUM_BONUS = 4
+_EFFECTIVE_ZONE_LOCATION_WRONG_PENALTY = 8
+_EFFECTIVE_ZONE_PREFERRED_MIN_SCORE = 50
+_EFFECTIVE_ZONE_HIGH_TEST_COUNT = 5
+
+_DIRECTIONAL_ZONE_TYPES = {
+    "buy": frozenset(
+        {"demand_zone", "bullish_order_block", "bullish_fvg"}
+    ),
+    "sell": frozenset(
+        {"supply_zone", "bearish_order_block", "bearish_fvg"}
+    ),
+}
+
+
+def zone_matches_direction(
+    zone: dict[str, Any] | None,
+    direction: str,
+) -> bool:
+    """Return whether an SMC zone family is valid for the trade direction."""
+    if not isinstance(zone, dict):
+        return False
+    normalized_direction = str(direction or "").strip().lower()
+    allowed_types = _DIRECTIONAL_ZONE_TYPES.get(normalized_direction)
+    if allowed_types is None:
+        return False
+    zone_type = str(
+        zone.get("zone_type") or zone.get("type") or ""
+    ).strip().lower()
+    return zone_type in allowed_types
 _ZONE_SCORE_STRONG = 75
 _ZONE_SCORE_MODERATE = 55
 _ZONE_MAX_TEST_BONUS = 20
@@ -697,6 +744,149 @@ def zone_quality_score(zone: dict[str, Any], side: str) -> int:
     return max(0, min(100, int(score)))
 
 
+def calculate_effective_zone_score(
+    zone: dict[str, Any],
+    side: str,
+    atr_value: float | int | None,
+) -> dict[str, Any]:
+    """Return a conservative, shadow-only zone score and its breakdown.
+
+    Unlike ``zone_quality_score``, repeated tests are treated as zone
+    consumption, stale/mitigated state is explicit, and excessive source-zone
+    width is penalized. Consumers must continue to use ``zone_score`` until
+    shadow results justify a production migration.
+    """
+    normalized_side = str(side or "").strip().lower()
+
+    test_count_available = zone.get("test_count") is not None
+    try:
+        test_count = max(0, int(zone.get("test_count", 0) or 0))
+    except (TypeError, ValueError):
+        test_count = 0
+        test_count_available = False
+    try:
+        freshness_bars = max(0, int(zone.get("freshness_bars", 999) or 999))
+    except (TypeError, ValueError):
+        freshness_bars = 999
+    try:
+        displacement = max(0.0, float(zone.get("displacement_multiple", 0) or 0))
+    except (TypeError, ValueError):
+        displacement = 0.0
+
+    stale = bool(zone.get("stale"))
+    mitigated = bool(zone.get("mitigated"))
+    broken = bool(zone.get("broken"))
+
+    freshness_bonus = 0
+    if not stale:
+        for max_bars, bonus in _EFFECTIVE_ZONE_FRESHNESS_BONUSES:
+            if freshness_bars <= max_bars:
+                freshness_bonus = bonus
+                break
+
+    if not test_count_available:
+        test_count_adjustment = 0
+    elif test_count == 0:
+        test_count_adjustment = 4
+    elif test_count == 1:
+        test_count_adjustment = 2
+    elif test_count == 2:
+        test_count_adjustment = 0
+    else:
+        test_count_adjustment = -min(
+            _EFFECTIVE_ZONE_MAX_RETEST_PENALTY,
+            (test_count - 2) * _EFFECTIVE_ZONE_RETEST_PENALTY_STEP,
+        )
+
+    width_atr = None
+    try:
+        low = float(zone.get("low"))
+        high = float(zone.get("high"))
+        atr = float(atr_value)
+        if high > low and atr > 0:
+            width_atr = (high - low) / atr
+    except (TypeError, ValueError):
+        pass
+
+    width_adjustment = 0
+    if width_atr is not None:
+        if width_atr <= _EFFECTIVE_ZONE_NARROW_WIDTH_ATR:
+            width_adjustment = _EFFECTIVE_ZONE_NARROW_BONUS
+        elif width_atr > _EFFECTIVE_ZONE_WIDE_WIDTH_ATR:
+            width_adjustment = -min(
+                _EFFECTIVE_ZONE_MAX_WIDTH_PENALTY,
+                round(
+                    (width_atr - _EFFECTIVE_ZONE_WIDE_WIDTH_ATR)
+                    * _EFFECTIVE_ZONE_WIDTH_PENALTY_PER_ATR
+                ),
+            )
+
+    displacement_bonus = min(
+        _EFFECTIVE_ZONE_MAX_DISPLACEMENT_BONUS,
+        int(displacement * _ZONE_DISPLACEMENT_MULTIPLIER),
+    )
+    liquidity_sweep_bonus = (
+        _EFFECTIVE_ZONE_LIQUIDITY_SWEEP_BONUS
+        if zone.get("liquidity_sweep")
+        else 0
+    )
+
+    location = str(zone.get("zone_location", "") or "").strip().lower()
+    if (
+        normalized_side == "buy"
+        and location == "discount"
+        or normalized_side == "sell"
+        and location == "premium"
+    ):
+        premium_discount_adjustment = _EFFECTIVE_ZONE_LOCATION_CORRECT_BONUS
+    elif location == "equilibrium":
+        premium_discount_adjustment = _EFFECTIVE_ZONE_LOCATION_EQUILIBRIUM_BONUS
+    elif (
+        normalized_side in {"buy", "sell"}
+        and location in {"premium", "discount"}
+    ):
+        premium_discount_adjustment = -_EFFECTIVE_ZONE_LOCATION_WRONG_PENALTY
+    else:
+        premium_discount_adjustment = 0
+
+    stale_penalty = -_EFFECTIVE_ZONE_STALE_PENALTY if stale else 0
+    mitigation_penalty = -_EFFECTIVE_ZONE_MITIGATED_PENALTY if mitigated else 0
+    pre_clamp_total = sum(
+        (
+            _EFFECTIVE_ZONE_SCORE_BASE,
+            freshness_bonus,
+            stale_penalty,
+            mitigation_penalty,
+            test_count_adjustment,
+            width_adjustment,
+            displacement_bonus,
+            liquidity_sweep_bonus,
+            premium_discount_adjustment,
+        )
+    )
+    effective_score = 0 if broken else max(0, min(100, int(pre_clamp_total)))
+
+    return {
+        "effective_zone_score": effective_score,
+        "effective_zone_score_breakdown": {
+            "base": _EFFECTIVE_ZONE_SCORE_BASE,
+            "freshness_bonus": freshness_bonus,
+            "stale_penalty": stale_penalty,
+            "mitigation_penalty": mitigation_penalty,
+            "test_count_adjustment": test_count_adjustment,
+            "width_adjustment": width_adjustment,
+            "displacement_bonus": displacement_bonus,
+            "liquidity_sweep_bonus": liquidity_sweep_bonus,
+            "premium_discount_adjustment": premium_discount_adjustment,
+            "source_zone_width_atr": (
+                round(width_atr, 4) if width_atr is not None else None
+            ),
+            "pre_clamp_total": pre_clamp_total,
+            "broken_override": broken,
+        },
+    }
+
+
 def score_to_strength(score: int) -> str:
     if score >= _ZONE_SCORE_STRONG:
         return "strong"
@@ -750,10 +940,7 @@ def _find_best_zone_for_direction(tf: dict[str, Any], direction: str) -> dict[st
         for zone in zones:
             if not isinstance(zone, dict) or zone.get("broken"):
                 continue
-            zone_type = str(zone.get("type", ""))
-            if direction == "buy" and any(term in zone_type for term in ("bearish", "supply")):
-                continue
-            if direction == "sell" and any(term in zone_type for term in ("bullish", "demand")):
+            if not zone_matches_direction(zone, direction):
                 continue
             candidates.append(zone)
 
@@ -762,24 +949,40 @@ def _find_best_zone_for_direction(tf: dict[str, Any], direction: str) -> dict[st
     return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
 
 
-def get_preferred_zone(smc_context: dict[str, Any] | None, direction: str, price: float | None = None) -> dict[str, Any] | None:
-    """Tra ve zone SMC tot nhat cho huong giao dich, dung de truyen vao build_trade_plan.
+def get_preferred_zone(
+    smc_context: dict[str, Any] | None,
+    direction: str,
+    price: float | None = None,
+    atr_value: float | int | None = None,
+) -> dict[str, Any] | None:
+    """Select an SMC zone by effective quality with deterministic tie-breaks.
 
-    Tra ve dict co low, high, level, zone_score, source="smc_selected",
-    hoac None neu khong tim thay zone phu hop.
-
-    Khi price duoc cung cap, uu tien zone nam dung phia so voi gia:
-    - buy: zone level < price (support)
-    - sell: zone level > price (resistance)
+    Zones below the preferred threshold, or stale zones consumed by at least
+    five tests, remain available only as WATCH_ONLY structural fallbacks.
     """
     if not isinstance(smc_context, dict):
         return None
     h4 = smc_context.get("H4", {})
     if not isinstance(h4, dict):
         return None
+    normalized_direction = str(direction or "").strip().lower()
+    if normalized_direction not in {"buy", "sell"}:
+        return None
 
-    # Gather all valid candidates (same logic as _find_best_zone_for_direction)
-    if direction == "buy":
+    try:
+        price_value = float(price) if price is not None else None
+        if price_value is not None and not isfinite(price_value):
+            price_value = None
+    except (TypeError, ValueError):
+        price_value = None
+    try:
+        atr = float(atr_value) if atr_value is not None else None
+        if atr is not None and (not isfinite(atr) or atr <= 0):
+            atr = None
+    except (TypeError, ValueError):
+        atr = None
+
+    if normalized_direction == "buy":
         zone_keys = ["demand_zones", "order_blocks", "fvg"]
     else:
         zone_keys = ["supply_zones", "order_blocks", "fvg"]
@@ -792,49 +995,149 @@ def get_preferred_zone(smc_context: dict[str, Any] | None, direction: str, price
         for zone in zones:
             if not isinstance(zone, dict) or zone.get("broken"):
                 continue
-            zone_type = str(zone.get("type", ""))
-            if direction == "buy" and any(term in zone_type for term in ("bearish", "supply")):
+            if not zone_matches_direction(zone, normalized_direction):
                 continue
-            if direction == "sell" and any(term in zone_type for term in ("bullish", "demand")):
+            try:
+                low = float(zone.get("low"))
+                high = float(zone.get("high"))
+            except (TypeError, ValueError):
                 continue
-            candidates.append(zone)
+            if not all(isfinite(value) for value in (low, high)) or high <= low:
+                continue
+            level = (low + high) / 2
+            if price_value is not None:
+                on_correct_side = (
+                    normalized_direction == "buy" and level < price_value
+                ) or (
+                    normalized_direction == "sell" and level > price_value
+                )
+                if not on_correct_side:
+                    continue
+
+            effective = calculate_effective_zone_score(
+                zone,
+                normalized_direction,
+                atr,
+            )
+            breakdown = effective["effective_zone_score_breakdown"]
+            try:
+                freshness = max(
+                    0,
+                    int(zone.get("freshness_bars", 999999) or 999999),
+                )
+            except (TypeError, ValueError):
+                freshness = 999999
+            try:
+                test_count = max(
+                    0,
+                    int(zone.get("test_count", 0) or 0),
+                )
+            except (TypeError, ValueError):
+                test_count = 0
+            distance = (
+                abs(price_value - level)
+                if price_value is not None
+                else float("inf")
+            )
+            width_atr = breakdown.get("source_zone_width_atr")
+            width_sort = (
+                float(width_atr)
+                if isinstance(width_atr, (int, float))
+                else float("inf")
+            )
+            candidate = dict(zone)
+            candidate.update(
+                {
+                    "_selection_low": low,
+                    "_selection_high": high,
+                    "_selection_level": level,
+                    "_selection_freshness": freshness,
+                    "_selection_test_count": test_count,
+                    "_selection_distance": distance,
+                    "_selection_width_atr": width_sort,
+                    **effective,
+                }
+            )
+            candidates.append(candidate)
 
     if not candidates:
         return None
 
-    # Sort by zone_score descending
-    candidates.sort(key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)
+    def _sort_key(
+        item: dict[str, Any],
+    ) -> tuple[float, int, float, float, float, float]:
+        return (
+            -float(item["effective_zone_score"]),
+            int(item["_selection_freshness"]),
+            float(item["_selection_distance"]),
+            float(item["_selection_width_atr"]),
+            float(item["_selection_low"]),
+            float(item["_selection_high"]),
+        )
 
-    # Pick the best zone on the correct side of price (if price provided)
-    zone = None
-    if price is not None:
-        for candidate in candidates:
-            low = candidate.get("low")
-            high = candidate.get("high")
-            if low is None or high is None:
-                continue
-            level = (float(low) + float(high)) / 2
-            if direction == "buy" and level < price:
-                zone = candidate
-                break
-            if direction == "sell" and level > price:
-                zone = candidate
-                break
+    candidates.sort(key=_sort_key)
+    preferred_candidates = [
+        item
+        for item in candidates
+        if item["effective_zone_score"] >= _EFFECTIVE_ZONE_PREFERRED_MIN_SCORE
+        and not (
+            item.get("stale")
+            and int(item["_selection_test_count"])
+            >= _EFFECTIVE_ZONE_HIGH_TEST_COUNT
+        )
+    ]
+    watch_only_fallback = not preferred_candidates
+    zone = preferred_candidates[0] if preferred_candidates else candidates[0]
+    low = float(zone["_selection_low"])
+    high = float(zone["_selection_high"])
+    level = float(zone["_selection_level"])
+    if watch_only_fallback:
+        if (
+            zone.get("stale")
+            and int(zone["_selection_test_count"])
+            >= _EFFECTIVE_ZONE_HIGH_TEST_COUNT
+        ):
+            selection_reason = "stale_high_test_count"
+        else:
+            selection_reason = "effective_score_below_preferred"
+    else:
+        selection_reason = "effective_score_eligible"
 
-    # Fallback: use the highest-scored zone regardless of position
-    if zone is None:
-        zone = candidates[0]
-
-    low = zone.get("low")
-    high = zone.get("high")
-    if low is None or high is None:
-        return None
     return {
-        "low": float(low),
-        "high": float(high),
-        "level": (float(low) + float(high)) / 2,
+        "low": low,
+        "high": high,
+        "level": level,
         "zone_score": zone.get("zone_score", 0),
+        "effective_zone_score": zone["effective_zone_score"],
+        "effective_zone_score_breakdown": zone[
+            "effective_zone_score_breakdown"
+        ],
+        "selection_status": (
+            "watch_only_fallback"
+            if watch_only_fallback
+            else "preferred"
+        ),
+        "selection_reason": selection_reason,
+        "watch_only_fallback": watch_only_fallback,
+        "selection_distance": (
+            round(float(zone["_selection_distance"]), 8)
+            if price_value is not None
+            else None
+        ),
+        "source_zone_width_atr": zone[
+            "effective_zone_score_breakdown"
+        ].get("source_zone_width_atr"),
         "source": "smc_selected",
+        "type": zone.get("type"),
+        "strength": zone.get("strength"),
+        "stale": zone.get("stale"),
+        "mitigated": zone.get("mitigated"),
+        "broken": zone.get("broken"),
+        "test_count": zone.get("test_count"),
+        "freshness_bars": zone.get("freshness_bars"),
+        "displacement_multiple": zone.get("displacement_multiple"),
+        "liquidity_sweep": zone.get("liquidity_sweep"),
+        "zone_location": zone.get("zone_location"),
     }
 
 

@@ -89,7 +89,7 @@ class TestTp1EntryZoneGuard(unittest.TestCase):
         support_level = 2.337015
         # Resistance zone NAM NGOAI entry zone (tren entry_high)
         # Phase 13C: zone boundary TP = low - buffer → must still clear far_edge
-        resistance_level = 2.34300
+        resistance_level = 2.34600
 
         technical = self._make_technical(price, atr, support_level, resistance_level)
         smc = self._make_smc()

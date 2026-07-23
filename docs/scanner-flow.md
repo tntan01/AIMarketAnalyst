@@ -260,14 +260,24 @@ symbol_auto_trade[symbol] = {
     → `use_preferred = True`, dùng SMC zone làm entry
   - Ngược lại: `select_best_level(support/resistance_zones, price, max_distance, below/above)`
 
-  **b) Tính Entry Zone (xung quanh zone level):**
+  **b) Tính Source và Execution Zone (Phase 16):**
   ```
-  entry_zone_atr_mult = clamp(zone_width / atr * 0.5, 0.10, 0.30)
-  entry_low  = level - atr × entry_zone_atr_mult
-  entry_high = level + atr × entry_zone_atr_mult
-  entry_for_rr = entry_low  (BUY, aggressiveness=0 → cạnh gần nhất)
-  entry_for_rr = entry_high (SELL)
+  source_zone = original zone boundaries + quality metadata
+
+  BUY structural execution:
+    entry_high = source.high
+    entry_low  = max(source.low, source.high - target_width)
+
+  SELL structural execution:
+    entry_low  = source.low
+    entry_high = min(source.high, source.low + target_width)
+
+  target_width = ATR × execution_zone_width_atr_by_quality[tier]
+  final entry_zone = structural_execution_zone ∩ RR-valid range
   ```
+  - Current width target là `0.25×ATR` cho strong/moderate/weak.
+  - `entry_for_rr`, midpoint và worst edge được tính lại sau RR-aware trim.
+  - Source zone không được dùng để cho phép execution.
 
   **c) Tính Stop Loss (ưu tiên: swing → zone boundary → ATR):**
   1. **Luôn tìm swing trước** — `_find_nearest_swing_for_sl()` gom tất cả swing H4+H1, chọn swing gần `level` nhất
@@ -277,21 +287,21 @@ symbol_auto_trade[symbol] = {
   - Floor guard: SL phải nằm ngoài entry zone ít nhất `atr × 0.20`
   - Min distance guard: khoảng cách `entry_for_rr → SL` ≥ `atr × 0.20` (SMC) hoặc `atr × 0.50` (technical)
 
-  **d) Tính Take Profit (cascade 5 bước, dừng ở bước đầu tiên tìm được):**
+  **d) Tính Take Profit (quality cascade):**
   1. **Equal Highs/Lows** (liquidity clusters từ H4/H1)
-  2. **S/R Zones** (nearest_target từ resistance/support zones)
+  2. **S/R Zones**: duyệt target gần→xa theo executable boundary; BUY dùng `zone.low - 0.03×ATR`, SELL dùng `zone.high + 0.03×ATR`
   3. **Fibonacci Extension** (0.382 từ impulse swing H4, trừ range)
   4. **Swing-based TP** (swing high/low gần nhất từ cả H4+H1)
-  5. Nếu `use_preferred` → **KHÔNG dùng fallback nhân tạo** → `tp1 = None` (RR để trống)
-  6. Nếu KHÔNG `use_preferred` → `return None` (không tạo plan)
+  - Mọi candidate phải past far edge, clearance ≥`0.15×ATR`, nominal base RR ≥1.0 và effective base RR ≥1.3 sau spread
+  - Candidate fail thì thử candidate kế tiếp; không có target thật thì SMC plan để TP/RR trống, technical plan bị loại
 
   **e) TP2:** next S/R zone sau TP1, hoặc Fib 0.618
 
   **f) R:R calculation:**
   ```
-  risk_reward = "1:{reward_risk(entry, sl, tp1):.1f}"  nếu tp1 tồn tại
-  risk_reward = None                                     nếu tp1 = None
-  expected_effective_rr = (|tp - entry| - spread) / (|entry - sl| + spread)
+  risk_reward / expected_effective_rr        = best edge
+  risk_reward_base / expected_effective_rr_base = midpoint
+  risk_reward_worst / expected_effective_rr_worst = far edge
   ```
 
   **g) evaluate_entry()** — Xác nhận entry (xem Step 4 detail bên dưới)
@@ -306,6 +316,38 @@ symbol_auto_trade[symbol] = {
 **Output Step 4:** `scenarios = [{type, entry_zone, stop_loss, take_profit, risk_reward, risk_reward_range, ...}, ...]`
   - Sắp xếp theo score giảm dần
   - Mỗi scenario có `entry_status` từ `evaluate_entry()`
+
+#### Phase 16 detail: source zone và final execution zone
+
+Luồng production dùng contract sau:
+
+1. `get_preferred_zone()` chỉ xét zone đúng hướng:
+   - BUY: `demand_zone`, `bullish_order_block`, `bullish_fvg`.
+   - SELL: `supply_zone`, `bearish_order_block`, `bearish_fvg`.
+   - Zone broken hoặc sai family bị loại khỏi cả preferred và fallback.
+2. Zone được xếp theo `effective_zone_score`. Breakdown gồm freshness,
+   stale/mitigated, test count, source width/ATR, displacement, liquidity
+   sweep và premium/discount.
+3. `source_zone` giữ nguyên original boundaries và metadata. Nó chỉ dùng để
+   phân tích, tooltip và chart reference.
+4. `_build_execution_sub_zone()` tạo proximal
+   `structural_execution_zone` nằm hoàn toàn trong source:
+   - BUY giữ source high.
+   - SELL giữ source low.
+   - Width target lấy từ `execution_zone_width_atr_by_quality`, hiện là
+     `0.25 ATR` cho cả ba tier.
+5. Sau khi chọn SL/TP1, `_trim_execution_zone_for_effective_rr()` giao
+   structural zone với vùng có worst-edge effective RR đạt
+   `execution_zone_min_effective_rr=1.3`, tolerance `0.0001`.
+6. Final zone được ghi đồng thời vào `entry_zone` và `execution_zone`. RR
+   best/base/worst, entry anchors và lot được tính lại từ final zone.
+7. Giao rỗng trả `entry_zone=None`, `execution_zone=None`,
+   `rr_trim_diagnostics.status="empty"` và reason code
+   `EXECUTION_ZONE_RR_EMPTY`.
+
+Scenario `smc_distant`, `watch_only_fallback` hoặc chưa có TP1 vẫn có thể giữ
+source/structural data để theo dõi, nhưng không được dùng source zone thay cho
+final execution zone.
 
 #### Step 4 detail: evaluate_entry() — Xác nhận entry với M15
 
@@ -399,7 +441,7 @@ bottom (66-100%): size_multiplier=1.0, cần M15 strict + SMC sweep
   | 6 | AccountGuard | check_account_guard không block | BLOCK |
   | 7 | Journal | journal_feedback không có blocks | BLOCK/WARN |
   | 8 | M15 | m15_quality đạt yêu cầu | WARN |
-  | 9 | ExpectedRR | expected_effective_rr ≥ min_expected_rr | WARN |
+  | 9 | ExpectedRR | expected_effective_rr_for_gate ưu tiên base, fallback best ≥ min_expected_rr | WARN |
   | 10 | ScoreGap | score_gap ≥ min_score_gap (10) | WARN |
   | 11 | ZoneBroken | entry zone chưa bị phá | WARN |
 
@@ -483,7 +525,10 @@ Tổng hợp tất cả output thành 1 dict với các key chính:
   - `best_score = max(buy_score, sell_score)`
   - `best_plan`: scenario đầu tiên khớp `best_side`
   - `scanner_action`: từ `decision_engine.legacy_action`
-  - `risk_reward`, `risk_reward_range`, `stop_loss`, `take_profit`, `entry_zone`: từ `best_plan`
+  - `risk_reward`, `risk_reward_range`, `stop_loss`, `take_profit`,
+    final `entry_zone`: từ scenario khớp chính xác `best_side`
+  - `source_zone`, `structural_execution_zone`, `rr_trim_diagnostics`: cùng
+    scenario với final entry; không trộn metadata từ side khác
   - `price_vs_zone`: `in_zone` / `near_zone` / `far` dựa trên giá vs entry_zone
   - `macro_score`, `macro_bias`, `macro_confidence`
   - `final_score`, `score_gap`, `m15_quality`, `expected_effective_rr`
@@ -570,7 +615,7 @@ Sắp xếp theo thứ tự ưu tiên (từ cao xuống thấp):
 1. **scanner_group**: `ready_now` (0) > `waiting_confirmation` (1) > `watch_zone` (2) > `blocked` (3)
 2. **opportunity_score**: giảm dần (cao nhất trước)
 3. **final_score** (hoặc best_score): giảm dần
-4. **expected_effective_rr** (hoặc risk_reward): giảm dần
+4. **expected_effective_rr_base** → **expected_effective_rr** → **risk_reward**: giảm dần
 5. **symbol**: alphabet
 
 Sau khi sắp xếp, gán `rank` từ 1 → N.
@@ -607,7 +652,7 @@ Với mỗi row:
    - Nếu `auto_trade_regime` được set → row's `market_regime` phải khớp
    - `best_score` phải ≥ `min_score` (hoặc 65 nếu min_score=0)
    - Nếu `auto_trade_side` được set → phải có scenario cho side đó
-   - Nếu `min_expected_rr > 0` → `expected_effective_rr` phải ≥ `min_expected_rr`
+   - Nếu `min_expected_rr > 0` → `expected_effective_rr` phải ≥ `min_expected_rr`. Đây là eligibility filter dùng best effective RR; ExpectedRR gate riêng vẫn ưu tiên base.
    - **Không** check `scanner_action == "ready"` — ghi đè toàn bộ
 
    **Nhánh 2 — `at_cfg is None` (backtest=false hoặc không config):**
@@ -683,7 +728,7 @@ Với mỗi row:
 | Entry | price_vs_zone | "Trong vùng" / "Gần vùng" / "Còn xa" (+ tooltip entry_status) |
 | M15 | m15_quality | "Chặt" / "Lỏng" / "Không đạt" |
 | Điểm | opportunity_score | "105" (+ tooltip final_score + breakdown) |
-| R:R | risk_reward / risk_reward_range | "1:5.6 (2.9–5.6)" (best + dải worst–best) |
+| R:R thực | expected_effective_rr | Best-case effective RR; base/current nằm trong diagnostic tooltip/order dialog |
 | Vĩ mô | macro_bias | "Thuận" / "Trung tính" / "Ngược" |
 | Chi tiết | detail_action | "Xem" |
 
@@ -700,6 +745,21 @@ Với mỗi row:
   - `build_full_chart_payload(symbol, analysis_result)` → tạo dữ liệu cho biểu đồ Lightweight Charts
   - Hiển thị: nến (H1 mặc định) + EMA + SMC zones + Entry zone + SL + TP lines
   - Hiển thị cards: best_score, buy/sell, final_score, gap, macro, RR, entry_status, position, M15, regime, permission, journal
+
+### Khi thực thi auto/manual order
+
+- Auto-trade lấy live ask/bid qua `MT5Service.get_live_price()`, fallback về
+  `technical.price` khi cần.
+- Giá phải còn trong entry zone và `current_effective_rr >= min_rr`; nếu không,
+  order bị skip với diagnostic reason.
+- Manual order dùng live price, fallback `order_info.entry_price`, và block với
+  warning khi current RR không đạt.
+- Auto result trả `diagnostics[]`; manual order gắn `execution_guard`.
+- Gate, eligibility, auto/manual guard, order dialog và chart đều đọc final
+  `entry_zone` của cùng scenario. Thiếu final zone thì candidate bị loại; không
+  fallback sang `source_zone`, `watch_zone` hoặc scenario đối diện.
+- Chart payload đánh dấu final entry bằng `execution_eligible=true`; source
+  zone dùng style tham khảo và `execution_eligible=false`.
 
 ---
 

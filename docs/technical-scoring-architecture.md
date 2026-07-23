@@ -88,17 +88,28 @@ Một mã (ví dụ `EUR/USD`) đi qua **9 bước lớn**, trong đó Bước 3
 
 ### Step 4 — Xây dựng Trade Scenario (Entry/SL/TP)
 1. `calc_trade_permission()`: kiểm tra MT5/spread/news → `allowed / caution / blocked`.
-2. `get_preferred_zone()`: tìm SMC zone tốt nhất cho mỗi hướng.
+2. `get_preferred_zone()`: lọc zone broken/sai hướng rồi xếp hạng zone SMC
+   bằng `effective_zone_score`. BUY chỉ nhận demand/bullish OB/bullish FVG;
+   SELL chỉ nhận supply/bearish OB/bearish FVG.
 3. `build_trade_plan()` cho mỗi side:
-   - **Chọn zone:** ưu tiên SMC zone nếu đủ gần (≤ `atr × zone_dist_mult`), không thì chọn support/resistance zone gần nhất.
-   - **Entry zone:** vùng hẹp quanh mức zone, độ rộng = `clamp(zone_width/atr × 0.5, 0.10, 0.30) × ATR`.
+   - **Chọn zone:** ưu tiên SMC zone đúng hướng nếu đủ gần (≤ `atr × zone_dist_mult`), không thì chọn support/resistance hoặc SMC fallback đúng hướng gần nhất.
+   - **Source zone:** giữ original boundaries, raw/effective score, freshness,
+     stale/mitigated, retest và selection status để phân tích.
+   - **Structural execution zone:** proximal sub-zone nằm hoàn toàn trong
+     source zone, giữ source high cho BUY/source low cho SELL, width mục tiêu
+     hiện tại `0.25×ATR`.
    - **Stop Loss:** ưu tiên swing structural gần nhất (H4+H1) → fallback cạnh SMC zone → fallback ATR, có guard đảm bảo SL cách entry tối thiểu 0.20×ATR (SMC) hoặc 0.50×ATR (technical).
-   - **Take Profit — cascade 5 bước**, dừng ở bước đầu tiên có kết quả: (1) Equal Highs/Lows → (2) S/R zone → (3) Fibonacci extension 0.382 → (4) Swing-based TP → (5) nếu vẫn không có và đang dùng SMC zone thì **để trống TP** (không tự bịa).
-   - **R:R** và `expected_effective_rr` (đã trừ hao chi phí spread), kèm `risk_reward_range` (best/base/worst theo 3 vị trí khớp lệnh).
+   - **Take Profit:** thử Equal Highs/Lows → lần lượt các S/R zone gần đến xa → Fibonacci 0.382 → swing. Mỗi candidate phải cách far edge ít nhất `0.15×ATR`, đạt nominal base RR ≥1.0 và effective base RR ≥1.3. TP từ S/R dùng biên gần nhất (`low-buffer` cho BUY, `high+buffer` cho SELL). Không có TP thật thì SMC plan để trống TP/RR; không tạo TP ảo.
+   - **RR-aware trim:** sau khi có SL/TP1, final `entry_zone` là giao của
+     structural zone và vùng có worst-edge effective RR ≥1.3. Giao rỗng trả
+     `EXECUTION_ZONE_RR_EMPTY`, không tạo entry execution hợp lệ.
+   - **R:R:** `risk_reward` và `expected_effective_rr` giữ best-case; các field base dùng midpoint, worst dùng far edge. Gate/ranking dùng base với best fallback.
    - **Position sizing:** `risk_amount = balance × risk% × size_multiplier`, chia cho `loss_per_lot` để ra lot đề xuất, làm tròn theo bước lot của broker.
 4. Gọi `evaluate_entry()` để xác nhận trạng thái entry (chi tiết bên dưới).
 
-→ Output: `scenarios[]`, mỗi cái có `entry_zone, stop_loss, take_profit, risk_reward, risk_reward_range, entry_status`.
+→ Output: `scenarios[]`, mỗi scenario có `source_zone`,
+`structural_execution_zone`, final `entry_zone`/`execution_zone`,
+`rr_trim_diagnostics`, SL/TP/RR/lot và `entry_status`.
 
 #### Step 4 chi tiết — `evaluate_entry()` (core/entry_engine.py)
 
@@ -139,7 +150,7 @@ Một mã (ví dụ `EUR/USD`) đi qua **9 bước lớn**, trong đó Bước 3
 | 6 | AccountGuard | Không bị chặn theo account guard | BLOCK |
 | 7 | Journal | Journal feedback không có block | BLOCK/WARN |
 | 8 | M15 | `m15_quality` đạt yêu cầu | WARN |
-| 9 | ExpectedRR | `expected_effective_rr` ≥ `min_expected_rr` | WARN |
+| 9 | ExpectedRR | `expected_effective_rr_for_gate` ưu tiên base, fallback best ≥ `min_expected_rr` | WARN |
 | 10 | ScoreGap | Chênh lệch điểm BUY/SELL ≥10 | WARN |
 | 11 | ZoneBroken | Entry zone chưa bị phá | WARN |
 
@@ -181,7 +192,7 @@ Một mã (ví dụ `EUR/USD`) đi qua **9 bước lớn**, trong đó Bước 3
 
 **File:** `core/scanner.py`
 
-Trích các trường quan trọng ra thành `row` phẳng để hiển thị (buy_score, sell_score, best_side, best_score, scanner_action, risk_reward, risk_reward_range, entry_zone, price_vs_zone, macro_score/bias, final_score, score_gap, m15_quality, expected_effective_rr, journal_feedback...), giữ nguyên `analysis_result` đầy đủ để dùng cho màn hình chi tiết. Sau đó gọi `enrich_scanner_row_with_ranking()` (Bước 5).
+Trích các trường quan trọng ra thành `row` phẳng để hiển thị, gồm RR best/base/worst, entry/TP1 diagnostics, entry zone, SL/TP, score và journal feedback. Scenario được chọn bằng canonical `type`/`side` (ưu tiên `type` hợp lệ), giữ nguyên `analysis_result` đầy đủ cho màn hình chi tiết. Sau đó gọi `enrich_scanner_row_with_ranking()` (Bước 5).
 
 ---
 
@@ -202,6 +213,9 @@ opportunity = final_score
             − journal_penalty    (từ journal_feedback, chỉ áp dụng nếu sample ≥8)
 ```
 Clamp 0–120. Row bị BLOCKED → cap cứng tối đa 20 điểm.
+
+`rr_bonus` ưu tiên `expected_effective_rr_base`, sau đó fallback
+`expected_effective_rr` và cuối cùng parse `risk_reward`.
 
 ### 5b. Phân loại `scanner_group` (6 lớp ưu tiên, lớp trên ghi đè lớp dưới)
 
@@ -224,7 +238,7 @@ Thứ tự ưu tiên khi sắp xếp (giảm dần):
 1. `scanner_group`: ready_now > waiting_confirmation > watch_zone > blocked
 2. `opportunity_score` (cao nhất trước)
 3. `final_score` (hoặc best_score nếu thiếu)
-4. `expected_effective_rr` (hoặc risk_reward)
+4. `expected_effective_rr_base` → `expected_effective_rr` → `risk_reward`
 5. `symbol` (alphabet)
 
 Sau đó gán `rank` từ 1→N.
@@ -251,7 +265,7 @@ Sau đó gán `rank` từ 1→N.
 - Regime khớp `auto_trade_regime` (nếu có đặt)
 - `best_score` ≥ `min_score` (fallback 65 nếu để trống)
 - Side khớp `auto_trade_side` (nếu có đặt)
-- `expected_effective_rr` ≥ `min_expected_rr` (nếu >0)
+- `expected_effective_rr` ≥ `min_expected_rr` (nếu >0). Đây là backtest eligibility legacy dùng best effective RR; không phải ExpectedRR gate, vốn ưu tiên base.
 - **Không** yêu cầu `scanner_action == "ready"` — filter riêng có quyền "phủ quyết" pipeline
 
 Row nào không pass → gán `scanner_action = "skip"`, `scanner_group = "blocked"`, thêm dòng lý do vào `short_reason`, rồi re-sort để đẩy các row fail xuống cuối bảng.
@@ -280,11 +294,18 @@ Tính `scanner_summary()` (đếm số lượng theo từng scanner_group + đi�
 
 **File:** `ui/screens/scanner_screen.py`
 
-Cột hiển thị: STT (rank) · Mã · Nhóm (màu theo scanner_group) · Hướng (kèm score gap) · Chế độ TT (regime) · Entry (trong/gần/xa vùng) · M15 (chặt/lỏng/không đạt) · Điểm (opportunity_score, tooltip breakdown) · R:R (dạng "5.6 (2.9–5.6)" — best + dải worst–best từ `risk_reward_range`) · Vĩ mô (thuận/trung tính/ngược) · nút Xem chi tiết.
+Cột hiển thị: STT (rank) · Mã · Nhóm · Hướng · Chế độ TT · Entry · M15 · Điểm · R:R thực · Vĩ mô · nút Xem chi tiết. Cột R:R chính vẫn hiển thị `expected_effective_rr` best-case để tương thích; gate/ranking/sort dùng base-case. Order dialog hiển thị best range và tooltip breakdown best/base/current.
 
 **Lưu ý về fallback scenario:** khi pipeline không tìm được zone SMC/technical thật, hệ thống vẫn tạo 1 scenario "giả" để tham khảo (`entry_zone_source = "fallback"`, RR cố định 1:2.0 dựa trên ATR). Row này **vẫn hiển thị trong bảng** nhưng **luôn bị chặn** khỏi auto-trade, "Hiển thị lệnh", và Telegram alert.
 
 Click vào 1 row → mở `ScannerDetailScreen`, load biểu đồ (nến H1 + EMA + SMC zone + Entry/SL/TP) và các card thông tin: best_score, buy/sell, final_score, gap, macro, RR, entry_status, vị trí giá, M15, regime, permission, journal.
+
+Nếu RR thiếu ở row phẳng, Scanner Detail fallback sang scenario khớp `best_side`. Có entry nhưng không có TP1 thật thì hiển thị `N/A` và giải thích chưa có TP1 hợp lệ, thay vì hiển thị một RR giả.
+
+Khi auto-entry thực thi, controller lấy live ask/bid, re-check entry zone và
+`current_effective_rr`. Giá ngoài zone hoặc RR thấp hơn `min_rr` bị skip và ghi
+vào `auto_trade_results.diagnostics`. Manual order áp dụng cùng guard, dùng
+`order_entry_fallback` khi không lấy được live price.
 
 ---
 

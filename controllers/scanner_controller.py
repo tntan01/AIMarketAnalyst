@@ -22,6 +22,7 @@ from core.scanner_ai_auditor import (
     build_ai_setup_audit_prompt,
     parse_ai_setup_audit,
 )
+from core.scanner_ranking_engine import _find_scenario_for_side
 from core.scanner_session_review import build_market_brief_prompt
 from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot, calculate_current_effective_rr
@@ -347,6 +348,18 @@ class ScannerController:
             if trade_side not in ("buy", "sell"):
                 trade_side = str(row.get("best_side") or "")
             scenario = self._best_scenario(row, force_side=trade_side)
+            entry_zone = self._final_execution_zone(scenario)
+            if entry_zone is None:
+                skipped += 1
+                errors.append(f"{symbol}: thiếu final execution entry zone, bỏ qua auto trade.")
+                diagnostics.append(_diag(
+                    symbol=symbol,
+                    broker_symbol=broker_symbol,
+                    side=trade_side,
+                    decision="skip_missing_entry_zone",
+                    reason="thiếu final execution entry zone",
+                ))
+                continue
             sizing = scenario.get("position_sizing", {}) if isinstance(scenario.get("position_sizing"), dict) else {}
             take_profit = scenario.get("take_profit")
             first_tp = take_profit[0] if isinstance(take_profit, list) and take_profit else take_profit
@@ -369,11 +382,7 @@ class ScannerController:
             # về suggested_lot từ scan (đã được tính đúng lúc MT5 còn kết nối).
             try:
                 settings = self.settings_service.load()
-                entry_zone = scenario.get("entry_zone")
-                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                    entry_price = (float(entry_zone[0]) + float(entry_zone[1])) / 2
-                else:
-                    entry_price = 0.0
+                entry_price = (entry_zone[0] + entry_zone[1]) / 2
                 if entry_price <= 0:
                     current = self.mt5.current_price(symbol, trade_side)
                     entry_price = float(current) if current else 0.0
@@ -453,15 +462,7 @@ class ScannerController:
                     continue
 
                 # --- Phase 5B: live-price entry zone + current RR guard ---
-                entry_zone = scenario.get("entry_zone")
-                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                    try:
-                        entry_low = float(entry_zone[0])
-                        entry_high = float(entry_zone[1])
-                    except (TypeError, ValueError):
-                        entry_low = entry_high = 0.0
-                else:
-                    entry_low = entry_high = 0.0
+                entry_low, entry_high = entry_zone
 
                 # Current effective RR guard (Phase 5B) — cfg_min_rr computed early for diagnostics
                 cfg_min_rr = float(at_cfg.get("min_rr", 0) or 0) if at_cfg else 0.0
@@ -566,6 +567,19 @@ class ScannerController:
                     comment=f"AMA {symbol}",
                 )
                 payload = asdict(order) if hasattr(order, "__dataclass_fields__") else dict(order)
+                payload.update({
+                    "entry_zone": list(entry_zone),
+                    "source_zone": scenario.get("source_zone"),
+                    "structural_execution_zone": scenario.get("structural_execution_zone"),
+                    "rr_trimmed": scenario.get("rr_trimmed", False),
+                    "rr_trim_diagnostics": scenario.get("rr_trim_diagnostics"),
+                    "entry_zone_width": scenario.get("entry_zone_width"),
+                    "entry_zone_width_atr": scenario.get("entry_zone_width_atr"),
+                    "price_digits": scenario.get("price_digits"),
+                    "risk_reward": scenario.get("risk_reward"),
+                    "risk_reward_range": scenario.get("risk_reward_range"),
+                    "expected_effective_rr_base": scenario.get("expected_effective_rr_base"),
+                })
                 results.append(payload)
                 if payload.get("success"):
                     opened += 1
@@ -654,11 +668,12 @@ class ScannerController:
             return False
 
         if at_cfg is None:
+            scenario = self._best_scenario(row)
             # No per-symbol config — fall back to original strict criteria
             return (
                 row.get("scanner_action") == "ready"
                 and row.get("trade_permission") == "allowed"
-                and bool(self._best_scenario(row))
+                and self._final_execution_zone(scenario) is not None
             )
 
         # Backtest-proven per-symbol filters
@@ -668,8 +683,14 @@ class ScannerController:
 
         if cfg_regime and str(row.get("market_regime", "")).strip().lower() != cfg_regime:
             return False
+        trade_side = cfg_side if cfg_side in ("buy", "sell") else row.get("best_side")
+        scenario = self._best_scenario(row, force_side=str(trade_side or ""))
+        if self._final_execution_zone(scenario) is None:
+            return False
         if cfg_min_rr > 0:
-            expected_rr = _safe_float_for_auto(row.get("expected_effective_rr"))
+            expected_rr = _safe_float_for_auto(
+                scenario.get("expected_effective_rr")
+            )
             if expected_rr is None or expected_rr < cfg_min_rr:
                 return False
         best_score = int(row.get("best_score", 0) or 0)
@@ -678,9 +699,7 @@ class ScannerController:
         if best_score < effective_min_score:
             return False
 
-        # Determine trade side: config override or fall back to best_side
-        trade_side = cfg_side if cfg_side in ("buy", "sell") else row.get("best_side")
-        return bool(self._best_scenario(row, force_side=trade_side))
+        return True
 
     def _best_scenario(self, row: dict[str, Any], *, force_side: str | None = None) -> dict[str, Any]:
         analysis = row.get("analysis_result", {})
@@ -689,21 +708,31 @@ class ScannerController:
         scenarios = analysis.get("scenarios", [])
         if not isinstance(scenarios, list):
             return {}
-        side = force_side or row.get("best_side")
-        for scenario in scenarios:
-            if isinstance(scenario, dict) and scenario.get("type") == side:
-                if scenario.get("entry_zone_source") == "fallback":
-                    continue
-                return scenario
-        # Fallback: if forced side not found, try best_side
-        if force_side:
-            fallback_side = row.get("best_side")
-            for scenario in scenarios:
-                if isinstance(scenario, dict) and scenario.get("type") == fallback_side:
-                    if scenario.get("entry_zone_source") == "fallback":
-                        continue
-                    return scenario
-        return {}
+        side = str(force_side or row.get("best_side") or "")
+        scenario = _find_scenario_for_side(
+            scenarios,
+            side,
+            fallback_to_first=False,
+        )
+        if not isinstance(scenario, dict):
+            return {}
+        if scenario.get("entry_zone_source") == "fallback":
+            return {}
+        return scenario
+
+    @staticmethod
+    def _final_execution_zone(
+        scenario: dict[str, Any],
+    ) -> tuple[float, float] | None:
+        """Return only the final entry_zone; source bounds never authorize orders."""
+        zone = scenario.get("entry_zone") if isinstance(scenario, dict) else None
+        if not isinstance(zone, list) or len(zone) != 2:
+            return None
+        try:
+            low, high = float(zone[0]), float(zone[1])
+        except (TypeError, ValueError):
+            return None
+        return (low, high) if 0 < low < high else None
 
     def _get_alert_order_candidates(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter scanner rows using the SAME gates as the 'Hiển thị lệnh' dialog.
@@ -733,6 +762,12 @@ class ScannerController:
                 continue
 
             symbol = str(row.get("symbol", "--"))
+            scenario = self._best_scenario(row)
+            if not scenario:
+                continue
+            final_zone = self._final_execution_zone(scenario)
+            if final_zone is None:
+                continue
 
             # --- Backtest config gate (same as _build_order_rows) ---
             if settings:
@@ -753,7 +788,7 @@ class ScannerController:
 
                     cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
                     if cfg_min_rr > 0:
-                        row_rr = row.get("expected_effective_rr")
+                        row_rr = scenario.get("expected_effective_rr")
                         try:
                             row_rr_f = float(row_rr) if row_rr is not None else 0.0
                         except (TypeError, ValueError):
@@ -767,24 +802,14 @@ class ScannerController:
                         if best_score < cfg_min_score:
                             continue
 
-            scenarios = analysis.get("scenarios", [])
-            if not isinstance(scenarios, list):
-                continue
-            scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
-            if not scenario:
-                continue
-            if scenario.get("entry_zone_source") == "fallback":
-                continue
-
-            entry_zone = scenario.get("entry_zone")
-            if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                entry_low = float(entry_zone[0])
-                entry_high = float(entry_zone[1])
-                ep = scenario.get("entry_price")
-                entry_price = float(ep) if ep is not None else (entry_high if best_side == "buy" else entry_low)
-            else:
-                entry_low = entry_high = 0.0
-                entry_price = None
+            entry_low, entry_high = final_zone
+            entry_zone = [entry_low, entry_high]
+            ep = scenario.get("entry_price")
+            entry_price = (
+                float(ep)
+                if ep is not None
+                else (entry_high if best_side == "buy" else entry_low)
+            )
 
             # --- Entry zone check: price must be inside entry zone ---
             technical = analysis.get("technical", {}) if isinstance(analysis, dict) else {}
@@ -846,7 +871,17 @@ class ScannerController:
                 "entry_low": entry_low,
                 "entry_high": entry_high,
                 "market_regime": str(row.get("market_regime", "")),
-                "expected_effective_rr": row.get("expected_effective_rr"),
+                "expected_effective_rr": scenario.get("expected_effective_rr"),
+                "expected_effective_rr_base": scenario.get("expected_effective_rr_base"),
+                "expected_effective_rr_worst": scenario.get("expected_effective_rr_worst"),
+                "source_zone": scenario.get("source_zone"),
+                "structural_execution_zone": scenario.get("structural_execution_zone"),
+                "rr_trimmed": scenario.get("rr_trimmed", False),
+                "rr_trim_diagnostics": scenario.get("rr_trim_diagnostics"),
+                "entry_zone_width": scenario.get("entry_zone_width"),
+                "entry_zone_width_atr": scenario.get("entry_zone_width_atr"),
+                "price_digits": scenario.get("price_digits"),
+                "invalid_reason": scenario.get("invalid_reason"),
                 "best_score": int(row.get("best_score", 0) or 0),
                 "scanner_action": str(row.get("scanner_action", "")),
                 "trade_permission": str(row.get("trade_permission", "")),

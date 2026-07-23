@@ -185,7 +185,7 @@ class TestOrderDialogRRContract:
             "current_price_in_entry_zone": True,
         }
         tip = format_order_entry_tooltip(order)
-        assert "Zone: [1.09700 – 1.09900]" in tip
+        assert "Execution: [1.09700 - 1.09900]" in tip
         assert "Live: 1.09850 (in zone)" in tip
 
     def test_entry_tooltip_out_of_zone(self):
