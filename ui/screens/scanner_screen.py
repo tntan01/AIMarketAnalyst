@@ -211,7 +211,12 @@ class ScannerTableModel (QAbstractTableModel ):
         return not self._has_real_plan(row)
 
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
-        if self._is_fallback_row(row) and key in {"price_vs_zone","m15_quality","macro_bias"}:
+        if self._is_fallback_row(row) and key in {
+            "price_vs_zone",
+            "m15_quality",
+            "macro_bias",
+            "expected_effective_rr",
+        }:
             return "--"
         if key =="candidate_status":
             return self.STATUS_TEXT.get(str(value or "").upper(), str(value or "--"))

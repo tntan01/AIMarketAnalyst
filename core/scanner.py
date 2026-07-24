@@ -269,6 +269,33 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "stop_loss": best_plan.get("stop_loss") if best_plan else None,
         "take_profit": best_plan.get("take_profit") if best_plan else None,
         "entry_zone": best_plan.get("entry_zone") if best_plan else None,
+        "execution_zone": (
+            best_plan.get("execution_zone") if best_plan else None
+        ),
+        "structural_execution_zone": (
+            best_plan.get("structural_execution_zone")
+            if best_plan else None
+        ),
+        "rr_valid_zone": (
+            best_plan.get("rr_valid_zone") if best_plan else None
+        ),
+        "rr_trimmed": (
+            bool(best_plan.get("rr_trimmed")) if best_plan else False
+        ),
+        "rr_trim_diagnostics": (
+            best_plan.get("rr_trim_diagnostics") if best_plan else None
+        ),
+        "execution_zone_quality": (
+            best_plan.get("execution_zone_quality")
+            if best_plan else None
+        ),
+        "execution_zone_width_atr_target": (
+            best_plan.get("execution_zone_width_atr_target")
+            if best_plan else None
+        ),
+        "price_digits": (
+            best_plan.get("price_digits") if best_plan else None
+        ),
         "selected_zone_id": (
             best_plan.get("entry_zone_id") if best_plan else None
         ),

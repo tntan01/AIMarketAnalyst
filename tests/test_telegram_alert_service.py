@@ -123,7 +123,7 @@ def test_summary_candidate_line_does_not_show_rr():
     # Summary line format: "{status} {symbol} | {side} | Điểm: {score}/100 | Entry: {entry} | SL: {sl}"
     assert "EUR/USD" in line
     assert "MUA" in line
-    assert "Điểm: 80/100" in line
+    assert "Setup: 80/100" in line
     # RR must NOT appear in the summary candidate line
     assert "1:2.5" not in line
     assert "1.8" not in line

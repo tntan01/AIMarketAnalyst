@@ -661,6 +661,11 @@ class AnalysisPipeline:
             self._market_regime.get("primary")
             if isinstance(self._market_regime, dict) else None
         )
+        smc_consumer_contract = getattr(
+            self,
+            "_smc_consumer_contract",
+            {},
+        )
         self._journal_feedback_by_side = {
             side: build_journal_feedback(
                 self._closed_trades,
@@ -668,11 +673,11 @@ class AnalysisPipeline:
                 direction=side,
                 regime=regime_key,
                 zone_score=side_consumer_metadata(
-                    self._smc_consumer_contract,
+                    smc_consumer_contract,
                     side,
                 ).get("selected_zone_setup_score"),
                 zone_scoring_version=side_consumer_metadata(
-                    self._smc_consumer_contract,
+                    smc_consumer_contract,
                     side,
                 ).get("scoring_version"),
             )
@@ -693,18 +698,20 @@ class AnalysisPipeline:
         # --- gate context ---------------------------------------------------
         # Gate data must belong to the selected side.  Missing selected-side
         # data intentionally yields a non-ready/fail-closed gate result.
-        _gate_scenario = (
-            self._primary_scenario
-            if isinstance(self._primary_scenario, dict)
-            else {}
-        )
-        _gate_zone = side_consumer_metadata(
-            self._smc_consumer_contract,
+        _gate_scenario = _find_scenario(
+            self._scenarios,
             self._best_side,
         )
+        _gate_zone = side_consumer_metadata(
+            smc_consumer_contract,
+            self._best_side,
+        )
+        smc_context = getattr(self, "_smc", {})
+        if not isinstance(smc_context, dict):
+            smc_context = {}
         _h4_smc = (
-            self._smc.get("H4")
-            if isinstance(self._smc.get("H4"), dict)
+            smc_context.get("H4")
+            if isinstance(smc_context.get("H4"), dict)
             else {}
         )
         _opposite_displacement = (

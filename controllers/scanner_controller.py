@@ -29,6 +29,7 @@ from core.backtest_config import serialize_backtest_config
 from core.execution_revalidation_engine import revalidate_execution
 from core.portfolio_risk_engine import evaluate_portfolio_risk
 from core.scanner_candidate_engine import build_candidate_order_payload
+from core.scanner_ranking_engine import _find_scenario_for_side
 from core.scanner_session_review import build_market_brief_prompt
 from core.scanner_observability import (
     SCANNER_OBSERVABILITY_VERSION,
@@ -1080,6 +1081,7 @@ class ScannerController:
 
         results: list[dict[str, Any]] = []
         errors: list[str] = []
+        diagnostics: list[dict[str, Any]] = []
         attempted = opened = skipped = rollout_blocked = 0
         for row in rows:
             symbol = str(row.get("symbol") or "--")
@@ -1232,7 +1234,65 @@ class ScannerController:
         for row in rows:
             stored = row.get("candidate_order_payload")
             if not isinstance(stored, dict):
-                continue
+                # Compatibility for old snapshots created before the
+                # canonical payload was persisted. This path only prepares an
+                # alert/preview payload and never grants execution permission.
+                scenario = self._best_scenario(row)
+                final_zone = self._final_execution_zone(scenario)
+                if not scenario or final_zone is None:
+                    continue
+                raw_tp = scenario.get("take_profit")
+                take_profit = (
+                    raw_tp[0]
+                    if isinstance(raw_tp, list) and raw_tp
+                    else raw_tp
+                )
+                sizing = scenario.get("position_sizing")
+                if not isinstance(sizing, dict):
+                    sizing = {}
+                stored = {
+                    "symbol": str(row.get("symbol") or "--"),
+                    "broker_symbol": str(
+                        row.get("broker_symbol") or ""
+                    ).strip(),
+                    "side": str(
+                        scenario.get("type")
+                        or scenario.get("side")
+                        or ""
+                    ).lower(),
+                    "entry_zone": list(final_zone),
+                    "entry_price": scenario.get("entry_price"),
+                    "stop_loss": scenario.get("stop_loss"),
+                    "take_profit": take_profit,
+                    "volume": sizing.get("suggested_lot"),
+                    "risk_reward": scenario.get("risk_reward"),
+                    "risk_reward_range": scenario.get(
+                        "risk_reward_range"
+                    ),
+                    "expected_effective_rr": scenario.get(
+                        "expected_effective_rr"
+                    ),
+                    "expected_effective_rr_base": scenario.get(
+                        "expected_effective_rr_base"
+                    ),
+                    "source_zone": scenario.get("source_zone"),
+                    "structural_execution_zone": scenario.get(
+                        "structural_execution_zone"
+                    ),
+                    "rr_trimmed": bool(scenario.get("rr_trimmed")),
+                    "rr_trim_diagnostics": scenario.get(
+                        "rr_trim_diagnostics"
+                    ),
+                    "entry_zone_width": scenario.get(
+                        "entry_zone_width"
+                    ),
+                    "entry_zone_width_atr": scenario.get(
+                        "entry_zone_width_atr"
+                    ),
+                    "price_digits": scenario.get("price_digits"),
+                    "invalid_reason": scenario.get("invalid_reason"),
+                    "analysis_result": row.get("analysis_result"),
+                }
             payload = dict(stored)
             payload.update({
                 "rank": row.get("rank"),
@@ -1248,6 +1308,54 @@ class ScannerController:
             candidates.append(payload)
 
         return candidates
+
+    def _best_scenario(
+        self,
+        row: dict[str, Any],
+        *,
+        force_side: str | None = None,
+    ) -> dict[str, Any]:
+        """Compatibility selector that never borrows the opposite side."""
+
+        analysis = row.get("analysis_result")
+        scenarios = (
+            analysis.get("scenarios")
+            if isinstance(analysis, dict)
+            else None
+        )
+        if not isinstance(scenarios, list):
+            return {}
+        side = str(
+            force_side
+            or row.get("selected_side")
+            or row.get("best_side")
+            or ""
+        ).strip().lower()
+        scenario = _find_scenario_for_side(
+            scenarios,
+            side,
+            fallback_to_first=side not in {"buy", "sell"},
+        )
+        return scenario if isinstance(scenario, dict) else {}
+
+    @staticmethod
+    def _final_execution_zone(
+        scenario: dict[str, Any],
+    ) -> tuple[float, float] | None:
+        """Return the final entry zone; source bounds are reference-only."""
+
+        zone = (
+            scenario.get("entry_zone")
+            if isinstance(scenario, dict)
+            else None
+        )
+        if not isinstance(zone, (list, tuple)) or len(zone) != 2:
+            return None
+        try:
+            low, high = sorted((float(zone[0]), float(zone[1])))
+        except (TypeError, ValueError):
+            return None
+        return (low, high) if 0 < low < high else None
 
     @staticmethod
     def _settings_auto_trade_config(settings: object, symbol: str) -> dict[str, object] | None:

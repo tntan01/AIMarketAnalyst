@@ -152,6 +152,24 @@ def build_candidate_order_payload(
             scenario.get("risk_reward_range") or row.get("risk_reward_range")
         ),
         "entry_zone": [entry_low, entry_high],
+        "execution_zone": scenario.get("execution_zone"),
+        "structural_execution_zone": scenario.get(
+            "structural_execution_zone"
+        ),
+        "rr_valid_zone": scenario.get("rr_valid_zone"),
+        "rr_trimmed": bool(scenario.get("rr_trimmed")),
+        "rr_trim_diagnostics": scenario.get("rr_trim_diagnostics"),
+        "execution_zone_quality": scenario.get(
+            "execution_zone_quality"
+        ),
+        "execution_zone_width_atr_target": scenario.get(
+            "execution_zone_width_atr_target"
+        ),
+        "entry_zone_width": scenario.get("entry_zone_width"),
+        "entry_zone_width_atr": scenario.get("entry_zone_width_atr"),
+        "source_zone": scenario.get("source_zone"),
+        "price_digits": scenario.get("price_digits"),
+        "invalid_reason": scenario.get("invalid_reason"),
         "selected_zone_id": scenario.get("entry_zone_id"),
         "entry_zone_id": scenario.get("entry_zone_id"),
         "entry_zone_score": scenario.get("entry_zone_score"),

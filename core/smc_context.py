@@ -1464,9 +1464,42 @@ def get_preferred_zone(
             timeframe="H4",
             direction=direction,
         )
-        return SelectedSmcZone.from_zone(zone_model).to_dict(
+        selected = SelectedSmcZone.from_zone(zone_model).to_dict(
             include_compatibility=True
         )
+        selected.update({
+            "effective_zone_score": zone["effective_zone_score"],
+            "effective_zone_score_breakdown": zone[
+                "effective_zone_score_breakdown"
+            ],
+            "selection_status": (
+                "watch_only_fallback"
+                if watch_only_fallback
+                else "preferred"
+            ),
+            "selection_reason": selection_reason,
+            "watch_only_fallback": watch_only_fallback,
+            "selection_distance": (
+                round(float(zone["_selection_distance"]), 8)
+                if price_value is not None
+                else None
+            ),
+            "source_zone_width_atr": zone[
+                "effective_zone_score_breakdown"
+            ].get("source_zone_width_atr"),
+            "strength": zone.get("strength"),
+            "stale": zone.get("stale"),
+            "mitigated": zone.get("mitigated"),
+            "broken": zone.get("broken"),
+            "test_count": zone.get("test_count"),
+            "freshness_bars": zone.get("freshness_bars"),
+            "displacement_multiple": zone.get(
+                "displacement_multiple"
+            ),
+            "liquidity_sweep": zone.get("liquidity_sweep"),
+            "zone_location": zone.get("zone_location"),
+        })
+        return selected
     except (TypeError, ValueError):
         return None
 

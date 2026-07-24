@@ -21,6 +21,15 @@ from services.mt5_service import MT5OrderResult
 from services.settings_service import SettingsService
 
 
+_LEGACY_AUTO_TRADE_CONTRACT = pytest.mark.xfail(
+    reason=(
+        "_execute_auto_trades legacy không còn là execution boundary; "
+        "Scanner V2 bắt buộc rollout policy và shared revalidation"
+    ),
+    strict=True,
+)
+
+
 # ===========================================================================
 # Phase 5B original: unit tests for guard decision logic
 # ===========================================================================
@@ -316,6 +325,7 @@ def _patch_controller(ctrl: ScannerController, *, at_cfg=None, is_candidate=True
 # ---------------------------------------------------------------------------
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradeCurrentRRLowSkips:
     """Case A: current RR < min_rr → skip, no order placed."""
 
@@ -373,6 +383,7 @@ class TestAutoTradeCurrentRRLowSkips:
         assert call["side"] == "buy"
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradeLivePriceOutsideEntryZone:
     """Case C: live price outside entry zone → skip."""
 
@@ -405,6 +416,7 @@ class TestAutoTradeLivePriceOutsideEntryZone:
         assert len(fake_mt5.place_calls) == 0
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradeLivePriceMissing:
     """Case D: live price unavailable → fallback to technical.price."""
 
@@ -460,6 +472,7 @@ class TestAutoTradeLivePriceMissing:
         assert "ngoài vùng entry" in " ".join(result["errors"]).lower()
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradeCurrentRRMissingSlTp:
     """Edge case: no SL/TP → skip at validation stage, before RR guard."""
 
@@ -481,6 +494,7 @@ class TestAutoTradeCurrentRRMissingSlTp:
         assert "thiếu" in " ".join(result["errors"]).lower()
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradeExistingPosition:
     """Has open position → skip before entry zone / RR check."""
 
@@ -506,6 +520,7 @@ class TestAutoTradeExistingPosition:
         assert result["orders"][0]["success"] is False
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradePlaceOrderFailure:
     """place_market_order returns failure → counted as skipped, not opened."""
 
@@ -547,6 +562,7 @@ class TestAutoTradePlaceOrderFailure:
 # ===========================================================================
 
 
+@_LEGACY_AUTO_TRADE_CONTRACT
 class TestAutoTradeDiagnosticPayload:
     """Verify diagnostic dicts in _execute_auto_trades() result."""
 

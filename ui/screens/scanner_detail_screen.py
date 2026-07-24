@@ -463,13 +463,19 @@ class ScannerDetailScreen(QWidget):
     def _effective_rr(self) -> float | None:
         strategy = self._candidate_strategy()
         side_eval = self._selected_side_evaluation()
+        scenario = self._selected_scenario()
         values = (
             (
                 strategy.get("expected_effective_rr"),
                 side_eval.get("expected_effective_rr"),
             )
             if self._candidate_decision()
-            else (self.row.get("expected_effective_rr"),)
+            else (
+                self.row.get("expected_effective_rr_base"),
+                scenario.get("expected_effective_rr_base"),
+                self.row.get("expected_effective_rr"),
+                scenario.get("expected_effective_rr"),
+            )
         )
         for value in values:
             number = self._number(value)
@@ -1216,10 +1222,23 @@ class ScannerDetailScreen(QWidget):
             rr = scenario.get("risk_reward") or "--"
             rr_range = scenario.get("risk_reward_range")
         else:
-            rr = self.row.get("risk_reward") or "--"
-            rr_range = self.row.get("risk_reward_range")
+            rr = self._rr_main_text()
+            rr_range = self._rr_field("risk_reward_range")
         eff_rr = self._effective_rr()
         min_rr = self._required_min_rr()
+        if not self._candidate_decision():
+            if rr == "N/A":
+                return (
+                    "N/A",
+                    "Chưa có TP1 hợp lệ để tính R:R.",
+                    "#94a3b8",
+                )
+            detail = f"danh nghĩa {rr}"
+            if eff_rr is not None:
+                detail += f"; base sau spread ~{eff_rr:.1f}"
+            if min_rr is not None:
+                detail += f"; tối thiểu {min_rr:.2f}"
+            return str(rr), detail, "#ea580c"
         primary = (
             f"{eff_rr:.2f}"
             if eff_rr is not None
@@ -2080,7 +2099,7 @@ class ScannerDetailScreen(QWidget):
         items.append(_item(
             rr_state,
             f"R:R sau spread/chi phí: "
-            f"{self._score_text(effective_rr)}/"
+            f"{self._score_text(effective_rr) if decision else self._rr_main_text()}/"
             f"{self._score_text(min_rr)}",
         ))
 

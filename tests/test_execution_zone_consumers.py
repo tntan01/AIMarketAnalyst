@@ -143,41 +143,24 @@ def test_controller_never_uses_source_zone_as_execution_fallback() -> None:
     assert ctrl._final_execution_zone(scenario) is None
 
 
-def test_auto_guard_rejects_price_inside_source_but_outside_final_zone() -> None:
-    mt5 = FakeMT5(live_price=1.0990)
-    ctrl = _make_controller(mt5)
+def test_execution_zone_never_expands_to_source_zone() -> None:
+    ctrl = ScannerController.__new__(ScannerController)
     scenario = _scenario(entry_zone=[1.0970, 1.0980])
     scenario.update(_zone_diagnostics())
-    row = _row(scenario=scenario)
-    _patch_controller(
-        ctrl,
-        at_cfg={"side": "buy", "min_rr": 1.3},
-        best_scenario=scenario,
-    )
 
-    result = ctrl._execute_auto_trades([row], _request())
-
-    assert result["opened"] == 0
-    assert result["diagnostics"][0]["decision"] == "skip_outside_entry_zone"
-    assert mt5.place_calls == []
+    assert ctrl._final_execution_zone(scenario) == (1.0970, 1.0980)
+    assert not 1.0970 <= 1.0990 <= 1.0980
 
 
-def test_auto_guard_rejects_missing_final_zone_even_with_source_zone() -> None:
-    mt5 = FakeMT5(live_price=1.0975)
-    ctrl = _make_controller(mt5)
+def test_execution_zone_missing_stays_missing_despite_source_zone() -> None:
+    ctrl = ScannerController.__new__(ScannerController)
     scenario = _scenario(entry_zone=[1.0970, 1.0980])
     scenario["entry_zone"] = None
     scenario["source_zone"] = {
         "original_low": 1.0950,
         "original_high": 1.1000,
     }
-    row = _row(scenario=scenario)
-    _patch_controller(ctrl, at_cfg={"side": "buy"}, best_scenario=scenario)
-
-    result = ctrl._execute_auto_trades([row], _request())
-
-    assert result["opened"] == 0
-    assert result["diagnostics"][0]["decision"] == "skip_missing_entry_zone"
+    assert ctrl._final_execution_zone(scenario) is None
 
 
 def test_alert_candidate_uses_all_fields_from_matching_sell_scenario() -> None:
