@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from controllers.scanner_controller import ScannerController
 from core.portfolio_models import PortfolioRiskItem, PortfolioSnapshot
 from core.scanner_models import ExecutionMarketSnapshot
+from config.settings import ScannerRolloutSettings
 
 
 def _settings():
@@ -178,6 +179,46 @@ def test_controller_revalidates_then_places_with_live_price_sizing():
     assert result["portfolio_guard"]["allowed"] is True
     assert "post_trade_portfolio" in result
     assert mt5.portfolio_snapshot_calls == 2
+
+
+def test_manual_order_bypasses_only_missing_release_evidence():
+    class _ProductionSettingsService:
+        def __init__(self) -> None:
+            self.settings = _settings()
+            self.settings.scanner_rollout = ScannerRolloutSettings(
+                stage="PRODUCTION",
+                production_approved=True,
+            )
+
+        def load(self):
+            return self.settings
+
+    class _NotReadyMetrics:
+        def readiness(self, _settings):
+            return {"ready": False}
+
+        def canary_readiness(self, _settings):
+            return {"ready": False}
+
+    mt5 = _MT5()
+    controller = ScannerController(
+        settings_service=_ProductionSettingsService(),
+        mt5=mt5,
+        news_service=_News(),
+        journal_service=_Journal(),
+    )
+    controller.rollout_metrics = _NotReadyMetrics()
+
+    blocked = controller.execute_order_candidate(_proposal())
+    result = controller.execute_order_candidate(
+        _proposal(),
+        manual_release_gate_override=True,
+    )
+
+    assert blocked["success"] is False
+    assert blocked["rollout"]["reason_codes"] == ["RELEASE_GATE_NOT_READY"]
+    assert result["success"] is True
+    assert len(mt5.place_calls) == 1
 
 
 def test_controller_does_not_place_when_realtime_news_is_unavailable():

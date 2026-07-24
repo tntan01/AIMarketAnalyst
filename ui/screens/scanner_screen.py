@@ -46,15 +46,14 @@ class ScannerTableModel (QAbstractTableModel ):
     ("symbol","Mã"),
     ("candidate_status","Trạng thái"),
     ("selected_side","Hướng"),
-    ("market_regime","Chế độ TT"),
-    ("setup_score","Setup"),
-    ("opportunity_rank","Cơ hội"),
-    ("evidence_confidence","Bằng chứng"),
-    ("execution_readiness","Thực thi"),
-    ("expected_effective_rr","R:R thực"),
-    ("auto_trade_branch","Nhánh"),
-    ("strategy_config_status","Config"),
-    ("detail_action","Chi tiết"),
+    ("market_regime","Bối cảnh TT"),
+    ("setup_score","Điểm thiết lập"),
+    ("opportunity_rank","Ưu tiên"),
+    ("evidence_confidence","Tin cậy LS"),
+    ("execution_readiness","Sẵn sàng"),
+    ("expected_effective_rr","R:R dự kiến"),
+    ("auto_trade_branch","Quy tắc"),
+    ("strategy_config_status","Cấu hình BT"),
     ]
 
     ACTION_TEXT ={"ready":'Sẵn sàng',"watch":'Theo dõi',"wait":'Chờ',"skip":'Bỏ qua'}
@@ -64,12 +63,12 @@ class ScannerTableModel (QAbstractTableModel ):
     ENTRY_ZONE_TEXT ={"in_zone":"Trong vùng","near_zone":"Gần vùng","far":"Còn xa","unknown":"Chưa có vùng"}
     GROUP_TEXT ={"ready_now":"Sẵn sàng ngay","waiting_confirmation":"Chờ xác nhận","watch_zone":"Theo dõi","blocked":"Bị chặn"}
     STATUS_TEXT ={
-        "READY_NOW":"Sẵn sàng",
+        "READY_NOW":"Đạt điều kiện",
         "WAITING_CONFIRMATION":"Chờ xác nhận",
-        "WATCH_ZONE":"Theo dõi",
-        "OUT_OF_STRATEGY":"Ngoài chiến lược",
-        "BLOCKED":"Bị chặn",
-        "DATA_UNAVAILABLE":"Thiếu dữ liệu",
+        "WATCH_ZONE":"Đang theo dõi",
+        "OUT_OF_STRATEGY":"Chưa đạt quy tắc",
+        "BLOCKED":"Bị chặn an toàn",
+        "DATA_UNAVAILABLE":"Không đủ dữ liệu",
     }
     ENTRY_STATUS_TEXT ={
         "confirmed_entry":"Đã xác nhận",
@@ -113,6 +112,8 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .ForegroundRole :
             return self ._foreground (row ,key )
         if role ==Qt .ItemDataRole .ToolTipRole :
+            if key =="candidate_status":
+                return self ._candidate_status_tooltip (row )
             if key =="direction_bias":
                 return self ._direction_bias_tooltip (value )
             if key =="entry_status":
@@ -302,14 +303,134 @@ class ScannerTableModel (QAbstractTableModel ):
             return m15_map .get (str (value ),str (value or "--"))
         if key =="score_gap":
             return str (int (value ))if isinstance (value ,(int ,float ))else "--"
-        if key =="detail_action":
-            return "Xem"
         if key =="short_reason":
             text =str (value if value is not None else "--")
             if row is not None and bool (row .get ("ai_summary_available")):
                 return f"AI: {text }"
             return text 
         return str (value if value is not None else "--")
+
+    @staticmethod
+    def _strategy_gap_messages(
+        row: dict[str, object] | None,
+    ) -> tuple[str, ...]:
+        """Return concise user-facing reasons why the active rule is not met."""
+
+        if not isinstance(row, dict):
+            return ()
+        decision = (
+            row.get("scanner_candidate_decision")
+            if isinstance(row.get("scanner_candidate_decision"), dict)
+            else {}
+        )
+        strategy = (
+            decision.get("strategy")
+            if isinstance(decision.get("strategy"), dict)
+            else {}
+        )
+        codes: list[str] = []
+        for source in (
+            strategy.get("reason_codes"),
+            decision.get("reason_codes"),
+            row.get("auto_trade_reason_codes"),
+        ):
+            if not isinstance(source, (list, tuple)):
+                continue
+            for code in source:
+                normalized = str(code).strip()
+                if normalized and normalized not in codes:
+                    codes.append(normalized)
+
+        def number(value: object) -> float | None:
+            try:
+                return float(value)
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        setup = number(strategy.get("score_value", row.get("setup_score")))
+        min_setup = number(strategy.get("min_score", row.get("min_score")))
+        rr = number(
+            strategy.get(
+                "expected_effective_rr",
+                row.get("expected_effective_rr"),
+            )
+        )
+        min_rr = number(strategy.get("min_rr", row.get("min_rr")))
+        messages: list[str] = []
+
+        for code in codes:
+            if code in {
+                "SETUP_SCORE_BELOW_DEFAULT_MIN",
+                "SETUP_SCORE_BELOW_MIN",
+            }:
+                if setup is not None and min_setup is not None:
+                    message = (
+                        f"Điểm thiết lập {setup:.0f}/{min_setup:.0f}, "
+                        "chưa đạt ngưỡng."
+                    )
+                else:
+                    message = "Điểm thiết lập chưa đạt ngưỡng yêu cầu."
+            elif code in {"NO_TRADE_SIDE", "MISSING_SELECTED_SIDE"}:
+                message = "Chưa xác định được hướng Mua/Bán đủ điều kiện."
+            elif code in {"BEST_SIDE_NOT_CLEAR", "SCORE_GAP_BELOW_MIN"}:
+                message = "Chênh lệch điểm Mua/Bán chưa đủ rõ."
+            elif code in {
+                "MISSING_SIDE_EVALUATION",
+                "SETUP_SCORE_MISSING",
+            }:
+                message = "Chưa có đánh giá thiết lập hợp lệ cho hướng giao dịch."
+            elif code == "EXPECTED_RR_MISSING":
+                message = "Chưa có Entry, SL và TP hợp lệ để tính R:R dự kiến."
+            elif code in {
+                "EXPECTED_RR_BELOW_DEFAULT_MIN",
+                "EXPECTED_RR_BELOW_MIN",
+            }:
+                if rr is not None and min_rr is not None:
+                    message = (
+                        f"R:R dự kiến {rr:.1f}/{min_rr:.1f}, "
+                        "chưa đạt ngưỡng."
+                    )
+                else:
+                    message = "R:R dự kiến chưa đạt ngưỡng yêu cầu."
+            else:
+                translated = codes_to_messages([code])
+                message = translated[0] if translated else code
+                if message == code:
+                    continue
+            if message not in messages:
+                messages.append(message)
+        return tuple(messages)
+
+    def _candidate_status_tooltip(
+        self,
+        row: dict[str, object] | None,
+    ) -> str:
+        if not isinstance(row, dict):
+            return "--"
+        status = str(row.get("candidate_status") or "").strip().upper()
+        label = self.STATUS_TEXT.get(status, status or "--")
+        if status == "OUT_OF_STRATEGY":
+            headline = (
+                f"{label}: cặp vẫn được hỗ trợ nhưng chưa đáp ứng đủ "
+                "quy tắc giao dịch trong lần quét này."
+            )
+        elif status == "READY_NOW":
+            headline = (
+                f"{label}: đạt điều kiện tại lúc quét, chưa đồng nghĩa "
+                "lệnh chắc chắn được gửi."
+            )
+        else:
+            headline = label
+        details = list(self._strategy_gap_messages(row))
+        if not details:
+            fallback = str(
+                row.get("permission_reason")
+                or row.get("short_reason")
+                or ""
+            ).strip()
+            if fallback:
+                details.append(fallback)
+        return "\n".join([headline, *details[:4]])
 
     def _foreground (self ,row :dict [str ,object ],key :str ):
         if key =="candidate_status":
@@ -571,6 +692,7 @@ class ScannerScreen (QWidget ):
     # Dynamically resolved from COLUMNS
     SHORT_REASON_COL =12  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
+    TABLE_HEADER_HORIZONTAL_PADDING =40
     TABLE_EXTRA_COLUMN_PADDING ={1 :18 ,2 :18 ,8 :18 ,10 :18 ,12 :24}
     TABLE_REASON_HORIZONTAL_PADDING =30
     TABLE_MIN_REASON_WIDTH =150
@@ -689,8 +811,10 @@ class ScannerScreen (QWidget ):
         self .stop_auto_scan_button .setVisible (False )
         self .stop_auto_scan_button .clicked .connect (self ._stop_auto_scan )
 
-        self.show_orders_button = action_button("📋 Hiển thị lệnh", primary=True, color="info")
-        self.show_orders_button.setToolTip("Xem danh sách lệnh sẽ được vào / đã vào từ MT5")
+        self.show_orders_button = action_button("📋 Kế hoạch lệnh", primary=True, color="info")
+        self.show_orders_button.setToolTip(
+            "Xem ứng viên, kết quả kiểm tra và trạng thái gửi lệnh của lần quét gần nhất"
+        )
         self.show_orders_button.clicked.connect(self._show_orders_dialog)
         self._dim_show_orders_button()
 
@@ -738,17 +862,11 @@ class ScannerScreen (QWidget ):
         return frame
 
     def _update_status_summary (self )->None :
-        mt5 =self .status_labels .get ("MT5",QLabel ("--")).text ()
         scanned =self .status_labels .get ("Đã quét",QLabel ("--")).text ()
-        ai =self .status_labels .get ("AI đã gọi",QLabel ("--")).text ()
         last =self .status_labels .get ("Lần quét gần nhất",QLabel ("--")).text ()
-        rollout =self .status_labels .get ("Rollout",QLabel ("--")).text ()
-        parts =[f"MT5: {mt5 }",f"Đã quét: {scanned }",f"AI: {ai }"]
-        if rollout not in ("--",""):
-            parts .append (f"Rollout: {rollout }")
-        if last not in ("--",""):
-            parts .append (f"Lần quét: {last }")
-        self .status_summary_label .setText ("  •  ".join (parts ))
+        self .status_summary_label .setText (
+            f"Đã quét: {scanned}  •  Lần quét gần nhất: {last}"
+        )
 
     def _auto_trade_enabled (self )->bool :
         return bool (
@@ -805,16 +923,34 @@ class ScannerScreen (QWidget ):
         except Exception:
             light = False
 
-        auto_trade_enabled = self._auto_trade_enabled()
         auto_results = scan_result.get("auto_trade_results", {})
         if not isinstance(auto_results, dict):
             auto_results = {}
+        # Read the request captured by this scan result. The current button
+        # state may have changed after the scan and must not rewrite history.
+        auto_trade_enabled = auto_results.get("enabled") is True
 
         order_rows = self._build_order_rows(rows, auto_trade_enabled, auto_results)
         if not order_rows:
-            QMessageBox.information(self, "Hiển thị lệnh",
-                "Không có lệnh nào được khớp.\n"
-                "Kiểm tra lại điều kiện vào lệnh hoặc kết quả quét.")
+            if auto_trade_enabled:
+                attempted = int(auto_results.get("attempted", 0) or 0)
+                skipped = int(auto_results.get("skipped", 0) or 0)
+                rollout_blocked = int(
+                    auto_results.get("rollout_blocked", 0) or 0
+                )
+                message = (
+                    "Lần quét này không mở lệnh MT5 nào.\n"
+                    f"Đã kiểm tra: {attempted} • Bỏ qua: {skipped} • "
+                    f"Bị rollout chặn: {rollout_blocked}.\n"
+                    "Xem trạng thái và lý do của từng cặp trong bảng kết quả."
+                )
+            else:
+                message = (
+                    "Lần quét này không có ứng viên nào đủ dữ liệu để lập "
+                    "kế hoạch lệnh.\nXem cột Trạng thái và bấm Giải thích để "
+                    "biết điều kiện còn thiếu."
+                )
+            QMessageBox.information(self, "Kế hoạch lệnh", message)
             return
 
         # Build dialog
@@ -827,16 +963,14 @@ class ScannerScreen (QWidget ):
         rollout_stage = str(
             rollout_policy.get("stage", "") or ""
         ).upper()
-        rollout_blocks_orders = (
-            rollout_policy.get("kill_switch") is True
-            or rollout_stage in {"DISABLED", "SHADOW"}
-        )
+        opened = int(auto_results.get("opened", 0) or 0)
+        attempted = int(auto_results.get("attempted", 0) or 0)
+        skipped = int(auto_results.get("skipped", 0) or 0)
+        rollout_blocked = int(auto_results.get("rollout_blocked", 0) or 0)
         title_text = (
-            f"Kết quả rollout {rollout_stage}"
-            if rollout_blocks_orders
-            else "Lệnh đã vào MT5"
+            "Kết quả vào lệnh tự động"
             if auto_trade_enabled
-            else "Lệnh sẽ được khớp"
+            else "Kế hoạch lệnh có thể xem xét"
         )
         dlg.setWindowTitle(f"📋 {title_text}")
         dlg.setMinimumSize(940, 560)
@@ -861,6 +995,7 @@ class ScannerScreen (QWidget ):
                 execution = self.scanner_controller.execute_order_candidate(
                     order_info,
                     comment=f"AMA Manual {order_info.get('symbol') or '--'}",
+                    manual_release_gate_override=True,
                 )
             except Exception as exc:
                 execution = {
@@ -904,12 +1039,22 @@ class ScannerScreen (QWidget ):
                         for code in (*block_codes, *portfolio_codes)
                     )
                 )
+                user_reasons = self._user_facing_block_reasons(
+                    [*block_codes, *portfolio_codes]
+                )
+                reason_text = (
+                    "\n\nLý do:\n- " + "\n- ".join(user_reasons)
+                    if user_reasons
+                    else ""
+                )
                 QMessageBox.warning(
                     dlg,
                     "Không thể vào lệnh",
                     (
-                        f"{execution.get('message') or 'Lệnh không vượt qua cổng thực thi.'}"
-                        + (f"\n\nMã chặn: {detail}" if detail else "")
+                        "Lệnh chưa được gửi tới MT5 vì chưa vượt qua đầy đủ "
+                        "các bước kiểm tra."
+                        + reason_text
+                        + (f"\n\nMã kỹ thuật: {detail}" if detail else "")
                     ),
                 )
                 btn.setEnabled(True)
@@ -952,7 +1097,9 @@ class ScannerScreen (QWidget ):
         # Beautiful Header Card
         header_frame = QFrame()
         header_frame.setObjectName("PanelCard")
-        header_accent = "#10b981" if auto_trade_enabled else "#fb923c"
+        header_accent = (
+            "#10b981" if auto_trade_enabled and opened > 0 else "#fb923c"
+        )
         header_frame.setStyleSheet(
             f"QFrame#PanelCard {{"
             f"  border-left: 4px solid {header_accent};"
@@ -976,10 +1123,17 @@ class ScannerScreen (QWidget ):
         )
         
         subtitle_text = (
-            f"{len(order_rows)} lệnh được khớp từ kết quả quét thị trường."
+            (
+                f"Đã mở {opened}/{attempted} lệnh MT5 • Bỏ qua {skipped} • "
+                f"Rollout chặn {rollout_blocked} • Stage {rollout_stage or '--'}. "
+                "Các dòng bên dưới là kết quả xử lý, không mặc định là lệnh đã khớp."
+            )
             if auto_trade_enabled
-            else f"{len(order_rows)} lệnh dự kiến từ kết quả quét thị trường "
-                  f"(chưa vào MT5 vì chưa bật tự động vào lệnh)."
+            else (
+                f"{len(order_rows)} ứng viên có kế hoạch lệnh từ lần quét gần nhất. "
+                "Đây chưa phải lệnh đã gửi tới MT5; bấm Vào lệnh để hệ thống "
+                "kiểm tra lại toàn bộ điều kiện theo giá mới."
+            )
         )
         subtitle = QLabel(subtitle_text)
         subtitle.setObjectName("CardDetail")
@@ -1237,6 +1391,52 @@ class ScannerScreen (QWidget ):
             result.append(payload)
 
         return result
+
+    @staticmethod
+    def _user_facing_block_reasons(codes: list[object]) -> list[str]:
+        rollout_messages = {
+            "RELEASE_GATE_NOT_READY": (
+                "Cổng phát hành chưa đạt; hệ thống còn thiếu bằng chứng "
+                "vận hành bắt buộc."
+            ),
+            "PRODUCTION_APPROVAL_REQUIRED": (
+                "Chưa có phê duyệt cho giao dịch production."
+            ),
+            "SHADOW_MODE_ORDER_SUPPRESSED": (
+                "Hệ thống đang ở chế độ chỉ quan sát, không gửi lệnh."
+            ),
+            "ROLLOUT_KILL_SWITCH_ACTIVE": (
+                "Công tắc dừng khẩn cấp đang được bật."
+            ),
+            "DEMO_ACCOUNT_REQUIRED": (
+                "Giai đoạn hiện tại chỉ cho phép tài khoản demo."
+            ),
+            "CANARY_GATE_NOT_READY": (
+                "Giai đoạn canary chưa đủ điều kiện để gửi lệnh."
+            ),
+            "SYMBOL_NOT_IN_LIMITED_ROLLOUT": (
+                "Cặp này chưa nằm trong danh sách được phép ở giai đoạn giới hạn."
+            ),
+            "USER_AUTO_TRADE_DISABLED": (
+                "Người dùng chưa bật tự động vào lệnh cho lần quét này."
+            ),
+        }
+        normalized: list[str] = []
+        for value in codes:
+            code = str(value or "").strip()
+            if code and code not in normalized:
+                normalized.append(code)
+        translated = codes_to_messages(normalized)
+        messages: list[str] = []
+        for code, generic in zip(normalized, translated):
+            message = rollout_messages.get(code)
+            if message is None and generic != code:
+                message = generic
+            if message is None:
+                message = f"Một điều kiện an toàn chưa đạt ({code})."
+            if message not in messages:
+                messages.append(message)
+        return messages
 
     def _update_auto_trade_toggle_style (self )->None :
         if not hasattr (self ,"auto_trade_check"):
@@ -1572,9 +1772,9 @@ class ScannerScreen (QWidget ):
                 f"/{shadow_report.get('samples', 0)}"
             )
         rollout_text += (
-            ", gate đạt"
+            ", cổng phát hành đạt"
             if readiness.get("ready") is True
-            else ", gate chờ"
+            else ", cổng phát hành chưa đạt"
         )
         if "Rollout" in self.status_labels:
             self.status_labels["Rollout"].setText(rollout_text)
@@ -1627,9 +1827,6 @@ class ScannerScreen (QWidget ):
                 if symbol
                 else "Xem giải thích các thông số trong bảng"
             )
-        if index .column ()==len (ScannerTableModel .COLUMNS )-1 :
-            self ._open_row_detail (index .row ())
-
     def _table_double_clicked (self ,index :QModelIndex )->None :
         if index .isValid ():
             self ._open_row_detail (index .row ())
@@ -1829,17 +2026,16 @@ class ScannerScreen (QWidget ):
         column_configs = {
             "rank": {"weight": 0, "min_width": 45},
             "symbol": {"weight": 1, "min_width": 75},
-            "candidate_status": {"weight": 3, "min_width": 115},
+            "candidate_status": {"weight": 3, "min_width": 145},
             "selected_side": {"weight": 1, "min_width": 70},
-            "market_regime": {"weight": 3, "min_width": 95},
-            "setup_score": {"weight": 0, "min_width": 65},
-            "opportunity_rank": {"weight": 0, "min_width": 70},
-            "evidence_confidence": {"weight": 0, "min_width": 85},
-            "execution_readiness": {"weight": 0, "min_width": 75},
-            "expected_effective_rr": {"weight": 0, "min_width": 75},
-            "auto_trade_branch": {"weight": 2, "min_width": 85},
-            "strategy_config_status": {"weight": 2, "min_width": 90},
-            "detail_action": {"weight": 0, "min_width": 65},
+            "market_regime": {"weight": 3, "min_width": 110},
+            "setup_score": {"weight": 0, "min_width": 110},
+            "opportunity_rank": {"weight": 0, "min_width": 80},
+            "evidence_confidence": {"weight": 0, "min_width": 100},
+            "execution_readiness": {"weight": 0, "min_width": 90},
+            "expected_effective_rr": {"weight": 0, "min_width": 105},
+            "auto_trade_branch": {"weight": 2, "min_width": 90},
+            "strategy_config_status": {"weight": 2, "min_width": 105},
         }
 
         col_count = self.table_model.columnCount()
@@ -1896,7 +2092,12 @@ class ScannerScreen (QWidget ):
     def _content_width_for_column (self ,col :int ,padding :int )->int :
         header =self .table .horizontalHeader ()
         header_text =str (self .table_model .headerData (col ,Qt .Orientation .Horizontal )or "")
-        width =header .fontMetrics ().horizontalAdvance (header_text )+padding
+        # Header sections use bold text plus 8px QSS padding on both sides.
+        # Keep an additional safety margin so no title is elided at common DPI.
+        width =(
+            header .fontMetrics ().horizontalAdvance (header_text )
+            +self .TABLE_HEADER_HORIZONTAL_PADDING
+        )
         for row in range (self .table_model .rowCount ()):
             index =self .table_model .index (row ,col )
             text =str (self .table_model .data (index ,Qt .ItemDataRole .DisplayRole )or "")
@@ -2294,7 +2495,7 @@ class ScannerRowExplanationDialog(QDialog):
             return (
                 f"{display_value} là vị trí ưu tiên hiện tại của mã sau khi "
                 "phân loại trạng thái. Trong cùng trạng thái, hệ thống so sánh "
-                "Cơ hội, bằng chứng, mức sẵn sàng, R:R rồi mới dùng tên mã."
+                "Ưu tiên, tin cậy lịch sử, mức sẵn sàng, R:R rồi mới dùng tên mã."
             )
         if key == "symbol":
             broker_symbol = str(row.get("broker_symbol") or "").strip()
@@ -2417,7 +2618,7 @@ class ScannerRowExplanationDialog(QDialog):
             min_rr = self._strategy_threshold("min_rr", 1.3)
             if rr is None:
                 return (
-                    "Chưa tính được R:R thực do thiếu entry, SL hoặc TP hợp lệ."
+                    "Chưa tính được R:R dự kiến do thiếu Entry, SL hoặc TP hợp lệ."
                 )
             relation = "đạt" if rr >= min_rr else "chưa đạt"
             return (
@@ -2442,7 +2643,7 @@ class ScannerRowExplanationDialog(QDialog):
                     "Cấu hình kiểm chứng bị lỗi hoặc hết hiệu lực; cơ hội này "
                     "không được dùng để tự động vào lệnh."
                 )
-            return "Chưa xác định được nhánh chiến lược của mã này."
+            return "Chưa xác định được bộ quy tắc áp dụng cho cặp này."
         if key == "strategy_config_status":
             status = str(value or "").upper()
             meanings = {
@@ -2457,11 +2658,6 @@ class ScannerRowExplanationDialog(QDialog):
             return (
                 f"{display_value}: "
                 f"{meanings.get(status, 'chưa có mô tả trạng thái config')}."
-            )
-        if key == "detail_action":
-            return (
-                "Bấm Xem hoặc nhấp đúp dòng để mở toàn bộ phân tích của mã: "
-                "scenario, vùng entry, SL/TP, gate, SMC, macro và reason codes."
             )
         return self._general_column_explanation(key)
 
@@ -2483,9 +2679,9 @@ class ScannerRowExplanationDialog(QDialog):
                 "có yếu tố đáng theo dõi nhưng chưa đủ điều kiện hành động"
             ),
             "OUT_OF_STRATEGY": (
-                "cơ hội này không khớp quy tắc giao dịch, chẳng hạn sai bối cảnh, "
-                "sai hướng, điểm chất lượng hoặc tỷ lệ lời/lỗ dưới mức yêu cầu, "
-                "hay chưa có kế hoạch hợp lệ; điều này không có nghĩa dữ liệu bị lỗi"
+                "cặp này vẫn được hỗ trợ nhưng chưa đáp ứng một hoặc nhiều điều "
+                "kiện của bộ quy tắc đang áp dụng, chẳng hạn chưa rõ hướng, điểm "
+                "thiết lập hoặc R:R chưa đạt, hay chưa có kế hoạch hợp lệ"
             ),
             "BLOCKED": (
                 "điều kiện an toàn đang chặn giao dịch, ví dụ dữ liệu chưa tốt, "
@@ -2495,8 +2691,9 @@ class ScannerRowExplanationDialog(QDialog):
                 "thiếu dữ liệu bắt buộc nên hệ thống không thể đánh giá an toàn"
             ),
         }
-        reason = self._selected_reason_summary()
-        suffix = f" Lý do của mã này: {reason}" if reason else ""
+        strategy_gaps = ScannerTableModel._strategy_gap_messages(self.row_data)
+        reason = "; ".join(strategy_gaps[:4]) or self._selected_reason_summary()
+        suffix = f" Điều kiện còn thiếu: {reason}" if reason else ""
         return (
             f"{display_value} nghĩa là {meanings.get(status, 'trạng thái chưa được nhận diện')}."
             f"{suffix}"
@@ -2530,10 +2727,11 @@ class ScannerRowExplanationDialog(QDialog):
                 ),
             ),
             "OUT_OF_STRATEGY": (
-                "Bỏ qua trong lần quét hiện tại",
+                "Chưa giao dịch; xem điều kiện còn thiếu",
                 (
-                    "Mã chưa khớp quy tắc giao dịch. Không cố vào lệnh; chờ "
-                    "lần quét sau khi điểm, bối cảnh hoặc tỷ lệ lời/lỗ thay đổi."
+                    "Cặp vẫn nằm trong phạm vi Scanner nhưng chưa đạt bộ quy tắc "
+                    "đang áp dụng. Xem điểm/ngưỡng, hướng và R:R còn thiếu; chỉ "
+                    "đánh giá lại ở lần quét sau, không cố vào lệnh."
                 ),
             ),
             "BLOCKED": (
@@ -2806,7 +3004,7 @@ class ScannerColumnsHelpDialog(QDialog):
             "column": "STT",
             "meaning": "Thứ tự ưu tiên sau khi Scanner hoàn tất phân loại và xếp hạng.",
             "cases": (
-                "Ưu tiên theo Trạng thái trước, sau đó lần lượt theo Cơ hội, "
+                "Ưu tiên theo Trạng thái trước, sau đó lần lượt theo điểm Ưu tiên, "
                 "độ tin cậy chiến lược, mức sẵn sàng thực thi, R:R và tên mã. "
                 "STT có thể thay đổi ở mỗi lần quét."
             ),
@@ -2821,13 +3019,14 @@ class ScannerColumnsHelpDialog(QDialog):
         },
         {
             "column": "Trạng thái",
-            "meaning": "Kết luận hiện tại của hệ thống về cơ hội giao dịch.",
+            "meaning": "Kết luận tại thời điểm quét về mức đáp ứng quy tắc giao dịch.",
             "cases": (
-                "Sẵn sàng = đã đủ điều kiện ở thời điểm quét; Chờ xác nhận = còn "
-                "thiếu tín hiệu vào lệnh; Theo dõi = chưa nên hành động; Ngoài "
-                "chiến lược = không khớp quy tắc giao dịch; Bị chặn = vi phạm "
-                "điều kiện an toàn; Thiếu dữ liệu = chưa đủ đầu vào. Trạng thái "
-                "Sẵn sàng vẫn phải được kiểm tra lại trước khi đặt lệnh."
+                "Đạt điều kiện = đã khớp quy tắc ở thời điểm quét; Chờ xác nhận = "
+                "còn thiếu tín hiệu vào lệnh; Đang theo dõi = chưa nên hành động; "
+                "Chưa đạt quy tắc = cặp vẫn được hỗ trợ nhưng còn thiếu điểm, hướng, "
+                "R:R hoặc kế hoạch hợp lệ; Bị chặn an toàn = safety gate không cho "
+                "phép; Không đủ dữ liệu = thiếu đầu vào bắt buộc. Đạt điều kiện vẫn "
+                "phải được kiểm tra lại trước khi đặt lệnh."
             ),
         },
         {
@@ -2840,15 +3039,15 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
-            "column": "Chế độ TT",
-            "meaning": "Trạng thái thị trường hiện tại do pipeline nhận diện.",
+            "column": "Bối cảnh TT",
+            "meaning": "Bối cảnh thị trường hiện tại do hệ thống nhận diện.",
             "cases": (
                 "Xu hướng tăng, Xu hướng giảm, Đi ngang, Biến động mạnh hoặc "
-                "Chưa rõ. Nhánh Backtest còn yêu cầu regime này khớp config."
+                "Chưa rõ. Quy tắc Backtest còn yêu cầu bối cảnh này khớp cấu hình."
             ),
         },
         {
-            "column": "Setup",
+            "column": "Điểm thiết lập",
             "meaning": "Điểm chất lượng của cơ hội theo đúng hướng đã chọn, thang 0–100.",
             "cases": (
                 "Hệ thống so sánh điểm này với mức điểm tối thiểu của chiến lược. "
@@ -2857,7 +3056,7 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
-            "column": "Cơ hội",
+            "column": "Ưu tiên",
             "meaning": "Điểm 0–100 dùng để xếp hạng các cơ hội sau khi đã phân loại.",
             "cases": (
                 "Điểm này giúp chọn mã đáng xem trước trong cùng một trạng thái. "
@@ -2866,7 +3065,7 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
-            "column": "Bằng chứng",
+            "column": "Tin cậy LS",
             "meaning": "Độ tin cậy của bằng chứng lịch sử, hiển thị theo phần trăm.",
             "cases": (
                 "Nếu có cấu hình đã kiểm chứng, hệ thống dùng kết quả trên dữ liệu "
@@ -2875,16 +3074,16 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
-            "column": "Thực thi",
+            "column": "Sẵn sàng",
             "meaning": "Mức gần với khả năng thực thi tại thời điểm quét.",
             "cases": (
-                "Sẵn sàng = 100%; Chờ xác nhận = 60%; Theo dõi = 30%; "
+                "Đạt điều kiện = 100%; Chờ xác nhận = 60%; Đang theo dõi = 30%; "
                 "các trạng thái khác = 0%. Đây không phải xác suất thành công "
                 "và không thay thế việc kiểm tra lại theo giá mới."
             ),
         },
         {
-            "column": "R:R thực",
+            "column": "R:R dự kiến",
             "meaning": "Tỷ lệ lợi nhuận/rủi ro dự kiến của đúng hướng đã chọn.",
             "cases": (
                 "Từ 2.0 trở lên hiển thị xanh; từ 1.3 đến dưới 2.0 hiển thị vàng; "
@@ -2893,7 +3092,7 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
-            "column": "Nhánh",
+            "column": "Quy tắc",
             "meaning": "Nguồn quy tắc được áp dụng cho mã trong lần quét.",
             "cases": (
                 "Đã kiểm chứng = dùng quy tắc rút ra từ kết quả kiểm tra dữ liệu "
@@ -2902,20 +3101,11 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
-            "column": "Config",
+            "column": "Cấu hình BT",
             "meaning": "Tình trạng của cấu hình kiểm chứng bằng dữ liệu quá khứ.",
             "cases": (
                 "Hợp lệ, Mặc định, Bản nháp, Hết hạn, Không hợp lệ, Sai phiên "
-                "bản hoặc Đã tắt. Luôn đọc cột này cùng cột Nhánh."
-            ),
-        },
-        {
-            "column": "Chi tiết",
-            "meaning": "Mở màn hình phân tích đầy đủ của mã được chọn.",
-            "cases": (
-                "Bấm Xem để đọc kịch bản, vùng vào lệnh, mức cắt lỗ, mục tiêu "
-                "chốt lời, điều kiện chiến lược, bối cảnh vĩ mô và danh sách "
-                "kiểm tra."
+                "bản hoặc Đã tắt. Luôn đọc cột này cùng cột Quy tắc."
             ),
         },
     ]
@@ -2933,9 +3123,9 @@ class ScannerColumnsHelpDialog(QDialog):
         layout.setSpacing(12)
 
         intro = QLabel(
-            "Bảng dưới đây giải thích đúng 13 cột của Scanner V2. "
-            "Cách đọc nhanh: Trạng thái → Nhánh và Config → Hướng, Setup và "
-            "R:R → Bằng chứng, Thực thi và Cơ hội."
+            "Bảng dưới đây giải thích đúng 12 cột của Scanner V2. "
+            "Cách đọc nhanh: Trạng thái → Quy tắc và Cấu hình BT → Hướng, "
+            "Điểm thiết lập và R:R dự kiến → Tin cậy LS, Sẵn sàng và Ưu tiên."
         )
         intro.setObjectName("HelperText")
         intro.setWordWrap(True)
@@ -2993,8 +3183,8 @@ class ScannerColumnsHelpDialog(QDialog):
         layout.addWidget(table, 1)
 
         note = QLabel(
-            "Lưu ý: READY_NOW chỉ là sẵn sàng tại thời điểm quét. "
-            "Rollout SHADOW hoặc execution revalidation vẫn có thể chặn lệnh."
+            "Lưu ý: Đạt điều kiện chỉ là kết quả tại thời điểm quét. "
+            "Cổng phát hành và bước kiểm tra lại theo giá mới vẫn có thể chặn lệnh."
         )
         note.setObjectName("HelperText")
         note.setWordWrap(True)

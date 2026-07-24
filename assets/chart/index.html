@@ -59,7 +59,7 @@
     var _priceLines = [];
     var _zones = [];
     var _payload = null;
-    var _activeTF = 'H1';
+    var _activeTF = 'D1';
     var _showSourceZone = false;
 
     var COLORS = {
@@ -222,16 +222,18 @@
 
     function _applyDefaultTimeScale(candleCount) {
       if (!_chart || !candleCount) return;
-      var visibleBars = 80;
-      var rightOffset = 6;
+      // Medium default candle density: enough history for context without
+      // making each candle oversized on the Scanner Detail screen.
+      var visibleBars = 100;
+      var rightOffset = 5;
       var from = Math.max(0, candleCount - visibleBars);
       var to = candleCount + rightOffset;
       var timeScale = _chart.timeScale();
 
       try {
         timeScale.applyOptions({
-          barSpacing: 10,
-          minBarSpacing: 4,
+          barSpacing: 7,
+          minBarSpacing: 3,
           rightOffset: rightOffset,
         });
       } catch(e) {}
@@ -406,7 +408,7 @@
 
       try {
         _payload = payload;
-        _activeTF = payload.active_timeframe || 'H1';
+        _activeTF = payload.active_timeframe || 'D1';
         _resetSourceZoneToggle();
 
         // Theme configuration

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QApplication
+from types import SimpleNamespace
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTableView
 
 from ui.screens import scanner_screen
 from ui.screens.scanner_screen import (
@@ -22,7 +25,7 @@ def test_columns_help_matches_current_scanner_table_contract() -> None:
     help_labels = [item["column"] for item in dialog.COLUMN_HELP]
 
     assert help_labels == expected_labels
-    assert dialog.help_table.rowCount() == len(expected_labels) == 13
+    assert dialog.help_table.rowCount() == len(expected_labels) == 12
     assert dialog.help_table.columnCount() == 3
     assert dialog.help_table.objectName() == "EconTable"
     assert dialog.help_table.showGrid() is False
@@ -30,6 +33,86 @@ def test_columns_help_matches_current_scanner_table_contract() -> None:
     assert app is QApplication.instance()
 
     dialog.close()
+
+
+def test_scanner_headers_are_wide_enough_for_their_titles() -> None:
+    app = _application()
+    model = ScannerTableModel()
+    table = QTableView()
+    table.setModel(model)
+    owner = SimpleNamespace(
+        table=table,
+        table_model=model,
+        TABLE_CELL_HORIZONTAL_PADDING=24,
+        TABLE_HEADER_HORIZONTAL_PADDING=40,
+    )
+    owner._content_width_for_column = lambda column, padding: (
+        scanner_screen.ScannerScreen._content_width_for_column(
+            owner,
+            column,
+            padding,
+        )
+    )
+
+    scanner_screen.ScannerScreen._configure_table_columns(owner)
+
+    header = table.horizontalHeader()
+    for column, (_key, title) in enumerate(model.COLUMNS):
+        required = (
+            header.fontMetrics().horizontalAdvance(title)
+            + owner.TABLE_HEADER_HORIZONTAL_PADDING
+        )
+        assert header.sectionSize(column) >= required
+
+    assert app is QApplication.instance()
+    table.close()
+
+
+def test_out_of_strategy_tooltip_explains_missing_rule_not_unsupported_pair() -> None:
+    model = ScannerTableModel()
+    model.set_rows(
+        [
+            {
+                "candidate_status": "OUT_OF_STRATEGY",
+                "setup_score": 59,
+                "min_score": 80,
+                "scanner_candidate_decision": {
+                    "strategy": {
+                        "score_value": 59,
+                        "min_score": 80,
+                        "reason_codes": [
+                            "SETUP_SCORE_BELOW_DEFAULT_MIN",
+                        ],
+                    },
+                },
+            },
+        ]
+    )
+    status_column = next(
+        index
+        for index, (key, _title) in enumerate(model.COLUMNS)
+        if key == "candidate_status"
+    )
+
+    tooltip = model.data(
+        model.index(0, status_column),
+        Qt.ItemDataRole.ToolTipRole,
+    )
+
+    assert "cặp vẫn được hỗ trợ" in tooltip
+    assert "Điểm thiết lập 59/80" in tooltip
+
+
+def test_rollout_block_codes_are_explained_in_vietnamese() -> None:
+    messages = scanner_screen.ScannerScreen._user_facing_block_reasons(
+        [
+            "RELEASE_GATE_NOT_READY",
+            "ROLLOUT_KILL_SWITCH_ACTIVE",
+        ]
+    )
+
+    assert "Cổng phát hành chưa đạt" in messages[0]
+    assert "dừng khẩn cấp" in messages[1]
 
 
 def test_help_button_opens_columns_dialog_without_selection(monkeypatch) -> None:
@@ -125,6 +208,7 @@ def test_selected_row_dialog_explains_actual_status_and_direction() -> None:
         "detail_action": "View Detail",
         "min_score": 65,
         "min_rr": 1.3,
+        "auto_trade_reason_codes": ["SETUP_SCORE_BELOW_DEFAULT_MIN"],
         "short_reason": "Setup thấp hơn ngưỡng chiến lược.",
         "analysis_result": {},
     }
@@ -142,16 +226,19 @@ def test_selected_row_dialog_explains_actual_status_and_direction() -> None:
     assert dialog.table.objectName() == "EconTable"
     assert len(visible_items) == 11
     assert dialog.table.rowCount() == 18
-    assert items["Trạng thái"]["value"] == "Ngoài chiến lược"
-    assert "không khớp quy tắc giao dịch" in items["Trạng thái"]["explanation"]
-    assert "Setup thấp hơn ngưỡng" in items["Trạng thái"]["explanation"]
+    assert items["Trạng thái"]["value"] == "Chưa đạt quy tắc"
+    assert "vẫn được hỗ trợ" in items["Trạng thái"]["explanation"]
+    assert "Điểm thiết lập 58/65" in items["Trạng thái"]["explanation"]
     assert items["Hướng đang đánh giá"]["value"] == "Bán"
     assert "kịch bản bán" in items["Hướng đang đánh giá"]["explanation"]
     assert (
         "chưa đạt mức yêu cầu 65"
         in items["Chất lượng thiết lập"]["explanation"]
     )
-    assert items["Nên làm gì"]["value"] == "Bỏ qua trong lần quét hiện tại"
+    assert (
+        items["Nên làm gì"]["value"]
+        == "Chưa giao dịch; xem điều kiện còn thiếu"
+    )
     assert all(dialog.table.isRowHidden(index) for index in technical_indexes)
 
     dialog.technical_check.setChecked(True)

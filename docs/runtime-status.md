@@ -1,6 +1,6 @@
 # Runtime Status
 
-Cập nhật: **24/07/2026 23:10 (Asia/Ho_Chi_Minh)**.
+Cập nhật: **25/07/2026 (Asia/Ho_Chi_Minh)**.
 
 Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tại. Đây không
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
@@ -34,9 +34,12 @@ bật. Khi bật trong auto-scan, request mang
 `ScannerRequest.auto_trade_enabled=true`. Chuyển sang quét một lần sẽ disable
 và reset nút về unchecked.
 
-Release readiness hiện vẫn là `ready=false`. Vì vậy cả auto trade lẫn lệnh thủ
-công từ Scanner đều bị rollout guard trả `RELEASE_GATE_NOT_READY` trước khi gọi
-MT5, dù stage đã là `PRODUCTION`.
+Release readiness hiện vẫn là `ready=false`. Vì vậy auto trade vẫn bị rollout
+guard trả `RELEASE_GATE_NOT_READY` trước khi gọi MT5. Theo yêu cầu trực tiếp
+ngày 25/07/2026, thao tác **Vào lệnh** thủ công trong dialog Scanner được phép
+bỏ qua riêng block này khi stage là `PRODUCTION` và đã có production approval.
+Override không áp dụng cho auto trade và không bỏ qua kill switch, stage khác,
+kết nối/quyền MT5, giá mới, spread, news, R:R hay portfolio guard.
 
 Các block code hiện tại:
 
@@ -62,6 +65,10 @@ AND production approval
 AND release readiness = true
 AND rollout/kill switch cho phép
 AND execution revalidation, news, account và portfolio đều đạt
+
+Lệnh thủ công từ dialog cần candidate hợp lệ và production approval; release
+readiness không chặn riêng thao tác này, nhưng mọi điều kiện còn lại vẫn bắt
+buộc đạt.
 ```
 
 Không sửa trực tiếp rollout metrics hoặc hạ ngưỡng để giả lập bằng chứng phát

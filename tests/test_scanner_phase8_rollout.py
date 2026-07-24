@@ -418,7 +418,7 @@ def test_controller_shadow_guard_blocks_before_market_revalidation():
         "symbol": "EUR/USD",
         "broker_symbol": "EURUSD",
         "side": "buy",
-    })
+    }, manual_release_gate_override=True)
 
     assert result["success"] is False
     assert "SHADOW_MODE_ORDER_SUPPRESSED" in (

@@ -43,5 +43,22 @@ def test_refresh_checklist_panel_no_duplicates():
     assert first_count == second_count, f"Duplicate labels detected! First: {first_count}, Second: {second_count}"
     print("PASS: No duplicate widgets detected after consecutive refreshes.")
 
+
+def test_overview_splitter_defaults_to_30_70_information_chart_ratio():
+    app = QApplication.instance() or QApplication(sys.argv)
+    screen = ScannerDetailScreen()
+
+    screen.resize(1200, 800)
+    screen.show()
+    app.processEvents()
+
+    sizes = screen.overview_splitter.sizes()
+    assert sum(sizes) > 0
+    information_ratio = sizes[0] / sum(sizes)
+    assert 0.27 <= information_ratio <= 0.33
+
+    screen.close()
+    assert app is QApplication.instance()
+
 if __name__ == "__main__":
     test_refresh_checklist_panel_no_duplicates()

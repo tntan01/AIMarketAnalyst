@@ -23,7 +23,7 @@ def build_chart_payload(candles_by_timeframe: dict[str, list[Candle]]) -> dict[s
     }
 
 
-def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = "H1") -> dict:
+def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = "D1") -> dict:
     """Build complete chart payload for QWebEngineView rendering.
 
     Returns a dict with:
@@ -85,6 +85,18 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
                                 })
                 tf_data["smc_zones"] = zones
         timeframes_data[tf] = tf_data
+
+    # Daily is the default overview timeframe.  Older or partial snapshots may
+    # not contain D1, so keep the chart usable by falling back in display order.
+    if active_timeframe not in timeframes_data:
+        active_timeframe = next(
+            (
+                timeframe
+                for timeframe in ("D1", "H4", "H1", "M15")
+                if timeframe in timeframes_data
+            ),
+            next(iter(timeframes_data), "D1"),
+        )
 
     # Trade plan from scenarios
     trade_plan = {

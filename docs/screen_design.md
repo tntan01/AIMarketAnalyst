@@ -515,7 +515,7 @@ Mỗi kết quả phân tích phải luôn có:
 
 ---
 
-## Màn hình 4: Scanner V2 — runtime contract hiện hành (24/07/2026)
+## Màn hình 4: Scanner V2 — runtime contract hiện hành (25/07/2026)
 
 ### Mục đích
 
@@ -530,13 +530,17 @@ lệnh từ các field legacy.
   định unchecked và được làm nổi khi người dùng bật. Trong quét một lần, nút
   phải disable và reset về unchecked. Tooltip phải cảnh báo việc bật nút có
   thể gửi lệnh thật nhưng vẫn chịu rollout và safety gates.
-- Banner rollout thể hiện stage, kill switch, disagreement và release/canary
-  gate.
+- Sau mỗi lần quét, chỉ hiển thị dòng trạng thái ngắn: số mã đã quét và thời
+  gian quét gần nhất.
 - Progress và thống kê theo sáu trạng thái candidate.
 - Bảng model/view theo đúng `ScannerTableModel.COLUMNS`.
+- Trong tab **Tổng quan**, cột card thông tin và biểu đồ dùng tỷ lệ mặc định
+  `30% / 70%`. Biểu đồ mở mặc định ở khung **D1 (Ngày)**; nếu snapshot không
+  có D1 thì lần lượt fallback H4, H1, M15. Mật độ nến mặc định ở mức trung bình
+  (100 nến nhìn thấy, `barSpacing=7`) để không phóng nến quá lớn.
 - Nút **Giải thích** có hai chế độ:
   - chưa chọn dòng: mở dialog ba cột theo style `EconTable`, mô tả chung đúng
-    13 cột Scanner V2 bằng thuật ngữ tiếng Việt;
+    12 cột Scanner V2 bằng thuật ngữ tiếng Việt;
   - đã chọn một dòng: mở dialog `Giải thích chi tiết - <mã>`, ưu tiên 11 thông
     tin hỗ trợ quyết định: trạng thái, hướng, việc nên làm, lý do chính, chất
     lượng thiết lập, tỷ lệ lời/lỗ, mức sẵn sàng, bối cảnh thị trường, độ tin
@@ -547,6 +551,10 @@ lệnh từ các field legacy.
   chấm và mã lý do nội bộ được đưa vào **Thông tin kỹ thuật**, ẩn mặc định và
   chỉ hiện khi người dùng bật `Hiển thị thông tin kỹ thuật`.
 - Khu vực kết quả auto trade, Telegram và lỗi có reason code.
+- Nút **Kế hoạch lệnh** phải mô tả đúng kết quả của chính lần quét đã lưu,
+  không suy ngược từ trạng thái hiện tại của nút auto-entry. Dialog phải tách
+  rõ số lệnh đã mở, đã kiểm tra, bỏ qua và bị rollout chặn; không dùng câu
+  “đã vào MT5” khi `opened=0`. Mã chặn phổ biến phải có giải thích tiếng Việt.
 
 ### Cột bảng hiện hành
 
@@ -556,28 +564,30 @@ lệnh từ các field legacy.
 | `symbol` | Mã |
 | `candidate_status` | Trạng thái |
 | `selected_side` | Hướng |
-| `market_regime` | Chế độ TT |
-| `setup_score` | Setup |
-| `opportunity_rank` | Cơ hội |
-| `evidence_confidence` | Bằng chứng |
-| `execution_readiness` | Thực thi |
-| `expected_effective_rr` | R:R thực |
-| `auto_trade_branch` | Nhánh |
-| `strategy_config_status` | Config |
-| `detail_action` | Chi tiết |
+| `market_regime` | Bối cảnh TT |
+| `setup_score` | Điểm thiết lập |
+| `opportunity_rank` | Ưu tiên |
+| `evidence_confidence` | Tin cậy LS |
+| `execution_readiness` | Sẵn sàng |
+| `expected_effective_rr` | R:R dự kiến |
+| `auto_trade_branch` | Quy tắc |
+| `strategy_config_status` | Cấu hình BT |
 
 `opportunity_rank` là điểm xếp hạng 0–100, không phải gate vào lệnh.
 Trạng thái chuẩn gồm `READY_NOW`, `WAITING_CONFIRMATION`, `WATCH_ZONE`,
 `OUT_OF_STRATEGY`, `BLOCKED` và `DATA_UNAVAILABLE`.
+Nhãn người dùng của `OUT_OF_STRATEGY` là **Chưa đạt quy tắc**, phải giải thích
+rõ cặp vẫn được hỗ trợ nhưng còn thiếu một hay nhiều điều kiện của bộ quy tắc
+hiện tại. Tiêu đề cột không được elide/cắt chữ; độ rộng tối thiểu phải tính từ
+font tiêu đề và padding, cho phép cuộn ngang nếu tổng độ rộng vượt viewport.
 
 ### Hành vi đặt lệnh
 
 UI chỉ phát yêu cầu auto order khi đang quét định kỳ và người dùng chủ động bật
 nút: khi đó `ScannerRequest.auto_trade_enabled=true`. Nút đặt candidate thủ
-công vẫn gọi `ScannerController.execute_order_candidate()`. Ở stage `SHADOW`,
-giao diện phải thông báo `SHADOW_MODE_ORDER_SUPPRESSED`; ở `PRODUCTION` nhưng
-release chưa đạt, phải thông báo `RELEASE_GATE_NOT_READY`. Không được gọi MT5
-trực tiếp.
+công vẫn gọi `ScannerController.execute_order_candidate()`. Ở `PRODUCTION` đã
+phê duyệt, nút manual truyền override giới hạn cho `RELEASE_GATE_NOT_READY`;
+auto order không có override này. Không được gọi MT5 trực tiếp.
 
 ### Thiết kế Scanner V1 lưu để tham chiếu lịch sử
 
@@ -645,11 +655,11 @@ Last Scan Time (thời gian quét gần nhất): 2026-05-29 14:35 VN
 SCANNER RESULT TABLE (BẢNG KẾT QUẢ QUÉT)
 --------------------------------------------------
 
-| Rank (xếp hạng) | Symbol (mã) | Nhóm | Bias (thiên hướng) | Chế độ TT | Entry | M15 | Điểm | R:R thực | Vĩ mô | Xem |
-|---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|
-| 1 | XAU/USD | Sẵn sàng ngay | Buy (mua) | trend_up | Trong vùng | Chặt | 115 | 2.1 | Thuận | Xem |
-| 2 | EUR/USD | Chờ xác nhận | Neutral (trung lập) | range | Gần vùng | Lỏng | 88 | 1.6 | Trung tính | Xem |
-| 3 | USD/JPY | Bị chặn | Sell (bán) | trend_down | Còn xa | Không đạt | 42 | — | Ngược | Xem |
+| Rank (xếp hạng) | Symbol (mã) | Nhóm | Bias (thiên hướng) | Chế độ TT | Entry | M15 | Điểm | R:R thực | Vĩ mô |
+|---:|---|---|---|---|---|---:|---:|---:|---:|
+| 1 | XAU/USD | Sẵn sàng ngay | Buy (mua) | trend_up | Trong vùng | Chặt | 115 | 2.1 | Thuận |
+| 2 | EUR/USD | Chờ xác nhận | Neutral (trung lập) | range | Gần vùng | Lỏng | 88 | 1.6 | Trung tính |
+| 3 | USD/JPY | Bị chặn | Sell (bán) | trend_down | Còn xa | Không đạt | 42 | — | Ngược |
 
 --------------------------------------------------
 NHÓM (SCANNER GROUP)
@@ -675,7 +685,6 @@ Bị chặn (blocked): Bị gate hoặc dữ liệu chặn, không nên giao d�
 | Điểm | opportunity_score (0-120) — điểm xếp hạng cơ hội (+ tooltip final_score breakdown) |
 | R:R thực | `expected_effective_rr` best-case ở cột chính; base/current hiển thị trong breakdown/tooltip phù hợp |
 | Vĩ mô | Thuận / Trung tính / Ngược — mức độ đồng thuận của vĩ mô với hướng trade |
-| Xem | Mở màn hình Scanner Detail (chi tiết mã từ quét thị trường) |
 
 ### Logic gọi AI trong Scanner (màn hình quét thị trường)
 

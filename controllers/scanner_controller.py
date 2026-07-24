@@ -649,8 +649,15 @@ class ScannerController:
         *,
         risk_percent: float | None = None,
         comment: str = "AMA",
+        manual_release_gate_override: bool = False,
     ) -> dict[str, Any]:
-        """Revalidate and execute one scan proposal through the shared gate."""
+        """Revalidate and execute one scan proposal through the shared gate.
+
+        ``manual_release_gate_override`` is reserved for the explicit manual
+        action in the Scanner dialog. It bypasses *only*
+        ``RELEASE_GATE_NOT_READY`` in ``PRODUCTION``; every other rollout,
+        account, market-data, news and portfolio guard remains mandatory.
+        """
 
         order = dict(proposal) if isinstance(proposal, dict) else {}
         symbol = str(order.get("symbol") or "--")
@@ -709,7 +716,13 @@ class ScannerController:
                 symbol,
                 requested=True,
             )
-            if not rollout_decision.allowed:
+            rollout_reasons = tuple(rollout_decision.reason_codes)
+            release_gate_only = (
+                manual_release_gate_override
+                and rollout_policy.stage == "PRODUCTION"
+                and rollout_reasons == ("RELEASE_GATE_NOT_READY",)
+            )
+            if not rollout_decision.allowed and not release_gate_only:
                 blocked = {
                     "success": False,
                     "symbol": symbol,
@@ -743,6 +756,21 @@ class ScannerController:
                     },
                 )
                 return blocked
+            if release_gate_only:
+                self._emit_observability(
+                    "MANUAL_RELEASE_GATE_OVERRIDE",
+                    scan_id=scan_id,
+                    symbol=symbol,
+                    severity="WARNING",
+                    payload={
+                        "row_id": row_id,
+                        "rollout": rollout_decision.to_dict(),
+                        "message": (
+                            "User explicitly bypassed RELEASE_GATE_NOT_READY "
+                            "for a manual order."
+                        ),
+                    },
+                )
             if rollout_decision.risk_cap_percent is not None:
                 requested_risk = (
                     float(risk_percent)

@@ -22,7 +22,7 @@ class AnalysisChartView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._payload: dict | None = None
-        self._active_tf = "H1"
+        self._active_tf = "D1"
         self._page_loaded = False
         self._pending_script: str | None = None
         self._build_ui()
@@ -73,7 +73,7 @@ class AnalysisChartView(QWidget):
         self._payload = payload
         if not HAS_WEBENGINE or not hasattr(self, "_webview"):
             return
-        self._active_tf = str(payload.get("active_timeframe", "H1"))
+        self._active_tf = str(payload.get("active_timeframe", "D1"))
         from ui.chart_bridge import chart_update_script
         self._run_chart_script(chart_update_script(payload))
 

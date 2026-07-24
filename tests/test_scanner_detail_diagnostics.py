@@ -501,7 +501,7 @@ def test_canonical_decision_wins_over_legacy_direction_and_score():
     assert screen._effective_rr() == 1.1
 
     html = screen._diag_final_score_html(screen.row["analysis_result"])
-    assert "Ngoài chiến lược" in html
+    assert "Chưa đạt quy tắc giao dịch" in html
     assert "Hướng phân tích: <b>BÁN</b>" in html
     assert ">61<" in html
 
@@ -520,7 +520,7 @@ def test_hero_explains_canonical_status_side_and_shadow_mode():
 
     screen._refresh_hero()
 
-    assert "NGOÀI CHIẾN LƯỢC" in screen.hero_bar.text
+    assert "CHƯA ĐẠT QUY TẮC GIAO DỊCH" in screen.hero_bar.text
     assert "Hướng phân tích: BÁN" in screen.hero_bar.text
     assert "Setup 61/80" in screen.hero_bar.text
     assert "SHADOW · chỉ quan sát, không gửi lệnh thật" in screen.hero_bar.text

@@ -115,7 +115,9 @@ Auto trade và thao tác đặt lệnh thủ công từ giao diện Scanner cùn
 `ScannerController.execute_order_candidate()`
 
 Ở quét một lần, người dùng vẫn có thể chủ động bấm đặt một candidate hợp lệ
-trong dialog lệnh; thao tác này cũng chịu cùng rollout và revalidation.
+trong dialog lệnh. Khi runtime là `PRODUCTION` và đã có production approval,
+thao tác thủ công này bỏ qua riêng `RELEASE_GATE_NOT_READY`; auto trade vẫn
+chịu release readiness. Cả hai vẫn đi qua revalidation và các guard còn lại.
 
 Ngay trước khi gửi lệnh, hệ thống lấy snapshot mới và kiểm tra lại:
 
@@ -126,7 +128,9 @@ Ngay trước khi gửi lệnh, hệ thống lấy snapshot mới và kiểm tra
 - lot theo balance/risk và quy tắc volume của broker;
 - daily/weekly loss, chuỗi thua;
 - tổng open risk, risk theo symbol, currency/correlation exposure và số lệnh;
-- rollout stage, kill switch, demo/allowlist/readiness/risk cap.
+- rollout stage, kill switch, demo/allowlist/readiness/risk cap. Với thao tác
+  thủ công ở `PRODUCTION`, chỉ riêng release readiness được override có chủ
+  đích; các rollout block khác vẫn giữ nguyên.
 
 Chỉ khi tất cả điều kiện đều đạt mới gọi `place_market_order`.
 
@@ -159,8 +163,7 @@ còn thiếu là `0/20` demo orders,
 - **Row `READY_NOW` nhưng không có lệnh:** xem `reason_codes`, rollout stage và kết quả execution revalidation.
 - **Đang ở `SHADOW`:** hành vi không gửi lệnh là đúng, kể cả người dùng bấm đặt lệnh từ Scanner.
 - **Đã chọn `PRODUCTION` nhưng Scanner không tự vào lệnh:** kiểm tra chế độ
-  quét định kỳ và nút auto-entry đã được người dùng bật hay chưa. Sau đó kiểm
-  tra `release_readiness.block_codes`; runtime hiện vẫn bị chặn bởi
-  `RELEASE_GATE_NOT_READY`.
+  quét định kỳ và nút auto-entry đã được người dùng bật hay chưa. Auto trade
+  vẫn bị chặn khi `release_readiness.block_codes` chưa rỗng.
 - **Demo không được nhận diện:** kiểm tra tên server MT5 có thể hiện demo/trial/practice/contest.
 - **Production bị chặn:** xem `release_readiness.block_codes` và bổ sung đúng bằng chứng còn thiếu.

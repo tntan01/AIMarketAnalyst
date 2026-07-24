@@ -55,12 +55,12 @@ _VN_MACRO = {
 }
 
 _CANDIDATE_STATUS = {
-    "READY_NOW": ("Sẵn sàng tại thời điểm quét", "ready"),
+    "READY_NOW": ("Đạt điều kiện tại lúc quét", "ready"),
     "WAITING_CONFIRMATION": ("Chờ xác nhận", "wait"),
-    "WATCH_ZONE": ("Theo dõi vùng giá", "watch"),
-    "OUT_OF_STRATEGY": ("Ngoài chiến lược", "neutral"),
-    "BLOCKED": ("Bị chặn", "blocked"),
-    "DATA_UNAVAILABLE": ("Thiếu dữ liệu", "data"),
+    "WATCH_ZONE": ("Đang theo dõi vùng giá", "watch"),
+    "OUT_OF_STRATEGY": ("Chưa đạt quy tắc giao dịch", "neutral"),
+    "BLOCKED": ("Bị cổng an toàn chặn", "blocked"),
+    "DATA_UNAVAILABLE": ("Không đủ dữ liệu để đánh giá", "data"),
 }
 
 _SCANNER_REASON_MESSAGES = {
@@ -213,9 +213,12 @@ class ScannerDetailScreen(QWidget):
         right_col.addWidget(self.chart_frame, 1)
 
         ov.addWidget(right_container)
-        ov.setStretchFactor(0, 1)
-        ov.setStretchFactor(1, 4)
-        ov.setSizes([280, 900])
+        # Default overview balance: keep the information cards compact while
+        # preserving most of the screen for price action.
+        ov.setStretchFactor(0, 30)
+        ov.setStretchFactor(1, 70)
+        ov.setSizes([300, 700])
+        self.overview_splitter = ov
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1473,7 +1476,11 @@ class ScannerDetailScreen(QWidget):
             from core.chart_payload import build_full_chart_payload
 
             symbol = str(analysis_result.get("symbol") or self.row.get("symbol") or "")
-            payload = build_full_chart_payload(symbol, analysis_result)
+            payload = build_full_chart_payload(
+                symbol,
+                analysis_result,
+                active_timeframe="D1",
+            )
             
             # Inject current theme to payload
             try:

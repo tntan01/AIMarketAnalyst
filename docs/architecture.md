@@ -539,18 +539,22 @@ Stage rollout:
 
 `DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`.
 
-`PRODUCTION` cần đồng thời `production_approved=true` và release readiness đạt;
-không một feature flag hoặc nút UI nào được bỏ qua điều kiện này.
+`PRODUCTION` yêu cầu `production_approved=true`. Auto trade còn yêu cầu release
+readiness đạt. Nút **Vào lệnh** thủ công trong dialog Scanner có override có
+chủ đích cho riêng `RELEASE_GATE_NOT_READY`; không một feature flag hoặc nút UI
+nào được bỏ qua kill switch hay các guard thực thi khác.
 
 Runtime trên máy hiện tại đã lưu stage `PRODUCTION`,
 `production_approved=true`, cho phép tài khoản real và bật các feature flag
-V2. Release readiness vẫn `false`, nên kiến trúc fail-closed vẫn chặn lệnh
-bằng `RELEASE_GATE_NOT_READY`. Xem `docs/runtime-status.md`.
+V2. Release readiness vẫn `false`, nên auto trade bị chặn bằng
+`RELEASE_GATE_NOT_READY`; thao tác manual trong dialog có override giới hạn.
+Xem `docs/runtime-status.md`.
 
 `ScannerScreen.AUTO_TRADE_UI_ENABLED=true` cho phép bật auto-entry ở chế độ
 quét định kỳ. Nút mặc định unchecked và bị reset khi chuyển sang quét một lần.
-Auto order và manual order đều đi qua shared execution boundary; nút UI không
-bỏ qua rollout guard.
+Auto order và manual order đều đi qua shared execution boundary. Auto order
+không bỏ qua rollout guard; manual order chỉ có thể override riêng release gate
+ở `PRODUCTION` đã phê duyệt.
 
 Xem chi tiết tại `docs/scanner-flow.md` và
 `docs/technical-scoring-architecture.md`.
@@ -571,7 +575,7 @@ Xem chi tiết tại `docs/scanner-flow.md` và
 
 ### Auto-entry on MT5
 
-- Auto-entry is enabled only when the Scanner is running in auto-scan mode and the user has turned on the `Tự động vào lệnh MT5` toggle button. Manual one-shot scans do not place orders.
+- Auto-entry is enabled only when the Scanner is running in auto-scan mode and the user has turned on the `Tự động vào lệnh MT5` toggle button. One-shot scans never place orders automatically; a valid candidate can still be placed manually from its dialog.
 - `ui.screens.scanner_screen.ScannerScreen` exposes a visible auto-entry toggle button. The button is disabled in one-shot mode, enabled in auto-scan mode, and highlighted when active.
 - `ScannerScreen` sets `ScannerRequest.auto_trade_enabled=True` only when scan mode is auto and the auto-entry toggle button is on.
 - `controllers.scanner_controller.ScannerController` executes auto trades after all rows are scanned, sorted and enriched.

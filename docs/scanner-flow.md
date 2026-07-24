@@ -1,6 +1,6 @@
 # Scanner V2 — Luồng chạy hiện hành
 
-Cập nhật: **24/07/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
+Cập nhật: **25/07/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
 
 ## 1. Tổng quan
 
@@ -98,7 +98,9 @@ Controller:
 Rollout guard fail-closed. `SHADOW` là mặc định và chặn order trước cả
 execution snapshot. Runtime ngày 24/07/2026 đã chọn `PRODUCTION` và
 `production_approved=true`, nhưng `release_ready=false`; vì vậy policy hiện
-vẫn chặn bằng `RELEASE_GATE_NOT_READY`.
+vẫn chặn auto trade bằng `RELEASE_GATE_NOT_READY`. Thao tác **Vào lệnh** thủ
+công từ dialog Scanner có override có chủ đích cho riêng block này khi đang ở
+`PRODUCTION`; các guard khác và execution revalidation vẫn áp dụng.
 
 ## 4. Thu thập và phân tích dữ liệu
 
@@ -173,7 +175,7 @@ Candidate decision chuẩn hóa về sáu trạng thái:
 | `READY_NOW` | Strategy eligible, entry ready và scan-time trade gate cho phép. |
 | `WAITING_CONFIRMATION` | Strategy phù hợp nhưng entry còn chờ xác nhận. |
 | `WATCH_ZONE` | Setup đáng theo dõi/chưa đạt mức thực thi. |
-| `OUT_OF_STRATEGY` | Setup không khớp branch chiến lược. |
+| `OUT_OF_STRATEGY` | Hiển thị **Chưa đạt quy tắc**: cặp vẫn được hỗ trợ nhưng setup chưa đáp ứng đủ quy tắc đang áp dụng. |
 | `BLOCKED` | Gate an toàn hoặc trade permission chặn. |
 | `DATA_UNAVAILABLE` | Thiếu dữ liệu/side/scenario cần thiết. |
 
@@ -252,17 +254,21 @@ Các cột hiện hành của `ScannerTableModel`:
 | `symbol` | Mã |
 | `candidate_status` | Trạng thái |
 | `selected_side` | Hướng |
-| `market_regime` | Chế độ TT |
-| `setup_score` | Setup |
-| `opportunity_rank` | Cơ hội |
-| `evidence_confidence` | Bằng chứng |
-| `execution_readiness` | Thực thi |
-| `expected_effective_rr` | R:R thực |
-| `auto_trade_branch` | Nhánh |
-| `strategy_config_status` | Config |
-| `detail_action` | Chi tiết |
+| `market_regime` | Bối cảnh TT |
+| `setup_score` | Điểm thiết lập |
+| `opportunity_rank` | Ưu tiên |
+| `evidence_confidence` | Tin cậy LS |
+| `execution_readiness` | Sẵn sàng |
+| `expected_effective_rr` | R:R dự kiến |
+| `auto_trade_branch` | Quy tắc |
+| `strategy_config_status` | Cấu hình BT |
 
 UI hiển thị rollout stage, disagreement và gate status để tránh hiểu `READY_NOW` là đã được phép đặt lệnh production.
+Độ rộng tối thiểu của từng cột phải bao phủ toàn bộ tiêu đề theo font/DPI hiện
+tại; khi cửa sổ không đủ rộng, bảng dùng thanh cuộn ngang thay vì cắt tiêu đề.
+Dialog **Kế hoạch lệnh** đọc `auto_trade_results.enabled` của chính lần quét,
+không đọc trạng thái toggle hiện tại. Nội dung phải phân biệt ứng viên, kết quả
+kiểm tra và lệnh thực sự đã mở (`opened`) để không diễn giải nhầm.
 
 Màn hình **Chi tiết kết quả quét** dùng
 `scanner_candidate_decision` làm nguồn chuẩn:
@@ -287,7 +293,9 @@ và reset nút. Việc bật nút chỉ tạo yêu cầu auto trade, không bỏ
 rollout hoặc execution gates.
 
 Quét một lần có thể hiển thị nút đặt lệnh thủ công cho candidate hợp lệ. Nút
-này vẫn gọi shared execution path, không gọi MT5 trực tiếp.
+này vẫn gọi shared execution path, không gọi MT5 trực tiếp. Ở `PRODUCTION` đã
+phê duyệt, nó chỉ override `RELEASE_GATE_NOT_READY`; không override kill
+switch, rollout stage, account/market/news hay portfolio guard.
 
 Mọi order từ Scanner, gồm auto và thao tác thủ công, đi qua:
 
@@ -325,7 +333,9 @@ Stage hợp lệ:
 - `DEMO_LIMITED`: demo server và allowlist.
 - `DEMO_FULL`: demo server.
 - `CANARY`: canary readiness; risk tối đa theo `canary_risk_percent`.
-- `PRODUCTION`: `production_approved=true` và release readiness đạt.
+- `PRODUCTION`: auto trade yêu cầu `production_approved=true` và release
+  readiness đạt; lệnh thủ công từ dialog có thể override riêng release
+  readiness theo yêu cầu trực tiếp.
 - `kill_switch`: luôn thắng mọi cấu hình khác.
 
 Readiness kiểm tra số mẫu shadow/demo/canary, disagreement, side mismatch, premature order, portfolio violation, revalidation failure, performance degradation, OOS/demo evidence và rollback.
@@ -337,7 +347,8 @@ Trạng thái runtime hiện tại:
   mang `auto_trade_enabled=true` khi người dùng chủ động bật;
 - release readiness `false` do thiếu 20 demo orders, 5 canary orders,
   OOS evidence và demo evidence;
-- do đó rollout guard hiện vẫn chặn trước khi gọi MT5.
+- do đó rollout guard hiện vẫn chặn auto trade trước khi gọi MT5; lệnh thủ
+  công hợp lệ có override riêng cho `RELEASE_GATE_NOT_READY`.
 
 Chi tiết thay đổi theo thời điểm xem tại `docs/runtime-status.md`.
 
