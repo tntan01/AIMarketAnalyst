@@ -1,6 +1,6 @@
 # Runtime Status
 
-Cập nhật: **24/07/2026 22:38 (Asia/Ho_Chi_Minh)**.
+Cập nhật: **24/07/2026 23:10 (Asia/Ho_Chi_Minh)**.
 
 Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tại. Đây không
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
@@ -27,15 +27,16 @@ symbol được quét hoặc có cấu hình không tự yêu cầu đặt lện
 
 ## Trạng thái gửi lệnh
 
-Nút **Tự động vào lệnh MT5** trên màn hình Quét thị trường hiện bị disable và
-luôn được reset về unchecked. `ScannerScreen.AUTO_TRADE_UI_ENABLED=false` làm
-mọi request tạo từ UI mang `ScannerRequest.auto_trade_enabled=false`; Scanner
-không thể tự động gửi lệnh, kể cả khi đang quét định kỳ và rollout stage là
-`PRODUCTION`.
+Nút **Tự động vào lệnh MT5** trên màn hình Quét thị trường đã được mở cho chế
+độ quét theo khoảng thời gian (`ScannerScreen.AUTO_TRADE_UI_ENABLED=true`).
+Nút mặc định **không được chọn** mỗi khi tạo màn hình; người dùng phải chủ động
+bật. Khi bật trong auto-scan, request mang
+`ScannerRequest.auto_trade_enabled=true`. Chuyển sang quét một lần sẽ disable
+và reset nút về unchecked.
 
-Ngoài khóa UI trên, release readiness hiện vẫn là `ready=false`. Lệnh thủ công
-từ Scanner vì vậy cũng bị rollout guard trả `RELEASE_GATE_NOT_READY` trước khi
-gọi MT5.
+Release readiness hiện vẫn là `ready=false`. Vì vậy cả auto trade lẫn lệnh thủ
+công từ Scanner đều bị rollout guard trả `RELEASE_GATE_NOT_READY` trước khi gọi
+MT5, dù stage đã là `PRODUCTION`.
 
 Các block code hiện tại:
 
@@ -44,7 +45,7 @@ Các block code hiện tại:
 - `OOS_EVIDENCE_MISSING`;
 - `DEMO_EVIDENCE_MISSING`.
 
-Snapshot metrics lúc cập nhật tài liệu có `364/100` shadow samples, không có
+Snapshot metrics lúc cập nhật tài liệu có `572/100` shadow samples, không có
 side mismatch/unsafe disagreement và
 rollback drill đã đạt. Những kết quả này chưa thay thế bằng chứng demo, canary,
 OOS và demo performance còn thiếu.
@@ -55,7 +56,7 @@ OOS và demo performance còn thiếu.
 gate. Lệnh thật chỉ có thể được gửi khi tất cả điều kiện sau cùng đạt:
 
 ```text
-Auto-entry được yêu cầu từ một client được cấp quyền (UI Scanner hiện không yêu cầu)
+Auto-entry được người dùng chủ động bật trong chế độ quét định kỳ
 AND candidate READY_NOW/auto_trade_candidate
 AND production approval
 AND release readiness = true
@@ -71,7 +72,7 @@ hành.
 Bản sao cấu hình trước thay đổi được lưu tại:
 
 ```text
-C:\Users\tntan\AppData\Roaming\ai-market-analyst\settings.before-production-20260724.json
+C:\Users\tntan\AppData\Roaming\ai-market-analyst\settings.before-live-20260724-231015.json
 ```
 
 Mã nguồn và settings mới/migrate vẫn mặc định `SHADOW`. Chỉ runtime settings

@@ -342,7 +342,7 @@ Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 5 màn hình chính trong ứng dụng:
 
 * `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5, AI, Broker dạng card.
-* `scanner_screen.py`: Quét thị trường và bảng xếp hạng. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5); nút auto-trade hiện bị disable và request từ UI luôn đặt `auto_trade_enabled=false`.
+* `scanner_screen.py`: Quét thị trường và bảng xếp hạng. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5); nút auto-trade khả dụng trong auto-scan, mặc định unchecked và chỉ đặt `auto_trade_enabled=true` khi người dùng chủ động bật.
 * `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Sử dụng QTabWidget 3 tab: (1) "📊 Kết quả" — HTML thống kê tổng hợp + bảng nhiệt lời/lỗ theo tháng + khoảng tin cậy Monte Carlo + Walk-Forward Analysis + pipeline diagnostics, (2) "📈 Đường cong vốn" — matplotlib FigureCanvas hiển thị cumulative R (line xanh) và drawdown R (vùng đỏ), (3) "📋 Danh sách lệnh" — bảng trade với màu sắc (xanh=thắng, đỏ=thua, xám=hòa). Có banner kết luận nhanh (có edge/không), KPI 9 ô, checkbox Walk-Forward, dialog phân tích với bảng thống kê mở rộng, Walk-Forward Analysis, Monte Carlo, pipeline diagnostics, và AI nhận xét.
 * `journal_screen.py`: Nhật ký giao dịch.
 * `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao.
@@ -547,9 +547,10 @@ Runtime trên máy hiện tại đã lưu stage `PRODUCTION`,
 V2. Release readiness vẫn `false`, nên kiến trúc fail-closed vẫn chặn lệnh
 bằng `RELEASE_GATE_NOT_READY`. Xem `docs/runtime-status.md`.
 
-Ngoài rollout guard, `ScannerScreen.AUTO_TRADE_UI_ENABLED=false` đang khóa nút
-auto-entry ở giao diện và `_auto_trade_enabled()` luôn trả `false`. Đường
-manual order vẫn đi qua shared execution boundary.
+`ScannerScreen.AUTO_TRADE_UI_ENABLED=true` cho phép bật auto-entry ở chế độ
+quét định kỳ. Nút mặc định unchecked và bị reset khi chuyển sang quét một lần.
+Auto order và manual order đều đi qua shared execution boundary; nút UI không
+bỏ qua rollout guard.
 
 Xem chi tiết tại `docs/scanner-flow.md` và
 `docs/technical-scoring-architecture.md`.

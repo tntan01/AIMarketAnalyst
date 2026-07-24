@@ -279,15 +279,12 @@ Màn hình **Chi tiết kết quả quét** dùng
 
 ## 10. Auto trade và đặt lệnh thủ công
 
-Nút **Tự động vào lệnh MT5** hiện được hiển thị ở trạng thái disable và
-unchecked trong mọi chế độ quét. `ScannerScreen.AUTO_TRADE_UI_ENABLED=false`
-khóa `_auto_trade_enabled()` về `false`, nên mọi request tạo từ giao diện đều
-có `ScannerRequest.auto_trade_enabled=false`. Thay đổi chế độ sang auto-scan
-hoặc stage sang `PRODUCTION` không thể bật lại nút.
-
-Controller vẫn giữ đường auto-trade và canonical
-`auto_trade_candidate=true` để phục vụ kiến trúc, kiểm thử và một rollout có
-chủ đích trong tương lai; UI hiện hành không yêu cầu thực thi đường này.
+Nút **Tự động vào lệnh MT5** chỉ khả dụng trong chế độ quét theo khoảng thời
+gian và mặc định unchecked. `ScannerScreen.AUTO_TRADE_UI_ENABLED=true`; khi
+người dùng chủ động bật, `_auto_trade_enabled()` trả `true` và request có
+`ScannerRequest.auto_trade_enabled=true`. Chuyển sang quét một lần sẽ disable
+và reset nút. Việc bật nút chỉ tạo yêu cầu auto trade, không bỏ qua candidate,
+rollout hoặc execution gates.
 
 Quét một lần có thể hiển thị nút đặt lệnh thủ công cho candidate hợp lệ. Nút
 này vẫn gọi shared execution path, không gọi MT5 trực tiếp.
@@ -336,11 +333,11 @@ Readiness kiểm tra số mẫu shadow/demo/canary, disagreement, side mismatch,
 Trạng thái runtime hiện tại:
 
 - stage `PRODUCTION`, kill switch tắt, real account được phép;
-- nút auto-entry bị disable và request từ UI luôn mang
-  `auto_trade_enabled=false`;
+- nút auto-entry khả dụng trong auto-scan nhưng mặc định unchecked; request chỉ
+  mang `auto_trade_enabled=true` khi người dùng chủ động bật;
 - release readiness `false` do thiếu 20 demo orders, 5 canary orders,
   OOS evidence và demo evidence;
-- do đó Scanner không thể tự động gọi MT5 từ giao diện hiện tại.
+- do đó rollout guard hiện vẫn chặn trước khi gọi MT5.
 
 Chi tiết thay đổi theo thời điểm xem tại `docs/runtime-status.md`.
 

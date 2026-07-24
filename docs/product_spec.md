@@ -48,12 +48,13 @@ Scanner phân tích danh sách symbol qua pipeline đầy đủ và tạo:
 - observability, snapshot, shadow comparison;
 - Telegram và auto-trade result khi áp dụng.
 
-Scanner hỗ trợ quét một lần và quét định kỳ. Nút **Tự động vào lệnh MT5** hiện
-bị disable trong cả hai chế độ; request tạo từ giao diện luôn có
-`auto_trade_enabled=false`, nên Scanner không tự gửi lệnh. Nút đặt lệnh thủ
-công cho candidate vẫn đi qua cùng rollout và execution gates.
+Scanner hỗ trợ quét một lần và quét định kỳ. Nút **Tự động vào lệnh MT5** chỉ
+khả dụng trong chế độ quét định kỳ và mặc định không chọn. Khi người dùng chủ
+động bật, request có `auto_trade_enabled=true`; khi chuyển sang quét một lần,
+nút bị disable và reset. Auto trade và nút đặt lệnh thủ công cho candidate đều
+đi qua cùng rollout và execution gates.
 
-Việc lưu `stage=PRODUCTION` không tự mở khóa nút auto trade.
+Việc lưu `stage=PRODUCTION` không bỏ qua release readiness hoặc safety gate.
 
 ### 3.2 Backtest
 

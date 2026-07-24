@@ -564,9 +564,10 @@ class ScannerTableModel (QAbstractTableModel ):
 
 
 class ScannerScreen (QWidget ):
-    # Product safety lock: Scanner may analyze and show manual candidates, but
-    # it must not request automatic MT5 execution from the UI.
-    AUTO_TRADE_UI_ENABLED =False
+    # Automatic execution is available only in periodic scan mode. The user
+    # must still opt in explicitly and every order remains subject to rollout
+    # and execution safety gates.
+    AUTO_TRADE_UI_ENABLED =True
     # Dynamically resolved from COLUMNS
     SHORT_REASON_COL =12  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
@@ -673,9 +674,9 @@ class ScannerScreen (QWidget ):
         self.auto_trade_check.setCheckable(True)
         self.auto_trade_check.setCursor(Qt.CursorShape.ArrowCursor)
         self .auto_trade_check .setToolTip (
-            "Chức năng tự động vào lệnh MT5 đang bị vô hiệu hóa. "
-            "Scanner sẽ không tự gửi lệnh; thao tác vào lệnh thủ công vẫn "
-            "phải qua các cổng an toàn."
+            "Chỉ dùng trong chế độ quét theo khoảng thời gian. Khi bật, Scanner "
+            "có thể gửi lệnh thật tới MT5; mọi lệnh vẫn phải vượt qua cổng phát "
+            "hành và các kiểm tra an toàn."
         )
         self .auto_trade_check .setChecked (False )
         self .auto_trade_check .toggled .connect (self ._update_auto_trade_toggle_style )

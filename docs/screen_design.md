@@ -62,8 +62,9 @@ Quyết định thiết kế bắt buộc:
 - Mục Tin mới nhất chỉ hiển thị headline thị trường và phát biểu đáng chú ý trong 24h qua, mỗi dòng riêng. Dòng tin mới nhất dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm `-> ảnh hưởng tới đồng tiền đang xét` khi đã có nhận định tác động cụ thể. Lịch kinh tế vẫn hiển thị tác động vì bản thân event có mức impact.
 - Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ M5, M15, H1, H4. Khi đang auto-scan phải có nút `Dừng quét tự động`.
 - Khi mở tab Scanner lần đầu trong phiên, tự động chọn tất cả mã, đặt chế độ
-  quét tự động M5 và chạy quét lần đầu sau 1.5 giây. Nút auto-trade luôn
-  unchecked và disabled; lượt quét tự khởi động không thể yêu cầu đặt lệnh.
+  quét tự động M5 và chạy quét lần đầu sau 1.5 giây. Nút auto-trade khả dụng
+  nhưng mặc định unchecked; lượt quét tự khởi động không yêu cầu đặt lệnh nếu
+  người dùng chưa chủ động bật nút.
 - Settings > Nâng cao có cấu hình Telegram gồm bot token, danh sách chat ID nhận alert và interval auto-scan mặc định. Chat ID có thể nhập nhiều giá trị, cách nhau bằng dấu phẩy.
 - Các phần dài như nhận định AI, điểm thành phần, raw JSON, log kỹ thuật phải đưa vào tab, panel phụ hoặc dialog.
 - Mọi tác vụ nặng như lấy dữ liệu MT5, gọi AI, quét 31 mã, tính indicator phải chạy qua worker/thread; UI không được bị đơ.
@@ -525,10 +526,10 @@ lệnh từ các field legacy.
 ### Thành phần bắt buộc
 
 - Bộ chọn phạm vi symbol, quét một lần/quét định kỳ và nút bắt đầu/dừng.
-- Nút **Tự động vào lệnh MT5** vẫn hiển thị để người dùng biết tính năng tồn
-  tại, nhưng phải ở trạng thái disable và unchecked trong mọi chế độ quét.
-  Tooltip giải thích Scanner không tự gửi lệnh; đổi sang auto-scan hoặc stage
-  `PRODUCTION` không được mở khóa nút.
+- Nút **Tự động vào lệnh MT5** chỉ được enable trong chế độ quét định kỳ, mặc
+  định unchecked và được làm nổi khi người dùng bật. Trong quét một lần, nút
+  phải disable và reset về unchecked. Tooltip phải cảnh báo việc bật nút có
+  thể gửi lệnh thật nhưng vẫn chịu rollout và safety gates.
 - Banner rollout thể hiện stage, kill switch, disagreement và release/canary
   gate.
 - Progress và thống kê theo sáu trạng thái candidate.
@@ -571,8 +572,8 @@ Trạng thái chuẩn gồm `READY_NOW`, `WAITING_CONFIRMATION`, `WATCH_ZONE`,
 
 ### Hành vi đặt lệnh
 
-UI hiện không phát yêu cầu auto order:
-`ScannerRequest.auto_trade_enabled` luôn là `false`. Nút đặt candidate thủ
+UI chỉ phát yêu cầu auto order khi đang quét định kỳ và người dùng chủ động bật
+nút: khi đó `ScannerRequest.auto_trade_enabled=true`. Nút đặt candidate thủ
 công vẫn gọi `ScannerController.execute_order_candidate()`. Ở stage `SHADOW`,
 giao diện phải thông báo `SHADOW_MODE_ORDER_SUPPRESSED`; ở `PRODUCTION` nhưng
 release chưa đạt, phải thông báo `RELEASE_GATE_NOT_READY`. Không được gọi MT5

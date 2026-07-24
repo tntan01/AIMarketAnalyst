@@ -72,8 +72,9 @@ vẫn chưa đạt nên cấu hình này chưa được phép gửi lệnh thậ
 
 1. Mở **Scanner** và chọn danh sách symbol.
 2. Chọn quét một lần hoặc quét tự động theo thời gian. Nút
-   **Tự động vào lệnh MT5** hiện bị disable trong cả hai chế độ, nên Scanner
-   chỉ quét và không tự gửi lệnh.
+   **Tự động vào lệnh MT5** chỉ khả dụng ở chế độ quét tự động và mặc định tắt.
+   Chỉ bật khi thực sự muốn Scanner gửi candidate hợp lệ tới đường thực thi
+   MT5; quét một lần không tự đặt lệnh.
 3. Nhấn **Quét thị trường**.
 4. Kiểm tra các cột chính: trạng thái, hướng, regime, setup score, opportunity rank, evidence confidence, execution readiness, R:R thực, branch và config status.
 5. Mở chi tiết để xem `reason_codes`, gate, strategy evaluation và candidate payload.
@@ -146,7 +147,7 @@ Code và test nội bộ hoàn tất không đồng nghĩa production-ready. C�
 
 Metrics được lưu tại app-data trong `rollout/scanner-rollout-metrics.json`. Bằng chứng release được cập nhật qua `ScannerRolloutMetricsService.update_release_evidence()`.
 
-Snapshot ngày 24/07/2026 lúc cập nhật tài liệu: shadow đã đạt `364/100`,
+Snapshot ngày 24/07/2026 lúc cập nhật tài liệu: shadow đã đạt `572/100`,
 rollback đã đạt và không có side mismatch/unsafe disagreement. Các điều kiện
 còn thiếu là `0/20` demo orders,
 `0/5` canary orders, OOS evidence và demo evidence. Không sửa metrics bằng tay
@@ -157,10 +158,9 @@ còn thiếu là `0/20` demo orders,
 - **Config hiện `DRAFT` hoặc `BACKTEST_INVALID`:** chạy lại validation theo schema hiện hành; không sửa status bằng tay.
 - **Row `READY_NOW` nhưng không có lệnh:** xem `reason_codes`, rollout stage và kết quả execution revalidation.
 - **Đang ở `SHADOW`:** hành vi không gửi lệnh là đúng, kể cả người dùng bấm đặt lệnh từ Scanner.
-- **Đã chọn `PRODUCTION` nhưng Scanner không tự vào lệnh:** đây là hành vi
-  hiện hành vì nút auto-entry đang bị disable và request từ UI luôn đặt
-  `auto_trade_enabled=false`. Với lệnh thủ công, tiếp tục kiểm tra
-  `release_readiness.block_codes`; runtime hiện còn bị chặn bởi
+- **Đã chọn `PRODUCTION` nhưng Scanner không tự vào lệnh:** kiểm tra chế độ
+  quét định kỳ và nút auto-entry đã được người dùng bật hay chưa. Sau đó kiểm
+  tra `release_readiness.block_codes`; runtime hiện vẫn bị chặn bởi
   `RELEASE_GATE_NOT_READY`.
 - **Demo không được nhận diện:** kiểm tra tên server MT5 có thể hiện demo/trial/practice/contest.
 - **Production bị chặn:** xem `release_readiness.block_codes` và bổ sung đúng bằng chứng còn thiếu.

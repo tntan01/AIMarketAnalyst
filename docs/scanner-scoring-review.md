@@ -1356,10 +1356,10 @@ Tooling và phần code của Giai đoạn 8 đã hoàn tất ngày **24/07/2026
 - Runtime ngày 24/07/2026 đã được lưu ở stage `PRODUCTION`, kill switch tắt,
   production approval bật, real account được phép, ba feature flag V2 bật và
   SMC mode là `v2`. Đây là cấu hình đã chọn, không phải bằng chứng release.
-- Nút auto-entry trên Scanner hiện bị disable và request từ UI luôn đặt
-  `auto_trade_enabled=false`. Lệnh thủ công vẫn bị policy trả
-  `RELEASE_GATE_NOT_READY` do `0/20` demo orders, `0/5` canary orders và thiếu
-  OOS/demo evidence.
+- Nút auto-entry trên Scanner đã khả dụng trong auto-scan, mặc định unchecked
+  và chỉ đặt `auto_trade_enabled=true` khi người dùng chủ động bật. Auto order
+  và lệnh thủ công vẫn bị policy trả `RELEASE_GATE_NOT_READY` do `0/20` demo
+  orders, `0/5` canary orders và thiếu OOS/demo evidence.
 
 Checklist triển khai:
 
@@ -1376,8 +1376,8 @@ Checklist triển khai:
 - [x] Test mục tiêu SMC/Scanner Phase 8: **143 passed**.
 - [x] Regression SMC/Scanner/Settings/Backtest/Journal liên quan:
   **322 passed**; 7 lỗi fixture Qt cũ nằm ngoài đường Phase 8.
-- [x] Đã đạt tối thiểu 100 shadow samples (`364/100` tại snapshot
-  24/07/2026 22:31, Asia/Ho_Chi_Minh).
+- [x] Đã đạt tối thiểu 100 shadow samples (`572/100` tại snapshot
+  24/07/2026 23:10, Asia/Ho_Chi_Minh).
 - [ ] Chưa đạt 20 demo orders (`0/20`) và 5 canary orders (`0/5`).
 - [ ] Chưa ghi OOS evidence và demo evidence.
 - [ ] Chưa chạy soak test MT5 demo, Telegram sandbox, UI interaction dài hạn
