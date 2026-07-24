@@ -1,32 +1,56 @@
 # Tài liệu dự án AI Market Analyst
 
-## Mục tiêu tài liệu
+Cập nhật đồng bộ gần nhất: **24/07/2026**.
 
-Bộ tài liệu này là nguồn tham chiếu gọn cho ứng dụng desktop PyQt6 AI Market Analyst.
+Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Market Analyst. Khi tài liệu và chương trình khác nhau, ưu tiên theo thứ tự:
 
-Stack công nghệ chính:
+1. Domain model, controller và test đang chạy.
+2. Tài liệu kiến trúc/luồng có nhãn **hiện hành**.
+3. Tài liệu review, kế hoạch, đề xuất và hướng dẫn MVP lịch sử.
 
-* PyQt6 làm app desktop.
-* `QWebEngineView` nhúng chart web/HTML.
-* Core Python xử lý MT5, AI, indicator, scoring và quản trị rủi ro.
+## Tài liệu hiện hành
 
-Tài liệu phải giúp đạt 3 mục tiêu:
+| Tài liệu | Phạm vi |
+|---|---|
+| `product_spec.md` | Đặc tả hành vi sản phẩm đang triển khai. |
+| `architecture.md` | Kiến trúc tổng thể, module và dependency. |
+| `scanner-flow.md` | Luồng Scanner V2 từ scan đến revalidation và rollout. |
+| `technical-scoring-architecture.md` | Ý nghĩa các lớp điểm, strategy branch, trạng thái và ranking. |
+| `workflow_guide.md` | Quy trình vận hành Backtest → Scanner → rollout. |
+| `runtime-status.md` | Trạng thái rollout/settings thực tế đang lưu trên máy hiện tại. |
+| `screen_design.md` | Thiết kế các màn hình; phần Scanner phải tuân theo `scanner-flow.md`. |
+| `installation_guide.md` | Cài đặt, chạy, đóng gói và checklist an toàn. |
+| `order_management.md` | Quản lý lệnh và trạng thái giao dịch. |
+| `system_backtest_design.md` | Thiết kế hệ thống backtest và validation. |
 
-1. Chương trình có độ hoàn thiện cao về tính năng và giao diện.
-2. Dễ nâng cấp, chỉnh sửa và test sau này.
-3. Dễ đóng gói, cài đặt và chạy trên máy tính khác.
+## Tài liệu đánh giá và lịch sử
 
-## Danh sách tài liệu
+| Tài liệu | Trạng thái |
+|---|---|
+| `scanner-scoring-review.md` | Review, kế hoạch 9 giai đoạn (0–8) và nhật ký hoàn thành Scanner V2. Code/tooling đã hoàn tất; validation thực tế trước production còn mở. |
+| `mvp_coding_guide.md` | Hướng dẫn triển khai MVP lịch sử; không phải runtime contract của Scanner V2. |
+| `macro_score_architecture.md` | Kiến trúc chấm điểm macro chuyên biệt. |
+| `macro_ui_enhancement_proposal.md` | Đề xuất cải tiến UI, không mặc nhiên là tính năng đã triển khai. |
+| `design_economic_calendar_fix.md` | Tài liệu thiết kế/sửa lỗi lịch kinh tế tại thời điểm viết. |
 
-1. `product_spec.md` — Đặc tả sản phẩm, phạm vi 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD, quy tắc MT5/AI/scoring và phụ lục auto trade hiện tại.
-2. `architecture.md` — Kiến trúc module, dependency, runtime data, chart nhúng, Telegram alert, auto-entry MT5 và packaging.
-3. `screen_design.md` — Thiết kế chi tiết các màn hình PyQt6, gồm hành vi Scanner auto-scan/auto-entry.
-4. `installation_guide.md` — Hướng dẫn cài môi trường, chạy app, đóng gói và checklist an toàn trước khi bật auto trade.
-5. `mvp_coding_guide.md` — Thứ tự code MVP theo từng giai đoạn và quy tắc triển khai auto trade/Telegram.
-6. `workflow_guide.md` — Hướng dẫn người dùng: quy trình backtest → cấu hình ngưỡng quyết định (decision_ready/watch/wait) → quét thị trường → auto trade.
-7. `evaluate_backtest_analysis_feature.md` — Đánh giá độc lập tính năng "Nhận định" kết quả Backtest: tính chính xác, tính đúng đắn, hiệu năng, khả năng bảo trì. Gồm danh sách bug đã phát hiện và trạng thái sửa.
-8. `bug_tracker.md` — Theo dõi toàn bộ bug đã phát hiện trong dự án, gồm trạng thái (đã fix / chưa fix), mức độ, file liên quan, và test tái hiện.
+## Trạng thái Scanner V2
 
-## Nguyên tắc cập nhật
+- Chín giai đoạn, đánh số **0 đến 8**, đã hoàn tất về code và test chuyên biệt.
+- Mã nguồn, settings mới và settings migrate mặc định ở rollout stage
+  `SHADOW`; stage này không gửi lệnh.
+- Runtime trên máy hiện tại đã chọn `PRODUCTION`, bật ba feature flag V2 và
+  dùng SMC v2. Đây chỉ là stage đã lưu; release gate hiện vẫn
+  `ready=false`, nên chưa có quyền gửi lệnh thật.
+- Nút auto-entry trên màn hình Scanner hiện bị disable và luôn tạo request với
+  `auto_trade_enabled=false`. Thao tác đặt lệnh thủ công vẫn đi qua shared
+  execution path và toàn bộ safety gate.
+- Chưa được xem là production-ready cho tới khi đủ bằng chứng shadow, demo, canary, OOS/demo performance và rollback.
+- Backtest chỉ tạo một strategy branch khi config hợp lệ; nó không được ghi đè Decision Engine, execution gate hoặc portfolio gate.
+- Mọi lệnh Scanner, kể cả thao tác thủ công từ giao diện Scanner, phải đi qua `ScannerController.execute_order_candidate()`.
 
-Khi thay đổi kiến trúc, màn hình, database, quy trình cài đặt hoặc cách đóng gói, cập nhật trực tiếp vào một trong 5 file trên. Không tạo thêm file nhỏ nếu nội dung có thể đặt vào tài liệu hiện có.
+## Quy tắc cập nhật
+
+- Thay đổi hành vi Scanner phải cập nhật tối thiểu `scanner-flow.md`, tài liệu kỹ thuật tương ứng và test.
+- Không mô tả `opportunity_score` là quyết định vào lệnh; đây chỉ là compatibility alias của ranking hiện tại.
+- Không dùng tên “nhánh có/không backtest” nếu chưa nói rõ trạng thái validation. Ba branch chuẩn là `BACKTEST_VALIDATED`, `DEFAULT_RULES` và `BACKTEST_INVALID`.
+- Tài liệu đề xuất hoặc lịch sử phải ghi rõ trạng thái để không bị hiểu là runtime contract.

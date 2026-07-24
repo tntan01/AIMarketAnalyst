@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -200,11 +201,13 @@ def test_build_gate_checks_from_result():
 
     checks = screen._build_gate_checks_from_result(analysis)
     assert isinstance(checks, list)
-    assert len(checks) == 11
+    assert len(checks) == 14
 
     found_gates = {c["gate"] for c in checks}
     expected = {"MT5", "Spread", "DataQuality", "News", "DailyWeeklyLoss",
-                "AccountGuard", "Journal", "M15", "ExpectedRR", "ScoreGap", "ZoneBroken"}
+                "AccountGuard", "Journal", "M15", "ExpectedRR", "ScoreGap",
+                "ZoneBroken", "ZoneRelevance", "ZonePriceRelation",
+                "H4ConfirmedCHOCH"}
     assert found_gates == expected
 
     # M15 should be warning (M15_LOOSE_CONFIRMATION in warning_codes)
@@ -307,7 +310,8 @@ def test_final_score_html():
     analysis = _make_mock_analysis()
     html = screen._diag_final_score_html(analysis)
 
-    assert "Điểm cuối cùng" in html
+    assert "Điểm thiết lập của hướng đã chọn" in html
+    assert "SETUP SCORE" in html
     assert "Tín hiệu" in html
     assert "Bằng chứng (NK)" in html
     assert "Chất lượng thực thi" in html
@@ -351,7 +355,7 @@ def test_diagnostics_no_pipeline():
     assert "Phân rã điểm số" in html
     assert "Gate kiểm tra" in html
     assert "Điều kiện vào lệnh" in html
-    assert "Điểm cuối cùng" in html
+    assert "Điểm thiết lập của hướng đã chọn" in html
     # Pipeline steps should be absent
     assert "Pipeline từng bước" not in html
 
@@ -390,6 +394,222 @@ def test_empty_checklist():
     assert html == ""
 
     print("  PASS: test_empty_checklist")
+
+
+def _canonical_conflict_row() -> dict:
+    """Legacy fields intentionally disagree with the canonical decision."""
+    analysis = _make_mock_analysis()
+    analysis["final_score"] = 90
+    analysis["technical"] = {
+        "price": 1.085,
+        "atr_h4": 0.01,
+    }
+    analysis["scenario_scores"]["buy"].update({
+        "macro_raw": 27,
+        "macro_confidence": 0.9,
+        "macro_status": "aligned",
+    })
+    analysis["scenario_scores"]["sell"].update({
+        "macro_raw": 9,
+        "macro_confidence": 0.4,
+        "macro_status": "conflict",
+    })
+    analysis["scenarios"] = [
+        {
+            "type": "buy",
+            "entry_status": "confirmed_entry",
+            "m15_quality": "strict",
+            "expected_effective_rr": 4.0,
+            "risk_reward": "1:5.0",
+        },
+        {
+            "type": "sell",
+            "entry_status": "watch_zone",
+            "m15_quality": "loose",
+            "expected_effective_rr": 1.1,
+            "risk_reward": "1:2.0",
+        },
+    ]
+    return {
+        "symbol": "EUR/USD",
+        "candidate_status": "OUT_OF_STRATEGY",
+        "selected_side": "sell",
+        "best_side": "buy",
+        "best_score": 90,
+        "final_score": 90,
+        "setup_score": 61,
+        "min_score": 80,
+        "risk_reward": "1:5.0",
+        "expected_effective_rr": 1.1,
+        "min_rr": 2.0,
+        "price_vs_zone": "far",
+        "trade_permission": "allowed",
+        "trade_allowed": False,
+        "analysis_result": analysis,
+        "scanner_candidate_decision": {
+            "status": "OUT_OF_STRATEGY",
+            "selected_side": "sell",
+            "setup_score": 61,
+            "reason_codes": [
+                "SETUP_SCORE_BELOW_DEFAULT_MIN",
+                "M15_NOT_STRICT",
+            ],
+            "strategy": {
+                "selected_side": "sell",
+                "score_value": 61,
+                "min_score": 80,
+                "expected_effective_rr": 1.1,
+                "min_rr": 2.0,
+                "eligible": False,
+                "reason_codes": ["SETUP_SCORE_BELOW_DEFAULT_MIN"],
+            },
+            "execution": {
+                "entry_ready": False,
+                "trade_allowed": False,
+                "reason_codes": ["M15_NOT_STRICT"],
+            },
+            "side_evaluation": {
+                "side": "sell",
+                "setup_score": 61,
+                "expected_effective_rr": 1.1,
+                "entry_status": "watch_zone",
+                "m15_quality": "loose",
+                "entry_zone": [1.08, 1.09],
+                "stop_loss": 1.10,
+                "take_profit": [1.06],
+                "gate_result": {
+                    "allowed": True,
+                    "decision_cap": "WAITING_CONFIRMATION",
+                    "block_codes": [],
+                    "warning_codes": ["M15_LOOSE_CONFIRMATION"],
+                    "account_guard_stats": {},
+                    "journal_feedback": {"warning_codes": []},
+                },
+            },
+        },
+    }
+
+
+def test_canonical_decision_wins_over_legacy_direction_and_score():
+    screen = _make_screen()
+    screen.row = _canonical_conflict_row()
+
+    assert screen._canonical_status() == "OUT_OF_STRATEGY"
+    assert screen._selected_side() == "sell"
+    assert screen._canonical_setup_score() == 61
+    assert screen._required_min_score() == 80
+    assert screen._effective_rr() == 1.1
+
+    html = screen._diag_final_score_html(screen.row["analysis_result"])
+    assert "Ngoài chiến lược" in html
+    assert "Hướng phân tích: <b>BÁN</b>" in html
+    assert ">61<" in html
+
+
+def test_hero_explains_canonical_status_side_and_shadow_mode():
+    screen = _make_screen()
+    screen.row = _canonical_conflict_row()
+    screen.row["rollout_stage"] = "SHADOW"
+    screen.scanner_result = {}
+    screen.hero_bar = _FakeLabel()
+    screen.settings_service = SimpleNamespace(
+        load=lambda: SimpleNamespace(
+            display=SimpleNamespace(theme="dark"),
+        ),
+    )
+
+    screen._refresh_hero()
+
+    assert "NGOÀI CHIẾN LƯỢC" in screen.hero_bar.text
+    assert "Hướng phân tích: BÁN" in screen.hero_bar.text
+    assert "Setup 61/80" in screen.hero_bar.text
+    assert "SHADOW · chỉ quan sát, không gửi lệnh thật" in screen.hero_bar.text
+    assert screen.hero_bar.visible is True
+
+
+def test_overview_checklist_uses_effective_rr_and_canonical_permission():
+    screen = _make_screen()
+    screen.row = _canonical_conflict_row()
+
+    items = screen._build_entry_checklist()
+
+    assert len(items) == 7
+    assert items[0]["state"] == "fail"  # strategy eligible=False
+    assert "61/80" in items[1]["label"]
+    assert items[1]["state"] == "fail"
+    assert items[3]["state"] == "pass"
+    assert "giá đang trong vùng" in items[3]["label"]
+    assert items[5]["state"] == "fail"
+    assert "1.1/2" in items[5]["label"]
+    assert items[6]["state"] == "fail"
+    assert "không được phép" in items[6]["label"]
+
+    _, rr_detail, _ = screen._dialog_card_rr()
+    assert "danh nghĩa 1:2.0" in rr_detail
+    assert "1:5.0" not in rr_detail
+
+    macro_value, macro_detail, _ = screen._dialog_card_macro()
+    assert macro_value == "◌ 9/30"
+    assert "Xung đột" in macro_detail
+
+
+def test_gate_fallback_uses_selected_sell_scenario_not_first_scenario():
+    screen = _make_screen()
+    screen.row = _canonical_conflict_row()
+    analysis = screen.row["analysis_result"]
+    analysis.pop("pipeline_diagnostics", None)
+
+    checks = screen._build_gate_checks_from_result(analysis)
+    m15 = next(item for item in checks if item["gate"] == "M15")
+    rr = next(item for item in checks if item["gate"] == "ExpectedRR")
+
+    assert "loose" in m15["detail"]
+    assert "1.1" in rr["detail"]
+    assert "5.0" not in rr["detail"]
+
+
+def test_gate_html_does_not_borrow_legacy_best_side_pipeline():
+    screen = _make_screen()
+    screen.row = _canonical_conflict_row()
+
+    html = screen._diag_gate_html(screen.row["analysis_result"])
+
+    assert "R:R=1.1" in html
+    assert "R:R=2.1 vs min=1.3" not in html
+    assert "M15=loose" in html
+
+
+def test_combined_gate_status_does_not_hide_weekly_block():
+    screen = _make_screen()
+    analysis = _make_mock_analysis()
+    analysis.pop("pipeline_diagnostics", None)
+    analysis["trade_gate"]["block_codes"] = [
+        "WEEKLY_LOSS_LIMIT_REACHED",
+    ]
+    analysis["trade_gate"]["warning_codes"] = []
+
+    checks = screen._build_gate_checks_from_result(analysis)
+    loss = next(
+        item for item in checks if item["gate"] == "DailyWeeklyLoss"
+    )
+
+    assert loss["status"] == "block"
+    assert "vượt giới hạn" in loss["detail"]
+
+
+def test_missing_gate_and_macro_data_are_not_presented_as_pass_or_neutral_score():
+    screen = _make_screen()
+    screen.row = {
+        "symbol": "EUR/USD",
+        "analysis_result": {"scenarios": []},
+    }
+
+    checks = screen._build_gate_checks_from_result(screen.row["analysis_result"])
+    assert all(item["status"] == "unknown" for item in checks)
+
+    macro_value, macro_detail, _ = screen._dialog_card_macro()
+    assert macro_value == "◌ --/30"
+    assert "Chưa rõ" in macro_detail
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +661,28 @@ class _FakeTextEdit:
     """Fake QTextEdit that captures setHtml calls."""
     def setHtml(self, html: str) -> None:
         self._html = html
+
+
+class _FakeLabel:
+    def __init__(self) -> None:
+        self.text = ""
+        self.tooltip = ""
+        self.visible = False
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+    def setStyleSheet(self, _style: str) -> None:
+        pass
+
+    def setToolTip(self, tooltip: str) -> None:
+        self.tooltip = tooltip
+
+    def show(self) -> None:
+        self.visible = True
+
+    def hide(self) -> None:
+        self.visible = False
 
 
 # ---------------------------------------------------------------------------

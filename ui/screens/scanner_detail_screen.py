@@ -3,6 +3,11 @@ from __future__ import annotations
 from html import escape
 
 from config.paths import app_data_dir
+from core.scanner_models import (
+    BRANCH_BACKTEST_INVALID,
+    BRANCH_BACKTEST_VALIDATED,
+)
+from core.reason_codes import REASON_CODE_MESSAGES
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QProgressBar,
@@ -40,6 +45,32 @@ _VN_MACRO = {
     "aligned": "thuận",
     "unclear": "chưa rõ",
     "": "trung lập",
+}
+
+_CANDIDATE_STATUS = {
+    "READY_NOW": ("Sẵn sàng tại thời điểm quét", "ready"),
+    "WAITING_CONFIRMATION": ("Chờ xác nhận", "wait"),
+    "WATCH_ZONE": ("Theo dõi vùng giá", "watch"),
+    "OUT_OF_STRATEGY": ("Ngoài chiến lược", "neutral"),
+    "BLOCKED": ("Bị chặn", "blocked"),
+    "DATA_UNAVAILABLE": ("Thiếu dữ liệu", "data"),
+}
+
+_SCANNER_REASON_MESSAGES = {
+    "SETUP_SCORE_BELOW_DEFAULT_MIN": "Điểm thiết lập thấp hơn ngưỡng Ready đang cấu hình.",
+    "SETUP_SCORE_BELOW_MIN": "Điểm thiết lập thấp hơn ngưỡng của cấu hình Backtest.",
+    "SCANNER_NOT_READY": "Pipeline chưa đánh giá thiết lập là sẵn sàng.",
+    "DECISION_NOT_READY": "Decision Engine chưa cho trạng thái sẵn sàng giao dịch.",
+    "ENTRY_NOT_CONFIRMED": "Điểm vào lệnh chưa được xác nhận.",
+    "SCENARIO_NOT_READY": "Kịch bản của hướng được chọn chưa sẵn sàng.",
+    "M15_NOT_STRICT": "M15 chưa xác nhận chặt.",
+    "TRADE_PERMISSION_NOT_ALLOWED": "Quyền giao dịch tại thời điểm quét chưa được cho phép.",
+    "TRADE_GATE_NOT_ALLOWED": "Cổng an toàn đang chặn giao dịch.",
+    "TRADE_GATE_DECISION_CAP": "Cổng an toàn đang giới hạn quyết định ở mức theo dõi/chờ.",
+    "EXPECTED_EFFECTIVE_RR_BELOW_MIN": "R:R sau chi phí thấp hơn mức tối thiểu.",
+    "MISSING_SELECTED_SIDE_SCENARIO": "Không có kịch bản hợp lệ cho hướng được chọn.",
+    "MISSING_SELECTED_SIDE": "Không xác định được hướng giao dịch.",
+    "BACKTEST_CONFIG_INVALID": "Cấu hình Backtest không hợp lệ.",
 }
 
 
@@ -94,7 +125,10 @@ class ScannerDetailScreen(QWidget):
         # -- Button + Trade Panel + Score Panel + Checklist Panel --
         self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.show_detail_btn.setToolTip("Xem toàn bộ 16 chỉ số phân tích chi tiết")
+        self.show_detail_btn.setToolTip(
+            "Xem bối cảnh kỹ thuật, vĩ mô, nhật ký và các điều kiện "
+            "của kết quả quét"
+        )
         self.show_detail_btn.setFixedHeight(28)
         self.show_detail_btn.setStyleSheet(
             "QPushButton {"
@@ -245,6 +279,274 @@ class ScannerDetailScreen(QWidget):
         self.scanner_result = dict(payload.get("scanner_result", {}) or {})
         self._render()
 
+    @staticmethod
+    def _as_dict(value: object) -> dict:
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _number(value: object) -> float | None:
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def _score_text(value: object) -> str:
+        number = ScannerDetailScreen._number(value)
+        if number is None:
+            return "--"
+        return str(int(number)) if number.is_integer() else f"{number:.1f}"
+
+    def _candidate_decision(self) -> dict:
+        return self._as_dict(self.row.get("scanner_candidate_decision"))
+
+    def _candidate_strategy(self) -> dict:
+        return self._as_dict(self._candidate_decision().get("strategy"))
+
+    def _candidate_execution(self) -> dict:
+        return self._as_dict(self._candidate_decision().get("execution"))
+
+    def _selected_side(self) -> str:
+        decision = self._candidate_decision()
+        raw_side = (
+            decision.get("selected_side")
+            if decision
+            else self.row.get("selected_side")
+        )
+        side = str(raw_side or "").strip().lower()
+        if side in {"buy", "sell"}:
+            return side
+
+        if decision:
+            return ""
+
+        # Compatibility only for old snapshots that predate the canonical
+        # candidate contract.
+        side = str(self.row.get("best_side") or "").strip().lower()
+        if side in {"buy", "sell"}:
+            return side
+        bias = self._as_dict(self.row.get("direction_bias"))
+        side = str(bias.get("best_side") or "").strip().lower()
+        return side if side in {"buy", "sell"} else ""
+
+    def _selected_side_evaluation(self) -> dict:
+        decision = self._candidate_decision()
+        selected = self._as_dict(decision.get("side_evaluation"))
+        side = self._selected_side()
+        if selected and (
+            not side or str(selected.get("side") or "").lower() == side
+        ):
+            return selected
+        sides = self._as_dict(decision.get("side_evaluations"))
+        return self._as_dict(sides.get(side))
+
+    def _selected_scenario(self, analysis: dict | None = None) -> dict:
+        source = analysis if isinstance(analysis, dict) else self._as_dict(
+            self.row.get("analysis_result")
+        )
+        scenarios = source.get("scenarios")
+        if not isinstance(scenarios, list):
+            return {}
+        side = self._selected_side()
+        for scenario in scenarios:
+            if not isinstance(scenario, dict):
+                continue
+            scenario_side = str(
+                scenario.get("type")
+                or scenario.get("side")
+                or scenario.get("direction")
+                or ""
+            ).strip().lower()
+            if side and scenario_side == side:
+                return scenario
+        if len(scenarios) == 1 and isinstance(scenarios[0], dict):
+            return scenarios[0]
+        return {}
+
+    def _selected_price_vs_zone(self) -> str:
+        """Return price position for the canonical selected-side zone."""
+        decision = self._candidate_decision()
+        side_eval = self._selected_side_evaluation()
+        entry_zone = side_eval.get("entry_zone")
+        if entry_zone is None:
+            entry_zone = self._selected_scenario().get("entry_zone")
+
+        if decision:
+            analysis = self._as_dict(self.row.get("analysis_result"))
+            technical = self._as_dict(analysis.get("technical"))
+            price = self._number(technical.get("price"))
+            atr = self._number(
+                technical.get("atr_h4") or technical.get("atr_d1")
+            )
+            if (
+                price is not None
+                and isinstance(entry_zone, (list, tuple))
+                and len(entry_zone) == 2
+            ):
+                low = self._number(entry_zone[0])
+                high = self._number(entry_zone[1])
+                if low is not None and high is not None:
+                    low, high = min(low, high), max(low, high)
+                    if low <= price <= high:
+                        return "in_zone"
+                    distance = low - price if price < low else price - high
+                    if atr is not None and atr > 0 and distance <= atr * 0.5:
+                        return "near_zone"
+                    return "far"
+            # A canonical row must not borrow the position calculated for a
+            # different legacy best-side zone.
+            return "unknown"
+
+        return str(self.row.get("price_vs_zone") or "unknown").lower()
+
+    def _canonical_status(self) -> str:
+        decision = self._candidate_decision()
+        raw_status = (
+            decision.get("status")
+            if decision
+            else self.row.get("candidate_status")
+        )
+        raw = str(raw_status or "").strip().upper()
+        if raw in _CANDIDATE_STATUS:
+            return raw
+        if decision:
+            return "DATA_UNAVAILABLE"
+        legacy = str(self.row.get("scanner_group") or "").strip().upper()
+        legacy_map = {
+            "READY": "READY_NOW",
+            "READY_NOW": "READY_NOW",
+            "WAIT": "WAITING_CONFIRMATION",
+            "WAITING_CONFIRMATION": "WAITING_CONFIRMATION",
+            "WATCH": "WATCH_ZONE",
+            "WATCH_ZONE": "WATCH_ZONE",
+            "BLOCKED": "BLOCKED",
+        }
+        return legacy_map.get(legacy, "DATA_UNAVAILABLE")
+
+    def _canonical_setup_score(self) -> float | None:
+        strategy = self._candidate_strategy()
+        decision = self._candidate_decision()
+        values = (
+            (strategy.get("score_value"), decision.get("setup_score"))
+            if decision
+            else (
+                self.row.get("setup_score"),
+                self.row.get("final_score"),
+            )
+        )
+        for value in values:
+            number = self._number(value)
+            if number is not None:
+                return number
+        return None
+
+    def _required_min_score(self) -> float | None:
+        strategy = self._candidate_strategy()
+        values = (
+            (strategy.get("min_score"),)
+            if self._candidate_decision()
+            else (self.row.get("min_score"),)
+        )
+        for value in values:
+            number = self._number(value)
+            if number is not None:
+                return number
+        return None
+
+    def _effective_rr(self) -> float | None:
+        strategy = self._candidate_strategy()
+        side_eval = self._selected_side_evaluation()
+        values = (
+            (
+                strategy.get("expected_effective_rr"),
+                side_eval.get("expected_effective_rr"),
+            )
+            if self._candidate_decision()
+            else (self.row.get("expected_effective_rr"),)
+        )
+        for value in values:
+            number = self._number(value)
+            if number is not None:
+                return number
+        return None
+
+    def _required_min_rr(self) -> float | None:
+        strategy = self._candidate_strategy()
+        values = (
+            (strategy.get("min_rr"),)
+            if self._candidate_decision()
+            else (self.row.get("min_rr"),)
+        )
+        for value in values:
+            number = self._number(value)
+            if number is not None:
+                return number
+        return None
+
+    def _scan_trade_allowed(self) -> bool | None:
+        decision = self._candidate_decision()
+        if decision:
+            value = self._candidate_execution().get("trade_allowed")
+        else:
+            value = self.row.get("trade_allowed")
+        return value if isinstance(value, bool) else None
+
+    def _selected_macro_metrics(
+        self,
+    ) -> tuple[float | None, float | None, str]:
+        """Return raw /30 macro score, confidence and status for selected side."""
+        if self._candidate_decision():
+            analysis = self._as_dict(self.row.get("analysis_result"))
+            scores = self._as_dict(analysis.get("scenario_scores"))
+            selected = self._as_dict(scores.get(self._selected_side()))
+            return (
+                self._number(selected.get("macro_raw")),
+                self._number(selected.get("macro_confidence")),
+                str(selected.get("macro_status") or "unclear").lower(),
+            )
+        return (
+            self._number(self.row.get("macro_score")),
+            self._number(self.row.get("macro_confidence")),
+            str(self.row.get("macro_bias") or "unclear").lower(),
+        )
+
+    def _rollout_stage(self) -> str:
+        stage = str(self.row.get("rollout_stage") or "").strip().upper()
+        if stage:
+            return stage
+        scanner_result = self._as_dict(getattr(self, "scanner_result", {}))
+        policy = self._as_dict(scanner_result.get("rollout_policy"))
+        return str(policy.get("stage") or "UNKNOWN").strip().upper()
+
+    def _rollout_display(self) -> str:
+        stage = self._rollout_stage()
+        return {
+            "DISABLED": "TẮT · không gửi lệnh thật",
+            "SHADOW": "SHADOW · chỉ quan sát, không gửi lệnh thật",
+            "DEMO_LIMITED": "DEMO GIỚI HẠN",
+            "DEMO_FULL": "DEMO ĐẦY ĐỦ",
+            "CANARY": "CANARY · chạy thật giới hạn",
+            "PRODUCTION": "PRODUCTION · chạy thật",
+            "UNKNOWN": "CHƯA XÁC ĐỊNH",
+            "INVALID": "CẤU HÌNH KHÔNG HỢP LỆ",
+        }.get(stage, stage)
+
+    def _candidate_reason_messages(self) -> list[str]:
+        decision = self._candidate_decision()
+        reasons = decision.get("reason_codes")
+        if not decision and not isinstance(reasons, list):
+            reasons = self.row.get("auto_trade_reason_codes")
+        if not isinstance(reasons, list):
+            return []
+        return [
+            REASON_CODE_MESSAGES.get(
+                str(code),
+                _SCANNER_REASON_MESSAGES.get(str(code), str(code)),
+            )
+            for code in reasons
+            if str(code).strip()
+        ]
+
     def _show_scan_detail_dialog(self) -> None:
         """Open a dialog showing all InfoCards and the entry checklist."""
         if not self.row:
@@ -261,7 +563,7 @@ class ScannerDetailScreen(QWidget):
         dlg = QDialog(self)
         dlg.setWindowTitle(f"📋 Chi tiết kết quả quét — {symbol}")
         dlg.setMinimumSize(880, 580)
-        dlg.resize(980, 680)
+        dlg.resize(1040, 680)
         dlg.setObjectName("ScanAnalysisDetailDialog")
 
         root = QVBoxLayout(dlg)
@@ -279,25 +581,36 @@ class ScannerDetailScreen(QWidget):
         title.setTextFormat(Qt.TextFormat.RichText)
         header_layout.addWidget(title)
         header_layout.addStretch(1)
+        root.addLayout(header_layout)
 
-        # Overview Pills
-        # 1. Signal Bias Pill
-        bias_val = self.row.get("direction_bias", {})
-        side = "buy"
-        bias_text = "TRUNG LẬP"
-        pill_side_obj = "SummaryPillNeutral"
-        side_color = "#f59e0b"
-        if isinstance(bias_val, dict):
-            side = str(bias_val.get("best_side", ""))
-            is_clear = bias_val.get("is_clear_bias", False)
-            if side == "buy":
-                bias_text = f"MUA {'RÕ' if is_clear else 'TB'}"
-                pill_side_obj = "SummaryPillBuy"
-                side_color = "#10b981"
-            elif side == "sell":
-                bias_text = f"BÁN {'RÕ' if is_clear else 'TB'}"
-                pill_side_obj = "SummaryPillSell"
-                side_color = "#f43f5e"
+        # Keep the decision summary on its own row. This prevents the title
+        # and six status pills from being squeezed or clipped on smaller
+        # screens.
+        summary_layout = QHBoxLayout()
+        summary_layout.setSpacing(8)
+
+        # Overview pills use the canonical candidate contract. Raw BUY/SELL
+        # bias is analysis context, not a recommendation to place an order.
+        status = self._canonical_status()
+        status_label, status_state = _CANDIDATE_STATUS[status]
+        status_colors = {
+            "ready": "#10b981",
+            "wait": "#f59e0b",
+            "watch": "#f59e0b",
+            "blocked": "#f43f5e",
+            "neutral": "#94a3b8",
+            "data": "#64748b",
+        }
+        side = self._selected_side()
+        bias_text = f"HƯỚNG: { {'buy': 'MUA', 'sell': 'BÁN'}.get(side, '--') }"
+        pill_side_obj = {
+            "buy": "SummaryPillBuy",
+            "sell": "SummaryPillSell",
+        }.get(side, "SummaryPillNeutral")
+        side_color = {
+            "buy": "#10b981",
+            "sell": "#f43f5e",
+        }.get(side, "#94a3b8")
 
         bias_pill = QFrame()
         bias_pill.setObjectName(pill_side_obj)
@@ -306,44 +619,89 @@ class ScannerDetailScreen(QWidget):
         bias_lbl = QLabel(bias_text)
         bias_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {side_color}; background: transparent; border: none;")
         bias_pill_layout.addWidget(bias_lbl)
-        header_layout.addWidget(bias_pill)
+        summary_layout.addWidget(bias_pill)
 
-        # 2. Final Score Pill
-        final_v = self.row.get("final_score", "--")
+        status_pill = QFrame()
+        status_pill.setObjectName("SummaryPillStatus")
+        status_pill_layout = QHBoxLayout(status_pill)
+        status_pill_layout.setContentsMargins(8, 4, 8, 4)
+        status_lbl = QLabel(status_label)
+        status_lbl.setStyleSheet(
+            f"font-size: 11px; font-weight: bold; "
+            f"color: {status_colors[status_state]}; "
+            "background: transparent; border: none;"
+        )
+        status_pill_layout.addWidget(status_lbl)
+        summary_layout.addWidget(status_pill)
+
+        # Setup score of the canonical selected side.
+        setup_text = self._score_text(self._canonical_setup_score())
+        min_score_text = self._score_text(self._required_min_score())
         score_pill = QFrame()
         score_pill.setObjectName("SummaryPillScore")
         score_pill_layout = QHBoxLayout(score_pill)
         score_pill_layout.setContentsMargins(8, 4, 8, 4)
-        score_lbl = QLabel(f"Điểm: {final_v}/100")
+        score_lbl = QLabel(f"Setup: {setup_text}/{min_score_text}")
         score_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {'#0f172a' if light else '#f8fafc'}; background: transparent; border: none;")
         score_pill_layout.addWidget(score_lbl)
-        header_layout.addWidget(score_pill)
+        summary_layout.addWidget(score_pill)
 
-        # 3. R:R Pill
-        rr = self.row.get("risk_reward") or "--"
+        # Effective R:R is used by Strategy Router; nominal R:R is not.
+        effective_rr = self._effective_rr()
+        min_rr = self._required_min_rr()
+        rr_text = (
+            f"{effective_rr:.2f}/{min_rr:.2f}"
+            if effective_rr is not None and min_rr is not None
+            else "--"
+        )
         rr_pill = QFrame()
         rr_pill.setObjectName("SummaryPillRR")
         rr_pill_layout = QHBoxLayout(rr_pill)
         rr_pill_layout.setContentsMargins(8, 4, 8, 4)
-        rr_lbl = QLabel(f"R:R: {rr}")
+        rr_lbl = QLabel(f"R:R thực: {rr_text}")
         rr_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #f59e0b; background: transparent; border: none;")
         rr_pill_layout.addWidget(rr_lbl)
-        header_layout.addWidget(rr_pill)
+        summary_layout.addWidget(rr_pill)
 
-        # 4. Permission Pill
-        perm = str(self.row.get("trade_permission") or "--").lower()
-        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
-        perm_accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#f43f5e"}.get(perm, "#94a3b8")
+        # Scan-time permission is canonical. It still does not bypass rollout
+        # or final execution revalidation.
+        trade_allowed = self._scan_trade_allowed()
+        perm_text = (
+            "Cho phép tại lúc quét"
+            if trade_allowed is True
+            else "Không cho phép tại lúc quét"
+            if trade_allowed is False
+            else "Chưa có kết quả"
+        )
+        perm_accent = (
+            "#10b981"
+            if trade_allowed is True
+            else "#f43f5e"
+            if trade_allowed is False
+            else "#94a3b8"
+        )
         perm_pill = QFrame()
         perm_pill.setObjectName("SummaryPillPerm")
         perm_pill_layout = QHBoxLayout(perm_pill)
         perm_pill_layout.setContentsMargins(8, 4, 8, 4)
-        perm_lbl = QLabel(f"Quyền: {perm_map.get(perm, perm)}")
+        perm_lbl = QLabel(perm_text)
         perm_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {perm_accent}; background: transparent; border: none;")
         perm_pill_layout.addWidget(perm_lbl)
-        header_layout.addWidget(perm_pill)
+        summary_layout.addWidget(perm_pill)
 
-        root.addLayout(header_layout)
+        rollout_pill = QFrame()
+        rollout_pill.setObjectName("SummaryPillRollout")
+        rollout_layout = QHBoxLayout(rollout_pill)
+        rollout_layout.setContentsMargins(8, 4, 8, 4)
+        rollout_lbl = QLabel(self._rollout_display())
+        rollout_lbl.setStyleSheet(
+            "font-size: 11px; font-weight: 600; color: #38bdf8; "
+            "background: transparent; border: none;"
+        )
+        rollout_layout.addWidget(rollout_lbl)
+        summary_layout.addWidget(rollout_pill)
+        summary_layout.addStretch(1)
+        root.addLayout(summary_layout)
 
         # -----------------------------------------------------------------------
         # Scroll Area
@@ -434,27 +792,38 @@ class ScannerDetailScreen(QWidget):
         macro_card_layout.setSpacing(10)
 
         # Macro Score Header
-        macro_val_raw = self.row.get("macro_score", "--")
-        try:
-            macro_num = int(macro_val_raw)
-        except (TypeError, ValueError):
-            macro_num = 15
-        macro_accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
-        macro_conf = float(self.row.get("macro_confidence", 1.0))
-        macro_dot = "●" if macro_conf >= 0.8 else ("○" if macro_conf >= 0.5 else "◌")
-        macro_bias_raw = str(self.row.get("macro_bias", "") or "").lower()
+        macro_num, macro_conf, macro_bias_raw = (
+            self._selected_macro_metrics()
+        )
+        macro_accent = (
+            "#10b981"
+            if macro_num is not None and macro_num >= 22
+            else "#f59e0b"
+            if macro_num is not None and macro_num >= 15
+            else "#94a3b8"
+        )
+        macro_dot = (
+            "●"
+            if macro_conf is not None and macro_conf >= 0.8
+            else "○"
+            if macro_conf is not None and macro_conf >= 0.5
+            else "◌"
+        )
         macro_bias_text = {
             "aligned": "Thuận",
             "conflict": "Xung đột",
             "divergent": "Xung đột",
             "neutral": "Trung lập",
             "unclear": "Chưa rõ"
-        }.get(macro_bias_raw, macro_bias_raw.title())
+        }.get(macro_bias_raw, macro_bias_raw.title() or "Chưa rõ")
 
         macro_hdr = QHBoxLayout()
-        macro_hdr_lbl = QLabel("Điểm số Vĩ mô")
+        macro_hdr_lbl = QLabel("Điểm vĩ mô gốc")
         macro_hdr_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color};")
-        macro_hdr_val = QLabel(f"{macro_dot} {macro_num}/30 ({macro_bias_text})")
+        macro_hdr_val = QLabel(
+            f"{macro_dot} {self._score_text(macro_num)}/30 "
+            f"({macro_bias_text})"
+        )
         macro_hdr_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {macro_accent};")
         macro_hdr.addWidget(macro_hdr_lbl)
         macro_hdr.addStretch(1)
@@ -476,7 +845,7 @@ class ScannerDetailScreen(QWidget):
             tier_info = QHBoxLayout()
             tier_lbl = QLabel(t_label)
             tier_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {value_color};")
-            tier_score = QLabel(f"{t_val}/{t_max}")
+            tier_score = QLabel(f"{self._score_text(t_val)}/{t_max}")
             tier_score.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {value_color};")
             tier_info.addWidget(tier_lbl)
             tier_info.addStretch(1)
@@ -486,10 +855,16 @@ class ScannerDetailScreen(QWidget):
             # Styled QProgressBar
             bar = QProgressBar()
             bar.setRange(0, t_max)
-            bar.setValue(t_val)
+            bar.setValue(int(t_val) if isinstance(t_val, (int, float)) else 0)
             bar.setTextVisible(False)
             bar.setFixedHeight(6)
-            p_color = "#10b981" if t_val >= t_max * 0.7 else ("#f59e0b" if t_val >= t_max * 0.4 else "#94a3b8")
+            p_color = (
+                "#10b981"
+                if isinstance(t_val, (int, float)) and t_val >= t_max * 0.7
+                else "#f59e0b"
+                if isinstance(t_val, (int, float)) and t_val >= t_max * 0.4
+                else "#94a3b8"
+            )
             bg_color = "#1e293b" if not light else "#e2e8f0"
             bar.setStyleSheet(f"""
                 QProgressBar {{ background-color: {bg_color}; border: none; border-radius: 3px; }}
@@ -625,23 +1000,44 @@ class ScannerDetailScreen(QWidget):
 
         green_color = "#10b981"
         red_color = "#f43f5e"
+        unknown_color = "#94a3b8"
 
         for item in self._build_entry_checklist():
+            state = str(item.get("state") or "unknown")
+            passed = state == "pass"
+            color = (
+                green_color
+                if passed
+                else red_color
+                if state == "fail"
+                else unknown_color
+            )
             row_card = QFrame()
-            row_card.setObjectName("ChecklistRowCardPass" if item["pass"] else "ChecklistRowCardFail")
+            row_card.setObjectName(
+                "ChecklistRowCardPass"
+                if passed
+                else "ChecklistRowCardFail"
+                if state == "fail"
+                else "ChecklistRowCardUnknown"
+            )
             
             row_l = QHBoxLayout(row_card)
             row_l.setContentsMargins(10, 6, 10, 6)
             row_l.setSpacing(8)
             row_l.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-            icon_lbl = QLabel("✅" if item["pass"] else "❌")
+            icon_lbl = QLabel(
+                "✅" if passed else "❌" if state == "fail" else "➖"
+            )
             icon_lbl.setStyleSheet("font-size: 11px; background: transparent; border: none;")
             icon_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             row_l.addWidget(icon_lbl)
 
             text_lbl = QLabel(item["label"])
-            text_lbl.setStyleSheet(f"font-size: 11.5px; font-weight: 500; color: {green_color if item["pass"] else red_color}; background: transparent; border: none;")
+            text_lbl.setStyleSheet(
+                f"font-size: 11.5px; font-weight: 500; color: {color}; "
+                "background: transparent; border: none;"
+            )
             text_lbl.setWordWrap(True)
             row_l.addWidget(text_lbl, 1)
 
@@ -696,22 +1092,28 @@ class ScannerDetailScreen(QWidget):
         return self._compact_number(gap), f"tối thiểu {min_gap}", "#f59e0b"
 
     def _dialog_card_macro(self) -> tuple[str, str, str]:
-        macro_val = self.row.get("macro_score", "--")
-        try:
-            macro_num = int(macro_val)
-        except (TypeError, ValueError):
-            macro_num = 15
-        conf = float(self.row.get("macro_confidence", 1.0))
-        dot = "●" if conf >= 0.8 else ("○" if conf >= 0.5 else "◌")
-        accent = "#10b981" if macro_num >= 22 else ("#f59e0b" if macro_num >= 15 else "#94a3b8")
-        macro_raw = str(self.row.get("macro_bias", "") or "").lower()
+        macro_num, conf, macro_raw = self._selected_macro_metrics()
+        dot = (
+            "●"
+            if conf is not None and conf >= 0.8
+            else "○"
+            if conf is not None and conf >= 0.5
+            else "◌"
+        )
+        accent = (
+            "#10b981"
+            if macro_num is not None and macro_num >= 22
+            else "#f59e0b"
+            if macro_num is not None and macro_num >= 15
+            else "#94a3b8"
+        )
         bias = {
             "aligned": "Thuận",
             "conflict": "Xung đột",
             "divergent": "Xung đột",
             "neutral": "Trung lập",
             "unclear": "Chưa rõ"
-        }.get(macro_raw, macro_raw.title())
+        }.get(macro_raw, macro_raw.title() or "Chưa rõ")
 
         # Build detailed HTML for the full-detail dialog
         md = self._get_macro_detail()
@@ -727,13 +1129,14 @@ class ScannerDetailScreen(QWidget):
             bar = self._tier_bar(score_val, max_val, True)  # light=True for HTML
             parts.append(
                 f"<span style='font-size:10px;color:#6b7280;'>{label}</span> "
-                f"<span style='font-size:10px;'>{bar} {score_val}/{max_val}</span>"
+                f"<span style='font-size:10px;'>{bar} "
+                f"{self._score_text(score_val)}/{max_val}</span>"
                 f"<br><span style='font-size:9px;color:#9ca3af;margin-left:8px;'>{reason}</span>"
             )
 
         # --- Sub-components ---
         d1 = md["t1_detail"]
-        if isinstance(d1, dict) and d1:
+        if side and isinstance(d1, dict) and d1:
             comps = d1.get("components", {})
             if isinstance(comps, dict):
                 rd = comps.get("rate_diff", {})
@@ -756,7 +1159,7 @@ class ScannerDetailScreen(QWidget):
                 )
 
         d3 = md["t3_detail"]
-        if isinstance(d3, dict) and d3:
+        if side and isinstance(d3, dict) and d3:
             comps = d3.get("components", {})
             if isinstance(comps, dict):
                 rs = comps.get("risk_sentiment", {})
@@ -798,26 +1201,46 @@ class ScannerDetailScreen(QWidget):
                 )
 
         detail = f"{bias}<br><br>{'<br>'.join(parts)}" if parts else bias
-        return f"{dot} {macro_num}/30", detail, accent
+        return f"{dot} {self._score_text(macro_num)}/30", detail, accent
 
     def _dialog_card_rr(self) -> tuple[str, str, str]:
-        rr = self.row.get("risk_reward") or "--"
-        eff_rr = self.row.get("expected_effective_rr")
-        rr_range = self.row.get("risk_reward_range")
+        scenario = self._selected_scenario()
+        if self._candidate_decision():
+            rr = scenario.get("risk_reward") or "--"
+            rr_range = scenario.get("risk_reward_range")
+        else:
+            rr = self.row.get("risk_reward") or "--"
+            rr_range = self.row.get("risk_reward_range")
+        eff_rr = self._effective_rr()
+        min_rr = self._required_min_rr()
+        primary = (
+            f"{eff_rr:.2f}"
+            if eff_rr is not None
+            else "--"
+        )
         if rr_range and isinstance(rr_range, dict):
             worst = rr_range.get("worst")
             if worst is not None:
-                detail = f"dải {worst:.1f}–{rr_range.get('best', '?'):.1f}"
-                if eff_rr is not None:
-                    detail += f" | thực ~{eff_rr:.1f}"
-                return str(rr), detail, "#ea580c"
-        detail = f"~{eff_rr:.1f}" if eff_rr is not None else ""
-        return str(rr), detail, "#ea580c"
+                best = self._number(rr_range.get("best"))
+                detail = (
+                    f"danh nghĩa {rr}; dải {worst:.1f}–"
+                    f"{best:.1f}" if best is not None else f"danh nghĩa {rr}"
+                )
+                if min_rr is not None:
+                    detail += f"; tối thiểu {min_rr:.2f}"
+                return primary, detail, "#ea580c"
+        detail = f"danh nghĩa {rr}"
+        if min_rr is not None:
+            detail += f"; tối thiểu {min_rr:.2f}"
+        return primary, detail, "#ea580c"
 
     def _dialog_card_sl(self) -> tuple[str, str, str]:
         if self._has_no_entry_zone():
             return "--", "", "#94a3b8"
-        sl = self.row.get("stop_loss")
+        sl = (
+            self._selected_side_evaluation().get("stop_loss")
+            or self.row.get("stop_loss")
+        )
         if isinstance(sl, (int, float)):
             return f"{sl:.5f}", "", "#e11d48"
         return "--", "", "#94a3b8"
@@ -825,7 +1248,10 @@ class ScannerDetailScreen(QWidget):
     def _dialog_card_tp(self) -> tuple[str, str, str]:
         if self._has_no_entry_zone():
             return "--", "", "#94a3b8"
-        tp = self.row.get("take_profit")
+        tp = (
+            self._selected_side_evaluation().get("take_profit")
+            or self.row.get("take_profit")
+        )
         if isinstance(tp, list) and tp:
             tp1 = f"{tp[0]:.5f}"
             tp2 = f"TP2: {tp[1]:.5f}" if len(tp) > 1 else ""
@@ -840,7 +1266,7 @@ class ScannerDetailScreen(QWidget):
         return val, "", accent
 
     def _dialog_card_position(self) -> tuple[str, str, str]:
-        price_zone = str(self.row.get("price_vs_zone") or "").lower()
+        price_zone = self._selected_price_vs_zone()
         zone_map = {"in_zone": "Trong vùng", "near_zone": "Gần vùng", "far": "Còn xa", "unknown": "Chưa rõ"}
         val = zone_map.get(price_zone, "Chưa rõ" if price_zone in ("unknown", "--", "") else price_zone.title())
         return val, "", "#f59e0b"
@@ -853,20 +1279,18 @@ class ScannerDetailScreen(QWidget):
         return val, "", accent
 
     def _dialog_card_group(self) -> tuple[str, str, str]:
-        group_raw = str(self.row.get("scanner_group") or "--")
-        group_map = {"ready_now": "Sẵn sàng ngay", "waiting_confirmation": "Chờ xác nhận",
-                     "watch_zone": "Theo dõi", "blocked": "Bị chặn"}
-        accent = {"ready_now": "#10b981", "waiting_confirmation": "#f59e0b",
-                  "watch_zone": "#f59e0b", "blocked": "#e11d48"}.get(group_raw, "#94a3b8")
-
-        detail = ""
-        if group_raw == "blocked":
-            analysis = self.row.get("analysis_result", {}) if isinstance(self.row.get("analysis_result"), dict) else {}
-            gate = analysis.get("trade_gate", {}) if isinstance(analysis, dict) else {}
-            reasons = gate.get("reasons", []) if isinstance(gate, dict) else []
-            if reasons:
-                detail = " | ".join(str(r) for r in reasons)
-        return group_map.get(group_raw, group_raw), detail, accent
+        status = self._canonical_status()
+        label, state = _CANDIDATE_STATUS[status]
+        accent = {
+            "ready": "#10b981",
+            "wait": "#f59e0b",
+            "watch": "#f59e0b",
+            "neutral": "#94a3b8",
+            "blocked": "#e11d48",
+            "data": "#64748b",
+        }[state]
+        detail = " | ".join(self._candidate_reason_messages()[:4])
+        return label, detail, accent
 
     def _dialog_card_regime(self) -> tuple[str, str, str]:
         regime = str(self.row.get("market_regime") or "--").lower()
@@ -875,10 +1299,12 @@ class ScannerDetailScreen(QWidget):
         return regime_map.get(regime, regime.title()), "", "#fb7185"
 
     def _dialog_card_permission(self) -> tuple[str, str, str]:
-        perm = str(self.row.get("trade_permission") or "--").lower()
-        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
-        accent = {"allowed": "#10b981", "caution": "#f59e0b", "blocked": "#e11d48"}.get(perm, "#94a3b8")
-        return perm_map.get(perm, perm.title()), "", accent
+        allowed = self._scan_trade_allowed()
+        if allowed is True:
+            return "Được phép tại lúc quét", "", "#10b981"
+        if allowed is False:
+            return "Không được phép tại lúc quét", "", "#e11d48"
+        return "Chưa có kết quả", "", "#94a3b8"
 
     def _dialog_card_journal_sample(self) -> tuple[str, str, str]:
         sample = self.row.get("journal_sample_size", 0)
@@ -910,7 +1336,7 @@ class ScannerDetailScreen(QWidget):
         symbol = str(self.row.get("symbol", "Chưa chọn"))
         self.header_slot.addWidget(
             page_header(
-                "Chi tiết từ quét thị trường",
+                "Chi tiết kết quả quét",
                 "",
                 symbol,
             )
@@ -970,7 +1396,7 @@ class ScannerDetailScreen(QWidget):
             self.chart.show_error("Không thể tạo dữ liệu biểu đồ từ kết quả quét.")
 
     def _refresh_hero(self) -> None:
-        """Render the colored verdict bar at the top of the overview."""
+        """Render the canonical Scanner verdict, never a raw directional bias."""
         if not self.row:
             self.hero_bar.setText("")
             self.hero_bar.hide()
@@ -981,71 +1407,59 @@ class ScannerDetailScreen(QWidget):
         except Exception:
             light = False
 
-        # Xác định xu hướng giao dịch (buy/sell/neutral)
-        bias_val = self.row.get("direction_bias", {})
-        side = "neutral"
-        if isinstance(bias_val, dict):
-            side = str(bias_val.get("best_side", "neutral")).lower()
-        
-        # Xác định điểm số cao nhất để định lượng cường độ (mạnh hay không)
-        best_score_raw = self.row.get("best_score", 0)
-        try:
-            best_score = int(best_score_raw)
-        except (TypeError, ValueError):
-            best_score = 0
+        status = self._canonical_status()
+        status_label, visual_state = _CANDIDATE_STATUS[status]
+        palette = {
+            "ready": (
+                "#047857" if light else "#34d399",
+                "#10b981",
+                "#d1fae5" if light else "#064e3b",
+            ),
+            "wait": (
+                "#b45309" if light else "#fbbf24",
+                "#f59e0b",
+                "#fef3c7" if light else "#451a03",
+            ),
+            "watch": (
+                "#b45309" if light else "#fbbf24",
+                "#f59e0b",
+                "#fffbeb" if light else "#291700",
+            ),
+            "blocked": (
+                "#b91c1c" if light else "#f87171",
+                "#ef4444",
+                "#fef2f2" if light else "#3f1017",
+            ),
+            "neutral": (
+                "#475569" if light else "#cbd5e1",
+                "#94a3b8",
+                "#f1f5f9" if light else "#1e293b",
+            ),
+            "data": (
+                "#475569" if light else "#94a3b8",
+                "#64748b",
+                "#f1f5f9" if light else "#111827",
+            ),
+        }
+        status_color, status_border, status_bg = palette[visual_state]
 
-        status_text = "TRUNG TÍNH"
-        status_color = "#f59e0b"
-        status_border = "#78350f"
-        status_bg = "#451a03"
-
-        if light:
-            status_bg = "#fef3c7"
-            status_border = "#f59e0b"
-            status_color = "#b45309"
-
-        if side == "buy":
-            if best_score >= 80:
-                status_text = "MUA MẠNH"
-                status_color = "#10b981"  # xanh lá đậm
-                status_border = "#059669"
-                status_bg = "#064e3b"
-                if light:
-                    status_bg = "#d1fae5"
-                    status_border = "#10b981"
-                    status_color = "#047857"
-            elif best_score >= 65:
-                status_text = "MUA"
-                status_color = "#34d399"  # xanh lá vừa
-                status_border = "#059669"
-                status_bg = "#064e3b"
-                if light:
-                    status_bg = "#e6fcf5"
-                    status_border = "#34d399"
-                    status_color = "#059669"
-            else:
-                status_text = "TRUNG TÍNH"
-        elif side == "sell":
-            if best_score >= 80:
-                status_text = "BÁN MẠNH"
-                status_color = "#f43f5e"  # đỏ đậm
-                status_border = "#e11d48"
-                status_bg = "#4c0519"
-                if light:
-                    status_bg = "#ffe4e6"
-                    status_border = "#f43f5e"
-                    status_color = "#be123c"
-            elif best_score >= 65:
-                status_text = "BÁN"
-                status_color = "#fb7185"  # đỏ vừa
-                status_border = "#e11d48"
-                status_bg = "#4c0519"
-                if light:
-                    status_bg = "#fff0f2"
-                    status_border = "#fb7185"
-                    status_color = "#e11d48"
-            else:
-                status_text = "TRUNG TÍNH"
+        side = self._selected_side()
+        side_text = {"buy": "MUA", "sell": "BÁN"}.get(
+            side,
+            "CHƯA XÁC ĐỊNH",
+        )
+        setup = self._score_text(self._canonical_setup_score())
+        min_score = self._score_text(self._required_min_score())
+        score_text = (
+            f"Setup {setup}/{min_score}"
+            if min_score != "--"
+            else f"Setup {setup}"
+        )
+        rollout_text = self._rollout_display()
+        status_text = (
+            f"{status_label.upper()} · Hướng phân tích: {side_text} · "
+            f"{score_text} · {rollout_text}"
+        )
 
         self.hero_bar.setStyleSheet(
             f"QLabel#ScannerDetailHero {{"
@@ -1060,6 +1474,15 @@ class ScannerDetailScreen(QWidget):
         )
 
         self.hero_bar.setText(status_text)
+        reasons = self._candidate_reason_messages()
+        self.hero_bar.setToolTip(
+            "\n".join(reasons[:6])
+            if reasons
+            else (
+                "Đây là trạng thái chuẩn của Scanner tại thời điểm quét; "
+                "không phải xác nhận đặt lệnh cuối cùng."
+            )
+        )
         self.hero_bar.show()
 
     # ------------------------------------------------------------------
@@ -1067,15 +1490,19 @@ class ScannerDetailScreen(QWidget):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _tier_bar(value: int, max_val: int, light: bool) -> str:
+    def _tier_bar(value: object, max_val: int, light: bool) -> str:
         """Segmented progress bar using Unicode block characters."""
-        ratio = max(0.0, min(1.0, value / max(max_val, 1)))
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            numeric_value = 0.0
+        ratio = max(0.0, min(1.0, numeric_value / max(max_val, 1)))
         total_segs = 10
         filled = max(0, min(total_segs, round(ratio * total_segs)))
         empty = total_segs - filled
-        if value >= max_val * 0.7:
+        if numeric_value >= max_val * 0.7:
             color = "#10b981"
-        elif value >= max_val * 0.4:
+        elif numeric_value >= max_val * 0.4:
             color = "#f59e0b"
         else:
             color = "#94a3b8"
@@ -1085,7 +1512,7 @@ class ScannerDetailScreen(QWidget):
 
     def _get_macro_detail(self) -> dict:
         """Safely extract tier detail from analysis_result with defaults."""
-        default = {"buy": 5, "sell": 5, "detail": {}}
+        default = {"buy": None, "sell": None, "detail": {}}
         ar = (self.row or {}).get("analysis_result", {}) or {}
         td = ar.get("macro", {}).get("macro_tier_detail", {})
         dc = ar.get("macro", {}).get("driver_context", {})
@@ -1094,7 +1521,7 @@ class ScannerDetailScreen(QWidget):
         t2 = td.get("tier2_calendar", default) if isinstance(td, dict) else default
         t3 = td.get("tier3_sentiment", default) if isinstance(td, dict) else default
         reasons = dc.get("macro_alignment_reasons", {}) if isinstance(dc, dict) else {}
-        side = (self.row or {}).get("best_side", "buy")
+        side = self._selected_side()
 
         d1 = t1.get("detail", {}) if isinstance(t1, dict) else {}
         d2 = t2.get("detail", {}) if isinstance(t2, dict) else {}
@@ -1111,12 +1538,20 @@ class ScannerDetailScreen(QWidget):
         stance_map = {"hawkish": "Thắt chặt", "dovish": "Nới lỏng", "neutral": "Trung tính"}
         bs_vn = stance_map.get(str(bs).lower(), bs)
         qs_vn = stance_map.get(str(qs).lower(), qs)
-        t1_reason = f"{base} {br} ({bs_vn}) so với {quote} {qr} ({qs_vn})"
+        t1_reason = (
+            f"{base} {br} ({bs_vn}) so với {quote} {qr} ({qs_vn})"
+            if d1
+            else "Chưa có dữ liệu lãi suất."
+        )
 
         # Tier 2 short reason
         bc = d2.get("base_event_count", 0) if isinstance(d2, dict) else 0
         qc = d2.get("quote_event_count", 0) if isinstance(d2, dict) else 0
-        t2_reason = f"{base}: {bc} sự kiện · {quote}: {qc} sự kiện"
+        t2_reason = (
+            f"{base}: {bc} sự kiện · {quote}: {qc} sự kiện"
+            if d2
+            else "Chưa có dữ liệu lịch kinh tế."
+        )
 
         # Tier 3 short reason
         sent = d3.get("risk_sentiment", "neutral") if isinstance(d3, dict) else "neutral"
@@ -1124,13 +1559,29 @@ class ScannerDetailScreen(QWidget):
         vix = d3.get("vix_level") if isinstance(d3, dict) else None
         hs = d3.get("hotspot_count", 0) if isinstance(d3, dict) else 0
         vix_str = f"VIX {vix:.1f} · " if vix is not None else ""
-        t3_reason = f"{sent_map.get(sent, sent)} · {vix_str}{hs} điểm nóng"
+        t3_reason = (
+            f"{sent_map.get(sent, sent)} · {vix_str}{hs} điểm nóng"
+            if d3
+            else "Chưa có dữ liệu tâm lý thị trường."
+        )
 
         return {
             "best_side": side,
-            "t1": int(t1.get(side, 5)) if isinstance(t1, dict) else 5,
-            "t2": int(t2.get(side, 5)) if isinstance(t2, dict) else 5,
-            "t3": int(t3.get(side, 5)) if isinstance(t3, dict) else 5,
+            "t1": (
+                self._number(t1.get(side))
+                if side and isinstance(t1, dict)
+                else None
+            ),
+            "t2": (
+                self._number(t2.get(side))
+                if side and isinstance(t2, dict)
+                else None
+            ),
+            "t3": (
+                self._number(t3.get(side))
+                if side and isinstance(t3, dict)
+                else None
+            ),
             "t1_reason": t1_reason,
             "t2_reason": t2_reason,
             "t3_reason": t3_reason,
@@ -1171,29 +1622,29 @@ class ScannerDetailScreen(QWidget):
         sl_val, _, _ = self._dialog_card_sl()
         tp_val, tp_detail, _ = self._dialog_card_tp()
         rr_val, rr_detail, _ = self._dialog_card_rr()
-        macro_val, _, _ = self._dialog_card_macro()
         regime_val, _, _ = self._dialog_card_regime()
+        side_text = {
+            "buy": "MUA",
+            "sell": "BÁN",
+        }.get(self._selected_side(), "Chưa xác định")
 
-        entry_ok = self.row.get("entry_status") == "confirmed_entry" if self.row else False
+        entry_ok = (
+            str(
+                self._selected_side_evaluation().get("entry_status")
+                or self.row.get("entry_status")
+                or ""
+            ).lower()
+            == "confirmed_entry"
+        )
         entry_accent = "#22c55e" if entry_ok else "#f59e0b"
 
-        rr_range = self.row.get("risk_reward_range")
-        rr_range_str = ""
-        if rr_range and isinstance(rr_range, dict):
-            worst = rr_range.get("worst")
-            if worst is not None:
-                rr_range_str = f" ({worst:.1f}–{rr_range.get('best', '?'):.1f})"
-
-        eff_rr = self.row.get("expected_effective_rr")
-        eff_rr_str = f"~{eff_rr:.1f}" if eff_rr is not None else "—"
-
         rows = [
+            ("Hướng phân tích", side_text, "#10b981" if self._selected_side() == "buy" else "#f43f5e" if self._selected_side() == "sell" else "#94a3b8"),
             ("Vùng vào lệnh", entry_val, entry_accent),
             ("Stop Loss", sl_val, "#e11d48"),
             ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "#10b981"),
-            ("R:R", f"{rr_val}{rr_range_str}", "#f59e0b"),
+            ("R:R thực", rr_val, "#f59e0b"),
             ("Chế độ TT", regime_val, val_color),
-            ("Điểm vĩ mô", macro_val, "#38bdf8"),
         ]
 
         for label_text, value_text, accent in rows:
@@ -1210,9 +1661,8 @@ class ScannerDetailScreen(QWidget):
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
             row_l.addWidget(val, 1)
-            # R:R row: show effective RR as tooltip
-            if label_text == "R:R":
-                row_w.setToolTip(f"R:R thực tế ~{eff_rr_str}" if eff_rr_str != "—" else "")
+            if label_text == "R:R thực":
+                row_w.setToolTip(rr_detail)
             layout.addWidget(row_w)
 
     def _refresh_score_panel(self) -> None:
@@ -1242,37 +1692,44 @@ class ScannerDetailScreen(QWidget):
             layout.addWidget(QLabel("—"))
             return
 
-        best_val, best_detail, best_accent = self._dialog_card_best()
-        final_val, final_detail, final_accent = self._dialog_card_final()
-        buysell_val, buysell_detail, _ = self._dialog_card_buysell()
-        gap_val, gap_detail, gap_accent = self._dialog_card_gap()
-        m15_val, _, m15_accent = self._dialog_card_m15()
-        perm_val, _, perm_accent = self._dialog_card_permission()
-
+        status = self._canonical_status()
+        status_label, status_state = _CANDIDATE_STATUS[status]
+        status_accent = {
+            "ready": "#10b981",
+            "wait": "#f59e0b",
+            "watch": "#f59e0b",
+            "neutral": "#94a3b8",
+            "blocked": "#e11d48",
+            "data": "#64748b",
+        }[status_state]
+        setup = self._score_text(self._canonical_setup_score())
+        min_score = self._score_text(self._required_min_score())
+        opportunity = self._score_text(self.row.get("opportunity_rank"))
+        evidence = self._score_text(self.row.get("evidence_confidence"))
+        execution = self._score_text(self.row.get("execution_readiness"))
         rows = [
-            ("Điểm tốt nhất", f"{best_val} {best_detail}".strip(), best_accent, True),
-            ("Điểm cuối", f"{final_val} {final_detail}".strip(), final_accent, True),
-            ("Buy / Sell", f"{buysell_val} {buysell_detail}".strip(), val_color, False),
-            ("Gap", f"{gap_val} ({gap_detail})", gap_accent, False),
-            ("M15", m15_val, m15_accent, False),
-            ("Quyền GD", perm_val, perm_accent, False),
+            ("Trạng thái", status_label, status_accent),
+            ("Điểm thiết lập", f"{setup}/{min_score}", "#38bdf8"),
+            ("Ưu tiên cơ hội", f"{opportunity}/100", "#a78bfa"),
+            ("Bằng chứng", f"{evidence}/100", val_color),
+            ("Mức sẵn sàng", f"{execution}/100", val_color),
+            (
+                "Chế độ chạy",
+                self._rollout_display(),
+                "#38bdf8",
+            ),
         ]
 
-        for label_text, value_text, accent, is_secondary in rows:
+        for label_text, value_text, accent in rows:
             row_w = QWidget()
             row_w.setStyleSheet("background: transparent;")
             row_l = QHBoxLayout(row_w)
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            if is_secondary:
-                lbl.setStyleSheet(f"font-size: 11px; color: {label_color};")
-                val = QLabel(value_text)
-                val.setStyleSheet(f"font-size: 11px; color: {label_color};")
-            else:
-                lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
-                val = QLabel(value_text)
-                val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
+            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
+            val = QLabel(value_text)
+            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
@@ -1331,18 +1788,32 @@ class ScannerDetailScreen(QWidget):
             return
 
         SHORT_NAMES = [
-            "Quyền GD", "Gate", "Chênh lệch", "Entry",
-            "Vị trí", "M15", "R:R",
+            "Chiến lược", "Điểm setup", "Entry",
+            "Vùng giá", "M15", "R:R thực", "Quyền quét",
         ]
 
         green = "#10b981"
         red = "#e11d48"
+        unknown_color = "#94a3b8"
 
-        # Fail count summary
-        fail_count = sum(1 for it in items[:7] if not it["pass"])
+        fail_count = sum(
+            1 for item in items[:7] if item.get("state") == "fail"
+        )
+        unknown_count = sum(
+            1 for item in items[:7] if item.get("state") == "unknown"
+        )
         if fail_count >= 1:
             summary = QLabel(f"⚠️ {fail_count}/7 điều kiện chưa đạt")
             summary.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {red}; padding: 2px 0;")
+            layout.addWidget(summary)
+        elif unknown_count:
+            summary = QLabel(
+                f"➖ {unknown_count}/7 điều kiện chưa có dữ liệu"
+            )
+            summary.setStyleSheet(
+                f"font-size: 11px; font-weight: bold; "
+                f"color: {unknown_color}; padding: 2px 0;"
+            )
             layout.addWidget(summary)
 
         # 2-column grid for compact display
@@ -1354,13 +1825,14 @@ class ScannerDetailScreen(QWidget):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(1)
         for i, item_data in enumerate(items[:7]):
-            passed = item_data["pass"]
+            state = str(item_data.get("state") or "unknown")
+            passed = state == "pass"
             full_label = item_data["label"]
             short_name = SHORT_NAMES[i] if i < len(SHORT_NAMES) else full_label[:12]
-            icon = "✅" if passed else "❌"
-            color = green if passed else red
+            icon = "✅" if passed else "❌" if state == "fail" else "➖"
+            color = green if passed else red if state == "fail" else unknown_color
             row_i, col_i = divmod(i, 2) if i < 6 else (3, 0)
-            # Last item (index 6, R:R) spans full width in row 3 col 0-1
+            # The final permission item spans the full width.
             if i == 6:
                 item_w = QWidget()
                 item_w.setStyleSheet("background: transparent;")
@@ -1394,50 +1866,77 @@ class ScannerDetailScreen(QWidget):
         layout.addLayout(grid)
 
     def _build_entry_checklist(self) -> list[dict]:
-        """Build a list of {pass: bool, label: str} for entry conditions."""
+        """Build seven checks from the canonical selected-side decision."""
         if not self.row:
             return []
 
-        items = []
-        best = int(self.row.get("best_score", 0) or 0)
-        gap = int(self.row.get("score_gap", 0) or 0)
-        buy_s = int(self.row.get("buy_score", 0) or 0)
-        sell_s = int(self.row.get("sell_score", 0) or 0)
-        stronger = "MUA" if buy_s > sell_s else "BÁN" if sell_s > buy_s else "Cân bằng"
-        perm = str(self.row.get("trade_permission", ""))
-        entry = str(self.row.get("entry_status", ""))
-        m15 = str(self.row.get("m15_quality", "")).lower()
-        price_zone = str(self.row.get("price_vs_zone", ""))
-        rr = str(self.row.get("risk_reward", ""))
-        min_score = int(self.row.get("min_score", 65) or 65)
-        analysis = self.row.get("analysis_result", {}) if isinstance(self.row.get("analysis_result"), dict) else {}
-        gate = analysis.get("trade_gate", {}) if isinstance(analysis, dict) else {}
-        gate_allowed = bool(gate.get("allowed", True)) if isinstance(gate, dict) else True
+        def _item(state: str, label: str) -> dict:
+            return {
+                "state": state,
+                "pass": state == "pass",
+                "label": label,
+            }
 
-        perm_map = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn", "--": "--"}
-        perm_vn = perm_map.get(perm.lower(), perm)
+        items: list[dict] = []
+        decision = self._candidate_decision()
+        strategy = self._candidate_strategy()
+        execution = self._candidate_execution()
+        side_eval = self._selected_side_evaluation()
+        side = self._selected_side()
+        side_text = {"buy": "MUA", "sell": "BÁN"}.get(
+            side,
+            "chưa xác định",
+        )
 
-        # 1. Trade Permission
-        items.append({
-            "pass": perm == "allowed",
-            "label": f"Quyền giao dịch: Điểm {best}/{min_score} — {perm_vn}",
-        })
+        eligible = strategy.get(
+            "eligible",
+            self.row.get("strategy_eligible"),
+        )
+        strategy_reasons = strategy.get("reason_codes")
+        if not isinstance(strategy_reasons, list):
+            strategy_reasons = []
+        strategy_detail = "; ".join(
+            REASON_CODE_MESSAGES.get(
+                str(code),
+                _SCANNER_REASON_MESSAGES.get(str(code), str(code)),
+            )
+            for code in strategy_reasons[:2]
+        )
+        strategy_state = (
+            "pass"
+            if eligible is True
+            else "fail"
+            if eligible is False
+            else "unknown"
+        )
+        items.append(_item(
+            strategy_state,
+            f"Chiến lược: hướng {side_text} "
+            f"{'phù hợp' if eligible is True else 'chưa phù hợp' if eligible is False else 'chưa có kết quả'}"
+            + (f" — {strategy_detail}" if strategy_detail else ""),
+        ))
 
-        # 2. Gate
-        gate_reasons = gate.get("reasons", []) if isinstance(gate, dict) else []
-        gate_text = "; ".join(gate_reasons[:2]) if gate_reasons else "không bị cổng lọc chặn"
-        items.append({
-            "pass": gate_allowed,
-            "label": f"Cổng lọc (Gate): {'ĐẠT' if gate_allowed else 'BỊ CHẶN'} — {gate_text}"
-        })
+        setup = self._canonical_setup_score()
+        min_score = self._required_min_score()
+        score_state = (
+            "pass"
+            if setup is not None and min_score is not None and setup >= min_score
+            else "fail"
+            if setup is not None and min_score is not None
+            else "unknown"
+        )
+        items.append(_item(
+            score_state,
+            f"Điểm thiết lập ({side_text}): "
+            f"{self._score_text(setup)}/{self._score_text(min_score)}",
+        ))
 
-        # 3. Score Gap
-        items.append({
-            "pass": gap >= 10,
-            "label": f"Chênh lệch Mua/Bán: Mua {buy_s} vs Bán {sell_s} → khoảng cách {gap} điểm (yêu cầu ≥10) → {'rõ hướng (' + stronger + ')' if gap >= 10 else 'chưa rõ hướng'}"
-        })
-
-        # 4. Entry confirmed
+        entry = str(
+            side_eval.get("entry_status")
+            or self.row.get("entry_status")
+            or ""
+        ).lower()
+        entry_known = bool(entry)
         entry_ok = entry in ("confirmed_entry", "ready", "ready_to_trade")
         entry_map = {
             "confirmed_entry": "đã xác nhận",
@@ -1445,45 +1944,106 @@ class ScannerDetailScreen(QWidget):
             "waiting_confirmation": "chờ xác nhận H1/M15",
             "no_setup": "chưa có thiết lập giao dịch (setup)",
         }
-        entry_label = entry_map.get(entry, entry)
-        items.append({
-            "pass": entry_ok,
-            "label": f"Xác nhận điểm vào lệnh (entry): {entry_label}"
-        })
+        items.append(_item(
+            "pass" if entry_ok else "fail" if entry_known else "unknown",
+            f"Xác nhận điểm vào lệnh: "
+            f"{entry_map.get(entry, entry) if entry else 'chưa có dữ liệu'}",
+        ))
 
-        # 5. Price in zone
-        in_zone = price_zone == "in_zone"
-        zone_map = {"in_zone": "đang trong vùng giá", "near_zone": "gần vùng giá", "far": "còn xa vùng giá"}
-        items.append({
-            "pass": in_zone,
-            "label": f"Vị trí giá: {zone_map.get(price_zone, price_zone)}"
-        })
+        entry_zone = side_eval.get("entry_zone")
+        if entry_zone is None:
+            entry_zone = self.row.get("entry_zone") or self.row.get(
+                "entry_zones"
+            )
+        price_zone = self._selected_price_vs_zone()
+        zone_map = {
+            "in_zone": "giá đang trong vùng",
+            "near_zone": "giá đang gần vùng",
+            "far": "giá còn xa vùng",
+            "unknown": "chưa xác định được vị trí giá",
+        }
+        zone_ok = bool(entry_zone) and price_zone == "in_zone"
+        zone_state = (
+            "pass"
+            if zone_ok
+            else "fail"
+            if price_zone in {"near_zone", "far"}
+            else "unknown"
+        )
+        items.append(_item(
+            zone_state,
+            f"Vùng vào lệnh: "
+            f"{zone_map.get(price_zone, price_zone or 'chưa có dữ liệu')}",
+        ))
 
-        # 6. M15
-        m15_ok = m15 in ("strict",)
-        m15_label = {"strict": "chặt chẽ", "loose": "lỏng lel", "none": "chưa xác nhận", "": "chưa có dữ liệu"}
-        # Fix typo lỏng lel thành lỏng lẻo
-        m15_label["loose"] = "lỏng lẻo"
-        items.append({
-            "pass": m15_ok,
-            "label": f"M15: {m15_label.get(m15, m15)}"
-        })
+        m15 = str(
+            side_eval.get("m15_quality")
+            or self.row.get("m15_quality")
+            or ""
+        ).lower()
+        m15_label = {
+            "strict": "xác nhận chặt",
+            "loose": "xác nhận lỏng",
+            "none": "chưa xác nhận",
+            "": "chưa có dữ liệu",
+        }
+        items.append(_item(
+            "pass" if m15 == "strict" else "fail" if m15 else "unknown",
+            f"M15: {m15_label.get(m15, m15)}",
+        ))
 
-        # 7. R:R
-        min_rr = float(self.row.get("min_rr", 1.3) or 1.3)
-        rr_val = 0.0
-        try:
-            if ":" in str(rr):
-                rr_val = float(str(rr).split(":")[1])
-            else:
-                rr_val = float(rr)
-        except (ValueError, TypeError):
-            pass
-        rr_ok = rr_val >= min_rr
-        items.append({
-            "pass": rr_ok,
-            "label": f"Tỷ lệ R:R là {rr} — {'đạt' if rr_ok else f'dưới tỷ lệ R:R tối thiểu là 1:{min_rr:.1f}'}"
-        })
+        effective_rr = self._effective_rr()
+        min_rr = self._required_min_rr()
+        rr_state = (
+            "pass"
+            if (
+                effective_rr is not None
+                and min_rr is not None
+                and effective_rr >= min_rr
+            )
+            else "fail"
+            if effective_rr is not None and min_rr is not None
+            else "unknown"
+        )
+        items.append(_item(
+            rr_state,
+            f"R:R sau spread/chi phí: "
+            f"{self._score_text(effective_rr)}/"
+            f"{self._score_text(min_rr)}",
+        ))
+
+        trade_allowed = self._scan_trade_allowed()
+        execution_reasons = execution.get("reason_codes")
+        if not isinstance(execution_reasons, list):
+            execution_reasons = decision.get("reason_codes")
+        if not isinstance(execution_reasons, list):
+            execution_reasons = []
+        permission_detail = "; ".join(
+            REASON_CODE_MESSAGES.get(
+                str(code),
+                _SCANNER_REASON_MESSAGES.get(str(code), str(code)),
+            )
+            for code in execution_reasons[:2]
+        )
+        permission_state = (
+            "pass"
+            if trade_allowed is True
+            else "fail"
+            if trade_allowed is False
+            else "unknown"
+        )
+        items.append(_item(
+            permission_state,
+            "Quyền tại thời điểm quét: "
+            + (
+                "được phép"
+                if trade_allowed is True
+                else "không được phép"
+                if trade_allowed is False
+                else "chưa có kết quả"
+            )
+            + (f" — {permission_detail}" if permission_detail else ""),
+        ))
 
         return items
 
@@ -1614,9 +2174,13 @@ class ScannerDetailScreen(QWidget):
         }.get(value, value)
 
     def _entry_status_display(self) -> str:
-        price_zone = str(self.row.get("price_vs_zone") or "").strip().lower() if self.row else ""
-        raw = str(self.row.get("entry_status") or "--").strip().lower() if self.row else "--"
-        if price_zone == "unknown" and raw in {
+        side_eval = self._selected_side_evaluation()
+        raw = str(
+            side_eval.get("entry_status")
+            or self.row.get("entry_status")
+            or "--"
+        ).strip().lower() if self.row else "--"
+        if self._has_no_entry_zone() and raw in {
             "waiting_confirmation",
             "waiting_for_confirmation",
             "watch_zone",
@@ -1627,12 +2191,31 @@ class ScannerDetailScreen(QWidget):
         return self._entry_status_text(raw)
 
     def _has_no_entry_zone(self) -> bool:
-        price_zone = str(self.row.get("price_vs_zone") or "").strip().lower() if self.row else ""
-        zones = self.row.get("entry_zone") or self.row.get("entry_zones") if self.row else None
-        return price_zone == "unknown" or (price_zone in {"", "--", "none"} and not zones)
+        side_eval = self._selected_side_evaluation()
+        scenario = self._selected_scenario()
+        zones = (
+            side_eval.get("entry_zone")
+            or scenario.get("entry_zone")
+            or self.row.get("entry_zone")
+            or self.row.get("entry_zones")
+            if self.row
+            else None
+        )
+        if scenario.get("entry_zone_source") == "fallback":
+            return True
+        return not (
+            isinstance(zones, (list, tuple))
+            and len(zones) == 2
+            and self._number(zones[0]) is not None
+            and self._number(zones[1]) is not None
+        )
 
     def _m15_text(self) -> str:
-        raw = str(self.row.get("m15_quality") or "").strip()
+        raw = str(
+            self._selected_side_evaluation().get("m15_quality")
+            or self.row.get("m15_quality")
+            or ""
+        ).strip()
         if not raw or raw in {"--", "-", "none", "unknown"}:
             return "Chưa xác nhận"
         return raw
@@ -1852,11 +2435,34 @@ class ScannerDetailScreen(QWidget):
     # -- Branch indicator ---------------------------------------------------
 
     def _diag_branch_html(self, light: bool = False) -> str:
-        """Show whether this symbol runs on Branch A (default) or Branch B (backtest config)."""
-        branch = str(self.row.get("auto_trade_branch", "A")).upper()
+        """Show the canonical strategy branch and Phase-0 safety status."""
+        branch = str(
+            self.row.get("auto_trade_branch", "DEFAULT_RULES")
+        ).strip().upper()
         sc = "#736B60" if light else "#94a3b8"
 
-        if branch == "B":
+        if branch == BRANCH_BACKTEST_INVALID:
+            reasons = self._candidate_reason_messages()
+            reason_text = "; ".join(escape(reason) for reason in reasons) or (
+                "BACKTEST_CONFIG_INVALID"
+            )
+            accent = "#b91c1c" if light else "#f87171"
+            bg = "#fef2f2" if light else "#2b1111"
+            return (
+                f"<table style='width:100%;border-collapse:collapse;background:{bg};"
+                f"border-left:4px solid {accent};margin:8px 0 12px;'>"
+                f"<tr><td style='padding:12px 16px;'>"
+                f"<div style='font-size:15px;font-weight:bold;color:{accent};"
+                f"margin-bottom:6px;'>⛔ BACKTEST_CONFIG_INVALID</div>"
+                f"<div style='font-size:13px;color:{sc};line-height:1.5;'>"
+                f"Scanner chỉ tính kết quả quy tắc mặc định để tham khảo hiển thị; "
+                f"nhánh chiến lược này luôn <b>không đủ điều kiện</b> và không "
+                f"được tạo lệnh.<br>"
+                f"<b>Lý do:</b> {reason_text}</div>"
+                f"</td></tr></table>"
+            )
+
+        if branch == BRANCH_BACKTEST_VALIDATED:
             cfg = self.row.get("auto_trade_config")
             if not isinstance(cfg, dict):
                 cfg = {}
@@ -1922,13 +2528,13 @@ class ScannerDetailScreen(QWidget):
                 f"<tr>"
                 f"<td style='padding:4px 16px;'>"
                 f"<div style='font-size:16px;font-weight:bold;color:{accent};margin-bottom:8px;'>"
-                f"✅ Nhánh B — Có cấu hình Backtest</div>"
+                f"✅ BACKTEST_VALIDATED — Cấu hình Backtest hợp lệ</div>"
                 f"{config_table_html}"
                 f"<div style='font-size:12px;color:{ref_color};background:{ref_bg};border:1px solid {ref_border};"
                 f"padding:8px 12px;border-radius:6px;line-height:1.5;'>"
-                f"💡 Khi vào lệnh tự động, pipeline <b>chỉ để tham khảo</b>. "
-                f"Hệ thống dùng các thông số trên để quyết định, "
-                f"không phụ thuộc trạng thái Ready/Watch/Wait/Stand Aside của pipeline."
+                f"💡 Cấu hình backtest chỉ xác định setup có phù hợp chiến lược. "
+                f"Lệnh tự động vẫn bắt buộc <b>READY_TO_TRADE + Allowed + entry đã xác nhận</b>; "
+                f"Watch/Wait/Stand Aside luôn bị chặn."
                 f"</div>"
                 f"</td>"
                 f"</tr>"
@@ -1942,10 +2548,11 @@ class ScannerDetailScreen(QWidget):
                 f"<tr>"
                 f"<td style='padding:12px 16px;'>"
                 f"<div style='font-size:14px;font-weight:bold;color:{accent};margin-bottom:4px;'>"
-                f"⚙️ Nhánh A — Không có cấu hình Backtest</div>"
+                f"⚙️ DEFAULT_RULES — Không có cấu hình Backtest</div>"
                 f"<div style='font-size:13px;color:{sc};line-height:1.5;'>"
-                f"Phải được pipeline đánh giá <b>Ready + Allowed</b> mới vào lệnh tự động. "
-                f"Các thông số bên dưới quyết định trực tiếp việc vào lệnh.</div>"
+                f"Không có cấu hình Backtest đang hoạt động. Strategy Router dùng "
+                f"ngưỡng live; kết quả vẫn phải qua entry, gate, rollout và "
+                f"tái kiểm tra ngay trước khi đặt lệnh.</div>"
                 f"</td>"
                 f"</tr>"
                 f"</table>"
@@ -2115,23 +2722,82 @@ class ScannerDetailScreen(QWidget):
             )
         rows.append("</table>")
 
+        consumer = analysis.get("smc_consumer")
+        consumer_sides = (
+            consumer.get("sides")
+            if isinstance(consumer, dict)
+            and isinstance(consumer.get("sides"), dict)
+            else {}
+        )
+        if consumer_sides:
+            rows.extend([
+                f"<h3 style='color:{title_color};margin:14px 0 6px;font-size:13px;'>Vùng SMC được chọn</h3>",
+                f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;'>",
+                "<tr>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Hướng</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Zone ID / phiên bản</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Quality</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Relevance</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Setup</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Lý do</th>",
+                "</tr>",
+            ])
+            for side, label in (("buy", "MUA"), ("sell", "BÁN")):
+                item = (
+                    consumer_sides.get(side)
+                    if isinstance(consumer_sides.get(side), dict)
+                    else {}
+                )
+                breakdown = (
+                    item.get("score_breakdown")
+                    if isinstance(item.get("score_breakdown"), dict)
+                    else {}
+                )
+                zone_id = item.get("selected_zone_id") or "--"
+                version = item.get("scoring_version") or "--"
+                reason_codes = breakdown.get("reason_codes", [])
+                reason = (
+                    ", ".join(str(code) for code in reason_codes)
+                    if isinstance(reason_codes, list) and reason_codes
+                    else "--"
+                )
+                rows.append(
+                    "<tr>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;'>{label}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{zone_id}<br><span style='font-size:11px'>{version}</span></td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{item.get('selected_zone_quality_score') if item.get('selected_zone_quality_score') is not None else '--'}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{item.get('selected_zone_relevance_score') if item.get('selected_zone_relevance_score') is not None else '--'}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{item.get('selected_zone_setup_score') if item.get('selected_zone_setup_score') is not None else '--'}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{reason}</td>"
+                    "</tr>"
+                )
+            rows.append("</table>")
+
         rows.append("</div>")
         return "\n".join(rows)
 
     # -- Gate Diagnostics --------------------------------------------------
 
     def _diag_gate_html(self, analysis: dict, light: bool = False) -> str:
-        gate = analysis.get("trade_gate", {})
+        canonical_decision = self._candidate_decision()
+        side_gate = self._selected_side_evaluation().get("gate_result")
+        gate = (
+            side_gate if isinstance(side_gate, dict) else {}
+        ) if canonical_decision else (
+            analysis.get("trade_gate", {})
+        )
         if not isinstance(gate, dict):
             gate = {}
         permission = analysis.get("trade_permission", {})
         if not isinstance(permission, dict):
             permission = {}
 
-        # Try pipeline diagnostics first (from backtest), fall back to trade_gate
+        # Pipeline diagnostics contain the legacy best-side gate. A canonical
+        # decision must use the selected-side result and must not borrow a
+        # pass/fail result from the other side.
         pipe_diags = analysis.get("pipeline_diagnostics")
         gate_checks: list[dict] = []
-        if isinstance(pipe_diags, list):
+        if not canonical_decision and isinstance(pipe_diags, list):
             for d in pipe_diags:
                 if isinstance(d, dict) and d.get("step") == "gate":
                     gate_checks = d.get("details", {}).get("gate_checks", []) or []
@@ -2148,6 +2814,9 @@ class ScannerDetailScreen(QWidget):
             "Journal": "Nhật ký", "M15": "M15 (xác nhận)",
             "ExpectedRR": "R:R kỳ vọng", "ScoreGap": "Chênh lệch điểm",
             "ZoneBroken": "Vùng bị phá",
+            "ZoneRelevance": "Độ liên quan vùng",
+            "ZonePriceRelation": "Giá so với vùng",
+            "H4ConfirmedCHOCH": "CHOCH H4 ngược hướng",
         }
         GATE_EXPLAIN = {
             "MT5": "Kiểm tra kết nối MT5 — terminal và broker đã đăng nhập chưa",
@@ -2161,6 +2830,9 @@ class ScannerDetailScreen(QWidget):
             "ExpectedRR": "Kiểm tra tỷ lệ R:R kỳ vọng có đạt tối thiểu không",
             "ScoreGap": "Kiểm tra chênh lệch điểm BUY/SELL có đủ rõ ràng không",
             "ZoneBroken": "Kiểm tra vùng entry có bị phá vỡ không",
+            "ZoneRelevance": "Kiểm tra vùng giá đã chọn còn phù hợp với bối cảnh hiện tại",
+            "ZonePriceRelation": "Kiểm tra kịch bản đang dùng đúng vùng giá đã chọn",
+            "H4ConfirmedCHOCH": "CHOCH H4 đã xác nhận ngược hướng luôn giới hạn quyết định ở WATCH_ONLY",
         }
 
         title_color = "#D94625" if light else "#f97316"
@@ -2192,7 +2864,7 @@ class ScannerDetailScreen(QWidget):
             if not isinstance(gc, dict):
                 continue
             g_name = gc.get("gate", "?")
-            g_status = gc.get("status", "pass")
+            g_status = gc.get("status", "unknown")
             g_detail = gc.get("detail", "")
             g_explain = GATE_EXPLAIN.get(g_name, "")
             g_label = GATE_VN_NAME.get(g_name, g_name)
@@ -2205,6 +2877,10 @@ class ScannerDetailScreen(QWidget):
                 icon = "🟡"
                 color = "#fbbf24"
                 text = "C.BÁO"
+            elif g_status == "unknown":
+                icon = "⚪"
+                color = "#94a3b8"
+                text = "CHƯA KT"
             else:
                 icon = "🟢"
                 color = "#22c55e"
@@ -2221,21 +2897,35 @@ class ScannerDetailScreen(QWidget):
         rows.append("</table>")
 
         # Summary
-        allowed = gate.get("allowed", True)
+        allowed = gate.get("allowed")
         cap = gate.get("decision_cap") or permission.get("decision_cap") or "không"
         reasons = gate.get("reasons", []) or []
+        canonical_allowed = self._scan_trade_allowed()
         perm_status = permission.get("status", "?")
-        perm_text = {"allowed": "Được phép", "caution": "Cẩn trọng", "blocked": "Bị chặn"}.get(perm_status, perm_status)
+        perm_text = (
+            "Được phép tại lúc quét"
+            if canonical_allowed is True
+            else "Không được phép tại lúc quét"
+            if canonical_allowed is False
+            else {
+                "allowed": "Được phép",
+                "caution": "Cẩn trọng",
+                "blocked": "Bị chặn",
+            }.get(perm_status, perm_status)
+        )
 
-        if not allowed:
+        if allowed is False:
             summary_color = "#ef4444"
             summary_text = f"BỊ CHẶN (mức: {cap})"
-        elif cap in ("WATCH_ONLY", "WAITING_CONFIRMATION"):
+        elif allowed is True and cap in ("WATCH_ONLY", "WAITING_CONFIRMATION"):
             summary_color = "#fbbf24"
             summary_text = f"CẢNH BÁO (mức: {cap})"
-        else:
+        elif allowed is True:
             summary_color = "#22c55e"
             summary_text = f"CHO PHÉP (mức: {cap})"
+        else:
+            summary_color = "#94a3b8"
+            summary_text = "CHƯA CÓ KẾT QUẢ GATE"
 
         rows.append(
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;"
@@ -2259,8 +2949,14 @@ class ScannerDetailScreen(QWidget):
         return "\n".join(rows)
 
     def _build_gate_checks_from_result(self, analysis: dict) -> list[dict]:
-        """Build gate checks from trade_gate + data_quality when pipeline diagnostics unavailable."""
-        gate = analysis.get("trade_gate", {})
+        """Build gate checks for the canonical selected side."""
+        canonical_decision = self._candidate_decision()
+        side_gate = self._selected_side_evaluation().get("gate_result")
+        gate = (
+            side_gate if isinstance(side_gate, dict) else {}
+        ) if canonical_decision else (
+            analysis.get("trade_gate", {})
+        )
         if not isinstance(gate, dict):
             gate = {}
         dq = analysis.get("data_quality", {})
@@ -2269,48 +2965,173 @@ class ScannerDetailScreen(QWidget):
         direction = analysis.get("direction_bias", {})
         if not isinstance(direction, dict):
             direction = {}
-        primary = analysis.get("scenarios", [{}])[0] if isinstance(analysis.get("scenarios"), list) else {}
+        primary = self._selected_scenario(analysis)
 
         block_codes = set(gate.get("block_codes", []) or [])
         warning_codes = set(gate.get("warning_codes", []) or [])
 
-        def _st(code: str) -> str:
+        gate_evaluated = "allowed" in gate
+
+        def _st(code: str, *, explicit_evidence: bool = False) -> str:
             if code in block_codes:
                 return "block"
             if code in warning_codes:
                 return "warning"
-            return "pass"
+            if gate_evaluated or explicit_evidence:
+                return "pass"
+            return "unknown"
 
         from core.reason_codes import (
             MT5_NOT_READY, SPREAD_ABNORMAL, DATA_QUALITY_WARNING,
             HIGH_IMPACT_NEWS_NEARBY, DAILY_LOSS_LIMIT_REACHED, WEEKLY_LOSS_LIMIT_REACHED,
+            MAX_CONSECUTIVE_LOSSES_REACHED, MAX_OPEN_RISK_REACHED,
             M15_NOT_CONFIRMED, M15_LOOSE_CONFIRMATION, EXPECTED_RR_TOO_LOW,
-            BUY_SELL_SCORE_GAP_LOW, ZONE_BROKEN,
+            BUY_SELL_SCORE_GAP_LOW, ZONE_BROKEN, ZONE_RELEVANCE_LOW,
+            ZONE_PRICE_RELATION_INVALID, CHOCH_AGAINST_DIRECTION,
         )
 
+        def _combined_status(codes: tuple[str, ...]) -> str:
+            statuses = [_st(code) for code in codes]
+            if "block" in statuses:
+                return "block"
+            if "warning" in statuses:
+                return "warning"
+            if "pass" in statuses:
+                return "pass"
+            return "unknown"
+
+        account_codes = (
+            MAX_CONSECUTIVE_LOSSES_REACHED,
+            MAX_OPEN_RISK_REACHED,
+        )
+        if any(code in block_codes for code in account_codes):
+            account_status = "block"
+        elif any(code in warning_codes for code in account_codes):
+            account_status = "warning"
+        else:
+            account_status = (
+                "pass"
+                if isinstance(gate.get("account_guard_stats"), dict)
+                else "unknown"
+            )
+
+        mt5_status = _st(
+            MT5_NOT_READY,
+            explicit_evidence=(
+                dq.get("terminal_connected") is True
+                and dq.get("broker_logged_in") is True
+            ),
+        )
+        spread_status = _st(
+            SPREAD_ABNORMAL,
+            explicit_evidence=bool(dq.get("spread_status")),
+        )
+        data_status = _st(
+            DATA_QUALITY_WARNING,
+            explicit_evidence=bool(dq),
+        )
+        news_status = _st(HIGH_IMPACT_NEWS_NEARBY)
+        loss_status = _combined_status((
+            DAILY_LOSS_LIMIT_REACHED,
+            WEEKLY_LOSS_LIMIT_REACHED,
+        ))
+        m15_status = _combined_status((
+            M15_NOT_CONFIRMED,
+            M15_LOOSE_CONFIRMATION,
+        ))
+        rr_status = _st(EXPECTED_RR_TOO_LOW)
+        gap_status = _st(BUY_SELL_SCORE_GAP_LOW)
+        zone_broken_status = _st(ZONE_BROKEN)
+        zone_relevance_status = _st(ZONE_RELEVANCE_LOW)
+        zone_relation_status = _st(ZONE_PRICE_RELATION_INVALID)
+        choch_status = _st(CHOCH_AGAINST_DIRECTION)
+
+        def _detail(
+            status: str,
+            *,
+            passed: str,
+            failed: str,
+            unknown: str = "chưa có dữ liệu kiểm tra",
+        ) -> str:
+            if status == "pass":
+                return passed
+            if status in {"warning", "block"}:
+                return failed
+            return unknown
+
         return [
-            {"gate": "MT5", "status": _st(MT5_NOT_READY),
-             "detail": "MT5 sẵn sàng" if _st(MT5_NOT_READY) == "pass" else "MT5 chưa sẵn sàng"},
-            {"gate": "Spread", "status": _st(SPREAD_ABNORMAL),
-             "detail": f"spread={dq.get('spread_status', 'normal')}"},
-            {"gate": "DataQuality", "status": _st(DATA_QUALITY_WARNING),
-             "detail": "không cảnh báo" if _st(DATA_QUALITY_WARNING) == "pass" else str(dq.get('warning', ''))},
-            {"gate": "News", "status": _st(HIGH_IMPACT_NEWS_NEARBY),
-             "detail": "không có tin gần" if _st(HIGH_IMPACT_NEWS_NEARBY) == "pass" else "có tin tác động cao trong 30 phút"},
-            {"gate": "DailyWeeklyLoss", "status": _st(DAILY_LOSS_LIMIT_REACHED) if _st(DAILY_LOSS_LIMIT_REACHED) != "pass" else _st(WEEKLY_LOSS_LIMIT_REACHED),
-             "detail": "trong giới hạn" if _st(DAILY_LOSS_LIMIT_REACHED) == "pass" and _st(WEEKLY_LOSS_LIMIT_REACHED) == "pass" else "vượt giới hạn lỗ"},
-            {"gate": "AccountGuard", "status": "pass",
-             "detail": "không kiểm tra (thiếu dữ liệu pipeline)"},
-            {"gate": "Journal", "status": "pass",
-             "detail": "không kiểm tra (thiếu dữ liệu pipeline)"},
-            {"gate": "M15", "status": _st(M15_NOT_CONFIRMED) if _st(M15_NOT_CONFIRMED) != "pass" else _st(M15_LOOSE_CONFIRMATION),
+            {"gate": "MT5", "status": mt5_status,
+             "detail": _detail(
+                 mt5_status,
+                 passed="MT5 sẵn sàng",
+                 failed="MT5 chưa sẵn sàng",
+             )},
+            {"gate": "Spread", "status": spread_status,
+             "detail": f"spread={dq.get('spread_status', 'chưa có dữ liệu')}"},
+            {"gate": "DataQuality", "status": data_status,
+             "detail": _detail(
+                 data_status,
+                 passed="không có cảnh báo",
+                 failed=str(dq.get("warning") or "có cảnh báo dữ liệu"),
+             )},
+            {"gate": "News", "status": news_status,
+             "detail": _detail(
+                 news_status,
+                 passed="không có tin tác động cao ở gần",
+                 failed="có tin tác động cao trong 30 phút",
+             )},
+            {"gate": "DailyWeeklyLoss", "status": loss_status,
+             "detail": _detail(
+                 loss_status,
+                 passed="đang trong giới hạn",
+                 failed="đã chạm hoặc vượt giới hạn lỗ",
+             )},
+            {"gate": "AccountGuard", "status": account_status,
+             "detail": _detail(
+                 account_status,
+                 passed="đã kiểm tra, không có cảnh báo",
+                 failed="bảo vệ tài khoản đang cảnh báo hoặc chặn",
+             )},
+            {"gate": "Journal", "status": (
+                "block"
+                if self._as_dict(gate.get("journal_feedback")).get("block_codes")
+                else "warning"
+                if self._as_dict(gate.get("journal_feedback")).get("warning_codes")
+                else "pass"
+                if isinstance(gate.get("journal_feedback"), dict)
+                else "unknown"
+             ),
+             "detail": "đã kiểm tra phản hồi nhật ký" if isinstance(gate.get("journal_feedback"), dict) else "chưa có dữ liệu kiểm tra"},
+            {"gate": "M15", "status": m15_status,
              "detail": f"M15={primary.get('m15_quality', '?')}"},
-            {"gate": "ExpectedRR", "status": _st(EXPECTED_RR_TOO_LOW),
+            {"gate": "ExpectedRR", "status": rr_status,
              "detail": f"R:R={primary.get('expected_effective_rr', '?')} sau spread (danh nghĩa {primary.get('risk_reward', '?')}, dải {ScannerDetailScreen._rr_range_compact(primary.get('risk_reward_range'))})"},
-            {"gate": "ScoreGap", "status": _st(BUY_SELL_SCORE_GAP_LOW),
+            {"gate": "ScoreGap", "status": gap_status,
              "detail": f"chênh lệch={direction.get('score_gap', '?')} (tối thiểu {direction.get('min_gap', 10)})"},
-            {"gate": "ZoneBroken", "status": _st(ZONE_BROKEN),
-             "detail": "vùng còn nguyên" if _st(ZONE_BROKEN) == "pass" else "vùng đã bị phá"},
+            {"gate": "ZoneBroken", "status": zone_broken_status,
+             "detail": _detail(
+                 zone_broken_status,
+                 passed="vùng chưa bị phá",
+                 failed="vùng đã bị phá",
+             )},
+            {"gate": "ZoneRelevance", "status": zone_relevance_status,
+             "detail": _detail(
+                 zone_relevance_status,
+                 passed="vùng còn đủ liên quan",
+                 failed="độ liên quan của vùng dưới ngưỡng",
+             )},
+            {"gate": "ZonePriceRelation", "status": zone_relation_status,
+             "detail": _detail(
+                 zone_relation_status,
+                 passed="vùng đã chọn khớp với kịch bản",
+                 failed="vùng đã chọn không còn khớp với kịch bản",
+             )},
+            {"gate": "H4ConfirmedCHOCH", "status": choch_status,
+             "detail": _detail(
+                 choch_status,
+                 passed="không có CHOCH H4 đã xác nhận ngược hướng",
+                 failed="có CHOCH H4 đã xác nhận ngược hướng",
+             )},
         ]
 
     # -- Entry Checklist ----------------------------------------------------
@@ -2347,13 +3168,15 @@ class ScannerDetailScreen(QWidget):
             if not isinstance(item, dict):
                 continue
             label = item.get("label", "?")
-            passed = item.get("status") == "pass"
+            item_status = str(item.get("status") or "").lower()
+            passed = item_status == "pass"
+            failed = item_status in {"fail", "failed", "block", "blocked"}
             value = item.get("value", "--")
             note = item.get("note", "")
 
-            icon = "✅" if passed else "⏳"
-            status_text = "Đạt" if passed else "Chờ"
-            color = "#22c55e" if passed else "#fbbf24"
+            icon = "✅" if passed else "❌" if failed else "⏳"
+            status_text = "Đạt" if passed else "Không đạt" if failed else "Chờ"
+            color = "#22c55e" if passed else "#ef4444" if failed else "#fbbf24"
 
             rows.append(
                 f"<tr>"
@@ -2455,7 +3278,7 @@ class ScannerDetailScreen(QWidget):
         final_detail = analysis.get("final_score_detail", {})
         if not isinstance(final_detail, dict):
             final_detail = {}
-        final_score = analysis.get("final_score", 0)
+        final_score = self._canonical_setup_score()
         decision = analysis.get("decision_engine", {})
         if not isinstance(decision, dict):
             decision = {}
@@ -2474,12 +3297,14 @@ class ScannerDetailScreen(QWidget):
         bg_color = "#f1f5f9" if light else "#1e293b"
 
         rows = [
-            f"<h2 style='color:{title_color};margin:20px 0 4px;font-size:14px;font-weight:bold;'>Điểm cuối cùng</h2>",
+            f"<h2 style='color:{title_color};margin:20px 0 4px;font-size:14px;font-weight:bold;'>Điểm thiết lập của hướng đã chọn</h2>",
             f"<p style='color:{desc_color};font-size:12px;margin:0 0 12px;'>"
             "Điểm tổng hợp từ 3 nguồn: <b>Tín hiệu</b> (điểm kỹ thuật/SMC/vĩ mô), "
             "<b>Bằng chứng nhật ký</b> (hiệu suất lịch sử của setup tương tự), "
             "<b>Chất lượng thực thi</b> (tỷ lệ vào lệnh thành công trước đây). "
-            "Điểm này quyết định hành động cuối cùng."
+            "Đây là điểm <b>setup_score</b> dùng để so với ngưỡng chiến lược. "
+            "Điểm cao không tự đồng nghĩa được vào lệnh; entry, gate, rollout "
+            "và tái kiểm tra trước khi đặt lệnh vẫn có quyền chặn."
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>",
             "<tr>",
@@ -2497,15 +3322,15 @@ class ScannerDetailScreen(QWidget):
             f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{desc_color};font-size:13px;'>15%</td>"
             f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;font-size:13px;'>{exec_s}</td></tr>",
             f"<tr style='border-top:2px solid {border_color};'>"
-            f"<td style='padding:4px 10px;color:{label_color};font-weight:bold;font-size:13px;' title='Điểm cuối cùng = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>ĐIỂM CUỐI</td>"
+            f"<td style='padding:4px 10px;color:{label_color};font-weight:bold;font-size:13px;' title='setup_score = Tín hiệu×0.65 + Bằng chứng×0.20 + Thực thi×0.15'>SETUP SCORE</td>"
             f"<td style='text-align:center;padding:4px 10px;color:{desc_color};font-size:13px;'>100%</td>"
-            f"<td style='text-align:center;padding:4px 10px;color:#22c55e;font-weight:bold;font-size:13px;'>{final_score}</td></tr>",
+            f"<td style='text-align:center;padding:4px 10px;color:#22c55e;font-weight:bold;font-size:13px;'>{self._score_text(final_score)}</td></tr>",
             "</table>",
         ]
 
-        # Decision
+        # Canonical Scanner decision. The older pipeline Decision Engine is
+        # retained as context only and must not overwrite candidate status.
         dec_decision = decision.get("decision", "?")
-        dec_action = decision.get("legacy_action", "?")
         DECISION_EXPLAIN = {
             "READY_TO_TRADE": "Sẵn sàng giao dịch — mọi điều kiện đều đạt",
             "WAITING_CONFIRMATION": "Chờ xác nhận thêm — cần thêm tín hiệu H1/M15",
@@ -2515,13 +3340,23 @@ class ScannerDetailScreen(QWidget):
             "TRADE_BLOCKED": "Bị chặn — gate đã chặn không cho vào lệnh",
         }
         dec_explain = DECISION_EXPLAIN.get(dec_decision, "")
+        candidate_status = self._canonical_status()
+        candidate_label = _CANDIDATE_STATUS[candidate_status][0]
+        selected_side = {
+            "buy": "MUA",
+            "sell": "BÁN",
+        }.get(self._selected_side(), "CHƯA XÁC ĐỊNH")
         rows.append(
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;background:{bg_color};border-radius:6px;'>"
             "<tr>"
-            f"<td style='padding:4px 12px;color:{muted_color};width:110px;font-size:13px;'>Quyết định</td>"
+            f"<td style='padding:4px 12px;color:{muted_color};width:110px;font-size:13px;'>Scanner chuẩn</td>"
+            f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{candidate_label}</b>"
+            f" · Hướng phân tích: <b>{selected_side}</b></td>"
+            "</tr><tr>"
+            f"<td style='padding:4px 12px;color:{muted_color};font-size:13px;'>Pipeline tham khảo</td>"
             f"<td style='padding:4px 12px;color:{text_color};font-size:13px;'><b>{dec_decision}</b>"
             + (f" <span style='color:{desc_color};font-size:13px;'>({dec_explain})</span>" if dec_explain else "")
-            + f" → hành động: <b>{dec_action}</b></td>"
+            + "</td>"
             "</tr>"
             "</table>"
         )

@@ -1,734 +1,362 @@
-# Scanner Flow — Luồng chạy chi tiết của hệ thống quét thị trường
+# Scanner V2 — Luồng chạy hiện hành
 
-## Tổng quan kiến trúc
+Cập nhật: **24/07/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
 
-```
-ScannerScreen (UI)
-  → build ScannerRequest (thresholds, symbol_auto_trade)
-  → ScannerWorker (thread)
-    → ScannerController.run()
-      → _analyze_one_symbol() × N symbols (ThreadPoolExecutor)
-        → analyze_symbol() → AnalysisPipeline.execute()  [9 bước]
-        → scanner_row_from_analysis()
-      → sort_scanner_rows()
-      → _apply_scanner_filters()  [2 nhánh: backtest=true / false]
-      → build_scanner_output()
-  → ScannerScreen._scan_finished()
-    → ScannerTableModel.set_rows()
-    → hiển thị bảng kết quả
-```
+## 1. Tổng quan
 
----
-
-## Bước 1: ScannerScreen — Build ScannerRequest
-
-**File:** `ui/screens/scanner_screen.py` — hàm `_start_scan()`
-
-### Input
-- Danh sách symbols đã chọn từ giao diện
-- `Settings` từ `SettingsService` (chứa `TradingSettings.symbol_settings`)
-
-### Xử lý
-
-#### 1a. Build `thresholds` (ngưỡng quyết định cho Decision Engine)
-
-Với mỗi symbol, đọc `SymbolScanSettings` từ `settings.trading.symbol_settings`:
-
-**Nhánh 1 — `backtest = true`:**
-```
-thresholds = {
-    "ready": min_score (nếu > 0) hoặc decision_ready,
-    "watch": 999,    // vô hiệu hóa phân loại WATCH
-    "wait": 999,     // vô hiệu hóa phân loại WAIT
-    "min_score_gap": 10,
-    "min_rr": min_expected_rr hoặc 0,
-}
-```
-→ Decision Engine chỉ phân được 2 trạng thái: READY_TO_TRADE hoặc STAND_ASIDE.
-  Không có trạng thái trung gian WATCH_ONLY / WAITING_CONFIRMATION.
-
-**Nhánh 2 — `backtest = false` (có config):**
-```
-thresholds = {
-    "ready": decision_ready (mặc định 65),
-    "watch": decision_watch (mặc định 60),
-    "wait": decision_wait (mặc định 55),
-    "min_score_gap": 10,
-    "min_rr": min_expected_rr hoặc 1.3,
-}
-```
-→ Decision Engine phân loại 3 mức: READY / WATCH / WAIT.
-
-**Không có config:**
-→ Dùng `DEFAULT_DECISION_THRESHOLDS = {ready: 65, watch: 60, wait: 55}`.
-
-#### 1b. Build `symbol_auto_trade` (cấu hình cho Nhánh 1)
-
-Chỉ symbol có `backtest = true` mới được thêm vào:
-
-```
-symbol_auto_trade[symbol] = {
-    "regime": auto_trade_regime,   // "", "trend_up", "range", ...
-    "side": auto_trade_side,       // "", "buy", "sell"
-    "min_score": min_score hoặc decision_ready,
-}
+```text
+ScannerScreen
+  → ScannerRequest
+  → ScannerController.run()
+      → tạo scan context và rollout policy
+      → lấy MT5/macro data
+      → phân tích song song từng symbol
+      → Candidate Engine
+          → đánh giá BUY và SELL độc lập
+          → Strategy Router
+          → Execution Readiness tại thời điểm scan
+      → lọc và canonical ranking
+      → observability + shadow V1/V2
+      → build output
+      → auto trade qua rollout guard và shared execution path
+      → metrics/readiness + Telegram + snapshot
 ```
 
-### Output
-- `ScannerRequest` object chứa: `thresholds`, `symbol_auto_trade`, `symbols`, `account_balance`, `risk_percent`, `min_scores`, `auto_trade_enabled`
+Scanner không còn luồng “backtest ghi đè `stand_aside` thành `ready`”. Backtest chỉ là đầu vào của Strategy Router.
 
----
+### SMC scorer đang hoạt động
 
-## Bước 2: ScannerController.run() — Điều phối quét
+- Runtime mặc định và settings đã lưu dùng `smc_scoring_mode=v2`.
+- SMC v2 quyết định điểm SMC theo BUY/SELL và canonical zone được đưa vào
+  scenario, trade plan và gate. Không có canonical zone hợp lệ thì không
+  fallback sang technical zone để tạo plan.
+- SMC v1 vẫn chạy làm dữ liệu đối chiếu và có thể được chọn lại bằng mode
+  `legacy`; mode `shadow` giữ quyết định v1 nhưng tính thêm v2 để so sánh.
+- Scanner contract hiện là `scanner-v3/scanner-features-v3`; backtest config
+  dùng schema v4/`phase8-smc-v2-oos-v1`, bắt buộc ghi rõ `smc-v2`; config cũ
+  hoặc thiếu SMC identity bị từ chối và cần chạy backtest lại.
+- Đây là thay đổi nguồn quyết định phân tích, không phải mở quyền gửi lệnh.
+  Runtime hiện chọn stage `PRODUCTION`, nhưng release readiness, kill switch
+  và các execution gate vẫn có quyền chặn. Giá trị mặc định của mã nguồn vẫn
+  là `SHADOW`.
 
-**File:** `controllers/scanner_controller.py`
+## 2. Tạo `ScannerRequest`
 
-### Input
-- `ScannerRequest` từ Bước 1
-- Data provider (MT5) đã kết nối
-- Progress callback để cập nhật UI
+**Nguồn chính:** `ui/screens/scanner_screen.py`, `core/scanner.py`, `core/backtest_config.py`.
 
-### Xử lý
+Request chứa:
 
-#### 2a. Chuẩn bị dữ liệu (8% → 49% progress)
-- Kiểm tra kết nối MT5, lấy account balance
-- Với mỗi symbol: resolve broker_symbol, load candles (D1/H4/H1/M15), lấy macro context
-- Build `_analyze_one_symbol` arguments
+- danh sách symbol và mode quét;
+- balance/risk phục vụ preview;
+- decision thresholds theo symbol;
+- backtest config đã serialize theo symbol;
+- trạng thái yêu cầu auto trade;
+- các feature flag phục vụ rollout/provenance.
 
-#### 2b. Quét song song (49% → 74% progress)
-- `ThreadPoolExecutor` chạy `_analyze_one_symbol()` cho từng symbol
-- Mỗi symbol trả về 1 row dict (có `analysis_result` bên trong)
-- Gán `auto_trade_branch = "B"` nếu symbol có backtest config, `"A"` nếu không
+Ba feature flag Scanner có giá trị mặc định mã nguồn là `false`; runtime hiện
+đã lưu cả ba ở `true`. Các flag được ghi vào scan context nhưng không có quyền
+khôi phục đường auto-trade V1 hoặc bỏ qua safety invariant; rollout policy vẫn
+là gate cho execution.
 
-#### 2c. Sắp xếp (74% progress)
-- Gọi `sort_scanner_rows(rows)` — sắp xếp theo scanner_group > opportunity_score > final_score > RR > symbol
+`analysis_thresholds_for_symbol()` luôn giữ `decision_ready/watch/wait` độc lập với config backtest. Giá trị mặc định là 65/60/55; pipeline `min_rr` mặc định 1.3.
 
-#### 2d. Lọc theo 2 nhánh (78% progress)
-- Gọi `_apply_scanner_filters(rows, request)` — xem chi tiết ở Bước 7
+Nếu settings cũ chứa cấu hình backtest, migration chỉ tạo config `DRAFT`. Config đó không được thực thi như strategy đã validation.
 
-#### 2e. Build output (94% progress)
-- Gọi `build_scanner_output(rows, request, ai_called=0)` — xem chi tiết ở Bước 8
+Trạng thái runtime ngày 24/07/2026: toàn bộ 31 config `DRAFT` đã tắt cờ
+`backtest` nhưng giữ nguyên metadata để dùng lại sau. Vì vậy ScannerRequest hiện
+không mang backtest config và Strategy Router dùng `DEFAULT_RULES` cùng SMC v2.
+Backtest/OOS không phải điều kiện để hiển thị quyết định v2, nhưng vẫn là điều
+kiện trước production rollout.
 
-### Output
-- `output` dict: `{mode, timestamp, symbols_scanned, summary, rows, market_brief}`
+Settings/Symbols cũng áp dụng fail-closed tại nguồn:
 
----
+- chỉ config được canonical validator xác nhận `VALIDATED`, đúng SMC-v2 và còn
+  hạn mới có thể bật;
+- config `DRAFT/INVALID/EXPIRED` được giữ metadata nhưng bắt buộc
+  `backtest=false`, đồng thời bị loại khỏi `enabled_symbols`;
+- Min Score/Regime/Hướng/RR của Backtest là dữ liệu chỉ đọc; Settings chỉ cho
+  sửa độc lập các ngưỡng live `Ready/Watch/Wait`;
+- dán config JSON chỉ tạo preview và chạy validator, không tự kích hoạt.
 
-## Bước 3: _analyze_one_symbol() → AnalysisPipeline — Pipeline phân tích
+Vì vậy đường Settings bình thường không còn có thể tạo
+`backtest=true + status=DRAFT` để đẩy Scanner vào `BACKTEST_INVALID`.
+Nhánh `BACKTEST_INVALID` vẫn tồn tại để fail-closed với request/config bên
+ngoài hoặc dữ liệu lỗi đi vòng qua Settings.
 
-**File:** `controllers/scanner_controller.py` → `core/analysis_engine.py` → `core/analysis_pipeline.py`
+## 3. Khởi tạo scan và rollout
 
-### Input
-- `AnalysisInput`: symbol, broker_symbol, account_balance, risk_percent, ...
-- Candles: D1 (≥60), H4 (≥60), H1 (≥30), M15
-- `data_quality`: spread, terminal status, news
-- `macro_alignment`: điểm macro cho buy/sell (mặc định 15/15)
-- `thresholds`: ngưỡng quyết định từ Bước 1
+**Nguồn chính:** `controllers/scanner_controller.py`, `core/scanner_observability.py`, `core/scanner_rollout.py`.
 
-### Pipeline 9 bước
+Controller:
 
-#### Step 1: Validate & Build Context
-- Kiểm tra đủ candles (D1≥60, H4≥60, H1≥30)
-- `build_technical_snapshot(D1, H4, H1)`:
-  - Tính EMA(50) cho D1 và H4, EMA(200) cho D1
-  - Tính RSI(14) cho H4
-  - Tính MACD histogram cho H4
-  - Tính ATR(14) cho H4, D1
-  - Phát hiện support/resistance zones (pivot-based)
-  - Xác định structure (HH/HL, LH/LL) cho D1, H4
-- `build_smc_context(D1, H4, H1)`:
-  - Với mỗi timeframe: `swing_points(candles, lookback=5)` — cửa sổ 11 nến (external swings)
-  - **Fallback:** Nếu `lookback=5` trả về 0 swings (cả highs và lows), tự động thử lại với `lookback=2` và đặt `swing_source = "fallback"`
-  - `_filter_swings_by_atr()` — lọc swing có khoảng cách < 0.2×ATR so với swing trước đó
-  - `_detect_internal_structure()` — tìm internal swings (lookback=2) trong từng leg giữa các external swings
-  - `detect_bos_choch(swings, candles)` — phát hiện BOS/CHOCH từ 2 swing cuối
-  - `_cross_validate_structure(d1, h4, h1)` — cross-validate D1→H4→H1, tính `confluence_score` (-3 đến +5)
-  - Kết quả lưu: `external_swings`, `internal_swings` (có tag `leg`), `leg_count`, `confluence`, `swing_source` (`"standard"` hoặc `"fallback"`)
-  - Supply/Demand zones, Order Blocks, FVG
-  - Liquidity pools (equal highs/lows), Liquidity sweeps
-  - Premium/Discount classification
-  - Mỗi zone được chấm `zone_score` (0-100) dựa trên:
-    - Số lần test và giữ được (+0 đến +20)
-    - Độ mới (freshness) (+0 đến +10)
-    - Displacement multiple (+0 đến +15)
-    - Liquidity sweep (+10)
-    - Vị trí premium/discount (-8 đến +12)
-- `detect_market_regime()`: xác định `trend_up`, `trend_down`, `range`, `volatile`
+1. tạo `scan_id`, `settings_hash`, `request_hash` và timestamp;
+2. đọc rollout settings và MT5 server;
+3. tính canary/release readiness từ metrics bền vững;
+4. tạo `ScannerRolloutPolicy`;
+5. phát event bắt đầu scan.
 
-**Output Step 1:** `technical` (EMA, RSI, MACD, ATR, S/R zones, structure), `smc` (BOS/CHOCH, zones, sweeps), `market_regime`, `risk_score`
+Rollout guard fail-closed. `SHADOW` là mặc định và chặn order trước cả
+execution snapshot. Runtime ngày 24/07/2026 đã chọn `PRODUCTION` và
+`production_approved=true`, nhưng `release_ready=false`; vì vậy policy hiện
+vẫn chặn bằng `RELEASE_GATE_NOT_READY`.
 
-#### Step 2: Correlation Adjustments
-- Tính DXY/VIX/US10Y correlation → điều chỉnh buy/sell score
-- Nếu DXY tăng → penalty cho buy EUR/USD, bonus cho sell
-- `correlation_adjustment` là số điểm cộng/thêm vào macro score
+## 4. Thu thập và phân tích dữ liệu
 
-**Output Step 2:** `buy_corr_adj`, `sell_corr_adj`
+Controller kiểm tra kết nối MT5, resolve broker symbol, lấy candle các timeframe cần thiết và macro context. Các symbol được phân tích song song.
 
-#### Step 3: Score Scenarios
-- Gọi `score_scenario("buy", ...)` và `score_scenario("sell", ...)` từ `signal_engine.py`
-- **Công thức tính signal_score (0-100):**
+Pipeline phân tích tạo dữ liệu kỹ thuật/macro, scenario theo từng side, score, entry status, gate result và R:R. Candidate Engine không được dùng scenario của BUY cho SELL hoặc ngược lại.
 
-  **a) 6 thành phần với trọng số động theo regime:**
+Các lỗi dữ liệu phải được biểu diễn bằng status/reason code; không được coi giá trị thiếu là điều kiện đã đạt.
 
-  | Regime | Trend | Momentum | Location | SMC | Risk | Macro |
-  |---|---|---|---|---|---|---|
-  | trending_up/down | 25 | 15 | 15 | 15 | 15 | 15 |
-  | range | 10 | 10 | 25 | 25 | 15 | 15 |
-  | volatile | 10 | 5 | 15 | 10 | 40 | 20 |
-  | unknown | 18 | 14 | 17 | 15 | 16 | 20 |
+## 5. Candidate Engine
 
-  **b) Trend Alignment (0-25):**
-  - BUY: EMA50>EMA200 (D1) = +8, price>EMA200 = +5, price>EMA50 = +5, H4 HH/HL = +5, D1+H4 HH/HL = +2
-  - SELL: ngược lại
+**Nguồn chính:** `core/scanner_candidate_engine.py`, `core/scanner_strategy_engine.py`, `core/scanner_models.py`.
 
-  **c) Momentum Alignment (0-20):**
-  - Kết hợp RSI(14) H4 + MACD histogram H4
-  - BUY — RSI (`_choose_one` lấy điều kiện đầu tiên khớp):
-    - RSI 30-50 và đang tăng = +8
-    - RSI 40-60 và không giảm = +6
-    - RSI 60-70 và không giảm = +3
-    - RSI > 75 = 0
-  - BUY — MACD:
-    - MACD > 0 và rising (now > prev > prev2) = +10
-    - MACD < 0 và rising (now > prev > prev2) = +6
-    - MACD > prev = +3
-    - MACD > 0 nhưng falling = +5
-  - SELL — RSI:
-    - RSI 50-70 và đang giảm = +8
-    - RSI 40-60 và không tăng = +6
-    - RSI 30-40 và không tăng = +3
-    - RSI < 25 = 0
-  - SELL — MACD:
-    - MACD < 0 và falling (now < prev < prev2) = +10
-    - MACD > 0 và falling (now < prev < prev2) = +6
-    - MACD < prev = +3
-    - MACD < 0 nhưng rising = +5
-  - Tổng = clamp(RSI score + MACD score, 0, 20)
+Candidate Engine thực hiện ba bước:
 
-  **d) Location Quality (0-25):**
-  - BUY: giá trong vùng support = +15, gần support (≤0.5 ATR) = +10
-  - Bonus: confluence ≥3 = +5, round number = +3
-  - Penalty: test_count ≥3 = -5; nếu ≥5 thì cộng dồn thêm -3 (tổng -8)
+### 5.1 Đánh giá hai side độc lập
 
-  **e) SMC Quality (0-15):**
-  - H4 BOS đúng hướng: +5 (strong, legs≥3) / +4 (normal, legs≥2) / +3 (weak, legs=1)
-  - H1 BOS/CHOCH đúng hướng: +4 (strong) / +3 (normal) / +2 (weak)
-  - `leg_count` = số cặp HH/HL hoặc LH/LL liên tiếp cùng hướng xu hướng (từ `_count_trend_legs()`)
-  - CHOCH confirmed (legs≥3) → tín hiệu đảo chiều mạnh hơn
-  - **Multi-TF Confluence**: H1∥H4=+2, H4∥D1=+2, all-3-TF=+1 (tổng +5), H1⟂H4=-3
-  - Zone score ≥75 = +4, ≥55 = +3, <55 = +1
-  - Zone ở đúng premium/discount = +3, equilibrium = +1, ngược = -2
-  - Zone-level liquidity sweep = +1, H1-level swept_lows/swept_highs = +2, cross-validate technical swing = +2
-  - Cap: H4 CHOCH ngược hướng = max 4 điểm, H1 CHOCH ngược = max 6 điểm
+Mỗi `SideEvaluation` giữ cùng một side cho:
 
-  **f) Risk Condition (0-15 scale, scaled to risk weight):**
-  - ATR ổn định (0.8-1.2× trung bình 14 ngày) = +6
-  - Không có news trong 3h = +6
-  - Spread bình thường = +3
+- `signal_score`;
+- `final_score`/`setup_score`;
+- scenario;
+- entry status;
+- M15 quality;
+- expected effective R:R;
+- gate result và reason codes.
 
-  **g) Macro Alignment (0-30 scale, scaled to macro weight):**
-  - macro_score × macro_confidence × macro_weight / 30
-  - Cộng correlation_adjustment
+`setup_score` hiện là metric chuẩn và alias trực tiếp của `final_score`. Việc đổi metric sau này phải đổi version scorer/config.
 
-  **h) Tổng hợp — Direct Sum:**
-  ```
-  total = technical_scaled + risk_scaled + macro_effective
-  ```
-  Trọng số các thành phần đã sum = 100, không cần chuẩn hóa thêm.
-  Khi thiếu dữ liệu vĩ mô, điểm tổng tự nhiên thấp hơn → phản ánh đúng mức độ tin cậy.
+### 5.2 Strategy Router
 
-  **i) Macro modifier:**
-  - Macro aligned → +5 × macro_confidence
-  - Macro conflict → -15 × macro_confidence
-  - Macro unclear → 0
+Router trả đúng một trong ba branch:
 
-  **j) CHOCH cap:** Nếu CHOCH ngược hướng → cap total ≤ 60
+#### `BACKTEST_VALIDATED`
 
-  **k) Final signal_score = total (clamp 0-100)**
+Chỉ dùng khi config:
 
-**Output Step 3:** `scores = {buy: {signal_score, trend_alignment, momentum_alignment, ...}, sell: {...}}`
+- status `VALIDATED`;
+- schema/version/scorer/feature đúng;
+- symbol, side và regime hợp lệ;
+- có `min_score`, `min_rr`;
+- train và OOS không chồng lấn, đủ cỡ mẫu;
+- expectancy, profit factor, drawdown và confidence interval đạt chuẩn;
+- walk-forward có verdict `ROBUST`;
+- fingerprint hợp lệ và chưa hết hạn.
 
-#### Step 4: Build Trade Scenarios
-- `calc_trade_permission()`: kiểm tra MT5 status, spread, news → `allowed` / `caution` / `blocked`
-- `get_preferred_zone(smc, side, price)`: tìm SMC zone tốt nhất cho mỗi hướng
-- `build_scenarios()` → gọi `build_trade_plan()` cho mỗi side (buy/sell)
+Sau đó Router kiểm tra live regime, side đã khóa hoặc best side, setup score và effective R:R.
 
-  **build_trade_plan() — Tính Entry, SL, TP:**
+#### `DEFAULT_RULES`
 
-  **a) Chọn zone:**
-  - Nếu có `preferred_zone` (SMC) VÀ zone cách giá ≤ `atr × zone_dist_mult`:
-    → `use_preferred = True`, dùng SMC zone làm entry
-  - Ngược lại: `select_best_level(support/resistance_zones, price, max_distance, below/above)`
+Dùng khi không có config backtest. Router chọn best side, yêu cầu:
 
-  **b) Tính Entry Zone (xung quanh zone level):**
-  ```
-  entry_zone_atr_mult = clamp(zone_width / atr * 0.5, 0.10, 0.30)
-  entry_low  = level - atr × entry_zone_atr_mult
-  entry_high = level + atr × entry_zone_atr_mult
-  entry_for_rr = entry_low  (BUY, aggressiveness=0 → cạnh gần nhất)
-  entry_for_rr = entry_high (SELL)
-  ```
+- dữ liệu side/scenario hợp lệ;
+- score gap tối thiểu;
+- `setup_score` đạt ngưỡng mặc định hoặc ngưỡng live thích hợp;
+- effective R:R đạt tối thiểu.
 
-  **c) Tính Stop Loss (ưu tiên: swing → zone boundary → ATR):**
-  1. **Luôn tìm swing trước** — `_find_nearest_swing_for_sl()` gom tất cả swing H4+H1, chọn swing gần `level` nhất
-     → SL = swing - atr × 0.15 (BUY) hoặc swing + atr × 0.15 (SELL)
-  2. Không có swing + có `use_preferred`: SL = zone_low - atr × 0.10 (BUY) hoặc zone_high + atr × 0.10 (SELL)
-  3. Không có swing + không có preferred: ATR-based SL (`_calc_stop_loss_buy/sell`)
-  - Floor guard: SL phải nằm ngoài entry zone ít nhất `atr × 0.20`
-  - Min distance guard: khoảng cách `entry_for_rr → SL` ≥ `atr × 0.20` (SMC) hoặc `atr × 0.50` (technical)
+#### `BACKTEST_INVALID`
 
-  **d) Tính Take Profit (cascade 5 bước, dừng ở bước đầu tiên tìm được):**
-  1. **Equal Highs/Lows** (liquidity clusters từ H4/H1)
-  2. **S/R Zones** (nearest_target từ resistance/support zones)
-  3. **Fibonacci Extension** (0.382 từ impulse swing H4, trừ range)
-  4. **Swing-based TP** (swing high/low gần nhất từ cả H4+H1)
-  5. Nếu `use_preferred` → **KHÔNG dùng fallback nhân tạo** → `tp1 = None` (RR để trống)
-  6. Nếu KHÔNG `use_preferred` → `return None` (không tạo plan)
+Dùng khi đã cấu hình backtest nhưng config không hợp lệ. Router vẫn có thể chọn side mặc định để hiển thị, nhưng luôn đặt `eligible=false`.
 
-  **e) TP2:** next S/R zone sau TP1, hoặc Fib 0.618
+### 5.3 Execution Readiness tại thời điểm scan
 
-  **f) R:R calculation:**
-  ```
-  risk_reward = "1:{reward_risk(entry, sl, tp1):.1f}"  nếu tp1 tồn tại
-  risk_reward = None                                     nếu tp1 = None
-  expected_effective_rr = (|tp - entry| - spread) / (|entry - sl| + spread)
-  ```
+Đánh giá entry status và scan-time trade permission để xác định row có đủ điều kiện trở thành candidate hay không. Đây chưa phải xác nhận cuối cùng để gửi lệnh.
 
-  **g) evaluate_entry()** — Xác nhận entry (xem Step 4 detail bên dưới)
+## 6. Trạng thái candidate
 
-  **h) Position Sizing:**
-  ```
-  risk_amount = balance × risk_percent / 100 × size_multiplier
-  loss_per_lot = |entry - sl| × contract_size × quote_to_usd_rate
-  suggested_lot = round_lot(risk_amount / loss_per_lot)
-  ```
+Candidate decision chuẩn hóa về sáu trạng thái:
 
-**Output Step 4:** `scenarios = [{type, entry_zone, stop_loss, take_profit, risk_reward, risk_reward_range, ...}, ...]`
-  - Sắp xếp theo score giảm dần
-  - Mỗi scenario có `entry_status` từ `evaluate_entry()`
-
-#### Step 4 detail: evaluate_entry() — Xác nhận entry với M15
-
-**File:** `core/entry_engine.py`
-
-**Input:** side, technical, smc, H1 candles, entry_zone, M15 candles
-
-**Xử lý:**
-
-**a) Phân loại vị trí giá so với entry zone:**
-- `in_zone`: giá đang nằm trong zone
-- `near_zone`: giá cách zone ≤ atr × 0.5
-- `far`: giá còn xa zone
-- `broken` (invalidated): giá đã phá qua zone (BUY: close < zone_low - atr×0.25)
-
-**b) H1 Confirmation (0-35 điểm):**
-- BUY: engulfing tăng = 35, rejection tail dài (lower wick ≥ body×0.8) = 30, micro break = 25
-- SELL: engulfing giảm = 35, rejection tail dài (upper wick ≥ body×0.8) = 30, micro break = 25
-- Không có → 0 điểm, trigger_type = "none"
-
-**c) SMC Confirmation (0-30 điểm):**
-- H1 BOS/CHOCH đúng hướng = 20
-- H4 BOS đúng hướng = 10
-- Liquidity sweep đúng hướng = 10
-
-**d) Location Score (0-15 điểm):**
-- BUY ở discount zone = 15, equilibrium = 8, premium = 0
-- SELL ở premium zone = 15, equilibrium = 8, discount = 0
-
-**e) Tổng confirmation score:**
-```
-score = (in_zone? 25 : near_zone? 15 : 0) + h1_score + smc_score + location_score
-```
-
-**f) M15 Layer — đánh giá structure + displacement trên M15:**
-- `_confirm_m15_structure()`: tìm higher low (BUY) hoặc lower high (SELL) → passed
-- `_confirm_m15_displacement()`: nến M15 có body > 0.3×ATR đúng hướng → passed
-- Cả 2 passed → `m15_quality = "strict"`, multiplier = 1.0
-- 1 passed → `m15_quality = "loose"`, multiplier = 0.85
-- 0 passed → `m15_quality = "none"`, multiplier = 0.7
-- `confirmation_score *= m15_score_multiplier`
-
-**g) Entry Ladder — phân loại sub-zone (top/mid/bottom):**
-```
-depth_pct = (high - price) / zone_width  (BUY)
-depth_pct = (price - low) / zone_width   (SELL)
-top    (0-33%):  size_multiplier=0.4, cần M15 loose+
-mid    (33-66%): size_multiplier=0.7, cần M15 strict
-bottom (66-100%): size_multiplier=1.0, cần M15 strict + SMC sweep
-```
-
-**h) Quyết định entry_status:**
-| Điều kiện | entry_status |
+| Status | Điều kiện khái quát |
 |---|---|
-| In zone + trigger + score ≥70 + sub-zone confirm | `confirmed_entry` |
-| In zone + trigger + score ≥70 + chưa đủ M15 | `waiting_confirmation` |
-| In zone nhưng thiếu trigger hoặc score <70 | `waiting_confirmation` |
-| Near zone | `watch_zone` |
-| Far | `watch_zone` |
-| Zone broken | `invalidated` |
-| Thiếu dữ liệu | `no_setup` |
+| `READY_NOW` | Strategy eligible, entry ready và scan-time trade gate cho phép. |
+| `WAITING_CONFIRMATION` | Strategy phù hợp nhưng entry còn chờ xác nhận. |
+| `WATCH_ZONE` | Setup đáng theo dõi/chưa đạt mức thực thi. |
+| `OUT_OF_STRATEGY` | Setup không khớp branch chiến lược. |
+| `BLOCKED` | Gate an toàn hoặc trade permission chặn. |
+| `DATA_UNAVAILABLE` | Thiếu dữ liệu/side/scenario cần thiết. |
 
-**Output evaluate_entry:** `{entry_status, trigger_type, confirmation_score, m15_quality, ready_to_trade, entry_ladder, internal_structure, ...}`
+Row được gắn:
 
-- `internal_structure`: kiểm tra H1 internal swings xác nhận hướng trade (BUY → internal higher low, SELL → internal lower high). Chứa `passed`, `reason`, `last_level`, `prev_level`.
+- `scanner_candidate_decision`;
+- `candidate_status`;
+- `selected_side`;
+- `auto_trade_branch`;
+- `strategy_config_status`;
+- `strategy_eligible`;
+- `execution_ready`;
+- `trade_allowed`;
+- `auto_trade_candidate`;
+- `candidate_order_payload`;
+- `auto_trade_reason_codes`.
 
-#### Step 5: Determine Direction
-- `calculate_direction_bias(buy_scores, sell_scores, min_gap=10)`:
-  - `best_side = "buy"` nếu buy_score > sell_score
-  - `best_side = "sell"` nếu sell_score > buy_score
-  - `is_clear_bias = True` nếu `score_gap ≥ 10`
-- Chọn `primary_scenario` khớp với `best_side`
-- Chọn `smc_trade_flags` khớp với `best_side`
+`candidate_order_payload` chỉ được tạo từ canonical decision và không nhúng toàn bộ `analysis_result`.
 
-**Output Step 5:** `direction_bias, best_side, best_score, primary_scenario, smc_trade_flags`
+## 7. Lọc và xếp hạng
 
-#### Step 6: Apply Gates
+**Nguồn chính:** `core/scanner_ranking_engine.py`, `core/scanner.py`.
 
-- `calc_trade_permission()` — kiểm tra MT5, spread, news, risk_score, best_score → `allowed/caution/blocked`
-- `check_account_guard()` — kiểm tra daily loss, weekly loss, consecutive losses
-- `build_journal_feedback()` — thống kê từ nhật ký giao dịch cũ
-- `check_trade_gates()` — chạy qua 11 gate checks:
+Xếp hạng chỉ chạy sau khi candidate đã được đánh giá. Thứ tự ưu tiên:
 
-  | # | Gate | Điều kiện | Nếu fail |
-  |---|---|---|---|
-  | 1 | MT5 | terminal_connected + broker_logged_in | BLOCK |
-  | 2 | Spread | spread_status != "abnormal" | BLOCK |
-  | 3 | DataQuality | không có warning | BLOCK |
-  | 4 | News | không có high_impact_event trong 30m | BLOCK |
-  | 5 | DailyWeeklyLoss | không vượt daily/weekly loss limit | BLOCK |
-  | 6 | AccountGuard | check_account_guard không block | BLOCK |
-  | 7 | Journal | journal_feedback không có blocks | BLOCK/WARN |
-  | 8 | M15 | m15_quality đạt yêu cầu | WARN |
-  | 9 | ExpectedRR | expected_effective_rr ≥ min_expected_rr | WARN |
-  | 10 | ScoreGap | score_gap ≥ min_score_gap (10) | WARN |
-  | 11 | ZoneBroken | entry zone chưa bị phá | WARN |
+1. priority của candidate status;
+2. `opportunity_rank` giảm dần;
+3. strategy confidence;
+4. execution readiness;
+5. effective R:R;
+6. symbol để bảo đảm kết quả deterministic.
 
-  - Gate block → `decision_cap = TRADE_BLOCKED` → `scanner_action = stand_aside`
-  - Gate warning → `decision_cap = WATCH_ONLY` hoặc `WAITING_CONFIRMATION`
+`opportunity_rank` có thang 0–100. Nó tổng hợp tín hiệu phục vụ ưu tiên hiển thị, không phải gate vào lệnh. `opportunity_score` chỉ còn là compatibility alias.
 
-**Output Step 6:** `trade_permission, gate_result, journal_feedback`
+Sau sort, `rank` được gán theo thứ tự canonical.
 
-#### Step 7: Compute Final Score
+## 8. Shadow comparison và observability
 
-- `calculate_final_score()`:
-  ```
-  final_score = signal_score × 0.65 + evidence_score × 0.20 + execution_quality × 0.15
-  ```
-  - `signal_score`: điểm từ Step 3
-  - `evidence_score`: từ nhật ký giao dịch cũ (nếu có)
-  - `execution_quality`: từ execution quality score
+**Nguồn chính:** `core/scanner_rollout.py`, `core/scanner_observability.py`, `services/observability_service.py`.
 
-- `make_final_decision()` — **Decision Engine**:
+Nếu bật shadow comparison, hệ thống tạo bản ghi V1/V2 cho từng symbol:
 
-  **Thứ tự ưu tiên (layer A → G):**
+- status, side và trade/wait decision;
+- score gate;
+- disagreement codes;
+- cờ `v2_order_suppressed`.
 
-  | Layer | Điều kiện | Decision |
-  |---|---|---|
-  | A | Gate không allowed hoặc trade_permission blocked | TRADE_BLOCKED |
-  | B | decision_cap == TRADE_BLOCKED | TRADE_BLOCKED |
-  | C | decision_cap == WATCH_ONLY | WATCH_ONLY |
-  | D | decision_cap == WAITING_CONFIRMATION | WAITING_CONFIRMATION |
-  | E | score_gap < min_score_gap (=10) | WAITING_CONFIRMATION |
-  | E2 | allow_aggressive_setup + entry waiting_confirmation + score ≥ ready + không có cap | AGGRESSIVE_SETUP |
-  | F | entry_status = watch_zone | WATCH_ONLY |
-  | F | entry_status = invalidated/no_setup | STAND_ASIDE |
-  | F | entry_status = waiting_confirmation | WAITING_CONFIRMATION |
-  | G | entry confirmed + score ≥ ready | **READY_TO_TRADE** |
-  | G | entry confirmed + score ≥ watch | WATCH_ONLY |
-  | G | entry confirmed + score ≥ wait | WAITING_CONFIRMATION |
-  | G | entry confirmed + score < wait | STAND_ASIDE |
+Mỗi scan/row/order có thể truy vết bằng:
 
-  - Với **Nhánh 1** (watch=999, wait=999): Layer G chỉ cho READY_TO_TRADE (score ≥ min_score) hoặc STAND_ASIDE (score < min_score). Layer F vẫn áp dụng nếu entry chưa confirmed.
-  - Với **Nhánh 2**: Phân loại đủ 3 mức + STAND_ASIDE.
+- `scan_id`, `row_id`;
+- settings/request hash;
+- scorer, feature, router, ranking, rollout và runtime version;
+- timestamp/freshness;
+- branch, side, score, gates, portfolio và decision.
 
-  `legacy_action = decision_to_legacy_action(decision)`:
-  - READY_TO_TRADE → `"ready"`
-  - WATCH_ONLY → `"watch"`
-  - WAITING_CONFIRMATION → `"wait_for_confirmation"`
-  - TRADE_BLOCKED / STAND_ASIDE → `"stand_aside"`
+Đường dẫn trong app-data:
 
-**Output Step 7:** `final_score, decision_engine, legacy_action`
-
-#### Step 8: Enrich
-- Build `main_view` (text mô tả)
-- Tính `pattern_feedback` (H1 pattern backtest confidence)
-- Tổng hợp `reason_codes`, `warning_codes`, `block_codes` từ tất cả layers
-
-#### Step 9: Assemble Result
-Tổng hợp tất cả output thành 1 dict với các key chính:
-```
-{symbol, data_quality, market_regime, direction_bias, trade_permission,
- decision_summary, trade_gate, journal_feedback, technical, smc,
- smc_trade_flags, scenario_scores, scenarios, entry_checklist,
- chart_payload, final_score, decision_engine, pipeline_diagnostics, ...}
-```
-
-### Output Bước 3
-- `result` dict — full pipeline output cho 1 symbol
-
----
-
-## Bước 4: scanner_row_from_analysis() — Chuyển pipeline result thành scanner row
-
-**File:** `core/scanner.py`
-
-### Input
-- `result` dict từ AnalysisPipeline
-- `broker_symbol`
-
-### Xử lý
-- Trích xuất các trường từ `result`:
-  - `buy_score`, `sell_score` từ `scenario_scores`
-  - `best_side = "buy"` nếu buy_score ≥ sell_score
-  - `best_score = max(buy_score, sell_score)`
-  - `best_plan`: scenario đầu tiên khớp `best_side`
-  - `scanner_action`: từ `decision_engine.legacy_action`
-  - `risk_reward`, `risk_reward_range`, `stop_loss`, `take_profit`, `entry_zone`: từ `best_plan`
-  - `price_vs_zone`: `in_zone` / `near_zone` / `far` dựa trên giá vs entry_zone
-  - `macro_score`, `macro_bias`, `macro_confidence`
-  - `final_score`, `score_gap`, `m15_quality`, `expected_effective_rr`
-  - `journal_feedback`: `sample_size`, `expectancy_r`, `evidence_score`
-- Gán `analysis_result = result` (full pipeline output, dùng cho màn hình chi tiết)
-- Gọi `enrich_scanner_row_with_ranking(row)` → tính `opportunity_score` + `scanner_group`
-
-### Output
-- `row` dict với ~35 trường, bao gồm cả `analysis_result`
-
----
-
-## Bước 5: Scanner Ranking Engine — Xếp hạng và phân nhóm
-
-**File:** `core/scanner_ranking_engine.py`
-
-### Input
-- `row` dict từ Bước 4
-
-### Xử lý
-
-#### 5a. Tính opportunity_score (0-120)
-
-Công thức cộng điểm (additive bonus):
-```
-opportunity = final_score
-            + proximity_bonus    (+8 in_zone, +4 near, 0 far)
-            + readiness_bonus    (+10 ready_now, +3 waiting_confirmation, 0 còn lại)
-            + rr_bonus           (+5 RR≥2.0, +3 RR≥1.5, +1 RR≥1.3, 0 còn lại)
-            + zone_quality_bonus (+0~6, tính từ entry_zone_score: 6×(score-50)/50)
-            - spread_penalty     (-8 abnormal, -4 caution, 0 normal)
-            - news_penalty       (-10 high-impact trong 30m, -5 news trong 3h)
-            - journal_penalty    (từ journal_feedback nếu sample ≥ 8)
-```
-- Kết quả clamp về 0–120.
-- Row bị BLOCKED: cap ở mức tối đa 20 điểm.
-
-| Thành phần | Cách tính |
+| Artifact | Đường dẫn |
 |---|---|
-| final_score (base) | Từ pipeline |
-| proximity_bonus | in_zone=+8, near_zone=+4, far=0 |
-| readiness_bonus | ready_now=+10, waiting_confirmation=+3, khác=0 |
-| rr_bonus | RR≥2.0=+5, RR≥1.5=+3, RR≥1.3=+1, thấp hơn=0 |
-| zone_quality_bonus | 6 × max(0, (entry_zone_score - 50) / 50), không có zone_score → 0 |
-| spread_penalty | abnormal=-8, caution=-4, normal=0 |
-| news_penalty | high_impact_30m=-10, news_in_3h=-5, không có=0 |
-| journal_penalty | Từ `journal_feedback.opportunity_penalty` nếu sample ≥ 8 |
+| Scan summary | `scanner_snapshots/scanner_{scan_id}.json` |
+| Full symbol analysis | `scanner_analysis/{scan_id}/{symbol}.json` |
+| Event log | `logs/scanner-events.jsonl` |
+| Rollout metrics | `rollout/scanner-rollout-metrics.json` |
 
-#### 5b. Phân loại scanner_group
+Replay helper dùng snapshot đã lưu để tái tạo và kiểm tra quyết định.
 
-`classify_scanner_group()` phân loại theo **6 lớp ưu tiên** (lớp trên ghi đè lớp dưới):
+## 9. Build output và UI
 
-| Ưu tiên | Lớp | Điều kiện | scanner_group |
-|---|---|---|---|
-| 1 | Hard block | `decision == TRADE_BLOCKED` hoặc `trade_permission.status == blocked` | `blocked` |
-| 2 | Decision engine | `READY_TO_TRADE` | `ready_now` |
-| 2 | Decision engine | `WAITING_CONFIRMATION` / `AGGRESSIVE_SETUP` | `waiting_confirmation` |
-| 2 | Decision engine | `WATCH_ONLY` / `STAND_ASIDE` | `watch_zone` |
-| 3 | Legacy fallback | `scanner_action == "ready"` + `ready_to_trade` truthy | `ready_now` |
-| 3 | Legacy fallback | `scanner_action == "wait"` / `"wait_for_confirmation"` | `waiting_confirmation` |
-| 3 | Legacy fallback | `scanner_action == "watch"` | `watch_zone` |
-| 4 | Entry status | `waiting_confirmation` | `waiting_confirmation` |
-| 4 | Entry status | `watch_zone` | `watch_zone` |
-| 4 | Entry status | `invalidated` / `no_setup` / `data_unavailable` | `blocked` |
-| 5 | Legacy skip | `scanner_action == "skip"` / `"stand_aside"` | `blocked` |
-| 6 | Fallback | Không khớp lớp nào ở trên | `watch_zone` |
+Output gồm mode, thời gian, version, rows, summary, market brief, shadow report, rollout policy, auto-trade result, metrics/readiness, Telegram result và snapshot path.
 
-Ngoài ra, `journal_feedback.decision_cap` (nếu sample ≥ 8) có thể override:
-- `TRADE_BLOCKED` → `blocked`
-- `WATCH_ONLY` → hạ `ready_now` và `waiting_confirmation` xuống `watch_zone`
-- `WAITING_CONFIRMATION` → hạ `ready_now` xuống `waiting_confirmation`
+Các cột hiện hành của `ScannerTableModel`:
 
-### Output
-- Row được thêm: `opportunity_score`, `scanner_group`, `proximity_score`, `rr_score`
+| Key | Nhãn |
+|---|---|
+| `rank` | STT |
+| `symbol` | Mã |
+| `candidate_status` | Trạng thái |
+| `selected_side` | Hướng |
+| `market_regime` | Chế độ TT |
+| `setup_score` | Setup |
+| `opportunity_rank` | Cơ hội |
+| `evidence_confidence` | Bằng chứng |
+| `execution_readiness` | Thực thi |
+| `expected_effective_rr` | R:R thực |
+| `auto_trade_branch` | Nhánh |
+| `strategy_config_status` | Config |
+| `detail_action` | Chi tiết |
 
----
+UI hiển thị rollout stage, disagreement và gate status để tránh hiểu `READY_NOW` là đã được phép đặt lệnh production.
 
-## Bước 6: sort_scanner_rows() — Sắp xếp kết quả
+Màn hình **Chi tiết kết quả quét** dùng
+`scanner_candidate_decision` làm nguồn chuẩn:
 
-**File:** `core/scanner.py`
+- hero hiển thị candidate status, selected side, setup score/ngưỡng và rollout;
+- Entry/SL/TP, vị trí giá, nominal/effective R:R và Gate đều thuộc cùng
+  `selected_side`;
+- vị trí giá được đối chiếu lại với entry zone của selected-side, không dùng
+  `price_vs_zone` legacy của hướng khác;
+- phần vĩ mô hiển thị `macro_raw/30`, confidence và macro status của
+  selected-side, không gắn `/30` cho điểm macro đã co giãn theo trọng số;
+- Gate canonical không mượn `pipeline_diagnostics` của legacy best-side;
+- dữ liệu thiếu hiển thị `unknown/chưa kiểm tra`, không mặc định pass.
 
-### Xử lý
-Sắp xếp theo thứ tự ưu tiên (từ cao xuống thấp):
-1. **scanner_group**: `ready_now` (0) > `waiting_confirmation` (1) > `watch_zone` (2) > `blocked` (3)
-2. **opportunity_score**: giảm dần (cao nhất trước)
-3. **final_score** (hoặc best_score): giảm dần
-4. **expected_effective_rr** (hoặc risk_reward): giảm dần
-5. **symbol**: alphabet
+## 10. Auto trade và đặt lệnh thủ công
 
-Sau khi sắp xếp, gán `rank` từ 1 → N.
+Nút **Tự động vào lệnh MT5** hiện được hiển thị ở trạng thái disable và
+unchecked trong mọi chế độ quét. `ScannerScreen.AUTO_TRADE_UI_ENABLED=false`
+khóa `_auto_trade_enabled()` về `false`, nên mọi request tạo từ giao diện đều
+có `ScannerRequest.auto_trade_enabled=false`. Thay đổi chế độ sang auto-scan
+hoặc stage sang `PRODUCTION` không thể bật lại nút.
 
-### Output
-- `rows` đã sắp xếp, mỗi row có `rank`
+Controller vẫn giữ đường auto-trade và canonical
+`auto_trade_candidate=true` để phục vụ kiến trúc, kiểm thử và một rollout có
+chủ đích trong tương lai; UI hiện hành không yêu cầu thực thi đường này.
 
----
+Quét một lần có thể hiển thị nút đặt lệnh thủ công cho candidate hợp lệ. Nút
+này vẫn gọi shared execution path, không gọi MT5 trực tiếp.
 
-## Bước 7: _apply_scanner_filters() — Lọc theo 2 nhánh
+Mọi order từ Scanner, gồm auto và thao tác thủ công, đi qua:
 
-**File:** `controllers/scanner_controller.py`
-
-### Input
-- `rows` đã sắp xếp từ Bước 6
-- `ScannerRequest` (chứa `symbol_auto_trade`)
-
-### Xử lý
-Với mỗi row:
-1. Gọi `_auto_trade_config(request, symbol)`:
-   - Symbol có trong `symbol_auto_trade` → trả về config dict → **Nhánh 1**
-   - Symbol không có → trả về None → **Nhánh 2**
-
-2. Gọi `_is_auto_trade_candidate(row, at_cfg)`:
-
-   **Guard chung (cả 2 nhánh):**
-   - Phải có `analysis_result`
-   - `scanner_group != "blocked"`
-   - `trade_permission != "blocked"`
-   - `journal_feedback.decision_cap` không phải `TRADE_BLOCKED` hoặc `WATCH_ONLY`
-   - **`entry_zone_source != "fallback"`** — fallback scenario (zone ATR giả, RR=1:2.0) bị chặn khỏi auto-trade và Hiển thị lệnh
-
-   **Nhánh 1 — `at_cfg is not None` (backtest=true):**
-   - Nếu `auto_trade_regime` được set → row's `market_regime` phải khớp
-   - `best_score` phải ≥ `min_score` (hoặc 65 nếu min_score=0)
-   - Nếu `auto_trade_side` được set → phải có scenario cho side đó
-   - Nếu `min_expected_rr > 0` → `expected_effective_rr` phải ≥ `min_expected_rr`
-   - **Không** check `scanner_action == "ready"` — ghi đè toàn bộ
-
-   **Nhánh 2 — `at_cfg is None` (backtest=false hoặc không config):**
-   - `scanner_action == "ready"` (từ Decision Engine dùng `decision_ready`)
-   - `trade_permission == "allowed"`
-   - Có scenario hợp lệ cho `best_side`
-
-3. Row không pass → đánh dấu:
-   - `scanner_action = "skip"`
-   - `scanner_group = "blocked"`
-   - Thêm tag vào `short_reason`:
-     - Nhánh 1: `[Loc: khong dat backtest — can regime=X, side=Y, min_score=Z]`
-     - Nhánh 2: `[Loc: chua dat ready]`
-
-4. Re-sort: pass rows trước, fail rows cuối bảng
-
-### Output
-- `rows` đã lọc + sắp xếp lại
-
----
-
-## Bước 8: build_scanner_output() — Đóng gói kết quả
-
-**File:** `core/scanner.py`
-
-### Input
-- `rows` đã lọc + sắp xếp
-- `ScannerRequest`
-
-### Xử lý
-- `scanner_summary(rows)`: đếm số lượng theo `scanner_group` + tính `top_opportunity_score`, `average_opportunity_score`
-
-### Output
-```python
-{
-    "mode": "scanner",
-    "timestamp": "2026-07-02T...",
-    "symbols_scanned": N,
-    "ai_details_limit": 3,
-    "ai_called": 0,
-    "summary": {
-        "ready_now_count": X,
-        "waiting_confirmation_count": Y,
-        "watch_zone_count": Z,
-        "blocked_count": W,
-        "top_opportunity_score": S,
-        "average_opportunity_score": A,
-    },
-    "rows": [...],  # danh sách row đã sắp xếp
-}
+```text
+ScannerController.execute_order_candidate(proposal)
+  → rollout guard
+  → MT5 execution snapshot mới
+  → tính lại lot theo giá/balance/risk/broker volume
+  → news status
+  → portfolio + account guard
+  → execution revalidation
+  → place_market_order (chỉ khi tất cả pass)
 ```
 
----
+Revalidation kiểm tra fail-closed:
 
-## Bước 9: ScannerTableModel — Hiển thị bảng kết quả
+- broker/session/symbol/trade mode;
+- bid/ask và tick freshness;
+- spread;
+- duplicate position/order;
+- side, zone, SL/TP;
+- effective R:R với giá thực thi;
+- news blackout;
+- account và portfolio limits;
+- volume hợp lệ.
 
-**File:** `ui/screens/scanner_screen.py`
+Không module UI nào được gọi `place_market_order` trực tiếp.
 
-### Input
-- `output` dict từ Bước 8
+## 11. Rollout và release gate
 
-### Xử lý
-- `ScannerTableModel.set_rows(output["rows"])` — cập nhật model
-- Bảng hiển thị các cột:
+Stage hợp lệ:
 
-| Cột | Key | Cách hiển thị |
-|---|---|---|
-| STT | rank | Số thứ tự sau sắp xếp |
-| Mã | symbol | Tên symbol |
-| Nhóm | scanner_group | "Sẵn sàng ngay" / "Chờ xác nhận" / "Theo dõi" / "Bị chặn" |
-| Hướng | direction_bias | "BUY rõ · Gap 28" |
-| Chế độ TT | market_regime | "trend_up" / "trend_down" / "range" / "volatile" |
-| Entry | price_vs_zone | "Trong vùng" / "Gần vùng" / "Còn xa" (+ tooltip entry_status) |
-| M15 | m15_quality | "Chặt" / "Lỏng" / "Không đạt" |
-| Điểm | opportunity_score | "105" (+ tooltip final_score + breakdown) |
-| R:R | risk_reward / risk_reward_range | "1:5.6 (2.9–5.6)" (best + dải worst–best) |
-| Vĩ mô | macro_bias | "Thuận" / "Trung tính" / "Ngược" |
-| Chi tiết | detail_action | "Xem" |
+`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`
 
-- Màu sắc hàng dựa trên `scanner_group`:
-  - `ready_now`: xanh lá
-  - `waiting_confirmation`: vàng
-  - `watch_zone`: xám
-  - `blocked`: đỏ
+- `DEMO_LIMITED`: demo server và allowlist.
+- `DEMO_FULL`: demo server.
+- `CANARY`: canary readiness; risk tối đa theo `canary_risk_percent`.
+- `PRODUCTION`: `production_approved=true` và release readiness đạt.
+- `kill_switch`: luôn thắng mọi cấu hình khác.
 
-- **Fallback scenario**: Khi pipeline không tìm được SMC/technical zone thật, `_assemble_result()` tạo fallback với `entry_zone_source = "fallback"`, `entry_zone_score = 50`, `RR = 1:2.0` (SL = price - ATR×1.2, TP = price + ATR×2.4). Fallback **vẫn hiển thị trong bảng** để trader tham khảo, nhưng **bị chặn** khỏi "Hiển thị lệnh", auto-trade, và Telegram alerts.
+Readiness kiểm tra số mẫu shadow/demo/canary, disagreement, side mismatch, premature order, portfolio violation, revalidation failure, performance degradation, OOS/demo evidence và rollback.
 
-### Khi click vào 1 row
-- Mở `ScannerDetailScreen` → gọi `_refresh_chart()`:
-  - `build_full_chart_payload(symbol, analysis_result)` → tạo dữ liệu cho biểu đồ Lightweight Charts
-  - Hiển thị: nến (H1 mặc định) + EMA + SMC zones + Entry zone + SL + TP lines
-  - Hiển thị cards: best_score, buy/sell, final_score, gap, macro, RR, entry_status, position, M15, regime, permission, journal
+Trạng thái runtime hiện tại:
 
----
+- stage `PRODUCTION`, kill switch tắt, real account được phép;
+- nút auto-entry bị disable và request từ UI luôn mang
+  `auto_trade_enabled=false`;
+- release readiness `false` do thiếu 20 demo orders, 5 canary orders,
+  OOS evidence và demo evidence;
+- do đó Scanner không thể tự động gọi MT5 từ giao diện hiện tại.
 
-## Tổng kết luồng dữ liệu
+Chi tiết thay đổi theo thời điểm xem tại `docs/runtime-status.md`.
 
-```
-Settings (symbol_settings)
-  │
-  ├── thresholds[ symbol ] → AnalysisPipeline → make_final_decision() → scanner_action
-  │
-  └── symbol_auto_trade[ symbol ] → _auto_trade_config() → _is_auto_trade_candidate()
-                                                                  │
-                    ┌─────────────────────────────────────────────┤
-                    │                                             │
-              Nhánh 1 (at_cfg not None)                    Nhánh 2 (at_cfg is None)
-              backtest=true                                backtest=false / no config
-                    │                                             │
-              Check: regime + side + min_score + min_rr   Check: scanner_action == "ready"
-              (ghi đè toàn bộ)                             (từ decision_ready/watch/wait)
-                    │                                             │
-                    └─────────────────────────────────────────────┤
-                                                                  │
-                                                    _apply_scanner_filters()
-                                                          │
-                                                    ┌─────┴─────┐
-                                                    │             │
-                                                  PASS          FAIL
-                                                    │             │
-                                              hiển thị       scanner_action="skip"
-                                              bình thường    scanner_group="blocked"
-                                                             đẩy xuống cuối bảng
-```
+## 12. Version contract
+
+| Thành phần | Version |
+|---|---|
+| Phase 0 safety | `phase0-safety-v1` |
+| Scorer | `scanner-v3` |
+| Feature | `scanner-features-v3` |
+| Strategy Router | `phase2-router-v1` |
+| Execution revalidation | `phase3-revalidation-v1` |
+| Portfolio | `phase4-portfolio-v1` |
+| Ranking | `phase6-ranking-v1` |
+| Observability | `phase7-observability-v1` |
+| Rollout | `phase8-rollout-v1` |
+| Runtime | `scanner-runtime-v2` |
+
+Config hoặc snapshot không tương thích version phải bị từ chối hoặc chỉ dùng cho mục đích hiển thị/replay có kiểm soát.

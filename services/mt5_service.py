@@ -9,6 +9,11 @@ from typing import Any
 
 from config.paths import CONFIG_DIR
 from core.market_models import Candle
+from core.portfolio_models import (
+    PortfolioRiskItem,
+    PortfolioSnapshot,
+)
+from core.scanner_models import ExecutionMarketSnapshot
 from services.data_provider import ConnectionStatus, DataProvider, OrderResult
 
 
@@ -125,7 +130,11 @@ class MT5Service(DataProvider):
         account = mt5.account_info()
         terminal_connected = bool(terminal and terminal.connected)
         logged_in = bool(account and account.login)
-        trade_allowed = bool(account and account.trade_allowed)
+        trade_allowed = bool(
+            account
+            and account.trade_allowed
+            and (terminal is None or getattr(terminal, "trade_allowed", True))
+        )
 
         return MT5ConnectionStatus(
             initialized=True,
@@ -141,6 +150,289 @@ class MT5Service(DataProvider):
             currency=getattr(account, "currency", "") if account else "",
             error_code=error_code,
             message="Đã kết nối MT5." if terminal_connected else "MT5 chưa connected trong terminal.",
+        )
+
+    def execution_snapshot(self, broker_symbol: str) -> ExecutionMarketSnapshot:
+        """Capture broker state once for the fail-closed execution gate."""
+
+        captured_at = datetime.now(timezone.utc)
+        status = self.mt5_connection_status()
+        reasons: list[str] = []
+        values: dict[str, Any] = {
+            "broker_symbol": str(broker_symbol or "").strip(),
+            "captured_at": captured_at,
+            "connected": status.terminal_connected,
+            "logged_in": status.logged_in,
+            "trade_allowed": status.trade_allowed,
+            "symbol_available": False,
+            "symbol_trade_mode": None,
+            "bid": None,
+            "ask": None,
+            "point": None,
+            "spread_points": None,
+            "spread_price": None,
+            "tick_time": None,
+            "volume_min": None,
+            "volume_max": None,
+            "volume_step": None,
+            "symbol_state_available": False,
+            "has_open_position_or_order": None,
+            "trade_tick_size": None,
+            "trade_tick_value_loss": None,
+            "contract_size": None,
+        }
+        if not broker_symbol:
+            return ExecutionMarketSnapshot(
+                **values,
+                reason_codes=("BROKER_SYMBOL_MISSING",),
+            )
+
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return ExecutionMarketSnapshot(
+                **values,
+                reason_codes=("MT5_PACKAGE_UNAVAILABLE",),
+            )
+
+        if not status.initialized or not status.terminal_connected or not status.logged_in:
+            return ExecutionMarketSnapshot(
+                **values,
+                reason_codes=("MT5_NOT_READY",),
+            )
+
+        try:
+            selected = bool(mt5.symbol_select(broker_symbol, True))
+            info = mt5.symbol_info(broker_symbol) if selected else None
+            tick = mt5.symbol_info_tick(broker_symbol) if info is not None else None
+            values["symbol_available"] = info is not None
+            if info is None:
+                reasons.append("SYMBOL_INFO_UNAVAILABLE")
+            else:
+                values["symbol_trade_mode"] = _optional_int(
+                    getattr(info, "trade_mode", None)
+                )
+                values["point"] = _optional_positive_float(
+                    getattr(info, "point", None)
+                )
+                values["volume_min"] = _optional_positive_float(
+                    getattr(info, "volume_min", None)
+                )
+                values["volume_max"] = _optional_positive_float(
+                    getattr(info, "volume_max", None)
+                )
+                values["volume_step"] = _optional_positive_float(
+                    getattr(info, "volume_step", None)
+                )
+                values["trade_tick_size"] = _optional_positive_float(
+                    getattr(info, "trade_tick_size", None)
+                ) or values["point"]
+                values["trade_tick_value_loss"] = _optional_positive_float(
+                    getattr(info, "trade_tick_value_loss", None)
+                ) or _optional_positive_float(
+                    getattr(info, "trade_tick_value", None)
+                )
+                values["contract_size"] = _optional_positive_float(
+                    getattr(info, "trade_contract_size", None)
+                )
+
+            if tick is None:
+                reasons.append("TICK_UNAVAILABLE")
+            else:
+                bid = _optional_positive_float(getattr(tick, "bid", None))
+                ask = _optional_positive_float(getattr(tick, "ask", None))
+                values["bid"] = bid
+                values["ask"] = ask
+                tick_timestamp = _tick_timestamp(tick)
+                values["tick_time"] = (
+                    datetime.fromtimestamp(tick_timestamp, tz=timezone.utc)
+                    if tick_timestamp is not None
+                    else None
+                )
+                point = values["point"]
+                if (
+                    bid is not None
+                    and ask is not None
+                    and ask >= bid
+                    and point is not None
+                ):
+                    spread_price = ask - bid
+                    values["spread_price"] = spread_price
+                    values["spread_points"] = spread_price / point
+                elif info is not None:
+                    spread_points = _optional_nonnegative_float(
+                        getattr(info, "spread", None)
+                    )
+                    values["spread_points"] = spread_points
+                    values["spread_price"] = (
+                        spread_points * point
+                        if spread_points is not None and point is not None
+                        else None
+                    )
+
+            positions = mt5.positions_get(symbol=broker_symbol)
+            orders = mt5.orders_get(symbol=broker_symbol)
+            if positions is None or orders is None:
+                reasons.append("SYMBOL_POSITION_STATE_UNAVAILABLE")
+            else:
+                values["symbol_state_available"] = True
+                values["has_open_position_or_order"] = bool(positions or orders)
+        except Exception:
+            reasons.append("EXECUTION_SNAPSHOT_FAILED")
+
+        return ExecutionMarketSnapshot(
+            **values,
+            reason_codes=tuple(dict.fromkeys(reasons)),
+        )
+
+    def portfolio_snapshot(self) -> PortfolioSnapshot:
+        """Capture all live positions and pending orders with broker risk data."""
+
+        captured_at = datetime.now(timezone.utc)
+        status = self.mt5_connection_status()
+        if (
+            not status.initialized
+            or not status.terminal_connected
+            or not status.logged_in
+        ):
+            return PortfolioSnapshot(
+                available=False,
+                captured_at=captured_at,
+                account_balance=status.balance,
+                account_currency=status.currency,
+                reason_codes=("PORTFOLIO_MT5_NOT_READY",),
+            )
+
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return PortfolioSnapshot(
+                available=False,
+                captured_at=captured_at,
+                account_balance=status.balance,
+                account_currency=status.currency,
+                reason_codes=("MT5_PACKAGE_UNAVAILABLE",),
+            )
+
+        try:
+            raw_positions = mt5.positions_get()
+            raw_orders = mt5.orders_get()
+            if raw_positions is None or raw_orders is None:
+                return PortfolioSnapshot(
+                    available=False,
+                    captured_at=captured_at,
+                    account_balance=status.balance,
+                    account_currency=status.currency,
+                    reason_codes=("PORTFOLIO_STATE_UNAVAILABLE",),
+                )
+            positions = tuple(
+                self._portfolio_risk_item(mt5, item, source="position")
+                for item in raw_positions
+            )
+            pending_orders = tuple(
+                self._portfolio_risk_item(mt5, item, source="pending_order")
+                for item in raw_orders
+            )
+            return PortfolioSnapshot(
+                available=True,
+                captured_at=captured_at,
+                account_balance=status.balance,
+                account_currency=status.currency,
+                positions=positions,
+                pending_orders=pending_orders,
+            )
+        except Exception:
+            return PortfolioSnapshot(
+                available=False,
+                captured_at=captured_at,
+                account_balance=status.balance,
+                account_currency=status.currency,
+                reason_codes=("PORTFOLIO_SNAPSHOT_FAILED",),
+            )
+
+    def _portfolio_risk_item(
+        self,
+        mt5_module: object,
+        item: object,
+        *,
+        source: str,
+    ) -> PortfolioRiskItem:
+        broker_symbol = str(getattr(item, "symbol", "") or "")
+        reasons: list[str] = []
+        try:
+            mt5_module.symbol_select(broker_symbol, True)
+            info = mt5_module.symbol_info(broker_symbol)
+        except Exception:
+            info = None
+        if info is None:
+            reasons.append("PORTFOLIO_SYMBOL_INFO_UNAVAILABLE")
+
+        raw_type = _optional_int(getattr(item, "type", None))
+        if source == "position":
+            side = "buy" if raw_type == 0 else "sell" if raw_type == 1 else ""
+            entry_price = _optional_positive_float(
+                getattr(item, "price_open", None)
+            )
+            current_price = _optional_positive_float(
+                getattr(item, "price_current", None)
+            )
+            volume = _optional_positive_float(getattr(item, "volume", None))
+            ticket = int(getattr(item, "ticket", 0) or 0)
+        else:
+            side = (
+                "buy"
+                if raw_type in {2, 4, 6}
+                else "sell" if raw_type in {3, 5, 7} else ""
+            )
+            entry_price = _optional_positive_float(
+                getattr(item, "price_open", None)
+            )
+            current_price = None
+            volume = _optional_positive_float(
+                getattr(item, "volume_current", None)
+            ) or _optional_positive_float(
+                getattr(item, "volume_initial", None)
+            )
+            ticket = int(getattr(item, "ticket", 0) or 0)
+        if not side:
+            reasons.append("PORTFOLIO_ITEM_SIDE_INVALID")
+
+        return PortfolioRiskItem(
+            source=source,
+            ticket=ticket,
+            symbol=self.app_symbol_for_broker_symbol(broker_symbol),
+            broker_symbol=broker_symbol,
+            side=side,
+            entry_price=entry_price,
+            current_price=current_price,
+            stop_loss=_optional_positive_float(getattr(item, "sl", None)),
+            volume=volume,
+            tick_size=(
+                _optional_positive_float(
+                    getattr(info, "trade_tick_size", None)
+                )
+                or _optional_positive_float(getattr(info, "point", None))
+                if info is not None
+                else None
+            ),
+            tick_value_loss=(
+                _optional_positive_float(
+                    getattr(info, "trade_tick_value_loss", None)
+                )
+                or _optional_positive_float(
+                    getattr(info, "trade_tick_value", None)
+                )
+                if info is not None
+                else None
+            ),
+            contract_size=(
+                _optional_positive_float(
+                    getattr(info, "trade_contract_size", None)
+                )
+                if info is not None
+                else None
+            ),
+            reason_codes=tuple(dict.fromkeys(reasons)),
         )
 
     def account_balance(self) -> float | None:
@@ -828,3 +1120,37 @@ class MT5Service(DataProvider):
                 "mt5_position_id": position_id,
             })
         return trades
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _optional_positive_float(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number > 0 else None
+
+
+def _optional_nonnegative_float(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number >= 0 else None
+
+
+def _tick_timestamp(tick: object) -> float | None:
+    try:
+        milliseconds = float(getattr(tick, "time_msc", 0) or 0)
+        if milliseconds > 0:
+            return milliseconds / 1000.0
+        seconds = float(getattr(tick, "time", 0) or 0)
+        return seconds if seconds > 0 else None
+    except (TypeError, ValueError, OverflowError):
+        return None

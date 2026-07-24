@@ -5,7 +5,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, replace
 from collections.abc import Callable
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
+from threading import RLock
+from time import perf_counter
 from typing import Any
 
 from PyQt6.QtCore import QThread
@@ -22,7 +25,31 @@ from core.scanner_ai_auditor import (
     build_ai_setup_audit_prompt,
     parse_ai_setup_audit,
 )
+from core.backtest_config import serialize_backtest_config
+from core.execution_revalidation_engine import revalidate_execution
+from core.portfolio_risk_engine import evaluate_portfolio_risk
+from core.scanner_candidate_engine import build_candidate_order_payload
 from core.scanner_session_review import build_market_brief_prompt
+from core.scanner_observability import (
+    SCANNER_OBSERVABILITY_VERSION,
+    attach_row_observability,
+    build_analysis_document,
+    create_scan_context,
+    input_timestamps_from_candles,
+    row_identity,
+)
+from core.scanner_rollout import (
+    ROLLOUT_SHADOW,
+    SCANNER_ROLLOUT_VERSION,
+    ScannerRolloutPolicy,
+    build_rollout_policy,
+    build_shadow_report,
+)
+from core.scanner_safety import (
+    AutoTradeSafetyDecision,
+    BRANCH_BACKTEST_INVALID,
+    evaluate_auto_trade_safety,
+)
 from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot
 from services.ai_service import AIProviderConfig, AIService
@@ -30,10 +57,29 @@ from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
 from services.news_service import NewsService
+from services.observability_service import (
+    StructuredObservabilityService,
+    structured_observability,
+)
+from services.scanner_rollout_service import (
+    ScannerRolloutMetricsService,
+    scanner_rollout_metrics,
+)
 from services.settings_service import SettingsService
 from services.storage_service import JsonStorage
 from services.telegram_alert_service import TelegramAlertService
 from workers.scanner_worker import ScannerWorker
+
+
+def _serialized_execution(method):
+    """Serialize live order checks so concurrent callers share fresh state."""
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._execution_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class ScannerController:
@@ -45,6 +91,8 @@ class ScannerController:
         telegram_service: TelegramAlertService | None = None,
         journal_service: JournalService | None = None,
         orders_screen = None,
+        observability_service: StructuredObservabilityService | None = None,
+        rollout_metrics_service: ScannerRolloutMetricsService | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.mt5: MT5Service = mt5 or MT5Service()
@@ -52,6 +100,12 @@ class ScannerController:
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
         self.orders_screen = orders_screen
+        self.observability = observability_service or structured_observability
+        self.rollout_metrics = (
+            rollout_metrics_service or scanner_rollout_metrics
+        )
+        self._execution_lock = RLock()
+        self._active_rollout_policy: ScannerRolloutPolicy | None = None
 
     def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
         thread = QThread()
@@ -76,13 +130,86 @@ class ScannerController:
             max(float(settings.trading.max_risk_percent), 0.0),
         )
         request = replace(request, risk_percent=effective_risk_percent)
+        scan_context = create_scan_context(settings, request)
+        self._emit_observability(
+            "SCAN_STARTED",
+            scan_id=scan_context.scan_id,
+            payload={
+                "request_hash": scan_context.request_hash,
+                "settings_hash": scan_context.settings_hash,
+                "symbols": list(request.symbols),
+                "smc_scoring_mode": scan_context.smc_scoring_mode,
+                "smc_scorer_version": scan_context.smc_scorer_version,
+                "smc_domain_version": scan_context.smc_domain_version,
+            },
+        )
         progress(8, "Đang kiểm tra kết nối dữ liệu...")
         status = self.mt5.connection_status()
         if not status.connected or not status.logged_in:
+            self._emit_observability(
+                "DATA_FETCH_FAILURE",
+                scan_id=scan_context.scan_id,
+                severity="ERROR",
+                payload={
+                    "stage": "connection",
+                    "provider": status.provider_name,
+                    "connected": status.connected,
+                    "logged_in": status.logged_in,
+                },
+            )
             raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
+        rollout_settings = getattr(settings, "scanner_rollout", None)
+        try:
+            pre_scan_readiness = self.rollout_metrics.readiness(
+                rollout_settings
+            )
+            pre_scan_canary_readiness = (
+                self.rollout_metrics.canary_readiness(
+                    rollout_settings
+                )
+            )
+            release_ready = pre_scan_readiness.get("ready") is True
+            canary_ready = (
+                pre_scan_canary_readiness.get("ready") is True
+            )
+        except Exception:
+            pre_scan_readiness = {
+                "ready": False,
+                "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
+            }
+            pre_scan_canary_readiness = dict(pre_scan_readiness)
+            release_ready = False
+            canary_ready = False
+        rollout_policy = build_rollout_policy(
+            rollout_settings,
+            server=status.server,
+            canary_ready=canary_ready,
+            release_ready=release_ready,
+        )
+        self._active_rollout_policy = rollout_policy
+        self._emit_observability(
+            "ROLLOUT_POLICY_EVALUATED",
+            scan_id=scan_context.scan_id,
+            payload=rollout_policy.to_dict(),
+        )
         mt5_balance = self.mt5.account_balance()
         if mt5_balance is None:
+            self._emit_observability(
+                "DATA_FETCH_FAILURE",
+                scan_id=scan_context.scan_id,
+                severity="ERROR",
+                payload={"stage": "account_balance"},
+            )
             raise RuntimeError("Không lấy được số dư từ tài khoản.")
+        try:
+            scan_portfolio = self.mt5.portfolio_snapshot()
+            portfolio_state = scan_portfolio.to_dict()
+        except Exception as exc:
+            portfolio_state = {
+                "available": False,
+                "reason_codes": ["PORTFOLIO_STATE_UNAVAILABLE"],
+                "reason": str(exc),
+            }
 
         bars_by_timeframe = {
             "D1": settings.advanced.d1_bars,
@@ -112,10 +239,34 @@ class ScannerController:
             progress(12, "Đang đọc danh sách mã giao dịch...")
             available_symbols = self.mt5.available_symbols(market_watch_only=True)
 
-            # Wait for background I/O to complete before proceeding
+            # Wait for background I/O to complete before proceeding.
             progress(14, "Đang tải dữ liệu thị trường Mỹ...")
-            correlation_context = _corr_future.result()
-            _preload_future.result()
+            try:
+                correlation_context = _corr_future.result()
+            except Exception as exc:
+                self._emit_observability(
+                    "DATA_FETCH_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={
+                        "stage": "macro_correlation_context",
+                        "reason": str(exc),
+                    },
+                )
+                raise
+            try:
+                _preload_future.result()
+            except Exception as exc:
+                self._emit_observability(
+                    "DATA_FETCH_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={
+                        "stage": "macro_news_preload",
+                        "reason": str(exc),
+                    },
+                )
+                raise
 
         rows: list[dict[str, Any]] = []
 
@@ -157,8 +308,15 @@ class ScannerController:
                     freshness=freshness,
                     ai_service=ai_svc,
                 )
-            except Exception:
+            except Exception as exc:
                 pkt = None
+                self._emit_observability(
+                    "DATA_FETCH_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    symbol=symbol,
+                    severity="ERROR",
+                    payload={"stage": "market_data", "reason": str(exc)},
+                )
             packets.append(pkt)
 
         # ---- Phase 2: analyze all symbols in parallel (CPU-only, no MT5) ----
@@ -170,6 +328,7 @@ class ScannerController:
             "analysis_input_kwargs": analysis_input_kwargs,
             "closed_trades": closed_trades,
             "account_guard_settings": account_guard_settings,
+            "smc_scoring_mode": request.smc_scoring_mode,
         }
 
         with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 4)) as ex:
@@ -178,8 +337,18 @@ class ScannerController:
                 symbol = request.symbols[i]
                 if pkt is None:
                     row = blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
-                    row["auto_trade_branch"] = "A"
+                    row["input_timestamps"] = {}
                     rows.append(row)
+                    self._emit_observability(
+                        "DATA_FETCH_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        symbol=symbol,
+                        severity="WARNING",
+                        payload={
+                            "stage": "symbol_resolution_or_market_data",
+                            "reason": row.get("short_reason"),
+                        },
+                    )
                     continue
                 futures[
                     ex.submit(
@@ -200,18 +369,109 @@ class ScannerController:
                     row = future.result()
                 except Exception as exc:
                     row = blocked_scanner_row(symbol, f"Lỗi không mong đợi: {exc}")
-                # Tag branch type + config for diagnostics display
+                    row["analysis_error"] = True
+                    row["input_timestamps"] = dict(
+                        (
+                            packets[i].get("input_timestamps", {})
+                            if isinstance(packets[i], dict)
+                            else {}
+                        )
+                    )
+                    self._emit_observability(
+                        "DATA_FETCH_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        symbol=symbol,
+                        severity="ERROR",
+                        payload={"stage": "analysis", "reason": str(exc)},
+                    )
+                analysis_error = str(row.pop("_analysis_error", "") or "")
+                if analysis_error:
+                    row["analysis_error"] = True
+                    self._emit_observability(
+                        "DATA_FETCH_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        symbol=symbol,
+                        severity="ERROR",
+                        payload={
+                            "stage": "analysis_pipeline",
+                            "reason": analysis_error,
+                        },
+                    )
+                else:
+                    row.setdefault("analysis_error", False)
+                # Keep the resolved config for diagnostics.  Canonical branch
+                # and safety fields are attached in _apply_scanner_filters.
                 at_cfg = self._auto_trade_config(request, symbol)
-                row["auto_trade_branch"] = "B" if at_cfg else "A"
-                if at_cfg:
+                if at_cfg is not None:
                     row["auto_trade_config"] = dict(at_cfg)
+                row["scan_id"] = scan_context.scan_id
+                row["row_id"] = row_identity(
+                    scan_context.scan_id,
+                    row.get("symbol"),
+                )
+                row["settings_hash"] = scan_context.settings_hash
                 rows.append(row)
 
-        progress(74, "Đang xếp hạng setup theo rule engine...")
-        rows = sort_scanner_rows(rows)
+        for row in rows:
+            symbol = str(row.get("symbol", ""))
+            row["legacy_candidate_status"] = {
+                "ready_now": "READY_NOW",
+                "waiting_confirmation": "WAITING_CONFIRMATION",
+                "watch_zone": "WATCH_ZONE",
+                "blocked": "BLOCKED",
+            }.get(
+                str(row.get("scanner_group", "") or "").lower(),
+                "DATA_UNAVAILABLE",
+            )
+            at_cfg = self._auto_trade_config(request, symbol)
+            if at_cfg is not None and "auto_trade_config" not in row:
+                row["auto_trade_config"] = dict(at_cfg)
+            row["legacy_candidate_input"] = {
+                "scanner_action": row.get("scanner_action"),
+                "scanner_group": row.get("scanner_group"),
+                "trade_permission": row.get("trade_permission"),
+                "best_side": row.get("best_side"),
+                "best_score": row.get("best_score"),
+                "expected_effective_rr": row.get(
+                    "expected_effective_rr"
+                ),
+                "market_regime": row.get("market_regime"),
+            }
+            row["scan_id"] = scan_context.scan_id
+            row["row_id"] = row_identity(scan_context.scan_id, symbol)
+            row["settings_hash"] = scan_context.settings_hash
+            row["rollout_stage"] = rollout_policy.stage
 
-        progress(78, "Đang lọc setup theo cấu hình symbol...")
+        progress(74, "Đang áp dụng Strategy Router và execution filters...")
         rows = self._apply_scanner_filters(rows, request)
+        rows = [
+            attach_row_observability(
+                row,
+                scan_context,
+                portfolio_state=portfolio_state,
+            )
+            for row in rows
+        ]
+        for row in rows:
+            self._emit_candidate_events(row, scan_context.scan_id)
+        shadow_report = build_shadow_report(
+            rows,
+            enabled=rollout_policy.shadow_compare_enabled,
+            suppress_v2_orders=rollout_policy.stage == ROLLOUT_SHADOW,
+        )
+        for comparison in shadow_report.get("comparisons", []):
+            self._emit_observability(
+                "SHADOW_DECISION_COMPARISON",
+                scan_id=scan_context.scan_id,
+                symbol=str(comparison.get("symbol", "") or ""),
+                severity=(
+                    "WARNING"
+                    if comparison.get("disagreement")
+                    else "INFO"
+                ),
+                payload=comparison,
+            )
+        progress(78, "Đã xếp hạng lại candidate sau filters...")
 
         # AI Market Brief (1 call, after all individual audits)
         market_brief = ""
@@ -234,17 +494,90 @@ class ScannerController:
 
         progress(94, "Đang dựng bảng kết quả quét...")
         output = build_scanner_output(rows, request, 0)  # ai_called=0 since audit is now manual
+        output["observability_version"] = SCANNER_OBSERVABILITY_VERSION
+        output["scan_id"] = scan_context.scan_id
+        output["scan_context"] = scan_context.to_dict()
+        output["portfolio_state"] = portfolio_state
+        output["rollout_version"] = SCANNER_ROLLOUT_VERSION
+        output["rollout_policy"] = rollout_policy.to_dict()
+        output["pre_scan_release_readiness"] = pre_scan_readiness
+        output["pre_scan_canary_readiness"] = (
+            pre_scan_canary_readiness
+        )
+        output["shadow_report"] = shadow_report
         output["market_brief"] = market_brief
         output["market_brief_error"] = market_brief_error
-        output["auto_trade_results"] = self._execute_auto_trades(rows, request) if request.auto_trade_enabled else {
-            "enabled": False,
-            "attempted": 0,
-            "opened": 0,
-            "skipped": 0,
-            "errors": [],
-            "orders": [],
-        }
+        auto_trade_results = (
+            self._execute_auto_trades(
+                rows,
+                request,
+                rollout_policy=rollout_policy,
+            )
+            if request.auto_trade_enabled
+            else {
+                "enabled": False,
+                "attempted": 0,
+                "opened": 0,
+                "skipped": 0,
+                "rollout_blocked": 0,
+                "errors": [],
+                "orders": [],
+                "rollout_policy": rollout_policy.to_dict(),
+            }
+        )
+        output["auto_trade_results"] = auto_trade_results
+        try:
+            output["rollout_metrics"] = self.rollout_metrics.record_scan(
+                scan_id=scan_context.scan_id,
+                shadow_report=shadow_report,
+                auto_trade_results=auto_trade_results,
+                rollout_policy=rollout_policy.to_dict(),
+                closed_trades=closed_trades,
+            )
+            output["release_readiness"] = self.rollout_metrics.readiness(
+                getattr(settings, "scanner_rollout", None)
+            )
+            output["canary_readiness"] = (
+                self.rollout_metrics.canary_readiness(
+                    getattr(settings, "scanner_rollout", None)
+                )
+            )
+        except Exception as exc:
+            output["rollout_metrics_error"] = str(exc)
+            output["release_readiness"] = {
+                "rollout_version": SCANNER_ROLLOUT_VERSION,
+                "ready": False,
+                "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
+            }
+            output["canary_readiness"] = dict(
+                output["release_readiness"]
+            )
+            self._emit_observability(
+                "ROLLOUT_METRICS_FAILURE",
+                scan_id=scan_context.scan_id,
+                severity="ERROR",
+                payload={"reason": str(exc)},
+            )
         output["telegram_alerts"] = self._send_telegram_alerts(rows)
+        try:
+            output["snapshot_path"] = str(self.save_snapshot(output))
+        except Exception as exc:
+            output["snapshot_error"] = str(exc)
+            self._emit_observability(
+                "SNAPSHOT_WRITE_FAILURE",
+                scan_id=scan_context.scan_id,
+                severity="ERROR",
+                payload={"reason": str(exc)},
+            )
+        self._emit_observability(
+            "SCAN_COMPLETED",
+            scan_id=scan_context.scan_id,
+            payload={
+                "symbols_scanned": len(rows),
+                "summary": output.get("summary", {}),
+                "snapshot_path": output.get("snapshot_path", ""),
+            },
+        )
         return output
 
     @staticmethod
@@ -262,435 +595,672 @@ class ScannerController:
             # Try slash format: "USDCHF" -> "USD/CHF"
             slash_key = symbol[:3] + "/" + symbol[3:]
             cfg = request.symbol_auto_trade.get(slash_key)
-        return cfg
+        if cfg is None:
+            return None
+        # Preserve configured-branch semantics for malformed payloads so the
+        # safety evaluator can fail closed instead of silently using defaults.
+        return cfg if isinstance(cfg, dict) else {}
 
     def _apply_scanner_filters(
         self,
         rows: list[dict[str, Any]],
         request: ScannerRequest,
     ) -> list[dict[str, Any]]:
-        """Lọc rows dùng chung logic 2 nhánh của _is_auto_trade_candidate.
+        """Annotate auto-trade safety without changing scanner decisions.
 
-        Nhánh 1 (backtest=true): dùng regime/side/min_score từ config.
-        Nhánh 2 (không config): yêu cầu scanner_action == "ready".
-        min_expected_rr là gate chung cho cả 2 nhánh.
-        Row không đạt -> scanner_action="skip", scanner_group="blocked".
+        Scanning and execution are deliberately separate in Phase 0.  A WATCH
+        row remains visible as WATCH, but can never become an order candidate.
         """
-        passed: list[dict[str, Any]] = []
-        failed: list[dict[str, Any]] = []
-
         for row in rows:
             symbol = str(row.get("symbol", ""))
             at_cfg = self._auto_trade_config(request, symbol)
-            if self._is_auto_trade_candidate(row, at_cfg):
-                passed.append(row)
-            else:
-                row["scanner_action"] = "skip"
-                row["scanner_group"] = "blocked"
-                reason = str(row.get("short_reason", ""))
-                if at_cfg is not None:
-                    regime = str(at_cfg.get("regime", "") or "").strip()
-                    side = str(at_cfg.get("side", "") or "").strip()
-                    min_sc = int(at_cfg.get("min_score", 0) or 0)
-                    parts = []
-                    if regime:
-                        parts.append(f"regime={regime}")
-                    if side in ("buy", "sell"):
-                        parts.append(f"side={side}")
-                    if min_sc > 0:
-                        parts.append(f"min_score={min_sc}")
-                    tag = f"[Loc: khong dat backtest — can {', '.join(parts)}]" if parts else "[Loc: khong dat backtest]"
-                else:
-                    tag = "[Loc: chua dat ready]"
-                if tag not in reason:
-                    row["short_reason"] = f"{reason} {tag}".strip()
-                failed.append(row)
+            decision = self._auto_trade_safety_decision(row, at_cfg)
+            row["auto_trade_branch"] = decision.branch
+            row["strategy_config_status"] = decision.strategy.config_status
+            row["backtest_config_status"] = (
+                "BACKTEST_CONFIG_INVALID"
+                if decision.branch == BRANCH_BACKTEST_INVALID
+                else decision.strategy.config_status
+            )
+            row["candidate_status"] = decision.status
+            row["selected_side"] = decision.selected_side
+            row["auto_trade_candidate"] = decision.auto_trade_candidate
+            row["strategy_eligible"] = decision.strategy_eligible
+            row["execution_ready"] = decision.execution_ready
+            row["trade_allowed"] = decision.trade_allowed
+            row["auto_trade_selected_side"] = decision.selected_side
+            row["auto_trade_reason_codes"] = list(decision.reason_codes)
+            row["scanner_candidate_decision"] = decision.to_dict()
+            candidate_payload = build_candidate_order_payload(
+                row,
+                decision,
+            )
+            if isinstance(candidate_payload, dict):
+                candidate_payload.pop("analysis_result", None)
+            row["candidate_order_payload"] = candidate_payload
 
-        return sort_scanner_rows(passed + failed)
+        return sort_scanner_rows(rows)
 
-    def _execute_auto_trades(self, rows: list[dict[str, Any]], request: ScannerRequest) -> dict[str, Any]:
-        results: list[dict[str, Any]] = []
-        errors: list[str] = []
-        attempted = 0
-        opened = 0
-        skipped = 0
+    @_serialized_execution
+    def execute_order_candidate(
+        self,
+        proposal: dict[str, Any],
+        *,
+        risk_percent: float | None = None,
+        comment: str = "AMA",
+    ) -> dict[str, Any]:
+        """Revalidate and execute one scan proposal through the shared gate."""
 
-        for row in rows:
-            at_cfg = self._auto_trade_config(request, str(row.get("symbol", "")))
-            if not self._is_auto_trade_candidate(row, at_cfg):
-                continue
-            attempted += 1
-            symbol = str(row.get("symbol") or "--")
-            broker_symbol = str(row.get("broker_symbol") or "").strip()
-            trade_side = str(at_cfg.get("side", "")).strip().lower() if at_cfg else ""
-            if trade_side not in ("buy", "sell"):
-                trade_side = str(row.get("best_side") or "")
-            scenario = self._best_scenario(row, force_side=trade_side)
-            sizing = scenario.get("position_sizing", {}) if isinstance(scenario.get("position_sizing"), dict) else {}
-            take_profit = scenario.get("take_profit")
-            first_tp = take_profit[0] if isinstance(take_profit, list) and take_profit else take_profit
-
+        order = dict(proposal) if isinstance(proposal, dict) else {}
+        symbol = str(order.get("symbol") or "--")
+        broker_symbol = str(order.get("broker_symbol") or "").strip()
+        side = str(order.get("side") or "").strip().lower()
+        scan_id = str(order.get("scan_id") or "")
+        row_id = str(order.get("row_id") or "")
+        self._emit_observability(
+            "ORDER_REQUEST",
+            scan_id=scan_id,
+            symbol=symbol,
+            payload={
+                "row_id": row_id,
+                "broker_symbol": broker_symbol,
+                "side": side,
+                "setup_score": order.get("setup_score"),
+                "required_min_rr": order.get("required_min_rr"),
+                "backtest_config_id": order.get("backtest_config_id"),
+                "scorer_version": order.get("scorer_version"),
+                "ranking_version": order.get("ranking_version"),
+                "rollout_stage": order.get("rollout_stage"),
+                "rollout_version": order.get("rollout_version"),
+            },
+        )
+        settings = self.settings_service.load()
+        rollout_policy: ScannerRolloutPolicy | None = None
+        rollout_decision = None
+        rollout_settings = getattr(settings, "scanner_rollout", None)
+        if rollout_settings is not None:
             try:
-                stop_loss = float(scenario.get("stop_loss"))
-                tp = float(first_tp)
-            except (TypeError, ValueError):
-                skipped += 1
-                errors.append(f"{symbol}: thiếu lot/SL/TP hợp lệ, bỏ qua auto trade.")
-                continue
-
-            # Tính lại lot ngay trước khi vào lệnh.
-            # Dùng quote_to_usd_rate mới nhất; nếu không lấy được thì fallback
-            # về suggested_lot từ scan (đã được tính đúng lúc MT5 còn kết nối).
+                rollout_status = self.mt5.connection_status()
+                rollout_server = getattr(rollout_status, "server", "")
+            except Exception:
+                rollout_server = ""
             try:
-                settings = self.settings_service.load()
-                entry_zone = scenario.get("entry_zone")
-                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                    entry_price = (float(entry_zone[0]) + float(entry_zone[1])) / 2
-                else:
-                    entry_price = 0.0
-                if entry_price <= 0:
-                    current = self.mt5.current_price(symbol, trade_side)
-                    entry_price = float(current) if current else 0.0
-                if entry_price <= 0 or stop_loss <= 0 or abs(entry_price - stop_loss) <= 0:
-                    skipped += 1
-                    errors.append(f"{symbol}: không tính được entry_price/stop_distance, bỏ qua auto trade.")
-                    continue
-                balance = float(settings.trading.account_balance or 0)
-                risk_pct = float(getattr(request, 'risk_percent', None) or settings.trading.default_risk_percent or 1.0)
-                contract_override = settings.trading.contract_size_override
-                if isinstance(contract_override, dict):
-                    contract = float(contract_override.get(symbol, 100000))
-                elif isinstance(contract_override, (int, float)) and contract_override > 0:
-                    contract = float(contract_override)
-                else:
-                    contract = 100000.0
-                lot_step = float(settings.trading.lot_step or 0.01)
-                min_lot = float(settings.trading.minimum_lot or 0.01)
-                quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-                quote_to_usd = self.mt5.quote_to_usd_rate(quote_currency)
-                volume = recalc_execution_lot(
-                    symbol=symbol,
-                    broker_symbol=broker_symbol or symbol,
-                    account_balance=balance,
-                    risk_percent=risk_pct,
-                    account_currency=settings.trading.account_currency,
-                    lot_step=lot_step,
-                    minimum_lot=min_lot,
-                    contract_size_override=contract,
-                    entry_price=entry_price,
-                    stop_loss=stop_loss,
-                    quote_to_usd_rate=quote_to_usd,
-                    fallback_lot=float(sizing.get("suggested_lot", 0.0)),
+                execution_canary_ready = (
+                    self.rollout_metrics.canary_readiness(
+                        rollout_settings
+                    ).get("ready") is True
+                )
+                execution_release_ready = (
+                    self.rollout_metrics.readiness(
+                        rollout_settings
+                    ).get("ready") is True
                 )
             except Exception:
-                skipped += 1
-                errors.append(f"{symbol}: lỗi khi tính lot, bỏ qua auto trade.")
-                continue
-            # ----------------------------------------------------------------
+                execution_canary_ready = False
+                execution_release_ready = False
+            rollout_policy = build_rollout_policy(
+                rollout_settings,
+                server=rollout_server,
+                canary_ready=execution_canary_ready,
+                release_ready=execution_release_ready,
+            )
+            rollout_decision = rollout_policy.order_decision(
+                symbol,
+                requested=True,
+            )
+            if not rollout_decision.allowed:
+                blocked = {
+                    "success": False,
+                    "symbol": symbol,
+                    "broker_symbol": broker_symbol,
+                    "side": side,
+                    "scan_id": scan_id,
+                    "row_id": row_id,
+                    "rollout": rollout_decision.to_dict(),
+                    "message": (
+                        "Rollout guard blocked order: "
+                        + ", ".join(rollout_decision.reason_codes)
+                    ),
+                }
+                self._emit_observability(
+                    "ROLLOUT_ORDER_BLOCKED",
+                    scan_id=scan_id,
+                    symbol=symbol,
+                    severity="WARNING",
+                    payload=blocked,
+                )
+                self._emit_observability(
+                    "ORDER_RESPONSE",
+                    scan_id=scan_id,
+                    symbol=symbol,
+                    severity="WARNING",
+                    payload={
+                        "row_id": row_id,
+                        "success": False,
+                        "message": blocked["message"],
+                        "rollout": rollout_decision.to_dict(),
+                    },
+                )
+                return blocked
+            if rollout_decision.risk_cap_percent is not None:
+                requested_risk = (
+                    float(risk_percent)
+                    if risk_percent is not None
+                    else float(settings.trading.default_risk_percent)
+                )
+                risk_percent = min(
+                    requested_risk,
+                    rollout_decision.risk_cap_percent,
+                )
 
-            if not broker_symbol:
-                skipped += 1
-                errors.append(f"{symbol}: thiếu broker symbol, bỏ qua auto trade.")
+        try:
+            snapshot = self.mt5.execution_snapshot(broker_symbol)
+        except Exception as exc:
+            self._emit_observability(
+                "EXECUTION_REVALIDATION_FAILURE",
+                scan_id=scan_id,
+                symbol=symbol,
+                severity="ERROR",
+                payload={
+                    "row_id": row_id,
+                    "stage": "execution_snapshot",
+                    "reason": str(exc),
+                },
+            )
+            raise
+        try:
+            portfolio_snapshot = self.mt5.portfolio_snapshot()
+        except Exception:
+            portfolio_snapshot = None
+        execution_price = (
+            snapshot.ask if side == "buy"
+            else snapshot.bid if side == "sell"
+            else None
+        )
+
+        # The lot calculation uses the fresh execution-side bid/ask, never the
+        # scanner snapshot or entry-zone midpoint.
+        try:
+            stop_loss = float(order.get("stop_loss"))
+            fallback_lot = float(order.get("volume") or 0.0)
+            balance = float(
+                portfolio_snapshot.account_balance
+                if portfolio_snapshot is not None
+                else 0.0
+            )
+            effective_risk = float(
+                risk_percent
+                if risk_percent is not None
+                else settings.trading.default_risk_percent
+            )
+            contract_override = settings.trading.contract_size_override
+            if isinstance(contract_override, dict):
+                contract = float(contract_override.get(symbol, 100000))
+            elif isinstance(contract_override, (int, float)) and contract_override > 0:
+                contract = float(contract_override)
+            else:
+                contract = 100000.0
+            quote_currency = (
+                symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+            )
+            quote_to_usd = self.mt5.quote_to_usd_rate(quote_currency)
+            order["volume"] = recalc_execution_lot(
+                symbol=symbol,
+                broker_symbol=broker_symbol or symbol,
+                account_balance=balance,
+                risk_percent=effective_risk,
+                account_currency=settings.trading.account_currency,
+                lot_step=float(settings.trading.lot_step or 0.01),
+                minimum_lot=float(settings.trading.minimum_lot or 0.01),
+                contract_size_override=contract,
+                entry_price=float(execution_price or 0.0),
+                stop_loss=stop_loss,
+                quote_to_usd_rate=quote_to_usd,
+                fallback_lot=fallback_lot,
+            )
+        except Exception:
+            # The engine below rejects a missing/invalid volume or live price.
+            order["volume"] = None
+
+        news_status: dict[str, object]
+        try:
+            news_status = self.news_service.execution_news_status(
+                symbol,
+                before_minutes=int(
+                    settings.advanced.high_impact_news_block_before_minutes
+                ),
+                after_minutes=int(
+                    settings.advanced.high_impact_news_block_after_minutes
+                ),
+            )
+        except Exception as exc:
+            news_status = {
+                "available": False,
+                "blackout": None,
+                "reason_codes": ["NEWS_STATUS_UNAVAILABLE"],
+                "message": str(exc),
+            }
+        news_blackout = (
+            news_status.get("blackout")
+            if news_status.get("available") is True
+            else None
+        )
+        if not settings.advanced.block_high_impact_news:
+            news_blackout = False
+
+        try:
+            portfolio = evaluate_portfolio_risk(
+                portfolio_snapshot,
+                proposal=order,
+                market_snapshot=snapshot,
+                closed_trades=(
+                    self.journal_service.list_closed_trades_for_account_guard()
+                    if self.journal_service
+                    else None
+                ),
+                limits=self._portfolio_limits(settings),
+            )
+            portfolio_payload = portfolio.to_dict()
+            account_guard = portfolio.account_guard
+            account_allowed: bool | None = (
+                portfolio.account_allowed
+                and snapshot.connected
+                and snapshot.logged_in
+                and snapshot.trade_allowed
+            )
+            portfolio_allowed: bool | None = portfolio.portfolio_allowed
+        except Exception as exc:
+            portfolio_payload = {
+                "allowed": False,
+                "portfolio_allowed": False,
+                "account_allowed": False,
+                "block_codes": ["PORTFOLIO_GUARD_UNAVAILABLE"],
+                "reason": str(exc),
+            }
+            account_guard = {
+                "allowed": None,
+                "block_codes": ["ACCOUNT_GUARD_UNAVAILABLE"],
+                "reasons": [str(exc)],
+            }
+            account_allowed = None
+            portfolio_allowed = None
+        required_min_rr = order.get("required_min_rr", order.get("min_rr"))
+        validation = revalidate_execution(
+            order,
+            snapshot,
+            news_blackout=(
+                bool(news_blackout) if news_blackout is not None else None
+            ),
+            account_allowed=account_allowed,
+            portfolio_allowed=portfolio_allowed,
+            required_min_rr=required_min_rr,
+        )
+        validation_payload = validation.to_dict()
+        common = {
+            "symbol": symbol,
+            "broker_symbol": broker_symbol,
+            "side": side,
+            "volume": order.get("volume"),
+            "stop_loss": order.get("stop_loss"),
+            "take_profit": order.get("take_profit"),
+            "revalidation": validation_payload,
+            "execution_snapshot": snapshot.to_dict(),
+            "news_status": news_status,
+            "account_guard": account_guard,
+            "portfolio_guard": portfolio_payload,
+            "scan_id": scan_id,
+            "row_id": row_id,
+            "settings_hash": order.get("settings_hash"),
+            "backtest_config_id": order.get("backtest_config_id"),
+            "scorer_version": order.get("scorer_version"),
+            "ranking_version": order.get("ranking_version"),
+            "rollout": (
+                rollout_decision.to_dict()
+                if rollout_decision is not None
+                else None
+            ),
+        }
+        if not validation.allowed:
+            detailed_blocks = list(validation.block_codes)
+            if isinstance(portfolio_payload, dict):
+                detailed_blocks.extend(
+                    str(code)
+                    for code in portfolio_payload.get("block_codes", [])
+                )
+            detailed_blocks = list(dict.fromkeys(detailed_blocks))
+            blocked_result = {
+                "success": False,
+                **common,
+                "message": (
+                    "Execution revalidation blocked: "
+                    + ", ".join(detailed_blocks)
+                ),
+            }
+            self._emit_observability(
+                "EXECUTION_REVALIDATION_FAILURE",
+                scan_id=scan_id,
+                symbol=symbol,
+                severity="WARNING",
+                payload={
+                    "row_id": row_id,
+                    "revalidation": validation_payload,
+                    "portfolio_guard": portfolio_payload,
+                    "news_status": news_status,
+                },
+            )
+            return blocked_result
+
+        self._emit_observability(
+            "ORDER_SEND_REQUEST",
+            scan_id=scan_id,
+            symbol=symbol,
+            payload={
+                "row_id": row_id,
+                "broker_symbol": broker_symbol,
+                "side": side,
+                "volume": order.get("volume"),
+                "execution_price": validation.execution_price,
+                "stop_loss": order.get("stop_loss"),
+                "take_profit": order.get("take_profit"),
+            },
+        )
+        try:
+            mt5_result = self.mt5.place_market_order(
+                symbol=symbol,
+                broker_symbol=broker_symbol,
+                side=side,
+                volume=float(order["volume"]),
+                stop_loss=float(order["stop_loss"]),
+                take_profit=float(order["take_profit"]),
+                comment=comment,
+            )
+        except Exception as exc:
+            self._emit_observability(
+                "ORDER_RESPONSE",
+                scan_id=scan_id,
+                symbol=symbol,
+                severity="ERROR",
+                payload={
+                    "row_id": row_id,
+                    "success": False,
+                    "message": str(exc),
+                    "revalidation": validation_payload,
+                },
+            )
+            raise
+        payload = (
+            asdict(mt5_result)
+            if hasattr(mt5_result, "__dataclass_fields__")
+            else dict(mt5_result)
+        )
+        payload.update({
+            **common,
+            "price": payload.get("price") or validation.execution_price,
+        })
+        if payload.get("success"):
+            try:
+                post_snapshot = self.mt5.portfolio_snapshot()
+                post_evaluation = evaluate_portfolio_risk(
+                    post_snapshot,
+                    closed_trades=(
+                        self.journal_service.list_closed_trades_for_account_guard()
+                        if self.journal_service
+                        else None
+                    ),
+                    limits=self._portfolio_limits(settings),
+                )
+                payload["post_trade_portfolio"] = post_evaluation.to_dict()
+            except Exception as exc:
+                payload["post_trade_portfolio"] = {
+                    "allowed": False,
+                    "block_codes": ["POST_TRADE_PORTFOLIO_UNAVAILABLE"],
+                    "reason": str(exc),
+                }
+        self._emit_observability(
+            "ORDER_RESPONSE",
+            scan_id=scan_id,
+            symbol=symbol,
+            severity="INFO" if payload.get("success") else "ERROR",
+            payload={
+                "row_id": row_id,
+                "success": bool(payload.get("success")),
+                "ticket": (
+                    payload.get("ticket")
+                    or payload.get("order_id")
+                    or payload.get("position_id")
+                ),
+                "message": payload.get("message"),
+                "revalidation": validation_payload,
+            },
+        )
+        return payload
+
+    @staticmethod
+    def _portfolio_limits(settings: object) -> dict[str, object]:
+        trading = getattr(settings, "trading", None)
+        display = getattr(settings, "display", None)
+        return {
+            "max_open_risk_pct": float(
+                getattr(trading, "max_open_risk_pct", 3.0)
+            ),
+            "max_symbol_risk_pct": float(
+                getattr(trading, "max_symbol_risk_pct", 2.0)
+            ),
+            "max_currency_exposure_pct": float(
+                getattr(trading, "max_currency_exposure_pct", 2.0)
+            ),
+            "max_correlated_risk_pct": float(
+                getattr(trading, "max_correlated_risk_pct", 2.0)
+            ),
+            "max_concurrent_orders": int(
+                getattr(trading, "max_concurrent_orders", 5)
+            ),
+            "max_daily_loss_pct": float(
+                getattr(trading, "max_daily_loss_pct", 2.0)
+            ),
+            "max_weekly_loss_pct": float(
+                getattr(trading, "max_weekly_loss_pct", 5.0)
+            ),
+            "max_consecutive_losses": int(
+                getattr(trading, "max_consecutive_losses", 3)
+            ),
+            "trader_timezone": str(
+                getattr(display, "timezone", "Asia/Ho_Chi_Minh")
+            ),
+        }
+
+    def _execute_auto_trades(
+        self,
+        rows: list[dict[str, Any]],
+        request: ScannerRequest,
+        *,
+        rollout_policy: ScannerRolloutPolicy,
+    ) -> dict[str, Any]:
+        """Execute every eligible row through Phase-3 realtime revalidation."""
+
+        results: list[dict[str, Any]] = []
+        errors: list[str] = []
+        attempted = opened = skipped = rollout_blocked = 0
+        for row in rows:
+            symbol = str(row.get("symbol") or "--")
+            config = self._auto_trade_config(request, symbol)
+            decision = self._auto_trade_safety_decision(row, config)
+            if not decision.auto_trade_candidate:
                 continue
+
+            attempted += 1
+            rollout_decision = rollout_policy.order_decision(
+                symbol,
+                requested=request.auto_trade_enabled,
+            )
+            if not rollout_decision.allowed:
+                rollout_blocked += 1
+                skipped += 1
+                blocked = {
+                    "success": False,
+                    "symbol": symbol,
+                    "scan_id": row.get("scan_id"),
+                    "row_id": row.get("row_id"),
+                    "rollout": rollout_decision.to_dict(),
+                    "message": (
+                        "Rollout guard blocked order: "
+                        + ", ".join(rollout_decision.reason_codes)
+                    ),
+                }
+                results.append(blocked)
+                errors.append(f"{symbol}: {blocked['message']}")
+                self._emit_observability(
+                    "ROLLOUT_ORDER_BLOCKED",
+                    scan_id=str(row.get("scan_id", "") or ""),
+                    symbol=symbol,
+                    severity="WARNING",
+                    payload=blocked,
+                )
+                continue
+            proposal = build_candidate_order_payload(
+                row,
+                decision,
+                require_price_in_zone=False,
+            )
+            if proposal is None:
+                skipped += 1
+                errors.append(f"{symbol}: order proposal không hợp lệ.")
+                continue
+            proposal.update({
+                "execution_origin": "AUTO_TRADE",
+                "rollout_version": SCANNER_ROLLOUT_VERSION,
+                "rollout_stage": rollout_policy.stage,
+            })
+            effective_risk = request.risk_percent
+            if rollout_decision.risk_cap_percent is not None:
+                effective_risk = min(
+                    effective_risk,
+                    rollout_decision.risk_cap_percent,
+                )
 
             try:
-                if self.mt5.has_open_position_or_order(broker_symbol):
-                    skipped += 1
-                    results.append({
-                        "success": False,
-                        "symbol": symbol,
-                        "broker_symbol": broker_symbol,
-                        "side": trade_side,
-                        "volume": volume,
-                        "message": "Đã có lệnh/position cho mã này, không vào thêm.",
-                    })
-                    continue
-
-                # --- Entry zone check: price must be inside entry zone ---
-                entry_zone = scenario.get("entry_zone")
-                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                    try:
-                        entry_low = float(entry_zone[0])
-                        entry_high = float(entry_zone[1])
-                    except (TypeError, ValueError):
-                        entry_low = entry_high = 0.0
-                else:
-                    entry_low = entry_high = 0.0
-
-                if entry_low > 0 and entry_high > 0:
-                    analysis = row.get("analysis_result", {})
-                    if isinstance(analysis, dict):
-                        technical = analysis.get("technical", {})
-                    else:
-                        technical = {}
-                    if isinstance(technical, dict):
-                        current_price = float(technical.get("price", 0) or 0)
-                    else:
-                        current_price = 0.0
-
-                    if current_price > 0 and not (entry_low <= current_price <= entry_high):
-                        skipped += 1
-                        errors.append(
-                            f"{symbol}: giá {current_price:.5f} nằm ngoài vùng entry "
-                            f"[{entry_low:.5f}–{entry_high:.5f}], bỏ qua."
-                        )
-                        continue
-
-                order = self.mt5.place_market_order(
-                    symbol=symbol,
-                    broker_symbol=broker_symbol,
-                    side=trade_side,
-                    volume=volume,
-                    stop_loss=stop_loss,
-                    take_profit=tp,
+                result = self.execute_order_candidate(
+                    proposal,
+                    risk_percent=effective_risk,
                     comment=f"AMA {symbol}",
                 )
-                payload = asdict(order) if hasattr(order, "__dataclass_fields__") else dict(order)
-                results.append(payload)
-                if payload.get("success"):
-                    opened += 1
-                    # Auto-enable BE+trailing tracking for this position
-                    if self.orders_screen is not None:
-                        try:
-                            pos_id = int(payload.get("position_id") or payload.get("ticket") or 0)
-                            if pos_id > 0:
-                                entry_price = (entry_low + entry_high) / 2 if entry_low > 0 and entry_high > 0 else 0.0
-                                atr_h1 = 0.0
-                                analysis = row.get("analysis_result", {})
-                                if isinstance(analysis, dict):
-                                    technical = analysis.get("technical", {})
-                                    if isinstance(technical, dict):
-                                        atr_h1 = float(technical.get("atr_h1") or 0)
-                                self.orders_screen.auto_enable_tracking(
-                                    pos_id, symbol, trade_side, entry_price, stop_loss, atr_h1,
-                                )
-                        except Exception:
-                            pass
-                else:
-                    skipped += 1
-                    errors.append(f"{symbol}: {payload.get('message') or 'MT5 từ chối lệnh.'}")
             except Exception as exc:
+                result = {
+                    "success": False,
+                    "symbol": symbol,
+                    "message": str(exc),
+                    "revalidation": {
+                        "allowed": False,
+                        "block_codes": ["EXECUTION_REVALIDATION_FAILED"],
+                    },
+                }
+            results.append(result)
+            if result.get("success"):
+                opened += 1
+                if self.orders_screen is not None:
+                    try:
+                        position_id = int(
+                            result.get("position_id")
+                            or result.get("ticket")
+                            or result.get("order_id")
+                            or 0
+                        )
+                        if position_id > 0:
+                            validation = result.get("revalidation", {})
+                            analysis = row.get("analysis_result", {})
+                            technical = (
+                                analysis.get("technical", {})
+                                if isinstance(analysis, dict)
+                                else {}
+                            )
+                            self.orders_screen.auto_enable_tracking(
+                                position_id,
+                                symbol,
+                                str(result.get("side") or ""),
+                                float(
+                                    validation.get("execution_price")
+                                    if isinstance(validation, dict)
+                                    else 0.0
+                                ),
+                                float(result.get("stop_loss") or 0.0),
+                                float(
+                                    technical.get("atr_h1", 0.0)
+                                    if isinstance(technical, dict)
+                                    else 0.0
+                                ),
+                            )
+                    except Exception:
+                        pass
+            else:
                 skipped += 1
-                errors.append(f"{symbol}: {exc}")
+                errors.append(
+                    f"{symbol}: {result.get('message') or 'order bị chặn.'}"
+                )
 
         return {
             "enabled": True,
             "attempted": attempted,
             "opened": opened,
             "skipped": skipped,
+            "rollout_blocked": rollout_blocked,
             "errors": errors,
             "orders": results,
             "risk_percent": request.risk_percent,
+            "effective_risk_cap_percent": (
+                rollout_policy.canary_risk_percent
+                if rollout_policy.stage == "CANARY"
+                else None
+            ),
+            "rollout_policy": rollout_policy.to_dict(),
         }
 
     def _is_auto_trade_candidate(self, row: dict[str, Any], at_cfg: dict[str, object] | None) -> bool:
-        """Check if a scanner row qualifies for auto-trade.
+        """Compatibility wrapper around the shared Phase-0 safety contract."""
+        return self._auto_trade_safety_decision(row, at_cfg).auto_trade_candidate
 
-        When *at_cfg* is provided (per-symbol config from Settings), uses
-        backtest-proven filters: regime, side, min_rr.  Otherwise requires
-        the original strict criteria (scanner_action == "ready").
-        """
-        if not isinstance(row.get("analysis_result"), dict):
-            return False
-        # Respect user's Min Score gate and trade permission blocks
-        if row.get("scanner_group") == "blocked":
-            return False
-        if str(row.get("trade_permission", "")).strip().lower() == "blocked":
-            return False
-        journal_feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
-        if journal_feedback.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
-            return False
-
-        if at_cfg is None:
-            # No per-symbol config — fall back to original strict criteria
-            return (
-                row.get("scanner_action") == "ready"
-                and row.get("trade_permission") == "allowed"
-                and bool(self._best_scenario(row))
-            )
-
-        # Backtest-proven per-symbol filters
-        cfg_regime = str(at_cfg.get("regime", "")).strip().lower()
-        cfg_side = str(at_cfg.get("side", "")).strip().lower()
-        cfg_min_rr = float(at_cfg.get("min_rr", 0) or 0)
-
-        if cfg_regime and str(row.get("market_regime", "")).strip().lower() != cfg_regime:
-            return False
-        if cfg_min_rr > 0:
-            expected_rr = _safe_float_for_auto(row.get("expected_effective_rr"))
-            if expected_rr is None or expected_rr < cfg_min_rr:
-                return False
-        best_score = int(row.get("best_score", 0) or 0)
-        cfg_min_score = int(at_cfg.get("min_score", 0) or 0)
-        effective_min_score = cfg_min_score if cfg_min_score > 0 else 65
-        if best_score < effective_min_score:
-            return False
-
-        # Determine trade side: config override or fall back to best_side
-        trade_side = cfg_side if cfg_side in ("buy", "sell") else row.get("best_side")
-        return bool(self._best_scenario(row, force_side=trade_side))
-
-    def _best_scenario(self, row: dict[str, Any], *, force_side: str | None = None) -> dict[str, Any]:
-        analysis = row.get("analysis_result", {})
-        if not isinstance(analysis, dict):
-            return {}
-        scenarios = analysis.get("scenarios", [])
-        if not isinstance(scenarios, list):
-            return {}
-        side = force_side or row.get("best_side")
-        for scenario in scenarios:
-            if isinstance(scenario, dict) and scenario.get("type") == side:
-                if scenario.get("entry_zone_source") == "fallback":
-                    continue
-                return scenario
-        # Fallback: if forced side not found, try best_side
-        if force_side:
-            fallback_side = row.get("best_side")
-            for scenario in scenarios:
-                if isinstance(scenario, dict) and scenario.get("type") == fallback_side:
-                    if scenario.get("entry_zone_source") == "fallback":
-                        continue
-                    return scenario
-        return {}
+    @staticmethod
+    def _auto_trade_safety_decision(
+        row: dict[str, Any],
+        at_cfg: dict[str, object] | None,
+    ) -> AutoTradeSafetyDecision:
+        return evaluate_auto_trade_safety(row, at_cfg)
 
     def _get_alert_order_candidates(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Filter scanner rows using the SAME gates as the 'Hiển thị lệnh' dialog.
-
-        Returns a list of order-candidate dicts with entry, SL, TP, volume, etc.
-        """
-        try:
-            settings = self.settings_service.load()
-        except Exception:
-            settings = None
-
+        """Return order candidates captured by the canonical scan decision."""
         candidates: list[dict[str, Any]] = []
         for row in rows:
-            analysis = row.get("analysis_result")
-            if not isinstance(analysis, dict):
+            stored = row.get("candidate_order_payload")
+            if not isinstance(stored, dict):
                 continue
-            if row.get("scanner_group") == "blocked":
-                continue
-            if str(row.get("trade_permission", "")).strip().lower() == "blocked":
-                continue
-            journal = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
-            if journal.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
-                continue
-
-            best_side = str(row.get("best_side", ""))
-            if best_side not in ("buy", "sell"):
-                continue
-
-            symbol = str(row.get("symbol", "--"))
-
-            # --- Backtest config gate (same as _build_order_rows) ---
-            if settings:
-                sym_cfg = settings.trading.symbol_settings.get(symbol)
-                if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
-                    slash_key = symbol[:3] + "/" + symbol[3:]
-                    sym_cfg = settings.trading.symbol_settings.get(slash_key)
-
-                if sym_cfg and sym_cfg.backtest:
-                    cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
-                    row_regime = str(row.get("market_regime", "")).strip().lower()
-                    if cfg_regime and row_regime and row_regime != cfg_regime:
-                        continue
-
-                    cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
-                    if cfg_side in ("buy", "sell") and best_side != cfg_side:
-                        continue
-
-                    cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
-                    if cfg_min_rr > 0:
-                        row_rr = row.get("expected_effective_rr")
-                        try:
-                            row_rr_f = float(row_rr) if row_rr is not None else 0.0
-                        except (TypeError, ValueError):
-                            row_rr_f = 0.0
-                        if row_rr_f < cfg_min_rr:
-                            continue
-
-                    cfg_min_score = int(sym_cfg.min_score or 0)
-                    if cfg_min_score > 0:
-                        best_score = int(row.get("best_score", 0) or 0)
-                        if best_score < cfg_min_score:
-                            continue
-
-            scenarios = analysis.get("scenarios", [])
-            if not isinstance(scenarios, list):
-                continue
-            scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
-            if not scenario:
-                continue
-            if scenario.get("entry_zone_source") == "fallback":
-                continue
-
-            entry_zone = scenario.get("entry_zone")
-            if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                entry_low = float(entry_zone[0])
-                entry_high = float(entry_zone[1])
-                ep = scenario.get("entry_price")
-                entry_price = float(ep) if ep is not None else (entry_high if best_side == "buy" else entry_low)
-            else:
-                entry_low = entry_high = 0.0
-                entry_price = None
-
-            # --- Entry zone check: price must be inside entry zone ---
-            technical = analysis.get("technical", {}) if isinstance(analysis, dict) else {}
-            if not isinstance(technical, dict):
-                technical = {}
-            current_price = float(technical.get("price", 0) or 0)
-
-            if entry_low > 0 and entry_high > 0 and current_price > 0:
-                if not (entry_low <= current_price <= entry_high):
-                    continue
-
-            take_profit = scenario.get("take_profit")
-            if isinstance(take_profit, list) and take_profit:
-                tp = float(take_profit[0])
-            else:
-                try:
-                    tp = float(take_profit)
-                except (TypeError, ValueError):
-                    tp = None
-
-            sl = scenario.get("stop_loss")
-            try:
-                sl = float(sl)
-            except (TypeError, ValueError):
-                sl = None
-
-            sizing = scenario.get("position_sizing", {})
-            if not isinstance(sizing, dict):
-                sizing = {}
-            vol = sizing.get("suggested_lot")
-
-            rr = scenario.get("risk_reward", row.get("risk_reward", ""))
-            rr_range = scenario.get("risk_reward_range") or row.get("risk_reward_range")
-
-            candidates.append({
-                "symbol": symbol,
-                "broker_symbol": str(row.get("broker_symbol") or "").strip(),
-                "side": best_side,
-                "entry_price": entry_price,
-                "stop_loss": sl,
-                "take_profit": tp,
-                "volume": vol,
-                "risk_reward": rr,
-                "risk_reward_range": rr_range,
-                "entry_zone": entry_zone,
-                "entry_low": entry_low,
-                "entry_high": entry_high,
-                "market_regime": str(row.get("market_regime", "")),
-                "expected_effective_rr": row.get("expected_effective_rr"),
-                "best_score": int(row.get("best_score", 0) or 0),
-                "scanner_action": str(row.get("scanner_action", "")),
-                "trade_permission": str(row.get("trade_permission", "")),
-                "short_reason": str(row.get("short_reason") or row.get("permission_reason") or ""),
-                "scanner_group": str(row.get("scanner_group", "")),
-                "analysis_result": analysis,
+            payload = dict(stored)
+            payload.update({
+                "rank": row.get("rank"),
+                "candidate_status": row.get("candidate_status"),
+                "opportunity_rank": row.get("opportunity_rank"),
+                "evidence_confidence": row.get("evidence_confidence"),
+                "execution_readiness": row.get("execution_readiness"),
+                "strategy_branch": row.get("auto_trade_branch"),
+                "config_health": row.get("strategy_config_status"),
+                "ranking_version": row.get("ranking_version"),
             })
+            payload["best_score"] = int(payload.get("best_score") or 0)
+            candidates.append(payload)
 
         return candidates
+
+    @staticmethod
+    def _settings_auto_trade_config(settings: object, symbol: str) -> dict[str, object] | None:
+        """Convert persisted per-symbol settings to the canonical live config."""
+        if settings is None:
+            return None
+        trading = getattr(settings, "trading", None)
+        symbol_settings = getattr(trading, "symbol_settings", None)
+        if not isinstance(symbol_settings, dict):
+            return None
+        sym_cfg = symbol_settings.get(symbol)
+        if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
+            sym_cfg = symbol_settings.get(symbol[:3] + "/" + symbol[3:])
+        return serialize_backtest_config(sym_cfg, symbol=symbol)
 
     def _send_telegram_alerts(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
         notifications = self.settings_service.load().notifications
@@ -710,12 +1280,160 @@ class ScannerController:
         )
         return {"attempted": result.attempted, "sent": result.sent, "errors": result.errors, "summary_sent": summary_sent}
 
+    def _emit_observability(
+        self,
+        event_type: str,
+        *,
+        scan_id: str = "",
+        symbol: str = "",
+        severity: str = "INFO",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            self.observability.emit(
+                event_type,
+                scan_id=scan_id,
+                symbol=symbol,
+                severity=severity,
+                payload=payload,
+            )
+        except Exception:
+            # Observability must never change a trading decision or crash a scan.
+            pass
+
+    def _emit_candidate_events(self, row: dict[str, Any], scan_id: str) -> None:
+        symbol = str(row.get("symbol", "") or "")
+        analysis = (
+            row.get("analysis_result")
+            if isinstance(row.get("analysis_result"), dict)
+            else {}
+        )
+        decision = (
+            row.get("scanner_candidate_decision")
+            if isinstance(row.get("scanner_candidate_decision"), dict)
+            else {}
+        )
+        strategy = (
+            decision.get("strategy")
+            if isinstance(decision.get("strategy"), dict)
+            else {}
+        )
+        execution = (
+            decision.get("execution")
+            if isinstance(decision.get("execution"), dict)
+            else {}
+        )
+        if strategy.get("eligible") is not True:
+            self._emit_observability(
+                "STRATEGY_REJECTION",
+                scan_id=scan_id,
+                symbol=symbol,
+                payload={
+                    "branch": decision.get("branch"),
+                    "status": decision.get("status"),
+                    "reason_codes": strategy.get("reason_codes", []),
+                },
+            )
+        if (
+            execution.get("entry_ready") is not True
+            or execution.get("trade_allowed") is not True
+        ):
+            self._emit_observability(
+                "GATE_REJECTION",
+                scan_id=scan_id,
+                symbol=symbol,
+                payload={
+                    "status": decision.get("status"),
+                    "reason_codes": execution.get("reason_codes", []),
+                    "block_codes": execution.get("block_codes", []),
+                },
+            )
+        legacy = str(row.get("legacy_candidate_status", "") or "")
+        canonical = str(row.get("candidate_status", "") or "")
+        if legacy and canonical and legacy != canonical:
+            self._emit_observability(
+                "DECISION_DISAGREEMENT",
+                scan_id=scan_id,
+                symbol=symbol,
+                severity="WARNING",
+                payload={
+                    "v1_status": legacy,
+                    "v2_status": canonical,
+                    "selected_side": row.get("selected_side"),
+                    "reason_codes": row.get("auto_trade_reason_codes", []),
+                },
+            )
+        smc_scoring = (
+            analysis.get("smc_scoring")
+            if isinstance(analysis.get("smc_scoring"), dict)
+            else {}
+        )
+        smc_policy = (
+            smc_scoring.get("policy")
+            if isinstance(smc_scoring.get("policy"), dict)
+            else {}
+        )
+        if smc_policy.get("shadow_enabled") is True:
+            comparison = (
+                smc_scoring.get("comparison")
+                if isinstance(smc_scoring.get("comparison"), dict)
+                else {}
+            )
+            self._emit_observability(
+                "SMC_SHADOW_COMPARISON",
+                scan_id=scan_id,
+                symbol=symbol,
+                severity=(
+                    "WARNING"
+                    if comparison.get("best_side_changed")
+                    else "INFO"
+                ),
+                payload={
+                    "policy": smc_policy,
+                    "shadow_status": smc_scoring.get("shadow_status"),
+                    "comparison": comparison,
+                    "active": smc_scoring.get("active", {}),
+                    "shadow": smc_scoring.get("shadow", {}),
+                    "consumer_contract": smc_scoring.get(
+                        "consumer_contract",
+                        {},
+                    ),
+                },
+            )
+
     def save_snapshot(self, result: dict[str, Any]) -> Path:
+        scan_id = str(result.get("scan_id", "") or "").strip()
+        if not scan_id:
+            scan_id = str(result.get("timestamp", "scanner")).replace(
+                ":", ""
+            ).replace("+", "_")
         snapshot_dir = app_data_dir() / "scanner_snapshots"
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = str(result.get("timestamp", "scanner")).replace(":", "").replace("+", "_")
-        path = snapshot_dir / f"scanner_{timestamp}.json"
-        JsonStorage(path).save(self._snapshot_payload(result))
+        analysis_dir = app_data_dir() / "scanner_analysis" / scan_id
+        analysis_dir.mkdir(parents=True, exist_ok=True)
+        context = (
+            result.get("scan_context")
+            if isinstance(result.get("scan_context"), dict)
+            else {}
+        )
+        manifest: dict[str, str] = {}
+        for row in result.get("rows", []):
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol", "UNKNOWN") or "UNKNOWN")
+            safe_symbol = "".join(
+                character
+                for character in symbol.upper()
+                if character.isalnum()
+            ) or "UNKNOWN"
+            analysis_path = analysis_dir / f"{safe_symbol}.json"
+            JsonStorage(analysis_path).save(
+                build_analysis_document(row, context)
+            )
+            manifest[symbol] = str(analysis_path)
+
+        path = snapshot_dir / f"scanner_{scan_id}.json"
+        JsonStorage(path).save(self._snapshot_payload(result, manifest))
         return path
 
     def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
@@ -746,26 +1464,27 @@ class ScannerController:
         audit = self._write_scanner_ai_audit(row, active_ai)
         return audit or {"auditor_error": "AI không trả về kết quả."}
 
-    def _snapshot_payload(self, result: dict[str, Any]) -> dict[str, Any]:
+    def _snapshot_payload(
+        self,
+        result: dict[str, Any],
+        manifest: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         payload = dict(result)
+        references = manifest or {}
         payload["rows"] = [
-            {key: value for key, value in row.items() if key != "analysis_result"}
+            {
+                **{
+                    key: value
+                    for key, value in row.items()
+                    if key != "analysis_result"
+                },
+                "analysis_ref": references.get(str(row.get("symbol", "")), ""),
+            }
             for row in result.get("rows", [])
+            if isinstance(row, dict)
         ]
+        payload["analysis_manifest"] = dict(references)
         return payload
-
-
-def _safe_float_for_auto(value: object) -> float | None:
-    """Safely convert a value to float, returning None on failure."""
-    if value is None:
-        return None
-    try:
-        result = float(value)
-        if result != result or result == float("inf") or result == float("-inf"):
-            return None
-        return result
-    except (TypeError, ValueError):
-        return None
 
 
 def _scan_one_symbol(
@@ -781,8 +1500,9 @@ def _scan_one_symbol(
     analysis_input_kwargs: dict[str, Any],
     closed_trades: list[dict[str, Any]],
     account_guard_settings: dict[str, Any],
-    thresholds: dict[str, int] | None = None,
+    thresholds: dict[str, int | float] | None = None,
     ai_service: object | None = None,
+    smc_scoring_mode: str = "v2",
 ) -> dict[str, Any]:
     """Process a single symbol — safe for ThreadPoolExecutor (each thread inits its own MT5)."""
     import MetaTrader5 as _mt5
@@ -836,6 +1556,7 @@ def _scan_one_symbol(
             open_trades=[],
             account_guard_settings=account_guard_settings,
             thresholds=thresholds,
+            smc_scoring_mode=smc_scoring_mode,
         )
         result["economic_events"] = macro_context.get("events", [])
         result["macro"]["driver_context"] = macro_context
@@ -894,6 +1615,7 @@ def _fetch_one_symbol_mt5(
         "data_quality": data_quality,
         "macro_context": macro_context,
         "quote_to_usd": quote_to_usd,
+        "input_timestamps": input_timestamps_from_candles(all_candles),
     }
 
 
@@ -906,9 +1628,11 @@ def _analyze_one_symbol(
     analysis_input_kwargs: dict[str, Any],
     closed_trades: list[dict[str, Any]],
     account_guard_settings: dict[str, Any],
-    thresholds: dict[str, int] | None = None,
+    thresholds: dict[str, int | float] | None = None,
+    smc_scoring_mode: str = "v2",
 ) -> dict[str, Any]:
     """Run the analysis pipeline for one symbol (CPU-only, thread-safe)."""
+    started_at = perf_counter()
     symbol = pkt["symbol"]
     broker_symbol = pkt["broker_symbol"]
     data_quality = pkt["data_quality"]
@@ -941,14 +1665,34 @@ def _analyze_one_symbol(
             open_trades=[],
             account_guard_settings=account_guard_settings,
             thresholds=thresholds,
+            smc_scoring_mode=smc_scoring_mode,
         )
     except Exception as exc:
-        return blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol)
+        blocked = blocked_scanner_row(
+            symbol,
+            f"Không quét được dữ liệu: {exc}",
+            broker_symbol=broker_symbol,
+        )
+        blocked["_analysis_error"] = str(exc)
+        blocked["input_timestamps"] = dict(
+            pkt.get("input_timestamps", {})
+        )
+        blocked["analysis_latency_ms"] = round(
+            (perf_counter() - started_at) * 1000,
+            3,
+        )
+        return blocked
 
     result["economic_events"] = macro_context.get("events", [])
     result["macro"]["driver_context"] = macro_context
     if isinstance(macro_context, dict):
         result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
         result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
-    return scanner_row_from_analysis(result, broker_symbol=broker_symbol)
+    row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
+    row["input_timestamps"] = dict(pkt.get("input_timestamps", {}))
+    row["analysis_latency_ms"] = round(
+        (perf_counter() - started_at) * 1000,
+        3,
+    )
+    return row
 

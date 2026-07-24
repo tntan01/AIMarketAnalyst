@@ -60,6 +60,7 @@ class BacktestRequest:
     min_final_score: int = 0
     correlation_context: dict[str, Any] | None = None
     macro_alignment_override: dict[str, int] | None = None
+    smc_scoring_mode: str = "v2"
 
 
 @dataclass(slots=True)
@@ -92,6 +93,16 @@ class BacktestTrade:
     liquidity_sweep_aligned: bool
     displacement_aligned: bool
     choch_against_direction: bool
+    selected_zone_id: str | None = None
+    selected_zone_quality_score: int | None = None
+    selected_zone_relevance_score: int | None = None
+    selected_zone_setup_score: int | None = None
+    selected_zone_scoring_version: str | None = None
+    smc_score_breakdown: dict[str, Any] = field(default_factory=dict)
+    scanner_scorer_version: str | None = None
+    scanner_feature_version: str | None = None
+    smc_scorer_version: str | None = None
+    smc_scoring_mode: str | None = None
     reason_codes: list[str] = field(default_factory=list)
     warning_codes: list[str] = field(default_factory=list)
     block_codes: list[str] = field(default_factory=list)
@@ -109,8 +120,29 @@ class BacktestResult:
     diagnostics: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
+        from core.scanner_models import (
+            SCANNER_FEATURE_VERSION,
+            SCANNER_SCORER_VERSION,
+            SETUP_SCORE_METRIC,
+        )
+        from core.scoring_provenance import build_scoring_provenance
+
+        provenance = build_scoring_provenance(
+            self.request.smc_scoring_mode
+        )
+
         return {
             "mode": "system_backtest",
+            "scoring_provenance": provenance,
+            "scoring_contract": {
+                "score_metric": SETUP_SCORE_METRIC,
+                "scorer_version": SCANNER_SCORER_VERSION,
+                "feature_version": SCANNER_FEATURE_VERSION,
+                "smc_scorer_version": provenance[
+                    "smc_scorer_version"
+                ],
+                "smc_scoring_mode": provenance["smc_scoring_mode"],
+            },
             "request": _request_to_dict(self.request),
             "summary": self.summary,
             "trades": [asdict(trade) for trade in self.trades],
@@ -785,11 +817,17 @@ def build_trade_record(
     result_value: float,
     holding_bars: int,
 ) -> BacktestTrade:
+    from core.scoring_provenance import normalize_scoring_provenance
+
     scores = analysis.get("scenario_scores", {}) if isinstance(analysis.get("scenario_scores"), dict) else {}
     side_score = scores.get(side, {}) if isinstance(scores.get(side), dict) else {}
     decision_summary = analysis.get("decision_summary", {}) if isinstance(analysis.get("decision_summary"), dict) else {}
     market_regime = analysis.get("market_regime", {}) if isinstance(analysis.get("market_regime"), dict) else {}
     smc_flags = analysis.get("smc_trade_flags", {}) if isinstance(analysis.get("smc_trade_flags"), dict) else {}
+    scoring_provenance = normalize_scoring_provenance(
+        analysis.get("scoring_provenance"),
+        fallback_mode=request.smc_scoring_mode,
+    )
     return BacktestTrade(
         symbol=request.symbol,
         side=side,
@@ -819,6 +857,38 @@ def build_trade_record(
         liquidity_sweep_aligned=bool(smc_flags.get("liquidity_sweep_aligned")),
         displacement_aligned=bool(smc_flags.get("displacement_aligned")),
         choch_against_direction=bool(smc_flags.get("choch_against_direction")),
+        selected_zone_id=(
+            str(scenario.get("entry_zone_id"))
+            if scenario.get("entry_zone_id")
+            else None
+        ),
+        selected_zone_quality_score=_safe_int(
+            scenario.get("entry_zone_quality_score")
+        ),
+        selected_zone_relevance_score=_safe_int(
+            scenario.get("entry_zone_relevance_score")
+        ),
+        selected_zone_setup_score=_safe_int(
+            scenario.get("entry_zone_setup_score")
+        ),
+        selected_zone_scoring_version=(
+            str(scenario.get("entry_zone_scoring_version"))
+            if scenario.get("entry_zone_scoring_version")
+            else None
+        ),
+        smc_score_breakdown=(
+            dict(scenario.get("smc_score_breakdown"))
+            if isinstance(scenario.get("smc_score_breakdown"), dict)
+            else {}
+        ),
+        scanner_scorer_version=scoring_provenance[
+            "scanner_scorer_version"
+        ],
+        scanner_feature_version=scoring_provenance[
+            "scanner_feature_version"
+        ],
+        smc_scorer_version=scoring_provenance["smc_scorer_version"],
+        smc_scoring_mode=scoring_provenance["smc_scoring_mode"],
         reason_codes=list(analysis.get("reason_codes", []) or []),
         warning_codes=list(analysis.get("warning_codes", []) or []),
         block_codes=list(analysis.get("block_codes", []) or []),
@@ -879,6 +949,7 @@ def _run_analysis_snapshot(
         account_guard_settings=_account_guard_settings(request),
         trade_date=current_time,
         is_backtest=True,
+        smc_scoring_mode=request.smc_scoring_mode,
     )
 
 
@@ -999,6 +1070,24 @@ def build_skip_debug(analysis: dict[str, Any] | None, scenario: dict[str, Any] |
         "liquidity_sweep_aligned": bool(smc_flags.get("liquidity_sweep_aligned")),
         "displacement_aligned": bool(smc_flags.get("displacement_aligned")),
         "choch_against_direction": bool(smc_flags.get("choch_against_direction")),
+        "selected_zone_id": scenario.get("entry_zone_id"),
+        "selected_zone_quality_score": _safe_int(
+            scenario.get("entry_zone_quality_score")
+        ),
+        "selected_zone_relevance_score": _safe_int(
+            scenario.get("entry_zone_relevance_score")
+        ),
+        "selected_zone_setup_score": _safe_int(
+            scenario.get("entry_zone_setup_score")
+        ),
+        "selected_zone_scoring_version": scenario.get(
+            "entry_zone_scoring_version"
+        ),
+        "smc_score_breakdown": (
+            dict(scenario.get("smc_score_breakdown"))
+            if isinstance(scenario.get("smc_score_breakdown"), dict)
+            else {}
+        ),
         "reason_codes": list(analysis.get("reason_codes", []) or [])[:8],
         "warning_codes": list(analysis.get("warning_codes", []) or [])[:8],
         "block_codes": list(analysis.get("block_codes", []) or [])[:8],

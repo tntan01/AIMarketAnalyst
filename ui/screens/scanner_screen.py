@@ -3,7 +3,12 @@ from __future__ import annotations
 from config.constants import SUPPORTED_SYMBOLS
 from controllers .scanner_controller import ScannerController 
 from core .scanner import ScannerRequest
+from core.backtest_config import (
+    analysis_thresholds_for_symbol,
+    serialize_backtest_config,
+)
 from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot
+from core.reason_codes import codes_to_messages
 from PyQt6 .QtCore import QAbstractTableModel ,QEvent ,QModelIndex ,QRect ,QSize ,Qt ,QTimer
 from PyQt6 .QtGui import QColor ,QIcon
 from PyQt6 .QtWidgets import (
@@ -39,14 +44,16 @@ class ScannerTableModel (QAbstractTableModel ):
     COLUMNS =[
     ("rank","STT"),
     ("symbol","Mã"),
-    ("scanner_group","Nhóm"),
-    ("direction_bias","Hướng"),
+    ("candidate_status","Trạng thái"),
+    ("selected_side","Hướng"),
     ("market_regime","Chế độ TT"),
-    ("price_vs_zone","Entry"),
-    ("m15_quality","M15"),
-    ("opportunity_score","Điểm"),
+    ("setup_score","Setup"),
+    ("opportunity_rank","Cơ hội"),
+    ("evidence_confidence","Bằng chứng"),
+    ("execution_readiness","Thực thi"),
     ("expected_effective_rr","R:R thực"),
-    ("macro_bias","Vĩ mô"),
+    ("auto_trade_branch","Nhánh"),
+    ("strategy_config_status","Config"),
     ("detail_action","Chi tiết"),
     ]
 
@@ -56,6 +63,14 @@ class ScannerTableModel (QAbstractTableModel ):
     MACRO_BIAS_TEXT ={"aligned":'Thuận',"neutral":'Trung tính',"divergent":'Ngược'}
     ENTRY_ZONE_TEXT ={"in_zone":"Trong vùng","near_zone":"Gần vùng","far":"Còn xa","unknown":"Chưa có vùng"}
     GROUP_TEXT ={"ready_now":"Sẵn sàng ngay","waiting_confirmation":"Chờ xác nhận","watch_zone":"Theo dõi","blocked":"Bị chặn"}
+    STATUS_TEXT ={
+        "READY_NOW":"Sẵn sàng",
+        "WAITING_CONFIRMATION":"Chờ xác nhận",
+        "WATCH_ZONE":"Theo dõi",
+        "OUT_OF_STRATEGY":"Ngoài chiến lược",
+        "BLOCKED":"Bị chặn",
+        "DATA_UNAVAILABLE":"Thiếu dữ liệu",
+    }
     ENTRY_STATUS_TEXT ={
         "confirmed_entry":"Đã xác nhận",
         "ready":"Đã xác nhận",
@@ -90,7 +105,7 @@ class ScannerTableModel (QAbstractTableModel ):
         if role ==Qt .ItemDataRole .DisplayRole :
             return self ._display_value (key ,value ,row )
         if role ==Qt .ItemDataRole .TextAlignmentRole :
-            if key in {"rank","scanner_group","direction_bias","market_regime","price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias","detail_action"}:
+            if key !="symbol":
                 return Qt .AlignmentFlag .AlignCenter
             return Qt .AlignmentFlag .AlignVCenter |Qt .AlignmentFlag .AlignLeft 
         if role ==Qt .ItemDataRole .BackgroundRole :
@@ -105,7 +120,7 @@ class ScannerTableModel (QAbstractTableModel ):
             if key =="price_vs_zone":
                 entry_status_val =row .get ("entry_status")if row else None
                 return self ._entry_status_tooltip (entry_status_val ,row )
-            if key =="opportunity_score":
+            if key in {"opportunity_score","opportunity_rank"}:
                 return self ._opportunity_score_tooltip (row )
             if key in {"journal_sample_size","journal_expectancy_r"}:
                 feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
@@ -196,8 +211,12 @@ class ScannerTableModel (QAbstractTableModel ):
         return not self._has_real_plan(row)
 
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
-        if self._is_fallback_row(row) and key in {"price_vs_zone","m15_quality","opportunity_score","expected_effective_rr","macro_bias"}:
+        if self._is_fallback_row(row) and key in {"price_vs_zone","m15_quality","macro_bias"}:
             return "--"
+        if key =="candidate_status":
+            return self.STATUS_TEXT.get(str(value or "").upper(), str(value or "--"))
+        if key =="selected_side":
+            return self.BIAS_TEXT.get(str(value or "").lower(), str(value or "--"))
         if key =="direction_bias":
             return self ._format_direction_bias (value )
         if key =="price_vs_zone":
@@ -235,8 +254,30 @@ class ScannerTableModel (QAbstractTableModel ):
             return f"{float(value):.2f}R" if isinstance(value, (int, float)) else "--"
         if key =="final_score":
             return str (int (value ))if isinstance (value ,(int ,float ))else "--"
+        if key =="setup_score":
+            return str (int (value ))if isinstance (value ,(int ,float ))else "--"
         if key =="opportunity_score":
             return str (int (value ))if isinstance (value ,(int ,float ))else "--"
+        if key =="opportunity_rank":
+            return f"{float(value):.0f}" if isinstance(value, (int, float)) else "--"
+        if key in {"evidence_confidence","execution_readiness"}:
+            return f"{float(value):.0f}%" if isinstance(value, (int, float)) else "--"
+        if key =="auto_trade_branch":
+            return {
+                "BACKTEST_VALIDATED":"Backtest",
+                "DEFAULT_RULES":"Mặc định",
+                "BACKTEST_INVALID":"BT lỗi",
+            }.get(str(value or ""), str(value or "--"))
+        if key =="strategy_config_status":
+            return {
+                "VALIDATED":"Hợp lệ",
+                "NOT_CONFIGURED":"Mặc định",
+                "DRAFT":"Bản nháp",
+                "EXPIRED":"Hết hạn",
+                "INVALID":"Không hợp lệ",
+                "VERSION_MISMATCH":"Sai phiên bản",
+                "DISABLED":"Đã tắt",
+            }.get(str(value or "").upper(), str(value or "--"))
         if key =="scanner_group":
             return self .GROUP_TEXT .get (str (value ),str (value or "--"))
         if key =="entry_status":
@@ -266,6 +307,39 @@ class ScannerTableModel (QAbstractTableModel ):
         return str (value if value is not None else "--")
 
     def _foreground (self ,row :dict [str ,object ],key :str ):
+        if key =="candidate_status":
+            return {
+                "READY_NOW":QColor ("#10b981"),
+                "WAITING_CONFIRMATION":QColor ("#f59e0b"),
+                "WATCH_ZONE":QColor ("#ea580c"),
+                "OUT_OF_STRATEGY":QColor ("#94a3b8"),
+                "BLOCKED":QColor ("#e11d48"),
+                "DATA_UNAVAILABLE":QColor ("#64748b"),
+            }.get(str(row.get(key, "")).upper())
+        if key =="selected_side":
+            return {
+                "buy":QColor ("#ea580c"),
+                "sell":QColor ("#f43f5e"),
+            }.get(str(row.get(key, "")).lower())
+        if key in {"opportunity_rank","setup_score","evidence_confidence","execution_readiness"}:
+            try:
+                value = float(row.get(key))
+            except (TypeError, ValueError):
+                return QColor("#94a3b8")
+            if value >= 70:
+                return QColor("#10b981")
+            if value >= 40:
+                return QColor("#f59e0b")
+            return QColor("#94a3b8")
+        if key =="strategy_config_status":
+            return {
+                "VALIDATED":QColor("#10b981"),
+                "NOT_CONFIGURED":QColor("#94a3b8"),
+                "DRAFT":QColor("#f59e0b"),
+                "EXPIRED":QColor("#e11d48"),
+                "INVALID":QColor("#e11d48"),
+                "VERSION_MISMATCH":QColor("#e11d48"),
+            }.get(str(row.get(key, "")).upper(), QColor("#94a3b8"))
         if key =="scanner_group":
             group =str (row .get ("scanner_group",""))
             return {
@@ -410,6 +484,17 @@ class ScannerTableModel (QAbstractTableModel ):
         final_str = f"{int(final)}" if isinstance(final, (int, float)) else "--"
         breakdown = row.get("ranking_score_breakdown")
         if isinstance(breakdown, dict):
+            if "setup_component" in breakdown:
+                return (
+                    f"Opportunity Rank: {float(row.get('opportunity_rank', 0) or 0):.1f}/100\n"
+                    f"Setup: {float(breakdown.get('setup_component', 0) or 0):.1f}"
+                    f" | RR: {float(breakdown.get('rr_component', 0) or 0):.1f}"
+                    f" | Vị trí: {float(breakdown.get('proximity_component', 0) or 0):.1f}\n"
+                    f"Bằng chứng: {float(breakdown.get('evidence_component', 0) or 0):.1f}"
+                    f" | Thực thi: {float(breakdown.get('execution_component', 0) or 0):.1f}"
+                    f" | Phạt: {float(breakdown.get('penalty_component', 0) or 0):.1f}\n"
+                    f"Trạng thái: {breakdown.get('status', '--')}"
+                )
             base = breakdown.get("base_final_score", "?")
             prox = breakdown.get("proximity_bonus", 0)
             ready = breakdown.get("readiness_bonus", 0)
@@ -474,6 +559,9 @@ class ScannerTableModel (QAbstractTableModel ):
 
 
 class ScannerScreen (QWidget ):
+    # Product safety lock: Scanner may analyze and show manual candidates, but
+    # it must not request automatic MT5 execution from the UI.
+    AUTO_TRADE_UI_ENABLED =False
     # Dynamically resolved from COLUMNS
     SHORT_REASON_COL =12  # overridden in __init__
     TABLE_CELL_HORIZONTAL_PADDING =24
@@ -578,9 +666,11 @@ class ScannerScreen (QWidget ):
         self.auto_trade_check = QPushButton("🤖 Tự động vào lệnh MT5")
         self.auto_trade_check.setObjectName("AutoTradeToggle")
         self.auto_trade_check.setCheckable(True)
-        self.auto_trade_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_trade_check.setCursor(Qt.CursorShape.ArrowCursor)
         self .auto_trade_check .setToolTip (
-            "Chỉ dùng khi quét tự động. Khi bật, hệ thống có thể đặt lệnh MT5 cho setup sẵn sàng."
+            "Chức năng tự động vào lệnh MT5 đang bị vô hiệu hóa. "
+            "Scanner sẽ không tự gửi lệnh; thao tác vào lệnh thủ công vẫn "
+            "phải qua các cổng an toàn."
         )
         self .auto_trade_check .setChecked (False )
         self .auto_trade_check .toggled .connect (self ._update_auto_trade_toggle_style )
@@ -612,7 +702,7 @@ class ScannerScreen (QWidget ):
 
         # ---- Status backing labels (not added to UI, used for summary) ----
         self .status_labels :dict [str ,QLabel ]={}
-        for title in ("MT5","Đã quét","AI đã gọi","Telegram","Lần quét gần nhất"):
+        for title in ("MT5","Đã quét","AI đã gọi","Telegram","Rollout","Lần quét gần nhất"):
             self .status_labels [title ]=QLabel ("--")
         self .status_summary_label =QLabel ("--")
         self .status_summary_label .setObjectName ("HelperText")
@@ -646,14 +736,18 @@ class ScannerScreen (QWidget ):
         scanned =self .status_labels .get ("Đã quét",QLabel ("--")).text ()
         ai =self .status_labels .get ("AI đã gọi",QLabel ("--")).text ()
         last =self .status_labels .get ("Lần quét gần nhất",QLabel ("--")).text ()
+        rollout =self .status_labels .get ("Rollout",QLabel ("--")).text ()
         parts =[f"MT5: {mt5 }",f"Đã quét: {scanned }",f"AI: {ai }"]
+        if rollout not in ("--",""):
+            parts .append (f"Rollout: {rollout }")
         if last not in ("--",""):
             parts .append (f"Lần quét: {last }")
         self .status_summary_label .setText ("  •  ".join (parts ))
 
     def _auto_trade_enabled (self )->bool :
         return bool (
-            hasattr (self ,"scan_mode_combo")
+            self .AUTO_TRADE_UI_ENABLED
+            and hasattr (self ,"scan_mode_combo")
             and hasattr (self ,"auto_trade_check")
             and self .scan_mode_combo .currentData ()=="auto"
             and self .auto_trade_check .isChecked ()
@@ -663,8 +757,9 @@ class ScannerScreen (QWidget ):
         if not hasattr (self ,"auto_trade_check"):
             return
         is_auto_mode =bool (hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto")
-        self .auto_trade_check .setEnabled (is_auto_mode )
-        if not is_auto_mode and self .auto_trade_check .isChecked ():
+        can_enable =bool (self .AUTO_TRADE_UI_ENABLED and is_auto_mode )
+        self .auto_trade_check .setEnabled (can_enable )
+        if not can_enable and self .auto_trade_check .isChecked ():
             self .auto_trade_check .setChecked (False )
         self ._update_auto_trade_toggle_style ()
 
@@ -718,7 +813,25 @@ class ScannerScreen (QWidget ):
 
         # Build dialog
         dlg = QDialog(self)
-        title_text = "Lệnh đã vào MT5" if auto_trade_enabled else "Lệnh sẽ được khớp"
+        rollout_policy = (
+            scan_result.get("rollout_policy")
+            if isinstance(scan_result.get("rollout_policy"), dict)
+            else {}
+        )
+        rollout_stage = str(
+            rollout_policy.get("stage", "") or ""
+        ).upper()
+        rollout_blocks_orders = (
+            rollout_policy.get("kill_switch") is True
+            or rollout_stage in {"DISABLED", "SHADOW"}
+        )
+        title_text = (
+            f"Kết quả rollout {rollout_stage}"
+            if rollout_blocks_orders
+            else "Lệnh đã vào MT5"
+            if auto_trade_enabled
+            else "Lệnh sẽ được khớp"
+        )
         dlg.setWindowTitle(f"📋 {title_text}")
         dlg.setMinimumSize(940, 560)
         dlg.resize(980, 620)
@@ -735,239 +848,68 @@ class ScannerScreen (QWidget ):
             from PyQt6.QtWidgets import QApplication
             QApplication.processEvents()
 
-            symbol = order_info.get("symbol")
-            broker_symbol = order_info.get("broker_symbol")
-            side = order_info.get("side")
-            volume = order_info.get("volume")
-            stop_loss = order_info.get("stop_loss")
-            take_profit = order_info.get("take_profit")
-
-            # Validate required numeric fields
+            # Manual and automatic orders share the same Phase-3 realtime
+            # revalidation path.  The controller recalculates volume from the
+            # live bid/ask and returns structured block codes on failure.
             try:
-                vol_f = float(volume or 0.0)
-                sl_f = float(stop_loss) if stop_loss is not None else 0.0
-                tp_f = float(take_profit) if take_profit is not None else 0.0
-            except (TypeError, ValueError):
-                QMessageBox.warning(dlg, "Lỗi dữ liệu",
-                    f"Dữ liệu lệnh {symbol} không hợp lệ (volume/SL/TP).")
-                btn.setEnabled(True)
-                btn.setText("⚡ Vào lệnh")
-                btn.setStyleSheet(active_btn_style)
-                return
-            if vol_f <= 0 or sl_f <= 0 or tp_f <= 0:
-                QMessageBox.warning(dlg, "Lỗi dữ liệu",
-                    f"Dữ liệu lệnh {symbol} không hợp lệ (volume/SL/TP phải > 0).\n"
-                    f"Vol={vol_f}, SL={sl_f}, TP={tp_f}")
-                btn.setEnabled(True)
-                btn.setText("⚡ Vào lệnh")
-                btn.setStyleSheet(active_btn_style)
-                return
-
-            # Tính lại lot ngay trước khi vào lệnh.
-            # Dùng quote_to_usd_rate mới nhất; nếu không lấy được thì fallback
-            # về volume từ scan (đã được tính đúng lúc MT5 còn kết nối).
-            try:
-                settings = self.settings_service.load()
-                entry_zone = order_info.get("entry_zone")
-                if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                    entry_price = (float(entry_zone[0]) + float(entry_zone[1])) / 2
-                else:
-                    entry_price = float(order_info.get("entry_price") or 0)
-                if entry_price <= 0:
-                    current = self.mt5.current_price(symbol, side)
-                    entry_price = float(current) if current else 0.0
-                balance = float(settings.trading.account_balance or 0)
-                risk_pct = float(settings.trading.default_risk_percent or 1.0)
-                contract_override = settings.trading.contract_size_override
-                if isinstance(contract_override, dict):
-                    contract = float(contract_override.get(symbol, 100000))
-                elif isinstance(contract_override, (int, float)) and contract_override > 0:
-                    contract = float(contract_override)
-                else:
-                    contract = 100000.0
-                lot_step = float(settings.trading.lot_step or 0.01)
-                min_lot = float(settings.trading.minimum_lot or 0.01)
-                if entry_price > 0 and sl_f > 0:
-                    stop_distance = abs(entry_price - sl_f)
-                    if stop_distance > 0:
-                        quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-                        quote_to_usd = self.mt5.quote_to_usd_rate(quote_currency)
-                        vol_f = recalc_execution_lot(
-                            symbol=symbol,
-                            broker_symbol=broker_symbol or symbol,
-                            account_balance=balance,
-                            risk_percent=risk_pct,
-                            account_currency=getattr(settings.trading, 'account_currency', 'USD'),
-                            lot_step=lot_step,
-                            minimum_lot=min_lot,
-                            contract_size_override=contract,
-                            entry_price=entry_price,
-                            stop_loss=sl_f,
-                            quote_to_usd_rate=quote_to_usd,
-                            fallback_lot=float(volume or 0.0),
-                        )
-            except Exception:
-                pass  # giữ nguyên vol_f từ bước validate
-
-            if not broker_symbol:
-                try:
-                    available = self.mt5.available_symbols()
-                    broker_symbol = self.mt5.resolve_symbol(symbol, available)
-                except Exception:
-                    broker_symbol = None
-
-            if not broker_symbol:
-                QMessageBox.warning(dlg, "Lỗi vào lệnh", f"Không tìm thấy mã broker cho {symbol}")
-                btn.setEnabled(True)
-                btn.setText("⚡ Vào lệnh")
-                btn.setStyleSheet(active_btn_style)
-                return
-
-            # --- Backtest config + distance gate checks ---
-            gate_blocked = False
-            try:
-                settings = self.settings_service.load()
-                # Normalize symbol format: rows use "USDCHF", settings use "USD/CHF"
-                sym_cfg = settings.trading.symbol_settings.get(symbol)
-                if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
-                    slash_key = symbol[:3] + "/" + symbol[3:]
-                    sym_cfg = settings.trading.symbol_settings.get(slash_key)
-                if sym_cfg and sym_cfg.backtest:
-                    # Regime check
-                    cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
-                    row_regime = str(order_info.get("market_regime", "")).strip().lower()
-                    if cfg_regime and row_regime and row_regime != cfg_regime:
-                        QMessageBox.warning(dlg, "Không đạt điều kiện vào lệnh",
-                            f"{symbol}: chế độ thị trường hiện tại ({row_regime}) "
-                            f"không khớp cấu hình backtest ({cfg_regime}).")
-                        gate_blocked = True
-
-                    # Side check
-                    if not gate_blocked:
-                        cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
-                        order_side = str(order_info.get("side", "")).strip().lower()
-                        if cfg_side in ("buy", "sell") and order_side != cfg_side:
-                            QMessageBox.warning(dlg, "Không đạt điều kiện vào lệnh",
-                                f"{symbol}: hướng lệnh ({order_side}) không khớp "
-                                f"cấu hình backtest ({cfg_side}).")
-                            gate_blocked = True
-
-                    # Min RR check
-                    if not gate_blocked:
-                        cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
-                        if cfg_min_rr > 0:
-                            row_rr = order_info.get("expected_effective_rr")
-                            try:
-                                row_rr_f = float(row_rr) if row_rr is not None else 0.0
-                            except (TypeError, ValueError):
-                                row_rr_f = 0.0
-                            if row_rr_f < cfg_min_rr:
-                                QMessageBox.warning(dlg, "Không đạt điều kiện vào lệnh",
-                                    f"{symbol}: Expected RR ({row_rr_f:.2f}) thấp hơn "
-                                    f"ngưỡng backtest ({cfg_min_rr:.2f}).")
-                                gate_blocked = True
-
-                # Entry zone check: price must be inside entry zone
-                if not gate_blocked:
-                    entry_zone = order_info.get("entry_zone")
-                    if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                        try:
-                            entry_low = float(entry_zone[0])
-                            entry_high = float(entry_zone[1])
-                        except (TypeError, ValueError):
-                            entry_low = entry_high = 0.0
-
-                        if entry_low > 0 and entry_high > 0:
-                            try:
-                                import MetaTrader5 as mt5
-                                tick = mt5.symbol_info_tick(broker_symbol)
-                                order_side = str(order_info.get("side", "")).strip().lower()
-                                current_price = float(tick.ask) if order_side == "buy" else float(tick.bid)
-                            except Exception:
-                                current_price = float(order_info.get("entry_price", 0) or 0)
-
-                            if current_price > 0 and not (entry_low <= current_price <= entry_high):
-                                QMessageBox.warning(dlg, "Giá ngoài vùng entry",
-                                    f"{symbol}: giá hiện tại {current_price:.5f} nằm ngoài vùng entry "
-                                    f"[{entry_low:.5f}–{entry_high:.5f}].\n\n"
-                                    f"Chỉ vào lệnh khi giá nằm trong vùng entry.")
-                                gate_blocked = True
-            except Exception:
-                pass  # If gate check fails for any reason, allow the order
-
-            if gate_blocked:
-                btn.setEnabled(True)
-                btn.setText("⚡ Vào lệnh")
-                btn.setStyleSheet(active_btn_style)
-                return
-
-            try:
-                # Pre-check: MT5 terminal algo trading status
-                try:
-                    import MetaTrader5 as mt5
-                    term_info = mt5.terminal_info()
-                    if term_info and not getattr(term_info, "trade_allowed", True):
-                        QMessageBox.warning(dlg, "Không thể vào lệnh",
-                            f"MT5 đang chặn giao dịch tự động (Algo Trading).\n\n"
-                            f"Vào MT5 → Tools → Options → Expert Advisors → "
-                            f"tích chọn 'Allow Algo Trading'.\n\n"
-                            f"Sau đó thử lại.")
-                        btn.setEnabled(True)
-                        btn.setText("⚡ Vào lệnh")
-                        btn.setStyleSheet(active_btn_style)
-                        return
-                except Exception:
-                    pass  # terminal_info() not available, proceed anyway
-
-                if self.mt5.has_open_position_or_order(broker_symbol):
-                    QMessageBox.information(dlg, "Thông báo", f"Đã có lệnh/position cho {symbol} ({broker_symbol}).")
-                    btn.setText("Đã có lệnh")
-                    btn.setStyleSheet(disabled_btn_style)
-                    return
-
-                order_res = self.mt5.place_market_order(
-                    symbol=symbol,
-                    broker_symbol=broker_symbol,
-                    side=side,
-                    volume=vol_f,
-                    stop_loss=sl_f,
-                    take_profit=tp_f,
-                    comment=f"AMA Manual {symbol}",
+                execution = self.scanner_controller.execute_order_candidate(
+                    order_info,
+                    comment=f"AMA Manual {order_info.get('symbol') or '--'}",
                 )
+            except Exception as exc:
+                execution = {
+                    "success": False,
+                    "message": str(exc),
+                    "revalidation": {
+                        "allowed": False,
+                        "block_codes": ["EXECUTION_REVALIDATION_FAILED"],
+                    },
+                }
 
-                if order_res and getattr(order_res, "success", False):
-                    QMessageBox.information(dlg, "Thành công",
-                        f"Đặt lệnh {side.upper()} {symbol} thành công!\n"
-                        f"ID: {getattr(order_res, 'order_id', '--')}")
-                    btn.setText("Đã vào lệnh")
-                    btn.setEnabled(False)
-                    btn.setStyleSheet(disabled_btn_style)
-                else:
-                    msg = str(getattr(order_res, "message", "") or "MT5 từ chối lệnh.")
-                    # Detect common MT5 issues and give actionable guidance
-                    hint = ""
-                    msg_lower = msg.lower()
-                    if "autotrading disabled" in msg_lower:
-                        hint = ("\n\nMT5 đang chặn giao dịch tự động.\n"
-                                "Vào MT5 → Tools → Options → Expert Advisors → "
-                                "tích chọn 'Allow Algo Trading'.")
-                    elif "trade is disabled" in msg_lower:
-                        hint = ("\n\nMã này có thể đã bị vô hiệu hóa giao dịch trong MT5.\n"
-                                "Kiểm tra Market Watch: chuột phải lên mã → Trade.")
-                    elif "not enough money" in msg_lower:
-                        hint = "\n\nTài khoản không đủ margin/ký quỹ. Giảm khối lượng hoặc nạp thêm."
-                    elif "off quotes" in msg_lower or "requote" in msg_lower:
-                        hint = "\n\nThị trường biến động mạnh. Thử lại sau vài giây."
-                    QMessageBox.warning(dlg, "Đặt lệnh thất bại",
-                        f"Đặt lệnh {symbol} thất bại:\n{msg}{hint}")
-                    btn.setEnabled(True)
-                    btn.setText("⚡ Thử lại")
-                    btn.setStyleSheet(active_btn_style)
-            except Exception as e:
-                QMessageBox.critical(dlg, "Lỗi hệ thống", f"Lỗi khi đặt lệnh {symbol}:\n{str(e)}")
+            if execution.get("success"):
+                QMessageBox.information(
+                    dlg,
+                    "Thành công",
+                    (
+                        f"Đặt lệnh {str(execution.get('side') or '').upper()} "
+                        f"{execution.get('symbol') or '--'} thành công!\n"
+                        f"ID: {execution.get('order_id') or '--'}"
+                    ),
+                )
+                btn.setText("Đã vào lệnh")
+                btn.setEnabled(False)
+                btn.setStyleSheet(disabled_btn_style)
+            else:
+                validation = execution.get("revalidation")
+                block_codes = (
+                    validation.get("block_codes", [])
+                    if isinstance(validation, dict)
+                    else []
+                )
+                portfolio = execution.get("portfolio_guard")
+                portfolio_codes = (
+                    portfolio.get("block_codes", [])
+                    if isinstance(portfolio, dict)
+                    else []
+                )
+                detail = ", ".join(
+                    dict.fromkeys(
+                        str(code)
+                        for code in (*block_codes, *portfolio_codes)
+                    )
+                )
+                QMessageBox.warning(
+                    dlg,
+                    "Không thể vào lệnh",
+                    (
+                        f"{execution.get('message') or 'Lệnh không vượt qua cổng thực thi.'}"
+                        + (f"\n\nMã chặn: {detail}" if detail else "")
+                    ),
+                )
                 btn.setEnabled(True)
-                btn.setText("⚡ Vào lệnh")
+                btn.setText("⚡ Thử lại")
                 btn.setStyleSheet(active_btn_style)
+            return
 
         def create_order_button(row_order: dict) -> QWidget:
             btn_container = QWidget()
@@ -1254,145 +1196,28 @@ class ScannerScreen (QWidget ):
                 })
             return result
 
-        # Not auto-trade: compute would-be orders from scan rows
-        # Apply the SAME gates as _execute_auto_trades + _is_auto_trade_candidate
-        try:
-            settings = self.settings_service.load()
-        except Exception:
-            settings = None
-
+        # Reuse the candidate payload captured by the backend scan decision.
         result: list[dict] = []
         for row in rows:
-            analysis = row.get("analysis_result")
-            if not isinstance(analysis, dict):
+            stored = row.get("candidate_order_payload")
+            if not isinstance(stored, dict):
                 continue
-            if row.get("scanner_group") == "blocked":
-                continue
-            if str(row.get("trade_permission", "")).strip().lower() == "blocked":
-                continue
-            journal = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
-            if journal.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
-                continue
-
-            best_side = str(row.get("best_side", ""))
-            if best_side not in ("buy", "sell"):
-                continue
-
-            symbol = str(row.get("symbol", "--"))
-
-            # --- Backtest config gate (same as _is_auto_trade_candidate) ---
-            if settings:
-                sym_cfg = settings.trading.symbol_settings.get(symbol)
-                if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
-                    slash_key = symbol[:3] + "/" + symbol[3:]
-                    sym_cfg = settings.trading.symbol_settings.get(slash_key)
-
-                if sym_cfg and sym_cfg.backtest:
-                    # Regime
-                    cfg_regime = (sym_cfg.auto_trade_regime or "").strip().lower()
-                    row_regime = str(row.get("market_regime", "")).strip().lower()
-                    if cfg_regime and row_regime and row_regime != cfg_regime:
-                        continue
-
-                    # Side
-                    cfg_side = (sym_cfg.auto_trade_side or "").strip().lower()
-                    if cfg_side in ("buy", "sell") and best_side != cfg_side:
-                        continue
-
-                    # Min RR
-                    cfg_min_rr = float(sym_cfg.min_expected_rr or 0)
-                    if cfg_min_rr > 0:
-                        row_rr = row.get("expected_effective_rr")
-                        try:
-                            row_rr_f = float(row_rr) if row_rr is not None else 0.0
-                        except (TypeError, ValueError):
-                            row_rr_f = 0.0
-                        if row_rr_f < cfg_min_rr:
-                            continue
-
-                    # Min Score
-                    cfg_min_score = int(sym_cfg.min_score or 0)
-                    if cfg_min_score > 0:
-                        best_score = int(row.get("best_score", 0) or 0)
-                        if best_score < cfg_min_score:
-                            continue
-
-            scenarios = analysis.get("scenarios", [])
-            if not isinstance(scenarios, list):
-                continue
-            scenario = next((s for s in scenarios if isinstance(s, dict) and s.get("type") == best_side), None)
-            if not scenario:
-                continue
-            if scenario.get("entry_zone_source") == "fallback":
-                continue
-
-            entry_zone = scenario.get("entry_zone")
-            if isinstance(entry_zone, list) and len(entry_zone) >= 2:
-                entry_low = float(entry_zone[0])
-                entry_high = float(entry_zone[1])
-                ep = scenario.get("entry_price")
-                entry_price = float(ep) if ep is not None else (entry_high if best_side == "buy" else entry_low)
-            else:
-                entry_low = entry_high = 0.0
-                entry_price = None
-
-            # --- Entry zone check: price must be inside entry zone ---
-            technical = analysis.get("technical", {}) if isinstance(analysis, dict) else {}
-            if not isinstance(technical, dict):
-                technical = {}
-            current_price = float(technical.get("price", 0) or 0)
-
-            if entry_low > 0 and entry_high > 0 and current_price > 0:
-                if not (entry_low <= current_price <= entry_high):
-                    continue  # outside entry zone
-
-            take_profit = scenario.get("take_profit")
-            if isinstance(take_profit, list) and take_profit:
-                tp = float(take_profit[0])
-            else:
-                try:
-                    tp = float(take_profit)
-                except (TypeError, ValueError):
-                    tp = None
-
-            sl = scenario.get("stop_loss")
-            try:
-                sl = float(sl)
-            except (TypeError, ValueError):
-                sl = None
-
-            sizing = scenario.get("position_sizing", {})
-            if not isinstance(sizing, dict):
-                sizing = {}
-            vol = sizing.get("suggested_lot")
-
-            rr = scenario.get("risk_reward", "")
-            rr_range = scenario.get("risk_reward_range") or row.get("risk_reward_range")
-
-            action = str(row.get("scanner_action", ""))
-            note = {
-                "ready": "Sẵn sàng",
-                "watch": "Theo dõi",
-                "wait": "Chờ",
-            }.get(action, action)
-
-            # Extra fields for gate checks in manual order
-            result.append({
-                "symbol": str(row.get("symbol", "--")),
-                "broker_symbol": str(row.get("broker_symbol") or "").strip(),
-                "side": best_side,
-                "entry_price": entry_price,
-                "stop_loss": sl,
-                "take_profit": tp,
-                "volume": vol,
-                "risk_reward": rr,
-                "risk_reward_range": rr_range,
-                "note": note,
-                "entry_zone": entry_zone,
-                "market_regime": str(row.get("market_regime", "")),
-                "expected_effective_rr": row.get("expected_effective_rr"),
-                "best_score": row.get("best_score", 0),
+            payload = dict(stored)
+            payload.update({
+                "rank": row.get("rank"),
+                "candidate_status": row.get("candidate_status"),
+                "opportunity_rank": row.get("opportunity_rank"),
+                "evidence_confidence": row.get("evidence_confidence"),
+                "execution_readiness": row.get("execution_readiness"),
+                "strategy_branch": row.get("auto_trade_branch"),
+                "config_health": row.get("strategy_config_status"),
+                "ranking_version": row.get("ranking_version"),
+                "note": ScannerTableModel.STATUS_TEXT.get(
+                    str(row.get("candidate_status", "") or "").upper(),
+                    str(row.get("candidate_status", "") or ""),
+                ),
             })
+            result.append(payload)
 
         return result
 
@@ -1462,17 +1287,35 @@ class ScannerScreen (QWidget ):
         return frame 
 
     def _show_columns_help (self )->None :
-        selected = self.table.selectionModel().selectedRows()
-        if selected:
-            row_index = selected[0].row()
-            row_data = self.table_model.row_at(row_index)
-            if row_data:
-                dialog = ScannerRowExplanationDialog(row_data, self.table_model, self)
-                dialog.exec()
-                return
-
-        dialog =ScannerColumnsHelpDialog (self )
+        row = ScannerScreen._selected_scanner_row(self)
+        if row is None:
+            dialog = ScannerColumnsHelpDialog(self)
+        else:
+            dialog = ScannerRowExplanationDialog(
+                row,
+                self.table_model,
+                self,
+            )
         dialog .exec ()
+
+    def _selected_scanner_row(self) -> dict[str, object] | None:
+        """Return the selected result row, or ``None`` when selection is empty."""
+
+        table = getattr(self, "table", None)
+        table_model = getattr(self, "table_model", None)
+        if table is None or table_model is None:
+            return None
+        selection_model = table.selectionModel()
+        if selection_model is None:
+            return None
+        selected = selection_model.selectedRows()
+        if not selected:
+            return None
+        index = selected[0]
+        if not index.isValid():
+            return None
+        row = table_model.row_at(index.row())
+        return row if isinstance(row, dict) else None
 
     def refresh_status (self )->None :
         status =self .mt5 .connection_status ()
@@ -1585,25 +1428,9 @@ class ScannerScreen (QWidget ):
                 # Try with slash: 'USDCAD' -> 'USD/CAD'
                 slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
                 cfg = settings.trading.symbol_settings.get(slash_symbol)
-            if cfg and cfg.backtest:
-                # Nhanh 1: backtest=true — ghi de toan bo bang min_score
-                ready = cfg.min_score if cfg.min_score > 0 else cfg.decision_ready
-                thresholds[symbol] = {
-                    "ready": ready,
-                    "watch": 999,
-                    "wait": 999,
-                    "min_score_gap": 10,
-                    "min_rr": cfg.min_expected_rr or 0,
-                }
-            elif cfg:
-                # Nhanh 2: backtest=false — dung decision_ready/watch/wait
-                thresholds[symbol] = {
-                    "ready": cfg.decision_ready,
-                    "watch": cfg.decision_watch,
-                    "wait": cfg.decision_wait,
-                    "min_score_gap": 10,
-                    "min_rr": cfg.min_expected_rr or 1.3,
-                }
+            symbol_thresholds = analysis_thresholds_for_symbol(cfg)
+            if symbol_thresholds is not None:
+                thresholds[symbol] = symbol_thresholds
             # else: khong config -> DEFAULT_DECISION_THRESHOLDS (65/60/55)
         symbol_auto_trade: dict[str, dict] = {}
         for symbol in symbols:
@@ -1611,13 +1438,21 @@ class ScannerScreen (QWidget ):
             if cfg is None:
                 slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
                 cfg = settings.trading.symbol_settings.get(slash_symbol)
-            if cfg and cfg.backtest:
-                ready = cfg.min_score if cfg.min_score > 0 else cfg.decision_ready
-                symbol_auto_trade[symbol] = {
-                    "regime": cfg.auto_trade_regime,
-                    "side": cfg.auto_trade_side,
-                    "min_score": ready,
-                }
+            backtest_config = serialize_backtest_config(cfg, symbol=symbol)
+            if backtest_config is not None:
+                symbol_auto_trade[symbol] = backtest_config
+        feature_settings = getattr(settings, "features", None)
+        feature_flags = {
+            "scanner_architecture_v2": bool(
+                getattr(feature_settings, "scanner_architecture_v2", False)
+            ),
+            "auto_trade_v2": bool(
+                getattr(feature_settings, "auto_trade_v2", False)
+            ),
+            "backtest_config_v2": bool(
+                getattr(feature_settings, "backtest_config_v2", False)
+            ),
+        }
         request =ScannerRequest (
         symbols =symbols ,
         account_balance =settings .trading .account_balance ,
@@ -1628,6 +1463,10 @@ class ScannerScreen (QWidget ):
         min_scores =min_scores ,
         symbol_auto_trade =symbol_auto_trade ,
         thresholds =thresholds ,
+        feature_flags =feature_flags ,
+        smc_scoring_mode =str (
+            getattr (feature_settings ,"smc_scoring_mode","v2")or "v2"
+        ),
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
         self .scan_thread =thread 
@@ -1681,47 +1520,7 @@ class ScannerScreen (QWidget ):
         self .scan_result =result
         rows =list (result .get ("rows",[]))
 
-        # Sort: Group A (plan) > Group B (SMC no plan) > Group C (no SMC)
-        # Within each group, sort by opportunity_score descending
-        def _sort_key(row):
-            analysis = row.get("analysis_result") if isinstance(row.get("analysis_result"), dict) else {}
-            scenarios = analysis.get("scenarios", [])
-            has_plan = any(
-                isinstance(s, dict) and s.get("entry_zone_source") not in (None, "fallback")
-                for s in scenarios
-            ) if isinstance(scenarios, list) else False
-
-            smc = analysis.get("smc")
-            has_smc = False
-            if isinstance(smc, dict):
-                h4 = smc.get("H4", {})
-                if isinstance(h4, dict):
-                    for key in ("demand_zones", "supply_zones", "order_blocks", "fvg"):
-                        for z in h4.get(key, []):
-                            if isinstance(z, dict) and not z.get("broken") and z.get("zone_score", 0) >= 55:
-                                has_smc = True
-                                break
-
-            # Group 0=A (plan), 1=B (SMC no plan), 2=C (no SMC)
-            if has_plan:
-                group = 0
-            elif has_smc:
-                group = 1
-            else:
-                group = 2
-
-            score = row.get("opportunity_score")
-            if not isinstance(score, (int, float)):
-                score = row.get("final_score", 0)
-                if not isinstance(score, (int, float)):
-                    score = 0
-            return (group, -score)
-
-        rows.sort(key=_sort_key)
-
-        # Re-assign rank after sorting
-        for i, row in enumerate(rows):
-            row["rank"] = i + 1
+        # Backend owns the canonical order.  UI must not re-rank by plan/SMC.
 
         self .table_model .set_rows (rows )
         self .status_labels ['Đã quét'].setText (f"{result .get ('symbols_scanned',0 )} / {len (self ._selected_symbols ())}")
@@ -1734,6 +1533,34 @@ class ScannerScreen (QWidget ):
             telegram_text =f"{sent} alert, {len (errors )} lỗi"
         if "Telegram"in self .status_labels :
             self .status_labels ["Telegram"].setText (telegram_text )
+        rollout_policy = (
+            result.get("rollout_policy")
+            if isinstance(result.get("rollout_policy"), dict)
+            else {}
+        )
+        shadow_report = (
+            result.get("shadow_report")
+            if isinstance(result.get("shadow_report"), dict)
+            else {}
+        )
+        readiness = (
+            result.get("release_readiness")
+            if isinstance(result.get("release_readiness"), dict)
+            else {}
+        )
+        rollout_text = str(rollout_policy.get("stage", "--") or "--")
+        if shadow_report.get("enabled") is True:
+            rollout_text += (
+                f", Δ {shadow_report.get('disagreements', 0)}"
+                f"/{shadow_report.get('samples', 0)}"
+            )
+        rollout_text += (
+            ", gate đạt"
+            if readiness.get("ready") is True
+            else ", gate chờ"
+        )
+        if "Rollout" in self.status_labels:
+            self.status_labels["Rollout"].setText(rollout_text)
         if sent :
             self .scan_button .setText (f"Đã gửi {sent} alert Telegram")
         self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
@@ -1773,6 +1600,16 @@ class ScannerScreen (QWidget ):
 
     def _table_clicked (self ,index :QModelIndex )->None :
         self .detail_button .setEnabled (index .isValid ())
+        if hasattr(self, "help_button"):
+            symbol = ""
+            row = self.table_model.row_at(index.row()) if index.isValid() else None
+            if isinstance(row, dict):
+                symbol = str(row.get("symbol") or "")
+            self.help_button.setToolTip(
+                f"Giải thích chi tiết các thông số của {symbol}"
+                if symbol
+                else "Xem giải thích các thông số trong bảng"
+            )
         if index .column ()==len (ScannerTableModel .COLUMNS )-1 :
             self ._open_row_detail (index .row ())
 
@@ -1975,14 +1812,16 @@ class ScannerScreen (QWidget ):
         column_configs = {
             "rank": {"weight": 0, "min_width": 45},
             "symbol": {"weight": 1, "min_width": 75},
-            "scanner_group": {"weight": 3, "min_width": 110},
-            "direction_bias": {"weight": 4, "min_width": 110},
+            "candidate_status": {"weight": 3, "min_width": 115},
+            "selected_side": {"weight": 1, "min_width": 70},
             "market_regime": {"weight": 3, "min_width": 95},
-            "price_vs_zone": {"weight": 3, "min_width": 100},
-            "m15_quality": {"weight": 2, "min_width": 80},
-            "opportunity_score": {"weight": 0, "min_width": 60},
+            "setup_score": {"weight": 0, "min_width": 65},
+            "opportunity_rank": {"weight": 0, "min_width": 70},
+            "evidence_confidence": {"weight": 0, "min_width": 85},
+            "execution_readiness": {"weight": 0, "min_width": 75},
             "expected_effective_rr": {"weight": 0, "min_width": 75},
-            "macro_bias": {"weight": 0, "min_width": 70},
+            "auto_trade_branch": {"weight": 2, "min_width": 85},
+            "strategy_config_status": {"weight": 2, "min_width": 90},
             "detail_action": {"weight": 0, "min_width": 65},
         }
 
@@ -2178,13 +2017,13 @@ class ScannerRowExplanationDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        header_label = QLabel(f"Giải thích chi tiết cho cặp {symbol}")
+        header_label = QLabel(f"Tóm tắt dễ hiểu cho {symbol}")
         header_label.setObjectName("HelpHeaderLabel")
         header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header_label)
 
         self.table = QTableWidget()
-        self.table.setObjectName("DataTable")
+        self.table.setObjectName("EconTable")
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(["Thông số", "Giá trị", "Giải thích chi tiết"])
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -2199,6 +2038,13 @@ class ScannerRowExplanationDialog(QDialog):
         self.table.setFrameShape(QFrame.Shape.NoFrame)
 
         layout.addWidget(self.table)
+
+        self.technical_check = QCheckBox("Hiển thị thông tin kỹ thuật")
+        self.technical_check.setToolTip(
+            "Hiển thị ID, phiên bản, mã lý do và chi tiết phục vụ kiểm tra hệ thống."
+        )
+        self.technical_check.toggled.connect(self._toggle_technical_rows)
+        layout.addWidget(self.technical_check)
 
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 8, 0, 0)
@@ -2226,55 +2072,128 @@ class ScannerRowExplanationDialog(QDialog):
         return label
 
     def _populate_table(self):
-        keys_to_show = [
-            ("Hành động", "scanner_action", "action_reason"),
-            ("Xu hướng", "direction_bias", "bias_reason"),
-            ("Entry", "price_vs_zone", "entry_reason"),
-            ("Quyền", "trade_permission", "permission_reason"),
-            ("Điểm tốt nhất", "best_score", "best_reason"),
-            ("Điểm mua", "buy_score", "buy_reason"),
-            ("Điểm bán", "sell_score", "sell_reason"),
-            ("Vĩ mô", "macro_score", "macro_reason"),
-            ("Final", "final_score", "final_reason"),
-            ("Cơ hội", "opportunity_score", "opportunity_reason"),
-            ("Lý do chính", "short_reason", None),
+        row = self.row_data
+        next_action, next_action_explanation = self._next_action()
+        reason_summary = (
+            self._selected_reason_summary()
+            or "Hệ thống chưa cung cấp lý do cụ thể cho mã này."
+        )
+
+        visible_fields: list[tuple[str, str, object, str | None]] = [
+            ("Trạng thái", "candidate_status", row.get("candidate_status"), None),
+            ("Hướng đang đánh giá", "selected_side", row.get("selected_side"), None),
+            ("Nên làm gì", "_next_action", next_action, next_action_explanation),
+            ("Lý do chính", "_reason_summary", reason_summary, reason_summary),
+            ("Chất lượng thiết lập", "setup_score", row.get("setup_score"), None),
+            (
+                "Tỷ lệ lời/lỗ dự kiến",
+                "expected_effective_rr",
+                row.get("expected_effective_rr"),
+                None,
+            ),
+            (
+                "Mức sẵn sàng vào lệnh",
+                "execution_readiness",
+                row.get("execution_readiness"),
+                None,
+            ),
+            (
+                "Bối cảnh thị trường",
+                "market_regime",
+                row.get("market_regime"),
+                None,
+            ),
+            (
+                "Độ tin cậy dữ liệu lịch sử",
+                "evidence_confidence",
+                row.get("evidence_confidence"),
+                None,
+            ),
+            ("Điểm ưu tiên", "opportunity_rank", row.get("opportunity_rank"), None),
+            (
+                "Quy tắc đang áp dụng",
+                "_rule_source",
+                self._rule_source_value(),
+                self._rule_source_explanation(),
+            ),
         ]
 
-        self.row_items = []
-        for title, key, reason_key in keys_to_show:
-            val = self.row_data.get(key)
-            if val is None or val == "":
-                continue
-                
-            display_val = self.table_model._display_value(key, val, self.row_data)
-            color = self.table_model._foreground(self.row_data, key)
-            color_hex = color.name() if color else "#e5e7eb"
-            
-            reason_text = self.row_data.get(reason_key) if reason_key else None
-            
-            general_cases = ""
-            default_exp = ""
-            for help_item in ScannerColumnsHelpDialog.COLUMN_HELP:
-                if help_item["column"] == title:
-                    general_cases = help_item.get("cases", "")
-                    default_exp = help_item.get("meaning", "")
-                    break
-                    
-            explanation = ""
-            if reason_text:
-                explanation = str(reason_text)
-            else:
-                if general_cases:
-                    explanation = f"{default_exp}\n({general_cases})"
-                else:
-                    explanation = default_exp
-            
-            self.row_items.append({
-                "param": title,
-                "value": display_val,
-                "color_hex": color_hex,
-                "explanation": explanation
-            })
+        self.row_items = [
+            self._build_explanation_item(
+                title,
+                key,
+                value,
+                explanation_override=explanation,
+                technical=False,
+            )
+            for title, key, value, explanation in visible_fields
+        ]
+
+        technical_fields: list[tuple[str, str, object, str]] = [
+            (
+                "Vị trí xếp hạng",
+                "rank",
+                row.get("rank"),
+                self._explain_value(
+                    "rank",
+                    row.get("rank"),
+                    str(row.get("rank") or "--"),
+                ),
+            ),
+            (
+                "Mã giao dịch tại broker",
+                "_broker_symbol",
+                row.get("broker_symbol") or "--",
+                "Tên mã thực tế ứng dụng dùng khi giao tiếp với phần mềm giao dịch.",
+            ),
+            (
+                "Chi tiết tính điểm ưu tiên",
+                "_ranking_breakdown",
+                self._compact_breakdown(
+                    row.get("ranking_score_breakdown")
+                    if isinstance(row.get("ranking_score_breakdown"), dict)
+                    else {}
+                ),
+                "Các thành phần nội bộ tạo nên Điểm ưu tiên; không phải điều kiện cho phép vào lệnh.",
+            ),
+            (
+                "Đánh giá vùng giá",
+                "_zone_summary",
+                self._zone_summary(),
+                (
+                    "Gồm chất lượng nội tại của vùng, mức phù hợp với giá hiện "
+                    "tại và điểm tổng hợp. Chỉ dùng để phân tích sâu."
+                ),
+            ),
+            (
+                "ID vùng giá",
+                "selected_zone_id",
+                row.get("selected_zone_id") or "--",
+                "Định danh kỹ thuật dùng để truy vết cùng một vùng giá xuyên hệ thống.",
+            ),
+            (
+                "Phiên bản cách chấm vùng",
+                "entry_zone_scoring_version",
+                row.get("entry_zone_scoring_version") or "--",
+                "Phiên bản kỹ thuật giúp hệ thống không trộn kết quả được tính theo các quy tắc khác nhau.",
+            ),
+            (
+                "Mã lý do kỹ thuật",
+                "_reason_codes",
+                self._technical_reason_codes() or "--",
+                "Mã nội bộ dành cho kiểm thử và truy vết; người dùng nên đọc hàng Lý do chính ở phía trên.",
+            ),
+        ]
+        self.row_items.extend(
+            self._build_explanation_item(
+                title,
+                key,
+                value,
+                explanation_override=explanation,
+                technical=True,
+            )
+            for title, key, value, explanation in technical_fields
+        )
 
         # Check if light theme
         try:
@@ -2302,8 +2221,535 @@ class ScannerRowExplanationDialog(QDialog):
             self.table.setCellWidget(row, 0, param_label)
             self.table.setCellWidget(row, 1, val_label)
             self.table.setCellWidget(row, 2, exp_label)
+            self.table.setRowHidden(row, bool(item.get("technical")))
 
         QTimer.singleShot(10, self._sync_table_layout)
+
+    def _build_explanation_item(
+        self,
+        title: str,
+        key: str,
+        value: object,
+        *,
+        explanation_override: str | None,
+        technical: bool,
+    ) -> dict[str, object]:
+        if key in {column_key for column_key, _label in ScannerTableModel.COLUMNS}:
+            display_value = self.table_model._display_value(
+                key,
+                value,
+                self.row_data,
+            )
+            color = self.table_model._foreground(self.row_data, key)
+            color_hex = color.name() if color else "#e5e7eb"
+        else:
+            display_value = str(value if value not in (None, "") else "--")
+            color_hex = "#94a3b8" if technical else "#e5e7eb"
+        explanation = (
+            explanation_override
+            if explanation_override is not None
+            else self._explain_value(key, value, display_value)
+        )
+        return {
+            "param": title,
+            "value": display_value,
+            "color_hex": color_hex,
+            "explanation": explanation,
+            "technical": technical,
+        }
+
+    def _toggle_technical_rows(self, visible: bool) -> None:
+        for index, item in enumerate(self.row_items):
+            if item.get("technical"):
+                self.table.setRowHidden(index, not visible)
+        QTimer.singleShot(0, self._sync_table_layout)
+
+    def _explain_value(
+        self,
+        key: str,
+        value: object,
+        display_value: str,
+    ) -> str:
+        """Explain the actual value of one selected scanner row."""
+
+        row = self.row_data
+        if key == "rank":
+            return (
+                f"{display_value} là vị trí ưu tiên hiện tại của mã sau khi "
+                "phân loại trạng thái. Trong cùng trạng thái, hệ thống so sánh "
+                "Cơ hội, bằng chứng, mức sẵn sàng, R:R rồi mới dùng tên mã."
+            )
+        if key == "symbol":
+            broker_symbol = str(row.get("broker_symbol") or "").strip()
+            suffix = (
+                f" Broker symbol đang dùng là {broker_symbol}."
+                if broker_symbol
+                else ""
+            )
+            return (
+                f"{display_value} là mã giao dịch chuẩn đang được Scanner "
+                f"đánh giá.{suffix}"
+            )
+        if key == "candidate_status":
+            return self._explain_candidate_status(value, display_value)
+        if key == "selected_side":
+            side = str(value or "").strip().lower()
+            if side == "sell":
+                return (
+                    "Bán nghĩa là bộ chọn chiến lược đang đánh giá kịch bản bán. "
+                    "Điểm thiết lập, vùng vào lệnh, mức cắt lỗ, mục tiêu chốt lời "
+                    "và tỷ lệ lời/lỗ đều phải thuộc phía bán. Đây không phải yêu "
+                    "cầu bán ngay và cũng không khẳng định giá chắc chắn giảm."
+                )
+            if side == "buy":
+                return (
+                    "Mua nghĩa là bộ chọn chiến lược đang đánh giá kịch bản mua. "
+                    "Điểm thiết lập, vùng vào lệnh, mức cắt lỗ, mục tiêu chốt lời "
+                    "và tỷ lệ lời/lỗ đều phải thuộc phía mua. Đây không phải yêu "
+                    "cầu mua ngay và cũng không khẳng định giá chắc chắn tăng."
+                )
+            return (
+                "Chưa chọn được hướng Mua/Bán hợp lệ, nên mã này không có "
+                "candidate giao dịch hoàn chỉnh."
+            )
+        if key == "market_regime":
+            descriptions = {
+                "trend_up": "thị trường đang có cấu trúc xu hướng tăng",
+                "trending_up": "thị trường đang có cấu trúc xu hướng tăng",
+                "trend_down": "thị trường đang có cấu trúc xu hướng giảm",
+                "trending_down": "thị trường đang có cấu trúc xu hướng giảm",
+                "range": "thị trường đang dao động đi ngang",
+                "ranging": "thị trường đang dao động đi ngang",
+                "volatile": "biến động hiện tại cao và rủi ro thực thi lớn hơn",
+                "unknown": "dữ liệu chưa đủ để phân loại chế độ thị trường",
+            }
+            detail = descriptions.get(
+                str(value or "").lower(),
+                "đây là chế độ thị trường pipeline đang nhận diện",
+            )
+            return (
+                f"{display_value}: {detail}. Quy tắc đã kiểm chứng bằng dữ liệu "
+                "quá khứ chỉ được áp dụng khi bối cảnh này khớp cấu hình."
+            )
+        if key == "setup_score":
+            score = self._number(value)
+            min_score = self._strategy_threshold("min_score", 65.0)
+            relation = (
+                "đạt"
+                if score is not None and score >= min_score
+                else "chưa đạt"
+            )
+            score_text = f"{score:.0f}" if score is not None else "--"
+            return (
+                f"Điểm chất lượng {score_text}/100 {relation} mức yêu cầu "
+                f"{min_score:.0f}. Đây là đánh giá tổng hợp cho đúng hướng đã "
+                "chọn, nhưng vẫn phải vượt điều kiện an toàn và xác nhận điểm vào."
+            )
+        if key == "opportunity_rank":
+            score = self._number(value)
+            score_text = f"{score:.0f}/100" if score is not None else "--"
+            status = self.table_model._display_value(
+                "candidate_status",
+                row.get("candidate_status"),
+                row,
+            )
+            return (
+                f"Điểm ưu tiên {score_text} chỉ dùng để sắp xếp các mã đang có "
+                f"cùng trạng thái {status}; điểm này không thể tự nâng mã sang "
+                "trạng thái tốt hơn. Cách tính chi tiết nằm trong phần thông "
+                "tin kỹ thuật."
+            )
+        if key == "evidence_confidence":
+            score = self._number(value)
+            breakdown = (
+                row.get("ranking_score_breakdown")
+                if isinstance(row.get("ranking_score_breakdown"), dict)
+                else {}
+            )
+            source = self._evidence_source_text(
+                breakdown.get("evidence_source")
+                or row.get("evidence_source")
+                or "chưa có nguồn đủ mẫu"
+            )
+            return (
+                f"Độ tin cậy từ dữ liệu lịch sử là "
+                f"{score:.0f}%, nguồn: {source}. Đây không phải tỷ lệ thắng." if score is not None else
+                "Chưa có bằng chứng lịch sử đủ điều kiện; giá trị này không "
+                "phải tỷ lệ thắng."
+            )
+        if key == "execution_readiness":
+            score = self._number(value)
+            if score is None:
+                return "Chưa xác định được mức sẵn sàng thực thi."
+            interpretation = (
+                "đã sẵn sàng tại scan-time"
+                if score >= 100
+                else "đang chờ thêm xác nhận"
+                if score >= 60
+                else "chỉ nên theo dõi"
+                if score > 0
+                else "chưa có điều kiện thực thi"
+            )
+            return (
+                f"Mức sẵn sàng {score:.0f}% nghĩa là cơ hội này {interpretation}. "
+                "Đây không phải tỷ lệ thắng; hệ thống vẫn phải kiểm tra lại theo "
+                "giá mua và giá bán mới nhất trước khi đặt lệnh."
+            )
+        if key == "expected_effective_rr":
+            rr = self._number(value)
+            min_rr = self._strategy_threshold("min_rr", 1.3)
+            if rr is None:
+                return (
+                    "Chưa tính được R:R thực do thiếu entry, SL hoặc TP hợp lệ."
+                )
+            relation = "đạt" if rr >= min_rr else "chưa đạt"
+            return (
+                f"Tỷ lệ {rr:.1f} nghĩa là với mỗi 1 phần rủi ro, lợi nhuận kỳ "
+                f"vọng là {rr:.1f} phần. Mức này {relation} yêu cầu {min_rr:.1f}. "
+                "Hệ thống đã xét chênh lệch giá mua/bán và sẽ tính lại trước lệnh."
+            )
+        if key == "auto_trade_branch":
+            branch = str(value or "").upper()
+            if branch == "BACKTEST_VALIDATED":
+                return (
+                    "Đã kiểm chứng bằng dữ liệu quá khứ: hệ thống dùng các mức "
+                    "điểm và tỷ lệ lời/lỗ đã được kiểm tra cho mã này."
+                )
+            if branch == "DEFAULT_RULES":
+                return (
+                    "Mặc định: mã không có cấu hình Backtest hợp lệ nên dùng "
+                    "quy tắc chung của hệ thống và vẫn phải qua mọi điều kiện an toàn."
+                )
+            if branch == "BACKTEST_INVALID":
+                return (
+                    "Cấu hình kiểm chứng bị lỗi hoặc hết hiệu lực; cơ hội này "
+                    "không được dùng để tự động vào lệnh."
+                )
+            return "Chưa xác định được nhánh chiến lược của mã này."
+        if key == "strategy_config_status":
+            status = str(value or "").upper()
+            meanings = {
+                "VALIDATED": "cấu hình Backtest đã qua validation và còn hiệu lực",
+                "NOT_CONFIGURED": "không có cấu hình Backtest; dùng quy tắc mặc định",
+                "DRAFT": "cấu hình vẫn là bản nháp, chưa được dùng để giao dịch",
+                "EXPIRED": "cấu hình đã hết hạn và phải validation lại",
+                "INVALID": "cấu hình không đạt điều kiện an toàn",
+                "VERSION_MISMATCH": "phiên bản scorer/feature không khớp",
+                "DISABLED": "cấu hình đã bị tắt",
+            }
+            return (
+                f"{display_value}: "
+                f"{meanings.get(status, 'chưa có mô tả trạng thái config')}."
+            )
+        if key == "detail_action":
+            return (
+                "Bấm Xem hoặc nhấp đúp dòng để mở toàn bộ phân tích của mã: "
+                "scenario, vùng entry, SL/TP, gate, SMC, macro và reason codes."
+            )
+        return self._general_column_explanation(key)
+
+    def _explain_candidate_status(
+        self,
+        value: object,
+        display_value: str,
+    ) -> str:
+        status = str(value or "").strip().upper()
+        meanings = {
+            "READY_NOW": (
+                "đã khớp quy tắc giao dịch và đủ điều kiện tại thời điểm quét; "
+                "hệ thống vẫn phải kiểm tra an toàn và giá mới trước khi đặt lệnh"
+            ),
+            "WAITING_CONFIRMATION": (
+                "setup phù hợp nhưng còn thiếu trigger/xác nhận entry"
+            ),
+            "WATCH_ZONE": (
+                "có yếu tố đáng theo dõi nhưng chưa đủ điều kiện hành động"
+            ),
+            "OUT_OF_STRATEGY": (
+                "cơ hội này không khớp quy tắc giao dịch, chẳng hạn sai bối cảnh, "
+                "sai hướng, điểm chất lượng hoặc tỷ lệ lời/lỗ dưới mức yêu cầu, "
+                "hay chưa có kế hoạch hợp lệ; điều này không có nghĩa dữ liệu bị lỗi"
+            ),
+            "BLOCKED": (
+                "điều kiện an toàn đang chặn giao dịch, ví dụ dữ liệu chưa tốt, "
+                "chênh lệch giá bất thường, có tin mạnh hoặc giới hạn rủi ro"
+            ),
+            "DATA_UNAVAILABLE": (
+                "thiếu dữ liệu bắt buộc nên hệ thống không thể đánh giá an toàn"
+            ),
+        }
+        reason = self._selected_reason_summary()
+        suffix = f" Lý do của mã này: {reason}" if reason else ""
+        return (
+            f"{display_value} nghĩa là {meanings.get(status, 'trạng thái chưa được nhận diện')}."
+            f"{suffix}"
+        )
+
+    def _next_action(self) -> tuple[str, str]:
+        status = str(
+            self.row_data.get("candidate_status") or ""
+        ).strip().upper()
+        actions = {
+            "READY_NOW": (
+                "Chuẩn bị kế hoạch, chưa vào lệnh ngay",
+                (
+                    "Có thể mở màn hình chi tiết để kiểm tra vùng vào, cắt lỗ "
+                    "và chốt lời. Chỉ đặt lệnh sau khi hệ thống kiểm tra lại "
+                    "điều kiện an toàn và giá mới nhất."
+                ),
+            ),
+            "WAITING_CONFIRMATION": (
+                "Chờ tín hiệu xác nhận điểm vào",
+                (
+                    "Không vào lệnh sớm. Chờ tín hiệu xác nhận theo kế hoạch, "
+                    "thường từ khung thời gian vào lệnh."
+                ),
+            ),
+            "WATCH_ZONE": (
+                "Theo dõi, chưa hành động",
+                (
+                    "Chờ giá tiến gần hoặc đi vào vùng quan sát và chờ điều "
+                    "kiện xác nhận. Điểm cao không làm trạng thái này tự sẵn sàng."
+                ),
+            ),
+            "OUT_OF_STRATEGY": (
+                "Bỏ qua trong lần quét hiện tại",
+                (
+                    "Mã chưa khớp quy tắc giao dịch. Không cố vào lệnh; chờ "
+                    "lần quét sau khi điểm, bối cảnh hoặc tỷ lệ lời/lỗ thay đổi."
+                ),
+            ),
+            "BLOCKED": (
+                "Không giao dịch",
+                (
+                    "Một điều kiện an toàn đang chặn mã này. Cần xử lý nguyên "
+                    "nhân như dữ liệu, chênh lệch giá, tin tức hoặc giới hạn rủi ro."
+                ),
+            ),
+            "DATA_UNAVAILABLE": (
+                "Kiểm tra lại dữ liệu",
+                (
+                    "Chưa đủ dữ liệu để đánh giá an toàn. Kiểm tra kết nối phần "
+                    "mềm giao dịch, lịch sử giá và nguồn dữ liệu rồi quét lại."
+                ),
+            ),
+        }
+        return actions.get(
+            status,
+            (
+                "Chưa có hành động phù hợp",
+                "Hệ thống chưa nhận diện được trạng thái của mã này.",
+            ),
+        )
+
+    def _rule_source_value(self) -> str:
+        branch = str(
+            self.row_data.get("auto_trade_branch") or ""
+        ).strip().upper()
+        config = str(
+            self.row_data.get("strategy_config_status") or ""
+        ).strip().upper()
+        branch_text = {
+            "BACKTEST_VALIDATED": "Quy tắc đã kiểm chứng",
+            "DEFAULT_RULES": "Quy tắc mặc định",
+            "BACKTEST_INVALID": "Cấu hình kiểm chứng bị lỗi",
+        }.get(branch, "Chưa xác định quy tắc")
+        config_text = {
+            "VALIDATED": "còn hiệu lực",
+            "NOT_CONFIGURED": "không có cấu hình riêng",
+            "DRAFT": "bản nháp",
+            "EXPIRED": "đã hết hạn",
+            "INVALID": "không hợp lệ",
+            "VERSION_MISMATCH": "không khớp phiên bản",
+            "DISABLED": "đã tắt",
+        }.get(config, "chưa rõ tình trạng")
+        return f"{branch_text} • {config_text}"
+
+    def _rule_source_explanation(self) -> str:
+        branch = str(
+            self.row_data.get("auto_trade_branch") or ""
+        ).strip().upper()
+        if branch == "BACKTEST_VALIDATED":
+            return (
+                "Mã đang dùng ngưỡng điểm và tỷ lệ lời/lỗ đã được kiểm tra "
+                "trên dữ liệu quá khứ và còn hiệu lực."
+            )
+        if branch == "DEFAULT_RULES":
+            return (
+                "Mã chưa có cấu hình kiểm chứng riêng nên dùng ngưỡng chung "
+                "của hệ thống."
+            )
+        if branch == "BACKTEST_INVALID":
+            return (
+                "Có cấu hình kiểm chứng nhưng cấu hình không còn hợp lệ; hệ "
+                "thống không cho phép dùng nó để tự động vào lệnh."
+            )
+        return "Chưa xác định được nguồn quy tắc đang áp dụng."
+
+    def _zone_summary(self) -> str:
+        quality = self.row_data.get("entry_zone_quality_score")
+        relevance = self.row_data.get("entry_zone_relevance_score")
+        setup = self.row_data.get("entry_zone_setup_score")
+        if quality is None and relevance is None and setup is None:
+            return "Chưa có vùng giá SMC được chọn"
+        return (
+            f"Chất lượng={quality if quality is not None else '--'} • "
+            f"Phù hợp hiện tại={relevance if relevance is not None else '--'} • "
+            f"Tổng hợp={setup if setup is not None else '--'}"
+        )
+
+    def _technical_reason_codes(self) -> str:
+        values: list[str] = []
+        decision = (
+            self.row_data.get("scanner_candidate_decision")
+            if isinstance(
+                self.row_data.get("scanner_candidate_decision"),
+                dict,
+            )
+            else {}
+        )
+        for source in (
+            self.row_data.get("auto_trade_reason_codes"),
+            decision.get("reason_codes"),
+        ):
+            if not isinstance(source, (list, tuple)):
+                continue
+            for code in source:
+                text = str(code).strip()
+                if text and text not in values:
+                    values.append(text)
+        return ", ".join(values)
+
+    @staticmethod
+    def _evidence_source_text(value: object) -> str:
+        source = str(value or "").strip().lower()
+        return {
+            "backtest_oos": "kết quả kiểm chứng ngoài mẫu",
+            "backtest": "kết quả kiểm chứng dữ liệu quá khứ",
+            "journal": "nhật ký giao dịch đã đóng",
+            "journal_evidence": "nhật ký giao dịch đã đóng",
+            "none": "chưa có nguồn đủ mẫu",
+            "not_enough_data": "chưa có nguồn đủ mẫu",
+        }.get(source, "nguồn dữ liệu lịch sử của hệ thống")
+
+    def _general_column_explanation(self, key: str) -> str:
+        label = next(
+            (
+                column_label
+                for column_key, column_label in ScannerTableModel.COLUMNS
+                if column_key == key
+            ),
+            "",
+        )
+        for item in ScannerColumnsHelpDialog.COLUMN_HELP:
+            if item.get("column") == label:
+                return (
+                    f"{item.get('meaning', '')} "
+                    f"{item.get('cases', '')}"
+                ).strip()
+        return "Chưa có giải thích cho thông số này."
+
+    def _selected_reason_summary(self) -> str:
+        row = self.row_data
+        values: list[str] = []
+        for field in (
+            "short_reason",
+            "permission_reason",
+            "strategy_reason",
+            "entry_reason",
+        ):
+            text = str(row.get(field) or "").strip()
+            if text and text not in values:
+                values.append(text)
+
+        decision = (
+            row.get("scanner_candidate_decision")
+            if isinstance(row.get("scanner_candidate_decision"), dict)
+            else {}
+        )
+        for source in (
+            row.get("auto_trade_reason_codes"),
+            decision.get("reason_codes"),
+        ):
+            if not isinstance(source, (list, tuple)):
+                continue
+            codes = [str(code) for code in source if str(code).strip()]
+            for code, message in zip(codes, codes_to_messages(codes)):
+                # Unknown internal codes remain available in the hidden
+                # technical section, not in the user-facing explanation.
+                if message == code:
+                    continue
+                if message and message not in values:
+                    values.append(message)
+        return "; ".join(values[:3])
+
+    def _strategy_threshold(self, key: str, default: float) -> float:
+        direct = self._number(self.row_data.get(key))
+        if direct is not None:
+            return direct
+        decision = (
+            self.row_data.get("scanner_candidate_decision")
+            if isinstance(
+                self.row_data.get("scanner_candidate_decision"),
+                dict,
+            )
+            else {}
+        )
+        strategy = (
+            decision.get("strategy")
+            if isinstance(decision.get("strategy"), dict)
+            else {}
+        )
+        nested = self._number(strategy.get(key))
+        return nested if nested is not None else default
+
+    @staticmethod
+    def _number(value: object) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def _compact_breakdown(value: dict[str, object]) -> str:
+        fields = (
+            ("Setup", "setup_component"),
+            ("R:R", "rr_component"),
+            ("Vị trí", "proximity_component"),
+            ("Bằng chứng", "evidence_component"),
+            ("Thực thi", "execution_component"),
+            ("Phạt", "penalty_component"),
+        )
+        parts = [
+            f"{label}={value.get(key)}"
+            for label, key in fields
+            if value.get(key) is not None
+        ]
+        return ", ".join(parts) if parts else "chưa có breakdown"
+
+    @staticmethod
+    def _explain_zone_value(key: str) -> str:
+        return {
+            "selected_zone_id": (
+                "ID của đúng vùng SMC được truyền xuyên score, scenario và gate."
+            ),
+            "entry_zone_quality_score": (
+                "Quality 0–100 đo chất lượng nội tại của vùng, không phụ thuộc "
+                "riêng vào khoảng cách giá hiện tại."
+            ),
+            "entry_zone_relevance_score": (
+                "Relevance 0–100 đo độ phù hợp hiện tại theo phía giá, khoảng "
+                "cách ATR, tuổi vùng và market regime."
+            ),
+            "entry_zone_setup_score": (
+                "Setup vùng tổng hợp Quality và Relevance; ranking không cộng "
+                "lặp lại bằng chứng này."
+            ),
+            "entry_zone_scoring_version": (
+                "Phiên bản semantics của điểm vùng; thống kê không trộn các "
+                "phiên bản khác nhau."
+            ),
+        }.get(key, "")
 
     def _sync_table_layout(self) -> None:
         header = self.table.horizontalHeader()
@@ -2337,96 +2783,205 @@ class ScannerRowExplanationDialog(QDialog):
 
 
 
-class ScannerColumnsHelpDialog (QDialog ):
-    COLUMN_COL_WIDTH =150
-    MEANING_COL_WIDTH =320
-    MIN_ROW_HEIGHT =32
-    CELL_VERTICAL_PADDING =32
-    CELL_HORIZONTAL_PADDING =34
-
-    COLUMN_HELP :list [dict [str ,str ]]=[
-        {"icon":"💸","column":"Mã","meaning":"Cặp tiền hoặc sản phẩm được quét.","cases":"28 cặp Forex (ngoại hối) + XAU/USD (vàng) + XAG/USD (bạc) + BTC/USD; chỉ hiển thị mã đang có trong Market Watch (danh sách theo dõi) của MT5."},
-        {"icon":"🚀","column":"Hành động","meaning":"Mức độ sẵn sàng giao dịch sau khi xét các điều kiện.","cases":"Sẵn sàng = có thể xem xét; Theo dõi = đáng chú ý; Chờ = cần xác nhận; Bỏ qua = chưa đạt hoặc bị chặn."},
-        {"icon":"🧭","column":"Hướng","meaning":"Thiên hướng giao dịch được hệ thống đánh giá từ điểm BUY (mua) và SELL (bán).","cases":"BUY rõ (mua rõ) / SELL rõ (bán rõ) = nghiêng rõ một phía; BUY yếu / SELL yếu = có nghiêng nhưng chưa mạnh; Trung lập = chưa đủ lệch."},
-        {"icon":"🎯","column":"Entry","meaning":"Entry (vùng vào lệnh): vị trí giá hiện tại so với vùng vào lệnh dự kiến.","cases":"Trong vùng = có thể theo sát; Gần vùng = chuẩn bị quan sát; Còn xa = chưa vội; -- = thiếu dữ liệu."},
-        {"icon":"🛡️","column":"Quyền","meaning":"Trạng thái cho phép giao dịch dựa trên dữ liệu và rủi ro.","cases":"Được phép = dữ liệu ổn, có thể xem xét; Cẩn trọng = có rủi ro phụ như tin tức hoặc spread (chênh lệch giá); Bị chặn = không nên vào lệnh."},
-        {"icon":"🔍","column":"Điểm","meaning":"Điểm xếp hạng cơ hội giao dịch tổng hợp trong scanner (bộ quét thị trường).","cases":">= 100 = cơ hội cao; 80-99 = khá; < 50 = thấp. Ưu tiên setup (thiết lập) gần vùng, rõ hướng, ít bị chặn. Xem chi tiết các điểm thành phần trong trang Chi tiết."},
-        {"icon":"⚖️","column":"R:R","meaning":"R:R (rủi ro/lợi nhuận): hiển thị dải ước tính từ mép xa nhất (worst) đến mép gần nhất (best) của vùng entry. Số đầu là best case, trong ngoặc là dải worst–best.","cases":"VD: 5.6 (2.9–5.6) = RR đạt 5.6 nếu khớp mép gần, tệ nhất 2.9 nếu khớp mép xa; >= 1:1.5 = chấp nhận được; < 1:1.0 = quá thấp, thường bị bỏ qua."},
-        {"icon":"🤝","column":"Vĩ mô","meaning":"Mức độ đồng thuận của vĩ mô (lãi suất, DXY, tin tức) với xu hướng kỹ thuật.","cases":"Thuận = vĩ mô cùng chiều với kỹ thuật; Trung tính = chưa rõ; Ngược = mâu thuẫn, cảnh báo nên thận trọng. Điểm vĩ mô chi tiết có trong trang Chi tiết."},
-        {"icon":"💡","column":"Lý do chính","meaning":"Tóm tắt ngắn vì sao mã được xếp hạng như vậy.","cases":"Tiền tố AI (trí tuệ nhân tạo): = nhận định do AI viết; không có AI = rule engine (bộ luật chấm điểm) sinh. Luôn đọc kèm trạng thái entry và quyền."},
-        {"icon":"🧐","column":"Chi tiết","meaning":"Mở màn hình chi tiết của mã được chọn.","cases":"Bấm ô Xem trên dòng hoặc chọn dòng rồi bấm nút Xem chi tiết để mở Scanner Detail (màn hình chi tiết quét) với đầy đủ điểm thành phần, gate, chẩn đoán và AI kiểm định."},
+class ScannerColumnsHelpDialog(QDialog):
+    COLUMN_HELP: list[dict[str, str]] = [
+        {
+            "column": "STT",
+            "meaning": "Thứ tự ưu tiên sau khi Scanner hoàn tất phân loại và xếp hạng.",
+            "cases": (
+                "Ưu tiên theo Trạng thái trước, sau đó lần lượt theo Cơ hội, "
+                "độ tin cậy chiến lược, mức sẵn sàng thực thi, R:R và tên mã. "
+                "STT có thể thay đổi ở mỗi lần quét."
+            ),
+        },
+        {
+            "column": "Mã",
+            "meaning": "Mã giao dịch chuẩn của ứng dụng đang được quét.",
+            "cases": (
+                "Ví dụ EUR/USD, XAU/USD. Broker symbol thực có thể có hậu tố "
+                "như EURUSDm và được hiển thị trong trang Chi tiết."
+            ),
+        },
+        {
+            "column": "Trạng thái",
+            "meaning": "Kết luận hiện tại của hệ thống về cơ hội giao dịch.",
+            "cases": (
+                "Sẵn sàng = đã đủ điều kiện ở thời điểm quét; Chờ xác nhận = còn "
+                "thiếu tín hiệu vào lệnh; Theo dõi = chưa nên hành động; Ngoài "
+                "chiến lược = không khớp quy tắc giao dịch; Bị chặn = vi phạm "
+                "điều kiện an toàn; Thiếu dữ liệu = chưa đủ đầu vào. Trạng thái "
+                "Sẵn sàng vẫn phải được kiểm tra lại trước khi đặt lệnh."
+            ),
+        },
+        {
+            "column": "Hướng",
+            "meaning": "Hướng Mua hoặc Bán mà hệ thống đang đánh giá.",
+            "cases": (
+                "Điểm chất lượng, kịch bản, vùng vào lệnh, mức cắt lỗ, mục tiêu "
+                "chốt lời và tỷ lệ lời/lỗ đều phải thuộc đúng hướng này. Dấu -- "
+                "nghĩa là chưa chọn được hướng hợp lệ."
+            ),
+        },
+        {
+            "column": "Chế độ TT",
+            "meaning": "Trạng thái thị trường hiện tại do pipeline nhận diện.",
+            "cases": (
+                "Xu hướng tăng, Xu hướng giảm, Đi ngang, Biến động mạnh hoặc "
+                "Chưa rõ. Nhánh Backtest còn yêu cầu regime này khớp config."
+            ),
+        },
+        {
+            "column": "Setup",
+            "meaning": "Điểm chất lượng của cơ hội theo đúng hướng đã chọn, thang 0–100.",
+            "cases": (
+                "Hệ thống so sánh điểm này với mức điểm tối thiểu của chiến lược. "
+                "Điểm cao không tự động cho phép vào lệnh; cơ hội vẫn phải đạt "
+                "điều kiện an toàn, tỷ lệ lời/lỗ và xác nhận điểm vào."
+            ),
+        },
+        {
+            "column": "Cơ hội",
+            "meaning": "Điểm 0–100 dùng để xếp hạng các cơ hội sau khi đã phân loại.",
+            "cases": (
+                "Điểm này giúp chọn mã đáng xem trước trong cùng một trạng thái. "
+                "Nó tổng hợp chất lượng cơ hội, tỷ lệ lời/lỗ, vị trí giá, dữ liệu "
+                "lịch sử và mức sẵn sàng; không phải điều kiện cho phép đặt lệnh."
+            ),
+        },
+        {
+            "column": "Bằng chứng",
+            "meaning": "Độ tin cậy của bằng chứng lịch sử, hiển thị theo phần trăm.",
+            "cases": (
+                "Nếu có cấu hình đã kiểm chứng, hệ thống dùng kết quả trên dữ liệu "
+                "kiểm tra độc lập. Nếu không, nhật ký giao dịch đủ mẫu có thể được "
+                "dùng. Thiếu bằng chứng hiển thị 0%. Đây không phải tỷ lệ thắng."
+            ),
+        },
+        {
+            "column": "Thực thi",
+            "meaning": "Mức gần với khả năng thực thi tại thời điểm quét.",
+            "cases": (
+                "Sẵn sàng = 100%; Chờ xác nhận = 60%; Theo dõi = 30%; "
+                "các trạng thái khác = 0%. Đây không phải xác suất thành công "
+                "và không thay thế việc kiểm tra lại theo giá mới."
+            ),
+        },
+        {
+            "column": "R:R thực",
+            "meaning": "Tỷ lệ lợi nhuận/rủi ro dự kiến của đúng hướng đã chọn.",
+            "cases": (
+                "Từ 2.0 trở lên hiển thị xanh; từ 1.3 đến dưới 2.0 hiển thị vàng; "
+                "thấp hơn hiển thị đỏ. R:R được tính lại theo bid/ask mới trước "
+                "khi gửi lệnh."
+            ),
+        },
+        {
+            "column": "Nhánh",
+            "meaning": "Nguồn quy tắc được áp dụng cho mã trong lần quét.",
+            "cases": (
+                "Đã kiểm chứng = dùng quy tắc rút ra từ kết quả kiểm tra dữ liệu "
+                "quá khứ; Mặc định = chưa có cấu hình kiểm chứng; Cấu hình lỗi = "
+                "có cấu hình nhưng chưa hợp lệ và không được tự động giao dịch."
+            ),
+        },
+        {
+            "column": "Config",
+            "meaning": "Tình trạng của cấu hình kiểm chứng bằng dữ liệu quá khứ.",
+            "cases": (
+                "Hợp lệ, Mặc định, Bản nháp, Hết hạn, Không hợp lệ, Sai phiên "
+                "bản hoặc Đã tắt. Luôn đọc cột này cùng cột Nhánh."
+            ),
+        },
+        {
+            "column": "Chi tiết",
+            "meaning": "Mở màn hình phân tích đầy đủ của mã được chọn.",
+            "cases": (
+                "Bấm Xem để đọc kịch bản, vùng vào lệnh, mức cắt lỗ, mục tiêu "
+                "chốt lời, điều kiện chiến lược, bối cảnh vĩ mô và danh sách "
+                "kiểm tra."
+            ),
+        },
     ]
 
-    def __init__ (self ,parent :QWidget |None =None )->None :
-        super ().__init__ (parent )
-        self .setWindowTitle ('Giải thích Bảng kết quả quét')
-        self .setObjectName ("ScannerHelpDialog")
-        self .setModal (True )
-        self .setMinimumSize (780 ,500 )
-        self .resize (880 ,600 )
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Giải thích Bảng kết quả quét")
+        self.setObjectName("ScannerHelpDialog")
+        self.setModal(True)
+        self.setMinimumSize(920, 560)
+        self.resize(1040, 680)
 
-        layout =QVBoxLayout (self )
-        layout .setContentsMargins (20 ,18 ,20 ,16 )
-        layout .setSpacing (12 )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(12)
 
-        intro =QLabel (
-            'Các cột dưới đây giúp đọc nhanh kết quả quét. '
-            'Giá trị trong bảng đã được rút gọn để dễ so sánh. '
-            'Các điểm thành phần (best_score, buy_score, sell_score, final_score, score_gap, macro_score, '
-            'entry_status, m15_quality, scanner_group, journal) được hiển thị trong trang Chi tiết.'
+        intro = QLabel(
+            "Bảng dưới đây giải thích đúng 13 cột của Scanner V2. "
+            "Cách đọc nhanh: Trạng thái → Nhánh và Config → Hướng, Setup và "
+            "R:R → Bằng chứng, Thực thi và Cơ hội."
         )
-        intro .setObjectName ("HelperText")
-        intro .setWordWrap (True )
-        layout .addWidget (intro )
+        intro.setObjectName("HelperText")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
-        table =QTableWidget (len (self .COLUMN_HELP ),3 )
-        table .setObjectName ("DataTable")
-        table .setHorizontalHeaderLabels (['Cột','Ý nghĩa','Trường hợp thường gặp'])
-        table .verticalHeader ().setVisible (False )
-        table .setEditTriggers (QTableWidget .EditTrigger .NoEditTriggers )
-        table .setSelectionMode (QTableWidget .SelectionMode .NoSelection )
-        table .setFocusPolicy (Qt .FocusPolicy .NoFocus )
-        table .setWordWrap (True )
-        table .setTextElideMode (Qt .TextElideMode .ElideNone )
-        table .setAlternatingRowColors (True )
-        table .setHorizontalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAlwaysOff )
-        table .setVerticalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAsNeeded )
-        table .setVerticalScrollMode (QTableWidget .ScrollMode .ScrollPerPixel )
-        table .verticalHeader ().setDefaultSectionSize (self .MIN_ROW_HEIGHT )
+        table = QTableWidget(len(self.COLUMN_HELP), 3)
+        table.setObjectName("EconTable")
+        table.setShowGrid(False)
+        table.setHorizontalHeaderLabels(
+            ["Cột", "Ý nghĩa", "Cách đọc / Trường hợp thường gặp"]
+        )
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        table.setWordWrap(True)
+        table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        table.setAlternatingRowColors(True)
+        table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
+        table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        )
+        table.setVerticalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
 
-        # Check if light theme
-        try:
-            light = SettingsService().load().display.theme == "light"
-        except Exception:
-            light = False
+        for row, help_item in enumerate(self.COLUMN_HELP):
+            values = (
+                help_item["column"],
+                help_item["meaning"],
+                help_item["cases"],
+            )
+            for column, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+                )
+                table.setItem(row, column, item)
 
-        if light:
-            col0_color = "#0f766e"
-            col1_color = "#1f2937"
-            col2_color = "#4b5563"
-        else:
-            col0_color = "#5eead4"
-            col1_color = "#e5e7eb"
-            col2_color = "#94a3b8"
+        header = table.horizontalHeader()
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setHighlightSections(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(0, 155)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
 
-        for row ,item in enumerate (self .COLUMN_HELP ):
-            for col in range (3 ):
-                cell =QTableWidgetItem ("")
-                cell .setFlags (Qt .ItemFlag .ItemIsEnabled )
-                cell .setTextAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
-                table .setItem (row ,col ,cell )
-            table .setCellWidget (row ,0 ,self ._help_cell_label (item .get ("column",""),bold =True ,color =col0_color))
-            table .setCellWidget (row ,1 ,self ._help_cell_label (item .get ("meaning",""),color =col1_color))
-            table .setCellWidget (row ,2 ,self ._help_cell_label (item .get ("cases",""),color =col2_color))
-        header =table .horizontalHeader ()
-        header .setSectionResizeMode (0 ,QHeaderView .ResizeMode .Fixed )
-        header .resizeSection (0 ,self .COLUMN_COL_WIDTH )
-        header .setSectionResizeMode (1 ,QHeaderView .ResizeMode .Fixed )
-        header .resizeSection (1 ,self .MEANING_COL_WIDTH )
-        header .setSectionResizeMode (2 ,QHeaderView .ResizeMode .Stretch )
-        header .setMinimumSectionSize (30 )
-        self .help_table =table
-        layout .addWidget (table ,1 )
+        self.help_table = table
+        layout.addWidget(table, 1)
+
+        note = QLabel(
+            "Lưu ý: READY_NOW chỉ là sẵn sàng tại thời điểm quét. "
+            "Rollout SHADOW hoặc execution revalidation vẫn có thể chặn lệnh."
+        )
+        note.setObjectName("HelperText")
+        note.setWordWrap(True)
+        layout.addWidget(note)
 
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 8, 0, 0)
@@ -2435,58 +2990,6 @@ class ScannerColumnsHelpDialog (QDialog ):
         close_btn.clicked.connect(self.accept)
         buttons_layout.addWidget(close_btn)
         layout.addLayout(buttons_layout)
-        self ._sync_help_table_layout ()
-
-    def showEvent (self ,event )->None :
-        super ().showEvent (event )
-        if hasattr (self ,"help_table"):
-            self ._sync_help_table_layout ()
-
-    def resizeEvent (self ,event )->None :
-        super ().resizeEvent (event )
-        if hasattr (self ,"help_table"):
-            QTimer .singleShot (0 ,self ._sync_help_table_layout )
-
-    def _help_cell_label (self ,text :str ,*,bold :bool =False ,color :str ="#e5e7eb")->QLabel :
-        label =QLabel (text )
-        label .setObjectName ("ScannerHelpCell")
-        label .setWordWrap (True )
-        label .setTextInteractionFlags (Qt .TextInteractionFlag .NoTextInteraction )
-        label .setAlignment (Qt .AlignmentFlag .AlignTop |Qt .AlignmentFlag .AlignLeft )
-        label .setContentsMargins (6 ,4 ,6 ,4 )
-        label .setSizePolicy (QSizePolicy .Policy .Expanding ,QSizePolicy .Policy .Preferred )
-        label .setStyleSheet (f"color: {color}; background: transparent;")
-        if bold :
-            font =label .font ()
-            font .setBold (True )
-            label .setFont (font )
-        return label
-
-    def _sync_help_table_layout (self )->None :
-        table =self .help_table
-        header =table .horizontalHeader ()
-        viewport_width =max (table .viewport ().width (),self .width ()-80 )
-        scrollbar_width =table .verticalScrollBar ().sizeHint ().width ()
-        fixed_width =self .COLUMN_COL_WIDTH +self .MEANING_COL_WIDTH
-        cases_width =max (280 ,viewport_width -fixed_width -scrollbar_width -6 )
-        
-        header .resizeSection (0 ,self .COLUMN_COL_WIDTH )
-        header .resizeSection (1 ,self .MEANING_COL_WIDTH )
-        header .resizeSection (2 ,cases_width )
-
-        column_widths ={0 :self .COLUMN_COL_WIDTH ,1 :self .MEANING_COL_WIDTH ,2 :cases_width}
-        
-        for row ,item in enumerate (self .COLUMN_HELP ):
-            heights =[self .MIN_ROW_HEIGHT ]
-            for col in range (3 ):
-                label =table .cellWidget (row ,col )
-                if isinstance (label ,QLabel ):
-                    usable_width = max(50, column_widths[col] - 24)
-                    label .setFixedWidth (usable_width)
-                    heights .append (label .heightForWidth (usable_width) + 24)
-            
-            row_height =max (heights )
-            table .setRowHeight (row ,row_height )
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,10 @@
 # Hướng dẫn code MVP
 
+> **Tài liệu lịch sử.** Các “giai đoạn” trong file này là thứ tự xây MVP ban
+> đầu, không phải kế hoạch Scanner 0–8. Runtime contract của Scanner hiện hành
+> nằm tại `docs/scanner-flow.md`; trạng thái kế hoạch nâng cấp nằm tại
+> `docs/scanner-scoring-review.md`.
+
 ## Mục tiêu MVP
 
 MVP phải là bản app desktop dùng thật được, không phải demo rời rạc.
@@ -247,7 +252,11 @@ Một task chỉ được coi là xong khi:
 - Khong hien thi them o checkbox nho ben trong nut toggle auto-entry; toan bo nut la chi bao trang thai bat/tat.
 - UI phai truyen `ScannerRequest.auto_trade_enabled=True` chi khi scan mode la auto va nut auto-entry dang bat.
 - Controller phai cap `risk_percent` theo `settings.trading.max_risk_percent` truoc khi goi analysis va truoc khi dat lenh.
-- Chi auto trade row `ready` + `allowed` + co `analysis_result` + co scenario khop `best_side`.
+- Chi auto trade khi canonical
+  `scanner_candidate_decision.auto_trade_candidate=true`; setup score,
+  scenario, Gate, entry va R:R phai cung `selected_side`.
+- Moi order phai qua rollout policy. `PRODUCTION` van bi chan neu
+  `production_approved=false` hoac release readiness chua dat.
 - Lot dat lenh duoc tinh lai ngay truoc khi goi `place_market_order()` qua `recalc_execution_lot()` (wrapper cua `position_sizing()` trong `core/risk_engine.py`). Ham nay su dung `quote_to_usd_rate` moi nhat tu MT5 de quy doi dung lot cho cac cap JPY/CHF/CAD. Neu khong lay duoc ty gia, fallback ve `suggested_lot` tu scan.
 - Moi broker symbol chi duoc co mot lenh dang ton tai. Phai kiem tra ca `positions_get(symbol=...)` va `orders_get(symbol=...)` truoc khi goi `order_send`.
 - Neu da co position/order cho symbol, ghi ket qua skipped va khong dat lenh moi.

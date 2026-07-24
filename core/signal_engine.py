@@ -188,6 +188,78 @@ def score_scenario(
     }
 
 
+def apply_smc_score_override(
+    score: dict[str, Any],
+    *,
+    smc_quality: object,
+    smc_reason: object,
+    smc_flags: dict[str, Any] | None = None,
+    scoring_version: object = None,
+    score_breakdown: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Recompute one side score with a versioned SMC component.
+
+    All non-SMC inputs and regime weights remain identical to the legacy
+    evaluation.  This makes a v1/v2 decision comparison attributable only to
+    the SMC scorer and prevents a second feature extraction pass.
+    """
+
+    result = dict(score if isinstance(score, dict) else {})
+    try:
+        quality = int(clamp(float(smc_quality), 0, 15))
+    except (TypeError, ValueError, OverflowError):
+        quality = 0
+    weights = (
+        result.get("regime_weights")
+        if isinstance(result.get("regime_weights"), dict)
+        else DYNAMIC_WEIGHTS["unknown"]
+    )
+    smc_weight = int(weights.get("smc", 15) or 15)
+    smc_scaled = int(quality * smc_weight / 15)
+    technical_scaled = int(
+        int(result.get("trend_scaled", 0) or 0)
+        + int(result.get("momentum_scaled", 0) or 0)
+        + int(result.get("location_scaled", 0) or 0)
+        + smc_scaled
+    )
+    total = int(clamp(
+        technical_scaled
+        + int(result.get("risk_condition", 0) or 0)
+        + int(result.get("macro_alignment", 0) or 0),
+        0,
+        100,
+    ))
+    flags = dict(smc_flags or {})
+    # The legacy score may already carry this SMC-specific code. Rebuild it
+    # from the promoted flags so rollback/v2 cannot inherit a stale cap.
+    penalty_codes = [
+        code
+        for code in list(result.get("penalty_codes", []) or [])
+        if code != CHOCH_AGAINST_DIRECTION
+    ]
+    smc_score_cap = None
+    if flags.get("choch_against_direction"):
+        total = min(total, 60)
+        smc_score_cap = 60
+        append_code(penalty_codes, CHOCH_AGAINST_DIRECTION)
+
+    result.update({
+        "smc_quality": quality,
+        "smc_reason": str(smc_reason or ""),
+        "smc_scaled": smc_scaled,
+        "technical_scaled": technical_scaled,
+        "signal_score": total,
+        "total": total,
+        "rating": score_rating(total),
+        "penalty_codes": normalize_codes(penalty_codes),
+        "smc_score_cap": smc_score_cap,
+        "smc_flags": flags,
+        "smc_scoring_version": str(scoring_version or ""),
+        "smc_score_breakdown": dict(score_breakdown or {}),
+    })
+    return result
+
+
 def score_rating(score: int) -> str:
     if score >= 80:
         return "chất lượng cao"

@@ -4,6 +4,7 @@ from typing import Any
 
 from core.reason_codes import (
     BUY_SELL_SCORE_GAP_LOW,
+    CHOCH_AGAINST_DIRECTION,
     DAILY_LOSS_LIMIT_REACHED,
     DATA_QUALITY_WARNING,
     EXPECTED_RR_TOO_LOW,
@@ -15,6 +16,8 @@ from core.reason_codes import (
     WEEKLY_LOSS_LIMIT_REACHED,
     ZONE_BROKEN,
     ZONE_QUALITY_LOW,
+    ZONE_PRICE_RELATION_INVALID,
+    ZONE_RELEVANCE_LOW,
     append_code,
 )
 
@@ -23,6 +26,7 @@ from core.reason_codes import (
 # ---------------------------------------------------------------------------
 
 MIN_ZONE_SCORE_FOR_ENTRY = 40
+MIN_ZONE_RELEVANCE_FOR_ENTRY = 40
 
 # Cap priority: TRADE_BLOCKED > WATCH_ONLY > WAITING_CONFIRMATION
 _CAP_PRIORITY = {
@@ -172,6 +176,71 @@ def _gate_zone_quality(context: dict[str, Any], result: dict[str, Any]) -> None:
         )
 
 
+def _gate_zone_relevance(
+    context: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    if not context.get("zone_id"):
+        return
+    relevance = context.get("zone_relevance_score")
+    if relevance is None:
+        # Legacy smc-v1 zones have no relevance semantic.  They remain
+        # explicitly versioned and are not interpreted as a v2 score.
+        return
+    try:
+        numeric_relevance = float(relevance)
+    except (TypeError, ValueError, OverflowError):
+        numeric_relevance = -1.0
+    if numeric_relevance < MIN_ZONE_RELEVANCE_FOR_ENTRY:
+        append_code(result["warning_codes"], ZONE_RELEVANCE_LOW)
+        result["decision_cap"] = _resolve_cap(
+            result["decision_cap"],
+            "WATCH_ONLY",
+        )
+        result["reasons"].append(
+            "Độ liên quan của vùng giá thấp "
+            f"({numeric_relevance:.0f} dưới ngưỡng "
+            f"{MIN_ZONE_RELEVANCE_FOR_ENTRY})."
+        )
+
+
+def _gate_zone_price_relation(
+    context: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    if not context.get("zone_id"):
+        return
+    if context.get("zone_price_relation_valid") is False:
+        append_code(
+            result["warning_codes"],
+            ZONE_PRICE_RELATION_INVALID,
+        )
+        result["decision_cap"] = _resolve_cap(
+            result["decision_cap"],
+            "WATCH_ONLY",
+        )
+        result["reasons"].append(
+            "Selected zone không còn khớp với vùng entry của kịch bản."
+        )
+
+
+def _gate_choch_safety(
+    context: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    if not context.get("h4_confirmed_choch_against_direction"):
+        return
+    append_code(result["warning_codes"], CHOCH_AGAINST_DIRECTION)
+    result["decision_cap"] = _resolve_cap(
+        result["decision_cap"],
+        "WATCH_ONLY",
+    )
+    result["reasons"].append(
+        "H4 có CHOCH đã xác nhận ngược hướng; quyết định bị giới hạn "
+        "ở WATCH_ONLY bất kể final score."
+    )
+
+
 def _gate_account_guard(context: dict[str, Any], result: dict[str, Any]) -> None:
     """Merge account guard result into trade gate.
 
@@ -243,7 +312,9 @@ _GATES = [
     _gate_expected_effective_rr,
     _gate_score_gap,
     _gate_zone_broken,
-    _gate_zone_quality,
+    _gate_zone_relevance,
+    _gate_zone_price_relation,
+    _gate_choch_safety,
 ]
 
 
@@ -269,6 +340,8 @@ def check_trade_gates(context: dict[str, Any]) -> dict[str, Any]:
         - daily_loss_limit_reached, weekly_loss_limit_reached
         - score_gap, min_buy_sell_score_gap
         - zone_broken
+        - zone_id, zone_relevance_score, zone_price_relation_valid
+        - h4_confirmed_choch_against_direction
 
     Returns
     -------
@@ -291,6 +364,21 @@ def check_trade_gates(context: dict[str, Any]) -> dict[str, Any]:
 
     for gate in _GATES:
         gate(context, result)
+
+    result["smc_zone"] = {
+        "selected_zone_id": context.get("zone_id"),
+        "scoring_version": context.get("zone_scoring_version"),
+        "quality_score": context.get("zone_quality_score"),
+        "relevance_score": context.get("zone_relevance_score"),
+        "setup_score": context.get("zone_setup_score"),
+        "broken": bool(context.get("zone_broken", False)),
+        "price_relation_valid": context.get(
+            "zone_price_relation_valid"
+        ),
+        "h4_confirmed_choch_against_direction": bool(
+            context.get("h4_confirmed_choch_against_direction", False)
+        ),
+    }
 
     # Hard override: if allowed is False, decision_cap must be TRADE_BLOCKED
     if not result["allowed"]:

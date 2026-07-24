@@ -24,12 +24,17 @@ from core.risk_engine import (
     contract_size_for,
 )
 from core.signal_engine import (
+    apply_smc_score_override,
     calc_risk_condition,
     calculate_direction_bias,
     score_scenario,
 )
 from core.correlation_check import compute_correlation_adjustment
-from core.final_score_engine import calculate_final_score, safe_score
+from core.final_score_engine import (
+    calculate_final_score,
+    default_final_score_result,
+    safe_score,
+)
 from core.decision_engine import make_final_decision
 from core.journal_feedback_engine import build_journal_feedback
 from core.statistical_edge_engine import calculate_evidence_score
@@ -39,7 +44,14 @@ from core.reason_codes import (
     codes_to_messages,
     normalize_codes,
 )
-from core.smc_context import build_smc_context, extract_smc_trade_flags, get_preferred_zone
+from core.smc_context import build_smc_context, extract_smc_trade_flags
+from core.smc_consumer_contract import (
+    build_smc_consumer_contract,
+    selected_zone_for_side,
+    side_consumer_metadata,
+)
+from core.smc_scoring_contract import build_smc_phase0_diagnostics
+from core.scoring_provenance import build_scoring_provenance
 from core.technical_context import build_technical_snapshot, detect_market_regime
 from core.trade_gate_engine import check_trade_gates
 
@@ -50,6 +62,65 @@ def _find_scenario(scenarios: list[dict[str, Any]], side: str) -> dict[str, Any]
         if isinstance(scenario, dict) and scenario.get("type") == side:
             return scenario
     return {}
+
+
+def _merge_active_smc_flags(
+    base_flags: dict[str, Any],
+    consumer_side: dict[str, Any],
+) -> dict[str, Any]:
+    """Attach the decision-path canonical zone to structural safety flags."""
+
+    flags = dict(base_flags)
+    selected = (
+        consumer_side.get("selected_zone")
+        if isinstance(consumer_side.get("selected_zone"), dict)
+        else {}
+    )
+    selected_zone_id = consumer_side.get("selected_zone_id")
+    flags.update({
+        "has_selected_zone": bool(selected_zone_id),
+        "selected_zone_id": selected_zone_id,
+        "selected_zone_type": consumer_side.get("selected_zone_type"),
+        "selected_zone_timeframe": consumer_side.get(
+            "selected_zone_timeframe"
+        ),
+        "selected_zone_family": selected.get("family"),
+        "selected_zone_score": consumer_side.get(
+            "selected_zone_setup_score"
+        ),
+        "selected_zone_quality_score": consumer_side.get(
+            "selected_zone_quality_score"
+        ),
+        "selected_zone_relevance_score": consumer_side.get(
+            "selected_zone_relevance_score"
+        ),
+        "selected_zone_setup_score": consumer_side.get(
+            "selected_zone_setup_score"
+        ),
+        "selected_zone_scoring_version": consumer_side.get(
+            "scoring_version"
+        ),
+        "selected_zone_liquidity_sweep_linked": bool(
+            selected.get("liquidity_sweep_linked")
+        ),
+        "selected_zone_linked_sweep_id": selected.get("linked_sweep_id"),
+        "selected_zone_linked_sweep_distance_atr": selected.get(
+            "linked_sweep_distance_atr"
+        ),
+        "selected_zone_linked_sweep_time_delta": selected.get(
+            "linked_sweep_time_delta"
+        ),
+        "zone_broken": bool(
+            selected.get("broken") or selected.get("lifecycle_broken")
+        ),
+        "smc_score_breakdown": dict(
+            consumer_side.get("score_breakdown", {})
+            if isinstance(consumer_side.get("score_breakdown"), dict)
+            else {}
+        ),
+        "raw": selected,
+    })
+    return flags
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +162,10 @@ class AnalysisPipeline:
         account_guard_settings: dict[str, Any] | None = None,
         trade_date: datetime | None = None,
         execution_quality_score: int | float | str | None = None,
-        thresholds: dict[str, int] | None = None,
+        thresholds: dict[str, int | float] | None = None,
         is_backtest: bool = False,
         scan_interval_min: int = 15,
+        smc_scoring_mode: str = "v2",
     ) -> dict[str, Any]:
         # ---- Step 0: stash inputs ------------------------------------------
         self._request = request
@@ -117,6 +189,7 @@ class AnalysisPipeline:
         self._execution_quality_score_in = execution_quality_score
         self._thresholds = thresholds
         self._is_backtest = is_backtest
+        self._smc_scoring_mode = smc_scoring_mode
 
         # ---- Pipeline diagnostics ------------------------------------------
         self._diag: list[dict[str, Any]] = []
@@ -180,6 +253,8 @@ class AnalysisPipeline:
             ("_buy_corr_adj", 0), ("_sell_corr_adj", 0),
             ("_scores", {"buy": {}, "sell": {}}),
             ("_buy_smc_flags", {}), ("_sell_smc_flags", {}),
+            ("_smc_scoring_diagnostics", {}),
+            ("_smc_consumer_contract", {}),
             ("_scenarios", []), ("_has_ready_plan", False),
             ("_buy_scenario", {}), ("_sell_scenario", {}),
             ("_direction_bias", {"best_side": "neutral", "buy_score": 0, "sell_score": 0, "score_gap": 0, "is_clear_bias": False, "min_gap": 10}),
@@ -188,6 +263,7 @@ class AnalysisPipeline:
             ("_trade_permission", {"status": "blocked", "reason": "validation failed"}),
             ("_decision_action", "stand_aside"),
             ("_journal_feedback", {}),
+            ("_journal_feedback_by_side", {"buy": {}, "sell": {}}),
             ("_gate_result", {"allowed": False, "decision_cap": "TRADE_BLOCKED", "block_codes": [], "warning_codes": [], "reasons": ["Pipeline validation failed"]}),
             ("_account_guard_result", {"blocked": False, "block_codes": [], "warning_codes": []}),
             ("_main_view", "Validation failed"),
@@ -196,6 +272,7 @@ class AnalysisPipeline:
             ("_reason_messages", []),
             ("_evidence_result", {}), ("_eq_score", 0), ("_eq_source", "fallback"),
             ("_final_score_result", {"final_score": 0}),
+            ("_side_score_results", {"buy": {}, "sell": {}}),
             ("_decision_engine_result", {"decision": "STAND_ASIDE", "legacy_action": "stand_aside"}),
         ]:
             if not hasattr(self, attr):
@@ -210,7 +287,13 @@ class AnalysisPipeline:
             raise ValueError("Không đủ dữ liệu D1/H4/H1 để phân tích.")
 
         self._technical = build_technical_snapshot(self._d1, self._h4, self._h1)
-        self._smc = build_smc_context(self._d1, self._h4, self._h1, scan_interval_min=self._scan_interval_min)
+        self._smc = build_smc_context(
+            self._d1,
+            self._h4,
+            self._h1,
+            scan_interval_min=self._scan_interval_min,
+            symbol=self._request.symbol,
+        )
         self._data_quality = _build_data_quality(
             self._request, self._candles, self._data_quality_raw, self._technical,
         )
@@ -323,6 +406,79 @@ class AnalysisPipeline:
 
         self._buy_smc_flags = extract_smc_trade_flags(self._smc, "buy")
         self._sell_smc_flags = extract_smc_trade_flags(self._smc, "sell")
+        self._smc_scoring_diagnostics = build_smc_phase0_diagnostics(
+            requested_mode=self._smc_scoring_mode,
+            smc=self._smc,
+            technical=self._technical,
+            active_scores=self._scores,
+            market_regime=self._market_regime,
+        )
+        self._smc_consumer_contract = build_smc_consumer_contract(
+            smc=self._smc,
+            scoring_diagnostics=self._smc_scoring_diagnostics,
+        )
+        self._smc_scoring_diagnostics["consumer_contract"] = (
+            self._smc_consumer_contract
+        )
+        smc_policy = self._smc_scoring_diagnostics.get("policy", {})
+        if smc_policy.get("decision_impact_allowed"):
+            decision_snapshots = (
+                self._smc_scoring_diagnostics.get("decision")
+                if isinstance(
+                    self._smc_scoring_diagnostics.get("decision"),
+                    dict,
+                )
+                else {}
+            )
+            for side in ("buy", "sell"):
+                snapshot = (
+                    decision_snapshots.get(side)
+                    if isinstance(decision_snapshots.get(side), dict)
+                    else {}
+                )
+                consumer_side = side_consumer_metadata(
+                    self._smc_consumer_contract,
+                    side,
+                )
+                base_flags = (
+                    self._buy_smc_flags
+                    if side == "buy"
+                    else self._sell_smc_flags
+                )
+                active_flags = _merge_active_smc_flags(
+                    base_flags,
+                    consumer_side,
+                )
+                self._scores[side] = apply_smc_score_override(
+                    self._scores[side],
+                    smc_quality=snapshot.get("smc_quality"),
+                    smc_reason=snapshot.get("smc_reason"),
+                    smc_flags=active_flags,
+                    scoring_version=snapshot.get("scoring_version"),
+                    score_breakdown=(
+                        snapshot.get("breakdown")
+                        if isinstance(snapshot.get("breakdown"), dict)
+                        else {}
+                    ),
+                )
+                if side == "buy":
+                    self._buy_smc_flags = active_flags
+                else:
+                    self._sell_smc_flags = active_flags
+            self._smc_scoring_diagnostics["decision_scores"] = {
+                side: {
+                    "signal_score": self._scores[side].get("signal_score"),
+                    "smc_quality": self._scores[side].get("smc_quality"),
+                    "smc_scaled": self._scores[side].get("smc_scaled"),
+                    "scoring_version": self._scores[side].get(
+                        "smc_scoring_version"
+                    ),
+                    "selected_zone_id": self._scores[side].get(
+                        "smc_flags", {}
+                    ).get("selected_zone_id"),
+                }
+                for side in ("buy", "sell")
+            }
 
         buy_sc = self._scores["buy"]
         sell_sc = self._scores["sell"]
@@ -341,6 +497,17 @@ class AnalysisPipeline:
                 "buy": {k: v for k, v in buy_sc.items() if not k.startswith("_")},
                 "sell": {k: v for k, v in sell_sc.items() if not k.startswith("_")},
             },
+        )
+        self._log_step(
+            "smc_scoring",
+            "pass",
+            (
+                f"requested={smc_policy.get('requested_mode', 'legacy')} "
+                f"effective={smc_policy.get('effective_mode', 'legacy')} "
+                f"decision_source={smc_policy.get('decision_source', 'smc-v1')} "
+                f"shadow={smc_policy.get('shadow_enabled', False)}"
+            ),
+            self._smc_scoring_diagnostics,
         )
 
     # ------------------------------------------------------------------
@@ -367,9 +534,21 @@ class AnalysisPipeline:
             spread_price=float(self._data_quality.get("spread_price") or 0),
             market_regime=self._market_regime,
             preferred_zones={
-                "buy": get_preferred_zone(self._smc, "buy", price=self._technical.get("price")),
-                "sell": get_preferred_zone(self._smc, "sell", price=self._technical.get("price")),
+                "buy": selected_zone_for_side(
+                    self._smc_consumer_contract,
+                    "buy",
+                ),
+                "sell": selected_zone_for_side(
+                    self._smc_consumer_contract,
+                    "sell",
+                ),
             },
+            strict_preferred_zones=True,
+            require_preferred_zones=bool(
+                self._smc_scoring_diagnostics.get("policy", {}).get(
+                    "decision_impact_allowed"
+                )
+            ),
             is_backtest=self._is_backtest,
         )
         self._has_ready_plan = any(
@@ -434,19 +613,16 @@ class AnalysisPipeline:
         # Pick SMC flags matching final best_side
         self._smc_trade_flags = (
             self._buy_smc_flags if self._best_side == "buy"
-            else self._sell_smc_flags
+            else self._sell_smc_flags if self._best_side == "sell"
+            else {}
         )
         self._primary_scenario = (
             self._buy_scenario if self._best_side == "buy"
             else self._sell_scenario if self._best_side == "sell"
-            else (self._scenarios[0] if self._scenarios else {})
+            else {}
         )
-        # Fallback: if best_side scenario is empty, use the first available scenario
-        if not self._primary_scenario:
-            self._primary_scenario = next(
-                (s for s in self._scenarios if isinstance(s, dict) and s.get("type") in ("buy", "sell")),
-                self._scenarios[0] if self._scenarios else {},
-            )
+        # Never borrow an opposite-side scenario.  Missing selected-side data
+        # must propagate to Decision Engine as not ready.
 
         gap = self._direction_bias.get("score_gap", 0)
         is_clear = self._direction_bias.get("is_clear_bias", False)
@@ -483,13 +659,27 @@ class AnalysisPipeline:
             self._market_regime.get("primary")
             if isinstance(self._market_regime, dict) else None
         )
-        self._journal_feedback = (
-            build_journal_feedback(
+        self._journal_feedback_by_side = {
+            side: build_journal_feedback(
                 self._closed_trades,
                 symbol=self._request.symbol,
-                direction=self._best_side if self._best_side in {"buy", "sell"} else "",
+                direction=side,
                 regime=regime_key,
+                zone_score=side_consumer_metadata(
+                    self._smc_consumer_contract,
+                    side,
+                ).get("selected_zone_setup_score"),
+                zone_scoring_version=side_consumer_metadata(
+                    self._smc_consumer_contract,
+                    side,
+                ).get("scoring_version"),
             )
+            for side in ("buy", "sell")
+        }
+        # Compatibility alias: gates and legacy consumers still apply only to
+        # the selected direction.  Score computation below uses both sides.
+        self._journal_feedback = (
+            self._journal_feedback_by_side.get(self._best_side, {})
             if self._best_side in {"buy", "sell"}
             else {}
         )
@@ -499,13 +689,40 @@ class AnalysisPipeline:
         self._decision_action = "stand_aside"
 
         # --- gate context ---------------------------------------------------
-        # Find best available scenario for gate context (may differ from _primary_scenario)
-        _gate_scenario = self._primary_scenario if isinstance(self._primary_scenario, dict) and self._primary_scenario else {}
-        if not _gate_scenario.get("expected_effective_rr"):
-            for s in self._scenarios:
-                if isinstance(s, dict) and s.get("type") in ("buy", "sell") and s.get("expected_effective_rr"):
-                    _gate_scenario = s
-                    break
+        # Gate data must belong to the selected side.  Missing selected-side
+        # data intentionally yields a non-ready/fail-closed gate result.
+        _gate_scenario = (
+            self._primary_scenario
+            if isinstance(self._primary_scenario, dict)
+            else {}
+        )
+        _gate_zone = side_consumer_metadata(
+            self._smc_consumer_contract,
+            self._best_side,
+        )
+        _h4_smc = (
+            self._smc.get("H4")
+            if isinstance(self._smc.get("H4"), dict)
+            else {}
+        )
+        _opposite_displacement = (
+            "bearish" if self._best_side == "buy" else "bullish"
+        )
+        _h4_confirmed_choch_against = bool(
+            self._best_side in {"buy", "sell"}
+            and _h4_smc.get("choch")
+            and _h4_smc.get("choch_confirmed")
+            and _h4_smc.get("displacement") == _opposite_displacement
+        )
+        _scenario_zone_id = _gate_scenario.get("entry_zone_id")
+        _selected_zone_id = _gate_zone.get("selected_zone_id")
+        _price_relation_valid = bool(
+            _gate_scenario
+            and (
+                not _selected_zone_id
+                or _scenario_zone_id == _selected_zone_id
+            )
+        )
 
         gate_context: dict[str, Any] = {
             "terminal_connected": self._data_quality.get("terminal_connected"),
@@ -536,8 +753,22 @@ class AnalysisPipeline:
                 ) if isinstance(_gate_scenario, dict) else False
             ),
             "zone_score": (
-                _gate_scenario.get("entry_zone_score")
-                if isinstance(_gate_scenario, dict) else None
+                _gate_zone.get("selected_zone_setup_score")
+            ),
+            "zone_id": _selected_zone_id,
+            "zone_scoring_version": _gate_zone.get("scoring_version"),
+            "zone_quality_score": _gate_zone.get(
+                "selected_zone_quality_score"
+            ),
+            "zone_relevance_score": _gate_zone.get(
+                "selected_zone_relevance_score"
+            ),
+            "zone_setup_score": _gate_zone.get(
+                "selected_zone_setup_score"
+            ),
+            "zone_price_relation_valid": _price_relation_valid,
+            "h4_confirmed_choch_against_direction": (
+                _h4_confirmed_choch_against
             ),
             "daily_loss_limit_reached": self._data_quality.get("daily_loss_limit_reached"),
             "weekly_loss_limit_reached": self._data_quality.get("weekly_loss_limit_reached"),
@@ -656,6 +887,50 @@ class AnalysisPipeline:
         zone_ok = not gate_context.get("zone_broken", False)
         gate_checks.append({"gate": "ZoneBroken", "status": "pass" if zone_ok else "warning",
                             "detail": "zone intact" if zone_ok else "zone broken"})
+        zone_id = gate_context.get("zone_id")
+        relevance = gate_context.get("zone_relevance_score")
+        relevance_ok = (
+            not zone_id
+            or (
+                relevance is not None
+                and float(relevance) >= 40
+            )
+        )
+        gate_checks.append({
+            "gate": "ZoneRelevance",
+            "status": "pass" if relevance_ok else "warning",
+            "detail": (
+                "not applicable"
+                if not zone_id
+                else f"zone={zone_id}, relevance={relevance}"
+            ),
+        })
+        relation_ok = (
+            not zone_id
+            or gate_context.get("zone_price_relation_valid") is not False
+        )
+        gate_checks.append({
+            "gate": "ZonePriceRelation",
+            "status": "pass" if relation_ok else "warning",
+            "detail": (
+                "selected zone matches scenario"
+                if relation_ok
+                else "selected zone differs from scenario entry"
+            ),
+        })
+        choch_safe = not gate_context.get(
+            "h4_confirmed_choch_against_direction",
+            False,
+        )
+        gate_checks.append({
+            "gate": "H4ConfirmedCHOCH",
+            "status": "pass" if choch_safe else "warning",
+            "detail": (
+                "no confirmed opposing H4 CHOCH"
+                if choch_safe
+                else "opposing confirmed H4 CHOCH -> WATCH_ONLY"
+            ),
+        })
 
         gate_status = "fail" if not self._gate_result["allowed"] else ("warning" if self._gate_result["warning_codes"] else "pass")
         self._log_step(
@@ -751,55 +1026,103 @@ class AnalysisPipeline:
     # ------------------------------------------------------------------
 
     def _step_compute_final_score(self) -> None:
-        best_side_scores = self._scores.get(self._best_side, {})
-        best_signal_score = int(
-            best_side_scores.get("signal_score")
-            or best_side_scores.get("total")
-            or self._best_score
-        )
-
         regime_key = (
             self._market_regime.get("primary")
             if isinstance(self._market_regime, dict) else None
         )
+        self._side_score_results = {}
+        feedback_by_side = (
+            self._journal_feedback_by_side
+            if isinstance(self._journal_feedback_by_side, dict)
+            else {}
+        )
 
-        # Evidence score
-        if isinstance(self._journal_feedback, dict) and self._journal_feedback.get("evidence"):
-            evidence_result = self._journal_feedback.get("evidence")
-            evidence_score = evidence_result.get("evidence_score", best_signal_score)
-        elif self._closed_trades:
-            evidence_result = calculate_evidence_score(
-                self._closed_trades,
-                symbol=self._request.symbol,
-                direction=self._best_side,
-                regime=regime_key,
+        # Compute setup quality independently for BUY and SELL.  The old
+        # top-level final_score remains an alias of the selected direction.
+        for side in ("buy", "sell"):
+            raw_side_scores = self._scores.get(side, {})
+            if not isinstance(raw_side_scores, dict):
+                raw_side_scores = {}
+            signal_score = safe_score(
+                raw_side_scores.get("signal_score", raw_side_scores.get("total")),
+                0,
             )
-            evidence_score = evidence_result.get("evidence_score", best_signal_score)
+            side_feedback = feedback_by_side.get(side, {})
+            if not isinstance(side_feedback, dict):
+                side_feedback = {}
+
+            evidence_result = side_feedback.get("evidence")
+            if not isinstance(evidence_result, dict):
+                evidence_result = calculate_evidence_score(
+                    self._closed_trades,
+                    symbol=self._request.symbol,
+                    direction=side,
+                    regime=regime_key,
+                )
+            evidence_score = safe_score(
+                evidence_result.get("evidence_score"),
+                signal_score,
+            )
+
+            feedback_eq = side_feedback.get("average_execution_quality")
+            eq_input = (
+                self._execution_quality_score_in
+                if self._execution_quality_score_in is not None
+                else feedback_eq
+            )
+            eq_score, eq_source = _resolve_execution_quality(
+                eq_input,
+                fallback=signal_score,
+            )
+            if self._execution_quality_score_in is not None:
+                eq_source = "shared_provided"
+            elif feedback_eq is not None:
+                eq_source = "side_journal"
+
+            final_result = calculate_final_score(
+                signal_score=signal_score,
+                evidence_score=evidence_score,
+                execution_quality_score=eq_score,
+            )
+            setup_score = final_result["final_score"]
+            side_result = {
+                "side": side,
+                "signal_score": signal_score,
+                "evidence_score": evidence_score,
+                "execution_quality_score": eq_score,
+                "execution_quality_source": eq_source,
+                "setup_score": setup_score,
+                "final_score": setup_score,
+                "final_score_detail": final_result,
+                "evidence": evidence_result,
+            }
+            self._side_score_results[side] = side_result
+            # Keep scenario_scores useful for old clients while exposing the
+            # canonical side-specific setup score.
+            raw_side_scores.update({
+                "evidence_score": evidence_score,
+                "execution_quality_score": eq_score,
+                "setup_score": setup_score,
+                "final_score": setup_score,
+            })
+
+        selected_result = self._side_score_results.get(self._best_side)
+        if self._best_side in {"buy", "sell"} and selected_result:
+            best_signal_score = selected_result["signal_score"]
+            evidence_score = selected_result["evidence_score"]
+            self._evidence_result = selected_result["evidence"]
+            self._eq_score = selected_result["execution_quality_score"]
+            self._eq_source = selected_result["execution_quality_source"]
+            self._final_score_result = selected_result["final_score_detail"]
         else:
-            evidence_result = {"evidence_score": best_signal_score}
-            evidence_score = best_signal_score
-        self._evidence_result = evidence_result
-
-        # Execution quality
-        feedback_eq = (
-            self._journal_feedback.get("average_execution_quality")
-            if isinstance(self._journal_feedback, dict) else None
-        )
-        eq_input = (
-            self._execution_quality_score_in
-            if self._execution_quality_score_in is not None
-            else feedback_eq
-        )
-        self._eq_score, self._eq_source = _resolve_execution_quality(
-            eq_input, fallback=best_signal_score,
-        )
-
-        # Final score blending
-        self._final_score_result = calculate_final_score(
-            signal_score=best_signal_score,
-            evidence_score=evidence_score,
-            execution_quality_score=self._eq_score,
-        )
+            best_signal_score = 0
+            evidence_score = 0
+            self._evidence_result = {}
+            self._eq_score = 0
+            self._eq_source = "not_applicable_no_selected_side"
+            self._final_score_result = default_final_score_result(
+                "no_selected_side"
+            )
 
         # Decision engine
         primary_entry_status = (
@@ -850,7 +1173,10 @@ class AnalysisPipeline:
         if not self._scenarios and atr > 0 and price > 0 and best_side in ("buy", "sell"):
             # Try to find the best SMC zone even beyond zone_dist_mult
             # so the scanner shows real structure instead of fake ATR fallback.
-            distant_zone = get_preferred_zone(self._smc, best_side, price=None)
+            distant_zone = selected_zone_for_side(
+                self._smc_consumer_contract,
+                best_side,
+            )
             if distant_zone is not None:
                 zone_low = float(distant_zone["low"])
                 zone_high = float(distant_zone["high"])
@@ -873,6 +1199,23 @@ class AnalysisPipeline:
                     "stop_loss": round(sl, 5),
                     "take_profit": [round(tp, 5)] if tp is not None else None,
                     "entry_zone_score": zone_score,
+                    "entry_zone_id": distant_zone.get("zone_id"),
+                    "entry_zone_quality_score": distant_zone.get(
+                        "zone_quality_score"
+                    ),
+                    "entry_zone_relevance_score": distant_zone.get(
+                        "zone_relevance_score"
+                    ),
+                    "entry_zone_setup_score": distant_zone.get(
+                        "zone_setup_score"
+                    ),
+                    "entry_zone_scoring_version": distant_zone.get(
+                        "scoring_version"
+                    ),
+                    "smc_score_breakdown": distant_zone.get(
+                        "smc_score_breakdown",
+                        {},
+                    ),
                     "entry_zone_source": "smc_distant",
                     "entry_status": "watch_zone",
                     "m15_quality": None,
@@ -908,6 +1251,14 @@ class AnalysisPipeline:
                     "stop_loss": sl,
                     "take_profit": [tp],
                     "entry_zone_score": 50,
+                    "entry_zone_id": None,
+                    "entry_zone_quality_score": None,
+                    "entry_zone_relevance_score": None,
+                    "entry_zone_setup_score": 50,
+                    # Display-only ATR fallback; it is not an SMC v1/v2 zone
+                    # and must never be counted as scorer evidence.
+                    "entry_zone_scoring_version": "non-smc-display-v1",
+                    "smc_score_breakdown": {},
                     "entry_zone_source": "fallback",
                     "entry_status": "watch_zone",
                     "m15_quality": None,
@@ -938,6 +1289,9 @@ class AnalysisPipeline:
         return {
             "symbol": self._request.symbol,
             "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            "scoring_provenance": build_scoring_provenance(
+                self._smc_scoring_mode
+            ),
             "data_quality": self._data_quality,
             "market_regime": self._market_regime,
             "direction_bias": self._direction_bias,
@@ -967,9 +1321,12 @@ class AnalysisPipeline:
             },
             "trade_gate": self._gate_result,
             "journal_feedback": self._journal_feedback,
+            "journal_feedback_by_side": self._journal_feedback_by_side,
             "account_guard": self._account_guard_result,
             "technical": _public_technical(self._technical),
             "smc": self._smc,
+            "smc_scoring": self._smc_scoring_diagnostics,
+            "smc_consumer": self._smc_consumer_contract,
             "smc_trade_flags": self._smc_trade_flags,
             "scenario_scores": self._scores,
             "macro": {
@@ -1021,6 +1378,7 @@ class AnalysisPipeline:
             ),
             "final_score": self._final_score_result["final_score"],
             "final_score_detail": self._final_score_result,
+            "side_scores": self._side_score_results,
             "evidence": self._evidence_result,
             "execution_quality": {
                 "execution_quality_score": self._eq_score,

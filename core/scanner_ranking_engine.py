@@ -49,6 +49,16 @@ from core.reason_codes import (
 )
 from core.normalization import normalize_choice, normalize_scanner_entry_status
 from core.safe_types import clamp_score, parse_risk_reward, safe_float
+from core.scanner_models import (
+    BLOCKED as CANDIDATE_BLOCKED,
+    DATA_UNAVAILABLE as CANDIDATE_DATA_UNAVAILABLE,
+    OUT_OF_STRATEGY as CANDIDATE_OUT_OF_STRATEGY,
+    READY_NOW as CANDIDATE_READY_NOW,
+    SCANNER_RANKING_VERSION,
+    WAITING_CONFIRMATION as CANDIDATE_WAITING_CONFIRMATION,
+    WATCH_ZONE as CANDIDATE_WATCH_ZONE,
+    ScannerRankingEvaluation,
+)
 
 # ---------------------------------------------------------------------------
 # Scanner-group constants
@@ -65,6 +75,33 @@ VALID_SCANNER_GROUPS = frozenset({
     WATCH_ZONE,
     BLOCKED,
 })
+
+CANONICAL_STATUS_PRIORITY: dict[str, int] = {
+    CANDIDATE_READY_NOW: 0,
+    CANDIDATE_WAITING_CONFIRMATION: 1,
+    CANDIDATE_WATCH_ZONE: 2,
+    CANDIDATE_OUT_OF_STRATEGY: 3,
+    CANDIDATE_BLOCKED: 4,
+    CANDIDATE_DATA_UNAVAILABLE: 5,
+}
+
+_STATUS_TO_GROUP = {
+    CANDIDATE_READY_NOW: READY_NOW,
+    CANDIDATE_WAITING_CONFIRMATION: WAITING_CONFIRMATION,
+    CANDIDATE_WATCH_ZONE: WATCH_ZONE,
+    CANDIDATE_OUT_OF_STRATEGY: "out_of_strategy",
+    CANDIDATE_BLOCKED: BLOCKED,
+    CANDIDATE_DATA_UNAVAILABLE: "data_unavailable",
+}
+
+_STATUS_EXECUTION_READINESS = {
+    CANDIDATE_READY_NOW: 100.0,
+    CANDIDATE_WAITING_CONFIRMATION: 60.0,
+    CANDIDATE_WATCH_ZONE: 30.0,
+    CANDIDATE_OUT_OF_STRATEGY: 0.0,
+    CANDIDATE_BLOCKED: 0.0,
+    CANDIDATE_DATA_UNAVAILABLE: 0.0,
+}
 
 # ---------------------------------------------------------------------------
 # Group labels
@@ -425,12 +462,10 @@ def calculate_opportunity_score(
     # Chỉ trừ điểm journal khi đủ mẫu (≥ 8), nếu không penalty = 0
     journal_pen = int(safe_float(journal_feedback.get("opportunity_penalty"), 0.0)) if journal_sample >= 8 else 0
 
-    # ---- zone quality ----
-    entry_zone_score = row.get("entry_zone_score")
-    if entry_zone_score is not None:
-        zone_bonus = int(w.get("zone_quality_bonus", 6.0) * max(0.0, (float(entry_zone_score) - 50) / 50))
-    else:
-        zone_bonus = 0
+    # Zone quality/relevance already contributes to setup_score.  Ranking may
+    # use independent proximity/readiness above, but must not reward the same
+    # zone evidence a second time.
+    zone_bonus = 0
 
     # ---- total ----
     raw = float(base) + prox_bonus + readiness_bonus + rr_bonus + zone_bonus + spread_pen + news_pen + journal_pen
@@ -576,6 +611,242 @@ def enrich_scanner_rows(
     if not isinstance(rows, list):
         return []
     return [enrich_scanner_row_with_ranking(r) for r in rows]
+
+
+def calculate_canonical_ranking(
+    row: dict[str, Any] | None,
+) -> ScannerRankingEvaluation:
+    """Calculate the Phase-6 ranking contract from a filtered candidate row.
+
+    This function consumes ``candidate_status`` and the structured candidate
+    decision attached by the controller.  It never promotes or changes a
+    trading decision; it only ranks the final decisions for presentation.
+    """
+
+    value = row if isinstance(row, dict) else {}
+    status = _canonical_status(value)
+    setup_score = _score_0_100(
+        value.get("setup_score", value.get("final_score", 0))
+    )
+    effective_rr = _positive_finite(value.get("expected_effective_rr"))
+    evidence_confidence, expected_value_r, evidence_source = (
+        _evidence_confidence(value)
+    )
+    strategy_confidence = evidence_confidence
+    execution_readiness = _STATUS_EXECUTION_READINESS[status]
+
+    setup_component = setup_score * 0.55
+    rr_quality = (
+        max(0.0, min(100.0, (effective_rr - 1.0) * 50.0))
+        if effective_rr is not None
+        else 0.0
+    )
+    rr_component = rr_quality * 0.15
+    proximity_quality = {
+        "in_zone": 100.0,
+        "near_zone": 65.0,
+        "far": 20.0,
+    }.get(normalize_price_vs_zone(value.get("price_vs_zone")), 0.0)
+    proximity_component = proximity_quality * 0.10
+    evidence_component = evidence_confidence * 0.10
+    readiness_component = execution_readiness * 0.10
+
+    spread_status = str(value.get("spread_status", "") or "").lower()
+    penalty = 8.0 if spread_status == "abnormal" else 4.0 if spread_status == "caution" else 0.0
+    if _truthy(value.get("high_impact_event_within_30m")):
+        penalty += 10.0
+    elif _truthy(value.get("news_in_3h")):
+        penalty += 5.0
+
+    raw_rank = (
+        setup_component
+        + rr_component
+        + proximity_component
+        + evidence_component
+        + readiness_component
+        - penalty
+    )
+    if status == CANDIDATE_DATA_UNAVAILABLE:
+        raw_rank = 0.0
+    opportunity_rank = round(max(0.0, min(100.0, raw_rank)), 2)
+
+    breakdown = {
+        "setup_score": setup_score,
+        "setup_component": round(setup_component, 2),
+        "rr_quality": round(rr_quality, 2),
+        "rr_component": round(rr_component, 2),
+        "proximity_quality": proximity_quality,
+        "proximity_component": round(proximity_component, 2),
+        "evidence_confidence": evidence_confidence,
+        "evidence_component": round(evidence_component, 2),
+        "evidence_source": evidence_source,
+        "execution_readiness": execution_readiness,
+        "execution_component": round(readiness_component, 2),
+        "readiness_bonus_applied": readiness_component > 0,
+        "penalty_component": round(-penalty, 2),
+        "raw_rank": round(raw_rank, 2),
+        "status": status,
+        "status_priority": CANONICAL_STATUS_PRIORITY[status],
+    }
+    return ScannerRankingEvaluation(
+        status=status,
+        status_priority=CANONICAL_STATUS_PRIORITY[status],
+        opportunity_rank=opportunity_rank,
+        evidence_confidence=evidence_confidence,
+        strategy_confidence=strategy_confidence,
+        execution_readiness=execution_readiness,
+        effective_rr=effective_rr,
+        expected_value_r=expected_value_r,
+        breakdown=breakdown,
+    )
+
+
+def rank_scanner_rows(
+    rows: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Recalculate every ranking field and return one canonical ordering."""
+
+    ranked: list[dict[str, Any]] = []
+    for source in rows if isinstance(rows, list) else []:
+        if not isinstance(source, dict):
+            continue
+        evaluation = calculate_canonical_ranking(source)
+        contract = evaluation.to_dict()
+        enriched = dict(source)
+        enriched.update({
+            "candidate_status": evaluation.status,
+            "scanner_group": _STATUS_TO_GROUP[evaluation.status],
+            "opportunity_rank": evaluation.opportunity_rank,
+            # Compatibility alias; Phase-6 guarantees the value is now 0-100.
+            "opportunity_score": evaluation.opportunity_rank,
+            "evidence_confidence": evaluation.evidence_confidence,
+            "strategy_confidence": evaluation.strategy_confidence,
+            "execution_readiness": evaluation.execution_readiness,
+            "expected_value_r": evaluation.expected_value_r,
+            "ranking_score_breakdown": dict(evaluation.breakdown),
+            "ranking_contract": contract,
+            "ranking_version": SCANNER_RANKING_VERSION,
+            "display_action": SCANNER_GROUP_DISPLAY_ACTIONS.get(
+                _STATUS_TO_GROUP[evaluation.status],
+                "skip",
+            ),
+        })
+        ranked.append(enriched)
+
+    ranked.sort(key=_canonical_sort_key)
+    for index, row in enumerate(ranked, start=1):
+        row["rank"] = index
+    return ranked
+
+
+def _canonical_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        CANONICAL_STATUS_PRIORITY.get(
+            str(row.get("candidate_status", "")),
+            len(CANONICAL_STATUS_PRIORITY),
+        ),
+        -_finite_or_zero(row.get("opportunity_rank")),
+        -_finite_or_zero(row.get("strategy_confidence")),
+        -_finite_or_zero(row.get("execution_readiness")),
+        -_finite_or_zero(row.get("expected_effective_rr")),
+        "".join(
+            character
+            for character in str(row.get("symbol", "") or "").upper()
+            if character.isalnum()
+        ),
+    )
+
+
+def _canonical_status(row: dict[str, Any]) -> str:
+    raw = str(row.get("candidate_status", "") or "").strip().upper()
+    if raw in CANONICAL_STATUS_PRIORITY:
+        return raw
+    decision = row.get("scanner_candidate_decision")
+    if isinstance(decision, dict):
+        raw = str(decision.get("status", "") or "").strip().upper()
+        if raw in CANONICAL_STATUS_PRIORITY:
+            return raw
+    group = str(row.get("scanner_group", "") or "").strip().lower()
+    group_map = {
+        READY_NOW: CANDIDATE_READY_NOW,
+        WAITING_CONFIRMATION: CANDIDATE_WAITING_CONFIRMATION,
+        WATCH_ZONE: CANDIDATE_WATCH_ZONE,
+        "out_of_strategy": CANDIDATE_OUT_OF_STRATEGY,
+        BLOCKED: CANDIDATE_BLOCKED,
+        "data_unavailable": CANDIDATE_DATA_UNAVAILABLE,
+    }
+    if group in group_map:
+        return group_map[group]
+    if row.get("analysis_result") is None:
+        return CANDIDATE_DATA_UNAVAILABLE
+    return CANDIDATE_WATCH_ZONE
+
+
+def _evidence_confidence(
+    row: dict[str, Any],
+) -> tuple[float, float | None, str]:
+    config = row.get("auto_trade_config")
+    config_status = str(
+        row.get("strategy_config_status", "") or ""
+    ).strip().upper()
+    if config_status == "VALIDATED" and isinstance(config, dict):
+        sample = max(0, int(_finite_or_zero(config.get("out_of_sample_trades"))))
+        expectancy = _finite(config.get("oos_expectancy_r"))
+        profit_factor = _finite(config.get("oos_profit_factor"))
+        ci_low = _finite(config.get("expectancy_ci_low"))
+        sample_score = min(40.0, sample / 40.0 * 40.0)
+        expectancy_score = (
+            max(0.0, min(30.0, expectancy / 0.50 * 30.0))
+            if expectancy is not None
+            else 0.0
+        )
+        pf_score = (
+            max(0.0, min(20.0, (profit_factor - 1.0) * 20.0))
+            if profit_factor is not None
+            else 0.0
+        )
+        ci_score = 10.0 if ci_low is not None and ci_low > 0 else 0.0
+        return (
+            round(sample_score + expectancy_score + pf_score + ci_score, 2),
+            expectancy,
+            "backtest_oos",
+        )
+
+    try:
+        journal_sample = int(row.get("journal_sample_size", 0) or 0)
+    except (TypeError, ValueError):
+        journal_sample = 0
+    if journal_sample >= 8:
+        journal_score = _score_0_100(row.get("journal_evidence_score", 0))
+        return (
+            journal_score,
+            _finite(row.get("journal_expectancy_r")),
+            "journal",
+        )
+    return 0.0, None, "none"
+
+
+def _score_0_100(value: object) -> float:
+    return round(max(0.0, min(100.0, _finite_or_zero(value))), 2)
+
+
+def _positive_finite(value: object) -> float | None:
+    parsed = _finite(value)
+    return parsed if parsed is not None and parsed > 0 else None
+
+
+def _finite_or_zero(value: object) -> float:
+    return _finite(value) or 0.0
+
+
+def _finite(value: object) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed != parsed or parsed in (float("inf"), float("-inf")):
+        return None
+    return parsed
 
 
 def _empty_ranking_enrichment() -> dict[str, Any]:

@@ -269,7 +269,11 @@ Scanner hỗ trợ chạy một lần hoặc chạy theo khoảng thời gian do
 
 Khi mở tab Scanner lần đầu trong phiên, hệ thống tự động chọn tất cả mã (`SUPPORTED_SYMBOLS`), đặt chế độ quét tự động với interval M5, và chạy quét đầu tiên sau 1.5 giây. Auto-trade (tự động vào lệnh MT5) luôn mặc định OFF. Cờ `_auto_scanned_this_session` đảm bảo chỉ auto-scan đúng 1 lần mỗi phiên.
 
-`services/telegram_alert_service.py` chỉ gửi alert khi row scanner có `scanner_action = ready`, `trade_permission = allowed` và còn `analysis_result` với trade plan tương ứng. Nội dung alert phải gồm mã giao dịch, broker symbol, hướng BUY/SELL, Entry, Stop loss, Take profit, lot gợi ý, R:R, điểm setup, lý do và vốn MT5 nếu có trong `position_sizing`.
+`services/telegram_alert_service.py` lọc detailed alert theo canonical
+`candidate_status == READY_NOW` và trade plan hợp lệ. Alert chỉ là kênh thông
+báo, không cấp quyền execution. Nội dung gồm mã giao dịch, broker symbol, hướng,
+Entry, Stop loss, Take profit, lot gợi ý, R:R, setup score, lý do và vốn MT5
+nếu có.
 
 Services không được phụ thuộc trực tiếp vào widget UI.
 
@@ -338,7 +342,7 @@ Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 5 màn hình chính trong ứng dụng:
 
 * `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5, AI, Broker dạng card.
-* `scanner_screen.py`: Quét thị trường, bảng xếp hạng, auto-trade. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5, auto-trade OFF).
+* `scanner_screen.py`: Quét thị trường và bảng xếp hạng. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5); nút auto-trade hiện bị disable và request từ UI luôn đặt `auto_trade_enabled=false`.
 * `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Sử dụng QTabWidget 3 tab: (1) "📊 Kết quả" — HTML thống kê tổng hợp + bảng nhiệt lời/lỗ theo tháng + khoảng tin cậy Monte Carlo + Walk-Forward Analysis + pipeline diagnostics, (2) "📈 Đường cong vốn" — matplotlib FigureCanvas hiển thị cumulative R (line xanh) và drawdown R (vùng đỏ), (3) "📋 Danh sách lệnh" — bảng trade với màu sắc (xanh=thắng, đỏ=thua, xám=hòa). Có banner kết luận nhanh (có edge/không), KPI 9 ô, checkbox Walk-Forward, dialog phân tích với bảng thống kê mở rộng, Walk-Forward Analysis, Monte Carlo, pipeline diagnostics, và AI nhận xét.
 * `journal_screen.py`: Nhật ký giao dịch.
 * `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao.
@@ -464,7 +468,11 @@ Ngay từ MVP phải giữ code tương thích đóng gói Windows:
 
 Không code tất cả trong một lần.
 
-## Logic Updates
+## Logic Updates (historical notes)
+
+> Các bullet dưới đây ghi lại thay đổi tại thời điểm triển khai trước Scanner
+> V2. Với Scanner, mọi giá trị threshold, branch, alert và execution phải theo
+> mục “Scanner V2 — kiến trúc hiện hành” bên dưới.
 
 - `risk_engine.build_trade_plan()` returns a wider `watch_zone` for monitoring and a narrower `entry_zone` for confirmation. Only the narrow `entry_zone` is passed to `core/entry_engine.py`; UI, controller and AI must not use `watch_zone` to set `ready_to_trade`.
 - `core/backtest_engine.py` applies `cooldown_bars` after a trade exits before replaying another touch of the same setup zone, reducing duplicate trades during sideways price action.
@@ -478,13 +486,79 @@ Không code tất cả trong một lần.
 - `core.risk_engine.build_trade_plan()` SL priority: **swing structural → preferred zone boundary → ATR/zone-based**. Swing search (`_find_nearest_swing_for_sl`) runs unconditionally first regardless of whether an SMC preferred zone exists; falling back to zone boundary only when no suitable swing is found. Two guards enforce min distance: floor guard (SL ≥ entry_zone_edge ± 0.20×ATR) and min-distance guard (entry_for_rr→SL ≥ 0.20×ATR for SMC, 0.50×ATR for technical).
 - `core.entry_engine` defines 8 module-level constants (e.g. `_NEAR_ZONE_ATR_MULT = 0.5`, `_ZONE_BROKEN_ATR_MULT = 0.25`, `_M15_DISPLACEMENT_THRESHOLD = 0.3`). An `UnboundLocalError` bug in `evaluate_entry()` (variable `internal_structure` used before assignment in early-return paths) and a missing kwarg bug (parameter accidentally embedded in a string) were fixed.
 - `core.analysis_engine.confidence_reason()` includes component score breakdowns, SMC reason and macro/news context so score confidence is explainable from rule-engine data.
-- `core.decision_engine.make_final_decision()` accepts per-symbol `thresholds` (dict with keys `ready`, `watch`, `wait`, `min_score_gap`) that override `DEFAULT_DECISION_THRESHOLDS` (80/65/50/10). Custom thresholds flow from `config.settings.SymbolScanSettings.decision_ready/watch/wait` → `ui.screens.scanner_screen` builds per-symbol dict → `ScannerRequest.thresholds` → `scanner_controller` passes to `analyze_symbol(thresholds=...)` → `AnalysisPipeline.execute()` → `make_final_decision(thresholds=...)`.
-- `config.settings.SymbolScanSettings` stores per-symbol decision thresholds: `decision_ready` (default 80), `decision_watch` (default 65), `decision_wait` (default 50). These are loaded from JSON by `services.settings_service.SettingsService` with backward-compatible fallback to defaults when fields are missing.
+- `core.decision_engine.make_final_decision()` accepts per-symbol `thresholds`
+  with `ready`, `watch`, `wait`, `min_score_gap` and `min_rr`. Scanner builds
+  these qua `analysis_thresholds_for_symbol()` để giữ Decision Engine độc lập
+  với strategy config backtest.
+- `config.settings.SymbolScanSettings` stores per-symbol decision thresholds:
+  `decision_ready` (default 65), `decision_watch` (default 60),
+  `decision_wait` (default 55), cùng `min_expected_rr` (default 1.3).
 - `core.risk_engine.build_trade_plan()` includes a **TP1 zone guard** after the 4-tier cascade: TP1 must be strictly outside the entry zone (`> entry_high` for BUY, `< entry_low` for SELL). Without this guard, a resistance/support zone inside the entry zone could be selected as TP1 when `entry_aggressiveness < ~0.32` — producing a take-profit target that hasn't left the entry zone. The guard rejects TP1 and allows the cascade to fall through; if no valid TP is found, the plan is cancelled rather than created with a bogus target.
 - `core.risk_engine.build_trade_plan()` includes a **TP2 minimum gap guard**: TP2 must be at least `_TP2_MIN_GAP_ATR` (0.15 × ATR) away from TP1. `next_target()` finds the nearest S/R zone but previously had no distance floor, so a resistance/support zone just 0.4 pips from TP1 could be selected as TP2 — producing two take-profit targets that are effectively identical. The guard runs after both `next_target` and the Fib 0.618 fallback; if the gap is too small, TP2 is set to None (plan proceeds with TP1 only).
 - `ui.main_window.MainWindow` có nút "🔄 Khởi động lại" trong sidebar footer (dưới dòng "Dữ liệu: MT5..."). Khi bấm: hiện QMessageBox xác nhận Yes/No; nếu Yes → shutdown MT5, khởi chạy process mới bằng `subprocess.Popen` (hỗ trợ cả PyInstaller `sys.executable` và `python main.py`), `QApplication.quit()`. Logic nằm trong `_restart_app()`. Tham khảo `docs/screen_design.md` phần Sidebar để biết vị trí UI.
 
-## Current Implementation Addendum
+## Scanner V2 — kiến trúc hiện hành (24/07/2026)
+
+```text
+UI / ScannerRequest
+  → ScannerController
+      → Analysis Pipeline
+      → Candidate Engine
+          → Side Evaluation
+          → Strategy Router
+          → Scan-time Execution Readiness
+      → Canonical Ranking
+      → Observability + Shadow V1/V2
+      → Rollout Policy
+      → Shared Execution Revalidation
+      → MT5Service.place_market_order()
+```
+
+Các boundary bắt buộc:
+
+- `core/scanner_models.py` định nghĩa domain model và version contract.
+- `core/scanner_strategy_router.py` là nơi duy nhất chọn
+  `BACKTEST_VALIDATED`, `DEFAULT_RULES` hoặc `BACKTEST_INVALID`.
+- Decision thresholds 65/60/55 độc lập với min score/RR của backtest.
+- Config backtest chỉ được thực thi khi `VALIDATED`, đúng schema/scorer/feature,
+  còn hạn và đủ bằng chứng OOS/walk-forward/fingerprint.
+- `core/scanner_candidate_engine.py` tạo canonical candidate decision với sáu
+  status; UI không suy luận lại từ `scanner_action`.
+- `core/scanner_ranking_engine.py` xếp hạng sau filter bằng thang 0–100.
+  `opportunity_score` chỉ là compatibility alias.
+- `controllers/scanner_controller.ScannerController.execute_order_candidate()`
+  là shared execution boundary cho cả auto và manual Scanner order.
+- Execution lấy snapshot MT5 mới, tính lại lot, kiểm tra news, giá/zone/SL/TP/RR,
+  account và portfolio trước khi gọi `place_market_order`.
+- `core/scanner_rollout.py` chặn order theo stage. Mặc định `SHADOW`; kill
+  switch luôn thắng.
+- Snapshot, full analysis, event JSONL và rollout metrics được lưu trong
+  app-data để replay/audit.
+
+Stage rollout:
+
+`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`.
+
+`PRODUCTION` cần đồng thời `production_approved=true` và release readiness đạt;
+không một feature flag hoặc nút UI nào được bỏ qua điều kiện này.
+
+Runtime trên máy hiện tại đã lưu stage `PRODUCTION`,
+`production_approved=true`, cho phép tài khoản real và bật các feature flag
+V2. Release readiness vẫn `false`, nên kiến trúc fail-closed vẫn chặn lệnh
+bằng `RELEASE_GATE_NOT_READY`. Xem `docs/runtime-status.md`.
+
+Ngoài rollout guard, `ScannerScreen.AUTO_TRADE_UI_ENABLED=false` đang khóa nút
+auto-entry ở giao diện và `_auto_trade_enabled()` luôn trả `false`. Đường
+manual order vẫn đi qua shared execution boundary.
+
+Xem chi tiết tại `docs/scanner-flow.md` và
+`docs/technical-scoring-architecture.md`.
+
+## Implementation Addendum trước Scanner V2 (tham chiếu lịch sử)
+
+> Hai mục Telegram/Auto-entry ngay dưới đây mô tả contract cũ. Chúng đã được
+> thay thế bởi candidate status canonical, shared execution path và rollout
+> policy ở mục trên.
 
 ### Telegram alert format
 
@@ -499,7 +573,11 @@ Không code tất cả trong một lần.
 - `ui.screens.scanner_screen.ScannerScreen` exposes a visible auto-entry toggle button. The button is disabled in one-shot mode, enabled in auto-scan mode, and highlighted when active.
 - `ScannerScreen` sets `ScannerRequest.auto_trade_enabled=True` only when scan mode is auto and the auto-entry toggle button is on.
 - `controllers.scanner_controller.ScannerController` executes auto trades after all rows are scanned, sorted and enriched.
-- A row can be auto-traded only when it is a true ready setup: `scanner_action == "ready"`, `trade_permission == "allowed"`, `analysis_result` exists, and a scenario matching `best_side` exists.
+- A row can be auto-traded only when canonical
+  `scanner_candidate_decision.auto_trade_candidate=true`. Setup score,
+  scenario, Gate, entry, R:R và payload phải cùng `selected_side`; không dùng
+  lại `scanner_action`, `trade_permission` hoặc `best_side` legacy để tự suy
+  luận quyền đặt lệnh.
 - Risk is still controlled by the normal sizing path. The controller caps `request.risk_percent` to `settings.trading.max_risk_percent` before analysis and before auto-entry.
 - Auto-entry uses `scenario.position_sizing.suggested_lot`, which is calculated from the MT5 account balance and configured risk percent.
 - For each broker symbol, `MT5Service.has_open_position_or_order()` checks both open positions and pending orders. If any existing position/order exists for that symbol, the system skips auto-entry for that symbol.

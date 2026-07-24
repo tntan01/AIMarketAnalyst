@@ -211,6 +211,24 @@ def _assert_valid_reason_codes(result: dict[str, Any]) -> None:
             assert isinstance(code, str), f"{key} item must be str, got {type(code)}"
 
 
+def _assert_valid_side_scores(result: dict[str, Any]) -> None:
+    side_scores = result["side_scores"]
+    assert isinstance(side_scores, dict)
+    assert set(side_scores) == {"buy", "sell"}
+    for side in ("buy", "sell"):
+        score = side_scores[side]
+        assert score["side"] == side
+        for key in (
+            "signal_score",
+            "evidence_score",
+            "execution_quality_score",
+            "setup_score",
+            "final_score",
+        ):
+            assert isinstance(score[key], int), f"{side}.{key} must be int"
+            assert 0 <= score[key] <= 100
+
+
 def _assert_valid_chart_payload(result: dict[str, Any]) -> None:
     cp_ = result["chart_payload"]
     assert isinstance(cp_, dict), "chart_payload must be a dict"
@@ -230,8 +248,9 @@ def _assert_full_contract(result: dict[str, Any]) -> None:
         "direction_bias", "reason_codes", "penalty_codes",
         "warning_codes", "block_codes", "reason_messages",
         "trade_permission", "decision_summary", "trade_gate",
-        "journal_feedback", "account_guard", "technical", "smc",
-        "smc_trade_flags", "scenario_scores", "macro", "economic_events",
+        "journal_feedback", "journal_feedback_by_side", "account_guard",
+        "technical", "smc", "smc_trade_flags", "scenario_scores",
+        "side_scores", "macro", "economic_events",
         "scenarios", "entry_checklist", "backtest", "pattern_backtest",
         "why_not_opposite", "confidence_reason", "risk_management",
         "ai_provider", "chart_payload", "final_score", "final_score_detail",
@@ -251,6 +270,7 @@ def _assert_full_contract(result: dict[str, Any]) -> None:
     _assert_valid_trade_gate(result)
     _assert_valid_direction_bias(result)
     _assert_valid_reason_codes(result)
+    _assert_valid_side_scores(result)
     _assert_valid_chart_payload(result)
 
     # Technical snapshot
@@ -388,8 +408,9 @@ def test_analyze_symbol_all_keys_present():
         "direction_bias", "reason_codes", "penalty_codes",
         "warning_codes", "block_codes", "reason_messages",
         "trade_permission", "decision_summary", "trade_gate",
-        "journal_feedback", "account_guard", "technical", "smc",
-        "smc_trade_flags", "scenario_scores", "macro", "economic_events",
+        "journal_feedback", "journal_feedback_by_side", "account_guard",
+        "technical", "smc", "smc_trade_flags", "scenario_scores",
+        "side_scores", "macro", "economic_events",
         "scenarios", "entry_checklist", "backtest", "pattern_backtest",
         "why_not_opposite", "confidence_reason", "risk_management",
         "ai_provider", "chart_payload", "final_score", "final_score_detail",

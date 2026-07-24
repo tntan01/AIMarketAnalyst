@@ -400,15 +400,38 @@ def build_scenarios(
     spread_price: float = 0.0,
     market_regime: dict[str, Any] | None = None,
     preferred_zones: dict[str, dict[str, Any] | None] | None = None,
+    strict_preferred_zones: bool = False,
+    require_preferred_zones: bool = False,
     is_backtest: bool = False,
 ) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
     preferred = preferred_zones or {}
     for side in ("buy", "sell"):
+        if (
+            require_preferred_zones
+            and not isinstance(preferred.get(side), dict)
+        ):
+            # Active canonical scoring cannot create a plan from an unrelated
+            # technical level when its own mandatory zone selection failed.
+            continue
         side_total = scores[side].get("signal_score", scores[side].get("total", 0))
         if side_total < 50 or trade_permission["status"] == "blocked":
             continue
-        plan = build_trade_plan(side, request, technical, smc, h1_candles or [], m15_candles=m15_candles, correlation_context=correlation_context, quote_to_usd_rate=quote_to_usd_rate, spread_price=spread_price, market_regime=market_regime, preferred_zone=preferred.get(side), is_backtest=is_backtest)
+        plan = build_trade_plan(
+            side,
+            request,
+            technical,
+            smc,
+            h1_candles or [],
+            m15_candles=m15_candles,
+            correlation_context=correlation_context,
+            quote_to_usd_rate=quote_to_usd_rate,
+            spread_price=spread_price,
+            market_regime=market_regime,
+            preferred_zone=preferred.get(side),
+            strict_preferred_zone=strict_preferred_zones,
+            is_backtest=is_backtest,
+        )
         if not plan:
             continue
         plan.update({
@@ -434,6 +457,7 @@ def build_trade_plan(
     market_regime: dict[str, Any] | None = None,
     entry_aggressiveness: float = _ENTRY_AGGRESSIVENESS,
     preferred_zone: dict[str, Any] | None = None,
+    strict_preferred_zone: bool = False,
     is_backtest: bool = False,
 ) -> dict[str, Any] | None:
     price = technical["price"]
@@ -476,6 +500,10 @@ def build_trade_plan(
             max_zone_distance = atr_value * zone_dist_mult
             if pz_distance <= max_zone_distance:
                 use_preferred = True
+    if strict_preferred_zone and isinstance(preferred_zone, dict) and not use_preferred:
+        # A consumer-owned selection must never silently become another SMC
+        # or technical zone.  An unusable selected zone means no plan.
+        return None
 
     sign = 1 if side == "buy" else -1
     zones = support_zones if side == "buy" else resistance_zones
@@ -493,6 +521,16 @@ def build_trade_plan(
 
     level = zone["level"]
     entry_zone_score = zone.get("zone_score")
+    entry_zone_id = zone.get("zone_id")
+    entry_zone_quality_score = zone.get(
+        "zone_quality_score",
+        entry_zone_score,
+    )
+    entry_zone_relevance_score = zone.get("zone_relevance_score")
+    entry_zone_setup_score = zone.get(
+        "zone_setup_score",
+        entry_zone_score,
+    )
     entry_zone_source = zone.get("source", "technical")
     is_smc_zone = entry_zone_source in ("smc", "smc_selected")
     zone_low = zone.get("low")
@@ -688,6 +726,26 @@ def build_trade_plan(
         "correlation_warnings": corr_warnings,
         "correlation_context": corr_context,
         "entry_zone_score": entry_zone_score,
+        "entry_zone_id": entry_zone_id,
+        "entry_zone_quality_score": entry_zone_quality_score,
+        "entry_zone_relevance_score": entry_zone_relevance_score,
+        "entry_zone_setup_score": entry_zone_setup_score,
+        "entry_zone_scoring_version": zone.get("scoring_version"),
+        "smc_score_breakdown": (
+            dict(zone.get("smc_score_breakdown"))
+            if isinstance(zone.get("smc_score_breakdown"), dict)
+            else {}
+        ),
+        "entry_zone_liquidity_sweep_linked": bool(
+            zone.get("liquidity_sweep_linked")
+        ),
+        "entry_zone_linked_sweep_id": zone.get("linked_sweep_id"),
+        "entry_zone_linked_sweep_distance_atr": zone.get(
+            "linked_sweep_distance_atr"
+        ),
+        "entry_zone_linked_sweep_time_delta": zone.get(
+            "linked_sweep_time_delta"
+        ),
         "entry_zone_source": entry_zone_source,
         "sl_source": sl_source,
         "tp_source": "none" if tp1 is None else "structure",
@@ -696,7 +754,15 @@ def build_trade_plan(
         "alternate_zones": [
             {
                 "level": round_price(z["level"]),
+                "zone_id": z.get("zone_id"),
                 "zone_score": z.get("zone_score", z.get("_effective_score")),
+                "zone_quality_score": z.get("zone_quality_score"),
+                "zone_relevance_score": z.get("zone_relevance_score"),
+                "zone_setup_score": z.get("zone_setup_score"),
+                "liquidity_sweep_linked": bool(
+                    z.get("liquidity_sweep_linked")
+                ),
+                "linked_sweep_id": z.get("linked_sweep_id"),
                 "source": z.get("source", "technical"),
             }
             for z in alternate_zones_raw
@@ -721,16 +787,47 @@ def _smc_zones_to_levels(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "low": low,
                 "high": high,
                 "type": zone.get("type", "smc_zone"),
+                "zone_id": zone.get("zone_id"),
+                "symbol": zone.get("symbol"),
+                "timeframe": zone.get("timeframe"),
+                "family": zone.get("family"),
+                "direction": zone.get("direction"),
                 "strength": zone.get("strength", "moderate"),
                 "confluence_count": zone.get("confluence_count", 1),
                 "consolidation_bars": zone.get("consolidation_bars", 0),
                 "zone_score": zone.get("zone_score", 50),
+                "zone_quality_score": zone.get(
+                    "zone_quality_score",
+                    zone.get("zone_score", 50),
+                ),
+                "zone_relevance_score": zone.get("zone_relevance_score"),
+                "zone_setup_score": zone.get(
+                    "zone_setup_score",
+                    zone.get("zone_score", 50),
+                ),
+                "scoring_version": zone.get("scoring_version"),
+                "domain_version": zone.get("domain_version"),
                 "freshness_bars": zone.get("freshness_bars"),
                 "mitigated": zone.get("mitigated", False),
                 "broken": zone.get("broken", False),
                 "test_count": zone.get("test_count", 0),
                 "displacement_multiple": zone.get("displacement_multiple", 0),
                 "liquidity_sweep": zone.get("liquidity_sweep", False),
+                "legacy_liquidity_sweep": zone.get(
+                    "legacy_liquidity_sweep",
+                    zone.get("liquidity_sweep", False),
+                ),
+                "liquidity_sweep_linked": bool(
+                    zone.get("liquidity_sweep_linked")
+                ),
+                "linked_sweep_id": zone.get("linked_sweep_id"),
+                "linked_sweep_distance_atr": zone.get(
+                    "linked_sweep_distance_atr"
+                ),
+                "linked_sweep_time_delta": zone.get(
+                    "linked_sweep_time_delta"
+                ),
+                "sweep_link_version": zone.get("sweep_link_version"),
                 "zone_location": zone.get("zone_location", "unknown"),
                 "source": "smc",
             }

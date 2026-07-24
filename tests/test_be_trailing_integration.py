@@ -4,6 +4,14 @@ Integration test: Verify all 7 tasks of BE + Trailing Stop are implemented.
 Tests the pure logic without requiring MT5 or PyQt6 widgets.
 """
 
+import pytest
+
+if __name__ != "__main__":
+    pytest.skip(
+        "Legacy source-inspection script; superseded by test_be_trailing_task1..6.",
+        allow_module_level=True,
+    )
+
 import sys
 import os
 import traceback

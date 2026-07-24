@@ -75,6 +75,16 @@ class JournalEntry:
     entry_zone_score: int | None = None
     entry_zone_source: str | None = None
     sub_zone: str | None = None
+    selected_zone_id: str | None = None
+    entry_zone_quality_score: int | None = None
+    entry_zone_relevance_score: int | None = None
+    entry_zone_setup_score: int | None = None
+    entry_zone_scoring_version: str | None = None
+    smc_score_breakdown_json: str | None = None
+    scanner_scorer_version: str | None = None
+    scanner_feature_version: str | None = None
+    smc_scorer_version: str | None = None
+    smc_scoring_mode: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -191,7 +191,9 @@ def filter_trades_by_symbol_direction(
             trade.get("symbol") if "symbol" in trade else trade.get("pair")
         )
         trade_direction = normalize_direction(
-            trade.get("direction") if "direction" in trade else trade.get("side")
+            trade.get("direction")
+            or trade.get("side")
+            or trade.get("selected_scenario")
         )
         if trade_symbol == norm_symbol and trade_direction == norm_direction:
             matched.append(trade)
@@ -260,8 +262,9 @@ def filter_trades_by_symbol_direction_zone(
     symbol: str,
     direction: str,
     zone_bucket: str,
+    zone_scoring_version: str | None = None,
 ) -> list[dict[str, object]]:
-    """Return trades matching symbol + direction + zone_score bucket."""
+    """Return trades matching symbol, direction, score bucket and version."""
     if not isinstance(trades, list):
         return []
 
@@ -278,9 +281,23 @@ def filter_trades_by_symbol_direction_zone(
             trade.get("symbol") if "symbol" in trade else trade.get("pair")
         )
         trade_direction = normalize_direction(
-            trade.get("direction") if "direction" in trade else trade.get("side")
+            trade.get("direction")
+            or trade.get("side")
+            or trade.get("selected_scenario")
         )
         if trade_symbol != norm_symbol or trade_direction != norm_direction:
+            continue
+        trade_version = str(
+            trade.get("entry_zone_scoring_version")
+            or trade.get("smc_scoring_version")
+            or ""
+        ).strip()
+        if zone_scoring_version is None:
+            # Compatibility calls may only use historical unversioned rows;
+            # they are never mixed with a canonical version.
+            if trade_version:
+                continue
+        elif trade_version != str(zone_scoring_version).strip():
             continue
         trade_zone_bucket = normalize_zone_bucket(trade.get("entry_zone_score"))
         if trade_zone_bucket == zone_bucket:
@@ -317,6 +334,7 @@ def select_evidence_group(
     direction: str,
     regime: str | None = None,
     zone_bucket: str | None = None,
+    zone_scoring_version: str | None = None,
     min_group_size: int = STRONG_SAMPLE_SIZE,
 ) -> dict[str, Any]:
     """Choose the best available trade group for evidence scoring.
@@ -336,7 +354,11 @@ def select_evidence_group(
     # Tier 0: symbol + direction + zone_bucket
     if zone_bucket is not None:
         zone_trades = filter_trades_by_symbol_direction_zone(
-            trades, symbol, direction, zone_bucket
+            trades,
+            symbol,
+            direction,
+            zone_bucket,
+            zone_scoring_version,
         )
         zone_rr = extract_closed_trade_results(zone_trades)
         if len(zone_rr) >= ZONE_BUCKET_SAMPLE_SIZE:
@@ -397,6 +419,7 @@ def calculate_evidence_score(
     direction: str,
     regime: str | None = None,
     zone_score: int | float | None = None,
+    zone_scoring_version: str | None = None,
 ) -> dict[str, Any]:
     """Compute an evidence score for a symbol + direction (+ regime) group.
 
@@ -421,9 +444,17 @@ def calculate_evidence_score(
         result["normalized_direction"] = norm_direction
         result["normalized_regime"] = norm_regime
         result["zone_bucket_used"] = None
+        result["zone_scoring_version_used"] = None
         return result
 
-    group = select_evidence_group(trades, norm_symbol, norm_direction, norm_regime, norm_zone_bucket)
+    group = select_evidence_group(
+        trades,
+        norm_symbol,
+        norm_direction,
+        norm_regime,
+        norm_zone_bucket,
+        zone_scoring_version,
+    )
 
     if group["group_used"] is None:
         # Insufficient data — run stats on best group for info, but cap score at 50
@@ -438,6 +469,11 @@ def calculate_evidence_score(
         edge["normalized_direction"] = norm_direction
         edge["normalized_regime"] = norm_regime
         edge["zone_bucket_used"] = group.get("zone_bucket_used")
+        edge["zone_scoring_version_used"] = (
+            zone_scoring_version
+            if norm_zone_bucket is not None
+            else None
+        )
         edge["group_used"] = group["group_used"]
         edge["sample_size"] = group["sample_size"]
         return edge
@@ -447,6 +483,11 @@ def calculate_evidence_score(
     edge["normalized_direction"] = norm_direction
     edge["normalized_regime"] = norm_regime
     edge["zone_bucket_used"] = norm_zone_bucket if group["group_used"] == "symbol_direction_zone" else None
+    edge["zone_scoring_version_used"] = (
+        zone_scoring_version
+        if group["group_used"] == "symbol_direction_zone"
+        else None
+    )
     return edge
 
 

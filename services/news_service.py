@@ -178,6 +178,83 @@ class NewsService:
             "resume_after": resume_after,
         }
 
+    def execution_news_status(
+        self,
+        symbol: str,
+        *,
+        before_minutes: int = 30,
+        after_minutes: int = 30,
+        now: datetime | None = None,
+    ) -> dict[str, object]:
+        """Return a fail-closed, execution-time high-impact news status."""
+
+        checked_at = now.astimezone(UTC) if now and now.tzinfo else (
+            now.replace(tzinfo=UTC) if now else datetime.now(UTC)
+        )
+        try:
+            context = self.latest_macro_context(
+                symbol,
+                include_latest_statements=False,
+            )
+        except Exception as exc:
+            return {
+                "available": False,
+                "blackout": None,
+                "checked_at": checked_at.isoformat(),
+                "event": None,
+                "reason_codes": ["NEWS_STATUS_UNAVAILABLE"],
+                "message": str(exc),
+            }
+
+        source = str(context.get("source") or "").strip()
+        normalized_source = source.lower()
+        source_is_available = bool(
+            source
+            and normalized_source not in {"error", "none"}
+            and "unavailable" not in normalized_source
+        )
+        events = context.get("events")
+        if not source_is_available or not isinstance(events, list):
+            return {
+                "available": False,
+                "blackout": None,
+                "checked_at": checked_at.isoformat(),
+                "event": None,
+                "source": source,
+                "reason_codes": ["NEWS_STATUS_UNAVAILABLE"],
+            }
+
+        before = max(0, int(before_minutes))
+        after = max(0, int(after_minutes))
+        blackout_event: dict[str, object] | None = None
+        smallest_distance: float | None = None
+        for event in events:
+            if not isinstance(event, dict) or not _is_high_impact(
+                str(event.get("impact", ""))
+            ):
+                continue
+            event_time = _event_time(event)
+            if event_time is None:
+                continue
+            event_time = event_time.astimezone(UTC)
+            delta_minutes = (event_time - checked_at).total_seconds() / 60.0
+            if -after <= delta_minutes <= before:
+                distance = abs(delta_minutes)
+                if smallest_distance is None or distance < smallest_distance:
+                    smallest_distance = distance
+                    blackout_event = dict(event)
+
+        return {
+            "available": True,
+            "blackout": blackout_event is not None,
+            "checked_at": checked_at.isoformat(),
+            "event": blackout_event,
+            "source": source,
+            "reason_codes": (
+                ["NEWS_BLACKOUT"] if blackout_event is not None else []
+            ),
+        }
+
     _preload_cache_time: datetime | None = None
     _preload_cache_ttl = timedelta(minutes=5)
     NEWS_WINDOW_DAYS = 7

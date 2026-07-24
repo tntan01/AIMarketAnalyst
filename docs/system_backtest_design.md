@@ -2,6 +2,41 @@
 
 > Quy tắc bắt buộc: file này phải luôn được lưu bằng **UTF-8**. Không dùng ANSI, Windows-1258, Windows-1252 hoặc bất kỳ encoding cục bộ nào. Khi chỉnh bằng VS Code, kiểm tra góc dưới bên phải phải là `UTF-8`. Khi đọc bằng PowerShell, dùng `Get-Content -Encoding utf8`.
 
+> Cập nhật 24/07/2026: các phần mô tả nhiều entry mode phía dưới là lịch sử
+> thiết kế. Runtime hiện tại dùng một `BacktestRequest` và
+> `trade_open_block_reason()` thống nhất. Backtest result phát hành scoring
+> contract `setup_score` / `scanner-v3` / `scanner-features-v3`; chỉ config
+> vượt validation schema v4 (`phase8-smc-v2-oos-v1`) mới được Strategy Router dùng
+> trong `BACKTEST_VALIDATED`.
+
+## Runtime Contract Hiện Hành
+
+`core/system_backtest_engine.py` replay `analyze_symbol()` và tạo
+`BacktestResult` gồm request, summary, trades, equity curve, breakdowns,
+skipped setups, diagnostics và scoring contract.
+
+Entry filter thống nhất:
+
+1. `trade_gate.allowed is True`;
+2. permission là `allowed` hoặc `caution`;
+3. decision thuộc tập được backtest engine chấp nhận;
+4. entry status thuộc `confirmed_entry`, `waiting_confirmation` hoặc
+   `watch_zone`;
+5. đạt `min_final_score` nếu request cấu hình giá trị lớn hơn 0.
+
+Đây là logic lấy mẫu nghiên cứu/backtest, không phải quyền đặt lệnh live.
+Auto-trade live vẫn phải qua Candidate Engine, Strategy Router, rollout guard,
+portfolio gate và execution revalidation.
+
+Khi áp dụng kết quả Backtest cho Scanner:
+
+- cấu hình mới bắt đầu theo lifecycle validation, không tự được coi là hợp lệ;
+- `VALIDATED` cần train/OOS ranges, sample/metrics, confidence interval,
+  walk-forward `ROBUST`, fingerprint và expiry;
+- config cũ migrate thành `DRAFT`;
+- sai scorer/feature/schema hoặc hết hạn tạo `BACKTEST_INVALID`, không fallback
+  sang auto-trade mặc định.
+
 ## Mục Tiêu
 
 Chức năng System Backtest dùng để đo hiệu quả của toàn bộ hệ thống phân tích hiện tại, không chỉ kiểm tra riêng một indicator hay một module SMC.
@@ -405,13 +440,14 @@ total = clamp(technical_scaled + risk_scaled + macro_effective, 0, 100)
 
 Điểm tối đa 100 chỉ đạt được khi cả technical, risk, và macro đều hoàn hảo.
 
-## Điều Kiện Vào Lệnh
+## Điều Kiện Vào Lệnh (thiết kế nhiều mode lịch sử)
 
 Hệ thống hỗ trợ 5 chế độ để so sánh, từ chặt nhất đến nới lỏng nhất. Hàm quyết định chính là `trade_open_block_reason()` trong `core/system_backtest_engine.py`.
 
 ### Chế Độ Strict (mặc định)
 
-Dành cho auto-trade thật. Chỉ vào lệnh khi tất cả điều kiện sau cùng đúng:
+Mô tả lịch sử của mode Strict. Không dùng mục này làm contract auto-trade thật;
+execution hiện hành tuân theo phần Runtime Contract ở đầu tài liệu.
 
 ```python
 result["trade_gate"]["allowed"] is True

@@ -1672,7 +1672,7 @@ QFrame#MacroContextCard, QFrame#ChecklistCard {
   border-radius: 8px;
 }
 
-QFrame#SummaryPillBuy, QFrame#SummaryPillSell, QFrame#SummaryPillNeutral, QFrame#SummaryPillScore, QFrame#SummaryPillRR, QFrame#SummaryPillPerm {
+QFrame#SummaryPillBuy, QFrame#SummaryPillSell, QFrame#SummaryPillNeutral, QFrame#SummaryPillStatus, QFrame#SummaryPillScore, QFrame#SummaryPillRR, QFrame#SummaryPillPerm, QFrame#SummaryPillRollout {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
@@ -1703,6 +1703,12 @@ QFrame#ChecklistRowCardPass {
 QFrame#ChecklistRowCardFail {
   background: rgba(244, 63, 94, 0.05);
   border: 1px solid rgba(244, 63, 94, 0.12);
+  border-radius: 6px;
+}
+
+QFrame#ChecklistRowCardUnknown {
+  background: rgba(100, 116, 139, 0.05);
+  border: 1px solid rgba(100, 116, 139, 0.12);
   border-radius: 6px;
 }
 

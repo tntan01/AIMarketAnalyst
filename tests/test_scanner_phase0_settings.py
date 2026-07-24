@@ -1,0 +1,50 @@
+"""Settings and scanner output contracts introduced in Phase 0."""
+
+from __future__ import annotations
+
+from config.settings import FeatureFlagSettings, default_settings
+from core.scanner import ScannerRequest, build_scanner_output
+from services.settings_service import SettingsService
+
+
+def test_feature_flags_default_off():
+    settings = default_settings()
+    assert settings.features == FeatureFlagSettings()
+
+
+def test_feature_flags_load_backward_compatibly(tmp_path):
+    service = SettingsService(tmp_path / "settings.json")
+    service.storage.save({"ai": {}})
+    settings = service.load()
+    assert settings.features.scanner_architecture_v2 is False
+    assert settings.features.auto_trade_v2 is False
+    assert settings.features.backtest_config_v2 is False
+
+
+def test_feature_flags_round_trip(tmp_path):
+    # Avoid touching the OS credential store; no provider has an API key.
+    service = SettingsService(tmp_path / "settings.json")
+    settings = default_settings()
+    settings.features.scanner_architecture_v2 = True
+    settings.features.auto_trade_v2 = True
+    service.save(settings)
+
+    loaded = service.load()
+    assert loaded.features.scanner_architecture_v2 is True
+    assert loaded.features.auto_trade_v2 is True
+    assert loaded.features.backtest_config_v2 is False
+
+
+def test_scanner_output_exposes_contract_and_flags():
+    request = ScannerRequest(
+        symbols=[],
+        account_balance=10_000,
+        risk_percent=1.0,
+        timezone_name="Asia/Ho_Chi_Minh",
+        feature_flags={"auto_trade_v2": False},
+    )
+    output = build_scanner_output([], request, 0)
+    assert output["scanner_contract_version"] == "phase0-safety-v1"
+    assert output["strategy_router_version"] == "phase2-router-v1"
+    assert output["portfolio_engine_version"] == "phase4-portfolio-v1"
+    assert output["feature_flags"] == {"auto_trade_v2": False}

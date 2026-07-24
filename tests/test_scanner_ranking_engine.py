@@ -87,8 +87,8 @@ def test_enrich_scanner_row_uses_nested_analysis_without_mutating_original():
     assert enriched["display_action"] == "ready"
 
 
-def test_zone_quality_bonus_rewards_high_zone_score():
-    """Row with entry_zone_score=90 should rank higher than identical row with score=20."""
+def test_zone_quality_is_not_double_counted_in_ranking():
+    """Zone evidence already included in setup_score must not be added again."""
     from core.scanner_ranking_engine import calculate_opportunity_score
 
     base_row = {
@@ -107,13 +107,9 @@ def test_zone_quality_bonus_rewards_high_zone_score():
     result_good = calculate_opportunity_score(row_good)
     result_bad = calculate_opportunity_score(row_bad)
 
-    # zone_score=90: (90-50)/50=0.8 * 6 = 4.8 -> int=4
-    # zone_score=20: 20<50 -> max(0, ...)=0 -> 0
-    assert result_good["score_breakdown"]["zone_quality_bonus"] >= 4
+    assert result_good["score_breakdown"]["zone_quality_bonus"] == 0
     assert result_bad["score_breakdown"]["zone_quality_bonus"] == 0
-    assert result_good["opportunity_score"] > result_bad["opportunity_score"], (
-        f"Good zone ({result_good['opportunity_score']}) should outrank bad zone ({result_bad['opportunity_score']})"
-    )
+    assert result_good["opportunity_score"] == result_bad["opportunity_score"]
 
 
 def test_missing_zone_score_does_not_crash():

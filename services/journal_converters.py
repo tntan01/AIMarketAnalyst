@@ -60,9 +60,30 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
     buy_score = int(scores.get("buy", {}).get("total", 0))
     sell_score = int(scores.get("sell", {}).get("total", 0))
     scenarios = analysis.get("scenarios", []) if isinstance(analysis.get("scenarios"), list) else []
-    scenario = next((item for item in scenarios if isinstance(item, dict) and item.get("type") in {"buy", "sell"}), scenarios[0] if scenarios else {})
-    scenario = scenario if isinstance(scenario, dict) else {}
     decision = analysis.get("decision_summary", {}) if isinstance(analysis.get("decision_summary"), dict) else {}
+    selected_side = str(
+        decision.get("best_side")
+        or decision.get("best_scenario")
+        or ""
+    ).lower()
+    scenario = next(
+        (
+            item
+            for item in scenarios
+            if isinstance(item, dict)
+            and item.get("type") == selected_side
+        ),
+        next(
+            (
+                item
+                for item in scenarios
+                if isinstance(item, dict)
+                and item.get("type") in {"buy", "sell"}
+            ),
+            scenarios[0] if scenarios else {},
+        ),
+    )
+    scenario = scenario if isinstance(scenario, dict) else {}
     permission = analysis.get("trade_permission", {}) if isinstance(analysis.get("trade_permission"), dict) else {}
     data_quality = analysis.get("data_quality", {}) if isinstance(analysis.get("data_quality"), dict) else {}
     market_regime = analysis.get("market_regime", {}) if isinstance(analysis.get("market_regime"), dict) else {}
@@ -81,6 +102,26 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
     zone_score = _safe_int(scenario.get("entry_zone_score"))
     zone_source = str(scenario.get("entry_zone_source") or "") or None
     sub_zone = str(scenario.get("sub_zone") or "") or None
+    selected_zone_id = str(scenario.get("entry_zone_id") or "") or None
+    zone_quality = _safe_int(scenario.get("entry_zone_quality_score"))
+    zone_relevance = _safe_int(
+        scenario.get("entry_zone_relevance_score")
+    )
+    zone_setup = _safe_int(scenario.get("entry_zone_setup_score"))
+    zone_version = (
+        str(scenario.get("entry_zone_scoring_version") or "") or None
+    )
+    score_breakdown = scenario.get("smc_score_breakdown")
+    score_breakdown_json = (
+        json.dumps(score_breakdown, ensure_ascii=False, sort_keys=True)
+        if isinstance(score_breakdown, dict)
+        else None
+    )
+    scoring_provenance = (
+        analysis.get("scoring_provenance")
+        if isinstance(analysis.get("scoring_provenance"), dict)
+        else {}
+    )
 
     eq = analysis.get("execution_quality")
     if not isinstance(eq, dict):
@@ -136,6 +177,34 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
         entry_zone_score=zone_score,
         entry_zone_source=zone_source,
         sub_zone=sub_zone,
+        selected_zone_id=selected_zone_id,
+        entry_zone_quality_score=zone_quality,
+        entry_zone_relevance_score=zone_relevance,
+        entry_zone_setup_score=zone_setup,
+        entry_zone_scoring_version=zone_version,
+        smc_score_breakdown_json=score_breakdown_json,
+        scanner_scorer_version=(
+            str(
+                scoring_provenance.get("scanner_scorer_version", "")
+                or ""
+            )
+            or None
+        ),
+        scanner_feature_version=(
+            str(
+                scoring_provenance.get("scanner_feature_version", "")
+                or ""
+            )
+            or None
+        ),
+        smc_scorer_version=(
+            str(scoring_provenance.get("smc_scorer_version", "") or "")
+            or zone_version
+        ),
+        smc_scoring_mode=(
+            str(scoring_provenance.get("smc_scoring_mode", "") or "")
+            or None
+        ),
         trade_status="planned",
         opened_at=None,
         result_amount=None,
@@ -164,6 +233,30 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
     row_zone_score = _safe_int(row.get("entry_zone_score"))
     row_zone_source = str(row.get("entry_zone_source") or "") or None
     row_sub_zone = str(row.get("sub_zone") or "") or None
+    row_zone_id = str(
+        row.get("selected_zone_id")
+        or row.get("entry_zone_id")
+        or ""
+    ) or None
+    row_zone_quality = _safe_int(row.get("entry_zone_quality_score"))
+    row_zone_relevance = _safe_int(
+        row.get("entry_zone_relevance_score")
+    )
+    row_zone_setup = _safe_int(row.get("entry_zone_setup_score"))
+    row_zone_version = (
+        str(row.get("entry_zone_scoring_version") or "") or None
+    )
+    row_breakdown = row.get("smc_score_breakdown")
+    row_breakdown_json = (
+        json.dumps(row_breakdown, ensure_ascii=False, sort_keys=True)
+        if isinstance(row_breakdown, dict)
+        else None
+    )
+    row_provenance = (
+        row.get("scoring_provenance")
+        if isinstance(row.get("scoring_provenance"), dict)
+        else {}
+    )
 
     return JournalEntry(
         id=None,
@@ -211,6 +304,45 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
         entry_zone_score=row_zone_score,
         entry_zone_source=row_zone_source,
         sub_zone=row_sub_zone,
+        selected_zone_id=row_zone_id,
+        entry_zone_quality_score=row_zone_quality,
+        entry_zone_relevance_score=row_zone_relevance,
+        entry_zone_setup_score=row_zone_setup,
+        entry_zone_scoring_version=row_zone_version,
+        smc_score_breakdown_json=row_breakdown_json,
+        scanner_scorer_version=(
+            str(
+                row.get("scorer_version")
+                or row_provenance.get("scanner_scorer_version")
+                or ""
+            )
+            or None
+        ),
+        scanner_feature_version=(
+            str(
+                row.get("feature_version")
+                or row_provenance.get("scanner_feature_version")
+                or ""
+            )
+            or None
+        ),
+        smc_scorer_version=(
+            str(
+                row.get("smc_scorer_version")
+                or row_provenance.get("smc_scorer_version")
+                or row_zone_version
+                or ""
+            )
+            or None
+        ),
+        smc_scoring_mode=(
+            str(
+                row.get("smc_scoring_mode")
+                or row_provenance.get("smc_scoring_mode")
+                or ""
+            )
+            or None
+        ),
         trade_status="planned",
         opened_at=None,
         result_amount=None,

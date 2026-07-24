@@ -1,7 +1,19 @@
 from __future__ import annotations
 
 from config.constants import DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
-from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
+from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, ScannerRolloutSettings, SymbolScanSettings, TradingSettings
+from core.backtest_config import (
+    backtest_activation_status,
+    merge_symbol_scan_settings,
+)
+from core.scanner_models import (
+    CONFIG_DRAFT,
+    CONFIG_EXPIRED,
+    CONFIG_INVALID,
+    CONFIG_NOT_CONFIGURED,
+    CONFIG_VALIDATED,
+    CONFIG_VERSION_MISMATCH,
+)
 from PyQt6.QtCore import QThread, Qt, QEvent, QObject
 from PyQt6.QtGui import QIntValidator
 from PyQt6.QtWidgets import (
@@ -45,6 +57,7 @@ class SettingsScreen(QWidget):
         self.ai_catalog_service = app.ai_catalog_service if app else AIProviderCatalogService()
         self.mt5: MT5Service = app.mt5 if app else MT5Service()
         self.app_settings = self.settings_service.load()
+        self._pending_backtest_configs: dict[str, dict] = {}
         self.ai_test_thread = None
         self.ai_test_worker = None
         self.setObjectName("FormScreen")
@@ -60,6 +73,7 @@ class SettingsScreen(QWidget):
         tabs.addTab(self._ai_tab(), "🤖 AI")
         tabs.addTab(self._mt5_tab(), "🔌 Dữ liệu")
         tabs.addTab(self._trading_tab(), "💼 Giao dịch")
+        tabs.addTab(self._rollout_tab(), "🚦 Rollout")
         tabs.addTab(self._display_tab(), "🎨 Hiển thị")
         tabs.addTab(self._advanced_tab(), "⚙️ Nâng cao")
         root.addWidget(tabs, 1)
@@ -509,8 +523,8 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
             "STT", "Mã hiển thị", "Mã MT5", "Trạng thái",
-            "Kiểm tra", "Backtest", "Min Score", "Regime tự động",
-            "Hướng tự động", "RR tối thiểu", "Ready", "Watch", "Wait",
+            "Kiểm tra", "Dùng BT đã duyệt", "Min Score BT", "Regime BT",
+            "Hướng BT", "RR tối thiểu BT", "Ready", "Watch", "Wait",
         ])
         self.mt5_symbols_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         self.mt5_symbols_table.horizontalHeader().setMinimumHeight(38)
@@ -527,7 +541,7 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.setColumnWidth(1, 85)
         self.mt5_symbols_table.setColumnWidth(3, 100)
         self.mt5_symbols_table.setColumnWidth(4, 170)
-        self.mt5_symbols_table.setColumnWidth(5, 70)
+        self.mt5_symbols_table.setColumnWidth(5, 125)
         self.mt5_symbols_table.setColumnWidth(6, 85)
         self.mt5_symbols_table.setColumnWidth(7, 130)
         self.mt5_symbols_table.setColumnWidth(8, 150)
@@ -545,14 +559,30 @@ class SettingsScreen(QWidget):
                 self.mt5_symbols_table.setItem(row, col, item)
             symbol_config = self.app_settings.trading.symbol_settings.get(symbol, SymbolScanSettings())
             backtest_box = QCheckBox()
-            backtest_box.setChecked(symbol_config.backtest)
-            backtest_box.setToolTip("Tick nếu mã này đã backtest và được phép đưa vào scanner.")
+            lifecycle_status, lifecycle_reasons = backtest_activation_status(
+                symbol_config,
+                symbol=symbol,
+            )
+            can_activate_backtest = lifecycle_status == CONFIG_VALIDATED
+            backtest_box.setText(
+                self._backtest_status_label(lifecycle_status)
+            )
+            backtest_box.setChecked(
+                bool(symbol_config.backtest and can_activate_backtest)
+            )
+            backtest_box.setEnabled(can_activate_backtest)
+            backtest_box.setToolTip(
+                self._backtest_status_tooltip(
+                    lifecycle_status,
+                    lifecycle_reasons,
+                )
+            )
             backtest_box.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 5, self._centered_cell(backtest_box))
 
-            # Min Score (col 6) — only editable when backtest=ON
+            # Backtest-derived fields are evidence, not manual settings.
             _stored_min_score = symbol_config.min_score
-            if symbol_config.backtest and _stored_min_score > 0:
+            if _stored_min_score > 0:
                 min_score_text = str(_stored_min_score)
             else:
                 min_score_text = ""
@@ -562,18 +592,11 @@ class SettingsScreen(QWidget):
             min_score_input.setMaxLength(3)
             min_score_input.setFixedWidth(48)
             min_score_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            min_score_input.setEnabled(symbol_config.backtest)
-            min_score_input.setToolTip("Ghi đè ngưỡng Ready khi Backtest=ON. Để trống = dùng Ready. Chỉnh trong khoảng 0-100.")
-            def _make_min_score_toggle(mi, stored):
-                def _toggle(checked):
-                    mi.setEnabled(checked)
-                    if not checked:
-                        mi.setText("")
-                    elif checked and not mi.text().strip():
-                        if stored > 0:
-                            mi.setText(str(stored))
-                return _toggle
-            backtest_box.toggled.connect(_make_min_score_toggle(min_score_input, _stored_min_score))
+            min_score_input.setEnabled(False)
+            min_score_input.setToolTip(
+                "Ngưỡng do Backtest tạo và khóa theo bằng chứng validation. "
+                "Muốn thay đổi, hãy chạy lại Backtest."
+            )
             min_score_input.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(min_score_input))
 
@@ -592,9 +615,11 @@ class SettingsScreen(QWidget):
             _stored_regime = symbol_config.auto_trade_regime or ""
             _regime_idx = next((i for i in range(regime_combo.count()) if regime_combo.itemData(i) == _stored_regime), 0)
             regime_combo.setCurrentIndex(_regime_idx)
-            regime_combo.setEnabled(symbol_config.backtest)
-            regime_combo.setToolTip("Chỉ tự động vào lệnh khi chế độ thị trường khớp với lựa chọn này. Để trống nếu không muốn lọc.")
-            backtest_box.toggled.connect(regime_combo.setEnabled)
+            regime_combo.setEnabled(False)
+            regime_combo.setToolTip(
+                "Chế độ thị trường do Backtest đã duyệt xác định; "
+                "không chỉnh tay tại Settings."
+            )
             regime_combo.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 7, self._padded_cell(regime_combo))
 
@@ -611,9 +636,11 @@ class SettingsScreen(QWidget):
             _stored_side = symbol_config.auto_trade_side or "best"
             _side_idx = next((i for i in range(side_combo.count()) if side_combo.itemData(i) == _stored_side), 0)
             side_combo.setCurrentIndex(_side_idx)
-            side_combo.setEnabled(symbol_config.backtest)
-            side_combo.setToolTip("Hướng tự động vào lệnh. 'best (tốt nhất)' = dùng hướng do hệ thống phân tích.")
-            backtest_box.toggled.connect(side_combo.setEnabled)
+            side_combo.setEnabled(False)
+            side_combo.setToolTip(
+                "Hướng giao dịch do Backtest đã duyệt xác định; "
+                "'best' nghĩa là dùng hướng hệ thống phân tích."
+            )
             side_combo.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 8, self._padded_cell(side_combo))
 
@@ -623,13 +650,15 @@ class SettingsScreen(QWidget):
             min_rr.setSingleStep(0.1)
             min_rr.setDecimals(1)
             min_rr.setValue(symbol_config.min_expected_rr)
-            min_rr.setEnabled(symbol_config.backtest)
+            min_rr.setEnabled(False)
             min_rr.setObjectName("Mt5MinRrInput")
             min_rr.setFixedWidth(60)
             min_rr.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
             min_rr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            min_rr.setToolTip("R:R kỳ vọng tối thiểu. Dùng cho cả gate chẩn đoán và auto-trade.")
-            backtest_box.toggled.connect(min_rr.setEnabled)
+            min_rr.setToolTip(
+                "Tỷ lệ lợi nhuận/rủi ro tối thiểu do Backtest đã duyệt "
+                "xác định; không chỉnh tay tại Settings."
+            )
             min_rr.installEventFilter(self)
             self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr))
 
@@ -677,7 +706,7 @@ class SettingsScreen(QWidget):
         self.mt5_paste_config_button.clicked.connect(self._paste_backtest_configs)
         self.mt5_paste_config_button.setToolTip(
             "Đọc cấu hình JSON từ clipboard (được copy từ nút 'Đề xuất cấu hình Scanner' "
-            "trong màn hình Backtest) và tự động điền vào bảng."
+            "trong màn hình Backtest), kiểm tra validation rồi mới cho phép kích hoạt."
         )
         mt5_button_row.addWidget(self.mt5_paste_config_button)
         self.mt5_symbol_settings_button = action_button("💾 Lưu cấu hình mã quét", primary=True, color="success")
@@ -846,8 +875,104 @@ class SettingsScreen(QWidget):
         subprocess.Popen([sys.executable] + sys.argv)
         QApplication.quit()
 
+    @staticmethod
+    def _backtest_status_label(status: str) -> str:
+        return {
+            CONFIG_VALIDATED: "Đã duyệt",
+            CONFIG_DRAFT: "Bản nháp",
+            CONFIG_EXPIRED: "Hết hạn",
+            CONFIG_INVALID: "Không hợp lệ",
+            CONFIG_VERSION_MISMATCH: "Sai phiên bản",
+            CONFIG_NOT_CONFIGURED: "Chưa có",
+        }.get(str(status or "").upper(), "Không hợp lệ")
+
+    @classmethod
+    def _backtest_status_tooltip(
+        cls,
+        status: str,
+        reasons: tuple[str, ...] | list[str],
+    ) -> str:
+        if status == CONFIG_VALIDATED:
+            return (
+                "Cấu hình Backtest đã đủ bằng chứng và đúng phiên bản SMC-v2. "
+                "Tick để Strategy Router dùng cấu hình này."
+            )
+        reason_text = ", ".join(str(reason) for reason in reasons[:5])
+        suffix = f"\nChi tiết kỹ thuật: {reason_text}" if reason_text else ""
+        return (
+            f"Trạng thái: {cls._backtest_status_label(status)}. "
+            "Scanner tiếp tục dùng SMC-v2 + luật mặc định; cấu hình này "
+            "không được phép tham gia quyết định thật."
+            f"{suffix}"
+        )
+
+    def _show_backtest_preview(
+        self,
+        *,
+        row: int,
+        status: str,
+        reasons: tuple[str, ...],
+        config: dict,
+    ) -> None:
+        backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
+        checkbox = (
+            backtest_cell.findChild(QCheckBox)
+            if isinstance(backtest_cell, QWidget)
+            else None
+        )
+        if checkbox:
+            validated = status == CONFIG_VALIDATED
+            checkbox.setText(self._backtest_status_label(status))
+            checkbox.setEnabled(validated)
+            checkbox.setChecked(validated)
+            checkbox.setToolTip(
+                self._backtest_status_tooltip(status, reasons)
+            )
+
+        min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
+        min_score_input = (
+            min_score_cell.findChild(QLineEdit)
+            if isinstance(min_score_cell, QWidget)
+            else None
+        )
+        if min_score_input:
+            value = config.get("min_score", 0)
+            min_score_input.setText(str(value) if value else "")
+
+        for column, key in ((7, "regime"), (8, "side")):
+            cell = self.mt5_symbols_table.cellWidget(row, column)
+            combo = (
+                cell.findChild(QComboBox)
+                if isinstance(cell, QWidget)
+                else None
+            )
+            value = str(config.get(key, "") or "").strip().lower()
+            if combo and value:
+                index = next(
+                    (
+                        item
+                        for item in range(combo.count())
+                        if combo.itemData(item) == value
+                    ),
+                    -1,
+                )
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+
+        rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
+        rr_input = (
+            rr_cell.findChild(QDoubleSpinBox)
+            if isinstance(rr_cell, QWidget)
+            else None
+        )
+        if rr_input:
+            try:
+                rr_input.setValue(float(config.get("min_rr", 0) or 0))
+            except (TypeError, ValueError):
+                rr_input.setValue(0.0)
+
     def _paste_backtest_configs(self) -> None:
-        """Read backtest config JSON from clipboard and fill the MT5 symbols table."""
+        """Preview clipboard configs; only validated evidence is activatable."""
         import json
 
         from PyQt6.QtWidgets import QApplication, QMessageBox
@@ -867,65 +992,58 @@ class SettingsScreen(QWidget):
             QMessageBox.warning(self, "Sai định dạng", "Clipboard không chứa cấu hình hợp lệ (cần JSON object).")
             return
 
+        if (
+            isinstance(configs.get("symbol"), str)
+            and "min_score" in configs
+        ):
+            configs = {str(configs["symbol"]): configs}
+
         updated = 0
+        validated_count = 0
         for row, symbol in enumerate(self.mt5_display_symbols):
             cfg = configs.get(symbol)
             if cfg is None or not isinstance(cfg, dict):
                 continue
 
-            # Tick "Backtest" checkbox (col 5)
-            backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
-            if isinstance(backtest_cell, QWidget):
-                cb = backtest_cell.findChild(QCheckBox)
-                if cb and not cb.isChecked():
-                    cb.setChecked(True)
-
-            # Set "Min Score" (col 6)
-            min_score_val = cfg.get("min_score", cfg.get("decision_ready", 0))
-            if min_score_val:
-                min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
-                if isinstance(min_score_cell, QWidget):
-                    le = min_score_cell.findChild(QLineEdit)
-                    if le:
-                        le.setText(str(min_score_val))
-
-            # Set "Regime tự động" (col 7)
-            regime_val = cfg.get("regime", "")
-            if regime_val:
-                regime_cell = self.mt5_symbols_table.cellWidget(row, 7)
-                if isinstance(regime_cell, QWidget):
-                    combo = regime_cell.findChild(QComboBox)
-                    if combo:
-                        idx = next((i for i in range(combo.count()) if combo.itemData(i) == regime_val), -1)
-                        if idx >= 0:
-                            combo.setCurrentIndex(idx)
-
-            # Set "Hướng tự động" (col 8)
-            side_val = cfg.get("side", "")
-            if side_val:
-                side_cell = self.mt5_symbols_table.cellWidget(row, 8)
-                if isinstance(side_cell, QWidget):
-                    combo = side_cell.findChild(QComboBox)
-                    if combo:
-                        idx = next((i for i in range(combo.count()) if combo.itemData(i) == side_val), -1)
-                        if idx >= 0:
-                            combo.setCurrentIndex(idx)
-
-            # Set "RR tối thiểu" (col 9)
-            rr_val = cfg.get("min_rr", 0)
-            if rr_val:
-                rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
-                if isinstance(rr_cell, QWidget):
-                    spin = rr_cell.findChild(QDoubleSpinBox)
-                    if spin:
-                        spin.setValue(float(rr_val))
-
+            existing = self.app_settings.trading.symbol_settings.get(symbol)
+            preview = merge_symbol_scan_settings(
+                existing,
+                symbol=symbol,
+                activate_backtest=True,
+                decision_ready=(
+                    existing.decision_ready if existing else 65
+                ),
+                decision_watch=(
+                    existing.decision_watch if existing else 60
+                ),
+                decision_wait=(
+                    existing.decision_wait if existing else 55
+                ),
+                recommendation=cfg,
+            )
+            status, reasons = backtest_activation_status(
+                preview,
+                symbol=symbol,
+            )
+            self._pending_backtest_configs[symbol] = dict(cfg)
+            self._show_backtest_preview(
+                row=row,
+                status=status,
+                reasons=reasons,
+                config=cfg,
+            )
             updated += 1
+            if status == CONFIG_VALIDATED:
+                validated_count += 1
 
         if updated:
+            retained_count = updated - validated_count
             QMessageBox.information(
                 self, "Đã dán",
-                f"Đã cập nhật cấu hình cho {updated} cặp.\n"
+                f"Đã đọc {updated} cấu hình: {validated_count} đã duyệt, "
+                f"{retained_count} chưa đủ điều kiện.\n"
+                "Chỉ cấu hình đã duyệt mới được bật. Bản nháp vẫn được "
+                "lưu để backtest sau.\n"
                 "Nhấn '💾 Lưu cấu hình mã quét' để lưu lại."
             )
         else:
@@ -935,38 +1053,27 @@ class SettingsScreen(QWidget):
             )
 
     def _save_mt5_symbol_settings(self) -> None:
-        symbol_settings: dict[str, SymbolScanSettings] = {}
-        enabled_symbols: list[str] = []
+        existing_symbol_settings = dict(
+            self.app_settings.trading.symbol_settings
+        )
+        symbol_settings: dict[str, SymbolScanSettings] = dict(
+            existing_symbol_settings
+        )
+        enabled_symbols: list[str] = [
+            symbol
+            for symbol in self.app_settings.trading.enabled_symbols
+            if symbol not in self.mt5_display_symbols
+        ]
         for row, symbol in enumerate(self.mt5_display_symbols):
             backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
-            min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
-            regime_cell = self.mt5_symbols_table.cellWidget(row, 7)
-            side_cell = self.mt5_symbols_table.cellWidget(row, 8)
-            min_rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
             ready_cell = self.mt5_symbols_table.cellWidget(row, 10)
             watch_cell = self.mt5_symbols_table.cellWidget(row, 11)
             wait_cell = self.mt5_symbols_table.cellWidget(row, 12)
 
             backtest_box = backtest_cell.findChild(QCheckBox) if backtest_cell else None
-            min_score_input = min_score_cell.findChild(QLineEdit) if min_score_cell else None
-            regime_combo = regime_cell.findChild(QComboBox) if regime_cell else None
-            side_combo = side_cell.findChild(QComboBox) if side_cell else None
-            min_rr_spin = min_rr_cell.findChild(QDoubleSpinBox) if min_rr_cell else None
             ready_input = ready_cell.findChild(QLineEdit) if ready_cell else None
             watch_input = watch_cell.findChild(QLineEdit) if watch_cell else None
             wait_input = wait_cell.findChild(QLineEdit) if wait_cell else None
-
-            backtested = bool(backtest_box and backtest_box.isChecked())
-            regime = str(regime_combo.currentData() or "").strip() if regime_combo else ""
-            side = str(side_combo.currentData() or "").strip() if side_combo else ""
-            min_rr = float(min_rr_spin.value() or 0) if min_rr_spin else 0.0
-
-            # Min Score — only meaningful when backtest=ON, 0 means "use decision_ready"
-            min_score_text = min_score_input.text().strip() if min_score_input else ""
-            try:
-                min_score = int(min_score_text) if min_score_text else 0
-            except ValueError:
-                min_score = 0
 
             # Validate Ready / Watch / Wait
             decisions: dict[str, int] = {}
@@ -986,22 +1093,29 @@ class SettingsScreen(QWidget):
                     return
                 decisions[field_name] = val
 
-            symbol_settings[symbol] = SymbolScanSettings(
-                backtest=backtested,
-                min_score=min_score,
+            merged = merge_symbol_scan_settings(
+                existing_symbol_settings.get(symbol),
+                symbol=symbol,
+                activate_backtest=bool(
+                    backtest_box and backtest_box.isChecked()
+                ),
                 decision_ready=decisions["Ready"],
                 decision_watch=decisions["Watch"],
                 decision_wait=decisions["Wait"],
-                auto_trade_regime=regime,
-                auto_trade_side=side,
-                min_expected_rr=min_rr,
+                recommendation=self._pending_backtest_configs.get(symbol),
             )
-            if backtested:
+            symbol_settings[symbol] = merged
+            if merged.backtest:
                 enabled_symbols.append(symbol)
         self.app_settings.trading.symbol_settings = symbol_settings
         self.app_settings.trading.enabled_symbols = enabled_symbols
         self.settings_service.save(self.app_settings)
-        self.mt5_status_label.setText("Đã lưu cấu hình mã quét.")
+        self._pending_backtest_configs.clear()
+        self.mt5_status_label.setText(
+            "Đã lưu cấu hình mã quét. "
+            f"{len(enabled_symbols)} cấu hình Backtest đã duyệt đang bật; "
+            "các mã còn lại dùng SMC-v2 + luật mặc định."
+        )
         self.mt5_status_label.setProperty("state", "ok")
         self.mt5_status_label.style().unpolish(self.mt5_status_label)
         self.mt5_status_label.style().polish(self.mt5_status_label)
@@ -1118,6 +1232,10 @@ class SettingsScreen(QWidget):
             max_weekly_loss_pct=self.app_settings.trading.max_weekly_loss_pct,
             max_consecutive_losses=self.app_settings.trading.max_consecutive_losses,
             max_open_risk_pct=self.app_settings.trading.max_open_risk_pct,
+            max_symbol_risk_pct=self.app_settings.trading.max_symbol_risk_pct,
+            max_currency_exposure_pct=self.app_settings.trading.max_currency_exposure_pct,
+            max_correlated_risk_pct=self.app_settings.trading.max_correlated_risk_pct,
+            max_concurrent_orders=self.app_settings.trading.max_concurrent_orders,
             enabled_symbols=self.app_settings.trading.enabled_symbols,
             symbol_settings=self.app_settings.trading.symbol_settings,
         )
@@ -1126,6 +1244,224 @@ class SettingsScreen(QWidget):
         self.trading_status_label.setProperty("state", "ok")
         self.trading_status_label.style().unpolish(self.trading_status_label)
         self.trading_status_label.style().polish(self.trading_status_label)
+
+    def _rollout_tab(self) -> QFrame:
+        frame = card("Scanner rollout")
+        frame.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+        rollout = self.app_settings.scanner_rollout
+
+        form_panel = QFrame()
+        form_panel.setObjectName("CompactFormPanel")
+        form_layout = QVBoxLayout(form_panel)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(6)
+
+        stage = QComboBox()
+        stage.addItems([
+            "DISABLED",
+            "SHADOW",
+            "DEMO_LIMITED",
+            "DEMO_FULL",
+            "CANARY",
+            "PRODUCTION",
+        ])
+        stage.setCurrentText(rollout.stage)
+
+        smc_mode = QComboBox()
+        smc_mode.addItems(["legacy", "shadow", "v2"])
+        smc_mode.setCurrentText(
+            str(
+                getattr(
+                    self.app_settings.features,
+                    "smc_scoring_mode",
+                    "v2",
+                )
+                or "v2"
+            ).lower()
+        )
+        smc_mode.setToolTip(
+            "v2: dùng SMC v2 cho quyết định; shadow: quyết định v1 và "
+            "đối chiếu v2; legacy: rollback hoàn toàn về SMC v1."
+        )
+
+        kill_switch = QCheckBox("Dừng toàn bộ lệnh từ Scanner")
+        kill_switch.setChecked(rollout.kill_switch)
+        shadow_compare = QCheckBox("Ghi so sánh V1/V2")
+        shadow_compare.setChecked(rollout.shadow_compare_enabled)
+        allowed_symbols = QLineEdit()
+        allowed_symbols.setPlaceholderText("EURUSD, GBPUSD")
+        allowed_symbols.setText(", ".join(rollout.allowed_symbols))
+
+        canary_risk = QDoubleSpinBox()
+        canary_risk.setRange(0.01, 1.0)
+        canary_risk.setDecimals(2)
+        canary_risk.setSingleStep(0.05)
+        canary_risk.setSuffix(" %")
+        canary_risk.setValue(rollout.canary_risk_percent)
+
+        require_demo = QCheckBox("Bắt buộc tài khoản demo")
+        require_demo.setChecked(rollout.require_demo_account)
+        production_approved = QCheckBox(
+            "Đã phê duyệt production sau khi đạt release gate"
+        )
+        production_approved.setChecked(rollout.production_approved)
+
+        min_shadow = QSpinBox()
+        min_shadow.setRange(1, 1_000_000)
+        min_shadow.setValue(rollout.min_shadow_samples)
+        min_demo = QSpinBox()
+        min_demo.setRange(1, 1_000_000)
+        min_demo.setValue(rollout.min_demo_orders)
+        min_canary = QSpinBox()
+        min_canary.setRange(1, 1_000_000)
+        min_canary.setValue(rollout.min_canary_orders)
+
+        max_disagreement = QDoubleSpinBox()
+        max_disagreement.setRange(0, 100)
+        max_disagreement.setDecimals(1)
+        max_disagreement.setSuffix(" %")
+        max_disagreement.setValue(rollout.max_disagreement_rate * 100)
+        max_revalidation = QDoubleSpinBox()
+        max_revalidation.setRange(0, 100)
+        max_revalidation.setDecimals(1)
+        max_revalidation.setSuffix(" %")
+        max_revalidation.setValue(
+            rollout.max_revalidation_failure_rate * 100
+        )
+        max_degradation = QDoubleSpinBox()
+        max_degradation.setRange(0, 100)
+        max_degradation.setDecimals(1)
+        max_degradation.setSuffix(" %")
+        max_degradation.setValue(
+            rollout.max_performance_degradation_pct
+        )
+
+        self.rollout_stage_input = stage
+        self.rollout_smc_mode_input = smc_mode
+        self.rollout_kill_switch_input = kill_switch
+        self.rollout_shadow_compare_input = shadow_compare
+        self.rollout_symbols_input = allowed_symbols
+        self.rollout_canary_risk_input = canary_risk
+        self.rollout_require_demo_input = require_demo
+        self.rollout_production_approved_input = production_approved
+        self.rollout_min_shadow_input = min_shadow
+        self.rollout_min_demo_input = min_demo
+        self.rollout_min_canary_input = min_canary
+        self.rollout_max_disagreement_input = max_disagreement
+        self.rollout_max_revalidation_input = max_revalidation
+        self.rollout_max_degradation_input = max_degradation
+
+        form_layout.addWidget(self._compact_form_row("Giai đoạn", stage))
+        form_layout.addWidget(
+            self._compact_form_row("SMC scoring mode", smc_mode)
+        )
+        form_layout.addWidget(kill_switch)
+        form_layout.addWidget(shadow_compare)
+        form_layout.addWidget(
+            self._compact_form_row("Mã DEMO_LIMITED", allowed_symbols)
+        )
+        form_layout.addWidget(
+            self._compact_form_row("Canary risk cap", canary_risk)
+        )
+        form_layout.addWidget(require_demo)
+        form_layout.addWidget(production_approved)
+        form_layout.addWidget(
+            self._compact_form_row("Mẫu shadow tối thiểu", min_shadow)
+        )
+        form_layout.addWidget(
+            self._compact_form_row("Lệnh demo tối thiểu", min_demo)
+        )
+        form_layout.addWidget(
+            self._compact_form_row("Lệnh canary tối thiểu", min_canary)
+        )
+        form_layout.addWidget(
+            self._compact_form_row(
+                "Disagreement tối đa",
+                max_disagreement,
+            )
+        )
+        form_layout.addWidget(
+            self._compact_form_row(
+                "Lỗi revalidation tối đa",
+                max_revalidation,
+            )
+        )
+        form_layout.addWidget(
+            self._compact_form_row(
+                "Suy giảm hiệu suất tối đa",
+                max_degradation,
+            )
+        )
+
+        self.rollout_save_button = action_button(
+            "💾 Lưu rollout",
+            primary=True,
+            color="success",
+        )
+        self.rollout_save_button.clicked.connect(
+            self._save_rollout_settings
+        )
+        form_layout.addWidget(self.rollout_save_button)
+        self.rollout_status_label = QLabel(
+            "Mặc định SHADOW: V2 chỉ so sánh và tuyệt đối không gửi lệnh."
+        )
+        self.rollout_status_label.setObjectName("HelperText")
+        self.rollout_status_label.setWordWrap(True)
+        form_layout.addWidget(self.rollout_status_label)
+        form_layout.addStretch(1)
+        frame.layout().addWidget(form_panel, 0, Qt.AlignmentFlag.AlignTop)
+        frame.layout().addStretch(1)
+        return frame
+
+    def _save_rollout_settings(self) -> None:
+        symbols = [
+            item.strip().upper()
+            for item in self.rollout_symbols_input.text().replace(
+                "\n",
+                ",",
+            ).split(",")
+            if item.strip()
+        ]
+        self.app_settings.scanner_rollout = ScannerRolloutSettings(
+            stage=self.rollout_stage_input.currentText(),
+            kill_switch=self.rollout_kill_switch_input.isChecked(),
+            shadow_compare_enabled=(
+                self.rollout_shadow_compare_input.isChecked()
+            ),
+            allowed_symbols=list(dict.fromkeys(symbols)),
+            canary_risk_percent=self.rollout_canary_risk_input.value(),
+            require_demo_account=self.rollout_require_demo_input.isChecked(),
+            production_approved=(
+                self.rollout_production_approved_input.isChecked()
+            ),
+            min_shadow_samples=self.rollout_min_shadow_input.value(),
+            min_demo_orders=self.rollout_min_demo_input.value(),
+            min_canary_orders=self.rollout_min_canary_input.value(),
+            max_disagreement_rate=(
+                self.rollout_max_disagreement_input.value() / 100
+            ),
+            max_revalidation_failure_rate=(
+                self.rollout_max_revalidation_input.value() / 100
+            ),
+            max_performance_degradation_pct=(
+                self.rollout_max_degradation_input.value()
+            ),
+        )
+        self.app_settings.features.smc_scoring_mode = (
+            self.rollout_smc_mode_input.currentText().strip().lower()
+        )
+        self.settings_service.save(self.app_settings)
+        self.rollout_status_label.setText(
+            "Đã lưu rollout và SMC mode. Kill switch và SHADOW luôn chặn "
+            "gửi lệnh."
+        )
+        self.rollout_status_label.setProperty("state", "ok")
+        self.rollout_status_label.style().unpolish(
+            self.rollout_status_label
+        )
+        self.rollout_status_label.style().polish(
+            self.rollout_status_label
+        )
 
     def _display_tab(self) -> QFrame:
         frame = card("Hiển thị")

@@ -1,334 +1,277 @@
-# AI Market Analyst - Đặc tả sản phẩm
+# AI Market Analyst — Đặc tả sản phẩm
 
-> Phiên bản tài liệu: 2026-06-11
-> Trạng thái: cập nhật theo chương trình hiện tại
-> Phạm vi: ứng dụng desktop PyQt6 phân tích Forex/XAU/USD/XAG/USD/BTC/USD bằng MT5, rule engine, AI commentary, scanner, backtest và auto-trade
+> Phiên bản tài liệu: 24/07/2026
+>
+> Trạng thái: đồng bộ với chương trình hiện tại
+>
+> Phạm vi: desktop PyQt6, MT5, phân tích, Scanner V2, backtest, journal, Telegram và order execution có kiểm soát
 
-## 1. Mục tiêu sản phẩm
+## 1. Mục tiêu
 
-AI Market Analyst là công cụ cá nhân hỗ trợ trader phân tích thị trường Forex, kim loại quý và BTC/USD. Sản phẩm tập trung vào:
+AI Market Analyst hỗ trợ trader:
 
-- Lấy dữ liệu thật từ broker (MT5).
-- Tự tính indicator, market regime, direction bias, SMC context, macro context và risk.
-- Tạo trade plan có Entry, SL, TP, R:R và lot theo risk settings.
-- Quét nhiều mã để tìm setup đủ điều kiện.
-- Backtest hệ thống trên dữ liệu lịch sử để đo lường edge.
-- Gửi Telegram alert cho setup sẵn sàng.
-- Tự động vào lệnh (MT5) khi người dùng bật auto-entry trong Scanner auto-scan, với bộ lọc riêng cho từng cặp dựa trên kết quả backtest.
+- lấy dữ liệu và trạng thái tài khoản từ MT5;
+- phân tích kỹ thuật, SMC, market regime, macro/news và risk;
+- tạo trade plan có Entry, SL, TP, R:R và lot;
+- quét nhiều symbol, phân loại và xếp hạng cơ hội;
+- backtest và validation chiến lược trên dữ liệu lịch sử;
+- ghi journal và gửi Telegram alert;
+- gửi lệnh MT5 khi người dùng yêu cầu và toàn bộ safety gate cho phép.
 
-AI chỉ dùng để diễn giải dữ liệu đã tính và viết nhận định dễ hiểu. AI không được tự bịa giá, entry, SL, TP, lot hoặc trạng thái ready.
+AI chỉ diễn giải dữ liệu đã tính. AI không tự tạo giá, score, trạng thái ready, lot hoặc quyền execution.
 
 ## 2. Phạm vi thị trường
 
-Sản phẩm hỗ trợ:
+`config.constants.SUPPORTED_SYMBOLS` hiện có 31 symbol:
 
-- 28 cặp Forex chính/phụ theo `config.constants.SUPPORTED_SYMBOLS`.
-- XAU/USD (vàng giao ngay so với USD).
-- XAG/USD (bạc giao ngay so với USD).
-- BTC/USD (Bitcoin so với USD).
+- 28 cặp Forex;
+- XAU/USD;
+- XAG/USD;
+- BTC/USD.
 
-Broker symbol trong MT5 có thể có hậu tố như `m`, `c`, `.r`. Code phải resolve symbol ứng dụng như `EUR/USD`, `XAG/USD` hoặc `BTC/USD` sang broker symbol thật trong Market Watch, ví dụ `XAGUSDm`, `BTCUSDm` hoặc dạng có hậu tố riêng của broker.
+MT5 service phải resolve symbol chuẩn sang broker symbol thực, kể cả hậu tố như `m`, `c` hoặc hậu tố riêng của broker.
 
-## 3. Chế độ phân tích
+## 3. Các chức năng chính
 
-### 3.1 Scanner (chính)
+### 3.1 Scanner
 
-Scanner là chế độ phân tích chính, quét danh sách mã đã chọn trong danh sách Symbol hệ thống (MT5). Mỗi mã được phân tích đầy đủ qua pipeline `analyze_symbol()`, trả về kết quả gồm:
+Scanner phân tích danh sách symbol qua pipeline đầy đủ và tạo:
 
-- Market regime, direction bias, buy/sell score, final score.
-- Trade permission, decision engine, scanner group.
-- Trade plan (entry zone, SL, TP, R:R + risk_reward_range best/base/worst, position sizing).
-- Entry checklist, M15 quality, SMC flags.
-- Macro/news context, macro alignment scores.
-- AI commentary (nếu có cấu hình AI).
+- market regime và BUY/SELL evaluation;
+- signal/final/setup score;
+- scenario Entry/SL/TP theo đúng side;
+- trade permission, gate và entry status;
+- Strategy Router decision;
+- candidate status và reason codes;
+- effective R:R, evidence/execution readiness;
+- canonical ranking;
+- observability, snapshot, shadow comparison;
+- Telegram và auto-trade result khi áp dụng.
 
-Scanner có hai chế độ:
+Scanner hỗ trợ quét một lần và quét định kỳ. Nút **Tự động vào lệnh MT5** hiện
+bị disable trong cả hai chế độ; request tạo từ giao diện luôn có
+`auto_trade_enabled=false`, nên Scanner không tự gửi lệnh. Nút đặt lệnh thủ
+công cho candidate vẫn đi qua cùng rollout và execution gates.
 
-- `Quét 1 lần`: quét và hiển thị kết quả, không tự động vào lệnh.
-- `Quét theo khoảng thời gian`: dùng timer quét lại định kỳ. Khi bật auto-trade, có thể tự động vào lệnh MT5 với bộ lọc riêng cho từng cặp.
-
-Mỗi cặp có thể được cấu hình ngưỡng quyết định riêng (`decision_ready`, `decision_watch`, `decision_wait`) trong `SymbolScanSettings`. Các ngưỡng này được truyền vào `decision_engine.make_final_decision()` để phân loại setup thành READY_TO_TRADE, WATCH_ONLY, WAITING_CONFIRMATION, hoặc STAND_ASIDE. Mặc định: ready=65, watch=60, wait=55.
+Việc lưu `stage=PRODUCTION` không tự mở khóa nút auto trade.
 
 ### 3.2 Backtest
 
-Backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge của hệ thống. Hỗ trợ 5 chế độ (Strict, Balanced, Legacy, Research, Backtest), multi-symbol batch, và breakdown 13 chiều (symbol, side, decision, month, regime, score, M15 quality, SMC, R:R...).
+Backtest replay logic chiến lược trên dữ liệu lịch sử, hỗ trợ phân tích funnel/breakdown, equity/drawdown và validation ngoài mẫu.
 
-Kết quả backtest dùng để xác định bộ lọc auto-trade tối ưu cho từng cặp, cấu hình trong Settings > Dữ liệu.
+Kết quả chỉ được dùng làm strategy config thực thi khi đạt contract validation hiện hành. Kết quả cũ hoặc chưa validation có status `DRAFT`/invalid và không được auto trade.
 
-## 4. Trạng thái entry và hành động scanner
+### 3.3 Journal và Order Management
 
-`core.entry_engine.py` là nơi duy nhất xác nhận trạng thái entry. Các module UI, controller và AI không được tự đặt trạng thái ready.
+Journal lưu kế hoạch, thực thi, outcome, R, chất lượng execution và mistake tags trong SQLite có migration. Order Management theo dõi position/order và các chức năng quản lý như break-even/trailing theo thiết kế tương ứng.
 
-Trade plan phải tách:
+### 3.4 Settings
 
-- `watch_zone`: vùng theo dõi rộng.
-- `entry_zone`: vùng xác nhận hẹp, dùng để tính `price_in_entry_zone` và `ready_to_trade`.
+Settings quản lý AI provider, MT5/data, trading risk, symbol settings, display, advanced, notification, feature flags và Scanner rollout.
 
-Một setup chỉ được xem là sẵn sàng vào lệnh khi:
+## 4. Contract quyết định Scanner
 
-- `scanner_action == "ready"`.
-- `trade_permission == "allowed"`.
-- Có `analysis_result`.
-- Có scenario đúng `best_side`.
-- Scenario có Entry/SL/TP và position sizing hợp lệ.
+### 4.1 Decision thresholds
 
-Các hành động scanner:
+Mỗi symbol có:
 
-- `ready`: sẵn sàng vào lệnh nếu người dùng cho phép.
-- `watch`: theo dõi.
-- `wait`: chờ xác nhận.
-- `skip`: bỏ qua hoặc bị chặn.
+| Field | Mặc định | Vai trò |
+|---|---:|---|
+| `decision_ready` | 65 | Phân loại setup live mức ready. |
+| `decision_watch` | 60 | Phân loại watch. |
+| `decision_wait` | 55 | Phân loại waiting. |
+| `min_expected_rr` | 1.3 | Ngưỡng R:R của pipeline. |
 
-## 5. Quản trị rủi ro và lot
+Các ngưỡng này không bị `min_score` backtest ghi đè.
 
-Lot phải được tính bằng `core.risk_engine.position_sizing()` dựa trên:
+### 4.2 Strategy Router
 
-- Balance thật từ MT5 nếu có.
-- `settings.trading.default_risk_percent`.
-- Giới hạn bởi `settings.trading.max_risk_percent`.
-- Khoảng cách Entry - SL.
-- Contract size và quote-to-USD rate nếu cần.
+Router trả đúng một branch:
 
-Quy tắc contract size:
-
-- Forex dùng `settings.trading.contract_size_override`, mặc định `100000`, để tránh sai lot trên tài khoản cent.
-- XAU/USD, XAG/USD và BTC/USD là symbol đặc biệt, được ưu tiên dùng `trade_contract_size` từ MT5 nếu broker trả về giá trị hợp lệ.
-- Nếu MT5 không trả về contract size hợp lệ, fallback lần lượt là XAU/USD = `100`, XAG/USD = `5000`, BTC/USD = `1`.
-
-Controller phải cap `risk_percent` theo `max_risk_percent` trước khi phân tích và trước khi auto-entry.
-
-Auto-entry không được tự tăng lot lên broker minimum nếu điều đó có thể làm vượt mức rủi ro đã tính. Nếu lot sau chuẩn hóa theo broker `volume_step` thấp hơn `volume_min`, hệ thống phải bỏ qua lệnh.
-
-## 6. Data và Execution (MT5)
-
-Hệ thống kết nối thị trường qua `MT5Service`:
-
-- **MT5**:
-  - Lấy OHLCV, tick bid/ask qua MetaTrader5 Python API.
-  - Account balance và lệnh market order gửi qua MT5 terminal đang đăng nhập.
-
-Nếu MT5 chưa kết nối, thiếu symbol, không lấy được OHLCV hoặc spread bất thường, hệ thống phải chặn trạng thái ready/action thực chiến.
-
-## 7. Auto-entry
-
-Auto-entry hoạt động theo cơ chế **hai nhánh** dựa trên cấu hình trong Settings > Dữ liệu. Cặp nào được bật Backtest và có filter riêng sẽ chạy **Nhánh B**, ngược lại chạy **Nhánh A**.
-
-### 7.1 Nguồn dữ liệu cấu hình
-
-Mỗi cặp được cấu hình trong `SymbolScanSettings` tại `config/settings.py`. Bảng cấu hình trong Settings > Dữ liệu gồm các cột:
-
-| Cột | Trường | Mặc định | Ý nghĩa |
-|---|---|---|---|
-| Kiểm thử | `backtest` | OFF | Bật/tắt chế độ auto-trade riêng cho cặp |
-| Điểm tối thiểu | `min_score` | (rỗng) | Ghi đè ngưỡng Ready khi backtest=ON. Rỗng = dùng `decision_ready` |
-| Regime | `auto_trade_regime` | (rỗng) | Lọc regime, chỉ auto-trade khi khớp |
-| Hướng | `auto_trade_side` | best | Hướng vào lệnh: buy/sell/best |
-| RR tối thiểu | `min_expected_rr` | 1.3 | Ngưỡng effective R:R tối thiểu |
-| Ready | `decision_ready` | **65** | final_score ≥ mức này → READY_TO_TRADE |
-| Watch | `decision_watch` | **60** | final_score ≥ mức này → WATCH_ONLY |
-| Wait | `decision_wait` | **55** | final_score ≥ mức này → WAITING_CONFIRMATION |
-
-Các cột Ready, Watch, Wait **luôn hiển thị và có thể chỉnh sửa** cho mọi cặp, không phụ thuộc vào trạng thái Backtest. Cột Điểm tối thiểu **chỉ được nhập khi Backtest = ON**, ngược lại để trống và disabled.
-
-### 7.2 Luồng pipeline chung (cả hai nhánh)
-
-Mỗi cặp khi quét đều chạy qua 2 lớp trong pipeline `AnalysisPipeline`:
-
-**Lớp 1 — Chấm điểm (Step 1→5):** Phân tích kỹ thuật (trend, momentum, location, SMC, risk, macro) → cho điểm BUY/SELL (0-100). Tạo scenario với Entry/SL/TP/R:R (kèm dải risk_reward_range best/base/worst).
-
-**Lớp 2 — Gate (Step 6):** 11 gate kiểm tra an toàn tuần tự: MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken. Gate có thể Block (chặn cứng), Warning (hạ cap xuống WATCH_ONLY/WAITING_CONFIRMATION), hoặc Pass.
-
-**Decision Engine (Step 7):** Kết hợp score + gate + entry status để ra quyết định cuối cùng. Thứ tự ưu tiên: Gate block → Gate cap → Score gap → Entry status → Score so với thresholds. `ready` threshold được lấy từ `min_score` (nếu > 0) hoặc `decision_ready`.
-
-### 7.3 Nhánh A — Cặp KHÔNG có cấu hình auto-trade riêng (Backtest = OFF)
-
-**Pipeline:** Dùng thresholds từ `decision_ready/watch/wait` (mặc định 65/60/55). Không có cơ chế override.
-
-**Auto-trade:** `_is_auto_trade_candidate` yêu cầu điều kiện strict:
-- `scanner_action == "ready"` (decision engine phải ra READY_TO_TRADE)
-- `trade_permission == "allowed"`
-- Có scenario hợp lệ (Entry/SL/TP/Lot)
-
-**Tóm lại:** Chỉ vào lệnh khi pipeline tự tin 100%: score đạt ngưỡng, gate pass, entry confirmed.
-
-### 7.4 Nhánh B — Cặp CÓ cấu hình auto-trade riêng (Backtest = ON, có ít nhất 1 filter)
-
-**Pipeline:** Dùng thresholds từ Settings:
-- Nếu `min_score > 0`: `ready = min_score` (vd: 55), ngược lại dùng `decision_ready` (65)
-- `min_rr = min_expected_rr` (vd: 1.5) thay vì mặc định 1.3
-
-**`_apply_symbol_override` (chạy sau pipeline, trước auto-trade):**
-Nếu row đang `stand_aside` (entry invalidated hoặc score < wait), kiểm tra 4 điều kiện từ cấu hình backtest:
-1. Regime khớp `auto_trade_regime` (nếu được đặt)
-2. Side khớp `auto_trade_side` (nếu là buy/sell)
-3. Score ≥ `min_score`
-4. effective_rr ≥ `min_expected_rr`
-
-Cả 4 đạt → nâng `scanner_action` lên `ready`. Cơ chế này cho phép backtest "phủ quyết" pipeline khi pipeline quá conservative.
-
-**Auto-trade (`_execute_auto_trades`):** Không cần `scanner_action == "ready"`. Dùng bộ lọc backtest riêng:
-- Không bị blocked (gate, permission, journal_feedback)
-- Regime khớp (nếu được đặt)
-- `expected_effective_rr >= min_expected_rr` (nếu > 0)
-- `best_score >= min_score` (fallback 65 nếu min_score = 0)
-- Có scenario đúng hướng với Entry/SL/TP/Lot hợp lệ
-- Chưa có lệnh mở cho mã đó
-
-→ Đạt tất cả: **đặt lệnh Market Order ngay**, không cần pipeline phê duyệt.
-
-### 7.5 So sánh hai nhánh
-
-| | Nhánh A (không backtest) | Nhánh B (có backtest) |
+| Branch | Khi nào dùng | Có thể auto trade? |
 |---|---|---|
-| Ngưỡng ready | `decision_ready` (65) | `min_score` nếu > 0, else `decision_ready` |
-| Ngưỡng watch | `decision_watch` (60) | `decision_watch` (60) |
-| Ngưỡng wait | `decision_wait` (55) | `decision_wait` (55) |
-| Ngưỡng min_rr | 1.3 (cứng) | `min_expected_rr` |
-| Override stand_aside | Không | Có, nếu khớp 4 điều kiện |
-| Auto-trade điều kiện | `scanner_action == "ready"` | Vượt bộ lọc backtest |
-| Regime filter | Không | Có, nếu đặt |
-| Ai quyết định vào lệnh | Decision engine | Backtest config + gate |
+| `BACKTEST_VALIDATED` | Có config hợp lệ, đúng version, đủ OOS/walk-forward, còn hạn. | Có, nếu strategy và mọi gate khác đạt. |
+| `DEFAULT_RULES` | Không có config backtest. | Có, nếu default strategy và mọi gate khác đạt. |
+| `BACKTEST_INVALID` | Có config nhưng draft/expired/malformed/sai version/thiếu evidence. | Không. |
 
-### 7.6 Luồng đặt lệnh
+Backtest không được nâng status hoặc bỏ qua entry, trade, portfolio, news hay rollout gate.
 
-1. Controller quét xong toàn bộ danh sách.
-2. Với mỗi row, gọi `_apply_symbol_override` → gọi `_is_auto_trade_candidate`.
-3. Nếu candidate pass, gọi `self.mt5.has_open_position_or_order()`.
-4. Nếu chưa có lệnh, gọi `self.mt5.place_market_order()`.
-5. BUY dùng giá `ask`; SELL dùng giá `bid`.
-6. SL lấy từ `scenario.stop_loss`.
-7. TP dùng TP đầu tiên trong `scenario.take_profit`.
-8. Volume được tính lại qua `recalc_execution_lot()` với `quote_to_usd_rate` mới nhất từ MT5, fallback về `suggested_lot` từ scan nếu không lấy được tỷ giá.
-9. Kết quả trả về trong `output["auto_trade_results"]`.
+### 4.3 Candidate status
 
-`auto_trade_results` gồm: `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`.
+Status chuẩn:
 
-Manual/one-shot scan không được đặt lệnh MT5.
+- `READY_NOW`;
+- `WAITING_CONFIRMATION`;
+- `WATCH_ZONE`;
+- `OUT_OF_STRATEGY`;
+- `BLOCKED`;
+- `DATA_UNAVAILABLE`.
 
-## 8. Telegram alert
+`READY_NOW` là sẵn sàng tại scan-time, không phải cam kết order sẽ được gửi.
 
-Telegram được cấu hình trong Settings > Nâng cao:
+## 5. Chấm điểm và xếp hạng
 
-- Bot token.
-- Danh sách chat ID.
-- Interval auto-scan mặc định.
+- `signal_score`: tín hiệu thô của từng side.
+- `final_score`: điểm setup đã điều chỉnh.
+- `setup_score`: metric chuẩn dùng live/backtest, hiện alias `final_score`.
+- `opportunity_rank`: điểm 0–100 dùng xếp hạng hiển thị.
+- `opportunity_score`: compatibility alias, không phải gate.
+- `evidence_confidence` và `execution_readiness`: tín hiệu bổ sung phục vụ hiểu/rank candidate.
 
-Detailed alert chỉ gửi cho setup thật sự ready:
+Ranking diễn ra sau filter và ưu tiên status trước điểm cơ hội. Điểm cao không thể đưa row bị block lên trước row ready hoặc mở khóa order.
 
-- `scanner_action == "ready"`.
-- `trade_permission == "allowed"`.
-- Có trade plan tương ứng.
+## 6. Backtest config contract
 
-Detailed alert phải dùng tiếng Việt có dấu, icon dễ nhìn và gạch đầu dòng rõ ràng. Nội dung gồm:
+Config được thực thi cần:
 
-- Mã giao dịch và broker symbol.
-- Hướng MUA/BÁN.
-- Entry.
-- Stop loss.
-- Take profit.
-- Lot gợi ý.
-- R:R.
-- Điểm setup.
-- Lý do.
-- Vốn MT5 nếu có.
-- Nguồn.
+- schema `v3`;
+- validation `phase8-smc-v2-oos-v1`, schema v4;
+- scorer `scanner-v3`;
+- feature `scanner-features-v3`;
+- score metric `setup_score`;
+- symbol, side, regime, min score và min R:R hợp lệ;
+- train/OOS ranges đúng;
+- cỡ mẫu, OOS metrics và confidence interval đạt;
+- walk-forward `ROBUST`;
+- validation fingerprint hợp lệ;
+- `validated_at` và `expires_at` hợp lệ.
 
-Summary alert sau mỗi lần scan chỉ hiển thị:
+Sai một điều kiện bắt buộc phải fail-closed.
 
-- Thời gian dạng `dd-mm-yyyy HH:MM:SS`.
-- Đã quét bao nhiêu mã.
-- Sẵn sàng vào lệnh bao nhiêu mã.
-- Danh sách mã ready kèm Entry/SL/TP.
+## 7. Execution và quản trị rủi ro
 
-Summary alert không hiển thị danh sách theo dõi.
+Mọi lệnh phát sinh từ Scanner đi qua `ScannerController.execute_order_candidate()`.
 
-## 9. UI/UX chính
+Ngay trước execution, hệ thống phải:
 
-Ứng dụng gồm 5 màn hình chính:
+- kiểm tra MT5 connected/logged-in/trade allowed;
+- lấy bid/ask và symbol metadata mới;
+- kiểm tra tick freshness, spread và duplicate position/order;
+- kiểm tra giá còn trong entry zone, SL/TP đúng hướng;
+- tính lại effective R:R;
+- lấy trạng thái blackout tin tức;
+- tính lại lot theo balance, risk, contract/tick value, quote conversion và broker volume rules;
+- kiểm tra account guard và portfolio risk;
+- kiểm tra rollout policy.
 
-- Dashboard — tổng quan trạng thái MT5, AI, thống kê nhanh.
-- Scanner — quét thị trường, bảng xếp hạng cơ hội, auto-trade.
-- Backtest — replay hệ thống trên dữ liệu lịch sử, phân tích edge.
-- Journal — nhật ký giao dịch, xem lại phân tích đã lưu.
-- Settings — cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao.
+Nếu dữ liệu bắt buộc thiếu hoặc service lỗi, order bị chặn.
 
-Yêu cầu UI:
+Risk settings gồm:
 
-- App mở maximized bằng `showMaximized()`.
-- Không để UI bị đơ khi lấy dữ liệu MT5, gọi AI hoặc scan nhiều mã.
-- Tác vụ nặng phải chạy qua worker/thread.
-- Scanner table phải dùng model/view.
-- Text phải là tiếng Việt có dấu, dễ hiểu.
-- Các thuật ngữ trading phổ biến có thể giữ tiếng Anh kèm giải thích ngắn: Entry, SL, TP, R:R, lot, MT5.
-- Control auto-entry phải nổi bật khi active vì có thể đặt lệnh thật.
+- default/max risk percent;
+- daily/weekly loss;
+- consecutive losses;
+- max open risk;
+- max symbol risk;
+- max currency exposure;
+- max correlated risk;
+- max concurrent orders.
 
-## 10. Journal
+Không tự nâng lot lên broker minimum nếu làm vượt risk được phép.
 
-Journal lưu phân tích và trade outcome để người dùng xem lại:
+## 8. Rollout
 
-- Planned entry/SL/TP/lot.
-- Actual entry/exit/lot nếu có.
-- Result R.
-- Execution quality.
-- Manual mistake tags.
-- Auto mistake tags.
+Stage:
 
-Journal data nằm trong SQLite và phải có migration ổn định.
-
-## 11. Backtest
-
-System backtest replay toàn bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử để đo lường edge.
-
-Tính năng chính:
-
-- 5 chế độ vào lệnh: Strict, Balanced, Legacy, Research, Backtest.
-- Multi-symbol batch backtest.
-- Funnel diagnostics: snapshot → setup → gate → entry → trade.
-- Breakdown 13 chiều: symbol, side, decision, month, score bucket, final score, M15 quality, regime, SMC zone, entry zone, liquidity sweep, displacement, CHOCH, R:R.
-- Equity curve, drawdown tracking, account guard mô phỏng.
-- Dữ liệu M15 load theo chunk 180 ngày, tự fallback sang H1 khi không có.
-
-Kết quả backtest là cơ sở để cấu hình bộ lọc auto-trade cho từng cặp trong Settings > Dữ liệu.
-
-## 12. Cấu hình auto-trade theo cặp
-
-Mỗi cặp có thể được cấu hình auto-trade riêng trong Settings > Dữ liệu:
-
-| Trường | Ý nghĩa |
+| Stage | Contract |
 |---|---|
-| Min Score | Ngưỡng final score tối thiểu |
-| Auto Regime | Chỉ auto-trade khi regime khớp. Để trống = không lọc |
-| Auto Side | Hướng auto-trade (buy/sell/best) |
-| Min RR | R:R kỳ vọng tối thiểu. 0 = không lọc |
+| `DISABLED` | Chặn mọi order Scanner. |
+| `SHADOW` | Ghi V1/V2 comparison và metrics; chặn mọi order Scanner. Mặc định của mã nguồn/settings mới. |
+| `DEMO_LIMITED` | Demo account và symbol allowlist. |
+| `DEMO_FULL` | Demo account. |
+| `CANARY` | Canary readiness và risk cap. |
+| `PRODUCTION` | Approval và release readiness. |
 
-Cặp chưa cấu hình (chưa backtest) sẽ không được auto-trade.
+`kill_switch` luôn chặn. Settings mới và settings migrate đều mặc định `SHADOW`.
 
-## 13. Packaging
+Runtime hiện tại đã chọn `PRODUCTION`, bật V2 và
+`production_approved=true`, nhưng release readiness vẫn `false`. Đây không
+phải trạng thái production-ready và không bỏ qua các yêu cầu dưới đây. Xem
+`runtime-status.md`.
 
-Ứng dụng phải đóng gói được trên Windows:
+Release readiness mặc định yêu cầu:
 
-- Include assets.
-- Include QSS.
-- Include chart assets.
-- Include migrations.
-- Include hidden imports cần cho PyQt6/PyQt6-WebEngine/MetaTrader5.
-- User data lưu trong `%APPDATA%/AI Market Analyst/`.
+- ít nhất 100 shadow samples;
+- ít nhất 20 demo orders;
+- ít nhất 5 canary orders;
+- unsafe disagreement rate ≤ 10%;
+- revalidation failure rate ≤ 5%;
+- performance degradation ≤ 15%;
+- không side mismatch, premature order hoặc portfolio violation;
+- có OOS/demo evidence và rollback đã kiểm thử.
 
-## 14. Testing
+## 9. Observability và dữ liệu runtime
 
-Các nhóm test quan trọng:
+Mỗi scan/row/order có ID, hash, version, timestamp, branch, side, score, gate, portfolio và rollout decision.
 
-- Core: scoring, risk, entry engine, signal engine, decision engine, trade gate.
-- MT5 service, scanner controller, auto-trade controller.
-- Backtest engine: system backtest, plan replay, feedback.
-- Telegram alert, journal, settings service.
-- Scanner ranking, opportunity score, scanner row contract.
+App-data lưu:
 
-## 15. Nguyên tắc an toàn
+- `scanner_snapshots/scanner_{scan_id}.json`;
+- `scanner_analysis/{scan_id}/{symbol}.json`;
+- `logs/scanner-events.jsonl`;
+- `rollout/scanner-rollout-metrics.json`;
+- journal SQLite và settings theo `config.paths`.
 
-- Không tự vào lệnh khi người dùng chưa bật nút chọn auto-entry.
-- Không vào thêm nếu broker symbol đã có position hoặc pending order.
-- Không bỏ qua risk settings.
-- Không gửi lệnh nếu thiếu SL/TP/lot hợp lệ.
-- Không dùng dữ liệu ngoài MT5 để tạo trạng thái ready thực chiến.
-- Không để AI quyết định execution.
+Snapshot/replay không được chứa credential nhạy cảm.
+
+## 10. Telegram
+
+Detailed alert chỉ áp dụng cho candidate canonical `READY_NOW` có trade plan hợp lệ. Alert không có quyền gửi lệnh và không thay rollout/execution gate.
+
+Nội dung nên gồm symbol, side, Entry, SL, TP, lot gợi ý, R:R, setup score, lý do và nguồn. Summary sau scan cho biết số symbol và nhóm trạng thái chính.
+
+## 11. UI/UX
+
+Các màn hình chính:
+
+- Dashboard;
+- Scanner và Scanner Detail;
+- Backtest;
+- Journal và Journal Detail;
+- Orders;
+- Settings.
+
+Yêu cầu:
+
+- tác vụ MT5/AI/scan chạy ngoài UI thread;
+- Scanner dùng model/view;
+- bảng Scanner dùng 13 cột theo `ScannerTableModel.COLUMNS`;
+- hiển thị rõ candidate status, strategy branch/config status và rollout stage;
+- Scanner Detail phải đọc canonical selected-side cho status, score,
+  entry/SL/TP, vị trí giá, effective/nominal R:R, Gate và macro raw; thiếu dữ
+  liệu hiển thị unknown thay vì mặc định pass;
+- action có khả năng đặt lệnh phải nổi bật và luôn chịu rollout guard;
+- text tiếng Việt dễ hiểu, thuật ngữ trading có thể giữ tiếng Anh kèm giải thích.
+
+## 12. Packaging
+
+Ứng dụng phải đóng gói được trên Windows, gồm assets, QSS, chart assets, migrations và hidden imports của PyQt6/PyQt6-WebEngine/MetaTrader5. User data nằm trong app-data, không ghi đè source/package.
+
+## 13. Testing và tiêu chí hoàn thành
+
+Nhóm test trọng yếu:
+
+- scoring/decision/entry/trade gate;
+- side and domain model;
+- strategy router/config validation;
+- execution revalidation/news;
+- portfolio risk/settings;
+- controller shared execution;
+- ranking;
+- observability/replay;
+- rollout/migration/readiness;
+- MT5, Telegram, journal và backtest integration.
+
+Code/tooling của kế hoạch Scanner 0–8 đã hoàn tất. Trạng thái production vẫn phụ thuộc validation thực tế: shadow, demo, canary, OOS/demo evidence, rollback và soak test.
+
+## 14. Nguyên tắc an toàn bất biến
+
+- Không đặt lệnh nếu người dùng không yêu cầu.
+- Không đặt lệnh khi rollout policy chặn.
+- Không đặt lệnh từ row ngoài canonical `READY_NOW`.
+- Không dùng config backtest invalid.
+- Không ghép score và scenario khác side.
+- Không bỏ qua fresh-price revalidation.
+- Không bỏ qua news/account/portfolio risk.
+- Không để UI hoặc AI gọi MT5 order API trực tiếp.
+- Không coi exception hoặc missing data là pass.

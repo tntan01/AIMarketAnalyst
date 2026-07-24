@@ -5,6 +5,22 @@ from typing import Any
 
 from core.indicators import atr
 from core.market_models import Candle
+from core.smc_confluence import build_directional_confluence
+from core.smc_lifecycle import analyze_zone_lifecycle
+from core.smc_models import (
+    SMC_DOMAIN_VERSION,
+    SelectedSmcZone,
+    SmcZone,
+    adapt_legacy_confluence_payload,
+    adapt_legacy_zone_payload,
+    build_zone_id,
+)
+from core.smc_sweep_linking import (
+    SMC_SWEEP_LINK_VERSION,
+    associate_sweeps_to_zones,
+    build_sweep_id,
+    empty_sweep_link_payload,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -93,13 +109,48 @@ def _cross_validate_structure(d1_smc: dict[str, Any], h4_smc: dict[str, Any], h1
 
 def build_smc_context(
     d1: list[Candle], h4: list[Candle], h1: list[Candle],
-    *, scan_interval_min: int = 15,
+    *, scan_interval_min: int = 15, symbol: str = "",
 ) -> dict[str, Any]:
-    d1_smc = _smc_for_timeframe(d1, tf_minutes=1440, scan_interval_min=scan_interval_min)
-    h4_smc = _smc_for_timeframe(h4, tf_minutes=240, scan_interval_min=scan_interval_min)
-    h1_smc = _smc_for_timeframe(h1, tf_minutes=60, scan_interval_min=scan_interval_min)
-    confluence = _cross_validate_structure(d1_smc, h4_smc, h1_smc)
+    d1_smc = _smc_for_timeframe(
+        d1,
+        tf_minutes=1440,
+        scan_interval_min=scan_interval_min,
+        symbol=symbol,
+        timeframe="D1",
+    )
+    h4_smc = _smc_for_timeframe(
+        h4,
+        tf_minutes=240,
+        scan_interval_min=scan_interval_min,
+        symbol=symbol,
+        timeframe="H4",
+    )
+    h1_smc = _smc_for_timeframe(
+        h1,
+        tf_minutes=60,
+        scan_interval_min=scan_interval_min,
+        symbol=symbol,
+        timeframe="H1",
+    )
+    legacy_confluence = _cross_validate_structure(
+        d1_smc,
+        h4_smc,
+        h1_smc,
+    )
+    directional_confluence = build_directional_confluence(
+        d1_smc,
+        h4_smc,
+        h1_smc,
+        legacy_score=int(
+            legacy_confluence.get("confluence_score", 0) or 0
+        ),
+    )
+    confluence = adapt_legacy_confluence_payload(
+        directional_confluence.to_dict(include_compatibility=True)
+    )
     return {
+        "domain_version": SMC_DOMAIN_VERSION,
+        "symbol": symbol,
         "D1": d1_smc,
         "H4": h4_smc,
         "H1": h1_smc,
@@ -127,9 +178,14 @@ def _smc_for_timeframe(
     *,
     tf_minutes: int = 60,
     scan_interval_min: int = 15,
+    symbol: str = "",
+    timeframe: str = "",
 ) -> dict[str, Any]:
     if len(candles) < _SMC_MIN_CANDLES:
         return {
+            "domain_version": SMC_DOMAIN_VERSION,
+            "symbol": symbol,
+            "timeframe": timeframe,
             "structure": "insufficient_data",
             "bos": False,
             "choch": False,
@@ -146,6 +202,7 @@ def _smc_for_timeframe(
             "fvg": [],
             "liquidity_pools": {"equal_highs": [], "equal_lows": [], "swing_highs": [], "swing_lows": []},
             "liquidity_sweeps": {"swept_highs": [], "swept_lows": []},
+            "zone_link_sweeps": {"swept_highs": [], "swept_lows": []},
             "premium_discount": "unknown",
             "premium_discount_range": {"status": "unknown"},
         }
@@ -166,12 +223,62 @@ def _smc_for_timeframe(
     fvg = detect_fvg(candles)
     order_blocks = detect_order_blocks(candles, fvg)
     demand_zones, supply_zones = detect_supply_demand_zones(candles)
-    liquidity_sweeps = detect_liquidity_sweeps(candles, swings)
-    demand_zones = enrich_zones(demand_zones, candles, "demand", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
-    supply_zones = enrich_zones(supply_zones, candles, "supply", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
-    order_blocks = enrich_zones(order_blocks, candles, "order_block", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
-    fvg = enrich_zones(fvg, candles, "fvg", liquidity_sweeps, premium_discount_range, tf_minutes=tf_minutes, scan_interval_min=scan_interval_min)
+    liquidity_sweeps = detect_liquidity_sweeps(
+        candles,
+        swings,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    zone_link_sweeps = detect_liquidity_sweeps(
+        candles,
+        swings,
+        symbol=symbol,
+        timeframe=timeframe,
+        lookback_bars=_LOOKBACK_WINDOW,
+        max_results=None,
+        causal_only=True,
+    )
+    _attach_zone_sweep_links(
+        (
+            ("demand", demand_zones),
+            ("supply", supply_zones),
+            ("order_block", order_blocks),
+            ("fvg", fvg),
+        ),
+        zone_link_sweeps,
+        candles=candles,
+        symbol=symbol,
+        timeframe=timeframe,
+        tf_minutes=tf_minutes,
+    )
+    demand_zones = enrich_zones(
+        demand_zones, candles, "demand", liquidity_sweeps,
+        premium_discount_range, tf_minutes=tf_minutes,
+        scan_interval_min=scan_interval_min, symbol=symbol,
+        timeframe=timeframe,
+    )
+    supply_zones = enrich_zones(
+        supply_zones, candles, "supply", liquidity_sweeps,
+        premium_discount_range, tf_minutes=tf_minutes,
+        scan_interval_min=scan_interval_min, symbol=symbol,
+        timeframe=timeframe,
+    )
+    order_blocks = enrich_zones(
+        order_blocks, candles, "order_block", liquidity_sweeps,
+        premium_discount_range, tf_minutes=tf_minutes,
+        scan_interval_min=scan_interval_min, symbol=symbol,
+        timeframe=timeframe,
+    )
+    fvg = enrich_zones(
+        fvg, candles, "fvg", liquidity_sweeps,
+        premium_discount_range, tf_minutes=tf_minutes,
+        scan_interval_min=scan_interval_min, symbol=symbol,
+        timeframe=timeframe,
+    )
     return {
+        "domain_version": SMC_DOMAIN_VERSION,
+        "symbol": symbol,
+        "timeframe": timeframe,
         "structure": bos.get("structure", "unknown"),
         "bos": bos.get("bos", False),
         "choch": bos.get("choch", False),
@@ -188,6 +295,7 @@ def _smc_for_timeframe(
         "fvg": fvg,
         "liquidity_pools": liquidity,
         "liquidity_sweeps": liquidity_sweeps,
+        "zone_link_sweeps": zone_link_sweeps,
         "premium_discount": premium_discount,
         "premium_discount_range": premium_discount_range,
         "swing_source": swing_source,
@@ -374,6 +482,10 @@ def detect_fvg(candles: list[Candle]) -> list[dict[str, Any]]:
                     "high": third.low,
                     "index": index,
                     "time": third.time.isoformat(),
+                    "origin_index": index,
+                    "origin_time": third.time.isoformat(),
+                    "formation_start_index": index - 2,
+                    "departure_end_index": index,
                     "displacement_multiple": displacement_multiple_at(candles, index),
                 }
             )
@@ -385,6 +497,10 @@ def detect_fvg(candles: list[Candle]) -> list[dict[str, Any]]:
                     "high": first.low,
                     "index": index,
                     "time": third.time.isoformat(),
+                    "origin_index": index,
+                    "origin_time": third.time.isoformat(),
+                    "formation_start_index": index - 2,
+                    "departure_end_index": index,
                     "displacement_multiple": displacement_multiple_at(candles, index),
                 }
             )
@@ -412,6 +528,10 @@ def detect_order_blocks(candles: list[Candle], fvg: list[dict[str, Any]]) -> lis
                     "high": candle.high,
                     "index": index,
                     "time": candle.time.isoformat(),
+                    "origin_index": index,
+                    "origin_time": candle.time.isoformat(),
+                    "formation_start_index": index,
+                    "departure_end_index": index + 1,
                     "has_fvg_above": (index + 2) in fvg_indices,
                     "displacement_multiple": displacement_multiple_at(candles, index + 1),
                 }
@@ -424,6 +544,10 @@ def detect_order_blocks(candles: list[Candle], fvg: list[dict[str, Any]]) -> lis
                     "high": candle.high,
                     "index": index,
                     "time": candle.time.isoformat(),
+                    "origin_index": index,
+                    "origin_time": candle.time.isoformat(),
+                    "formation_start_index": index,
+                    "departure_end_index": index + 1,
                     "has_fvg_below": (index + 2) in fvg_indices,
                     "displacement_multiple": displacement_multiple_at(candles, index + 1),
                 }
@@ -477,6 +601,10 @@ def detect_supply_demand_zones(candles: list[Candle]) -> tuple[list[dict[str, An
                     "high": base_high,
                     "index": index - 1,
                     "time": base[-1].time.isoformat(),
+                    "origin_index": index - 1,
+                    "origin_time": base[-1].time.isoformat(),
+                    "formation_start_index": index - consolidation_bars,
+                    "departure_end_index": index,
                     "consolidation_bars": consolidation_bars,
                     "displacement_multiple": round(impulse_size / avg_range, 2) if avg_range else 0,
                     "liquidity_sweep": (
@@ -562,26 +690,178 @@ def premium_discount_bounds(swings: dict[str, list[dict[str, Any]]]) -> dict[str
     return {"status": "ok", "high": high, "low": low, "midpoint": (high + low) / 2}
 
 
-def detect_liquidity_sweeps(candles: list[Candle], swings: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+def detect_liquidity_sweeps(
+    candles: list[Candle],
+    swings: dict[str, list[dict[str, Any]]],
+    *,
+    symbol: str = "",
+    timeframe: str = "",
+    lookback_bars: int = 6,
+    max_results: int | None = _MAX_LIQUIDITY_LEVELS,
+    causal_only: bool = False,
+) -> dict[str, list[dict[str, Any]]]:
     if len(candles) < 3:
         return {"swept_highs": [], "swept_lows": []}
-    recent = candles[-6:]
-    swing_highs = swings["highs"][-6:]
-    swing_lows = swings["lows"][-6:]
+    safe_lookback = max(1, int(lookback_bars))
+    recent_start = max(0, len(candles) - safe_lookback)
+    swing_highs = swings["highs"][-safe_lookback:]
+    swing_lows = swings["lows"][-safe_lookback:]
     swept_highs: list[dict[str, Any]] = []
     swept_lows: list[dict[str, Any]] = []
-    for candle in recent:
+    for candle_index in range(recent_start, len(candles)):
+        candle = candles[candle_index]
         for swing in swing_highs:
+            if (
+                causal_only
+                and swing.get("index") is not None
+                and int(swing["index"]) >= candle_index
+            ):
+                continue
             level = swing["level"]
             if candle.high > level and candle.close < level:
-                swept_highs.append({"level": level, "time": candle.time.isoformat()})
+                occurred_at = candle.time.isoformat()
+                swept_highs.append({
+                    "sweep_id": build_sweep_id(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        side="sell",
+                        kind="swept_high",
+                        level=level,
+                        occurred_at=occurred_at,
+                    ),
+                    "side": "sell",
+                    "kind": "swept_high",
+                    "level": level,
+                    "index": candle_index,
+                    "time": occurred_at,
+                    "source_swing_index": swing.get("index"),
+                    "source_swing_time": swing.get("time"),
+                    "sweep_link_version": SMC_SWEEP_LINK_VERSION,
+                })
                 break
         for swing in swing_lows:
+            if (
+                causal_only
+                and swing.get("index") is not None
+                and int(swing["index"]) >= candle_index
+            ):
+                continue
             level = swing["level"]
             if candle.low < level and candle.close > level:
-                swept_lows.append({"level": level, "time": candle.time.isoformat()})
+                occurred_at = candle.time.isoformat()
+                swept_lows.append({
+                    "sweep_id": build_sweep_id(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        side="buy",
+                        kind="swept_low",
+                        level=level,
+                        occurred_at=occurred_at,
+                    ),
+                    "side": "buy",
+                    "kind": "swept_low",
+                    "level": level,
+                    "index": candle_index,
+                    "time": occurred_at,
+                    "source_swing_index": swing.get("index"),
+                    "source_swing_time": swing.get("time"),
+                    "sweep_link_version": SMC_SWEEP_LINK_VERSION,
+                })
                 break
-    return {"swept_highs": swept_highs[-_MAX_LIQUIDITY_LEVELS:], "swept_lows": swept_lows[-_MAX_LIQUIDITY_LEVELS:]}
+    if max_results is None:
+        return {"swept_highs": swept_highs, "swept_lows": swept_lows}
+    safe_limit = max(0, int(max_results))
+    if safe_limit == 0:
+        return {"swept_highs": [], "swept_lows": []}
+    return {
+        "swept_highs": swept_highs[-safe_limit:],
+        "swept_lows": swept_lows[-safe_limit:],
+    }
+
+
+def _attach_zone_sweep_links(
+    zone_groups: tuple[tuple[str, list[dict[str, Any]]], ...],
+    liquidity_sweeps: dict[str, list[dict[str, Any]]],
+    *,
+    candles: list[Candle],
+    symbol: str,
+    timeframe: str,
+    tf_minutes: int,
+) -> None:
+    """Attach canonical one-to-one sweep links across every zone family."""
+
+    candidates: list[dict[str, Any]] = []
+    for family, zones in zone_groups:
+        for zone in zones:
+            origin_index = int(
+                zone.get("origin_index", zone.get("index", -1))
+            )
+            origin_time = str(
+                zone.get("origin_time", zone.get("time", "")) or ""
+            )
+            direction = zone_side(zone, family)
+            zone_id = str(zone.get("zone_id", "") or "").strip() or build_zone_id(
+                symbol=symbol,
+                timeframe=timeframe or str(tf_minutes),
+                family=family,
+                direction=direction,
+                origin_time=origin_time,
+                low=zone.get("low", 0),
+                high=zone.get("high", 0),
+            )
+            zone.update({
+                "zone_id": zone_id,
+                "family": family,
+                "direction": direction,
+                "origin_index": origin_index,
+                "origin_time": origin_time,
+                "formation_start_index": int(
+                    zone.get("formation_start_index", origin_index)
+                ),
+                "departure_end_index": int(
+                    zone.get("departure_end_index", origin_index)
+                ),
+            })
+            for key, value in empty_sweep_link_payload().items():
+                zone.setdefault(key, value)
+            candidates.append(zone)
+
+    links = associate_sweeps_to_zones(
+        candidates,
+        liquidity_sweeps,
+        atr_value=_latest_atr(candles),
+    )
+    sweep_to_zone: dict[str, str] = {}
+    for zone in candidates:
+        link = links.get(str(zone.get("zone_id", "")))
+        if link is None:
+            continue
+        zone.update(link.to_zone_payload())
+        sweep_to_zone[link.sweep_id] = link.zone_id
+
+    for key in ("swept_lows", "swept_highs"):
+        values = liquidity_sweeps.get(key, [])
+        if not isinstance(values, list):
+            continue
+        for sweep in values:
+            if not isinstance(sweep, dict):
+                continue
+            sweep_id = str(sweep.get("sweep_id", "") or "")
+            sweep["linked_zone_id"] = sweep_to_zone.get(sweep_id)
+            sweep["sweep_link_version"] = SMC_SWEEP_LINK_VERSION
+
+
+def _latest_atr(candles: list[Candle]) -> float | None:
+    if not candles:
+        return None
+    values = atr(
+        [candle.high for candle in candles],
+        [candle.low for candle in candles],
+        [candle.close for candle in candles],
+        _ATR_PERIOD,
+    )
+    value = values[-1] if values else None
+    return float(value) if value is not None and value > 0 else None
 
 
 def enrich_zones(
@@ -593,35 +873,96 @@ def enrich_zones(
     *,
     tf_minutes: int = 60,
     scan_interval_min: int = 15,
+    symbol: str = "",
+    timeframe: str = "",
 ) -> list[dict[str, Any]]:
     enriched = []
     stale_threshold = max(1, (scan_interval_min * 2) // tf_minutes)
     for zone in zones:
         item = dict(zone)
-        index = int(item.get("index", len(candles) - 1))
+        for key, value in empty_sweep_link_payload().items():
+            item.setdefault(key, value)
+        index = int(
+            item.get(
+                "origin_index",
+                item.get("index", len(candles) - 1),
+            )
+        )
+        departure_end_index = int(
+            item.get("departure_end_index", index)
+        )
         future = candles[index + 1 :] if index + 1 < len(candles) else []
         low = float(item.get("low", 0.0))
         high = float(item.get("high", 0.0))
         side = zone_side(item, family)
-        test_count = count_zone_tests(future, low, high)
-        broken = zone_broken(future, low, high, side)
-        mitigated = test_count > 0
+        legacy_test_count = count_zone_tests(future, low, high)
+        legacy_broken = zone_broken(future, low, high, side)
+        legacy_mitigated = legacy_test_count > 0
         freshness_bars = max(0, len(candles) - 1 - index)
-        stale = freshness_bars > stale_threshold
+        legacy_stale = freshness_bars > stale_threshold
         zone_location = zone_premium_discount(low, high, premium_discount_range)
+        legacy_liquidity_sweep = (
+            bool(item.get("liquidity_sweep"))
+            or _legacy_timeframe_has_sweep(side, liquidity_sweeps)
+        )
+        origin_time = str(
+            item.get("origin_time", item.get("time", "")) or ""
+        )
+        zone_id = str(item.get("zone_id", "") or "").strip() or build_zone_id(
+            symbol=symbol,
+            timeframe=timeframe or str(tf_minutes),
+            family=family,
+            direction=side,
+            origin_time=origin_time,
+            low=low,
+            high=high,
+        )
+        lifecycle = analyze_zone_lifecycle(
+            candles=candles,
+            low=low,
+            high=high,
+            side=side,
+            origin_index=index,
+            departure_end_index=departure_end_index,
+            zone_id=zone_id,
+            timeframe=timeframe,
+            tf_minutes=tf_minutes,
+        )
         item.update(
             {
+                "zone_id": zone_id,
+                "origin_index": index,
+                "origin_time": origin_time,
                 "freshness_bars": freshness_bars,
-                "stale": stale,
-                "mitigated": mitigated,
-                "broken": broken,
-                "test_count": test_count,
+                "stale": legacy_stale,
+                "mitigated": legacy_mitigated,
+                "broken": legacy_broken,
+                "test_count": legacy_test_count,
+                "legacy_stale": legacy_stale,
+                "legacy_mitigated": legacy_mitigated,
+                "legacy_broken": legacy_broken,
+                "legacy_test_count": legacy_test_count,
+                "liquidity_sweep": legacy_liquidity_sweep,
+                "legacy_liquidity_sweep": legacy_liquidity_sweep,
                 "zone_location": zone_location,
-                "liquidity_sweep": bool(item.get("liquidity_sweep")) or zone_has_sweep(side, liquidity_sweeps),
             }
         )
-        item["zone_score"] = zone_quality_score(item, side)
-        item["strength"] = score_to_strength(item["zone_score"])
+        item.update(lifecycle.to_dict())
+        legacy_zone_score = zone_quality_score(item, side)
+        item.update({
+            "zone_quality_score": legacy_zone_score,
+            "zone_relevance_score": None,
+            "zone_setup_score": legacy_zone_score,
+            "zone_score": legacy_zone_score,
+        })
+        item["strength"] = score_to_strength(legacy_zone_score)
+        item = adapt_legacy_zone_payload(
+            item,
+            symbol=symbol,
+            timeframe=timeframe or str(tf_minutes),
+            family=family,
+            direction=side,
+        )
         enriched.append(item)
     return sorted(enriched, key=lambda zone: zone.get("zone_score", 0), reverse=True)
 
@@ -658,7 +999,12 @@ def zone_premium_discount(low: float, high: float, bounds: dict[str, float | str
     return "equilibrium"
 
 
-def zone_has_sweep(side: str, liquidity_sweeps: dict[str, list[dict[str, Any]]]) -> bool:
+def _legacy_timeframe_has_sweep(
+    side: str,
+    liquidity_sweeps: dict[str, list[dict[str, Any]]],
+) -> bool:
+    """Compatibility-only broadcast used by the active smc-v1 scorer."""
+
     return bool(liquidity_sweeps.get("swept_lows" if side == "buy" else "swept_highs"))
 
 
@@ -829,13 +1175,18 @@ def get_preferred_zone(smc_context: dict[str, Any] | None, direction: str, price
     high = zone.get("high")
     if low is None or high is None:
         return None
-    return {
-        "low": float(low),
-        "high": float(high),
-        "level": (float(low) + float(high)) / 2,
-        "zone_score": zone.get("zone_score", 0),
-        "source": "smc_selected",
-    }
+    try:
+        zone_model = SmcZone.from_legacy_dict(
+            zone,
+            symbol=smc_context.get("symbol", ""),
+            timeframe="H4",
+            direction=direction,
+        )
+        return SelectedSmcZone.from_zone(zone_model).to_dict(
+            include_compatibility=True
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) -> dict[str, Any]:
@@ -860,6 +1211,7 @@ def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) 
             "liquidity_sweep_aligned": bool,
             "displacement_aligned": bool,
             "has_selected_zone": bool,
+            "selected_zone_id": str | None,
             "selected_zone_type": str | None,
             "selected_zone_score": int | None,
             "raw": dict,
@@ -871,8 +1223,19 @@ def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) 
         "liquidity_sweep_aligned": False,
         "displacement_aligned": False,
         "has_selected_zone": False,
+        "selected_zone_id": None,
         "selected_zone_type": None,
         "selected_zone_score": None,
+        "selected_zone_quality_score": None,
+        "selected_zone_relevance_score": None,
+        "selected_zone_setup_score": None,
+        "selected_zone_timeframe": None,
+        "selected_zone_family": None,
+        "selected_zone_scoring_version": None,
+        "selected_zone_liquidity_sweep_linked": False,
+        "selected_zone_linked_sweep_id": None,
+        "selected_zone_linked_sweep_distance_atr": None,
+        "selected_zone_linked_sweep_time_delta": None,
         "raw": {},
     }
 
@@ -912,9 +1275,77 @@ def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) 
     # --- Selected zone ---
     zone = _find_best_zone_for_direction(h4, direction)
     if zone:
+        try:
+            zone_model = SmcZone.from_legacy_dict(
+                zone,
+                symbol=smc_context.get("symbol", ""),
+                timeframe="H4",
+                direction=direction,
+            )
+        except (TypeError, ValueError):
+            zone_model = None
         result["has_selected_zone"] = True
-        result["selected_zone_type"] = zone.get("type")
-        result["selected_zone_score"] = zone.get("zone_score")
+        result["selected_zone_id"] = (
+            zone_model.zone_id if zone_model is not None else zone.get("zone_id")
+        )
+        result["selected_zone_type"] = (
+            zone_model.zone_type if zone_model is not None else zone.get("type")
+        )
+        result["selected_zone_score"] = (
+            zone_model.zone_score
+            if zone_model is not None
+            else zone.get("zone_score")
+        )
+        result["selected_zone_quality_score"] = (
+            zone_model.zone_quality_score
+            if zone_model is not None
+            else zone.get("zone_quality_score", zone.get("zone_score"))
+        )
+        result["selected_zone_relevance_score"] = (
+            zone_model.zone_relevance_score
+            if zone_model is not None
+            else zone.get("zone_relevance_score")
+        )
+        result["selected_zone_setup_score"] = (
+            zone_model.zone_setup_score
+            if zone_model is not None
+            else zone.get("zone_setup_score", zone.get("zone_score"))
+        )
+        result["selected_zone_timeframe"] = (
+            zone_model.timeframe
+            if zone_model is not None
+            else zone.get("timeframe", "H4")
+        )
+        result["selected_zone_family"] = (
+            zone_model.family
+            if zone_model is not None
+            else zone.get("family")
+        )
+        result["selected_zone_scoring_version"] = (
+            zone_model.scoring_version
+            if zone_model is not None
+            else zone.get("scoring_version")
+        )
+        result["selected_zone_liquidity_sweep_linked"] = (
+            zone_model.liquidity_sweep_linked
+            if zone_model is not None
+            else bool(zone.get("liquidity_sweep_linked"))
+        )
+        result["selected_zone_linked_sweep_id"] = (
+            zone_model.linked_sweep_id
+            if zone_model is not None
+            else zone.get("linked_sweep_id")
+        )
+        result["selected_zone_linked_sweep_distance_atr"] = (
+            zone_model.linked_sweep_distance_atr
+            if zone_model is not None
+            else zone.get("linked_sweep_distance_atr")
+        )
+        result["selected_zone_linked_sweep_time_delta"] = (
+            zone_model.linked_sweep_time_delta
+            if zone_model is not None
+            else zone.get("linked_sweep_time_delta")
+        )
         if zone.get("broken"):
             result["zone_broken"] = True
 

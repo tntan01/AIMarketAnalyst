@@ -31,6 +31,32 @@ class AISettings:
 @dataclass(slots=True)
 class SymbolScanSettings:
     backtest: bool = False
+    backtest_config_id: str = ""
+    backtest_status: str = ""
+    backtest_schema_version: int = 0
+    backtest_validation_version: str = ""
+    backtest_scorer_version: str = ""
+    backtest_feature_version: str = ""
+    backtest_smc_scorer_version: str = ""
+    backtest_smc_scoring_mode: str = ""
+    backtest_score_metric: str = ""
+    backtest_trained_from: str = ""
+    backtest_trained_to: str = ""
+    backtest_validated_from: str = ""
+    backtest_validated_to: str = ""
+    backtest_in_sample_trades: int = 0
+    backtest_out_of_sample_trades: int = 0
+    backtest_oos_expectancy_r: float = 0.0
+    backtest_oos_profit_factor: float = 0.0
+    backtest_oos_max_drawdown_r: float = 0.0
+    backtest_expectancy_ci_low: float | None = None
+    backtest_expectancy_ci_high: float | None = None
+    backtest_walk_forward_windows: int = 0
+    backtest_walk_forward_verdict: str = ""
+    backtest_validation_fingerprint: str = ""
+    backtest_validation_reasons: list[str] = field(default_factory=list)
+    backtest_validated_at: str = ""
+    backtest_expires_at: str = ""
     min_score: int = 0
     auto_trade_regime: str = ""       # "range", "trend_up", etc. Empty = no filter
     auto_trade_side: str = ""         # "buy", "sell", "best". Empty = use best_side
@@ -53,6 +79,10 @@ class TradingSettings:
     max_weekly_loss_pct: float = 5.0
     max_consecutive_losses: int = 3
     max_open_risk_pct: float = 3.0
+    max_symbol_risk_pct: float = 2.0
+    max_currency_exposure_pct: float = 2.0
+    max_correlated_risk_pct: float = 2.0
+    max_concurrent_orders: int = 5
     enabled_symbols: list[str] = field(default_factory=list)
     symbol_settings: dict[str, SymbolScanSettings] = field(default_factory=dict)
 
@@ -88,12 +118,49 @@ class NotificationSettings:
 
 
 @dataclass(slots=True)
+class FeatureFlagSettings:
+    """Architecture rollout switches.
+
+    Phase-0 safety invariants are always enabled.  These flags only select
+    future implementations and must never restore unsafe auto-trade behavior.
+    """
+
+    scanner_architecture_v2: bool = False
+    auto_trade_v2: bool = False
+    backtest_config_v2: bool = False
+    smc_scoring_mode: str = "v2"
+
+
+@dataclass(slots=True)
+class ScannerRolloutSettings:
+    """Fail-closed rollout policy for Scanner V2 order execution."""
+
+    stage: str = "SHADOW"
+    kill_switch: bool = False
+    shadow_compare_enabled: bool = True
+    allowed_symbols: list[str] = field(default_factory=list)
+    canary_risk_percent: float = 0.1
+    require_demo_account: bool = True
+    production_approved: bool = False
+    min_shadow_samples: int = 100
+    min_demo_orders: int = 20
+    min_canary_orders: int = 5
+    max_disagreement_rate: float = 0.1
+    max_revalidation_failure_rate: float = 0.05
+    max_performance_degradation_pct: float = 15.0
+
+
+@dataclass(slots=True)
 class AppSettings:
     ai: AISettings
     trading: TradingSettings = field(default_factory=TradingSettings)
     display: DisplaySettings = field(default_factory=DisplaySettings)
     advanced: AdvancedSettings = field(default_factory=AdvancedSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
+    features: FeatureFlagSettings = field(default_factory=FeatureFlagSettings)
+    scanner_rollout: ScannerRolloutSettings = field(
+        default_factory=ScannerRolloutSettings
+    )
     default_symbol: str = "EUR/USD"
     default_timeframe: str = "H1"
     language: str = "vi"

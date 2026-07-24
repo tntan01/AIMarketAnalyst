@@ -128,9 +128,11 @@ def _recommend_for_symbol(symbol: str, trades: list[dict]) -> dict[str, Any] | N
             rr_evidence = ""
 
         # Apply min_rr filter
-        final_trades = [t for t in score_filtered
-                        if t["expected_effective_rr"] is None
-                        or t["expected_effective_rr"] >= min_rr]
+        final_trades = [
+            t for t in score_filtered
+            if t["expected_effective_rr"] is not None
+            and t["expected_effective_rr"] >= min_rr
+        ]
         if len(final_trades) < MIN_TRADES_AFTER_FILTER:
             continue
 
@@ -210,8 +212,8 @@ def _find_optimal_min_rr(trades: list[dict]) -> tuple[float | None, str]:
     for threshold in RR_THRESHOLDS:
         filtered = [
             t for t in trades
-            if t["expected_effective_rr"] is None
-            or t["expected_effective_rr"] >= threshold
+            if t["expected_effective_rr"] is not None
+            and t["expected_effective_rr"] >= threshold
         ]
         if len(filtered) < MIN_TRADES_AFTER_FILTER:
             continue

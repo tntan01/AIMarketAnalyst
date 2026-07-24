@@ -1,146 +1,166 @@
-# Hướng dẫn quy trình: Backtest → Cấu hình Ngưỡng → Quét & Auto Trade
+# Quy trình vận hành Backtest → Scanner → Rollout
 
-Quy trình 3 bước để tối ưu ngưỡng quyết định (decision thresholds) cho từng cặp tiền và bật auto trade.
+Trạng thái tài liệu: **hiện hành**, đồng bộ với Scanner V2 ngày 24/07/2026.
 
----
+## 1. Nguyên tắc cần hiểu trước
 
-## Bước 1: Backtest để tìm ngưỡng quyết định tối ưu
+Scanner tách ba loại quyết định:
 
-**Mục tiêu:** Xác định mức `final_score` mà mỗi cặp bắt đầu có edge — tức ngưỡng `decision_ready`, `decision_watch`, `decision_wait` riêng cho từng cặp.
+1. **Decision Engine** phân loại chất lượng setup theo ngưỡng `ready/watch/wait`.
+2. **Strategy Router** chọn đúng một nhánh chiến lược và kiểm tra setup có thuộc chiến lược hay không.
+3. **Execution/Portfolio/Rollout Gate** quyết định có được gửi lệnh tại thời điểm thực thi hay không.
 
-### Thao tác
+Backtest không thay thế hai lớp còn lại và không được nâng một setup bị chặn thành setup được phép đặt lệnh.
 
-1. Mở màn hình **Backtest**.
-2. Chọn mã cần test (ô "Chọn mã"). Nên test từng mã một để có kết quả rõ ràng.
-3. Chọn chế độ phù hợp:
-   - `balanced` — mô phỏng sát thực tế nhất (có spread, slippage, gate).
-   - `research` — nới lỏng gate để thấy toàn bộ tín hiệu.
-4. Nhấn **"Chạy Backtest"** — đợi worker hoàn thành.
+Ngưỡng Decision Engine mặc định cho từng symbol:
 
-### Đọc kết quả
+| Thuộc tính | Mặc định | Mục đích |
+|---|---:|---|
+| `decision_ready` | 65 | Setup đủ mức sẵn sàng nếu các điều kiện khác cùng đạt. |
+| `decision_watch` | 60 | Setup cần theo dõi. |
+| `decision_wait` | 55 | Setup cần chờ xác nhận. |
+| `min_expected_rr` | 1.3 | R:R tối thiểu của pipeline phân tích. |
 
-Sau khi chạy xong, xem bảng **Trades** và phần **Tổng quan**:
+Các ngưỡng này độc lập với `min_score` và `min_rr` của chiến lược đã backtest.
 
-| Chỉ số | Ý nghĩa |
-|--------|---------|
-| Win Rate | Tỷ lệ thắng. > 40% là chấp nhận được với RR cao. |
-| Profit Factor | Lợi nhuận gộp / thua lỗ gộp. > 1.2 là ổn, > 1.5 là tốt. |
-| Expectancy (R) | Kỳ vọng trung bình mỗi lệnh tính theo R. Phải > 0. |
-| Max Drawdown | Mức sụt giảm tối đa. < 10% là an toàn. |
+## 2. Chạy và xác thực backtest
 
-Lọc theo cột `final_score` trong bảng trades:
-- Tập trung vào nhóm lệnh có `final_score` cao (≥ 50, ≥ 60, ≥ 70...).
-- Tìm ngưỡng thấp nhất mà tại đó tập lệnh vẫn có Profit Factor > 1.0 và Expectancy dương.
-- **Ví dụ:** USDCHF có thể `decision_ready = 60` là đủ, trong khi GBPJPY cần `decision_ready = 75`.
+1. Mở màn hình **Backtest**, chọn symbol, khoảng train và khoảng validation ngoài mẫu.
+2. Chạy backtest và xem expectancy, profit factor, drawdown, confidence interval và walk-forward.
+3. Chỉ config đáp ứng đầy đủ schema/validation hiện hành mới có status `VALIDATED`.
+4. Config cũ được migrate thành `DRAFT`; hệ thống không tự nâng lên `VALIDATED`.
+5. Config hết hạn, sai scorer/feature version, thiếu fingerprint hoặc thiếu bằng chứng OOS sẽ fail-closed.
 
-Ba mức ngưỡng cần xác định cho mỗi cặp:
+Config được Router chấp nhận cần phù hợp với các version hiện hành:
 
-| Ngưỡng | Ý nghĩa | Cách xác định |
-|--------|---------|---------------|
-| `decision_ready` | Score ≥ mức này → READY_TO_TRADE (sẵn sàng vào lệnh) | Ngưỡng thấp nhất có Profit Factor > 1.2 |
-| `decision_watch` | Score ≥ mức này → WATCH_ONLY (theo dõi) | Ngưỡng thấp nhất có Win Rate > 35% |
-| `decision_wait` | Score ≥ mức này → WAITING_CONFIRMATION (chờ thêm) | Ngưỡng có Expectancy dương |
+- backtest config schema `v3`;
+- scorer `scanner-v3`;
+- feature `scanner-features-v3`;
+- validation `phase8-smc-v2-oos-v1`, schema v4.
 
----
+Ngoài version, config còn phải có symbol, side, regime, `min_score`, `min_rr`, khoảng train/OOS hợp lệ, cỡ mẫu, CI, walk-forward, fingerprint và thời hạn.
 
-## Bước 2: Cấu hình ngưỡng quyết định trong Settings → Dữ liệu
+## 3. Cấu hình Scanner
 
-Sau khi đã có ngưỡng cho từng cặp từ backtest, lưu vào cấu hình.
+Trong **Settings**, cấu hình riêng cho từng symbol:
 
-### Thao tác
+- `decision_ready`, `decision_watch`, `decision_wait`: ngưỡng phân loại live.
+- `min_expected_rr`: ngưỡng R:R của pipeline.
+- cấu hình backtest: strategy side/regime/min score/min RR và metadata validation.
 
-1. Mở màn hình **Settings**.
-2. Chọn tab **Dữ liệu**.
-3. Kéo xuống bảng cấu hình mã — mỗi dòng là một cặp:
+Không nhập `min_score` backtest để thay cho `decision_ready`. Hai giá trị phục vụ hai quyết định khác nhau.
 
-   | Cột | Ý nghĩa | Cách điền |
-   |-----|---------|-----------|
-   | Kiểm thử | Bật/tắt cấu hình riêng (Nhánh B) | Check ON để kích hoạt auto-trade cho mã này |
-   | Điểm tối thiểu | Ghi đè ngưỡng Ready | Chỉ nhập khi Kiểm thử=ON. Rỗng = dùng Ready mặc định |
-   | Regime tự động | Lọc theo chế độ thị trường | `range`, `trend_up`, `trend_down`, `volatile`, hoặc để trống |
-   | Hướng tự động | Hướng vào lệnh | `buy`, `sell`, `best` |
-   | RR tối thiểu | Tỷ lệ effective R:R tối thiểu | VD: `1.5`. Mặc định 1.3 |
-   | **Ready** | Score ≥ mức này → READY_TO_TRADE | **Mặc định 65**. Áp dụng cho cả Nhánh A và B |
-   | **Watch** | Score ≥ mức này → WATCH_ONLY | **Mặc định 60**. Áp dụng cho cả Nhánh A và B |
-   | **Wait** | Score ≥ mức này → WAITING_CONFIRMATION | **Mặc định 55**. Áp dụng cho cả Nhánh A và B |
+Trong tab **Rollout**, cấu hình stage và safety gate:
 
-4. Nhấn **"💾 Lưu cấu hình mã quét"** ở cuối bảng.
+| Stage | Hành vi |
+|---|---|
+| `DISABLED` | Không gửi lệnh. |
+| `SHADOW` | So sánh V1/V2, ghi metrics, không gửi lệnh. Đây là mặc định của mã nguồn/settings mới. |
+| `DEMO_LIMITED` | Chỉ demo account và symbol trong allowlist. |
+| `DEMO_FULL` | Chỉ demo account. |
+| `CANARY` | Yêu cầu canary readiness; áp trần risk. |
+| `PRODUCTION` | Yêu cầu phê duyệt và toàn bộ release gate đạt. |
 
-### Ví dụ cấu hình
+`kill_switch=true` luôn chặn lệnh, bất kể stage.
 
-| Mã | Kiểm thử | Điểm tối thiểu | Regime | Hướng | RR tối thiểu | Ready | Watch | Wait |
-|----|----------|---------------|--------|-------|-------------|-------|-------|------|
-| USDCHF | ON | 60 | | best | 1.5 | 65 | 60 | 55 |
-| GBPJPY | ON | 75 | | best | 2.0 | 65 | 60 | 55 |
-| EURUSD | OFF | (rỗng) | | | 1.3 | 65 | 60 | 55 |
+Runtime hiện tại trên máy này đã chọn `PRODUCTION`,
+`production_approved=true` và không bắt buộc demo account. Release readiness
+vẫn chưa đạt nên cấu hình này chưa được phép gửi lệnh thật. Xem
+`runtime-status.md`.
 
-- **Nhánh A (Kiểm thử = OFF):** Điểm tối thiểu để trống, disabled. Hệ thống dùng Ready/Watch/Wait (65/60/55) làm ngưỡng. Chỉ auto-trade khi pipeline ra `scanner_action == "ready"`.
-- **Nhánh B (Kiểm thử = ON):** Điểm tối thiểu ghi đè Ready khi > 0. Dùng bộ lọc regime/side/RR từ backtest. Có cơ chế override `stand_aside` → `ready` nếu khớp điều kiện. Auto-trade không cần `scanner_action == "ready"`.
-- Để trống `Regime` và `Side` nếu muốn hệ thống tự quyết định.
+## 4. Quét thị trường
 
----
+1. Mở **Scanner** và chọn danh sách symbol.
+2. Chọn quét một lần hoặc quét tự động theo thời gian. Nút
+   **Tự động vào lệnh MT5** hiện bị disable trong cả hai chế độ, nên Scanner
+   chỉ quét và không tự gửi lệnh.
+3. Nhấn **Quét thị trường**.
+4. Kiểm tra các cột chính: trạng thái, hướng, regime, setup score, opportunity rank, evidence confidence, execution readiness, R:R thực, branch và config status.
+5. Mở chi tiết để xem `reason_codes`, gate, strategy evaluation và candidate payload.
 
-## Bước 3: Quét thị trường & Auto Trade
+Mỗi symbol được Router đưa vào đúng một branch:
 
-### Quét thủ công (không auto trade)
+### `BACKTEST_VALIDATED`
 
-1. Mở màn hình **Scanner**.
-2. Chọn chế độ quét: `Toàn bộ 31 mã`, `Danh sách tùy chọn`, hoặc `Chỉ mã đã bật auto trade`.
-3. Đảm bảo nút **"🤖 Tự động vào lệnh MT5"** đang TẮT (màu xám).
-4. Nhấn **"Quét thị trường"**.
-5. Kết quả hiển thị theo nhóm (do decision engine phân loại dựa trên ngưỡng của từng cặp):
-   - **Sẵn sàng** — `final_score >= ready`, entry confirmed, gate cho phép.
-   - **Chờ xác nhận** — cần thêm tín hiệu M15 hoặc score chưa đạt ready.
-   - **Theo dõi** — đáng chú ý nhưng chưa đạt (`final_score >= watch`).
-   - **Bị chặn** — gate chặn (spread, news, account guard, journal feedback).
+Áp dụng khi config backtest hợp lệ và còn hiệu lực. Router kiểm tra side/regime đã khóa, `setup_score >= min_score` và `expected_effective_rr >= min_rr`.
 
-### Bật Auto Trade
+### `DEFAULT_RULES`
 
-1. Chọn chế độ quét: `Chỉ mã đã bật auto trade` (chỉ quét những mã có `Kiểm thử = ON` trong Settings > Dữ liệu).
-2. Bấm nút **"🤖 Tự động vào lệnh MT5"** — nút chuyển sang màu xanh (đã kích hoạt).
-3. Nhấn **"Quét thị trường"**.
-4. Hệ thống sẽ:
-   - Quét toàn bộ mã đã bật auto trade.
-   - **Nhánh B:** Dùng bộ lọc regime/side/RR từ Settings. Không cần `scanner_action == "ready"`, chỉ cần vượt bộ lọc backtest.
-   - **Nhánh A:** Yêu cầu `scanner_action == "ready"` (pipeline phải ra READY_TO_TRADE).
-   - Kiểm tra gate (spread, news, account guard).
-   - Nếu tất cả pass → **tự động đặt lệnh Market Order qua MT5** với SL/TP tính sẵn.
+Áp dụng khi symbol không có config backtest được cấu hình. Router chọn best side, yêu cầu score gap rõ, setup score và R:R đạt ngưỡng mặc định.
 
-Kết quả auto trade hiển thị ở cuối màn hình Scanner: số lệnh đã mở, bị bỏ qua, và lỗi (nếu có).
+### `BACKTEST_INVALID`
 
----
+Áp dụng khi có config nhưng config draft, malformed, hết hạn, sai version hoặc thiếu bằng chứng validation. Phân tích mặc định vẫn có thể hiển thị để người dùng tham khảo, nhưng `strategy_eligible=false` và không được auto trade.
 
-## Tổng kết luồng hoạt động
+## 5. Hiểu kết quả
 
-```
-Cấu hình Settings > Dữ liệu cho từng cặp:
-  Ready=65, Watch=60, Wait=55 (mặc định cho mọi cặp)
-  Kiểm thử=ON + filter (regime/side/min_rr/min_score) cho cặp đã backtest
-    │
-    ▼
-  Mở Scanner, chọn chế độ quét
-    │
-    ▼
-  Pipeline (mọi cặp):
-    Lớp 1: Chấm điểm SMC/kỹ thuật/vĩ mô → best_score, best_side
-    Lớp 2: 11 gate kiểm tra an toàn
-    Decision Engine: score + gate + entry → READY_TO_TRADE / WATCH / WAIT / STAND_ASIDE
-    │
-    ▼
-  Controller (mỗi cặp):
-    _apply_symbol_override: Nhánh B nâng stand_aside → ready nếu khớp backtest
-    _is_auto_trade_candidate:
-      Nhánh A → cần scanner_action == "ready"
-      Nhánh B → chỉ cần vượt bộ lọc backtest
-    → Đặt lệnh Market Order nếu pass
-```
+Các trạng thái chuẩn:
 
-## Lưu ý quan trọng
+| Trạng thái | Ý nghĩa |
+|---|---|
+| `READY_NOW` | Strategy phù hợp, entry và scan-time gate đạt. Chưa đồng nghĩa lệnh chắc chắn được gửi. |
+| `WAITING_CONFIRMATION` | Setup cần thêm xác nhận. |
+| `WATCH_ZONE` | Cơ hội đáng theo dõi nhưng chưa sẵn sàng. |
+| `OUT_OF_STRATEGY` | Setup live không thuộc strategy branch đã chọn. |
+| `BLOCKED` | Bị safety/trade gate chặn. |
+| `DATA_UNAVAILABLE` | Thiếu hoặc lỗi dữ liệu cần thiết. |
 
-- **Ngưỡng mặc định:** Ready=65, Watch=60, Wait=55. Áp dụng cho mọi cặp, có thể chỉnh riêng trong Settings > Dữ liệu.
-- **Nhánh A (không backtest):** Chỉ auto-trade khi pipeline tự tin (READY_TO_TRADE). An toàn, conservative.
-- **Nhánh B (có backtest):** Auto-trade theo điều kiện đã được chứng minh bởi dữ liệu lịch sử. Có thể vào lệnh ngay cả khi pipeline chưa ra READY.
-- **Chạy backtest định kỳ:** Thị trường thay đổi, nên chạy lại backtest mỗi 1-2 tháng để cập nhật bộ lọc cho phù hợp.
-- **Account Guard:** Hệ thống luôn kiểm tra giới hạn thua lỗ ngày/tuần và số lệnh thua liên tiếp trước khi vào lệnh — bất kể score có đạt hay không.
-- **Kiểm tra MT5:** Đảm bảo MT5 desktop đang mở, đã đăng nhập broker, và các mã cần quét có trong Market Watch.
-- **Gate vẫn hoạt động:** Decision thresholds chỉ phân loại setup; gate layer (spread, news, M15, RR, account guard) vẫn có quyền chặn cứng bất kỳ setup nào.
+`opportunity_rank` nằm trong thang 0–100 và chỉ dùng xếp hạng hiển thị. Nó không mở khóa đặt lệnh. `opportunity_score` nếu còn xuất hiện trong payload chỉ là compatibility alias.
+
+## 6. Luồng đặt lệnh an toàn
+
+Auto trade và thao tác đặt lệnh thủ công từ giao diện Scanner cùng đi qua:
+
+`ScannerController.execute_order_candidate()`
+
+Ở quét một lần, người dùng vẫn có thể chủ động bấm đặt một candidate hợp lệ
+trong dialog lệnh; thao tác này cũng chịu cùng rollout và revalidation.
+
+Ngay trước khi gửi lệnh, hệ thống lấy snapshot mới và kiểm tra lại:
+
+- kết nối, đăng nhập và quyền trade của MT5;
+- bid/ask, độ cũ tick, spread và trạng thái symbol;
+- entry zone, SL/TP và effective R:R theo giá mới;
+- blackout tin tức;
+- lot theo balance/risk và quy tắc volume của broker;
+- daily/weekly loss, chuỗi thua;
+- tổng open risk, risk theo symbol, currency/correlation exposure và số lệnh;
+- rollout stage, kill switch, demo/allowlist/readiness/risk cap.
+
+Chỉ khi tất cả điều kiện đều đạt mới gọi `place_market_order`.
+
+## 7. Checklist rollout trước production
+
+Code và test nội bộ hoàn tất không đồng nghĩa production-ready. Cần tối thiểu:
+
+- 100 shadow samples;
+- unsafe disagreement rate không vượt 10%, không có side mismatch hoặc
+  premature order;
+- 20 demo orders;
+- 5 canary orders;
+- revalidation failure rate không vượt 5%;
+- OOS và demo degradation không vượt 15%;
+- đã ghi nhận OOS evidence, demo evidence và kiểm thử rollback;
+- MT5 demo, UI và Telegram đã được soak test;
+- `production_approved=true` chỉ sau review có trách nhiệm.
+
+Metrics được lưu tại app-data trong `rollout/scanner-rollout-metrics.json`. Bằng chứng release được cập nhật qua `ScannerRolloutMetricsService.update_release_evidence()`.
+
+Snapshot ngày 24/07/2026 lúc cập nhật tài liệu: shadow đã đạt `364/100`,
+rollback đã đạt và không có side mismatch/unsafe disagreement. Các điều kiện
+còn thiếu là `0/20` demo orders,
+`0/5` canary orders, OOS evidence và demo evidence. Không sửa metrics bằng tay
+để vượt checklist.
+
+## 8. Xử lý tình huống thường gặp
+
+- **Config hiện `DRAFT` hoặc `BACKTEST_INVALID`:** chạy lại validation theo schema hiện hành; không sửa status bằng tay.
+- **Row `READY_NOW` nhưng không có lệnh:** xem `reason_codes`, rollout stage và kết quả execution revalidation.
+- **Đang ở `SHADOW`:** hành vi không gửi lệnh là đúng, kể cả người dùng bấm đặt lệnh từ Scanner.
+- **Đã chọn `PRODUCTION` nhưng Scanner không tự vào lệnh:** đây là hành vi
+  hiện hành vì nút auto-entry đang bị disable và request từ UI luôn đặt
+  `auto_trade_enabled=false`. Với lệnh thủ công, tiếp tục kiểm tra
+  `release_readiness.block_codes`; runtime hiện còn bị chặn bởi
+  `RELEASE_GATE_NOT_READY`.
+- **Demo không được nhận diện:** kiểm tra tên server MT5 có thể hiện demo/trial/practice/contest.
+- **Production bị chặn:** xem `release_readiness.block_codes` và bổ sung đúng bằng chứng còn thiếu.

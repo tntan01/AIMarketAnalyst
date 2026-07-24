@@ -18,6 +18,8 @@ PRICE_NEAR_RESISTANCE = "PRICE_NEAR_RESISTANCE"
 CHOCH_AGAINST_DIRECTION = "CHOCH_AGAINST_DIRECTION"
 ZONE_BROKEN = "ZONE_BROKEN"
 ZONE_QUALITY_LOW = "ZONE_QUALITY_LOW"
+ZONE_RELEVANCE_LOW = "ZONE_RELEVANCE_LOW"
+ZONE_PRICE_RELATION_INVALID = "ZONE_PRICE_RELATION_INVALID"
 SWEEP_DISPLACEMENT_M15_ALIGNED = "SWEEP_DISPLACEMENT_M15_ALIGNED"
 
 # ---------------------------------------------------------------------------
@@ -155,6 +157,8 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     PRICE_NEAR_RESISTANCE: "Giá đang gần vùng kháng cự.",
     CHOCH_AGAINST_DIRECTION: "CHOCH ngược hướng giao dịch, giới hạn điểm tối đa.",
     ZONE_BROKEN: "Vùng hỗ trợ/kháng cự đã bị phá, không còn đáng tin cậy.",
+    ZONE_RELEVANCE_LOW: "Vùng giá không còn đủ liên quan với bối cảnh hiện tại.",
+    ZONE_PRICE_RELATION_INVALID: "Quan hệ giữa giá hiện tại và vùng entry không hợp lệ.",
     SWEEP_DISPLACEMENT_M15_ALIGNED: "Quét thanh khoản + displacement + M15 strict cùng hướng, tăng chất lượng entry.",
     # M15
     M15_STRICT_CONFIRMED: "M15 xác nhận chặt, tín hiệu entry đạt yêu cầu.",

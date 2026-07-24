@@ -61,7 +61,9 @@ Quyết định thiết kế bắt buộc:
 - Kết quả phân tích phải có phần Vĩ mô hiển thị: điểm vĩ mô mua/bán, macro theme theo từng đồng tiền, Tin mới nhất, điểm nóng thế giới và lịch kinh tế. Nếu không có dữ liệu, phải hiển thị rõ “không có dữ liệu” thay vì để trống.
 - Mục Tin mới nhất chỉ hiển thị headline thị trường và phát biểu đáng chú ý trong 24h qua, mỗi dòng riêng. Dòng tin mới nhất dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm `-> ảnh hưởng tới đồng tiền đang xét` khi đã có nhận định tác động cụ thể. Lịch kinh tế vẫn hiển thị tác động vì bản thân event có mức impact.
 - Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ M5, M15, H1, H4. Khi đang auto-scan phải có nút `Dừng quét tự động`.
-- Khi mở tab Scanner lần đầu trong phiên, tự động chọn tất cả mã, đặt chế độ quét tự động M5, và chạy quét lần đầu sau 1.5 giây. KHÔNG tự động bật chế độ vào lệnh (auto-trade luôn unchecked).
+- Khi mở tab Scanner lần đầu trong phiên, tự động chọn tất cả mã, đặt chế độ
+  quét tự động M5 và chạy quét lần đầu sau 1.5 giây. Nút auto-trade luôn
+  unchecked và disabled; lượt quét tự khởi động không thể yêu cầu đặt lệnh.
 - Settings > Nâng cao có cấu hình Telegram gồm bot token, danh sách chat ID nhận alert và interval auto-scan mặc định. Chat ID có thể nhập nhiều giá trị, cách nhau bằng dấu phẩy.
 - Các phần dài như nhận định AI, điểm thành phần, raw JSON, log kỹ thuật phải đưa vào tab, panel phụ hoặc dialog.
 - Mọi tác vụ nặng như lấy dữ liệu MT5, gọi AI, quét 31 mã, tính indicator phải chạy qua worker/thread; UI không được bị đơ.
@@ -512,7 +514,79 @@ Mỗi kết quả phân tích phải luôn có:
 
 ---
 
-## Màn hình 4: Scanner (Màn hình quét thị trường)
+## Màn hình 4: Scanner V2 — runtime contract hiện hành (24/07/2026)
+
+### Mục đích
+
+Quét danh sách symbol, hiển thị canonical candidate decision và cho phép người
+dùng mở chi tiết. Giao diện không tự suy luận trạng thái, side hoặc quyền đặt
+lệnh từ các field legacy.
+
+### Thành phần bắt buộc
+
+- Bộ chọn phạm vi symbol, quét một lần/quét định kỳ và nút bắt đầu/dừng.
+- Nút **Tự động vào lệnh MT5** vẫn hiển thị để người dùng biết tính năng tồn
+  tại, nhưng phải ở trạng thái disable và unchecked trong mọi chế độ quét.
+  Tooltip giải thích Scanner không tự gửi lệnh; đổi sang auto-scan hoặc stage
+  `PRODUCTION` không được mở khóa nút.
+- Banner rollout thể hiện stage, kill switch, disagreement và release/canary
+  gate.
+- Progress và thống kê theo sáu trạng thái candidate.
+- Bảng model/view theo đúng `ScannerTableModel.COLUMNS`.
+- Nút **Giải thích** có hai chế độ:
+  - chưa chọn dòng: mở dialog ba cột theo style `EconTable`, mô tả chung đúng
+    13 cột Scanner V2 bằng thuật ngữ tiếng Việt;
+  - đã chọn một dòng: mở dialog `Giải thích chi tiết - <mã>`, ưu tiên 11 thông
+    tin hỗ trợ quyết định: trạng thái, hướng, việc nên làm, lý do chính, chất
+    lượng thiết lập, tỷ lệ lời/lỗ, mức sẵn sàng, bối cảnh thị trường, độ tin
+    cậy dữ liệu lịch sử, điểm ưu tiên và nguồn quy tắc.
+- Dialog theo dòng không diễn giải các điểm số thành xác suất thắng và luôn so
+  sánh chất lượng thiết lập/tỷ lệ lời lỗ với ngưỡng tương ứng.
+- ID, tên mã tại broker, chi tiết tính điểm, metadata vùng giá, phiên bản cách
+  chấm và mã lý do nội bộ được đưa vào **Thông tin kỹ thuật**, ẩn mặc định và
+  chỉ hiện khi người dùng bật `Hiển thị thông tin kỹ thuật`.
+- Khu vực kết quả auto trade, Telegram và lỗi có reason code.
+
+### Cột bảng hiện hành
+
+| Key | Nhãn |
+|---|---|
+| `rank` | STT |
+| `symbol` | Mã |
+| `candidate_status` | Trạng thái |
+| `selected_side` | Hướng |
+| `market_regime` | Chế độ TT |
+| `setup_score` | Setup |
+| `opportunity_rank` | Cơ hội |
+| `evidence_confidence` | Bằng chứng |
+| `execution_readiness` | Thực thi |
+| `expected_effective_rr` | R:R thực |
+| `auto_trade_branch` | Nhánh |
+| `strategy_config_status` | Config |
+| `detail_action` | Chi tiết |
+
+`opportunity_rank` là điểm xếp hạng 0–100, không phải gate vào lệnh.
+Trạng thái chuẩn gồm `READY_NOW`, `WAITING_CONFIRMATION`, `WATCH_ZONE`,
+`OUT_OF_STRATEGY`, `BLOCKED` và `DATA_UNAVAILABLE`.
+
+### Hành vi đặt lệnh
+
+UI hiện không phát yêu cầu auto order:
+`ScannerRequest.auto_trade_enabled` luôn là `false`. Nút đặt candidate thủ
+công vẫn gọi `ScannerController.execute_order_candidate()`. Ở stage `SHADOW`,
+giao diện phải thông báo `SHADOW_MODE_ORDER_SUPPRESSED`; ở `PRODUCTION` nhưng
+release chưa đạt, phải thông báo `RELEASE_GATE_NOT_READY`. Không được gọi MT5
+trực tiếp.
+
+### Thiết kế Scanner V1 lưu để tham chiếu lịch sử
+
+Phần dưới đây mô tả giao diện trước Scanner V2. Không dùng tên cột, thang điểm
+hoặc logic automation trong phần lịch sử làm runtime contract.
+
+## Màn hình 4 (lịch sử): Scanner trước V2
+
+<details>
+<summary>Mở thiết kế Scanner V1 lịch sử</summary>
 
 ### Mục đích
 
@@ -619,6 +693,8 @@ Nếu có nhiều mã đạt điều kiện, MVP (phiên bản khả dụng tố
 
 ---
 
+</details>
+
 ## Màn hình 5: Scanner Detail (Màn hình chi tiết mã từ quét thị trường)
 
 ### Mục đích
@@ -629,13 +705,26 @@ Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra kh
 
 **Tab Tổng quan** — chia 2 cột (20%/80%):
 - Cột trái (20%, font 11px, padding 6/4, spacing 1px):
-  - Nút "📋 Xem đầy đủ" — mở dialog 16 chỉ số chi tiết
-  - Card "🎯 Số liệu giao dịch" — 6 dòng (Vùng vào lệnh, SL, TP, R:R kèm dải worst–best, Vĩ mô, Chế độ TT)
-  - Card "📊 Điểm phân tích" — 6 dòng (Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD)
-  - Card "🔍 Điều kiện vào lệnh" — 7 checklist items dạng grid 2 cột (Quyền GD, Gate, Chênh lệch, Entry, Vị trí, M15, R:R kèm dải), mỗi item hiển thị icon ✅/❌ + tên ngắn, tooltip chứa text đầy đủ
-- Cột phải (80%): Hero verdict bar + Chart (OHLCV, indicator, SMC zones) full height
+  - Nút "📋 Xem đầy đủ" — mở dialog bối cảnh kỹ thuật, vĩ mô, nhật ký và
+    checklist của kết quả quét.
+  - Card "🎯 Số liệu giao dịch" — hướng phân tích canonical, vùng vào lệnh,
+    SL, TP, R:R thực sau spread/chi phí và chế độ thị trường.
+  - Card "📊 Điểm phân tích" — trạng thái candidate, setup score/ngưỡng,
+    điểm ưu tiên, độ tin cậy bằng chứng, mức sẵn sàng và rollout stage.
+  - Card "🔍 Điều kiện vào lệnh" — 7 điều kiện lấy từ đúng hướng đã chọn:
+    chiến lược, setup score, entry, vùng giá, M15, R:R thực và quyền tại lúc
+    quét. Trạng thái có ba mức ✅ đạt / ❌ không đạt / ➖ chưa có dữ liệu.
+- Cột phải (80%): Hero verdict canonical + Chart (OHLCV, indicator, SMC
+  zones) full height. Hero không dùng `best_score` để gọi “MUA/BÁN mạnh”; nó
+  hiển thị `candidate_status`, hướng phân tích, setup/ngưỡng và rollout.
 
-**Tab Chẩn đoán** — ô tóm tắt lý do chính → Điểm cuối & Quyết định → Gate kiểm tra → Phân rã điểm số, kèm khối "Chi tiết kỹ thuật nâng cao" (ẩn mặc định, có nút bấm để mở)
+**Tab Chẩn đoán** — nhánh chiến lược → phân rã điểm BUY/SELL → Gate → checklist
+pipeline → các bước pipeline → setup score của hướng đã chọn. Quyết định
+canonical của Scanner được hiển thị trước; Decision Engine cũ chỉ là thông tin
+tham khảo. Gate thiếu dữ liệu phải hiện "chưa kiểm tra", không được mặc định
+"qua". Khi Strategy Router chọn hướng khác hướng legacy có điểm cao nhất,
+Gate và scenario phải lấy đúng `selected_side`; không được mượn kết quả Gate
+của hướng còn lại.
 
 **Tab Kiểm định AI** — nút chạy kiểm định + kết quả AI audit
 
@@ -650,6 +739,16 @@ Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra kh
 
 ### Lưu ý về Giao diện & Styling
 - **Bảng HTML nội bộ (Inline HTML Tables):** Toàn bộ các bảng hiển thị chi tiết (bảng chấm điểm kịch bản, bảng kiểm tra gate, bảng điều kiện vào lệnh, bảng chẩn đoán 7 bước, bảng điểm cuối cùng) đều có padding dọc cho thẻ `<td>` và `<th>` được đặt cố định ở mức `4px` để tối ưu hóa không gian hiển thị theo chiều dọc, tránh việc người dùng phải cuộn chuột quá nhiều.
+- **Nguồn dữ liệu chuẩn:** `scanner_candidate_decision` quyết định trạng thái,
+  hướng, setup score, ngưỡng, R:R thực và quyền tại thời điểm quét. Dữ liệu
+  legacy chỉ dùng để đọc snapshot cũ. Vị trí giá được đối chiếu lại với vùng
+  entry của đúng hướng đã chọn; R:R danh nghĩa/dải R:R trong phần giải thích
+  cũng lấy từ scenario của hướng này.
+- **Vĩ mô:** giá trị hiển thị `/30` là `macro_raw` của đúng hướng đã chọn,
+  không phải `macro_alignment` đã co giãn theo trọng số chế độ thị trường.
+- **Không giả dữ liệu:** thiếu điểm vĩ mô/Gate/evidence phải hiển thị `--`,
+  “chưa rõ” hoặc “chưa kiểm tra”; không tự điền điểm trung lập hay coi Gate là
+  đạt.
 
 ---
 
@@ -903,15 +1002,27 @@ MT5 đã kết nối | Broker | Server | Login
 BẢNG CẤU HÌNH MÃ QUÉT
 --------------------------------------------------
 
-| STT | Mã hiển thị | Mã MT5 | Trạng thái | Kiểm tra | Backtest | Min Score | Regime | Hướng | RR tối thiểu | Ready | Watch | Wait |
+| STT | Mã hiển thị | Mã MT5 | Trạng thái | Kiểm tra | Dùng BT đã duyệt | Min Score BT | Regime BT | Hướng BT | RR tối thiểu BT | Ready | Watch | Wait |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | EUR/USD | EURUSDm | OK | -- | [x] | 65 | range | best | 1.3 | 65 | 60 | 55 |
+| 1 | EUR/USD | EURUSDm | OK | -- | [x] Đã duyệt | 65 | range | best | 1.3 | 65 | 60 | 55 |
 
 Bảng hỗ trợ đầy đủ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD.
 
 Nút chức năng:
 [🔍 Tự phát hiện mã broker] [📋 Dán cấu hình Backtest] [💾 Lưu cấu hình mã quét]
 ```
+
+Quy tắc phần Symbols:
+
+- `Ready/Watch/Wait` là ngưỡng live của Decision Engine và được phép chỉnh.
+- `Min Score BT/Regime BT/Hướng BT/RR tối thiểu BT` là bằng chứng do Backtest
+  tạo, chỉ đọc tại Settings; muốn đổi phải chạy lại Backtest.
+- Chỉ config `VALIDATED`, đúng contract SMC-v2 và còn hạn mới cho phép tick
+  **Dùng BT đã duyệt**.
+- `DRAFT/INVALID/EXPIRED` vẫn được hiển thị và lưu để kiểm tra lại sau nhưng
+  luôn inactive. Scanner của mã đó dùng SMC-v2 + `DEFAULT_RULES`.
+- Dán JSON phải chạy canonical validator trước khi cho phép kích hoạt; thao tác
+  dán hoặc tick không được tự nâng một bản nháp thành `VALIDATED`.
 
 ### Cảnh báo bắt buộc
 
@@ -1034,6 +1145,26 @@ Settings Storage (nơi lưu cài đặt):
 
 ---
 
+## 8.6. Tab Rollout Scanner
+
+Tab Rollout là control an toàn cho Scanner V2, gồm:
+
+- stage: `DISABLED`, `SHADOW`, `DEMO_LIMITED`, `DEMO_FULL`, `CANARY`,
+  `PRODUCTION`;
+- kill switch;
+- bật/tắt shadow comparison;
+- allowlist symbol cho `DEMO_LIMITED`;
+- canary risk percent;
+- yêu cầu demo account và production approval;
+- các ngưỡng shadow/demo/canary, disagreement, revalidation failure và
+  performance degradation;
+- trạng thái metrics, canary readiness và release readiness.
+
+Mã nguồn/settings mới mặc định là `SHADOW`. Runtime hiện tại đã lưu
+`PRODUCTION`, nhưng release gate vẫn chưa đạt. UI phải hiển thị cảnh báo rõ
+trước khi đổi stage và không được diễn giải `production_approved` như việc bỏ
+qua release gate.
+
 # 3. Cấu trúc menu đề xuất
 
 ```text
@@ -1083,7 +1214,15 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 - Entry checklist muc `Xu huong` phai xet theo side cua setup; range market co the dat neu setup nam tai POI/bien gia tot, khong mac dinh fail.
 - Man hinh ket qua nen hien `confidence_reason` co breakdown diem trend/momentum/location/risk/macro, macro confidence va event caution gan nhat neu co.
 
-## Current Scanner Automation Behavior
+## Legacy Scanner Automation Behavior (đã bị thay thế bởi Scanner V2)
+
+> Nội dung trong mục này chỉ lưu lại hành vi trước migration. Runtime contract
+> hiện hành nằm tại “Màn hình 4: Scanner V2” và `scanner-flow.md`. Các hàm
+> `_best_scenario`, `_is_auto_trade_candidate` kiểu cũ và mô hình Nhánh 1/2
+> không còn là nguồn quyết định đặt lệnh.
+
+<details>
+<summary>Mở hành vi automation V1 lịch sử</summary>
 
 - Scanner has two modes: one-shot scan and auto-scan.
 - Auto-entry is attached only to auto-scan mode and requires the user to check `Tự động vào lệnh MT5`. The UI must not place MT5 orders from one-shot scan.
@@ -1101,6 +1240,8 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
   - **Auto-trade** (`_best_scenario` skip fallback → `_is_auto_trade_candidate` trả về False)
   - **Telegram alerts** (`_get_alert_order_candidates` skip fallback)
 - Logic này áp dụng cho cả Nhánh 1 (backtest=true) và Nhánh 2 (backtest=false).
+
+</details>
 
 ---
 

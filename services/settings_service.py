@@ -11,7 +11,9 @@ from config.settings import (
     AIProviderSettings,
     AISettings,
     DisplaySettings,
+    FeatureFlagSettings,
     NotificationSettings,
+    ScannerRolloutSettings,
     SymbolScanSettings,
     TradingSettings,
     default_settings,
@@ -34,6 +36,10 @@ class SettingsService:
             display=self._load_display_settings(data.get("display", {}), data.get("language", "vi")),
             advanced=self._load_advanced_settings(data.get("advanced", {})),
             notifications=self._load_notification_settings(data.get("notifications", {})),
+            features=self._load_feature_flags(data.get("features", {})),
+            scanner_rollout=self._load_scanner_rollout(
+                data.get("scanner_rollout", {})
+            ),
             default_symbol=data.get("default_symbol", "EUR/USD"),
             default_timeframe=data.get("default_timeframe", "H1"),
             language=data.get("language", "vi"),
@@ -133,8 +139,93 @@ class SettingsService:
                     min_score = int(item.get("min_score", 0))
                 except (TypeError, ValueError):
                     min_score = 0
-                symbol_settings[symbol] = SymbolScanSettings(
+                raw_reasons = item.get("backtest_validation_reasons", [])
+                loaded_symbol = SymbolScanSettings(
                     backtest=bool(item.get("backtest", False)),
+                    backtest_config_id=str(
+                        item.get("backtest_config_id", "") or ""
+                    ).strip(),
+                    backtest_status=str(
+                        item.get("backtest_status", "") or ""
+                    ).strip().upper(),
+                    backtest_schema_version=_safe_int(
+                        item.get("backtest_schema_version")
+                    ),
+                    backtest_validation_version=str(
+                        item.get("backtest_validation_version", "") or ""
+                    ).strip(),
+                    backtest_scorer_version=str(
+                        item.get("backtest_scorer_version", "") or ""
+                    ).strip(),
+                    backtest_feature_version=str(
+                        item.get("backtest_feature_version", "") or ""
+                    ).strip(),
+                    backtest_smc_scorer_version=str(
+                        item.get("backtest_smc_scorer_version", "") or ""
+                    ).strip(),
+                    backtest_smc_scoring_mode=str(
+                        item.get("backtest_smc_scoring_mode", "") or ""
+                    ).strip().lower(),
+                    backtest_score_metric=str(
+                        item.get("backtest_score_metric", "") or ""
+                    ).strip(),
+                    backtest_trained_from=str(
+                        item.get("backtest_trained_from", "") or ""
+                    ).strip(),
+                    backtest_trained_to=str(
+                        item.get("backtest_trained_to", "") or ""
+                    ).strip(),
+                    backtest_validated_from=str(
+                        item.get("backtest_validated_from", "") or ""
+                    ).strip(),
+                    backtest_validated_to=str(
+                        item.get("backtest_validated_to", "") or ""
+                    ).strip(),
+                    backtest_in_sample_trades=_safe_int(
+                        item.get("backtest_in_sample_trades")
+                    ),
+                    backtest_out_of_sample_trades=_safe_int(
+                        item.get("backtest_out_of_sample_trades")
+                    ),
+                    backtest_oos_expectancy_r=_safe_float(
+                        item.get("backtest_oos_expectancy_r")
+                    ),
+                    backtest_oos_profit_factor=_safe_float(
+                        item.get("backtest_oos_profit_factor")
+                    ),
+                    backtest_oos_max_drawdown_r=_safe_float(
+                        item.get("backtest_oos_max_drawdown_r")
+                    ),
+                    backtest_expectancy_ci_low=_safe_optional_float(
+                        item.get("backtest_expectancy_ci_low")
+                    ),
+                    backtest_expectancy_ci_high=_safe_optional_float(
+                        item.get("backtest_expectancy_ci_high")
+                    ),
+                    backtest_walk_forward_windows=_safe_int(
+                        item.get("backtest_walk_forward_windows")
+                    ),
+                    backtest_walk_forward_verdict=str(
+                        item.get("backtest_walk_forward_verdict", "") or ""
+                    ).strip().upper(),
+                    backtest_validation_fingerprint=str(
+                        item.get("backtest_validation_fingerprint", "") or ""
+                    ).strip(),
+                    backtest_validation_reasons=(
+                        [
+                            str(value)
+                            for value in raw_reasons
+                            if str(value).strip()
+                        ]
+                        if isinstance(raw_reasons, list)
+                        else []
+                    ),
+                    backtest_validated_at=str(
+                        item.get("backtest_validated_at", "") or ""
+                    ).strip(),
+                    backtest_expires_at=str(
+                        item.get("backtest_expires_at", "") or ""
+                    ).strip(),
                     min_score=max(0, min(100, min_score)),
                     auto_trade_regime=str(item.get("auto_trade_regime", "")).strip(),
                     auto_trade_side=str(item.get("auto_trade_side", "")).strip(),
@@ -143,6 +234,52 @@ class SettingsService:
                     decision_wait=max(0, min(100, int(item.get("decision_wait", 55)))),
                     min_expected_rr=float(item.get("min_expected_rr", 1.3) or 1.3),
                 )
+                if loaded_symbol.backtest:
+                    from core.backtest_config import serialize_backtest_config
+                    from core.scanner_models import (
+                        CONFIG_DRAFT,
+                        CONFIG_EXPIRED,
+                        CONFIG_INVALID,
+                        CONFIG_VALIDATED,
+                    )
+                    from core.backtest_config_validation import (
+                        BACKTEST_CONFIG_SCHEMA_VERSION,
+                    )
+                    from core.scanner_strategy_router import validate_backtest_config
+
+                    if loaded_symbol.backtest_status == CONFIG_VALIDATED:
+                        payload = serialize_backtest_config(
+                            loaded_symbol,
+                            symbol=symbol,
+                        )
+                        lifecycle_status, lifecycle_reasons = (
+                            validate_backtest_config(payload, {"symbol": symbol})
+                        )
+                        if lifecycle_status != CONFIG_VALIDATED:
+                            loaded_symbol.backtest_status = (
+                                CONFIG_EXPIRED
+                                if lifecycle_status == CONFIG_EXPIRED
+                                else (
+                                    CONFIG_INVALID
+                                    if (
+                                        loaded_symbol.backtest_schema_version
+                                        == BACKTEST_CONFIG_SCHEMA_VERSION
+                                    )
+                                    else CONFIG_DRAFT
+                                )
+                            )
+                            loaded_symbol.backtest_validation_fingerprint = ""
+                            loaded_symbol.backtest_validation_reasons = list(
+                                lifecycle_reasons
+                            )
+                    elif not loaded_symbol.backtest_status:
+                        loaded_symbol.backtest_status = CONFIG_DRAFT
+                    # Fail closed: retained DRAFT/INVALID/EXPIRED evidence is
+                    # useful for a later backtest, but must not create a live
+                    # BACKTEST_INVALID branch. Scanner will use DEFAULT_RULES.
+                    if loaded_symbol.backtest_status != CONFIG_VALIDATED:
+                        loaded_symbol.backtest = False
+                symbol_settings[symbol] = loaded_symbol
         return TradingSettings(
             account_balance=float(data.get("account_balance", 10000)),
             account_currency=data.get("account_currency", "USD"),
@@ -155,7 +292,30 @@ class SettingsService:
             max_weekly_loss_pct=float(data.get("max_weekly_loss_pct", 5.0)),
             max_consecutive_losses=int(data.get("max_consecutive_losses", 3)),
             max_open_risk_pct=float(data.get("max_open_risk_pct", 3.0)),
-            enabled_symbols=enabled,
+            max_symbol_risk_pct=max(
+                0.1,
+                float(data.get("max_symbol_risk_pct", 2.0)),
+            ),
+            max_currency_exposure_pct=max(
+                0.1,
+                float(data.get("max_currency_exposure_pct", 2.0)),
+            ),
+            max_correlated_risk_pct=max(
+                0.1,
+                float(data.get("max_correlated_risk_pct", 2.0)),
+            ),
+            max_concurrent_orders=max(
+                1,
+                int(data.get("max_concurrent_orders", 5)),
+            ),
+            enabled_symbols=[
+                symbol
+                for symbol in enabled
+                if (
+                    symbol in symbol_settings
+                    and symbol_settings[symbol].backtest
+                )
+            ],
             symbol_settings=symbol_settings,
         )
 
@@ -202,4 +362,121 @@ class SettingsService:
             telegram_chat_ids=chat_ids,
             auto_scan_interval_minutes=interval,
         )
+
+    def _load_feature_flags(self, data: dict | None) -> FeatureFlagSettings:
+        data = data if isinstance(data, dict) else {}
+        smc_scoring_mode = str(
+            data.get("smc_scoring_mode", "v2") or "v2"
+        ).strip().lower()
+        if smc_scoring_mode not in {"legacy", "shadow", "v2"}:
+            smc_scoring_mode = "legacy"
+        return FeatureFlagSettings(
+            scanner_architecture_v2=bool(data.get("scanner_architecture_v2", False)),
+            auto_trade_v2=bool(data.get("auto_trade_v2", False)),
+            backtest_config_v2=bool(data.get("backtest_config_v2", False)),
+            smc_scoring_mode=smc_scoring_mode,
+        )
+
+    def _load_scanner_rollout(
+        self,
+        data: dict | None,
+    ) -> ScannerRolloutSettings:
+        data = data if isinstance(data, dict) else {}
+        stage = str(data.get("stage", "SHADOW") or "SHADOW").upper()
+        allowed_stages = {
+            "DISABLED",
+            "SHADOW",
+            "DEMO_LIMITED",
+            "DEMO_FULL",
+            "CANARY",
+            "PRODUCTION",
+        }
+        if stage not in allowed_stages:
+            stage = "SHADOW"
+        raw_symbols = data.get("allowed_symbols", [])
+        symbols = (
+            [
+                str(symbol).strip().upper()
+                for symbol in raw_symbols
+                if str(symbol).strip()
+            ]
+            if isinstance(raw_symbols, list)
+            else []
+        )
+        return ScannerRolloutSettings(
+            stage=stage,
+            kill_switch=bool(data.get("kill_switch", False)),
+            shadow_compare_enabled=bool(
+                data.get("shadow_compare_enabled", True)
+            ),
+            allowed_symbols=list(dict.fromkeys(symbols)),
+            canary_risk_percent=min(
+                max(_safe_float(data.get("canary_risk_percent", 0.1)), 0.01),
+                1.0,
+            ),
+            require_demo_account=bool(
+                data.get("require_demo_account", True)
+            ),
+            production_approved=bool(
+                data.get("production_approved", False)
+            ),
+            min_shadow_samples=max(
+                _safe_int(data.get("min_shadow_samples", 100)),
+                1,
+            ),
+            min_demo_orders=max(
+                _safe_int(data.get("min_demo_orders", 20)),
+                1,
+            ),
+            min_canary_orders=max(
+                _safe_int(data.get("min_canary_orders", 5)),
+                1,
+            ),
+            max_disagreement_rate=min(
+                max(
+                    _safe_float(data.get("max_disagreement_rate", 0.1)),
+                    0.0,
+                ),
+                1.0,
+            ),
+            max_revalidation_failure_rate=min(
+                max(
+                    _safe_float(
+                        data.get("max_revalidation_failure_rate", 0.05)
+                    ),
+                    0.0,
+                ),
+                1.0,
+            ),
+            max_performance_degradation_pct=min(
+                max(
+                    _safe_float(
+                        data.get(
+                            "max_performance_degradation_pct",
+                            15.0,
+                        )
+                    ),
+                    0.0,
+                ),
+                100.0,
+            ),
+        )
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value: object) -> float:
+    return _safe_optional_float(value) or 0.0
+
+
+def _safe_optional_float(value: object) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 

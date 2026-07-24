@@ -29,28 +29,23 @@ def build_market_brief_prompt(
     """
     now = datetime.now().astimezone().isoformat(timespec="minutes")
 
-    # --- Top setups (ready + waiting, up to 8) ---
-    top_setups: list[dict[str, Any]] = []
-    ready_rows = [r for r in rows if r.get("scanner_group") == "ready_now"]
-    waiting_rows = [r for r in rows if r.get("scanner_group") == "waiting_confirmation"]
-    other_rows = [r for r in rows if r.get("scanner_group") not in ("ready_now", "waiting_confirmation", "blocked")]
-
-    for r in ready_rows[:5]:
-        top_setups.append(_compact_row(r))
-    for r in waiting_rows[:3]:
-        if len(top_setups) >= 8:
-            break
-        top_setups.append(_compact_row(r))
-    for r in other_rows[:2]:
-        if len(top_setups) >= 8:
-            break
-        top_setups.append(_compact_row(r))
+    # Preserve the exact backend ranking.  Do not create a second order for AI.
+    eligible_statuses = {
+        "READY_NOW",
+        "WAITING_CONFIRMATION",
+        "WATCH_ZONE",
+    }
+    top_setups = [
+        _compact_row(row)
+        for row in rows
+        if _candidate_status(row) in eligible_statuses
+    ][:8]
 
     # --- Blocked summary ---
     blocked_reasons: dict[str, int] = {}
     blocked_samples: list[dict[str, str]] = []
     for r in rows:
-        if r.get("scanner_group") != "blocked":
+        if _candidate_status(r) not in {"BLOCKED", "DATA_UNAVAILABLE"}:
             continue
         reason = str(r.get("permission_reason") or r.get("short_reason") or "không rõ")
         blocked_reasons[reason] = blocked_reasons.get(reason, 0) + 1
@@ -84,8 +79,18 @@ def build_market_brief_prompt(
 
     # --- Group summary ---
     group_counts: dict[str, int] = {}
+    status_counts: dict[str, int] = {}
     for r in rows:
-        g = str(r.get("scanner_group", "unknown"))
+        status = _candidate_status(r)
+        status_counts[status] = status_counts.get(status, 0) + 1
+        g = str(r.get("scanner_group", "") or "").lower() or {
+            "READY_NOW": "ready_now",
+            "WAITING_CONFIRMATION": "waiting_confirmation",
+            "WATCH_ZONE": "watch_zone",
+            "OUT_OF_STRATEGY": "out_of_strategy",
+            "BLOCKED": "blocked",
+            "DATA_UNAVAILABLE": "data_unavailable",
+        }.get(status, "data_unavailable")
         group_counts[g] = group_counts.get(g, 0) + 1
 
     # --- Macro context ---
@@ -127,6 +132,7 @@ def build_market_brief_prompt(
         ],
         "blocked_samples": blocked_samples,
         "group_summary": group_counts,
+        "candidate_status_summary": status_counts,
         "gate_warnings": pipeline_stats,
         "macro_context": macro_summary,
     }
@@ -161,12 +167,20 @@ def build_market_brief_prompt(
 def _compact_row(row: dict[str, Any]) -> dict[str, Any]:
     """Extract compact summary from a scanner row."""
     return {
+        "rank": row.get("rank"),
         "symbol": row.get("symbol"),
+        "candidate_status": _candidate_status(row),
         "scanner_group": row.get("scanner_group"),
         "scanner_action": row.get("scanner_action"),
         "best_side": row.get("best_side"),
         "best_score": row.get("best_score"),
         "final_score": row.get("final_score"),
+        "setup_score": row.get("setup_score"),
+        "opportunity_rank": row.get("opportunity_rank"),
+        "evidence_confidence": row.get("evidence_confidence"),
+        "execution_readiness": row.get("execution_readiness"),
+        "strategy_branch": row.get("auto_trade_branch"),
+        "config_health": row.get("strategy_config_status"),
         "market_regime": row.get("market_regime"),
         "trade_permission": row.get("trade_permission"),
         "entry_status": row.get("entry_status"),
@@ -180,3 +194,17 @@ def _compact_row(row: dict[str, Any]) -> dict[str, Any]:
         "journal_sample_size": row.get("journal_sample_size"),
         "journal_expectancy_r": row.get("journal_expectancy_r"),
     }
+
+
+def _candidate_status(row: dict[str, Any]) -> str:
+    raw = str(row.get("candidate_status", "") or "").strip().upper()
+    if raw:
+        return raw
+    return {
+        "ready_now": "READY_NOW",
+        "waiting_confirmation": "WAITING_CONFIRMATION",
+        "watch_zone": "WATCH_ZONE",
+        "out_of_strategy": "OUT_OF_STRATEGY",
+        "blocked": "BLOCKED",
+        "data_unavailable": "DATA_UNAVAILABLE",
+    }.get(str(row.get("scanner_group", "") or "").lower(), "DATA_UNAVAILABLE")

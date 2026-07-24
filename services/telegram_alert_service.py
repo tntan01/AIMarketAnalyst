@@ -53,7 +53,12 @@ class TelegramAlertService:
         broker_symbol = str(cand.get("broker_symbol") or "").strip()
         symbol_text = f"{symbol} ({broker_symbol})" if broker_symbol else symbol
         side_text = self._format_side(cand.get("side"))
-        score = cand.get("best_score", "--")
+        score = cand.get("setup_score", cand.get("best_score", "--"))
+        opportunity_rank = cand.get("opportunity_rank", "--")
+        evidence = cand.get("evidence_confidence", "--")
+        readiness = cand.get("execution_readiness", "--")
+        branch = cand.get("strategy_branch", "--")
+        config_health = cand.get("config_health", "--")
 
         entry_zone = cand.get("entry_zone")
         entry_text = self._format_entry(entry_zone)
@@ -78,6 +83,10 @@ class TelegramAlertService:
             f"• Lot gợi ý: {vol}",
             f"• R:R: {rr}",
             f"• Điểm setup: {score}/100",
+            f"• Xếp hạng cơ hội: {opportunity_rank}/100",
+            f"• Bằng chứng: {evidence}/100",
+            f"• Sẵn sàng thực thi: {readiness}/100",
+            f"• Nhánh / config: {branch} / {config_health}",
         ]
         if reason:
             lines.append(f"• Lý do: {reason}")
@@ -124,8 +133,14 @@ class TelegramAlertService:
         timestamp: str,
     ) -> str:
         total = len(rows)
-        ready = [c for c in candidates if c.get("scanner_action") == "ready"]
-        waiting = [c for c in candidates if c.get("scanner_action") != "ready"]
+        ready = [
+            c for c in candidates
+            if str(c.get("candidate_status", "") or "").upper() == "READY_NOW"
+        ]
+        waiting = [
+            c for c in candidates
+            if str(c.get("candidate_status", "") or "").upper() != "READY_NOW"
+        ]
 
         lines = [
             "✨ AI Market Analyst - Tổng kết quét thị trường",
@@ -157,10 +172,14 @@ class TelegramAlertService:
         side = self._format_side(cand.get("side"))
         entry = self._format_entry(cand.get("entry_zone"))
         sl = cand.get("stop_loss", "--")
-        score = cand.get("best_score", "--")
+        score = cand.get("setup_score", cand.get("best_score", "--"))
+        rank = cand.get("rank", "--")
         action = str(cand.get("scanner_action", ""))
         status = {"ready": "✓", "watch": "△", "wait": "⏳"}.get(action, "•")
-        return f"{status} {symbol_text} | {side} | Điểm: {score}/100 | Entry: {entry} | SL: {sl}"
+        return (
+            f"{status} #{rank} {symbol_text} | {side} | "
+            f"Setup: {score}/100 | Entry: {entry} | SL: {sl}"
+        )
 
     # ------------------------------------------------------------------
     # Messaging helpers

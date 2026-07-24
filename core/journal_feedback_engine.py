@@ -27,6 +27,8 @@ def build_journal_feedback(
     symbol: str,
     direction: str,
     regime: str | None = None,
+    zone_score: int | float | None = None,
+    zone_scoring_version: str | None = None,
 ) -> dict[str, Any]:
     """Build conservative live feedback from journal outcomes.
 
@@ -35,7 +37,14 @@ def build_journal_feedback(
     historical sample is clearly bad.
     """
     trades = closed_trades if isinstance(closed_trades, list) else []
-    evidence = calculate_evidence_score(trades, symbol=symbol, direction=direction, regime=regime)
+    evidence = calculate_evidence_score(
+        trades,
+        symbol=symbol,
+        direction=direction,
+        regime=regime,
+        zone_score=zone_score,
+        zone_scoring_version=zone_scoring_version,
+    )
     matched = _matching_trades(trades, symbol=symbol, direction=direction, regime=regime)
     results = [rr for rr in (coerce_result_r(trade.get("result_r")) for trade in matched) if rr is not None]
     sample_size = len(results)

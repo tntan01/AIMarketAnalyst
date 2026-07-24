@@ -7,10 +7,28 @@ from typing import Any
 
 from core.scanner_ranking_engine import (
     enrich_scanner_row_with_ranking,
+    rank_scanner_rows,
     READY_NOW,
     WAITING_CONFIRMATION,
     WATCH_ZONE,
     BLOCKED,
+)
+from core.scanner_models import (
+    BLOCKED as CANDIDATE_BLOCKED,
+    DATA_UNAVAILABLE,
+    OUT_OF_STRATEGY,
+    SCANNER_RANKING_VERSION,
+    STRATEGY_ROUTER_VERSION,
+)
+from core.portfolio_models import PORTFOLIO_ENGINE_VERSION
+from core.smc_scoring_contract import (
+    normalize_smc_scoring_mode,
+    resolve_smc_scoring_policy,
+)
+from core.smc_models import SMC_DOMAIN_VERSION
+from core.scoring_provenance import (
+    build_scoring_provenance,
+    normalize_scoring_provenance,
 )
 
 
@@ -34,25 +52,71 @@ class ScannerRequest:
     auto_trade_enabled: bool = False
     min_scores: dict[str, int] = field(default_factory=dict)
     symbol_auto_trade: dict[str, dict] = field(default_factory=dict)
-    thresholds: dict[str, dict[str, int]] = field(default_factory=dict)
-    # Each entry: {"regime": "range", "side": "buy", "min_rr": 2.0}
+    thresholds: dict[str, dict[str, int | float]] = field(default_factory=dict)
+    feature_flags: dict[str, bool] = field(default_factory=dict)
+    smc_scoring_mode: str = "v2"
+    # Each auto-trade entry: regime, side, min_score, min_rr, score_metric.
 
 
 
 
 def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | None = None) -> dict[str, Any]:
-    scores = result.get("scenario_scores", {})
-    buy_score = int(scores.get("buy", {}).get("signal_score", scores.get("buy", {}).get("total", 0)))
-    sell_score = int(scores.get("sell", {}).get("signal_score", scores.get("sell", {}).get("total", 0)))
-    best_side = "buy" if buy_score >= sell_score else "sell"
-    best_score = max(buy_score, sell_score)
-    permission = str(result.get("trade_permission", {}).get("status", "blocked"))
-    scenarios = [item for item in result.get("scenarios", []) if item.get("type") in {"buy", "sell"}]
+    scoring_provenance = normalize_scoring_provenance(
+        result.get("scoring_provenance"),
+        fallback_mode=(
+            result.get("smc_scoring", {}).get("policy", {}).get(
+                "requested_mode",
+                "v2",
+            )
+            if isinstance(result.get("smc_scoring"), dict)
+            else "v2"
+        ),
+    )
+    scores = (
+        result.get("scenario_scores")
+        if isinstance(result.get("scenario_scores"), dict)
+        else {}
+    )
+    buy_scores = scores.get("buy") if isinstance(scores.get("buy"), dict) else {}
+    sell_scores = scores.get("sell") if isinstance(scores.get("sell"), dict) else {}
+    buy_score = int(buy_scores.get("signal_score", buy_scores.get("total", 0)) or 0)
+    sell_score = int(sell_scores.get("signal_score", sell_scores.get("total", 0)) or 0)
+    score_best_side = "buy" if buy_score >= sell_score else "sell"
+    direction_bias_raw = (
+        result.get("direction_bias")
+        if isinstance(result.get("direction_bias"), dict)
+        else {}
+    )
+    direction_best_side = str(
+        direction_bias_raw.get("best_side", "")
+    ).strip().lower()
+    if direction_best_side in {"buy", "sell"}:
+        best_side = direction_best_side
+        best_score = buy_score if best_side == "buy" else sell_score
+    elif direction_best_side in {"neutral", "stand_aside"}:
+        best_side = "stand_aside"
+        best_score = max(buy_score, sell_score)
+    else:
+        # Compatibility for older analysis payloads without direction_bias.
+        best_side = score_best_side
+        best_score = max(buy_score, sell_score)
+    trade_permission = (
+        result.get("trade_permission")
+        if isinstance(result.get("trade_permission"), dict)
+        else {}
+    )
+    permission = str(trade_permission.get("status", "blocked"))
+    raw_scenarios = (
+        result.get("scenarios")
+        if isinstance(result.get("scenarios"), list)
+        else []
+    )
+    scenarios = [
+        item
+        for item in raw_scenarios
+        if isinstance(item, dict) and item.get("type") in {"buy", "sell"}
+    ]
     best_plan = next((item for item in scenarios if item.get("type") == best_side), None)
-    if best_plan is None and scenarios:
-        # Best side has no valid plan — use whatever plan exists and align side
-        best_plan = scenarios[0]
-        best_side = str(best_plan.get("type", best_side))
     risk_reward = best_plan.get("risk_reward") if best_plan else None
     technical = result.get("technical", {}) if isinstance(result.get("technical"), dict) else {}
     # Fallback plans have no real entry zone - don't compute fake distance
@@ -68,42 +132,83 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     decision_engine = result.get("decision_engine", {})
     if not isinstance(decision_engine, dict):
         decision_engine = {}
+    decision_summary = (
+        result.get("decision_summary")
+        if isinstance(result.get("decision_summary"), dict)
+        else {}
+    )
+    data_quality = (
+        result.get("data_quality")
+        if isinstance(result.get("data_quality"), dict)
+        else {}
+    )
+    market_regime = (
+        result.get("market_regime")
+        if isinstance(result.get("market_regime"), dict)
+        else {}
+    )
 
     # Action from decision engine (CT-2) — the single source of truth.
     action = str(decision_engine.get("legacy_action") or "stand_aside")
 
     # Extract macro info
-    macro_buy = int(scores.get("buy", {}).get("macro_alignment", 15))
-    macro_sell = int(scores.get("sell", {}).get("macro_alignment", 15))
-    macro_score = macro_buy if best_side == "buy" else macro_sell
-    macro_confidence = float(scores.get("buy", {}).get("macro_confidence", 1.0))
-    macro_bias = _classify_macro_bias(result, best_side)
+    macro_buy = int(buy_scores.get("macro_alignment", 15) or 15)
+    macro_sell = int(sell_scores.get("macro_alignment", 15) or 15)
+    macro_score = (
+        macro_buy
+        if best_side == "buy"
+        else macro_sell if best_side == "sell" else 15
+    )
+    macro_confidence = float(buy_scores.get("macro_confidence", 1.0) or 1.0)
+    macro_bias = (
+        _classify_macro_bias(result, best_side)
+        if best_side in {"buy", "sell"}
+        else "neutral"
+    )
 
     # ---- Phase 15: new ranking metadata ----
-    row_final_score = result.get("final_score", best_score)
+    side_score_results = (
+        result.get("side_scores")
+        if isinstance(result.get("side_scores"), dict)
+        else {}
+    )
+    selected_score_result = (
+        side_score_results.get(best_side)
+        if best_side in {"buy", "sell"}
+        and isinstance(side_score_results.get(best_side), dict)
+        else {}
+    )
+    row_final_score = selected_score_result.get(
+        "setup_score",
+        result.get("final_score", best_score),
+    )
     journal_feedback = result.get("journal_feedback", {})
     m15_quality = best_plan.get("m15_quality") if best_plan else None
     expected_effective_rr = best_plan.get("expected_effective_rr") if best_plan else None
-    score_gap = result.get("decision_summary", {}).get("score_gap")
+    score_gap = decision_summary.get("score_gap")
 
     # Align direction_bias with actual plan side (may differ from raw score comparison)
-    direction_bias = dict(result.get("direction_bias", {})) if isinstance(result.get("direction_bias"), dict) else {}
+    direction_bias = dict(direction_bias_raw)
     if direction_bias and best_plan and best_score >= 50:
         direction_bias["best_side"] = best_side
 
     row = {
         "rank": 0,
         "symbol": result.get("symbol", ""),
-        "broker_symbol": broker_symbol or result.get("data_quality", {}).get("broker_symbol", ""),
-        "market_regime": result.get("market_regime", {}).get("primary", "unknown"),
+        "broker_symbol": broker_symbol or data_quality.get("broker_symbol", ""),
+        "market_regime": market_regime.get("primary", "unknown"),
         "direction_bias": direction_bias,
         "trade_permission": permission,
-        "permission_reason": result.get("trade_permission", {}).get("reason", ""),
-        "min_score": int(result.get("trade_permission", {}).get("min_score", 65) or 65),
-        "min_rr": float(result.get("trade_permission", {}).get("min_rr", 1.3) or 1.3),
+        "permission_reason": trade_permission.get("reason", ""),
+        "min_score": int(trade_permission.get("min_score", 65) or 65),
+        "min_rr": float(trade_permission.get("min_rr", 1.3) or 1.3),
         "buy_score": buy_score,
         "sell_score": sell_score,
-        "best_side": best_side if best_score >= 50 else "stand_aside",
+        "best_side": (
+            best_side
+            if best_side in {"buy", "sell"} and best_score >= 50
+            else "stand_aside"
+        ),
         "best_score": best_score,
         "scanner_action": action,
         "entry_status": best_plan.get("entry_status") if best_plan else "waiting_for_confirmation",
@@ -122,8 +227,26 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "ai_setup_audit": {},
         "detail_action": "View Detail",
         "analysis_result": result,
+        "scoring_provenance": scoring_provenance,
+        "scorer_version": scoring_provenance[
+            "scanner_scorer_version"
+        ],
+        "feature_version": scoring_provenance[
+            "scanner_feature_version"
+        ],
+        "smc_scorer_version": scoring_provenance[
+            "smc_scorer_version"
+        ],
+        "smc_scoring_mode": scoring_provenance[
+            "smc_scoring_mode"
+        ],
+        "side_scores": side_score_results,
         # ---- Phase 15 ranking fields ----
         "final_score": row_final_score,
+        # Canonical threshold metric for both backtest recommendations and live.
+        # Kept as an explicit alias during migration away from mixed
+        # best_score/final_score comparisons.
+        "setup_score": row_final_score,
         "scanner_decision": decision_engine.get("decision", ""),
         "legacy_action": decision_engine.get("legacy_action", ""),
         "score_gap": score_gap,
@@ -132,6 +255,35 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "stop_loss": best_plan.get("stop_loss") if best_plan else None,
         "take_profit": best_plan.get("take_profit") if best_plan else None,
         "entry_zone": best_plan.get("entry_zone") if best_plan else None,
+        "selected_zone_id": (
+            best_plan.get("entry_zone_id") if best_plan else None
+        ),
+        "entry_zone_id": (
+            best_plan.get("entry_zone_id") if best_plan else None
+        ),
+        "entry_zone_score": (
+            best_plan.get("entry_zone_score") if best_plan else None
+        ),
+        "entry_zone_quality_score": (
+            best_plan.get("entry_zone_quality_score")
+            if best_plan else None
+        ),
+        "entry_zone_relevance_score": (
+            best_plan.get("entry_zone_relevance_score")
+            if best_plan else None
+        ),
+        "entry_zone_setup_score": (
+            best_plan.get("entry_zone_setup_score")
+            if best_plan else None
+        ),
+        "entry_zone_scoring_version": (
+            best_plan.get("entry_zone_scoring_version")
+            if best_plan else None
+        ),
+        "smc_score_breakdown": (
+            best_plan.get("smc_score_breakdown", {})
+            if best_plan else {}
+        ),
         "journal_feedback": journal_feedback if isinstance(journal_feedback, dict) else {},
         "journal_sample_size": journal_feedback.get("sample_size") if isinstance(journal_feedback, dict) else 0,
         "journal_expectancy_r": journal_feedback.get("expectancy_r") if isinstance(journal_feedback, dict) else None,
@@ -143,6 +295,7 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
 
 
 def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") -> dict[str, Any]:
+    scoring_provenance = build_scoring_provenance("v2")
     row = {
         "rank": 0,
         "symbol": symbol,
@@ -168,6 +321,19 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
         "ai_setup_audit": {},
         "detail_action": "View Detail",
         "analysis_result": None,
+        "scoring_provenance": scoring_provenance,
+        "scorer_version": scoring_provenance[
+            "scanner_scorer_version"
+        ],
+        "feature_version": scoring_provenance[
+            "scanner_feature_version"
+        ],
+        "smc_scorer_version": scoring_provenance[
+            "smc_scorer_version"
+        ],
+        "smc_scoring_mode": scoring_provenance[
+            "smc_scoring_mode"
+        ],
         # Phase 15 ranking fields
         "final_score": 0,
         "scanner_decision": "TRADE_BLOCKED",
@@ -196,11 +362,8 @@ def _is_fallback_row(row: dict[str, Any]) -> bool:
 
 
 def _sort_priority(row: dict[str, Any]) -> int:
-    """Sort priority: 0=ready_now or backtest candidate, 1=non-fallback, 2=fallback."""
+    """Sort priority: 0=ready, 1=non-fallback, 2=fallback."""
     if str(row.get("scanner_group")) == READY_NOW:
-        return 0
-    # Nhánh 1 (backtest=true): auto_trade_branch="B" + not blocked -> top group
-    if str(row.get("auto_trade_branch")) == "B" and str(row.get("scanner_group")) != BLOCKED:
         return 0
     if _is_fallback_row(row):
         return 2
@@ -208,19 +371,9 @@ def _sort_priority(row: dict[str, Any]) -> int:
 
 
 def sort_scanner_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    sorted_rows = sorted(
-        rows,
-        key=lambda row: (
-            _sort_priority(row),
-            -int(row.get("opportunity_score", 0)),
-            -int(row.get("final_score", row.get("best_score", 0))),
-            -_safe_rr(row),
-            str(row.get("symbol", "")),
-        ),
-    )
-    for index, row in enumerate(sorted_rows, start=1):
-        row["rank"] = index
-    return sorted_rows
+    """Compatibility wrapper for the canonical Phase-6 ranking engine."""
+
+    return rank_scanner_rows(rows)
 
 
 def _safe_rr(row: dict[str, Any]) -> float:
@@ -238,37 +391,13 @@ def ai_targets(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
 
-    # Filter: not blocked
-    eligible = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        # Check blocked status
-        group = str(row.get("scanner_group", ""))
-        permission = str(row.get("trade_permission", ""))
-        if group == BLOCKED or permission == "blocked":
-            continue
-
-        # Legacy fallback for rows without scanner_group
-        if not group:
-            if int(row.get("best_score", 0)) < 75:
-                continue
-
-        eligible.append(row)
-
-    # Sort by: group priority > opportunity_score > final_score > best_score
-    eligible.sort(
-        key=lambda r: (
-            GROUP_PRIORITY_NEW.get(
-                str(r.get("scanner_group")),
-                99,
-            ),
-            -int(r.get("opportunity_score", 0)),
-            -int(r.get("final_score", r.get("best_score", 0))),
-            -int(r.get("best_score", 0)),
-        ),
-    )
-
+    ranked = rank_scanner_rows(rows)
+    eligible = [
+        row
+        for row in ranked
+        if row.get("candidate_status")
+        not in {OUT_OF_STRATEGY, CANDIDATE_BLOCKED, DATA_UNAVAILABLE}
+    ]
     return eligible[: max(0, limit)]
 
 
@@ -284,13 +413,16 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     waiting = 0
     watch_zone = 0
     blocked = 0
-    scores: list[int] = []
+    out_of_strategy = 0
+    data_unavailable = 0
+    scores: list[float] = []
 
     for row in rows:
         if not isinstance(row, dict):
             continue
+        status = str(row.get("candidate_status", "") or "").upper()
         group = row.get("scanner_group")
-        if not group:
+        if not status and not group:
             # fallback from legacy scanner_action
             action = str(row.get("scanner_action", "")).strip().lower()
             if action == "ready":
@@ -304,18 +436,22 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             else:
                 group = WATCH_ZONE
 
-        if group == READY_NOW:
+        if status == "READY_NOW" or group == READY_NOW:
             ready_now += 1
-        elif group == WAITING_CONFIRMATION:
+        elif status == "WAITING_CONFIRMATION" or group == WAITING_CONFIRMATION:
             waiting += 1
-        elif group == WATCH_ZONE:
+        elif status == "WATCH_ZONE" or group == WATCH_ZONE:
             watch_zone += 1
-        elif group == BLOCKED:
+        elif status == OUT_OF_STRATEGY or group == "out_of_strategy":
+            out_of_strategy += 1
+        elif status == CANDIDATE_BLOCKED or group == BLOCKED:
             blocked += 1
+        elif status == DATA_UNAVAILABLE or group == "data_unavailable":
+            data_unavailable += 1
 
-        score = row.get("opportunity_score")
+        score = row.get("opportunity_rank", row.get("opportunity_score"))
         if isinstance(score, (int, float)):
-            scores.append(int(score))
+            scores.append(float(score))
 
     top = max(scores) if scores else None
     avg = round(sum(scores) / len(scores), 2) if scores else 0
@@ -328,19 +464,38 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "ready_now_count": ready_now,
         "waiting_confirmation_count": waiting,
         "watch_zone_count": watch_zone,
+        "out_of_strategy_count": out_of_strategy,
         "blocked_count": blocked,
+        "data_unavailable_count": data_unavailable,
         "top_opportunity_score": top,
         "average_opportunity_score": avg,
+        "top_opportunity_rank": top,
+        "average_opportunity_rank": avg,
     }
 
 
 def build_scanner_output(rows: list[dict[str, Any]], request: ScannerRequest, ai_called: int) -> dict[str, Any]:
+    smc_policy = resolve_smc_scoring_policy(request.smc_scoring_mode)
+    scoring_provenance = build_scoring_provenance(
+        request.smc_scoring_mode
+    )
     return {
         "mode": "scanner",
         "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
         "symbols_scanned": len(rows),
         "ai_details_limit": request.max_ai_details,
         "ai_called": ai_called,
+        "scanner_contract_version": "phase0-safety-v1",
+        "strategy_router_version": STRATEGY_ROUTER_VERSION,
+        "portfolio_engine_version": PORTFOLIO_ENGINE_VERSION,
+        "ranking_version": SCANNER_RANKING_VERSION,
+        "smc_scorer_version": smc_policy.active_version,
+        "smc_domain_version": SMC_DOMAIN_VERSION,
+        "scoring_provenance": scoring_provenance,
+        "feature_flags": dict(request.feature_flags),
+        "smc_scoring_mode": normalize_smc_scoring_mode(
+            request.smc_scoring_mode
+        ),
         "summary": scanner_summary(rows),
         "rows": rows,
     }

@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
 
 from config.constants import SUPPORTED_SYMBOLS
 from controllers.backtest_controller import BacktestController
+from core.backtest_config import apply_validated_backtest_config
 from core.param_sensitivity import (
     DEFAULT_PERIODS,
     DEFAULT_SWEEP_CONFIGS,
@@ -1033,10 +1034,14 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             QMessageBox.information(self, "Đề xuất", "Chưa có dữ liệu backtest. Hãy chạy backtest hoặc tải file trước.")
             return
 
-        from core.backtest_to_scanner_config import recommend_scanner_configs
+        from core.backtest_config_validation import build_backtest_config
 
         try:
-            recs = recommend_scanner_configs(self.result)
+            config = build_backtest_config(
+                self.result,
+                symbol=self.selected_symbol,
+            )
+            recs = {self.selected_symbol: config}
         except Exception as exc:
             QMessageBox.warning(self, "Lỗi phân tích", f"Không thể phân tích backtest:\n{exc}")
             return
@@ -1103,7 +1108,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             no_data = QLabel(
                 f"<span style='color:{muted_color};font-size:13px;'>"
                 f"{symbol}: không đủ dữ liệu để đề xuất "
-                f"(cần ≥10 lệnh, kỳ vọng &gt;+0.10R, PF &gt;1.2)</span>"
+                f"(cần ≥18 lệnh để tách IS/OOS; hãy bật Walk-Forward)</span>"
             )
             no_data.setTextFormat(Qt.TextFormat.RichText)
             dlg_layout.addWidget(no_data)
@@ -1114,7 +1119,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             current_score = str(existing.min_score) if existing else "--"
             current_rr = f"{existing.min_expected_rr:.1f}" if existing else "--"
 
-            table = QTableWidget(3, 2)
+            table = QTableWidget(4, 2)
             table.setObjectName("LuuTrungHoaTable")
             table.verticalHeader().setVisible(False)
             table.horizontalHeader().setVisible(False)
@@ -1156,6 +1161,16 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 ("Bằng chứng", 
                  f"<span style='color:{evidence_color}; font-size: 12px; font-style: italic; line-height: 1.4;'>"
                  f"{evidence}</span>"),
+                (
+                    "Trạng thái validation",
+                    f"<span style='color:{proposed_color}; font-size: 12px;'>"
+                    f"<b>{cfg.get('status', 'DRAFT')}</b>"
+                    f" &nbsp; OOS: {cfg.get('out_of_sample_trades', 0)} lệnh"
+                    f" &nbsp; WF: {cfg.get('walk_forward_windows', 0)} cửa sổ"
+                    f"<br><span style='color:{evidence_color};'>"
+                    f"{', '.join(cfg.get('validation_reasons', [])) or 'Đủ bằng chứng OOS/walk-forward'}"
+                    "</span></span>",
+                ),
             ]
             
             for row_idx, (label, html_value) in enumerate(rows):
@@ -1182,7 +1197,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 8, 0, 0)
-        apply_btn = action_button("🔥 Áp dụng cấu hình", primary=True)
+        apply_btn = action_button("🔥 Lưu cấu hình", primary=True)
         apply_btn.setStyleSheet(
             f"QPushButton {{"
             f"  background-color: {proposed_color};"
@@ -1242,14 +1257,22 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 sym_settings = SymbolScanSettings()
                 settings.trading.symbol_settings[symbol] = sym_settings
 
-            sym_settings.backtest = True
-            sym_settings.auto_trade_regime = cfg["regime"]
-            sym_settings.auto_trade_side = cfg["side"]
-            sym_settings.min_score = int(cfg["min_score"])
-            sym_settings.min_expected_rr = float(cfg["min_rr"])
+            apply_validated_backtest_config(
+                sym_settings,
+                symbol=symbol,
+                recommendation=cfg,
+            )
 
-            if symbol not in settings.trading.enabled_symbols:
+            if (
+                sym_settings.backtest
+                and symbol not in settings.trading.enabled_symbols
+            ):
                 settings.trading.enabled_symbols.append(symbol)
+            elif (
+                not sym_settings.backtest
+                and symbol in settings.trading.enabled_symbols
+            ):
+                settings.trading.enabled_symbols.remove(symbol)
 
             if self.app:
                 self.app.settings_service.save(settings)
@@ -1261,8 +1284,13 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 self, "Đã áp dụng",
                 f"Đã cập nhật cấu hình Scanner cho {symbol}.\n\n"
                 f"Regime: {cfg['regime']}    Side: {cfg['side'].upper()}\n"
-                f"MinScore: {cfg['min_score']}    MinRR: {cfg['min_rr']}\n\n"
-                "Lần quét tiếp theo sẽ dùng cấu hình mới."
+                f"MinScore: {cfg['min_score']}    MinRR: {cfg['min_rr']}\n"
+                f"Trạng thái: {sym_settings.backtest_status}\n\n"
+                + (
+                    "Config đã đủ bằng chứng và có thể được Strategy Router sử dụng."
+                    if sym_settings.backtest_status == "VALIDATED"
+                    else "Config được lưu ở DRAFT và không được phép auto-trade."
+                )
             )
         except Exception as exc:
             QMessageBox.warning(self, "Lỗi áp dụng", f"Không thể lưu cấu hình:\n{exc}")
@@ -1276,12 +1304,7 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
             cfg = recs.get(symbol)
             if cfg is None:
                 continue
-            configs[symbol] = {
-                "regime": cfg["regime"],
-                "side": cfg["side"],
-                "min_score": cfg["min_score"],
-                "min_rr": cfg["min_rr"],
-            }
+            configs[symbol] = dict(cfg)
 
         if not configs:
             QMessageBox.information(self, "Áp dụng", "Không có đề xuất nào được chọn để áp dụng.")
@@ -1304,15 +1327,23 @@ html, body { width: 100%; height: 100%; background: transparent; overflow: hidde
                 sym_settings = SymbolScanSettings()
                 settings.trading.symbol_settings[symbol] = sym_settings
 
-            sym_settings.backtest = True
-            sym_settings.auto_trade_regime = cfg["regime"]
-            sym_settings.auto_trade_side = cfg["side"]
-            sym_settings.min_score = int(cfg["min_score"])
-            sym_settings.min_expected_rr = float(cfg["min_rr"])
+            apply_validated_backtest_config(
+                sym_settings,
+                symbol=symbol,
+                recommendation=cfg,
+            )
             updated += 1
 
-            if symbol not in settings.trading.enabled_symbols:
+            if (
+                sym_settings.backtest
+                and symbol not in settings.trading.enabled_symbols
+            ):
                 settings.trading.enabled_symbols.append(symbol)
+            elif (
+                not sym_settings.backtest
+                and symbol in settings.trading.enabled_symbols
+            ):
+                settings.trading.enabled_symbols.remove(symbol)
 
         try:
             if self.app:
