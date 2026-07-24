@@ -564,6 +564,7 @@ Xem chi tiết tại `docs/scanner-flow.md` và
 
 - `services/telegram_alert_service.py` sends detailed trade alerts only for scanner rows with `scanner_action == "ready"`, `trade_permission == "allowed"` and a matching trade plan in `analysis_result`.
 - The detailed trade alert is Vietnamese with accents and bullet icons. It includes symbol, broker symbol, side, Entry, Stop loss, Take profit, suggested lot, R:R, setup score, reason, MT5 balance if present, and source.
+- Detailed R:R uses base effective RR as the primary value when available, falls back to best effective RR, and keeps best nominal RR as a secondary reference. Current execution RR is not substituted into the alert.
 - The scanner summary alert no longer lists watch symbols. It shows only scan time, number of scanned symbols, number of ready symbols, and ready symbols with Entry/SL/TP.
 - Summary time is formatted as `dd-mm-yyyy HH:MM:SS`, for example `09-06-2026 10:30:07`.
 
@@ -579,8 +580,16 @@ Xem chi tiết tại `docs/scanner-flow.md` và
   lại `scanner_action`, `trade_permission` hoặc `best_side` legacy để tự suy
   luận quyền đặt lệnh.
 - Risk is still controlled by the normal sizing path. The controller caps `request.risk_percent` to `settings.trading.max_risk_percent` before analysis and before auto-entry.
-- Auto-entry uses `scenario.position_sizing.suggested_lot`, which is calculated from the MT5 account balance and configured risk percent.
+- Auto-entry recalculates volume from the latest MT5 balance, risk percent, entry/SL and quote-to-USD rate; `scenario.position_sizing.suggested_lot` is the fallback when execution-time conversion is unavailable.
 - For each broker symbol, `MT5Service.has_open_position_or_order()` checks both open positions and pending orders. If any existing position/order exists for that symbol, the system skips auto-entry for that symbol.
+- Immediately before execution, the controller retrieves live ask/bid with
+  `MT5Service.get_live_price()`, re-checks the final `entry_zone` from the
+  strict same-side scenario and calculates spread-adjusted current RR. Price
+  outside that zone or current RR below `min_rr` causes an explicit skip.
+  Manual order placement applies the same protection and blocks with a
+  warning. `source_zone`, `watch_zone`, and opposite-side scenarios are never
+  execution fallbacks.
+- Auto-trade results include a `diagnostics` list; manual order data includes an `execution_guard` dict with price source, live/fallback price, entry-zone state, current RR and decision reason.
 - `MT5Service.place_market_order()` sends a market order through the MetaTrader5 Python API:
   - BUY uses current `ask`.
   - SELL uses current `bid`.
@@ -588,7 +597,7 @@ Xem chi tiết tại `docs/scanner-flow.md` và
   - TP uses the first item in `take_profit`.
   - The order comment is prefixed with `AMA`.
 - Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
-- Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, and `risk_percent`.
+- Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`, and `diagnostics`.
 
 ### Order Management — BE & Trailing Stop (Design 2026-07-08)
 
@@ -679,6 +688,7 @@ Toàn bộ subsystem AI đã được refactor từ Model-Centric sang Provider-
 ### 8. Tab Tổng quan redesign — hiển thị trực tiếp không cần mở dialog
 - **Hero bar mở rộng**: thêm 5 chỉ số inline (Điểm, R:R kèm dải worst–best, Buy/Sell, Gap, Vĩ mô) ngay trên hero bar. R:R hiển thị dạng `1:5.6 (2.9–5.6)` — best case + khoảng dao động.
 - **Panel "Số liệu giao dịch"** (`_refresh_trade_panel()`): QFrame cố định ở cột phải, hiển thị Entry zone, SL, TP, R:R (kèm dải worst–best từ `risk_reward_range`), Vĩ mô, Chế độ TT — tái sử dụng `_dialog_card_*()`.
+- Scanner Detail resolves RR from the flat row first and falls back to the scenario matching `best_side`. Entry without a real TP1 is displayed as `N/A` with an explanatory note, not a fabricated RR.
 - **Panel "Điểm phân tích"** (`_refresh_score_panel()`): QFrame cố định ở cột phải, hiển thị Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD.
 - Cả 2 panel đều có guard `if not self.row` → hiển thị `"—"`, không crash.
 

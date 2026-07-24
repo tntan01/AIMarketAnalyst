@@ -17,6 +17,13 @@ from PyQt6.QtWidgets import (
 from controllers.journal_controller import JournalController
 from services.storage_service import JsonStorage
 
+from core.scanner_ranking_engine import _find_scenario_for_side
+from ui.scanner_rr_formatters import (
+    format_execution_zone_text,
+    format_execution_zone_width,
+    format_rr_trim_reason,
+    format_source_zone_text,
+)
 from ui.components.chart_view import AnalysisChartView
 from ui.screens.shared import action_button, card, page_header
 
@@ -1234,6 +1241,71 @@ class ScannerDetailScreen(QWidget):
             detail += f"; tối thiểu {min_rr:.2f}"
         return primary, detail, "#ea580c"
 
+    def _best_detail_scenario(self) -> dict[str, object]:
+        analysis = self.row.get("analysis_result") if isinstance(self.row, dict) else None
+        if not isinstance(analysis, dict):
+            return {}
+        scenarios = analysis.get("scenarios")
+        if not isinstance(scenarios, list):
+            return {}
+        best_side = str(self.row.get("best_side") or "").strip().lower()
+        scenario = _find_scenario_for_side(
+            scenarios,
+            best_side,
+            fallback_to_first=best_side not in {"buy", "sell"},
+        )
+        return scenario if isinstance(scenario, dict) else {}
+
+    def _rr_field(self, key: str) -> object:
+        scenario = self._best_detail_scenario()
+        value = scenario.get(key)
+        if value is not None and value != "":
+            return value
+        best_side = str(self.row.get("best_side") or "").strip().lower()
+        if best_side in {"buy", "sell"} and not scenario:
+            return None
+        value = self.row.get(key)
+        if value is not None and value != "":
+            return value
+        return None
+
+    def _plan_field(self, key: str) -> object:
+        scenario = self._best_detail_scenario()
+        if scenario:
+            return scenario.get(key)
+        best_side = str(self.row.get("best_side") or "").strip().lower()
+        return None if best_side in {"buy", "sell"} else self.row.get(key)
+
+    def _rr_context(self) -> dict[str, object]:
+        keys = (
+            "risk_reward",
+            "risk_reward_range",
+            "risk_reward_effective_range",
+            "expected_effective_rr",
+            "expected_effective_rr_base",
+        )
+        return {key: self._rr_field(key) for key in keys}
+
+    def _has_entry_without_rr(self) -> bool:
+        entry_zone = self._plan_field("entry_zone")
+        return bool(entry_zone)
+
+    def _rr_main_text(self) -> str:
+        rr = self._rr_field("risk_reward")
+        if rr:
+            return str(rr)
+        rr_range = self._rr_field("risk_reward_range")
+        if isinstance(rr_range, dict):
+            try:
+                best = rr_range.get("best")
+                if best is not None:
+                    return f"1:{float(best):.1f}"
+            except (TypeError, ValueError):
+                pass
+        if self._has_entry_without_rr():
+            return "N/A"
+        return "--"
+
     def _dialog_card_sl(self) -> tuple[str, str, str]:
         if self._has_no_entry_zone():
             return "--", "", "#94a3b8"
@@ -2090,7 +2162,7 @@ class ScannerDetailScreen(QWidget):
         gap, min_gap = self._gap_numbers()
         if gap is not None and min_gap is not None and gap < min_gap:
             items.append((f"Gap mua-bán đạt tối thiểu {self._compact_number(min_gap)}.", "wait"))
-        if not self.row.get("risk_reward"):
+        if not self._rr_field("risk_reward"):
             items.append(("Có R:R hợp lệ trước khi lập kế hoạch lệnh.", "wait"))
         return items
 
@@ -2145,6 +2217,63 @@ class ScannerDetailScreen(QWidget):
         except (TypeError, ValueError):
             return str(value)
         return str(int(number)) if number.is_integer() else f"{number:.1f}"
+
+    @staticmethod
+    def _rr_detail_text(
+        rr_range: object,
+        effective_range: object,
+        expected_effective_rr: object,
+        expected_effective_rr_base: object,
+    ) -> str:
+        return ScannerDetailScreen._rr_detail_text_ascii(
+            rr_range,
+            effective_range,
+            expected_effective_rr,
+            expected_effective_rr_base,
+        )
+
+    @staticmethod
+    def _rr_detail_text_ascii(
+        rr_range: object,
+        effective_range: object,
+        expected_effective_rr: object,
+        expected_effective_rr_base: object,
+    ) -> str:
+        parts: list[str] = []
+        nominal_range = ScannerDetailScreen._rr_range_ascii(rr_range)
+        if nominal_range:
+            parts.append(f"dai {nominal_range}")
+        effective_range_text = ScannerDetailScreen._rr_range_ascii(effective_range)
+        if effective_range_text:
+            parts.append(f"dai thuc {effective_range_text}")
+        try:
+            base = float(expected_effective_rr_base) if expected_effective_rr_base is not None else None
+        except (TypeError, ValueError):
+            base = None
+        try:
+            best = float(expected_effective_rr) if expected_effective_rr is not None else None
+        except (TypeError, ValueError):
+            best = None
+        if base is not None:
+            parts.append(f"base sau spread ~{base:.1f}")
+        elif best is not None:
+            parts.append(f"thuc ~{best:.1f}")
+        return " | ".join(parts)
+
+    @staticmethod
+    def _rr_range_ascii(value: object) -> str:
+        if not isinstance(value, dict):
+            return ""
+        try:
+            best = float(value["best"]) if value.get("best") is not None else None
+            worst = float(value["worst"]) if value.get("worst") is not None else None
+        except (TypeError, ValueError):
+            return ""
+        if best is None or worst is None:
+            return ""
+        if best == worst:
+            return f"{best:.1f}"
+        return f"{worst:.1f}-{best:.1f}"
 
     @staticmethod
     def _rr_range_compact(rr_range: object) -> str:

@@ -477,7 +477,7 @@ scenario["m15_quality"] == "strict"
 analysis["final_score"] >= 68
 signal_score >= 65
 
-# RR: thêm ngưỡng tối thiểu
+# RR: field legacy best-case effective; khi đánh giá production gate cần đối chiếu thêm base effective RR
 scenario["expected_effective_rr"] >= 1.2
 ```
 
@@ -586,6 +586,19 @@ expected_effective_rr = scenario.get("expected_effective_rr")
 m15_quality = scenario.get("m15_quality")
 entry_status = scenario.get("entry_status")
 ```
+
+Phase 16 contract:
+
+- `entry_zone` ở đây là final RR-valid execution zone, không phải
+  `source_zone`.
+- Scenario phải khớp chính xác `best_side`; không fallback sang scenario đối
+  diện.
+- Thiếu final `entry_zone`, TP1 hoặc RR hợp lệ thì không tạo simulated entry.
+- Có thể lưu thêm `source_zone`, `structural_execution_zone` và
+  `rr_trim_diagnostics` để phân tích rejection/zone quality, nhưng các field
+  này không thay thế execution boundary.
+- Backtest/replay mới phải ghi nhận directional zone type để phát hiện BUY dùng
+  bearish/supply hoặc SELL dùng bullish/demand.
 
 SMC flags:
 
@@ -949,6 +962,11 @@ no_selected_zone        (entry vào technical level, không dùng SMC)
 Nguyên tắc: zone đã bị test 3-4 lần và vẫn giữ được = đáng tin cậy hơn zone vừa mới hình thành chưa từng bị test.
 
 ### Theo Expected Effective R:R
+
+`expected_effective_rr` trong trade/backtest schema là best-case để giữ backward
+compatibility. Phân tích gate/ranking hiện tại nên bổ sung
+`expected_effective_rr_base` (midpoint) khi snapshot có field này; không đổi nghĩa
+field legacy.
 
 ```text
 < 1.0

@@ -51,7 +51,7 @@ from core.scanner_safety import (
     evaluate_auto_trade_safety,
 )
 from core.analysis_engine import analyze_symbol
-from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot
+from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot, calculate_current_effective_rr
 from services.ai_service import AIProviderConfig, AIService
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
@@ -1205,6 +1205,7 @@ class ScannerController:
             "rollout_blocked": rollout_blocked,
             "errors": errors,
             "orders": results,
+            "diagnostics": diagnostics,
             "risk_percent": request.risk_percent,
             "effective_risk_cap_percent": (
                 rollout_policy.canary_risk_percent

@@ -204,6 +204,9 @@ Before enabling auto-scan with MT5 auto-entry on a real account:
 * Test first on demo account or very small risk.
 * Confirm each broker symbol has no existing position or pending order if a new entry is expected.
 * Confirm SL and TP are visible in the scanner detail before relying on auto-entry.
+* Confirm the live price is still inside the displayed final execution zone
+  and current R:R remains above the configured minimum. The source zone is
+  reference-only and must not be used as an execution boundary.
 
 Runtime behavior:
 
@@ -211,5 +214,9 @@ Runtime behavior:
 * Auto-scan can place orders only when `Tự động vào lệnh MT5` is on and rows are `ready` and `allowed`.
 * The system checks existing MT5 positions and pending orders per broker symbol before sending a new order.
 * If an order already exists for that broker symbol, auto-entry skips that symbol.
+* Immediately before execution, the system uses live ask/bid to re-check the
+  final `entry_zone` from the same-side scenario and current spread-adjusted
+  R:R. It skips the order when price is outside the zone, the final zone is
+  missing, or current R:R is below `min_rr`.
 * Lot comes from `position_sizing.suggested_lot`, calculated from MT5 balance and the capped risk percent.
 * The first TP from the trade plan is used for the MT5 order.

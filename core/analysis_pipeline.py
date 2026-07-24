@@ -20,7 +20,9 @@ from core.signal_engine import clamp
 from core.risk_engine import (
     AnalysisInput,
     build_scenarios,
+    build_source_zone_diagnostics,
     calc_trade_permission,
+    calculate_expected_effective_rr,
     contract_size_for,
 )
 from core.signal_engine import (
@@ -724,6 +726,59 @@ class AnalysisPipeline:
             )
         )
 
+        # --- Compute base-case effective RR (midpoint anchor) for gate ---------
+        _gate_sc_side = _gate_scenario.get("type") if isinstance(_gate_scenario, dict) else None
+        _gate_sc_entry_zone = _gate_scenario.get("entry_zone") if isinstance(_gate_scenario, dict) else None
+        _gate_sc_sl = _gate_scenario.get("stop_loss") if isinstance(_gate_scenario, dict) else None
+        _gate_sc_tp_list = _gate_scenario.get("take_profit") if isinstance(_gate_scenario, dict) else None
+        _gate_sc_tp1 = _gate_sc_tp_list[0] if isinstance(_gate_sc_tp_list, list) and _gate_sc_tp_list else None
+        _gate_sc_best_eff_rr = _gate_scenario.get("expected_effective_rr") if isinstance(_gate_scenario, dict) else None
+        _gate_sc_base_eff_rr = _gate_scenario.get("expected_effective_rr_base") if isinstance(_gate_scenario, dict) else None
+        _gate_spread_price = float(self._data_quality.get("spread_price") or 0)
+
+        expected_effective_rr_base = None
+        expected_effective_rr_for_gate = None
+        expected_effective_rr_source = "none"
+
+        try:
+            if _gate_sc_base_eff_rr is not None:
+                _stored_base_rr = float(_gate_sc_base_eff_rr)
+                if _stored_base_rr > 0:
+                    expected_effective_rr_base = _stored_base_rr
+                    expected_effective_rr_for_gate = _stored_base_rr
+                    expected_effective_rr_source = "base"
+        except (TypeError, ValueError):
+            pass
+
+        if (
+            expected_effective_rr_for_gate is None
+            and
+            isinstance(_gate_sc_entry_zone, list) and len(_gate_sc_entry_zone) == 2
+            and _gate_sc_sl is not None
+            and _gate_sc_tp1 is not None
+            and _gate_sc_side in ("buy", "sell")
+        ):
+            try:
+                _entry_mid = (float(_gate_sc_entry_zone[0]) + float(_gate_sc_entry_zone[1])) / 2.0
+                _base_rr = calculate_expected_effective_rr(
+                    direction=str(_gate_sc_side),
+                    entry=_entry_mid,
+                    stop_loss=float(_gate_sc_sl),
+                    take_profit=float(_gate_sc_tp1),
+                    spread_price=_gate_spread_price,
+                )
+                if _base_rr is not None and _base_rr > 0:
+                    expected_effective_rr_base = _base_rr
+                    expected_effective_rr_for_gate = _base_rr
+                    expected_effective_rr_source = "base"
+            except (TypeError, ValueError):
+                pass
+
+        if expected_effective_rr_for_gate is None:
+            expected_effective_rr_for_gate = _gate_sc_best_eff_rr
+            if expected_effective_rr_for_gate is not None:
+                expected_effective_rr_source = "best_case_fallback"
+
         gate_context: dict[str, Any] = {
             "terminal_connected": self._data_quality.get("terminal_connected"),
             "broker_logged_in": self._data_quality.get("broker_logged_in"),
@@ -738,6 +793,9 @@ class AnalysisPipeline:
                 _gate_scenario.get("expected_effective_rr")
                 if isinstance(_gate_scenario, dict) else None
             ),
+            "expected_effective_rr_base": expected_effective_rr_base,
+            "expected_effective_rr_for_gate": expected_effective_rr_for_gate,
+            "expected_effective_rr_source": expected_effective_rr_source,
             "risk_reward": (
                 _gate_scenario.get("risk_reward")
                 if isinstance(_gate_scenario, dict) else None
@@ -864,14 +922,16 @@ class AnalysisPipeline:
             m15_status, m15_detail = "warning", f"m15={m15_q} (không rõ)"
         gate_checks.append({"gate": "M15", "status": m15_status, "detail": m15_detail})
         # 9. Expected R:R gate
-        rr_val = gate_context.get("expected_effective_rr")
+        rr_val = gate_context.get("expected_effective_rr_for_gate")
+        rr_source = str(gate_context.get("expected_effective_rr_source") or "")
         nominal_rr = gate_context.get("risk_reward", "")
         nominal_str = f" (danh nghĩa {nominal_rr})" if nominal_rr else ""
         if rr_val is not None:
             min_rr = gate_context.get("min_expected_effective_rr", 1.3)
             rr_ok = rr_val >= min_rr
+            rr_label = "RR base" if rr_source == "base" else "RR"
             gate_checks.append({"gate": "ExpectedRR", "status": "pass" if rr_ok else "warning",
-                                "detail": f"RR={float(rr_val):.1f} sau spread{nominal_str} vs min={min_rr}"})
+                                "detail": f"{rr_label}={float(rr_val):.1f} sau spread{nominal_str} vs min={min_rr}"})
         else:
             gate_checks.append({"gate": "ExpectedRR", "status": "warning", "detail": "chưa có điểm vào — không có RR"})
         # 10. Score gap gate
@@ -1217,6 +1277,11 @@ class AnalysisPipeline:
                         {},
                     ),
                     "entry_zone_source": "smc_distant",
+                    "source_zone": build_source_zone_diagnostics(
+                        distant_zone,
+                        atr,
+                        best_side,
+                    ),
                     "entry_status": "watch_zone",
                     "m15_quality": None,
                     "expected_effective_rr": None,
@@ -1537,13 +1602,30 @@ def _build_entry_checklist(
 ) -> list[dict[str, Any]]:
     trend_pass, trend_note = _entry_trend_check(scenario, market_regime, score)
     min_rr = trade_permission.get("min_rr", 1.3)
+    rr_display = scenario.get("risk_reward", "--")
+    rr_note = f"R:R tối thiểu là 1:{min_rr:.1f}."
+    rr_range = _rr_range_text(scenario.get("risk_reward_range"))
+    rr_effective_range = _rr_range_text(scenario.get("risk_reward_effective_range"))
+    rr_base = scenario.get("expected_effective_rr_base")
+    rr_parts: list[str] = []
+    if rr_range:
+        rr_parts.append(f"dai {rr_range}")
+    if rr_effective_range:
+        rr_parts.append(f"dai thuc {rr_effective_range}")
+    if rr_base is not None:
+        try:
+            rr_parts.append(f"base sau spread ~{float(rr_base):.1f}")
+        except (TypeError, ValueError):
+            pass
+    if rr_parts:
+        rr_note = f"{rr_note} " + " | ".join(rr_parts)
     return [
         _checklist_item("Xu hướng", trend_pass, market_regime.get("primary", "unknown"), trend_note),
         _checklist_item("Vùng POI", bool(scenario.get("entry_zone")) and scenario.get("entry_status") != "invalidated", scenario.get("entry_zone", "--"), "Cần có vùng entry/POI hợp lệ và chưa bị vô hiệu."),
         _checklist_item("Xác nhận H1", bool(scenario.get("h1_confirmation")), scenario.get("trigger_type", "none"), scenario.get("invalid_reason") or "Cần nến H1 xác nhận tại vùng."),
         _checklist_item("Tin tức", not data_quality.get("news_in_3h") and trade_permission.get("status") != "blocked", data_quality.get("next_high_impact_event") or "Không có tin tác động cao gần", "Tránh vào lệnh gần tin tác động cao."),
         _checklist_item("Spread", data_quality.get("spread_status") == "normal", data_quality.get("spread_status", "unknown"), "Spread phải bình thường."),
-        _checklist_item("R:R", _parse_rr(scenario.get("risk_reward")) >= min_rr, scenario.get("risk_reward", "--"), f"R:R tối thiểu là 1:{min_rr:.1f}."),
+        _checklist_item("R:R", _parse_rr(scenario.get("risk_reward")) >= min_rr, rr_display, rr_note),
         _checklist_item(
             "Lot",
             isinstance(scenario.get("position_sizing"), dict) and float(scenario.get("position_sizing", {}).get("suggested_lot", 0)) > 0,
@@ -1579,6 +1661,21 @@ def _entry_trend_check(
 
 def _checklist_item(label: str, passed: bool, value: object, note: str) -> dict[str, Any]:
     return {"label": label, "status": "pass" if passed else "wait", "value": value, "note": note}
+
+
+def _rr_range_text(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    try:
+        best = float(value["best"]) if value.get("best") is not None else None
+        worst = float(value["worst"]) if value.get("worst") is not None else None
+    except (TypeError, ValueError):
+        return ""
+    if best is None or worst is None:
+        return ""
+    if best == worst:
+        return f"{best:.1f}"
+    return f"{worst:.1f}-{best:.1f}"
 
 
 def _parse_rr(value: object) -> float:

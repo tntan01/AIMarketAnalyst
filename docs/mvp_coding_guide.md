@@ -140,7 +140,7 @@ Tiêu chí đạt:
 * Lịch kinh tế hiển thị theo mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt -> ảnh hưởng tới đồng tiền đang xét`. AI chỉ được dịch/nhận định tác động từ dữ liệu app đã fetch, không tự tạo tin hoặc giờ công bố.
 * `resume_after` do code tính, mặc định bằng thời điểm tin tác động cao cộng 30 phút. AI không được tự đặt hoặc tự sửa thời điểm này.
 * `core/entry_engine.py` là nơi duy nhất xác nhận trạng thái entry. Module này trả về `entry_status`, `trigger_type`, `confirmation_score`, `invalid_reason`, `price_in_entry_zone`, `h1_confirmation`, `ready_to_trade`.
-* `risk_engine.build_trade_plan()` trả về `risk_reward_range` (best/base/worst) và chỉ coi lệnh là ready khi `ready_to_trade = true`. Nếu chưa xác nhận, vẫn có thể hiển thị `entry_zone` dưới dạng vùng theo dõi, nhưng không được trình bày như lệnh sẵn sàng.
+* `risk_engine.build_trade_plan()` trả về nominal/effective RR theo ba anchor best/base/worst. `risk_reward` và `expected_effective_rr` giữ nghĩa best-case; gate/ranking ưu tiên base-case. Nếu chưa xác nhận, vẫn có thể hiển thị `entry_zone` dưới dạng vùng theo dõi, nhưng không được trình bày như lệnh sẵn sàng.
 * `smc_context.py` phải gắn metadata chất lượng cho supply/demand, order block và FVG: `zone_score`, `freshness_bars`, `mitigated`, `broken`, `test_count`, `displacement_multiple`, `liquidity_sweep`, `zone_location`.
 * Rule Engine ưu tiên vùng chưa broken, còn fresh, ít bị test, có displacement rõ, có liquidity sweep và đúng premium/discount theo hướng lệnh.
 * `core/backtest_engine.py` phải replay trade plan trên H1 và trả về `win_rate`, `expectancy_r`, `average_r`, `average_mfe_r`, `average_mae_r`, `max_drawdown_r`, `by_symbol`, `by_session`.
@@ -238,6 +238,19 @@ Một task chỉ được coi là xong khi:
 ## Logic Updates
 
 - `risk_engine.build_trade_plan()` phai tach `watch_zone` rong va `entry_zone` hep. Chi `entry_zone` duoc dung de xac nhan `price_in_entry_zone` va `ready_to_trade`; `watch_zone` chi la vung theo doi.
+- Phase 16 bắt buộc tách `source_zone`, `structural_execution_zone` và final
+  `entry_zone`/`execution_zone`. `source_zone` chỉ để phân tích/hiển thị;
+  controller, gate, manual/auto guard và chart execution marker chỉ được dùng
+  final `entry_zone` từ scenario cùng hướng.
+- BUY chỉ nhận `demand_zone`, `bullish_order_block`, `bullish_fvg`; SELL chỉ
+  nhận `supply_zone`, `bearish_order_block`, `bearish_fvg`. Phải áp dụng cùng
+  contract cho preferred và fallback selection.
+- Structural execution zone là proximal sub-zone nằm hoàn toàn trong source
+  zone, có width theo `execution_zone_width_atr_by_quality` (hiện tại `0.25
+  ATR`). Sau khi có SL/TP1, final zone là giao với vùng đạt
+  `execution_zone_min_effective_rr`; giao rỗng phải trả reason code rõ ràng và
+  không được tạo entry có thể execution.
+- TP1 phai qua quality validator: clearance khoi far edge ≥ `0.15 ATR`, nominal base RR ≥1.0, effective base RR ≥1.3. Target zone fail phai thu zone ke tiep; khong tao TP ao.
 - `core/backtest_engine.py` phai ap dung `cooldown_bars` sau khi thoat lenh de tranh dem trung cung mot setup khi gia sideways trong entry zone.
 - AI commentary prompt phai co `entry_context`, gom entry/SL/TP/trang thai entry va `price_vs_zone`, de AI khong viet nhan dinh chung chung.
 - Scanner table phai hien thi `price_vs_zone` bang text ngan: `Trong vung`, `Gan vung`, `Con xa`, de trader khong can mo Detail moi biet gia dang o dau so voi entry.
@@ -266,6 +279,7 @@ Một task chỉ được coi là xong khi:
   - SL dung `scenario.stop_loss`.
   - TP dung TP dau tien trong `scenario.take_profit`.
 - Ket qua auto trade phai tra ve trong `output["auto_trade_results"]` de UI/log co the hien thi va debug.
+- `auto_trade_results` phai kem execution diagnostics. Manual order cung phai block khi current RR tai gia live khong dat.
 
 ## Telegram Alert Implementation Rules
 
@@ -317,6 +331,7 @@ Một task chỉ được coi là xong khi:
 - Hero bar mở rộng: thêm Điểm, R:R (kèm dải worst–best), Buy/Sell, Gap, Vĩ mô inline.
 - Panel "Số liệu giao dịch" + "Điểm phân tích" cố định cột phải, tái sử dụng `_dialog_card_*()`.
 - Có guard `if not self.row` → `"—"`, không crash.
+- Scanner Detail fallback RR tu scenario khop `best_side` neu row phang thieu field. Co entry nhung khong co TP1 that thi hien thi `N/A`, khong tao RR gia.
 
 ### 9. Dialog "Xem đầy đủ" upgrade
 - Bỏ 10 ô trùng tab Tổng quan, giữ 6 ô nhóm 2 khu vực có tiêu đề + tooltip.

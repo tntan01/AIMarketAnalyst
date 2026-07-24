@@ -64,7 +64,7 @@ class TelegramAlertService:
         entry_text = self._format_entry(entry_zone)
         sl = cand.get("stop_loss", "--")
         tp = self._format_take_profit(cand.get("take_profit"))
-        rr = cand.get("risk_reward", "--")
+        rr = self._format_risk_reward(cand)
         vol = cand.get("volume", "--")
         reason = str(cand.get("short_reason") or "")
 
@@ -227,6 +227,43 @@ class TelegramAlertService:
         if isinstance(value, list):
             return ", ".join(str(item) for item in value) or "--"
         return str(value or "--")
+
+    def _format_risk_reward(self, cand: dict[str, object]) -> str:
+        nominal = str(cand.get("risk_reward") or "--")
+        base = self._format_decimal(cand.get("expected_effective_rr_base"))
+        effective = self._format_decimal(cand.get("expected_effective_rr"))
+        effective_range = self._format_rr_range(cand.get("risk_reward_effective_range"))
+        nominal_range = self._format_rr_range(cand.get("risk_reward_range"))
+
+        parts: list[str] = []
+        if base:
+            parts.append(f"base {base} sau spread")
+        elif effective:
+            parts.append(f"thuc {effective} sau spread")
+        if effective_range:
+            parts.append(f"dai thuc {effective_range}")
+        elif nominal_range:
+            parts.append(f"dai {nominal_range}")
+        has_context = bool(parts)
+        if has_context and nominal != "--":
+            parts.append(f"danh nghia {nominal}")
+        return " | ".join(parts) if has_context else nominal
+
+    def _format_rr_range(self, value: object) -> str:
+        if not isinstance(value, dict):
+            return ""
+        best = self._format_decimal(value.get("best"))
+        worst = self._format_decimal(value.get("worst"))
+        if not best or not worst:
+            return ""
+        return best if best == worst else f"{worst}-{best}"
+
+    def _format_decimal(self, value: object) -> str:
+        try:
+            number = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return ""
+        return f"{number:.1f}"
 
     def _format_timestamp(self, value: str) -> str:
         cleaned = str(value or "").strip()

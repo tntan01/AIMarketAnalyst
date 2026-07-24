@@ -1067,6 +1067,12 @@ class ScannerScreen (QWidget ):
 
         for idx, order in enumerate(order_rows):
             direction = str(order.get("side", "")).lower()
+            price_digits = order.get("price_digits")
+            if not isinstance(price_digits, int):
+                normalized_symbol = "".join(
+                    c for c in str(order.get("symbol", "")).upper() if c.isalpha()
+                )
+                price_digits = 3 if normalized_symbol.endswith("JPY") else 5
 
             def styled_item(text: str, align=Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
                 item = QTableWidgetItem(text)
@@ -1090,19 +1096,23 @@ class ScannerScreen (QWidget ):
 
             # Entry
             entry = order.get("entry_price")
-            entry_text = f"{float(entry):.5f}" if entry is not None else "--"
-            table.setItem(idx, 3, styled_item(entry_text))
+            entry_text = f"{float(entry):.{price_digits}f}" if entry is not None else "--"
+            entry_item = styled_item(entry_text)
+            entry_tip = format_order_entry_tooltip(order)
+            if entry_tip:
+                entry_item.setToolTip(entry_tip)
+            table.setItem(idx, 3, entry_item)
 
             # SL
             sl = order.get("stop_loss")
-            sl_text = f"{float(sl):.5f}" if sl is not None else "--"
+            sl_text = f"{float(sl):.{price_digits}f}" if sl is not None else "--"
             sl_item = styled_item(sl_text)
             sl_item.setForeground(sell_color)
             table.setItem(idx, 4, sl_item)
 
             # TP
             tp = order.get("take_profit")
-            tp_text = f"{float(tp):.5f}" if tp is not None else "--"
+            tp_text = f"{float(tp):.{price_digits}f}" if tp is not None else "--"
             tp_item = styled_item(tp_text)
             tp_item.setForeground(buy_color)
             table.setItem(idx, 5, tp_item)
@@ -1113,23 +1123,15 @@ class ScannerScreen (QWidget ):
             table.setItem(idx, 6, styled_item(vol_text))
 
             # R:R — show range if available: "5.6 (2.9–5.6)"
-            rr = order.get("risk_reward")
-            rr_range = order.get("risk_reward_range")
-            if rr_range and isinstance(rr_range, dict):
-                best = rr_range.get("best")
-                worst = rr_range.get("worst")
-                if best is not None and worst is not None and best != worst:
-                    rr_text = f"{best:.1f} ({worst:.1f}–{best:.1f})"
-                elif best is not None:
-                    rr_text = f"{best:.1f}"
-                else:
-                    rr_text = str(rr) if rr else "--"
-            else:
-                rr_text = str(rr) if rr else "--"
-            table.setItem(idx, 7, styled_item(rr_text))
+            rr_text = format_order_rr_text(order)
+            rr_item = styled_item(rr_text)
+            rr_tooltip = format_order_rr_tooltip(order)
+            if rr_tooltip:
+                rr_item.setToolTip(rr_tooltip)
+            table.setItem(idx, 7, rr_item)
 
-            # Note
-            note = str(order.get("note", "") or order.get("message", ""))
+            # Note — with current RR diagnostic (Phase 9 shared formatter)
+            note = enrich_order_note_with_current_rr(order)
             note_item = QTableWidgetItem(note if note else "--")
             note_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             if note:
@@ -1192,6 +1194,15 @@ class ScannerScreen (QWidget ):
                     "volume": o.get("volume"),
                     "risk_reward": o.get("risk_reward", ""),
                     "risk_reward_range": o.get("risk_reward_range"),
+                    "entry_zone": o.get("entry_zone"),
+                    "source_zone": o.get("source_zone"),
+                    "structural_execution_zone": o.get("structural_execution_zone"),
+                    "rr_trimmed": o.get("rr_trimmed", False),
+                    "rr_trim_diagnostics": o.get("rr_trim_diagnostics"),
+                    "entry_zone_width": o.get("entry_zone_width"),
+                    "entry_zone_width_atr": o.get("entry_zone_width_atr"),
+                    "price_digits": o.get("price_digits"),
+                    "expected_effective_rr_base": o.get("expected_effective_rr_base"),
                     "note": str(o.get("message", o.get("status", ""))),
                 })
             return result

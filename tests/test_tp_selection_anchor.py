@@ -219,9 +219,10 @@ class TestFarTPUnchanged:
                                 market_regime={"primary": "trend_up"})
         assert plan is not None
         assert len(plan["take_profit"]) > 0
-        # TP should be at least 1.1050 (the far target)
-        assert plan["take_profit"][0] >= 1.1050, \
-            f"Far TP should not be skipped, got {plan['take_profit'][0]}"
+        # Phase 13C: TP uses boundary (low - buffer), not zone level directly.
+        # Zone low=1.1040 → TP = 1.1040 - 0.03*ATR ≈ 1.10394 < 1.1050
+        assert plan["take_profit"][0] >= 1.1039, \
+            f"Far boundary TP should be near zone low {plan['take_profit'][0]}"
 
     def test_sell_far_tp_unchanged(self):
         atr = 0.0020

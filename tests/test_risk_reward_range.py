@@ -16,6 +16,7 @@ import pytest
 
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput, build_trade_plan, reward_risk
+from core.scanner import scanner_row_from_analysis
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +174,16 @@ class TestRRRangeNone:
                 assert rr["best"] is None
                 assert rr["base"] is None
                 assert rr["worst"] is None
+                eff = plan["risk_reward_effective_range"]
+                assert eff["best"] is None
+                assert eff["base"] is None
+                assert eff["worst"] is None
                 assert plan["risk_reward"] is None
+                assert plan["risk_reward_base"] is None
+                assert plan["risk_reward_worst"] is None
+                assert plan["expected_effective_rr"] is None
+                assert plan["expected_effective_rr_base"] is None
+                assert plan["expected_effective_rr_worst"] is None
         # If plan is None, that's also valid (SL might be too tight)
 
 
@@ -228,3 +238,341 @@ class TestRRRangeFieldPresent:
         assert "risk_reward_range" in plan
         assert isinstance(plan["risk_reward_range"], dict)
         assert set(plan["risk_reward_range"].keys()) == {"best", "base", "worst"}
+
+    def test_new_rr_fields_present_in_valid_plan(self):
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"},
+                                spread_price=0.0001)
+        assert plan is not None
+
+        for key in (
+            "risk_reward_base",
+            "risk_reward_worst",
+            "expected_effective_rr_base",
+            "expected_effective_rr_worst",
+            "risk_reward_effective_range",
+        ):
+            assert key in plan
+
+        assert isinstance(plan["risk_reward_effective_range"], dict)
+        assert set(plan["risk_reward_effective_range"].keys()) == {"best", "base", "worst"}
+
+    def test_new_nominal_fields_match_rr_range(self):
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+
+        rr = plan["risk_reward_range"]
+        assert plan["risk_reward_base"] == rr["base"]
+        assert plan["risk_reward_worst"] == rr["worst"]
+
+    def test_effective_rr_fields_are_ordered(self):
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"},
+                                spread_price=0.0001)
+        assert plan is not None
+
+        assert plan["expected_effective_rr"] >= plan["expected_effective_rr_base"]
+        assert plan["expected_effective_rr_base"] >= plan["expected_effective_rr_worst"]
+
+        eff = plan["risk_reward_effective_range"]
+        assert eff["best"] == plan["expected_effective_rr"]
+        assert eff["base"] == plan["expected_effective_rr_base"]
+        assert eff["worst"] == plan["expected_effective_rr_worst"]
+
+    def test_scanner_row_copies_new_rr_fields_without_reinterpreting(self):
+        plan = {
+            "type": "buy",
+            "risk_reward": "1:2.4",
+            "risk_reward_base": 1.8,
+            "risk_reward_worst": 1.2,
+            "expected_effective_rr": 2.3,
+            "expected_effective_rr_base": 1.7,
+            "expected_effective_rr_worst": 1.1,
+            "risk_reward_range": {"best": 2.4, "base": 1.8, "worst": 1.2},
+            "risk_reward_effective_range": {"best": 2.3, "base": 1.7, "worst": 1.1},
+            "entry_zone": [1.095, 1.097],
+            "entry_status": "watch_zone",
+            "m15_quality": "loose",
+            "stop_loss": 1.093,
+            "take_profit": [1.105],
+        }
+        result = {
+            "symbol": "EUR/USD",
+            "scenario_scores": {"buy": {"signal_score": 80}, "sell": {"signal_score": 50}},
+            "trade_permission": {"status": "allowed"},
+            "scenarios": [plan],
+            "technical": {"price": 1.096, "atr_h4": 0.002},
+            "decision_engine": {"legacy_action": "watch", "decision": "WATCH_ONLY"},
+            "direction_bias": {"best_side": "buy"},
+        }
+
+        row = scanner_row_from_analysis(result)
+
+        assert row["risk_reward_base"] == plan["risk_reward_base"]
+        assert row["risk_reward_worst"] == plan["risk_reward_worst"]
+        assert row["expected_effective_rr_base"] == plan["expected_effective_rr_base"]
+        assert row["expected_effective_rr_worst"] == plan["expected_effective_rr_worst"]
+        assert row["risk_reward_effective_range"] == plan["risk_reward_effective_range"]
+
+
+# ===========================================================================
+# Phase 6: Cross-contract regression — lock RR anchor semantics
+# ===========================================================================
+
+
+class TestCrossContractAnchors:
+    """Verify that a single trade plan is consumed consistently by all layers:
+    plan → scanner row → gate → ranking.  These tests lock the anchor
+    semantics documented in docs/rr_anchor_semantics.md."""
+
+    # ------------------------------------------------------------------
+    # Plan-level: build_trade_plan anchor correctness
+    # ------------------------------------------------------------------
+
+    def test_plan_risk_reward_is_best_case_string(self):
+        """risk_reward must be '1:X.X' from best edge, never midpoint."""
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+        # Contract: risk_reward is a "1:X.X" string
+        assert isinstance(plan["risk_reward"], str)
+        assert plan["risk_reward"].startswith("1:")
+        # Contract: numeric value matches risk_reward_range.best (not base)
+        rr_str_val = float(plan["risk_reward"].split(":")[1])
+        assert rr_str_val == pytest.approx(plan["risk_reward_range"]["best"], abs=0.15)
+
+    def test_plan_expected_effective_rr_is_best_case_float(self):
+        """expected_effective_rr is best-case, after spread."""
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+        assert isinstance(plan["expected_effective_rr"], float)
+        assert plan["expected_effective_rr"] > 0
+        # effective_range best should match (allowing for spread effect)
+        eff_range = plan.get("risk_reward_effective_range")
+        if eff_range and eff_range.get("best") is not None:
+            assert plan["expected_effective_rr"] == pytest.approx(eff_range["best"], abs=0.15)
+
+    def test_plan_base_worst_is_conservative(self):
+        """Base and worst RR must be <= best RR for both nominal and effective."""
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+
+        # Nominal range
+        rr = plan["risk_reward_range"]
+        assert rr["best"] > rr["base"] > rr["worst"]
+
+        # Effective range
+        eff = plan.get("risk_reward_effective_range")
+        if eff and eff["best"] is not None:
+            assert eff["best"] > eff["base"] > eff["worst"]
+
+        # expected_effective_rr_base <= expected_effective_rr
+        assert plan["expected_effective_rr_base"] <= plan["expected_effective_rr"]
+
+    # ------------------------------------------------------------------
+    # Gate-level: gate uses base, not best
+    # ------------------------------------------------------------------
+
+    def test_gate_blocks_best_pass_base_fail(self):
+        """Gate must produce WATCH_ONLY when best RR passes but base fails."""
+        from core.trade_gate_engine import check_trade_gates
+
+        ctx = {
+            "terminal_connected": True,
+            "broker_logged_in": True,
+            "spread_status": "normal",
+            "data_quality_warning": False,
+            "high_impact_event_within_30m": False,
+            "m15_quality": "strict",
+            "score_gap": 20,
+            "min_buy_sell_score_gap": 10,
+            "zone_broken": False,
+            "daily_loss_limit_reached": False,
+            "weekly_loss_limit_reached": False,
+            "min_expected_effective_rr": 1.3,
+            "risk_reward": "1:2.5",
+            "expected_effective_rr": 2.5,               # best: passes
+            "expected_effective_rr_base": 1.1,           # base: fails
+            "expected_effective_rr_for_gate": 1.1,
+            "expected_effective_rr_source": "base",
+        }
+        result = check_trade_gates(ctx)
+        from core.reason_codes import EXPECTED_RR_TOO_LOW
+        assert EXPECTED_RR_TOO_LOW in result["warning_codes"]
+        assert result["decision_cap"] == "WATCH_ONLY"
+
+    # ------------------------------------------------------------------
+    # Ranking-level: ranking uses base, not best
+    # ------------------------------------------------------------------
+
+    def test_ranking_rr_bonus_uses_base_over_best(self):
+        """A row with best=2.5 (strong) but base=1.1 (no bonus) gets rr_bonus=0."""
+        from core.scanner_ranking_engine import calculate_opportunity_score
+
+        result = calculate_opportunity_score({
+            "final_score": 80,
+            "decision": "READY_TO_TRADE",
+            "price_vs_zone": "in_zone",
+            "expected_effective_rr": 2.5,
+            "expected_effective_rr_base": 1.1,
+            "spread_status": "normal",
+        })
+        assert result["score_breakdown"]["rr_bonus"] == 0
+
+    def test_ranking_safe_rr_uses_base_over_best(self):
+        """_safe_rr must prefer base over best over risk_reward string."""
+        from core.scanner import _safe_rr
+
+        # base available → use it
+        assert _safe_rr({
+            "expected_effective_rr_base": 1.1,
+            "expected_effective_rr": 2.5,
+            "risk_reward": "1:3.0",
+        }) == 1.1
+
+        # base missing → fallback best
+        assert _safe_rr({
+            "expected_effective_rr": 2.0,
+            "risk_reward": "1:1.8",
+        }) == 2.0
+
+        # both missing → fallback risk_reward string
+        assert _safe_rr({"risk_reward": "1:1.5"}) == 1.5
+
+        # all missing
+        assert _safe_rr({}) == 0.0
+
+    # ------------------------------------------------------------------
+    # Execution guard: current RR blocks/skips, never gate/ranking
+    # ------------------------------------------------------------------
+
+    def test_current_rr_guard_logic_does_not_affect_gate(self):
+        """Current RR being low must NOT affect the gate — only execution guard."""
+        from core.trade_gate_engine import check_trade_gates
+        from core.reason_codes import EXPECTED_RR_TOO_LOW
+
+        ctx = {
+            "terminal_connected": True,
+            "broker_logged_in": True,
+            "spread_status": "normal",
+            "data_quality_warning": False,
+            "high_impact_event_within_30m": False,
+            "m15_quality": "strict",
+            "score_gap": 20,
+            "min_buy_sell_score_gap": 10,
+            "zone_broken": False,
+            "daily_loss_limit_reached": False,
+            "weekly_loss_limit_reached": False,
+            "min_expected_effective_rr": 1.3,
+            "risk_reward": "1:2.5",
+            "expected_effective_rr": 2.5,
+            "expected_effective_rr_base": 1.8,
+            "expected_effective_rr_for_gate": 1.8,
+            "expected_effective_rr_source": "base",
+            # current_effective_rr is NOT in gate_context — gate doesn't see it
+        }
+        result = check_trade_gates(ctx)
+        # Gate should pass (base=1.8 >= 1.3), no current RR involvement
+        assert EXPECTED_RR_TOO_LOW not in result["warning_codes"]
+
+    # ------------------------------------------------------------------
+    # Legacy field immutability
+    # ------------------------------------------------------------------
+
+    def test_risk_reward_never_changed_to_base(self):
+        """risk_reward must always be best-case, never midpoint or worst."""
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+
+        rr_val = float(plan["risk_reward"].split(":")[1])
+        base_val = plan["risk_reward_range"]["base"]
+        # Contract: risk_reward matches BEST, not base
+        assert rr_val > base_val, \
+            f"risk_reward={rr_val} must be > base={base_val} (best edge > midpoint)"
+
+    def test_expected_effective_rr_never_changed_to_base(self):
+        """expected_effective_rr must always be best-case, never midpoint."""
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+
+        assert plan["expected_effective_rr"] > plan["expected_effective_rr_base"], \
+            f"expected_effective_rr={plan['expected_effective_rr']} must be > base={plan['expected_effective_rr_base']}"
+
+    # ------------------------------------------------------------------
+    # Field presence contract
+    # ------------------------------------------------------------------
+
+    def test_plan_contains_rr_and_execution_price_fields(self):
+        """Every valid plan must contain 8 RR anchor fields + 4 execution price fields."""
+        tech = _base_tech(1.1000, 0.0020,
+                          [_zone(1.0960, 1.0950, 1.0970, "strong", 75)],
+                          [_zone(1.1050, 1.1040, 1.1060, "strong", 70)])
+        smc = _base_smc()
+        smc["H4"]["swings"] = {"highs": [_swing(1.1050, 10)], "lows": [_swing(1.0940, 5)]}
+        plan = build_trade_plan("buy", _req(), tech, smc, candles, m15_candles=m15,
+                                market_regime={"primary": "trend_up"})
+        assert plan is not None
+
+        required_fields = [
+            # 8 RR anchor fields
+            "risk_reward",
+            "risk_reward_base",
+            "risk_reward_worst",
+            "risk_reward_range",
+            "risk_reward_effective_range",
+            "expected_effective_rr",
+            "expected_effective_rr_base",
+            "expected_effective_rr_worst",
+            # 4 execution price fields
+            "entry_price",
+            "entry_zone",
+            "stop_loss",
+            "take_profit",
+        ]
+        for field in required_fields:
+            assert field in plan, f"Missing field '{field}' in trade plan"

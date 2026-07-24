@@ -1,7 +1,28 @@
-# Báo cáo kiến trúc: Điểm "Vĩ mô" trên màn hình Chi tiết từ quét thị trường
+# Macro Score Architecture & Phase 15 Changelog
 
-**Ngày**: 2026-07-20
-**Trạng thái**: Điều tra — chỉ đọc code, không sửa
+**Last updated**: 2026-07-23
+**Status**: Production V1 stable, V2 in shadow data collection
+
+---
+
+## Phase 15 Changelog Summary
+
+| Phase | Date | Change | Impact |
+|-------|------|--------|--------|
+| **15A** | 2026-07-23 | Audit macro scoring contracts + tests | 15 tests, no code change |
+| **15B** | 2026-07-23 | Remove surplus weight redistribution in `score_scenario` | Confidence decrease no longer increases score |
+| **15C** | 2026-07-23 | Tier 2 calendar always neutral (buy=sell=5) | Calendar events no longer create fake directional bias |
+| **15C.1** | 2026-07-23 | Harden: `actual`/`forecast` diagnostic only, never directional | Event risk tracked as separate diagnostic field |
+| **15D** | 2026-07-23 | Add Macro V2 pair-relative shadow model | New `_compute_macro_v2()` — currency strength diff |
+| **15D.1** | 2026-07-23 | Harden V2: exact symmetry (sell=30-buy), missing→neutral | Added confidence + availability tracking |
+| **15D.2** | 2026-07-23 | Expose `macro_v2` in `latest_macro_context` + scanner | End-to-end shadow diagnostics |
+| **15E** | 2026-07-23 | Remove VIX/AI double-count from Tier 3 | AI stance only in Tier 1; VIX only via `correlation_adjustment` |
+| **15F** | 2026-07-23 | Add `macro_data_quality_detail` provenance breakdown | Per-component availability, source, freshness, confidence |
+| **15F.1** | 2026-07-23 | Fix rates availability (rate=0 valid), no re-fetch | Calendar confidence based on source fetch, not event count |
+| **15F.2** | 2026-07-23 | Rename yield spread: `yield_spread_2s10s` → `yield_spread_10y_5y` | ^TNX-^FVX = 10Y-5Y, deprecated alias kept |
+| **15G** | 2026-07-23 | V1 vs V2 comparison script + shadow metrics | `scripts/compare_macro_v1_v2.py` |
+| **15G.1–6** | 2026-07-23 | Sensitivity grid, fix symbol parsing, edge deadband | Config A (db=2) and B (db=3) candidates |
+| **15G.7** | 2026-07-23 | Forward outcome validation tool | `scripts/validate_macro_v2.py` — record/label/report |
 
 ---
 
@@ -17,7 +38,7 @@
 | `core/signal_engine.py` | Signal — `score_scenario()` kết hợp macro với technical/risk |
 | `core/scanner_ai_auditor.py` | AI audit — truyền `macro_score` vào prompt audit |
 | `controllers/scanner_controller.py` | Controller — gọi `NewsService.data_quality_flags()` lấy `macro_context` |
-| `services/news_service.py` | Service — `_compute_macro_tiers()` tính điểm 3 tier (0-30) |
+| `services/news_service.py` | Service — `_compute_macro_tiers()` tính 3-tier (0-30) + `_compute_macro_v2()` shadow |
 | `services/forex_factory_client.py` | Data — `calendar_events()` lấy lịch kinh tế từ ForexFactory |
 | `services/interest_rate_service.py` | Data — `get_latest_rates()` lấy lãi suất từ FRED + FF |
 | `services/calendar_helpers.py` | Utility — shared helpers |
@@ -70,9 +91,9 @@
 | **config/interest_rates.json** | `interest_rates.json` | `_load_fallback()` | Lãi suất tĩnh | Tier 1: fallback cuối cùng |
 | **Google News RSS** | `news_service.py` | `_macro_headlines()` | Headlines (title, published_utc) | Tier 1: stance analysis, Tier 3: sentiment |
 | **Official Statements RSS** | `news_service.py` | `_latest_official_statements()` | Phát biểu chính thức | Hotspot detection |
-| **Yahoo Finance (^VIX)** | `news_service.py` | `_fetch_vix()` | VIX index | Tier 3: VIX adjustment |
-| **Yahoo Finance (^TNX, ^FVX)** | `news_service.py` | `_fetch_yield_spread()` | 10Y-5Y yield spread | Tier 1: yield curve |
-| **AI Service (Gemini/DeepSeek)** | `news_service.py` | `_ai_currency_stance()` | hawkish/dovish/neutral per currency | Tier 1 + Tier 3: stance |
+| **Yahoo Finance (^VIX)** | `news_service.py` | `_fetch_vix()` | VIX index | Diagnostic only — Tier3 `vix_applied_to_score=false` (Phase 15E) |
+| **Yahoo Finance (^TNX, ^FVX)** | `news_service.py` | `_fetch_yield_spread()` | 10Y-5Y yield spread | Tier 1: yield curve (Phase 15F.2: renamed from 2s10s) |
+| **AI Service (Gemini/DeepSeek)** | `news_service.py` | `_ai_currency_stance()` | hawkish/dovish/neutral per currency | Tier 1 stance only (Phase 15E: removed from Tier 3) |
 | **Static Rules** | `news_service.py` | `SENTIMENT_LEXICON`, `EVENT_SEVERITY` | Keyword weights | Tier 2 + Tier 3: severity/sentiment |
 | **Disk Cache** | `forex_factory_client.py` | `_cached_calendar_events()` | Calendar events cached | Giảm HTTP calls |
 | **NewsService cache** | `news_service.py` | `_tier_scores_cache` | Tier scores per symbol | 5-min TTL |
@@ -211,43 +232,115 @@ Mỗi tier đóng góp vào điểm buy VÀ sell riêng biệt.
 
 **Lưu ý**: Yield spread có thể làm Tier 1 vượt quá 12 hoặc dưới 0 (không clamp).
 
-### Tier 2 — Lịch kinh tế (0-10)
+### Tier 2 — Lịch kinh tế (0-10 → luôn 5/5 trung lập)
 
-**File**: `news_service.py:822-899`
-**Input**: base currency, quote currency, events
+**File**: `news_service.py:_macro_tier2()`
+**Status**: **Phase 15C.1 — ALWAYS neutral (buy=sell=5)**
 
-| Thành phần | Giá trị |
-|-----------|--------|
-| Phạm vi thời gian | 72 giờ tới |
-| Event severity | 1 (thường), 2 (quan trọng), 3 (rất quan trọng) |
-| Time weight | 3.0 (<6h), 2.0 (<24h), 1.5 (<48h), 1.0 (<72h) |
-| Quality per event | `severity × time_weight` |
-| Điểm nền | 5 |
-| **Công thức** | `buy_cal = clamp(5 - base_quality, 1, 9)` |
-| | `sell_cal = clamp(5 - quote_quality, 1, 9)` |
+Trước đây: `buy_cal = clamp(5 - base_quality, 1, 9)` — sự kiện cho base currency làm giảm điểm buy.
+**Phase 15C.1 sửa**: Calendar events không có actual-vs-forecast → không được tạo directional bias.
+`buy_cal = sell_cal = 5` luôn luôn. `actual`/`forecast` chỉ dùng cho diagnostic `has_surprise_data`.
 
-**Ý nghĩa**: ÍT sự kiện quan trọng cho base currency → điểm buy CAO hơn (5 - 0 = 5). NHIỀU sự kiện → điểm thấp hơn (5 - 9 = -4 → clamp về 1).
+**Event risk** được theo dõi riêng qua `event_risk_score` và `event_risk_level` (low/medium/high) nhưng KHÔNG ảnh hưởng điểm directional.
 
-### Tier 3 — Tâm lý rủi ro & Địa chính trị (0-8)
+### Tier 3 — Tâm lý rủi ro & Địa chính trị (0-12)
 
-**File**: `news_service.py:918-1096`
-**Input**: currencies, headlines, hotspots
+**File**: `news_service.py:_macro_tier3()`
+**Status**: **Phase 15E — AI stance và VIX đã loại bỏ khỏi scoring**
 
-| Thành phần | Điểm | Công thức |
-|-----------|------|-----------|
-| Sentiment (lexicon) | Biến động | Quét headlines tìm 40+ từ khóa positive/negative, có negation detection |
-| Sentiment (AI) | Biến động | AI stance → score map: hawkish=-2, dovish=2, neutral=0 |
-| VIX adjustment | -3 đến +2 | <15: +2, <20: 0, <25: -1, <30: -2, ≥30: -3 |
-| Risk sentiment (0-8) | 0-8 | Raw sentiment mapped to 0-8 scale, split buy/sell dựa trên safe haven vs risk currency |
-| Geopolitical (0-4) | 0-4 | Dựa trên severity của hotspot keywords |
-| **Tổng Tier 3** | **0-12** | `risk_sentiment(0-8) + geopolitical(0-4)` |
-
-**Safe havens**: USD, JPY, CHF, XAU — được lợi khi risk_off
-**Risk currencies**: AUD, NZD, CAD — được lợi khi risk_on
+| Thành phần | Điểm | Ghi chú |
+|-----------|------|--------|
+| Sentiment (keyword lexicon) | Biến động | Quét headlines tìm 40+ từ khóa, có negation detection |
+| ~~Sentiment (AI)~~ | ~~Đã loại bỏ~~ | Phase 15E: `ai_sentiment_score * 3` không còn cộng vào raw_sentiment — AI stance chỉ ở Tier 1 |
+| ~~VIX adjustment~~ | ~~Đã loại bỏ~~ | Phase 15E: `vix_adj` không còn cộng vào raw_sentiment — VIX chỉ qua `correlation_adjustment()` |
+| Risk sentiment (0-8) | 0-8 | Raw sentiment mapped to 0-8, split buy/sell theo safe haven vs risk |
+| Geopolitical (0-4) | 0-4 | Severity của hotspot keywords |
 
 ---
 
-## 7. Giải thích từng Tier
+## 7. Phase 15B: `score_scenario` macro confidence fix
+
+**File**: `core/signal_engine.py:score_scenario()`
+
+**Trước**: `effective_macro_weight = macro_cap * conf`. Surplus weight từ macro được PHÂN PHỐI LẠI cho 5 technical categories. Khi confidence giảm, technical được tăng weight → tổng điểm TĂNG (84→87→89).
+
+**Sau (Phase 15B)**: Surplus weight bị DISCARD. Khi confidence giảm, điểm kỹ thuật không đổi, chỉ điểm macro giảm → tổng điểm GIẢM (84→80→77).
+
+```python
+# Before (bug):
+weights["macro"] = effective_macro_weight
+surplus = macro_cap - effective_macro_weight
+for k in tech_keys:
+    weights[k] += surplus_each  # WRONG: inflates tech scores
+
+# After (fix):
+weights["macro"] = effective_macro_weight
+# surplus discarded — technical scores unchanged
+```
+
+---
+
+## 8. Macro V2 — Pair-Relative Currency Strength (SHADOW)
+
+**File**: `services/news_service.py:_compute_macro_v2()`
+**Status**: Shadow mode — NOT used in scoring/gate/ranking
+
+### Formula
+
+```
+base_strength  = rate_score(base)  + trend_score(base)  + stance_score(base)   [0-12]
+quote_strength = rate_score(quote) + trend_score(quote) + stance_score(quote)  [0-12]
+pair_edge      = base_strength - quote_strength                                 [-12,+12]
+buy_v2         = round(clamp(15 + pair_edge * 1.25, 0, 30))
+sell_v2        = 30 - buy_v2   (exact symmetry)
+confidence     = fraction of 6 components with valid data (0.0-1.0)
+```
+
+### Key differences from V1
+
+| | V1 | V2 |
+|---|---|---|
+| Components | 3 tiers (rate, calendar, sentiment) | rate + trend + stance only |
+| Calendar | Neutral (5/5) | Not included |
+| VIX | Correlation adjustment only | Not included |
+| Symmetry | buy + sell can be anything | **buy + sell = 30 always** |
+| Base/quote reversal | Implicit via split scores | **Explicit via pair_edge sign flip** |
+| Missing data | Falls back to neutral | Confidence tracking per component |
+
+### Config candidates (tested in shadow, not production)
+
+| Config | Deadband | Multiplier | Behavior |
+|--------|----------|------------|----------|
+| A | 2 | 1.0 | \|edge\| ≤ 2 → neutral 15/15; else directional |
+| B | 3 | 1.0 | \|edge\| ≤ 3 → neutral 15/15; else directional |
+
+### Forward validation
+
+Tool: `scripts/validate_macro_v2.py` — record/label/report cycle.
+Data: `data/shadow_records.jsonl` (gitignored).
+Target: >=200 labeled rows + >=5 trading days before rollout decision.
+
+---
+
+## 9. Data Quality Provenance (Phase 15F)
+
+**File**: `services/news_service.py:_macro_data_quality_detail()`
+
+Per-component breakdown exposed at `latest_macro_context()["macro_data_quality_detail"]`:
+
+```json
+{
+  "rates": {"available": true, "source": "fred", "is_fallback": false, "confidence": 1.0},
+  "calendar": {"available": true, "source": "forex_factory", "event_count": 0, "confidence": 1.0},
+  "headlines": {"base_count": 3, "base_freshness": "fresh", "base_confidence": 1.0, ...},
+  "ai_stance": {"available": false, "source": "keyword_fallback", "confidence": 0.4},
+  "market_proxies": {"vix": {"available": true, "level": 18.5, ...}, "yield_spread": {...}}
+}
+```
+
+Key rule: **global headlines not counted for currency coverage** (`global_not_counted_for_coverage: true`).
+Calendar `available` = source fetch succeeded (not event_count > 0).
+Rate `available` = value parseable as float (rate=0 is valid data).
 
 ### Tier 1 (0-12): Lãi suất — "Tiền tệ nào đang thắt chặt?"
 

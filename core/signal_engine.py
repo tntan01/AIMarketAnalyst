@@ -112,14 +112,11 @@ def score_scenario(
     macro_cap = int(base_weights["macro"])
     conf = clamp(macro_confidence, 0.0, 1.0)
     effective_macro_weight = int(macro_cap * conf)
-    surplus = macro_cap - effective_macro_weight
     weights = dict(base_weights)
     weights["macro"] = effective_macro_weight
-    tech_keys = ["trend", "momentum", "location", "smc", "risk"]
-    surplus_each = surplus // len(tech_keys)
-    remainder = surplus % len(tech_keys)
-    for i, k in enumerate(tech_keys):
-        weights[k] = weights[k] + surplus_each + (1 if i < remainder else 0)
+    # Phase 15B: surplus weight from reduced macro confidence is DISCARDED,
+    # NOT redistributed to technical categories.  This ensures lower
+    # confidence never increases signal_score.
 
     trend_scaled = int(clamp(trend, 0, 25) * weights["trend"] / 25)
     momentum_scaled = int(clamp(momentum, 0, 20) * weights["momentum"] / 20)

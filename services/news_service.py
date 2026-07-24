@@ -108,6 +108,11 @@ class NewsService:
             return self._tier_scores_cache[cache_key]
 
         currencies = [part for part in symbol.split("/") if part]
+        if len(currencies) == 1 and len(currencies[0]) >= 6:
+            raw = currencies[0]
+            currencies = [raw[:3], raw[3:]]
+        base = currencies[0] if currencies else ""
+        quote = currencies[1] if len(currencies) > 1 else ""
         calendar = self._ff_client.calendar_events(currencies)
         events = calendar["events"]
         calendar_source = str(calendar["source"])
@@ -142,6 +147,14 @@ class NewsService:
                 "macro_score_raw": tier_scores["raw_total"],
             },
             "macro_data_quality": data_quality,
+            "macro_data_quality_detail": self._macro_data_quality_detail(
+                base=base, quote=quote, headlines=headlines, events=events,
+                calendar_source=calendar_source, calendar_warning=calendar_warning,
+                tier1_detail=tier_scores["tier1"]["detail"],
+                tier3_detail=tier_scores["tier3"]["detail"],
+                ai_available=ai_service is not None,
+            ),  # Phase 15F.1: provenance from pre-fetched data
+            "macro_v2": tier_scores.get("macro_v2"),  # Phase 15D.2: shadow diagnostics
             "warning": calendar_warning
             or ("" if events else "Không có dữ liệu sự kiện kinh tế sắp tới khớp cặp tiền trong nguồn đã kiểm tra."),
         }
@@ -730,6 +743,10 @@ class NewsService:
         raw_buy = tier1_buy + tier2_buy + tier3_buy
         raw_sell = tier1_sell + tier2_sell + tier3_sell
 
+        # Phase 15D: Macro V2 — pair-relative currency strength (shadow mode)
+        macro_v2 = self._compute_macro_v2(base, quote, base_stance, quote_stance,
+                                          tier1_detail)
+
         return {
             "tier1": {"buy": tier1_buy, "sell": tier1_sell, "detail": tier1_detail},
             "tier2": {"buy": tier2_buy, "sell": tier2_sell, "detail": tier2_detail},
@@ -740,6 +757,7 @@ class NewsService:
                 "buy": self._build_macro_reason(base, quote, base_stance, quote_stance, "buy", tier1_detail, tier2_detail, tier3_detail),
                 "sell": self._build_macro_reason(base, quote, base_stance, quote_stance, "sell", tier1_detail, tier2_detail, tier3_detail),
             },
+            "macro_v2": macro_v2,
         }
 
     def _ai_currency_stance(
@@ -810,9 +828,129 @@ Trả lời:"""
                     prev_fvx = float(fvx["Close"].iloc[-2])
                 prev_spread = prev_tnx - prev_fvx
                 steepening = spread > prev_spread
-            return {"spread": round(spread, 2), "tnx": tnx_close, "fvx": fvx_close, "steepening": steepening}
+            return {
+                "spread": round(spread, 2),
+                "tnx": tnx_close, "fvx": fvx_close, "steepening": steepening,
+                # Phase 15F.2: canonical field names (^TNX=10Y, ^FVX=5Y)
+                "ten_year_yield": round(float(tnx_close), 2),
+                "five_year_yield": round(float(fvx_close), 2),
+                "yield_spread_10y_5y": round(spread, 2),
+                # Deprecated alias — same value, remove after Phase 15G
+                "yield_spread_2s10s": round(spread, 2),
+                "_deprecated_alias": "yield_spread_2s10s is a 10Y-5Y spread (^TNX - ^FVX), kept for backward compat. Use yield_spread_10y_5y.",
+            }
         except Exception:
-            return {"spread": None, "tnx": None, "fvx": None}
+            return {
+                "spread": None, "tnx": None, "fvx": None,
+                "ten_year_yield": None, "five_year_yield": None,
+                "yield_spread_10y_5y": None,
+                "yield_spread_2s10s": None,
+            }
+
+    # --- Phase 15D.1: Macro V2 — pair-relative currency strength (hardened) ---
+
+    def _compute_macro_v2(
+        self, base: str, quote: str, base_stance: str, quote_stance: str,
+        tier1_detail: dict[str, object],
+    ) -> dict[str, object]:
+        """Compute pair-relative macro scores from currency strength.
+
+        base_strength and quote_strength from rate, trend, and stance.
+        pair_edge = base_strength - quote_strength.
+        Exact symmetry: sell_v2 = 30 - buy_v2 (buy computed by round/clamp).
+        Missing/unavailable data = neutral score (2), tracked in availability.
+        """
+        rates = self._load_interest_rates()
+        base_info = rates.get(base, {})
+        quote_info = rates.get(quote, {})
+
+        # --- Component availability ---
+        # Phase 15G.4: rate=0.0 is valid data; use type-check + parse, not bool()
+        def _rate_available(info: dict) -> bool:
+            v = info.get("rate") if isinstance(info, dict) else None
+            if v is None:
+                return False
+            try:
+                float(str(v).replace("%", ""))
+                return True
+            except (ValueError, TypeError):
+                return False
+
+        def _trend_available(info: dict) -> bool:
+            v = info.get("trend") if isinstance(info, dict) else None
+            return isinstance(v, str) and v.strip() in ("hike", "hold", "cut")
+
+        base_rate_avail = _rate_available(base_info)
+        quote_rate_avail = _rate_available(quote_info)
+        base_trend_avail = _trend_available(base_info)
+        quote_trend_avail = _trend_available(quote_info)
+        base_stance_avail = isinstance(base_stance, str) and base_stance.strip()
+        quote_stance_avail = isinstance(quote_stance, str) and quote_stance.strip()
+
+        # --- Currency strength components (0-4 each) ---
+        # Missing data → neutral score 2 (not 0 dovish/weak)
+
+        def _rate_score(info: dict, available: bool) -> tuple[int, bool]:
+            if not available:
+                return 2, False
+            try:
+                f = float(str(info.get("rate", 0)).replace("%", ""))
+            except (ValueError, TypeError):
+                return 2, False
+            return round(4 * min(abs(f), 5.0) / 5.0), True
+
+        def _trend_score(info: dict, available: bool) -> tuple[int, bool]:
+            trend_map = {"hike": 4, "hold": 2, "cut": 0}
+            if not available:
+                return 2, False
+            return int(trend_map.get(str(info.get("trend", "hold")), 2)), True
+
+        def _stance_score(stance: str, available: bool) -> tuple[int, bool]:
+            stance_map = {"hawkish": 4, "neutral": 2, "dovish": 0}
+            if not available:
+                return 2, False
+            return int(stance_map.get(stance.strip().lower(), 2)), True
+
+        base_rate, br_ok = _rate_score(base_info, base_rate_avail)
+        quote_rate, qr_ok = _rate_score(quote_info, quote_rate_avail)
+        base_trend, bt_ok = _trend_score(base_info, base_trend_avail)
+        quote_trend, qt_ok = _trend_score(quote_info, quote_trend_avail)
+        base_st, bs_ok = _stance_score(base_stance, base_stance_avail)
+        quote_st, qs_ok = _stance_score(quote_stance, quote_stance_avail)
+
+        # --- Currency strength (0-12) ---
+        base_strength = base_rate + base_trend + base_st
+        quote_strength = quote_rate + quote_trend + quote_st
+
+        # Pair edge: positive = base stronger → favors BUY  [-12, +12]
+        pair_edge = base_strength - quote_strength
+
+        # Exact symmetry: compute buy, derive sell = 30 - buy
+        scale = 30.0 / 24.0
+        buy_v2 = round(max(0.0, min(30.0, 15.0 + pair_edge * scale)))
+        sell_v2 = 30 - buy_v2
+
+        # Confidence: fraction of 6 components available
+        total_avail = sum([br_ok, qr_ok, bt_ok, qt_ok, bs_ok, qs_ok])
+        confidence = round(total_avail / 6.0, 2)
+
+        return {
+            "base_strength": base_strength,
+            "quote_strength": quote_strength,
+            "pair_edge": pair_edge,
+            "buy": buy_v2,
+            "sell": sell_v2,
+            "confidence": confidence,
+            "availability": {
+                "base_rate": br_ok, "quote_rate": qr_ok,
+                "base_trend": bt_ok, "quote_trend": qt_ok,
+                "base_stance": bs_ok, "quote_stance": qs_ok,
+            },
+            "components": {
+                "base": {"rate": base_rate, "trend": base_trend, "stance": base_st},
+                "quote": {"rate": quote_rate, "trend": quote_trend, "stance": quote_st},
+            },
+        }
 
     def _macro_tier1(self, base: str, quote: str, base_stance: str, quote_stance: str) -> tuple[int, int, dict[str, object]]:
         rates = self._load_interest_rates()
@@ -883,7 +1021,10 @@ Trả lời:"""
             "quote_trend": quote_info.get("trend", "hold"),
             "base_stance": base_stance,
             "quote_stance": quote_stance,
-            "yield_spread_2s10s": spread_val,
+            "yield_spread_2s10s": spread_val,  # deprecated alias (10Y-5Y)
+            "yield_spread_10y_5y": spread_val,  # Phase 15F.2: canonical name
+            "ten_year_yield": yield_spread_data.get("ten_year_yield"),
+            "five_year_yield": yield_spread_data.get("five_year_yield"),
             "yield_spread_tnx": yield_spread_data.get("tnx"),
             "yield_spread_fvx": yield_spread_data.get("fvx"),
             "yield_spread_steepening": yield_spread_data.get("steepening"),
@@ -915,6 +1056,7 @@ Trả lời:"""
         quote_total = 0
         base_events_detail: list[dict[str, object]] = []
         quote_events_detail: list[dict[str, object]] = []
+        has_surprise = False  # Phase 15C: track if any event has actual/forecast
 
         for event in events:
             currency = str(event.get("currency", ""))
@@ -943,6 +1085,21 @@ Trả lời:"""
             quality = int(quality_raw)
             if quality_raw > quality:
                 quality += 1
+
+            # Phase 15C: check for actual-vs-forecast surprise data
+            actual = event.get("actual")
+            forecast = event.get("forecast")
+            has_event_surprise = False
+            try:
+                if actual is not None and forecast is not None:
+                    actual_f = float(str(actual).replace("%", ""))
+                    forecast_f = float(str(forecast).replace("%", ""))
+                    if forecast_f != 0:
+                        has_event_surprise = True
+                        has_surprise = True
+            except (ValueError, TypeError):
+                pass
+
             event_info = {
                 "title": str(event.get("event", "")),
                 "time": event_time.isoformat(),
@@ -950,6 +1107,7 @@ Trả lời:"""
                 "severity": severity,
                 "time_weight": time_weight,
                 "quality": quality,
+                "has_surprise": has_event_surprise,
             }
 
             if currency == base:
@@ -961,10 +1119,24 @@ Trả lời:"""
                 quote_quality += quality
                 quote_events_detail.append(event_info)
 
-        buy_cal = 5 - base_quality
-        sell_cal = 5 - quote_quality
+        # Phase 15C.1: calendar events are ALWAYS directional-neutral
+        # until a standardized surprise-direction engine is implemented.
+        # actual/forecast are tracked as diagnostic only (has_surprise_data).
+        buy_cal = 5
+        sell_cal = 5
         buy_cal = max(1, min(9, buy_cal))
         sell_cal = max(1, min(9, sell_cal))
+
+        # Phase 15C: event risk diagnostic (severity × time, direction-neutral)
+        total_risk = base_quality + quote_quality
+        if total_risk >= 8:
+            risk_level = "high"
+        elif total_risk >= 4:
+            risk_level = "medium"
+        elif total_risk > 0:
+            risk_level = "low"
+        else:
+            risk_level = "none"
 
         detail = {
             "base_event_count": base_total,
@@ -972,6 +1144,9 @@ Trả lời:"""
             "base_quality": base_quality,
             "quote_quality": quote_quality,
             "next_72h_events": len(events),
+            "has_surprise_data": has_surprise,
+            "event_risk_score": total_risk,
+            "event_risk_level": risk_level,
             "base_events": base_events_detail,
             "quote_events": quote_events_detail,
         }
@@ -1067,9 +1242,10 @@ Trả lời:"""
                 idx = end
 
         # --- Combine AI + lexicon ---
-        if ai_sentiment_score is not None and ai_sentiment_score != 0:
-            raw_sentiment = ai_sentiment_score * 3 + raw_sentiment
+        # Phase 15E: AI stance already contributes via Tier 1 (stance delta).
+        # Tier 3 ai_sentiment_score is DIAGNOSTIC ONLY — not added to raw_sentiment.
         ai_used = ai_sentiment_score is not None and ai_sentiment_score != 0
+        # (ai_sentiment_score * 3 no longer added to raw_sentiment)
 
         # --- VIX adjustment ---
         vix_data = self._fetch_vix()
@@ -1086,7 +1262,8 @@ Trả lời:"""
                 vix_adj = -2
             else:
                 vix_adj = -3
-        raw_sentiment += vix_adj
+        # Phase 15E: VIX already contributes via correlation_adjustment().
+        # Tier 3 vix_adj is DIAGNOSTIC ONLY — not added to raw_sentiment.
 
         # --- Map raw sentiment to 0-8 ---
         MAX_ABS = 12.0
@@ -1162,9 +1339,11 @@ Trả lời:"""
             "raw_sentiment": raw_sentiment,
             "ai_sentiment_used": ai_used,
             "ai_sentiment_score": ai_sentiment_score,
+            "ai_applied_to_score": False,  # Phase 15E: only Tier 1 stance contributes
             "matched_terms": matched_terms,
             "vix_level": vix_level,
             "vix_adjustment": vix_adj,
+            "vix_applied_to_score": False,  # Phase 15E: only correlation_adjustment contributes
             "hotspot_count": len(hotspots),
             "hotspot_severity": hotspot_severity,
             "components": {
@@ -1212,6 +1391,151 @@ Trả lời:"""
             confidence -= 0.10
 
         return max(0.10, confidence)
+
+    # --- Phase 15F.1: Data quality provenance (uses pre-fetched data only) ---
+
+    def _macro_data_quality_detail(
+        self, *, base: str, quote: str,
+        headlines: list[dict[str, object]], events: list[dict[str, object]],
+        calendar_source: str, calendar_warning: str,
+        tier1_detail: dict[str, object], tier3_detail: dict[str, object],
+        ai_available: bool,
+    ) -> dict[str, object]:
+        """Per-component provenance from pre-fetched pipeline data.
+        Does NOT re-fetch VIX, yields, or rates.
+        """
+        now = datetime.now(UTC)
+
+        def _headline_age(hl: list[dict]) -> float | None:
+            newest = None
+            for h in hl:
+                pub = h.get("published_utc", "")
+                if not pub:
+                    continue
+                try:
+                    t = datetime.fromisoformat(str(pub).replace("Z", "+00:00"))
+                    if newest is None or t > newest:
+                        newest = t
+                except ValueError:
+                    pass
+            return round((now - newest).total_seconds() / 3600.0, 1) if newest else None
+
+        def _age_conf(age_hours: float | None) -> tuple[float, str]:
+            if age_hours is None:
+                return 0.0, "stale"
+            if age_hours <= 3:
+                return 1.0, "fresh"
+            if age_hours <= 6:
+                return 0.8, "recent"
+            if age_hours <= 12:
+                return 0.5, "aging"
+            return 0.2, "stale"
+
+        # --- Rates (from pre-loaded _load_interest_rates, already fetched) ---
+        rates = self._load_interest_rates()
+        base_info = rates.get(base, {})
+        quote_info = rates.get(quote, {})
+        rate_source = str(rates.get("_source", "unknown"))
+        rate_updated = rates.get("_updated")  # ISO timestamp or None
+        is_fallback = rate_source == "fallback"
+        # Confidence: degrade if fallback or stale (>7 days since update)
+        rate_conf = 1.0
+        if is_fallback:
+            rate_conf = 0.5
+        if rate_updated:
+            try:
+                age_days = (now - datetime.fromisoformat(str(rate_updated).replace("Z", "+00:00"))).days
+                if age_days > 30:
+                    rate_conf = min(rate_conf, 0.3)
+                elif age_days > 7:
+                    rate_conf = min(rate_conf, 0.6)
+            except (ValueError, TypeError):
+                rate_conf = min(rate_conf, 0.7)
+
+        # --- Calendar (from pre-fetched calendar_events) ---
+        cal_fetch_ok = str(calendar_warning) == "" or "no_fetch" not in str(calendar_warning).lower()
+        cal_avail = cal_fetch_ok and calendar_source != "none"
+        cal_conf = 1.0 if cal_avail else 0.0
+        if str(calendar_warning).strip():
+            cal_conf = min(cal_conf, 0.8)
+
+        # --- Headlines ---
+        base_headlines = [h for h in headlines if self._matches_currency(h, base)]
+        quote_headlines = [h for h in headlines if self._matches_currency(h, quote)]
+        global_headlines = [h for h in headlines
+                           if not self._matches_currency(h, base)
+                           and not self._matches_currency(h, quote)]
+        base_age = _headline_age(base_headlines)
+        quote_age = _headline_age(quote_headlines)
+        base_conf, base_fresh = _age_conf(base_age)
+        quote_conf, quote_fresh = _age_conf(quote_age)
+
+        # --- AI stance (from actual ai_service availability, not fetch) ---
+        stance_used = str(tier1_detail.get("base_stance", "")).strip()
+        stance_from_ai = bool(stance_used) and not (
+            stance_used in ("hawkish", "neutral", "dovish")
+            and not ai_available  # AI unavailable → keyword fallback
+        )
+        ai_is_fallback = not ai_available
+
+        # --- Market proxies (from tier1_detail and tier3_detail, pre-fetched) ---
+        vix_val = tier3_detail.get("vix_level")
+        vix_avail = vix_val is not None
+        yield_val = tier1_detail.get("yield_spread_10y_5y") or tier1_detail.get("yield_spread_2s10s")
+        yield_avail = yield_val is not None
+
+        return {
+            "rates": {
+                "available": bool(base_info) and bool(quote_info),
+                "source": rate_source,
+                "is_fallback": is_fallback,
+                "last_updated": rate_updated,
+                "confidence": round(rate_conf, 2),
+            },
+            "calendar": {
+                "available": cal_avail,
+                "source": str(calendar_source),
+                "warning": str(calendar_warning) if calendar_warning else None,
+                "event_count": len(events),
+                "has_warning": bool(str(calendar_warning).strip()),
+                "confidence": round(cal_conf, 2),
+            },
+            "headlines": {
+                "base_count": len(base_headlines),
+                "quote_count": len(quote_headlines),
+                "global_count": len(global_headlines),
+                "base_freshness": base_fresh,
+                "quote_freshness": quote_fresh,
+                "base_age_hours": base_age,
+                "quote_age_hours": quote_age,
+                "base_confidence": base_conf,
+                "quote_confidence": quote_conf,
+                "global_not_counted_for_coverage": True,
+            },
+            "ai_stance": {
+                "available": ai_available,
+                "source": "ai_service" if ai_available else "keyword_fallback",
+                "is_fallback": ai_is_fallback,
+                "stance_used_for_tier1": stance_used if stance_used else None,
+                "confidence": 1.0 if ai_available else 0.4,
+            },
+            "market_proxies": {
+                "vix": {
+                    "available": vix_avail,
+                    "source": "yahoo_finance" if vix_avail else "unavailable",
+                    "level": vix_val,
+                    "is_fallback": not vix_avail,
+                    "confidence": 1.0 if vix_avail else 0.0,
+                },
+                "yield_spread": {
+                    "available": yield_avail,
+                    "source": "yahoo_finance" if yield_avail else "unavailable",
+                    "spread_2s10s": yield_val,
+                    "is_fallback": not yield_avail,
+                    "confidence": 1.0 if yield_avail else 0.0,
+                },
+            },
+        }
 
     def _build_macro_reason(
         self,

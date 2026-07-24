@@ -105,7 +105,15 @@ def _gate_m15(context: dict[str, Any], result: dict[str, Any]) -> None:
 
 
 def _gate_expected_effective_rr(context: dict[str, Any], result: dict[str, Any]) -> None:
-    expected_effective_rr = context.get("expected_effective_rr")
+    # Phase 3: ưu tiên dùng base-case effective RR (midpoint anchor),
+    # fallback về best-case nếu base không có.
+    expected_effective_rr = context.get("expected_effective_rr_for_gate")
+    rr_source = str(context.get("expected_effective_rr_source", ""))
+
+    if expected_effective_rr is None:
+        expected_effective_rr = context.get("expected_effective_rr")
+        rr_source = "best_case_fallback"
+
     if expected_effective_rr is None:
         result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
         result["reasons"].append("Chưa có điểm vào — không tính được R:R kỳ vọng.")
@@ -118,8 +126,12 @@ def _gate_expected_effective_rr(context: dict[str, Any], result: dict[str, Any])
         result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
         nominal_rr = context.get("risk_reward", "")
         nominal_info = f" (danh nghĩa {nominal_rr})" if nominal_rr else ""
+        if rr_source == "base":
+            label = f"R:R base sau spread"
+        else:
+            label = f"R:R kỳ vọng sau spread"
         result["reasons"].append(
-            f"Tỷ lệ R:R kỳ vọng ({expected_effective_rr:.1f} sau spread{nominal_info}) thấp hơn mức tối thiểu ({min_expected_effective_rr:.1f})."
+            f"Tỷ lệ {label} ({expected_effective_rr:.1f}{nominal_info}) thấp hơn mức tối thiểu ({min_expected_effective_rr:.1f})."
         )
 
 

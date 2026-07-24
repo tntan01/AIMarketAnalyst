@@ -1,0 +1,2946 @@
+{
+  "rows": [
+    {
+      "symbol": "USDCAD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 57,
+      "risk_reward": "1:3.5",
+      "entry_zone_width": 0.00081,
+      "entry_zone_width_atr": 0.4471,
+      "tp1_source": "target_zone",
+      "tp1_clearance_atr": 1.0102,
+      "expected_effective_rr": 2.7725,
+      "expected_effective_rr_base": 1.6032,
+      "entry_zone": [
+        1.4081,
+        1.40891
+      ],
+      "opportunity_score": 76,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURGBP",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "sell",
+      "best_score": 61,
+      "risk_reward": "1:3.1",
+      "entry_zone_width": 0.00049,
+      "entry_zone_width_atr": 0.499,
+      "tp1_source": "target_zone",
+      "tp1_clearance_atr": 2.2606,
+      "expected_effective_rr": 2.5361,
+      "expected_effective_rr_base": 1.8498,
+      "entry_zone": [
+        0.85416,
+        0.85465
+      ],
+      "opportunity_score": 71,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "GBPJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 59,
+      "risk_reward": "1:2.2",
+      "entry_zone_width": 0.18139,
+      "entry_zone_width_atr": 0.5,
+      "tp1_source": "target_zone",
+      "tp1_clearance_atr": 1.3995,
+      "expected_effective_rr": 1.9761,
+      "expected_effective_rr_base": 1.3466,
+      "entry_zone": [
+        218.07961,
+        218.261
+      ],
+      "opportunity_score": 67,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "CHFJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 52,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        200.129,
+        200.441
+      ],
+      "opportunity_score": 66,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "GBPCHF",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 59,
+      "risk_reward": "1:2.5",
+      "entry_zone_width": 0.00081,
+      "entry_zone_width_atr": 0.4989,
+      "tp1_source": "target_zone",
+      "tp1_clearance_atr": 1.7616,
+      "expected_effective_rr": 2.2089,
+      "expected_effective_rr_base": 1.5586,
+      "entry_zone": [
+        1.08634,
+        1.08715
+      ],
+      "opportunity_score": 65,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURUSD",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "sell",
+      "best_score": 52,
+      "risk_reward": "1:2.9",
+      "entry_zone_width": 0.00083,
+      "entry_zone_width_atr": 0.4976,
+      "tp1_source": "target_zone",
+      "tp1_clearance_atr": 1.5289,
+      "expected_effective_rr": 2.6216,
+      "expected_effective_rr_base": 1.7237,
+      "entry_zone": [
+        1.14234,
+        1.14317
+      ],
+      "opportunity_score": 62,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "XAGUSD",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "sell",
+      "best_score": 58,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        59.399,
+        60.063
+      ],
+      "opportunity_score": 61,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.459999084472656,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AUDCHF",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 54,
+      "risk_reward": "1:2.8",
+      "entry_zone_width": 0.00053,
+      "entry_zone_width_atr": 0.5,
+      "tp1_source": "target_zone",
+      "tp1_clearance_atr": 1.1037,
+      "expected_effective_rr": 2.3033,
+      "expected_effective_rr_base": 1.3952,
+      "entry_zone": [
+        0.56942,
+        0.56995
+      ],
+      "opportunity_score": 60,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "USDCHF",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 59,
+      "risk_reward": null,
+      "entry_zone_width": 0.00081,
+      "entry_zone_width_atr": 0.5001,
+      "tp1_source": "none",
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        0.81343,
+        0.81424
+      ],
+      "opportunity_score": 59,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "USDJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 54,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        162.192,
+        162.43
+      ],
+      "opportunity_score": 58,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.459999084472656,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "GBPNZD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 53,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        2.2946,
+        2.2978
+      ],
+      "opportunity_score": 58,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AUDNZD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 53,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.19343,
+        1.19616
+      ],
+      "opportunity_score": 56,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURCAD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "sell",
+      "best_score": 52,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.60776,
+        1.60904
+      ],
+      "opportunity_score": 56,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "GBPAUD",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "sell",
+      "best_score": 53,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.92672,
+        1.9274
+      ],
+      "opportunity_score": 56,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "CADJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "buy",
+      "best_score": 52,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        114.682,
+        114.876
+      ],
+      "opportunity_score": 55,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "NZDUSD",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 47,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        0.5822,
+        0.5833
+      ],
+      "opportunity_score": 54,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AUDUSD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 49,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        0.69935,
+        0.6997
+      ],
+      "opportunity_score": 53,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AUDCAD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 48,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        0.98643,
+        0.98705
+      ],
+      "opportunity_score": 53,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "GBPUSD",
+      "market_regime": "range",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 48,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.34726,
+        1.34799
+      ],
+      "opportunity_score": 53,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURAUD",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 48,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.63698,
+        1.63961
+      ],
+      "opportunity_score": 52,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AUDJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 46,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        113.1,
+        113.386
+      ],
+      "opportunity_score": 51,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURCHF",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 44,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        0.92238,
+        0.92369
+      ],
+      "opportunity_score": 51,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.40999984741211,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURNZD",
+      "market_regime": "trend_down",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 44,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.95506,
+        1.95664
+      ],
+      "opportunity_score": 50,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "NZDJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 42,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        94.897,
+        95.005
+      ],
+      "opportunity_score": 49,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "EURJPY",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 41,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        185.922,
+        186.19
+      ],
+      "opportunity_score": 49,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "XAUUSD",
+      "market_regime": "trend_down",
+      "trade_permission": "blocked",
+      "best_side": "sell",
+      "best_score": 59,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        4099.246,
+        4112.096
+      ],
+      "opportunity_score": 20,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.459999084472656,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AUDAUC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "CADCAC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "CHFCHC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "EUREUC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "GBPGBC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDAUC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDCAC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDCHC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDEUC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDGBC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDHKD",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "USDUSC",
+      "market_regime": "unknown",
+      "trade_permission": "blocked",
+      "best_side": "stand_aside",
+      "best_score": 0,
+      "risk_reward": null,
+      "expected_effective_rr": null,
+      "opportunity_score": 0,
+      "scanner_group": "blocked"
+    },
+    {
+      "symbol": "GBPCAD",
+      "market_regime": "trend_up",
+      "trade_permission": "caution",
+      "best_side": "stand_aside",
+      "best_score": 46,
+      "risk_reward": null,
+      "entry_zone_width": null,
+      "entry_zone_width_atr": null,
+      "tp1_source": null,
+      "tp1_clearance_atr": null,
+      "expected_effective_rr": null,
+      "expected_effective_rr_base": null,
+      "entry_zone": [
+        1.87856,
+        1.87998
+      ],
+      "opportunity_score": 47,
+      "scanner_group": "blocked",
+      "macro_alignment_scores": {
+        "buy": 16,
+        "sell": 14
+      },
+      "macro_v2": {
+        "base_strength": 6,
+        "quote_strength": 4,
+        "pair_edge": 2,
+        "buy": 18,
+        "sell": 12,
+        "confidence": 0.33,
+        "availability": {
+          "base_rate": false,
+          "quote_rate": false,
+          "base_trend": false,
+          "quote_trend": false,
+          "base_stance": true,
+          "quote_stance": true
+        },
+        "components": {
+          "base": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 2
+          },
+          "quote": {
+            "rate": 2,
+            "trend": 2,
+            "stance": 0
+          }
+        }
+      },
+      "macro_data_quality_detail": {
+        "rates": {
+          "available": false,
+          "source": "unknown",
+          "is_fallback": false,
+          "last_updated": null,
+          "confidence": 1.0
+        },
+        "calendar": {
+          "available": true,
+          "source": "Calendar file cache",
+          "warning": null,
+          "event_count": 8,
+          "has_warning": false,
+          "confidence": 1.0
+        },
+        "headlines": {
+          "base_count": 0,
+          "quote_count": 1,
+          "global_count": 0,
+          "base_freshness": "stale",
+          "quote_freshness": "stale",
+          "base_age_hours": null,
+          "quote_age_hours": 16.3,
+          "base_confidence": 0.0,
+          "quote_confidence": 0.2,
+          "global_not_counted_for_coverage": true
+        },
+        "ai_stance": {
+          "available": true,
+          "source": "ai_service",
+          "is_fallback": false,
+          "stance_used_for_tier1": "neutral",
+          "confidence": 1.0
+        },
+        "market_proxies": {
+          "vix": {
+            "available": true,
+            "source": "yahoo_finance",
+            "level": 18.440000534057617,
+            "is_fallback": false,
+            "confidence": 1.0
+          },
+          "yield_spread": {
+            "available": true,
+            "source": "yahoo_finance",
+            "spread_2s10s": 0.25,
+            "is_fallback": false,
+            "confidence": 1.0
+          }
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-07-23T19:38:37+07:00",
+  "_redacted": true
+}

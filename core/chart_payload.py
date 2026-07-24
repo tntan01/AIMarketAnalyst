@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.market_models import Candle
+from core.scanner_ranking_engine import _find_scenario_for_side
 
 
 def build_chart_payload(candles_by_timeframe: dict[str, list[Candle]]) -> dict[str, list[dict[str, Any]]]:
@@ -86,22 +87,36 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
         timeframes_data[tf] = tf_data
 
     # Trade plan from scenarios
-    trade_plan = {"side": "neutral", "entry_zone": None, "stop_loss": None, "take_profit": None, "entry_status": "no_setup"}
+    trade_plan = {
+        "side": "neutral",
+        "entry_zone": None,
+        "execution_zone": None,
+        "source_zone": None,
+        "structural_execution_zone": None,
+        "rr_trim_diagnostics": None,
+        "invalid_reason": None,
+        "stop_loss": None,
+        "take_profit": None,
+        "entry_status": "no_setup",
+    }
     scenarios = result.get("scenarios", [])
     if isinstance(scenarios, list) and scenarios:
-        # Prefer the best-side scenario (first buy/sell entry), not just scenarios[0]
         best_side = result.get("decision_summary", {}).get("best_side")
-        primary = scenarios[0]
-        if best_side in ("buy", "sell"):
-            for sc in scenarios:
-                if isinstance(sc, dict) and sc.get("type") == best_side:
-                    primary = sc
-                    break
+        primary = _find_scenario_for_side(
+            scenarios,
+            str(best_side or ""),
+            fallback_to_first=best_side not in ("buy", "sell"),
+        )
         if isinstance(primary, dict):
             # Skip fallback scenarios — no real entry/SL/TP
             if primary.get("entry_zone_source") != "fallback":
-                trade_plan["side"] = primary.get("type", "neutral")
+                trade_plan["side"] = primary.get("type") or primary.get("side") or "neutral"
                 trade_plan["entry_zone"] = primary.get("entry_zone")
+                trade_plan["execution_zone"] = primary.get("entry_zone")
+                trade_plan["source_zone"] = primary.get("source_zone")
+                trade_plan["structural_execution_zone"] = primary.get("structural_execution_zone")
+                trade_plan["rr_trim_diagnostics"] = primary.get("rr_trim_diagnostics")
+                trade_plan["invalid_reason"] = primary.get("invalid_reason")
                 trade_plan["stop_loss"] = primary.get("stop_loss")
                 trade_plan["take_profit"] = primary.get("take_profit")
                 trade_plan["entry_status"] = primary.get("entry_status", "no_setup")
@@ -130,8 +145,20 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
         if price is not None:
             levels.append({"price": price, "label": "TP", "type": "take_profit"})
 
-    # Build zones (entry zone rectangle)
+    # Source is reference-only; execution permission always uses entry_zone.
     zones = []
+    source = trade_plan["source_zone"]
+    if isinstance(source, dict):
+        source_from = _to_float(source.get("original_low"))
+        source_to = _to_float(source.get("original_high"))
+        if source_from is not None and source_to is not None:
+            zones.append({
+                "from": source_from,
+                "to": source_to,
+                "label": "Source",
+                "type": "source_zone",
+                "execution_eligible": False,
+            })
     entry = trade_plan["entry_zone"]
     if isinstance(entry, list) and len(entry) == 2:
         entry_from = _to_float(entry[0])
@@ -142,6 +169,7 @@ def build_full_chart_payload(symbol: str, result: dict, active_timeframe: str = 
                 "to": entry_to,
                 "label": "Entry",
                 "type": "entry_zone",
+                "execution_eligible": True,
             })
 
     # Current price

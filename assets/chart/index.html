@@ -14,6 +14,9 @@
     #timeframe-selector button { background: #1e2227; color: #9ca3af; border: 1px solid #374151; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: Arial, sans-serif; }
     #timeframe-selector button:hover { background: #2d3238; color: #e5e7eb; }
     #timeframe-selector button.active { background: #374151; color: #f3f4f6; border-color: #6b7280; }
+    #source-zone-toggle { position: absolute; top: 42px; right: 10px; z-index: 10; display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; background: rgba(30, 34, 39, 0.92); color: #9ca3af; border: 1px solid #374151; border-radius: 4px; cursor: pointer; font-size: 11px; user-select: none; }
+    #source-zone-toggle:hover { color: #e5e7eb; background: #2d3238; }
+    #source-zone-toggle input { width: 14px; height: 14px; margin: 0; accent-color: #6b7280; cursor: pointer; }
     #empty-state, #error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; }
     #watermark { position: absolute; bottom: 8px; left: 10px; color: #6b7280; font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
     
@@ -23,6 +26,8 @@
     body.light-theme #timeframe-selector button { background: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
     body.light-theme #timeframe-selector button:hover { background: #e5e7eb; color: #1f2937; }
     body.light-theme #timeframe-selector button.active { background: #D94625; color: #ffffff; border-color: #D94625; }
+    body.light-theme #source-zone-toggle { background: rgba(243, 244, 246, 0.94); color: #6b7280; border-color: #d1d5db; }
+    body.light-theme #source-zone-toggle:hover { background: #e5e7eb; color: #1f2937; }
     body.light-theme #empty-state, body.light-theme #error-state, body.light-theme #watermark { color: #9ca3af; }
     ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
   </style>
@@ -36,6 +41,10 @@
       <button data-tf="H1">H1</button>
       <button data-tf="M15">M15</button>
     </div>
+    <label id="source-zone-toggle" title="Vùng cấu trúc tham khảo, không dùng để vào lệnh">
+      <input id="source-zone-checkbox" type="checkbox" aria-label="Hiện vùng cấu trúc">
+      <span>Vùng cấu trúc</span>
+    </label>
     <div id="empty-state">Chưa có dữ liệu biểu đồ</div>
     <div id="error-state">Không thể tải biểu đồ</div>
     <div id="watermark">AI Market Analyst</div>
@@ -51,6 +60,7 @@
     var _zones = [];
     var _payload = null;
     var _activeTF = 'H1';
+    var _showSourceZone = false;
 
     var COLORS = {
       bg: '#101214', text: '#f3f4f6', grid: '#1e2227', border: '#2d3238',
@@ -76,6 +86,17 @@
 
     function _hide(id) { var el = document.getElementById(id); if (el) el.style.display = 'none'; }
     function _show(id) { var el = document.getElementById(id); if (el) el.style.display = 'block'; }
+
+    function _resetSourceZoneToggle() {
+      _showSourceZone = false;
+      var sourceCheckbox = document.getElementById('source-zone-checkbox');
+      if (sourceCheckbox) sourceCheckbox.checked = false;
+      var sourceToggle = document.getElementById('source-zone-toggle');
+      if (!sourceToggle) return;
+      var zones = (_payload && _payload.zones) || [];
+      var hasSource = zones.some(function(zone) { return zone.type === 'source_zone'; });
+      sourceToggle.style.display = hasSource ? 'inline-flex' : 'none';
+    }
 
     function _addSeries(seriesType, options) {
       if (!_chart || !window.LightweightCharts) return null;
@@ -263,23 +284,28 @@
 
       for (var z = 0; z < zones.length; z++) {
         var zn = zones[z];
+        var isSource = zn.type === 'source_zone';
+        if (isSource && !_showSourceZone) continue;
+        var drawColor = isSource ? COLORS.neutral : zoneColor;
+        var upperTitle = isSource ? 'Source zone' : 'Entry+';
+        var lowerTitle = isSource ? '' : 'Entry-';
         try {
           var pl = _candleSeries.createPriceLine({
             price: zn.to,
-            color: zoneColor,
+            color: drawColor,
             lineWidth: 1,
-            lineStyle: 2,
+            lineStyle: isSource ? 4 : 2,
             axisLabelVisible: true,
-            title: 'Entry+',
+            title: upperTitle,
           });
           _priceLines.push(pl);
           pl = _candleSeries.createPriceLine({
             price: zn.from,
-            color: zoneColor,
+            color: drawColor,
             lineWidth: 1,
-            lineStyle: 2,
-            axisLabelVisible: true,
-            title: 'Entry-',
+            lineStyle: isSource ? 4 : 2,
+            axisLabelVisible: !isSource,
+            title: lowerTitle,
           });
           _priceLines.push(pl);
         } catch(e) {}
@@ -330,6 +356,7 @@
       // From zones (Entry)
       var zones = _payload.zones || [];
       for (var j = 0; j < zones.length; j++) {
+        if (zones[j].type === 'source_zone' && !_showSourceZone) continue;
         if (typeof zones[j].from === 'number' && isFinite(zones[j].from)) {
           prices.push(zones[j].from);
         }
@@ -380,6 +407,7 @@
       try {
         _payload = payload;
         _activeTF = payload.active_timeframe || 'H1';
+        _resetSourceZoneToggle();
 
         // Theme configuration
         var isLight = payload.theme === 'light';
@@ -480,6 +508,14 @@
       buttons[i].addEventListener('click', function(e) {
         var tf = this.getAttribute('data-tf');
         if (tf) switchTimeframe(tf);
+      });
+    }
+
+    var sourceCheckbox = document.getElementById('source-zone-checkbox');
+    if (sourceCheckbox) {
+      sourceCheckbox.addEventListener('change', function() {
+        _showSourceZone = this.checked === true;
+        reloadChart();
       });
     }
 

@@ -45,6 +45,7 @@ MT5_NOT_READY = "MT5_NOT_READY"
 # ---------------------------------------------------------------------------
 EXPECTED_RR_OK = "EXPECTED_RR_OK"
 EXPECTED_RR_TOO_LOW = "EXPECTED_RR_TOO_LOW"
+EXECUTION_ZONE_RR_EMPTY = "EXECUTION_ZONE_RR_EMPTY"
 
 # ---------------------------------------------------------------------------
 # Account guard
@@ -175,6 +176,7 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     # R:R
     EXPECTED_RR_OK: "Tỷ lệ R:R kỳ vọng đạt yêu cầu.",
     EXPECTED_RR_TOO_LOW: "Tỷ lệ R:R kỳ vọng thấp hơn mức tối thiểu, chỉ nên theo dõi.",
+    EXECUTION_ZONE_RR_EMPTY: "Execution zone không còn mức giá đạt R:R hiệu dụng tối thiểu.",
     # Account guard
     DAILY_LOSS_LIMIT_REACHED: "Đã chạm giới hạn thua lỗ trong ngày, tạm dừng giao dịch mới.",
     WEEKLY_LOSS_LIMIT_REACHED: "Đã chạm giới hạn thua lỗ trong tuần, tạm dừng giao dịch mới.",

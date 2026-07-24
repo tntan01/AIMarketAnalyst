@@ -214,7 +214,19 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "entry_status": best_plan.get("entry_status") if best_plan else "waiting_for_confirmation",
         "price_vs_zone": price_vs_zone,
         "risk_reward": risk_reward,
+        "risk_reward_base": best_plan.get("risk_reward_base") if best_plan else None,
+        "risk_reward_worst": best_plan.get("risk_reward_worst") if best_plan else None,
         "risk_reward_range": best_plan.get("risk_reward_range") if best_plan else None,
+        "risk_reward_effective_range": best_plan.get("risk_reward_effective_range") if best_plan else None,
+        # Phase 13A: entry zone & TP1 quality diagnostics
+        "entry_zone_width": best_plan.get("entry_zone_width") if best_plan else None,
+        "entry_zone_width_atr": best_plan.get("entry_zone_width_atr") if best_plan else None,
+        "entry_zone_source": best_plan.get("entry_zone_source") if best_plan else None,
+        "source_zone": best_plan.get("source_zone") if best_plan else None,
+        "tp1_source": best_plan.get("tp1_source") if best_plan else None,
+        "tp1_clearance_from_far_edge": best_plan.get("tp1_clearance_from_far_edge") if best_plan else None,
+        "tp1_clearance_atr": best_plan.get("tp1_clearance_atr") if best_plan else None,
+        "tp1_effective_rr_base": best_plan.get("tp1_effective_rr_base") if best_plan else None,
         "macro_score": macro_score,
         "macro_bias": macro_bias,
         "macro_confidence": round(macro_confidence, 2),
@@ -252,6 +264,8 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "score_gap": score_gap,
         "m15_quality": m15_quality,
         "expected_effective_rr": expected_effective_rr,
+        "expected_effective_rr_base": best_plan.get("expected_effective_rr_base") if best_plan else None,
+        "expected_effective_rr_worst": best_plan.get("expected_effective_rr_worst") if best_plan else None,
         "stop_loss": best_plan.get("stop_loss") if best_plan else None,
         "take_profit": best_plan.get("take_profit") if best_plan else None,
         "entry_zone": best_plan.get("entry_zone") if best_plan else None,
@@ -377,7 +391,13 @@ def sort_scanner_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _safe_rr(row: dict[str, Any]) -> float:
-    """Get best available R:R value for sorting."""
+    """Get best available R:R value for sorting — base-case preferred (Phase 4A)."""
+    e_rr = row.get("expected_effective_rr_base")
+    if e_rr is not None:
+        try:
+            return float(e_rr)
+        except (ValueError, TypeError):
+            pass
     e_rr = row.get("expected_effective_rr")
     if e_rr is not None:
         try:

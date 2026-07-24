@@ -672,7 +672,7 @@ Bị chặn (blocked): Bị gate hoặc dữ liệu chặn, không nên giao d�
 | Entry | Vị trí giá so với vùng: Trong vùng / Gần vùng / Còn xa (+ tooltip entry_status) |
 | M15 | Chất lượng xác nhận M15: Chặt / Lỏng / Không đạt |
 | Điểm | opportunity_score (0-120) — điểm xếp hạng cơ hội (+ tooltip final_score breakdown) |
-| R:R | risk_reward (best case) + risk_reward_range (dải worst–best) — hiển thị dạng "5.6 (2.9–5.6)" |
+| R:R thực | `expected_effective_rr` best-case ở cột chính; base/current hiển thị trong breakdown/tooltip phù hợp |
 | Vĩ mô | Thuận / Trung tính / Ngược — mức độ đồng thuận của vĩ mô với hướng trade |
 | Xem | Mở màn hình Scanner Detail (chi tiết mã từ quét thị trường) |
 
@@ -700,6 +700,30 @@ Nếu có nhiều mã đạt điều kiện, MVP (phiên bản khả dụng tố
 ### Mục đích
 
 Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra khi người dùng bấm View Detail (xem chi tiết) ở bảng Scanner (bảng quét thị trường). Màn hình này hiển thị phân tích đầy đủ của mã đã chọn.
+
+R:R ưu tiên field top-level của scanner row và fallback sang scenario khớp `best_side`. Nếu đã có entry zone nhưng chưa có TP1 hợp lệ, màn hình hiển thị `N/A` cùng ghi chú chưa có TP1 hợp lệ nên chưa tính R:R; không hiển thị RR giả.
+
+### Hiển thị zone theo contract Phase 16
+
+- `Execution zone` là final `entry_zone` của scenario khớp chính xác
+  `best_side`. Đây là vùng duy nhất được dùng cho trạng thái in/out zone và
+  execution guard.
+- `Source zone` phải được gắn nhãn tham khảo; không dùng màu hoặc wording làm
+  người dùng hiểu nhầm đây là vùng có thể vào lệnh.
+- Trên chart chi tiết, source zone bị ẩn mặc định. Trader có thể bật
+  `Vùng cấu trúc` để xem hai biên nét thưa với một nhãn `Source zone`; control
+  phải ghi rõ đây là vùng tham khảo, không dùng để vào lệnh. Khi ẩn, source
+  zone không được ảnh hưởng đến price scale của chart.
+- Card/tooltip hiển thị đồng thời source zone, execution zone, width theo pip
+  và ATR, cùng lý do `unchanged`, `trimmed`, `not_applicable_no_tp1` hoặc
+  reject/empty.
+- Order dialog dùng final execution zone trong cột Entry và tooltip. Source
+  zone chỉ xuất hiện trong breakdown.
+- Chart vẽ source zone bằng style tham khảo và final execution zone bằng style
+  Entry. Payload source có `execution_eligible=false`; final entry có
+  `execution_eligible=true`.
+- Nếu không có final execution zone, UI hiển thị `--`/lý do reject và không
+  được fallback sang source zone hoặc scenario đối diện.
 
 ### Bố cục màn hình
 
@@ -1228,9 +1252,12 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 - Auto-entry is attached only to auto-scan mode and requires the user to check `Tự động vào lệnh MT5`. The UI must not place MT5 orders from one-shot scan.
 - The `Tự động vào lệnh MT5` toggle button must be visually highlighted when active, because enabling it can place real MT5 orders. Do not show a separate checkbox indicator inside this button; the whole button is the state indicator.
 - When auto-scan is active and a row becomes `ready`, the user-facing result should still show the normal scanner table and Telegram alert. Auto-entry execution status is returned separately as `auto_trade_results`.
+- Trước khi đặt auto order, controller lấy live ask/bid, kiểm tra giá còn trong entry zone và tính current effective RR. Lệnh bị skip nếu giá ngoài zone hoặc current RR thấp hơn `min_rr`; manual order bị block với cảnh báo tương ứng.
+- Order dialog giữ best-case RR ở text chính; tooltip hiển thị best/base/current. Entry tooltip hiển thị zone, live price và trạng thái in/out zone.
 - Auto-entry status should be displayed or logged with these counts when surfaced in UI: attempted, opened, skipped, and errors.
 - A skipped auto-entry is not a UI failure when the reason is "already has position/order"; it is the intended one-order-per-symbol guard.
 - Telegram summary should remain short: scanned count, ready count, ready symbol list with Entry/SL/TP. Watch-only symbols are intentionally omitted from Telegram summary.
+- Telegram detail dùng base effective RR làm giá trị chính khi có, fallback best effective, và giữ best nominal RR làm tham chiếu; current RR không thay thế dòng RR chính.
 
 ### Fallback Scenario Filtering
 

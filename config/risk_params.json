@@ -29,6 +29,24 @@
   "fib_tp1": 0.382,
   "fib_tp2": 0.618,
 
+  "tp1_min_clearance_atr": 0.15,
+  "tp1_min_effective_rr_base": 1.3,
+  "tp_target_buffer_atr": 0.03,
+  "entry_zone_buffer_atr": 0.05,
+  "entry_zone_max_width_atr": 0.50,
+  "entry_zone_half_width_atr": 0.25,
+  "execution_zone_width_atr_by_quality": {
+    "strong": 0.25,
+    "moderate": 0.25,
+    "weak": 0.25
+  },
+  "execution_zone_quality_thresholds": {
+    "strong": 70,
+    "moderate": 50
+  },
+  "execution_zone_min_effective_rr": 1.3,
+  "execution_zone_rr_tolerance": 0.0001,
+
   "regime_sl_multiplier": {
     "trend_up": 0.65,
     "trend_down": 0.65,
