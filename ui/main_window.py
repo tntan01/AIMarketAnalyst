@@ -217,9 +217,6 @@ class MainWindow(QMainWindow):
         self.sidebar.setVisible(open_)
         self.sidebar_toggle.setVisible(not open_)
         self._position_sidebar()
-        current = self.stack.currentWidget()
-        if current is not None and hasattr(current, 'set_equity_chart_visible'):
-            current.set_equity_chart_visible(not open_)
 
     def _position_sidebar(self) -> None:
         if not hasattr(self, "central_shell"):

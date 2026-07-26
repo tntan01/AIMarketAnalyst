@@ -18,12 +18,17 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
 import core.risk_engine as _re
+from core.risk_parameter_context import RiskParameterOverrides
+
+
+_CANDLE_CACHE: dict[tuple[str, str, str], dict[str, tuple[Any, ...]]] = {}
+PARAM_SWEEP_VERSION = "parameter-sweep-v2-shared-context"
 
 
 # ── Sweep configurations ─────────────────────────────────────────────────────
@@ -84,8 +89,8 @@ SECONDARY_SWEEP_CONFIGS = [
         test_values=[0.05, 0.10, 0.15, 0.20, 0.25],
     ),
     ParamSweepConfig(
-        json_key="entry_zone_atr_mult",
-        attr_name="ENTRY_ZONE_ATR_MULT",
+        json_key="entry_zone_half_width_atr",
+        attr_name="_ENTRY_ZONE_HALF_WIDTH_ATR",
         test_values=[0.20, 0.30, 0.35, 0.40, 0.50],
     ),
     ParamSweepConfig(
@@ -129,6 +134,11 @@ class SweepRunResult:
     expectancy_r: float = 0.0
     profit_factor: float = 0.0
     max_drawdown_r: float = 0.0
+    dataset_hash: str = ""
+    request_fingerprint: str = ""
+    provenance_fingerprint: str = ""
+    execution_mode: str = ""
+    lifecycle: str = "RESEARCH_ONLY"
     error: str | None = None
 
 
@@ -140,6 +150,10 @@ class SweepResult:
     stability_score: float | None = None   # 0-100, higher = more stable
     verdict: str = "UNKNOWN"               # STABLE / OVERFIT / INSENSITIVE / UNKNOWN
     recommendation: str | None = None       # human-readable recommendation
+    version: str = PARAM_SWEEP_VERSION
+    lifecycle: str = "RESEARCH_ONLY"
+    can_apply_config: bool = False
+    request_context: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Core sweep logic ──────────────────────────────────────────────────────────
@@ -152,27 +166,34 @@ def sweep_single_param(
     progress_callback: Callable[[str], None] | None = None,
     data_provider: Any = None,
     backtest_settings: dict[str, Any] | None = None,
+    request_templates: dict[str, Any] | None = None,
 ) -> SweepResult:
-    """Sweep a single parameter across all periods and symbols.
-
-    Monkey-patches the risk_engine module variable, runs a full system
-    backtest for each (value, period, symbol) combination, restores the
-    original value, and returns aggregated results.
-    """
+    """Sweep one parameter without mutating shared risk-engine globals."""
     log = progress_callback or (lambda _m: None)
     settings = backtest_settings or {}
-    result = SweepResult(json_key=config.json_key, attr_name=config.attr_name)
-
-    # Save original value
-    original = getattr(_re, config.attr_name)
+    templates = request_templates or {}
+    result = SweepResult(
+        json_key=config.json_key,
+        attr_name=config.attr_name,
+        request_context={
+            "symbols": list(symbols),
+            "periods": [
+                {
+                    "name": period.name,
+                    "start": period.start,
+                    "end": period.end,
+                    "expected_regime": period.expected_regime,
+                }
+                for period in periods
+            ],
+            "shared_request_templates": sorted(templates),
+        },
+    )
 
     total_runs = len(config.test_values) * len(periods) * len(symbols)
     run_idx = 0
 
     for val in config.test_values:
-        # Monkey-patch
-        setattr(_re, config.attr_name, val)
-
         for period in periods:
             for symbol in symbols:
                 run_idx += 1
@@ -190,6 +211,8 @@ def sweep_single_param(
                         end_str=period.end,
                         data_provider=data_provider,
                         settings=settings,
+                        parameter_overrides={config.json_key: val},
+                        request_template=templates.get(symbol),
                     )
                     if summary:
                         run_result.total_trades = summary.get("total_trades", 0)
@@ -197,6 +220,18 @@ def sweep_single_param(
                         run_result.expectancy_r = summary.get("expectancy_r", 0.0)
                         run_result.profit_factor = summary.get("profit_factor", 0.0)
                         run_result.max_drawdown_r = summary.get("max_drawdown_r", 0.0)
+                        trace = summary.get("_sweep_trace", {})
+                        if isinstance(trace, dict):
+                            run_result.dataset_hash = str(trace.get("dataset_hash") or "")
+                            run_result.request_fingerprint = str(
+                                trace.get("request_fingerprint") or ""
+                            )
+                            run_result.provenance_fingerprint = str(
+                                trace.get("provenance_fingerprint") or ""
+                            )
+                            run_result.execution_mode = str(
+                                trace.get("execution_mode") or ""
+                            )
                         log(f"  {label} ... {run_result.total_trades} trades, {run_result.expectancy_r:.2f}R")
                     else:
                         run_result.error = "no trades"
@@ -207,9 +242,6 @@ def sweep_single_param(
                     log(f"  {label} ... ERROR: {exc}")
 
                 result.runs.append(run_result)
-
-    # Restore original
-    setattr(_re, config.attr_name, original)
 
     # Compute stability
     _compute_stability(result)
@@ -225,6 +257,7 @@ def sweep_params(
     progress_callback: Callable[[str], None] | None = None,
     data_provider: Any = None,
     backtest_settings: dict[str, Any] | None = None,
+    request_templates: dict[str, Any] | None = None,
 ) -> list[SweepResult]:
     """Sweep multiple parameters. Returns one SweepResult per config."""
     log = progress_callback or (lambda _m: None)
@@ -241,6 +274,7 @@ def sweep_params(
             progress_callback=progress_callback,
             data_provider=data_provider,
             backtest_settings=backtest_settings,
+            request_templates=request_templates,
         )
         results.append(result)
 
@@ -259,6 +293,8 @@ def _run_single_backtest(
     end_str: str,
     data_provider: Any = None,
     settings: dict[str, Any] | None = None,
+    parameter_overrides: dict[str, float] | None = None,
+    request_template: Any = None,
 ) -> dict[str, Any] | None:
     """Run a single system backtest and return the trade summary."""
     from datetime import datetime as dt, timezone
@@ -273,19 +309,44 @@ def _run_single_backtest(
     start = dt.strptime(start_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     end = dt.strptime(end_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
-    # Build request
-    request = BacktestRequest(
-        symbol=symbol,
-        broker_symbol=_resolve_broker_symbol(symbol, data_provider),
-        start=start,
-        end=end,
-        initial_balance=float(settings.get("initial_balance", 10000)),
-        risk_percent=float(settings.get("risk_percent", 1.0)),
-        account_currency=settings.get("account_currency", "USD"),
-        lot_step=float(settings.get("lot_step", 0.01)),
-        minimum_lot=float(settings.get("minimum_lot", 0.01)),
-        contract_size_override=settings.get("contract_size_override"),
-    )
+    overrides = RiskParameterOverrides.from_mapping(parameter_overrides)
+    if isinstance(request_template, BacktestRequest):
+        # The controller-created template contains broker metadata, costs,
+        # account limits and execution mode. Only the research window and the
+        # isolated parameter under test are changed here.
+        request = replace(
+            request_template,
+            symbol=symbol,
+            start=start,
+            end=end,
+            purpose="RESEARCH",
+            risk_parameter_overrides=overrides,
+            frozen_strategy_config=None,
+        )
+    else:
+        # Compatibility path for CLI callers and legacy checkpoints.
+        request = BacktestRequest(
+            symbol=symbol,
+            broker_symbol=_resolve_broker_symbol(symbol, data_provider),
+            start=start,
+            end=end,
+            initial_balance=float(settings.get("initial_balance", 10000)),
+            risk_percent=float(settings.get("risk_percent", 1.0)),
+            account_currency=settings.get("account_currency", "USD"),
+            lot_step=float(settings.get("lot_step", 0.01)),
+            minimum_lot=float(settings.get("minimum_lot", 0.01)),
+            maximum_lot=float(settings.get("maximum_lot", 100.0)),
+            contract_size_override=settings.get("contract_size_override"),
+            spread_price=float(settings.get("spread_price", 0.0)),
+            entry_slippage_price=float(settings.get("entry_slippage_price", 0.0)),
+            exit_slippage_price=float(settings.get("exit_slippage_price", 0.0)),
+            commission_per_lot_round_turn=float(
+                settings.get("commission_per_lot_round_turn", 0.0)
+            ),
+            swap_long_per_lot_day=float(settings.get("swap_long_per_lot_day", 0.0)),
+            swap_short_per_lot_day=float(settings.get("swap_short_per_lot_day", 0.0)),
+            risk_parameter_overrides=overrides,
+        )
 
     # Load candles
     candles = _load_candles(request, data_provider)
@@ -297,6 +358,19 @@ def _run_single_backtest(
     if summary.get("total_trades", 0) == 0:
         return None
 
+    payload = result.to_dict()
+    provenance = payload.get("backtest_provenance", {})
+    manifest = payload.get("data_manifest", {})
+    summary["_sweep_trace"] = {
+        "dataset_hash": manifest.get("dataset_hash", "")
+        if isinstance(manifest, dict) else "",
+        "request_fingerprint": provenance.get("request_fingerprint", "")
+        if isinstance(provenance, dict) else "",
+        "provenance_fingerprint": provenance.get("provenance_fingerprint", "")
+        if isinstance(provenance, dict) else "",
+        "execution_mode": request.execution_mode,
+        "lifecycle": "RESEARCH_ONLY",
+    }
     return summary
 
 
@@ -315,54 +389,23 @@ def _resolve_broker_symbol(symbol: str, data_provider: Any = None) -> str:
 
 def _load_candles(request: Any, data_provider: Any = None) -> dict[str, list]:
     """Load OHLCV candles for all required timeframes."""
-    from datetime import timedelta
+    if data_provider is None:
+        return {timeframe: [] for timeframe in ("D1", "H4", "H1", "M15")}
+    from core.backtest_history import load_backtest_history
 
-    warmup_start = request.start - timedelta(days=520)
-    ranges = {
-        "D1": (warmup_start, request.end),
-        "H4": (warmup_start, request.end),
-        "H1": (warmup_start, request.end),
-        "M15": (request.start - timedelta(days=90), request.end),
-    }
-
-    result: dict[str, list] = {}
-    for timeframe, (start, end) in ranges.items():
-        if data_provider is not None:
-            try:
-                if timeframe == "M15":
-                    result[timeframe] = _load_m15_chunked(
-                        data_provider, request.broker_symbol, start, end,
-                    )
-                else:
-                    result[timeframe] = data_provider.load_ohlcv_range(
-                        request.broker_symbol, timeframe, start, end,
-                    )
-            except Exception:
-                result[timeframe] = []
-        else:
-            result[timeframe] = []
-
-    return result
+    return load_backtest_history(
+        data_provider,
+        request,
+        cache=_CANDLE_CACHE,
+        cache_limit=8,
+    )
 
 
 def _load_m15_chunked(data_provider: Any, broker_symbol: str, start: Any, end: Any) -> list:
     """Load M15 candles in chunks to avoid MT5 limits."""
-    from datetime import timedelta
+    from core.backtest_history import load_m15_history
 
-    all_candles: list = []
-    chunk_start = start
-    while chunk_start < end:
-        chunk_end = min(chunk_start + timedelta(days=60), end)
-        try:
-            chunk = data_provider.load_ohlcv_range(
-                broker_symbol, "M15", chunk_start, chunk_end,
-            )
-            if chunk:
-                all_candles.extend(chunk)
-        except Exception:
-            pass
-        chunk_start = chunk_end
-    return all_candles
+    return load_m15_history(data_provider, broker_symbol, start, end)
 
 
 # ── Stability analysis ────────────────────────────────────────────────────────
@@ -535,9 +578,16 @@ def export_results(
 
 def _results_to_dict(results: list[SweepResult]) -> dict:
     return {
+        "version": PARAM_SWEEP_VERSION,
+        "lifecycle": "RESEARCH_ONLY",
+        "can_apply_config": False,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "results": [
             {
+                "version": r.version,
+                "lifecycle": r.lifecycle,
+                "can_apply_config": r.can_apply_config,
+                "request_context": r.request_context,
                 "json_key": r.json_key,
                 "attr_name": r.attr_name,
                 "stability_score": r.stability_score,
@@ -553,6 +603,11 @@ def _results_to_dict(results: list[SweepResult]) -> dict:
                         "expectancy_r": run.expectancy_r,
                         "profit_factor": run.profit_factor,
                         "max_drawdown_r": run.max_drawdown_r,
+                        "dataset_hash": run.dataset_hash,
+                        "request_fingerprint": run.request_fingerprint,
+                        "provenance_fingerprint": run.provenance_fingerprint,
+                        "execution_mode": run.execution_mode,
+                        "lifecycle": run.lifecycle,
                         "error": run.error,
                     }
                     for run in r.runs

@@ -660,6 +660,9 @@ class MT5Service(DataProvider):
         spread_price = None
         spread_status = "unknown"
         contract_size = None
+        volume_min = None
+        volume_max = None
+        volume_step = None
         warning = None
         try:
             import MetaTrader5 as mt5
@@ -668,6 +671,9 @@ class MT5Service(DataProvider):
             if info:
                 spread_points = getattr(info, "spread", None)
                 contract_size = getattr(info, "trade_contract_size", None)
+                volume_min = getattr(info, "volume_min", None)
+                volume_max = getattr(info, "volume_max", None)
+                volume_step = getattr(info, "volume_step", None)
                 point_val = getattr(info, "point", None)
                 if spread_points is not None and point_val is not None:
                     spread_price = spread_points * point_val
@@ -686,6 +692,9 @@ class MT5Service(DataProvider):
             "spread_price": spread_price,
             "spread_status": spread_status,
             "contract_size": contract_size,
+            "volume_min": volume_min,
+            "volume_max": volume_max,
+            "volume_step": volume_step,
             "warning": warning,
         }
 
@@ -1124,7 +1133,14 @@ class MT5Service(DataProvider):
             profit = sum(float(getattr(deal, "profit", 0.0) or 0.0) for deal in exit_deals)
             commission = sum(float(getattr(deal, "commission", 0.0) or 0.0) for deal in ordered)
             swap = sum(float(getattr(deal, "swap", 0.0) or 0.0) for deal in ordered)
+            entry_comment = str(getattr(entry_deal, "comment", "") or "")
+            correlation_id = (
+                entry_comment.split("AMA-FWD:", 1)[1].strip()
+                if entry_comment.startswith("AMA-FWD:")
+                else ""
+            )
             trades.append({
+                "candidate_id": correlation_id,
                 "symbol": self.app_symbol_for_broker_symbol(symbol),
                 "broker_symbol": symbol,
                 "side": side,
@@ -1138,6 +1154,7 @@ class MT5Service(DataProvider):
                 "mt5_deal_id": int(getattr(exit_deal, "ticket", 0) or 0),
                 "mt5_order_id": int(getattr(exit_deal, "order", 0) or 0),
                 "mt5_position_id": position_id,
+                "comment": entry_comment,
             })
         return trades
 

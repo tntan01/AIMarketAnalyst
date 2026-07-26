@@ -40,6 +40,7 @@ def test_closed_trades_from_deals_parsing():
             swap=-0.5,
             ticket=1001,
             order=2001,
+            comment="AMA-FWD:abc123",
         ),
         MockDeal(
             symbol="EURUSDm",
@@ -54,6 +55,7 @@ def test_closed_trades_from_deals_parsing():
             swap=-0.5,
             ticket=1002,
             order=2002,
+            comment="",
         )
     ]
     
@@ -73,6 +75,7 @@ def test_closed_trades_from_deals_parsing():
     assert trade["result_amount"] == 46.0
     assert trade["mt5_deal_id"] == 1002
     assert trade["mt5_position_id"] == 123
+    assert trade["candidate_id"] == "abc123"
 
 def test_sync_mt5_closed_trades_crud(temp_db_path):
     service = JournalService(db_path=temp_db_path)

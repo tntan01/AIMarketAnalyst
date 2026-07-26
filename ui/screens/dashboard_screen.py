@@ -201,7 +201,7 @@ class DashboardScreen(QWidget):
         frame.setObjectName("StatusCard")
         frame.setProperty("state", state)
         frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        frame.setFixedHeight(54)
+        frame.setFixedHeight(44)
 
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(12, 0, 12, 0)
@@ -233,7 +233,9 @@ class DashboardScreen(QWidget):
         )
 
         text_layout.addWidget(value_label)
-        text_layout.addWidget(detail_label)
+        # Keep the detail label in the public card tuple for status updates,
+        # but the compact card intentionally renders one text line only.
+        detail_label.hide()
 
         layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(text_layout, 1)
@@ -1686,7 +1688,7 @@ QUAN TRỌNG:
                         if not self.stop_flag:
                             self.error.emit(str(exc))
 
-            worker = MarketHelpWorker(ai, prompt, 6000)
+            worker = MarketHelpWorker(ai, prompt, max_tokens=2500)
             self._market_help_worker = worker
 
             def on_chunk(text):

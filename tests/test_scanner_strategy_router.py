@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from config.settings import SymbolScanSettings
+from core.backtest_contract import validation_engine_contract
 from controllers.scanner_controller import ScannerController
 from core.backtest_config import (
     analysis_thresholds_for_symbol,
@@ -36,6 +37,7 @@ from core.scanner_strategy_router import (
     validate_backtest_config,
 )
 from services.settings_service import SettingsService
+from tests.phase7_helpers import ready_release_report
 
 
 def _scenario(side: str) -> dict:
@@ -100,9 +102,58 @@ def _row(**overrides) -> dict:
 
 
 def _validated_config(**overrides) -> dict:
+    engine_contract = validation_engine_contract()
     config = {
         "schema_version": BACKTEST_CONFIG_SCHEMA_VERSION,
         "validation_version": BACKTEST_VALIDATION_VERSION,
+        "engine_contract_version": engine_contract["contract_version"],
+        "engine_version": engine_contract["engine_version"],
+        "purpose": engine_contract["purpose"],
+        "execution_parity": engine_contract["execution_parity"],
+        "data_manifest_version": engine_contract[
+            "data_manifest_version"
+        ],
+        "point_in_time_data": engine_contract["point_in_time_data"],
+        "dataset_hash": "a" * 64,
+        "data_quality_status": "OK",
+        "execution_policy_version": engine_contract[
+            "execution_policy_version"
+        ],
+        "entry_fill_model": engine_contract["entry_fill_model"],
+        "exit_evaluation_model": engine_contract[
+            "exit_evaluation_model"
+        ],
+        "same_bar_ambiguity_policy": engine_contract[
+            "same_bar_ambiguity_policy"
+        ],
+        "execution_timeframe": engine_contract["execution_timeframe"],
+        "synthetic_trades_allowed": engine_contract[
+            "synthetic_trades_allowed"
+        ],
+        "execution_mode": engine_contract["execution_mode"],
+        "execution_model_version": engine_contract[
+            "execution_model_version"
+        ],
+        "cost_model_version": engine_contract["cost_model_version"],
+        "quote_conversion_model_version": engine_contract[
+            "quote_conversion_model_version"
+        ],
+        "cost_model_fingerprint": engine_contract[
+            "cost_model_fingerprint"
+        ],
+        "quote_conversion_fingerprint": engine_contract[
+            "quote_conversion_fingerprint"
+        ],
+        "candidate_ledger_version": engine_contract["candidate_ledger_version"],
+        "candidate_replay_version": engine_contract["candidate_replay_version"],
+        "frozen_strategy_version": engine_contract["frozen_strategy_version"],
+        "frozen_strategy_applied": engine_contract["frozen_strategy_applied"],
+        "oos_replay": engine_contract["oos_replay"],
+        "provenance_version": "backtest-provenance-v1",
+        "code_revision": "b" * 40,
+        "request_fingerprint": "c" * 64,
+        "execution_fingerprint": "d" * 64,
+        "provenance_fingerprint": "e" * 64,
         "config_id": "EURUSD-range-buy-v3",
         "status": "VALIDATED",
         "symbol": "EUR/USD",
@@ -127,14 +178,48 @@ def _validated_config(**overrides) -> dict:
         "oos_max_drawdown_r": 5.8,
         "expectancy_ci_low": 0.05,
         "expectancy_ci_high": 0.43,
+        "statistics_version": "backtest-statistics-v1",
+        "probability_positive_edge_pct": 97.5,
+        "one_sided_p_value": 0.025,
+        "minimum_required_trades": 8,
+        "statistical_power_passed": True,
         "walk_forward_windows": 3,
         "walk_forward_verdict": "ROBUST",
         "validated_at": "2026-07-24T00:00:00+00:00",
         "expires_at": "2027-07-24T00:00:00+00:00",
+        "release_report": ready_release_report(),
     }
     config.update(overrides)
     config["validation_fingerprint"] = validation_fingerprint(config)
     return config
+
+
+def test_previous_engine_config_is_invalid_after_phase0_lock():
+    config = _validated_config()
+    config["schema_version"] = 4
+    config["validation_version"] = "phase8-smc-v2-oos-v1"
+    config.pop("engine_contract_version")
+    config.pop("engine_version")
+    config.pop("purpose")
+    config.pop("execution_parity")
+    config["validation_fingerprint"] = validation_fingerprint(config)
+
+    decision = evaluate_scanner_candidate(_row(), config)
+
+    assert decision.branch == BRANCH_BACKTEST_INVALID
+    assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
+    assert "BACKTEST_SCHEMA_VERSION_MISMATCH" in decision.reason_codes
+    assert "BACKTEST_ENGINE_VERSION_MISMATCH" in decision.reason_codes
+
+
+def test_missing_execution_policy_fails_closed_as_version_mismatch():
+    config = _validated_config()
+    config["execution_policy_version"] = ""
+
+    status, reasons = validate_backtest_config(config, _row())
+
+    assert status == CONFIG_VERSION_MISMATCH
+    assert "BACKTEST_EXECUTION_POLICY_VERSION_MISMATCH" in reasons
 
 
 def test_default_rules_pass_only_with_clear_gap_score_and_rr():
@@ -467,6 +552,30 @@ def test_settings_service_round_trips_validation_metadata(tmp_path):
     assert loaded.backtest_config_id == "EURUSD-range-buy-v3"
     assert loaded.backtest_status == CONFIG_VALIDATED
     assert loaded.backtest_scorer_version == SCANNER_SCORER_VERSION
+    assert loaded.backtest_purpose == "VALIDATION"
+    assert loaded.backtest_execution_parity is True
+    assert loaded.backtest_data_manifest_version == (
+        validation_engine_contract()["data_manifest_version"]
+    )
+    assert loaded.backtest_point_in_time_data is True
+    assert loaded.backtest_dataset_hash == "a" * 64
+    assert loaded.backtest_data_quality_status == "OK"
+    engine_contract = validation_engine_contract()
+    assert loaded.backtest_execution_policy_version == (
+        engine_contract["execution_policy_version"]
+    )
+    assert loaded.backtest_entry_fill_model == "confirmation_close"
+    assert (
+        loaded.backtest_exit_evaluation_model
+        == "next_execution_candle"
+    )
+    assert loaded.backtest_same_bar_ambiguity_policy == "STOP_FIRST"
+    assert loaded.backtest_execution_timeframe == "M15"
+    assert loaded.backtest_synthetic_trades_allowed is False
+    assert (
+        loaded.backtest_engine_version
+        == "system-backtest-v2-execution-parity"
+    )
     assert loaded.backtest_expires_at.startswith("2027-07-24")
 
 

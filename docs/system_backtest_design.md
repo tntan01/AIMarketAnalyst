@@ -2,18 +2,187 @@
 
 > Quy tắc bắt buộc: file này phải luôn được lưu bằng **UTF-8**. Không dùng ANSI, Windows-1258, Windows-1252 hoặc bất kỳ encoding cục bộ nào. Khi chỉnh bằng VS Code, kiểm tra góc dưới bên phải phải là `UTF-8`. Khi đọc bằng PowerShell, dùng `Get-Content -Encoding utf8`.
 
-> Cập nhật 24/07/2026: các phần mô tả nhiều entry mode phía dưới là lịch sử
+> Cập nhật 25/07/2026: các phần mô tả nhiều entry mode phía dưới là lịch sử
 > thiết kế. Runtime hiện tại dùng một `BacktestRequest` và
 > `trade_open_block_reason()` thống nhất. Backtest result phát hành scoring
-> contract `setup_score` / `scanner-v3` / `scanner-features-v3`; chỉ config
-> vượt validation schema v4 (`phase8-smc-v2-oos-v1`) mới được Strategy Router dùng
-> trong `BACKTEST_VALIDATED`.
+> contract `setup_score` / `scanner-v3` / `scanner-features-v3`. Purpose
+> `RESEARCH` vẫn không được phát hành config live, nhưng màn hình Backtest mặc
+> định dùng execution model `system-backtest-v2-execution-parity` để kết quả
+> phản ánh chi phí thực thi.
+> Strategy Router chỉ nhận config schema v8
+> (`backtest-v8-statistical-validation-v1`) có purpose `VALIDATION`, đúng validation
+> engine version và `execution_parity=true`.
+>
+> Giai đoạn 1 của kiến trúc point-in-time đã chuyển replay sang dữ liệu
+> point-in-time: `Candle.time` là
+> thời điểm mở nến, `close_time = open_time + timeframe_duration`, snapshot
+> chỉ nhận nến có `close_time <= decision_time`, và mọi khoảng replay dùng
+> `[start, end)`.
+>
+> Giai đoạn 2 tinh gọn orchestration bằng `backtest-run-policy-v1`:
+> `VALIDATION` luôn dùng execution parity và tự chạy frozen IS/OOS cùng
+> Walk-Forward; `RESEARCH` mặc định parity. Nghiên cứu nhanh chỉ nằm trong khu
+> vực nâng cao và luôn `RESEARCH_ONLY`.
+>
+> Giai đoạn 4–5 tách toàn bộ workload chuyên sâu vào tab **Nghiên cứu nâng
+> cao** và dọn contract cũ. Portfolio là opt-in, Monte Carlo chạy khi đủ 30
+> trade hoặc theo yêu cầu, sweep dùng chung request/cost/data context. Hai flag
+> `backtest_config_v2`/`backtest_engine_v2` không còn trong runtime; Settings cũ
+> vẫn đọc được và snapshot lịch sử vẫn được giữ fail-closed.
 
 ## Runtime Contract Hiện Hành
 
+### Portfolio và workload nghiên cứu — kiến trúc hiện hành
+
+- Một lần chạy có thể nhận nhiều symbol. Mỗi symbol replay point-in-time độc
+  lập, sau đó trade candidate được ghép entry/exit theo portfolio clock chung.
+- Exit tại cùng timestamp được xử lý trước entry. Entry mới bị chặn khi vượt
+  tổng open risk, risk theo symbol, exposure tiền tệ, risk tương quan hoặc số
+  vị thế đồng thời.
+- Snapshot batch có `mode=portfolio_backtest`, tổng hợp `portfolio.per_symbol`,
+  trade được nhận và trade bị từ chối kèm reason code. Batch luôn
+  `RESEARCH_ONLY`, không áp trực tiếp thành config của một symbol.
+- Parameter sweep chạy bằng process `spawn`, có cancel, timeout,
+  checkpoint/resume và cache dữ liệu. Sweep nhận request template từ controller,
+  dùng cùng cost/account context và `backtest-history-loader-v1`; override đi
+  qua immutable execution context, không thay đổi global của `risk_engine`.
+- Portfolio chỉ chạy khi người dùng bật chủ động, mặc định tắt và không dùng
+  trong Validation. Monte Carlo tự chạy từ 30 trade hoặc theo yêu cầu; mọi
+  output nâng cao đều `RESEARCH_ONLY` và có manifest/provenance để audit.
+
+### Migration và release gate — Phase 7
+
+- Snapshot engine cũ được gắn `LEGACY_RESEARCH`, chỉ cho xem/phân tích.
+- Golden replay cố định khóa execution result fingerprint và không phụ thuộc
+  MT5 online.
+- Forward-demo reconciliation dùng snapshot forward hiện hành riêng, chạy cùng
+  khoảng thời gian với tài khoản demo; không tái sử dụng trade OOS lịch sử của
+  snapshot validation. Báo cáo đo sample, fill, rejection, adverse slippage và
+  suy giảm expectancy.
+- Engine shadow so candidate/outcome của output cũ và mới theo cùng identity.
+- Lệnh Scanner gửi sang MT5 mang comment correlation `AMA-FWD:*`; exporter chỉ
+  nhận lịch sử đóng trên tài khoản demo có correlation này. Ghép được bằng
+  symbol/side/time nhưng thiếu correlation vẫn bị chặn phát hành.
+- Config chỉ đạt `VALIDATED` khi release report đã review có `ready=true` và
+  khớp dataset/provenance; report cũng nằm trong validation fingerprint.
+- Quy trình vận hành chi tiết nằm tại `docs/backtest-release-runbook.md`.
+
 `core/system_backtest_engine.py` replay `analyze_symbol()` và tạo
 `BacktestResult` gồm request, summary, trades, equity curve, breakdowns,
-skipped setups, diagnostics và scoring contract.
+skipped setups, diagnostics, scoring contract, `backtest_contract` và
+`data_manifest`.
+
+Contract execution-parity hiện hành:
+
+- `contract_version=phase0-backtest-safety-v1`;
+- `purpose=RESEARCH`;
+- `engine_version=system-backtest-v2-execution-parity`;
+- `data_manifest_version=backtest-data-manifest-v2-session-aware`;
+- `point_in_time_data=true`;
+- `execution_policy_version=backtest-execution-sequence-v1`;
+- `entry_fill_model=confirmation_close`;
+- `exit_evaluation_model=next_execution_candle`;
+- `same_bar_ambiguity_policy=STOP_FIRST`;
+- `execution_timeframe=M15`;
+- `execution_mode=EXECUTION_PARITY`;
+- `execution_model_version=backtest-execution-parity-v1`;
+- `cost_model_version=backtest-cost-model-v1`;
+- `quote_conversion_model_version=point-in-time-close-v1`;
+- `synthetic_trades_allowed=true` khi purpose là `RESEARCH` và bắt buộc false
+  khi purpose là `VALIDATION`;
+- `execution_parity=true`;
+- `candidate_ledger_version=backtest-candidate-ledger-v1`;
+- `candidate_replay_version=candidate-replay-v1`;
+- `frozen_strategy_version=frozen-strategy-config-v1`;
+- validation chỉ hợp lệ khi `frozen_strategy_applied=true` và
+  `oos_replay=true`;
+- `validation_eligible=false` cho purpose `RESEARCH`, chỉ true khi request là
+  `VALIDATION` và toàn bộ data/cost contract đạt chuẩn.
+
+### Point-in-time data contract
+
+`core/backtest_market_data.py` là nguồn chuẩn cho thời gian dữ liệu:
+
+| Timeframe | Duration | Thời điểm khả dụng |
+|---|---:|---|
+| D1 | 1 ngày | `open_time + 1 ngày` |
+| H4 | 4 giờ | `open_time + 4 giờ` |
+| H1 | 1 giờ | `open_time + 1 giờ` |
+| M15 | 15 phút | `open_time + 15 phút` |
+
+Quy tắc runtime:
+
+1. Chuẩn hóa timestamp về UTC.
+2. Sort tăng dần và deduplicate theo timestamp bằng quy tắc xác định.
+3. Quyết định tại thời điểm đóng nến step, mặc định là H1.
+4. Snapshot chỉ nhìn nến đã đóng; nến H4/D1 đang hình thành không được vào
+   indicator, SMC hoặc scenario.
+5. Nến execution phải mở không sớm hơn `decision_time` và đóng trước `end`.
+6. Macro correlation context, khi bật, chỉ nhận nến D1 đã đóng tại
+   `decision_time`.
+7. IS/OOS dùng `[start, end)`: boundary thuộc OOS, không thuộc IS.
+
+`DataManifest` lưu timezone, coverage, số nến input/normalized, duplicate,
+duplicate xung đột, gap trong phiên, khoảng đóng hợp lệ, OHLC lỗi, session
+policy fingerprint và SHA-256 hash. `TradingSessionCalendar` phân loại theo
+Forex/kim loại/crypto, dùng giờ New York để xử lý DST và có lịch nghỉ/bảo trì
+có version. Kết quả
+`RESEARCH` vẫn có thể chạy khi manifest cảnh báo nhưng phải hiển thị cảnh báo.
+Request `VALIDATION` fail-closed nếu manifest không có
+`validation_eligible=true`.
+
+Khi tạo config, `data_manifest_version`, `point_in_time_data`, `dataset_hash`
+và `data_quality_status` được đưa vào validation fingerprint. Settings lưu
+nguyên các trường này và Strategy Router kiểm tra lại sau mỗi lần load.
+Thiếu manifest, hash không hợp lệ, quality khác `OK` hoặc contract không xác
+nhận point-in-time đều không thể vào branch `BACKTEST_VALIDATED`.
+
+Tương tự, execution policy version, entry/exit model, same-bar policy,
+execution timeframe và `synthetic_trades_allowed` cũng nằm trong fingerprint.
+Validation contract yêu cầu M15, `confirmation_close`,
+`next_execution_candle`, `STOP_FIRST` và
+`synthetic_trades_allowed=false`.
+
+### Candidate Ledger và frozen OOS replay
+
+Mỗi snapshot đã phân tích được ghi vào Candidate Ledger trước khi áp dụng bộ
+lọc chiến lược. Ledger lưu side, `setup_score` đúng phía, regime, R:R, nguồn
+scenario, điều kiện nền, lý do bị loại, trade mô phỏng và trạng thái thực thi.
+`final_score` không được dùng thay cho `setup_score`.
+
+Luồng validation hiện hành:
+
+1. Chạy IS ở purpose `RESEARCH` để tạo ledger.
+2. Optimizer chỉ đọc ledger IS và tạo `FrozenStrategyConfig` bất biến.
+3. Chạy lại engine từ đầu trên OOS ở purpose `VALIDATION`, balance ban đầu
+   sạch và frozen config được giữ nguyên.
+4. Chỉ trade thực thi của lần replay OOS được dùng tính metric validation.
+5. Validator đối chiếu version/fingerprint ledger, frozen config ID và tập
+   candidate đã thực thi. Thiếu hoặc sai bất kỳ bằng chứng nào đều giữ config
+   ở `DRAFT`.
+
+### Walk-Forward và statistical validation
+
+Walk-Forward dùng tháng lịch thật, không quy đổi một tháng thành 31 ngày. Mỗi
+window tối ưu Candidate Ledger IS, khóa config và replay OOS. Aggregate OOS
+khử trùng lặp theo candidate/trade identity và lưu fingerprint của tập trade
+duy nhất.
+
+Hai phương pháp mô phỏng được tách rõ:
+
+- bootstrap with replacement tạo phân phối uncertainty cho expectancy,
+  profit factor và win rate;
+- permutation without replacement chỉ thay đổi đường đi vốn, vì vậy chỉ dùng
+  cho max drawdown và chuỗi thua.
+
+Config chỉ được validation khi bootstrap CI dương, xác suất edge dương đạt
+ít nhất 95%, one-sided p-value không quá 0,05 và số OOS trade đạt sample size
+động theo effect/dispersion. `validated_to` không được ở tương lai hoặc cũ
+quá 365 ngày.
+
+`backtest_provenance` khóa dataset, code revision, request/risk, scoring,
+frozen config và execution contract. Validator đối chiếu từng component với
+evidence replay trước khi đưa provenance fingerprint vào config.
 
 Entry filter thống nhất:
 
@@ -31,8 +200,9 @@ portfolio gate và execution revalidation.
 Khi áp dụng kết quả Backtest cho Scanner:
 
 - cấu hình mới bắt đầu theo lifecycle validation, không tự được coi là hợp lệ;
-- `VALIDATED` cần train/OOS ranges, sample/metrics, confidence interval,
-  walk-forward `ROBUST`, fingerprint và expiry;
+- `VALIDATED` cần engine execution-parity, purpose `VALIDATION`, train/OOS
+  ranges, sample/metrics, confidence interval, walk-forward `ROBUST`,
+  fingerprint và expiry;
 - config cũ migrate thành `DRAFT`;
 - sai scorer/feature/schema hoặc hết hạn tạo `BACKTEST_INVALID`, không fallback
   sang auto-trade mặc định.
@@ -65,14 +235,15 @@ Backtest cần replay lại các lớp này theo dữ liệu lịch sử để t
 
 ### 1. Không Nhìn Dữ Liệu Tương Lai
 
-Tại mỗi bước backtest, engine chỉ được nhìn thấy các cây nến đã đóng trước hoặc tại thời điểm đang xét.
+Tại mỗi bước backtest, engine chỉ được nhìn thấy các cây nến có
+`close_time <= decision_time`.
 
 Ví dụ khi backtest tại `2025-03-10 14:00`, các input phải là:
 
-- `D1`: các nến D1 đã có tới thời điểm đó.
-- `H4`: các nến H4 đã có tới thời điểm đó.
-- `H1`: các nến H1 đã có tới thời điểm đó.
-- `M15`: các nến M15 đã có tới thời điểm đó.
+- `D1`: chỉ các nến D1 đã đóng tới thời điểm đó.
+- `H4`: chỉ các nến H4 đã đóng tới thời điểm đó.
+- `H1`: nến H1 vừa đóng có thể được dùng.
+- `M15`: chỉ các nến M15 đã đóng tới thời điểm đó.
 
 Không được dùng swing, ATR, EMA, SMC zone hoặc macro data từ tương lai.
 
@@ -161,15 +332,24 @@ class BacktestRequest:
     account_currency: str = "USD"
     lot_step: float = 0.01
     minimum_lot: float = 0.01
+    maximum_lot: float = 100.0
     contract_size_override: float | None = None
     timezone_name: str = "Asia/Ho_Chi_Minh"
     spread_price: float = 0.0
     slippage_price: float = 0.0
-    max_holding_bars: int = 96
-    setup_expiry_bars: int = 12
+    entry_slippage_price: float | None = None
+    exit_slippage_price: float | None = None
+    commission_per_lot_round_turn: float = 0.0
+    swap_long_per_lot_day: float = 0.0
+    swap_short_per_lot_day: float = 0.0
+    cost_model_configured: bool = False
+    max_holding_minutes: int = 1440
+    setup_expiry_minutes: int = 180
     step_timeframe: str = "H1"
+    execution_timeframe: str = "M15"
     allow_macro: bool = False
     conservative_same_bar: bool = True
+    execution_mode: str = "RESEARCH"
 
 @dataclass(slots=True)
 class BacktestTrade:
@@ -238,21 +418,22 @@ def run_system_backtest(
 ### Luồng Xử Lý
 
 ```text
-1. Validate request và dữ liệu.
-2. Xác định danh sách mốc thời gian cần replay, thường là từng nến H1.
-3. Tại mỗi mốc thời gian:
+1. Chuẩn hóa UTC, sort/deduplicate và tạo `DataManifest`.
+2. Validate request và chất lượng dữ liệu theo purpose.
+3. Xác định danh sách mốc đóng nến cần replay, thường là từng nến H1.
+4. Tại mỗi mốc thời gian:
    - Cắt D1/H4/H1/M15 tới mốc hiện tại.
    - Bỏ qua nếu chưa đủ warmup.
    - Gọi analyze_symbol().
    - Đọc decision, gate, scenario.
    - Nếu có setup hợp lệ thì tạo lệnh giả lập.
-4. Nếu đang có lệnh mở:
+5. Nếu đang có lệnh mở:
    - Không mở thêm lệnh cùng symbol.
    - Cập nhật lệnh bằng các nến sau entry.
-5. Khi SL/TP/expiry được kích hoạt:
+6. Khi SL/TP/expiry được kích hoạt:
    - Tính result_r.
    - Cập nhật balance/equity curve.
-6. Sau khi hết dữ liệu:
+7. Sau khi hết dữ liệu:
    - Đóng lệnh đang mở theo giá cuối hoặc đánh dấu expired/open.
    - Tính summary và breakdown.
 ```
@@ -613,16 +794,16 @@ choch_against_direction = smc_flags.get("choch_against_direction")
 
 ## Giả Lập Khớp Lệnh
 
-### Cơ Chế Entry Fill (Phase 1 cải tiến)
+### Cơ Chế Entry Fill Hiện Hành
 
 `find_entry_fill()` trong `core/system_backtest_engine.py` đã được sửa để yêu cầu **xác nhận đảo chiều** trước khi vào lệnh, thay vì fill ngay khi giá chạm zone lần đầu:
 
 ```python
-# Buy: nến M15 chạm zone VÀ close > zone_low (áp lực mua đẩy giá lên khỏi đáy zone)
+# RESEARCH compatibility: Buy
 if candle.close > zone_low:
     fill_price = candle.close + spread + slippage
 
-# Sell: nến M15 chạm zone VÀ close < zone_high (áp lực bán đẩy giá xuống khỏi đỉnh zone)
+# RESEARCH compatibility: Sell
 if candle.close < zone_high:
     fill_price = candle.close - spread - slippage
 ```
@@ -639,6 +820,13 @@ if candle.close < zone_high:
 - Tránh vào lệnh khi giá đang xuyên qua zone (không có dấu hiệu dừng)
 - Fill tại close (thực tế hơn) thay vì biên xấu nhất
 - Giảm tỉ lệ SL bị hit ngay sau entry
+
+Execution policy nằm tại `core/backtest_execution.py`, version
+`backtest-execution-sequence-v1`. Setup chỉ được fill nếu nến thực sự giao
+dịch trong entry zone và đóng cửa xác nhận. Gap nhảy hoàn toàn qua zone mà
+không có OHLC giao với zone không được xem là fill. Nếu giá fill sau
+spread/slippage đã nằm ngoài quan hệ `SL < entry < TP` cho BUY hoặc
+`TP < entry < SL` cho SELL thì trade plan bị loại.
 
 ### Stop Loss Buffer (Phase 1 cải tiến)
 
@@ -660,41 +848,31 @@ Bonus cho setup có liquidity_sweep + displacement + M15 strict đã bị **bỏ
 2. Giảm còn **+5** — cải thiện nhưng vùng 70-79 vẫn tệ nhất (win rate 22.2%)
 3. **Bỏ hẳn** — các điều kiện bonus xác nhận entry quá muộn (cuối sóng), không có giá trị dự đoán
 
-## Giả Lập SL/TP
+## Giả Lập SL/TP Hiện Hành
 
-Sau khi có lệnh, quét các nến M15 hoặc H1 sau entry.
+Sau khi fill tại close, engine bỏ toàn bộ high/low của nến fill và bắt đầu
+quét từ nến execution kế tiếp. Runtime ưu tiên và validation bắt buộc M15;
+research có thể fallback H1 nhưng contract phải ghi đúng timeframe thực tế.
 
-Nên dùng M15 nếu có để giảm sai số thứ tự chạm SL/TP.
+Trước khi xét high/low, engine kiểm tra gap tại open:
 
-Buy:
+- BUY: `open <= SL` thoát tại open; `open >= TP` chốt tại open.
+- SELL: `open >= SL` thoát tại open; `open <= TP` chốt tại open.
 
-```python
-if candle.low <= stop_loss:
-    result = "loss"
-    exit_price = stop_loss
-elif candle.high >= take_profit:
-    result = "win"
-    exit_price = take_profit
-```
-
-Sell:
-
-```python
-if candle.high >= stop_loss:
-    result = "loss"
-    exit_price = stop_loss
-elif candle.low <= take_profit:
-    result = "win"
-    exit_price = take_profit
-```
-
-Nếu trong cùng một nến chạm cả SL và TP, mặc định nên tính SL trước:
+Nếu trong cùng một nến **sau fill** chạm cả SL và TP mà không có
+lower-timeframe/tick path, policy mặc định là:
 
 ```text
-conservative_same_bar = True
+same_bar_ambiguity_policy = STOP_FIRST
 ```
 
-Lý do: OHLC không cho biết thứ tự giá di chuyển trong nến, tính SL trước là cách bảo thủ hơn.
+`TARGET_FIRST` chỉ được dùng cho nghiên cứu nhạy cảm; validation bắt buộc
+`STOP_FIRST`. Thời hạn setup và giữ lệnh dùng phút, không còn thay đổi ý nghĩa
+theo việc dữ liệu M15 có sẵn hay không.
+
+Mỗi trade lưu `execution_events`, `execution_policy_version`,
+`execution_timeframe`, `scenario_source` và `research_only` để truy vết thứ
+tự signal, activation, confirmation, fill và exit.
 
 ## Tính R Result
 
@@ -712,11 +890,20 @@ risk = abs(stop_loss - entry_price)
 result_r = (entry_price - exit_price) / risk
 ```
 
-Nếu có spread/slippage:
+Trong `EXECUTION_PARITY`, OHLC được xem là giá Bid giống chart MT5:
 
-- Buy entry tăng thêm slippage/spread.
-- Sell entry giảm thêm slippage/spread.
-- Reward giảm, risk tăng.
+- BUY vào Ask nên trả spread ở entry; BUY thoát Bid;
+- SELL vào Bid; SELL thoát Ask nên trả spread ở exit;
+- entry và exit đều chịu adverse slippage riêng;
+- spread nền của symbol được nhân hệ số phiên UTC;
+- commission tính theo lot khứ hồi, swap tính theo rollover và Wednesday triple;
+- lot được floor theo volume step rồi chặn minimum/maximum volume;
+- PnL quote currency được quy đổi bằng candle H1 đã đóng tại thời điểm fill/exit.
+
+Kết quả mỗi trade tách `gross_r`, `cost_r`, `net_r`; `result_r`, equity curve
+và account guard dùng `net_r` trong execution-parity. `cost_model_fingerprint`
+khóa toàn bộ tham số chi phí, còn `quote_conversion_fingerprint` khóa chuỗi tỷ
+giá lịch sử vào validation evidence.
 
 MVP có thể dùng `expected_effective_rr` của scenario để filter, nhưng khi tính kết quả nên tính theo giá entry/SL/TP đã điều chỉnh.
 
@@ -1027,7 +1214,11 @@ Output dict:
 - `aggregate_is`, `aggregate_oos`: summary gộp
 - `oos_is_expectancy_ratio`, `robustness_score`, `verdict`, `window_count`
 
-**Tích hợp UI**: Checkbox "Walk-Forward" trong form backtest. Khi bật, `backtest_controller.run_backtest()` gọi `run_walk_forward()` sau Monte Carlo, gắn kết quả vào `payload["walk_forward"]`. Tab "📊 Kết quả" hiển thị bảng "🔄 Walk-Forward Analysis" với số window, lệnh IS/OOS, kỳ vọng IS/OOS, tỷ lệ OOS/IS, điểm robustness, và verdict (ROBUST xanh / SUSPECT vàng / OVERFITTING đỏ).
+**Tích hợp UI hiện hành**: form chính không còn checkbox Walk-Forward/IS-OOS.
+Purpose `VALIDATION` tự chạy `run_frozen_validation_replay()` và
+`run_walk_forward()`. Với `RESEARCH`, evidence bổ sung là tùy chọn trong tab
+Nghiên cứu nâng cao và chỉ khả dụng khi dùng execution parity. Tab kết quả hiển
+thị số window, lệnh IS/OOS, kỳ vọng, robustness và verdict.
 
 Không nên tối ưu ngưỡng bằng out-of-sample. Nếu đã nhìn out-of-sample để sửa rule, cần tạo một giai đoạn test mới hơn.
 
@@ -1040,22 +1231,31 @@ Không nên tối ưu ngưỡng bằng out-of-sample. Nếu đã nhìn out-of-sa
 - Tải dữ liệu lịch sử từ MT5.
 - Thêm warmup period.
 - Gọi `run_system_backtest()`.
-- Gọi `run_monte_carlo()` và gắn kết quả vào payload dưới key `"monte_carlo"`.
-- Nếu `walk_forward_enabled=True`, gọi `run_walk_forward()` và gắn vào `"walk_forward"`.
+- Chạy Monte Carlo 2.000 lượt khi có ít nhất 30 trade hoặc được người dùng yêu
+  cầu; nếu thiếu mẫu thì gắn `SKIPPED` có lý do dưới key `"monte_carlo"`.
+- Resolve `backtest-run-policy-v1`; Validation luôn gắn
+  `validation_replay` và `walk_forward`, Research chỉ gắn khi người dùng yêu
+  cầu evidence nâng cao hợp lệ.
 - Lưu snapshot kết quả.
 
 API đề xuất:
 
 ```python
 class BacktestController:
-    def create_backtest_worker(self, request: BacktestRequest, walk_forward_enabled: bool = False) -> tuple[QThread, BacktestWorker]:
+    def create_backtest_worker(
+        self,
+        request: BacktestRequest | list[BacktestRequest],
+        research_validation_enabled: bool = False,
+        monte_carlo_requested: bool = False,
+    ) -> tuple[QThread, BacktestWorker]:
         ...
 
     def run_backtest(
         self,
         *,
-        request: BacktestRequest,
-        walk_forward_enabled: bool = False,
+        request: BacktestRequest | list[BacktestRequest],
+        research_validation_enabled: bool = False,
+        monte_carlo_requested: bool = False,
         _progress_callback=None,
     ) -> dict[str, Any]:
         ...
@@ -1124,14 +1324,16 @@ Không nên làm như landing page. Đây là màn hình công cụ, cần rõ r
 
 ```text
 +---------------------------------------------------------------+
-| Header: Kết quả                                               |
-| Verdict Banner | 📂 Xem lại kết quả | 🤖 Phân tích             |
+| Grid row 1: Mã | Từ ngày | Đến ngày                          |
+| Grid row 2: Vốn | Rủi ro | Mục đích | Chạy/Hủy               |
+| Grid row 3: Tiến độ | Trạng thái | policy hiện hành          |
 +---------------------------------------------------------------+
 | KPI strip                                                     |
-| Total Trades | Expectancy | Profit Factor | Max DD | Win Rate |
+| Số lệnh | Kỳ vọng | Hệ số lợi nhuận | DD tối đa | Net R       |
 +---------------------------------------------------------------+
-| QTabWidget (3 tabs)                                           |
-| 📊 Kết quả | 📈 Đường cong vốn | 📋 Danh sách lệnh             |
+| Verdict Banner | 📂 Mở kết quả                                |
+| QTabWidget (4 tabs)                                           |
+| Kết quả | Đường cong vốn | Lệnh | Nghiên cứu nâng cao         |
 +---------------------------------------------------------------+
 | Tab "📊 Kết quả": HTML thống kê + bảng nhiệt lời/lỗ theo    |
 |   tháng (heatmap) + khoảng tin cậy Monte Carlo +             |
@@ -1139,44 +1341,57 @@ Không nên làm như landing page. Đây là màn hình công cụ, cần rõ r
 | Tab "📈 Đường cong vốn": matplotlib FigureCanvas               |
 |   - Line xanh (#2196F3): cumulative_r theo thời gian          |
 |   - Area đỏ (#F44336, alpha 0.2): drawdown_r từ y=0           |
-| Tab "📋 Danh sách lệnh": Bảng trade với màu sắc               |
+| Tab "📋 Lệnh": Bảng trade với màu sắc                        |
+| Tab "🧪 Nghiên cứu nâng cao": AI, research-fast, portfolio,   |
+|   Monte Carlo theo yêu cầu và parameter sweep                 |
 +---------------------------------------------------------------+
 ```
 
 ### Header Controls
 
-Controls:
+Controls hiện hành trên form chính:
 
-- Symbol multi-select list.
-- Broker symbol readonly/resolved.
-- Date from picker.
-- Date to picker.
-- Initial balance input.
-- Risk percent input.
-- Spread/slippage input.
-- Mode dropdown (QComboBox):
-  - Strict — lọc chặt nhất cho tín hiệu mạnh
-  - Balanced — nhận allowed/caution, bắt buộc confirmed entry + M15 strict + score + RR
-  - Legacy — giữ logic cũ (action=ready + permission=allowed)
-  - Research — khảo sát rộng, nhận cả waiting/watch_zone
-  - Backtest (nới lỏng nhất) — bỏ qua M15 quality, score, RR; sinh nhiều lệnh để nghiên cứu
-- Time step:
-  - H1
-  - H4
-- Button:
-  - Run
-  - Stop
-  - Export JSON
+- chọn một hoặc nhiều symbol, nhưng mặc định chỉ chạy symbol chính;
+- ngày bắt đầu/kết thúc theo `[start,end)`;
+- số dư, phần trăm rủi ro;
+- purpose `Nghiên cứu` hoặc `Kiểm chứng`;
+- nút chạy/hủy và nhãn tóm tắt policy.
+
+UI Backtest dùng hệ token tại `ui/layout_system.py`, theo lưới cơ sở 4 px:
+
+- spacing chuẩn: 4/8/12/16/24 px;
+- page/card/dialog margin: 12/12/16 px;
+- input, button và checkbox: cao 32 px;
+- progress bar: cao 20 px; help button 24 px; icon 16 px;
+- table header/row: 32/36 px; chart tối thiểu 240 px;
+- field width dùng các cấp chuẩn theo loại dữ liệu, không đo/căn riêng từng
+  control.
+
+Form chính là `QGridLayout` ba hàng, các cột label thẳng nhau. Hai card
+Nghiên cứu nâng cao và Quét độ nhạy đặt cân bằng trong `QHBoxLayout`; nội dung
+từng card tiếp tục dùng grid. Dialog AI, áp dụng cấu hình và chọn mã dùng cùng
+dialog margin/spacing/button metrics. Status, verdict và đường dẫn snapshot
+được phép tự xuống dòng.
+
+Responsive regression test dùng vùng làm việc từ `1110x700` tới `3200x1800`,
+đại diện màn hình 14", 15.6", 16", 24", 27" và 32"; kiểm tra widget không
+chồng lấn hoặc tràn viewport.
+
+Tab **Nghiên cứu nâng cao** chứa execution parity/research-fast, evidence bổ
+sung cho Research, portfolio opt-in, Monte Carlo theo yêu cầu, AI và parameter
+sweep. Các control này không xuất hiện trong luồng chính và không tự phát hành
+cấu hình.
 
 ### KPI Strip
 
-Hiển thị 9 ô (3 hàng × 3 cột):
+Runtime hiện hành chỉ hiển thị nhanh năm chỉ số:
 
 ```text
-Số lệnh          | Tỷ lệ thắng      | Kỳ vọng
-Hệ số LN         | DD tối đa        | Tổng R
-R thắng TB       | R thua TB        | Chuỗi thua max
+Số lệnh | Kỳ vọng | Hệ số lợi nhuận | DD tối đa | Net R
 ```
+
+Tỷ lệ thắng, Gross R, chi phí, trung bình thắng/thua và chuỗi thua vẫn nằm
+trong bảng chi tiết và snapshot JSON, không bị loại khỏi dữ liệu audit.
 
 Màu sắc:
 
@@ -1184,6 +1399,13 @@ Màu sắc:
 - Expectancy <= 0: đỏ/cảnh báo.
 - Profit factor < 1.2: cảnh báo.
 - Max drawdown cao: cảnh báo.
+
+### Hành động theo lifecycle
+
+UI dùng `backtest-presentation-v1`: Research, legacy, review-required và
+portfolio không có nút ghi cấu hình; DRAFT chỉ có **Lưu đề xuất nháp**;
+VALIDATED/RELEASE_READY mới có **Áp dụng cấu hình**. Khi tải snapshot, symbol
+trên form được đồng bộ từ file và được kiểm tra lại ngay trước khi ghi Settings.
 
 ### Verdict Banner (Kết luận nhanh)
 
@@ -1498,13 +1720,18 @@ Nếu dùng backtest để sửa quá nhiều ngưỡng, kết quả sẽ bị o
 
 ### Monte Carlo Simulation
 
-Sau khi có kết quả backtest, `controllers/backtest_controller.py` tự động gọi `core/monte_carlo.py` để đánh giá độ ổn định:
+Sau khi có kết quả backtest, `controllers/backtest_controller.py` gọi
+`core/monte_carlo.py` khi mẫu có ít nhất 30 trade hoặc khi người dùng yêu cầu:
 
-- `run_monte_carlo(trades, num_simulations=2000)` — shuffle ngẫu nhiên thứ tự `result_r` 2000 lần, tính phân phối expectancy, max drawdown, profit factor, win rate, max consecutive losses.
+- bootstrap có hoàn lại 2.000 lượt đo uncertainty của expectancy, profit factor
+  và win rate;
+- permutation không hoàn lại 2.000 lượt đo sequence drawdown và chuỗi thua;
 - Output mỗi metric gồm `{mean, median, p95_low, p95_high}` — khoảng tin cậy 95%.
 - Trả về `prob_negative_expectancy` (% xác suất kỳ vọng âm) và `prob_dd_exceed_10r` (% xác suất drawdown > 10R).
 - Xử lý edge case: trades rỗng hoặc thiếu win/loss → tất cả metric = None; num_simulations < 10 → tự động set = 10.
-- Kết quả được gắn vào payload JSON dưới key `"monte_carlo"`.
+- Mẫu dưới 30 trade không được yêu cầu rõ ràng sẽ tạo `status=SKIPPED` kèm
+  lý do, số trade và ngưỡng; kết quả nằm dưới key `"monte_carlo"` và luôn
+  `RESEARCH_ONLY`.
 
 Monte Carlo giúp trả lời: nếu thứ tự lệnh khác đi, kết quả có còn tốt không? Nếu p95_low của expectancy vẫn > 0, hệ thống có edge thực sự.
 

@@ -8,12 +8,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+class _SaveDebounceStub:
+    def start(self):
+        pass
+
+
 def test_auto_enable_creates_config():
     """auto_enable_tracking() tạo config đầy đủ fields."""
     from ui.screens.orders_screen import OrdersScreen
 
     screen = OrdersScreen.__new__(OrdersScreen)
     screen._trailing_configs = {}
+    screen._position_original_sl = {}
+    screen._save_debounce = _SaveDebounceStub()
 
     screen.auto_enable_tracking(123, "NZDUSD", "buy", 0.60000, 0.59870, 0.00150)
 
@@ -38,6 +45,8 @@ def test_auto_enable_adds_to_configs_dict():
 
     screen = OrdersScreen.__new__(OrdersScreen)
     screen._trailing_configs = {}
+    screen._position_original_sl = {}
+    screen._save_debounce = _SaveDebounceStub()
 
     screen.auto_enable_tracking(456, "EURUSD", "sell", 1.08000, 1.08200, 0.00100)
     assert 456 in screen._trailing_configs
@@ -51,6 +60,8 @@ def test_auto_enable_overwrites_same_pos_id():
 
     screen = OrdersScreen.__new__(OrdersScreen)
     screen._trailing_configs = {}
+    screen._position_original_sl = {}
+    screen._save_debounce = _SaveDebounceStub()
 
     screen.auto_enable_tracking(789, "XAUUSD", "buy", 2500.00, 2492.00, 3.50)
     screen.auto_enable_tracking(789, "XAUUSD", "buy", 2510.00, 2502.00, 3.60)
@@ -68,6 +79,8 @@ def test_auto_enable_jpy_pip_multiplier():
 
     screen = OrdersScreen.__new__(OrdersScreen)
     screen._trailing_configs = {}
+    screen._position_original_sl = {}
+    screen._save_debounce = _SaveDebounceStub()
 
     screen.auto_enable_tracking(111, "USDJPY", "buy", 150.000, 149.500, 0.300)
     cfg = screen._trailing_configs[111]
@@ -82,6 +95,8 @@ def test_auto_enable_sell_be_trigger():
 
     screen = OrdersScreen.__new__(OrdersScreen)
     screen._trailing_configs = {}
+    screen._position_original_sl = {}
+    screen._save_debounce = _SaveDebounceStub()
 
     screen.auto_enable_tracking(222, "NZDUSD", "sell", 0.60000, 0.60130, 0.00150)
     cfg = screen._trailing_configs[222]

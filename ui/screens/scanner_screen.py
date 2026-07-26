@@ -1666,9 +1666,6 @@ class ScannerScreen (QWidget ):
             "auto_trade_v2": bool(
                 getattr(feature_settings, "auto_trade_v2", False)
             ),
-            "backtest_config_v2": bool(
-                getattr(feature_settings, "backtest_config_v2", False)
-            ),
         }
         request =ScannerRequest (
         symbols =symbols ,

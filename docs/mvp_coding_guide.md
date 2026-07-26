@@ -144,7 +144,7 @@ Tiêu chí đạt:
 * `smc_context.py` phải gắn metadata chất lượng cho supply/demand, order block và FVG: `zone_score`, `freshness_bars`, `mitigated`, `broken`, `test_count`, `displacement_multiple`, `liquidity_sweep`, `zone_location`.
 * Rule Engine ưu tiên vùng chưa broken, còn fresh, ít bị test, có displacement rõ, có liquidity sweep và đúng premium/discount theo hướng lệnh.
 * `core/backtest_engine.py` phải replay trade plan trên H1 và trả về `win_rate`, `expectancy_r`, `average_r`, `average_mfe_r`, `average_mae_r`, `max_drawdown_r`, `by_symbol`, `by_session`.
-* Dashboard Market Overview dùng `yfinance` lấy DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`2YY=F`). Có fallback qua `requests` gọi thẳng Yahoo Finance chart API nếu yfinance lỗi. Cache 30 phút. Không phụ thuộc MT5. Cập nhật bằng `QTimer` hoặc `refresh_status`.
+* Dashboard Market Overview dùng `yfinance` lấy DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`^IRX`). Có fallback qua `requests` gọi thẳng Yahoo Finance chart API nếu yfinance lỗi. Cache 30 phút. Không phụ thuộc MT5. Cập nhật bằng `QTimer` hoặc `refresh_status`.
 * Màn hình kết quả phải hiển thị checklist entry gồm: Xu hướng, Vùng POI, Xác nhận H1, Tin tức, Spread, R:R (kèm dải best–worst), Lot. Mỗi mục phải có trạng thái đạt/chờ và ghi chú ngắn.
 * Auto-scan trong Scanner phải dùng `QTimer` để hẹn lần quét tiếp theo sau khi worker hiện tại kết thúc; không chạy song song hai worker scan. Nút `Dừng quét tự động` phải dừng timer và không hủy ngang worker đang chạy.
 * Telegram alert chỉ gửi cho setup thật sự sẵn sàng (`ready` + `allowed`). Tin nhắn phải dùng lot tính theo vốn MT5 hiện tại, không dùng vốn nhập tay nếu MT5 có balance hợp lệ.

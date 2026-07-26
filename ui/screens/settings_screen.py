@@ -5,6 +5,7 @@ from config.settings import AdvancedSettings, AIProviderSettings, AISettings, Di
 from core.backtest_config import (
     backtest_activation_status,
     merge_symbol_scan_settings,
+    reconcile_enabled_symbol,
 )
 from core.scanner_models import (
     CONFIG_DRAFT,
@@ -45,6 +46,13 @@ from services.ai.provider_catalog import ProviderCapability, capability_labels, 
 from services.data_provider import ConnectionStatus
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
+from ui.layout_system import (
+    LayoutTokens,
+    configure_button,
+    configure_control,
+    configure_form_label,
+    configure_layout,
+)
 from ui.screens.shared import action_button, card, form_row, page_header
 from workers.ai_test_worker import AITestWorker
 
@@ -461,19 +469,27 @@ class SettingsScreen(QWidget):
     def _aligned_button_row(self) -> tuple[QWidget, QHBoxLayout]:
         container = QWidget()
         row = QHBoxLayout(container)
-        row.setContentsMargins(0, 2, 0, 0)
-        row.setSpacing(10)
+        configure_layout(
+            row,
+            margins=(0, LayoutTokens.SPACE_1, 0, 0),
+            spacing=LayoutTokens.SPACE_3,
+        )
         return container, row
 
-    def _compact_form_row(self, label: str, field: QWidget, label_width: int = 132, field_width: int = 220) -> QWidget:
+    def _compact_form_row(
+        self,
+        label: str,
+        field: QWidget,
+        label_width: int = LayoutTokens.SETTINGS_LABEL_WIDTH,
+        field_width: int = LayoutTokens.SETTINGS_FIELD_WIDTH,
+    ) -> QWidget:
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        configure_layout(layout, spacing=LayoutTokens.SPACE_2)
         label_widget = QLabel(label)
         label_widget.setObjectName("FormLabel")
-        label_widget.setFixedWidth(label_width)
-        field.setFixedWidth(field_width)
+        configure_form_label(label_widget, width=label_width)
+        configure_control(field, width=field_width)
         layout.addWidget(label_widget)
         layout.addWidget(field)
         layout.addStretch(1)
@@ -1059,11 +1075,9 @@ class SettingsScreen(QWidget):
         symbol_settings: dict[str, SymbolScanSettings] = dict(
             existing_symbol_settings
         )
-        enabled_symbols: list[str] = [
-            symbol
-            for symbol in self.app_settings.trading.enabled_symbols
-            if symbol not in self.mt5_display_symbols
-        ]
+        enabled_symbols: list[str] = list(
+            self.app_settings.trading.enabled_symbols
+        )
         for row, symbol in enumerate(self.mt5_display_symbols):
             backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
             ready_cell = self.mt5_symbols_table.cellWidget(row, 10)
@@ -1105,8 +1119,15 @@ class SettingsScreen(QWidget):
                 recommendation=self._pending_backtest_configs.get(symbol),
             )
             symbol_settings[symbol] = merged
-            if merged.backtest:
-                enabled_symbols.append(symbol)
+            enabled_symbols = reconcile_enabled_symbol(
+                enabled_symbols,
+                symbol=symbol,
+                backtest_active=merged.backtest,
+                lifecycle_status=merged.backtest_status,
+                confirmed_disable=bool(
+                    backtest_box and not backtest_box.isChecked()
+                ),
+            )
         self.app_settings.trading.symbol_settings = symbol_settings
         self.app_settings.trading.enabled_symbols = enabled_symbols
         self.settings_service.save(self.app_settings)
@@ -1128,8 +1149,7 @@ class SettingsScreen(QWidget):
         form_panel = QFrame()
         form_panel.setObjectName("CompactFormPanel")
         form_layout = QVBoxLayout(form_panel)
-        form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setSpacing(6)
+        configure_layout(form_layout, spacing=LayoutTokens.SPACE_2)
 
         balance = QDoubleSpinBox()
         balance.setRange(0, 1_000_000_000)
@@ -1173,6 +1193,13 @@ class SettingsScreen(QWidget):
         minimum_lot.setValue(trading.minimum_lot)
         minimum_lot.setSuffix(" lot")
 
+        maximum_lot = QDoubleSpinBox()
+        maximum_lot.setRange(0.01, 100_000)
+        maximum_lot.setDecimals(2)
+        maximum_lot.setSingleStep(0.01)
+        maximum_lot.setValue(trading.maximum_lot)
+        maximum_lot.setSuffix(" lot")
+
         contract_size = QDoubleSpinBox()
         contract_size.setRange(0, 100_000_000)
         contract_size.setDecimals(0)
@@ -1181,13 +1208,44 @@ class SettingsScreen(QWidget):
         contract_size.setValue(trading.contract_size_override)
         contract_size.setSuffix(" units")
 
+        backtest_slippage = QDoubleSpinBox()
+        backtest_slippage.setRange(0, 1000)
+        backtest_slippage.setDecimals(6)
+        backtest_slippage.setSingleStep(0.00001)
+        backtest_slippage.setValue(trading.backtest_slippage_price)
+
+        backtest_commission = QDoubleSpinBox()
+        backtest_commission.setRange(0, 100_000)
+        backtest_commission.setDecimals(2)
+        backtest_commission.setValue(
+            trading.backtest_commission_per_lot_round_turn
+        )
+        backtest_commission.setSuffix(" / lot")
+
+        backtest_swap_long = QDoubleSpinBox()
+        backtest_swap_long.setRange(0, 100_000)
+        backtest_swap_long.setDecimals(2)
+        backtest_swap_long.setValue(trading.backtest_swap_long_per_lot_day)
+        backtest_swap_long.setSuffix(" / lot/ngày")
+
+        backtest_swap_short = QDoubleSpinBox()
+        backtest_swap_short.setRange(0, 100_000)
+        backtest_swap_short.setDecimals(2)
+        backtest_swap_short.setValue(trading.backtest_swap_short_per_lot_day)
+        backtest_swap_short.setSuffix(" / lot/ngày")
+
         self.trading_balance_input = balance
         self.trading_currency_input = currency
         self.trading_risk_input = risk
         self.trading_max_risk_input = max_risk
         self.trading_lot_step_input = lot_step
         self.trading_minimum_lot_input = minimum_lot
+        self.trading_maximum_lot_input = maximum_lot
         self.trading_contract_size_input = contract_size
+        self.trading_backtest_slippage_input = backtest_slippage
+        self.trading_backtest_commission_input = backtest_commission
+        self.trading_backtest_swap_long_input = backtest_swap_long
+        self.trading_backtest_swap_short_input = backtest_swap_short
 
         form_layout.addWidget(self._compact_form_row("Số dư MT5", balance))
         form_layout.addWidget(self._compact_form_row("Đồng tiền", currency))
@@ -1195,16 +1253,19 @@ class SettingsScreen(QWidget):
         form_layout.addWidget(self._compact_form_row("Rủi ro tối đa", max_risk))
         form_layout.addWidget(self._compact_form_row("Bước lot", lot_step))
         form_layout.addWidget(self._compact_form_row("Lot tối thiểu", minimum_lot))
+        form_layout.addWidget(self._compact_form_row("Lot tối đa", maximum_lot))
         form_layout.addWidget(self._compact_form_row("Quy mô hợp đồng", contract_size))
+        form_layout.addWidget(self._compact_form_row("Trượt giá Backtest", backtest_slippage))
+        form_layout.addWidget(self._compact_form_row("Phí khứ hồi Backtest", backtest_commission))
+        form_layout.addWidget(self._compact_form_row("Swap BUY Backtest", backtest_swap_long))
+        form_layout.addWidget(self._compact_form_row("Swap SELL Backtest", backtest_swap_short))
 
-        button_container = QWidget()
-        button_row = QHBoxLayout(button_container)
-        button_row.setContentsMargins(0, 2, 0, 0)
-        button_row.setSpacing(8)
-        button_spacer = QWidget()
-        button_spacer.setFixedWidth(132)
-        button_row.addWidget(button_spacer)
+        button_container, button_row = self._aligned_button_row()
+        button_row.addSpacing(
+            LayoutTokens.SETTINGS_LABEL_WIDTH + LayoutTokens.SPACE_2
+        )
         self.trading_save_button = action_button("💾 Lưu cài đặt giao dịch", primary=True, color="success")
+        configure_button(self.trading_save_button)
         self.trading_save_button.clicked.connect(self._save_trading_settings)
         button_row.addWidget(self.trading_save_button)
         button_row.addStretch(1)
@@ -1227,7 +1288,20 @@ class SettingsScreen(QWidget):
             max_risk_percent=self.trading_max_risk_input.value(),
             lot_step=self.trading_lot_step_input.value(),
             minimum_lot=self.trading_minimum_lot_input.value(),
+            maximum_lot=self.trading_maximum_lot_input.value(),
             contract_size_override=self.trading_contract_size_input.value(),
+            backtest_slippage_price=(
+                self.trading_backtest_slippage_input.value()
+            ),
+            backtest_commission_per_lot_round_turn=(
+                self.trading_backtest_commission_input.value()
+            ),
+            backtest_swap_long_per_lot_day=(
+                self.trading_backtest_swap_long_input.value()
+            ),
+            backtest_swap_short_per_lot_day=(
+                self.trading_backtest_swap_short_input.value()
+            ),
             max_daily_loss_pct=self.app_settings.trading.max_daily_loss_pct,
             max_weekly_loss_pct=self.app_settings.trading.max_weekly_loss_pct,
             max_consecutive_losses=self.app_settings.trading.max_consecutive_losses,

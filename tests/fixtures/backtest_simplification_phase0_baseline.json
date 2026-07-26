@@ -1,0 +1,61 @@
+{
+  "baseline_version": "backtest-simplification-phase0-v1",
+  "captured_at": "2026-07-25",
+  "runtime_changed": false,
+  "single_symbol_matrix": [
+    {
+      "purpose": "RESEARCH",
+      "evidence_requested": false,
+      "validation_replay_present": false,
+      "walk_forward_present": false,
+      "lifecycle": "RESEARCH_ONLY",
+      "publishable": false
+    },
+    {
+      "purpose": "RESEARCH",
+      "evidence_requested": true,
+      "validation_replay_present": true,
+      "walk_forward_present": true,
+      "lifecycle": "RESEARCH_ONLY",
+      "publishable": false
+    },
+    {
+      "purpose": "VALIDATION",
+      "evidence_requested": false,
+      "validation_replay_present": false,
+      "walk_forward_present": false,
+      "lifecycle": "RESEARCH_ONLY",
+      "publishable": false
+    },
+    {
+      "purpose": "VALIDATION",
+      "evidence_requested": true,
+      "validation_replay_present": true,
+      "walk_forward_present": true,
+      "lifecycle": "DRAFT",
+      "publishable": false
+    }
+  ],
+  "portfolio_contract": {
+    "mode": "portfolio_backtest",
+    "lifecycle": "RESEARCH_ONLY",
+    "publishable_as_symbol_config": false
+  },
+  "ui_characterization": {
+    "walk_forward_and_is_oos_share_one_controller_flag": true,
+    "research_and_validation_are_both_selectable": true,
+    "execution_parity_and_research_are_both_selectable": true
+  },
+  "known_issue_baseline": {
+    "friday_21_to_sunday_22_h1_missing_intervals_reported": 2,
+    "classification": "KNOWN_FALSE_POSITIVE_TO_FIX_IN_PHASE_1"
+  },
+  "migration_inventory": {
+    "deprecated_feature_flags": [
+      "backtest_config_v2",
+      "backtest_engine_v2"
+    ],
+    "legacy_snapshot_status": "LEGACY_RESEARCH",
+    "legacy_snapshot_publishable": false
+  }
+}

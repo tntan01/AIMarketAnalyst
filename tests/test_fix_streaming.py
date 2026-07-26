@@ -83,7 +83,7 @@ class TestEffectiveMaxTokens:
 
 
 # ---------------------------------------------------------------------------
-# F2 — SSE parser yields reasoning_content as fallback
+# F2 — SSE parser never exposes private reasoning_content
 # ---------------------------------------------------------------------------
 
 
@@ -99,7 +99,7 @@ class TestSSEParserReasoningFallback:
         mock.iter_lines.return_value = (l.decode() for l in lines)
         assert list(iter_chat_completion_chunks(mock)) == ["Hello"]
 
-    def test_yields_reasoning_when_content_empty(self):
+    def test_skips_reasoning_when_content_empty(self):
         from services.sse_parser import iter_chat_completion_chunks
 
         lines = [
@@ -110,9 +110,7 @@ class TestSSEParserReasoningFallback:
         mock = MagicMock()
         mock.iter_lines.return_value = (l.decode() for l in lines)
         chunks = list(iter_chat_completion_chunks(mock))
-        assert chunks == ["thinking step 1", "thinking step 2"], (
-            f"F2 FAILED: expected reasoning chunks, got {chunks}"
-        )
+        assert chunks == []
 
     def test_prefers_content_over_reasoning(self):
         from services.sse_parser import iter_chat_completion_chunks
@@ -143,12 +141,7 @@ class TestSSEParserReasoningFallback:
         mock = MagicMock()
         mock.iter_lines.return_value = (l.decode() for l in lines)
         chunks = list(iter_chat_completion_chunks(mock))
-        assert chunks == [
-            "We are asked",
-            " to analyze",
-            "## Phan tich",
-            "\n\nDXY...",
-        ], f"F2 FAILED: expected mixed reasoning+content, got {chunks}"
+        assert chunks == ["## Phan tich", "\n\nDXY..."]
 
     def test_both_empty_yields_nothing(self):
         from services.sse_parser import iter_chat_completion_chunks
@@ -193,10 +186,9 @@ class TestF3Integration:
         )
         chunks = list(iter_chat_completion_chunks(mock))
 
-        assert "think 0" in chunks
-        assert "think 4" in chunks
+        assert not any(chunk.startswith("think ") for chunk in chunks)
         assert "## Analysis" in chunks
-        assert len(chunks) == 7, f"F3 FAILED: expected 7 chunks, got {len(chunks)}"
+        assert len(chunks) == 2
 
     def test_effective_tokens_applied_in_full_streaming(self):
         """DeepSeekAdapter floors max_tokens for reasoning models in streaming."""

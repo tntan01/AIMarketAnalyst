@@ -3,7 +3,7 @@ Test race condition fix: analyze_btn bị disable khi backtest đang chạy.
 """
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from PyQt6.QtWidgets import QApplication
 
 
@@ -59,11 +59,13 @@ class TestAnalyzeBtnDisabledDuringBacktest(unittest.TestCase):
         """Khi build_requests throw exception → analyze_btn không đổi."""
         self.screen.controller.build_requests.side_effect = ValueError("bad input")
 
-        self.screen._run_backtest()
+        with patch("ui.screens.backtest_screen.QMessageBox.warning") as warning:
+            self.screen._run_backtest()
 
         # build_requests fail → return sớm, analyze_btn vẫn enabled
         self.assertTrue(self.screen.analyze_btn.isEnabled(),
                         "analyze_btn vẫn enabled khi build_requests fail")
+        warning.assert_called_once()
 
     # ── Re-enable khi backtest hoàn thành (signal connection) ─────
 

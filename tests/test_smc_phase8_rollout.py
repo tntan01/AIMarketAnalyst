@@ -61,6 +61,9 @@ def test_scanner_and_backtest_outputs_expose_same_v2_identity():
     ] == "smc-v2"
     assert backtest["scoring_contract"]["smc_scorer_version"] == "smc-v2"
     assert backtest["scoring_contract"]["smc_scoring_mode"] == "v2"
+    assert backtest["backtest_contract"]["purpose"] == "RESEARCH"
+    assert backtest["backtest_contract"]["execution_parity"] is False
+    assert backtest["backtest_contract"]["validation_eligible"] is False
 
 
 def test_journal_persists_scoring_provenance_columns(tmp_path):

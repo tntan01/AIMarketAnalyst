@@ -168,13 +168,12 @@ class TestAnalyzeStreamDispatch:
         )
         ai = AIService(config)
 
-        with patch.object(ai, "_chat_completion_stream") as mock_stream:
+        with patch.object(ai._adapter, "generate_stream") as mock_stream:
             mock_stream.return_value = iter(["chunk1", "chunk2"])
             chunks = list(ai.analyze_stream("test prompt", max_tokens=500))
             assert chunks == ["chunk1", "chunk2"]
-            # DeepSeek v4 models have a 4000 token floor (Proposal 3)
             mock_stream.assert_called_once_with(
-                "https://api.deepseek.com/chat/completions", "test prompt", 4000
+                "test prompt", "deepseek-v4-flash", "sk-test", 500
             )
 
     def test_deepseek_invalid_model_raises(self):
@@ -200,7 +199,11 @@ class TestAnalyzeStreamDispatch:
         )
         ai = AIService(config)
 
-        with patch.object(ai, "_openai_response", return_value="fallback text"):
+        with patch.object(
+            ai._adapter,
+            "generate_stream",
+            return_value=iter(["fallback text"]),
+        ):
             chunks = list(ai.analyze_stream("test"))
             assert chunks == ["fallback text"]
 
@@ -214,7 +217,11 @@ class TestAnalyzeStreamDispatch:
         )
         ai = AIService(config)
 
-        with patch.object(ai, "_anthropic_message", return_value="claude response"):
+        with patch.object(
+            ai._adapter,
+            "generate_stream",
+            return_value=iter(["claude response"]),
+        ):
             chunks = list(ai.analyze_stream("test"))
             assert chunks == ["claude response"]
 
@@ -228,7 +235,11 @@ class TestAnalyzeStreamDispatch:
         )
         ai = AIService(config)
 
-        with patch.object(ai, "_gemini_generate_content", return_value="gemini text"):
+        with patch.object(
+            ai._adapter,
+            "generate_stream",
+            return_value=iter(["gemini text"]),
+        ):
             chunks = list(ai.analyze_stream("test"))
             assert chunks == ["gemini text"]
 
@@ -240,15 +251,8 @@ class TestAnalyzeStreamDispatch:
             model="custom-model",
             api_key="sk-test",
         )
-        ai = AIService(config)
-
-        with patch.object(ai, "_chat_completion_stream") as mock_stream:
-            mock_stream.return_value = iter(["a", "b"])
-            chunks = list(ai.analyze_stream("prompt", max_tokens=100))
-            assert chunks == ["a", "b"]
-            mock_stream.assert_called_once_with(
-                "https://api.openai.com/v1/chat/completions", "prompt", 100
-            )
+        with pytest.raises(RuntimeError, match="không được hỗ trợ"):
+            AIService(config)
 
 
 # ---------------------------------------------------------------------------
@@ -258,15 +262,9 @@ class TestAnalyzeStreamDispatch:
 
 class TestChatCompletionStream:
     def test_payload_includes_stream_true(self):
-        from services.ai_service import AIService, AIProviderConfig
-        from services.sse_parser import iter_chat_completion_chunks
+        from services.ai.providers.deepseek_adapter import DeepSeekAdapter
 
-        config = AIProviderConfig(
-            provider="deepseek",
-            model="deepseek-v4-flash",
-            api_key="sk-test",
-        )
-        ai = AIService(config)
+        adapter = DeepSeekAdapter()
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -278,68 +276,57 @@ class TestChatCompletionStream:
             captured_payload = json
             return mock_response
 
-        with patch("services.ai_service.requests.post", side_effect=fake_post):
-            with patch.object(
-                ai, "_chat_completion_stream",
-                wraps=ai._chat_completion_stream,
-            ):
-                pass
-
-        with patch("services.ai_service.requests.post", side_effect=fake_post):
+        with patch(
+            "services.ai.providers.deepseek_adapter.requests.post",
+            side_effect=fake_post,
+        ):
             with patch(
                 "services.sse_parser.iter_chat_completion_chunks",
                 return_value=iter(["ok"]),
             ):
-                chunks = list(ai._chat_completion_stream(
-                    "https://api.deepseek.com/chat/completions", "test", 500
+                chunks = list(adapter.generate_stream(
+                    "test", "deepseek-v4-flash", "sk-test", 500
                 ))
 
         assert captured_payload["stream"] is True, (
             f"B1 FAILED: stream not True in payload: {captured_payload}"
         )
-        assert captured_payload["max_tokens"] == 500
+        assert captured_payload["max_tokens"] == 4000
         assert captured_payload["model"] == "deepseek-v4-flash"
         assert captured_payload["temperature"] == 0.2
         assert chunks == ["ok"]
 
     def test_http_error_raises(self):
-        from services.ai_service import AIService, AIProviderConfig
+        from services.ai.providers.deepseek_adapter import DeepSeekAdapter
 
-        config = AIProviderConfig(
-            provider="deepseek",
-            model="deepseek-v4-flash",
-            api_key="sk-test",
-        )
-        ai = AIService(config)
+        adapter = DeepSeekAdapter()
 
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
 
-        with patch("services.ai_service.requests.post", return_value=mock_response):
+        with patch(
+            "services.ai.providers.deepseek_adapter.requests.post",
+            return_value=mock_response,
+        ):
             with pytest.raises(RuntimeError, match="AI API lỗi HTTP 500"):
-                list(ai._chat_completion_stream(
-                    "https://api.deepseek.com/chat/completions", "test"
+                list(adapter.generate_stream(
+                    "test", "deepseek-v4-flash", "sk-test", 500
                 ))
 
     def test_connection_error_raises(self):
-        from services.ai_service import AIService, AIProviderConfig
+        from services.ai.providers.deepseek_adapter import DeepSeekAdapter
         import requests as req
 
-        config = AIProviderConfig(
-            provider="deepseek",
-            model="deepseek-v4-flash",
-            api_key="sk-test",
-        )
-        ai = AIService(config)
+        adapter = DeepSeekAdapter()
 
         with patch(
-            "services.ai_service.requests.post",
+            "services.ai.providers.deepseek_adapter.requests.post",
             side_effect=req.ConnectionError("timeout"),
         ):
             with pytest.raises(RuntimeError, match="Không kết nối được AI API"):
-                list(ai._chat_completion_stream(
-                    "https://api.deepseek.com/chat/completions", "test"
+                list(adapter.generate_stream(
+                    "test", "deepseek-v4-flash", "sk-test", 500
                 ))
 
 
@@ -371,13 +358,11 @@ class TestB2MaxTokens:
         )
         ai = AIService(config)
 
-        with patch.object(ai, "_chat_completion_stream") as mock_stream:
+        with patch.object(ai._adapter, "generate_stream") as mock_stream:
             mock_stream.return_value = iter(["ok"])
             list(ai.analyze_stream("prompt", max_tokens=2500))
-            # DeepSeek v4 models floor to 4000 (Proposal 3)
-            assert mock_stream.call_args[0][2] == 4000, (
-                f"B2 FAILED: max_tokens not passed correctly, "
-                f"got {mock_stream.call_args[0][2]}"
+            mock_stream.assert_called_once_with(
+                "prompt", "deepseek-v4-flash", "sk-test", 2500
             )
 
 
@@ -414,7 +399,10 @@ class TestB1Integration:
             line.decode() for line in sse_lines
         )
 
-        with patch("services.ai_service.requests.post", return_value=mock_response):
+        with patch(
+            "services.ai.providers.deepseek_adapter.requests.post",
+            return_value=mock_response,
+        ):
             chunks = list(ai.analyze_stream("prompt", max_tokens=2500))
 
         combined = "".join(chunks)

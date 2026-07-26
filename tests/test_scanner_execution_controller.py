@@ -72,6 +72,8 @@ def _snapshot():
 
 def _proposal():
     return {
+        "scan_id": "scan-test",
+        "row_id": "scan-test:EURUSD",
         "symbol": "EUR/USD",
         "broker_symbol": "EURUSD",
         "side": "buy",
@@ -179,6 +181,8 @@ def test_controller_revalidates_then_places_with_live_price_sizing():
     assert result["portfolio_guard"]["allowed"] is True
     assert "post_trade_portfolio" in result
     assert mt5.portfolio_snapshot_calls == 2
+    assert mt5.place_calls[0]["comment"].startswith("AMA-FWD:")
+    assert result["forward_correlation_id"]
 
 
 def test_manual_order_bypasses_only_missing_release_evidence():

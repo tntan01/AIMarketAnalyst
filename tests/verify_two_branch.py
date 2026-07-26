@@ -17,7 +17,13 @@ from core.scanner_safety import (
     BRANCH_DEFAULT_RULES,
     evaluate_auto_trade_safety,
 )
-from core.backtest_config_validation import validation_fingerprint
+from core.backtest_contract import validation_engine_contract
+from core.backtest_config_validation import (
+    BACKTEST_CONFIG_SCHEMA_VERSION,
+    BACKTEST_VALIDATION_VERSION,
+    validation_fingerprint,
+)
+from tests.phase7_helpers import ready_release_report
 
 
 def scenario(side: str = "buy") -> dict:
@@ -63,9 +69,56 @@ def row(*, action: str = "ready", decision: str = "READY_TO_TRADE") -> dict:
     }
 
 
+_ENGINE_CONTRACT = validation_engine_contract()
 BACKTEST_CONFIG = {
-    "schema_version": 4,
-    "validation_version": "phase8-smc-v2-oos-v1",
+    "schema_version": BACKTEST_CONFIG_SCHEMA_VERSION,
+    "validation_version": BACKTEST_VALIDATION_VERSION,
+    "engine_contract_version": _ENGINE_CONTRACT["contract_version"],
+    "engine_version": _ENGINE_CONTRACT["engine_version"],
+    "purpose": _ENGINE_CONTRACT["purpose"],
+    "execution_parity": _ENGINE_CONTRACT["execution_parity"],
+    "data_manifest_version": _ENGINE_CONTRACT["data_manifest_version"],
+    "point_in_time_data": _ENGINE_CONTRACT["point_in_time_data"],
+    "dataset_hash": "a" * 64,
+    "data_quality_status": "OK",
+    "execution_policy_version": _ENGINE_CONTRACT[
+        "execution_policy_version"
+    ],
+    "entry_fill_model": _ENGINE_CONTRACT["entry_fill_model"],
+    "exit_evaluation_model": _ENGINE_CONTRACT[
+        "exit_evaluation_model"
+    ],
+    "same_bar_ambiguity_policy": _ENGINE_CONTRACT[
+        "same_bar_ambiguity_policy"
+    ],
+    "execution_timeframe": _ENGINE_CONTRACT["execution_timeframe"],
+    "synthetic_trades_allowed": _ENGINE_CONTRACT[
+        "synthetic_trades_allowed"
+    ],
+    "execution_mode": _ENGINE_CONTRACT["execution_mode"],
+    "execution_model_version": _ENGINE_CONTRACT[
+        "execution_model_version"
+    ],
+    "cost_model_version": _ENGINE_CONTRACT["cost_model_version"],
+    "quote_conversion_model_version": _ENGINE_CONTRACT[
+        "quote_conversion_model_version"
+    ],
+    "cost_model_fingerprint": _ENGINE_CONTRACT[
+        "cost_model_fingerprint"
+    ],
+    "quote_conversion_fingerprint": _ENGINE_CONTRACT[
+        "quote_conversion_fingerprint"
+    ],
+    "candidate_ledger_version": _ENGINE_CONTRACT["candidate_ledger_version"],
+    "candidate_replay_version": _ENGINE_CONTRACT["candidate_replay_version"],
+    "frozen_strategy_version": _ENGINE_CONTRACT["frozen_strategy_version"],
+    "frozen_strategy_applied": _ENGINE_CONTRACT["frozen_strategy_applied"],
+    "oos_replay": _ENGINE_CONTRACT["oos_replay"],
+    "provenance_version": "backtest-provenance-v1",
+    "code_revision": "b" * 40,
+    "request_fingerprint": "c" * 64,
+    "execution_fingerprint": "d" * 64,
+    "provenance_fingerprint": "e" * 64,
     "config_id": "EURUSD-range-buy-v3",
     "status": "VALIDATED",
     "scorer_version": "scanner-v3",
@@ -90,10 +143,16 @@ BACKTEST_CONFIG = {
     "oos_max_drawdown_r": 5.8,
     "expectancy_ci_low": 0.05,
     "expectancy_ci_high": 0.43,
+    "statistics_version": "backtest-statistics-v1",
+    "probability_positive_edge_pct": 97.5,
+    "one_sided_p_value": 0.025,
+    "minimum_required_trades": 8,
+    "statistical_power_passed": True,
     "walk_forward_windows": 3,
     "walk_forward_verdict": "ROBUST",
     "validated_at": "2026-07-24T00:00:00+00:00",
     "expires_at": "2027-07-24T00:00:00+00:00",
+    "release_report": ready_release_report(),
 }
 BACKTEST_CONFIG["validation_fingerprint"] = validation_fingerprint(BACKTEST_CONFIG)
 

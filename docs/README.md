@@ -1,6 +1,6 @@
 # Tài liệu dự án AI Market Analyst
 
-Cập nhật đồng bộ gần nhất: **24/07/2026**.
+Cập nhật đồng bộ gần nhất: **25/07/2026**.
 
 Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Market Analyst. Khi tài liệu và chương trình khác nhau, ưu tiên theo thứ tự:
 
@@ -22,6 +22,9 @@ Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Marke
 | `installation_guide.md` | Cài đặt, chạy, đóng gói và checklist an toàn. |
 | `order_management.md` | Quản lý lệnh và trạng thái giao dịch. |
 | `system_backtest_design.md` | Thiết kế hệ thống backtest và validation. |
+| `backtest-review-plan.md` | Kết luận rà soát và kế hoạch 8 giai đoạn nâng cấp Backtest lên execution parity. |
+| `backtest-release-runbook.md` | Quy trình golden, shadow, forward-demo và duyệt release report Phase 7. |
+| `backtest-simplification-plan.md` | Mục đích và kế hoạch 7 giai đoạn tinh gọn Backtest, sửa data gap và tách công cụ nghiên cứu nâng cao. |
 
 ## Tài liệu đánh giá và lịch sử
 
@@ -38,8 +41,9 @@ Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Marke
 - Chín giai đoạn, đánh số **0 đến 8**, đã hoàn tất về code và test chuyên biệt.
 - Mã nguồn, settings mới và settings migrate mặc định ở rollout stage
   `SHADOW`; stage này không gửi lệnh.
-- Runtime trên máy hiện tại đã chọn `PRODUCTION`, bật ba feature flag V2 và
-  dùng SMC v2. Đây chỉ là stage đã lưu; release gate hiện vẫn
+- Runtime trên máy hiện tại đã chọn `PRODUCTION`, dùng SMC v2 và còn hai flag
+  Scanner `scanner_architecture_v2`/`auto_trade_v2`. Hai flag Backtest cũ đã
+  được migration khỏi runtime. Đây chỉ là stage đã lưu; release gate hiện vẫn
   `ready=false`, nên chưa có quyền gửi lệnh thật.
 - Nút auto-entry khả dụng trong chế độ quét định kỳ, mặc định không chọn và bị
   reset khi chuyển sang quét một lần. Khi người dùng chủ động bật, request có
@@ -47,6 +51,24 @@ Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Marke
   execution path cùng toàn bộ safety gate.
 - Chưa được xem là production-ready cho tới khi đủ bằng chứng shadow, demo, canary, OOS/demo performance và rollback.
 - Backtest chỉ tạo một strategy branch khi config hợp lệ; nó không được ghi đè Decision Engine, execution gate hoặc portfolio gate.
+- Backtest hiện dùng point-in-time snapshot theo thời điểm đóng nến, UTC và
+  khoảng `[start, end)`; mỗi kết quả có `DataManifest` v2 session-aware. Lịch
+  phiên có version tách thời gian đóng hợp lệ khỏi gap thật và lưu fingerprint
+  để audit. Manifest không đạt chất lượng bị chặn khi purpose là `VALIDATION`.
+- Backtest execution dùng event sequence có version, không xét SL/TP trên nến
+  fill, xử lý gap tại open và chặn scenario sai side/synthetic trong
+  validation.
+- Backtest validation dùng Candidate Ledger IS để tạo frozen config và replay
+  OOS từ trạng thái tài khoản sạch; schema v8 còn bắt buộc Walk-Forward theo
+  tháng lịch, bootstrap statistical power, recency và provenance đầy đủ.
+- Backtest orchestration dùng `backtest-run-policy-v1`: Validation tự ép Mô
+  phỏng MT5 và chạy IS/OOS + Walk-Forward; Research mặc định parity. Chế độ
+  nhanh chỉ nằm trong Nghiên cứu nâng cao và luôn `RESEARCH_ONLY`.
+- Backtest UI dùng `backtest-presentation-v1`: thanh nhanh có 5 KPI, tự đồng bộ
+  symbol khi tải snapshot và chỉ cho lưu/áp dụng cấu hình đúng lifecycle.
+- Portfolio, AI, research-fast, Monte Carlo theo yêu cầu và parameter sweep nằm
+  trong **Nghiên cứu nâng cao**. Portfolio mặc định tắt; Monte Carlo chỉ tự chạy
+  từ 30 lệnh; sweep dùng chung request/cost/data context và không tự áp tham số.
 - Mọi lệnh Scanner, kể cả thao tác thủ công từ giao diện Scanner, phải đi qua `ScannerController.execute_order_candidate()`.
 
 ## Quy tắc cập nhật

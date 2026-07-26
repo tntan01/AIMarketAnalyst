@@ -14,11 +14,20 @@ def test_feature_flags_default_off():
 
 def test_feature_flags_load_backward_compatibly(tmp_path):
     service = SettingsService(tmp_path / "settings.json")
-    service.storage.save({"ai": {}})
+    service.storage.save({
+        "ai": {},
+        "features": {
+            "scanner_architecture_v2": True,
+            "auto_trade_v2": True,
+            "backtest_config_v2": True,
+            "backtest_engine_v2": True,
+        },
+    })
     settings = service.load()
-    assert settings.features.scanner_architecture_v2 is False
-    assert settings.features.auto_trade_v2 is False
-    assert settings.features.backtest_config_v2 is False
+    assert settings.features.scanner_architecture_v2 is True
+    assert settings.features.auto_trade_v2 is True
+    assert not hasattr(settings.features, "backtest_config_v2")
+    assert not hasattr(settings.features, "backtest_engine_v2")
 
 
 def test_feature_flags_round_trip(tmp_path):
@@ -32,7 +41,9 @@ def test_feature_flags_round_trip(tmp_path):
     loaded = service.load()
     assert loaded.features.scanner_architecture_v2 is True
     assert loaded.features.auto_trade_v2 is True
-    assert loaded.features.backtest_config_v2 is False
+    stored = service.storage.load()
+    assert "backtest_config_v2" not in stored["features"]
+    assert "backtest_engine_v2" not in stored["features"]
 
 
 def test_scanner_output_exposes_contract_and_flags():

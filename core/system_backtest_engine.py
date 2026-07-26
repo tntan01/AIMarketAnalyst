@@ -7,9 +7,69 @@ from statistics import median
 from typing import Any
 
 from core.analysis_engine import analyze_symbol
+from core.backtest_contract import (
+    BACKTEST_PURPOSE_VALIDATION,
+    BACKTEST_PURPOSE_RESEARCH,
+    VALID_BACKTEST_PURPOSES,
+    build_runtime_backtest_contract,
+    normalize_backtest_purpose,
+)
+from core.backtest_market_data import (
+    DataManifest,
+    candle_close_time,
+    closed_candle_snapshot,
+    execution_candles_in_interval,
+    in_half_open_interval,
+    normalize_candle_series,
+    normalize_utc,
+    prepare_backtest_data,
+    timeframe_duration,
+    validation_quality_errors,
+)
+from core.backtest_candidate_ledger import (
+    CANDIDATE_LEDGER_VERSION,
+    CANDIDATE_REPLAY_VERSION,
+    CandidateLedgerEntry,
+    FrozenStrategyConfig,
+    build_candidate_ledger_entry,
+    candidate_ledger_fingerprint,
+    evaluate_frozen_strategy,
+    side_setup_score,
+)
+from core.backtest_execution import (
+    BACKTEST_EXECUTION_POLICY_VERSION,
+    ENTRY_FILL_MODEL,
+    EXIT_EVALUATION_MODEL,
+    SAME_BAR_STOP_FIRST,
+    SAME_BAR_TARGET_FIRST,
+    build_execution_events,
+    find_confirmation_close_fill,
+    resolve_post_fill_exit,
+    valid_trade_geometry,
+)
+from core.backtest_execution_parity import (
+    DEFAULT_SESSION_SPREAD_MULTIPLIERS,
+    EXECUTION_COST_MODEL_VERSION,
+    EXECUTION_MODE_PARITY,
+    EXECUTION_MODE_RESEARCH,
+    EXECUTION_PARITY_MODEL_VERSION,
+    QUOTE_CONVERSION_MODEL_VERSION,
+    VALID_EXECUTION_MODES,
+    apply_execution_costs,
+    cost_model_fingerprint,
+    cost_model_manifest,
+    normalize_execution_mode,
+    quote_rate_at,
+    quote_conversion_fingerprint,
+    session_spread_price,
+)
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput, REGIME_TP_FALLBACK_MULT
 from core.safe_types import optional_float
+from core.risk_parameter_context import (
+    RiskParameterOverrides,
+    risk_parameter_scope,
+)
 
 
 AnalysisFn = Callable[..., dict[str, Any]]
@@ -25,6 +85,7 @@ BACKTEST_FUNNEL_KEYS = (
     "blocked_by_entry_status",
     "blocked_by_m15",
     "blocked_by_rr",
+    "blocked_by_frozen_strategy",
     "entry_zone_not_touched",
     "invalid_trade_plan",
     "trade_opened",
@@ -42,13 +103,31 @@ class BacktestRequest:
     account_currency: str = "USD"
     lot_step: float = 0.01
     minimum_lot: float = 0.01
+    maximum_lot: float = 100.0
     contract_size_override: float | None = None
     timezone_name: str = "Asia/Ho_Chi_Minh"
     spread_price: float = 0.0
     slippage_price: float = 0.0
+    entry_slippage_price: float | None = None
+    exit_slippage_price: float | None = None
+    commission_per_lot_round_turn: float = 0.0
+    swap_long_per_lot_day: float = 0.0
+    swap_short_per_lot_day: float = 0.0
+    triple_swap_weekday: int = 2
+    spread_session_multipliers: dict[str, float] = field(
+        default_factory=lambda: dict(DEFAULT_SESSION_SPREAD_MULTIPLIERS)
+    )
+    cost_model_configured: bool = False
+    quote_conversion_symbol: str = ""
+    quote_conversion_inverted: bool = False
+    quote_conversion_candles: tuple[Candle, ...] = ()
+    quote_to_account_rate: float | None = None
     max_holding_bars: int = 96
     setup_expiry_bars: int = 12
+    max_holding_minutes: int = 1440
+    setup_expiry_minutes: int = 180
     step_timeframe: str = "H1"
+    execution_timeframe: str = "M15"
     allow_macro: bool = False
     conservative_same_bar: bool = True
     store_analysis_snapshots: bool = False
@@ -61,6 +140,18 @@ class BacktestRequest:
     correlation_context: dict[str, Any] | None = None
     macro_alignment_override: dict[str, int] | None = None
     smc_scoring_mode: str = "v2"
+    purpose: str = BACKTEST_PURPOSE_RESEARCH
+    execution_mode: str = EXECUTION_MODE_RESEARCH
+    code_revision: str = ""
+    frozen_strategy_config: FrozenStrategyConfig | None = None
+    candidate_ledger_enabled: bool = True
+    risk_parameter_overrides: RiskParameterOverrides = field(
+        default_factory=RiskParameterOverrides
+    )
+    max_symbol_risk_pct: float = 999.0
+    max_currency_exposure_pct: float = 999.0
+    max_correlated_risk_pct: float = 999.0
+    max_concurrent_positions: int = 999
 
 
 @dataclass(slots=True)
@@ -107,6 +198,35 @@ class BacktestTrade:
     warning_codes: list[str] = field(default_factory=list)
     block_codes: list[str] = field(default_factory=list)
     analysis_snapshot: dict[str, Any] | None = None
+    execution_policy_version: str = BACKTEST_EXECUTION_POLICY_VERSION
+    execution_timeframe: str = "M15"
+    scenario_source: str = "pipeline"
+    research_only: bool = False
+    execution_events: list[dict[str, Any]] = field(default_factory=list)
+    execution_mode: str = EXECUTION_MODE_RESEARCH
+    execution_model_version: str = BACKTEST_EXECUTION_POLICY_VERSION
+    cost_model_version: str = ""
+    quote_conversion_model_version: str = ""
+    raw_entry_price: float | None = None
+    raw_exit_price: float | None = None
+    gross_r: float = 0.0
+    cost_r: float = 0.0
+    net_r: float = 0.0
+    gross_pnl_account: float = 0.0
+    net_pnl_account: float = 0.0
+    spread_slippage_account: float = 0.0
+    commission_account: float = 0.0
+    swap_account: float = 0.0
+    position_lot: float = 0.0
+    target_risk_account: float = 0.0
+    planned_risk_account: float = 0.0
+    quote_rate_entry: float = 1.0
+    quote_rate_exit: float = 1.0
+    execution_session: str = ""
+    cost_breakdown: dict[str, Any] = field(default_factory=dict)
+    setup_score: int | None = None
+    candidate_id: str = ""
+    frozen_config_id: str = ""
 
 
 @dataclass(slots=True)
@@ -118,6 +238,9 @@ class BacktestResult:
     breakdowns: dict[str, Any]
     skipped_setups: list[dict[str, Any]]
     diagnostics: dict[str, Any]
+    data_manifest: dict[str, Any] = field(default_factory=dict)
+    candidate_ledger: list[dict[str, Any]] = field(default_factory=list)
+    frozen_strategy_config: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from core.scanner_models import (
@@ -126,30 +249,107 @@ class BacktestResult:
             SETUP_SCORE_METRIC,
         )
         from core.scoring_provenance import build_scoring_provenance
+        from core.backtest_provenance import build_backtest_provenance
 
         provenance = build_scoring_provenance(
             self.request.smc_scoring_mode
         )
+        parity_enabled = (
+            normalize_execution_mode(self.request.execution_mode)
+            == EXECUTION_MODE_PARITY
+        )
+        provenance.update({
+            "backtest_execution_mode": normalize_execution_mode(
+                self.request.execution_mode
+            ),
+            "backtest_execution_model_version": (
+                EXECUTION_PARITY_MODEL_VERSION
+                if parity_enabled
+                else BACKTEST_EXECUTION_POLICY_VERSION
+            ),
+            "backtest_cost_model_version": (
+                EXECUTION_COST_MODEL_VERSION if parity_enabled else ""
+            ),
+        })
 
+        contract = build_runtime_backtest_contract(
+            self.request.purpose,
+            self.request.execution_mode,
+        )
+        contract.update({
+            "execution_policy_version": (
+                BACKTEST_EXECUTION_POLICY_VERSION
+            ),
+            "entry_fill_model": ENTRY_FILL_MODEL,
+            "exit_evaluation_model": EXIT_EVALUATION_MODEL,
+            "same_bar_ambiguity_policy": (
+                SAME_BAR_STOP_FIRST
+                if self.request.conservative_same_bar
+                else SAME_BAR_TARGET_FIRST
+            ),
+            "execution_timeframe": self.diagnostics.get(
+                "execution_timeframe",
+                self.request.execution_timeframe,
+            ),
+            "cost_model": cost_model_manifest(self.request),
+            "cost_model_fingerprint": cost_model_fingerprint(self.request),
+            "quote_conversion_fingerprint": (
+                quote_conversion_fingerprint(self.request)
+            ),
+            "frozen_strategy_applied": (
+                self.request.frozen_strategy_config is not None
+            ),
+            "oos_replay": (
+                normalize_backtest_purpose(self.request.purpose)
+                == BACKTEST_PURPOSE_VALIDATION
+                and self.request.frozen_strategy_config is not None
+            ),
+            "validation_eligible": (
+                contract.get("validation_eligible") is True
+                and self.request.frozen_strategy_config is not None
+            ),
+        })
+
+        scoring_contract = {
+            "score_metric": SETUP_SCORE_METRIC,
+            "scorer_version": SCANNER_SCORER_VERSION,
+            "feature_version": SCANNER_FEATURE_VERSION,
+            "smc_scorer_version": provenance["smc_scorer_version"],
+            "smc_scoring_mode": provenance["smc_scoring_mode"],
+        }
+        request_payload = _request_to_dict(self.request)
+        backtest_provenance = build_backtest_provenance(
+            code_revision=self.request.code_revision,
+            request=request_payload,
+            data_manifest=self.data_manifest,
+            execution_contract=contract,
+            scoring_contract=scoring_contract,
+            frozen_strategy_config=self.frozen_strategy_config,
+        )
         return {
             "mode": "system_backtest",
+            "backtest_contract": contract,
             "scoring_provenance": provenance,
-            "scoring_contract": {
-                "score_metric": SETUP_SCORE_METRIC,
-                "scorer_version": SCANNER_SCORER_VERSION,
-                "feature_version": SCANNER_FEATURE_VERSION,
-                "smc_scorer_version": provenance[
-                    "smc_scorer_version"
-                ],
-                "smc_scoring_mode": provenance["smc_scoring_mode"],
-            },
-            "request": _request_to_dict(self.request),
+            "scoring_contract": scoring_contract,
+            "backtest_provenance": backtest_provenance,
+            "request": request_payload,
             "summary": self.summary,
             "trades": [asdict(trade) for trade in self.trades],
             "equity_curve": self.equity_curve,
             "breakdowns": self.breakdowns,
             "skipped_setups": self.skipped_setups,
             "diagnostics": self.diagnostics,
+            "data_manifest": self.data_manifest,
+            "candidate_ledger": self.candidate_ledger,
+            "candidate_ledger_contract": {
+                "version": CANDIDATE_LEDGER_VERSION,
+                "replay_version": CANDIDATE_REPLAY_VERSION,
+                "fingerprint": candidate_ledger_fingerprint(
+                    self.candidate_ledger
+                ),
+                "candidate_count": len(self.candidate_ledger),
+            },
+            "frozen_strategy_config": self.frozen_strategy_config,
         }
 
 
@@ -160,14 +360,42 @@ def run_system_backtest(
     analysis_fn: AnalysisFn = analyze_symbol,
     progress_callback: Callable[[int, str], None] | None = None,
 ) -> BacktestResult:
-    validate_backtest_input(request, candles_by_timeframe)
+    normalized_candles, data_manifest = prepare_backtest_data(
+        candles_by_timeframe,
+        symbol=request.symbol,
+        requested_start=request.start,
+        requested_end=request.end,
+    )
+    validate_backtest_input(
+        request,
+        normalized_candles,
+        data_manifest=data_manifest,
+    )
     progress = progress_callback or (lambda _percent, _message: None)
-    step_candles = candles_by_timeframe.get(request.step_timeframe) or candles_by_timeframe.get("H1", [])
-    m15_all = candles_by_timeframe.get("M15", [])
+    step_timeframe = (
+        request.step_timeframe
+        if normalized_candles.get(request.step_timeframe)
+        else "H1"
+    )
+    step_candles = normalized_candles.get(step_timeframe, [])
+    requested_execution_timeframe = str(
+        request.execution_timeframe or "M15"
+    ).upper()
+    execution_timeframe = (
+        requested_execution_timeframe
+        if normalized_candles.get(requested_execution_timeframe)
+        else "H1"
+    )
+    request_start = normalize_utc(request.start)[0]
+    request_end = normalize_utc(request.end)[0]
+    normalized_correlation_context = _normalize_correlation_context(
+        request.correlation_context
+    )
     trades: list[BacktestTrade] = []
     skipped: list[dict[str, Any]] = []
     equity_curve: list[dict[str, Any]] = []
     closed_for_guard: list[dict[str, Any]] = []
+    candidate_ledger: list[CandidateLedgerEntry] = []
     funnel = {key: 0 for key in BACKTEST_FUNNEL_KEYS}
     balance = float(request.initial_balance)
     snapshots_evaluated = 0
@@ -180,26 +408,36 @@ def run_system_backtest(
     score_fail_count = 0  # snapshots where best_score < 50
 
     eligible_steps = [
-        (index, candle)
+        (index, candle, candle_close_time(candle, step_timeframe))
         for index, candle in enumerate(step_candles)
-        if request.start <= candle.time <= request.end
+        if in_half_open_interval(
+            candle_close_time(candle, step_timeframe),
+            request_start,
+            request_end,
+        )
     ]
     total_steps = max(1, len(eligible_steps))
 
-    for ordinal, (step_index, candle) in enumerate(eligible_steps, start=1):
-        if next_allowed_time is not None and candle.time <= next_allowed_time:
+    for ordinal, (_step_index, candle, decision_time) in enumerate(
+        eligible_steps,
+        start=1,
+    ):
+        if (
+            next_allowed_time is not None
+            and decision_time <= next_allowed_time
+        ):
             continue
         percent = 10 + int(ordinal / total_steps * 75)
-        t = candle.time
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=timezone.utc)
-        gmt7 = t.astimezone(timezone(timedelta(hours=7)))
+        gmt7 = decision_time.astimezone(timezone(timedelta(hours=7)))
         time_str = gmt7.strftime("%d/%m/%Y %H:%M")
         progress(percent, f"Đang backtest {request.symbol} tại {time_str}")
 
-        snapshot = slice_candles_until(candles_by_timeframe, candle.time)
+        snapshot = slice_candles_until(
+            normalized_candles,
+            decision_time,
+        )
         if not has_minimum_analysis_data(snapshot):
-            skipped.append(_skip(candle.time, "insufficient_warmup", "Chưa đủ dữ liệu warmup."))
+            skipped.append(_skip(decision_time, "insufficient_warmup", "Chưa đủ dữ liệu warmup."))
             continue
 
         try:
@@ -208,12 +446,13 @@ def run_system_backtest(
                 snapshot,
                 balance,
                 closed_for_guard,
-                candle.time,
+                decision_time,
                 analysis_fn,
+                correlation_context=normalized_correlation_context,
             )
         except Exception as exc:
             analysis_errors += 1
-            skipped.append(_skip(candle.time, "analysis_error", str(exc)))
+            skipped.append(_skip(decision_time, "analysis_error", str(exc)))
             continue
 
         snapshots_evaluated += 1
@@ -226,14 +465,51 @@ def run_system_backtest(
 
         scenario = select_trade_scenario(analysis)
         is_fallback = False
-        if not scenario:
+        if (
+            not scenario
+            and normalize_backtest_purpose(request.purpose)
+            == BACKTEST_PURPOSE_RESEARCH
+        ):
             scenario = build_fallback_scenario(analysis, candle)
             is_fallback = scenario is not None
+        strict_execution = (
+            normalize_backtest_purpose(request.purpose)
+            == BACKTEST_PURPOSE_VALIDATION
+        )
+        base_block_reason = (
+            trade_open_block_reason(
+                analysis,
+                scenario,
+                0,
+                strict_execution=strict_execution,
+            )
+            if scenario is not None
+            else "no_trade_scenario"
+        )
+        ledger_block_reason = (
+            trade_open_block_reason(
+                analysis,
+                scenario,
+                0,
+                strict_execution=True,
+            )
+            if scenario is not None
+            else "no_trade_scenario"
+        )
+        ledger_entry = build_candidate_ledger_entry(
+            symbol=request.symbol,
+            decision_time=decision_time,
+            analysis=analysis,
+            scenario=scenario,
+            base_rejection_reason=ledger_block_reason,
+        )
+        if request.candidate_ledger_enabled:
+            candidate_ledger.append(ledger_entry)
         if not scenario:
             funnel["no_trade_scenario"] += 1
             skipped.append(
                 _skip(
-                    candle.time,
+                    decision_time,
                     "no_trade_scenario",
                     "Không có scenario buy/sell hợp lệ.",
                     build_skip_debug(analysis, None),
@@ -245,7 +521,7 @@ def run_system_backtest(
         funnel["setup_detected"] += 1
         if is_fallback:
             funnel["fallback_scenario"] += 1
-        block_reason = trade_open_block_reason(analysis, scenario, request.min_final_score)
+        block_reason = base_block_reason
         if block_reason is not None:
             if _gate_blocked(analysis):
                 blocked_by_gate += 1
@@ -253,7 +529,7 @@ def run_system_backtest(
                 funnel[block_reason] += 1
             skipped.append(
                 _skip(
-                    candle.time,
+                    decision_time,
                     "not_actionable",
                     _skip_reason(analysis, scenario, block_reason),
                     build_skip_debug(analysis, scenario),
@@ -268,7 +544,7 @@ def run_system_backtest(
                     tz = ZoneInfo(request.timezone_name)
                 except (ZoneInfoNotFoundError, KeyError):
                     tz = ZoneInfo("Asia/Ho_Chi_Minh")
-                local = candle.time.astimezone(tz)
+                local = decision_time.astimezone(tz)
                 next_day_local = local.replace(hour=0, minute=0, second=0, microsecond=0) + _td(days=1)
                 next_allowed_time = next_day_local
             continue
@@ -278,14 +554,24 @@ def run_system_backtest(
             analysis=analysis,
             scenario=scenario,
             entry_candle=candle,
-            future_candles=_future_execution_candles(candles_by_timeframe, candle.time),
+            future_candles=_future_execution_candles(
+                normalized_candles,
+                decision_time,
+                request_end,
+                execution_timeframe=execution_timeframe,
+            ),
+            execution_timeframe=execution_timeframe,
+            signal_time=decision_time,
+            account_balance=balance,
         )
         if trade is None:
+            ledger_entry.base_eligible = False
+            ledger_entry.base_rejection_reason = "TRADE_SIMULATION_REJECTED"
             skip_funnel_key, skip_message = trade_plan_skip_reason(scenario)
             funnel[skip_funnel_key] += 1
             skipped.append(
                 _skip(
-                    candle.time,
+                    decision_time,
                     "invalid_trade_plan",
                     skip_message,
                     build_skip_debug(analysis, scenario),
@@ -293,9 +579,50 @@ def run_system_backtest(
             )
             continue
 
+        trade.candidate_id = ledger_entry.candidate_id
+        ledger_entry.simulated_trade = asdict(trade)
+        frozen_allowed, frozen_reasons = evaluate_frozen_strategy(
+            ledger_entry,
+            request.frozen_strategy_config,
+        )
+        if request.frozen_strategy_config is None and request.min_final_score > 0:
+            if ledger_entry.setup_score is None:
+                frozen_allowed = False
+                frozen_reasons.append("LEGACY_SETUP_SCORE_MISSING")
+            elif ledger_entry.setup_score < request.min_final_score:
+                frozen_allowed = False
+                frozen_reasons.append("LEGACY_SETUP_SCORE_BELOW_MIN")
+        ledger_entry.frozen_config_id = (
+            request.frozen_strategy_config.config_id
+            if request.frozen_strategy_config is not None
+            else ""
+        )
+        ledger_entry.strategy_eligible = frozen_allowed
+        ledger_entry.strategy_rejection_reasons = list(
+            dict.fromkeys(frozen_reasons)
+        )
+        trade.frozen_config_id = ledger_entry.frozen_config_id
+        ledger_entry.simulated_trade = asdict(trade)
+        if not frozen_allowed:
+            funnel["blocked_by_frozen_strategy"] += 1
+            skipped.append(
+                _skip(
+                    decision_time,
+                    "blocked_by_frozen_strategy",
+                    "; ".join(ledger_entry.strategy_rejection_reasons),
+                    build_skip_debug(analysis, scenario),
+                )
+            )
+            continue
+
+        ledger_entry.executed = True
         trades.append(trade)
         funnel["trade_opened"] += 1
-        balance += (balance * request.risk_percent / 100.0) * trade.result_r
+        balance_before_trade = balance
+        if normalize_execution_mode(request.execution_mode) == EXECUTION_MODE_PARITY:
+            balance += trade.net_pnl_account
+        else:
+            balance += (balance * request.risk_percent / 100.0) * trade.result_r
         equity_curve.append(
             {
                 "time": trade.exit_time or trade.entry_time,
@@ -308,21 +635,32 @@ def run_system_backtest(
             0,
             {
                 "result_r": trade.result_r,
-                "result_pct": trade.result_r * request.risk_percent,
+                "result_pct": (
+                    trade.net_pnl_account / balance_before_trade * 100.0
+                    if balance_before_trade > 0
+                    and normalize_execution_mode(request.execution_mode)
+                    == EXECUTION_MODE_PARITY
+                    else trade.result_r * request.risk_percent
+                ),
                 "closed_at": trade.exit_time,
                 "exit_reason": trade.result,
                 "symbol": trade.symbol,
                 "direction": trade.side,
             },
         )
-        next_allowed_time = _parse_time(trade.exit_time) if trade.exit_time else candle.time
+        next_allowed_time = (
+            _parse_time(trade.exit_time)
+            if trade.exit_time
+            else decision_time
+        )
 
     progress(92, "Đang tổng hợp kết quả backtest...")
     summary = summarize_backtest_trades(trades)
     diagnostics = {
         "data_range": {
-            "start": request.start.isoformat(),
-            "end": request.end.isoformat(),
+            "start": request_start.isoformat(),
+            "end": request_end.isoformat(),
+            "interval": "[start,end)",
         },
         "snapshots_evaluated": snapshots_evaluated,
         "setups_detected": setups_detected,
@@ -338,11 +676,63 @@ def run_system_backtest(
             "max_open_risk_pct": request.max_open_risk_pct,
         },
         "analysis_errors": analysis_errors,
-        "step_timeframe": request.step_timeframe,
-        "execution_timeframe": "M15" if m15_all else "H1",
+        "step_timeframe": step_timeframe,
+        "execution_timeframe": execution_timeframe,
+        "execution_policy": {
+            "version": BACKTEST_EXECUTION_POLICY_VERSION,
+            "entry_fill_model": ENTRY_FILL_MODEL,
+            "exit_evaluation_model": EXIT_EVALUATION_MODEL,
+            "same_bar_ambiguity_policy": (
+                SAME_BAR_STOP_FIRST
+                if request.conservative_same_bar
+                else SAME_BAR_TARGET_FIRST
+            ),
+            "setup_expiry_minutes": request.setup_expiry_minutes,
+            "max_holding_minutes": request.max_holding_minutes,
+        },
+        "execution_parity": {
+            "enabled": (
+                normalize_execution_mode(request.execution_mode)
+                == EXECUTION_MODE_PARITY
+            ),
+            "mode": normalize_execution_mode(request.execution_mode),
+            **cost_model_manifest(request),
+        },
+        "data_quality": {
+            "status": data_manifest.quality_status,
+            "validation_eligible": data_manifest.validation_eligible,
+            "dataset_hash": data_manifest.dataset_hash,
+            "issue_count": len(data_manifest.issues),
+            "correlation_context_point_in_time": bool(
+                request.allow_macro and normalized_correlation_context
+            ),
+        },
         "pipeline_stats": pipeline_stats,
         "gate_fail_counts": gate_fail_counts,
         "score_below_50_count": score_fail_count,
+        "candidate_ledger": {
+            "version": CANDIDATE_LEDGER_VERSION,
+            "replay_version": CANDIDATE_REPLAY_VERSION,
+            "candidate_count": len(candidate_ledger),
+            "base_eligible_count": sum(
+                1 for entry in candidate_ledger if entry.base_eligible
+            ),
+            "strategy_eligible_count": sum(
+                1 for entry in candidate_ledger
+                if entry.strategy_eligible is True
+            ),
+            "executed_count": sum(
+                1 for entry in candidate_ledger if entry.executed
+            ),
+            "fingerprint": candidate_ledger_fingerprint(
+                candidate_ledger
+            ),
+            "frozen_config_id": (
+                request.frozen_strategy_config.config_id
+                if request.frozen_strategy_config is not None
+                else ""
+            ),
+        },
     }
     return BacktestResult(
         request=request,
@@ -352,16 +742,156 @@ def run_system_backtest(
         breakdowns=build_breakdowns(trades),
         skipped_setups=skipped,
         diagnostics=diagnostics,
+        data_manifest=data_manifest.to_dict(),
+        candidate_ledger=[entry.to_dict() for entry in candidate_ledger],
+        frozen_strategy_config=(
+            request.frozen_strategy_config.to_dict()
+            if request.frozen_strategy_config is not None
+            else None
+        ),
     )
 
 
-def validate_backtest_input(request: BacktestRequest, candles_by_timeframe: dict[str, list[Candle]]) -> None:
-    if request.end <= request.start:
+def validate_backtest_input(
+    request: BacktestRequest,
+    candles_by_timeframe: dict[str, list[Candle]],
+    *,
+    data_manifest: DataManifest | None = None,
+) -> None:
+    request_timezone_missing = (
+        request.start.tzinfo is None
+        or request.start.utcoffset() is None
+        or request.end.tzinfo is None
+        or request.end.utcoffset() is None
+    )
+    request_start = normalize_utc(request.start)[0]
+    request_end = normalize_utc(request.end)[0]
+    if request_end <= request_start:
         raise ValueError("Ngày kết thúc backtest phải sau ngày bắt đầu.")
     if request.initial_balance <= 0:
         raise ValueError("Số dư ban đầu phải lớn hơn 0.")
     if request.risk_percent <= 0:
         raise ValueError("Risk percent phải lớn hơn 0.")
+    execution_mode = normalize_execution_mode(request.execution_mode)
+    if execution_mode not in VALID_EXECUTION_MODES:
+        raise ValueError(
+            "Execution mode phải là RESEARCH hoặc EXECUTION_PARITY."
+        )
+    if request.lot_step <= 0 or request.minimum_lot <= 0:
+        raise ValueError("Lot step và minimum lot phải lớn hơn 0.")
+    if request.maximum_lot < request.minimum_lot:
+        raise ValueError("Maximum lot phải lớn hơn hoặc bằng minimum lot.")
+    if request.contract_size_override is not None and request.contract_size_override <= 0:
+        raise ValueError("Contract size phải lớn hơn 0.")
+    if any(
+        value < 0
+        for value in (
+            request.spread_price,
+            request.slippage_price,
+            request.entry_slippage_price or 0.0,
+            request.exit_slippage_price or 0.0,
+            request.commission_per_lot_round_turn,
+            request.swap_long_per_lot_day,
+            request.swap_short_per_lot_day,
+        )
+    ):
+        raise ValueError("Các thành phần chi phí execution không được âm.")
+    if request.setup_expiry_minutes <= 0:
+        raise ValueError("Thời hạn setup theo phút phải lớn hơn 0.")
+    if request.max_holding_minutes <= 0:
+        raise ValueError("Thời gian giữ lệnh theo phút phải lớn hơn 0.")
+    if normalize_backtest_purpose(request.purpose) not in VALID_BACKTEST_PURPOSES:
+        raise ValueError(
+            "Mục đích backtest phải là RESEARCH hoặc VALIDATION."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and execution_mode != EXECUTION_MODE_PARITY
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "EXECUTION_PARITY_REQUIRED."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and request.cost_model_configured is not True
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "EXECUTION_COST_MODEL_NOT_CONFIGURED."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and _quote_conversion_required(request)
+        and not request.quote_conversion_candles
+        and not request.quote_to_account_rate
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "POINT_IN_TIME_QUOTE_CONVERSION_MISSING."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and request_timezone_missing
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "REQUEST_TIMEZONE_MISSING: start/end phải có timezone."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and request.conservative_same_bar is not True
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "SAME_BAR_POLICY_MUST_BE_STOP_FIRST."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and str(request.execution_timeframe or "").upper() != "M15"
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "EXECUTION_TIMEFRAME_MUST_BE_M15."
+        )
+    timeframe_duration(request.step_timeframe)
+    timeframe_duration(request.execution_timeframe)
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and data_manifest is not None
+        and not data_manifest.validation_eligible
+    ):
+        details = "; ".join(validation_quality_errors(data_manifest))
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: " + details
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and not candles_by_timeframe.get(
+            str(request.execution_timeframe or "").upper()
+        )
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "EXECUTION_TIMEFRAME_MISSING."
+        )
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and request.frozen_strategy_config is None
+    ):
+        raise ValueError(
+            "Dữ liệu không đạt chuẩn VALIDATION: "
+            "FROZEN_STRATEGY_CONFIG_REQUIRED."
+        )
     for timeframe in ("D1", "H4", "H1"):
         if not candles_by_timeframe.get(timeframe):
             raise ValueError(f"Thiếu dữ liệu {timeframe} cho backtest.")
@@ -371,10 +901,7 @@ def slice_candles_until(
     candles_by_timeframe: dict[str, list[Candle]],
     moment: datetime,
 ) -> dict[str, list[Candle]]:
-    return {
-        timeframe: [candle for candle in candles if candle.time <= moment]
-        for timeframe, candles in candles_by_timeframe.items()
-    }
+    return closed_candle_snapshot(candles_by_timeframe, moment)
 
 
 def has_minimum_analysis_data(snapshot: dict[str, list[Candle]]) -> bool:
@@ -387,15 +914,21 @@ def has_minimum_analysis_data(snapshot: dict[str, list[Candle]]) -> bool:
 
 def select_trade_scenario(analysis: dict[str, Any]) -> dict[str, Any] | None:
     summary = analysis.get("decision_summary", {}) if isinstance(analysis.get("decision_summary"), dict) else {}
-    best_side = summary.get("best_side") or summary.get("best_scenario")
+    best_side = str(
+        summary.get("best_side")
+        or summary.get("best_scenario")
+        or ""
+    ).lower()
     scenarios = analysis.get("scenarios", [])
     if not isinstance(scenarios, list):
         return None
+    if best_side not in {"buy", "sell"}:
+        return None
     for scenario in scenarios:
-        if isinstance(scenario, dict) and scenario.get("type") == best_side:
-            return scenario
-    for scenario in scenarios:
-        if isinstance(scenario, dict) and scenario.get("type") in {"buy", "sell"}:
+        if (
+            isinstance(scenario, dict)
+            and str(scenario.get("type") or "").lower() == best_side
+        ):
             return scenario
     return None
 
@@ -456,6 +989,9 @@ def build_fallback_scenario(analysis: dict[str, Any], candle: Any) -> dict[str, 
         "entry_zone_source": "fallback",
         "ready_to_trade": False,
         "_fallback": True,
+        "synthetic": True,
+        "research_only": True,
+        "scenario_source": "synthetic_fallback",
         "_regime": regime_primary,
     }
 
@@ -464,7 +1000,13 @@ def should_open_trade(analysis: dict[str, Any], scenario: dict[str, Any], min_fi
     return trade_open_block_reason(analysis, scenario, min_final_score) is None
 
 
-def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], min_final_score: int = 0) -> str | None:
+def trade_open_block_reason(
+    analysis: dict[str, Any],
+    scenario: dict[str, Any],
+    min_final_score: int = 0,
+    *,
+    strict_execution: bool = False,
+) -> str | None:
     """Standard backtest entry filter — single unified logic.
 
     Pipeline: trade_gate.allowed → permission allowed/caution →
@@ -475,19 +1017,52 @@ def trade_open_block_reason(analysis: dict[str, Any], scenario: dict[str, Any], 
     gate = analysis.get("trade_gate", {}) if isinstance(analysis.get("trade_gate"), dict) else {}
     decision_engine = analysis.get("decision_engine", {}) if isinstance(analysis.get("decision_engine"), dict) else {}
 
-    if gate.get("allowed") is not True:
+    if gate.get("allowed") is not True or (
+        strict_execution and gate.get("decision_cap") is not None
+    ):
         return "blocked_by_trade_gate"
 
     permission_status = trade_permission.get("status")
-    if permission_status not in {"allowed", "caution"}:
+    allowed_permissions = {"allowed"} if strict_execution else {"allowed", "caution"}
+    if permission_status not in allowed_permissions:
         return "blocked_by_permission"
 
     decision = decision_engine.get("decision")
-    if decision not in {"READY_TO_TRADE", "WAITING_CONFIRMATION", "AGGRESSIVE_SETUP", "WATCH_ONLY"}:
+    allowed_decisions = (
+        {"READY_TO_TRADE"}
+        if strict_execution
+        else {
+            "READY_TO_TRADE",
+            "WAITING_CONFIRMATION",
+            "AGGRESSIVE_SETUP",
+            "WATCH_ONLY",
+        }
+    )
+    if decision not in allowed_decisions:
         return "blocked_by_decision"
 
-    if scenario.get("entry_status") not in {"confirmed_entry", "waiting_confirmation", "watch_zone"}:
+    allowed_entry_statuses = (
+        {"confirmed_entry"}
+        if strict_execution
+        else {"confirmed_entry", "waiting_confirmation", "watch_zone"}
+    )
+    if scenario.get("entry_status") not in allowed_entry_statuses:
         return "blocked_by_entry_status"
+    if strict_execution and (
+        scenario.get("ready_to_trade") is not True
+        or str(scenario.get("m15_quality") or "").lower() != "strict"
+    ):
+        return "blocked_by_entry_status"
+    journal = (
+        analysis.get("journal_feedback")
+        if isinstance(analysis.get("journal_feedback"), dict)
+        else {}
+    )
+    if strict_execution and journal.get("decision_cap") in {
+        "TRADE_BLOCKED",
+        "WATCH_ONLY",
+    }:
+        return "blocked_by_permission"
 
     if min_final_score > 0 and _safe_int(analysis.get("final_score")) is not None:
         if int(analysis.get("final_score") or 0) < min_final_score:
@@ -510,9 +1085,22 @@ def simulate_trade_from_analysis(
     scenario: dict[str, Any],
     entry_candle: Candle,
     future_candles: list[Candle],
+    execution_timeframe: str = "M15",
+    signal_time: datetime | None = None,
+    account_balance: float | None = None,
 ) -> BacktestTrade | None:
     side = str(scenario.get("type") or "")
     if side not in {"buy", "sell"}:
+        return None
+    if (
+        normalize_backtest_purpose(request.purpose)
+        == BACKTEST_PURPOSE_VALIDATION
+        and (
+            scenario.get("research_only") is True
+            or scenario.get("_fallback") is True
+            or scenario.get("synthetic") is True
+        )
+    ):
         return None
     try:
         stop_loss = float(scenario["stop_loss"])
@@ -521,44 +1109,211 @@ def simulate_trade_from_analysis(
     except (KeyError, TypeError, ValueError):
         return None
 
-    entry_fill = find_entry_fill(
+    zone = _entry_zone_bounds(scenario.get("entry_zone"))
+    if zone is None:
+        return None
+    if signal_time is not None:
+        active_at = normalize_utc(signal_time)[0]
+    elif isinstance(getattr(entry_candle, "time", None), datetime):
+        active_at = candle_close_time(
+            entry_candle,
+            request.step_timeframe,
+        )
+    elif future_candles:
+        active_at = normalize_utc(future_candles[0].time)[0]
+    else:
+        return None
+    setup_expiry = timedelta(minutes=request.setup_expiry_minutes)
+    parity_enabled = (
+        normalize_execution_mode(request.execution_mode)
+        == EXECUTION_MODE_PARITY
+    )
+    entry_fill = find_confirmation_close_fill(
         side=side,
-        scenario=scenario,
+        zone_low=zone[0],
+        zone_high=zone[1],
         future_candles=future_candles,
-        setup_expiry_bars=request.setup_expiry_bars,
-        request=request,
+        setup_active_time=active_at,
+        setup_expiry=setup_expiry,
+        execution_timeframe=execution_timeframe,
+        spread_price=(0.0 if parity_enabled else request.spread_price),
+        slippage_price=(0.0 if parity_enabled else request.slippage_price),
     )
     if entry_fill is None:
         return None
-    fill_candle, entry_price, fill_index = entry_fill
-    if abs(entry_price - stop_loss) <= 0:
+    execution_entry_price = entry_fill.price
+    if parity_enabled:
+        entry_spread = session_spread_price(
+            request.spread_price,
+            entry_fill.filled_at,
+            request.spread_session_multipliers,
+        )[0]
+        entry_slippage = (
+            request.entry_slippage_price
+            if request.entry_slippage_price is not None
+            else request.slippage_price
+        )
+        execution_entry_price = (
+            entry_fill.price + entry_spread + max(0.0, entry_slippage)
+            if side == "buy"
+            else entry_fill.price - max(0.0, entry_slippage)
+        )
+    if not valid_trade_geometry(
+        side,
+        execution_entry_price,
+        stop_loss,
+        take_profit,
+    ):
         return None
 
-    exit_time, exit_price, outcome, holding_bars = resolve_exit(
+    same_bar_policy = (
+        SAME_BAR_STOP_FIRST
+        if request.conservative_same_bar
+        else SAME_BAR_TARGET_FIRST
+    )
+    exit_resolution = resolve_post_fill_exit(
         side=side,
-        entry_price=entry_price,
+        entry_price=execution_entry_price,
         stop_loss=stop_loss,
         take_profit=take_profit,
-        future_candles=future_candles[fill_index:],
-        max_holding_bars=request.max_holding_bars,
-        conservative_same_bar=request.conservative_same_bar,
+        future_candles=future_candles[entry_fill.candle_index + 1:],
+        filled_at=entry_fill.filled_at,
+        max_holding=timedelta(minutes=request.max_holding_minutes),
+        execution_timeframe=execution_timeframe,
+        same_bar_policy=same_bar_policy,
     )
-    result = result_r(side, entry_price, stop_loss, exit_price) if exit_price is not None else 0.0
+    execution_costs: dict[str, Any] | None = None
+    effective_entry_price = execution_entry_price
+    effective_exit_price = exit_resolution.price
+    if parity_enabled and exit_resolution.price is not None and exit_resolution.exited_at is not None:
+        quote_rate_entry = _quote_rate_for_request(
+            request,
+            entry_fill.filled_at,
+        )
+        quote_rate_exit = _quote_rate_for_request(
+            request,
+            exit_resolution.exited_at,
+        )
+        if quote_rate_entry is None or quote_rate_exit is None:
+            return None
+        contract_size = float(request.contract_size_override or 100000.0)
+        parity = apply_execution_costs(
+            side=side,
+            raw_entry_price=entry_fill.price,
+            raw_exit_price=exit_resolution.price,
+            stop_loss=stop_loss,
+            entry_time=entry_fill.filled_at,
+            exit_time=exit_resolution.exited_at,
+            balance=(
+                float(account_balance)
+                if account_balance is not None
+                else request.initial_balance
+            ),
+            risk_percent=request.risk_percent,
+            contract_size=contract_size,
+            quote_rate_entry=quote_rate_entry,
+            quote_rate_exit=quote_rate_exit,
+            lot_step=request.lot_step,
+            minimum_lot=request.minimum_lot,
+            maximum_lot=request.maximum_lot,
+            base_spread_price=request.spread_price,
+            spread_session_multipliers=request.spread_session_multipliers,
+            entry_slippage_price=(
+                request.entry_slippage_price
+                if request.entry_slippage_price is not None
+                else request.slippage_price
+            ),
+            exit_slippage_price=(
+                request.exit_slippage_price
+                if request.exit_slippage_price is not None
+                else request.slippage_price
+            ),
+            commission_per_lot_round_turn=(
+                request.commission_per_lot_round_turn
+            ),
+            swap_long_per_lot_day=request.swap_long_per_lot_day,
+            swap_short_per_lot_day=request.swap_short_per_lot_day,
+            triple_swap_weekday=request.triple_swap_weekday,
+        )
+        effective_entry_price = parity.entry_price
+        effective_exit_price = parity.exit_price
+        result = parity.net_r
+        execution_costs = {
+            "raw_entry_price": parity.raw_entry_price,
+            "raw_exit_price": parity.raw_exit_price,
+            "gross_r": parity.gross_r,
+            "cost_r": parity.cost_r,
+            "net_r": parity.net_r,
+            "gross_pnl_account": parity.gross_pnl_account,
+            "net_pnl_account": parity.net_pnl_account,
+            "spread_slippage_account": parity.spread_slippage_account,
+            "commission_account": parity.commission_account,
+            "swap_account": parity.swap_account,
+            "position_lot": parity.position.lot,
+            "target_risk_account": parity.position.target_risk_account,
+            "planned_risk_account": parity.position.planned_risk_account,
+            "quote_rate_entry": quote_rate_entry,
+            "quote_rate_exit": quote_rate_exit,
+            "execution_session": parity.session,
+            "rollover_units": parity.rollover_units,
+            "entry_spread_price": parity.entry_spread_price,
+            "exit_spread_price": parity.exit_spread_price,
+            "entry_slippage_price": parity.entry_slippage_price,
+            "exit_slippage_price": parity.exit_slippage_price,
+            "raw_lot": parity.position.raw_lot,
+            "capped_by_minimum": parity.position.capped_by_minimum,
+            "capped_by_maximum": parity.position.capped_by_maximum,
+        }
+    else:
+        result = (
+            result_r(
+                side,
+                effective_entry_price,
+                stop_loss,
+                effective_exit_price,
+            )
+            if effective_exit_price is not None
+            else 0.0
+        )
+    events = build_execution_events(
+        signal_time=active_at,
+        setup_expires_at=active_at + setup_expiry,
+        fill=entry_fill,
+        exit_resolution=exit_resolution,
+    )
+    if parity_enabled:
+        for event in events:
+            if event.get("event") == "ENTRY_FILLED":
+                event["price"] = round(effective_entry_price, 8)
+            elif event.get("event") == "EXIT_FILLED":
+                event["price"] = (
+                    round(effective_exit_price, 8)
+                    if effective_exit_price is not None
+                    else None
+                )
     return build_trade_record(
         request=request,
         analysis=analysis,
         scenario=scenario,
         side=side,
         decision=str((analysis.get("decision_engine") or {}).get("decision", "")),
-        entry_candle=fill_candle,
-        entry_price=entry_price,
+        entry_candle=entry_fill.candle,
+        entry_price=effective_entry_price,
         stop_loss=stop_loss,
         take_profit=take_profit,
-        exit_time=exit_time,
-        exit_price=exit_price,
-        outcome=outcome,
+        exit_time=(
+            exit_resolution.exited_at.isoformat()
+            if exit_resolution.exited_at is not None
+            else None
+        ),
+        exit_price=effective_exit_price,
+        outcome=exit_resolution.outcome,
         result_value=result,
-        holding_bars=holding_bars,
+        holding_bars=exit_resolution.holding_bars,
+        entry_timeframe=execution_timeframe,
+        execution_timeframe=execution_timeframe,
+        execution_events=events,
+        execution_costs=execution_costs,
     )
 
 
@@ -569,28 +1324,38 @@ def find_entry_fill(
     future_candles: list[Candle],
     setup_expiry_bars: int,
     request: BacktestRequest,
+    setup_active_time: datetime | None = None,
+    execution_timeframe: str = "M15",
+    setup_expiry_minutes: int | None = None,
 ) -> tuple[Candle, float, int] | None:
-    """Tim diem vao lenh trong cac nen tuong lai.
-
-    Yeu cau xac nhan dao chieu tai zone:
-    - Buy: nen chạm zone VA close > zone_low (áp lực mua đẩy giá lên)
-    - Sell: nen chạm zone VA close < zone_high (áp lực bán đẩy giá xuống)
-    Fill tại close thay vì biên xấu nhất của zone.
-    """
+    """Compatibility wrapper for the versioned confirmation-close policy."""
     zone = _entry_zone_bounds(scenario.get("entry_zone"))
-    if zone is None:
+    if zone is None or not future_candles:
         return None
-    zone_low, zone_high = zone
-    for index, candle in enumerate(future_candles[: max(1, setup_expiry_bars)]):
-        if not _candle_touches_zone(candle, zone_low, zone_high):
-            continue
-        if side == "buy":
-            if candle.close > zone_low:
-                return candle, _entry_price_with_costs(side, candle.close, request), index
-        else:
-            if candle.close < zone_high:
-                return candle, _entry_price_with_costs(side, candle.close, request), index
-    return None
+    duration = timeframe_duration(execution_timeframe)
+    active_at = setup_active_time or (
+        normalize_utc(future_candles[0].time)[0] - duration
+    )
+    expiry_minutes = (
+        setup_expiry_minutes
+        if setup_expiry_minutes is not None
+        else max(1, setup_expiry_bars)
+        * int(duration.total_seconds() // 60)
+    )
+    fill = find_confirmation_close_fill(
+        side=side,
+        zone_low=zone[0],
+        zone_high=zone[1],
+        future_candles=future_candles,
+        setup_active_time=active_at,
+        setup_expiry=timedelta(minutes=expiry_minutes),
+        execution_timeframe=execution_timeframe,
+        spread_price=request.spread_price,
+        slippage_price=request.slippage_price,
+    )
+    if fill is None:
+        return None
+    return fill.candle, fill.price, fill.candle_index
 
 
 def trade_plan_skip_reason(scenario: dict[str, Any]) -> tuple[str, str]:
@@ -633,27 +1398,47 @@ def resolve_exit(
     future_candles: list[Candle],
     max_holding_bars: int,
     conservative_same_bar: bool = True,
+    execution_timeframe: str = "M15",
+    filled_at: datetime | None = None,
+    max_holding_minutes: int | None = None,
 ) -> tuple[str | None, float | None, str, int]:
-    selected = future_candles[: max(1, max_holding_bars)]
-    if not selected:
+    if not future_candles:
         return None, None, "open", 0
-    for index, candle in enumerate(selected, start=1):
-        if side == "buy":
-            stop_hit = candle.low <= stop_loss
-            target_hit = candle.high >= take_profit
-        else:
-            stop_hit = candle.high >= stop_loss
-            target_hit = candle.low <= take_profit
-        if stop_hit and target_hit:
-            if conservative_same_bar:
-                return candle.time.isoformat(), stop_loss, "loss", index
-            return candle.time.isoformat(), take_profit, "win", index
-        if stop_hit:
-            return candle.time.isoformat(), stop_loss, "loss", index
-        if target_hit:
-            return candle.time.isoformat(), take_profit, "win", index
-    last = selected[-1]
-    return last.time.isoformat(), last.close, "expired", len(selected)
+    duration = timeframe_duration(execution_timeframe)
+    normalized_fill = filled_at or normalize_utc(
+        future_candles[0].time
+    )[0]
+    holding_minutes = (
+        max_holding_minutes
+        if max_holding_minutes is not None
+        else max(1, max_holding_bars)
+        * int(duration.total_seconds() // 60)
+    )
+    resolution = resolve_post_fill_exit(
+        side=side,
+        entry_price=entry_price,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+        future_candles=future_candles,
+        filled_at=normalized_fill,
+        max_holding=timedelta(minutes=holding_minutes),
+        execution_timeframe=execution_timeframe,
+        same_bar_policy=(
+            SAME_BAR_STOP_FIRST
+            if conservative_same_bar
+            else SAME_BAR_TARGET_FIRST
+        ),
+    )
+    return (
+        (
+            resolution.exited_at.isoformat()
+            if resolution.exited_at is not None
+            else None
+        ),
+        resolution.price,
+        resolution.outcome,
+        resolution.holding_bars,
+    )
 
 
 def result_r(side: str, entry_price: float, stop_loss: float, exit_price: float | None) -> float:
@@ -669,6 +1454,9 @@ def result_r(side: str, entry_price: float, stop_loss: float, exit_price: float 
 
 def summarize_backtest_trades(trades: list[BacktestTrade]) -> dict[str, Any]:
     results = [trade.result_r for trade in trades]
+    gross_results = [trade.gross_r for trade in trades]
+    cost_results = [trade.cost_r for trade in trades]
+    net_results = [trade.net_r for trade in trades]
     wins = [value for value in results if value > 0]
     losses = [value for value in results if value < 0]
     breakeven = [value for value in results if value == 0]
@@ -683,6 +1471,27 @@ def summarize_backtest_trades(trades: list[BacktestTrade]) -> dict[str, Any]:
         "win_rate": round(len(wins) / len(trades) * 100, 2) if trades else 0.0,
         "loss_rate": round(len(losses) / len(trades) * 100, 2) if trades else 0.0,
         "total_r": round(sum(results), 4) if results else 0.0,
+        "gross_r": round(sum(gross_results), 4) if gross_results else 0.0,
+        "cost_r": round(sum(cost_results), 4) if cost_results else 0.0,
+        "net_r": round(sum(net_results), 4) if net_results else 0.0,
+        "gross_pnl_account": round(
+            sum(trade.gross_pnl_account for trade in trades), 2
+        ),
+        "net_pnl_account": round(
+            sum(trade.net_pnl_account for trade in trades), 2
+        ),
+        "total_transaction_cost_account": round(
+            sum(
+                trade.spread_slippage_account
+                + trade.commission_account
+                + trade.swap_account
+                for trade in trades
+            ),
+            2,
+        ),
+        "gross_net_difference_r": round(
+            sum(cost_results), 4
+        ) if trades else 0.0,
         "average_r": round(sum(results) / len(results), 4) if results else 0.0,
         "median_r": round(median(results), 4) if results else 0.0,
         "expectancy_r": round(sum(results) / len(results), 4) if results else 0.0,
@@ -816,6 +1625,10 @@ def build_trade_record(
     outcome: str,
     result_value: float,
     holding_bars: int,
+    entry_timeframe: str = "M15",
+    execution_timeframe: str = "M15",
+    execution_events: list[dict[str, Any]] | None = None,
+    execution_costs: dict[str, Any] | None = None,
 ) -> BacktestTrade:
     from core.scoring_provenance import normalize_scoring_provenance
 
@@ -828,11 +1641,25 @@ def build_trade_record(
         analysis.get("scoring_provenance"),
         fallback_mode=request.smc_scoring_mode,
     )
+    costs = execution_costs if isinstance(execution_costs, dict) else {}
+    normalized_execution_mode = normalize_execution_mode(
+        request.execution_mode
+    )
+    explicit_setup_score, _setup_score_source = side_setup_score(
+        analysis,
+        side,
+    )
+    gross_r = float(costs.get("gross_r", result_value) or 0.0)
+    cost_r = float(costs.get("cost_r", 0.0) or 0.0)
+    net_r = float(costs.get("net_r", result_value) or 0.0)
     return BacktestTrade(
         symbol=request.symbol,
         side=side,
         decision=decision,
-        entry_time=entry_candle.time.isoformat(),
+        entry_time=candle_close_time(
+            entry_candle,
+            entry_timeframe,
+        ).isoformat(),
         exit_time=exit_time,
         entry_price=round(entry_price, 5),
         stop_loss=round(stop_loss, 5),
@@ -893,6 +1720,72 @@ def build_trade_record(
         warning_codes=list(analysis.get("warning_codes", []) or []),
         block_codes=list(analysis.get("block_codes", []) or []),
         analysis_snapshot=analysis if request.store_analysis_snapshots else None,
+        execution_policy_version=BACKTEST_EXECUTION_POLICY_VERSION,
+        execution_timeframe=execution_timeframe,
+        scenario_source=str(
+            scenario.get("scenario_source")
+            or (
+                "synthetic_fallback"
+                if scenario.get("_fallback") is True
+                else "pipeline"
+            )
+        ),
+        research_only=bool(
+            scenario.get("research_only") is True
+            or scenario.get("_fallback") is True
+            or scenario.get("synthetic") is True
+        ),
+        execution_events=list(execution_events or []),
+        execution_mode=normalized_execution_mode,
+        execution_model_version=(
+            EXECUTION_PARITY_MODEL_VERSION
+            if normalized_execution_mode == EXECUTION_MODE_PARITY
+            else BACKTEST_EXECUTION_POLICY_VERSION
+        ),
+        cost_model_version=(
+            EXECUTION_COST_MODEL_VERSION
+            if normalized_execution_mode == EXECUTION_MODE_PARITY
+            else ""
+        ),
+        quote_conversion_model_version=(
+            QUOTE_CONVERSION_MODEL_VERSION
+            if normalized_execution_mode == EXECUTION_MODE_PARITY
+            else ""
+        ),
+        raw_entry_price=optional_float(costs.get("raw_entry_price")),
+        raw_exit_price=optional_float(costs.get("raw_exit_price")),
+        gross_r=round(gross_r, 4),
+        cost_r=round(cost_r, 4),
+        net_r=round(net_r, 4),
+        gross_pnl_account=round(
+            float(costs.get("gross_pnl_account", 0.0) or 0.0), 4
+        ),
+        net_pnl_account=round(
+            float(costs.get("net_pnl_account", 0.0) or 0.0), 4
+        ),
+        spread_slippage_account=round(
+            float(costs.get("spread_slippage_account", 0.0) or 0.0), 4
+        ),
+        commission_account=round(
+            float(costs.get("commission_account", 0.0) or 0.0), 4
+        ),
+        swap_account=round(
+            float(costs.get("swap_account", 0.0) or 0.0), 4
+        ),
+        position_lot=round(
+            float(costs.get("position_lot", 0.0) or 0.0), 4
+        ),
+        target_risk_account=round(
+            float(costs.get("target_risk_account", 0.0) or 0.0), 4
+        ),
+        planned_risk_account=round(
+            float(costs.get("planned_risk_account", 0.0) or 0.0), 4
+        ),
+        quote_rate_entry=float(costs.get("quote_rate_entry", 1.0) or 1.0),
+        quote_rate_exit=float(costs.get("quote_rate_exit", 1.0) or 1.0),
+        execution_session=str(costs.get("execution_session", "") or ""),
+        cost_breakdown=dict(costs),
+        setup_score=explicit_setup_score,
     )
 
 
@@ -903,7 +1796,22 @@ def _run_analysis_snapshot(
     closed_trades: list[dict[str, Any]],
     current_time: datetime,
     analysis_fn: AnalysisFn,
+    *,
+    correlation_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    point_in_time_quote_rate = _quote_rate_for_request(
+        request,
+        current_time,
+    )
+    if point_in_time_quote_rate is None:
+        point_in_time_quote_rate = 1.0
+    analysis_spread = float(request.spread_price or 0.0)
+    if normalize_execution_mode(request.execution_mode) == EXECUTION_MODE_PARITY:
+        analysis_spread = session_spread_price(
+            request.spread_price,
+            current_time,
+            request.spread_session_multipliers,
+        )[0]
     analysis_input = AnalysisInput(
         symbol=request.symbol,
         broker_symbol=request.broker_symbol,
@@ -921,7 +1829,8 @@ def _run_analysis_snapshot(
         "broker_logged_in": True,
         "display_symbol": request.symbol,
         "broker_symbol": request.broker_symbol,
-        "spread_points": request.spread_price,
+        "spread_points": analysis_spread,
+        "spread_price": analysis_spread,
         "spread_status": "normal",
         "warning": None,
         "news_in_3h": False,
@@ -932,25 +1841,67 @@ def _run_analysis_snapshot(
         else None if request.allow_macro
         else {"buy": 15, "sell": 15}
     )
-    correlation_context = request.correlation_context if request.allow_macro else None
-    return analysis_fn(
-        analysis_input,
-        {"D1": snapshot["D1"], "H4": snapshot["H4"], "H1": snapshot["H1"]},
-        data_quality=data_quality,
-        macro_alignment=macro_alignment,
-        macro_confidence=1.0,
-        ai_commentary=None,
-        ai_meta=None,
-        m15_candles=snapshot.get("M15"),
-        correlation_context=correlation_context,
-        quote_to_usd_rate=1.0,
-        closed_trades=_closed_trades_for_guard(request, closed_trades),
-        open_trades=[],
-        account_guard_settings=_account_guard_settings(request),
-        trade_date=current_time,
-        is_backtest=True,
-        smc_scoring_mode=request.smc_scoring_mode,
+    point_in_time_correlation = (
+        _slice_correlation_context(correlation_context, current_time)
+        if request.allow_macro
+        else None
     )
+    with risk_parameter_scope(request.risk_parameter_overrides):
+        return analysis_fn(
+            analysis_input,
+            {"D1": snapshot["D1"], "H4": snapshot["H4"], "H1": snapshot["H1"]},
+            data_quality=data_quality,
+            macro_alignment=macro_alignment,
+            macro_confidence=1.0,
+            ai_commentary=None,
+            ai_meta=None,
+            m15_candles=snapshot.get("M15"),
+            correlation_context=point_in_time_correlation,
+            quote_to_usd_rate=point_in_time_quote_rate,
+            closed_trades=_closed_trades_for_guard(request, closed_trades),
+            open_trades=[],
+            account_guard_settings=_account_guard_settings(request),
+            trade_date=current_time,
+            is_backtest=True,
+            smc_scoring_mode=request.smc_scoring_mode,
+        )
+
+
+def _normalize_correlation_context(
+    value: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    normalized: dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, list) and all(
+            isinstance(candle, Candle) for candle in item
+        ):
+            normalized[key] = normalize_candle_series(item, "D1")
+        else:
+            normalized[key] = item
+    return normalized
+
+
+def _slice_correlation_context(
+    value: dict[str, Any] | None,
+    decision_time: datetime,
+) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    sliced: dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, list) and all(
+            isinstance(candle, Candle) for candle in item
+        ):
+            sliced[key] = [
+                candle
+                for candle in item
+                if candle_close_time(candle, "D1") <= decision_time
+            ]
+        else:
+            sliced[key] = item
+    return sliced
 
 
 def _closed_trades_for_guard(request: BacktestRequest, closed_trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -967,9 +1918,55 @@ def _account_guard_settings(request: BacktestRequest) -> dict[str, Any]:
     }
 
 
-def _future_execution_candles(candles_by_timeframe: dict[str, list[Candle]], moment: datetime) -> list[Candle]:
-    execution = candles_by_timeframe.get("M15") or candles_by_timeframe.get("H1", [])
-    return [candle for candle in execution if candle.time > moment]
+def _symbol_currencies(symbol: str) -> tuple[str, str]:
+    normalized = "".join(
+        character for character in str(symbol or "").upper()
+        if character.isalpha()
+    )
+    if len(normalized) < 6:
+        return "", ""
+    return normalized[:3], normalized[-3:]
+
+
+def _quote_conversion_required(request: BacktestRequest) -> bool:
+    _base, quote = _symbol_currencies(request.symbol)
+    account = str(request.account_currency or "USD").upper()
+    return bool(quote and account and quote != account)
+
+
+def _quote_rate_for_request(
+    request: BacktestRequest,
+    moment: datetime,
+) -> float | None:
+    if not _quote_conversion_required(request):
+        return 1.0
+    return quote_rate_at(
+        request.quote_conversion_candles,
+        moment,
+        inverted=request.quote_conversion_inverted,
+        timeframe="H1",
+        fallback_rate=request.quote_to_account_rate,
+    )
+
+
+def _future_execution_candles(
+    candles_by_timeframe: dict[str, list[Candle]],
+    moment: datetime,
+    end: datetime | None = None,
+    execution_timeframe: str | None = None,
+) -> list[Candle]:
+    requested = str(execution_timeframe or "M15").upper()
+    timeframe = (
+        requested if candles_by_timeframe.get(requested) else "H1"
+    )
+    execution = candles_by_timeframe.get(timeframe, [])
+    upper_bound = end or datetime.max.replace(tzinfo=timezone.utc)
+    return execution_candles_in_interval(
+        execution,
+        timeframe,
+        start=moment,
+        end=upper_bound,
+    )
 
 
 def _entry_price_with_costs(side: str, close: float, request: BacktestRequest) -> float:
@@ -1106,6 +2103,18 @@ def _request_to_dict(request: BacktestRequest) -> dict[str, Any]:
     data["start"] = request.start.isoformat()
     data["end"] = request.end.isoformat()
     data["correlation_context"] = _serialize_correlation_context(request.correlation_context)
+    conversion = list(request.quote_conversion_candles)
+    data["quote_conversion_candles"] = {
+        "count": len(conversion),
+        "symbol": request.quote_conversion_symbol or None,
+        "inverted": request.quote_conversion_inverted,
+        "from": (
+            conversion[0].time.isoformat() if conversion else None
+        ),
+        "to": (
+            conversion[-1].time.isoformat() if conversion else None
+        ),
+    }
     return data
 
 

@@ -17,6 +17,7 @@ from core.smc_context import (
     calculate_effective_zone_score,
     zone_matches_direction,
 )
+from core.risk_parameter_context import risk_parameter
 
 
 def _load_risk_params() -> dict:
@@ -468,7 +469,9 @@ def _calc_stop_loss_buy(
     if zone_low is None or zone_low >= level:
         return atr_sl  # no valid zone boundary below level, use ATR-based
 
-    zone_sl = zone_low - atr_value * _ZONE_SL_BUFFER_ATR
+    zone_sl = zone_low - atr_value * risk_parameter(
+        "zone_sl_buffer_atr", _ZONE_SL_BUFFER_ATR
+    )
     if zone_sl >= max_sl:
         return zone_sl  # zone is close enough, place SL below it
     return max_sl       # zone too far, cap at 1.5×
@@ -489,7 +492,9 @@ def _calc_stop_loss_sell(
     if zone_high is None or zone_high <= level:
         return atr_sl  # no valid zone boundary above level, use ATR-based
 
-    zone_sl = zone_high + atr_value * _ZONE_SL_BUFFER_ATR
+    zone_sl = zone_high + atr_value * risk_parameter(
+        "zone_sl_buffer_atr", _ZONE_SL_BUFFER_ATR
+    )
     if zone_sl <= min_sl:
         return zone_sl  # zone is close enough, place SL above it
     return min_sl       # zone too far, cap at 1.5×
@@ -648,7 +653,7 @@ def build_trade_plan(
     quote_to_usd_rate: float | None = None,
     spread_price: float = 0.0,
     market_regime: dict[str, Any] | None = None,
-    entry_aggressiveness: float = _ENTRY_AGGRESSIVENESS,
+    entry_aggressiveness: float | None = None,
     preferred_zone: dict[str, Any] | None = None,
     strict_preferred_zone: bool = False,
     is_backtest: bool = False,
@@ -658,7 +663,17 @@ def build_trade_plan(
     atr_value = technical["atr_h4"] or technical["atr_d1"] or 0.0
     if atr_value <= 0:
         return None
-    min_stop_distance = max(atr_value * _MIN_STOP_DISTANCE_ATR_MULT, spread_price * _MIN_STOP_SPREAD_MULT)
+    entry_aggressiveness = (
+        risk_parameter("entry_aggressiveness", _ENTRY_AGGRESSIVENESS)
+        if entry_aggressiveness is None
+        else float(entry_aggressiveness)
+    )
+    min_stop_distance = max(
+        atr_value * risk_parameter(
+            "min_stop_distance_atr_mult", _MIN_STOP_DISTANCE_ATR_MULT
+        ),
+        spread_price * _MIN_STOP_SPREAD_MULT,
+    )
     regime_primary = market_regime.get("primary", "unknown") if isinstance(market_regime, dict) else "unknown"
     sl_mult = REGIME_SL_MULTIPLIER.get(regime_primary, _DEFAULT_SL_MULT)
     # Apply asset-class multiplier on top of regime multiplier.
@@ -794,7 +809,9 @@ def build_trade_plan(
         ]
     else:
         # Fallback: level ± half-width
-        half_w = atr_value * _ENTRY_ZONE_HALF_WIDTH_ATR
+        half_w = atr_value * risk_parameter(
+            "entry_zone_half_width_atr", _ENTRY_ZONE_HALF_WIDTH_ATR
+        )
         entry_low = round_price(level - half_w, price_digits)
         entry_high = round_price(level + half_w, price_digits)
 
@@ -808,13 +825,17 @@ def build_trade_plan(
     sl_source = "atr"
     swing_sl = _find_nearest_swing_for_sl(smc, side, level)
     if swing_sl is not None:
-        stop_loss = swing_sl - sign * atr_value * _SWING_SL_BUFFER_ATR
+        stop_loss = swing_sl - sign * atr_value * risk_parameter(
+            "swing_sl_buffer_atr", _SWING_SL_BUFFER_ATR
+        )
         if abs(level - stop_loss) < min_stop_distance:
             stop_loss = level - sign * min_stop_distance
         sl_source = "swing"
     elif use_preferred:
         sl_boundary = preferred_zone["low"] if side == "buy" else preferred_zone["high"]
-        stop_loss = sl_boundary - sign * atr_value * _ZONE_SL_BUFFER_ATR
+        stop_loss = sl_boundary - sign * atr_value * risk_parameter(
+            "zone_sl_buffer_atr", _ZONE_SL_BUFFER_ATR
+        )
         if abs(level - stop_loss) < min_stop_distance:
             stop_loss = level - sign * min_stop_distance
         sl_source = "zone_boundary"
@@ -824,7 +845,9 @@ def build_trade_plan(
         stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, zone)
 
     # Guard: SL must be on the correct side of the entry zone
-    sl_edge = (entry_low if side == "buy" else entry_high) - sign * atr_value * _SL_FLOOR_BUFFER_ATR
+    sl_edge = (entry_low if side == "buy" else entry_high) - sign * atr_value * risk_parameter(
+        "sl_floor_buffer_atr", _SL_FLOOR_BUFFER_ATR
+    )
     if (stop_loss - sl_edge) * sign >= 0:
         stop_loss = sl_edge
     stop_loss = round_price(stop_loss, price_digits)
@@ -838,9 +861,13 @@ def build_trade_plan(
     # Entry price for TP SELECTION (midpoint = conservative — TP must clear RR>=1
     # even when filled at zone center, not just the best edge)
     entry_for_selection = (
-        entry_low + (entry_high - entry_low) * _TP_SELECTION_AGGRESSIVENESS
+        entry_low + (entry_high - entry_low) * risk_parameter(
+            "tp_selection_aggressiveness", _TP_SELECTION_AGGRESSIVENESS
+        )
         if side == "buy" else
-        entry_high + (entry_low - entry_high) * _TP_SELECTION_AGGRESSIVENESS
+        entry_high + (entry_low - entry_high) * risk_parameter(
+            "tp_selection_aggressiveness", _TP_SELECTION_AGGRESSIVENESS
+        )
     )
     sel_risk_distance = abs(entry_for_selection - stop_loss)
 
@@ -850,9 +877,13 @@ def build_trade_plan(
     # entry_for_selection (midpoint), so the guard is stricter. A plan passing
     # this check guarantees adequate SL buffer at ALL fill prices within the zone.
     if use_preferred or is_smc_zone:
-        _min_sl = atr_value * _MIN_STOP_DISTANCE_ATR_MULT
+        _min_sl = atr_value * risk_parameter(
+            "min_stop_distance_atr_mult", _MIN_STOP_DISTANCE_ATR_MULT
+        )
     else:
-        _min_sl = atr_value * _MIN_SL_DISTANCE_ATR
+        _min_sl = atr_value * risk_parameter(
+            "min_sl_distance_atr", _MIN_SL_DISTANCE_ATR
+        )
     rr_risk_distance = abs(entry_for_rr - stop_loss)
     if rr_risk_distance < _min_sl - 1e-10:
         return None
@@ -881,7 +912,9 @@ def build_trade_plan(
     eq_tp = _find_nearest_equal_level(smc, side, entry_for_selection)
     if eq_tp is not None:
         eq_tp = _round_target_price(eq_tp, side, price_digits)
-        if abs(eq_tp - entry_for_selection) > sel_risk_distance * _EQ_TP_MAX_RR:
+        if abs(eq_tp - entry_for_selection) > sel_risk_distance * risk_parameter(
+            "eq_tp_max_rr", _EQ_TP_MAX_RR
+        ):
             diag_rejected["equal_level_too_far"] += 1
         else:
             diag_candidates_checked += 1
@@ -998,7 +1031,9 @@ def build_trade_plan(
         if tp2 is not None and (tp2 - far_edge) * sign <= 0:
             tp2 = None
         # Guard: TP2 must be at least _TP2_MIN_GAP_ATR * ATR away from TP1
-        if tp2 is not None and abs(tp2 - tp1) < atr_value * _TP2_MIN_GAP_ATR:
+        if tp2 is not None and abs(tp2 - tp1) < atr_value * risk_parameter(
+            "tp2_min_gap_atr", _TP2_MIN_GAP_ATR
+        ):
             tp2 = None
 
     # --- Condition & Invalidation ---
@@ -1121,9 +1156,13 @@ def build_trade_plan(
         else entry_high + (entry_low - entry_high) * entry_aggressiveness
     )
     entry_for_selection = (
-        entry_low + (entry_high - entry_low) * _TP_SELECTION_AGGRESSIVENESS
+        entry_low + (entry_high - entry_low) * risk_parameter(
+            "tp_selection_aggressiveness", _TP_SELECTION_AGGRESSIVENESS
+        )
         if side == "buy"
-        else entry_high + (entry_low - entry_high) * _TP_SELECTION_AGGRESSIVENESS
+        else entry_high + (entry_low - entry_high) * risk_parameter(
+            "tp_selection_aggressiveness", _TP_SELECTION_AGGRESSIVENESS
+        )
     )
     entry_state = evaluate_entry(
         side=side,

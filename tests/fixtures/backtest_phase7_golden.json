@@ -1,0 +1,53 @@
+{
+  "fixture_version": "backtest-phase7-fixture-v1",
+  "timezone": "UTC",
+  "setup": {
+    "symbol": "EUR/USD",
+    "side": "buy",
+    "signal_time": "2026-01-05T00:00:00+00:00",
+    "zone_low": 1.0998,
+    "zone_high": 1.1003,
+    "stop_loss": 1.099,
+    "take_profit": 1.10245,
+    "spread_price": 0.0001,
+    "slippage_price": 0.00005,
+    "setup_expiry_minutes": 60,
+    "max_holding_minutes": 240
+  },
+  "candles": [
+    {
+      "time": "2026-01-05T00:00:00+00:00",
+      "open": 1.1001,
+      "high": 1.1004,
+      "low": 1.0997,
+      "close": 1.1,
+      "volume": 100
+    },
+    {
+      "time": "2026-01-05T00:15:00+00:00",
+      "open": 1.1001,
+      "high": 1.1026,
+      "low": 1.0999,
+      "close": 1.1023,
+      "volume": 120
+    },
+    {
+      "time": "2026-01-05T00:30:00+00:00",
+      "open": 1.1023,
+      "high": 1.1025,
+      "low": 1.1018,
+      "close": 1.102,
+      "volume": 80
+    }
+  ],
+  "expected_result_fingerprint": "1990c198354354545871323fa970fc8c4b0a9ff9b6c05f54aa1dfa3adb5a47b8",
+  "expected": {
+    "candidate_count": 1,
+    "trade_count": 1,
+    "fill_time": "2026-01-05T00:15:00+00:00",
+    "fill_price": 1.10015,
+    "outcome": "win",
+    "exit_price": 1.10245,
+    "result_r": 2.0
+  }
+}

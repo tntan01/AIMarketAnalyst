@@ -1,6 +1,6 @@
 # Kiến trúc chấm điểm Scanner V2
 
-Trạng thái: **hiện hành**, cập nhật 24/07/2026.
+Trạng thái: **hiện hành**, cập nhật 25/07/2026.
 
 ## 1. Mục tiêu
 
@@ -27,6 +27,11 @@ Một điểm số không được trả lời thay cả bốn câu hỏi.
 | `expected_effective_rr` | R:R dự kiến sau chi phí/giá thực tế tương ứng. | Là điều kiện, không phải quyết định duy nhất. |
 
 Mọi điểm phải thuộc đúng side. Không được lấy score của BUY rồi ghép scenario/SL/TP của SELL.
+
+`strategy_score` là cách gọi khái niệm cho `setup_score` của side được Strategy
+Router chọn để so với `min_score`; runtime không phát hành thêm một field điểm
+độc lập mang tên này. `final_score` tiếp tục là compatibility alias của
+`setup_score`, không phải một công thức thứ hai.
 
 ## 3. Decision thresholds và strategy thresholds
 
@@ -146,8 +151,21 @@ Các nguyên tắc:
 
 Backtest config version hiện hành:
 
-- schema `v3`;
-- validation `phase8-smc-v2-oos-v1`, schema v4;
+- schema `v8`;
+- validation `backtest-v8-statistical-validation-v1`;
+- Candidate Ledger `backtest-candidate-ledger-v1` và frozen OOS replay
+  `candidate-replay-v1`;
+- statistical contract `backtest-statistics-v1` và provenance
+  `backtest-provenance-v1`;
+- execution/cost/quote-conversion version và cost-model fingerprint hợp lệ;
+- engine contract `phase0-backtest-safety-v1`;
+- purpose `VALIDATION`, engine
+  `system-backtest-v2-execution-parity`, `execution_parity=true`;
+- data manifest `backtest-data-manifest-v2-session-aware`, session-policy
+  fingerprint hợp lệ,
+  `point_in_time_data=true`, quality `OK` và dataset hash hợp lệ;
+- execution policy `backtest-execution-sequence-v1`, confirmation-close fill,
+  exit từ nến M15 kế tiếp, same-bar `STOP_FIRST` và cấm synthetic trade;
 - scorer `scanner-v3`;
 - feature `scanner-features-v3`;
 - metric `setup_score`.
@@ -161,6 +179,10 @@ Validation yêu cầu:
 - đủ walk-forward windows và verdict `ROBUST`;
 - fingerprint toàn vẹn;
 - config chưa hết hạn.
+
+Engine hiện hành `system-backtest-v1.2-event-sequence-research` luôn phát hành
+`validation_eligible=false`; kết quả vẫn dùng để nghiên cứu nhưng không thể
+được Router coi là `BACKTEST_VALIDATED`.
 
 Khi scorer hoặc feature semantics đổi, version phải đổi và config cũ phải fail-closed.
 

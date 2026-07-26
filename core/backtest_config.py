@@ -29,6 +29,36 @@ _VALIDATION_SETTING_FIELDS = (
     "backtest_status",
     "backtest_schema_version",
     "backtest_validation_version",
+    "backtest_engine_contract_version",
+    "backtest_engine_version",
+    "backtest_purpose",
+    "backtest_execution_parity",
+    "backtest_data_manifest_version",
+    "backtest_point_in_time_data",
+    "backtest_dataset_hash",
+    "backtest_data_quality_status",
+    "backtest_execution_policy_version",
+    "backtest_entry_fill_model",
+    "backtest_exit_evaluation_model",
+    "backtest_same_bar_ambiguity_policy",
+    "backtest_execution_timeframe",
+    "backtest_synthetic_trades_allowed",
+    "backtest_execution_mode",
+    "backtest_execution_model_version",
+    "backtest_cost_model_version",
+    "backtest_quote_conversion_model_version",
+    "backtest_cost_model_fingerprint",
+    "backtest_quote_conversion_fingerprint",
+    "backtest_candidate_ledger_version",
+    "backtest_candidate_replay_version",
+    "backtest_frozen_strategy_version",
+    "backtest_frozen_strategy_applied",
+    "backtest_oos_replay",
+    "backtest_provenance_version",
+    "backtest_code_revision",
+    "backtest_request_fingerprint",
+    "backtest_execution_fingerprint",
+    "backtest_provenance_fingerprint",
     "backtest_scorer_version",
     "backtest_feature_version",
     "backtest_smc_scorer_version",
@@ -45,12 +75,18 @@ _VALIDATION_SETTING_FIELDS = (
     "backtest_oos_max_drawdown_r",
     "backtest_expectancy_ci_low",
     "backtest_expectancy_ci_high",
+    "backtest_statistics_version",
+    "backtest_probability_positive_edge_pct",
+    "backtest_one_sided_p_value",
+    "backtest_minimum_required_trades",
+    "backtest_statistical_power_passed",
     "backtest_walk_forward_windows",
     "backtest_walk_forward_verdict",
     "backtest_validation_fingerprint",
     "backtest_validation_reasons",
     "backtest_validated_at",
     "backtest_expires_at",
+    "backtest_release_report",
 )
 
 
@@ -97,6 +133,94 @@ def apply_validated_backtest_config(
     settings.backtest_validation_version = str(
         recommendation.get("validation_version", "") or ""
     ).strip()
+    settings.backtest_engine_contract_version = str(
+        recommendation.get("engine_contract_version", "") or ""
+    ).strip()
+    settings.backtest_engine_version = str(
+        recommendation.get("engine_version", "") or ""
+    ).strip()
+    settings.backtest_purpose = str(
+        recommendation.get("purpose", "") or ""
+    ).strip().upper()
+    settings.backtest_execution_parity = (
+        recommendation.get("execution_parity") is True
+    )
+    settings.backtest_data_manifest_version = str(
+        recommendation.get("data_manifest_version", "") or ""
+    ).strip()
+    settings.backtest_point_in_time_data = (
+        recommendation.get("point_in_time_data") is True
+    )
+    settings.backtest_dataset_hash = str(
+        recommendation.get("dataset_hash", "") or ""
+    ).strip().lower()
+    settings.backtest_data_quality_status = str(
+        recommendation.get("data_quality_status", "") or ""
+    ).strip().upper()
+    settings.backtest_execution_policy_version = str(
+        recommendation.get("execution_policy_version", "") or ""
+    ).strip()
+    settings.backtest_entry_fill_model = str(
+        recommendation.get("entry_fill_model", "") or ""
+    ).strip()
+    settings.backtest_exit_evaluation_model = str(
+        recommendation.get("exit_evaluation_model", "") or ""
+    ).strip()
+    settings.backtest_same_bar_ambiguity_policy = str(
+        recommendation.get("same_bar_ambiguity_policy", "") or ""
+    ).strip().upper()
+    settings.backtest_execution_timeframe = str(
+        recommendation.get("execution_timeframe", "") or ""
+    ).strip().upper()
+    settings.backtest_synthetic_trades_allowed = (
+        recommendation.get("synthetic_trades_allowed") is True
+    )
+    settings.backtest_execution_mode = str(
+        recommendation.get("execution_mode", "") or ""
+    )
+    settings.backtest_execution_model_version = str(
+        recommendation.get("execution_model_version", "") or ""
+    )
+    settings.backtest_cost_model_version = str(
+        recommendation.get("cost_model_version", "") or ""
+    )
+    settings.backtest_quote_conversion_model_version = str(
+        recommendation.get("quote_conversion_model_version", "") or ""
+    )
+    settings.backtest_cost_model_fingerprint = str(
+        recommendation.get("cost_model_fingerprint", "") or ""
+    )
+    settings.backtest_quote_conversion_fingerprint = str(
+        recommendation.get("quote_conversion_fingerprint", "") or ""
+    )
+    settings.backtest_candidate_ledger_version = str(
+        recommendation.get("candidate_ledger_version", "") or ""
+    )
+    settings.backtest_candidate_replay_version = str(
+        recommendation.get("candidate_replay_version", "") or ""
+    )
+    settings.backtest_frozen_strategy_version = str(
+        recommendation.get("frozen_strategy_version", "") or ""
+    )
+    settings.backtest_frozen_strategy_applied = (
+        recommendation.get("frozen_strategy_applied") is True
+    )
+    settings.backtest_oos_replay = recommendation.get("oos_replay") is True
+    settings.backtest_provenance_version = str(
+        recommendation.get("provenance_version", "") or ""
+    )
+    settings.backtest_code_revision = str(
+        recommendation.get("code_revision", "") or ""
+    )
+    settings.backtest_request_fingerprint = str(
+        recommendation.get("request_fingerprint", "") or ""
+    )
+    settings.backtest_execution_fingerprint = str(
+        recommendation.get("execution_fingerprint", "") or ""
+    )
+    settings.backtest_provenance_fingerprint = str(
+        recommendation.get("provenance_fingerprint", "") or ""
+    )
     settings.backtest_scorer_version = str(
         recommendation.get("scorer_version", SCANNER_SCORER_VERSION)
         or SCANNER_SCORER_VERSION
@@ -139,6 +263,21 @@ def apply_validated_backtest_config(
     settings.backtest_expectancy_ci_high = _optional_number(
         recommendation.get("expectancy_ci_high")
     )
+    settings.backtest_statistics_version = _text(
+        recommendation, "statistics_version"
+    )
+    settings.backtest_probability_positive_edge_pct = _optional_number(
+        recommendation.get("probability_positive_edge_pct")
+    )
+    settings.backtest_one_sided_p_value = _optional_number(
+        recommendation.get("one_sided_p_value")
+    )
+    settings.backtest_minimum_required_trades = _integer(
+        recommendation, "minimum_required_trades"
+    )
+    settings.backtest_statistical_power_passed = (
+        recommendation.get("statistical_power_passed") is True
+    )
     settings.backtest_walk_forward_windows = _integer(
         recommendation, "walk_forward_windows"
     )
@@ -160,6 +299,12 @@ def apply_validated_backtest_config(
     settings.backtest_expires_at = (
         _text(recommendation, "expires_at") if validated else ""
     )
+    raw_release_report = recommendation.get("release_report")
+    settings.backtest_release_report = (
+        dict(raw_release_report)
+        if isinstance(raw_release_report, dict)
+        else {}
+    )
     settings.auto_trade_regime = regime
     settings.auto_trade_side = side
     settings.min_score = min_score
@@ -178,6 +323,8 @@ def preserve_or_invalidate_manual_config(
             value = getattr(existing, field_name)
             if isinstance(value, list):
                 value = list(value)
+            elif isinstance(value, dict):
+                value = dict(value)
             setattr(proposed, field_name, value)
         proposed.backtest = bool(
             proposed.backtest
@@ -216,6 +363,60 @@ def serialize_backtest_config(
         "status": settings.backtest_status,
         "schema_version": settings.backtest_schema_version,
         "validation_version": settings.backtest_validation_version,
+        "engine_contract_version": (
+            settings.backtest_engine_contract_version
+        ),
+        "engine_version": settings.backtest_engine_version,
+        "purpose": settings.backtest_purpose,
+        "execution_parity": settings.backtest_execution_parity,
+        "data_manifest_version": settings.backtest_data_manifest_version,
+        "point_in_time_data": settings.backtest_point_in_time_data,
+        "dataset_hash": settings.backtest_dataset_hash,
+        "data_quality_status": settings.backtest_data_quality_status,
+        "execution_policy_version": (
+            settings.backtest_execution_policy_version
+        ),
+        "entry_fill_model": settings.backtest_entry_fill_model,
+        "exit_evaluation_model": settings.backtest_exit_evaluation_model,
+        "same_bar_ambiguity_policy": (
+            settings.backtest_same_bar_ambiguity_policy
+        ),
+        "execution_timeframe": settings.backtest_execution_timeframe,
+        "synthetic_trades_allowed": (
+            settings.backtest_synthetic_trades_allowed
+        ),
+        "execution_mode": settings.backtest_execution_mode,
+        "execution_model_version": (
+            settings.backtest_execution_model_version
+        ),
+        "cost_model_version": settings.backtest_cost_model_version,
+        "quote_conversion_model_version": (
+            settings.backtest_quote_conversion_model_version
+        ),
+        "cost_model_fingerprint": (
+            settings.backtest_cost_model_fingerprint
+        ),
+        "quote_conversion_fingerprint": (
+            settings.backtest_quote_conversion_fingerprint
+        ),
+        "candidate_ledger_version": (
+            settings.backtest_candidate_ledger_version
+        ),
+        "candidate_replay_version": (
+            settings.backtest_candidate_replay_version
+        ),
+        "frozen_strategy_version": (
+            settings.backtest_frozen_strategy_version
+        ),
+        "frozen_strategy_applied": (
+            settings.backtest_frozen_strategy_applied
+        ),
+        "oos_replay": settings.backtest_oos_replay,
+        "provenance_version": settings.backtest_provenance_version,
+        "code_revision": settings.backtest_code_revision,
+        "request_fingerprint": settings.backtest_request_fingerprint,
+        "execution_fingerprint": settings.backtest_execution_fingerprint,
+        "provenance_fingerprint": settings.backtest_provenance_fingerprint,
         "symbol": symbol,
         "allowed_regimes": (
             [settings.auto_trade_regime]
@@ -242,12 +443,22 @@ def serialize_backtest_config(
         "oos_max_drawdown_r": settings.backtest_oos_max_drawdown_r,
         "expectancy_ci_low": settings.backtest_expectancy_ci_low,
         "expectancy_ci_high": settings.backtest_expectancy_ci_high,
+        "statistics_version": settings.backtest_statistics_version,
+        "probability_positive_edge_pct": (
+            settings.backtest_probability_positive_edge_pct
+        ),
+        "one_sided_p_value": settings.backtest_one_sided_p_value,
+        "minimum_required_trades": settings.backtest_minimum_required_trades,
+        "statistical_power_passed": (
+            settings.backtest_statistical_power_passed
+        ),
         "walk_forward_windows": settings.backtest_walk_forward_windows,
         "walk_forward_verdict": settings.backtest_walk_forward_verdict,
         "validation_fingerprint": settings.backtest_validation_fingerprint,
         "validation_reasons": list(settings.backtest_validation_reasons),
         "validated_at": settings.backtest_validated_at,
         "expires_at": settings.backtest_expires_at,
+        "release_report": dict(settings.backtest_release_report),
     }
 
 
@@ -324,6 +535,31 @@ def merge_symbol_scan_settings(
     return result
 
 
+def reconcile_enabled_symbol(
+    enabled_symbols: list[str],
+    *,
+    symbol: str,
+    backtest_active: bool,
+    lifecycle_status: str,
+    confirmed_disable: bool = False,
+) -> list[str]:
+    """Update membership without treating a retained DRAFT as user disable.
+
+    Only an active validated config adds a new symbol.  A symbol is removed
+    only when the user explicitly disables a config that is otherwise still
+    VALIDATED.  Saving DRAFT/expired/version-mismatch evidence preserves the
+    previous scanner membership.
+    """
+
+    result = list(dict.fromkeys(enabled_symbols))
+    if backtest_active:
+        if symbol not in result:
+            result.append(symbol)
+    elif confirmed_disable and lifecycle_status == CONFIG_VALIDATED:
+        result = [item for item in result if item != symbol]
+    return result
+
+
 def analysis_thresholds_for_symbol(
     settings: SymbolScanSettings | None,
 ) -> dict[str, int | float] | None:
@@ -365,6 +601,7 @@ def _has_stored_backtest_config(settings: SymbolScanSettings) -> bool:
         or settings.backtest_validation_version
         or settings.backtest_validated_at
         or settings.backtest_expires_at
+        or settings.backtest_release_report
     )
 
 
@@ -374,6 +611,8 @@ def _clear_validation(settings: SymbolScanSettings) -> None:
         value = getattr(defaults, field_name)
         if isinstance(value, list):
             value = list(value)
+        elif isinstance(value, dict):
+            value = dict(value)
         setattr(settings, field_name, value)
 
 

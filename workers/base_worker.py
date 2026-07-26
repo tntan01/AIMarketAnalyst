@@ -6,3 +6,4 @@ class WorkerState:
     RUNNING = "running"
     FINISHED = "finished"
     FAILED = "failed"
+    CANCELLED = "cancelled"

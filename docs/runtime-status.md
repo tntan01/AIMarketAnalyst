@@ -17,7 +17,11 @@ phải giá trị mặc định của mã nguồn và không thay thế contract
 | Bắt buộc tài khoản demo | `false` |
 | Allowlist rollout | Rỗng; `PRODUCTION` không giới hạn symbol bằng allowlist |
 | SMC scoring mode | `v2` |
-| Feature flags | `scanner_architecture_v2=true`, `auto_trade_v2=true`, `backtest_config_v2=true` |
+| Feature flags runtime | `scanner_architecture_v2=true`, `auto_trade_v2=true`; hai flag Backtest cũ không còn được runtime sử dụng |
+
+`backtest_config_v2` hoặc `backtest_engine_v2` có thể vẫn còn trong file
+Settings được tạo bởi bản cũ. Loader hiện bỏ qua hai key này và lần lưu Settings
+tiếp theo sẽ không ghi lại; Strategy Router không phụ thuộc vào chúng.
 
 Settings hiện có bản ghi cấu hình riêng cho **31 symbol**. Danh sách
 `trading.enabled_symbols` đang rỗng; trường này chỉ đánh dấu các cấu hình

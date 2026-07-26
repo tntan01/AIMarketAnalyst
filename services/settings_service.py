@@ -154,6 +154,126 @@ class SettingsService:
                     backtest_validation_version=str(
                         item.get("backtest_validation_version", "") or ""
                     ).strip(),
+                    backtest_engine_contract_version=str(
+                        item.get(
+                            "backtest_engine_contract_version", ""
+                        ) or ""
+                    ).strip(),
+                    backtest_engine_version=str(
+                        item.get("backtest_engine_version", "") or ""
+                    ).strip(),
+                    backtest_purpose=str(
+                        item.get("backtest_purpose", "") or ""
+                    ).strip().upper(),
+                    backtest_execution_parity=(
+                        item.get("backtest_execution_parity") is True
+                    ),
+                    backtest_data_manifest_version=str(
+                        item.get(
+                            "backtest_data_manifest_version", ""
+                        ) or ""
+                    ).strip(),
+                    backtest_point_in_time_data=(
+                        item.get("backtest_point_in_time_data") is True
+                    ),
+                    backtest_dataset_hash=str(
+                        item.get("backtest_dataset_hash", "") or ""
+                    ).strip().lower(),
+                    backtest_data_quality_status=str(
+                        item.get(
+                            "backtest_data_quality_status", ""
+                        ) or ""
+                    ).strip().upper(),
+                    backtest_execution_policy_version=str(
+                        item.get(
+                            "backtest_execution_policy_version", ""
+                        ) or ""
+                    ).strip(),
+                    backtest_entry_fill_model=str(
+                        item.get("backtest_entry_fill_model", "") or ""
+                    ).strip(),
+                    backtest_exit_evaluation_model=str(
+                        item.get(
+                            "backtest_exit_evaluation_model", ""
+                        ) or ""
+                    ).strip(),
+                    backtest_same_bar_ambiguity_policy=str(
+                        item.get(
+                            "backtest_same_bar_ambiguity_policy", ""
+                        ) or ""
+                    ).strip().upper(),
+                    backtest_execution_timeframe=str(
+                        item.get(
+                            "backtest_execution_timeframe", ""
+                        ) or ""
+                    ).strip().upper(),
+                    backtest_synthetic_trades_allowed=(
+                        item.get(
+                            "backtest_synthetic_trades_allowed"
+                        ) is True
+                    ),
+                    backtest_execution_mode=str(
+                        item.get("backtest_execution_mode", "") or ""
+                    ),
+                    backtest_execution_model_version=str(
+                        item.get(
+                            "backtest_execution_model_version", ""
+                        ) or ""
+                    ),
+                    backtest_cost_model_version=str(
+                        item.get("backtest_cost_model_version", "") or ""
+                    ),
+                    backtest_quote_conversion_model_version=str(
+                        item.get(
+                            "backtest_quote_conversion_model_version", ""
+                        ) or ""
+                    ),
+                    backtest_cost_model_fingerprint=str(
+                        item.get(
+                            "backtest_cost_model_fingerprint", ""
+                        ) or ""
+                    ),
+                    backtest_quote_conversion_fingerprint=str(
+                        item.get(
+                            "backtest_quote_conversion_fingerprint", ""
+                        ) or ""
+                    ),
+                    backtest_candidate_ledger_version=str(
+                        item.get(
+                            "backtest_candidate_ledger_version", ""
+                        ) or ""
+                    ),
+                    backtest_candidate_replay_version=str(
+                        item.get(
+                            "backtest_candidate_replay_version", ""
+                        ) or ""
+                    ),
+                    backtest_frozen_strategy_version=str(
+                        item.get(
+                            "backtest_frozen_strategy_version", ""
+                        ) or ""
+                    ),
+                    backtest_frozen_strategy_applied=(
+                        item.get("backtest_frozen_strategy_applied") is True
+                    ),
+                    backtest_oos_replay=(
+                        item.get("backtest_oos_replay") is True
+                    ),
+                    backtest_provenance_version=str(
+                        item.get("backtest_provenance_version", "") or ""
+                    ),
+                    backtest_code_revision=str(
+                        item.get("backtest_code_revision", "") or ""
+                    ),
+                    backtest_request_fingerprint=str(
+                        item.get("backtest_request_fingerprint", "") or ""
+                    ),
+                    backtest_execution_fingerprint=str(
+                        item.get("backtest_execution_fingerprint", "") or ""
+                    ),
+                    backtest_provenance_fingerprint=str(
+                        item.get("backtest_provenance_fingerprint", "") or ""
+                    ),
                     backtest_scorer_version=str(
                         item.get("backtest_scorer_version", "") or ""
                     ).strip(),
@@ -202,6 +322,21 @@ class SettingsService:
                     backtest_expectancy_ci_high=_safe_optional_float(
                         item.get("backtest_expectancy_ci_high")
                     ),
+                    backtest_statistics_version=str(
+                        item.get("backtest_statistics_version", "") or ""
+                    ),
+                    backtest_probability_positive_edge_pct=_safe_optional_float(
+                        item.get("backtest_probability_positive_edge_pct")
+                    ),
+                    backtest_one_sided_p_value=_safe_optional_float(
+                        item.get("backtest_one_sided_p_value")
+                    ),
+                    backtest_minimum_required_trades=_safe_int(
+                        item.get("backtest_minimum_required_trades")
+                    ),
+                    backtest_statistical_power_passed=(
+                        item.get("backtest_statistical_power_passed") is True
+                    ),
                     backtest_walk_forward_windows=_safe_int(
                         item.get("backtest_walk_forward_windows")
                     ),
@@ -226,6 +361,11 @@ class SettingsService:
                     backtest_expires_at=str(
                         item.get("backtest_expires_at", "") or ""
                     ).strip(),
+                    backtest_release_report=(
+                        dict(item.get("backtest_release_report"))
+                        if isinstance(item.get("backtest_release_report"), dict)
+                        else {}
+                    ),
                     min_score=max(0, min(100, min_score)),
                     auto_trade_regime=str(item.get("auto_trade_regime", "")).strip(),
                     auto_trade_side=str(item.get("auto_trade_side", "")).strip(),
@@ -234,13 +374,18 @@ class SettingsService:
                     decision_wait=max(0, min(100, int(item.get("decision_wait", 55)))),
                     min_expected_rr=float(item.get("min_expected_rr", 1.3) or 1.3),
                 )
-                if loaded_symbol.backtest:
+                if (
+                    loaded_symbol.backtest
+                    or loaded_symbol.backtest_status
+                    or loaded_symbol.backtest_config_id
+                ):
                     from core.backtest_config import serialize_backtest_config
                     from core.scanner_models import (
                         CONFIG_DRAFT,
                         CONFIG_EXPIRED,
                         CONFIG_INVALID,
                         CONFIG_VALIDATED,
+                        CONFIG_VERSION_MISMATCH,
                     )
                     from core.backtest_config_validation import (
                         BACKTEST_CONFIG_SCHEMA_VERSION,
@@ -260,15 +405,22 @@ class SettingsService:
                                 CONFIG_EXPIRED
                                 if lifecycle_status == CONFIG_EXPIRED
                                 else (
-                                    CONFIG_INVALID
-                                    if (
-                                        loaded_symbol.backtest_schema_version
-                                        == BACKTEST_CONFIG_SCHEMA_VERSION
+                                    CONFIG_VERSION_MISMATCH
+                                    if lifecycle_status == CONFIG_VERSION_MISMATCH
+                                    else (
+                                        CONFIG_INVALID
+                                        if (
+                                            loaded_symbol.backtest_schema_version
+                                            == BACKTEST_CONFIG_SCHEMA_VERSION
+                                        )
+                                        else CONFIG_DRAFT
                                     )
-                                    else CONFIG_DRAFT
                                 )
                             )
-                            loaded_symbol.backtest_validation_fingerprint = ""
+                            # Keep the historical fingerprint for audit and
+                            # migration. The non-VALIDATED lifecycle and
+                            # backtest=False below remain the fail-closed
+                            # execution boundary.
                             loaded_symbol.backtest_validation_reasons = list(
                                 lifecycle_reasons
                             )
@@ -287,7 +439,24 @@ class SettingsService:
             max_risk_percent=float(data.get("max_risk_percent", 2.0)),
             lot_step=float(data.get("lot_step", 0.01)),
             minimum_lot=float(data.get("minimum_lot", 0.01)),
+            maximum_lot=max(
+                float(data.get("minimum_lot", 0.01)),
+                float(data.get("maximum_lot", 100.0)),
+            ),
             contract_size_override=float(data.get("contract_size_override", 100000)),
+            backtest_slippage_price=max(
+                0.0, float(data.get("backtest_slippage_price", 0.0))
+            ),
+            backtest_commission_per_lot_round_turn=max(
+                0.0,
+                float(data.get("backtest_commission_per_lot_round_turn", 0.0)),
+            ),
+            backtest_swap_long_per_lot_day=max(
+                0.0, float(data.get("backtest_swap_long_per_lot_day", 0.0))
+            ),
+            backtest_swap_short_per_lot_day=max(
+                0.0, float(data.get("backtest_swap_short_per_lot_day", 0.0))
+            ),
             max_daily_loss_pct=float(data.get("max_daily_loss_pct", 2.0)),
             max_weekly_loss_pct=float(data.get("max_weekly_loss_pct", 5.0)),
             max_consecutive_losses=int(data.get("max_consecutive_losses", 3)),
@@ -373,7 +542,6 @@ class SettingsService:
         return FeatureFlagSettings(
             scanner_architecture_v2=bool(data.get("scanner_architecture_v2", False)),
             auto_trade_v2=bool(data.get("auto_trade_v2", False)),
-            backtest_config_v2=bool(data.get("backtest_config_v2", False)),
             smc_scoring_mode=smc_scoring_mode,
         )
 

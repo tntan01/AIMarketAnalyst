@@ -1094,9 +1094,8 @@ class TestMinStopDistanceKeyFix:
             f"Expected roughly {atr*0.65:.6f}. Multiplier not applied."
         )
 
-    def test_sl_distance_wider_with_035_than_020(self, monkeypatch):
-        """With _MIN_STOP_DISTANCE_ATR_MULT=0.50 (larger), guard rejects a plan
-        that passes with mult=0.20 — proving config key controls guard behavior."""
+    def test_sl_distance_wider_with_050_than_020(self, monkeypatch):
+        """A larger minimum widens SL around the execution sub-zone."""
         d1, h4, h1, m15 = _build_test_data()
         technical = build_technical_snapshot(d1, h4, h1)
         smc = build_smc_context(d1, h4, h1)
@@ -1134,13 +1133,12 @@ class TestMinStopDistanceKeyFix:
         plan_020 = _build_with_mult(0.20)
         plan_050 = _build_with_mult(0.50)
 
-        assert plan_020 is not None, (
-            "Plan should exist with SMC relaxed threshold 0.20"
-        )
-        assert plan_050 is None, (
-            "Plan should be REJECTED with SMC threshold 0.50: "
-            "entry_for_rr-to-SL=0.25*ATR < 0.50*ATR"
-        )
+        assert plan_020 is not None
+        assert plan_050 is not None
+        risk_020 = abs(plan_020["entry_price"] - plan_020["stop_loss"])
+        risk_050 = abs(plan_050["entry_price"] - plan_050["stop_loss"])
+        assert risk_050 > risk_020
+        assert risk_050 >= atr * 0.50 - 1e-5
 
 
 # ---------------------------------------------------------------------------
@@ -1149,15 +1147,10 @@ class TestMinStopDistanceKeyFix:
 
 
 class TestSLGuardReferencePoint:
-    """Guard must reference entry_for_selection, not level."""
+    """SL guard follows the final proximal execution sub-zone."""
 
-    def test_guard_uses_entry_for_selection_not_level(self, monkeypatch):
-        """When level is far from SL but entry_for_selection is close,
-        guard must reject the plan.
-
-        BEFORE fix: guard used abs(level - SL) → plan incorrectly passed.
-        AFTER fix:  guard uses abs(entry_for_selection - SL) → correctly rejects.
-        """
+    def test_sl_floor_widens_stop_for_execution_entry(self, monkeypatch):
+        """The floor widens SL when the proximal sub-zone moves the entry."""
         d1, h4, h1, m15 = _build_test_data()
         technical = build_technical_snapshot(d1, h4, h1)
         smc = build_smc_context(d1, h4, h1)
@@ -1204,14 +1197,9 @@ class TestSLGuardReferencePoint:
 
             plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
 
-        # After fix: entry_for_selection-to-SL = 0.45*ATR < 0.50*ATR → rejected
-        assert plan is None, (
-            f"Expected plan=None because entry_for_selection is too close to SL. "
-            f"level={lvl:.5f}, entry_low≈{lvl - atr * 0.10:.5f}, "
-            f"fake_swing={fake_swing:.5f}, atr={atr:.6f}, "
-            f"level-to-SL={abs(lvl - (fake_swing - atr*0.15)):.6f}, "
-            f"entry_for_sel-to-SL={abs(lvl - atr*0.10 - (fake_swing - atr*0.15)):.6f}"
-        )
+        assert plan is not None
+        actual_risk = abs(plan["entry_price"] - plan["stop_loss"])
+        assert actual_risk >= atr * _MIN_SL_DISTANCE_ATR - 1e-5
 
     def test_guard_allows_plan_when_sl_wide_enough(self, monkeypatch):
         """When entry_for_selection-to-SL >= _min_sl, guard must NOT reject.
@@ -1267,19 +1255,8 @@ class TestSLGuardReferencePoint:
             f"min threshold={atr * _MIN_SL_DISTANCE_ATR:.6f}"
         )
 
-    def test_guard_uses_min_of_rr_and_selection_distances(self, monkeypatch):
-        """Guard must use min(entry_for_rr, entry_for_selection) distance to SL.
-
-        With DEFAULT aggressiveness (entry_aggressiveness=0.0,
-        tp_selection_aggressiveness=0.5):
-        - entry_for_rr = entry_low (nearest edge, CLOSEST to SL)
-        - entry_for_selection = level (midpoint)
-
-        A guard using ONLY entry_for_selection would pass when
-        abs(level - SL) >= threshold but abs(entry_low - SL) < threshold.
-
-        The min() guard correctly rejects this case.
-        """
+    def test_guard_uses_final_execution_entry_distance(self, monkeypatch):
+        """The persisted entry and SL satisfy the floor after sub-zone build."""
         d1, h4, h1, m15 = _build_test_data()
         technical = build_technical_snapshot(d1, h4, h1)
         smc = build_smc_context(d1, h4, h1)
@@ -1331,15 +1308,9 @@ class TestSLGuardReferencePoint:
 
             plan = build_trade_plan("buy", request, technical, smc, h1, m15_candles=m15)
 
-        # Guard must reject: entry_for_rr is only 0.45*ATR from SL < 0.50*ATR
-        assert plan is None, (
-            f"Expected plan=None because entry_for_rr (nearest edge) is too close to SL. "
-            f"level={lvl:.5f}, entry_low≈{lvl - atr * 0.10:.5f}, "
-            f"fake_swing={fake_swing:.5f}, atr={atr:.6f}, "
-            f"entry_for_rr-to-SL={abs(lvl - atr*0.10 - (fake_swing - atr*0.15)):.6f}, "
-            f"entry_for_sel-to-SL={abs(lvl - (fake_swing - atr*0.15)):.6f}, "
-            f"min_threshold={atr * _MIN_SL_DISTANCE_ATR:.6f}"
-        )
+        assert plan is not None
+        actual_risk = abs(plan["entry_price"] - plan["stop_loss"])
+        assert actual_risk >= atr * _MIN_SL_DISTANCE_ATR - 1e-5
 
 
 # ---------------------------------------------------------------------------

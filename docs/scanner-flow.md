@@ -33,8 +33,18 @@ Scanner không còn luồng “backtest ghi đè `stand_aside` thành `ready`”
 - SMC v1 vẫn chạy làm dữ liệu đối chiếu và có thể được chọn lại bằng mode
   `legacy`; mode `shadow` giữ quyết định v1 nhưng tính thêm v2 để so sánh.
 - Scanner contract hiện là `scanner-v3/scanner-features-v3`; backtest config
-  dùng schema v4/`phase8-smc-v2-oos-v1`, bắt buộc ghi rõ `smc-v2`; config cũ
-  hoặc thiếu SMC identity bị từ chối và cần chạy backtest lại.
+  dùng schema v8/`backtest-v8-statistical-validation-v1`, bắt buộc ghi rõ `smc-v2`,
+  Candidate Ledger/frozen OOS replay,
+  statistical power, recency và provenance code/data/execution,
+  execution/cost/quote-conversion version và cost-model fingerprint,
+  purpose `VALIDATION`, validation engine version và
+  `execution_parity=true`, đồng thời phải có data manifest v1,
+  point-in-time flag, quality `OK`, dataset hash và execution policy v1 nằm
+  trong fingerprint. Policy validation bắt buộc M15, confirmation-close,
+  exit từ nến kế tiếp, `STOP_FIRST` và cấm synthetic trade.
+  Engine backtest hiện hành chỉ phát hành kết quả
+  `RESEARCH`, vì vậy chưa thể tạo config live. Config cũ hoặc thiếu engine/SMC
+  identity bị từ chối và cần chạy validation lại bằng engine mới.
 - Đây là thay đổi nguồn quyết định phân tích, không phải mở quyền gửi lệnh.
   Runtime hiện chọn stage `PRODUCTION`, nhưng release readiness, kill switch
   và các execution gate vẫn có quyền chặn. Giá trị mặc định của mã nguồn vẫn
@@ -145,6 +155,9 @@ Chỉ dùng khi config:
 - train và OOS không chồng lấn, đủ cỡ mẫu;
 - expectancy, profit factor, drawdown và confidence interval đạt chuẩn;
 - walk-forward có verdict `ROBUST`;
+- data manifest v1, point-in-time flag, quality `OK` và dataset hash hợp lệ;
+- execution policy/fill/exit/same-bar/timeframe đúng contract và không cho
+  phép synthetic trade;
 - fingerprint hợp lệ và chưa hết hạn.
 
 Sau đó Router kiểm tra live regime, side đã khóa hoặc best side, setup score và effective R:R.

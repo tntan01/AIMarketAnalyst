@@ -8,6 +8,7 @@ import json
 from unittest.mock import patch
 
 from controllers.scanner_controller import ScannerController
+from core.backtest_contract import validation_engine_contract
 from core.backtest_config_validation import (
     BACKTEST_CONFIG_SCHEMA_VERSION,
     BACKTEST_VALIDATION_VERSION,
@@ -29,6 +30,7 @@ from core.scanner_observability import (
 )
 from core.scanner_ranking_engine import rank_scanner_rows
 from services.observability_service import StructuredObservabilityService
+from tests.phase7_helpers import ready_release_report
 
 
 def _scenario(side: str) -> dict:
@@ -104,9 +106,58 @@ def _row() -> dict:
 
 
 def _validated_config() -> dict:
+    engine_contract = validation_engine_contract()
     config = {
         "schema_version": BACKTEST_CONFIG_SCHEMA_VERSION,
         "validation_version": BACKTEST_VALIDATION_VERSION,
+        "engine_contract_version": engine_contract["contract_version"],
+        "engine_version": engine_contract["engine_version"],
+        "purpose": engine_contract["purpose"],
+        "execution_parity": engine_contract["execution_parity"],
+        "data_manifest_version": engine_contract[
+            "data_manifest_version"
+        ],
+        "point_in_time_data": engine_contract["point_in_time_data"],
+        "dataset_hash": "a" * 64,
+        "data_quality_status": "OK",
+        "execution_policy_version": engine_contract[
+            "execution_policy_version"
+        ],
+        "entry_fill_model": engine_contract["entry_fill_model"],
+        "exit_evaluation_model": engine_contract[
+            "exit_evaluation_model"
+        ],
+        "same_bar_ambiguity_policy": engine_contract[
+            "same_bar_ambiguity_policy"
+        ],
+        "execution_timeframe": engine_contract["execution_timeframe"],
+        "synthetic_trades_allowed": engine_contract[
+            "synthetic_trades_allowed"
+        ],
+        "execution_mode": engine_contract["execution_mode"],
+        "execution_model_version": engine_contract[
+            "execution_model_version"
+        ],
+        "cost_model_version": engine_contract["cost_model_version"],
+        "quote_conversion_model_version": engine_contract[
+            "quote_conversion_model_version"
+        ],
+        "cost_model_fingerprint": engine_contract[
+            "cost_model_fingerprint"
+        ],
+        "quote_conversion_fingerprint": engine_contract[
+            "quote_conversion_fingerprint"
+        ],
+        "candidate_ledger_version": engine_contract["candidate_ledger_version"],
+        "candidate_replay_version": engine_contract["candidate_replay_version"],
+        "frozen_strategy_version": engine_contract["frozen_strategy_version"],
+        "frozen_strategy_applied": engine_contract["frozen_strategy_applied"],
+        "oos_replay": engine_contract["oos_replay"],
+        "provenance_version": "backtest-provenance-v1",
+        "code_revision": "b" * 40,
+        "request_fingerprint": "c" * 64,
+        "execution_fingerprint": "d" * 64,
+        "provenance_fingerprint": "e" * 64,
         "config_id": "EURUSD-range-buy-v3",
         "status": "VALIDATED",
         "symbol": "EUR/USD",
@@ -131,10 +182,16 @@ def _validated_config() -> dict:
         "oos_max_drawdown_r": 5.8,
         "expectancy_ci_low": 0.05,
         "expectancy_ci_high": 0.43,
+        "statistics_version": "backtest-statistics-v1",
+        "probability_positive_edge_pct": 97.5,
+        "one_sided_p_value": 0.025,
+        "minimum_required_trades": 8,
+        "statistical_power_passed": True,
         "walk_forward_windows": 3,
         "walk_forward_verdict": "ROBUST",
         "validated_at": "2026-07-24T00:00:00+00:00",
         "expires_at": "2027-07-24T00:00:00+00:00",
+        "release_report": ready_release_report(),
     }
     config["validation_fingerprint"] = validation_fingerprint(config)
     return config

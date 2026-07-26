@@ -28,6 +28,7 @@ _CORRELATION_KEYS: dict[str, str] = {
 
 _CORRELATION_CACHE: dict[str, Any] | None = None
 _CORRELATION_CACHE_TIME: datetime | None = None
+_CORRELATION_CACHE_KEY: tuple[str, str, Any] | None = None
 _CORRELATION_CACHE_TTL = timedelta(minutes=30)
 
 
@@ -128,13 +129,16 @@ def fetch_macro_correlation_context(
     Results are cached for _CORRELATION_CACHE_TTL (30 min) to avoid
     redundant yfinance downloads on repeated scans.
     """
-    global _CORRELATION_CACHE, _CORRELATION_CACHE_TIME
+    global _CORRELATION_CACHE, _CORRELATION_CACHE_TIME, _CORRELATION_CACHE_KEY
 
     now = datetime.now()
+    download = downloader or _yf_download
+    cache_key = (period, interval, download)
     if (
         not force_refresh
         and _CORRELATION_CACHE is not None
         and _CORRELATION_CACHE_TIME is not None
+        and _CORRELATION_CACHE_KEY == cache_key
         and now - _CORRELATION_CACHE_TIME < _CORRELATION_CACHE_TTL
     ):
         return _CORRELATION_CACHE
@@ -145,8 +149,6 @@ def fetch_macro_correlation_context(
         "us10y_candles": None,
         "us2y_candles": None,
     }
-    download = downloader or _yf_download
-
     with ThreadPoolExecutor(max_workers=len(MARKET_TICKERS)) as ex:
         futures = {
             ex.submit(download, ticker, period=period, interval=interval, progress=False): tag
@@ -168,6 +170,7 @@ def fetch_macro_correlation_context(
 
     _CORRELATION_CACHE = context
     _CORRELATION_CACHE_TIME = now
+    _CORRELATION_CACHE_KEY = cache_key
     return context
 
 

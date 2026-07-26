@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, replace
 from collections.abc import Callable
@@ -81,6 +82,16 @@ def _serialized_execution(method):
             return method(self, *args, **kwargs)
 
     return wrapper
+
+
+def _forward_order_comment(row_id: str, fallback: str) -> str:
+    """Return an MT5-safe correlation comment for Scanner forward evidence."""
+
+    normalized = str(row_id or "").strip()
+    if not normalized:
+        return str(fallback or "AMA")[:31]
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+    return f"AMA-FWD:{digest}"
 
 
 class ScannerController:
@@ -994,6 +1005,7 @@ class ScannerController:
             },
         )
         try:
+            mt5_comment = _forward_order_comment(row_id, comment)
             mt5_result = self.mt5.place_market_order(
                 symbol=symbol,
                 broker_symbol=broker_symbol,
@@ -1001,7 +1013,7 @@ class ScannerController:
                 volume=float(order["volume"]),
                 stop_loss=float(order["stop_loss"]),
                 take_profit=float(order["take_profit"]),
-                comment=comment,
+                comment=mt5_comment,
             )
         except Exception as exc:
             self._emit_observability(
@@ -1025,6 +1037,11 @@ class ScannerController:
         payload.update({
             **common,
             "price": payload.get("price") or validation.execution_price,
+            "forward_correlation_id": (
+                mt5_comment.removeprefix("AMA-FWD:")
+                if mt5_comment.startswith("AMA-FWD:")
+                else ""
+            ),
         })
         if payload.get("success"):
             try:

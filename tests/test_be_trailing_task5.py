@@ -8,12 +8,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+class _SaveDebounceStub:
+    def start(self):
+        pass
+
+
 def _make_mock_orders_screen():
     """Create a minimal OrdersScreen for testing (no full UI init)."""
     from ui.screens.orders_screen import OrdersScreen
 
     screen = OrdersScreen.__new__(OrdersScreen)
     screen._trailing_configs = {}
+    screen._position_original_sl = {}
+    screen._save_debounce = _SaveDebounceStub()
     return screen
 
 

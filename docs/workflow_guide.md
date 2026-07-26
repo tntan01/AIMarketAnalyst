@@ -1,6 +1,13 @@
 # Quy trình vận hành Backtest → Scanner → Rollout
 
-Trạng thái tài liệu: **hiện hành**, đồng bộ với Scanner V2 ngày 24/07/2026.
+Trạng thái tài liệu: **hiện hành**, đồng bộ với runtime ngày 25/07/2026.
+
+Khi phát hành cấu hình Backtest `VALIDATED`, thực hiện thêm quy trình golden,
+shadow, forward-demo và review tại `docs/backtest-release-runbook.md`.
+Không dùng OOS trade của snapshot validation thay cho forward evidence. Cần tạo
+snapshot current-forward và legacy-forward trên đúng khoảng thời gian chạy demo,
+rồi xuất các lệnh Scanner đã đóng bằng `scripts/export_mt5_forward_demo.py`.
+Exporter sẽ từ chối tài khoản thật và các lệnh không có correlation `AMA-FWD:*`.
 
 ## 1. Nguyên tắc cần hiểu trước
 
@@ -25,20 +32,94 @@ Các ngưỡng này độc lập với `min_score` và `min_rr` của chiến l�
 
 ## 2. Chạy và xác thực backtest
 
+Luồng sử dụng hiện hành:
+
+1. Bấm **Chọn** và đánh dấu một hoặc nhiều mã. Luồng chính luôn chạy mã đầu
+   tiên. Muốn đánh giá nhiều mã, mở **Nghiên cứu nâng cao** và bật chủ động
+   **Đánh giá danh mục nhiều mã**; tùy chọn này yêu cầu ít nhất hai mã và không
+   dùng được trong Validation.
+2. Chọn mục đích `Nghiên cứu` hoặc `Kiểm chứng`. Nghiên cứu tạo
+   `RESEARCH_ONLY`; Kiểm chứng tự ép Mô phỏng MT5, tự chạy frozen IS/OOS và
+   Walk-Forward. Hoàn tất replay tạo `DRAFT` và vẫn phải qua validator trước
+   khi thành `VALIDATED`.
+3. Luồng thông thường mặc định dùng **Mô phỏng MT5**. Chỉ vào tab
+   **Nghiên cứu nâng cao** khi cần Nghiên cứu nhanh; chế độ này luôn
+   `RESEARCH_ONLY` và không thể kết hợp với evidence Validation.
+4. Với Research dùng Mô phỏng MT5, có thể chủ động chạy thêm IS/OOS và
+   Walk-Forward trong phần nâng cao; kết quả vẫn không được phát hành.
+5. Có thể bấm **Hủy**. Kết quả dở dang không tạo snapshot; sweep giữ checkpoint
+   phần hoàn tất để lần chạy sau tiếp tục.
+6. Monte Carlo tự chạy khi kết quả có ít nhất 30 lệnh. Với mẫu nhỏ, bật
+   **Yêu cầu chạy Monte Carlo** nếu vẫn cần khảo sát uncertainty; kết quả luôn
+   là bằng chứng nghiên cứu, không tự phát hành config.
+7. Parameter sweep mặc định dùng mã và khoảng ngày trên form chính. Chỉ bật
+   **Sweep tất cả mã đã chọn** khi chấp nhận workload lớn hơn; báo cáo sweep
+   không tự áp tham số và phải được kiểm chứng lại bằng Validation mới.
+
+Lưu `DRAFT`, config hết hạn hoặc sai version chỉ lưu evidence để xem lại và
+không tự xóa symbol khỏi Scanner. Chỉ config `VALIDATED` mới được kích hoạt;
+thao tác tắt đã xác nhận mới gỡ mã khỏi `enabled_symbols`.
+
+Hành động trên kết quả phụ thuộc lifecycle:
+
+- `RESEARCH_ONLY`, kết quả cũ, review chưa đạt và portfolio: chỉ xem/phân tích;
+- `DRAFT`: **Lưu đề xuất nháp**, không kích hoạt Strategy Router;
+- `VALIDATED`/`RELEASE_READY`: **Áp dụng cấu hình**;
+- khi tải snapshot, luôn kiểm tra mã trên form đã tự đồng bộ đúng với file trước
+  khi lưu. Hệ thống sẽ chặn nếu snapshot nhiều mã hoặc symbol không khớp.
+
 1. Mở màn hình **Backtest**, chọn symbol, khoảng train và khoảng validation ngoài mẫu.
 2. Chạy backtest và xem expectancy, profit factor, drawdown, confidence interval và walk-forward.
 3. Chỉ config đáp ứng đầy đủ schema/validation hiện hành mới có status `VALIDATED`.
 4. Config cũ được migrate thành `DRAFT`; hệ thống không tự nâng lên `VALIDATED`.
 5. Config hết hạn, sai scorer/feature version, thiếu fingerprint hoặc thiếu bằng chứng OOS sẽ fail-closed.
 
+Mỗi kết quả mới có `DataManifest`. Trước khi dùng làm bằng chứng validation,
+kiểm tra:
+
+- `quality_status=OK` và `validation_eligible=true`;
+- timezone đã chuẩn hóa UTC;
+- không có duplicate, duplicate xung đột hoặc OHLC lỗi;
+- không có `UNEXPECTED_DATA_GAP` trong phiên hoặc trong quality lookback; cuối
+  tuần, ngày lễ và khoảng bảo trì hợp lệ phải được session calendar có version
+  phân loại và lưu riêng;
+- dataset hash và coverage đúng khoảng dữ liệu dự kiến;
+- train/OOS tuân theo `[start, end)`, boundary chỉ thuộc OOS.
+- execution policy đúng version, fill model `confirmation_close`, exit model
+  `next_execution_candle`, timeframe M15 và same-bar policy `STOP_FIRST`;
+- không có trade `synthetic_fallback` hoặc `research_only`.
+
+Kết quả `RESEARCH` có manifest `WARNING/INVALID` vẫn được lưu để điều tra,
+nhưng không được phát hành config `VALIDATED`.
+Các trường manifest/hash đã nằm trong validation fingerprint; sửa thủ công
+Settings hoặc làm mất metadata sẽ khiến Router chuyển config sang
+`BACKTEST_INVALID`/`VERSION_MISMATCH`.
+
 Config được Router chấp nhận cần phù hợp với các version hiện hành:
 
-- backtest config schema `v3`;
+- backtest config schema `v8`;
+- engine contract `phase0-backtest-safety-v1`;
+- purpose `VALIDATION`;
+- engine `system-backtest-v2-execution-parity`;
+- `execution_parity=true`;
 - scorer `scanner-v3`;
 - feature `scanner-features-v3`;
-- validation `phase8-smc-v2-oos-v1`, schema v4.
+- validation `backtest-v8-statistical-validation-v1`;
+- Candidate Ledger `backtest-candidate-ledger-v1`, frozen strategy
+  `frozen-strategy-config-v1` và OOS replay `candidate-replay-v1`;
+- `frozen_strategy_applied=true` và `oos_replay=true`;
+- Walk-Forward calendar v2 đã khử duplicate OOS;
+- bootstrap edge probability/statistical power đạt chuẩn;
+- provenance có code revision hợp lệ và dữ liệu validation không quá 365 ngày;
+- execution model `backtest-execution-parity-v1` và cost model
+  `backtest-cost-model-v1` có fingerprint hợp lệ.
 
 Ngoài version, config còn phải có symbol, side, regime, `min_score`, `min_rr`, khoảng train/OOS hợp lệ, cỡ mẫu, CI, walk-forward, fingerprint và thời hạn.
+
+Màn hình Backtest mặc định chạy `EXECUTION_PARITY` để phản ánh spread,
+slippage, commission, swap, lot constraints và quote conversion. Purpose
+`RESEARCH` luôn là `RESEARCH_ONLY`; purpose `VALIDATION` tự tạo evidence nhưng
+vẫn chỉ là `DRAFT` cho tới khi toàn bộ validator và release gate đạt.
 
 ## 3. Cấu hình Scanner
 
