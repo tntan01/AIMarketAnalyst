@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
+from ui.theme.fonts import get_body_font, get_subtitle_font
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.screens.shared import action_button, card, page_header, labeled_value
 
@@ -393,11 +394,15 @@ class OrdersScreen(QWidget):
         symbol = str(row.get("symbol", "--"))
 
         table.setItem(idx, 0, sitem(symbol))
-        f = table.item(idx, 0).font(); f.setBold(True); table.item(idx, 0).setFont(f)
+        symbol_font = get_body_font()
+        symbol_font.setBold(True)
+        table.item(idx, 0).setFont(symbol_font)
 
         dir_item = sitem("MUA" if is_buy else "BÁN")
         dir_item.setForeground(buy_color if is_buy else sell_color)
-        f = dir_item.font(); f.setBold(True); dir_item.setFont(f)
+        direction_font = get_body_font()
+        direction_font.setBold(True)
+        dir_item.setFont(direction_font)
         table.setItem(idx, 1, dir_item)
 
         table.setItem(idx, 2, sitem(f"{float(row.get('volume', 0)):.2f}"))
@@ -491,12 +496,16 @@ class OrdersScreen(QWidget):
         is_buy_type = "buy" in otype
 
         sym = sitem(str(row.get("symbol", "--")))
-        f = sym.font(); f.setBold(True); sym.setFont(f)
+        symbol_font = get_body_font()
+        symbol_font.setBold(True)
+        sym.setFont(symbol_font)
         table.setItem(idx, 0, sym)
 
         dir_item = sitem("MUA" if is_buy_type else "BÁN")
         dir_item.setForeground(buy_color if is_buy_type else sell_color)
-        f = dir_item.font(); f.setBold(True); dir_item.setFont(f)
+        direction_font = get_body_font()
+        direction_font.setBold(True)
+        dir_item.setFont(direction_font)
         table.setItem(idx, 1, dir_item)
 
         table.setItem(idx, 2, sitem(f"{float(row.get('volume', 0)):.2f}"))
@@ -958,7 +967,7 @@ class OrdersScreen(QWidget):
         # BE section
         self._dlg_be_title = QLabel("🎯 Break Even")
         self._dlg_be_title.setObjectName("CardDetail")
-        be_font = self._dlg_be_title.font(); be_font.setBold(True); self._dlg_be_title.setFont(be_font)
+        self._dlg_be_title.setFont(get_subtitle_font())
         preview_card.layout().addWidget(self._dlg_be_title)
 
         self._dlg_be_sl_label = QLabel("")
@@ -985,7 +994,7 @@ class OrdersScreen(QWidget):
         # Trail section
         self._dlg_trail_title = QLabel("📐 Trailing Stop")
         self._dlg_trail_title.setObjectName("CardDetail")
-        tr_font = self._dlg_trail_title.font(); tr_font.setBold(True); self._dlg_trail_title.setFont(tr_font)
+        self._dlg_trail_title.setFont(get_subtitle_font())
         preview_card.layout().addWidget(self._dlg_trail_title)
 
         self._dlg_trail_mode_label = QLabel("")
