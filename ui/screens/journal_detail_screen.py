@@ -29,6 +29,8 @@ from controllers.journal_controller import JournalController
 from services.journal_converters import parse_entry_from_zone
 from services.journal_models import JournalEntry
 from services.settings_service import SettingsService
+from ui.rich_text import empty_state_html, set_rich_html
+from ui.theme_manager import is_light_theme
 from ui.screens.journal_screen import BIAS_TEXT, DECISION_TEXT, PERMISSION_TEXT, format_time
 from ui.screens.shared import action_button, card, page_header
 
@@ -47,10 +49,7 @@ class JournalDetailScreen(QWidget):
         self._build_ui()
 
     def _is_light(self) -> bool:
-        try:
-            return self.settings_service.load().display.theme == "light"
-        except Exception:
-            return False
+        return is_light_theme(self.settings_service)
 
     @property
     def _bg(self) -> str:
@@ -101,7 +100,6 @@ class JournalDetailScreen(QWidget):
 
         scroll_widget = QWidget()
         scroll_widget.setObjectName("MainDetailScrollWidget")
-        scroll_widget.setStyleSheet("#MainDetailScrollWidget { background: transparent; }")
 
         main_vbox = QVBoxLayout(scroll_widget)
         main_vbox.setContentsMargins(0, 0, 0, 0)
@@ -149,24 +147,11 @@ class JournalDetailScreen(QWidget):
     def _hero_summary_card(self) -> QFrame:
         card_frame = QFrame()
         card_frame.setObjectName("HeroSummaryCard")
-        card_frame.setStyleSheet(
-            f"""
-            QFrame#HeroSummaryCard {{
-                background-color: {self._bg};
-                border: 1px solid {self._border_color};
-                border-radius: 8px;
-                padding: 4px 10px;
-            }}
-            """
-        )
         layout = QHBoxLayout(card_frame)
         layout.setContentsMargins(12, 6, 12, 6)
 
         self.hero_text_lbl = QLabel("--")
-        self.hero_text_lbl.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: {self._val_color}; "
-            "font-family: -apple-system, 'Segoe UI', sans-serif;"
-        )
+        self.hero_text_lbl.setObjectName("JournalHeroText")
         self.hero_text_lbl.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(self.hero_text_lbl)
         layout.addStretch(1)
@@ -249,15 +234,13 @@ class JournalDetailScreen(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        title_style = f"color: {self._orange_accent}; font-size: 12px; font-weight: 700;"
-
         card1 = card("📊 Kết luận phân tích")
         card1.layout().setContentsMargins(8, 6, 8, 6)
         card1.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         card1.layout().setSpacing(4)
         c1_title = card1.findChild(QLabel, "CardTitle")
         if c1_title:
-            c1_title.setStyleSheet(title_style)
+            c1_title.setProperty("journalDetailTitle", True)
 
         card2 = card("🎯 Kế hoạch giao dịch")
         card2.layout().setContentsMargins(8, 6, 8, 6)
@@ -265,7 +248,7 @@ class JournalDetailScreen(QWidget):
         card2.layout().setSpacing(4)
         c2_title = card2.findChild(QLabel, "CardTitle")
         if c2_title:
-            c2_title.setStyleSheet(title_style)
+            c2_title.setProperty("journalDetailTitle", True)
 
         card3 = card("🤖 Nhận định của AI")
         card3.layout().setContentsMargins(8, 6, 8, 6)
@@ -273,7 +256,7 @@ class JournalDetailScreen(QWidget):
         card3.layout().setSpacing(4)
         c3_title = card3.findChild(QLabel, "CardTitle")
         if c3_title:
-            c3_title.setStyleSheet(title_style)
+            c3_title.setProperty("journalDetailTitle", True)
 
         self.analysis_dec_text = QTextEdit()
         self.analysis_plan_text = QTextEdit()
@@ -281,6 +264,7 @@ class JournalDetailScreen(QWidget):
 
         for txt in (self.analysis_dec_text, self.analysis_plan_text, self.analysis_ai_text):
             txt.setObjectName("ReadonlyText")
+            txt.setProperty("compactReadOnly", True)
             txt.setReadOnly(True)
             txt.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -289,9 +273,6 @@ class JournalDetailScreen(QWidget):
             txt.setMaximumHeight(75)
             txt.document().setDocumentMargin(0)
             txt.setAlignment(Qt.AlignmentFlag.AlignLeft)
-            txt.setStyleSheet(
-                "QTextEdit#ReadonlyText { background: transparent; border: none; font-family: -apple-system, 'Segoe UI', sans-serif; text-align: left; padding: 0px; margin: 0px; }"
-            )
 
         card1.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         card2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -319,14 +300,11 @@ class JournalDetailScreen(QWidget):
         frame.layout().setSpacing(4)
         c_title = frame.findChild(QLabel, "CardTitle")
         if c_title:
-            c_title.setStyleSheet(f"color: {self._orange_accent}; font-size: 12px; font-weight: 700;")
+            c_title.setProperty("journalDetailTitle", True)
 
         self.note_input = QTextEdit()
-        self.note_input.setObjectName("ReadonlyText")
+        self.note_input.setObjectName("JournalNoteInput")
         self.note_input.setMinimumHeight(80)
-        self.note_input.setStyleSheet(
-            f"QTextEdit {{ background: {self._card_bg}; border: 1px solid {self._border_color}; border-radius: 6px; color: {self._val_color}; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 11.5px; padding: 4px; }}"
-        )
         frame.layout().addWidget(self.note_input, 1)
 
         self.save_note_button = action_button("💾 Lưu ghi chú", primary=True, color="success")
@@ -341,7 +319,8 @@ class JournalDetailScreen(QWidget):
         frame.layout().setSpacing(6)
         c_title = frame.findChild(QLabel, "CardTitle")
         if c_title:
-            c_title.setStyleSheet(f"color: {self._orange_accent}; font-size: 13px; font-weight: 700;")
+            c_title.setProperty("journalDetailTitle", True)
+            c_title.setProperty("prominent", True)
 
         # Status input (Planned, Opened, Closed, Cancelled, Missed)
         self.status_input = QComboBox()
@@ -361,7 +340,7 @@ class JournalDetailScreen(QWidget):
             vbox.setSpacing(4)
 
             title = QLabel(title_text)
-            title.setStyleSheet(f"color: #38bdf8; font-size: 12px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px solid {self._border_color}; margin-bottom: 2px;")
+            title.setObjectName("JournalLifecycleSectionTitle")
             vbox.addWidget(title)
 
             inner = QWidget()
@@ -387,11 +366,8 @@ class JournalDetailScreen(QWidget):
         exec_layout.setHorizontalSpacing(8)
         exec_layout.setVerticalSpacing(4)
 
-        chk_style = "QCheckBox::indicator { width: 16px; height: 16px; }"
-
         self.opened_at_chk = QCheckBox()
-        self.opened_at_chk.setMinimumSize(20, 20)
-        self.opened_at_chk.setStyleSheet(chk_style)
+        self.opened_at_chk.setObjectName("JournalLifecycleCheck")
         self.opened_at_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.opened_at_edit.setCalendarPopup(True)
         self.opened_at_edit.setDisplayFormat("dd/MM/yyyy HH:mm:ss")
@@ -400,8 +376,7 @@ class JournalDetailScreen(QWidget):
         self.opened_at_chk.toggled.connect(self.opened_at_edit.setEnabled)
 
         self.closed_at_chk = QCheckBox()
-        self.closed_at_chk.setMinimumSize(20, 20)
-        self.closed_at_chk.setStyleSheet(chk_style)
+        self.closed_at_chk.setObjectName("JournalLifecycleCheck")
         self.closed_at_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.closed_at_edit.setCalendarPopup(True)
         self.closed_at_edit.setDisplayFormat("dd/MM/yyyy HH:mm:ss")
@@ -440,10 +415,8 @@ class JournalDetailScreen(QWidget):
         for spin in [self.actual_lot_edit, self.actual_entry_edit, self.actual_sl_edit, self.actual_tp_edit, self.actual_exit_edit, self.result_amount_edit]:
             spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
 
-        lbl_style = f"color: {self._label_color}; font-size: 11px; font-weight: 600;"
-
         l_topen = QLabel("TG mở")
-        l_topen.setStyleSheet(lbl_style)
+        l_topen.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_topen, 0, 0)
         opened_layout = QHBoxLayout()
         opened_layout.setContentsMargins(0, 0, 0, 0)
@@ -453,7 +426,7 @@ class JournalDetailScreen(QWidget):
         exec_layout.addLayout(opened_layout, 0, 1, 1, 3)
 
         l_tclose = QLabel("TG đóng")
-        l_tclose.setStyleSheet(lbl_style)
+        l_tclose.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_tclose, 1, 0)
         closed_layout = QHBoxLayout()
         closed_layout.setContentsMargins(0, 0, 0, 0)
@@ -463,37 +436,37 @@ class JournalDetailScreen(QWidget):
         exec_layout.addLayout(closed_layout, 1, 1, 1, 3)
 
         l_lot = QLabel("Lot")
-        l_lot.setStyleSheet(lbl_style)
+        l_lot.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_lot, 2, 0)
         exec_layout.addWidget(self.actual_lot_edit, 2, 1)
 
         l_entry = QLabel("Entry")
-        l_entry.setStyleSheet(lbl_style)
+        l_entry.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_entry, 2, 2)
         exec_layout.addWidget(self.actual_entry_edit, 2, 3)
 
         l_sl = QLabel("SL")
-        l_sl.setStyleSheet(lbl_style)
+        l_sl.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_sl, 3, 0)
         exec_layout.addWidget(self.actual_sl_edit, 3, 1)
 
         l_tp = QLabel("TP")
-        l_tp.setStyleSheet(lbl_style)
+        l_tp.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_tp, 3, 2)
         exec_layout.addWidget(self.actual_tp_edit, 3, 3)
 
         l_exit = QLabel("Thoát")
-        l_exit.setStyleSheet(lbl_style)
+        l_exit.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_exit, 4, 0)
         exec_layout.addWidget(self.actual_exit_edit, 4, 1)
 
         l_pl = QLabel("Lãi/lỗ")
-        l_pl.setStyleSheet(lbl_style)
+        l_pl.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_pl, 4, 2)
         exec_layout.addWidget(self.result_amount_edit, 4, 3)
 
         l_reason = QLabel("Lý do thoát")
-        l_reason.setStyleSheet(lbl_style)
+        l_reason.setObjectName("JournalLifecycleLabel")
         exec_layout.addWidget(l_reason, 5, 0)
         exec_layout.addWidget(self.exit_reason_edit, 5, 1, 1, 3)
 
@@ -517,23 +490,6 @@ class JournalDetailScreen(QWidget):
             btn.setCheckable(True)
             btn.setObjectName("TagChip")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(f"""
-                QPushButton#TagChip {{
-                    background-color: {self._card_bg};
-                    border: 1px solid {self._border_color};
-                    border-radius: 10px;
-                    padding: 3px 8px;
-                    color: {self._label_color};
-                    font-size: 11px;
-                    font-family: -apple-system, 'Segoe UI', sans-serif;
-                }}
-                QPushButton#TagChip:checked {{
-                    background-color: rgba(239, 68, 68, 0.15);
-                    border: 1px solid #ef4444;
-                    color: #ef4444;
-                    font-weight: bold;
-                }}
-            """)
             tags_chips_layout.addWidget(btn, row, col)
             self.tag_buttons[tag_code] = btn
             col += 1
@@ -550,7 +506,7 @@ class JournalDetailScreen(QWidget):
         status_row = QHBoxLayout()
         status_row.setSpacing(6)
         status_lbl = QLabel("Trạng thái lệnh:")
-        status_lbl.setStyleSheet(f"color: {self._val_color}; font-size: 12px; font-weight: 600;")
+        status_lbl.setObjectName("JournalLifecycleStatusLabel")
         status_row.addWidget(status_lbl)
         status_row.addWidget(self.status_input, 1)
         card_layout.addLayout(status_row)
@@ -566,7 +522,6 @@ class JournalDetailScreen(QWidget):
         helper = QLabel("Result R được tính khi có hướng lệnh, entry, SL và giá thoát. Thời gian đóng sẽ tự điền khi trạng thái là Đã đóng lệnh.")
         helper.setObjectName("HelperText")
         helper.setWordWrap(True)
-        helper.setStyleSheet(f"color: {self._label_color}; font-size: 11px;")
         card_layout.addWidget(helper)
 
         frame.layout().addLayout(card_layout)
@@ -588,10 +543,12 @@ class JournalDetailScreen(QWidget):
             page_header("Chi tiết nhật ký", "", symbol)
         )
         if not self.entry:
-            empty_html = f"<div style='color: {self._label_color}; font-size: 12px;'>Chọn một bản ghi trong màn Nhật ký để xem chi tiết.</div>"
-            self.analysis_dec_text.setHtml(empty_html)
-            self.analysis_plan_text.setHtml(empty_html)
-            self.analysis_ai_text.setHtml(empty_html)
+            empty_html = empty_state_html(
+                "Chọn một bản ghi trong màn Nhật ký để xem chi tiết."
+            )
+            set_rich_html(self.analysis_dec_text, empty_html)
+            set_rich_html(self.analysis_plan_text, empty_html)
+            set_rich_html(self.analysis_ai_text, empty_html)
             self.note_input.setPlainText("")
             self._clear_lifecycle_form()
             if hasattr(self, "hero_summary"):
@@ -602,9 +559,10 @@ class JournalDetailScreen(QWidget):
             self.hero_summary.setVisible(True)
             self._update_hero_summary()
         dec_html, plan_html, ai_html = self._analysis_html_parts()
-        self.analysis_dec_text.setHtml(dec_html)
-        self.analysis_plan_text.setHtml(plan_html)
-        self.analysis_ai_text.setHtml(ai_html)
+        theme = "light" if self._is_light() else "dark"
+        set_rich_html(self.analysis_dec_text, dec_html, theme=theme)
+        set_rich_html(self.analysis_plan_text, plan_html, theme=theme)
+        set_rich_html(self.analysis_ai_text, ai_html, theme=theme)
         self.analysis_ai_text.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.note_input.setPlainText(self.entry.note)
         self._load_lifecycle_form()

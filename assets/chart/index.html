@@ -6,29 +6,40 @@
   <title>AI Market Analyst Chart</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: transparent !important; color: #f3f4f6; font-family: Arial, sans-serif; overflow: hidden; }
-    #chart-wrapper { position: relative; width: 100%; height: 100%; background: transparent !important; }
-    #chart-container { width: 100%; height: 100%; background: transparent !important; }
+    :root {
+      --chart-background: #0f1216;
+      --chart-text: #f3f4f6;
+      --chart-muted: #9ca3af;
+      --chart-subtle: #6b7280;
+      --chart-surface: #1e2227;
+      --chart-surface-hover: #2d3238;
+      --chart-border: #374151;
+      --chart-accent: #6b7280;
+      --chart-selection-text: #ffffff;
+    }
+    html, body { width: 100%; height: 100%; background: var(--chart-background) !important; color: var(--chart-text); font-family: Arial, sans-serif; overflow: hidden; }
+    #chart-wrapper { position: relative; width: 100%; height: 100%; background: var(--chart-background) !important; }
+    #chart-container { width: 100%; height: 100%; background: var(--chart-background) !important; }
     #chart-container table, #chart-container td, #chart-container canvas { border: none !important; outline: none !important; }
     #timeframe-selector { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; z-index: 10; }
-    #timeframe-selector button { background: #1e2227; color: #9ca3af; border: 1px solid #374151; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: Arial, sans-serif; }
-    #timeframe-selector button:hover { background: #2d3238; color: #e5e7eb; }
-    #timeframe-selector button.active { background: #374151; color: #f3f4f6; border-color: #6b7280; }
-    #source-zone-toggle { position: absolute; top: 42px; right: 10px; z-index: 10; display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; background: rgba(30, 34, 39, 0.92); color: #9ca3af; border: 1px solid #374151; border-radius: 4px; cursor: pointer; font-size: 11px; user-select: none; }
-    #source-zone-toggle:hover { color: #e5e7eb; background: #2d3238; }
-    #source-zone-toggle input { width: 14px; height: 14px; margin: 0; accent-color: #6b7280; cursor: pointer; }
-    #empty-state, #error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #6b7280; font-size: 14px; display: none; z-index: 5; pointer-events: none; }
-    #watermark { position: absolute; bottom: 8px; left: 10px; color: #6b7280; font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
+    #timeframe-selector button { background: var(--chart-surface); color: var(--chart-muted); border: 1px solid var(--chart-border); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: Arial, sans-serif; }
+    #timeframe-selector button:hover { background: var(--chart-surface-hover); color: var(--chart-text); }
+    #timeframe-selector button.active { background: var(--chart-accent); color: var(--chart-selection-text); border-color: var(--chart-accent); }
+    #source-zone-toggle { position: absolute; top: 42px; right: 10px; z-index: 10; display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; background: var(--chart-surface); color: var(--chart-muted); border: 1px solid var(--chart-border); border-radius: 4px; cursor: pointer; font-size: 11px; user-select: none; }
+    #source-zone-toggle:hover { color: var(--chart-text); background: var(--chart-surface-hover); }
+    #source-zone-toggle input { width: 14px; height: 14px; margin: 0; accent-color: var(--chart-accent); cursor: pointer; }
+    #empty-state, #error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--chart-subtle); font-size: 14px; display: none; z-index: 5; pointer-events: none; }
+    #watermark { position: absolute; bottom: 8px; left: 10px; color: var(--chart-subtle); font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
     
     /* Light theme styles */
-    html.light-theme, body.light-theme { background: transparent !important; color: #111827; }
-    body.light-theme #chart-wrapper, body.light-theme #chart-container { background: transparent !important; }
-    body.light-theme #timeframe-selector button { background: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
-    body.light-theme #timeframe-selector button:hover { background: #e5e7eb; color: #1f2937; }
-    body.light-theme #timeframe-selector button.active { background: #D94625; color: #ffffff; border-color: #D94625; }
-    body.light-theme #source-zone-toggle { background: rgba(243, 244, 246, 0.94); color: #6b7280; border-color: #d1d5db; }
-    body.light-theme #source-zone-toggle:hover { background: #e5e7eb; color: #1f2937; }
-    body.light-theme #empty-state, body.light-theme #error-state, body.light-theme #watermark { color: #9ca3af; }
+    html.light-theme, body.light-theme { background: var(--chart-background) !important; color: var(--chart-text); }
+    body.light-theme #chart-wrapper, body.light-theme #chart-container { background: var(--chart-background) !important; }
+    body.light-theme #timeframe-selector button { background: var(--chart-surface); color: var(--chart-muted); border: 1px solid var(--chart-border); }
+    body.light-theme #timeframe-selector button:hover { background: var(--chart-surface-hover); color: var(--chart-text); }
+    body.light-theme #timeframe-selector button.active { background: var(--chart-accent); color: var(--chart-selection-text); border-color: var(--chart-accent); }
+    body.light-theme #source-zone-toggle { background: var(--chart-surface); color: var(--chart-muted); border-color: var(--chart-border); }
+    body.light-theme #source-zone-toggle:hover { background: var(--chart-surface-hover); color: var(--chart-text); }
+    body.light-theme #empty-state, body.light-theme #error-state, body.light-theme #watermark { color: var(--chart-subtle); }
     ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
   </style>
 </head>
@@ -112,13 +123,7 @@
       throw new Error('Unsupported Lightweight Charts series API');
     }
 
-    function showError(message) {
-      var el = document.getElementById('error-state');
-      if (el && message) el.textContent = message;
-      _show('error-state');
-    }
-
-    function _initChart() {
+    function _clearChart() {
       if (_chart) {
         try { _chart.remove(); } catch(e) {}
         _chart = null;
@@ -127,6 +132,28 @@
       _emaSeries = [];
       _priceLines = [];
       _zones = [];
+    }
+
+    function showEmpty() {
+      _clearChart();
+      _payload = null;
+      _hide('error-state');
+      _show('empty-state');
+      _resetSourceZoneToggle();
+    }
+
+    function showError(message) {
+      _clearChart();
+      _payload = null;
+      var el = document.getElementById('error-state');
+      if (el && message) el.textContent = message;
+      _hide('empty-state');
+      _show('error-state');
+      _resetSourceZoneToggle();
+    }
+
+    function _initChart() {
+      _clearChart();
 
       var container = document.getElementById('chart-container');
       if (!container) return null;
@@ -397,6 +424,53 @@
 
     // === Public API ===
 
+    function applyChartTheme(theme, palette) {
+      palette = palette || {};
+      var isLight = theme === 'light';
+      document.body.classList.toggle('light-theme', isLight);
+      document.body.classList.toggle('dark-theme', !isLight);
+      document.documentElement.classList.toggle('light-theme', isLight);
+      document.documentElement.classList.toggle('dark-theme', !isLight);
+
+      COLORS.bg = palette.background || (isLight ? '#f4f1ea' : '#0f1216');
+      COLORS.text = palette.text || (isLight ? '#111827' : '#e5e7eb');
+      COLORS.grid = palette.grid || (isLight ? '#e5e7eb' : '#1e2227');
+      COLORS.border = palette.border || (isLight ? '#d6d2c8' : '#334155');
+      COLORS.buy = palette.buy || COLORS.buy;
+      COLORS.sell = palette.sell || COLORS.sell;
+      COLORS.tp = palette.buy || COLORS.tp;
+      COLORS.sl = palette.sell || COLORS.sl;
+      COLORS.neutral = palette.neutral || COLORS.neutral;
+      COLORS.currentPrice = palette.neutral || COLORS.currentPrice;
+      COLORS.ema20 = palette.warning || COLORS.ema20;
+      COLORS.ema50 = palette.info || COLORS.ema50;
+      COLORS.ema200 = palette.sell || COLORS.ema200;
+
+      var rootStyle = document.documentElement.style;
+      rootStyle.setProperty('--chart-background', COLORS.bg);
+      rootStyle.setProperty('--chart-text', COLORS.text);
+      rootStyle.setProperty('--chart-muted', palette.neutral || COLORS.neutral);
+      rootStyle.setProperty('--chart-subtle', palette.neutral || COLORS.neutral);
+      rootStyle.setProperty('--chart-surface', palette.surface || COLORS.grid);
+      rootStyle.setProperty('--chart-surface-hover', palette.surfaceRaised || COLORS.border);
+      rootStyle.setProperty('--chart-border', COLORS.border);
+      rootStyle.setProperty('--chart-accent', palette.accent || COLORS.neutral);
+      rootStyle.setProperty('--chart-selection-text', palette.selectionText || '#ffffff');
+
+      if (_chart) {
+        _chart.applyOptions({
+          layout: { background: { type: 'solid', color: COLORS.bg }, textColor: COLORS.text },
+          grid: { vertLines: { color: COLORS.grid }, horzLines: { color: COLORS.grid } },
+          crosshair: {
+            vertLine: { color: COLORS.border, labelBackgroundColor: COLORS.border },
+            horzLine: { color: COLORS.border, labelBackgroundColor: COLORS.border },
+          },
+          rightPriceScale: { borderColor: COLORS.border },
+          timeScale: { borderColor: COLORS.border },
+        });
+      }
+    }
+
     function setChartData(payload) {
       _hide('empty-state');
       _hide('error-state');
@@ -407,33 +481,18 @@
       }
 
       try {
+        applyChartTheme(payload.theme, payload.palette);
         _payload = payload;
         _activeTF = payload.active_timeframe || 'D1';
         _resetSourceZoneToggle();
 
-        // Theme configuration
-        var isLight = payload.theme === 'light';
-        document.body.classList.toggle('light-theme', isLight);
-        document.documentElement.classList.toggle('light-theme', isLight);
-        if (isLight) {
-          COLORS.bg = '#ffffff';
-          COLORS.text = '#111827';
-          COLORS.grid = '#f3f4f6';
-          COLORS.border = '#e5e7eb';
-        } else {
-          COLORS.bg = '#101214';
-          COLORS.text = '#f3f4f6';
-          COLORS.grid = '#1e2227';
-          COLORS.border = '#2d3238';
-        }
-
         if (!payload.timeframes || Object.keys(payload.timeframes).length === 0) {
-          _show('empty-state');
+          showEmpty();
           return;
         }
 
         if (!_initChart()) {
-          _show('error-state');
+          showError('Không thể khởi tạo biểu đồ.');
           return;
         }
         _renderCandles();
@@ -502,6 +561,8 @@
     window.switchTimeframe = switchTimeframe;
     window.reloadChart = reloadChart;
     window.handleResize = handleResize;
+    window.applyChartTheme = applyChartTheme;
+    window.showEmpty = showEmpty;
     window.showError = showError;
 
     // Timeframe selector click handlers

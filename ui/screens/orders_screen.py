@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
+from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.screens.shared import action_button, card, page_header, labeled_value
 
 
@@ -80,10 +81,7 @@ class OrdersScreen(QWidget):
         self._load_trailing_state()
 
     def _is_light_theme(self) -> bool:
-        try:
-            return self.settings_service.load().display.theme == "light"
-        except Exception:
-            return False
+        return is_light_theme(self.settings_service)
 
     def refresh_theme_styles(self) -> None:
         self._light = self._is_light_theme()
@@ -139,7 +137,8 @@ class OrdersScreen(QWidget):
                 card_layout.setSpacing(2)
             val_lbl = card_widget.findChild(QLabel, "MiniStatValue")
             if val_lbl:
-                val_lbl.setStyleSheet("padding-top: 1px; padding-bottom: 1px;")
+                val_lbl.setProperty("compactStatus", True)
+        self.pl_label.setProperty("metricRole", "profit")
 
         layout.addWidget(self.balance_card)
         layout.addWidget(self.position_count_card)
@@ -154,7 +153,6 @@ class OrdersScreen(QWidget):
         layout.setSpacing(10)
 
         self.orders_tab_bar = QTabBar()
-        self.orders_tab_bar.setStyleSheet("background: transparent; border: none;")
         self.orders_tab_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.orders_tab_keys = ["positions", "pending"]
         self.orders_tab_bar.addTab("Vị thế đang mở")
@@ -298,10 +296,11 @@ class OrdersScreen(QWidget):
         total_pl = sum(float(p.get("profit", 0) or 0) + float(p.get("swap", 0) or 0) + float(p.get("commission", 0) or 0) for p in self._positions)
         if getattr(self, "pl_label", None):
             self.pl_label.setText(f"${total_pl:+,.2f}")
-            pl_color = "#059669" if self._light else "#10b981"
-            if total_pl < 0:
-                pl_color = "#b91c1c" if self._light else "#f87171"
-            self.pl_label.setStyleSheet(f"font-weight:700;font-size:16px;color:{pl_color}; padding-top: 2px; padding-bottom: 2px;")
+            set_dynamic_property(
+                self.pl_label,
+                "metricTone",
+                "negative" if total_pl < 0 else "positive",
+            )
 
         active_trails = sum(1 for cfg in self._trailing_configs.values() if cfg.get("enabled"))
         if getattr(self, "trail_count_label", None):
@@ -341,19 +340,26 @@ class OrdersScreen(QWidget):
             self.trail_btn.setVisible(False)
             self.clear_trail_btn.setVisible(False)
 
+        palette = current_palette(self.settings_service)
         if not data:
             table.setRowCount(1)
             table.setSpan(0, 0, 1, table.columnCount())
             item = QTableWidgetItem("Không có lệnh nào.")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            item.setForeground(QColor("#78716C" if self._light else "#94a3b8"))
+            item.setForeground(QColor(palette.text_muted))
             table.setItem(0, 0, item)
             table.setRowHeight(0, 40)
             return
 
-        buy_color = QColor("#059669" if self._light else "#10b981")
-        sell_color = QColor("#b91c1c" if self._light else "#f87171")
-        neutral_fg = QColor("#4b5563" if self._light else "#9ca3af")
+        buy_color = QColor(palette.buy)
+        sell_color = QColor(palette.sell)
+        neutral_fg = QColor(palette.text_muted)
+        self._table_semantic_colors = {
+            "success": QColor(palette.success),
+            "warning": QColor(palette.warning),
+            "info": QColor(palette.info),
+            "muted": QColor(palette.text_muted),
+        }
 
         table.setRowCount(len(data))
         for idx, row in enumerate(data):
@@ -438,17 +444,18 @@ class OrdersScreen(QWidget):
                 r_item = sitem("--")
         else:
             r_item = sitem("--")
-            r_item.setForeground(QColor("#9ca3af"))
+            r_item.setForeground(neutral_fg)
         table.setItem(idx, 8, r_item)
 
         # Trailing / BE status
         cfg = self._trailing_configs.get(pos_id)
+        semantic = self._table_semantic_colors
         if cfg and cfg.get("enabled"):
             be_done = cfg.get("be_done", False)
             trail_mode = str(cfg.get("trail_mode", "wide"))
             if not be_done:
                 trail_text = "⏳ Chờ BE"
-                trail_color = QColor("#9ca3af")
+                trail_color = semantic["muted"]
             else:
                 entry = float(cfg.get("entry_price", 0) or 0)
                 current_sl_val = float(cfg.get("current_sl", 0) or 0)
@@ -456,19 +463,19 @@ class OrdersScreen(QWidget):
                 be_sl = entry + (2.0 / pip_m) if cfg.get("side") == "buy" else entry - (2.0 / pip_m)
                 if abs(current_sl_val - be_sl) < (1.0 / pip_m):
                     trail_text = "✅ BE"
-                    trail_color = QColor("#10b981")
+                    trail_color = semantic["success"]
                 elif trail_mode == "tight":
                     trail_text = "🔒 Tight"
-                    trail_color = QColor("#f59e0b")
+                    trail_color = semantic["warning"]
                 else:
                     trail_text = "🟢 Wide"
-                    trail_color = QColor("#3b82f6")
+                    trail_color = semantic["info"]
         elif cfg and not cfg.get("enabled"):
             trail_text = "⏸️ Tạm dừng"
-            trail_color = QColor("#9ca3af")
+            trail_color = semantic["muted"]
         else:
             trail_text = "--"
-            trail_color = QColor("#9ca3af")
+            trail_color = semantic["muted"]
         trail_item = sitem(trail_text)
         if cfg:
             trail_item.setForeground(trail_color)
@@ -679,15 +686,13 @@ class OrdersScreen(QWidget):
         def _is_dirty():
             return _current_snapshot() != _initial_snapshot
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
+        light = is_light_theme(self.settings_service)
 
         dlg = QDialog(self)
         dlg.setWindowTitle(f"🎯 Trailing Stop — {symbol} ({'MUA' if is_buy else 'BÁN'} {volume:.2f})")
         dlg.setMinimumWidth(650)
         dlg.setObjectName("AnalysisDetailDialog")
+        dlg.setProperty("trailingDialog", True)
 
         root = QVBoxLayout(dlg)
         root.setContentsMargins(24, 24, 24, 24)
@@ -768,32 +773,38 @@ class OrdersScreen(QWidget):
 
         def _refresh_live_labels(cp: float, prof: float, pips_signed: float, r_signed: float) -> None:
             """Update labels in real-time. Safe to call from timer."""
-            green = "#059669" if light else "#10b981"
-            red = "#b91c1c" if light else "#f87171"
-
             if self._dlg_cp_label and cp > 0:
                 self._dlg_cp_label.setText(f"{cp:.5f}")
-                self._dlg_cp_label.setStyleSheet(f"font-weight:700; color:{green};")
+                set_dynamic_property(self._dlg_cp_label, "metricTone", "positive")
 
             if self._dlg_pl_label:
                 self._dlg_pl_label.setText(f"${prof:+,.2f}")
-                self._dlg_pl_label.setStyleSheet(f"font-weight:700; color:{green if prof >= 0 else red};")
+                set_dynamic_property(
+                    self._dlg_pl_label,
+                    "metricTone",
+                    "positive" if prof >= 0 else "negative",
+                )
 
             if self._dlg_pips_label:
                 self._dlg_pips_label.setText(f"{pips_signed:+.1f} pip")
-                self._dlg_pips_label.setStyleSheet(f"font-weight:700; color:{green if pips_signed >= 0 else red};")
+                set_dynamic_property(
+                    self._dlg_pips_label,
+                    "metricTone",
+                    "positive" if pips_signed >= 0 else "negative",
+                )
 
             if self._dlg_r_label:
                 self._dlg_r_label.setText(f"{r_signed:+.2f}R")
-                if r_signed >= 1.0:
-                    r_c = green
-                elif r_signed >= 0.5:
-                    r_c = "#f59e0b"
-                elif r_signed < 0:
-                    r_c = red
-                else:
-                    r_c = green
-                self._dlg_r_label.setStyleSheet(f"font-weight:700; color:{r_c};")
+                r_tone = (
+                    "positive"
+                    if r_signed >= 1.0
+                    else "warning"
+                    if r_signed >= 0.5
+                    else "negative"
+                    if r_signed < 0
+                    else "positive"
+                )
+                set_dynamic_property(self._dlg_r_label, "metricTone", r_tone)
 
         _refresh_live_labels(current_price, profit, profit_pips_signed, r_multiple_signed)
 
@@ -925,7 +936,6 @@ class OrdersScreen(QWidget):
         self._dlg_pip_spin.setValue(default_pips)
         self._dlg_pip_spin.setSuffix(" pip")
         self._dlg_pip_spin.setMinimumWidth(100)
-        self._dlg_pip_spin.setMinimumHeight(32)
         self._dlg_pip_spin.setEnabled(existing_mode == "fixed")
         pip_layout.addWidget(self._dlg_pip_spin)
         pip_layout.addWidget(QLabel("Nhanh:"))
@@ -1040,28 +1050,27 @@ class OrdersScreen(QWidget):
                 dist = cp - be_trigger
 
             dist_pips = dist * pip_m
-            green = "#059669" if light else "#10b981"
-            orange = "#f59e0b"
-            neutral = "#9ca3af"
-
             if be_already_done and sl_matches_be:
                 self._dlg_be_status_label.setText("✅ Đã kích hoạt Break Even")
-                self._dlg_be_status_label.setStyleSheet(f"color:{green};font-weight:700;")
+                set_dynamic_property(self._dlg_be_status_label, "statusTone", "success")
                 self._dlg_be_distance_label.setText("")
             elif be_already_done and not sl_matches_be:
                 self._dlg_be_status_label.setText("⚠️ Break Even đã kích hoạt trước đó — SL hiện tại không còn ở vị trí BE")
-                self._dlg_be_status_label.setStyleSheet(f"color:{orange};font-weight:700;")
+                set_dynamic_property(self._dlg_be_status_label, "statusTone", "warning")
                 self._dlg_be_distance_label.setText("")
             elif dist <= 0:
                 self._dlg_be_status_label.setText("🟢 Đã sẵn sàng kích hoạt Break Even")
-                self._dlg_be_status_label.setStyleSheet(f"color:{green};font-weight:700;")
+                set_dynamic_property(self._dlg_be_status_label, "statusTone", "success")
                 self._dlg_be_distance_label.setText("")
             else:
                 self._dlg_be_status_label.setText("🟡 Chưa kích hoạt Break Even")
-                self._dlg_be_status_label.setStyleSheet(f"color:{orange};font-weight:700;")
-                dist_color = orange if dist_pips < 3 else neutral
+                set_dynamic_property(self._dlg_be_status_label, "statusTone", "warning")
                 self._dlg_be_distance_label.setText(f"Còn:  {dist_pips:.1f} pip")
-                self._dlg_be_distance_label.setStyleSheet(f"color:{dist_color};font-weight:700;")
+                set_dynamic_property(
+                    self._dlg_be_distance_label,
+                    "statusTone",
+                    "warning" if dist_pips < 3 else "neutral",
+                )
 
         _update_preview(default_pips)
         _update_be_live(current_price, current_sl)
@@ -1167,10 +1176,6 @@ class OrdersScreen(QWidget):
 
         root.addLayout(btn_layout)
 
-        if light:
-            dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
-        else:
-            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
         dlg.exec()
 
     # ------------------------------------------------------------------

@@ -1,0 +1,697 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-27T12:44:03.036199+00:00",
+  "source_manifest": "docs/ui-baseline/current/screenshot-manifest.json",
+  "theme": "dark",
+  "policy": {
+    "brightness_threshold": 215,
+    "neutral_tolerance": 30,
+    "largest_component_ratio_threshold": 0.005,
+    "note": "Flagged means a connected neutral-bright surface occupies at least the configured share of the screenshot; manual classification is still required."
+  },
+  "capture_count": 40,
+  "flagged_count": 0,
+  "flagged_names": [],
+  "results": [
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-backtest-ai-analysis.png",
+      "width": 800,
+      "height": 600,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.003133,
+      "largest_component_ratio": 6.7e-05,
+      "largest_component": {
+        "x": 39,
+        "y": 80,
+        "width": 9,
+        "height": 9
+      },
+      "flagged": false,
+      "name": "dialog-backtest-ai-analysis",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-backtest-config.png",
+      "width": 908,
+      "height": 329,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.000561,
+      "largest_component_ratio": 4e-05,
+      "largest_component": {
+        "x": 740,
+        "y": 295,
+        "width": 2,
+        "height": 6
+      },
+      "flagged": false,
+      "name": "dialog-backtest-config",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-backtest-symbol-selection.png",
+      "width": 420,
+      "height": 425,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.033793,
+      "largest_component_ratio": 0.000179,
+      "largest_component": {
+        "x": 18,
+        "y": 18,
+        "width": 9,
+        "height": 9
+      },
+      "flagged": false,
+      "name": "dialog-backtest-symbol-selection",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-dashboard-event.png",
+      "width": 750,
+      "height": 520,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.00801,
+      "largest_component_ratio": 0.000133,
+      "largest_component": {
+        "x": 26,
+        "y": 26,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "dialog-dashboard-event",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-dashboard-headline.png",
+      "width": 750,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.013089,
+      "largest_component_ratio": 0.000144,
+      "largest_component": {
+        "x": 26,
+        "y": 26,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "dialog-dashboard-headline",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-dashboard-market-help.png",
+      "width": 960,
+      "height": 680,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.005821,
+      "largest_component_ratio": 0.000147,
+      "largest_component": {
+        "x": 26,
+        "y": 26,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "dialog-dashboard-market-help",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-journal-metrics-help.png",
+      "width": 920,
+      "height": 620,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.066564,
+      "largest_component_ratio": 4.9e-05,
+      "largest_component": {
+        "x": 34,
+        "y": 90,
+        "width": 8,
+        "height": 8
+      },
+      "flagged": false,
+      "name": "dialog-journal-metrics-help",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-orders-trailing-stop.png",
+      "width": 939,
+      "height": 610,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.025281,
+      "largest_component_ratio": 0.00014,
+      "largest_component": {
+        "x": 50,
+        "y": 114,
+        "width": 12,
+        "height": 12
+      },
+      "flagged": false,
+      "name": "dialog-orders-trailing-stop",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-scanner-analysis-detail.png",
+      "width": 1298,
+      "height": 680,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.013686,
+      "largest_component_ratio": 7.3e-05,
+      "largest_component": {
+        "x": 28,
+        "y": 96,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "dialog-scanner-analysis-detail",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-scanner-columns-help.png",
+      "width": 1040,
+      "height": 680,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.056821,
+      "largest_component_ratio": 4e-05,
+      "largest_component": {
+        "x": 34,
+        "y": 104,
+        "width": 8,
+        "height": 8
+      },
+      "flagged": false,
+      "name": "dialog-scanner-columns-help",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-scanner-market-brief.png",
+      "width": 850,
+      "height": 650,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003055,
+      "largest_component_ratio": 5.1e-05,
+      "largest_component": {
+        "x": 60,
+        "y": 116,
+        "width": 8,
+        "height": 8
+      },
+      "flagged": false,
+      "name": "dialog-scanner-market-brief",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-scanner-orders.png",
+      "width": 980,
+      "height": 620,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.010145,
+      "largest_component_ratio": 7.2e-05,
+      "largest_component": {
+        "x": 42,
+        "y": 36,
+        "width": 12,
+        "height": 12
+      },
+      "flagged": false,
+      "name": "dialog-scanner-orders",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-scanner-row-explanation.png",
+      "width": 880,
+      "height": 600,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.040788,
+      "largest_component_ratio": 0.000121,
+      "largest_component": {
+        "x": 48,
+        "y": 90,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "dialog-scanner-row-explanation",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/dialog-scanner-symbol-selection.png",
+      "width": 560,
+      "height": 520,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.004931,
+      "largest_component_ratio": 9.6e-05,
+      "largest_component": {
+        "x": 50,
+        "y": 279,
+        "width": 8,
+        "height": 8
+      },
+      "flagged": false,
+      "name": "dialog-scanner-symbol-selection",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003333,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-backtest-tab-1-ng-cong-v-n",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-2-l-nh.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003333,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-backtest-tab-2-l-nh",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.007136,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-backtest-tab-3-nghi-n-c-u-n-ng-cao",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-backtest.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003333,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-backtest",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-dashboard.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.005681,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 252,
+        "y": 26,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-dashboard",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-journal-detail.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.006025,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 266,
+        "y": 10,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-journal-detail",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.0034,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 266,
+        "y": 14,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-journal-tab-1-th-ng-k-hi-u-su-t",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-journal.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003206,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 266,
+        "y": 14,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-journal",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-orders.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.002511,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 244,
+        "y": 16,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-orders",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-scanner-detail-tab-1-ch-n-o-n.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003031,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 244,
+        "y": 18,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-scanner-detail-tab-1-ch-n-o-n",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003047,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 244,
+        "y": 18,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-scanner-detail-tab-2-ki-m-nh-ai",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-scanner-detail.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003608,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 244,
+        "y": 18,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-scanner-detail",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-scanner.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003978,
+      "largest_component_ratio": 6.4e-05,
+      "largest_component": {
+        "x": 244,
+        "y": 16,
+        "width": 24,
+        "height": 24
+      },
+      "flagged": false,
+      "name": "screen-scanner",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-settings-tab-1-d-li-u.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.010986,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-settings-tab-1-d-li-u",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.003917,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-settings-tab-2-giao-d-ch",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-settings-tab-3-rollout.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.005008,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-settings-tab-3-rollout",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.002822,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-settings-tab-4-hi-n-th",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.004689,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-settings-tab-5-n-ng-cao",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/screen-settings.png",
+      "width": 1600,
+      "height": 900,
+      "sample_step": 2,
+      "neutral_bright_ratio": 0.0041,
+      "largest_component_ratio": 4.4e-05,
+      "largest_component": {
+        "x": 44,
+        "y": 148,
+        "width": 10,
+        "height": 10
+      },
+      "flagged": false,
+      "name": "screen-settings",
+      "kind": "screen"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-checked.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-checked",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-default.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-default",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-disabled.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-disabled",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-focus.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-focus",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-hover.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-hover",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-pressed.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-pressed",
+      "kind": "dialog"
+    },
+    {
+      "path": "docs/ui-baseline/current/dark/state-validation.png",
+      "width": 640,
+      "height": 480,
+      "sample_step": 1,
+      "neutral_bright_ratio": 0.018854,
+      "largest_component_ratio": 0.000169,
+      "largest_component": {
+        "x": 13,
+        "y": 46,
+        "width": 14,
+        "height": 14
+      },
+      "flagged": false,
+      "name": "state-validation",
+      "kind": "dialog"
+    }
+  ]
+}

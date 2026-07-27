@@ -1,0 +1,1871 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-27T14:21:18.500885+00:00",
+  "target_contract": {
+    "standard_actual_height_px": 24,
+    "compact_actual_height_px": 20,
+    "multiline_height": "content-driven",
+    "style_owner": "ui/styles/base.qss",
+    "theme_overlays": [
+      "ui/styles.qss",
+      "ui/styles_light.qss"
+    ]
+  },
+  "reviewed_groups": {
+    "standard_24px": [
+      "QLineEdit",
+      "QComboBox",
+      "QSpinBox",
+      "QDoubleSpinBox",
+      "QDateEdit",
+      "QDateTimeEdit",
+      "QTimeEdit",
+      "QCheckBox",
+      "QRadioButton",
+      "standard action QPushButton",
+      "standard QTabBar::tab"
+    ],
+    "compact_20px": [
+      "table-embedded editor",
+      "HelpButton",
+      "icon-only button",
+      "compact chip or badge",
+      "dense toolbar control"
+    ],
+    "content_or_layout_driven": [
+      "QTextEdit and note fields",
+      "chart and WebEngine canvas",
+      "progress indicator",
+      "table and header",
+      "scrollbar subcontrol",
+      "card, dialog and window container"
+    ]
+  },
+  "python_height_calls": [
+    {
+      "path": "ui/components/chart_view.py",
+      "line": 86,
+      "method": "setMinimumHeight",
+      "receiver": "self._webview",
+      "arguments": [
+        "200"
+      ],
+      "category": "chart"
+    },
+    {
+      "path": "ui/components/info_card.py",
+      "line": 25,
+      "method": "setFixedHeight",
+      "receiver": "self",
+      "arguments": [
+        "34"
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/layout_system.py",
+      "line": 75,
+      "method": "setMinimumSize",
+      "receiver": "dialog",
+      "arguments": [
+        "minimum_width",
+        "minimum_height"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/layout_system.py",
+      "line": 134,
+      "method": "setFixedHeight",
+      "receiver": "progress",
+      "arguments": [
+        "LayoutTokens.PROGRESS_HEIGHT"
+      ],
+      "category": "progress"
+    },
+    {
+      "path": "ui/layout_system.py",
+      "line": 143,
+      "method": "setFixedHeight",
+      "receiver": "horizontal",
+      "arguments": [
+        "LayoutTokens.TABLE_HEADER_HEIGHT"
+      ],
+      "category": "table"
+    },
+    {
+      "path": "ui/main_window.py",
+      "line": 35,
+      "method": "setMinimumSize",
+      "receiver": "self",
+      "arguments": [
+        "1024",
+        "700"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/backtest_screen.py",
+      "line": 537,
+      "method": "setMinimumHeight",
+      "receiver": "self._equity_canvas",
+      "arguments": [
+        "LayoutTokens.CHART_MIN_HEIGHT"
+      ],
+      "category": "chart"
+    },
+    {
+      "path": "ui/screens/backtest_screen.py",
+      "line": 1421,
+      "method": "setMinimumHeight",
+      "receiver": "table",
+      "arguments": [
+        "LayoutTokens.TABLE_ROW_HEIGHT * 4 + LayoutTokens.SPACE_1"
+      ],
+      "category": "table"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 184,
+      "method": "setFixedHeight",
+      "receiver": "frame",
+      "arguments": [
+        "44"
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 193,
+      "method": "setFixedSize",
+      "receiver": "dot",
+      "arguments": [
+        "8",
+        "8"
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 888,
+      "method": "setMinimumSize",
+      "receiver": "dlg",
+      "arguments": [
+        "700",
+        "450"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 951,
+      "method": "setMinimumHeight",
+      "receiver": "ai_response",
+      "arguments": [
+        "140"
+      ],
+      "category": "multiline"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 1049,
+      "method": "setMinimumSize",
+      "receiver": "dlg",
+      "arguments": [
+        "700",
+        "480"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 1146,
+      "method": "setMinimumHeight",
+      "receiver": "self._event_ai_response",
+      "arguments": [
+        "140"
+      ],
+      "category": "multiline"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 1368,
+      "method": "setMinimumSize",
+      "receiver": "dlg",
+      "arguments": [
+        "900",
+        "640"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "line": 1426,
+      "method": "setMinimumHeight",
+      "receiver": "ai_response",
+      "arguments": [
+        "150"
+      ],
+      "category": "multiline"
+    },
+    {
+      "path": "ui/screens/journal_detail_screen.py",
+      "line": 272,
+      "method": "setMinimumHeight",
+      "receiver": "txt",
+      "arguments": [
+        "55"
+      ],
+      "category": "multiline"
+    },
+    {
+      "path": "ui/screens/journal_detail_screen.py",
+      "line": 273,
+      "method": "setMaximumHeight",
+      "receiver": "txt",
+      "arguments": [
+        "75"
+      ],
+      "category": "multiline"
+    },
+    {
+      "path": "ui/screens/journal_detail_screen.py",
+      "line": 307,
+      "method": "setMinimumHeight",
+      "receiver": "self.note_input",
+      "arguments": [
+        "80"
+      ],
+      "category": "multiline"
+    },
+    {
+      "path": "ui/screens/journal_screen.py",
+      "line": 60,
+      "method": "setMinimumHeight",
+      "receiver": "self",
+      "arguments": [
+        "82"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/journal_screen.py",
+      "line": 173,
+      "method": "setMinimumHeight",
+      "receiver": "self.canvas",
+      "arguments": [
+        "210"
+      ],
+      "category": "chart"
+    },
+    {
+      "path": "ui/screens/journal_screen.py",
+      "line": 1990,
+      "method": "setMinimumSize",
+      "receiver": "self",
+      "arguments": [
+        "880",
+        "560"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/orders_screen.py",
+      "line": 133,
+      "method": "setMinimumHeight",
+      "receiver": "card_widget",
+      "arguments": [
+        "50"
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/screens/scanner_detail_screen.py",
+      "line": 570,
+      "method": "setMinimumSize",
+      "receiver": "dlg",
+      "arguments": [
+        "880",
+        "580"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/scanner_detail_screen.py",
+      "line": 864,
+      "method": "setFixedHeight",
+      "receiver": "bar",
+      "arguments": [
+        "6"
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "line": 874,
+      "method": "setFixedHeight",
+      "receiver": "self.progress_bar",
+      "arguments": [
+        "16"
+      ],
+      "category": "progress"
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "line": 999,
+      "method": "setMinimumSize",
+      "receiver": "dlg",
+      "arguments": [
+        "940",
+        "560"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "line": 1848,
+      "method": "setMinimumSize",
+      "receiver": "dlg",
+      "arguments": [
+        "850",
+        "650"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "line": 2062,
+      "method": "setMinimumSize",
+      "receiver": "self",
+      "arguments": [
+        "560",
+        "520"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "line": 2171,
+      "method": "setMinimumSize",
+      "receiver": "self",
+      "arguments": [
+        "880",
+        "500"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "line": 3066,
+      "method": "setMinimumSize",
+      "receiver": "self",
+      "arguments": [
+        "920",
+        "560"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/settings_screen.py",
+      "line": 105,
+      "method": "setMinimumHeight",
+      "receiver": "self.ai_provider_list",
+      "arguments": [
+        "200"
+      ],
+      "category": "container"
+    },
+    {
+      "path": "ui/screens/settings_screen.py",
+      "line": 546,
+      "method": "setMinimumHeight",
+      "receiver": "self.mt5_symbols_table.horizontalHeader()",
+      "arguments": [
+        "38"
+      ],
+      "category": "table"
+    }
+  ],
+  "python_category_counts": {
+    "chart": 3,
+    "container": 14,
+    "multiline": 6,
+    "progress": 2,
+    "structural": 5,
+    "table": 3
+  },
+  "qss_height_rules": [
+    {
+      "path": "ui/styles/base.qss",
+      "line": 19,
+      "selector": "QLabel#FormLabel",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        },
+        {
+          "property": "max-height",
+          "value": "24px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 24,
+      "selector": "QPushButton",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "16px"
+        },
+        {
+          "property": "max-height",
+          "value": "16px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 40,
+      "selector": "QPushButton#SidebarToggleButton, QPushButton#FloatingSidebarToggle",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 93,
+      "selector": "QLabel#ScannerDecisionAction",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "34px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 101,
+      "selector": "QFrame#InlineStat",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "34px"
+        },
+        {
+          "property": "max-height",
+          "value": "54px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 119,
+      "selector": "QLineEdit, QDoubleSpinBox, QSpinBox, QDateEdit, QDateTimeEdit, QTimeEdit",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "16px"
+        },
+        {
+          "property": "max-height",
+          "value": "16px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 132,
+      "selector": "QComboBox",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "16px"
+        },
+        {
+          "property": "max-height",
+          "value": "16px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 151,
+      "selector": "QComboBox::down-arrow, QDateEdit::down-arrow, QDateTimeEdit::down-arrow, QTimeEdit::down-arrow",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "14px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 176,
+      "selector": "QDateEdit#FilterField::up-button, QDateEdit#FilterField::down-button",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 201,
+      "selector": "QCheckBox",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        },
+        {
+          "property": "max-height",
+          "value": "24px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 209,
+      "selector": "QCheckBox::indicator",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "18px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 220,
+      "selector": "QCheckBox#ScannerSymbolCheck::indicator",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "13px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 226,
+      "selector": "QRadioButton",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        },
+        {
+          "property": "max-height",
+          "value": "24px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 233,
+      "selector": "QDialog#ScannerHelpDialog QRadioButton",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 246,
+      "selector": "QDialog#ScannerHelpDialog QRadioButton::indicator",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "14px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 329,
+      "selector": "QTabBar::tab",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "16px"
+        },
+        {
+          "property": "max-height",
+          "value": "16px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 693,
+      "selector": "QProgressBar#ScannerTierProgress",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "6px"
+        },
+        {
+          "property": "max-height",
+          "value": "6px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 841,
+      "selector": "QCheckBox#JournalLifecycleCheck::indicator",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "16px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 851,
+      "selector": "QPushButton#TagChip",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "14px"
+        },
+        {
+          "property": "max-height",
+          "value": "14px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 890,
+      "selector": "QPushButton#HelpButton",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 903,
+      "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5MinScoreInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5ReadyInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WatchInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WaitInput",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 914,
+      "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QComboBox",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 922,
+      "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 950,
+      "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::up-arrow, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::down-arrow",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 956,
+      "selector": "#LifecycleScrollWidget QLineEdit, #LifecycleScrollWidget QDoubleSpinBox, #LifecycleScrollWidget QDateTimeEdit, #LifecycleScrollWidget QComboBox",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "14px"
+        },
+        {
+          "property": "max-height",
+          "value": "14px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 974,
+      "selector": "QTabWidget#ContentTabs QTabBar QToolButton",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 986,
+      "selector": "QPushButton#ResultTabArrow",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 944,
+      "selector": "QFrame#ScannerDecisionMetric",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "48px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1011,
+      "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1021,
+      "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1095,
+      "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "22px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1105,
+      "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1314,
+      "selector": "QLabel#ConditionBadge",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "22px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1439,
+      "selector": "QProgressBar",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1969,
+      "selector": "QTableView#DataTable QScrollBar:horizontal, QTableWidget#DataTable QScrollBar:horizontal",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "14px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 1991,
+      "selector": "QTableView#DataTable QScrollBar::add-line:horizontal, QTableView#DataTable QScrollBar::sub-line:horizontal, QTableWidget#DataTable QScrollBar::add-line:horizontal, QTableWidget#DataTable QScrollBar::sub-line:horizontal",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2008,
+      "selector": "QTableView#DataTable QScrollBar::handle:vertical, QTableWidget#DataTable QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "30px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2018,
+      "selector": "QTableView#DataTable QScrollBar::add-line:vertical, QTableView#DataTable QScrollBar::sub-line:vertical, QTableWidget#DataTable QScrollBar::add-line:vertical, QTableWidget#DataTable QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2170,
+      "selector": "QLabel#ResultTabPosition",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2181,
+      "selector": "QFrame#ChartPanel",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "260px"
+        }
+      ],
+      "category": "multiline_or_chart"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2237,
+      "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2245,
+      "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2306,
+      "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "30px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles.qss",
+      "line": 2316,
+      "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 940,
+      "selector": "QFrame#ScannerDecisionMetric",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "48px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1007,
+      "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1017,
+      "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1091,
+      "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "22px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1101,
+      "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1310,
+      "selector": "QLabel#ConditionBadge",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "22px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1435,
+      "selector": "QProgressBar",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "18px"
+        },
+        {
+          "property": "max-height",
+          "value": "18px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1966,
+      "selector": "QTableView#DataTable QScrollBar:horizontal, QTableWidget#DataTable QScrollBar:horizontal",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "14px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 1988,
+      "selector": "QTableView#DataTable QScrollBar::add-line:horizontal, QTableView#DataTable QScrollBar::sub-line:horizontal, QTableWidget#DataTable QScrollBar::add-line:horizontal, QTableWidget#DataTable QScrollBar::sub-line:horizontal",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2005,
+      "selector": "QTableView#DataTable QScrollBar::handle:vertical, QTableWidget#DataTable QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "30px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2015,
+      "selector": "QTableView#DataTable QScrollBar::add-line:vertical, QTableView#DataTable QScrollBar::sub-line:vertical, QTableWidget#DataTable QScrollBar::add-line:vertical, QTableWidget#DataTable QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2155,
+      "selector": "QLabel#ResultTabPosition",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        }
+      ],
+      "category": "structural"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2166,
+      "selector": "QFrame#ChartPanel",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "260px"
+        }
+      ],
+      "category": "multiline_or_chart"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2222,
+      "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "24px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2230,
+      "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2290,
+      "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "30px"
+        }
+      ],
+      "category": "subcontrol"
+    },
+    {
+      "path": "ui/styles_light.qss",
+      "line": 2300,
+      "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
+      "declarations": [
+        {
+          "property": "height",
+          "value": "0px"
+        }
+      ],
+      "category": "subcontrol"
+    }
+  ],
+  "qss_category_counts": {
+    "interactive": 19,
+    "multiline_or_chart": 2,
+    "structural": 12,
+    "subcontrol": 28
+  },
+  "runtime_measurements": {
+    "dark": {
+      "content_tab": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 0,
+        "maximum": 16777215,
+        "content_height": 12
+      },
+      "generic_line_edit": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_combo_box": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_double_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_date_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_date_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_line_edit": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_combo_box": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_double_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_date_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_date_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "primary_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "secondary_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "help_button": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 12
+      },
+      "sidebar_toggle": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 14
+      },
+      "nav_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "news_link_button": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "news_icon_button": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 14
+      },
+      "dialog_ai_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "restart_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "scanner_detail_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "tag_chip": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "inline_help_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "market_help_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "auto_trade_toggle": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "result_tab_arrow": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 16
+      },
+      "generic_checkbox": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 13
+      },
+      "scanner_symbol_check": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 12
+      },
+      "generic_radio_button": {
+        "actual": 24,
+        "size_hint": 29,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 13
+      },
+      "scanner_help_radio": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 13
+      },
+      "pill_tab": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "configured_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "configured_control": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "table_line_edit": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "table_spin_box": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "table_combo_box": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_line_edit": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_spin_box": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_date_time_edit": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_combo_box": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "content_tab_scroller": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 14
+      }
+    },
+    "light": {
+      "content_tab": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 0,
+        "maximum": 16777215,
+        "content_height": 12
+      },
+      "generic_line_edit": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_combo_box": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_double_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_date_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_date_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_line_edit": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_combo_box": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_double_spin_box": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_date_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_date_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "filter_time_edit": {
+        "actual": 24,
+        "size_hint": 27,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "generic_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "primary_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "secondary_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "help_button": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 12
+      },
+      "sidebar_toggle": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 14
+      },
+      "nav_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "news_link_button": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "news_icon_button": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 14
+      },
+      "dialog_ai_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "restart_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "scanner_detail_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "tag_chip": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "inline_help_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "market_help_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "auto_trade_toggle": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "result_tab_arrow": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 16
+      },
+      "generic_checkbox": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 13
+      },
+      "scanner_symbol_check": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 12
+      },
+      "generic_radio_button": {
+        "actual": 24,
+        "size_hint": 29,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 13
+      },
+      "scanner_help_radio": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 13
+      },
+      "pill_tab": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "configured_button": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "configured_control": {
+        "actual": 24,
+        "size_hint": 24,
+        "minimum": 24,
+        "maximum": 24,
+        "content_height": 11
+      },
+      "table_line_edit": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "table_spin_box": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "table_combo_box": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_line_edit": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_spin_box": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_date_time_edit": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "lifecycle_combo_box": {
+        "actual": 20,
+        "size_hint": 20,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 11
+      },
+      "content_tab_scroller": {
+        "actual": 20,
+        "size_hint": 23,
+        "minimum": 20,
+        "maximum": 20,
+        "content_height": 14
+      }
+    }
+  }
+}

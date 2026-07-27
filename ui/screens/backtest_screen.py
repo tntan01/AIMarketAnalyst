@@ -78,7 +78,14 @@ from ui.layout_system import (
     configure_progress,
     configure_table,
 )
+from ui.rich_text import empty_state_html, set_rich_html
+from ui.matplotlib_theme import (
+    apply_axes_theme,
+    apply_figure_theme,
+    apply_legend_theme,
+)
 from ui.screens.shared import action_button, card, page_header
+from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 
 
 class _AIAnalyzeWorker(QObject):
@@ -175,31 +182,22 @@ class BacktestScreen(QWidget):
         if not hasattr(self, "sweep_period_combo"):
             return
         configure_control(self.symbol_summary, width=LayoutTokens.FIELD_SM)
-        self.symbol_summary.setFixedHeight(22)
         configure_control(self.start_date, width=130)
         self.start_date.setMinimumWidth(130)
         self.start_date.setMaximumWidth(130)
-        self.start_date.setFixedHeight(22)
         configure_control(self.end_date, width=130)
         self.end_date.setMinimumWidth(130)
         self.end_date.setMaximumWidth(130)
-        self.end_date.setFixedHeight(22)
         configure_control(self.balance_input, width=120)
         self.balance_input.setMinimumWidth(120)
         self.balance_input.setMaximumWidth(120)
-        self.balance_input.setFixedHeight(22)
         configure_control(self.risk_input, width=80)
-        self.risk_input.setFixedHeight(22)
-        configure_control(self.purpose_combo, width=LayoutTokens.FIELD_NUMERIC_SM)
-        self.purpose_combo.setFixedHeight(22)
+        configure_control(self.purpose_combo, width=LayoutTokens.FIELD_MD)
         configure_control(
             self.advanced_execution_combo, width=LayoutTokens.FIELD_LG
         )
-        self.advanced_execution_combo.setFixedHeight(22)
         configure_control(self.sweep_params_combo, width=LayoutTokens.FIELD_LG)
-        self.sweep_params_combo.setFixedHeight(22)
         configure_control(self.sweep_period_combo, width=LayoutTokens.FIELD_XL)
-        self.sweep_period_combo.setFixedHeight(22)
 
     def _settings_card(self) -> QFrame:
         frame = card(None)
@@ -210,7 +208,7 @@ class BacktestScreen(QWidget):
             spacing=4,
         )
 
-        inputs_layout = QHBoxLayout()
+        inputs_layout = QGridLayout()
         self.settings_input_layout = inputs_layout
         configure_layout(
             inputs_layout,
@@ -223,7 +221,6 @@ class BacktestScreen(QWidget):
             lbl = QLabel(text)
             lbl.setObjectName("FormLabel")
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            lbl.setFixedHeight(22)
             lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             return lbl
 
@@ -292,7 +289,6 @@ class BacktestScreen(QWidget):
         self.mode_summary_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
         )
-        self.mode_summary_label.setMinimumHeight(22)
 
         self.run_button = action_button("▶️ Chạy", primary=True, color="success")
         self._configure_compact_button(self.run_button)
@@ -315,21 +311,34 @@ class BacktestScreen(QWidget):
         actions_group.addWidget(self.cancel_backtest_btn)
         actions_group.addWidget(self.apply_config_btn)
 
-        inputs_layout.addWidget(create_form_label("Mã:"))
-        inputs_layout.addWidget(self.symbol_summary)
-        inputs_layout.addWidget(self.symbol_button)
-        inputs_layout.addWidget(create_form_label("Vốn:"))
-        inputs_layout.addWidget(self.balance_input)
-        inputs_layout.addWidget(create_form_label("Từ:"))
-        inputs_layout.addWidget(self.start_date)
-        inputs_layout.addWidget(create_form_label("Đến:"))
-        inputs_layout.addWidget(self.end_date)
-        inputs_layout.addWidget(create_form_label("Rủi ro:"))
-        inputs_layout.addWidget(self.risk_input)
-        inputs_layout.addWidget(create_form_label("Mục đích:"))
-        inputs_layout.addWidget(self.purpose_combo)
-        inputs_layout.addLayout(actions_group)
-        inputs_layout.addStretch(1)
+        configuration_fields = QHBoxLayout()
+        configure_layout(
+            configuration_fields,
+            margins=(0, 0, 0, 0),
+            spacing=LayoutTokens.SPACE_2,
+        )
+        configuration_fields.addWidget(create_form_label("Mã:"))
+        configuration_fields.addWidget(self.symbol_summary)
+        configuration_fields.addWidget(self.symbol_button)
+        configuration_fields.addWidget(create_form_label("Vốn:"))
+        configuration_fields.addWidget(self.balance_input)
+        configuration_fields.addWidget(create_form_label("Từ:"))
+        configuration_fields.addWidget(self.start_date)
+        configuration_fields.addWidget(create_form_label("Đến:"))
+        configuration_fields.addWidget(self.end_date)
+        configuration_fields.addWidget(create_form_label("Rủi ro:"))
+        configuration_fields.addWidget(self.risk_input)
+        configuration_fields.addWidget(create_form_label("Mục đích:"))
+        configuration_fields.addWidget(self.purpose_combo)
+        configuration_fields.addWidget(self.mode_summary_label)
+        configuration_fields.addStretch(1)
+
+        self.configuration_fields_layout = configuration_fields
+        inputs_layout.addLayout(configuration_fields, 0, 0)
+
+        # Row 2: Progress — chiếm 100% chiều rộng
+        progress_row = QHBoxLayout()
+        configure_layout(progress_row, spacing=LayoutTokens.SPACE_3)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -339,20 +348,20 @@ class BacktestScreen(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
         configure_progress(self.progress)
-        frame.layout().addWidget(self.progress)
+        progress_row.addWidget(self.progress, 1)
+        progress_row.addLayout(actions_group)
 
+        frame.layout().addLayout(progress_row)
+
+        # Hidden labels — kept as instance vars for test/logic compat,
+        # not added to any visible layout.
         self.status_label = QLabel("Sẵn sàng")
         self.status_label.setObjectName("HelperText")
         self.status_label.setWordWrap(True)
         self.status_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
         )
-
-        status_row = QHBoxLayout()
-        configure_layout(status_row, spacing=LayoutTokens.SPACE_3)
-        status_row.addWidget(self.status_label, 1)
-        status_row.addWidget(self.mode_summary_label)
-        frame.layout().addLayout(status_row)
+        self.status_label.hide()
 
         # Row 3: Results Display
         results_row = QHBoxLayout()
@@ -371,7 +380,6 @@ class BacktestScreen(QWidget):
 
         self.snapshot_label = QLabel("")
         self.snapshot_label.setObjectName("HelperText")
-        self.snapshot_label.setMinimumHeight(22)
         self.snapshot_label.setWordWrap(True)
         self.snapshot_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.snapshot_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -379,7 +387,7 @@ class BacktestScreen(QWidget):
         frame.layout().addWidget(self.snapshot_label)
         return frame
 
-    def _stat_cell(self, title: str, value: str, color: str | None = None) -> QFrame:
+    def _stat_cell(self, title: str, value: str, tone: str | None = None) -> QFrame:
         frame = QFrame()
         frame.setObjectName("MiniStatCompact")
         frame.setSizePolicy(
@@ -400,8 +408,8 @@ class BacktestScreen(QWidget):
         title_label.setObjectName("MiniStatTitleCompact")
         value_label = QLabel(value)
         value_label.setObjectName("MiniStatValueCompact")
-        if color:
-            value_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+        if tone:
+            value_label.setProperty("metricTone", tone)
         layout.addWidget(title_label)
         layout.addWidget(value_label)
         return frame
@@ -417,7 +425,6 @@ class BacktestScreen(QWidget):
     @staticmethod
     def _configure_compact_button(button: QPushButton) -> None:
         configure_button(button)
-        button.setFixedHeight(22)
 
     def _trades_card(self) -> QFrame:
         frame = QFrame()
@@ -512,10 +519,16 @@ class BacktestScreen(QWidget):
             layout.addWidget(fallback)
             self._equity_canvas = None
             return
-        self._equity_figure = Figure(tight_layout=True)
+        self._equity_figure = Figure(
+            tight_layout=True,
+            facecolor=current_palette().background,
+        )
+        apply_figure_theme(self._equity_figure)
         self._equity_canvas = FigureCanvas(self._equity_figure)
+        self._equity_canvas.setObjectName("MatplotlibCanvas")
         self._equity_canvas.setMinimumHeight(LayoutTokens.CHART_MIN_HEIGHT)
         layout.addWidget(self._equity_canvas)
+        self._refresh_equity_curve()
 
     # ── Param Tuning Tab ─────────────────────────────────────────────────
 
@@ -547,13 +560,15 @@ class BacktestScreen(QWidget):
 
         advanced_row = QGridLayout()
         self.advanced_options_grid = advanced_row
-        configure_form_grid(advanced_row)
+        configure_layout(advanced_row, spacing=4)
+        advanced_row.setHorizontalSpacing(10)
+        advanced_row.setVerticalSpacing(4)
         advanced_row.setColumnStretch(1, 1)
+
         advanced_label = QLabel("Chế độ:")
         advanced_label.setObjectName("FormLabel")
-        configure_form_label(advanced_label)
-        advanced_label.setFixedHeight(22)
         advanced_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        advanced_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         advanced_row.addWidget(advanced_label, 0, 0)
 
         self.advanced_execution_combo = QComboBox()
@@ -579,7 +594,6 @@ class BacktestScreen(QWidget):
             "IS/OOS + Walk-Forward"
         )
         configure_checkbox(self.research_validation_checkbox)
-        self.research_validation_checkbox.setFixedHeight(22)
         self.research_validation_checkbox.setToolTip(
             "Chỉ là phân tích bổ sung cho Research; không biến kết quả thành "
             "config có thể phát hành. Validation luôn tự chạy hai bước này."
@@ -594,22 +608,20 @@ class BacktestScreen(QWidget):
         )
         self.analyze_btn.clicked.connect(self._analyze_loaded_result)
 
-        # Row 0: Chế độ
-        advanced_row.addWidget(self.advanced_execution_combo, 0, 1)
+        # Row 0: Chế độ — label + combobox CÙNG HÀNG
+        advanced_row.addWidget(self.advanced_execution_combo, 0, 1, Qt.AlignmentFlag.AlignLeft)
 
-        # Row 1: Tùy chọn — 4 checkboxes dạng lưới 2x2
+        # Row 1: Tùy chọn — label + 4 checkboxes dạng lưới 2x2 CÙNG HÀNG
         options_label = QLabel("Tùy chọn:")
         options_label.setObjectName("FormLabel")
-        configure_form_label(options_label)
-        options_label.setFixedHeight(22)
         options_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        advanced_row.addWidget(options_label, 1, 0)
+        options_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        advanced_row.addWidget(options_label, 1, 0, Qt.AlignmentFlag.AlignTop)
 
         self.portfolio_mode_checkbox = QCheckBox(
             "Đánh giá danh mục nhiều mã"
         )
         configure_checkbox(self.portfolio_mode_checkbox)
-        self.portfolio_mode_checkbox.setFixedHeight(22)
         self.portfolio_mode_checkbox.setToolTip(
             "Chỉ dùng cho Research. Kết quả danh mục luôn RESEARCH_ONLY và không thể áp cấu hình cho một mã."
         )
@@ -621,7 +633,6 @@ class BacktestScreen(QWidget):
             "Chạy Monte Carlo"
         )
         configure_checkbox(self.monte_carlo_checkbox)
-        self.monte_carlo_checkbox.setFixedHeight(22)
         self.monte_carlo_checkbox.setToolTip(
             "Nếu không chọn, Monte Carlo chỉ tự chạy khi có ít nhất 30 lệnh."
         )
@@ -630,7 +641,6 @@ class BacktestScreen(QWidget):
             "Quét tất cả mã đã chọn"
         )
         configure_checkbox(self.sweep_all_symbols_checkbox)
-        self.sweep_all_symbols_checkbox.setFixedHeight(22)
         self.sweep_all_symbols_checkbox.setToolTip(
             "Mặc định sweep chỉ chạy mã chính; bật tùy chọn này để chạy toàn bộ các mã đã chọn."
         )
@@ -638,17 +648,16 @@ class BacktestScreen(QWidget):
         checkbox_grid = QGridLayout()
         checkbox_grid.setSpacing(4)
         checkbox_grid.addWidget(self.research_validation_checkbox, 0, 0)
-        checkbox_grid.addWidget(self.portfolio_mode_checkbox, 0, 1)
-        checkbox_grid.addWidget(self.monte_carlo_checkbox, 1, 0)
-        checkbox_grid.addWidget(self.sweep_all_symbols_checkbox, 1, 1)
-        advanced_row.addLayout(checkbox_grid, 1, 1)
+        checkbox_grid.addWidget(self.portfolio_mode_checkbox, 1, 0)
+        checkbox_grid.addWidget(self.monte_carlo_checkbox, 2, 0)
+        checkbox_grid.addWidget(self.sweep_all_symbols_checkbox, 3, 0)
+        advanced_row.addLayout(checkbox_grid, 1, 1, Qt.AlignmentFlag.AlignLeft)
 
         # Row 2: Nút Phân tích AI — riêng 1 hàng dưới cùng
         advanced_row.addWidget(self.analyze_btn, 2, 1, Qt.AlignmentFlag.AlignLeft)
 
         research_card.layout().addLayout(advanced_row)
         research_card.layout().addStretch(1)
-        self.advanced_options_grid.setVerticalSpacing(4)
 
         self._sync_backtest_mode_ui()
 
@@ -664,15 +673,16 @@ class BacktestScreen(QWidget):
 
         form_row = QGridLayout()
         self.sweep_controls_grid = form_row
-        configure_form_grid(form_row)
-        form_row.setColumnStretch(4, 1)
+        configure_layout(form_row, spacing=4)
+        form_row.setHorizontalSpacing(10)
+        form_row.setVerticalSpacing(4)
+        form_row.setColumnStretch(1, 1)
 
         # Nhãn + combobox chọn bộ tham số
         params_label = QLabel("Tham số:")
         params_label.setObjectName("FormLabel")
-        configure_form_label(params_label)
-        params_label.setFixedHeight(22)
         params_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        params_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         form_row.addWidget(params_label, 0, 0)
 
         self.sweep_params_combo = QComboBox()
@@ -684,21 +694,24 @@ class BacktestScreen(QWidget):
         self.sweep_params_combo.addItem("6 ưu tiên", "priority6")
         self.sweep_params_combo.addItem("Tất cả 10", "all")
         self.sweep_params_combo.setCurrentIndex(0)
-        form_row.addWidget(self.sweep_params_combo, 0, 1)
 
-        form_row.addWidget(self._help_button(
+        params_control_row = QHBoxLayout()
+        configure_layout(params_control_row, spacing=4)
+        params_control_row.addWidget(self.sweep_params_combo)
+        params_control_row.addWidget(self._help_button(
             "Chọn bộ tham số cần quét:\n"
             "• 4 tham số ưu tiên: SL distance, Zone SL buffer, Entry aggressiveness, TP selection\n"
             "• 6 tham số: thêm Swing SL buffer, SL Floor buffer\n"
             "• Tất cả: bao gồm cả secondary params (EQ TP max RR, TP2 min gap, Entry zone ATR, Min stop distance)"
-        ), 0, 2)
+        ))
+        params_control_row.addStretch(1)
+        form_row.addLayout(params_control_row, 0, 1)
 
         # Nhãn + combobox chọn giai đoạn
         period_label = QLabel("Giai đoạn:")
         period_label.setObjectName("FormLabel")
-        configure_form_label(period_label)
-        period_label.setFixedHeight(22)
         period_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        period_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         form_row.addWidget(period_label, 1, 0)
 
         self.sweep_period_combo = QComboBox()
@@ -711,16 +724,20 @@ class BacktestScreen(QWidget):
         for p in DEFAULT_PERIODS:
             self.sweep_period_combo.addItem(p.name, p.name)
         self.sweep_period_combo.setCurrentIndex(0)
-        form_row.addWidget(self.sweep_period_combo, 1, 1)
 
-        form_row.addWidget(self._help_button(
+        period_control_row = QHBoxLayout()
+        configure_layout(period_control_row, spacing=4)
+        period_control_row.addWidget(self.sweep_period_combo)
+        period_control_row.addWidget(self._help_button(
             "Mặc định dùng đúng khoảng ngày trên form Backtest chính. Hoặc chọn giai đoạn mẫu để nghiên cứu:\n"
             "• Trending 2023: thị trường có xu hướng rõ ràng\n"
             "• Range 2024: thị trường đi ngang, ít xu hướng\n"
             "• Volatile 2025: thị trường biến động cao (tariff news)\n"
             "• Mixed Full 2024: cả năm, đủ mọi chế độ\n"
             "• Tất cả: quét qua tất cả giai đoạn"
-        ), 1, 2)
+        ))
+        period_control_row.addStretch(1)
+        form_row.addLayout(period_control_row, 1, 1)
 
         # Nút chạy
         self.sweep_run_btn = action_button("▶️ Chạy quét", primary=True, color="success")
@@ -728,9 +745,8 @@ class BacktestScreen(QWidget):
         self.sweep_run_btn.clicked.connect(self._run_param_sweep)
         actions_label = QLabel("Thao tác:")
         actions_label.setObjectName("FormLabel")
-        configure_form_label(actions_label)
-        actions_label.setFixedHeight(22)
         actions_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        actions_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         form_row.addWidget(actions_label, 2, 0)
         sweep_actions = QHBoxLayout()
         configure_layout(sweep_actions, spacing=LayoutTokens.SPACE_2)
@@ -762,7 +778,7 @@ class BacktestScreen(QWidget):
             2,
             1,
             1,
-            4,
+            2,
             Qt.AlignmentFlag.AlignLeft,
         )
 
@@ -783,18 +799,20 @@ class BacktestScreen(QWidget):
         self.sweep_status.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
-        progress_row.addWidget(self.sweep_status)
+        self.sweep_status.hide()
         sweep_card.layout().addLayout(progress_row)
         sweep_card.layout().addStretch(1)
-        self.sweep_controls_grid.setVerticalSpacing(4)
+
 
         # ── Results ──
         self.sweep_result_text = QTextEdit()
         self.sweep_result_text.setReadOnly(True)
         self.sweep_result_text.setObjectName("BacktestResultText")
-        self.sweep_result_text.setHtml(
-            '<p style="color:#94a3b8;text-align:center;padding:32px">'
-            'Chọn tham số và bấm <b>▶️ Chạy quét</b> để bắt đầu.</p>'
+        set_rich_html(
+            self.sweep_result_text,
+            empty_state_html(
+                "Chọn tham số và bấm ▶️ Chạy quét để bắt đầu."
+            ),
         )
         layout.addWidget(self.sweep_result_text, 1)
 
@@ -890,9 +908,9 @@ class BacktestScreen(QWidget):
             self.sweep_report_btn.hide()
             self.sweep_progress.setValue(0)
             self.sweep_status.setText("Đang khởi động...")
-            self.sweep_result_text.setHtml(
-                '<p style="color:#94a3b8;text-align:center;padding:32px">'
-                'Đang chạy... vui lòng đợi.</p>'
+            set_rich_html(
+                self.sweep_result_text,
+                empty_state_html("Đang chạy... vui lòng đợi."),
             )
 
             # Worker + thread
@@ -939,12 +957,13 @@ class BacktestScreen(QWidget):
 
     def _on_sweep_cancelled(self, message: str) -> None:
         self.sweep_status.setText(message)
+        QMessageBox.information(self, "Đã hủy", message)
 
     def _on_sweep_success(self, results: list) -> None:
         self._sweep_results = results
         self.sweep_status.setText("Hoàn tất quét tham số.")
         html = self._build_sweep_results_html(results)
-        self.sweep_result_text.setHtml(html)
+        set_rich_html(self.sweep_result_text, html)
 
         # Export báo cáo ra file
         try:
@@ -956,9 +975,12 @@ class BacktestScreen(QWidget):
 
     def _on_sweep_failed(self, error_msg: str) -> None:
         self.sweep_status.setText(f"Lỗi: {error_msg}")
-        self.sweep_result_text.setHtml(
-            f'<p style="color:#e74c3c;text-align:center;padding:32px">'
-            f'<b>Lỗi khi quét tham số:</b><br>{html.escape(error_msg)}</p>'
+        set_rich_html(
+            self.sweep_result_text,
+            empty_state_html(
+                f"Lỗi khi quét tham số: {error_msg}",
+                tone="danger",
+            ),
         )
 
     def _open_sweep_report(self) -> None:
@@ -1033,25 +1055,25 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
     def _refresh_equity_curve(self) -> None:
         if not hasattr(self, '_equity_canvas') or self._equity_canvas is None:
             return
-        if not self.result:
-            self._equity_figure.clear()
-            self._equity_canvas.draw()
-            return
-        equity_curve = self.result.get("equity_curve", [])
+        equity_curve = self.result.get("equity_curve", []) if self.result else []
         if not isinstance(equity_curve, list):
             equity_curve = []
         self._equity_figure.clear()
+        colors = apply_figure_theme(self._equity_figure)
         ax = self._equity_figure.add_subplot(111)
-        light = self._is_light_theme()
-        bg = '#ffffff' if light else '#101214'
-        fg = '#111827' if light else '#f3f4f6'
-        grid_c = '#e5e7eb' if light else '#1e2227'
-        self._equity_figure.set_facecolor(bg)
-        ax.set_facecolor(bg)
-        if len(equity_curve) < 2:
+        fg = colors["text"]
+        grid_c = colors["grid"]
+        apply_axes_theme(ax, colors)
+        if not self.result:
+            ax.text(0.5, 0.5, 'Chưa có kết quả backtest để vẽ biểu đồ',
+                    transform=ax.transAxes, ha='center', va='center',
+                    color=colors["neutral"], fontsize=12)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        elif len(equity_curve) < 2:
             ax.text(0.5, 0.5, 'Không đủ dữ liệu để vẽ biểu đồ',
                     transform=ax.transAxes, ha='center', va='center',
-                    color='#6b7280', fontsize=12)
+                    color=colors["neutral"], fontsize=12)
             ax.set_xticks([])
             ax.set_yticks([])
         else:
@@ -1067,30 +1089,43 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                     times.append(t)
                 cum_r.append(d.get("cumulative_r", 0))
                 dd_r.append(d.get("drawdown_r", 0))
-            ax.plot(times, cum_r, color='#2196F3', linewidth=2, label='Cumulative R')
+            ax.plot(
+                times,
+                cum_r,
+                color=colors["equity"],
+                linewidth=2,
+                label='Cumulative R',
+            )
             ax.fill_between(times, [0] * len(dd_r), dd_r,
-                            color='#F44336', alpha=0.2, label='Drawdown R')
+                            color=colors["drawdown"], alpha=0.2,
+                            label='Drawdown R')
             ax.axhline(y=0, color=grid_c, linewidth=0.5)
-            ax.legend(loc='upper left', fontsize=9)
+            legend = ax.legend(loc='upper left', fontsize=9)
+            apply_legend_theme(legend, colors)
         ax.tick_params(colors=fg, labelsize=9)
-        for spine in ax.spines.values():
-            spine.set_color(grid_c)
         ax.set_ylabel('R', color=fg)
         ax.grid(True, color=grid_c, linewidth=0.5, alpha=0.5)
-        self._equity_figure.autofmt_xdate()
+        apply_axes_theme(ax, colors)
+        if len(equity_curve) >= 2:
+            self._equity_figure.autofmt_xdate()
         self._equity_canvas.draw()
 
     def _refresh_result_text(self) -> None:
         if not self.result:
-            self.result_text.setHtml("")
+            set_rich_html(self.result_text, "")
             return
         self._analysis_light = self._is_light_theme()
-        self._refresh_result_text_style()
         try:
             html = self._generate_stats_html()
-            self.result_text.setHtml(html)
+            set_rich_html(self.result_text, html)
         except Exception:
-            self.result_text.setHtml("<p style='color:#888;text-align:center;padding:40px;'>Không thể hiển thị kết quả.</p>")
+            set_rich_html(
+                self.result_text,
+                empty_state_html(
+                    "Không thể hiển thị kết quả.",
+                    tone="danger",
+                ),
+            )
 
     def _load_backtest_file(self) -> None:
         from PyQt6.QtWidgets import QApplication
@@ -1100,6 +1135,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         path, _ = QFileDialog.getOpenFileName(
             self, "Tải file backtest", str(default_dir),
             "Tệp JSON (*.json);;Tất cả tệp (*)",
+            options=QFileDialog.Option.DontUseNativeDialog,
         )
         if not path:
             return
@@ -1166,10 +1202,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             QMessageBox.warning(self, "Phân tích", "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và nhập API key.")
             return
 
-        try:
-            self._analysis_light = (settings.display.theme == "light")
-        except Exception:
-            self._analysis_light = False
+        self._analysis_light = self._is_light_theme()
 
         self.analyze_btn.setText("⏳ Đang phân tích")
         self.analyze_btn.setEnabled(False)
@@ -1208,10 +1241,6 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 minimum_width=LayoutTokens.DIALOG_MD_WIDTH,
                 minimum_height=LayoutTokens.DIALOG_MD_HEIGHT,
             )
-            if light:
-                dlg.setStyleSheet("QDialog { background: #FAF9F5; }")
-            else:
-                dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
             layout = QVBoxLayout(dlg)
             configure_layout(
                 layout,
@@ -1220,19 +1249,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             )
 
             text = QTextEdit()
+            text.setObjectName("BacktestAnalysisText")
             text.setReadOnly(True)
-            if light:
-                text.setStyleSheet(
-                    "QTextEdit { background: #ffffff; color: #1e293b; font-size: 13px; "
-                    "border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }"
-                    "QScrollBar:vertical { width: 8px; background: transparent; }"
-                )
-            else:
-                text.setStyleSheet(
-                    "QTextEdit { background: #0f172a; color: #e2e8f0; font-size: 13px; "
-                    "border: 1px solid #1e293b; border-radius: 8px; padding: 14px 16px; }"
-                    "QScrollBar:vertical { width: 8px; background: transparent; }"
-                )
 
             stats_html = self._generate_stats_html()
             ai_html = self._format_ai_to_html(response, light)
@@ -1246,7 +1264,11 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 f"{ai_html}"
             )
 
-            text.setHtml(final_html)
+            set_rich_html(
+                text,
+                final_html,
+                theme="light" if light else "dark",
+            )
             layout.addWidget(text, 1)
 
             close_btn = action_button("Đóng")
@@ -1314,11 +1336,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             QMessageBox.warning(self, "Lỗi", f"Không đọc được Settings:\n{exc}")
             return
 
-        try:
-            light = (self.app.settings_service.load().display.theme == "light"
-                     if self.app else self.controller.settings_service.load().display.theme == "light")
-        except Exception:
-            light = False
+        light = self._is_light_theme()
 
         if light:
             text_color = "#1c1917"
@@ -1328,7 +1346,6 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             current_color = "#57534e"
             proposed_color = "#ea580c"
             evidence_color = "#78716c"
-            bg_color = "#faf8f5"
         else:
             text_color = "#ebdcd0"
             muted_color = "#a8a29e"
@@ -1337,7 +1354,6 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             current_color = "#d6d3d1"
             proposed_color = "#fb923c"
             evidence_color = "#a8a29e"
-            bg_color = "#17120f"
 
         dlg = QDialog(self)
         dlg.setWindowTitle(action.label.replace("📋 ", "").replace("💾 ", ""))
@@ -1347,8 +1363,6 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             minimum_width=LayoutTokens.DIALOG_LG_WIDTH,
             minimum_height=320,
         )
-        dlg.setStyleSheet(f"QDialog {{ background: {bg_color}; }}")
-        
         dlg_layout = QVBoxLayout(dlg)
         configure_layout(
             dlg_layout,
@@ -1402,19 +1416,6 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             )
             configure_table(table)
             
-            table.setStyleSheet(
-                f"QTableWidget#LuuTrungHoaTable {{"
-                f"  background: transparent;"
-                f"  border: 1px solid {border_color};"
-                f"  border-radius: 8px;"
-                f"  outline: none;"
-                f"}}"
-                f"QTableWidget#LuuTrungHoaTable::item {{"
-                f"  border-bottom: 1px solid {border_color};"
-                f"  padding: 12px 16px;"
-                f"}}"
-            )
-
             rows = [
                 ("Cấu hình hiện tại",
                  f"<span style='color:{current_color}; font-size: 13px;'>"
@@ -1447,13 +1448,13 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             
             for row_idx, (label, html_value) in enumerate(rows):
                 lbl_title = QLabel(label)
-                lbl_title.setStyleSheet(f"color: {text_color}; font-weight: bold; font-size: 13px; padding-left: 8px;")
+                lbl_title.setObjectName("BacktestConfigRowTitle")
                 table.setCellWidget(row_idx, 0, lbl_title)
                 
                 lbl_val = QLabel(html_value)
+                lbl_val.setObjectName("BacktestConfigRowValue")
                 lbl_val.setTextFormat(Qt.TextFormat.RichText)
                 lbl_val.setWordWrap(True)
-                lbl_val.setStyleSheet("padding-right: 8px; background: transparent;")
                 table.setCellWidget(row_idx, 1, lbl_val)
                 
             table.resizeRowsToContents()
@@ -2521,6 +2522,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
     def _on_backtest_cancelled(self, message: str) -> None:
         self.status_label.setText(message)
         self.cancel_backtest_btn.setEnabled(True)
+        QMessageBox.information(self, "Đã hủy", message)
 
     def _show_symbol_dialog(self) -> None:
         dialog = SymbolSelectionDialog(self.selected_symbols, self)
@@ -2627,20 +2629,19 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             if widget:
                 widget.deleteLater()
         items = [
-            ("Lệnh", self._format_integer(summary.get("total_trades", 0)), "#38bdf8"),
-            ("Kỳ vọng", self._format_decimal(summary.get("expectancy_r", 0), 2, "R"), "#10b981"),
-            ("Hệ số LN", self._format_decimal(summary.get("profit_factor", 0), 2), "#f59e0b"),
-            ("DD tối đa", self._format_decimal(summary.get("max_drawdown_r", 0), 1, "R"), "#ef4444"),
-            ("Net", self._format_decimal(summary.get("net_r", summary.get("total_r", 0)), 1, "R"), "#a855f7"),
+            ("Lệnh", self._format_integer(summary.get("total_trades", 0)), "info"),
+            ("Kỳ vọng", self._format_decimal(summary.get("expectancy_r", 0), 2, "R"), "success"),
+            ("Hệ số LN", self._format_decimal(summary.get("profit_factor", 0), 2), "warning"),
+            ("DD tối đa", self._format_decimal(summary.get("max_drawdown_r", 0), 1, "R"), "danger"),
+            ("Net", self._format_decimal(summary.get("net_r", summary.get("total_r", 0)), 1, "R"), "accent"),
         ]
-        for idx, (title, value, color) in enumerate(items):
+        for idx, (title, value, tone) in enumerate(items):
             if idx > 0:
                 sep_label = QLabel(" | ")
-                sep_label.setObjectName("FormLabel")
-                sep_label.setStyleSheet("color: #64748b; font-weight: bold;")
+                sep_label.setObjectName("BacktestSummarySeparator")
                 self.summary_row.addWidget(sep_label)
             self.summary_row.addWidget(
-                self._stat_cell(str(title), str(value), color=color)
+                self._stat_cell(str(title), str(value), tone=tone)
             )
         self.summary_row.addStretch(1)
 
@@ -2683,46 +2684,52 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
 
         if light:
             if total == 0:
-                accent, bg, border, separator, text = "#475569", "#f1f5f9", "#cbd5e1", "#cbd5e1", "#334155"
+                verdict_state = "empty"
+                accent, separator, text = "#475569", "#cbd5e1", "#334155"
                 line = "Chưa có lệnh nào"
             elif has_edge and good_pf:
-                accent, bg, border, separator, text = "#047857", "#d1fae5", "#a7f3d0", "#a7f3d0", "#065f46"
+                verdict_state = "success"
+                accent, separator, text = "#047857", "#a7f3d0", "#065f46"
                 line = f"CÓ LỢI THẾ · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif has_edge and not good_pf:
-                accent, bg, border, separator, text = "#b45309", "#fef3c7", "#fde68a", "#fde68a", "#78350f"
+                verdict_state = "warning"
+                accent, separator, text = "#b45309", "#fde68a", "#78350f"
                 line = f"LỢI THẾ YẾU · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif positive_total and not has_edge:
-                accent, bg, border, separator, text = "#ea580c", "#ffedd5", "#fed7aa", "#fed7aa", "#7c2d12"
+                verdict_state = "unclear"
+                accent, separator, text = "#ea580c", "#fed7aa", "#7c2d12"
                 line = f"CHƯA RÕ · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             else:
-                accent, bg, border, separator, text = "#be123c", "#ffe4e6", "#fecdd3", "#fecdd3", "#9f1239"
+                verdict_state = "danger"
+                accent, separator, text = "#be123c", "#fecdd3", "#9f1239"
                 line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
         else:
             if total == 0:
-                accent, bg, border, separator, text = "#94a3b8", "#0f172a", "#1e293b", "#334155", "#cbd5e1"
+                verdict_state = "empty"
+                accent, separator, text = "#94a3b8", "#334155", "#cbd5e1"
                 line = "Chưa có lệnh nào"
             elif has_edge and good_pf:
-                accent, bg, border, separator, text = "#10b981", "#064e3b", "#065f46", "#334155", "#cbd5e1"
+                verdict_state = "success"
+                accent, separator, text = "#10b981", "#334155", "#cbd5e1"
                 line = f"CÓ LỢI THẾ · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif has_edge and not good_pf:
-                accent, bg, border, separator, text = "#f59e0b", "#451a03", "#78350f", "#334155", "#cbd5e1"
+                verdict_state = "warning"
+                accent, separator, text = "#f59e0b", "#334155", "#cbd5e1"
                 line = f"LỢI THẾ YẾU · Kỳ vọng +{exp_r:.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             elif positive_total and not has_edge:
-                accent, bg, border, separator, text = "#fb923c", "#431407", "#7c2d12", "#334155", "#cbd5e1"
+                verdict_state = "unclear"
+                accent, separator, text = "#fb923c", "#334155", "#cbd5e1"
                 line = f"CHƯA RÕ · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
             else:
-                accent, bg, border, separator, text = "#e11d48", "#4c0519", "#881337", "#334155", "#cbd5e1"
+                verdict_state = "danger"
+                accent, separator, text = "#e11d48", "#334155", "#cbd5e1"
                 line = f"HỆ THỐNG ÂM · Kỳ vọng {exp_r:+.2f}R · Hệ số LN {pf:.2f} · Tổng {total_r:+.1f}R"
 
-        if hasattr(self.verdict_banner, "setStyleSheet"):
-            self.verdict_banner.setStyleSheet(
-                f"QLabel#BacktestVerdict {{"
-                f"  background: {bg};"
-                f"  border: 1px solid {border};"
-                f"  border-radius: 6px;"
-                f"  padding: 4px 10px;"
-                f"}}"
-            )
+        set_dynamic_property(
+            self.verdict_banner,
+            "verdictState",
+            verdict_state,
+        )
 
         self.verdict_banner.setText(
             f"<span style='font-size:12px;font-family:Segoe UI,sans-serif;'>"
@@ -2737,21 +2744,32 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
 
 
     def _is_light_theme(self) -> bool:
-        try:
-            settings = (
-                self.app.settings_service.load()
-                if self.app
-                else self.controller.settings_service.load()
-            )
-            return settings.display.theme == "light"
-        except Exception:
-            return False
+        state = self.__dict__
+        app = state.get("app")
+        controller = state.get("controller")
+        settings_service = (
+            getattr(app, "settings_service", None)
+            if app
+            else getattr(controller, "settings_service", None)
+        )
+        if settings_service is None:
+            return bool(state.get("_analysis_light", False))
+        return is_light_theme(settings_service)
 
     def _refresh_trade_table_style(self) -> None:
         if not hasattr(self, "trades") or not self.trades:
             return
         
         from PyQt6.QtGui import QBrush, QColor
+        palette = current_palette()
+        semantic_colors = {
+            "muted": QColor(palette.text_muted),
+            "buy": QColor(palette.buy),
+            "sell": QColor(palette.sell),
+            "success": QColor(palette.success),
+            "danger": QColor(palette.danger),
+            "warning": QColor(palette.warning),
+        }
         
         for row, trade in enumerate(self.trades):
             for col, (key, _label) in enumerate(self.TRADE_COLUMNS):
@@ -2766,39 +2784,39 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 fg_color = None
                 
                 if key == "stt":
-                    fg_color = QColor("#9ca3af")
+                    fg_color = semantic_colors["muted"]
                 elif key == "side":
                     side = str(trade.get("side", "")).lower()
-                    if side == "buy": fg_color = QColor("#ea580c")
-                    elif side == "sell": fg_color = QColor("#f43f5e")
+                    if side == "buy": fg_color = semantic_colors["buy"]
+                    elif side == "sell": fg_color = semantic_colors["sell"]
                 elif key in ("result", "result_r", "expected_effective_rr"):
                     val_str = str(trade.get(key, "")).lower()
                     if key == "result":
-                        if val_str == "win": fg_color = QColor("#10b981")
-                        elif val_str == "loss": fg_color = QColor("#e11d48")
-                        elif val_str == "breakeven": fg_color = QColor("#f59e0b")
+                        if val_str == "win": fg_color = semantic_colors["success"]
+                        elif val_str == "loss": fg_color = semantic_colors["danger"]
+                        elif val_str == "breakeven": fg_color = semantic_colors["warning"]
                     else:
                         try:
                             val_num = float(val_str.replace("r", "").strip())
-                            if val_num > 0: fg_color = QColor("#10b981")
-                            elif val_num < 0: fg_color = QColor("#e11d48")
-                            else: fg_color = QColor("#9ca3af")
+                            if val_num > 0: fg_color = semantic_colors["success"]
+                            elif val_num < 0: fg_color = semantic_colors["danger"]
+                            else: fg_color = semantic_colors["muted"]
                         except ValueError:
-                            fg_color = QColor("#9ca3af")
+                            fg_color = semantic_colors["muted"]
                 elif key == "final_score":
                     try:
                         score = int(trade.get("final_score", 0))
-                        if score >= 65: fg_color = QColor("#10b981")
-                        elif score >= 50: fg_color = QColor("#f59e0b")
-                        else: fg_color = QColor("#9ca3af")
+                        if score >= 65: fg_color = semantic_colors["success"]
+                        elif score >= 50: fg_color = semantic_colors["warning"]
+                        else: fg_color = semantic_colors["muted"]
                     except (TypeError, ValueError):
-                        fg_color = QColor("#9ca3af")
+                        fg_color = semantic_colors["muted"]
                 elif key == "market_regime":
                     regime = str(trade.get("market_regime", "")).lower()
-                    if regime == "aligned": fg_color = QColor("#10b981")
-                    elif regime == "divergent": fg_color = QColor("#e11d48")
-                    elif regime == "neutral": fg_color = QColor("#f59e0b")
-                    else: fg_color = QColor("#9ca3af")
+                    if regime == "aligned": fg_color = semantic_colors["success"]
+                    elif regime == "divergent": fg_color = semantic_colors["danger"]
+                    elif regime == "neutral": fg_color = semantic_colors["warning"]
+                    else: fg_color = semantic_colors["muted"]
                 
                 if fg_color:
                     cell.setForeground(fg_color)
@@ -2812,26 +2830,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
     def _refresh_theme_styles(self) -> None:
         self._refresh_verdict_banner_style()
         self._refresh_trade_table_style()
-        self._refresh_result_text_style()
         self._refresh_compact_control_sizes()
-
-    def _refresh_result_text_style(self) -> None:
-        if not hasattr(self, 'result_text'):
-            return
-        light = self._is_light_theme()
-        if light:
-            style = (
-                "QTextEdit#BacktestResultText { background: #ffffff; color: #1e293b; font-family: 'Segoe UI'; font-size: 12px; "
-                "border: none; border-radius: 6px; padding: 8px; }"
-            )
-        else:
-            style = (
-                "QTextEdit#BacktestResultText { background: #0f172a; color: #e2e8f0; font-family: 'Segoe UI'; font-size: 12px; "
-                "border: none; border-radius: 6px; padding: 8px; }"
-            )
-        self.result_text.setStyleSheet(style)
-        if hasattr(self, 'sweep_result_text'):
-            self.sweep_result_text.setStyleSheet(style)
+        self._refresh_equity_curve()
 
     def _refresh_verdict_banner_style(self) -> None:
         self._update_verdict()

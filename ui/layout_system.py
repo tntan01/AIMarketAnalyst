@@ -28,9 +28,7 @@ class LayoutTokens:
     CARD_MARGIN = SPACE_3
     DIALOG_MARGIN = SPACE_4
 
-    CONTROL_HEIGHT = 32
     PROGRESS_HEIGHT = 20
-    HELP_SIZE = 24
     ICON_SIZE = 16
 
     FIELD_SM = 96
@@ -97,7 +95,6 @@ def configure_control(
     width: int | None = None,
     horizontal_policy: QSizePolicy.Policy = QSizePolicy.Policy.Fixed,
 ) -> None:
-    widget.setFixedHeight(LayoutTokens.CONTROL_HEIGHT)
     if width is not None:
         widget.setFixedWidth(width)
     widget.setSizePolicy(horizontal_policy, QSizePolicy.Policy.Fixed)
@@ -108,7 +105,7 @@ def configure_form_label(
     *,
     width: int = LayoutTokens.FORM_LABEL_WIDTH,
 ) -> None:
-    label.setFixedSize(width, LayoutTokens.CONTROL_HEIGHT)
+    label.setFixedWidth(width)
     label.setAlignment(
         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
     )
@@ -116,19 +113,17 @@ def configure_form_label(
 
 
 def configure_button(button: QAbstractButton) -> None:
-    button.setFixedHeight(LayoutTokens.CONTROL_HEIGHT)
     button.setIconSize(QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE))
     button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
 
 def configure_checkbox(checkbox: QCheckBox) -> None:
-    checkbox.setFixedHeight(LayoutTokens.CONTROL_HEIGHT)
     checkbox.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
 
 def configure_help_button(button: QAbstractButton) -> None:
-    button.setFixedSize(LayoutTokens.HELP_SIZE, LayoutTokens.HELP_SIZE)
     button.setIconSize(QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE))
+    button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
 
 def configure_progress(

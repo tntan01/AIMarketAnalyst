@@ -25,3 +25,15 @@ def chart_reload_script() -> str:
 def chart_resize_script() -> str:
     """Generate JavaScript to handle resize."""
     return "if(window.handleResize){window.handleResize();}"
+
+
+def chart_theme_script(theme: str, palette: dict[str, str]) -> str:
+    """Generate JavaScript that updates chart chrome without resetting data."""
+
+    theme_json = json.dumps(str(theme))
+    palette_json = json.dumps(palette, default=str)
+    return (
+        "if(window.applyChartTheme){"
+        f"window.applyChartTheme({theme_json},{palette_json});"
+        "}"
+    )

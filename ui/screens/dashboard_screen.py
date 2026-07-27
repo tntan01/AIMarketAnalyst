@@ -28,6 +28,13 @@ from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
+from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
+from ui.theme_manager import (
+    current_palette,
+    is_light_theme,
+    semantic_qcolor,
+    set_dynamic_property,
+)
 
 class MarketWorker(QThread):
     finished = pyqtSignal(dict)
@@ -97,30 +104,7 @@ class StatusCardEventFilter(QObject):
                 
             state = obj.property("state") or "warning"
             
-            # Cập nhật màu chấm và border của card theo state
-            color = "#f59e0b"
-            if state == "ok":
-                color = "#10b981"
-            elif state in ("danger", "error"):
-                color = "#ef4444"
-                
-            self.dot.setStyleSheet(f"background-color: {color}; border-radius: 4px; border: none;")
-            
-            # Đọc lại theme mới nhất
-            is_light = self.screen._is_light_theme()
-            self.screen._light = is_light
-            
-            val_color = "#111827" if is_light else "#f1f5f9"
-            title_color = "#736B60" if is_light else "#94a3b8"
-            
-            obj.setStyleSheet(
-                f"QFrame#StatusCard {{"
-                f"  border: 1px solid {color}; border-radius: 6px; background: transparent;"
-                f"}}"
-                f"QLabel#CardValue {{"
-                f"  color: {val_color}; font-weight: 600; font-size: 13px; border: none; background: transparent;"
-                f"}}"
-            )
+            set_dynamic_property(self.dot, "state", state)
         return super().eventFilter(obj, event)
 
 
@@ -147,11 +131,7 @@ class DashboardScreen(QWidget):
         self.refresh_news_section()
 
     def _is_light_theme(self) -> bool:
-        try:
-            settings = self.settings_service.load()
-            return settings.display.theme == "light"
-        except Exception:
-            return False
+        return is_light_theme(self.settings_service)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -211,6 +191,7 @@ class DashboardScreen(QWidget):
         dot = QFrame()
         dot.setObjectName("StatusDot")
         dot.setFixedSize(8, 8)
+        dot.setProperty("state", state)
 
         # Vertical layout for text (value + detail)
         text_layout = QVBoxLayout()
@@ -228,9 +209,6 @@ class DashboardScreen(QWidget):
         detail_label.setObjectName("CardDetailLabel")
         detail_label.setWordWrap(False)
         detail_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        detail_label.setStyleSheet(
-            "color: #888888; font-size: 11px; border: none; background: transparent;"
-        )
 
         text_layout.addWidget(value_label)
         # Keep the detail label in the public card tuple for status updates,
@@ -239,27 +217,6 @@ class DashboardScreen(QWidget):
 
         layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(text_layout, 1)
-        
-        # Thiết lập style ban đầu theo state
-        color = "#f59e0b"
-        if state == "ok":
-            color = "#10b981"
-        elif state in ("danger", "error"):
-            color = "#ef4444"
-            
-        dot.setStyleSheet(f"background-color: {color}; border-radius: 4px; border: none;")
-
-        is_light = self._light
-        val_color = "#111827" if is_light else "#f1f5f9"
-
-        frame.setStyleSheet(
-            f"QFrame#StatusCard {{"
-            f"  border: 1px solid {color}; border-radius: 6px; background: transparent;"
-            f"}}"
-            f"QLabel#CardValue {{"
-            f"  color: {val_color}; font-weight: 600; font-size: 13px; border: none; background: transparent;"
-            f"}}"
-        )
         
         # Install event filter to dynamically update dot color and frame border on state change
         event_filter = StatusCardEventFilter(self, dot, value_label, frame)
@@ -295,22 +252,17 @@ class DashboardScreen(QWidget):
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(20)
 
-        _badge_color = "#374151" if self._light else "#e5e7eb"
         self.dxy_label = QLabel("DXY: Đang tải...")
         self.dxy_label.setObjectName("MarketBadge")
-        self.dxy_label.setStyleSheet(f"font-weight:700;font-size:14px;color:{_badge_color};")
 
         self.vix_label = QLabel("VIX: Đang tải...")
         self.vix_label.setObjectName("MarketBadge")
-        self.vix_label.setStyleSheet(f"font-weight:700;font-size:14px;color:{_badge_color};")
 
         self.us10y_label = QLabel("US10Y: Đang tải...")
         self.us10y_label.setObjectName("MarketBadge")
-        self.us10y_label.setStyleSheet(f"font-weight:700;font-size:14px;color:{_badge_color};")
 
         self.us2y_label = QLabel("US2Y: Đang tải...")
         self.us2y_label.setObjectName("MarketBadge")
-        self.us2y_label.setStyleSheet(f"font-weight:700;font-size:14px;color:{_badge_color};")
 
         layout.addWidget(self.dxy_label)
         layout.addWidget(self.vix_label)
@@ -353,7 +305,6 @@ class DashboardScreen(QWidget):
         self.news_tab_bar = QTabBar()
         self.news_tab_bar.setDrawBase(False)   # tắt native base bar (nguyên nhân nền trắng)
         self.news_tab_bar.setExpanding(False)  # không stretch tab ra đầy chiều rộng
-        self.news_tab_bar.setStyleSheet("background: transparent; border: none;")
         self.news_tab_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.news_tab_keys = ["last_week", "this_week", "next_week"]
         self.news_tab_bar.addTab("📅 Tuần trước")
@@ -595,6 +546,7 @@ class DashboardScreen(QWidget):
 
     def _render_news_rows(self, rows: list, tz, now_utc: datetime, tab_key: str = "this_week") -> None:
         self._light = self._is_light_theme()
+        palette = current_palette(self.settings_service)
         table = self.news_table
         table.setRowCount(0)
 
@@ -656,22 +608,34 @@ class DashboardScreen(QWidget):
             is_bold = False
 
             if zone == "past":
-                fg_color = QColor("#6b7280" if self._light else "#8b949e")
+                fg_color = QColor(palette.text_subtle)
                 bg_color = None  # Let it inherit table's default alternating colors
                 is_bold = False
             elif zone == "nearest":
-                fg_color = QColor("#137333" if self._light else "#10b981")
-                bg_color = QColor("#eafaf1" if self._light else "#082f25")
+                fg_color = QColor(palette.success)
+                bg_color = semantic_qcolor(
+                    "success",
+                    palette=palette,
+                    alpha=28,
+                )
                 is_bold = True
             else:  # future zone
                 is_bold = False
                 if row_type == "event":
                     if impact == "high":
-                        fg_color = QColor("#b91c1c" if self._light else "#f87171")
-                        bg_color = QColor("#fdf2f2" if self._light else "#2a0d11")
+                        fg_color = QColor(palette.danger)
+                        bg_color = semantic_qcolor(
+                            "danger",
+                            palette=palette,
+                            alpha=25,
+                        )
                     elif impact == "medium":
-                        fg_color = QColor("#b45309" if self._light else "#fbbf24")
-                        bg_color = QColor("#fffbeb" if self._light else "#251608")
+                        fg_color = QColor(palette.warning)
+                        bg_color = semantic_qcolor(
+                            "warning",
+                            palette=palette,
+                            alpha=25,
+                        )
                     else:
                         fg_color = None
                         bg_color = None
@@ -759,9 +723,9 @@ class DashboardScreen(QWidget):
                     av = float(actual.replace("%", "").replace(",", ""))
                     fv = float(forecast.replace("%", "").replace(",", ""))
                     if av > fv:
-                        actual_item.setForeground(QColor("#137333" if self._light else "#10b981"))
+                        actual_item.setForeground(QColor(palette.success))
                     elif av < fv:
-                        actual_item.setForeground(QColor("#b91c1c" if self._light else "#f87171"))
+                        actual_item.setForeground(QColor(palette.danger))
                 except (ValueError, TypeError):
                     pass
             style_item(actual_item)
@@ -797,48 +761,29 @@ class DashboardScreen(QWidget):
             table.setItem(i, 7, action_item)
 
             if row_type == "event":
-                link_color, link_hover = self._zone_link_colors(zone)
+                link_tone = zone
                 if zone == "nearest":
-                    link_color = "#137333" if self._light else "#10b981"
-                    link_hover = "#065f46" if self._light else "#34d399"
+                    link_tone = "nearest"
                 elif impact == "high" and zone == "future":
-                    link_color = "#b91c1c" if self._light else "#f87171"
-                    link_hover = "#7f1d1d" if self._light else "#fca5a5"
+                    link_tone = "danger"
                 elif impact == "medium" and zone == "future":
-                    link_color = "#b45309" if self._light else "#fbbf24"
-                    link_hover = "#78350f" if self._light else "#fcd34d"
+                    link_tone = "warning"
 
                 detail_btn = QPushButton("Xem")
+                detail_btn.setObjectName("NewsLinkButton")
+                detail_btn.setProperty("linkTone", link_tone)
                 detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                detail_btn.setStyleSheet(
-                    f"QPushButton {{"
-                    f"  font-size:11px; padding:2px 0; margin:0;"
-                    f"  background:transparent; color:{link_color}; border:none;"
-                    f"  text-decoration:underline;"
-                    f"}}"
-                    f"QPushButton:hover {{ color:{link_hover}; }}"
-                )
                 detail_btn.clicked.connect(lambda checked, r=row: self._show_news_event_detail(r, tz))
                 table.setCellWidget(i, 7, detail_btn)
             else:
                 url = str(row.get("url", ""))
                 title = str(row.get("title", ""))
                 if url or title:
-                    link_color, link_hover = self._zone_link_colors(zone)
-                    if zone == "nearest":
-                        link_color = "#137333" if self._light else "#10b981"
-                        link_hover = "#065f46" if self._light else "#34d399"
-                    
                     detail_btn = QPushButton("🔗")
+                    detail_btn.setObjectName("NewsIconButton")
+                    detail_btn.setProperty("linkTone", zone)
                     detail_btn.setToolTip("Xem tóm tắt & chi tiết tin tức")
                     detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                    detail_btn.setStyleSheet(
-                        f"QPushButton {{"
-                        f"  font-size:14px; padding:2px 0; margin:0;"
-                        f"  background:transparent; color:{link_color}; border:none;"
-                        f"}}"
-                        f"QPushButton:hover {{ color:{link_hover}; }}"
-                    )
                     detail_btn.clicked.connect(lambda checked, r=row: self._show_headline_detail(r, tz))
                     table.setCellWidget(i, 7, detail_btn)
 
@@ -884,13 +829,14 @@ class DashboardScreen(QWidget):
     def _render_zone_header(self, table: QTableWidget, row_idx: int, zone: str) -> None:
         """Render a colored zone separator row with full background fill."""
         configs = {
-            "past":    ("─── 📅 ĐÃ QUA ───",                        "#78716C", "#94a3b8", "#F4F1EA", "#1F242F"),
-            "nearest": ("─── ⚡ SẮP TỚI GẦN NHẤT ───",              "#137333", "#10b981", "#E6F4EA", "#082f25"),
-            "future":  ("─── 📅 SẮP TỚI ───",                       "#B06000", "#fb923c", "#FEF7E0", "#251608"),
+            "past": ("─── 📅 ĐÃ QUA ───", "muted"),
+            "nearest": ("─── ⚡ SẮP TỚI GẦN NHẤT ───", "success"),
+            "future": ("─── 📅 SẮP TỚI ───", "warning"),
         }
-        text, fg_light, fg_dark, bg_light, bg_dark = configs.get(zone, ("───", "#aaa", "#aaa", "#fff", "#000"))
-        fg_color = QColor(fg_light if self._light else fg_dark)
-        bg_color = QColor(bg_light if self._light else bg_dark)
+        text, role = configs.get(zone, ("───", "muted"))
+        palette = current_palette(self.settings_service)
+        fg_color = semantic_qcolor(role, palette=palette)
+        bg_color = semantic_qcolor(role, palette=palette, alpha=24)
 
         sep_item = QTableWidgetItem(text)
         sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -909,14 +855,6 @@ class DashboardScreen(QWidget):
             table.setItem(row_idx, c, dummy)
             
         table.setRowHeight(row_idx, 30)
-
-    def _zone_link_colors(self, zone: str) -> tuple[str, str]:
-        """Return (color, hover_color) for the detail button based on zone."""
-        if zone == "past":
-            return ("#78716C", "#94a3b8") if self._light else ("#64748b", "#94a3b8")
-        if zone == "nearest":
-            return ("#059669", "#047857") if self._light else ("#10b981", "#34d399")
-        return ("#C2410C", "#9A3412") if self._light else ("#ea580c", "#fb923c")
 
     def _show_news_event_detail(self, row: dict, tz) -> None:
         """Show detail dialog for a calendar event from the news feed."""
@@ -963,7 +901,7 @@ class DashboardScreen(QWidget):
 
         # Info grid — 2 columns
         info_frame = QFrame()
-        info_frame.setStyleSheet("QFrame { background:transparent; border:none; }")
+        info_frame.setObjectName("TransparentFrame")
         info_layout = QGridLayout(info_frame)
         info_layout.setContentsMargins(0, 4, 0, 4)
         info_layout.setHorizontalSpacing(40)
@@ -980,11 +918,11 @@ class DashboardScreen(QWidget):
         ]
 
         for row_idx, (lbl_txt, val_txt) in enumerate(left_items):
-            lbl = QLabel(lbl_txt)
+            lbl = QLabel(compile_rich_html(lbl_txt))
             lbl.setObjectName("CardDetail")
             lbl.setFixedWidth(120)
             lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(val_txt)
+            val = QLabel(compile_rich_html(val_txt))
             val.setObjectName("CardValue")
             val.setTextFormat(Qt.TextFormat.RichText)
             val.setWordWrap(True)
@@ -992,11 +930,11 @@ class DashboardScreen(QWidget):
             info_layout.addWidget(val, row_idx, 1)
 
         for row_idx, (lbl_txt, val_txt) in enumerate(right_items):
-            lbl = QLabel(lbl_txt)
+            lbl = QLabel(compile_rich_html(lbl_txt))
             lbl.setObjectName("CardDetail")
             lbl.setFixedWidth(120)
             lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(val_txt)
+            val = QLabel(compile_rich_html(val_txt))
             val.setObjectName("CardValue")
             val.setTextFormat(Qt.TextFormat.RichText)
             val.setWordWrap(True)
@@ -1019,28 +957,7 @@ class DashboardScreen(QWidget):
         btn_layout.setSpacing(10)
 
         ai_btn = action_button("🤖 Tóm tắt AI", primary=True)
-        # Apply Lư Trung Hỏa styling to the action button
-        active_bg = "#D94625" if self._light else "#ea580c"
-        active_hover = "#E0533C" if self._light else "#f97316"
-        disabled_bg = "#DEDAD0" if self._light else "#1f2937"
-        disabled_border = "#D6D2C8" if self._light else "#273244"
-        disabled_fg = "#736B60" if self._light else "#6b7280"
-        
-        ai_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:700; padding:0 16px;"
-            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px;"
-            f"  min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{active_hover};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  background:{disabled_bg};"
-            f"  color:{disabled_fg};"
-            f"  border:1px solid {disabled_border};"
-            f"}}"
-        )
+        ai_btn.setObjectName("DialogAiButton")
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
@@ -1060,10 +977,13 @@ class DashboardScreen(QWidget):
                 settings = self.settings_service.load()
                 active = settings.ai.active_provider()
                 if not active or not (active.api_key or active.api_key_ref):
-                    ai_response.setHtml(
-                        "<p style='color:#e11d48;font-size:13px;'>"
-                        "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
-                        "</p>"
+                    set_rich_html(
+                        ai_response,
+                        empty_state_html(
+                            "⚠️ Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung "
+                            "cấp và nhập API key.",
+                            tone="danger",
+                        ),
                     )
                     ai_btn.setText("🤖 Tóm tắt AI")
                     ai_btn.setEnabled(True)
@@ -1104,7 +1024,9 @@ class DashboardScreen(QWidget):
         table.setSpan(0, 0, 1, 5)
         item = QTableWidgetItem(message)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        item.setForeground(QColor("#78716C" if self._light else "#94a3b8"))
+        item.setForeground(
+            QColor(current_palette(self.settings_service).text_muted)
+        )
         table.setItem(0, 0, item)
         table.setRowHeight(0, 40)
 
@@ -1140,7 +1062,7 @@ class DashboardScreen(QWidget):
 
         # Info grid — 2 columns
         info_frame = QFrame()
-        info_frame.setStyleSheet("QFrame { background:transparent; border:none; }")
+        info_frame.setObjectName("TransparentFrame")
         info_layout = QGridLayout(info_frame)
         info_layout.setContentsMargins(0, 4, 0, 4)
         info_layout.setHorizontalSpacing(40)
@@ -1169,11 +1091,11 @@ class DashboardScreen(QWidget):
             right_items.append(("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🔄</span> Kết quả", "Đang tra cứu..."))
 
         for row_idx, (label_text, value_text) in enumerate(left_items):
-            lbl = QLabel(label_text)
+            lbl = QLabel(compile_rich_html(label_text))
             lbl.setObjectName("CardDetail")
             lbl.setFixedWidth(120)
             lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(value_text)
+            val = QLabel(compile_rich_html(value_text))
             val.setObjectName("CardValue")
             val.setMargin(2)
             val.setTextFormat(Qt.TextFormat.RichText)
@@ -1184,11 +1106,11 @@ class DashboardScreen(QWidget):
             info_layout.addWidget(val, row_idx, 1)
 
         for row_idx, (label_text, value_text) in enumerate(right_items):
-            lbl = QLabel(label_text)
+            lbl = QLabel(compile_rich_html(label_text))
             lbl.setObjectName("CardDetail")
             lbl.setFixedWidth(120)
             lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(value_text)
+            val = QLabel(compile_rich_html(value_text))
             val.setObjectName("CardValue")
             val.setMargin(2)
             val.setTextFormat(Qt.TextFormat.RichText)
@@ -1230,28 +1152,7 @@ class DashboardScreen(QWidget):
         btn_layout.setSpacing(10)
 
         ai_btn = action_button("🤖 Xem tác động", primary=True)
-        # Apply Lư Trung Hỏa styling to the action button
-        active_bg = "#D94625" if self._light else "#ea580c"
-        active_hover = "#E0533C" if self._light else "#f97316"
-        disabled_bg = "#DEDAD0" if self._light else "#1f2937"
-        disabled_border = "#D6D2C8" if self._light else "#273244"
-        disabled_fg = "#736B60" if self._light else "#6b7280"
-        
-        ai_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:700; padding:0 16px;"
-            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px;"
-            f"  min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{active_hover};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  background:{disabled_bg};"
-            f"  color:{disabled_fg};"
-            f"  border:1px solid {disabled_border};"
-            f"}}"
-        )
+        ai_btn.setObjectName("DialogAiButton")
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
@@ -1274,10 +1175,13 @@ class DashboardScreen(QWidget):
         settings = self.settings_service.load()
         active = settings.ai.active_provider()
         if not active or not (active.api_key or active.api_key_ref):
-            text_widget.setHtml(
-                "<p style='color:#e11d48;font-size:13px;'>"
-                "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
-                "</p>"
+            set_rich_html(
+                text_widget,
+                empty_state_html(
+                    "⚠️ Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và "
+                    "nhập API key.",
+                    tone="danger",
+                ),
             )
             btn.setText("🤖 Xem tác động")
             btn.setEnabled(True)
@@ -1372,10 +1276,12 @@ class DashboardScreen(QWidget):
             self._impact_worker = None
 
         def on_error(err_msg):
-            text_widget.setHtml(
-                f"<p style='color:#e11d48;font-size:13px;'>"
-                f"❌ Lỗi khi gọi AI: {err_msg}"
-                f"</p>"
+            set_rich_html(
+                text_widget,
+                empty_state_html(
+                    f"❌ Lỗi khi gọi AI: {err_msg}",
+                    tone="danger",
+                ),
             )
             btn.setText("🤖 Xem tác động")
             btn.setEnabled(True)
@@ -1436,32 +1342,28 @@ class DashboardScreen(QWidget):
         self._light = self._is_light_theme()
         arrow = "↑" if change_pct > 0 else "↓" if change_pct < 0 else ""
         abs_change = abs(change_pct)
-        neutral = "#374151" if self._light else "#e5e7eb"
-        green = "#059669" if self._light else "#10b981"
-        red = "#BE123C" if self._light else "#e11d48"
-        yellow = "#B45309" if self._light else "#f59e0b"
         if tag == "VIX":
             if close > 25:
-                status, color = "Rủi ro cao", red
+                status, tone = "Rủi ro cao", "danger"
             elif close >= 20:
-                status, color = "Cảnh báo", yellow
+                status, tone = "Cảnh báo", "warning"
             else:
-                status, color = "Bình thường", green
+                status, tone = "Bình thường", "positive"
             label.setText(f"VIX: {close:.1f} — {status}")
         elif tag == "DXY":
-            color = green if change_pct > 0 else red if change_pct < 0 else neutral
+            tone = "positive" if change_pct > 0 else "danger" if change_pct < 0 else "neutral"
             label.setText(f"DXY: {close:.2f} {arrow} {abs_change:.1f}%")
         else:  # US10Y / US2Y: lợi suất GIẢM → tốt (xanh), TĂNG → xấu (đỏ)
-            color = red if change_pct > 0 else green if change_pct < 0 else neutral
-            yr = "10Y" if tag == "US10Y" else "2Y"
+            tone = "danger" if change_pct > 0 else "positive" if change_pct < 0 else "neutral"
             label.setText(f"{tag}: {close:.2f}% {arrow}")
-        label.setStyleSheet(f"font-weight:700;font-size:14px;color:{color};")
+        set_dynamic_property(label, "metricTone", tone)
 
     def _show_market_help(self) -> None:
         from PyQt6.QtWidgets import QDialog
 
         self._light = self._is_light_theme()
         dlg = QDialog(self)
+        dlg.setObjectName("MarketHelpDialog")
         dlg.setWindowTitle("Ý nghĩa các chỉ số thị trường")
         dlg.setMinimumSize(900, 640)
         dlg.resize(960, 680)
@@ -1470,15 +1372,21 @@ class DashboardScreen(QWidget):
         root_layout.setContentsMargins(24, 24, 24, 24)
         root_layout.setSpacing(14)
 
-        _title_color = "#111827" if self._light else "#f8fafc"
-        title = QLabel(f"<b style='font-size:17px;color:{_title_color};'>📊 Hướng dẫn đọc chỉ số thị trường</b>")
+        palette = current_palette(self.settings_service)
+        _title_color = palette.text
+        title = QLabel(
+            compile_rich_html(
+                f"<b style='font-size:17px;color:{_title_color};'>"
+                "📊 Hướng dẫn đọc chỉ số thị trường</b>"
+            )
+        )
         root_layout.addWidget(title)
 
         # Current market values line (colored like dashboard)
-        neutral = "#374151" if self._light else "#e5e7eb"
-        green = "#059669" if self._light else "#10b981"
-        red = "#BE123C" if self._light else "#e11d48"
-        yellow = "#B45309" if self._light else "#f59e0b"
+        neutral = palette.text
+        green = palette.success
+        red = palette.danger
+        yellow = palette.warning
 
         mv = getattr(self, "_market_values", None) or {}
         spans = []
@@ -1505,7 +1413,7 @@ class DashboardScreen(QWidget):
             else:
                 spans.append(f"<span style='color:{neutral};'>{tag}: —</span>")
         vals_html = "  |  ".join(spans)
-        vals_label = QLabel(vals_html)
+        vals_label = QLabel(compile_rich_html(vals_html))
         vals_label.setObjectName("CardValue")
         vals_label.setWordWrap(True)
         vals_label.setTextFormat(Qt.TextFormat.RichText)
@@ -1523,27 +1431,7 @@ class DashboardScreen(QWidget):
         btn_layout.setSpacing(10)
 
         ai_btn = action_button("🤖 Phân tích AI", primary=True)
-        active_bg = "#D94625" if self._light else "#ea580c"
-        active_hover = "#E0533C" if self._light else "#f97316"
-        disabled_bg = "#DEDAD0" if self._light else "#1f2937"
-        disabled_border = "#D6D2C8" if self._light else "#273244"
-        disabled_fg = "#736B60" if self._light else "#6b7280"
-
-        ai_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size:12px; font-weight:700; padding:0 16px;"
-            f"  background:{active_bg}; color:#ffffff; border:none; border-radius:6px;"
-            f"  min-height:24px; max-height:24px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background:{active_hover};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  background:{disabled_bg};"
-            f"  color:{disabled_fg};"
-            f"  border:1px solid {disabled_border};"
-            f"}}"
-        )
+        ai_btn.setObjectName("DialogAiButton")
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
@@ -1562,10 +1450,13 @@ class DashboardScreen(QWidget):
             settings = self.settings_service.load()
             active = settings.ai.active_provider()
             if not active or not (active.api_key or active.api_key_ref):
-                ai_response.setHtml(
-                    "<p style='color:#e11d48;font-size:13px;'>"
-                    "⚠️ Chưa cấu hình AI. Vào <b>Cài đặt</b> để chọn nhà cung cấp và nhập API key."
-                    "</p>"
+                set_rich_html(
+                    ai_response,
+                    empty_state_html(
+                        "⚠️ Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp "
+                        "và nhập API key.",
+                        tone="danger",
+                    ),
                 )
                 return
 
@@ -1706,10 +1597,12 @@ QUAN TRỌNG:
                 self._market_help_worker = None
 
             def on_error(err_msg):
-                ai_response.setHtml(
-                    f"<p style='color:#e11d48;font-size:13px;'>"
-                    f"❌ Lỗi phân tích: {err_msg}"
-                    f"</p>"
+                set_rich_html(
+                    ai_response,
+                    empty_state_html(
+                        f"❌ Lỗi phân tích: {err_msg}",
+                        tone="danger",
+                    ),
                 )
                 ai_btn.setText("🤖 Phân tích AI")
                 ai_btn.setEnabled(True)
@@ -1724,10 +1617,6 @@ QUAN TRỌNG:
 
         ai_btn.clicked.connect(request_analysis)
 
-        if self._light:
-            dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
-        else:
-            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
         dlg.exec()
 
         # Cleanup worker if still running after dialog closes
@@ -1796,6 +1685,4 @@ QUAN TRỌNG:
         frame, value_label, detail_label = card_data
         value_label.setText(value)
         detail_label.setText(detail)
-        frame.setProperty("state", state)
-        frame.style().unpolish(frame)
-        frame.style().polish(frame)
+        set_dynamic_property(frame, "state", state)

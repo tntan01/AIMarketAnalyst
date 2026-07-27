@@ -10,6 +10,8 @@ a = Analysis(
         ("../prompts", "prompts"),
         ("../data/migrations/*.sql", "data/migrations"),
         ("../ui/styles.qss", "ui"),
+        ("../ui/styles_light.qss", "ui"),
+        ("../ui/styles/*.qss", "ui/styles"),
     ],
     hiddenimports=["PyQt6.QtWebEngineWidgets"],
     hookspath=[],

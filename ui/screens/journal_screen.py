@@ -37,8 +37,10 @@ from PyQt6.QtWidgets import (
 from controllers.journal_controller import JournalController
 from services.journal_models import JournalEntry, JournalFilter
 from services.journal_converters import build_performance_summary
+from ui.rich_text import compile_rich_html
+from ui.matplotlib_theme import apply_axes_theme, apply_figure_theme
 from ui.screens.shared import action_button, card, labeled_value, page_header
-from ui.theme import COLOR_UP, COLOR_DOWN
+from ui.theme_manager import current_palette, set_dynamic_property
 
 try:
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
@@ -67,23 +69,19 @@ class PerformanceKPICard(QFrame):
 
         self.title_label = QLabel(title)
         self.title_label.setObjectName("KPICardTitle")
-        self.title_label.setStyleSheet("font-size: 11px; font-weight: 600; color: #94a3b8;")
         header_layout.addWidget(self.title_label, 1)
 
         self.badge_label = QLabel("")
         self.badge_label.setObjectName("KPICardBadge")
-        self.badge_label.setStyleSheet("font-size: 11px; font-weight: 600;")
         header_layout.addWidget(self.badge_label)
         layout.addLayout(header_layout)
 
         self.value_label = QLabel("--")
         self.value_label.setObjectName("KPICardValue")
-        self.value_label.setStyleSheet("font-size: 20px; font-weight: 700; color: #f8fafc;")
         layout.addWidget(self.value_label)
 
         self.sub_label = QLabel("")
         self.sub_label.setObjectName("KPICardSub")
-        self.sub_label.setStyleSheet("font-size: 11px; color: #64748b;")
         self.sub_label.setWordWrap(True)
         layout.addWidget(self.sub_label)
 
@@ -96,48 +94,12 @@ class PerformanceKPICard(QFrame):
         self.set_state(state)
 
     def set_state(self, state: str) -> None:
-        is_dark = self.palette().base().color().lightness() < 128
-        bg_color = "#1e293b" if is_dark else "#ffffff"
-
-        styles = {
-            "positive": {
-                "border": "#10b981",
-                "val_color": "#34d399" if is_dark else "#059669",
-                "sub_color": "#10b981" if is_dark else "#047857",
-            },
-            "negative": {
-                "border": "#ef4444",
-                "val_color": "#f87171" if is_dark else "#dc2626",
-                "sub_color": "#ef4444" if is_dark else "#b91c1c",
-            },
-            "warning": {
-                "border": "#f59e0b",
-                "val_color": "#fbbf24" if is_dark else "#d97706",
-                "sub_color": "#f59e0b" if is_dark else "#b45309",
-            },
-            "neutral": {
-                "border": "#3b82f6",
-                "val_color": "#38bdf8" if is_dark else "#0284c7",
-                "sub_color": "#64748b" if is_dark else "#475569",
-            },
-            "muted": {
-                "border": "#475569" if is_dark else "#cbd5e1",
-                "val_color": "#64748b" if is_dark else "#94a3b8",
-                "sub_color": "#64748b" if is_dark else "#94a3b8",
-            },
-        }
-        style = styles.get(state, styles["neutral"])
-
-        self.setStyleSheet(f"""
-            QFrame#PerformanceKPICard {{
-                background-color: {bg_color};
-                border: 1px solid {"#334155" if is_dark else "#e2e8f0"};
-                border-left: 4px solid {style['border']};
-                border-radius: 8px;
-            }}
-        """)
-        self.value_label.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {style['val_color']};")
-        self.sub_label.setStyleSheet(f"font-size: 11px; color: {style['sub_color']};")
+        normalized = state if state in {
+            "positive", "negative", "warning", "neutral", "muted"
+        } else "neutral"
+        set_dynamic_property(self, "kpiState", normalized)
+        set_dynamic_property(self.value_label, "kpiState", normalized)
+        set_dynamic_property(self.sub_label, "kpiState", normalized)
 
 
 class MissingRBanner(QFrame):
@@ -152,11 +114,11 @@ class MissingRBanner(QFrame):
         layout.setSpacing(12)
 
         icon_label = QLabel("⚠️")
-        icon_label.setStyleSheet("font-size: 18px;")
+        icon_label.setObjectName("MissingRIcon")
         layout.addWidget(icon_label)
 
         self.text_label = QLabel("")
-        self.text_label.setStyleSheet("font-size: 12px; font-weight: 500; color: #fbbf24;")
+        self.text_label.setObjectName("MissingRText")
         self.text_label.setWordWrap(True)
         layout.addWidget(self.text_label, 1)
 
@@ -165,21 +127,9 @@ class MissingRBanner(QFrame):
         layout.addWidget(self.cta_button)
 
     def set_missing_info(self, missing_count: int, total_closed: int) -> None:
-        is_dark = self.palette().base().color().lightness() < 128
-        bg = "rgba(245, 158, 11, 0.15)" if is_dark else "#fef3c7"
-        border = "#f59e0b" if is_dark else "#d97706"
-        txt_color = "#fef08a" if is_dark else "#78350f"
-
-        self.setStyleSheet(f"""
-            QFrame#MissingRBanner {{
-                background-color: {bg};
-                border: 1px solid {border};
-                border-radius: 8px;
-            }}
-        """)
-        self.text_label.setStyleSheet(f"font-size: 12px; font-weight: 500; color: {txt_color};")
-
         if total_closed > 0 and missing_count > 0:
+            set_dynamic_property(self, "state", "warning")
+            set_dynamic_property(self.text_label, "state", "warning")
             if missing_count == total_closed:
                 msg = f"<b>Chưa có dữ liệu Result R:</b> Tất cả {total_closed} lệnh đã đóng chưa điền SL / Entry. Các chỉ số Expectancy, Tổng R, DD tối đa chưa thể tính toán."
             else:
@@ -187,6 +137,8 @@ class MissingRBanner(QFrame):
             self.text_label.setText(msg)
             self.setVisible(True)
         else:
+            set_dynamic_property(self, "state", "hidden")
+            set_dynamic_property(self.text_label, "state", "hidden")
             self.setVisible(False)
 
 
@@ -195,6 +147,9 @@ class PerformanceChartWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._last_by_symbol: list[dict[str, object]] = []
+        self._last_recent_trades: list[dict[str, object]] = []
+        self._last_selected_symbol: str | None = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -207,11 +162,18 @@ class PerformanceChartWidget(QWidget):
             self.canvas = None
             return
 
-        self.figure = Figure(figsize=(10, 3.0), tight_layout=True)
+        self.figure = Figure(
+            figsize=(10, 3.0),
+            tight_layout=True,
+            facecolor=current_palette().background,
+        )
+        apply_figure_theme(self.figure)
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setObjectName("MatplotlibCanvas")
         self.canvas.setMinimumHeight(210)
         self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.canvas)
+        self.update_charts([], [])
 
     def update_charts(
         self,
@@ -222,18 +184,17 @@ class PerformanceChartWidget(QWidget):
         if not HAS_MATPLOTLIB or self.canvas is None:
             return
 
+        self._last_by_symbol = list(by_symbol)
+        self._last_recent_trades = list(recent_trades)
+        self._last_selected_symbol = selected_symbol
         self.figure.clear()
-        is_dark = self.palette().window().color().lightness() < 128
-
-        bg_color = "#1e293b" if is_dark else "#ffffff"
-        text_color = "#cbd5e1" if is_dark else "#334155"
-        grid_color = "#334155" if is_dark else "#e2e8f0"
-
-        self.figure.patch.set_facecolor(bg_color)
+        palette_colors = apply_figure_theme(self.figure)
+        text_color = palette_colors["text"]
+        grid_color = palette_colors["grid"]
 
         # Plot 1: Horizontal Bar Chart - P/L theo Mã
         ax1 = self.figure.add_subplot(121)
-        ax1.set_facecolor(bg_color)
+        apply_axes_theme(ax1, palette_colors)
 
         symbols = []
         pls = []
@@ -246,9 +207,12 @@ class PerformanceChartWidget(QWidget):
             symbols.append(sym)
             pls.append(net)
             if selected_symbol and sym == selected_symbol:
-                colors.append("#38bdf8")
+                colors.append(palette_colors["info"])
             else:
-                colors.append("#10b981" if net >= 0 else "#ef4444")
+                colors.append(
+                    palette_colors["buy"] if net >= 0
+                    else palette_colors["sell"]
+                )
 
         if symbols:
             symbols.reverse()
@@ -286,6 +250,8 @@ class PerformanceChartWidget(QWidget):
         else:
             ax1.text(0.5, 0.5, "Chưa có dữ liệu theo mã", ha="center", va="center", color=text_color, fontsize=9)
             ax1.set_title("Lãi/Lỗ theo Mã ($)", color=text_color, fontsize=10, fontweight="bold", pad=8)
+            ax1.set_xticks([])
+            ax1.set_yticks([])
 
         ax1.tick_params(colors=text_color, labelsize=8, pad=6)
         ax1.spines["top"].set_visible(False)
@@ -293,10 +259,11 @@ class PerformanceChartWidget(QWidget):
         ax1.spines["left"].set_color(grid_color)
         ax1.spines["bottom"].set_color(grid_color)
         ax1.xaxis.grid(True, linestyle=":", alpha=0.4, color=grid_color)
+        apply_axes_theme(ax1, palette_colors)
 
         # Plot 2: Line / Area Chart - Equity Curve
         ax2 = self.figure.add_subplot(122)
-        ax2.set_facecolor(bg_color)
+        apply_axes_theme(ax2, palette_colors)
 
         valid_trades = [t for t in recent_trades if isinstance(t, dict) and t.get("closed_at")]
         if selected_symbol:
@@ -313,11 +280,11 @@ class PerformanceChartWidget(QWidget):
                 cum_pl.append(running)
 
             x_indices = list(range(1, len(cum_pl) + 1))
-            line_color = "#38bdf8"
+            line_color = palette_colors["info"]
             if cum_pl[-1] > 0:
-                line_color = "#10b981"
+                line_color = palette_colors["buy"]
             elif cum_pl[-1] < 0:
-                line_color = "#ef4444"
+                line_color = palette_colors["sell"]
 
             ax2.plot(x_indices, cum_pl, marker="o", markersize=3, color=line_color, linewidth=2, label="P/L Tích lũy")
             ax2.fill_between(x_indices, 0, cum_pl, color=line_color, alpha=0.15)
@@ -335,6 +302,8 @@ class PerformanceChartWidget(QWidget):
         else:
             ax2.text(0.5, 0.5, "Chưa có lịch sử lệnh đóng", ha="center", va="center", color=text_color, fontsize=9)
             ax2.set_title("Đường cong P/L Lũy kế ($)", color=text_color, fontsize=10, fontweight="bold", pad=8)
+            ax2.set_xticks([])
+            ax2.set_yticks([])
 
         ax2.tick_params(colors=text_color, labelsize=8)
         ax2.spines["top"].set_visible(False)
@@ -342,9 +311,19 @@ class PerformanceChartWidget(QWidget):
         ax2.spines["left"].set_color(grid_color)
         ax2.spines["bottom"].set_color(grid_color)
         ax2.yaxis.grid(True, linestyle=":", alpha=0.4, color=grid_color)
+        apply_axes_theme(ax2, palette_colors)
 
         self.figure.tight_layout()
         self.canvas.draw()
+
+    def refresh_theme_styles(self) -> None:
+        """Redraw cached chart data with the active semantic palette."""
+
+        self.update_charts(
+            self._last_by_symbol,
+            self._last_recent_trades,
+            selected_symbol=self._last_selected_symbol,
+        )
 
 
 
@@ -408,26 +387,30 @@ class JournalTableModel(QAbstractTableModel):
                 return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight
             return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         if role == Qt.ItemDataRole.ForegroundRole:
+            palette = current_palette()
             if key == "open":
-                return QColor("#38bdf8")
+                return QColor(palette.info)
             if key == "trade_status":
                 return {
-                    "planned": QColor("#cbd5e1"),
-                    "opened": QColor("#7dd3fc"),
-                    "closed": QColor("#34d399"),
-                    "cancelled": QColor("#f87171"),
-                    "missed": QColor("#fde047"),
+                    "planned": QColor(palette.text_muted),
+                    "opened": QColor(palette.info),
+                    "closed": QColor(palette.success),
+                    "cancelled": QColor(palette.danger),
+                    "missed": QColor(palette.warning),
                 }.get(entry.trade_status)
             if key == "direction_bias":
-                return {"buy": QColor("#22c55e"), "sell": QColor("#fb7185")}.get(entry.direction_bias)
+                return {
+                    "buy": QColor(palette.buy),
+                    "sell": QColor(palette.sell),
+                }.get(entry.direction_bias)
             if key == "result_r":
                 val = entry.result_r
                 if val is not None:
-                    return QColor("#4ade80") if val > 0 else QColor("#f87171") if val < 0 else None
+                    return QColor(palette.success) if val > 0 else QColor(palette.danger) if val < 0 else None
             if key == "result_amount":
                 val = entry.result_amount
                 if val is not None:
-                    return QColor("#4ade80") if val > 0 else QColor("#f87171") if val < 0 else None
+                    return QColor(palette.success) if val > 0 else QColor(palette.danger) if val < 0 else None
         if role == Qt.ItemDataRole.ToolTipRole:
             return entry.note or entry.ai_commentary
         return None
@@ -578,18 +561,17 @@ class NoteIconDelegate(QStyledItemDelegate):
             return
 
         painter.save()
-        is_dark = option.palette.base().color().lightness() < 128
         is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        palette = current_palette()
 
         # Font to hơn font dữ liệu thông thường
         font = option.font
         font.setPixelSize(self._ICON_SIZE)
         painter.setFont(font)
 
-        if is_hover:
-            color = QColor("#fbbf24")  # amber-400 — sáng lên khi hover
-        else:
-            color = QColor("#f59e0b") if is_dark else QColor("#d97706")  # amber-500/600
+        color = QColor(
+            palette.accent_hover if is_hover else palette.warning
+        )
 
         painter.setPen(color)
         painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, self._ICON_CHAR)
@@ -610,18 +592,17 @@ class LinkDelegate(QStyledItemDelegate):
         painter.save()
         text = index.data(Qt.ItemDataRole.DisplayRole) or "Chi tiết"
         
-        # Nhận diện theme động qua palette của table
-        is_dark = option.palette.base().color().lightness() < 128
         is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        palette = current_palette()
 
         # Kế thừa font size từ option (đồng nhất với các ô dữ liệu khác)
         font = option.font
         if is_hover:
             font.setUnderline(True)
-            color = QColor("#7dd3fc") if is_dark else QColor("#0369a1")
+            color = QColor(palette.accent_hover)
         else:
             font.setUnderline(False)
-            color = QColor("#38bdf8") if is_dark else QColor("#0284c7")
+            color = QColor(palette.info)
 
         painter.setFont(font)
         painter.setPen(color)
@@ -866,7 +847,7 @@ class JournalScreen(QWidget):
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
         lbl = QLabel("Lọc nhanh:")
         lbl.setObjectName("FormLabel")
@@ -879,6 +860,8 @@ class JournalScreen(QWidget):
             btn.setCheckable(True)
             btn.setProperty("qf_group", group)
             btn.setProperty("qf_attr", attr)
+            btn.setProperty("quickFilter", True)
+            btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.toggled.connect(lambda checked, b=btn: self._on_quick_filter_toggled(b, checked))
             self._quick_btns[label] = btn
             self._quick_groups.setdefault(group, []).append(label)
@@ -891,6 +874,7 @@ class JournalScreen(QWidget):
                 btn.setProperty("qf_reset_val", 30)  # reset về "1 tháng trước"
 
         layout.addStretch(1)
+        self.quick_filter_layout = layout
         return widget
 
     def _on_quick_filter_toggled(self, btn: QPushButton, checked: bool) -> None:
@@ -1150,12 +1134,13 @@ class JournalScreen(QWidget):
         action_bar.setSpacing(10)
 
         tab_title = QLabel(
-            'Thống kê hiệu suất giao dịch '
-            '<span style="font-weight: normal; color: #E57373;">'
-            '(Lần đồng bộ gần nhất: chưa đồng bộ)</span>'
+            compile_rich_html(
+                'Thống kê hiệu suất giao dịch '
+                '<span style="font-weight: normal; color: #E57373;">'
+                '(Lần đồng bộ gần nhất: chưa đồng bộ)</span>'
+            )
         )
         tab_title.setObjectName("PanelTitle")
-        tab_title.setStyleSheet("font-size: 16px; font-weight: 700;")
         tab_title.setTextFormat(Qt.TextFormat.RichText)
         self.performance_title_label = tab_title
 
@@ -1196,7 +1181,7 @@ class JournalScreen(QWidget):
         kpi_container.setSpacing(10)
 
         group1_lbl = QLabel("🟢 TỔNG QUAN HIỆU SUẤT TÀI CHÍNH")
-        group1_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; padding-bottom: 2px;")
+        group1_lbl.setObjectName("JournalSectionLabel")
         kpi_container.addWidget(group1_lbl)
 
         row1_layout = QHBoxLayout()
@@ -1223,7 +1208,8 @@ class JournalScreen(QWidget):
         kpi_container.addLayout(row1_layout)
 
         group2_lbl = QLabel("🔵 THỐNG KÊ LỆNH & KỶ LUẬT THỰC THI")
-        group2_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; margin-top: 8px; padding-bottom: 2px;")
+        group2_lbl.setObjectName("JournalSectionLabel")
+        group2_lbl.setProperty("spaced", True)
         kpi_container.addWidget(group2_lbl)
 
         row2_layout = QHBoxLayout()
@@ -1267,7 +1253,7 @@ class JournalScreen(QWidget):
         left_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
         left_header.setSpacing(8)
         left_title = QLabel("📑 Phân bổ nhóm:")
-        left_title.setStyleSheet("font-size: 12px; font-weight: 600;")
+        left_title.setObjectName("JournalTableTitle")
 
         self.group_view_combo = QComboBox()
         self.group_view_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
@@ -1312,7 +1298,7 @@ class JournalScreen(QWidget):
         right_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
         right_header.setSpacing(8)
         right_title = QLabel("📋 Lịch sử lệnh đóng")
-        right_title.setStyleSheet("font-size: 12px; font-weight: 600;")
+        right_title.setObjectName("JournalTableTitle")
         right_header.addWidget(right_title)
 
         self.recent_time_combo = QComboBox()
@@ -1811,10 +1797,12 @@ class JournalScreen(QWidget):
                 btn.setEnabled(True)
         self.refresh_status()
         self.performance_title_label.setText(
-            'Thống kê hiệu suất giao dịch '
-            '<span style="font-weight: normal; color: #5C8DBC;">'
-            f'(Lần đồng bộ gần nhất: nhận {result.get("received", 0)}, tạo mới {result.get("created", 0)}, cập nhật {result.get("updated", 0)}, bỏ qua {result.get("skipped", 0)})'
-            '</span>'
+            compile_rich_html(
+                'Thống kê hiệu suất giao dịch '
+                '<span style="font-weight: normal; color: #5C8DBC;">'
+                f'(Lần đồng bộ gần nhất: nhận {result.get("received", 0)}, tạo mới {result.get("created", 0)}, cập nhật {result.get("updated", 0)}, bỏ qua {result.get("skipped", 0)})'
+                '</span>'
+            )
         )
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Đồng bộ MT5 hoàn tất")
@@ -1857,6 +1845,12 @@ class JournalScreen(QWidget):
         super().resizeEvent(event)
         if hasattr(self, 'table'):
             self._recalculate_column_widths()
+
+    def refresh_theme_styles(self) -> None:
+        """Forward hot theme changes to the embedded Matplotlib chart."""
+
+        if hasattr(self, "performance_chart"):
+            self.performance_chart.refresh_theme_styles()
 
     # ------------------------------------------------------------------
     # Column width — Weight-based proportional distribution (khong Stretch)
@@ -2074,12 +2068,13 @@ def format_metric(value: object, suffix: str = "") -> str:
 
 
 def color_item_by_number(item: QTableWidgetItem, value: str) -> None:
+    palette = current_palette()
     val_str = str(value).upper()
     if "↑" in val_str or "▲" in val_str or "BUY" in val_str or "LONG" in val_str:
-        item.setForeground(QColor(COLOR_UP))
+        item.setForeground(QColor(palette.buy))
         return
     if "↓" in val_str or "▼" in val_str or "SELL" in val_str or "SHORT" in val_str:
-        item.setForeground(QColor(COLOR_DOWN))
+        item.setForeground(QColor(palette.sell))
         return
 
     clean_text = (
@@ -2099,6 +2094,6 @@ def color_item_by_number(item: QTableWidgetItem, value: str) -> None:
         return
 
     if number > 0:
-        item.setForeground(QColor(COLOR_UP))
+        item.setForeground(QColor(palette.success))
     elif number < 0:
-        item.setForeground(QColor(COLOR_DOWN))
+        item.setForeground(QColor(palette.danger))

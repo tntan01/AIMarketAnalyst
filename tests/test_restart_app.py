@@ -42,12 +42,19 @@ def run_tests():
     print("TEST GROUP 2: Button inline style")
     print("=" * 60)
 
-    check("2a: Font 11px", "font-size: 11px" in source)
-    check("2b: Color #94a3b8", "color: #94a3b8" in source)
-    check("2c: Background transparent", "background: transparent" in source)
-    check("2d: Border-radius 4px", "border-radius: 4px" in source)
-    check("2e: Margin-top 12px", "margin-top: 12px" in source)
-    check("2f: Hover effect", "QPushButton:hover" in source)
+    base_path = os.path.join(os.path.dirname(test_dir), "ui", "styles", "base.qss")
+    dark_path = os.path.join(os.path.dirname(test_dir), "ui", "styles.qss")
+    with open(base_path, "r", encoding="utf-8") as f:
+        base_qss = f.read()
+    with open(dark_path, "r", encoding="utf-8") as f:
+        dark_qss = f.read()
+    check("2a: Shared selector", 'setObjectName("RestartButton")' in source)
+    check("2b: Font 11px", "font-size: 11px" in base_qss)
+    check("2c: Background transparent", "background: transparent" in base_qss)
+    check("2d: Border none", "border: none" in base_qss)
+    check("2e: Margin-top 12px", "margin-top: 12px" in base_qss)
+    check("2f: Hover effect", "QPushButton#RestartButton:hover" in base_qss)
+    check("2g: Dark theme color", "color: #0d9488" in dark_qss)
 
     # === Group 3: _restart_app method ===
     print("\n" + "=" * 60)

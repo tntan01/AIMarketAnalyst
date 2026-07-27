@@ -25,7 +25,10 @@ from ui.scanner_rr_formatters import (
     format_source_zone_text,
 )
 from ui.components.chart_view import AnalysisChartView
+from ui.rich_text import empty_state_html, set_rich_html
 from ui.screens.shared import action_button, card, page_header
+from ui.theme import chart_palette, semantic_role_for_color
+from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +108,13 @@ class ScannerDetailScreen(QWidget):
         self.setObjectName("FormScreen")
         self._build_ui()
 
+    def _is_light_theme(self) -> bool:
+        state = self.__dict__
+        settings_service = state.get("settings_service")
+        if settings_service is None:
+            return bool(state.get("_light", False))
+        return is_light_theme(settings_service)
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 14, 18, 14)
@@ -131,27 +141,11 @@ class ScannerDetailScreen(QWidget):
 
         # -- Button + Trade Panel + Score Panel + Checklist Panel --
         self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
+        self.show_detail_btn.setObjectName("ScannerDetailFullButton")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.show_detail_btn.setToolTip(
             "Xem bối cảnh kỹ thuật, vĩ mô, nhật ký và các điều kiện "
             "của kết quả quét"
-        )
-        self.show_detail_btn.setFixedHeight(28)
-        self.show_detail_btn.setStyleSheet(
-            "QPushButton {"
-            "  padding: 4px 12px;"
-            "  border-radius: 8px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  background: #D97706;"
-            "  border: 1px solid #D97706;"
-            "  color: #ffffff;"
-            "}"
-            "QPushButton:hover, QPushButton:pressed {"
-            "  background: #F59E0B;"
-            "  border-color: #B45309;"
-            "  color: #ffffff;"
-            "}"
         )
         self.show_detail_btn.clicked.connect(self._show_scan_detail_dialog)
         left_col.addWidget(self.show_detail_btn)
@@ -193,13 +187,9 @@ class ScannerDetailScreen(QWidget):
         # -- Hero verdict bar --
         self.hero_bar = QLabel("")
         self.hero_bar.setObjectName("ScannerDetailHero")
-        self.hero_bar.setFixedHeight(28)
         self.hero_bar.setWordWrap(False)
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
         self.hero_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.hero_bar.setStyleSheet(
-            "QLabel#ScannerDetailHero { border-radius: 8px; padding: 4px 12px; font-size: 12px; background: #1e293b; border: 1px solid #334155; }"
-        )
         right_col.addWidget(self.hero_bar)
 
         # -- Chart --
@@ -231,6 +221,7 @@ class ScannerDetailScreen(QWidget):
         # ---- Tab 2: Chẩn đoán (score + gate + checklist) ----------------
         diag_tab = card()
         self.diag_text = QTextEdit()
+        self.diag_text.setObjectName("ScannerDetailText")
         self.diag_text.setReadOnly(True)
         diag_tab.layout().addWidget(self.diag_text, 1)
         self.tabs.addTab(diag_tab, "🔬 Chẩn đoán")
@@ -243,13 +234,14 @@ class ScannerDetailScreen(QWidget):
         self.audit_btn = action_button("🔍 Chạy kiểm định AI", primary=True, color="warning")
         self.audit_btn.clicked.connect(self._run_ai_audit)
         self.audit_status = QLabel("")
-        self.audit_status.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.audit_status.setObjectName("ScannerAuditStatus")
         btn_row.addWidget(self.audit_btn)
         btn_row.addWidget(self.audit_status)
         btn_row.addStretch()
         audit_layout.addLayout(btn_row)
         # Result area
         self.audit_text = QTextEdit()
+        self.audit_text.setObjectName("ScannerDetailText")
         self.audit_text.setReadOnly(True)
         audit_layout.addWidget(self.audit_text, 1)
         self.tabs.addTab(audit_tab, "🤖 Kiểm định AI")
@@ -570,10 +562,7 @@ class ScannerDetailScreen(QWidget):
             QMessageBox.information(self, "Chưa có dữ liệu", "Chưa chọn mã nào từ bảng quét.")
             return
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
+        light = self._is_light_theme()
 
         symbol = str(self.row.get("symbol", "--"))
         dlg = QDialog(self)
@@ -609,31 +598,20 @@ class ScannerDetailScreen(QWidget):
         # bias is analysis context, not a recommendation to place an order.
         status = self._canonical_status()
         status_label, status_state = _CANDIDATE_STATUS[status]
-        status_colors = {
-            "ready": "#10b981",
-            "wait": "#f59e0b",
-            "watch": "#f59e0b",
-            "blocked": "#f43f5e",
-            "neutral": "#94a3b8",
-            "data": "#64748b",
-        }
         side = self._selected_side()
         bias_text = f"HƯỚNG: { {'buy': 'MUA', 'sell': 'BÁN'}.get(side, '--') }"
         pill_side_obj = {
             "buy": "SummaryPillBuy",
             "sell": "SummaryPillSell",
         }.get(side, "SummaryPillNeutral")
-        side_color = {
-            "buy": "#10b981",
-            "sell": "#f43f5e",
-        }.get(side, "#94a3b8")
 
         bias_pill = QFrame()
         bias_pill.setObjectName(pill_side_obj)
         bias_pill_layout = QHBoxLayout(bias_pill)
         bias_pill_layout.setContentsMargins(8, 4, 8, 4)
         bias_lbl = QLabel(bias_text)
-        bias_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {side_color}; background: transparent; border: none;")
+        bias_lbl.setObjectName("ScannerSummaryText")
+        bias_lbl.setProperty("metricTone", side or "neutral")
         bias_pill_layout.addWidget(bias_lbl)
         summary_layout.addWidget(bias_pill)
 
@@ -642,10 +620,17 @@ class ScannerDetailScreen(QWidget):
         status_pill_layout = QHBoxLayout(status_pill)
         status_pill_layout.setContentsMargins(8, 4, 8, 4)
         status_lbl = QLabel(status_label)
-        status_lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: bold; "
-            f"color: {status_colors[status_state]}; "
-            "background: transparent; border: none;"
+        status_lbl.setObjectName("ScannerSummaryText")
+        status_lbl.setProperty(
+            "metricTone",
+            {
+                "ready": "success",
+                "wait": "warning",
+                "watch": "warning",
+                "blocked": "danger",
+                "neutral": "neutral",
+                "data": "muted",
+            }[status_state],
         )
         status_pill_layout.addWidget(status_lbl)
         summary_layout.addWidget(status_pill)
@@ -658,7 +643,8 @@ class ScannerDetailScreen(QWidget):
         score_pill_layout = QHBoxLayout(score_pill)
         score_pill_layout.setContentsMargins(8, 4, 8, 4)
         score_lbl = QLabel(f"Setup: {setup_text}/{min_score_text}")
-        score_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {'#0f172a' if light else '#f8fafc'}; background: transparent; border: none;")
+        score_lbl.setObjectName("ScannerSummaryText")
+        score_lbl.setProperty("metricTone", "text")
         score_pill_layout.addWidget(score_lbl)
         summary_layout.addWidget(score_pill)
 
@@ -675,7 +661,7 @@ class ScannerDetailScreen(QWidget):
         rr_pill_layout = QHBoxLayout(rr_pill)
         rr_pill_layout.setContentsMargins(8, 4, 8, 4)
         rr_lbl = QLabel(f"R:R thực: {rr_text}")
-        rr_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #f59e0b; background: transparent; border: none;")
+        rr_lbl.setObjectName("ScannerSummaryRR")
         rr_pill_layout.addWidget(rr_lbl)
         summary_layout.addWidget(rr_pill)
 
@@ -689,19 +675,20 @@ class ScannerDetailScreen(QWidget):
             if trade_allowed is False
             else "Chưa có kết quả"
         )
-        perm_accent = (
-            "#10b981"
-            if trade_allowed is True
-            else "#f43f5e"
-            if trade_allowed is False
-            else "#94a3b8"
-        )
         perm_pill = QFrame()
         perm_pill.setObjectName("SummaryPillPerm")
         perm_pill_layout = QHBoxLayout(perm_pill)
         perm_pill_layout.setContentsMargins(8, 4, 8, 4)
         perm_lbl = QLabel(perm_text)
-        perm_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {perm_accent}; background: transparent; border: none;")
+        perm_lbl.setObjectName("ScannerSummaryText")
+        perm_lbl.setProperty(
+            "metricTone",
+            "success"
+            if trade_allowed is True
+            else "danger"
+            if trade_allowed is False
+            else "neutral",
+        )
         perm_pill_layout.addWidget(perm_lbl)
         summary_layout.addWidget(perm_pill)
 
@@ -710,10 +697,7 @@ class ScannerDetailScreen(QWidget):
         rollout_layout = QHBoxLayout(rollout_pill)
         rollout_layout.setContentsMargins(8, 4, 8, 4)
         rollout_lbl = QLabel(self._rollout_display())
-        rollout_lbl.setStyleSheet(
-            "font-size: 11px; font-weight: 600; color: #38bdf8; "
-            "background: transparent; border: none;"
-        )
+        rollout_lbl.setObjectName("ScannerSummaryRollout")
         rollout_layout.addWidget(rollout_lbl)
         summary_layout.addWidget(rollout_pill)
         summary_layout.addStretch(1)
@@ -723,16 +707,13 @@ class ScannerDetailScreen(QWidget):
         # Scroll Area
         # -----------------------------------------------------------------------
         scroll = QScrollArea()
+        scroll.setObjectName("ScannerDetailDialogScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
 
         content = QWidget()
-        content.setStyleSheet("background: transparent;")
+        content.setObjectName("ScannerDetailDialogContent")
         
-        label_color = "#475569" if light else "#94a3b8"
-        value_color = "#0f172a" if light else "#f1f5f9"
-
         # Main horizontal layout inside scroll area (2 columns)
         body_layout = QHBoxLayout(content)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -759,11 +740,16 @@ class ScannerDetailScreen(QWidget):
             card_widget.setToolTip(tooltip_txt)
 
             lbl = QLabel(title_txt)
-            lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color}; background: transparent; border: none;")
+            lbl.setObjectName("ScannerInfoLabel")
             lbl.setToolTip(tooltip_txt)
 
             val = QLabel(val_txt)
-            val.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {val_color}; background: transparent; border: none;")
+            val.setObjectName("ScannerInfoValue")
+            set_dynamic_property(
+                val,
+                "metricTone",
+                semantic_role_for_color(val_color),
+            )
             val.setWordWrap(True)
 
             card_w_layout.addWidget(lbl)
@@ -774,7 +760,7 @@ class ScannerDetailScreen(QWidget):
         # CỘT TRÁI - PHẦN 1: BỐI CẢNH KỸ THUẬT
         # -----------------------------------------------------------------------
         tech_title = QLabel("🔍 BỐI CẢNH KỸ THUẬT")
-        tech_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        tech_title.setObjectName("ScannerDialogSectionTitle")
         left_col.addWidget(tech_title)
 
         tech_grid = QGridLayout()
@@ -798,7 +784,7 @@ class ScannerDetailScreen(QWidget):
         # CỘT TRÁI - PHẦN 2: BỐI CẢNH VĨ MÔ
         # -----------------------------------------------------------------------
         macro_title = QLabel("🌐 BỐI CẢNH VĨ MÔ")
-        macro_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        macro_title.setObjectName("ScannerDialogSectionTitle")
         left_col.addWidget(macro_title)
 
         macro_card = QFrame()
@@ -810,13 +796,6 @@ class ScannerDetailScreen(QWidget):
         # Macro Score Header
         macro_num, macro_conf, macro_bias_raw = (
             self._selected_macro_metrics()
-        )
-        macro_accent = (
-            "#10b981"
-            if macro_num is not None and macro_num >= 22
-            else "#f59e0b"
-            if macro_num is not None and macro_num >= 15
-            else "#94a3b8"
         )
         macro_dot = (
             "●"
@@ -835,12 +814,20 @@ class ScannerDetailScreen(QWidget):
 
         macro_hdr = QHBoxLayout()
         macro_hdr_lbl = QLabel("Điểm vĩ mô gốc")
-        macro_hdr_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {label_color};")
+        macro_hdr_lbl.setObjectName("ScannerInfoLabel")
         macro_hdr_val = QLabel(
             f"{macro_dot} {self._score_text(macro_num)}/30 "
             f"({macro_bias_text})"
         )
-        macro_hdr_val.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {macro_accent};")
+        macro_hdr_val.setObjectName("ScannerMacroScore")
+        macro_hdr_val.setProperty(
+            "metricTone",
+            "success"
+            if macro_num is not None and macro_num >= 22
+            else "warning"
+            if macro_num is not None and macro_num >= 15
+            else "neutral",
+        )
         macro_hdr.addWidget(macro_hdr_lbl)
         macro_hdr.addStretch(1)
         macro_hdr.addWidget(macro_hdr_val)
@@ -860,9 +847,9 @@ class ScannerDetailScreen(QWidget):
 
             tier_info = QHBoxLayout()
             tier_lbl = QLabel(t_label)
-            tier_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {value_color};")
+            tier_lbl.setObjectName("ScannerTierLabel")
             tier_score = QLabel(f"{self._score_text(t_val)}/{t_max}")
-            tier_score.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {value_color};")
+            tier_score.setObjectName("ScannerTierScore")
             tier_info.addWidget(tier_lbl)
             tier_info.addStretch(1)
             tier_info.addWidget(tier_score)
@@ -870,22 +857,19 @@ class ScannerDetailScreen(QWidget):
 
             # Styled QProgressBar
             bar = QProgressBar()
+            bar.setObjectName("ScannerTierProgress")
             bar.setRange(0, t_max)
             bar.setValue(int(t_val) if isinstance(t_val, (int, float)) else 0)
             bar.setTextVisible(False)
             bar.setFixedHeight(6)
-            p_color = (
-                "#10b981"
+            progress_tone = (
+                "success"
                 if isinstance(t_val, (int, float)) and t_val >= t_max * 0.7
-                else "#f59e0b"
+                else "warning"
                 if isinstance(t_val, (int, float)) and t_val >= t_max * 0.4
-                else "#94a3b8"
+                else "neutral"
             )
-            bg_color = "#1e293b" if not light else "#e2e8f0"
-            bar.setStyleSheet(f"""
-                QProgressBar {{ background-color: {bg_color}; border: none; border-radius: 3px; }}
-                QProgressBar::chunk {{ background-color: {p_color}; border-radius: 3px; }}
-            """)
+            set_dynamic_property(bar, "metricTone", progress_tone)
             tier_row.addWidget(bar)
 
             if t_reason:
@@ -915,7 +899,7 @@ class ScannerDetailScreen(QWidget):
 
         if indicator_parts:
             ind_lbl = QLabel(" &nbsp;&bull;&nbsp; ".join(indicator_parts))
-            ind_lbl.setStyleSheet(f"font-size: 11px; color: {label_color}; border-top: 1px solid {'#242b3d' if not light else '#e2e8f0'}; padding-top: 6px; margin-top: 4px;")
+            ind_lbl.setObjectName("ScannerMacroIndicators")
             ind_lbl.setTextFormat(Qt.TextFormat.RichText)
             macro_card_layout.addWidget(ind_lbl)
 
@@ -929,14 +913,14 @@ class ScannerDetailScreen(QWidget):
             sell_r = reasons_dict.get("sell", "")
             if buy_r:
                 buy_lbl = QLabel(f"🟢 <b style='color:#10b981;'>MUA:</b> {buy_r}")
-                buy_lbl.setStyleSheet("font-size: 11px; color: #cbd5e1;" if not light else "font-size: 11px; color: #475569;")
+                buy_lbl.setObjectName("ScannerReasonText")
                 buy_lbl.setWordWrap(True)
                 buy_lbl.setTextFormat(Qt.TextFormat.RichText)
                 reasons_layout.addWidget(buy_lbl)
                 has_reasons = True
             if sell_r:
                 sell_lbl = QLabel(f"🔴 <b style='color:#f43f5e;'>BÁN:</b> {sell_r}")
-                sell_lbl.setStyleSheet("font-size: 11px; color: #cbd5e1;" if not light else "font-size: 11px; color: #475569;")
+                sell_lbl.setObjectName("ScannerReasonText")
                 sell_lbl.setWordWrap(True)
                 sell_lbl.setTextFormat(Qt.TextFormat.RichText)
                 reasons_layout.addWidget(sell_lbl)
@@ -944,7 +928,7 @@ class ScannerDetailScreen(QWidget):
 
         if has_reasons:
             reasons_container = QWidget()
-            reasons_container.setStyleSheet("background: transparent;")
+            reasons_container.setObjectName("TransparentWidget")
             reasons_container_layout = QVBoxLayout(reasons_container)
             reasons_container_layout.setContentsMargins(0, 4, 0, 0)
             reasons_container_layout.addLayout(reasons_layout)
@@ -957,7 +941,7 @@ class ScannerDetailScreen(QWidget):
         # CỘT PHẢI - PHẦN 3: HIỆU SUẤT NHẬT KÝ
         # -----------------------------------------------------------------------
         journal_title = QLabel("📔 HIỆU SUẤT NHẬT KÝ")
-        journal_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        journal_title.setObjectName("ScannerDialogSectionTitle")
         right_col.addWidget(journal_title)
 
         sample_val, _, sample_accent = self._dialog_card_journal_sample()
@@ -981,21 +965,15 @@ class ScannerDetailScreen(QWidget):
         # Warning Banner for small sample sizes
         if sample_num < 20:
             warn_frame = QFrame()
-            warn_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {"rgba(245, 158, 11, 0.08)" if not light else "rgba(245, 158, 11, 0.05)"};
-                    border: 1px solid rgba(245, 158, 11, 0.2);
-                    border-radius: 6px;
-                }}
-            """)
+            warn_frame.setObjectName("ScannerWarningBanner")
             warn_l = QHBoxLayout(warn_frame)
             warn_l.setContentsMargins(10, 6, 10, 6)
             warn_l.setSpacing(6)
             
             warn_icon = QLabel("⚠️")
-            warn_icon.setStyleSheet("font-size: 12px; background: transparent; border: none;")
+            warn_icon.setObjectName("ScannerWarningIcon")
             warn_txt = QLabel("Mẫu quá ít, kỳ vọng chưa đáng tin cậy")
-            warn_txt.setStyleSheet("font-size: 11px; font-weight: 600; color: #f59e0b; background: transparent; border: none;")
+            warn_txt.setObjectName("ScannerWarningText")
             warn_l.addWidget(warn_icon)
             warn_l.addWidget(warn_txt)
             warn_l.addStretch(1)
@@ -1005,7 +983,7 @@ class ScannerDetailScreen(QWidget):
         # CỘT PHẢI - PHẦN 4: ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)
         # -----------------------------------------------------------------------
         checklist_title = QLabel("🔍 ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)")
-        checklist_title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {value_color}; background: transparent; border: none; margin-top: 4px;")
+        checklist_title.setObjectName("ScannerDialogSectionTitle")
         right_col.addWidget(checklist_title)
 
         checklist_card = QFrame()
@@ -1014,20 +992,9 @@ class ScannerDetailScreen(QWidget):
         cl_layout.setContentsMargins(12, 12, 12, 12)
         cl_layout.setSpacing(6)
 
-        green_color = "#10b981"
-        red_color = "#f43f5e"
-        unknown_color = "#94a3b8"
-
         for item in self._build_entry_checklist():
             state = str(item.get("state") or "unknown")
             passed = state == "pass"
-            color = (
-                green_color
-                if passed
-                else red_color
-                if state == "fail"
-                else unknown_color
-            )
             row_card = QFrame()
             row_card.setObjectName(
                 "ChecklistRowCardPass"
@@ -1045,15 +1012,13 @@ class ScannerDetailScreen(QWidget):
             icon_lbl = QLabel(
                 "✅" if passed else "❌" if state == "fail" else "➖"
             )
-            icon_lbl.setStyleSheet("font-size: 11px; background: transparent; border: none;")
+            icon_lbl.setObjectName("ScannerChecklistIcon")
             icon_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             row_l.addWidget(icon_lbl)
 
             text_lbl = QLabel(item["label"])
-            text_lbl.setStyleSheet(
-                f"font-size: 11.5px; font-weight: 500; color: {color}; "
-                "background: transparent; border: none;"
-            )
+            text_lbl.setObjectName("ScannerChecklistText")
+            text_lbl.setProperty("checkState", state)
             text_lbl.setWordWrap(True)
             row_l.addWidget(text_lbl, 1)
 
@@ -1436,27 +1401,6 @@ class ScannerDetailScreen(QWidget):
             )
         )
         
-        # Apply transparent theme-appropriate styling to text views
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-            
-        if light:
-            self.diag_text.setStyleSheet(
-                "QTextEdit { background: transparent; color: #111827; font-size: 13px; border: none; padding: 2px; }"
-            )
-            self.audit_text.setStyleSheet(
-                "QTextEdit { background: transparent; color: #111827; font-size: 13px; border: none; padding: 2px; }"
-            )
-        else:
-            self.diag_text.setStyleSheet(
-                "QTextEdit { background: transparent; color: #e5e7eb; font-size: 13px; border: none; padding: 2px; }"
-            )
-            self.audit_text.setStyleSheet(
-                "QTextEdit { background: transparent; color: #e5e7eb; font-size: 13px; border: none; padding: 2px; }"
-            )
-
         self._refresh_hero()
         self._refresh_trade_panel()
         self._refresh_score_panel()
@@ -1483,15 +1427,19 @@ class ScannerDetailScreen(QWidget):
             )
             
             # Inject current theme to payload
-            try:
-                light = self.settings_service.load().display.theme == "light"
-            except Exception:
-                light = False
+            light = self._is_light_theme()
             payload["theme"] = "light" if light else "dark"
+            payload["palette"] = chart_palette(current_palette())
             
             self.chart.set_payload(payload)
         except Exception:
             self.chart.show_error("Không thể tạo dữ liệu biểu đồ từ kết quả quét.")
+
+    def refresh_theme_styles(self) -> None:
+        """Keep the embedded WebEngine chart in sync with the active theme."""
+
+        if hasattr(self, "chart"):
+            self.chart.refresh_theme(current_palette())
 
     def _refresh_hero(self) -> None:
         """Render the canonical Scanner verdict, never a raw directional bias."""
@@ -1500,46 +1448,8 @@ class ScannerDetailScreen(QWidget):
             self.hero_bar.hide()
             return
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-
         status = self._canonical_status()
         status_label, visual_state = _CANDIDATE_STATUS[status]
-        palette = {
-            "ready": (
-                "#047857" if light else "#34d399",
-                "#10b981",
-                "#d1fae5" if light else "#064e3b",
-            ),
-            "wait": (
-                "#b45309" if light else "#fbbf24",
-                "#f59e0b",
-                "#fef3c7" if light else "#451a03",
-            ),
-            "watch": (
-                "#b45309" if light else "#fbbf24",
-                "#f59e0b",
-                "#fffbeb" if light else "#291700",
-            ),
-            "blocked": (
-                "#b91c1c" if light else "#f87171",
-                "#ef4444",
-                "#fef2f2" if light else "#3f1017",
-            ),
-            "neutral": (
-                "#475569" if light else "#cbd5e1",
-                "#94a3b8",
-                "#f1f5f9" if light else "#1e293b",
-            ),
-            "data": (
-                "#475569" if light else "#94a3b8",
-                "#64748b",
-                "#f1f5f9" if light else "#111827",
-            ),
-        }
-        status_color, status_border, status_bg = palette[visual_state]
 
         side = self._selected_side()
         side_text = {"buy": "MUA", "sell": "BÁN"}.get(
@@ -1559,16 +1469,10 @@ class ScannerDetailScreen(QWidget):
             f"{score_text} · {rollout_text}"
         )
 
-        self.hero_bar.setStyleSheet(
-            f"QLabel#ScannerDetailHero {{"
-            f"  background-color: {status_bg};"
-            f"  border: 1px solid {status_border};"
-            f"  border-radius: 8px;"
-            f"  padding: 4px 12px;"
-            f"  font-size: 13px;"
-            f"  font-weight: bold;"
-            f"  color: {status_color};"
-            f"}}"
+        set_dynamic_property(
+            self.hero_bar,
+            "candidateState",
+            visual_state,
         )
 
         self.hero_bar.setText(status_text)
@@ -1694,22 +1598,8 @@ class ScannerDetailScreen(QWidget):
         layout = self.trade_panel.layout()
         self._clear_layout(layout)
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-
-        bg = "#ffffff" if light else "#1a1f2e"
-        border_color = "#d1d5db" if light else "#2b3545"
-        label_color = "#475569" if light else "#94a3b8"
-        val_color = "#0f172a" if light else "#f1f5f9"
-
-        self.trade_panel.setStyleSheet(
-            f"QFrame#TradePanelCard {{ background: {bg}; border: 1px solid {border_color}; border-radius: 6px; }}"
-        )
-
         title = QLabel("🎯 Số liệu giao dịch")
-        title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {val_color}; margin-bottom: 4px;")
+        title.setObjectName("ScannerPanelTitle")
         layout.addWidget(title)
 
         if not self.row:
@@ -1734,27 +1624,28 @@ class ScannerDetailScreen(QWidget):
             ).lower()
             == "confirmed_entry"
         )
-        entry_accent = "#22c55e" if entry_ok else "#f59e0b"
+        entry_tone = "success" if entry_ok else "warning"
 
         rows = [
-            ("Hướng phân tích", side_text, "#10b981" if self._selected_side() == "buy" else "#f43f5e" if self._selected_side() == "sell" else "#94a3b8"),
-            ("Vùng vào lệnh", entry_val, entry_accent),
-            ("Stop Loss", sl_val, "#e11d48"),
-            ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "#10b981"),
-            ("R:R thực", rr_val, "#f59e0b"),
-            ("Chế độ TT", regime_val, val_color),
+            ("Hướng phân tích", side_text, self._selected_side() or "neutral"),
+            ("Vùng vào lệnh", entry_val, entry_tone),
+            ("Stop Loss", sl_val, "danger"),
+            ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "success"),
+            ("R:R thực", rr_val, "warning"),
+            ("Chế độ TT", regime_val, "text"),
         ]
 
-        for label_text, value_text, accent in rows:
+        for label_text, value_text, tone in rows:
             row_w = QWidget()
-            row_w.setStyleSheet("background: transparent;")
+            row_w.setObjectName("TransparentWidget")
             row_l = QHBoxLayout(row_w)
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
+            lbl.setObjectName("ScannerPanelLabel")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
+            val.setObjectName("ScannerPanelValue")
+            val.setProperty("metricTone", tone)
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
@@ -1768,22 +1659,8 @@ class ScannerDetailScreen(QWidget):
         layout = self.score_panel.layout()
         self._clear_layout(layout)
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-
-        bg = "#ffffff" if light else "#1a1f2e"
-        border_color = "#d1d5db" if light else "#2b3545"
-        label_color = "#475569" if light else "#94a3b8"
-        val_color = "#0f172a" if light else "#f1f5f9"
-
-        self.score_panel.setStyleSheet(
-            f"QFrame#ScorePanelCard {{ background: {bg}; border: 1px solid {border_color}; border-radius: 6px; }}"
-        )
-
         title = QLabel("📊 Điểm phân tích")
-        title.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {val_color}; margin-bottom: 4px;")
+        title.setObjectName("ScannerPanelTitle")
         layout.addWidget(title)
 
         if not self.row:
@@ -1792,13 +1669,13 @@ class ScannerDetailScreen(QWidget):
 
         status = self._canonical_status()
         status_label, status_state = _CANDIDATE_STATUS[status]
-        status_accent = {
-            "ready": "#10b981",
-            "wait": "#f59e0b",
-            "watch": "#f59e0b",
-            "neutral": "#94a3b8",
-            "blocked": "#e11d48",
-            "data": "#64748b",
+        status_tone = {
+            "ready": "success",
+            "wait": "warning",
+            "watch": "warning",
+            "neutral": "neutral",
+            "blocked": "danger",
+            "data": "muted",
         }[status_state]
         setup = self._score_text(self._canonical_setup_score())
         min_score = self._score_text(self._required_min_score())
@@ -1806,28 +1683,29 @@ class ScannerDetailScreen(QWidget):
         evidence = self._score_text(self.row.get("evidence_confidence"))
         execution = self._score_text(self.row.get("execution_readiness"))
         rows = [
-            ("Trạng thái", status_label, status_accent),
-            ("Điểm thiết lập", f"{setup}/{min_score}", "#38bdf8"),
-            ("Ưu tiên cơ hội", f"{opportunity}/100", "#a78bfa"),
-            ("Bằng chứng", f"{evidence}/100", val_color),
-            ("Mức sẵn sàng", f"{execution}/100", val_color),
+            ("Trạng thái", status_label, status_tone),
+            ("Điểm thiết lập", f"{setup}/{min_score}", "info"),
+            ("Ưu tiên cơ hội", f"{opportunity}/100", "accent"),
+            ("Bằng chứng", f"{evidence}/100", "text"),
+            ("Mức sẵn sàng", f"{execution}/100", "text"),
             (
                 "Chế độ chạy",
                 self._rollout_display(),
-                "#38bdf8",
+                "info",
             ),
         ]
 
-        for label_text, value_text, accent in rows:
+        for label_text, value_text, tone in rows:
             row_w = QWidget()
-            row_w.setStyleSheet("background: transparent;")
+            row_w.setObjectName("TransparentWidget")
             row_l = QHBoxLayout(row_w)
             row_l.setContentsMargins(0, 0, 0, 0)
             row_l.setSpacing(4)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"font-size: 12px; color: {label_color};")
+            lbl.setObjectName("ScannerPanelLabel")
             val = QLabel(value_text)
-            val.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {accent};")
+            val.setObjectName("ScannerPanelValue")
+            val.setProperty("metricTone", tone)
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
@@ -1858,22 +1736,8 @@ class ScannerDetailScreen(QWidget):
         layout = self.checklist_panel.layout()
         self._clear_layout(layout)
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
-
-        bg = "#ffffff" if light else "#1a1f2e"
-        border_color = "#d1d5db" if light else "#2b3545"
-        label_color = "#475569" if light else "#94a3b8"
-        val_color = "#0f172a" if light else "#f1f5f9"
-
-        self.checklist_panel.setStyleSheet(
-            f"QFrame#ChecklistPanelCard {{ background: {bg}; border: 1px solid {border_color}; border-radius: 6px; }}"
-        )
-
         title = QLabel("🔍 Điều kiện vào lệnh")
-        title.setStyleSheet(f"font-weight: bold; font-size: 13px; color: {val_color}; margin-bottom: 4px;")
+        title.setObjectName("ScannerPanelTitle")
         layout.addWidget(title)
 
         if not self.row:
@@ -1890,10 +1754,6 @@ class ScannerDetailScreen(QWidget):
             "Vùng giá", "M15", "R:R thực", "Quyền quét",
         ]
 
-        green = "#10b981"
-        red = "#e11d48"
-        unknown_color = "#94a3b8"
-
         fail_count = sum(
             1 for item in items[:7] if item.get("state") == "fail"
         )
@@ -1902,16 +1762,15 @@ class ScannerDetailScreen(QWidget):
         )
         if fail_count >= 1:
             summary = QLabel(f"⚠️ {fail_count}/7 điều kiện chưa đạt")
-            summary.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {red}; padding: 2px 0;")
+            summary.setObjectName("ScannerChecklistSummary")
+            summary.setProperty("checkState", "fail")
             layout.addWidget(summary)
         elif unknown_count:
             summary = QLabel(
                 f"➖ {unknown_count}/7 điều kiện chưa có dữ liệu"
             )
-            summary.setStyleSheet(
-                f"font-size: 11px; font-weight: bold; "
-                f"color: {unknown_color}; padding: 2px 0;"
-            )
+            summary.setObjectName("ScannerChecklistSummary")
+            summary.setProperty("checkState", "unknown")
             layout.addWidget(summary)
 
         # 2-column grid for compact display
@@ -1928,19 +1787,19 @@ class ScannerDetailScreen(QWidget):
             full_label = item_data["label"]
             short_name = SHORT_NAMES[i] if i < len(SHORT_NAMES) else full_label[:12]
             icon = "✅" if passed else "❌" if state == "fail" else "➖"
-            color = green if passed else red if state == "fail" else unknown_color
             row_i, col_i = divmod(i, 2) if i < 6 else (3, 0)
             # The final permission item spans the full width.
             if i == 6:
                 item_w = QWidget()
-                item_w.setStyleSheet("background: transparent;")
+                item_w.setObjectName("TransparentWidget")
                 item_l = QHBoxLayout(item_w)
                 item_l.setContentsMargins(0, 0, 0, 0)
                 item_l.setSpacing(3)
                 icon_lbl = QLabel(icon)
-                icon_lbl.setStyleSheet("font-size: 11px;")
+                icon_lbl.setObjectName("ScannerCompactIcon")
                 name_lbl = QLabel(short_name)
-                name_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color};")
+                name_lbl.setObjectName("ScannerChecklistName")
+                name_lbl.setProperty("checkState", state)
                 item_l.addWidget(icon_lbl)
                 item_l.addWidget(name_lbl)
                 item_l.addStretch()
@@ -1948,14 +1807,15 @@ class ScannerDetailScreen(QWidget):
                 grid.addWidget(item_w, row_i, col_i, 1, 2)
             else:
                 item_w = QWidget()
-                item_w.setStyleSheet("background: transparent;")
+                item_w.setObjectName("TransparentWidget")
                 item_l = QHBoxLayout(item_w)
                 item_l.setContentsMargins(0, 0, 0, 0)
                 item_l.setSpacing(3)
                 icon_lbl = QLabel(icon)
-                icon_lbl.setStyleSheet("font-size: 11px;")
+                icon_lbl.setObjectName("ScannerCompactIcon")
                 name_lbl = QLabel(short_name)
-                name_lbl.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color};")
+                name_lbl.setObjectName("ScannerChecklistName")
+                name_lbl.setProperty("checkState", state)
                 item_l.addWidget(icon_lbl)
                 item_l.addWidget(name_lbl)
                 item_l.addStretch()
@@ -2396,17 +2256,24 @@ class ScannerDetailScreen(QWidget):
         if not hasattr(self, "diag_text"):
             return
         if not self.row:
-            self.diag_text.setHtml("<p style='color:#94a3b8;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>Chọn một dòng trong bảng quét để xem chẩn đoán.</p>")
+            set_rich_html(
+                self.diag_text,
+                empty_state_html(
+                    "Chọn một dòng trong bảng quét để xem chẩn đoán."
+                ),
+            )
             return
         analysis = self.row.get("analysis_result")
         if not isinstance(analysis, dict):
-            self.diag_text.setHtml("<p style='color:#94a3b8;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>Không có dữ liệu phân tích để hiển thị chẩn đoán.</p>")
+            set_rich_html(
+                self.diag_text,
+                empty_state_html(
+                    "Không có dữ liệu phân tích để hiển thị chẩn đoán."
+                ),
+            )
             return
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
+        light = self._is_light_theme()
 
         body_text_color = "#334155" if light else "#e2e8f0"
         parts: list[str] = []
@@ -2418,7 +2285,11 @@ class ScannerDetailScreen(QWidget):
         parts.append(self._diag_pipeline_steps_html(analysis, light=light))
         parts.append(self._diag_final_score_html(analysis, light=light))
         parts.append("</div>")
-        self.diag_text.setHtml("\n".join(parts))
+        set_rich_html(
+            self.diag_text,
+            "\n".join(parts),
+            theme="light" if light else "dark",
+        )
 
     # -- AI Setup Audit ----------------------------------------------------
 
@@ -2426,7 +2297,12 @@ class ScannerDetailScreen(QWidget):
         if not hasattr(self, "audit_text"):
             return
         if not self.row:
-            self.audit_text.setHtml("<p style='color:#94a3b8;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>Chọn một dòng trong bảng quét để xem AI kiểm định.</p>")
+            set_rich_html(
+                self.audit_text,
+                empty_state_html(
+                    "Chọn một dòng trong bảng quét để xem AI kiểm định."
+                ),
+            )
             if getattr(self, "audit_btn", None):
                 self.audit_btn.setEnabled(False)
             return
@@ -2434,17 +2310,22 @@ class ScannerDetailScreen(QWidget):
             self.audit_btn.setEnabled(True)
         audit = self.row.get("ai_setup_audit")
         if not isinstance(audit, dict) or not audit:
-            self.audit_text.setHtml(
-                "<p style='color:#94a3b8;font-size:13px;font-family:-apple-system,Segoe UI,sans-serif;'>Chưa có kết quả kiểm định AI. Bấm nút <b>Chạy kiểm định AI</b> để AI phân tích setup này.</p>"
+            set_rich_html(
+                self.audit_text,
+                empty_state_html(
+                    "Chưa có kết quả kiểm định AI. Bấm nút Chạy kiểm định AI "
+                    "để AI phân tích setup này."
+                ),
             )
             return
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
+        light = self._is_light_theme()
 
-        self.audit_text.setHtml(self._ai_audit_html(audit, light=light))
+        set_rich_html(
+            self.audit_text,
+            self._ai_audit_html(audit, light=light),
+            theme="light" if light else "dark",
+        )
 
     def _run_ai_audit(self) -> None:
         """Run AI audit on-demand for the current row."""
@@ -2456,7 +2337,13 @@ class ScannerDetailScreen(QWidget):
 
         self.audit_btn.setEnabled(False)
         self.audit_status.setText("Đang gọi AI...")
-        self.audit_text.setHtml("<p style='color:#f59e0b;'>⏳ Đang chờ AI phản hồi...</p>")
+        set_rich_html(
+            self.audit_text,
+            empty_state_html(
+                "⏳ Đang chờ AI phản hồi...",
+                tone="warning",
+            ),
+        )
 
         # Run in a simple thread to not block UI
         from PyQt6.QtCore import QThread, pyqtSignal
@@ -2484,19 +2371,21 @@ class ScannerDetailScreen(QWidget):
             raw = str(audit.get("raw_response", "") or "")[:800]
             raw_display = f"<pre style='color:#94a3b8;font-size:11px;max-height:200px;overflow:auto;'>{raw}</pre>" if raw else ""
             self.audit_status.setText(f"Lỗi: {audit['auditor_error']}")
-            self.audit_text.setHtml(
+            set_rich_html(
+                self.audit_text,
                 f"<p style='color:#e11d48;'>Lỗi kiểm định: {audit['auditor_error']}</p>"
                 f"<p style='color:#94a3b8;'>AI không trả về JSON hợp lệ.</p>"
-                f"{raw_display}"
+                f"{raw_display}",
             )
         else:
             self.audit_status.setText("Hoàn tất kiểm định.")
             self.row["ai_setup_audit"] = audit
-            try:
-                light = self.settings_service.load().display.theme == "light"
-            except Exception:
-                light = False
-            self.audit_text.setHtml(self._ai_audit_html(audit, light=light))
+            light = self._is_light_theme()
+            set_rich_html(
+                self.audit_text,
+                self._ai_audit_html(audit, light=light),
+                theme="light" if light else "dark",
+            )
 
     def _ai_audit_html(self, audit: dict, light: bool = False) -> str:
         agreement = str(audit.get("agreement") or "caution").strip().lower()

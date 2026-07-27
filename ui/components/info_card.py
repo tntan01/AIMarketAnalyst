@@ -2,15 +2,8 @@
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout
-
-
-def _is_light_theme() -> bool:
-    try:
-        from services.settings_service import SettingsService
-        settings = SettingsService().load()
-        return settings.display.theme == "light"
-    except Exception:
-        return False
+from ui.theme import PALETTES
+from ui.theme_manager import set_dynamic_property
 
 
 class InfoCard(QFrame):
@@ -54,27 +47,23 @@ class InfoCard(QFrame):
         self.refresh_theme()
 
     def refresh_theme(self, accent: str | None = None) -> None:
-        self._light = _is_light_theme()
-
-        if self._light:
-            bg, border, hover_border = "#EAE6DF", "#D6D2C8", "#A19B90"
-            label_color, detail_color = "#57534E", "#736B60"
-            default_accent = "#0369A1"
-        else:
-            bg, border, hover_border = "#1e293b", "#334155", "#475569"
-            label_color, detail_color = "#94a3b8", "#64748b"
-            default_accent = "#38bdf8"
-
-        if not accent:
-            accent = self._accent if self._accent else default_accent
-
-        self.setStyleSheet(
-            f"QFrame#InfoCard {{ background: {bg}; border: 1px solid {border}; border-radius: 4px; }}"
-            f"QFrame#InfoCard:hover {{ border-color: {hover_border}; }}"
+        requested = accent or self._accent
+        set_dynamic_property(
+            self._value_w,
+            "accentRole",
+            self._accent_role(requested),
         )
-        self._label_w.setStyleSheet(f"color: {label_color}; font-size: 13px;")
-        self._value_w.setStyleSheet(f"color: {accent}; font-size: 13px; font-weight: bold;")
-        self._detail_w.setStyleSheet(f"color: {detail_color}; font-size: 12px;")
+
+    @staticmethod
+    def _accent_role(color: str) -> str:
+        normalized = str(color or "").strip().lower()
+        if not normalized:
+            return "info"
+        for palette in PALETTES.values():
+            for role in ("accent", "success", "warning", "danger", "info"):
+                if normalized == getattr(palette, role).lower():
+                    return role
+        return "info"
 
     def set_value(self, text: str, accent: str | None = None) -> None:
         self._value_w.setText(text)

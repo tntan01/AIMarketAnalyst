@@ -37,6 +37,15 @@ QWidget ,
 from services .mt5_service import MT5Service
 from services .settings_service import SettingsService
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header
+from ui.scanner_rr_formatters import (
+    enrich_order_note_with_current_rr,
+    format_order_entry_tooltip,
+    format_order_rr_text,
+    format_order_rr_tooltip,
+)
+from ui.rich_text import compile_rich_html
+from ui.theme import palette_for, semantic_role_for_color
+from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.translation import vi_term
 
 
@@ -88,6 +97,10 @@ class ScannerTableModel (QAbstractTableModel ):
     def __init__ (self )->None :
         super ().__init__ ()
         self .rows :list [dict [str ,object ]]=[]
+        self._theme = "dark"
+
+    def set_theme(self, theme: object) -> None:
+        self._theme = str(theme or "dark").strip().lower()
 
     def rowCount (self ,parent :QModelIndex =QModelIndex ())->int :
         return 0 if parent .isValid ()else len (self .rows )
@@ -433,119 +446,129 @@ class ScannerTableModel (QAbstractTableModel ):
         return "\n".join([headline, *details[:4]])
 
     def _foreground (self ,row :dict [str ,object ],key :str ):
+        palette = palette_for(self._theme)
+        colors = {
+            "success": QColor(palette.success),
+            "warning": QColor(palette.warning),
+            "danger": QColor(palette.danger),
+            "muted": QColor(palette.text_muted),
+            "subtle": QColor(palette.text_subtle),
+            "buy": QColor(palette.buy),
+            "sell": QColor(palette.sell),
+        }
         if key =="candidate_status":
             return {
-                "READY_NOW":QColor ("#10b981"),
-                "WAITING_CONFIRMATION":QColor ("#f59e0b"),
-                "WATCH_ZONE":QColor ("#ea580c"),
-                "OUT_OF_STRATEGY":QColor ("#94a3b8"),
-                "BLOCKED":QColor ("#e11d48"),
-                "DATA_UNAVAILABLE":QColor ("#64748b"),
+                "READY_NOW":colors["success"],
+                "WAITING_CONFIRMATION":colors["warning"],
+                "WATCH_ZONE":colors["warning"],
+                "OUT_OF_STRATEGY":colors["muted"],
+                "BLOCKED":colors["danger"],
+                "DATA_UNAVAILABLE":colors["subtle"],
             }.get(str(row.get(key, "")).upper())
         if key =="selected_side":
             return {
-                "buy":QColor ("#ea580c"),
-                "sell":QColor ("#f43f5e"),
+                "buy":colors["buy"],
+                "sell":colors["sell"],
             }.get(str(row.get(key, "")).lower())
         if key in {"opportunity_rank","setup_score","evidence_confidence","execution_readiness"}:
             try:
                 value = float(row.get(key))
             except (TypeError, ValueError):
-                return QColor("#94a3b8")
+                return colors["muted"]
             if value >= 70:
-                return QColor("#10b981")
+                return colors["success"]
             if value >= 40:
-                return QColor("#f59e0b")
-            return QColor("#94a3b8")
+                return colors["warning"]
+            return colors["muted"]
         if key =="strategy_config_status":
             return {
-                "VALIDATED":QColor("#10b981"),
-                "NOT_CONFIGURED":QColor("#94a3b8"),
-                "DRAFT":QColor("#f59e0b"),
-                "EXPIRED":QColor("#e11d48"),
-                "INVALID":QColor("#e11d48"),
-                "VERSION_MISMATCH":QColor("#e11d48"),
-            }.get(str(row.get(key, "")).upper(), QColor("#94a3b8"))
+                "VALIDATED":colors["success"],
+                "NOT_CONFIGURED":colors["muted"],
+                "DRAFT":colors["warning"],
+                "EXPIRED":colors["danger"],
+                "INVALID":colors["danger"],
+                "VERSION_MISMATCH":colors["danger"],
+            }.get(str(row.get(key, "")).upper(), colors["muted"])
         if key =="scanner_group":
             group =str (row .get ("scanner_group",""))
             return {
-            "ready_now":QColor ("#10b981"),
-            "waiting_confirmation":QColor ("#f59e0b"),
-            "watch_zone":QColor ("#ea580c"),
-            "blocked":QColor ("#e11d48"),
+            "ready_now":colors["success"],
+            "waiting_confirmation":colors["warning"],
+            "watch_zone":colors["warning"],
+            "blocked":colors["danger"],
             }.get (group )
         if key =="direction_bias":
             side =self ._direction_bias_side (row .get (key ))
-            return {"buy":QColor ("#ea580c"),"sell":QColor ("#f43f5e")}.get (side )
+            return {"buy":colors["buy"],"sell":colors["sell"]}.get (side )
         if key =="market_regime":
             regime =str (row .get (key ,""))
             return {
-            "trend_up":QColor ("#10b981"),
-            "trend_down":QColor ("#e11d48"),
-            "range":QColor ("#f59e0b"),
-            "volatile":QColor ("#ea580c"),
-            "unknown":QColor ("#94a3b8"),
+            "trend_up":colors["success"],
+            "trend_down":colors["danger"],
+            "range":colors["warning"],
+            "volatile":colors["warning"],
+            "unknown":colors["muted"],
             }.get (regime )
         if key =="m15_quality":
             quality =str (row .get (key ,""))
             return {
-            "strict":QColor ("#10b981"),
-            "loose":QColor ("#f59e0b"),
-            "none":QColor ("#e11d48"),
-            "backtest_fallback":QColor ("#94a3b8"),
+            "strict":colors["success"],
+            "loose":colors["warning"],
+            "none":colors["danger"],
+            "backtest_fallback":colors["muted"],
             }.get (quality )
         if key =="expected_effective_rr":
             try:
                 val =float (row .get (key ))
             except (TypeError ,ValueError ):
-                return QColor ("#94a3b8")
+                return colors["muted"]
             if val >=2.0 :
-                return QColor ("#10b981")
+                return colors["success"]
             if val >=1.3 :
-                return QColor ("#f59e0b")
-            return QColor ("#e11d48")
+                return colors["warning"]
+            return colors["danger"]
         if key =="price_vs_zone":
             return {
-            "in_zone":QColor ("#10b981"),
-            "near_zone":QColor ("#f59e0b"),
-            "far":QColor ("#94a3b8"),
-            "unknown":QColor ("#94a3b8"),
+            "in_zone":colors["success"],
+            "near_zone":colors["warning"],
+            "far":colors["muted"],
+            "unknown":colors["muted"],
             }.get (str (row .get (key )))
         if key =="macro_bias":
             return {
-            "aligned":QColor ("#10b981"),
-            "neutral":QColor ("#f59e0b"),
-            "divergent":QColor ("#e11d48"),
+            "aligned":colors["success"],
+            "neutral":colors["warning"],
+            "divergent":colors["danger"],
             }.get (str (row .get (key )))
         if key =="macro_score":
             val =int (row .get ("macro_score",15 ))
             if val >=22 :
-                return QColor ("#10b981")
+                return colors["success"]
             if val >=15 :
-                return QColor ("#f59e0b")
-            return QColor ("#94a3b8")
+                return colors["warning"]
+            return colors["muted"]
         if key =="journal_expectancy_r":
             try:
                 val =float (row .get ("journal_expectancy_r"))
             except (TypeError ,ValueError ):
-                return QColor ("#94a3b8")
+                return colors["muted"]
             if val >0 :
-                return QColor ("#10b981")
+                return colors["success"]
             if val <0 :
-                return QColor ("#e11d48")
-            return QColor ("#94a3b8")
+                return colors["danger"]
+            return colors["muted"]
         if key =="journal_sample_size":
-            return QColor ("#9ca3af")
+            return colors["muted"]
         if key =="entry_status":
             if self ._has_no_entry_zone (row ):
-                return QColor ("#94a3b8")
+                return colors["muted"]
             raw =str (row .get (key ,"")).strip ().lower ()
             if raw in ("confirmed_entry","ready","ready_to_trade"):
-                return QColor ("#10b981")
+                return colors["success"]
             if raw in ("waiting_confirmation","waiting_for_confirmation","watch_zone","in_zone","near_zone"):
-                return QColor ("#f59e0b")
+                return colors["warning"]
             if raw in ("invalidated","no_setup","data_unavailable","","none"):
-                return QColor ("#94a3b8")
+                return colors["muted"]
             return None
         return None
 
@@ -715,6 +738,9 @@ class ScannerScreen (QWidget ):
         self .scan_symbols :list [str ]=[]
         self .selected_scan_symbols :list [str ]=[]
         self .table_model =ScannerTableModel ()
+        self.table_model.set_theme(
+            "light" if is_light_theme(self.settings_service) else "dark"
+        )
         # Resolve SHORT_REASON_COL dynamically from COLUMNS
         reason_keys =[k for k,_ in self .table_model .COLUMNS]
         self .SHORT_REASON_COL =reason_keys .index ("short_reason")if "short_reason"in reason_keys else -1
@@ -791,6 +817,10 @@ class ScannerScreen (QWidget ):
             self .scan_mode_combo .setCurrentIndex (1 )   # "Quét theo khoảng thời gian"
             m5_idx =self .scan_interval_combo .findData (300 )
             self .scan_interval_combo .setCurrentIndex (m5_idx if m5_idx >=0 else 0 )
+        self .scan_mode_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
+        self .scan_interval_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
+        for combo in (self .scan_mode_combo ,self .scan_interval_combo ):
+            combo .setSizePolicy (QSizePolicy .Policy .Fixed ,QSizePolicy .Policy .Fixed )
         self.auto_trade_check = QPushButton("🤖 Tự động vào lệnh MT5")
         self.auto_trade_check.setObjectName("AutoTradeToggle")
         self.auto_trade_check.setCheckable(True)
@@ -818,16 +848,32 @@ class ScannerScreen (QWidget ):
         self.show_orders_button.clicked.connect(self._show_orders_dialog)
         self._dim_show_orders_button()
 
+        self .scan_mode_label =QLabel ("Chế độ")
+        self .scan_interval_label =QLabel ("Khoảng thời gian")
+        compact_controls =(
+            self .scan_mode_label ,
+            self .scan_interval_label ,
+            self .auto_trade_check ,
+            self .scan_button ,
+            self .stop_auto_scan_button ,
+            self .show_orders_button ,
+        )
+        for control in compact_controls:
+            control .setSizePolicy (QSizePolicy .Policy .Fixed ,QSizePolicy .Policy .Fixed )
+
         scan_options =QHBoxLayout ()
-        scan_options .addWidget (QLabel ("Chế độ"))
+        scan_options .setContentsMargins (0 ,0 ,0 ,0 )
+        scan_options .setSpacing (8 )
+        scan_options .addWidget (self .scan_mode_label )
         scan_options .addWidget (self .scan_mode_combo )
-        scan_options .addWidget (QLabel ("Khoảng thời gian"))
+        scan_options .addWidget (self .scan_interval_label )
         scan_options .addWidget (self .scan_interval_combo )
         scan_options .addWidget (self .auto_trade_check )
-        scan_options .addWidget (self .stop_auto_scan_button )
         scan_options .addWidget (self .scan_button )
+        scan_options .addWidget (self .stop_auto_scan_button )
         scan_options .addWidget (self .show_orders_button )
         scan_options .addStretch (1 )
+        self .scan_options_layout =scan_options
         frame .layout ().addLayout (scan_options )
 
         # ---- Status backing labels (not added to UI, used for summary) ----
@@ -918,10 +964,7 @@ class ScannerScreen (QWidget ):
                 "Kết quả quét không có mã nào.")
             return
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
+        light = is_light_theme(self.settings_service)
 
         auto_results = scan_result.get("auto_trade_results", {})
         if not isinstance(auto_results, dict):
@@ -976,15 +1019,12 @@ class ScannerScreen (QWidget ):
         dlg.setMinimumSize(940, 560)
         dlg.resize(980, 620)
         dlg.setObjectName("AnalysisDetailDialog")
-
-        active_btn_style = ""
-        disabled_btn_style = ""
+        dlg.setProperty("scannerOrderDialog", True)
 
         # Action button helper for manual trade execution
         def execute_manual_order(order_info: dict, btn: QPushButton) -> None:
             btn.setEnabled(False)
             btn.setText("Đang đặt...")
-            btn.setStyleSheet(disabled_btn_style)
             from PyQt6.QtWidgets import QApplication
             QApplication.processEvents()
 
@@ -1019,7 +1059,6 @@ class ScannerScreen (QWidget ):
                 )
                 btn.setText("Đã vào lệnh")
                 btn.setEnabled(False)
-                btn.setStyleSheet(disabled_btn_style)
             else:
                 validation = execution.get("revalidation")
                 block_codes = (
@@ -1059,7 +1098,6 @@ class ScannerScreen (QWidget ):
                 )
                 btn.setEnabled(True)
                 btn.setText("⚡ Thử lại")
-                btn.setStyleSheet(active_btn_style)
             return
 
         def create_order_button(row_order: dict) -> QWidget:
@@ -1069,6 +1107,7 @@ class ScannerScreen (QWidget ):
             btn_layout.setSpacing(0)
             
             btn = action_button("⚡ Vào lệnh", primary=True)
+            btn.setProperty("manualOrder", True)
             
             broker_symbol = row_order.get("broker_symbol")
             has_existing = False
@@ -1082,9 +1121,6 @@ class ScannerScreen (QWidget ):
             if has_existing:
                 btn.setText("Đã có lệnh")
                 btn.setEnabled(False)
-                btn.setStyleSheet(disabled_btn_style)
-            else:
-                btn.setStyleSheet(active_btn_style)
                 
             btn.clicked.connect(lambda: execute_manual_order(row_order, btn))
             btn_layout.addWidget(btn)
@@ -1097,30 +1133,17 @@ class ScannerScreen (QWidget ):
         # Beautiful Header Card
         header_frame = QFrame()
         header_frame.setObjectName("PanelCard")
-        header_accent = (
-            "#10b981" if auto_trade_enabled and opened > 0 else "#fb923c"
-        )
-        header_frame.setStyleSheet(
-            f"QFrame#PanelCard {{"
-            f"  border-left: 4px solid {header_accent};"
-            f"  background: {'#fbfbfb' if light else '#171c24'};"
-            f"}}"
-        )
-        header_frame.setStyleSheet(
-            f"QFrame#PanelCard {{"
-            f"  border-left: 4px solid {header_accent};"
-            f"  background: {'#fbfbfb' if light else '#171c24'};"
-            f"}}"
+        set_dynamic_property(
+            header_frame,
+            "headerTone",
+            "success" if auto_trade_enabled and opened > 0 else "warning",
         )
         header_layout = QVBoxLayout(header_frame)
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_layout.setSpacing(4)
 
         title_label = QLabel(f"📋 {title_text}")
-        title_label.setObjectName("ActionTitle")
-        title_label.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {'#111827' if light else '#f8fafc'};"
-        )
+        title_label.setObjectName("OrderDialogTitle")
         
         subtitle_text = (
             (
@@ -1136,11 +1159,8 @@ class ScannerScreen (QWidget ):
             )
         )
         subtitle = QLabel(subtitle_text)
-        subtitle.setObjectName("CardDetail")
+        subtitle.setObjectName("OrderDialogSubtitle")
         subtitle.setWordWrap(True)
-        subtitle.setStyleSheet(
-            f"font-size: 12px; color: {'#4b5563' if light else '#9ca3af'};"
-        )
         header_layout.addWidget(title_label)
         header_layout.addWidget(subtitle)
         root.addWidget(header_frame)
@@ -1189,9 +1209,10 @@ class ScannerScreen (QWidget ):
 
         table.setRowCount(len(order_rows))
 
-        buy_color = QColor("#059669" if light else "#10b981")
-        sell_color = QColor("#b91c1c" if light else "#f87171")
-        neutral_fg = QColor("#4b5563" if light else "#9ca3af")
+        palette = current_palette(self.settings_service)
+        buy_color = QColor(palette.buy)
+        sell_color = QColor(palette.sell)
+        neutral_fg = QColor(palette.text_muted)
 
         def create_direction_pill(direction: str, light_theme: bool) -> QWidget:
             container = QWidget()
@@ -1199,29 +1220,17 @@ class ScannerScreen (QWidget ):
             layout.setContentsMargins(0, 4, 0, 4)
             layout.setSpacing(0)
             label = QLabel()
+            label.setObjectName("OrderDirectionPill")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             if direction == "buy":
                 label.setText(" MUA ")
-                bg = "#d1fae5" if light_theme else "#064e3b"
-                fg = "#065f46" if light_theme else "#34d399"
+                set_dynamic_property(label, "direction", "buy")
             elif direction == "sell":
                 label.setText(" BÁN ")
-                bg = "#ffe4e6" if light_theme else "#4c0519"
-                fg = "#9f1239" if light_theme else "#f87171"
+                set_dynamic_property(label, "direction", "sell")
             else:
                 label.setText(" -- ")
-                bg = "#e5e7eb" if light_theme else "#1f2937"
-                fg = "#374151" if light_theme else "#9ca3af"
-            label.setStyleSheet(
-                f"QLabel {{"
-                f"  background-color: {bg};"
-                f"  color: {fg};"
-                f"  font-size: 11px;"
-                f"  font-weight: bold;"
-                f"  border-radius: 4px;"
-                f"  padding: 3px 12px;"
-                f"}}"
-            )
+                set_dynamic_property(label, "direction", "neutral")
             layout.addWidget(label)
             return container
 
@@ -1323,10 +1332,6 @@ class ScannerScreen (QWidget ):
         btn_layout.addWidget(close_btn)
         root.addLayout(btn_layout)
 
-        if light:
-            dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
-        else:
-            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
         dlg.exec()
 
     def _build_order_rows(
@@ -1855,19 +1860,12 @@ class ScannerScreen (QWidget ):
                 "Chưa có dữ liệu bản tin.\nCần quét thị trường và bật AI để tạo bản tin.")
             return
 
-        try:
-            light = self.settings_service.load().display.theme == "light"
-        except Exception:
-            light = False
+        light = is_light_theme(self.settings_service)
 
         dlg = QDialog(self)
+        dlg.setObjectName("MarketBriefDialog")
         dlg.setWindowTitle("Bản tin thị trường")
         dlg.setMinimumSize(850, 650)
-        
-        if light:
-            dlg.setStyleSheet("QDialog { background: #F4F1EA; }")
-        else:
-            dlg.setStyleSheet("QDialog { background: #1a1f2e; }")
             
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(24, 20, 24, 20)
@@ -1878,49 +1876,32 @@ class ScannerScreen (QWidget ):
         header_layout.setSpacing(2)
         
         title = QLabel("📊 BẢN TIN THỊ TRƯỜNG")
-        title.setObjectName("PanelTitle")
-        if light:
-            title.setStyleSheet("font-size: 16px; color: #D94625; font-weight: bold;")
-        else:
-            title.setStyleSheet("font-size: 16px; color: #ea580c; font-weight: bold;")
+        title.setObjectName("MarketBriefTitle")
         header_layout.addWidget(title)
 
         timestamp = str(self.scan_result.get("timestamp", "") if self.scan_result else "")
         ts_text = f"Thời gian quét: {timestamp.replace('T', ' ')[:19]}" if timestamp else "Bản tin tổng hợp từ AI"
         ts_label = QLabel(ts_text)
-        ts_label.setObjectName("HelperText")
-        if light:
-            ts_label.setStyleSheet("color: #736B60; font-size: 11px;")
-        else:
-            ts_label.setStyleSheet("color: #64748b; font-size: 11px;")
+        ts_label.setObjectName("MarketBriefTimestamp")
         header_layout.addWidget(ts_label)
         layout.addLayout(header_layout)
 
         # Content Container (Outer Frame)
         container_frame = QFrame()
-        container_frame.setObjectName("ContainerFrame")
-        if light:
-            container_frame.setStyleSheet(
-                "QFrame#ContainerFrame { background: #EDEBE4; border: 1px solid #D6D2C8; border-radius: 8px; }"
-            )
-        else:
-            container_frame.setStyleSheet(
-                "QFrame#ContainerFrame { background: #171c24; border: 1px solid #2b3545; border-radius: 8px; }"
-            )
+        container_frame.setObjectName("MarketBriefContainer")
             
         container_layout = QVBoxLayout(container_frame)
         container_layout.setContentsMargins(4, 4, 4, 4)
         
         # Scroll Area
         scroll = QScrollArea()
+        scroll.setObjectName("MarketBriefScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        scroll.viewport().setStyleSheet("background: transparent;")
+        scroll.viewport().setObjectName("MarketBriefViewport")
         
         scroll_content = QWidget()
-        scroll_content.setObjectName("ScrollContent")
-        scroll_content.setStyleSheet("background: transparent;")
+        scroll_content.setObjectName("MarketBriefScrollContent")
         scroll_content_layout = QVBoxLayout(scroll_content)
         scroll_content_layout.setContentsMargins(12, 12, 12, 12)
         scroll_content_layout.setSpacing(12)
@@ -1930,15 +1911,7 @@ class ScannerScreen (QWidget ):
         
         for sec in sections:
             card = QFrame()
-            card.setObjectName("SectionCard")
-            if light:
-                card.setStyleSheet(
-                    "QFrame#SectionCard { background: #ffffff; border: 1px solid #D6D2C8; border-radius: 8px; }"
-                )
-            else:
-                card.setStyleSheet(
-                    "QFrame#SectionCard { background: #1e2533; border: 1px solid #2b3545; border-radius: 8px; }"
-                )
+            card.setObjectName("MarketBriefSectionCard")
                 
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(16, 14, 16, 14)
@@ -1946,27 +1919,18 @@ class ScannerScreen (QWidget ):
             
             # Section Header (Icon + Title)
             sec_title = QLabel(f"{sec['icon']}  {sec['title'].upper()}")
-            sec_title.setObjectName("SectionTitle")
-            if light:
-                sec_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #D94625;")
-            else:
-                sec_title.setStyleSheet("font-size: 13px; font-weight: bold; color: #ea580c;")
+            sec_title.setObjectName("MarketBriefSectionTitle")
             card_layout.addWidget(sec_title)
             
             # Section Body Content
             sec_content = QLabel()
-            sec_content.setObjectName("SectionContent")
+            sec_content.setObjectName("MarketBriefSectionContent")
             sec_content.setWordWrap(True)
             sec_content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             
             formatted_html = _format_section_content_to_html(sec['content'], light=light)
             sec_content.setText(formatted_html)
             
-            if light:
-                sec_content.setStyleSheet("font-size: 13px; color: #111827; line-height: 1.5;")
-            else:
-                sec_content.setStyleSheet("font-size: 13px; color: #cbd5e1; line-height: 1.5;")
-                
             card_layout.addWidget(sec_content)
             scroll_content_layout.addWidget(card)
             
@@ -2274,12 +2238,16 @@ class ScannerRowExplanationDialog(QDialog):
     def _help_cell_label(self, text: str, *, bold: bool = False, color: str = "#e5e7eb") -> QLabel:
         label = QLabel(text)
         label.setObjectName("ScannerHelpCell")
+        set_dynamic_property(
+            label,
+            "metricTone",
+            semantic_role_for_color(color),
+        )
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         label.setContentsMargins(4, 2, 4, 2)
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        label.setStyleSheet(f"color: {color}; background: transparent;")
         if bold:
             font = label.font()
             font.setBold(True)
@@ -2410,11 +2378,7 @@ class ScannerRowExplanationDialog(QDialog):
             for title, key, value, explanation in technical_fields
         )
 
-        # Check if light theme
-        try:
-            light = SettingsService().load().display.theme == "light"
-        except Exception:
-            light = False
+        light = is_light_theme()
 
         self.table.setRowCount(len(self.row_items))
         for row, item in enumerate(self.row_items):
@@ -2989,6 +2953,13 @@ class ScannerRowExplanationDialog(QDialog):
             row_height = max(heights)
             self.table.setRowHeight(row, row_height)
 
+    def refresh_theme_styles(self) -> None:
+        self.table_model.set_theme(
+            "light" if is_light_theme(self.settings_service) else "dark"
+        )
+        self.table_model.layoutChanged.emit()
+        self._sync_table_layout()
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._sync_table_layout()
@@ -3439,4 +3410,7 @@ def _format_section_content_to_html(text: str, light: bool = False) -> str:
     if list_type:
         html_lines.append(f"</{list_type}>")
         
-    return "\n".join(html_lines)
+    return compile_rich_html(
+        "\n".join(html_lines),
+        theme="light" if light else "dark",
+    )

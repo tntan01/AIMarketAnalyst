@@ -14,13 +14,26 @@ from __future__ import annotations
 
 import pytest
 
+import ui.screens.scanner_screen as scanner_screen_module
 from ui.screens.scanner_screen import ScannerTableModel
+from ui.theme import DARK_PALETTE
 from ui.scanner_rr_formatters import (
     format_order_rr_text,
     format_order_rr_tooltip,
     format_order_entry_tooltip,
     enrich_order_note_with_current_rr,
 )
+
+
+def test_scanner_screen_imports_order_dialog_formatters():
+    """The order dialog must resolve its production formatter dependencies."""
+    assert scanner_screen_module.format_order_entry_tooltip is format_order_entry_tooltip
+    assert scanner_screen_module.format_order_rr_text is format_order_rr_text
+    assert scanner_screen_module.format_order_rr_tooltip is format_order_rr_tooltip
+    assert (
+        scanner_screen_module.enrich_order_note_with_current_rr
+        is enrich_order_note_with_current_rr
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -69,17 +82,17 @@ class TestScannerTableRRDisplay:
         # Strong: best=2.5 → green
         green = model._foreground({"expected_effective_rr": 2.5}, "expected_effective_rr")
         assert green is not None
-        assert green.name() == "#10b981"
+        assert green.name() == DARK_PALETTE.success
 
         # Weak-but-ok: best=1.5 → orange
         orange = model._foreground({"expected_effective_rr": 1.5}, "expected_effective_rr")
         assert orange is not None
-        assert orange.name() == "#f59e0b"
+        assert orange.name() == DARK_PALETTE.warning
 
         # Too low: best=1.0 → red
         red = model._foreground({"expected_effective_rr": 1.0}, "expected_effective_rr")
         assert red is not None
-        assert red.name() == "#e11d48"
+        assert red.name() == DARK_PALETTE.danger
 
         # Base low but best high → should still be green (uses best-case)
         green2 = model._foreground(

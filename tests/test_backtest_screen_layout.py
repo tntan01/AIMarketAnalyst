@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.layout_system import LayoutTokens
+from ui.theme_manager import ThemeManager
 import ui.screens.backtest_screen as backtest_screen_module
 from ui.screens.backtest_screen import BacktestScreen, SymbolSelectionDialog
 from ui.screens.settings_screen import SettingsScreen
@@ -34,11 +35,14 @@ DISPLAY_VIEWPORTS = (
     (2560, 1400),  # 27"
     (3200, 1800),  # 32"
 )
+STANDARD_CONTROL_HEIGHT = 24
+COMPACT_CONTROL_HEIGHT = 20
 
 
 def _screen(width: int = 1110, height: int = 700) -> BacktestScreen:
     app_instance = QApplication.instance() or QApplication([])
     screen = BacktestScreen(app=MagicMock())
+    ThemeManager().apply(screen, theme="dark")
     screen.resize(width, height)
     screen.show()
     app_instance.processEvents()
@@ -114,6 +118,22 @@ def test_backtest_main_form_uses_aligned_grid_without_overlap() -> None:
             margins.bottom(),
         ) == (LayoutTokens.PAGE_MARGIN,) * 4
 
+        configuration_controls = (
+            screen.symbol_summary,
+            screen.symbol_button,
+            screen.balance_input,
+            screen.start_date,
+            screen.end_date,
+            screen.risk_input,
+            screen.purpose_combo,
+            screen.mode_summary_label,
+        )
+        center_lines = [
+            widget.mapTo(screen.settings_frame, widget.rect().center()).y()
+            for widget in configuration_controls
+        ]
+        assert max(center_lines) - min(center_lines) <= 1
+
         _assert_no_overlap(
             (
                 screen.symbol_summary,
@@ -185,18 +205,18 @@ def test_backtest_same_control_types_share_metrics() -> None:
             screen._sweep_tab.findChildren(QPushButton, "HelpButton")
         )
 
-        assert {widget.height() for widget in fields} == {22}
-        assert {widget.height() for widget in buttons} == {22}
+        assert {widget.height() for widget in fields} == {STANDARD_CONTROL_HEIGHT}
+        assert {widget.height() for widget in buttons} == {STANDARD_CONTROL_HEIGHT}
         assert {widget.iconSize().width() for widget in buttons} == {
             LayoutTokens.ICON_SIZE
         }
-        assert {widget.height() for widget in checkboxes} == {22}
+        assert {widget.height() for widget in checkboxes} == {STANDARD_CONTROL_HEIGHT}
         assert help_buttons
         assert {button.size().width() for button in help_buttons} == {
-            LayoutTokens.HELP_SIZE
+            COMPACT_CONTROL_HEIGHT
         }
         assert {button.size().height() for button in help_buttons} == {
-            LayoutTokens.HELP_SIZE
+            COMPACT_CONTROL_HEIGHT
         }
         assert screen.progress.height() == LayoutTokens.PROGRESS_HEIGHT
         assert screen.sweep_progress.height() == LayoutTokens.PROGRESS_HEIGHT
@@ -271,6 +291,7 @@ def test_backtest_table_chart_and_advanced_cards_use_shared_grid() -> None:
 def test_backtest_symbol_dialog_uses_dialog_grid_tokens() -> None:
     app_instance = QApplication.instance() or QApplication([])
     dialog = SymbolSelectionDialog(["EUR/USD"])
+    ThemeManager().apply(dialog, theme="dark")
     dialog.show()
     app_instance.processEvents()
     try:
@@ -285,7 +306,7 @@ def test_backtest_symbol_dialog_uses_dialog_grid_tokens() -> None:
         assert dialog.isSizeGripEnabled()
         assert dialog.minimumWidth() == LayoutTokens.DIALOG_SM_WIDTH
         assert {box.height() for box in dialog._symbol_checks} == {
-            LayoutTokens.CONTROL_HEIGHT
+            STANDARD_CONTROL_HEIGHT
         }
         action_buttons = tuple(
             button
@@ -293,7 +314,7 @@ def test_backtest_symbol_dialog_uses_dialog_grid_tokens() -> None:
             if button.objectName() in {"PrimaryButton", "SecondaryButton"}
         )
         assert {button.height() for button in action_buttons} == {
-            LayoutTokens.CONTROL_HEIGHT
+            STANDARD_CONTROL_HEIGHT
         }
     finally:
         dialog.close()
@@ -315,6 +336,9 @@ def test_backtest_analysis_dialog_uses_shared_dialog_metrics(
         screen._on_ai_analysis_done("Kết quả phân tích")
         assert len(captured) == 1
         dialog = captured[0]
+        ThemeManager().apply(dialog, theme="dark")
+        dialog.show()
+        QApplication.processEvents()
         margins = dialog.layout().contentsMargins()
         assert dialog.objectName() == "BacktestAnalysisDialog"
         assert dialog.minimumWidth() == LayoutTokens.DIALOG_MD_WIDTH
@@ -328,7 +352,7 @@ def test_backtest_analysis_dialog_uses_shared_dialog_metrics(
         ) == (LayoutTokens.DIALOG_MARGIN,) * 4
         close_button = dialog.findChild(QPushButton, "SecondaryButton")
         assert close_button is not None
-        assert close_button.height() == LayoutTokens.CONTROL_HEIGHT
+        assert close_button.height() == STANDARD_CONTROL_HEIGHT
     finally:
         screen.close()
 
@@ -381,6 +405,9 @@ def test_backtest_config_dialog_uses_shared_dialog_metrics(
         screen._apply_scanner_config()
         assert len(captured) == 1
         dialog = captured[0]
+        ThemeManager().apply(dialog, theme="light")
+        dialog.show()
+        QApplication.processEvents()
         margins = dialog.layout().contentsMargins()
         assert dialog.objectName() == "BacktestConfigDialog"
         assert dialog.minimumWidth() == LayoutTokens.DIALOG_LG_WIDTH
@@ -398,7 +425,7 @@ def test_backtest_config_dialog_uses_shared_dialog_metrics(
             if button.objectName() in {"PrimaryButton", "SecondaryButton"}
         )
         assert {button.height() for button in action_buttons} == {
-            LayoutTokens.CONTROL_HEIGHT
+            STANDARD_CONTROL_HEIGHT
         }
     finally:
         screen.close()
@@ -411,13 +438,15 @@ def test_settings_backtest_cost_fields_share_layout_tokens() -> None:
         "Trượt giá Backtest",
         field,
     )
+    ThemeManager().apply(row, theme="dark")
+    QApplication.processEvents()
     try:
         label = row.findChild(QLabel, "FormLabel")
         assert label is not None
         assert label.width() == LayoutTokens.SETTINGS_LABEL_WIDTH
-        assert label.height() == LayoutTokens.CONTROL_HEIGHT
+        assert label.height() == STANDARD_CONTROL_HEIGHT
         assert field.width() == LayoutTokens.SETTINGS_FIELD_WIDTH
-        assert field.height() == LayoutTokens.CONTROL_HEIGHT
+        assert field.height() == STANDARD_CONTROL_HEIGHT
         assert row.layout().spacing() == LayoutTokens.SPACE_2
     finally:
         row.close()

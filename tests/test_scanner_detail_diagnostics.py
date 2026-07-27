@@ -668,11 +668,30 @@ class _FakeLabel:
         self.text = ""
         self.tooltip = ""
         self.visible = False
+        self.properties = {}
 
     def setText(self, text: str) -> None:
         self.text = text
 
     def setStyleSheet(self, _style: str) -> None:
+        pass
+
+    def property(self, name: str):
+        return self.properties.get(name)
+
+    def setProperty(self, name: str, value) -> None:
+        self.properties[name] = value
+
+    def style(self):
+        return self
+
+    def unpolish(self, _widget) -> None:
+        pass
+
+    def polish(self, _widget) -> None:
+        pass
+
+    def update(self) -> None:
         pass
 
     def setToolTip(self, tooltip: str) -> None:

@@ -1,0 +1,1001 @@
+/*
+  Shared visual foundation for both themes.
+
+  Phase 2 keeps semantic colors in styles.qss/styles_light.qss, while all
+  theme-independent typography, sizing and spacing lives here.  Theme files
+  are loaded after this file and therefore only provide color/state variants.
+*/
+
+QWidget#AppShell,
+QWidget#DashboardScreen,
+QWidget#FormScreen,
+QStackedWidget#ContentStack {
+  font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QLabel {
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QLabel#FormLabel {
+  min-height: 24px;
+  max-height: 24px;
+}
+
+QPushButton {
+  border-radius: 6px;
+  min-height: 16px;
+  max-height: 16px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QPushButton#NavButton {
+  text-align: left;
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+QPushButton#SidebarToggleButton,
+QPushButton#FloatingSidebarToggle {
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 900;
+  min-width: 18px;
+  max-width: 18px;
+  min-height: 18px;
+  max-height: 18px;
+  padding: 0;
+}
+
+QFrame#ActionCard,
+QFrame#MiniStat,
+QFrame#PanelCard,
+QFrame#ChartPanel,
+QFrame#AnalysisChartFrame,
+QFrame#EntryConditionsCard,
+QFrame#AnalysisRiskCard,
+QFrame#SupportCardCheck,
+QFrame#SupportCardResult,
+QFrame#ScannerDetailStat,
+QFrame#ScannerDecisionPanel,
+QFrame#ConditionInfoCardEntry,
+QFrame#ConditionInfoCardWait,
+QFrame#ConditionInfoCardSkip,
+QFrame#MacroContextCard,
+QFrame#ChecklistCard,
+QFrame#PriceCard,
+QFrame#ScannerGroupCard,
+QFrame#M15Card,
+QFrame#JournalSampleCard,
+QFrame#JournalExpectancyCard {
+  border-radius: 8px;
+}
+
+QFrame#StatusCard {
+  background: transparent;
+  border-radius: 6px;
+}
+
+QFrame#StatusDot {
+  border: none;
+  border-radius: 4px;
+}
+
+QFrame#StatusCard QLabel#CardValue {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+QLabel#ScannerDecisionAction {
+  border-radius: 6px;
+  font-size: 18px;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 4px 10px;
+}
+
+QFrame#InlineStat {
+  border-radius: 8px;
+  min-height: 34px;
+  max-height: 54px;
+}
+
+QLabel#ConditionInfoTitle {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+QTextEdit {
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QLineEdit,
+QDoubleSpinBox,
+QSpinBox,
+QDateEdit,
+QDateTimeEdit,
+QTimeEdit {
+  border-radius: 6px;
+  min-height: 16px;
+  max-height: 16px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+QComboBox {
+  border-radius: 6px;
+  min-height: 16px;
+  max-height: 16px;
+  font-size: 11px;
+  padding: 3px 28px 3px 8px;
+}
+
+QComboBox::drop-down,
+QDateEdit::drop-down,
+QDateTimeEdit::drop-down,
+QTimeEdit::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 22px;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+QComboBox::down-arrow,
+QDateEdit::down-arrow,
+QDateTimeEdit::down-arrow,
+QTimeEdit::down-arrow {
+  image: url(assets/icons/chevron-down.svg);
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+}
+
+QComboBox::down-arrow:on,
+QDateEdit::down-arrow:on,
+QDateTimeEdit::down-arrow:on,
+QTimeEdit::down-arrow:on {
+  top: 1px;
+}
+
+QDoubleSpinBox::up-button,
+QDoubleSpinBox::down-button,
+QSpinBox::up-button,
+QSpinBox::down-button {
+  background: transparent;
+  border: none;
+}
+
+QDateEdit#FilterField::up-button,
+QDateEdit#FilterField::down-button {
+  width: 0;
+  height: 0;
+  border: none;
+  background: transparent;
+}
+
+QComboBox#FilterField,
+QDateEdit#FilterField,
+QDateTimeEdit#FilterField,
+QTimeEdit#FilterField {
+  padding: 3px 28px 3px 8px;
+}
+
+QDoubleSpinBox#FilterField,
+QSpinBox#FilterField,
+QLineEdit#FilterField {
+  padding-right: 8px;
+}
+
+QComboBox QAbstractItemView {
+  padding: 4px;
+}
+
+QCheckBox {
+  spacing: 8px;
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  min-height: 24px;
+  max-height: 24px;
+}
+
+QCheckBox::indicator {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+QCheckBox#ScannerSymbolCheck {
+  font-size: 12px;
+  spacing: 5px;
+}
+
+QCheckBox#ScannerSymbolCheck::indicator {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+QRadioButton {
+  font-size: 13px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  min-height: 24px;
+  max-height: 24px;
+}
+
+QDialog#ScannerHelpDialog QRadioButton {
+  padding: 2px 10px;
+  spacing: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  min-height: 18px;
+  max-height: 18px;
+}
+
+QDialog#ScannerHelpDialog QRadioButton:checked {
+  font-weight: bold;
+}
+
+QDialog#ScannerHelpDialog QRadioButton::indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+}
+
+QPushButton#PrimaryButton,
+QPushButton#SecondaryButton {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 3px 10px;
+}
+
+QPushButton#SecondaryButton[quickFilter="true"] {
+  font-size: 10px;
+  padding: 3px 5px;
+}
+
+QPushButton#AutoTradeToggle {
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 3px 10px;
+}
+
+QPushButton#PrimaryButton[compactPrimary="true"] {
+  min-width: 0;
+  padding: 3px 10px;
+}
+
+QPushButton#PrimaryButton[compactSize="add"] {
+  min-width: 52px;
+  max-width: 52px;
+}
+
+QPushButton#PrimaryButton[compactSize="save"] {
+  min-width: 42px;
+  max-width: 42px;
+}
+
+QPushButton#InlineHelpButton {
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+}
+
+QPushButton#MarketHelpBtn {
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 12px;
+}
+
+QDialog#ScannerHelpDialog QHeaderView::section {
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  text-transform: uppercase;
+}
+
+QMessageBox QLabel {
+  font-size: 13px;
+}
+
+QMessageBox QPushButton {
+  border-radius: 6px;
+}
+
+QTabWidget::pane {
+  border-radius: 8px;
+  margin-top: 8px;
+  padding: 12px;
+}
+
+QTabBar {
+  background: transparent;
+  background-color: transparent;
+  border: none;
+}
+
+QTabBar::base {
+  border: none;
+  background: transparent;
+  background-color: transparent;
+}
+
+QTabBar::tab {
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 80px;
+  min-height: 16px;
+  max-height: 16px;
+  padding: 3px 10px;
+  margin-right: 6px;
+}
+
+QTableWidget#DataTable::item,
+QTableView#DataTable::item,
+QTableWidget#EconTable::item,
+QTableView#EconTable::item {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: none;
+}
+
+QHeaderView::section {
+  border: 0;
+  font-weight: 700;
+  padding: 7px;
+}
+
+QLabel#HelperText {
+  font-size: 12px;
+}
+
+/* Shared object-name contracts used by screens/components. */
+QFrame#InfoCard {
+  border-radius: 4px;
+}
+
+QLabel#InfoCardLabel {
+  font-size: 13px;
+}
+
+QLabel#InfoCardValue {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+QLabel#InfoCardDetail {
+  font-size: 12px;
+}
+
+QTextEdit#BacktestResultText {
+  border: none;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  font-size: 12px;
+}
+
+QLabel#BacktestVerdict {
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+QFrame#MiniStatCompact {
+  background: transparent;
+  border: none;
+}
+
+QLabel#MiniStatTitleCompact {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QLabel#MiniStatValueCompact {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+QLabel#MarketBadge {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+QPushButton#NewsLinkButton {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  margin: 0;
+  padding: 2px 0;
+  text-decoration: underline;
+}
+
+QPushButton#NewsIconButton {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  margin: 0;
+  padding: 2px 0;
+}
+
+QPushButton#DialogAiButton {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 16px;
+}
+
+QPushButton#RestartButton {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  margin: 0;
+  padding: 4px 8px;
+}
+
+QPushButton#RestartButton:hover,
+QPushButton#RestartButton:pressed {
+  background: transparent;
+  text-decoration: underline;
+}
+
+QWidget#AnalysisChartSurface,
+QWidget#AnalysisChartWebView {
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+QFrame#TransparentFrame {
+  background: transparent;
+  border: none;
+}
+
+QLabel#CardDetailLabel {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+}
+
+QLabel#MiniStatValue[compactStatus="true"] {
+  padding-bottom: 1px;
+  padding-top: 1px;
+}
+
+QLabel#MiniStatValue[metricTone="positive"],
+QLabel#MiniStatValue[metricTone="negative"],
+QLabel#MiniStatValue[metricTone="warning"],
+QLabel#MiniStatValue[metricTone="neutral"] {
+  font-weight: 700;
+}
+
+QLabel#MiniStatValue[metricRole="profit"] {
+  font-size: 16px;
+  padding-bottom: 2px;
+  padding-top: 2px;
+}
+
+QLabel#CardDetail[statusTone="success"],
+QLabel#CardDetail[statusTone="warning"],
+QLabel#CardDetail[statusTone="danger"],
+QLabel#CardDetail[statusTone="neutral"] {
+  font-weight: 700;
+}
+
+QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText {
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13px;
+}
+
+QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText QScrollBar:vertical {
+  background: transparent;
+  width: 8px;
+}
+
+QTableWidget#LuuTrungHoaTable {
+  background: transparent;
+  border-radius: 8px;
+  outline: none;
+}
+
+QTableWidget#LuuTrungHoaTable::item {
+  padding: 12px 16px;
+}
+
+QLabel#BacktestConfigRowTitle {
+  font-size: 13px;
+  font-weight: bold;
+  padding-left: 8px;
+}
+
+QLabel#BacktestConfigRowValue {
+  background: transparent;
+  padding-right: 8px;
+}
+
+QLabel#BacktestSummarySeparator {
+  font-weight: bold;
+}
+
+QDialog#MarketBriefDialog {
+  font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+QLabel#MarketBriefTitle {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+QLabel#MarketBriefTimestamp {
+  font-size: 11px;
+}
+
+QFrame#MarketBriefContainer,
+QFrame#MarketBriefSectionCard {
+  border-radius: 8px;
+}
+
+QScrollArea#MarketBriefScroll,
+QWidget#MarketBriefViewport,
+QWidget#MarketBriefScrollContent {
+  background: transparent;
+  border: none;
+}
+
+QLabel#MarketBriefSectionTitle {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+QLabel#MarketBriefSectionContent {
+  font-size: 13px;
+}
+
+QLabel#KPICardTitle,
+QLabel#KPICardBadge {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QLabel#KPICardValue {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+QLabel#KPICardSub {
+  font-size: 11px;
+}
+
+QFrame#PerformanceKPICard {
+  border-radius: 8px;
+}
+
+QLabel#KPICardValue[kpiState="positive"],
+QLabel#KPICardValue[kpiState="negative"],
+QLabel#KPICardValue[kpiState="warning"],
+QLabel#KPICardValue[kpiState="neutral"],
+QLabel#KPICardValue[kpiState="muted"] {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+QLabel#KPICardSub[kpiState="positive"],
+QLabel#KPICardSub[kpiState="negative"],
+QLabel#KPICardSub[kpiState="warning"],
+QLabel#KPICardSub[kpiState="neutral"],
+QLabel#KPICardSub[kpiState="muted"] {
+  font-size: 11px;
+}
+
+QLabel#MissingRIcon {
+  font-size: 18px;
+}
+
+QLabel#MissingRText {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+QFrame#MissingRBanner {
+  border-radius: 8px;
+}
+
+QLabel#JournalSectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding-bottom: 2px;
+}
+
+QLabel#JournalSectionLabel[spaced="true"] {
+  margin-top: 8px;
+}
+
+QLabel#JournalTableTitle {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+QWidget#MainDetailScrollWidget {
+  background: transparent;
+}
+
+QTextEdit#ReadonlyText[compactReadOnly="true"] {
+  background: transparent;
+  border: none;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+QPushButton#ScannerDetailFullButton {
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 12px;
+}
+
+QLabel#ScannerDetailHero {
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 4px 12px;
+}
+
+QLabel#ScannerAuditStatus,
+QLabel#ScannerCompactIcon {
+  font-size: 11px;
+}
+
+QLabel#ScannerSummaryRR,
+QLabel#ScannerSummaryRollout,
+QLabel#ScannerWarningText {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QLabel#ScannerSummaryText {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QLabel#ScannerInfoLabel {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QLabel#ScannerInfoValue {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+QLabel#ScannerHelpCell {
+  background: transparent;
+  border: none;
+}
+
+QProgressBar#ScannerTierProgress {
+  border: none;
+  border-radius: 3px;
+  min-height: 6px;
+  max-height: 6px;
+}
+
+QProgressBar#ScannerTierProgress::chunk {
+  border-radius: 3px;
+}
+
+QLabel#ScannerDialogSectionTitle {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+QLabel#ScannerMacroScore {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+QLabel#ScannerTierLabel {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+QLabel#ScannerTierScore {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QLabel#ScannerMacroIndicators {
+  border-top-width: 1px;
+  font-size: 11px;
+  margin-top: 4px;
+  padding-top: 6px;
+}
+
+QLabel#ScannerReasonText {
+  font-size: 11px;
+}
+
+QFrame#ScannerWarningBanner {
+  border-radius: 6px;
+}
+
+QLabel#ScannerChecklistText {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+QScrollArea#ScannerDetailDialogScroll,
+QWidget#ScannerDetailDialogContent,
+QWidget#TransparentWidget {
+  background: transparent;
+  border: none;
+}
+
+QLabel#ScannerWarningIcon {
+  background: transparent;
+  border: none;
+  font-size: 12px;
+}
+
+QLabel#ScannerChecklistIcon {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+}
+
+QFrame#TradePanelCard,
+QFrame#ScorePanelCard,
+QFrame#ChecklistPanelCard {
+  border-radius: 6px;
+}
+
+QLabel#ScannerPanelTitle {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+QLabel#ScannerPanelLabel {
+  font-size: 12px;
+}
+
+QLabel#ScannerPanelValue {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+QLabel#ScannerChecklistSummary {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 0;
+}
+
+QLabel#ScannerChecklistName {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+QTextEdit#ScannerDetailText {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  padding: 2px;
+}
+
+QFrame#HeroSummaryCard {
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+QLabel#JournalHeroText {
+  font-family: "Segoe UI", "Arial", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+QLabel#CardTitle[journalDetailTitle="true"] {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+QLabel#CardTitle[journalDetailTitle="true"][prominent="true"] {
+  font-size: 13px;
+}
+
+QTextEdit#JournalNoteInput {
+  border-radius: 6px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  font-size: 11.5px;
+  padding: 4px;
+}
+
+QLabel#JournalLifecycleSectionTitle {
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 2px;
+  padding-bottom: 2px;
+}
+
+QCheckBox#JournalLifecycleCheck::indicator {
+  height: 16px;
+  width: 16px;
+}
+
+QLabel#JournalLifecycleLabel {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+QPushButton#TagChip {
+  border-radius: 10px;
+  font-family: "Segoe UI", "Arial", sans-serif;
+  font-size: 11px;
+  min-height: 14px;
+  max-height: 14px;
+  padding: 2px 8px;
+}
+
+QPushButton#TagChip:checked {
+  font-weight: bold;
+}
+
+QLabel#JournalLifecycleStatusLabel {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+QLabel#OrderDialogTitle {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+QLabel#OrderDialogSubtitle {
+  font-size: 12px;
+}
+
+QFrame#PanelCard[headerTone="success"],
+QFrame#PanelCard[headerTone="warning"] {
+  border-left-width: 4px;
+}
+
+QLabel#OrderDirectionPill {
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 12px;
+}
+
+/* Compact interactive controls: 20 px rendered height with a 1 px border. */
+QPushButton#HelpButton {
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 18px;
+  max-width: 18px;
+  min-height: 18px;
+  max-height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput {
+  border-radius: 6px;
+  min-height: 18px;
+  max-height: 18px;
+  font-size: 8pt;
+  padding: 0 6px;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox {
+  border-radius: 6px;
+  min-height: 18px;
+  max-height: 18px;
+  font-size: 8pt;
+  padding: 0 22px 0 6px;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput {
+  border-radius: 6px;
+  min-height: 18px;
+  max-height: 18px;
+  font-size: 8pt;
+  padding: 0 6px;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox::drop-down {
+  width: 22px;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-button {
+  width: 0;
+  border: 0;
+  background: transparent;
+  subcontrol-origin: border;
+  subcontrol-position: top right;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::down-button {
+  width: 0;
+  border: 0;
+  background: transparent;
+  subcontrol-origin: border;
+  subcontrol-position: bottom right;
+}
+
+QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-arrow,
+QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::down-arrow {
+  width: 0;
+  height: 0;
+}
+
+#LifecycleScrollWidget QLineEdit,
+#LifecycleScrollWidget QDoubleSpinBox,
+#LifecycleScrollWidget QDateTimeEdit,
+#LifecycleScrollWidget QComboBox {
+  font-size: 11px;
+  min-height: 14px;
+  max-height: 14px;
+  padding: 2px 4px;
+}
+
+/* Tab-like buttons share the 24 px standard contract. */
+QPushButton[tabStyle="PillTab"] {
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 14px;
+}
+
+QTabWidget#ContentTabs QTabBar QToolButton {
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  min-width: 18px;
+  max-width: 18px;
+  min-height: 18px;
+  max-height: 18px;
+  margin: 0 3px;
+  padding: 0;
+}
+
+QPushButton#ResultTabArrow {
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 900;
+  min-width: 30px;
+  min-height: 18px;
+  max-height: 18px;
+  padding: 0 6px;
+}

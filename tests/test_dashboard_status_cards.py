@@ -1,8 +1,13 @@
 import sys
+from pathlib import Path
 import pytest
 from PyQt6.QtWidgets import QApplication, QLabel, QFrame
 from PyQt6.QtCore import QEvent
 from ui.screens.dashboard_screen import DashboardScreen
+
+ROOT = Path(__file__).resolve().parents[1]
+BASE_QSS = (ROOT / "ui" / "styles" / "base.qss").read_text(encoding="utf-8")
+DARK_QSS = (ROOT / "ui" / "styles.qss").read_text(encoding="utf-8")
 
 # Khởi tạo QApplication (nếu chưa có)
 app = QApplication.instance()
@@ -28,11 +33,11 @@ def test_dashboard_status_cards():
         assert frame.height() == 44 or frame.maximumHeight() == 44 or frame.minimumHeight() == 44, \
             f"Card '{key}' height should be fixed to 44px"
         
-        # 2. Card có border 1px solid, border-radius 6px, background transparent
-        style = frame.styleSheet()
-        assert "border: 1px solid" in style, f"Card '{key}' should have border styling"
-        assert "border-radius: 6px" in style, f"Card '{key}' border-radius should be 6px"
-        assert "background: transparent" in style, f"Card '{key}' background should be transparent"
+        # 2. Card dùng contract QSS chung, không còn stylesheet cục bộ.
+        assert frame.styleSheet() == ""
+        assert "QFrame#StatusCard {" in BASE_QSS
+        assert "border-radius: 6px" in BASE_QSS
+        assert "background: transparent" in BASE_QSS
         
         # 3. Mỗi card có chấm tròn màu (không dùng emoji)
         dots = [child for child in frame.findChildren(QFrame) if child.objectName() == "StatusDot"]
@@ -58,11 +63,6 @@ def test_dashboard_status_cards():
                     # Gửi MockEvent kế thừa từ QEvent
                     child.eventFilter(frame, MockEvent())
             
-            # Đọc stylesheet mới sau khi thay đổi state
-            dot_style = dot.styleSheet()
-            frame_style = frame.styleSheet()
-            
-            assert expected_color in dot_style, \
-                f"Dot color for state '{test_state}' should be '{expected_color}' but got '{dot_style}'"
-            assert f"border: 1px solid {expected_color}" in frame_style, \
-                f"Frame border color for state '{test_state}' should match '{expected_color}'"
+            assert dot.property("state") == test_state
+            assert f'QFrame#StatusDot[state="{test_state}"]' in DARK_QSS
+            assert expected_color in DARK_QSS

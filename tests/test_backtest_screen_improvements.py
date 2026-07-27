@@ -324,6 +324,7 @@ class _FakeLabel:
     def __init__(self):
         self._text = ""
         self._visible = True
+        self._properties = {}
 
     def setText(self, text: str) -> None:
         self._text = text
@@ -336,6 +337,25 @@ class _FakeLabel:
 
     def text(self) -> str:
         return self._text
+
+    def property(self, name: str):
+        return self._properties.get(name)
+
+    def setProperty(self, name: str, value) -> None:
+        self._properties[name] = value
+
+    class _Style:
+        def unpolish(self, _widget) -> None:
+            pass
+
+        def polish(self, _widget) -> None:
+            pass
+
+    def style(self):
+        return self._Style()
+
+    def update(self) -> None:
+        pass
 
 
 # ---------------------------------------------------------------------------

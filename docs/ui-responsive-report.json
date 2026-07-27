@@ -1,0 +1,4955 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-07-27T14:59:37.163328+00:00",
+  "profiles": {
+    "laptop-14": {
+      "width": 1366,
+      "height": 768
+    },
+    "laptop-15-6": {
+      "width": 1536,
+      "height": 864
+    },
+    "laptop-16": {
+      "width": 1728,
+      "height": 1117
+    },
+    "desktop-24": {
+      "width": 1920,
+      "height": 1080
+    },
+    "desktop-27": {
+      "width": 2560,
+      "height": 1440
+    },
+    "desktop-32": {
+      "width": 3840,
+      "height": 2160
+    }
+  },
+  "dpi_profiles": {
+    "dpi-100": {
+      "scale_factor": 1.0
+    },
+    "dpi-125": {
+      "scale_factor": 1.25
+    },
+    "dpi-150": {
+      "scale_factor": 1.5
+    }
+  },
+  "themes": [
+    "dark",
+    "light"
+  ],
+  "external_services": "disabled",
+  "routes": [
+    "backtest",
+    "dashboard",
+    "journal",
+    "journal_detail",
+    "orders",
+    "scanner",
+    "scanner_detail",
+    "settings"
+  ],
+  "results": [
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "dark",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-100",
+      "scale_factor": 1.0,
+      "device_pixel_ratio": 1.0,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-125",
+      "scale_factor": 1.25,
+      "device_pixel_ratio": 1.25,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "backtest",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "dashboard",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "journal_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "orders",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "scanner_detail",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-24",
+      "viewport": {
+        "width": 1920,
+        "height": 1080
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-27",
+      "viewport": {
+        "width": 2560,
+        "height": 1440
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 2560,
+        "height": 1440
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "desktop-32",
+      "viewport": {
+        "width": 3840,
+        "height": 2160
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 3840,
+        "height": 2160
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-14",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1366,
+        "height": 768
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-15-6",
+      "viewport": {
+        "width": 1536,
+        "height": 864
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1536,
+        "height": 864
+      },
+      "issues": []
+    },
+    {
+      "theme": "light",
+      "dpi_profile": "dpi-150",
+      "scale_factor": 1.5,
+      "device_pixel_ratio": 1.5,
+      "profile": "laptop-16",
+      "viewport": {
+        "width": 1728,
+        "height": 1117
+      },
+      "route": "settings",
+      "screen_size": {
+        "width": 1728,
+        "height": 1117
+      },
+      "issues": []
+    }
+  ],
+  "issue_count": 0
+}

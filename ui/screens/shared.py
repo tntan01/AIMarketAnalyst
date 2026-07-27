@@ -125,7 +125,6 @@ class HelpButton(QPushButton):
     def __init__(self, tooltip_text: str, parent=None):
         super().__init__("?", parent)
         self.tooltip_text = tooltip_text
-        self.setFixedSize(20, 20)
         self.setObjectName("HelpButton")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clicked.connect(self.toggle_tooltip)

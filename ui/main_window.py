@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -25,6 +23,7 @@ from ui.screens.scanner_detail_screen import ScannerDetailScreen
 from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.orders_screen import OrdersScreen
 from ui.screens.settings_screen import SettingsScreen
+from ui.theme_manager import ThemeManager, resolve_theme
 
 
 class MainWindow(QMainWindow):
@@ -83,30 +82,22 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Đang mở: {button_label(active_nav)}", 2500)
 
     def _apply_styles(self) -> None:
-        import sys
-
-        if getattr(sys, "frozen", False):
-            base = Path(sys._MEIPASS) / "ui"
-        else:
-            base = Path(__file__).resolve().parent
+        settings_service = (
+            self.app.settings_service
+            if hasattr(self, "app") and self.app
+            else None
+        )
+        theme = resolve_theme(settings_service=settings_service)
+        manager = getattr(self, "_theme_manager", None)
+        if manager is None:
+            manager = ThemeManager()
+            self._theme_manager = manager
+        manager.apply(
+            self,
+            theme=theme,
+            settings_service=settings_service,
+        )
             
-        theme = "dark"
-        if hasattr(self, "app") and self.app:
-            try:
-                settings = self.app.settings_service.load()
-                theme = settings.display.theme
-            except Exception:
-                pass
-                
-        filename = "styles_light.qss" if theme == "light" else "styles.qss"
-        style_path = base / filename
-        if style_path.exists():
-            self.setStyleSheet(style_path.read_text(encoding="utf-8"))
-            
-        # Cập nhật style nút Khởi động lại khi đổi theme
-        if hasattr(self, "restart_btn") and self.restart_btn:
-            self._update_restart_btn_style(theme)
-
         if hasattr(self, "screens"):
             for screen in self.screens.values():
                 if hasattr(screen, "refresh_theme_styles"):
@@ -178,35 +169,8 @@ class MainWindow(QMainWindow):
         # Nút khởi động lại
         restart_btn = QPushButton("🔄 Khởi động lại")
         self.restart_btn = restart_btn
+        restart_btn.setObjectName("RestartButton")
         restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        # Test requirements: color: #94a3b8, #e2e8f0, background: transparent, border: none, padding: 4px 8px, margin-top: 12px, text-decoration: underline
-        
-        # Xác định theme hiện tại để khởi tạo style tương ứng
-        theme = "dark"
-        if hasattr(self, "app") and self.app:
-            try:
-                settings = self.app.settings_service.load()
-                theme = settings.display.theme
-            except Exception:
-                pass
-
-        if theme == "light":
-            restart_btn.setStyleSheet(
-                "QPushButton {"
-                "  font-size: 11px; color: #D94625; background: transparent;"
-                "  border: none; padding: 4px 8px; margin-top: 12px;"
-                "}"
-                "QPushButton:hover { color: #E0533C; text-decoration: underline; background: transparent; }"
-            )
-        else:
-            restart_btn.setStyleSheet(
-                "QPushButton {"
-                "  font-size: 11px; color: #0d9488; background: transparent;"
-                "  border: none; padding: 4px 8px; margin-top: 12px;"
-                "}"
-                "QPushButton:hover { color: #2dd4bf; text-decoration: underline; background: transparent; }"
-            )
         restart_btn.clicked.connect(self._restart_app)
         layout.addWidget(restart_btn)
 
@@ -271,28 +235,6 @@ class MainWindow(QMainWindow):
         if route.startswith("journal"):
             return "journal"
         return route
-
-    def _update_restart_btn_style(self, theme: str) -> None:
-        if theme == "light":
-            color = "#D94625"
-            hover_color = "#E0533C"
-        else:
-            color = "#0d9488"
-            hover_color = "#2dd4bf"
-
-        self.restart_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size: 11px; color: {color}; background: transparent;"
-            f"  border: none; padding: 4px 8px; margin-top: 12px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  color: {hover_color}; text-decoration: underline; background: transparent;"
-            f"}}"
-            f"QPushButton:pressed {{"
-            f"  color: {hover_color}; background: transparent;"
-            f"}}"
-        )
-
 
 def nav_route(key: str) -> str:
     return {

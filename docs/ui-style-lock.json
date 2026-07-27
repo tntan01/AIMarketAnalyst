@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-27T08:25:01.602706+00:00",
+  "scope": "ui/**/*.py plus ui/styles/**/*.qss and theme overlays",
+  "policy": {
+    "comparison": "current counts must be less than or equal to baseline",
+    "new_debt_files": "forbidden",
+    "source_hashes": "informational visual-baseline traceability only"
+  },
+  "totals": {
+    "set_stylesheet_calls": 1,
+    "html_style_attributes": 450,
+    "hex_color_literals": 532,
+    "object_name_calls": 346
+  },
+  "python_files": {
+    "ui/__init__.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 1,
+      "sha256": "2e446e53cdd455e80dc49f715750c55ffd5f56ededfd38e84dc24c366d303cce"
+    },
+    "ui/chart_bridge.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 27,
+      "sha256": "e391f8b299614aaf513502ae78e4b288f7e47381057de711af04198cdeb4a223"
+    },
+    "ui/components/__init__.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 1,
+      "sha256": "e661a2a70477ca03f97705a874fac2da424084d113e442edcd94039181ce1243"
+    },
+    "ui/components/app_button.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 7,
+      "sha256": "3a354a96685d79392120cfc57d1bd28c8abe51df5988fd72c11a0462651faae4"
+    },
+    "ui/components/card.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 7,
+      "sha256": "bf23c780184019d7416f183f8344ef19e6abaaec032ecf1e6ec7ec3d29b57ec0"
+    },
+    "ui/components/chart_view.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 3,
+      "line_count": 120,
+      "sha256": "22e7c6fe12d278f8f79da68b0749ddb504ae4b22c2fc60f8a080db704683bc84"
+    },
+    "ui/components/empty_state.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 8,
+      "sha256": "b68ecbeabc3a2e61645a59219fb773536685991702cc5560d072bc1acf305283"
+    },
+    "ui/components/icon_button.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 7,
+      "sha256": "177e9cfb0429a7b1c4168fd35c35d54c3f9cc394c281edef64c814f3f8c19a25"
+    },
+    "ui/components/info_card.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 4,
+      "line_count": 79,
+      "sha256": "2bd06029d6c67ca3f26b0f0e6d892596dec618e390191d04084b429d7b83ce58"
+    },
+    "ui/components/loading_state.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 8,
+      "sha256": "ab837f760adb543ba537ec52195ac9ea53368f05f9434e64d39162dd5168b20c"
+    },
+    "ui/components/section_header.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 7,
+      "sha256": "e6aff045908cc305f43430becbb408fee63d9f2cc33246a56be1e6c6151f8528"
+    },
+    "ui/components/stat_card.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 7,
+      "sha256": "9a544e4d124e4205ad7992be5772c9fe9562b9c9a85712c93b2274801ed68107"
+    },
+    "ui/components/toolbar.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 7,
+      "sha256": "4b86d18379cb5536d6d5714260ace510e999b95a855d135741055d0f13df4ea0"
+    },
+    "ui/layout_system.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 152,
+      "sha256": "7eecb9ea23e20a5946f51a3aada3332484df77539c5509f6a70d90c07b3dd621"
+    },
+    "ui/main_window.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 10,
+      "line_count": 251,
+      "sha256": "9ca1e8ad0e29383203effc64d53bb523692f384c25c3822c51f68312b4f08944"
+    },
+    "ui/navigation.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 10,
+      "sha256": "fd55775a790c9a64444bc28e2fa2cfc8830d34321b140d3054d6fc217302415f"
+    },
+    "ui/rich_text.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 271,
+      "sha256": "ee83a4810142fe68123ade459288cbefd5a6d2583739d38e43be73cc2be52617"
+    },
+    "ui/scanner_rr_formatters.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 197,
+      "sha256": "9d87d0e9790ced8aaef2bea11438bec185d1528ab95cbbea33875144ea40bd38"
+    },
+    "ui/screens/__init__.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 1,
+      "sha256": "26bdc9fb7d444fb32b626fe4cfb4a6b08e9bb857f07691c9fadef4c06bdfcaa4"
+    },
+    "ui/screens/backtest_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 182,
+      "hex_color_literals": 153,
+      "object_name_calls": 41,
+      "line_count": 3045,
+      "sha256": "17a37697d7fd747b36b98f951126c9180742b65b9a45ad149823f059da47d2b7"
+    },
+    "ui/screens/dashboard_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 19,
+      "hex_color_literals": 1,
+      "object_name_calls": 44,
+      "line_count": 1688,
+      "sha256": "d3f32d0682f6a9e0abef2918eb37a9e4b46451ec150d044fa1da31a82739c5e3"
+    },
+    "ui/screens/journal_detail_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 51,
+      "hex_color_literals": 35,
+      "object_name_calls": 23,
+      "line_count": 941,
+      "sha256": "5c869724cedafd2bb5f07cbd52237bf1fe7dc357d43d0bd098780ca018eb8b2f"
+    },
+    "ui/screens/journal_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 2,
+      "hex_color_literals": 2,
+      "object_name_calls": 60,
+      "line_count": 2065,
+      "sha256": "a4757244ace53a7131f2dd2d9640d4214cb993b7c1539e4f71ac51a1450ebb9e"
+    },
+    "ui/screens/orders_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 14,
+      "line_count": 1549,
+      "sha256": "1855927f68e62f756f1520db5a77fabe73a44c0cb548c244262a8838f860f1c6"
+    },
+    "ui/screens/scanner_detail_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 191,
+      "hex_color_literals": 240,
+      "object_name_calls": 70,
+      "line_count": 3424,
+      "sha256": "b35521f875f4a46d5951ecb7b1f9db58280ccbf5765b443ad22f0490dddef14b"
+    },
+    "ui/screens/scanner_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 5,
+      "hex_color_literals": 14,
+      "object_name_calls": 37,
+      "line_count": 3397,
+      "sha256": "ba2fbdf2c405ae872d3a338682d0d2f20a7dbafa24210205d339febb370986c4"
+    },
+    "ui/screens/settings_screen.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 26,
+      "line_count": 1795,
+      "sha256": "47362cb7e4a5459dfcfac46ec36f4898f6563d55047c3385e2c9ca5cc1aaf3c8"
+    },
+    "ui/screens/shared.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 14,
+      "line_count": 150,
+      "sha256": "b57057d3e0e5edc9f7971b8ed49685efd8f725e4c1ffa088571aeb524103de66"
+    },
+    "ui/terminology.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 23,
+      "sha256": "4ebff78db0070839ec3392a25ac8dc491de00d22083dd67d43890e2931cba627"
+    },
+    "ui/theme.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 87,
+      "object_name_calls": 0,
+      "line_count": 218,
+      "sha256": "da71e71297f056cf1e787079fe8916ad2e844cccce3fd513cca27ea76ec77362"
+    },
+    "ui/theme_manager.py": {
+      "set_stylesheet_calls": 1,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 167,
+      "sha256": "2b36bcd39cb17ec240537ab27ae06ded3368d76c094d03d754919bada34150cf"
+    },
+    "ui/translation.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 146,
+      "sha256": "4e15809944118744d92ebb11e645c89b7dc232293ce66e5621d5c05797e027a9"
+    }
+  },
+  "qss_files": {
+    "ui/styles/base.qss": {
+      "line_count": 736,
+      "rule_blocks": 120,
+      "selector_references": 181,
+      "unique_selectors": 180,
+      "duplicate_selectors": 1,
+      "hex_color_literals": 0,
+      "sha256": "ef476dbda655efa508d5c0c959d3e17e1c7b0a71a512774202d9b3deb8581935"
+    },
+    "ui/styles.qss": {
+      "line_count": 2375,
+      "rule_blocks": 435,
+      "selector_references": 646,
+      "unique_selectors": 614,
+      "duplicate_selectors": 32,
+      "hex_color_literals": 639,
+      "sha256": "c592cf19539975f0f87d638825e91b87d303f687983677d26e3e0ffab2dc897e"
+    },
+    "ui/styles_light.qss": {
+      "line_count": 2359,
+      "rule_blocks": 434,
+      "selector_references": 647,
+      "unique_selectors": 614,
+      "duplicate_selectors": 33,
+      "hex_color_literals": 640,
+      "sha256": "d6f9f78e5605ec04d064a21526d84155ce1cc058b9ba084954c22fda7cf06c35"
+    }
+  }
+}

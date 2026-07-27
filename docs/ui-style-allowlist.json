@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "status": "phase-7-reviewed",
+  "policy": {
+    "default": "forbidden",
+    "note": "Không thêm setStyleSheet, HTML style hoặc literal màu mới ngoài các nhóm đã duyệt. Các mục temporary phải giảm dần qua các phase.",
+    "permanent_categories": [
+      "application_stylesheet_loader",
+      "data_driven_item_color",
+      "chart_runtime_palette",
+      "rich_text_runtime_template"
+    ]
+  },
+  "exceptions": [
+    {
+      "path": "ui/theme.py",
+      "category": "semantic_palette",
+      "disposition": "permanent",
+      "reason": "Đây là nguồn màu semantic duy nhất được phép chứa literal màu dùng chung cho widget, HTML và biểu đồ."
+    },
+    {
+      "path": "ui/theme_manager.py",
+      "category": "application_stylesheet_loader",
+      "disposition": "permanent",
+      "reason": "Đây là điểm tập trung duy nhất được phép đọc, ghép và áp dụng stylesheet cho ứng dụng."
+    },
+    {
+      "path": "ui/main_window.py",
+      "category": "application_stylesheet_loader",
+      "disposition": "permanent",
+      "reason": "MainWindow chỉ điều phối ThemeManager; style cục bộ của nút khởi động lại đã chuyển vào QSS chung."
+    },
+    {
+      "path": "ui/components/chart_view.py",
+      "category": "embedded_web_surface",
+      "disposition": "centralized",
+      "reason": "Nền trong suốt của widget/WebEngine đã chuyển vào QSS chung; QColor trong suốt của trang WebEngine vẫn là cấu hình runtime bắt buộc."
+    },
+    {
+      "path": "ui/components/info_card.py",
+      "category": "semantic_component_property",
+      "disposition": "centralized",
+      "reason": "InfoCard không còn stylesheet cục bộ; màu accent dùng semantic property và selector chung."
+    },
+    {
+      "path": "ui/screens/dashboard_screen.py",
+      "category": "runtime_state_and_dialog_style",
+      "disposition": "centralized",
+      "reason": "Status, tin tức, dialog và nội dung rich-text đều đi qua dynamic property hoặc shared rich-text renderer."
+    },
+    {
+      "path": "ui/screens/scanner_screen.py",
+      "category": "runtime_state_and_dialog_style",
+      "disposition": "centralized",
+      "reason": "Header, hướng lệnh, nút thao tác, màu bảng và market brief đều dùng semantic property/palette hoặc shared rich-text renderer."
+    },
+    {
+      "path": "ui/screens/orders_screen.py",
+      "category": "data_driven_trade_state",
+      "disposition": "centralized",
+      "reason": "Màu lời/lỗ, Break Even và mọi màu cell bảng đều lấy từ semantic palette; rich-text dialog dùng renderer chung."
+    },
+    {
+      "path": "ui/screens/backtest_screen.py",
+      "category": "rich_text_chart_and_runtime_state",
+      "disposition": "centralized",
+      "reason": "HTML báo cáo được compile bằng rich-text renderer; màu cell và Matplotlib dùng semantic palette/chart palette; ô thống kê và banner dùng QSS/property."
+    },
+    {
+      "path": "ui/screens/journal_screen.py",
+      "category": "data_driven_metrics_and_heatmap",
+      "disposition": "centralized",
+      "reason": "KPI và Missing R banner dùng dynamic property; heatmap, màu hiệu suất, model bảng và Matplotlib dùng semantic/chart palette."
+    },
+    {
+      "path": "ui/screens/journal_detail_screen.py",
+      "category": "runtime_trade_state",
+      "disposition": "centralized",
+      "reason": "Không còn setStyleSheet; các vùng rich-text, trạng thái giao dịch và màu dữ liệu đều được compile/resolve qua palette chung."
+    },
+    {
+      "path": "ui/screens/scanner_detail_screen.py",
+      "category": "rich_text_and_runtime_decision_state",
+      "disposition": "centralized",
+      "reason": "Hero, summary, panel, checklist, cảnh báo, chẩn đoán rich-text, value và progress bar đều dùng semantic property/palette; chart nhận chart palette từ payload."
+    }
+  ]
+}
