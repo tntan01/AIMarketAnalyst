@@ -85,6 +85,7 @@ from ui.matplotlib_theme import (
     apply_legend_theme,
 )
 from ui.screens.shared import action_button, card, page_header
+from ui.theme.fonts import QSS_BODY, QSS_NUMBER, QSS_SMALL, QSS_SUBTITLE, QSS_TITLE
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 
 
@@ -1028,13 +1029,13 @@ class BacktestScreen(QWidget):
                 <td style="text-align:center"><code>{best_val}</code></td>
                 <td style="text-align:center;color:{vc};font-weight:700">{r.verdict}</td>
                 <td style="text-align:center">{score}</td>
-                <td style="max-width:420px;font-size:11px">{rec_text}</td>
+                <td style="max-width:420px;{QSS_BODY}">{rec_text}</td>
             </tr>"""
 
         return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head><body style="font-family:-apple-system,'Segoe UI',sans-serif;margin:0;color:#1f2937">
-<h3 style="margin:0 0 8px;font-size:12px">Quét tham số</h3>
-<table style="border-collapse:collapse;width:100%;font-size:11px">
+<html><head><meta charset="utf-8"></head><body style="{QSS_BODY}margin:0;color:#1f2937">
+<h3 style="margin:0 0 8px;{QSS_SUBTITLE}">Quét tham số</h3>
+<table style="border-collapse:collapse;width:100%;{QSS_BODY}">
 <thead><tr style="background:#f5f5f5">
     <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">Biến</th>
     <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">JSON Key</th>
@@ -1044,7 +1045,7 @@ class BacktestScreen(QWidget):
     <th style="padding:6px 10px;text-align:center;border:1px solid #ddd">Ổn định</th>
     <th style="padding:6px 10px;text-align:left;border:1px solid #ddd">Khuyến nghị</th>
 </tr></thead><tbody>{rows_html}</tbody></table>
-<p style="color:#94a3b8;font-size:11px;margin-top:12px">
+<p style="color:#94a3b8;{QSS_SMALL}margin-top:12px">
 <b>STABLE</b> = giữ nguyên &nbsp;|&nbsp;
 <b>OVERFIT</b> = đổi sang giá trị an toàn &nbsp;|&nbsp;
 <b>INSENSITIVE</b> = không cần tối ưu<br>
@@ -1260,7 +1261,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             final_html = (
                 f"{stats_html}"
                 f"<div style='margin:20px 0;border-top:1px dashed {hr_color};'></div>"
-                f"<h2 style='color:{header_color};margin:0 0 10px 0;font-size:15px;'>AI Nhận xét & Khuyến nghị</h2>"
+                f"<h2 style='color:{header_color};margin:0 0 10px 0;{QSS_SUBTITLE}'>AI Nhận xét & Khuyến nghị</h2>"
                 f"{ai_html}"
             )
 
@@ -1373,9 +1374,9 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         title_widget = QLabel("")
         title_widget.setTextFormat(Qt.TextFormat.RichText)
         title_widget.setText(
-            f"<h2 style='color:{title_color};margin:0 0 6px;font-size:18px;'>"
+            f"<h2 style='color:{title_color};margin:0 0 6px;{QSS_TITLE}'>"
             f"Cấu hình Scanner cho {self.selected_symbol}</h2>"
-            f"<p style='color:{muted_color};font-size:12px;margin:0;'>"
+            f"<p style='color:{muted_color};{QSS_BODY}margin:0;'>"
             "So sánh cấu hình hiện tại trong Settings với đề xuất từ kết quả backtest."
             "</p>"
         )
@@ -1387,7 +1388,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
 
         if cfg is None:
             no_data = QLabel(
-                f"<span style='color:{muted_color};font-size:13px;'>"
+                f"<span style='color:{muted_color};{QSS_BODY}'>"
                 f"{symbol}: không đủ dữ liệu để đề xuất "
                 f"(cần ≥18 lệnh; hãy chạy mục đích Kiểm chứng để hệ thống tự "
                 f"tạo IS/OOS và Walk-Forward)</span>"
@@ -1418,25 +1419,25 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             
             rows = [
                 ("Cấu hình hiện tại",
-                 f"<span style='color:{current_color}; font-size: 13px;'>"
+                 f"<span style='color:{current_color}; {QSS_BODY}'>"
                  f"<b>Regime:</b> {current_regime} &nbsp;&nbsp;&nbsp; "
                  f"<b>Side:</b> {current_side} &nbsp;&nbsp;&nbsp; "
                  f"<b>MinScore:</b> {current_score} &nbsp;&nbsp;&nbsp; "
                  f"<b>MinRR:</b> {current_rr}</span>"),
                  
                 ("Đề xuất từ backtest",
-                 f"<span style='color:{proposed_color}; font-size: 14px;'>"
+                 f"<span style='color:{proposed_color}; {QSS_SUBTITLE}'>"
                  f"<b>Regime:</b> {cfg['regime']} &nbsp;&nbsp;&nbsp; "
                  f"<b>Side:</b> {cfg['side'].upper()} &nbsp;&nbsp;&nbsp; "
                  f"<b>MinScore:</b> {cfg['min_score']} &nbsp;&nbsp;&nbsp; "
                  f"<b>MinRR:</b> {cfg['min_rr']}</span>"),
                  
                 ("Bằng chứng", 
-                 f"<span style='color:{evidence_color}; font-size: 12px; font-style: italic; line-height: 1.4;'>"
+                 f"<span style='color:{evidence_color}; {QSS_SMALL} font-style: italic; line-height: 1.4;'>"
                  f"{evidence}</span>"),
                 (
                     "Trạng thái validation",
-                    f"<span style='color:{proposed_color}; font-size: 12px;'>"
+                    f"<span style='color:{proposed_color}; {QSS_BODY}'>"
                     f"<b>{cfg.get('status', 'DRAFT')}</b>"
                     f" &nbsp; OOS: {cfg.get('out_of_sample_trades', 0)} lệnh"
                     f" &nbsp; WF: {cfg.get('walk_forward_windows', 0)} cửa sổ"
@@ -1823,8 +1824,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             return "<span style='color:#e11d48;font-weight:bold;'>🆘 Nguy hiểm</span>"
 
         html = [
-            "<div style='font-family:-apple-system,Segoe UI,sans-serif;'>",
-            f"<h2 style='color:{panel_title_color}; margin-top: 0; margin-bottom: 12px; font-size: 12px;'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
+            f"<div style='{QSS_BODY}'>",
+            f"<h2 style='color:{panel_title_color}; margin-top: 0; margin-bottom: 12px; {QSS_SUBTITLE}'>📊 BẢNG KẾT QUẢ TỔNG HỢP</h2>",
         ]
         
         html.extend(self._build_stats_overview_html(
@@ -1835,7 +1836,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
 
         symbol_stats = self.result.get("symbol_stats", {})
         if isinstance(symbol_stats, dict) and len(symbol_stats) > 1:
-            html.append(f"<h2 style='color:{details_title_color}; margin-bottom: 16px; margin-top: 24px; font-size: 12px;'>🌍 CHI TIẾT TỪNG CẶP</h2>")
+            html.append(f"<h2 style='color:{details_title_color}; margin-bottom: 16px; margin-top: 24px; {QSS_SUBTITLE}'>🌍 CHI TIẾT TỪNG CẶP</h2>")
             html.append("<div style='display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;'>")
             for symbol, sym_stats in sorted(symbol_stats.items()):
                 if not isinstance(sym_stats, dict):
@@ -1845,8 +1846,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 
                 html.append(
                     f"<div style='background-color: {card_bg}; border-radius: 8px; padding: 14px; width: calc(50% - 6px); box-sizing: border-box; border-left: 4px solid #ea580c; border: 1px solid {border_color};'>"
-                    f"<div style='font-size: 11px; font-weight: bold; color: {card_title}; margin-bottom: 10px;'>✨ {symbol}</div>"
-                    f"<table style='width: 100%; border-collapse: collapse; font-size: 11px;'>"
+                    f"<div style='{QSS_BODY} font-weight: bold; color: {card_title}; margin-bottom: 10px;'>✨ {symbol}</div>"
+                    f"<table style='width: 100%; border-collapse: collapse; {QSS_BODY}'>"
                     f"<tr>"
                     f"<td style='padding: 4px 0;'><span style='color: {muted_color};'>Lệnh:</span> <span style='color: {text_color}; font-weight: bold;'>{get_stat(sym_stats, 'total_trades', '0')}</span></td>"
                     f"<td style='padding: 4px 0;'><span style='color: {muted_color};'>Kỳ vọng:</span> <span style='color: {text_color}; font-weight: bold;'>{get_stat(sym_stats, 'expectancy_r')}R</span></td>"
@@ -1882,8 +1883,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 "INCONCLUSIVE": "INCONCLUSIVE — Không đủ dữ liệu để kết luận",
             }.get(verdict, verdict)
 
-            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 12px;'>🔄 Walk-Forward Analysis</h2>")
-            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
+            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; {QSS_SUBTITLE}'>🔄 Walk-Forward Analysis</h2>")
+            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; {QSS_BODY}'>")
             row = lambda label, value, clr=None: (
                 f"<tr>"
                 f"<td style='padding: 6px 10px; border-bottom: 1px solid {row_border}; color: {text_color};'>{label}</td>"
@@ -1929,7 +1930,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         dd = float(summary.get("max_drawdown_r", 0) or 0)
 
         html.append(
-            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>"
+            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; {QSS_BODY}'>"
             f"<tr>"
             f"<th style='text-align: left; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chỉ số</th>"
             f"<th style='text-align: right; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Giá trị</th>"
@@ -1997,7 +1998,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         avg_holding = float(summary.get("average_holding_bars", 0) or 0)
 
         html.append(
-            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>"
+            f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; {QSS_BODY}'>"
             f"<tr>"
             f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chi tiết thắng/thua</th>"
             f"<th style='text-align: right; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: {muted_color}; width: 60px;'>Số lượng</th>"
@@ -2086,8 +2087,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                     txt = f"+{value:.2f}" if value > 0 else f"{value:.2f}"
                     clr = "#ffffff" if ratio > 0.65 else text_color
                     return txt, clr
-                html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 12px;'>📅 Bảng nhiệt lời/lỗ theo tháng</h2>")
-                html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
+                html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; {QSS_SUBTITLE}'>📅 Bảng nhiệt lời/lỗ theo tháng</h2>")
+                html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; {QSS_BODY}'>")
                 hdr = [f"<th style='text-align: left; padding: 6px 8px; border-bottom: 2px solid {border_color}; color: {head_text}; background: {head_bg};'>Năm</th>"]
                 for m in range(1, 13):
                     hdr.append(f"<th style='text-align: center; padding: 4px 3px; border-bottom: 2px solid {border_color}; color: {head_text}; background: {head_bg}; width: 44px;'>T{m}</th>")
@@ -2103,9 +2104,9 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                         t, tc = _text(val, max_abs)
                         if val is not None:
                             yearly_total += val
-                        row.append(f"<td style='text-align: center; padding: 3px 2px; border-bottom: 1px solid {row_border}; background: {bg}; color: {tc}; font-size: 10px;'>{t}</td>")
+                        row.append(f"<td style='text-align: center; padding: 3px 2px; border-bottom: 1px solid {row_border}; background: {bg}; color: {tc}; {QSS_NUMBER}'>{t}</td>")
                     yc = "#10b981" if yearly_total > 0 else ("#e11d48" if yearly_total < 0 else text_color)
-                    row.append(f"<td style='text-align: center; padding: 4px 6px; border-bottom: 1px solid {row_border}; color: {yc}; font-weight: 700; font-size: 11px;'>{yearly_total:+.1f}R</td>")
+                    row.append(f"<td style='text-align: center; padding: 4px 6px; border-bottom: 1px solid {row_border}; color: {yc}; {QSS_NUMBER} font-weight: 700;'>{yearly_total:+.1f}R</td>")
                     html.append("<tr>" + "".join(row) + "</tr>")
                 html.append("</table>")
 
@@ -2130,13 +2131,13 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 high_v = data.get("p95_high")
                 clr = _mc_color(low_v, high_v)
                 return (
-                    f"<td style='padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {text_color}; font-size: 11px;'>{label}</td>"
-                    f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; font-weight: 600; font-size: 11px;'>{_mc_fmt(mean_v, suffix)}</td>"
-                    f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; font-size: 11px;'>{_mc_fmt(low_v, suffix)} → {_mc_fmt(high_v, suffix)}</td>"
+                    f"<td style='padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {text_color}; {QSS_BODY}'>{label}</td>"
+                    f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; {QSS_NUMBER} font-weight: 600;'>{_mc_fmt(mean_v, suffix)}</td>"
+                    f"<td style='text-align: right; padding: 5px 10px; border-bottom: 1px solid {row_border}; color: {clr}; {QSS_NUMBER}'>{_mc_fmt(low_v, suffix)} → {_mc_fmt(high_v, suffix)}</td>"
                 )
 
-            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; font-size: 12px;'>🎲 Monte Carlo: Bootstrap uncertainty và permutation sequence risk</h2>")
-            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px;'>")
+            html.append(f"<h2 style='color:{text_color}; margin-bottom: 10px; margin-top: 6px; {QSS_SUBTITLE}'>🎲 Monte Carlo: Bootstrap uncertainty và permutation sequence risk</h2>")
+            html.append(f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; {QSS_BODY}'>")
             html.append(
                 f"<tr>"
                 f"<th style='text-align: left; padding: 6px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Chỉ số</th>"
@@ -2151,12 +2152,12 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             dd = mc.get("max_drawdown_r", {})
             dd_clr = _mc_color(dd.get("p95_low"), dd.get("p95_high"))
             prob_dd = mc.get("prob_dd_exceed_10r")
-            dd_note = f" <span style='font-size:10px;color:{muted_color};'>(P(DD&gt;10R)={prob_dd}%)</span>" if prob_dd is not None else ""
+            dd_note = f" <span style='{QSS_SMALL}color:{muted_color};'>(P(DD&gt;10R)={prob_dd}%)</span>" if prob_dd is not None else ""
             html.append(
                 f"<tr>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border};color:{text_color};font-size:11px;'>Drawdown tối đa</td>"
-                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{dd_clr};font-weight:600;font-size:11px;'>{_mc_fmt(dd.get('mean'), 'R')}{dd_note}</td>"
-                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{dd_clr};font-size:11px;'>{_mc_fmt(dd.get('p95_low'), 'R')} → {_mc_fmt(dd.get('p95_high'), 'R')}</td>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border};color:{text_color};{QSS_BODY}'>Drawdown tối đa</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{dd_clr};{QSS_NUMBER}font-weight:600;'>{_mc_fmt(dd.get('mean'), 'R')}{dd_note}</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{dd_clr};{QSS_NUMBER}'>{_mc_fmt(dd.get('p95_low'), 'R')} → {_mc_fmt(dd.get('p95_high'), 'R')}</td>"
                 f"</tr>"
             )
 
@@ -2170,9 +2171,9 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             cl_clr = "#10b981" if (cl_mean or 0) <= 3 else ("#f59e0b" if (cl_mean or 0) <= 6 else "#e11d48")
             html.append(
                 f"<tr>"
-                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border};color:{text_color};font-size:11px;'>Chuỗi thua dài nhất</td>"
-                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{cl_clr};font-weight:600;font-size:11px;'>{cl_mean:.0f} lệnh (tối đa: {cl_high:.0f})</td>"
-                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{muted_color};font-size:11px;'>—</td>"
+                f"<td style='padding:5px 10px;border-bottom:1px solid {row_border};color:{text_color};{QSS_BODY}'>Chuỗi thua dài nhất</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{cl_clr};{QSS_NUMBER}font-weight:600;'>{cl_mean:.0f} lệnh (tối đa: {cl_high:.0f})</td>"
+                f"<td style='text-align:right;padding:5px 10px;border-bottom:1px solid {row_border};color:{muted_color};{QSS_BODY}'>—</td>"
                 f"</tr>"
             )
 
@@ -2188,7 +2189,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 pn_color = "#10b981" if prob_neg < 20 else ("#f59e0b" if prob_neg <= 50 else "#e11d48")
                 html.append(
                     f"<tr>"
-                    f"<td colspan='3' style='padding:6px 10px;border-bottom:1px solid {row_border};color:{pn_color};font-weight:700;font-size:11px;text-align:center;'>"
+                    f"<td colspan='3' style='padding:6px 10px;border-bottom:1px solid {row_border};color:{pn_color};{QSS_NUMBER}font-weight:700;text-align:center;'>"
                     f"Xác suất edge dương = {prob_positive}% · "
                     f"P(edge không dương) = {prob_neg}% · p một phía = {p_value}"
                     f"</td>"
@@ -2207,9 +2208,9 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         pipeline_stats = diagnostics.get("pipeline_stats", {})
         gate_fail_counts = diagnostics.get("gate_fail_counts", {})
         if pipeline_stats:
-            html.append(f"<h2 style='color:{pipeline_title_color}; margin-bottom: 12px; margin-top: 24px; font-size: 12px;'>🔬 CHẨN ĐOÁN PIPELINE</h2>")
+            html.append(f"<h2 style='color:{pipeline_title_color}; margin-bottom: 12px; margin-top: 24px; {QSS_SUBTITLE}'>🔬 CHẨN ĐOÁN PIPELINE</h2>")
             html.append(
-                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 11px;'>"
+                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 16px; {QSS_BODY}'>"
                 f"<tr>"
                 f"<th style='text-align: left; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: {muted_color};'>Bước</th>"
                 f"<th style='text-align: center; padding: 8px 10px; border-bottom: 2px solid {border_color}; color: #10b981;'>Pass</th>"
@@ -2261,7 +2262,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             blk = diagnostics.get("blocked_by_gate", 0)
             low = diagnostics.get("score_below_50_count", 0)
             html.append(
-                f"<div style='display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; font-size: 11px; color: {muted_color};'>"
+                f"<div style='display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; {QSS_SMALL} color: {muted_color};'>"
                 f"<span>📊 Tổng snapshot: <b style='color:{text_color};'>{ev}</b></span>"
                 f"<span>🚫 Bị gate chặn: <b style='color:#e11d48;'>{blk}</b></span>"
                 f"<span>⚠️ Điểm {'<'}50: <b style='color:#f59e0b;'>{low}</b></span>"
@@ -2269,9 +2270,9 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             )
 
         if gate_fail_counts:
-            html.append(f"<h3 style='color:{pipeline_title_color}; margin-bottom: 8px; margin-top: 16px; font-size: 12px;'>🚧 Chi tiết Gate</h3>")
+            html.append(f"<h3 style='color:{pipeline_title_color}; margin-bottom: 8px; margin-top: 16px; {QSS_SUBTITLE}'>🚧 Chi tiết Gate</h3>")
             html.append(
-                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px;'>"
+                f"<table style='width: 100%; border-collapse: collapse; margin-bottom: 12px; {QSS_BODY}'>"
                 f"<tr>"
                 f"<th style='text-align: left; padding: 6px 10px; border-bottom: 1px solid {border_color}; color: {muted_color};'>Gate</th>"
                 f"<th style='text-align: right; padding: 6px 10px; border-bottom: 1px solid {border_color}; color: {muted_color};'>Số lần chặn/cảnh báo</th>"
@@ -2348,7 +2349,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
                 _end_list()
                 clean = _esc(stripped.replace("*", "").replace("#", "").replace("_", "").replace("`", ""))
                 html_lines.append(
-                    f"<div style='font-weight:700;font-size:14px;color:{h_color};"
+                    f"<div style='{QSS_SUBTITLE}font-weight:700;color:{h_color};"
                     f"margin:16px 0 4px 0;padding-bottom:4px;"
                     f"border-bottom:1px solid {b_border};'>{clean}</div>"
                 )
@@ -2359,7 +2360,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             if m:
                 if not in_list or list_type != "ol":
                     _end_list()
-                    html_lines.append(f"<ol style='margin:4px 0;padding-left:20px;color:{t_color};font-size:13px;line-height:1.55;'>")
+                    html_lines.append(f"<ol style='margin:4px 0;padding-left:20px;color:{t_color};{QSS_BODY}line-height:1.55;'>")
                     in_list = True
                     list_type = "ol"
                 content = _highlight_numbers(_esc(m.group(2).replace("*", "").replace("#", "").replace("_", "").replace("`", "")))
@@ -2371,7 +2372,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             if m:
                 if not in_list or list_type != "ul":
                     _end_list()
-                    html_lines.append(f"<ul style='margin:4px 0;padding-left:20px;color:{t_color};font-size:13px;line-height:1.55;'>")
+                    html_lines.append(f"<ul style='margin:4px 0;padding-left:20px;color:{t_color};{QSS_BODY}line-height:1.55;'>")
                     in_list = True
                     list_type = "ul"
                 content = _highlight_numbers(_esc(m.group(1).replace("*", "").replace("#", "").replace("_", "").replace("`", "")))
@@ -2382,13 +2383,13 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             _end_list()
             clean = _highlight_numbers(_esc(stripped.replace("*", "").replace("#", "").replace("_", "").replace("`", "")))
             html_lines.append(
-                f"<p style='margin:4px 0;color:{t_color};font-size:13px;line-height:1.55;'>{clean}</p>"
+                f"<p style='margin:4px 0;color:{t_color};{QSS_BODY}line-height:1.55;'>{clean}</p>"
             )
 
         _end_list()
         body = "\n".join(html_lines)
         return (
-            f"<div style='font-family:-apple-system,Segoe UI,Helvetica,sans-serif;font-size:13px;'>"
+            f"<div style='{QSS_BODY}'>"
             f"{body}</div>"
         )
 
@@ -2732,7 +2733,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         )
 
         self.verdict_banner.setText(
-            f"<span style='font-size:12px;font-family:Segoe UI,sans-serif;'>"
+            f"<span style='{QSS_BODY}'>"
             f"<b style='color:{accent};'>{line}</b>"
             f"<span style='color:{separator};'>&nbsp;&nbsp;│&nbsp;&nbsp;</span>"
             f"<span style='color:{text};font-weight:500;'>"
