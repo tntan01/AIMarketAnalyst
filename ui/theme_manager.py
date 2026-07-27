@@ -10,9 +10,57 @@ from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from ui.theme import ThemePalette, color_for_role, normalize_theme, palette_for
+from ui.theme.fonts import (
+    FONT_SIZE_NUMBER,
+    FONT_SIZE_SMALL,
+    FONT_SIZE_TITLE,
+    QSS_BODY,
+    QSS_BUTTON,
+    QSS_NUMBER,
+    QSS_SMALL,
+    QSS_SUBTITLE,
+    QSS_TITLE,
+)
 
 
 APP_THEME_PROPERTY = "amaTheme"
+
+
+def _qss_with_size(qss: str, source_size: int, target_size: int) -> str:
+    return qss.replace(f"font-size: {source_size}pt;", f"font-size: {target_size}pt;")
+
+
+_FONT_STYLE_TOKENS = {
+    "@QSS_TITLE@": QSS_TITLE,
+    "@QSS_SUBTITLE@": QSS_SUBTITLE,
+    "@QSS_BODY@": QSS_BODY,
+    "@QSS_NUMBER@": QSS_NUMBER,
+    "@QSS_SMALL@": QSS_SMALL,
+    "@QSS_BUTTON@": QSS_BUTTON,
+    # Purposeful display sizes remain relative to the shared font scale.
+    "@QSS_PAGE_TITLE@": _qss_with_size(
+        QSS_TITLE,
+        FONT_SIZE_TITLE,
+        round(FONT_SIZE_TITLE * 1.5),
+    ),
+    "@QSS_NUMBER_LARGE@": _qss_with_size(
+        QSS_NUMBER,
+        FONT_SIZE_NUMBER,
+        FONT_SIZE_TITLE + 1,
+    ),
+    "@QSS_COMPACT@": _qss_with_size(
+        QSS_SMALL,
+        FONT_SIZE_SMALL,
+        max(1, FONT_SIZE_SMALL - 1),
+    ),
+}
+
+
+def _expand_font_style_tokens(stylesheet: str) -> str:
+    expanded = stylesheet
+    for token, declaration in _FONT_STYLE_TOKENS.items():
+        expanded = expanded.replace(token, declaration)
+    return expanded
 
 
 class _SettingsLoader(Protocol):
@@ -162,7 +210,8 @@ def load_stylesheet(
     if not overlay_path.exists():
         raise FileNotFoundError(f"Theme overlay not found: {overlay_path}")
     chunks.append(overlay_path.read_text(encoding="utf-8").strip())
-    return "\n\n".join(chunk for chunk in chunks if chunk) + "\n"
+    stylesheet = "\n\n".join(chunk for chunk in chunks if chunk) + "\n"
+    return _expand_font_style_tokens(stylesheet)
 
 
 def repolish(widget: QWidget, *, recursive: bool = False) -> None:
