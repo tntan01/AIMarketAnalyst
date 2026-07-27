@@ -45,6 +45,7 @@ from ui.scanner_rr_formatters import (
 )
 from ui.rich_text import compile_rich_html
 from ui.theme import palette_for, semantic_role_for_color
+from ui.theme.fonts import get_body_font
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.translation import vi_term
 
@@ -1255,9 +1256,9 @@ class ScannerScreen (QWidget ):
 
             # Symbol
             sym_item = styled_item(str(order.get("symbol", "--")))
-            f = sym_item.font()
-            f.setBold(True)
-            sym_item.setFont(f)
+            symbol_font = get_body_font()
+            symbol_font.setBold(True)
+            sym_item.setFont(symbol_font)
             table.setItem(idx, 1, sym_item)
 
             # Direction pill
@@ -2249,7 +2250,7 @@ class ScannerRowExplanationDialog(QDialog):
         label.setContentsMargins(4, 2, 4, 2)
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         if bold:
-            font = label.font()
+            font = get_body_font()
             font.setBold(True)
             label.setFont(font)
         return label
