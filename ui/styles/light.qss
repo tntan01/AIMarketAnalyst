@@ -765,7 +765,7 @@ QFrame#Sidebar {
 
 QLabel#SidebarTitle {
   color: #111827;
-  font-size: 18px;
+  @QSS_TITLE@
   font-weight: 700;
 }
 
@@ -815,7 +815,7 @@ QPushButton#FloatingSidebarToggle:hover {
 
 QLabel#PageTitle {
   color: #111827;
-  font-size: 28px;
+  @QSS_PAGE_TITLE@
   font-weight: 700;
 }
 
@@ -850,13 +850,13 @@ QFrame#AnalysisStatusBadge {
 
 QLabel#StatusBadgeTitle {
   color: #111827;
-  font-size: 11px;
+  @QSS_SMALL@
   font-weight: 800;
 }
 
 QLabel#StatusBadgeValue {
   color: #231E19;
-  font-size: 11px;
+  @QSS_NUMBER@
   font-weight: 700;
 }
 
@@ -876,7 +876,7 @@ QFrame#SupportCardResult {
 
 QLabel#SupportCardLine {
   color: #1E40AF;
-  font-size: 13px;
+  @QSS_BODY@
   font-weight: 600;
 }
 
@@ -887,13 +887,13 @@ QFrame#ScannerDetailStat {
 
 QLabel#ScannerDetailStatTitle {
   color: #736B60;
-  font-size: 12px;
+  @QSS_SMALL@
   font-weight: 700;
 }
 
 QLabel#ScannerDetailStatValue {
   color: #231E19;
-  font-size: 14px;
+  @QSS_NUMBER@
   font-weight: 800;
 }
 
@@ -935,7 +935,7 @@ QLabel#ScannerDecisionAction[state="skip"] {
 
 QLabel#ScannerDecisionReason {
   color: #57534E;
-  font-size: 12px;
+  @QSS_BODY@
   font-weight: 700;
 }
 
@@ -948,19 +948,19 @@ QFrame#ScannerDecisionMetric {
 
 QLabel#ScannerDecisionMetricTitle {
   color: #8A8175;
-  font-size: 10px;
+  @QSS_SMALL@
   font-weight: 700;
 }
 
 QLabel#ScannerDecisionMetricValue {
   color: #231E19;
-  font-size: 12px;
+  @QSS_NUMBER@
   font-weight: 800;
 }
 
 QLabel#ScannerDecisionSectionTitle {
   color: #231E19;
-  font-size: 13px;
+  @QSS_SUBTITLE@
   font-weight: 900;
   padding-top: 4px;
 }
@@ -971,7 +971,7 @@ QLabel#ScannerDecisionPill {
   border-left: 4px solid #A19B90;
   border-radius: 6px;
   color: #1E293B;
-  font-size: 11px;
+  @QSS_BODY@
   font-weight: 650;
   padding: 7px 10px;
 }
@@ -1027,13 +1027,13 @@ QFrame#AnalysisChartFrame {
 
 QFrame#InlineStat QLabel#MiniStatTitle {
   color: #736B60;
-  font-size: 11px;
+  @QSS_SMALL@
   font-weight: 700;
 }
 
 QFrame#InlineStat QLabel#MiniStatValue {
   color: #231E19;
-  font-size: 13px;
+  @QSS_NUMBER@
   font-weight: 800;
 }
 
@@ -1075,7 +1075,7 @@ QTextEdit#ConditionInfoBody {
   background: transparent;
   border: none;
   color: #231E19;
-  font-size: 13px;
+  @QSS_BODY@
   font-weight: 600;
   padding: 0;
   selection-background-color: #D94625;
@@ -1120,13 +1120,13 @@ QWidget#CompactInfoRow {
 
 QLabel#CompactInfoTitle {
   color: #736B60;
-  font-size: 12px;
+  @QSS_SMALL@
   font-weight: 600;
 }
 
 QLabel#CompactInfoValue {
   color: #111827;
-  font-size: 13px;
+  @QSS_NUMBER@
   font-weight: 700;
 }
 
@@ -1156,9 +1156,13 @@ QFrame#StatusDot[state="ok"] {
   background: #059669;
 }
 
-QLabel#CardTitle,
+QLabel#CardTitle {
+  @QSS_SUBTITLE@
+  font-weight: 600;
+}
+
 QLabel#MiniStatTitle {
-  font-size: 12px;
+  @QSS_SMALL@
   font-weight: 600;
 }
 
@@ -1171,19 +1175,19 @@ QLabel#MiniStatValue {
 }
 
 QLabel#CardValue {
-  font-size: 15px;
+  @QSS_NUMBER@
 }
 
 QLabel#ActionTitle {
-  font-size: 18px;
+  @QSS_TITLE@
 }
 
 QLabel#PanelTitle {
-  font-size: 16px;
+  @QSS_SUBTITLE@
 }
 
 QLabel#MiniStatValue {
-  font-size: 15px;
+  @QSS_NUMBER@
 }
 
 QLabel#MiniStatValue[metricTone="positive"] {
@@ -1226,7 +1230,7 @@ QFrame#WarningPanel {
 
 QLabel#WarningTitle {
   color: #F59E0B;
-  font-size: 16px;
+  @QSS_SUBTITLE@
   font-weight: 700;
 }
 
@@ -1273,23 +1277,23 @@ QPushButton#PrimaryButton[btnColor="info"] { background: #0284C7; border: 1px so
 QPushButton#PrimaryButton[btnColor="info"]:hover, QPushButton#PrimaryButton[btnColor="info"]:pressed, QPushButton#PrimaryButton[btnColor="info"]:checked { background: #38BDF8; border-color: #0369A1; color: #ffffff; }
 
 QLabel#FormLabel {
-  font-size: 13px;
+  @QSS_BODY@
   font-weight: 600;
 }
 
 QLabel#StatsLabel {
   color: #736B60;
-  font-size: 11px;
+  @QSS_SMALL@
   font-weight: 500;
 }
 QLabel#StatsValue {
   color: #231E19;
-  font-size: 11px;
+  @QSS_NUMBER@
   font-weight: bold;
 }
 QLabel#StatsSeparator {
   color: #A19B90;
-  font-size: 11px;
+  @QSS_SMALL@
   font-weight: bold;
   padding: 0px 4px;
 }
@@ -1315,7 +1319,7 @@ QLabel#ConditionBadge {
   border: 1px solid #E0533C;
   border-radius: 6px;
   color: #111827;
-  font-size: 12px;
+  @QSS_BODY@
   font-weight: 700;
   min-height: 22px;
   min-width: 22px;
@@ -1323,13 +1327,13 @@ QLabel#ConditionBadge {
 
 QLabel#ConditionTitle {
   color: #111827;
-  font-size: 12px;
+  @QSS_SUBTITLE@
   font-weight: 700;
 }
 
 QLabel#ConditionDetail {
   color: #736B60;
-  font-size: 11px;
+  @QSS_SMALL@
 }
 
 QLineEdit,
@@ -1439,7 +1443,7 @@ QProgressBar {
   border: 1px solid #cbd5e1;
   border-radius: 5px;
   color: #1f2937;
-  font-size: 11px;
+  @QSS_NUMBER@
   font-weight: bold;
   text-align: center;
   min-height: 18px;
@@ -1784,7 +1788,7 @@ QDialog#ScannerHelpDialog QCheckBox {
 
 QDialog#ScannerHelpDialog QLabel#HelpHeaderLabel {
   color: #D94625;
-  font-size: 18px;
+  @QSS_TITLE@
   font-weight: 800;
   padding-bottom: 2px;
 }
@@ -1794,7 +1798,7 @@ QDialog#ScannerHelpDialog QHeaderView::section {
   border: none;
   border-bottom: 2px solid #D94625;
   color: #736B60;
-  font-size: 11px;
+  @QSS_BODY@
   font-weight: 700;
   padding: 4px 8px;
   text-transform: uppercase;
@@ -1803,7 +1807,7 @@ QDialog#ScannerHelpDialog QHeaderView::section {
 QMessageBox {
   background: #F4F1EA;
   color: #111827;
-  font-family: "Segoe UI", "Arial", sans-serif;
+  @QSS_BODY@
 }
 
 QDialog#AnalysisDetailDialog {
@@ -1865,8 +1869,7 @@ QToolTip {
   border: 1px solid #d1d5db;
   border-radius: 4px;
   padding: 6px;
-  font-family: "Segoe UI", "Arial", sans-serif;
-  font-size: 12px;
+  @QSS_SMALL@
 }
 
 QMessageBox QLabel {
@@ -2046,7 +2049,7 @@ QTableView#DataTable QHeaderView::section,
 QTableWidget#DataTable QHeaderView::section {
   background: #EAE6DF;
   color: #736B60;
-  font-size: 11px;
+  @QSS_BODY@
   font-weight: 700;
   padding: 4px 8px;
   border: none;
@@ -2159,7 +2162,7 @@ QLabel#ResultTabPosition {
   border: 1px solid #F5978A;
   border-radius: 6px;
   color: #231E19;
-  font-size: 11px;
+  @QSS_SMALL@
   font-weight: 800;
   min-height: 24px;
   padding: 0 8px;
@@ -2187,7 +2190,7 @@ QSplitter#SettingsAiSplitter::handle:hover {
 }
 
 QLabel#HelperText {
-  font-size: 12px;
+  @QSS_SMALL@
 }
 
 QLabel#HelperText[state="ok"] {
@@ -2264,7 +2267,7 @@ QTableView#EconTable {
 }
 QTableWidget#EconTable::item,
 QTableView#EconTable::item {
-  font-size: 13px;
+  @QSS_BODY@
   padding: 4px 8px;
   border: none;
 }
@@ -2272,7 +2275,7 @@ QTableWidget#EconTable QHeaderView::section,
 QTableView#EconTable QHeaderView::section {
   background: #EAE6DF;
   color: #736B60;
-  font-size: 11px;
+  @QSS_BODY@
   font-weight: 700;
   padding: 4px 8px;
   border: none;
@@ -2319,7 +2322,7 @@ QDialog#ScanAnalysisDetailDialog {
 }
 
 QDialog#ScanAnalysisDetailDialog QLabel {
-  font-family: "Segoe UI", "Arial", sans-serif;
+  @QSS_BODY@
   color: #0f172a;
 }
 
@@ -2394,7 +2397,7 @@ QFrame#MacroProgressBarFill {
 }
 
 QLabel#MacroReasonLabel {
-  font-size: 11px;
+  @QSS_SMALL@
   color: #64748b;
 }
 
@@ -2407,7 +2410,7 @@ QFrame#NotePopup {
 
 QLabel#NotePopupText {
   color: #1e293b;
-  font-size: 13px;
+  @QSS_BODY@
   padding: 2px 0;
 }
 
