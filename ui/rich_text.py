@@ -18,6 +18,7 @@ from ui.theme import (
     palette_for,
     semantic_role_for_color,
 )
+from ui.theme.fonts import QSS_BODY, QSS_NUMBER, QSS_SMALL, QSS_SUBTITLE, QSS_TITLE
 from ui.theme_manager import current_palette
 
 
@@ -113,24 +114,25 @@ def rich_text_css(
 ) -> str:
     """Build the common QTextDocument stylesheet for one active palette."""
 
+    qss_body_bold = QSS_BODY.replace("font-weight: normal;", "font-weight: bold;")
     rules = [
         (
             ".rt-root",
-            "font-family:'Segoe UI',Arial,sans-serif;"
+            f"{QSS_BODY}"
             f"color:{palette.text};background:transparent;"
-            "font-size:12px;line-height:1.45;margin:0;",
+            "line-height:1.45;margin:0;",
         ),
         ("h1,h2,h3,h4", f"color:{palette.text};font-weight:700;"),
-        ("h1", "font-size:18px;margin:0 0 12px;"),
-        ("h2", "font-size:15px;margin:16px 0 10px;"),
-        ("h3", "font-size:13px;margin:12px 0 8px;"),
+        ("h1", f"{QSS_TITLE}margin:0 0 12px;"),
+        ("h2", f"{QSS_SUBTITLE}margin:16px 0 10px;"),
+        ("h3", f"{qss_body_bold}margin:12px 0 8px;"),
         ("p", "margin:5px 0;"),
         ("ul,ol", "margin:5px 0;padding-left:22px;"),
         ("li", "margin:3px 0;"),
         (
             "table",
-            "width:100%;border-collapse:collapse;"
-            "font-size:11px;margin:0 0 14px;",
+            f"{QSS_SMALL}width:100%;border-collapse:collapse;"
+            "margin:0 0 14px;",
         ),
         (
             "th",
@@ -142,7 +144,7 @@ def rich_text_css(
             f"color:{palette.text};border-bottom:1px solid {palette.border};"
             "padding:6px 9px;vertical-align:top;",
         ),
-        ("code", f"color:{palette.info};font-family:Consolas,monospace;"),
+        ("code", f"{QSS_NUMBER}color:{palette.info};"),
         ("a", f"color:{palette.info};text-decoration:none;"),
         (".rt-muted", f"color:{palette.text_muted};"),
         (".rt-success", f"color:{palette.success};"),
