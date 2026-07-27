@@ -40,6 +40,7 @@ from services.journal_converters import build_performance_summary
 from ui.rich_text import compile_rich_html
 from ui.matplotlib_theme import apply_axes_theme, apply_figure_theme
 from ui.screens.shared import action_button, card, labeled_value, page_header
+from ui.theme.fonts import get_body_font, get_title_font
 from ui.theme_manager import current_palette, set_dynamic_property
 
 try:
@@ -544,7 +545,6 @@ class NotePopup(QFrame):
 class NoteIconDelegate(QStyledItemDelegate):
     """Vẽ icon ghi chú 💬 với kích thước lớn, màu nổi bật và hover effect."""
 
-    _ICON_SIZE = 20  # px — to hơn font data thông thường
     _ICON_CHAR = "💬"  # speech bubble — trực quan hơn 📝
 
     def paint(self, painter, option, index):
@@ -565,8 +565,8 @@ class NoteIconDelegate(QStyledItemDelegate):
         palette = current_palette()
 
         # Font to hơn font dữ liệu thông thường
-        font = option.font
-        font.setPixelSize(self._ICON_SIZE)
+        font = get_title_font()
+        font.setBold(False)
         painter.setFont(font)
 
         color = QColor(
@@ -595,8 +595,8 @@ class LinkDelegate(QStyledItemDelegate):
         is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
         palette = current_palette()
 
-        # Kế thừa font size từ option (đồng nhất với các ô dữ liệu khác)
-        font = option.font
+        # Dùng font body chuẩn, đồng nhất với các ô dữ liệu khác.
+        font = get_body_font()
         if is_hover:
             font.setUnderline(True)
             color = QColor(palette.accent_hover)
