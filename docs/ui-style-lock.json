@@ -281,7 +281,7 @@
       "hex_color_literals": 0,
       "sha256": "ef476dbda655efa508d5c0c959d3e17e1c7b0a71a512774202d9b3deb8581935"
     },
-    "ui/styles.qss": {
+    "ui/styles/dark.qss": {
       "line_count": 2375,
       "rule_blocks": 435,
       "selector_references": 646,
@@ -290,7 +290,7 @@
       "hex_color_literals": 639,
       "sha256": "c592cf19539975f0f87d638825e91b87d303f687983677d26e3e0ffab2dc897e"
     },
-    "ui/styles_light.qss": {
+    "ui/styles/light.qss": {
       "line_count": 2359,
       "rule_blocks": 434,
       "selector_references": 647,

@@ -6,8 +6,8 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DARK_QSS = ROOT / "ui" / "styles.qss"
-LIGHT_QSS = ROOT / "ui" / "styles_light.qss"
+DARK_QSS = ROOT / "ui" / "styles" / "dark.qss"
+LIGHT_QSS = ROOT / "ui" / "styles" / "light.qss"
 COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 BLOCK_RE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.DOTALL)
 

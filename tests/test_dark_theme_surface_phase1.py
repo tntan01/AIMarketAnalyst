@@ -21,8 +21,8 @@ from ui.theme_manager import ThemeManager, build_qpalette
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DARK_QSS = ROOT / "ui" / "styles.qss"
-LIGHT_QSS = ROOT / "ui" / "styles_light.qss"
+DARK_QSS = ROOT / "ui" / "styles" / "dark.qss"
+LIGHT_QSS = ROOT / "ui" / "styles" / "light.qss"
 _APP = QApplication.instance() or QApplication([])
 
 

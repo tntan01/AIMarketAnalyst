@@ -117,7 +117,7 @@ Spec phải include:
 * `assets/icons`.
 * `assets/fonts`.
 * `assets/chart`.
-* `ui/styles.qss`.
+* `ui/styles/dark.qss`.
 * `data/migrations`.
 * Các package hidden import cần cho PyQt6, PyQt6-WebEngine và MetaTrader5.
 

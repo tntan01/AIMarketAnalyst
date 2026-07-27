@@ -1,7 +1,7 @@
 /*
   Shared visual foundation for both themes.
 
-  Phase 2 keeps semantic colors in styles.qss/styles_light.qss, while all
+  Phase 2 keeps semantic colors in dark.qss/light.qss, while all
   theme-independent typography, sizing and spacing lives here.  Theme files
   are loaded after this file and therefore only provide color/state variants.
 */

@@ -43,7 +43,9 @@ def run_tests():
     print("=" * 60)
 
     base_path = os.path.join(os.path.dirname(test_dir), "ui", "styles", "base.qss")
-    dark_path = os.path.join(os.path.dirname(test_dir), "ui", "styles.qss")
+    dark_path = os.path.join(
+        os.path.dirname(test_dir), "ui", "styles", "dark.qss"
+    )
     with open(base_path, "r", encoding="utf-8") as f:
         base_qss = f.read()
     with open(dark_path, "r", encoding="utf-8") as f:

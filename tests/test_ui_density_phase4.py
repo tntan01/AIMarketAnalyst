@@ -21,7 +21,10 @@ SCREEN_CLUSTER_FILES = {
     "ui/screens/dashboard_screen.py",
     "ui/screens/shared.py",
 }
-THEME_FILES = (ROOT / "ui" / "styles.qss", ROOT / "ui" / "styles_light.qss")
+THEME_FILES = (
+    ROOT / "ui" / "styles" / "dark.qss",
+    ROOT / "ui" / "styles" / "light.qss",
+)
 INTERACTIVE_SELECTOR_TOKENS = (
     "QPushButton",
     "QToolButton",

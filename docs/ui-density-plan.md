@@ -16,7 +16,7 @@ Contract mục tiêu đã chốt:
 - control trong bảng, nút trợ giúp/icon và thành phần compact: 20 px;
 - text nhiều dòng, chart và container: chiều cao theo nội dung hoặc bố cục;
 - `ui/styles/base.qss` sở hữu kích thước, padding và typography;
-- `ui/styles.qss` và `ui/styles_light.qss` chỉ sở hữu màu theo theme.
+- `ui/styles/dark.qss` và `ui/styles/light.qss` chỉ sở hữu màu theo theme.
 
 ## 2. Phase 0 — Kiểm kê và khóa baseline ✅
 
@@ -182,7 +182,7 @@ không còn screen/dialog tự đặt stylesheet hoặc chiều cao cho control 
   hình thức radio trong dialog trợ giúp và hình thức button của `QMessageBox` về
   `ui/styles/base.qss`;
 - loại bỏ toàn bộ padding, spacing, font, kích thước và border-radius tương tác còn
-  lặp trong `ui/styles.qss` và `ui/styles_light.qss`; hai overlay giờ chỉ giữ màu và
+  lặp trong `ui/styles/dark.qss` và `ui/styles/light.qss`; hai overlay giờ chỉ giữ màu và
   trạng thái theo theme;
 - sửa radio thuộc `ScannerHelpDialog` từ chiều cao render 30 px về đúng 24 px trên
   cả dark và light, không cắt nội dung;

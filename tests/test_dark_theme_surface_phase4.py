@@ -17,8 +17,8 @@ from ui.theme_manager import ThemeManager
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DARK_QSS = ROOT / "ui" / "styles.qss"
-LIGHT_QSS = ROOT / "ui" / "styles_light.qss"
+DARK_QSS = ROOT / "ui" / "styles" / "dark.qss"
+LIGHT_QSS = ROOT / "ui" / "styles" / "light.qss"
 BACKTEST = ROOT / "ui" / "screens" / "backtest_screen.py"
 _APP = QApplication.instance() or QApplication([])
 

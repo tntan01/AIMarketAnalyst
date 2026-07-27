@@ -30,7 +30,7 @@ Tạo:
 * `services/settings_service.py`.
 * `ui/main_window.py`.
 * `ui/chart_bridge.py`.
-* `ui/styles.qss`.
+* `ui/styles/dark.qss`.
 
 Tiêu chí đạt:
 

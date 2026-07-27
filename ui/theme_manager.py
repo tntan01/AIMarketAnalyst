@@ -153,8 +153,8 @@ def load_stylesheet(
     resolved = normalize_theme(theme)
     directory = ui_dir or runtime_ui_dir()
     base_path = directory / "styles" / "base.qss"
-    overlay_name = "styles_light.qss" if resolved == "light" else "styles.qss"
-    overlay_path = directory / overlay_name
+    overlay_name = "light.qss" if resolved == "light" else "dark.qss"
+    overlay_path = directory / "styles" / overlay_name
 
     chunks: list[str] = []
     if base_path.exists():

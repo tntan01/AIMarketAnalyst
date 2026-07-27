@@ -7,7 +7,7 @@ from ui.screens.dashboard_screen import DashboardScreen
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE_QSS = (ROOT / "ui" / "styles" / "base.qss").read_text(encoding="utf-8")
-DARK_QSS = (ROOT / "ui" / "styles.qss").read_text(encoding="utf-8")
+DARK_QSS = (ROOT / "ui" / "styles" / "dark.qss").read_text(encoding="utf-8")
 
 # Khởi tạo QApplication (nếu chưa có)
 app = QApplication.instance()

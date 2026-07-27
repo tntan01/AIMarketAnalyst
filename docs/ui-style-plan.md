@@ -42,8 +42,8 @@ Lỗi nền được phát hiện trong quá trình chụp baseline và đã s�
 - Tạo `ui/theme_manager.py` làm điểm duy nhất resolve, nạp và áp dụng theme.
 - Tạo helper `set_dynamic_property()` và `repolish()`.
 - Tạo `ui/styles/base.qss` và pipeline nạp `base.qss` trước theme overlay.
-- Trong giai đoạn chuyển tiếp, overlay vẫn là `ui/styles.qss` và
-  `ui/styles_light.qss` để bảo toàn pixel; Phase 2 mới chuyển các rule dùng
+- Trong giai đoạn chuyển tiếp, overlay vẫn là `ui/styles/dark.qss` và
+  `ui/styles/light.qss` để bảo toàn pixel; Phase 2 mới chuyển các rule dùng
   chung vào `base.qss`.
 - Toàn bộ code UI xác định light/dark qua Theme Manager. Settings chỉ đọc giá
   trị hiện tại để hiển thị combobox và gọi hot reload như trước.
@@ -58,7 +58,7 @@ Lỗi nền được phát hiện trong quá trình chụp baseline và đã s�
 
 - Chuyển typography, kích thước, padding, border-radius và quy tắc bố cục dùng
   chung sang `ui/styles/base.qss`; file này không chứa màu theme.
-- Giữ `ui/styles.qss` và `ui/styles_light.qss` làm color/state overlay và bảo
+- Giữ `ui/styles/dark.qss` và `ui/styles/light.qss` làm color/state overlay và bảo
   đảm hai file có cùng 425 selector.
 - Bổ sung contract chung cho `InfoCard`, `BacktestResultText`,
   `BacktestVerdict`, `MarketBadge`, `BacktestAnalysisDialog` và
@@ -223,7 +223,7 @@ code về một hệ thống style dùng chung. Mục tiêu là:
 
 Đã rà soát toàn bộ 32 file trong thư mục `ui`, bao gồm:
 
-- Hai stylesheet dùng chung: `ui/styles.qss` và `ui/styles_light.qss`.
+- Hai stylesheet dùng chung: `ui/styles/dark.qss` và `ui/styles/light.qss`.
 - Cửa sổ chính và điều hướng.
 - Tất cả màn hình, dialog và widget.
 - Các component dùng chung.
@@ -244,8 +244,8 @@ Thống kê tĩnh:
 - 184 lần gọi `setStyleSheet()`.
 - Khoảng 467 thuộc tính `style=` trong nội dung HTML.
 - 1.024 literal màu HEX trong Python.
-- `ui/styles.qss`: 1.787 dòng, 286 block rule.
-- `ui/styles_light.qss`: 1.742 dòng, 282 block rule.
+- `ui/styles/dark.qss`: 1.787 dòng, 286 block rule.
+- `ui/styles/light.qss`: 1.742 dòng, 282 block rule.
 - Có 32–33 selector được khai báo ở nhiều block trong mỗi theme.
 - `ui/theme.py` mới có 8 màu của dark theme và gần như chưa được dùng làm nguồn
   màu chung.

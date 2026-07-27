@@ -6,8 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / "ui" / "main_window.py").read_text(encoding="utf-8")
 BASE = (ROOT / "ui" / "styles" / "base.qss").read_text(encoding="utf-8")
-DARK = (ROOT / "ui" / "styles.qss").read_text(encoding="utf-8")
-LIGHT = (ROOT / "ui" / "styles_light.qss").read_text(encoding="utf-8")
+DARK = (ROOT / "ui" / "styles" / "dark.qss").read_text(encoding="utf-8")
+LIGHT = (ROOT / "ui" / "styles" / "light.qss").read_text(encoding="utf-8")
 
 
 def test_restart_button_uses_shared_selector() -> None:

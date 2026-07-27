@@ -2877,8 +2877,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
 
     def _backtest_form_stylesheet(self) -> str:
         """Return the shared app QSS for legacy layout checks."""
-        qss_name = "styles_light.qss" if self._is_light_theme() else "styles.qss"
-        return (Path(__file__).resolve().parents[1] / qss_name).read_text(
+        qss_name = "light.qss" if self._is_light_theme() else "dark.qss"
+        return (Path(__file__).resolve().parents[1] / "styles" / qss_name).read_text(
             encoding="utf-8"
         )
 

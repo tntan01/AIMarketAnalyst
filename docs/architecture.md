@@ -107,7 +107,10 @@ ai-market-analyst/
 
   ui/
     theme.py
-    styles.qss
+    styles/
+      base.qss
+      dark.qss
+      light.qss
     main_window.py
     navigation.py
     chart_bridge.py

@@ -8,7 +8,7 @@ không làm vỡ bố cục ở các kích thước màn hình được hỗ tr�
 
 - `ui/styles/base.qss`: typography, kích thước, padding, border-radius và quy
   tắc bố cục không phụ thuộc theme. Không đặt màu theme trong file này.
-- `ui/styles.qss` và `ui/styles_light.qss`: màu và trạng thái tương tác của dark
+- `ui/styles/dark.qss` và `ui/styles/light.qss`: màu và trạng thái tương tác của dark
   và light theme. Hai overlay phải có contract selector tương ứng.
 - `ui/theme.py`: nguồn semantic palette duy nhất cho Python, rich text và chart.
 - `ui/theme_manager.py`: điểm duy nhất được phép gọi `setStyleSheet()` để nạp

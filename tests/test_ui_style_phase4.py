@@ -46,8 +46,8 @@ def test_phase4_semantic_selectors_are_shared_by_both_themes() -> None:
         'QLabel#MiniStatValue[metricTone="positive"]',
         'QLabel#CardDetail[statusTone="warning"]',
     )
-    dark = (UI / "styles.qss").read_text(encoding="utf-8")
-    light = (UI / "styles_light.qss").read_text(encoding="utf-8")
+    dark = (UI / "styles" / "dark.qss").read_text(encoding="utf-8")
+    light = (UI / "styles" / "light.qss").read_text(encoding="utf-8")
     for selector in required:
         assert selector in dark
         assert selector in light

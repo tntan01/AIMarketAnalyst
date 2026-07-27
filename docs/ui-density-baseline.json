@@ -7,8 +7,8 @@
     "multiline_height": "content-driven",
     "style_owner": "ui/styles/base.qss",
     "theme_overlays": [
-      "ui/styles.qss",
-      "ui/styles_light.qss"
+      "ui/styles/dark.qss",
+      "ui/styles/light.qss"
     ]
   },
   "reviewed_groups": {
@@ -877,7 +877,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 945,
       "selector": "QFrame#ScannerDecisionMetric",
       "declarations": [
@@ -889,7 +889,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1012,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
       "declarations": [
@@ -901,7 +901,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1022,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
       "declarations": [
@@ -913,7 +913,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1096,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
       "declarations": [
@@ -925,7 +925,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1106,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
       "declarations": [
@@ -937,7 +937,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1337,
       "selector": "QLabel#ConditionBadge",
       "declarations": [
@@ -949,7 +949,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1424,
       "selector": "QProgressBar",
       "declarations": [
@@ -965,7 +965,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1460,
       "selector": "QComboBox::down-arrow, QDateEdit::down-arrow, QDateTimeEdit::down-arrow",
       "declarations": [
@@ -977,7 +977,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1483,
       "selector": "QDateEdit#FilterField::up-button, QDateEdit#FilterField::down-button",
       "declarations": [
@@ -989,7 +989,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1491,
       "selector": "QComboBox#FilterField, QDateEdit#FilterField, QDoubleSpinBox#FilterField, QSpinBox#FilterField, QLineEdit#FilterField",
       "declarations": [
@@ -1005,7 +1005,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1551,
       "selector": "QComboBox#FilterField::down-arrow, QDateEdit#FilterField::down-arrow",
       "declarations": [
@@ -1017,7 +1017,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1581,
       "selector": "QCheckBox::indicator",
       "declarations": [
@@ -1029,7 +1029,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1608,
       "selector": "QCheckBox#ScannerSymbolCheck::indicator",
       "declarations": [
@@ -1041,7 +1041,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1739,
       "selector": "QDialog#ScannerHelpDialog QRadioButton::indicator",
       "declarations": [
@@ -1053,7 +1053,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1828,
       "selector": "QPushButton#HelpButton",
       "declarations": [
@@ -1069,7 +1069,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1886,
       "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5MinScoreInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5ReadyInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WatchInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WaitInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QComboBox",
       "declarations": [
@@ -1085,7 +1085,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1958,
       "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::up-arrow, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::down-arrow",
       "declarations": [
@@ -1097,7 +1097,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1964,
       "selector": "QTableView#DataTable QScrollBar:horizontal, QTableWidget#DataTable QScrollBar:horizontal",
       "declarations": [
@@ -1109,7 +1109,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 1986,
       "selector": "QTableView#DataTable QScrollBar::add-line:horizontal, QTableView#DataTable QScrollBar::sub-line:horizontal, QTableWidget#DataTable QScrollBar::add-line:horizontal, QTableWidget#DataTable QScrollBar::sub-line:horizontal",
       "declarations": [
@@ -1121,7 +1121,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2003,
       "selector": "QTableView#DataTable QScrollBar::handle:vertical, QTableWidget#DataTable QScrollBar::handle:vertical",
       "declarations": [
@@ -1133,7 +1133,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2013,
       "selector": "QTableView#DataTable QScrollBar::add-line:vertical, QTableView#DataTable QScrollBar::sub-line:vertical, QTableWidget#DataTable QScrollBar::add-line:vertical, QTableWidget#DataTable QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1145,7 +1145,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2129,
       "selector": "QTabWidget#ContentTabs QTabBar QToolButton",
       "declarations": [
@@ -1157,7 +1157,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2156,
       "selector": "QPushButton#ResultTabArrow",
       "declarations": [
@@ -1169,7 +1169,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2183,
       "selector": "QLabel#ResultTabPosition",
       "declarations": [
@@ -1181,7 +1181,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2194,
       "selector": "QFrame#ChartPanel",
       "declarations": [
@@ -1193,7 +1193,7 @@
       "category": "multiline_or_chart"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2250,
       "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
       "declarations": [
@@ -1205,7 +1205,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2258,
       "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1217,7 +1217,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2324,
       "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
       "declarations": [
@@ -1229,7 +1229,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles.qss",
+      "path": "ui/styles/dark.qss",
       "line": 2334,
       "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1241,7 +1241,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 941,
       "selector": "QFrame#ScannerDecisionMetric",
       "declarations": [
@@ -1253,7 +1253,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1008,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
       "declarations": [
@@ -1265,7 +1265,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1018,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1277,7 +1277,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1092,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
       "declarations": [
@@ -1289,7 +1289,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1102,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1301,7 +1301,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1333,
       "selector": "QLabel#ConditionBadge",
       "declarations": [
@@ -1313,7 +1313,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1420,
       "selector": "QProgressBar",
       "declarations": [
@@ -1329,7 +1329,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1456,
       "selector": "QComboBox::down-arrow, QDateEdit::down-arrow, QDateTimeEdit::down-arrow",
       "declarations": [
@@ -1341,7 +1341,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1479,
       "selector": "QDateEdit#FilterField::up-button, QDateEdit#FilterField::down-button",
       "declarations": [
@@ -1353,7 +1353,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1487,
       "selector": "QComboBox#FilterField, QDateEdit#FilterField, QDoubleSpinBox#FilterField, QSpinBox#FilterField, QLineEdit#FilterField",
       "declarations": [
@@ -1369,7 +1369,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1547,
       "selector": "QComboBox#FilterField::down-arrow, QDateEdit#FilterField::down-arrow",
       "declarations": [
@@ -1381,7 +1381,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1577,
       "selector": "QCheckBox::indicator",
       "declarations": [
@@ -1393,7 +1393,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1604,
       "selector": "QCheckBox#ScannerSymbolCheck::indicator",
       "declarations": [
@@ -1405,7 +1405,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1735,
       "selector": "QDialog#ScannerHelpDialog QRadioButton::indicator",
       "declarations": [
@@ -1417,7 +1417,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1824,
       "selector": "QPushButton#HelpButton",
       "declarations": [
@@ -1433,7 +1433,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1883,
       "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5MinScoreInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5ReadyInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WatchInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WaitInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QComboBox",
       "declarations": [
@@ -1449,7 +1449,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1955,
       "selector": "QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::up-arrow, QTableWidget#DataTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::down-arrow",
       "declarations": [
@@ -1461,7 +1461,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1961,
       "selector": "QTableView#DataTable QScrollBar:horizontal, QTableWidget#DataTable QScrollBar:horizontal",
       "declarations": [
@@ -1473,7 +1473,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 1983,
       "selector": "QTableView#DataTable QScrollBar::add-line:horizontal, QTableView#DataTable QScrollBar::sub-line:horizontal, QTableWidget#DataTable QScrollBar::add-line:horizontal, QTableWidget#DataTable QScrollBar::sub-line:horizontal",
       "declarations": [
@@ -1485,7 +1485,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2000,
       "selector": "QTableView#DataTable QScrollBar::handle:vertical, QTableWidget#DataTable QScrollBar::handle:vertical",
       "declarations": [
@@ -1497,7 +1497,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2010,
       "selector": "QTableView#DataTable QScrollBar::add-line:vertical, QTableView#DataTable QScrollBar::sub-line:vertical, QTableWidget#DataTable QScrollBar::add-line:vertical, QTableWidget#DataTable QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1509,7 +1509,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2114,
       "selector": "QTabWidget#ContentTabs QTabBar QToolButton",
       "declarations": [
@@ -1521,7 +1521,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2141,
       "selector": "QPushButton#ResultTabArrow",
       "declarations": [
@@ -1533,7 +1533,7 @@
       "category": "interactive"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2168,
       "selector": "QLabel#ResultTabPosition",
       "declarations": [
@@ -1545,7 +1545,7 @@
       "category": "structural"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2179,
       "selector": "QFrame#ChartPanel",
       "declarations": [
@@ -1557,7 +1557,7 @@
       "category": "multiline_or_chart"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2235,
       "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
       "declarations": [
@@ -1569,7 +1569,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2243,
       "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
       "declarations": [
@@ -1581,7 +1581,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2308,
       "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
       "declarations": [
@@ -1593,7 +1593,7 @@
       "category": "subcontrol"
     },
     {
-      "path": "ui/styles_light.qss",
+      "path": "ui/styles/light.qss",
       "line": 2318,
       "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
       "declarations": [

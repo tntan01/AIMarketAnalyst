@@ -88,8 +88,8 @@ HEIGHT_METHODS = {
 }
 QSS_FILES = (
     UI_ROOT / "styles" / "base.qss",
-    UI_ROOT / "styles.qss",
-    UI_ROOT / "styles_light.qss",
+    UI_ROOT / "styles" / "dark.qss",
+    UI_ROOT / "styles" / "light.qss",
 )
 CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 CSS_BLOCK_RE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.DOTALL)
@@ -529,7 +529,7 @@ def build_inventory(*, include_runtime: bool = True) -> dict[str, Any]:
             "compact_actual_height_px": 20,
             "multiline_height": "content-driven",
             "style_owner": "ui/styles/base.qss",
-            "theme_overlays": ["ui/styles.qss", "ui/styles_light.qss"],
+            "theme_overlays": ["ui/styles/dark.qss", "ui/styles/light.qss"],
         },
         "reviewed_groups": {
             "standard_24px": [

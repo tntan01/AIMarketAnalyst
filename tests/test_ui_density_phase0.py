@@ -27,7 +27,7 @@ def test_density_phase0_baseline_is_reviewable() -> None:
         "compact_actual_height_px": 20,
         "multiline_height": "content-driven",
         "style_owner": "ui/styles/base.qss",
-        "theme_overlays": ["ui/styles.qss", "ui/styles_light.qss"],
+        "theme_overlays": ["ui/styles/dark.qss", "ui/styles/light.qss"],
     }
     assert payload["python_height_calls"]
     assert payload["qss_height_rules"]

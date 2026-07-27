@@ -58,8 +58,8 @@ def test_phase5_shared_component_selectors_exist_in_both_themes() -> None:
         'QLabel#ScannerPanelValue[metricTone="success"]',
         'QLabel#ScannerChecklistText[checkState="fail"]',
     )
-    dark = (UI / "styles.qss").read_text(encoding="utf-8")
-    light = (UI / "styles_light.qss").read_text(encoding="utf-8")
+    dark = (UI / "styles" / "dark.qss").read_text(encoding="utf-8")
+    light = (UI / "styles" / "light.qss").read_text(encoding="utf-8")
     for selector in required:
         assert selector in dark
         assert selector in light

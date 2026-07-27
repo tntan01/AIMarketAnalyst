@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "captured_at": "2026-07-26T15:35:58.279984+00:00",
-  "scope": "ui/**/*.py plus ui/styles.qss and ui/styles_light.qss",
+  "scope": "ui/**/*.py plus ui/styles/dark.qss and ui/styles/light.qss",
   "policy": {
     "comparison": "current counts must be less than or equal to baseline",
     "new_debt_files": "forbidden",
@@ -256,7 +256,7 @@
     }
   },
   "qss_files": {
-    "ui/styles.qss": {
+    "ui/styles/dark.qss": {
       "line_count": 1787,
       "rule_blocks": 286,
       "selector_references": 455,
@@ -265,7 +265,7 @@
       "hex_color_literals": 451,
       "sha256": "47411a74c23a4a9fd076116b7bf74ce8e5fc1ec36c3282eab4af8ab1ebf4d879"
     },
-    "ui/styles_light.qss": {
+    "ui/styles/light.qss": {
       "line_count": 1742,
       "rule_blocks": 282,
       "selector_references": 456,
