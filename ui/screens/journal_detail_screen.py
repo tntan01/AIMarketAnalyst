@@ -30,6 +30,7 @@ from services.journal_converters import parse_entry_from_zone
 from services.journal_models import JournalEntry
 from services.settings_service import SettingsService
 from ui.rich_text import empty_state_html, set_rich_html
+from ui.theme.fonts import QSS_BODY, QSS_SMALL
 from ui.theme_manager import is_light_theme
 from ui.screens.journal_screen import BIAS_TEXT, DECISION_TEXT, PERMISSION_TEXT, format_time
 from ui.screens.shared import action_button, card, page_header
@@ -677,7 +678,7 @@ class JournalDetailScreen(QWidget):
                             <td style="background-color: #10b981; width: {green_pct}%; border-radius: 0 4px 4px 0; height: 8px;"></td>
                         </tr>
                     </table>
-                    <div style="display: flex; justify-content: space-between; font-size: 10px; color: {self._label_color};">
+                    <div style="display: flex; justify-content: space-between; {QSS_SMALL} color: {self._label_color};">
                         <span>SL</span><span>Entry</span><span>TP</span>
                     </div>
                     </div>
@@ -694,7 +695,7 @@ class JournalDetailScreen(QWidget):
         regime_txt: str, label: str, val: str,
     ) -> str:
         return f"""
-        <div style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.25; font-size: 11px; color: {val};">
+        <div style="{QSS_BODY} line-height: 1.25; color: {val};">
           <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%;">
             <tr>
               <td width="20%" style="color: {label}; padding: 1px 0;">Kết luận:</td>
@@ -724,7 +725,7 @@ class JournalDetailScreen(QWidget):
         suggested_lot_txt: str, rr_bar_html: str, label: str, val: str,
     ) -> str:
         return f"""
-        <div style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.25; font-size: 11px; color: {val};">
+        <div style="{QSS_BODY} line-height: 1.25; color: {val};">
           <table width="100%" border="0" cellspacing="0" cellpadding="0" style="width: 100%;">
             <tr>
               <td width="20%" style="color: {label}; padding: 1px 0;">Kịch bản:</td>
@@ -754,7 +755,7 @@ class JournalDetailScreen(QWidget):
         if "Imported from MT5 history" in ai_text:
             ai_text = ai_text.replace("Imported from MT5 history.", "Đã nhập từ lịch sử MT5.").replace("Imported from MT5 history", "Đã nhập từ lịch sử MT5")
         return f"""
-        <div align="left" style="font-family: -apple-system, 'Segoe UI', sans-serif; line-height: 1.2; font-size: 11.5px; color: {val}; text-align: left; margin: 0; padding: 0;">
+        <div align="left" style="{QSS_BODY} line-height: 1.2; color: {val}; text-align: left; margin: 0; padding: 0;">
           <p align="left" style="text-align: left; margin: 0; padding: 0;">{ai_text}</p>
         </div>
         """
