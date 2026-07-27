@@ -246,7 +246,7 @@
       "line_count": 23,
       "sha256": "4ebff78db0070839ec3392a25ac8dc491de00d22083dd67d43890e2931cba627"
     },
-    "ui/theme.py": {
+    "ui/theme/__init__.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 87,
