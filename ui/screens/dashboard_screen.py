@@ -29,6 +29,7 @@ from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
+from ui.theme.fonts import QSS_BODY, QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
 from ui.theme_manager import (
     current_palette,
     is_light_theme,
@@ -650,7 +651,7 @@ class DashboardScreen(QWidget):
                 if bg_color:
                     item.setBackground(bg_color)
                 if is_bold:
-                    f = item.font()
+                    f = get_body_font()
                     f.setBold(True)
                     item.setFont(f)
 
@@ -715,10 +716,8 @@ class DashboardScreen(QWidget):
                 forecast = "—"
             actual_item = QTableWidgetItem(actual if actual else "—")
             actual_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if actual and actual not in ("", "—"):
-                f = actual_item.font()
-                f.setBold(True)
-                actual_item.setFont(f)
+            has_actual = actual not in ("", "—")
+            if has_actual:
                 try:
                     av = float(actual.replace("%", "").replace(",", ""))
                     fv = float(forecast.replace("%", "").replace(",", ""))
@@ -729,6 +728,8 @@ class DashboardScreen(QWidget):
                 except (ValueError, TypeError):
                     pass
             style_item(actual_item)
+            if has_actual:
+                actual_item.setFont(get_number_font())
             table.setItem(i, 3, actual_item)
 
             # Column 4: Forecast
@@ -842,9 +843,7 @@ class DashboardScreen(QWidget):
         sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         sep_item.setForeground(fg_color)
         sep_item.setBackground(bg_color)
-        f = sep_item.font()
-        f.setBold(True)
-        sep_item.setFont(f)
+        sep_item.setFont(get_subtitle_font())
         table.setItem(row_idx, 0, sep_item)
         table.setSpan(row_idx, 0, 1, 5)
         
@@ -908,13 +907,13 @@ class DashboardScreen(QWidget):
         info_layout.setVerticalSpacing(8)
 
         left_items = [
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>⏰</span> Thời gian", local_time_str or "—"),
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📰</span> Nguồn", source),
+            (f'<span style="{QSS_BODY}">⏰</span> Thời gian', local_time_str or "—"),
+            (f'<span style="{QSS_BODY}">📰</span> Nguồn', source),
         ]
         
         url_link = f"<a href='{url}' style='color:#ea580c;'>Link gốc</a>" if url else "—"
         right_items = [
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🔗</span> Liên kết", url_link),
+            (f'<span style="{QSS_BODY}">🔗</span> Liên kết', url_link),
         ]
 
         for row_idx, (lbl_txt, val_txt) in enumerate(left_items):
@@ -1069,26 +1068,26 @@ class DashboardScreen(QWidget):
         info_layout.setVerticalSpacing(8)
 
         impact_map = {
-            "high": "<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🔴</span> Cao",
-            "medium": "<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🟡</span> Trung bình",
-            "low": "<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>⚪</span> Thấp"
+            "high": f'<span style="{QSS_BODY}">🔴</span> Cao',
+            "medium": f'<span style="{QSS_BODY}">🟡</span> Trung bình',
+            "low": f'<span style="{QSS_BODY}">⚪</span> Thấp'
         }
         impact_text = impact_map.get(impact.lower(), impact)
 
         left_items = [
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>⏰</span> Thời gian", time_str),
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>💱</span> Tiền tệ", currency),
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📊</span> Mức tác động", impact_text),
+            (f'<span style="{QSS_BODY}">⏰</span> Thời gian', time_str),
+            (f'<span style="{QSS_BODY}">💱</span> Tiền tệ', currency),
+            (f'<span style="{QSS_BODY}">📊</span> Mức tác động', impact_text),
         ]
         right_items = [
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📈</span> Dự báo", forecast),
-            ("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>📉</span> Kỳ trước", previous),
+            (f'<span style="{QSS_BODY}">📈</span> Dự báo', forecast),
+            (f'<span style="{QSS_BODY}">📉</span> Kỳ trước', previous),
         ]
         actual_val_label = None
         if actual:
-            right_items.append(("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>✅</span> Kết quả", actual))
+            right_items.append((f'<span style="{QSS_BODY}">✅</span> Kết quả', actual))
         elif ev_time < now_utc:
-            right_items.append(("<span style='font-weight:normal; font-family:\"Segoe UI Emoji\";'>🔄</span> Kết quả", "Đang tra cứu..."))
+            right_items.append((f'<span style="{QSS_BODY}">🔄</span> Kết quả', "Đang tra cứu..."))
 
         for row_idx, (label_text, value_text) in enumerate(left_items):
             lbl = QLabel(compile_rich_html(label_text))
@@ -1376,7 +1375,7 @@ class DashboardScreen(QWidget):
         _title_color = palette.text
         title = QLabel(
             compile_rich_html(
-                f"<b style='font-size:17px;color:{_title_color};'>"
+                f'<b style="{QSS_TITLE}color:{_title_color};">'
                 "📊 Hướng dẫn đọc chỉ số thị trường</b>"
             )
         )
