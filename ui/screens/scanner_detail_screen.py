@@ -142,7 +142,7 @@ class ScannerDetailScreen(QWidget):
         overview_container = QWidget()
         overview_layout = QHBoxLayout(overview_container)
         overview_layout.setContentsMargins(0, 0, 0, 0)
-        overview_layout.setSpacing(0)
+        overview_layout.setSpacing(10)
 
         # --- Left container: button + trade panel + score panel + checklist ---
         left_container = QWidget()
@@ -187,7 +187,7 @@ class ScannerDetailScreen(QWidget):
         left_col.addWidget(self.checklist_panel)
         left_col.addStretch(1)
 
-        overview_layout.addWidget(left_container, 20)
+        overview_layout.addWidget(left_container, 25)
 
         # --- Right container: hero bar + chart ---
         right_container = QWidget()
@@ -214,7 +214,7 @@ class ScannerDetailScreen(QWidget):
         cl.addWidget(self.chart)
         right_col.addWidget(self.chart_frame, 1)
 
-        overview_layout.addWidget(right_container, 80)
+        overview_layout.addWidget(right_container, 75)
         self.overview_layout = overview_layout
 
         scroll = QScrollArea()
