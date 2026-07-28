@@ -850,7 +850,9 @@ class ScannerScreen (QWidget ):
         self._dim_show_orders_button()
 
         self .scan_mode_label =QLabel ("Chế độ")
+        self .scan_mode_label .setObjectName ("FormLabel")
         self .scan_interval_label =QLabel ("Khoảng thời gian")
+        self .scan_interval_label .setObjectName ("FormLabel")
         compact_controls =(
             self .scan_mode_label ,
             self .scan_interval_label ,
