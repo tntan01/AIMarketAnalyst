@@ -107,6 +107,11 @@ class _AIAnalyzeWorker(QObject):
 
 
 class BacktestScreen(QWidget):
+    _DATE_FIELD_WIDTH = 184  # dd/MM/yyyy + calendar affordance at the current UI font
+    _BACKTEST_TIMESTAMP_RE = re.compile(
+        r"(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s*$"
+    )
+
     TRADE_COLUMNS = [
         ("stt", "STT"),
         ("entry_time", "Thời gian vào"),
@@ -183,12 +188,12 @@ class BacktestScreen(QWidget):
         if not hasattr(self, "sweep_period_combo"):
             return
         configure_control(self.symbol_summary, width=LayoutTokens.FIELD_SM)
-        configure_control(self.start_date, width=130)
-        self.start_date.setMinimumWidth(130)
-        self.start_date.setMaximumWidth(130)
-        configure_control(self.end_date, width=130)
-        self.end_date.setMinimumWidth(130)
-        self.end_date.setMaximumWidth(130)
+        configure_control(self.start_date, width=self._DATE_FIELD_WIDTH)
+        self.start_date.setMinimumWidth(self._DATE_FIELD_WIDTH)
+        self.start_date.setMaximumWidth(self._DATE_FIELD_WIDTH)
+        configure_control(self.end_date, width=self._DATE_FIELD_WIDTH)
+        self.end_date.setMinimumWidth(self._DATE_FIELD_WIDTH)
+        self.end_date.setMaximumWidth(self._DATE_FIELD_WIDTH)
         configure_control(self.balance_input, width=120)
         self.balance_input.setMinimumWidth(120)
         self.balance_input.setMaximumWidth(120)
@@ -290,6 +295,7 @@ class BacktestScreen(QWidget):
         self.mode_summary_label.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
         )
+        self.mode_summary_label.setFixedWidth(0)
 
         self.run_button = action_button("▶️ Chạy", primary=True, color="success")
         self._configure_compact_button(self.run_button)
@@ -344,6 +350,7 @@ class BacktestScreen(QWidget):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.progress.setFormat("0%")
         self.progress.setTextVisible(True)
         self.progress.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
@@ -367,14 +374,23 @@ class BacktestScreen(QWidget):
         # Row 3: Results Display
         results_row = QHBoxLayout()
         configure_layout(results_row, spacing=LayoutTokens.SPACE_2)
+        results_row.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         frame.layout().addLayout(results_row)
 
         results_label = create_form_label("Kết quả:")
         results_label.setObjectName("PanelTitle")
-        results_row.addWidget(results_label)
+        results_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        results_row.addWidget(results_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.summary_row = QHBoxLayout()
-        configure_layout(self.summary_row, spacing=LayoutTokens.SPACE_1)
+        configure_layout(self.summary_row, spacing=LayoutTokens.SPACE_2)
+        self.summary_row.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         results_row.addLayout(self.summary_row)
         results_row.addStretch(1)
         self._set_summary({})
@@ -397,22 +413,26 @@ class BacktestScreen(QWidget):
         layout = QHBoxLayout(frame)
         configure_layout(
             layout,
-            margins=(
-                LayoutTokens.SPACE_2,
-                0,
-                LayoutTokens.SPACE_2,
-                0,
-            ),
+            margins=(0, 0, 0, 0),
             spacing=LayoutTokens.SPACE_1,
+        )
+        layout.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
         title_label = QLabel(f"{title}:")
         title_label.setObjectName("MiniStatTitleCompact")
+        title_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         value_label = QLabel(value)
         value_label.setObjectName("MiniStatValueCompact")
+        value_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         if tone:
             value_label.setProperty("metricTone", tone)
-        layout.addWidget(title_label)
-        layout.addWidget(value_label)
+        layout.addWidget(title_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(value_label, 0, Qt.AlignmentFlag.AlignVCenter)
         return frame
 
     def _vertical_separator(self) -> QFrame:
@@ -2424,6 +2444,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         self.analyze_btn.setEnabled(False)
         self.apply_config_btn.hide()
         self.progress.setValue(0)
+        self.progress.setFormat("0%")
         self.status_label.setText("Đang chạy backtest...")
         self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(
             requests,
@@ -2496,8 +2517,24 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             self._refresh_compact_control_sizes()
 
     def _on_progress(self, percent: int, message: str) -> None:
-        self.progress.setValue(percent)
+        bounded_percent = max(0, min(100, int(percent)))
+        self.progress.setValue(bounded_percent)
+        self.progress.setFormat(
+            self._progress_bar_text(bounded_percent, message)
+        )
         self.status_label.setText(message)
+
+    @classmethod
+    def _progress_bar_text(cls, percent: int, message: str) -> str:
+        """Return the compact progress-bar label without changing run logic."""
+        if percent >= 100:
+            return "Hoàn tất - 100%"
+        if percent <= 0:
+            return "0%"
+        match = cls._BACKTEST_TIMESTAMP_RE.search(str(message or ""))
+        if match:
+            return f"Đang quét: {match.group(1)} - {percent}%"
+        return f"{percent}%"
 
     def _cancel_backtest(self) -> None:
         if self.backtest_worker is not None:
@@ -2560,6 +2597,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             )
 
     def _on_success(self, result: dict) -> None:
+        self.progress.setValue(100)
+        self.progress.setFormat("Hoàn tất - 100%")
         self.result = result
         self._sync_symbols_from_result(result)
         lifecycle = (
@@ -2623,11 +2662,19 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         ]
         for idx, (title, value, tone) in enumerate(items):
             if idx > 0:
-                sep_label = QLabel(" | ")
+                sep_label = QLabel("|")
                 sep_label.setObjectName("BacktestSummarySeparator")
-                self.summary_row.addWidget(sep_label)
+                sep_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                sep_label.setSizePolicy(
+                    QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+                )
+                self.summary_row.addWidget(
+                    sep_label, 0, Qt.AlignmentFlag.AlignVCenter
+                )
             self.summary_row.addWidget(
-                self._stat_cell(str(title), str(value), tone=tone)
+                self._stat_cell(str(title), str(value), tone=tone),
+                0,
+                Qt.AlignmentFlag.AlignVCenter,
             )
         self.summary_row.addStretch(1)
 

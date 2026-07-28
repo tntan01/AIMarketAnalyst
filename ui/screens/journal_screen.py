@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
@@ -404,7 +405,7 @@ class JournalTableModel(QAbstractTableModel):
                 return {
                     "buy": QColor(palette.buy),
                     "sell": QColor(palette.sell),
-                }.get(entry.direction_bias)
+                }.get(self._direction_bias_side(entry.direction_bias))
             if key == "result_r":
                 val = entry.result_r
                 if val is not None:
@@ -414,6 +415,8 @@ class JournalTableModel(QAbstractTableModel):
                 if val is not None:
                     return QColor(palette.success) if val > 0 else QColor(palette.danger) if val < 0 else None
         if role == Qt.ItemDataRole.ToolTipRole:
+            if key == "direction_bias":
+                return self._direction_bias_tooltip(entry.direction_bias)
             return entry.note or entry.ai_commentary
         return None
 
@@ -454,7 +457,12 @@ class JournalTableModel(QAbstractTableModel):
             }
             return status_map.get(entry.trade_status, entry.trade_status or "Kế hoạch")
         if key == "direction_bias":
-            return BIAS_TEXT.get(entry.direction_bias, entry.direction_bias)
+            bias = self._direction_bias_payload(entry.direction_bias)
+            if bias:
+                side = str(bias.get("best_side") or "").strip().lower()
+                return BIAS_TEXT.get(side, "Trung lập")
+            raw_bias = str(entry.direction_bias or "").strip().lower()
+            return BIAS_TEXT.get(raw_bias, entry.direction_bias or "--")
         if key == "result_r":
             if entry.result_r is not None:
                 return f"{entry.result_r:+.2f}R"
@@ -472,6 +480,54 @@ class JournalTableModel(QAbstractTableModel):
             return "📝" if entry.note else ""
         value = getattr(entry, key)
         return str(value if value not in (None, "") else "--")
+
+    @staticmethod
+    def _direction_bias_payload(value: object) -> dict[str, object]:
+        """Read the legacy Scanner direction-bias representation for display only."""
+        if isinstance(value, dict):
+            return value
+        if not isinstance(value, str):
+            return {}
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @classmethod
+    def _direction_bias_side(cls, value: object) -> str:
+        payload = cls._direction_bias_payload(value)
+        if payload:
+            return str(payload.get("best_side") or "").strip().lower()
+        return str(value or "").strip().lower()
+
+    @classmethod
+    def _direction_bias_tooltip(cls, value: object) -> str:
+        payload = cls._direction_bias_payload(value)
+        if not payload:
+            return cls._display_bias_text(value)
+
+        side = cls._direction_bias_side(value)
+        label = BIAS_TEXT.get(side, "Trung lập")
+        buy_score = cls._format_bias_score(payload.get("buy_score"))
+        sell_score = cls._format_bias_score(payload.get("sell_score"))
+        score_parts = [
+            f"Điểm Mua: {buy_score}" if buy_score is not None else "",
+            f"Điểm Bán: {sell_score}" if sell_score is not None else "",
+        ]
+        return "\n".join([f"Thiên hướng: {label}", *filter(None, score_parts)])
+
+    @staticmethod
+    def _format_bias_score(value: object) -> str | None:
+        try:
+            return f"{float(value):.0f}"
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _display_bias_text(value: object) -> str:
+        raw_bias = str(value or "").strip().lower()
+        return BIAS_TEXT.get(raw_bias, str(value or "--"))
 
 
 class NotePopup(QFrame):
@@ -858,10 +914,12 @@ class JournalScreen(QWidget):
 
         for label, group, attr, set_val, reset_val in self._QUICK_FILTER_DEFS:
             btn = action_button(label)
+            btn.setProperty("quickFilter", True)
+            size_hint = btn.sizeHint()
+            btn.setMinimumSize(size_hint.width() + 12, size_hint.height() + 6)
             btn.setCheckable(True)
             btn.setProperty("qf_group", group)
             btn.setProperty("qf_attr", attr)
-            btn.setProperty("quickFilter", True)
             btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             btn.toggled.connect(lambda checked, b=btn: self._on_quick_filter_toggled(b, checked))
             self._quick_btns[label] = btn
@@ -1840,17 +1898,17 @@ class JournalScreen(QWidget):
 
     # (col_index, min_width, stretch_weight)
     _COLUMN_WEIGHTS: list[tuple[int, int, int]] = [
-        (0, 110, 1),   # Thoi gian  ← co gian
-        (1,  80, 1),   # Ma         ← co gian
-        (2,  90, 0),   # Setup      ← co dinh
-        (3,  80, 0),   # Regime     ← co dinh
-        (4,  80, 0),   # Trang thai ← co dinh
-        (5,  80, 0),   # Thien huong← co dinh
-        (6,  45, 0),   # R          ← co dinh
-        (7,  90, 0),   # Loi nhuan  ← co dinh
-        (8,  90, 0),   # CL Thuc thi← co dinh
-        (9,  55, 0),   # Ghi chu    ← co dinh
-        (10, 70, 0),   # Chi tiet   ← co dinh
+        (0, 140, 0),   # Thoi gian  ← dd/mm/yyyy hh:mm
+        (1,  90, 0),   # Ma         ← XXX/YYY
+        (2, 150, 3),   # Setup      ← uu tien noi dung ky thuat dai
+        (3, 130, 2),   # Regime     ← uu tien noi dung ky thuat dai
+        (4, 120, 1),   # Trang thai
+        (5, 130, 1),   # Thien huong
+        (6,  55, 0),   # R
+        (7, 120, 1),   # Loi nhuan
+        (8, 130, 1),   # CL Thuc thi
+        (9, 104, 0),   # Ghi chu    ← du tieu de, noi dung la icon popup
+        (10, 90, 0),   # Chi tiet
     ]
 
     def _recalculate_column_widths(self) -> None:
@@ -1878,7 +1936,12 @@ class JournalScreen(QWidget):
         effective: list[tuple[int, int, int]] = []
         for idx, hard_min, weight in self._COLUMN_WEIGHTS:
             hint = header.sectionSizeHint(idx)
-            effective.append((idx, max(hard_min, hint), weight))
+            minimum = (
+                hard_min
+                if JournalTableModel.COLUMNS[idx][0] == "note"
+                else max(hard_min, hint)
+            )
+            effective.append((idx, minimum, weight))
 
         total_min = sum(mw for _, mw, _ in effective)
         total_weight = sum(w for _, _, w in effective)

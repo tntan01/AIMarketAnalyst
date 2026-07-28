@@ -26,12 +26,12 @@ FONT_FAMILY_NUMBER_FALLBACK = ["Consolas", "JetBrains Mono", "Courier New", "mon
 # ============================================================
 # FONT SIZE - Các cấp size chuẩn (đơn vị: pt)
 # ============================================================
-FONT_SIZE_TITLE = 14       # Tiêu đề màn hình, tên panel (bold)
-FONT_SIZE_SUBTITLE = 12    # Tiêu đề phụ, tên section (bold)
-FONT_SIZE_BODY = 10        # Text thường, label, nội dung bảng (regular)
-FONT_SIZE_NUMBER = 11      # Giá, % , điểm AI, RR (semi-bold, dùng font monospace)
-FONT_SIZE_SMALL = 9        # Ghi chú, timestamp, phụ đề nhỏ (regular)
-FONT_SIZE_BUTTON = 10      # Nút bấm (medium)
+FONT_SIZE_TITLE = 12       # Tiêu đề màn hình, tên panel (bold)
+FONT_SIZE_SUBTITLE = 9    # Tiêu đề phụ, tên section (bold)
+FONT_SIZE_BODY = 9        # Text thường, label, nội dung bảng (regular)
+FONT_SIZE_NUMBER = 9      # Giá, % , điểm AI, RR (semi-bold, dùng font monospace)
+FONT_SIZE_SMALL = 8        # Ghi chú, timestamp, phụ đề nhỏ (regular)
+FONT_SIZE_BUTTON = 8      # Nút bấm (medium)
 
 
 # ============================================================

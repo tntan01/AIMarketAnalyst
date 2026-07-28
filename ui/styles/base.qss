@@ -258,8 +258,9 @@ QPushButton#SecondaryButton {
 }
 
 QPushButton#SecondaryButton[quickFilter="true"] {
-  @QSS_COMPACT@
-  padding: 3px 5px;
+  @QSS_BODY@
+  font-weight: bold;
+  padding: 5px 11px;
 }
 
 QPushButton#AutoTradeToggle {
