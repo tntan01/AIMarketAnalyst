@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 from controllers.journal_controller import JournalController
 from services.journal_models import JournalEntry, JournalFilter
 from services.journal_converters import build_performance_summary
+from ui.layout_system import configure_table
 from ui.rich_text import compile_rich_html
 from ui.matplotlib_theme import apply_axes_theme, apply_figure_theme
 from ui.screens.shared import action_button, card, labeled_value, page_header
@@ -1085,19 +1086,12 @@ class JournalScreen(QWidget):
         frame.layout().addLayout(header_layout)
 
         self.table = QTableView()
-        self.table.setObjectName("DataTable")
+        configure_table(self.table)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.table.setShowGrid(False)
         self.table.setModel(self.table_model)
-        self.table.setWordWrap(False)
         self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
-        self.table.setAlternatingRowColors(True)
-        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.horizontalHeader().setHighlightSections(False)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setTextElideMode(Qt.TextElideMode.ElideRight)
         self.table.setHorizontalScrollMode(QTableView.ScrollMode.ScrollPerPixel)
@@ -1267,18 +1261,12 @@ class JournalScreen(QWidget):
         left_box.addLayout(left_header)
 
         self.performance_group_table = QTableWidget()
-        self.performance_group_table.setObjectName("DataTable")
-        self.performance_group_table.setShowGrid(False)
+        configure_table(self.performance_group_table)
         self.performance_group_table.setColumnCount(7)
         self.performance_group_table.setHorizontalHeaderLabels(["Nhóm", "Tên", "Lệnh", "Thắng %", "Kỳ vọng R", "Tổng R", "P/L"])
-        self.performance_group_table.verticalHeader().setVisible(False)
-        self.performance_group_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.performance_group_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.performance_group_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.performance_group_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.performance_group_table.setAlternatingRowColors(True)
-        self.performance_group_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.performance_group_table.horizontalHeader().setHighlightSections(False)
         self.performance_group_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.performance_group_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         for column in range(2, 7):
@@ -1323,17 +1311,11 @@ class JournalScreen(QWidget):
         right_box.addLayout(right_header)
 
         self.recent_trade_table = QTableWidget()
-        self.recent_trade_table.setObjectName("DataTable")
-        self.recent_trade_table.setShowGrid(False)
+        configure_table(self.recent_trade_table)
         self.recent_trade_table.setColumnCount(6)
         self.recent_trade_table.setHorizontalHeaderLabels(["Đóng lúc", "Mã", "Hướng", "R", "P/L", "CL"])
-        self.recent_trade_table.verticalHeader().setVisible(False)
-        self.recent_trade_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.recent_trade_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.recent_trade_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.recent_trade_table.setAlternatingRowColors(True)
-        self.recent_trade_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.recent_trade_table.horizontalHeader().setHighlightSections(False)
         self.recent_trade_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.recent_trade_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         for column in (1, 2, 3, 5):
@@ -2003,19 +1985,12 @@ class MetricsExplanationDialog(QDialog):
         layout.addWidget(intro)
 
         self.table = QTableWidget(len(self.HELP_ROWS), 3)
-        self.table.setObjectName("EconTable")
-        self.table.setShowGrid(False)
+        configure_table(self.table)
         self.table.setHorizontalHeaderLabels(["Chỉ số / Cột", "Ý nghĩa & Ứng dụng", "Mẹo & Hướng dẫn cho Trader"])
-        self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.table.setWordWrap(True)
-        self.table.setAlternatingRowColors(True)
-        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.horizontalHeader().setHighlightSections(False)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
