@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLayout,
     QProgressBar,
+    QHeaderView,
     QSizePolicy,
     QTableView,
     QWidget,
@@ -139,9 +140,16 @@ def configure_progress(
 
 
 def configure_table(table: QTableView) -> None:
+    table.setObjectName("EconTable")
+    table.setShowGrid(False)
+    table.setAlternatingRowColors(True)
+    table.setWordWrap(True)
+
     horizontal = table.horizontalHeader()
-    horizontal.setFixedHeight(LayoutTokens.TABLE_HEADER_HEIGHT)
     horizontal.setMinimumSectionSize(LayoutTokens.SPACE_6)
+    horizontal.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+    horizontal.setHighlightSections(False)
+
     vertical = table.verticalHeader()
-    vertical.setDefaultSectionSize(LayoutTokens.TABLE_ROW_HEIGHT)
-    vertical.setMinimumSectionSize(LayoutTokens.TABLE_ROW_HEIGHT)
+    vertical.setVisible(False)
+    vertical.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)

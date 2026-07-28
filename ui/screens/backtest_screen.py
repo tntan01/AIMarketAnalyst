@@ -478,22 +478,15 @@ class BacktestScreen(QWidget):
 
         # Tab 2: Danh sách lệnh
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
-        self.table.setObjectName("EconTable")
+        configure_table(self.table)
         self.table.setHorizontalHeaderLabels([label for _, label in self.TRADE_COLUMNS])
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setAlternatingRowColors(True)
-        self.table.setShowGrid(False)
-        self.table.setWordWrap(False)
-        self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setStretchLastSection(False)
-        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.table.horizontalHeader().setHighlightSections(False)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.setHorizontalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-        configure_table(self.table)
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
         self.tabs.addTab(self.table, "📋 Lệnh")
@@ -1403,19 +1396,11 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             current_rr = f"{existing.min_expected_rr:.1f}" if existing else "--"
 
             table = QTableWidget(4, 2)
-            table.setObjectName("LuuTrungHoaTable")
-            table.verticalHeader().setVisible(False)
+            configure_table(table)
             table.horizontalHeader().setVisible(False)
             table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
             table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            table.setShowGrid(False)
-            table.setWordWrap(True)
-            table.setMinimumHeight(
-                LayoutTokens.TABLE_ROW_HEIGHT * 4
-                + LayoutTokens.SPACE_1
-            )
-            configure_table(table)
             
             rows = [
                 ("Cấu hình hiện tại",

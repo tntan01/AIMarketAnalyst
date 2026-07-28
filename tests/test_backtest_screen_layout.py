@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QGridLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -270,15 +271,15 @@ def test_backtest_table_chart_and_advanced_cards_use_shared_grid() -> None:
         assert isinstance(screen.advanced_options_grid, QGridLayout)
         assert isinstance(screen.sweep_controls_grid, QGridLayout)
         assert screen.research_card.height() == screen.sweep_card.height()
+        assert screen.table.objectName() == "EconTable"
+        assert screen.table.showGrid() is False
+        assert screen.table.alternatingRowColors() is True
+        assert screen.table.wordWrap() is True
+        screen.table.setRowCount(1)
         assert (
-            screen.table.horizontalHeader().height()
-            == LayoutTokens.TABLE_HEADER_HEIGHT
+            screen.table.verticalHeader().sectionResizeMode(0)
+            == QHeaderView.ResizeMode.ResizeToContents
         )
-        assert (
-            screen.table.verticalHeader().defaultSectionSize()
-            == LayoutTokens.TABLE_ROW_HEIGHT
-        )
-        assert screen.table.wordWrap() is False
         assert (
             screen._equity_canvas is None
             or screen._equity_canvas.minimumHeight()
