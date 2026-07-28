@@ -1681,6 +1681,8 @@ class ScannerDetailScreen(QWidget):
 
         status = self._canonical_status()
         status_label, status_state = _CANDIDATE_STATUS[status]
+        if status == "OUT_OF_STRATEGY":
+            status_label = "Chưa đạt quy tắc GD"
         status_tone = {
             "ready": "success",
             "wait": "warning",

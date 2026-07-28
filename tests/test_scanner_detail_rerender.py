@@ -92,5 +92,26 @@ def test_trade_panel_renders_tp1_and_tp2_on_separate_rows():
     assert app is QApplication.instance()
 
 
+def test_score_panel_shortens_only_out_of_strategy_display_text():
+    app = QApplication.instance() or QApplication(sys.argv)
+    screen = ScannerDetailScreen()
+    screen.row = {"candidate_status": "OUT_OF_STRATEGY"}
+
+    screen._refresh_score_panel()
+
+    values = [
+        label.text()
+        for label in screen.score_panel.findChildren(QLabel)
+        if label.objectName() == "ScannerPanelValue"
+    ]
+
+    assert "Chưa đạt quy tắc GD" in values
+    assert "Chưa đạt quy tắc giao dịch" not in values
+    assert screen._canonical_status() == "OUT_OF_STRATEGY"
+
+    screen.close()
+    assert app is QApplication.instance()
+
+
 if __name__ == "__main__":
     test_refresh_checklist_panel_no_duplicates()
