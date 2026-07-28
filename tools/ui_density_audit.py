@@ -371,7 +371,7 @@ def measure_representative_controls() -> dict[str, dict[str, dict[str, int]]]:
         layout.addWidget(configured_control)
 
         symbol_table = QTableWidget(1, 3)
-        symbol_table.setObjectName("DataTable")
+        symbol_table.setObjectName("EconTable")
         symbol_table.setProperty("tableRole", "mt5Symbols")
         symbol_table.setFixedHeight(56)
         table_line_edit = QLineEdit()

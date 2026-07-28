@@ -46,6 +46,7 @@ from services.ai.provider_catalog import ProviderCapability, capability_labels, 
 from services.data_provider import ConnectionStatus
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
+from ui.layout_system import configure_table
 from ui.layout_system import (
     LayoutTokens,
     configure_button,
@@ -535,16 +536,13 @@ class SettingsScreen(QWidget):
 
         self.mt5_display_symbols = sorted(SUPPORTED_SYMBOLS)
         self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 13)
-        self.mt5_symbols_table.setObjectName("DataTable")
+        configure_table(self.mt5_symbols_table)
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
             "STT", "Mã hiển thị", "Mã MT5", "Trạng thái",
             "Kiểm tra", "Dùng BT đã duyệt", "Min Score BT", "Regime BT",
             "Hướng BT", "RR tối thiểu BT", "Ready", "Watch", "Wait",
         ])
-        self.mt5_symbols_table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.mt5_symbols_table.horizontalHeader().setMinimumHeight(38)
-        self.mt5_symbols_table.verticalHeader().setVisible(False)
         self.mt5_symbols_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.mt5_symbols_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         for col_idx in range(13):
@@ -565,8 +563,6 @@ class SettingsScreen(QWidget):
         self.mt5_symbols_table.setColumnWidth(10, 90)
         self.mt5_symbols_table.setColumnWidth(11, 90)
         self.mt5_symbols_table.setColumnWidth(12, 90)
-        self.mt5_symbols_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.mt5_symbols_table.verticalHeader().setDefaultSectionSize(36)
         self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(48)
         for row, symbol in enumerate(self.mt5_display_symbols):
             for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", "", "", "", "", "", "", ""]):

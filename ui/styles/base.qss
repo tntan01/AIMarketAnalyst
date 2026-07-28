@@ -905,10 +905,10 @@ QPushButton#HelpButton {
   padding: 0;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput,
-QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput,
-QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput,
-QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QLineEdit#Mt5MinScoreInput,
+QTableWidget#EconTable[tableRole="mt5Symbols"] QLineEdit#Mt5ReadyInput,
+QTableWidget#EconTable[tableRole="mt5Symbols"] QLineEdit#Mt5WatchInput,
+QTableWidget#EconTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput {
   border-radius: 6px;
   min-height: 18px;
   max-height: 18px;
@@ -916,7 +916,7 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QLineEdit#Mt5WaitInput {
   padding: 0 6px;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QComboBox {
   border-radius: 6px;
   min-height: 18px;
   max-height: 18px;
@@ -924,7 +924,7 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox {
   padding: 0 22px 0 6px;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput {
   border-radius: 6px;
   min-height: 18px;
   max-height: 18px;
@@ -932,11 +932,11 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput {
   padding: 0 6px;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QComboBox::drop-down {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QComboBox::drop-down {
   width: 22px;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-button {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-button {
   width: 0;
   border: 0;
   background: transparent;
@@ -944,7 +944,7 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-
   subcontrol-position: top right;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::down-button {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::down-button {
   width: 0;
   border: 0;
   background: transparent;
@@ -952,8 +952,8 @@ QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::dow
   subcontrol-position: bottom right;
 }
 
-QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-arrow,
-QTableWidget#DataTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::down-arrow {
+QTableWidget#EconTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::up-arrow,
+QTableWidget#EconTable[tableRole="mt5Symbols"] QDoubleSpinBox#Mt5MinRrInput::down-arrow {
   width: 0;
   height: 0;
 }

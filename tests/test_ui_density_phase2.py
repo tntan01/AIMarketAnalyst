@@ -209,7 +209,7 @@ def test_compact_table_editors_have_hover_focus_disabled_and_invalid_borders() -
         "QDoubleSpinBox#Mt5MinRrInput",
         "QComboBox",
     )
-    prefix = 'QTableWidget#DataTable[tableRole="mt5Symbols"] '
+    prefix = 'QTableWidget#EconTable[tableRole="mt5Symbols"] '
     for path, colors in THEMES:
         rules = _rules(path)
         for suffix in suffixes:
