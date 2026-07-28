@@ -95,6 +95,7 @@ def run_walk_forward(
                 is_request,
                 candles_by_timeframe,
                 progress_callback=progress,
+                phase_label=f"Walk-Forward cửa sổ {index}/{len(boundaries)} IS",
             )
             frozen = optimize_frozen_strategy(
                 is_result.candidate_ledger,
@@ -128,6 +129,7 @@ def run_walk_forward(
                 oos_request,
                 candles_by_timeframe,
                 progress_callback=progress,
+                phase_label=f"Walk-Forward cửa sổ {index}/{len(boundaries)} OOS",
             )
         except Exception as exc:
             windows.append({

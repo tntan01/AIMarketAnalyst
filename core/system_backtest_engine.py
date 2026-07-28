@@ -359,6 +359,7 @@ def run_system_backtest(
     *,
     analysis_fn: AnalysisFn = analyze_symbol,
     progress_callback: Callable[[int, str], None] | None = None,
+    phase_label: str = "",
 ) -> BacktestResult:
     normalized_candles, data_manifest = prepare_backtest_data(
         candles_by_timeframe,
@@ -430,7 +431,7 @@ def run_system_backtest(
         percent = 10 + int(ordinal / total_steps * 75)
         gmt7 = decision_time.astimezone(timezone(timedelta(hours=7)))
         time_str = gmt7.strftime("%d/%m/%Y %H:%M")
-        progress(percent, f"Đang backtest {request.symbol} tại {time_str}")
+        progress(percent, f"Đang backtest {request.symbol} tại {time_str} | {phase_label}")
 
         snapshot = slice_candles_until(
             normalized_candles,
@@ -654,7 +655,7 @@ def run_system_backtest(
             else decision_time
         )
 
-    progress(92, "Đang tổng hợp kết quả backtest...")
+    progress(92, f"Đang tổng hợp kết quả backtest... | {phase_label}")
     summary = summarize_backtest_trades(trades)
     diagnostics = {
         "data_range": {

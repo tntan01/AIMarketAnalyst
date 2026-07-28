@@ -80,7 +80,7 @@ def test_sweep_reuses_full_controller_request_context(monkeypatch) -> None:
     monkeypatch.setattr(sensitivity, "_load_candles", lambda request, _provider: captured.append(request) or {})
     monkeypatch.setattr(
         "core.system_backtest_engine.run_system_backtest",
-        lambda _request, _candles: Result(),
+        lambda _request, _candles, **_: Result(),
     )
     monkeypatch.setattr(
         "core.system_backtest_engine.summarize_backtest_trades",

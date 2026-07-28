@@ -109,6 +109,9 @@ class _AIAnalyzeWorker(QObject):
 class BacktestScreen(QWidget):
     _DATE_FIELD_WIDTH = 184  # dd/MM/yyyy + calendar affordance at the current UI font
     _BACKTEST_TIMESTAMP_RE = re.compile(
+        r"(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s*\|\s*(.+?)\s*$"
+    )
+    _BACKTEST_TIMESTAMP_LEGACY_RE = re.compile(
         r"(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})\s*$"
     )
 
@@ -2531,7 +2534,13 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             return "Hoàn tất - 100%"
         if percent <= 0:
             return "0%"
-        match = cls._BACKTEST_TIMESTAMP_RE.search(str(message or ""))
+        msg = str(message or "")
+        match = cls._BACKTEST_TIMESTAMP_RE.search(msg)
+        if match:
+            timestamp = match.group(1)
+            phase = match.group(2).strip()
+            return f"Đang quét: {phase} - {timestamp} - {percent}%"
+        match = cls._BACKTEST_TIMESTAMP_LEGACY_RE.search(msg)
         if match:
             return f"Đang quét: {match.group(1)} - {percent}%"
         return f"{percent}%"

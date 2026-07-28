@@ -83,7 +83,7 @@ def _controller(monkeypatch: pytest.MonkeyPatch) -> BacktestController:
     monkeypatch.setattr(
         controller_module,
         "run_system_backtest",
-        lambda request, _candles, progress_callback=None: _engine_result(request),
+        lambda request, _candles, progress_callback=None, **_: _engine_result(request),
     )
     monkeypatch.setattr(
         "core.monte_carlo.run_monte_carlo",

@@ -54,6 +54,7 @@ def run_frozen_validation_replay(
         is_request,
         candles_by_timeframe,
         **runner_kwargs,
+        phase_label="Kiểm chứng In-Sample",
     )
     frozen = optimize_frozen_strategy(
         is_result.candidate_ledger,
@@ -92,6 +93,7 @@ def run_frozen_validation_replay(
         oos_request,
         candles_by_timeframe,
         **runner_kwargs,
+        phase_label="Kiểm chứng Out-Of-Sample",
     )
     oos_payload = oos_result.to_dict()
     return {

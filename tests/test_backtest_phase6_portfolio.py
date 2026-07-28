@@ -159,7 +159,7 @@ def test_controller_batch_returns_symbol_and_portfolio_aggregates(monkeypatch) -
     monkeypatch.setattr(
         controller_module,
         "run_system_backtest",
-        lambda request, _candles, progress_callback=None: _result(
+        lambda request, _candles, progress_callback=None, **_: _result(
             request.symbol,
             [_trade(
                 request.symbol,

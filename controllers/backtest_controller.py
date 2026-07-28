@@ -242,6 +242,7 @@ class BacktestController:
             primary_request,
             candles,
             progress_callback=progress,
+            phase_label="Chạy chính",
         )
         payload = result.to_dict()
         payload["monte_carlo"] = run_monte_carlo_if_eligible(
@@ -333,6 +334,7 @@ class BacktestController:
                 primary_request,
                 candles,
                 progress_callback=scaled,
+                phase_label="Chạy chính",
             )
             engine_results.append(result)
             symbol_payload = result.to_dict()
