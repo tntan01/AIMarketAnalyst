@@ -60,5 +60,37 @@ def test_overview_splitter_defaults_to_30_70_information_chart_ratio():
     screen.close()
     assert app is QApplication.instance()
 
+
+def test_trade_panel_renders_tp1_and_tp2_on_separate_rows():
+    app = QApplication.instance() or QApplication(sys.argv)
+    screen = ScannerDetailScreen()
+    screen.row = {
+        "entry_zone": [1.1000, 1.1010],
+        "take_profit": [1.1050, 1.1100],
+    }
+
+    screen._refresh_trade_panel()
+
+    labels = [
+        label.text()
+        for label in screen.trade_panel.findChildren(QLabel)
+        if label.objectName() == "ScannerPanelLabel"
+    ]
+    values = [
+        label.text()
+        for label in screen.trade_panel.findChildren(QLabel)
+        if label.objectName() == "ScannerPanelValue"
+    ]
+
+    assert "TP1" in labels
+    assert "TP2" in labels
+    assert "Take Profit" not in labels
+    assert "1.10500" in values
+    assert "1.11000" in values
+
+    screen.close()
+    assert app is QApplication.instance()
+
+
 if __name__ == "__main__":
     test_refresh_checklist_panel_no_duplicates()

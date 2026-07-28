@@ -1619,6 +1619,7 @@ class ScannerDetailScreen(QWidget):
         entry_val, _, _ = self._dialog_card_entry()
         sl_val, _, _ = self._dialog_card_sl()
         tp_val, tp_detail, _ = self._dialog_card_tp()
+        tp2_val = tp_detail.removeprefix("TP2: ") if tp_detail else "--"
         rr_val, rr_detail, _ = self._dialog_card_rr()
         regime_val, _, _ = self._dialog_card_regime()
         side_text = {
@@ -1640,7 +1641,8 @@ class ScannerDetailScreen(QWidget):
             ("Hướng phân tích", side_text, self._selected_side() or "neutral"),
             ("Vùng vào lệnh", entry_val, entry_tone),
             ("Stop Loss", sl_val, "danger"),
-            ("Take Profit", f"{tp_val}{' · ' + tp_detail if tp_detail else ''}", "success"),
+            ("TP1", tp_val, "success"),
+            ("TP2", tp2_val, "success"),
             ("R:R thực", rr_val, "warning"),
             ("Chế độ TT", regime_val, "text"),
         ]
