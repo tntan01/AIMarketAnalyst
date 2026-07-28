@@ -44,7 +44,7 @@ def test_refresh_checklist_panel_no_duplicates():
     print("PASS: No duplicate widgets detected after consecutive refreshes.")
 
 
-def test_overview_splitter_defaults_to_30_70_information_chart_ratio():
+def test_overview_layout_is_fixed_to_20_80_information_chart_ratio():
     app = QApplication.instance() or QApplication(sys.argv)
     screen = ScannerDetailScreen()
 
@@ -52,11 +52,15 @@ def test_overview_splitter_defaults_to_30_70_information_chart_ratio():
     screen.show()
     app.processEvents()
 
-    sizes = screen.overview_splitter.sizes()
-    assert sum(sizes) > 0
-    information_ratio = sizes[0] / sum(sizes)
-    assert 0.27 <= information_ratio <= 0.33
-    assert screen.overview_splitter.handle(1).isEnabled() is False
+    left_width = screen.overview_layout.itemAt(0).widget().width()
+    right_width = screen.overview_layout.itemAt(1).widget().width()
+    information_ratio = left_width / (left_width + right_width)
+
+    assert 0.18 <= information_ratio <= 0.22
+    assert screen.overview_layout.stretch(0) == 20
+    assert screen.overview_layout.stretch(1) == 80
+    assert screen.overview_layout.spacing() == 0
+    assert not hasattr(screen, "overview_splitter")
 
     screen.close()
     assert app is QApplication.instance()

@@ -11,7 +11,7 @@ from core.reason_codes import REASON_CODE_MESSAGES
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QProgressBar,
-    QScrollArea, QSizePolicy, QSplitter, QTabWidget, QTextEdit, QVBoxLayout,
+    QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
     QWidget,
 )
 from controllers.journal_controller import JournalController
@@ -139,12 +139,14 @@ class ScannerDetailScreen(QWidget):
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
         overview_tab = card()
 
-        ov = QSplitter(Qt.Orientation.Horizontal)
-        ov.setChildrenCollapsible(False)
+        overview_container = QWidget()
+        overview_layout = QHBoxLayout(overview_container)
+        overview_layout.setContentsMargins(0, 0, 0, 0)
+        overview_layout.setSpacing(0)
 
         # --- Left container: button + trade panel + score panel + checklist ---
         left_container = QWidget()
-        left_container.setMinimumWidth(260)
+        left_container.setMinimumWidth(200)
         left_col = QVBoxLayout(left_container)
         left_col.setSpacing(4)
         left_col.setContentsMargins(0, 0, 0, 0)
@@ -185,7 +187,7 @@ class ScannerDetailScreen(QWidget):
         left_col.addWidget(self.checklist_panel)
         left_col.addStretch(1)
 
-        ov.addWidget(left_container)
+        overview_layout.addWidget(left_container, 20)
 
         # --- Right container: hero bar + chart ---
         right_container = QWidget()
@@ -212,19 +214,13 @@ class ScannerDetailScreen(QWidget):
         cl.addWidget(self.chart)
         right_col.addWidget(self.chart_frame, 1)
 
-        ov.addWidget(right_container)
-        ov.handle(1).setEnabled(False)
-        # Default overview balance: keep the information cards compact while
-        # preserving most of the screen for price action.
-        ov.setStretchFactor(0, 30)
-        ov.setStretchFactor(1, 70)
-        ov.setSizes([300, 700])
-        self.overview_splitter = ov
+        overview_layout.addWidget(right_container, 80)
+        self.overview_layout = overview_layout
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setWidget(ov)
+        scroll.setWidget(overview_container)
         overview_tab.layout().addWidget(scroll)
 
         self.tabs.addTab(overview_tab, "📊 Tổng quan")
