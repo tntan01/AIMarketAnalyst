@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
+from ui.layout_system import configure_table
 from ui.theme.fonts import get_body_font, get_subtitle_font
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.screens.shared import action_button, card, page_header, labeled_value
@@ -168,7 +169,7 @@ class OrdersScreen(QWidget):
 
     def _build_order_table(self) -> QTableWidget:
         table = QTableWidget()
-        table.setObjectName("EconTable")
+        configure_table(table)
         table.setColumnCount(11)
         table.setHorizontalHeaderLabels([
             "Mã", "Hướng", "KL", "Entry", "Hiện tại", "SL", "TP", "P/L", "R", "Trailing", ""
@@ -176,10 +177,6 @@ class OrdersScreen(QWidget):
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setShowGrid(False)
-        table.setWordWrap(True)
         table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         header = table.horizontalHeader()
@@ -349,7 +346,6 @@ class OrdersScreen(QWidget):
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setForeground(QColor(palette.text_muted))
             table.setItem(0, 0, item)
-            table.setRowHeight(0, 40)
             return
 
         buy_color = QColor(palette.buy)
@@ -368,8 +364,6 @@ class OrdersScreen(QWidget):
                 self._render_position_row(table, idx, row, buy_color, sell_color, neutral_fg)
             else:
                 self._render_pending_row(table, idx, row, buy_color, sell_color, neutral_fg)
-            table.setRowHeight(idx, 30)
-
         # Restore previous selection
         if selected_pos_id and self._active_tab == "positions":
             for r in range(table.rowCount()):
