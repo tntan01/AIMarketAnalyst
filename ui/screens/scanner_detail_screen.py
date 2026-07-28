@@ -213,6 +213,7 @@ class ScannerDetailScreen(QWidget):
         right_col.addWidget(self.chart_frame, 1)
 
         ov.addWidget(right_container)
+        ov.handle(1).setEnabled(False)
         # Default overview balance: keep the information cards compact while
         # preserving most of the screen for price action.
         ov.setStretchFactor(0, 30)

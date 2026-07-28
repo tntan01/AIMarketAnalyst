@@ -56,6 +56,7 @@ def test_overview_splitter_defaults_to_30_70_information_chart_ratio():
     assert sum(sizes) > 0
     information_ratio = sizes[0] / sum(sizes)
     assert 0.27 <= information_ratio <= 0.33
+    assert screen.overview_splitter.handle(1).isEnabled() is False
 
     screen.close()
     assert app is QApplication.instance()
