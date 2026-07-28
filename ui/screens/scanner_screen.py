@@ -36,6 +36,7 @@ QWidget ,
 )
 from services .mt5_service import MT5Service
 from services .settings_service import SettingsService
+from ui.layout_system import configure_table
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header
 from ui.scanner_rr_formatters import (
     enrich_order_note_with_current_rr,
@@ -1171,7 +1172,7 @@ class ScannerScreen (QWidget ):
 
         # Table
         table = QTableWidget()
-        table.setObjectName("EconTable")
+        configure_table(table)
         columns = ["STT", "Mã", "Hướng", "Entry", "SL", "TP", "KL", "R:R", "Ghi chú"]
         if not auto_trade_enabled:
             columns.append("Thao tác")
@@ -1179,10 +1180,6 @@ class ScannerScreen (QWidget ):
         table.setHorizontalHeaderLabels(columns)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setShowGrid(False)
-        table.setWordWrap(True)
 
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
@@ -1320,8 +1317,6 @@ class ScannerScreen (QWidget ):
 
             if not auto_trade_enabled:
                 table.setCellWidget(idx, 9, create_order_button(order))
-
-            table.setRowHeight(idx, 36)
 
         root.addWidget(table, 1)
 
@@ -1488,18 +1483,11 @@ class ScannerScreen (QWidget ):
             frame .layout ().insertWidget (0 ,header )
 
         self .table =QTableView ()
-        self .table .setObjectName ("EconTable")
-        self .table .setShowGrid (False )
+        configure_table(self.table)
         self .table .setModel (self .table_model )
-        self .table .setWordWrap (True )
-        self .table .verticalHeader ().setSectionResizeMode (QHeaderView .ResizeMode .ResizeToContents )
         self .table .setSelectionBehavior (QTableView .SelectionBehavior .SelectRows )
         self .table .setSelectionMode (QTableView .SelectionMode .SingleSelection )
-        self .table .setAlternatingRowColors (True )
-        self .table .verticalHeader ().setVisible (False )
         self .table .horizontalHeader ().setStretchLastSection (False )
-        self .table .horizontalHeader ().setDefaultAlignment (Qt .AlignmentFlag .AlignCenter )
-        self .table .horizontalHeader ().setHighlightSections (False )
         self .table .setHorizontalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAsNeeded )
         self .table .setHorizontalScrollMode (QTableView .ScrollMode .ScrollPerPixel )
         self .table .setVerticalScrollBarPolicy (Qt .ScrollBarPolicy .ScrollBarAlwaysOn )
@@ -2205,19 +2193,15 @@ class ScannerRowExplanationDialog(QDialog):
         layout.addWidget(header_label)
 
         self.table = QTableWidget()
-        self.table.setObjectName("EconTable")
+        configure_table(self.table)
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(["Thông số", "Giá trị", "Giải thích chi tiết"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.table.setWordWrap(True)
         self.table.setVerticalScrollMode(QTableWidget.ScrollMode.ScrollPerPixel)
-        self.table.setFrameShape(QFrame.Shape.NoFrame)
 
         layout.addWidget(self.table)
 
@@ -3103,22 +3087,15 @@ class ScannerColumnsHelpDialog(QDialog):
         layout.addWidget(intro)
 
         table = QTableWidget(len(self.COLUMN_HELP), 3)
-        table.setObjectName("EconTable")
-        table.setShowGrid(False)
+        configure_table(table)
         table.setHorizontalHeaderLabels(
             ["Cột", "Ý nghĩa", "Cách đọc / Trường hợp thường gặp"]
-        )
-        table.verticalHeader().setVisible(False)
-        table.verticalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
         )
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        table.setWordWrap(True)
         table.setTextElideMode(Qt.TextElideMode.ElideNone)
-        table.setAlternatingRowColors(True)
         table.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -3143,8 +3120,6 @@ class ScannerColumnsHelpDialog(QDialog):
                 table.setItem(row, column, item)
 
         header = table.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setHighlightSections(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(0, 155)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
