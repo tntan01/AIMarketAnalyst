@@ -270,6 +270,11 @@ class ScannerDetailScreen(QWidget):
         root.addLayout(actions)
         self._render()
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self.show_detail_btn.setFixedHeight(26)
+        self.hero_bar.setFixedHeight(26)
+
     def _section_title(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setObjectName("ScannerDecisionSectionTitle")
@@ -1445,6 +1450,8 @@ class ScannerDetailScreen(QWidget):
     def refresh_theme_styles(self) -> None:
         """Keep the embedded WebEngine chart in sync with the active theme."""
 
+        self.show_detail_btn.setFixedHeight(26)
+        self.hero_bar.setFixedHeight(26)
         if hasattr(self, "chart"):
             self.chart.refresh_theme(current_palette())
 
