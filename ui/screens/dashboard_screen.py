@@ -28,6 +28,7 @@ from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
+from ui.layout_system import configure_table
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
 from ui.theme.fonts import QSS_BODY, QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
 from ui.theme_manager import (
@@ -331,15 +332,11 @@ class DashboardScreen(QWidget):
 
         # Table
         self.news_table = QTableWidget()
-        self.news_table.setObjectName("EconTable")
+        configure_table(self.news_table)
         self.news_table.setColumnCount(8)
         self.news_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung", "Thực tế", "Dự báo", "Kỳ trước", "Nguồn", ""])
         self.news_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.news_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.news_table.setAlternatingRowColors(True)
-        self.news_table.verticalHeader().setVisible(False)
-        self.news_table.setShowGrid(False)
-        self.news_table.setWordWrap(True)
         self.news_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.news_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
 
@@ -788,8 +785,6 @@ class DashboardScreen(QWidget):
                     detail_btn.clicked.connect(lambda checked, r=row: self._show_headline_detail(r, tz))
                     table.setCellWidget(i, 7, detail_btn)
 
-            table.setRowHeight(i, 32)
-
         # Auto-scroll to nearest upcoming after render
         QTimer.singleShot(50, self._scroll_to_nearest)
 
@@ -853,8 +848,6 @@ class DashboardScreen(QWidget):
             dummy.setBackground(bg_color)
             table.setItem(row_idx, c, dummy)
             
-        table.setRowHeight(row_idx, 30)
-
     def _show_news_event_detail(self, row: dict, tz) -> None:
         """Show detail dialog for a calendar event from the news feed."""
         ev = {
@@ -1027,8 +1020,6 @@ class DashboardScreen(QWidget):
             QColor(current_palette(self.settings_service).text_muted)
         )
         table.setItem(0, 0, item)
-        table.setRowHeight(0, 40)
-
     def _show_event_detail(self, ev: dict, ev_time: datetime, tz) -> None:
         impact = str(ev.get("impact", "low"))
         currency = str(ev.get("currency", ""))
