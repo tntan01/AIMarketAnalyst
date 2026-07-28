@@ -50,7 +50,7 @@ def test_base_defines_shared_component_contracts() -> None:
         "QRadioButton",
         "QTabWidget::pane",
         "QTabBar::tab",
-        "QTableWidget#DataTable::item",
+        "QTableWidget#EconTable::item",
         "QFrame#InfoCard",
         "QLabel#InfoCardLabel",
         "QLabel#InfoCardValue",
@@ -117,7 +117,7 @@ def test_structural_declarations_are_removed_from_color_overlays() -> None:
             "padding",
             "margin-right",
         },
-        "QTableWidget#DataTable::item": {
+        "QTableWidget#EconTable::item": {
             "font-size",
             "padding",
             "border",

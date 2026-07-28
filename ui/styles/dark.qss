@@ -730,14 +730,6 @@ QDialog#BacktestConfigDialog {
   background: #17120f;
 }
 
-QTableWidget#LuuTrungHoaTable {
-  border: 1px solid #3f2c25;
-}
-
-QTableWidget#LuuTrungHoaTable::item {
-  border-bottom: 1px solid #3f2c25;
-}
-
 QLabel#BacktestConfigRowTitle {
   color: #ebdcd0;
 }
@@ -1690,28 +1682,12 @@ QPushButton#AutoTradeToggle:disabled {
   background: #111827;
 }
 
-QTableWidget#DataTable,
-QTableView#DataTable {
-  background: #161a22;
-  alternate-background-color: #191e28;
-  border: 1px solid #2b3545;
-  border-radius: 8px;
-  color: #e5e7eb;
-  gridline-color: #273244;
-  selection-background-color: #143735;
-  selection-color: #e5e7eb;
-}
-
-QTableWidget#DataTable::item:hover,
-QTableView#DataTable::item:hover,
 QTableWidget#EconTable::item:hover,
 QTableView#EconTable::item:hover {
   background: #1c2533; /* Soft dark hover background */
   color: #e5e7eb;
 }
 
-QTableWidget#DataTable::item:selected,
-QTableView#DataTable::item:selected,
 QTableWidget#EconTable::item:selected,
 QTableView#EconTable::item:selected {
   background: #143735; /* Soft selected background */
@@ -1972,67 +1948,6 @@ QTableWidget#EconTable[tableRole="mt5Symbols"] QComboBox[validationState="invali
   border: 1px solid #334155;
 }
 
-QTableView#DataTable QScrollBar:horizontal,
-QTableWidget#DataTable QScrollBar:horizontal {
-  background: #0b1220;
-  border: 1px solid #263244;
-  border-radius: 4px;
-  height: 14px;
-  margin: 2px 8px 4px 8px;
-}
-
-QTableView#DataTable QScrollBar::handle:horizontal,
-QTableWidget#DataTable QScrollBar::handle:horizontal {
-  background: #0f766e;
-  border: 1px solid #5eead4;
-  border-radius: 4px;
-  min-width: 48px;
-}
-
-QTableView#DataTable QScrollBar::handle:horizontal:hover,
-QTableWidget#DataTable QScrollBar::handle:horizontal:hover {
-  background: #14b8a6;
-}
-
-QTableView#DataTable QScrollBar::add-line:horizontal,
-QTableView#DataTable QScrollBar::sub-line:horizontal,
-QTableWidget#DataTable QScrollBar::add-line:horizontal,
-QTableWidget#DataTable QScrollBar::sub-line:horizontal {
-  width: 0;
-  height: 0;
-}
-
-/* Thanh cuộn dọc cho bảng DataTable */
-QTableView#DataTable QScrollBar:vertical,
-QTableWidget#DataTable QScrollBar:vertical {
-  background: #11151d;
-  width: 12px;
-  border-radius: 4px;
-  margin: 4px 2px 4px 2px;
-}
-QTableView#DataTable QScrollBar::handle:vertical,
-QTableWidget#DataTable QScrollBar::handle:vertical {
-  background: #334155;
-  border-radius: 4px;
-  min-height: 30px;
-}
-QTableView#DataTable QScrollBar::handle:vertical:hover,
-QTableWidget#DataTable QScrollBar::handle:vertical:hover {
-  background: #475569;
-}
-QTableView#DataTable QScrollBar::add-line:vertical,
-QTableView#DataTable QScrollBar::sub-line:vertical,
-QTableWidget#DataTable QScrollBar::add-line:vertical,
-QTableWidget#DataTable QScrollBar::sub-line:vertical {
-  height: 0px;
-}
-QTableView#DataTable QScrollBar::add-page:vertical,
-QTableView#DataTable QScrollBar::sub-page:vertical,
-QTableWidget#DataTable QScrollBar::add-page:vertical,
-QTableWidget#DataTable QScrollBar::sub-page:vertical {
-  background: transparent;
-}
-
 QScrollArea#SymbolScroll {
   background: #111827;
   border: 1px solid #2b3545;
@@ -2047,24 +1962,6 @@ QHeaderView::section {
   background: #1f2937;
   border-right: 1px solid #334155;
   color: #d1d5db;
-}
-
-QTableView#DataTable QHeaderView::section,
-QTableWidget#DataTable QHeaderView::section {
-  background: #11151d;
-  color: #64748b;
-  @QSS_BODY@
-  font-weight: 700;
-  padding: 4px 8px;
-  border: none;
-  border-bottom: 2px solid #0f766e;
-  text-transform: uppercase;
-}
-
-QTableView#DataTable QHeaderView::section:hover,
-QTableWidget#DataTable QHeaderView::section:hover {
-  background: #1a2435;
-  color: #e5e7eb;
 }
 
 QTabWidget::pane {
@@ -2281,12 +2178,6 @@ QTableView#EconTable {
   alternate-background-color: #191e28;
   selection-background-color: #143735;
   selection-color: #e5e7eb;
-}
-QTableWidget#EconTable::item,
-QTableView#EconTable::item {
-  @QSS_BODY@
-  padding: 4px 8px;
-  border: none;
 }
 QTableWidget#EconTable QHeaderView::section,
 QTableView#EconTable QHeaderView::section {

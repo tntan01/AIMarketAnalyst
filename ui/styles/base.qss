@@ -343,8 +343,6 @@ QTabBar::tab {
   margin-right: 6px;
 }
 
-QTableWidget#DataTable::item,
-QTableView#DataTable::item,
 QTableWidget#EconTable::item,
 QTableView#EconTable::item {
   @QSS_BODY@
@@ -505,16 +503,6 @@ QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText {
 QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText QScrollBar:vertical {
   background: transparent;
   width: 8px;
-}
-
-QTableWidget#LuuTrungHoaTable {
-  background: transparent;
-  border-radius: 8px;
-  outline: none;
-}
-
-QTableWidget#LuuTrungHoaTable::item {
-  padding: 12px 16px;
 }
 
 QLabel#BacktestConfigRowTitle {
