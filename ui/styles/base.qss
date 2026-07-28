@@ -641,6 +641,7 @@ QPushButton#ScannerDetailFullButton {
 QLabel#ScannerDetailHero {
   border-radius: 8px;
   @QSS_BODY@
+  font-weight: 700;
   padding: 4px 12px;
 }
 

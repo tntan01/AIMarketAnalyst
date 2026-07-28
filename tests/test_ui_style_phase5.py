@@ -65,6 +65,13 @@ def test_phase5_shared_component_selectors_exist_in_both_themes() -> None:
         assert selector in light
 
 
+def test_scanner_detail_hero_uses_bold_typography() -> None:
+    base = (UI / "styles" / "base.qss").read_text(encoding="utf-8")
+    hero_rule = base.split("QLabel#ScannerDetailHero {", 1)[1].split("}", 1)[0]
+
+    assert "font-weight: 700;" in hero_rule
+
+
 def test_phase5_inline_stylesheet_debt_is_frozen() -> None:
     inventory = build_inventory()
     assert inventory["totals"]["set_stylesheet_calls"] <= 4
