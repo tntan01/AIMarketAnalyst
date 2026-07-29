@@ -29,6 +29,8 @@ SUMMARY_ROW_FIELDS = (
     "selected_zone_id", "selected_zone_type", "risk_reward",
     "expected_effective_rr", "entry_status", "scan_id", "row_id",
     "settings_hash", "rollout_stage", "analysis_error",
+    "analysis_status", "pipeline_route", "fast_path_version",
+    "fast_reject_reason",
 )
 
 

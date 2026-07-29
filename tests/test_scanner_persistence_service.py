@@ -22,3 +22,22 @@ def test_summary_mode_becomes_full_for_ready_or_error_event(tmp_path):
 def test_summary_row_is_explicitly_bounded_to_allowed_fields():
     compact = summary_row({"symbol": "EURUSD", "best_score": 80, "analysis_result": {"candles": [1]}, "observability": {"raw": 1}})
     assert compact == {"symbol": "EURUSD", "best_score": 80}
+
+
+def test_summary_row_preserves_structural_reject_route_and_reason():
+    compact = summary_row({
+        "symbol": "EURUSD",
+        "analysis_status": "structural_reject",
+        "pipeline_route": "post_context_reject",
+        "fast_path_version": "scanner-fast-path-v1",
+        "fast_reject_reason": "NO_ACTIONABLE_SMC_ZONE",
+        "analysis_result": {"candles": [1]},
+    })
+
+    assert compact == {
+        "symbol": "EURUSD",
+        "analysis_status": "structural_reject",
+        "pipeline_route": "post_context_reject",
+        "fast_path_version": "scanner-fast-path-v1",
+        "fast_reject_reason": "NO_ACTIONABLE_SMC_ZONE",
+    }

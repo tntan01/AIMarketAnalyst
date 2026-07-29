@@ -62,6 +62,10 @@ class ScannerRequest:
 
 
 def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | None = None) -> dict[str, Any]:
+    is_structural_reject = (
+        str(result.get("analysis_status", "") or "").strip().lower()
+        == "structural_reject"
+    )
     scoring_provenance = normalize_scoring_provenance(
         result.get("scoring_provenance"),
         fallback_mode=(
@@ -197,6 +201,10 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "rank": 0,
         "symbol": result.get("symbol", ""),
         "broker_symbol": broker_symbol or data_quality.get("broker_symbol", ""),
+        "analysis_status": str(result.get("analysis_status") or "completed"),
+        "pipeline_route": str(result.get("pipeline_route") or "full"),
+        "fast_path_version": result.get("fast_path_version"),
+        "fast_reject_reason": result.get("fast_reject_reason"),
         "market_regime": market_regime.get("primary", "unknown"),
         "direction_bias": direction_bias,
         "trade_permission": permission,
@@ -212,7 +220,13 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         ),
         "best_score": best_score,
         "scanner_action": action,
-        "entry_status": best_plan.get("entry_status") if best_plan else "waiting_for_confirmation",
+        "entry_status": (
+            "no_setup"
+            if is_structural_reject
+            else best_plan.get("entry_status")
+            if best_plan
+            else "waiting_for_confirmation"
+        ),
         "price_vs_zone": price_vs_zone,
         "risk_reward": risk_reward,
         "risk_reward_base": best_plan.get("risk_reward_base") if best_plan else None,
@@ -333,7 +347,17 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "journal_opportunity_penalty": journal_feedback.get("opportunity_penalty") if isinstance(journal_feedback, dict) else 0,
     }
 
-    return enrich_scanner_row_with_ranking(row)
+    enriched = enrich_scanner_row_with_ranking(row)
+    if is_structural_reject:
+        # A fast reject is a valid, fully analysed no-setup result.  It must
+        # never inherit the generic data-error status used for failed analysis.
+        enriched.update({
+            "candidate_status": OUT_OF_STRATEGY,
+            "scanner_group": "out_of_strategy",
+            "display_action": "skip",
+            "opportunity_score": 0,
+        })
+    return enriched
 
 
 def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") -> dict[str, Any]:
@@ -463,11 +487,14 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     blocked = 0
     out_of_strategy = 0
     data_unavailable = 0
+    structural_reject = 0
     scores: list[float] = []
 
     for row in rows:
         if not isinstance(row, dict):
             continue
+        if str(row.get("analysis_status", "") or "").lower() == "structural_reject":
+            structural_reject += 1
         status = str(row.get("candidate_status", "") or "").upper()
         group = row.get("scanner_group")
         if not status and not group:
@@ -515,6 +542,7 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "out_of_strategy_count": out_of_strategy,
         "blocked_count": blocked,
         "data_unavailable_count": data_unavailable,
+        "structural_reject_count": structural_reject,
         "top_opportunity_score": top,
         "average_opportunity_score": avg,
         "top_opportunity_rank": top,

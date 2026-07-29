@@ -8,10 +8,16 @@ from typing import Any
 
 from core.execution_readiness_engine import evaluate_execution_readiness
 from core.scanner_models import (
+    BRANCH_DEFAULT_RULES,
     BLOCKED,
+    CONFIG_NOT_CONFIGURED,
     DATA_UNAVAILABLE,
+    ExecutionEvaluation,
     OUT_OF_STRATEGY,
     READY_NOW,
+    SETUP_SCORE_METRIC,
+    SideEvaluation,
+    StrategyEvaluation,
     WAITING_CONFIRMATION,
     WATCH_ZONE,
     ScannerCandidateDecision,
@@ -34,6 +40,25 @@ _DATA_CODES = frozenset({
     "TAKE_PROFIT_MISSING",
 })
 
+STRUCTURAL_SMC_REJECT = "STRUCTURAL_SMC_REJECT"
+
+
+def is_structural_reject_row(row: object) -> bool:
+    """Return whether a row is a valid fast-path no-setup result."""
+
+    if not isinstance(row, dict):
+        return False
+    if str(row.get("analysis_status", "") or "").strip().lower() == (
+        "structural_reject"
+    ):
+        return True
+    analysis = row.get("analysis_result")
+    return (
+        isinstance(analysis, dict)
+        and str(analysis.get("analysis_status", "") or "").strip().lower()
+        == "structural_reject"
+    )
+
 
 def evaluate_scanner_candidate(
     row: dict[str, Any],
@@ -42,6 +67,9 @@ def evaluate_scanner_candidate(
     now: datetime | None = None,
 ) -> ScannerCandidateDecision:
     """Return the canonical, serializable scanner candidate decision."""
+
+    if is_structural_reject_row(row):
+        return _structural_reject_decision(row)
 
     side_evaluations = evaluate_sides(row)
     strategy, side_evaluation = route_strategy(
@@ -89,6 +117,7 @@ def build_candidate_order_payload(
 
     if (
         not isinstance(row, dict)
+        or is_structural_reject_row(row)
         or not decision.auto_trade_candidate
         or decision.side_evaluation is None
         or decision.scenario is None
@@ -227,6 +256,59 @@ def build_candidate_order_payload(
         ),
         "analysis_result": analysis,
     }
+
+
+def _structural_reject_decision(row: dict[str, Any]) -> ScannerCandidateDecision:
+    """Fail closed for a valid SMC no-setup result, not a data failure."""
+
+    analysis = row.get("analysis_result")
+    source = analysis if isinstance(analysis, dict) else row
+    reason = str(source.get("fast_reject_reason", "") or "").strip()
+    reasons = unique_codes((STRUCTURAL_SMC_REJECT, reason))
+    evaluation_status = "not_evaluated_due_to_fast_reject"
+    side_evaluations = tuple(
+        SideEvaluation(
+            side=side,
+            signal_score=0.0,
+            final_score=0.0,
+            expected_effective_rr=None,
+            scenario=None,
+            entry_status="no_setup",
+            m15_quality="",
+            gate_result={"evaluation_status": evaluation_status},
+            reason_codes=reasons,
+        )
+        for side in ("buy", "sell")
+    )
+    strategy = StrategyEvaluation(
+        branch=BRANCH_DEFAULT_RULES,
+        config_status=CONFIG_NOT_CONFIGURED,
+        selected_side=None,
+        score_metric=SETUP_SCORE_METRIC,
+        score_value=0.0,
+        min_score=None,
+        expected_effective_rr=None,
+        min_rr=None,
+        eligible=False,
+        reason_codes=reasons,
+    )
+    execution = ExecutionEvaluation(
+        entry_ready=False,
+        trade_allowed=False,
+        live_price_valid=None,
+        portfolio_allowed=None,
+        reason_codes=reasons,
+        block_codes=reasons,
+    )
+    return ScannerCandidateDecision(
+        status=OUT_OF_STRATEGY,
+        side_evaluation=None,
+        side_evaluations=side_evaluations,
+        strategy=strategy,
+        execution=execution,
+        auto_trade_candidate=False,
+        reason_codes=reasons,
+    )
 
 
 def _positive_float(value: object) -> float | None:

@@ -1652,6 +1652,12 @@ class ScannerScreen (QWidget ):
             "auto_trade_v2": bool(
                 getattr(feature_settings, "auto_trade_v2", False)
             ),
+            "scanner_fast_tier1": bool(
+                getattr(feature_settings, "scanner_fast_tier1", False)
+            ),
+            "scanner_fast_tier2": bool(
+                getattr(feature_settings, "scanner_fast_tier2", False)
+            ),
         }
         request =ScannerRequest (
         symbols =symbols ,

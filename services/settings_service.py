@@ -542,6 +542,8 @@ class SettingsService:
         return FeatureFlagSettings(
             scanner_architecture_v2=bool(data.get("scanner_architecture_v2", False)),
             auto_trade_v2=bool(data.get("auto_trade_v2", False)),
+            scanner_fast_tier1=bool(data.get("scanner_fast_tier1", False)),
+            scanner_fast_tier2=bool(data.get("scanner_fast_tier2", False)),
             smc_scoring_mode=smc_scoring_mode,
         )
 

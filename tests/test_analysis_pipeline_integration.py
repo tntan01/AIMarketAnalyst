@@ -8,13 +8,23 @@ these tests green.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from core.analysis_engine import analyze_symbol, build_analysis_context
+from core.analysis_pipeline import AnalysisPipeline
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
+from core.scanner import scanner_row_from_analysis
+from core.scanner_candidate_engine import (
+    build_candidate_order_payload,
+    evaluate_scanner_candidate,
+)
+from core.smc_prefilter import NO_ACTIONABLE_SMC_ZONE, NO_RAW_SMC_CANDIDATE
+from core.smc_scorer_v2 import score_smc_v2
 
 
 class _Context:
@@ -418,6 +428,253 @@ def test_analyze_symbol_all_keys_present():
     }
     for key in expected_keys:
         assert key in result, f"Key '{key}' missing from analyze_symbol output"
+
+
+def test_fast_flags_activate_tier1_and_backtest_forces_full_path():
+    """Tier 1 can reject the scanner route, while backtests remain full."""
+    candles = _build_candles_by_timeframe(regime="trending_up")
+    request = _default_input()
+
+    scanner_pipeline = AnalysisPipeline()
+    scanner_result = scanner_pipeline.execute(
+        request,
+        candles,
+        scanner_fast_tier1=True,
+        scanner_fast_tier2=True,
+    )
+    assert scanner_pipeline._scanner_fast_tier1 is True
+    assert scanner_pipeline._scanner_fast_tier2 is True
+    assert scanner_result["analysis_status"] == "structural_reject"
+    assert scanner_result["pipeline_route"] == "post_context_reject"
+    assert scanner_result["fast_path_version"] == "scanner-fast-path-v1"
+    assert scanner_result["fast_reject_reason"] == NO_ACTIONABLE_SMC_ZONE
+    assert {item["step"] for item in scanner_result["pipeline_diagnostics"]} == {
+        "validate", "structural_reject",
+    }
+    assert isinstance(scanner_result["evidence"], dict)
+    assert isinstance(scanner_result["decision_engine"], dict)
+    row = scanner_row_from_analysis(scanner_result)
+    assert row["analysis_status"] == "structural_reject"
+    assert row["pipeline_route"] == "post_context_reject"
+    assert row["fast_path_version"] == "scanner-fast-path-v1"
+    assert row["fast_reject_reason"] == NO_ACTIONABLE_SMC_ZONE
+    assert row["entry_status"] == "no_setup"
+    candidate = evaluate_scanner_candidate(row)
+    assert candidate.status == "OUT_OF_STRATEGY"
+    assert candidate.auto_trade_candidate is False
+    assert build_candidate_order_payload(row, candidate) is None
+
+    detail_pipeline = AnalysisPipeline()
+    detail_result = detail_pipeline.execute(request, candles)
+    assert detail_pipeline._scanner_fast_tier1 is False
+    assert detail_pipeline._scanner_fast_tier2 is False
+    assert detail_result["pipeline_route"] == "full"
+
+    backtest_pipeline = AnalysisPipeline()
+    backtest_result = backtest_pipeline.execute(
+        request,
+        candles,
+        is_backtest=True,
+        scanner_fast_tier1=True,
+        scanner_fast_tier2=True,
+    )
+    assert backtest_pipeline._scanner_fast_tier1 is False
+    assert backtest_pipeline._scanner_fast_tier2 is False
+    assert backtest_result["pipeline_route"] == "full"
+
+
+def test_structural_reject_builder_preserves_full_contract_and_blocks_fallbacks():
+    """Step 3 prepares an honest result without activating the fast route."""
+    candles = _build_candles_by_timeframe(regime="trending_up")
+    pipeline = AnalysisPipeline()
+    pipeline.execute(_default_input(), candles)
+
+    pipeline._prepare_structural_reject(
+        "post_context",
+        {
+            "reason_code": NO_ACTIONABLE_SMC_ZONE,
+            "fast_path_version": "scanner-fast-path-v1",
+            "prefilter_version": "smc-prefilter-v1",
+        },
+    )
+    result = pipeline._assemble_result()
+
+    _assert_full_contract(result)
+    assert result["analysis_status"] == "structural_reject"
+    assert result["pipeline_route"] == "post_context_reject"
+    assert result["fast_reject_reason"] == NO_ACTIONABLE_SMC_ZONE
+    assert result["scenarios"] == [{
+        "type": "stand_aside",
+        "priority": "primary",
+        "entry_status": "no_setup",
+        "reason": "Structural SMC reject: NO_ACTIONABLE_SMC_ZONE",
+        "reason_code": NO_ACTIONABLE_SMC_ZONE,
+    }]
+    assert result["trade_permission"]["status"] == "blocked"
+    assert result["decision_engine"]["decision"] == "STAND_ASIDE"
+    assert result["decision_summary"]["decision_engine_enabled"] is False
+    assert result["trade_gate"]["evaluation_status"] == (
+        "not_evaluated_due_to_fast_reject"
+    )
+    reject_diag = result["pipeline_diagnostics"][-1]
+    assert reject_diag["step"] == "structural_reject"
+    assert reject_diag["status"] == "warning"
+    assert "gate" in reject_diag["details"]["skipped_steps"]
+    assert result["macro"]
+    assert json.dumps(result)
+
+    row = scanner_row_from_analysis(result)
+    assert isinstance(row["analysis_result"], dict)
+
+
+def test_structural_reject_builder_maps_pre_smc_to_prefilter_route():
+    pipeline = AnalysisPipeline()
+    pipeline.execute(
+        _default_input(),
+        _build_candles_by_timeframe(regime="range"),
+    )
+
+    pipeline._prepare_structural_reject(
+        "pre_smc",
+        {"reason_code": NO_RAW_SMC_CANDIDATE},
+    )
+    result = pipeline._assemble_result()
+
+    assert result["analysis_status"] == "structural_reject"
+    assert result["pipeline_route"] == "prefilter_reject"
+    assert result["fast_reject_reason"] == NO_RAW_SMC_CANDIDATE
+
+
+def test_tier1_reject_short_circuits_all_post_context_steps():
+    """A verified Tier-1 reject returns before correlation through enrichment."""
+    pipeline = AnalysisPipeline()
+    decision = {
+        "should_reject": True,
+        "fail_open": False,
+        "reason_code": NO_ACTIONABLE_SMC_ZONE,
+        "fast_path_version": "scanner-fast-path-v1",
+        "prefilter_version": "smc-prefilter-v1",
+    }
+
+    with (
+        patch(
+            "core.analysis_pipeline.evaluate_post_context_prefilter",
+            return_value=decision,
+        ) as prefilter,
+        patch.object(
+            pipeline,
+            "_step_compute_correlation",
+            side_effect=AssertionError("correlation must be skipped"),
+        ) as correlation,
+        patch.object(
+            pipeline,
+            "_step_score_scenarios",
+            side_effect=AssertionError("score must be skipped"),
+        ) as score,
+        patch.object(
+            pipeline,
+            "_step_build_trade_scenarios",
+            side_effect=AssertionError("scenarios must be skipped"),
+        ) as scenarios,
+        patch.object(
+            pipeline,
+            "_step_determine_direction",
+            side_effect=AssertionError("direction must be skipped"),
+        ) as direction,
+        patch.object(
+            pipeline,
+            "_step_apply_gates",
+            side_effect=AssertionError("gate must be skipped"),
+        ) as gate,
+        patch.object(
+            pipeline,
+            "_step_compute_final_score",
+            side_effect=AssertionError("final score must be skipped"),
+        ) as final_score,
+        patch.object(
+            pipeline,
+            "_step_enrich",
+            side_effect=AssertionError("enrichment must be skipped"),
+        ) as enrich,
+    ):
+        result = pipeline.execute(
+            _default_input(),
+            _build_candles_by_timeframe(regime="range"),
+            scanner_fast_tier1=True,
+        )
+
+    prefilter.assert_called_once()
+    for skipped_step in (
+        correlation, score, scenarios, direction, gate, final_score, enrich,
+    ):
+        skipped_step.assert_not_called()
+    assert result["analysis_status"] == "structural_reject"
+    assert result["pipeline_route"] == "post_context_reject"
+    assert result["scenarios"][0]["type"] == "stand_aside"
+
+
+def test_tier1_survivor_reuses_precomputed_v2_result_and_runs_full_pipeline():
+    """Tier-1 must not score v2 twice for symbols that remain on full route."""
+    pipeline = AnalysisPipeline()
+
+    def survivor_decision(
+        *,
+        smc: dict[str, Any],
+        technical: dict[str, Any],
+        market_regime: dict[str, Any],
+        **_: Any,
+    ) -> dict[str, Any]:
+        return {
+            "should_reject": False,
+            "fail_open": False,
+            "precomputed_v2_result": score_smc_v2(
+                smc,
+                technical,
+                market_regime,
+            ),
+        }
+
+    with (
+        patch(
+            "core.analysis_pipeline.evaluate_post_context_prefilter",
+            side_effect=survivor_decision,
+        ),
+        patch(
+            "core.smc_scoring_contract.score_smc_v2",
+            side_effect=AssertionError("v2 result must be reused"),
+        ),
+        patch.object(
+            pipeline,
+            "_step_enrich",
+            wraps=pipeline._step_enrich,
+        ) as enrich,
+    ):
+        result = pipeline.execute(
+            _default_input(),
+            _build_candles_by_timeframe(regime="trending_up"),
+            scanner_fast_tier1=True,
+        )
+
+    assert result["analysis_status"] == "completed"
+    assert result["pipeline_route"] == "full"
+    steps = [item["step"] for item in result["pipeline_diagnostics"]]
+    assert {"correlation", "score", "scenarios", "direction", "gate", "final_score"} <= set(steps)
+    enrich.assert_called_once()
+
+
+def test_disabled_tier_flags_keep_exact_baseline_except_timestamp():
+    candles = _build_candles_by_timeframe(regime="trending_up")
+    baseline = analyze_symbol(_default_input(), candles)
+    flags_off = analyze_symbol(
+        _default_input(),
+        candles,
+        scanner_fast_tier1=False,
+        scanner_fast_tier2=False,
+    )
+
+    baseline.pop("timestamp")
+    flags_off.pop("timestamp")
+    assert flags_off == baseline
 
 
 def test_analyze_symbol_scenarios_have_required_fields():

@@ -15,7 +15,7 @@ from core.backtest_config_validation import (
     BACKTEST_VALIDATION_VERSION,
     validation_fingerprint,
 )
-from core.scanner import scanner_row_from_analysis
+from core.scanner import scanner_row_from_analysis, scanner_summary
 from core.scanner_candidate_engine import (
     build_candidate_order_payload,
     evaluate_scanner_candidate,
@@ -269,6 +269,46 @@ def test_shared_order_payload_rejects_snapshot_price_outside_entry_zone():
         )
         is not None
     )
+
+
+def test_structural_reject_is_out_of_strategy_not_data_unavailable_or_orderable():
+    row = _row(
+        analysis_status="structural_reject",
+        pipeline_route="post_context_reject",
+        fast_reject_reason="NO_ACTIONABLE_SMC_ZONE",
+        best_side="stand_aside",
+        scanner_action="stand_aside",
+        entry_status="no_setup",
+        trade_permission="blocked",
+    )
+    row["analysis_result"].update({
+        "analysis_status": "structural_reject",
+        "pipeline_route": "post_context_reject",
+        "fast_reject_reason": "NO_ACTIONABLE_SMC_ZONE",
+        "scenarios": [{"type": "stand_aside", "entry_status": "no_setup"}],
+    })
+
+    decision = evaluate_scanner_candidate(row)
+
+    assert decision.status == OUT_OF_STRATEGY
+    assert decision.auto_trade_candidate is False
+    assert decision.selected_side is None
+    assert "STRUCTURAL_SMC_REJECT" in decision.reason_codes
+    assert "NO_ACTIONABLE_SMC_ZONE" in decision.reason_codes
+    assert build_candidate_order_payload(row, decision) is None
+
+
+def test_summary_counts_structural_reject_separately_from_data_unavailable():
+    summary = scanner_summary([{
+        "analysis_status": "structural_reject",
+        "candidate_status": OUT_OF_STRATEGY,
+        "scanner_group": "out_of_strategy",
+        "scanner_action": "stand_aside",
+    }])
+
+    assert summary["structural_reject_count"] == 1
+    assert summary["out_of_strategy_count"] == 1
+    assert summary["data_unavailable_count"] == 0
 
 
 def test_execution_readiness_requires_strict_m15():

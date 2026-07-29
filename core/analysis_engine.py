@@ -36,6 +36,8 @@ def analyze_symbol(
     thresholds: dict[str, int | float] | None = None,
     is_backtest: bool = False,
     smc_scoring_mode: str = "v2",
+    scanner_fast_tier1: bool = False,
+    scanner_fast_tier2: bool = False,
 ) -> dict[str, Any]:
     """Orchestrate the full market analysis pipeline.
 
@@ -66,4 +68,6 @@ def analyze_symbol(
         thresholds=thresholds,
         is_backtest=is_backtest,
         smc_scoring_mode=smc_scoring_mode,
+        scanner_fast_tier1=scanner_fast_tier1,
+        scanner_fast_tier2=scanner_fast_tier2,
     )

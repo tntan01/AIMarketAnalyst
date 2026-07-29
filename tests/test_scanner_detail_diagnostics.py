@@ -301,6 +301,28 @@ def test_pipeline_steps_html():
     print("  PASS: test_pipeline_steps_html")
 
 
+def test_pipeline_steps_explain_structural_reject_as_no_setup_not_data_error():
+    screen = _make_screen()
+    analysis = {
+        "analysis_status": "structural_reject",
+        "pipeline_route": "post_context_reject",
+        "fast_reject_reason": "NO_ACTIONABLE_SMC_ZONE",
+        "pipeline_diagnostics": [{
+            "step": "structural_reject",
+            "status": "warning",
+            "summary": "Structural SMC reject: NO_ACTIONABLE_SMC_ZONE",
+            "details": {"skipped_steps": ["gate"]},
+        }],
+    }
+
+    html = screen._diag_pipeline_steps_html(analysis)
+
+    assert "Fast reject SMC" in html
+    assert "post_context_reject" in html
+    assert "NO_ACTIONABLE_SMC_ZONE" in html
+    assert "không phải thiếu dữ liệu" in html
+
+
 # ---------------------------------------------------------------------------
 # Test 8: Final score HTML
 # ---------------------------------------------------------------------------

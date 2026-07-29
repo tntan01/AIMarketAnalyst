@@ -1,0 +1,426 @@
+{
+  "accounting_errors": 0,
+  "accounting_errors_by_scenario": {
+    "full": 0,
+    "tier1": 0
+  },
+  "benchmark_error_count": 0,
+  "decision": "STOP_AFTER_TIER1",
+  "metadata": {
+    "fast_path_version": "scanner-fast-path-v1",
+    "fixture_count": 8,
+    "fixture_names": [
+      "raw_empty_v2",
+      "h1_only_fvg_v2",
+      "h1_order_block_v2",
+      "broken_invalid_v2",
+      "buy_setup_v2",
+      "sell_setup_v2",
+      "mode_legacy",
+      "mode_shadow"
+    ],
+    "fixture_version": "scanner-fast-path-corpus-v1",
+    "prefilter_version": "smc-prefilter-v1",
+    "python_version": "3.14.5 (tags/v3.14.5:5607950, May 10 2026, 10:43:50) [MSC v.1944 64 bit (AMD64)]",
+    "repeats": 50,
+    "scenario_order_alternate": true,
+    "warmup": 5
+  },
+  "paired_timing": {
+    "full": {
+      "aggregate": {
+        "other_pipeline_ms_p50": 0.0117,
+        "other_pipeline_ms_p95": 0.0177,
+        "post_smc_ms_p50": 1.1857,
+        "post_smc_ms_p95": 1.5534,
+        "post_smc_pct_of_total_p50": 0.409158,
+        "smc_ms_p50": 1.3945,
+        "smc_ms_p95": 1.7929,
+        "smc_pct_of_total_p50": 0.481211,
+        "technical_ms_p50": 0.3291,
+        "technical_ms_p95": 0.4152,
+        "total_ms_p50": 2.8979,
+        "total_ms_p95": 3.7116
+      },
+      "per_fixture": {
+        "broken_invalid_v2": {
+          "other_pipeline_ms_p50": 0.0121,
+          "other_pipeline_ms_p95": 0.0198,
+          "post_smc_ms_p50": 1.3747,
+          "post_smc_ms_p95": 1.6616,
+          "smc_ms_p50": 1.5574,
+          "smc_ms_p95": 1.8603,
+          "technical_ms_p50": 0.3262,
+          "technical_ms_p95": 0.41,
+          "total_ms_p50": 3.2742,
+          "total_ms_p95": 3.928
+        },
+        "buy_setup_v2": {
+          "other_pipeline_ms_p50": 0.0117,
+          "other_pipeline_ms_p95": 0.018,
+          "post_smc_ms_p50": 1.2801,
+          "post_smc_ms_p95": 1.705,
+          "smc_ms_p50": 1.433,
+          "smc_ms_p95": 1.8872,
+          "technical_ms_p50": 0.3312,
+          "technical_ms_p95": 0.4334,
+          "total_ms_p50": 3.0664,
+          "total_ms_p95": 3.9547
+        },
+        "h1_only_fvg_v2": {
+          "other_pipeline_ms_p50": 0.0118,
+          "other_pipeline_ms_p95": 0.015,
+          "post_smc_ms_p50": 1.2691,
+          "post_smc_ms_p95": 1.5678,
+          "smc_ms_p50": 1.4297,
+          "smc_ms_p95": 1.8331,
+          "technical_ms_p50": 0.3264,
+          "technical_ms_p95": 0.3958,
+          "total_ms_p50": 3.0414,
+          "total_ms_p95": 3.8833
+        },
+        "h1_order_block_v2": {
+          "other_pipeline_ms_p50": 0.0119,
+          "other_pipeline_ms_p95": 0.0186,
+          "post_smc_ms_p50": 1.1609,
+          "post_smc_ms_p95": 1.505,
+          "smc_ms_p50": 1.2964,
+          "smc_ms_p95": 1.6114,
+          "technical_ms_p50": 0.3339,
+          "technical_ms_p95": 0.4007,
+          "total_ms_p50": 2.8294,
+          "total_ms_p95": 3.3518
+        },
+        "mode_legacy": {
+          "other_pipeline_ms_p50": 0.0116,
+          "other_pipeline_ms_p95": 0.0153,
+          "post_smc_ms_p50": 0.8085,
+          "post_smc_ms_p95": 1.0628,
+          "smc_ms_p50": 1.4207,
+          "smc_ms_p95": 1.7929,
+          "technical_ms_p50": 0.3229,
+          "technical_ms_p95": 0.4152,
+          "total_ms_p50": 2.5707,
+          "total_ms_p95": 3.2895
+        },
+        "mode_shadow": {
+          "other_pipeline_ms_p50": 0.0114,
+          "other_pipeline_ms_p95": 0.0237,
+          "post_smc_ms_p50": 1.2475,
+          "post_smc_ms_p95": 1.5006,
+          "smc_ms_p50": 1.4196,
+          "smc_ms_p95": 1.8185,
+          "technical_ms_p50": 0.3291,
+          "technical_ms_p95": 0.4097,
+          "total_ms_p50": 2.9999,
+          "total_ms_p95": 3.6611
+        },
+        "raw_empty_v2": {
+          "other_pipeline_ms_p50": 0.0116,
+          "other_pipeline_ms_p95": 0.0148,
+          "post_smc_ms_p50": 0.8579,
+          "post_smc_ms_p95": 1.105,
+          "smc_ms_p50": 1.0705,
+          "smc_ms_p95": 1.3011,
+          "technical_ms_p50": 0.3306,
+          "technical_ms_p95": 0.3844,
+          "total_ms_p50": 2.2806,
+          "total_ms_p95": 2.7564
+        },
+        "sell_setup_v2": {
+          "other_pipeline_ms_p50": 0.012,
+          "other_pipeline_ms_p95": 0.0204,
+          "post_smc_ms_p50": 1.1321,
+          "post_smc_ms_p95": 1.4008,
+          "smc_ms_p50": 1.2991,
+          "smc_ms_p95": 1.6622,
+          "technical_ms_p50": 0.3356,
+          "technical_ms_p95": 0.4989,
+          "total_ms_p50": 2.7961,
+          "total_ms_p95": 3.6531
+        }
+      },
+      "scan_wall_ms_p50": 23.1832
+    },
+    "tier1": {
+      "aggregate": {
+        "other_pipeline_ms_p50": 0.0118,
+        "other_pipeline_ms_p95": 0.017,
+        "post_smc_ms_p50": 1.1439,
+        "post_smc_ms_p95": 1.5495,
+        "post_smc_pct_of_total_p50": 0.398058,
+        "smc_ms_p50": 1.3872,
+        "smc_ms_p95": 1.7966,
+        "smc_pct_of_total_p50": 0.482723,
+        "technical_ms_p50": 0.3272,
+        "technical_ms_p95": 0.4236,
+        "total_ms_p50": 2.8737,
+        "total_ms_p95": 3.6735
+      },
+      "per_fixture": {
+        "broken_invalid_v2": {
+          "other_pipeline_ms_p50": 0.0122,
+          "other_pipeline_ms_p95": 0.0179,
+          "post_smc_ms_p50": 1.0469,
+          "post_smc_ms_p95": 1.2362,
+          "smc_ms_p50": 1.5671,
+          "smc_ms_p95": 1.8533,
+          "technical_ms_p50": 0.3246,
+          "technical_ms_p95": 0.3925,
+          "total_ms_p50": 3.0005,
+          "total_ms_p95": 3.4976
+        },
+        "buy_setup_v2": {
+          "other_pipeline_ms_p50": 0.012,
+          "other_pipeline_ms_p95": 0.0198,
+          "post_smc_ms_p50": 1.2908,
+          "post_smc_ms_p95": 1.7045,
+          "smc_ms_p50": 1.4242,
+          "smc_ms_p95": 1.9187,
+          "technical_ms_p50": 0.3314,
+          "technical_ms_p95": 0.4355,
+          "total_ms_p50": 3.0607,
+          "total_ms_p95": 4.0745
+        },
+        "h1_only_fvg_v2": {
+          "other_pipeline_ms_p50": 0.0122,
+          "other_pipeline_ms_p95": 0.0159,
+          "post_smc_ms_p50": 1.2895,
+          "post_smc_ms_p95": 1.5858,
+          "smc_ms_p50": 1.4419,
+          "smc_ms_p95": 1.7768,
+          "technical_ms_p50": 0.3287,
+          "technical_ms_p95": 0.3937,
+          "total_ms_p50": 3.1085,
+          "total_ms_p95": 3.6541
+        },
+        "h1_order_block_v2": {
+          "other_pipeline_ms_p50": 0.0118,
+          "other_pipeline_ms_p95": 0.017,
+          "post_smc_ms_p50": 1.1692,
+          "post_smc_ms_p95": 1.5495,
+          "smc_ms_p50": 1.2803,
+          "smc_ms_p95": 1.6336,
+          "technical_ms_p50": 0.3291,
+          "technical_ms_p95": 0.4265,
+          "total_ms_p50": 2.7975,
+          "total_ms_p95": 3.5279
+        },
+        "mode_legacy": {
+          "other_pipeline_ms_p50": 0.0114,
+          "other_pipeline_ms_p95": 0.017,
+          "post_smc_ms_p50": 0.8116,
+          "post_smc_ms_p95": 1.0586,
+          "smc_ms_p50": 1.4214,
+          "smc_ms_p95": 1.862,
+          "technical_ms_p50": 0.3242,
+          "technical_ms_p95": 0.4347,
+          "total_ms_p50": 2.556,
+          "total_ms_p95": 3.3438
+        },
+        "mode_shadow": {
+          "other_pipeline_ms_p50": 0.0114,
+          "other_pipeline_ms_p95": 0.0167,
+          "post_smc_ms_p50": 1.2389,
+          "post_smc_ms_p95": 1.6977,
+          "smc_ms_p50": 1.4196,
+          "smc_ms_p95": 1.8627,
+          "technical_ms_p50": 0.3254,
+          "technical_ms_p95": 0.4379,
+          "total_ms_p50": 3.0062,
+          "total_ms_p95": 4.0134
+        },
+        "raw_empty_v2": {
+          "other_pipeline_ms_p50": 0.0116,
+          "other_pipeline_ms_p95": 0.0165,
+          "post_smc_ms_p50": 0.5665,
+          "post_smc_ms_p95": 0.679,
+          "smc_ms_p50": 1.0872,
+          "smc_ms_p95": 1.4209,
+          "technical_ms_p50": 0.3235,
+          "technical_ms_p95": 0.4236,
+          "total_ms_p50": 1.967,
+          "total_ms_p95": 2.5055
+        },
+        "sell_setup_v2": {
+          "other_pipeline_ms_p50": 0.0116,
+          "other_pipeline_ms_p95": 0.0161,
+          "post_smc_ms_p50": 1.1612,
+          "post_smc_ms_p95": 1.5478,
+          "smc_ms_p50": 1.2955,
+          "smc_ms_p95": 1.608,
+          "technical_ms_p50": 0.3318,
+          "technical_ms_p95": 0.4232,
+          "total_ms_p50": 2.813,
+          "total_ms_p95": 3.6735
+        }
+      },
+      "scan_wall_ms_p50": 22.9896
+    }
+  },
+  "raw_empty": {
+    "count": 1,
+    "counts": {
+      "broken_invalid_v2": {
+        "H1": {
+          "demand": 1,
+          "fvg": 1,
+          "order_block": 3,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "buy_setup_v2": {
+        "H1": {
+          "demand": 1,
+          "fvg": 1,
+          "order_block": 2,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "h1_only_fvg_v2": {
+        "H1": {
+          "demand": 1,
+          "fvg": 1,
+          "order_block": 2,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "h1_order_block_v2": {
+        "H1": {
+          "demand": 0,
+          "fvg": 1,
+          "order_block": 1,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "mode_legacy": {
+        "H1": {
+          "demand": 1,
+          "fvg": 1,
+          "order_block": 2,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "mode_shadow": {
+        "H1": {
+          "demand": 1,
+          "fvg": 1,
+          "order_block": 2,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "raw_empty_v2": {
+        "H1": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "sell_setup_v2": {
+        "H1": {
+          "demand": 0,
+          "fvg": 1,
+          "order_block": 1,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      }
+    },
+    "error_count": 0,
+    "errors": [],
+    "fixtures": [
+      "raw_empty_v2"
+    ],
+    "rate": 0.125
+  },
+  "raw_empty_smc_p50_ms": 1.0705,
+  "reasons": [
+    "RAW_EMPTY_RATE=0.1250 < MIN=0.20",
+    "SAVING_PER_RAW_EMPTY_MS=0.54 < MIN=10.0",
+    "SCAN_SAVING_PCT=0.0233 < MIN=0.08"
+  ],
+  "sensitivity": {
+    "conservative": {
+      "discovery_cost_ms": 0.5353,
+      "discovery_factor": 0.5,
+      "saving_per_raw_empty_ms": 0.5353,
+      "scan_saving_ms": 0.5353,
+      "scan_saving_pct": 0.023282
+    },
+    "expected": {
+      "discovery_cost_ms": 0.3747,
+      "discovery_factor": 0.35,
+      "saving_per_raw_empty_ms": 0.6958,
+      "scan_saving_ms": 0.6958,
+      "scan_saving_pct": 0.030267
+    },
+    "optimistic": {
+      "discovery_cost_ms": 0.2141,
+      "discovery_factor": 0.2,
+      "saving_per_raw_empty_ms": 0.8564,
+      "scan_saving_ms": 0.8564,
+      "scan_saving_pct": 0.037252
+    }
+  },
+  "thresholds": {
+    "MIN_RAW_EMPTY_RATE": 0.2,
+    "MIN_SAVING_PER_RAW_EMPTY_MS": 10.0,
+    "MIN_SCAN_SAVING_PCT": 0.08,
+    "PHASE_ACCOUNTING_TOLERANCE": 0.02,
+    "SENSITIVITY_FACTORS": {
+      "conservative": 0.5,
+      "expected": 0.35,
+      "optimistic": 0.2
+    }
+  },
+  "tier1_scan_wall_ms": 22.9896,
+  "timing_skipped_fixtures": []
+}

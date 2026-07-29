@@ -145,6 +145,7 @@ class _StatusProvider:
             logged_in=logged_in,
             trade_allowed=trade_allowed,
             provider_name="MT5 fixture",
+            server="Fixture-Demo",
         )
 
     def connection_status(self):
@@ -292,3 +293,58 @@ def test_scanner_emits_connection_failure_with_status_fields(
         "connected": connected,
         "logged_in": logged_in,
     }
+
+
+def test_scanner_ready_mt5_builds_rollout_policy_from_ready_status() -> None:
+    class ScanContinued(RuntimeError):
+        pass
+
+    controller = object.__new__(ScannerController)
+    controller.settings_service = SimpleNamespace(
+        load=lambda: SimpleNamespace(
+            trading=SimpleNamespace(max_risk_percent=2.0),
+            scanner_rollout=SimpleNamespace(stage="SHADOW"),
+        )
+    )
+    provider = _StatusProvider(connected=True, logged_in=True)
+    provider.account_balance = MagicMock(
+        side_effect=ScanContinued("scan continued after rollout policy")
+    )
+    controller.mt5 = provider
+    controller.observability = MagicMock()
+    controller.rollout_metrics = MagicMock()
+    controller.rollout_metrics.readiness.return_value = {"ready": True}
+    controller.rollout_metrics.canary_readiness.return_value = {
+        "ready": True
+    }
+    controller._active_rollout_policy = None
+    request = ScannerRequest(
+        symbols=[],
+        account_balance=10_000.0,
+        risk_percent=1.0,
+        timezone_name="Asia/Ho_Chi_Minh",
+    )
+    context = SimpleNamespace(
+        scan_id="scan-ready",
+        request_hash="request-hash",
+        settings_hash="settings-hash",
+        smc_scoring_mode="v2",
+        smc_scorer_version="smc-v2",
+        smc_domain_version="smc-domain-v2",
+    )
+
+    with patch.object(scanner_module, "create_scan_context", return_value=context):
+        with pytest.raises(ScanContinued, match="scan continued"):
+            controller.run_market_scan(request=request)
+
+    assert provider.calls == 1
+    assert controller._active_rollout_policy is not None
+    assert controller._active_rollout_policy.server == "Fixture-Demo"
+    provider.account_balance.assert_called_once_with()
+    policy_calls = [
+        call
+        for call in controller.observability.emit.call_args_list
+        if call.args[0] == "ROLLOUT_POLICY_EVALUATED"
+    ]
+    assert len(policy_calls) == 1
+    assert policy_calls[0].kwargs["payload"]["server"] == "Fixture-Demo"

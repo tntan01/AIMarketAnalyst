@@ -53,6 +53,7 @@ from core.smc_consumer_contract import (
     side_consumer_metadata,
 )
 from core.smc_scoring_contract import build_smc_phase0_diagnostics
+from core.smc_prefilter import evaluate_post_context_prefilter
 from core.scoring_provenance import build_scoring_provenance
 from core.technical_context import build_technical_snapshot, detect_market_regime
 from core.trade_gate_engine import check_trade_gates
@@ -168,6 +169,8 @@ class AnalysisPipeline:
         is_backtest: bool = False,
         scan_interval_min: int = 15,
         smc_scoring_mode: str = "v2",
+        scanner_fast_tier1: bool = False,
+        scanner_fast_tier2: bool = False,
     ) -> dict[str, Any]:
         # ---- Step 0: stash inputs ------------------------------------------
         self._request = request
@@ -192,6 +195,13 @@ class AnalysisPipeline:
         self._thresholds = thresholds
         self._is_backtest = is_backtest
         self._smc_scoring_mode = smc_scoring_mode
+        # Only the bulk scanner supplies these flags.  Backtests always retain
+        # the full pipeline even if an external caller supplies fast-path flags.
+        self._scanner_fast_tier1 = bool(scanner_fast_tier1) and not is_backtest
+        self._scanner_fast_tier2 = bool(scanner_fast_tier2) and not is_backtest
+        self._structural_reject: dict[str, Any] | None = None
+        self._precomputed_v2_result: dict[str, Any] | None = None
+        self._decision_engine_enabled = True
 
         # ---- Pipeline diagnostics ------------------------------------------
         self._diag: list[dict[str, Any]] = []
@@ -206,6 +216,37 @@ class AnalysisPipeline:
                 {"d1_count": len(self._d1), "h4_count": len(self._h4), "h1_count": len(self._h1)},
             )
             raise
+
+        # Tier 1 is a Scanner-only post-context optimisation.  The predicate
+        # owns every reject decision and is fail-open by contract; an
+        # unexpected integration error must likewise retain the full route.
+        # Survivors retain the canonical v2 payload so Step 3 does not score
+        # the same zones for a second time.
+        if self._scanner_fast_tier1:
+            try:
+                fast_decision = evaluate_post_context_prefilter(
+                    mode=self._smc_scoring_mode,
+                    smc=self._smc,
+                    technical=self._technical,
+                    market_regime=self._market_regime,
+                )
+            except Exception:
+                fast_decision = None
+            if isinstance(fast_decision, dict):
+                precomputed_v2_result = fast_decision.get(
+                    "precomputed_v2_result"
+                )
+                if isinstance(precomputed_v2_result, dict):
+                    self._precomputed_v2_result = precomputed_v2_result
+                if (
+                    fast_decision.get("should_reject") is True
+                    and fast_decision.get("fail_open") is False
+                ):
+                    self._prepare_structural_reject(
+                        "post_context",
+                        fast_decision,
+                    )
+                    return self._assemble_result()
 
         # ---- Step 2: correlation adjustments -------------------------------
         self._step_compute_correlation()
@@ -276,9 +317,167 @@ class AnalysisPipeline:
             ("_final_score_result", {"final_score": 0}),
             ("_side_score_results", {"buy": {}, "sell": {}}),
             ("_decision_engine_result", {"decision": "STAND_ASIDE", "legacy_action": "stand_aside"}),
+            ("_decision_engine_enabled", True),
         ]:
             if not hasattr(self, attr):
                 setattr(self, attr, default)
+
+    def _prepare_structural_reject(
+        self,
+        stage: str,
+        decision: dict[str, Any],
+    ) -> None:
+        """Prepare a full-schema, fail-closed result for a verified reject.
+
+        This method intentionally performs no routing.  Step 4 will call it
+        after Tier 1 has made a canonical decision; keeping the builder
+        separate lets its output contract be verified before activation.
+        """
+
+        route_by_stage = {
+            "pre_smc": "prefilter_reject",
+            "post_context": "post_context_reject",
+        }
+        route = route_by_stage.get(stage)
+        reason_code = str(decision.get("reason_code", "") or "").strip()
+        if route is None or not reason_code:
+            raise ValueError("Structural reject requires a valid stage and reason code.")
+
+        self._ensure_safe_defaults()
+        evaluation_status = "not_evaluated_due_to_fast_reject"
+        reason = f"Structural SMC reject: {reason_code}"
+        self._structural_reject = {
+            "stage": stage,
+            "pipeline_route": route,
+            "reason_code": reason_code,
+            "fast_path_version": str(
+                decision.get("fast_path_version", "scanner-fast-path-v1")
+                or "scanner-fast-path-v1"
+            ),
+            "prefilter_version": str(
+                decision.get("prefilter_version", "smc-prefilter-v1")
+                or "smc-prefilter-v1"
+            ),
+        }
+        side_score = {
+            "signal_score": 0,
+            "total": 0,
+            "smc_quality": 0,
+            "smc_reason": reason,
+            "reason_codes": [reason_code],
+            "penalty_codes": [],
+            "warning_codes": [],
+            "block_codes": [reason_code],
+            "smc_flags": {},
+        }
+        self._scores = {"buy": dict(side_score), "sell": dict(side_score)}
+        self._side_score_results = {
+            side: {
+                "side": side,
+                "signal_score": 0,
+                "evidence_score": 0,
+                "execution_quality_score": 0,
+                "setup_score": 0,
+                "final_score": 0,
+            }
+            for side in ("buy", "sell")
+        }
+        self._scenarios = [{
+            "type": "stand_aside",
+            "priority": "primary",
+            "entry_status": "no_setup",
+            "reason": reason,
+            "reason_code": reason_code,
+        }]
+        self._primary_scenario = self._scenarios[0]
+        self._buy_scenario = {}
+        self._sell_scenario = {}
+        self._has_ready_plan = False
+        self._direction_bias = {
+            "best_side": "neutral",
+            "buy_score": 0,
+            "sell_score": 0,
+            "score_gap": 0,
+            "is_clear_bias": False,
+            "min_gap": 10,
+        }
+        self._best_side = "neutral"
+        self._best_score = 0
+        self._smc_trade_flags = {"buy": {}, "sell": {}}
+        self._smc_scoring_diagnostics = {
+            "evaluation_status": evaluation_status,
+            "prefilter": dict(decision),
+        }
+        self._smc_consumer_contract = {
+            "evaluation_status": evaluation_status,
+            "buy": {},
+            "sell": {},
+        }
+        self._trade_permission = {
+            "status": "blocked",
+            "reason": reason,
+            "reason_code": reason_code,
+            "min_score": self._thresholds.get("ready", 65) if self._thresholds else 65,
+            "min_rr": self._thresholds.get("min_rr", 1.3) if self._thresholds else 1.3,
+        }
+        self._gate_result = {
+            "allowed": False,
+            "decision_cap": "TRADE_BLOCKED",
+            "block_codes": [reason_code],
+            "warning_codes": [],
+            "reasons": [reason],
+            "evaluation_status": evaluation_status,
+        }
+        self._account_guard_result = {
+            "blocked": False,
+            "block_codes": [],
+            "warning_codes": [],
+            "evaluation_status": evaluation_status,
+        }
+        self._decision_action = "stand_aside"
+        self._main_view = "STAND_ASIDE — no actionable canonical SMC zone."
+        self._journal_feedback = {"evaluation_status": evaluation_status}
+        self._journal_feedback_by_side = {
+            "buy": {"evaluation_status": evaluation_status},
+            "sell": {"evaluation_status": evaluation_status},
+        }
+        self._pattern_feedback = {"evaluation_status": evaluation_status}
+        self._reason_codes = [reason_code]
+        self._penalty_codes = []
+        self._warning_codes = []
+        self._block_codes = [reason_code]
+        self._reason_messages = [reason]
+        self._evidence_result = {
+            "evidence_score": 0,
+            "evaluation_status": evaluation_status,
+        }
+        self._eq_score = 0
+        self._eq_source = evaluation_status
+        self._final_score_result = {
+            "final_score": 0,
+            "evaluation_status": evaluation_status,
+        }
+        self._decision_engine_result = {
+            "decision": "STAND_ASIDE",
+            "legacy_action": "stand_aside",
+            "reason_codes": [reason_code],
+            "evaluation_status": evaluation_status,
+        }
+        self._decision_engine_enabled = False
+        self._log_step(
+            "structural_reject",
+            "warning",
+            reason,
+            {
+                "stage": stage,
+                "pipeline_route": route,
+                "reason_code": reason_code,
+                "skipped_steps": [
+                    "correlation", "score", "scenarios", "direction",
+                    "gate", "final_score", "enrich",
+                ],
+            },
+        )
 
     # ------------------------------------------------------------------
     # Step 1 — validate inputs & build technical / SMC context
@@ -414,6 +613,7 @@ class AnalysisPipeline:
             technical=self._technical,
             active_scores=self._scores,
             market_regime=self._market_regime,
+            precomputed_v2_result=self._precomputed_v2_result,
         )
         self._smc_consumer_contract = build_smc_consumer_contract(
             smc=self._smc,
@@ -1234,10 +1434,16 @@ class AnalysisPipeline:
         best_side = self._best_side
         best_score = self._best_score
         primary_scenario = self._primary_scenario
+        structural_reject = self._structural_reject
 
         atr = (self._technical.get("atr_h4") or self._technical.get("atr_d1") or 0.0)
-        price = float(self._technical.get("price", 0.0))
-        if not self._scenarios and atr > 0 and price > 0 and best_side in ("buy", "sell"):
+        try:
+            price = float(self._technical.get("price", 0.0))
+        except (TypeError, ValueError):
+            price = 0.0
+        if structural_reject is not None:
+            fallback_scenarios = list(self._scenarios)
+        elif not self._scenarios and atr > 0 and price > 0 and best_side in ("buy", "sell"):
             # Try to find the best SMC zone even beyond zone_dist_mult
             # so the scanner shows real structure instead of fake ATR fallback.
             distant_zone = selected_zone_for_side(
@@ -1361,6 +1567,21 @@ class AnalysisPipeline:
         return {
             "symbol": self._request.symbol,
             "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            "analysis_status": (
+                "structural_reject" if structural_reject is not None else "completed"
+            ),
+            "pipeline_route": (
+                structural_reject["pipeline_route"]
+                if structural_reject is not None else "full"
+            ),
+            "fast_path_version": (
+                structural_reject["fast_path_version"]
+                if structural_reject is not None else None
+            ),
+            "fast_reject_reason": (
+                structural_reject["reason_code"]
+                if structural_reject is not None else None
+            ),
             "scoring_provenance": build_scoring_provenance(
                 self._smc_scoring_mode
             ),
@@ -1388,7 +1609,7 @@ class AnalysisPipeline:
                 "gate_warning_codes": self._gate_result.get("warning_codes", []),
                 "account_guard_blocked": self._account_guard_result.get("blocked"),
                 "account_guard_block_codes": self._account_guard_result.get("block_codes", []),
-                "decision_engine_enabled": True,
+                "decision_engine_enabled": self._decision_engine_enabled,
                 "decision_engine_decision": self._decision_engine_result["decision"],
             },
             "trade_gate": self._gate_result,
@@ -1415,14 +1636,29 @@ class AnalysisPipeline:
             },
             "economic_events": [],
             "scenarios": self._scenarios or fallback_scenarios,
-            "entry_checklist": _build_entry_checklist(
-                primary_scenario,
-                self._market_regime,
-                self._trade_permission,
-                self._data_quality,
-                self._scores.get(best_side, {}),
+            "entry_checklist": (
+                [{
+                    "label": "Structural SMC fast reject",
+                    "status": "blocked",
+                    "detail": self._trade_permission["reason"],
+                }]
+                if structural_reject is not None
+                else _build_entry_checklist(
+                    primary_scenario,
+                    self._market_regime,
+                    self._trade_permission,
+                    self._data_quality,
+                    self._scores.get(best_side, {}),
+                )
             ),
-            "backtest": _conditional_backtest(self._request.symbol, primary_scenario, self._h1, self._best_score),
+            "backtest": (
+                {"evaluation_status": "not_evaluated_due_to_fast_reject"}
+                if structural_reject is not None
+                else _conditional_backtest(
+                    self._request.symbol, primary_scenario, self._h1,
+                    self._best_score,
+                )
+            ),
             "pattern_backtest": self._pattern_feedback,
             "why_not_opposite": _why_not_opposite(best_side, self._scores),
             "confidence_reason": _confidence_reason(

@@ -1,8 +1,11 @@
 # Kế hoạch nâng cấp Scanner Fast-Reject SMC
 
-> **Trạng thái:** Đề xuất triển khai, chưa sửa code
+> **Trạng thái:** Bước 0–7 đã triển khai và nghiệm thu offline; gate Bước 7 trả
+> `STOP_AFTER_TIER1`, vì vậy Bước 8–10 không thực hiện theo gate
 >
 > **Ngày lập:** 2026-07-29
+>
+> **Cập nhật gần nhất:** 2026-07-30
 >
 > **Phạm vi:** Bulk market scanner; không thay đổi công thức chấm điểm/gate và không thay đổi backtest/detail analysis
 >
@@ -11,6 +14,24 @@
 > **Độ phức tạp tổng thể:** 8/10 (điểm khó nhất là tách candidate discovery và tái sử dụng cache mà không làm lệch SMC context)
 
 Tài liệu này là runbook để một AI khác có thể đọc, sửa code, chạy test và nghiệm thu theo cùng một trình tự. Đây chưa phải runtime contract. Nếu triển khai thành công, phải cập nhật thêm `docs/scanner/scanner-flow.md` vì file đó là tài liệu runtime contract hiện hành.
+
+### Trạng thái bàn giao ngày 2026-07-30
+
+Trạng thái code và bằng chứng được ghi nhận tại thời điểm bàn giao:
+
+- Bước 0–5 đã được triển khai cho Tầng 1, gồm flags/route, canonical prefilter,
+  structural-reject contract, short-circuit, scanner safety, UI và persistence.
+- Bước 6 đã đạt offline A/B: 8 fixture, trade false reject bằng 0,
+  survivor parity failure bằng 0, error bằng 0; script trả `GATE: PASS`.
+- Test A/B trực tiếp đạt 32 test; nhóm regression scanner/fast-path liên quan đạt
+  177 test. Một lỗi native Qt/Chromium từng xuất hiện khi chạy wildcard UI rộng hơn,
+  không thuộc logic Fast-Reject và không được dùng làm bằng chứng cho Bước 7.
+- Cấu hình persisted được kiểm tra với `scanner_fast_tier1=true` và
+  `scanner_fast_tier2=false`; source default vẫn là `false` để rollback an toàn.
+- Benchmark Bước 7 đã đo paired riêng full baseline/Tầng 1, mã hóa gate chính thức và
+  tạo artifact JSON theo contract bên dưới.
+- Bước 7 đã hoàn thành nghiệm thu với `STOP_AFTER_TIER1`; Bước 8–10 không thực hiện
+  theo gate.
 
 ## 1. Mục tiêu và giới hạn
 
@@ -440,23 +461,165 @@ Khác biệt được phép:
 
 ### Bước 7 — Feasibility gate cho Tầng 2
 
-**Độ phức tạp: 3/10**
+**Độ phức tạp: 4/10**
 
-Đây là cổng quyết định có đáng refactor Tầng 2 hay không.
+Đây là cổng quyết định có đáng refactor Tầng 2 hay không. Bước này chỉ sửa benchmark,
+test và tài liệu bằng chứng; không tách raw discovery, không sửa production path và
+không bật `scanner_fast_tier2`.
 
-**Việc làm:**
+**File sửa/tạo:**
 
-1. Trên corpus hiện có, đếm tỷ lệ raw-empty H4/H1.
-2. Đo tỷ trọng thời gian của:
-   - technical;
-   - full SMC;
-   - post-SMC.
-3. Ước lượng wall-clock savings nếu chỉ bỏ raw-empty.
+- `scripts/tier2_feasibility_gate.py`
+- `tests/test_tier2_feasibility_gate.py`
+- `reports/scanner_fast_path/tier2-feasibility.json`
+- tài liệu này
 
-**Quyết định:**
+**Định nghĩa phép đo:**
 
-- Nếu raw-empty rate đủ cao và saving đạt ngưỡng đã chốt: tiếp tục Bước 8.
-- Nếu raw-empty rate thấp hoặc saving không đáng kể: dừng sau Tầng 1, không refactor rủi ro 9/10.
+- `technical_ms`: thời gian thực thi đúng lời gọi `build_technical_snapshot()`.
+- `smc_ms`: thời gian thực thi đúng lời gọi `build_smc_context()`.
+- `post_smc_ms`: từ lúc `build_smc_context()` trả về đến khi `analyze_symbol()` trả về.
+- `other_pipeline_ms`: phần còn lại của tổng thời gian, không được gộp hoặc gắn nhãn
+  sai thành post-SMC.
+- `total_ms`: toàn bộ thời gian của một lần `analyze_symbol()`, không bao gồm thời gian
+  tạo fixture/candles.
+- `raw_empty`: cả bốn family `demand`, `supply`, `order_block`, `fvg` đều rỗng trên cả
+  H4 và H1. Lỗi detector hoặc payload malformed phải được ghi là error/fail-open,
+  không được tính là raw-empty.
+
+**Kế hoạch thực hiện tuần tự:**
+
+1. **Khóa corpus và cấu hình benchmark.**
+   - Dùng đúng corpus deterministic của Bước 0/6, cùng candles, request, threshold và
+     SMC mode v2.
+   - Ghi `fixture_count`, danh sách fixture hoặc `corpus_hash`, phiên bản Python và
+     `fast_path_version` vào báo cáo để lần chạy có thể tái lập.
+   - Không gọi MT5, network, AI provider hoặc order API.
+
+2. **Tách logic quyết định khỏi logic đo.**
+   - Tạo các hàm thuần để tính raw-empty, phần trăm saving và quyết định gate.
+   - Hàm quyết định chỉ nhận metrics + thresholds, không đọc clock/file/global state.
+   - CLI chỉ chịu trách nhiệm chạy benchmark, in kết quả và ghi JSON.
+
+3. **Instrument một lần chạy pipeline thật.**
+   - Bọc đúng symbol được import trong `core.analysis_pipeline` cho
+     `build_technical_snapshot()` và `build_smc_context()`.
+   - Wrapper phải gọi implementation thật, chỉ ghi timestamp trước/sau; không thay
+     payload và không mock kết quả.
+   - Ghi mốc `pipeline_start`, `smc_end`, `pipeline_end` để đo riêng
+     `post_smc_ms`; tính `other_pipeline_ms` làm residual.
+   - Kiểm tra sai số kế toán:
+     `total_ms ≈ technical_ms + smc_ms + post_smc_ms + other_pipeline_ms`.
+     Residual dương là overhead pipeline hợp lệ; chỉ residual âm vượt sai số clock
+     mới bị đánh dấu benchmark error.
+
+4. **Chạy paired benchmark.**
+   - Với mỗi fixture, warm-up 5 lần rồi đo tối thiểu 50 lần.
+   - Mỗi vòng chạy full baseline và Tầng 1 trên cùng input; đảo thứ tự theo vòng để
+     giảm thiên lệch cache/CPU.
+   - Ghi full baseline và Tầng 1 vào hai accumulator độc lập. Không được gộp hai
+     scenario khi tính percentile hoặc `tier1_scan_wall_ms`.
+   - Báo cáo p50/p95 cho từng phase và tổng pipeline; không dùng một lần đo đơn lẻ
+     để ra quyết định.
+   - Không đặt timing assertion trong unit test vì CI/workstation có độ nhiễu khác nhau.
+
+5. **Đo raw-empty độc lập.**
+   - Đếm raw candidate theo H4/H1 và đủ bốn family.
+   - Báo cáo `raw_empty_count`, `raw_empty_rate`, error count và danh sách fixture
+     raw-empty để có thể audit.
+   - Nếu `build_smc_context()` ném exception, bắt lỗi tại classification, ghi
+     `detector_exception` vào report, không tính fixture là raw-empty và bỏ fixture
+     lỗi khỏi phase timing. Error này phải ép gate về `STOP_AFTER_TIER1`.
+   - Không suy diễn raw-empty từ kết quả canonical selected zone của Tầng 1.
+
+6. **Ước lượng chi phí discovery bằng sensitivity analysis.**
+   - Chưa có implementation Tầng 2 nên không coi chi phí discovery là số đo thật.
+   - Chạy ba kịch bản tỷ lệ chi phí discovery trên full SMC:
+     `optimistic=0.20`, `expected=0.35`, `conservative=0.50`.
+   - Với mỗi kịch bản:
+     `discovery_cost_ms = raw_empty_smc_p50_ms × factor`;
+     `saving_per_raw_empty_ms = raw_empty_smc_p50_ms - discovery_cost_ms`;
+     `scan_saving_ms = raw_empty_count × saving_per_raw_empty_ms`;
+     `scan_saving_pct = scan_saving_ms / tier1_scan_wall_ms`.
+   - `raw_empty_smc_p50_ms` chỉ lấy từ accumulator full baseline;
+     `tier1_scan_wall_ms` chỉ lấy từ accumulator Tầng 1.
+   - Quyết định chính thức chỉ dùng kịch bản `conservative`; hai kịch bản còn lại
+     chỉ để tham khảo.
+
+7. **Áp dụng cổng chính thức.**
+   - `MIN_RAW_EMPTY_RATE = 0.20`.
+   - `MIN_SAVING_PER_RAW_EMPTY_MS = 10.0`.
+   - `MIN_SCAN_SAVING_PCT = 0.08`.
+   - Chỉ trả `CONTINUE_TO_TIER2` khi cả ba điều kiện đều đạt trong kịch bản
+     conservative và benchmark không có error.
+   - Nếu thiếu bất kỳ điều kiện nào, trả `STOP_AFTER_TIER1` kèm danh sách reason
+     cụ thể; không dùng nhận định thủ công để override.
+
+8. **Ghi artifact bằng chứng.**
+   - Ghi atomically vào `reports/scanner_fast_path/tier2-feasibility.json`.
+   - JSON tối thiểu có: metadata corpus/run, raw counts, `paired_timing.full` và
+     `paired_timing.tier1` (mỗi nhánh có aggregate/per-fixture p50/p95 và scan wall),
+     `timing_skipped_fixtures`, ba kịch bản sensitivity, thresholds, decision,
+     reasons, `benchmark_error_count` và error count theo từng scenario.
+   - CLI in cùng decision với JSON và trả exit code khác 0 khi benchmark lỗi;
+     `STOP_AFTER_TIER1` là một quyết định hợp lệ nên không phải process error.
+
+9. **Thêm test deterministic.**
+   - Test predicate raw-empty cho đủ H4/H1/family và malformed fail-open.
+   - Test deterministic khi detector ném exception: benchmark không crash, fixture lỗi
+     không là raw-empty, report tăng error count, gate trả `STOP_AFTER_TIER1`, artifact
+     vẫn được ghi và CLI trả exit code khác 0.
+   - Test phase accounting bằng fake clock/metrics cố định, không assert thời gian máy.
+   - Test accumulator/schema bằng metrics cố định; unit test không gọi benchmark thật
+     và không đặt quan hệ tỷ lệ timing phụ thuộc tốc độ CI/workstation.
+   - Test hàm gate ở cả hai nhánh `CONTINUE_TO_TIER2` và `STOP_AFTER_TIER1`, gồm
+     boundary đúng bằng ngưỡng.
+   - Test schema report có đủ field và reason; test serialization round-trip.
+
+10. **Chạy nghiệm thu và chốt quyết định.**
+    - Chạy:
+      `py -m pytest tests/test_tier2_feasibility_gate.py -q`.
+    - Chạy:
+      `py scripts/tier2_feasibility_gate.py`.
+    - Đọc lại JSON, đối chiếu số in trên CLI và cập nhật mục “Kết quả Bước 7” bên
+      dưới bằng số đo chính thức.
+    - Chỉ bắt đầu Bước 8 nếu decision là `CONTINUE_TO_TIER2`; nếu là
+      `STOP_AFTER_TIER1`, đánh dấu Bước 7 hoàn thành và kết thúc phạm vi Fast-Reject
+      ở Tầng 1.
+
+**Kết quả chính thức (2026-07-30):**
+
+- corpus 8 fixture, raw-empty 1/8 = 12,50%;
+- full baseline p50: technical 0,3291ms | smc 1,3945ms (48,12%) |
+  post_smc 1,1857ms (40,92%) | other 0,0117ms | total 2,8979ms;
+- Tầng 1 p50: technical 0,3272ms | smc 1,3872ms (48,27%) |
+  post_smc 1,1439ms (39,81%) | other 0,0118ms | total 2,8737ms;
+- paired scan wall p50: full 23,1832ms | Tầng 1 22,9896ms;
+- sensitivity conservative: discovery=50% full SMC,
+  saving_per_raw_empty=0,5353ms, scan_saving=2,3282%;
+- cả ba tiêu chí đều thất bại: RAW_EMPTY_RATE 12,5% < MIN 20%;
+  SAVING_PER_RAW_EMPTY_MS 0,54ms < MIN 10,0ms;
+  SCAN_SAVING_PCT 2,33% < MIN 8%;
+- decision: `STOP_AFTER_TIER1`, `benchmark_error_count=0`,
+  `raw_empty.error_count=0`, `accounting_errors=0` (`full=0`, `tier1=0`);
+  CLI exit code 0 vì đây là decision hợp lệ.
+- bằng chứng deterministic cho detector exception: fixture lỗi không được tính
+  raw-empty, `benchmark_error_count=1`, decision `STOP_AFTER_TIER1`, report vẫn được
+  ghi và CLI exit code 1.
+- report: `reports/scanner_fast_path/tier2-feasibility.json`.
+- tests: `tests/test_tier2_feasibility_gate.py` (51 tests, pass toàn bộ).
+- Bước 8–10 được ghi nhận là "không thực hiện theo gate". Bước 7 hoàn thành.
+
+**Định nghĩa hoàn thành Bước 7:**
+
+- phase timing được tách đúng và phase accounting hợp lệ;
+- thresholds được mã hóa trong script và ghi vào report;
+- unit test deterministic pass;
+- report JSON tái lập được, không có benchmark error;
+- detector exception fail-open đúng contract và không làm benchmark crash;
+- decision có reason rõ ràng;
+- nếu decision là `STOP_AFTER_TIER1`, Bước 8–10 được ghi nhận là “không thực hiện theo
+  gate”, không phải là Bước 7 chưa hoàn thành.
 
 ### Bước 8 — Raw candidate discovery và cache
 
@@ -665,13 +828,13 @@ Nếu raw-empty rate thấp hoặc Tầng 2 không giảm wall-clock đáng kể
 - [ ] Hai cờ tắt, backtest và detail cho kết quả baseline tương đương.
 - [ ] Hai flag mặc định tắt trước release.
 - [ ] Tầng 1 đã qua offline A/B, trade false reject bằng 0.
-- [ ] Tầng 2 đã qua feasibility gate.
-- [ ] Tầng 2 cache không chạy detector lặp và không rò dữ liệu.
+- [ ] Bước 7 đã tạo report và decision chính thức; chỉ triển khai Tầng 2 nếu decision là `CONTINUE_TO_TIER2`.
+- [ ] Nếu decision là `CONTINUE_TO_TIER2`: cache Tầng 2 không chạy detector lặp và không rò dữ liệu; nếu `STOP_AFTER_TIER1` thì mục này là N/A.
 - [ ] Survivor parity đạt.
 - [ ] Structural reject không bị coi là data error.
 - [ ] Không phát sinh order từ fast result.
 - [ ] UI, ranking, AI target, persistence và snapshot pass.
-- [ ] Benchmark cho thấy wall-clock cải thiện.
+- [ ] Benchmark Bước 7 đã chốt decision; nếu triển khai Tầng 2, benchmark Bước 10 phải cho thấy wall-clock cải thiện.
 - [ ] Rollback từng tầng đã kiểm tra.
 - [ ] `docs/scanner/scanner-flow.md` và tài liệu liên quan đã cập nhật sau khi runtime thay đổi.
 

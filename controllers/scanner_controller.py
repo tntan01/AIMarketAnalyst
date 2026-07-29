@@ -29,7 +29,10 @@ from core.scanner_ai_auditor import (
 from core.backtest_config import serialize_backtest_config
 from core.execution_revalidation_engine import revalidate_execution
 from core.portfolio_risk_engine import evaluate_portfolio_risk
-from core.scanner_candidate_engine import build_candidate_order_payload
+from core.scanner_candidate_engine import (
+    build_candidate_order_payload,
+    is_structural_reject_row,
+)
 from core.scanner_ranking_engine import _find_scenario_for_side
 from core.scanner_session_review import build_market_brief_prompt
 from core.scanner_observability import (
@@ -298,7 +301,7 @@ class ScannerController:
         )
         progress(8, "Đang kiểm tra kết nối dữ liệu...")
         try:
-            self.mt5.ensure_ready(require_login=True)
+            status = self.mt5.ensure_ready(require_login=True)
         except ProviderNotReadyError as exc:
             status = exc.status
             self._emit_observability(
@@ -484,6 +487,12 @@ class ScannerController:
             "closed_trades": closed_trades,
             "account_guard_settings": account_guard_settings,
             "smc_scoring_mode": request.smc_scoring_mode,
+            "scanner_fast_tier1": bool(
+                request.feature_flags.get("scanner_fast_tier1", False)
+            ),
+            "scanner_fast_tier2": bool(
+                request.feature_flags.get("scanner_fast_tier2", False)
+            ),
         }
 
         with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 4)) as ex:
@@ -573,10 +582,15 @@ class ScannerController:
                 "ready_now": "READY_NOW",
                 "waiting_confirmation": "WAITING_CONFIRMATION",
                 "watch_zone": "WATCH_ZONE",
+                "out_of_strategy": "OUT_OF_STRATEGY",
                 "blocked": "BLOCKED",
             }.get(
                 str(row.get("scanner_group", "") or "").lower(),
-                "DATA_UNAVAILABLE",
+                (
+                    "OUT_OF_STRATEGY"
+                    if is_structural_reject_row(row)
+                    else "DATA_UNAVAILABLE"
+                ),
             )
             at_cfg = self._auto_trade_config(request, symbol)
             if at_cfg is not None and "auto_trade_config" not in row:
@@ -788,9 +802,10 @@ class ScannerController:
             row["auto_trade_selected_side"] = decision.selected_side
             row["auto_trade_reason_codes"] = list(decision.reason_codes)
             row["scanner_candidate_decision"] = decision.to_dict()
-            candidate_payload = build_candidate_order_payload(
-                row,
-                decision,
+            candidate_payload = (
+                None
+                if is_structural_reject_row(row)
+                else build_candidate_order_payload(row, decision)
             )
             if isinstance(candidate_payload, dict):
                 candidate_payload.pop("analysis_result", None)
@@ -1422,6 +1437,8 @@ class ScannerController:
         """Return order candidates captured by the canonical scan decision."""
         candidates: list[dict[str, Any]] = []
         for row in rows:
+            if is_structural_reject_row(row):
+                continue
             stored = row.get("candidate_order_payload")
             if not isinstance(stored, dict):
                 # Compatibility for old snapshots created before the
@@ -1932,6 +1949,8 @@ def _analyze_one_symbol(
     account_guard_settings: dict[str, Any],
     thresholds: dict[str, int | float] | None = None,
     smc_scoring_mode: str = "v2",
+    scanner_fast_tier1: bool = False,
+    scanner_fast_tier2: bool = False,
 ) -> dict[str, Any]:
     """Run the analysis pipeline for one symbol (CPU-only, thread-safe)."""
     started_at = perf_counter()
@@ -1968,6 +1987,8 @@ def _analyze_one_symbol(
             account_guard_settings=account_guard_settings,
             thresholds=thresholds,
             smc_scoring_mode=smc_scoring_mode,
+            scanner_fast_tier1=scanner_fast_tier1,
+            scanner_fast_tier2=scanner_fast_tier2,
         )
     except Exception as exc:
         blocked = blocked_scanner_row(

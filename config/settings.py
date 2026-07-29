@@ -168,6 +168,9 @@ class FeatureFlagSettings:
 
     scanner_architecture_v2: bool = False
     auto_trade_v2: bool = False
+    # Fast reject remains opt-in until its offline A/B gates pass.
+    scanner_fast_tier1: bool = False
+    scanner_fast_tier2: bool = False
     smc_scoring_mode: str = "v2"
 
 

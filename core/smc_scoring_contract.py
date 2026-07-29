@@ -87,18 +87,27 @@ def build_smc_phase0_diagnostics(
     technical: dict[str, Any] | None,
     active_scores: dict[str, dict[str, Any]] | None,
     market_regime: dict[str, Any] | None = None,
+    precomputed_v2_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build deterministic legacy/v2-shadow diagnostics."""
+    """Build deterministic legacy/v2-shadow diagnostics.
+
+    ``precomputed_v2_result`` is supplied only by Scanner Tier 1 after it has
+    already evaluated the canonical selector.  Reusing it keeps full-route
+    survivors observationally identical while avoiding a duplicate v2 pass.
+    """
 
     policy = resolve_smc_scoring_policy(requested_mode)
     active = _active_side_snapshots(active_scores)
     shadow: dict[str, dict[str, Any]] = {}
     if policy.shadow_enabled:
-        shadow = score_smc_v2(
-            smc or {},
-            technical or {},
-            market_regime or {},
-        )
+        if isinstance(precomputed_v2_result, dict):
+            shadow = precomputed_v2_result
+        else:
+            shadow = score_smc_v2(
+                smc or {},
+                technical or {},
+                market_regime or {},
+            )
 
     comparison = _compare_side_snapshots(active, shadow)
     decision_input_changed = bool(

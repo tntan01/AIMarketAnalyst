@@ -372,6 +372,11 @@ def test_snapshot_splits_summary_and_full_symbol_analysis(tmp_path):
 
 def test_summary_snapshot_avoids_full_analysis_for_routine_auto_scan(tmp_path):
     row, context = _observed_row()
+    # A ready/allowed row is deliberately a material event and therefore must
+    # persist full evidence.  This fixture models the non-actionable routine
+    # scan that the summary mode contract is intended to cover.
+    row["scanner_action"] = "stand_aside"
+    row["trade_permission"] = "blocked"
     row["observability"] = {"large": ["x"] * 100}
     result = {
         "scan_id": context.scan_id,

@@ -91,6 +91,9 @@ _SCANNER_REASON_MESSAGES = {
     "MISSING_SELECTED_SIDE_SCENARIO": "Không có kịch bản hợp lệ cho hướng được chọn.",
     "MISSING_SELECTED_SIDE": "Không xác định được hướng giao dịch.",
     "BACKTEST_CONFIG_INVALID": "Cấu hình Backtest không hợp lệ.",
+    "STRUCTURAL_SMC_REJECT": "Không có vùng SMC canonical phù hợp; không tạo thiết lập giao dịch.",
+    "NO_ACTIONABLE_SMC_ZONE": "Cả BUY và SELL đều không có vùng SMC canonical đủ điều kiện.",
+    "NO_RAW_SMC_CANDIDATE": "Không phát hiện raw SMC candidate ở các khung thời gian yêu cầu.",
 }
 
 
@@ -3267,6 +3270,7 @@ class ScannerDetailScreen(QWidget):
             "direction": "So sánh điểm BUY vs SELL để chọn hướng giao dịch tốt nhất",
             "gate": "Chạy 11 gate kiểm tra: MT5, spread, tin tức, bảo vệ TK, M15, R:R, chênh lệch điểm...",
             "final_score": "Tổng hợp điểm cuối cùng (tín hiệu×65% + bằng chứng NK×20% + thực thi×15%) và ra quyết định",
+            "structural_reject": "Dừng sớm có chủ đích: SMC đã được kiểm tra đủ để xác nhận không có thiết lập. Đây không phải lỗi dữ liệu.",
         }
 
         title_color = "#D94625" if light else "#fb923c"
@@ -3299,7 +3303,19 @@ class ScannerDetailScreen(QWidget):
             "direction": "5. Chọn hướng",
             "gate": "6. Gate",
             "final_score": "7. Điểm cuối",
+            "structural_reject": "Fast reject SMC",
         }
+
+        route = str(analysis.get("pipeline_route", "") or "").strip()
+        reason = str(analysis.get("fast_reject_reason", "") or "").strip()
+        if route and reason:
+            rows.insert(
+                2,
+                f"<p style='color:{desc_color};{_HTML_SMALL}margin:0 0 12px;'>"
+                f"Đường xử lý: <b>{route}</b> · Lý do: <b>{reason}</b>. "
+                "Kết quả là không có thiết lập, không phải thiếu dữ liệu."
+                "</p>",
+            )
 
         for entry in pipe_diags:
             if not isinstance(entry, dict):

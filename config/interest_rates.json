@@ -1,31 +1,35 @@
 {
   "_description": "Central bank interest rates for macro scoring. Update manually when rates change.",
-  "_last_updated": "2026-07-15 15:25 UTC",
+  "_last_updated": "2026-07-29 19:49 UTC",
   "currencies": {
     "USD": {
       "central_bank": "Federal Reserve",
-      "rate": 5.5,
-      "rate_label": "5.25-5.50%",
-      "trend": "hold",
+      "rate": 3.75,
+      "rate_label": "3.75%",
+      "trend": "hike",
       "next_decision": "",
       "drivers": [
         "DXY",
         "UST 2Y",
         "UST 10Y",
         "Fed expectations"
-      ]
+      ],
+      "_source": "ForexFactory",
+      "_updated": "2026-07-29"
     },
     "EUR": {
       "central_bank": "ECB",
-      "rate": 2.5,
-      "rate_label": "2.50%",
-      "trend": "cut",
+      "rate": 2.25,
+      "rate_label": "2.25%",
+      "trend": "hold",
       "next_decision": "",
       "drivers": [
         "ECB expectations",
         "Bund yield",
         "US-Germany yield spread"
-      ]
+      ],
+      "_source": "FRED",
+      "_updated": "2026-07-29"
     },
     "GBP": {
       "central_bank": "BOE",
@@ -41,8 +45,8 @@
     },
     "JPY": {
       "central_bank": "BOJ",
-      "rate": 0.5,
-      "rate_label": "0.50%",
+      "rate": 0.841,
+      "rate_label": "0.84%",
       "trend": "hike",
       "next_decision": "",
       "drivers": [
@@ -50,7 +54,9 @@
         "JGB yields",
         "US-Japan yield spread",
         "intervention risk"
-      ]
+      ],
+      "_source": "FRED",
+      "_updated": "2026-06-01"
     },
     "AUD": {
       "central_bank": "RBA",
