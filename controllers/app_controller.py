@@ -95,6 +95,11 @@ class AppController:
             self._telegram_service = TelegramAlertService()
         return self._telegram_service
 
+    def shutdown(self) -> None:
+        """Release application-owned resources without creating new services."""
+        if self._mt5 is not None:
+            self._mt5.disconnect()
+
     # -- controllers -------------------------------------------------------
 
     @property

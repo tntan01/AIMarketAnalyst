@@ -30,8 +30,7 @@ class TestAnalyzeBtnDisabledDuringBacktest(unittest.TestCase):
 
     def test_analyze_btn_disabled_when_backtest_starts(self):
         """Khi backtest bắt đầu → analyze_btn bị disable."""
-        self.screen.controller.build_requests.return_value = [MagicMock()]
-        self.screen.controller.create_backtest_worker.return_value = (
+        self.screen.controller.create_backtest_worker_from_inputs.return_value = (
             MagicMock(), MagicMock()
         )
 
@@ -43,8 +42,7 @@ class TestAnalyzeBtnDisabledDuringBacktest(unittest.TestCase):
 
     def test_run_button_also_disabled(self):
         """run_button vẫn bị disable như trước (không regression)."""
-        self.screen.controller.build_requests.return_value = [MagicMock()]
-        self.screen.controller.create_backtest_worker.return_value = (
+        self.screen.controller.create_backtest_worker_from_inputs.return_value = (
             MagicMock(), MagicMock()
         )
 
@@ -55,26 +53,28 @@ class TestAnalyzeBtnDisabledDuringBacktest(unittest.TestCase):
 
     # ── Không crash khi build_requests fail ───────────────────────
 
-    def test_analyze_btn_state_unchanged_when_build_requests_fails(self):
+    def test_request_building_is_delegated_to_backtest_worker(self):
         """Khi build_requests throw exception → analyze_btn không đổi."""
         self.screen.controller.build_requests.side_effect = ValueError("bad input")
+        self.screen.controller.create_backtest_worker_from_inputs.return_value = (
+            MagicMock(), MagicMock()
+        )
 
         with patch("ui.screens.backtest_screen.QMessageBox.warning") as warning:
             self.screen._run_backtest()
 
         # build_requests fail → return sớm, analyze_btn vẫn enabled
-        self.assertTrue(self.screen.analyze_btn.isEnabled(),
+        self.assertFalse(self.screen.analyze_btn.isEnabled(),
                         "analyze_btn vẫn enabled khi build_requests fail")
-        warning.assert_called_once()
+        warning.assert_not_called()
 
     # ── Re-enable khi backtest hoàn thành (signal connection) ─────
 
     def test_finished_signal_connected_to_reenable_analyze_btn(self):
         """finished signal được connect để re-enable analyze_btn."""
-        self.screen.controller.build_requests.return_value = [MagicMock()]
         mock_thread = MagicMock()
         mock_worker = MagicMock()
-        self.screen.controller.create_backtest_worker.return_value = (
+        self.screen.controller.create_backtest_worker_from_inputs.return_value = (
             mock_thread, mock_worker
         )
 
@@ -100,9 +100,8 @@ class TestAnalyzeBtnDisabledDuringBacktest(unittest.TestCase):
 
     def test_finished_signal_connected_to_reenable_run_button(self):
         """finished signal vẫn reconnect run_button (không regression)."""
-        self.screen.controller.build_requests.return_value = [MagicMock()]
         mock_worker = MagicMock()
-        self.screen.controller.create_backtest_worker.return_value = (
+        self.screen.controller.create_backtest_worker_from_inputs.return_value = (
             MagicMock(), mock_worker
         )
 

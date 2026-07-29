@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from math import floor
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from config.paths import CONFIG_DIR
@@ -15,6 +17,17 @@ from core.portfolio_models import (
 )
 from core.scanner_models import ExecutionMarketSnapshot
 from services.data_provider import ConnectionStatus, DataProvider, OrderResult
+
+
+def _serialized_mt5_operation(method):
+    """Serialize calls into the MetaTrader5 SDK for one service instance."""
+
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._operation_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,37 +67,68 @@ class MT5Service(DataProvider):
         path = symbol_profile_path or CONFIG_DIR / "symbol_profiles.json"
         self.symbol_profiles = json.loads(path.read_text(encoding="utf-8"))
         self._quote_usd_cache: dict[str, float | None] = {}
+        self._lifecycle_lock = RLock()
+        self._operation_lock = RLock()
+        self._owns_connection = False
 
-    def _ensure_initialized(self, mt5: object) -> bool:
+    @staticmethod
+    def _has_existing_session(mt5: object) -> bool:
         try:
             if mt5.terminal_info() is not None or mt5.account_info() is not None:
                 return True
         except Exception:
             pass
-        return bool(mt5.initialize())
+        return False
 
     # -- DataProvider interface: connection ---------------------------------
 
     def connect(self) -> bool:
-        return self.connect_thread()
-
-    def disconnect(self) -> None:
-        self.disconnect_thread()
-
-    def connect_thread(self) -> bool:
         try:
             import MetaTrader5 as mt5
-            return self._ensure_initialized(mt5)
         except ImportError:
             return False
 
-    def disconnect_thread(self) -> None:
+        with self._lifecycle_lock:
+            if self._has_existing_session(mt5):
+                return True
+            initialized = bool(mt5.initialize())
+            if initialized:
+                self._owns_connection = True
+            return initialized
+
+    def disconnect(self) -> None:
         try:
             import MetaTrader5 as mt5
-            mt5.shutdown()
         except ImportError:
-            pass
+            return
 
+        with self._lifecycle_lock:
+            if not self._owns_connection:
+                return
+            mt5.shutdown()
+            self._owns_connection = False
+
+    def connect_thread(self) -> bool:
+        """Compatibility alias for callers using the legacy name."""
+        return self.connect()
+
+    def disconnect_thread(self) -> None:
+        """Compatibility alias for callers using the legacy name."""
+        self.disconnect()
+
+    def ensure_ready(
+        self,
+        *,
+        require_login: bool = True,
+        require_trade: bool = False,
+    ) -> ConnectionStatus:
+        self.connect()
+        return super().ensure_ready(
+            require_login=require_login,
+            require_trade=require_trade,
+        )
+
+    @_serialized_mt5_operation
     def connection_status(self) -> ConnectionStatus:
         mt5_status = self.mt5_connection_status()
         return ConnectionStatus(
@@ -102,6 +146,7 @@ class MT5Service(DataProvider):
             message=mt5_status.message,
         )
 
+    @_serialized_mt5_operation
     def mt5_connection_status(self) -> MT5ConnectionStatus:
         try:
             import MetaTrader5 as mt5
@@ -114,8 +159,10 @@ class MT5Service(DataProvider):
                 message="Chưa cài package MetaTrader5.",
             )
 
-        initialized = self._ensure_initialized(mt5)
         error_code, error_message = mt5.last_error()
+        terminal = mt5.terminal_info()
+        account = mt5.account_info()
+        initialized = terminal is not None or account is not None
         if not initialized:
             return MT5ConnectionStatus(
                 initialized=False,
@@ -126,8 +173,6 @@ class MT5Service(DataProvider):
                 message=error_message or "Không khởi tạo được kết nối MT5.",
             )
 
-        terminal = mt5.terminal_info()
-        account = mt5.account_info()
         terminal_connected = bool(terminal and terminal.connected)
         logged_in = bool(account and account.login)
         trade_allowed = bool(
@@ -152,10 +197,12 @@ class MT5Service(DataProvider):
             message="Đã kết nối MT5." if terminal_connected else "MT5 chưa connected trong terminal.",
         )
 
+    @_serialized_mt5_operation
     def execution_snapshot(self, broker_symbol: str) -> ExecutionMarketSnapshot:
         """Capture broker state once for the fail-closed execution gate."""
 
         captured_at = datetime.now(timezone.utc)
+        self.connect()
         status = self.mt5_connection_status()
         reasons: list[str] = []
         values: dict[str, Any] = {
@@ -285,10 +332,12 @@ class MT5Service(DataProvider):
             reason_codes=tuple(dict.fromkeys(reasons)),
         )
 
+    @_serialized_mt5_operation
     def portfolio_snapshot(self) -> PortfolioSnapshot:
         """Capture all live positions and pending orders with broker risk data."""
 
         captured_at = datetime.now(timezone.utc)
+        self.connect()
         status = self.mt5_connection_status()
         if (
             not status.initialized
@@ -435,7 +484,9 @@ class MT5Service(DataProvider):
             reason_codes=tuple(dict.fromkeys(reasons)),
         )
 
+    @_serialized_mt5_operation
     def account_balance(self) -> float | None:
+        self.connect()
         status = self.mt5_connection_status()
         if not status.terminal_connected or not status.logged_in:
             return None
@@ -481,13 +532,14 @@ class MT5Service(DataProvider):
                 matched.append((app_symbol, broker_symbol))
         return matched
 
+    @_serialized_mt5_operation
     def available_symbols(self, market_watch_only: bool = True) -> list[str]:
         try:
             import MetaTrader5 as mt5
         except ImportError:
             return []
 
-        if not self._ensure_initialized(mt5):
+        if not self.connect():
             return []
 
         symbols = mt5.symbols_get()
@@ -503,6 +555,7 @@ class MT5Service(DataProvider):
             names.add(name)
         return sorted(names)
 
+    @_serialized_mt5_operation
     def load_ohlcv(self, broker_symbol: str, timeframe: str, bars: int, skip_select: bool = False) -> list[Candle]:
         try:
             import MetaTrader5 as mt5
@@ -543,6 +596,7 @@ class MT5Service(DataProvider):
             )
         return candles
 
+    @_serialized_mt5_operation
     def load_ohlcv_range(
         self,
         broker_symbol: str,
@@ -597,7 +651,8 @@ class MT5Service(DataProvider):
         import MetaTrader5 as mt5
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        selected = mt5.symbol_select(broker_symbol, True)
+        with self._operation_lock:
+            selected = mt5.symbol_select(broker_symbol, True)
         if not selected:
             raise RuntimeError(f"Không chọn được mã {broker_symbol} trong MT5 Market Watch.")
 
@@ -619,6 +674,7 @@ class MT5Service(DataProvider):
 
     # -- DataProvider interface: trading ------------------------------------
 
+    @_serialized_mt5_operation
     def place_market_order_unified(
         self,
         *,
@@ -654,7 +710,9 @@ class MT5Service(DataProvider):
             message=mt5_result.message,
         )
 
+    @_serialized_mt5_operation
     def symbol_data_quality(self, display_symbol: str, broker_symbol: str) -> dict[str, Any]:
+        self.connect()
         status = self.mt5_connection_status()
         spread_points = None
         spread_price = None
@@ -698,6 +756,7 @@ class MT5Service(DataProvider):
             "warning": warning,
         }
 
+    @_serialized_mt5_operation
     def server_time_utc(self) -> datetime | None:
         """Trả về thời gian UTC từ MT5 server, hoặc None nếu không lấy được."""
         try:
@@ -712,6 +771,7 @@ class MT5Service(DataProvider):
         except Exception:
             return None
 
+    @_serialized_mt5_operation
     def quote_to_usd_rate(self, quote_currency: str) -> float | None:
         """Trả về tỷ giá quy đổi từ quote_currency sang USD, hoặc None nếu không lấy được.
 
@@ -744,6 +804,7 @@ class MT5Service(DataProvider):
             self._quote_usd_cache[quote_currency] = None
             return None
 
+    @_serialized_mt5_operation
     def has_open_position_or_order(self, broker_symbol: str) -> bool:
         try:
             import MetaTrader5 as mt5
@@ -757,6 +818,7 @@ class MT5Service(DataProvider):
         orders = mt5.orders_get(symbol=broker_symbol)
         return bool(orders)
 
+    @_serialized_mt5_operation
     def get_live_price(self, broker_symbol: str, side: str) -> float | None:
         """Return the current bid/ask tick price for *broker_symbol* and *side*.
 
@@ -777,6 +839,7 @@ class MT5Service(DataProvider):
             return float(tick.bid) if tick.bid else None
         return None
 
+    @_serialized_mt5_operation
     def place_market_order(
         self,
         *,
@@ -866,6 +929,7 @@ class MT5Service(DataProvider):
                 return app_symbol
         return broker_symbol
 
+    @_serialized_mt5_operation
     def closed_trade_history(self, *, start: datetime, end: datetime) -> list[dict[str, object]]:
         """Return closed MT5 positions grouped into journal-ready trades."""
         try:
@@ -883,6 +947,7 @@ class MT5Service(DataProvider):
             raise RuntimeError(error_message or f"Không lấy được lịch sử deal MT5 ({error_code}).")
         return self._closed_trades_from_deals(mt5, list(deals))
 
+    @_serialized_mt5_operation
     def closed_trade_history_recent(self, days: int = 90) -> list[dict[str, object]]:
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=max(1, int(days)))
@@ -891,6 +956,7 @@ class MT5Service(DataProvider):
     # ------------------------------------------------------------------
     # Position & order management
     # ------------------------------------------------------------------
+    @_serialized_mt5_operation
     def get_open_positions(self) -> list[dict[str, object]]:
         """Return all currently open positions from MT5."""
         try:
@@ -923,6 +989,7 @@ class MT5Service(DataProvider):
         except Exception:
             return []
 
+    @_serialized_mt5_operation
     def get_pending_orders(self) -> list[dict[str, object]]:
         """Return all pending (limit/stop) orders from MT5."""
         try:
@@ -960,6 +1027,7 @@ class MT5Service(DataProvider):
         except Exception:
             return []
 
+    @_serialized_mt5_operation
     def close_position(self, position_id: int, *, volume: float | None = None, comment: str = "") -> dict[str, object]:
         """Close an open position (fully or partially) by position ticket."""
         try:
@@ -1013,6 +1081,7 @@ class MT5Service(DataProvider):
         except Exception as exc:
             return {"success": False, "position_id": position_id, "message": str(exc)}
 
+    @_serialized_mt5_operation
     def modify_position_sltp(self, position_id: int, *, sl: float | None = None, tp: float | None = None) -> dict[str, object]:
         """Modify SL and/or TP for an open position."""
         try:

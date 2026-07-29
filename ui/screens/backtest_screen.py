@@ -2427,19 +2427,15 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             if portfolio_enabled
             else [self.selected_symbol]
         )
-        try:
-            requests = self.controller.build_requests(
-                symbols=run_symbols,
-                start=self._qdate_to_utc_start(self.start_date.date()),
-                end=self._qdate_to_utc_end(self.end_date.date()),
-                initial_balance=self.balance_input.value(),
-                risk_percent=self.risk_input.value(),
-                purpose=purpose,
-                execution_mode=execution_mode,
-            )
-        except Exception as exc:
-            QMessageBox.warning(self, "Không tạo được request", str(exc))
-            return
+        build_args = {
+            "symbols": run_symbols,
+            "start": self._qdate_to_utc_start(self.start_date.date()),
+            "end": self._qdate_to_utc_end(self.end_date.date()),
+            "initial_balance": self.balance_input.value(),
+            "risk_percent": self.risk_input.value(),
+            "purpose": purpose,
+            "execution_mode": execution_mode,
+        }
 
         self.run_button.setEnabled(False)
         self.run_button.setText("⏳ Đang chạy...")
@@ -2449,8 +2445,8 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         self.progress.setValue(0)
         self.progress.setFormat("0%")
         self.status_label.setText("Đang chạy backtest...")
-        self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker(
-            requests,
+        self.backtest_thread, self.backtest_worker = self.controller.create_backtest_worker_from_inputs(
+            build_args=build_args,
             research_validation_enabled=(
                 purpose == BACKTEST_PURPOSE_RESEARCH
                 and self.research_validation_checkbox.isEnabled()

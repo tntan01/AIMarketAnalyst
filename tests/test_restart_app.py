@@ -75,8 +75,8 @@ def run_tests():
           "QMessageBox.question(" in restart_body)
     check("3c: Yes/No buttons",
           "StandardButton.Yes" in restart_body and "StandardButton.No" in restart_body)
-    check("3d: MT5 shutdown attempted",
-          "mt5.shutdown()" in restart_body)
+    check("3d: app shutdown attempted",
+          "self.app.shutdown()" in restart_body)
     check("3e: subprocess.Popen used",
           "subprocess.Popen" in restart_body)
     check("3f: QApplication.quit called",

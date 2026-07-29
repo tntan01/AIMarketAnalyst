@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from controllers.app_controller import AppController
 from services.ai_service import AIProviderConfig, AIService
@@ -23,6 +24,30 @@ def test_app_controller_creates_configured_ai_service():
 
     assert isinstance(ai, AIService)
     assert ai.config is config
+
+
+def test_app_controller_shutdown_does_not_create_mt5_service():
+    app = AppController()
+
+    app.shutdown()
+
+    assert app._mt5 is None
+
+
+def test_app_controller_shutdown_disconnects_existing_mt5_service():
+    app = AppController()
+    mt5 = MagicMock()
+    app._mt5 = mt5
+
+    app.shutdown()
+
+    mt5.disconnect.assert_called_once_with()
+
+
+def test_main_registers_app_shutdown_callback():
+    source = Path("main.py").read_text(encoding="utf-8")
+
+    assert "app.aboutToQuit.connect(app_ctrl.shutdown)" in source
 
 
 def test_screen_constructors_are_wired_to_app_controller():

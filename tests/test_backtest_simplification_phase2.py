@@ -108,8 +108,7 @@ def test_research_fast_is_only_selected_from_advanced_ui() -> None:
     app_instance = QApplication.instance() or QApplication([])
     app = MagicMock()
     screen = BacktestScreen(app=app)
-    app.backtest_controller.build_requests.return_value = [MagicMock()]
-    app.backtest_controller.create_backtest_worker.return_value = (
+    app.backtest_controller.create_backtest_worker_from_inputs.return_value = (
         MagicMock(),
         MagicMock(),
     )
@@ -122,10 +121,9 @@ def test_research_fast_is_only_selected_from_advanced_ui() -> None:
 
     assert app_instance is QApplication.instance()
     assert not hasattr(screen, "execution_combo")
-    request_call = app.backtest_controller.build_requests.call_args
-    assert request_call.kwargs["purpose"] == BACKTEST_PURPOSE_RESEARCH
-    assert request_call.kwargs["execution_mode"] == EXECUTION_MODE_RESEARCH
-    worker_call = app.backtest_controller.create_backtest_worker.call_args
+    worker_call = app.backtest_controller.create_backtest_worker_from_inputs.call_args
+    assert worker_call.kwargs["build_args"]["purpose"] == BACKTEST_PURPOSE_RESEARCH
+    assert worker_call.kwargs["build_args"]["execution_mode"] == EXECUTION_MODE_RESEARCH
     assert worker_call.kwargs["research_validation_enabled"] is False
     assert screen.research_validation_checkbox.isEnabled() is False
     assert "Chỉ nghiên cứu" in screen.mode_summary_label.text()

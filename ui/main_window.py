@@ -209,11 +209,9 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # Shutdown MT5
+        # Release application-owned resources before spawning the replacement.
         try:
-            import MetaTrader5 as mt5
-            if mt5.initialize():
-                mt5.shutdown()
+            self.app.shutdown()
         except Exception:
             pass
 

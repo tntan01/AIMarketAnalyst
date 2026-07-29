@@ -185,8 +185,7 @@ def test_phase2_ui_removes_duplicate_evidence_controls() -> None:
     app_instance = QApplication.instance() or QApplication([])
     app = MagicMock()
     screen = BacktestScreen(app=app)
-    app.backtest_controller.build_requests.return_value = [MagicMock()]
-    app.backtest_controller.create_backtest_worker.return_value = (
+    app.backtest_controller.create_backtest_worker_from_inputs.return_value = (
         MagicMock(),
         MagicMock(),
     )
@@ -200,10 +199,9 @@ def test_phase2_ui_removes_duplicate_evidence_controls() -> None:
     assert app_instance is QApplication.instance()
     assert not hasattr(screen, "walk_forward_checkbox")
     assert not hasattr(screen, "is_oos_checkbox")
-    request_call = app.backtest_controller.build_requests.call_args
-    assert request_call.kwargs["purpose"] == BACKTEST_PURPOSE_VALIDATION
-    assert request_call.kwargs["execution_mode"] == EXECUTION_MODE_PARITY
-    worker_call = app.backtest_controller.create_backtest_worker.call_args
+    worker_call = app.backtest_controller.create_backtest_worker_from_inputs.call_args
+    assert worker_call.kwargs["build_args"]["purpose"] == BACKTEST_PURPOSE_VALIDATION
+    assert worker_call.kwargs["build_args"]["execution_mode"] == EXECUTION_MODE_PARITY
     assert worker_call.kwargs["research_validation_enabled"] is False
     assert screen.advanced_execution_combo.isEnabled() is False
     screen.close()

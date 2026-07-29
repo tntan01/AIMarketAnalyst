@@ -1626,6 +1626,7 @@ QUAN TRỌNG:
         self.refresh_ai_status()
 
     def refresh_mt5_status(self) -> None:
+        self.mt5.connect()
         status = self.mt5.connection_status()
         self._apply_connection_status(status)
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from math import floor
-from typing import Any
+from typing import Any, Protocol
 
 import json
 from pathlib import Path
@@ -1822,14 +1822,32 @@ def _count_rejection(bucket: dict[str, int], reason: str) -> None:
     bucket[key] += 1
 
 
-def position_sizing(request: AnalysisInput, entry_price: float, stop_loss: float, *, quote_to_usd_rate: float | None = None, size_multiplier: float = 1.0) -> dict[str, Any]:
+class QuoteRateProvider(Protocol):
+    """Boundary contract for quote-currency conversion outside the risk core."""
+
+    def quote_to_usd_rate(self, quote_currency: str) -> float | None:
+        ...
+
+
+def position_sizing(
+    request: AnalysisInput,
+    entry_price: float,
+    stop_loss: float,
+    *,
+    quote_to_usd_rate: float | None = None,
+    quote_rate_provider: QuoteRateProvider | None = None,
+    size_multiplier: float = 1.0,
+) -> dict[str, Any]:
     price_digits = _price_digits_for_request(request)
     contract_size = contract_size_for(request)
     risk_amount = request.account_balance * request.risk_percent / 100 * size_multiplier
     price_distance = abs(entry_price - stop_loss)
     loss_per_lot = price_distance * contract_size
     if quote_to_usd_rate is None:
-        quote_to_usd_rate = _resolve_quote_to_usd_rate(request.symbol)
+        quote_to_usd_rate = _resolve_quote_to_usd_rate(
+            request.symbol,
+            provider=quote_rate_provider,
+        )
     if quote_to_usd_rate is not None and quote_to_usd_rate > 0:
         loss_per_lot = loss_per_lot * quote_to_usd_rate
     raw_lot = risk_amount / loss_per_lot if loss_per_lot else 0.0
@@ -1891,45 +1909,23 @@ def recalc_execution_lot(
     return sizing["suggested_lot"]
 
 
-def _resolve_quote_to_usd_rate(symbol: str) -> float | None:
-    """Try to get quote-currency to USD conversion rate from MT5."""
+def _resolve_quote_to_usd_rate(
+    symbol: str,
+    *,
+    provider: QuoteRateProvider | None = None,
+) -> float | None:
+    """Resolve a quote-currency rate through an injected provider only."""
     if "/" not in symbol:
         return None
     quote = symbol.split("/")[-1]
     if quote == "USD":
         return 1.0
-    mt5 = None
-    initialized = False
-    owned_connection = False
-    try:
-        import MetaTrader5 as mt5
-
-        try:
-            owned_connection = mt5.terminal_info() is None and mt5.account_info() is None
-        except Exception:
-            owned_connection = True
-        initialized = mt5.initialize()
-        if not initialized:
-            return None
-        for pair_name in (quote + "USD", "USD" + quote):
-            tick = mt5.symbol_info_tick(pair_name)
-            if tick is None:
-                symbols = mt5.symbols_get()
-                for sym in (symbols or []):
-                    name = getattr(sym, "name", "")
-                    if name.upper().startswith(pair_name.upper()):
-                        mt5.symbol_select(name, True)
-                        tick = mt5.symbol_info_tick(name)
-                        break
-            if tick and tick.bid:
-                rate = float(tick.bid)
-                return rate if pair_name.startswith(quote) else 1.0 / rate
+    if provider is None:
         return None
+    try:
+        return provider.quote_to_usd_rate(quote)
     except Exception:
         return None
-    finally:
-        if initialized and owned_connection and mt5 is not None:
-            mt5.shutdown()
 
 
 def contract_size_for(request: AnalysisInput) -> float:
