@@ -24,7 +24,7 @@ Contract mục tiêu đã chốt:
 
 - `tools/ui_density_audit.py` quét toàn bộ `ui/**/*.py`, ba QSS chung và đo
   representative control bằng Qt offscreen ở dark/light theme.
-- `docs/ui-density-baseline.json` lưu inventory có thể kiểm tra lại.
+- `docs/ui/density/ui-density-baseline.json` lưu inventory có thể kiểm tra lại.
 - `tests/test_ui_density_phase0.py` không cho phát sinh chiều cao cục bộ hoặc rule
   QSS mới khi chưa được review.
 
@@ -37,7 +37,7 @@ Lệnh tái tạo/kiểm tra:
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_density_audit.py --write docs/ui-density-baseline.json
+python tools/ui_density_audit.py --write docs/ui/density/ui-density-baseline.json
 python -m pytest -q tests/test_ui_density_phase0.py
 ```
 
@@ -107,14 +107,14 @@ nhầm `min-height` là chiều cao tổng.
   trong `ui/styles/base.qss`;
 - padding, typography và kích thước subcontrol trùng nhau đã được chuyển khỏi hai
   theme overlay về base QSS;
-- `docs/ui-density-lock.json` là lock đã review sau Phase 1; baseline Phase 0 vẫn
+- `docs/ui/density/ui-density-lock.json` là lock đã review sau Phase 1; baseline Phase 0 vẫn
   được giữ nguyên làm bằng chứng trước thay đổi.
 
 Lệnh kiểm tra:
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_density_audit.py --check docs/ui-density-lock.json
+python tools/ui_density_audit.py --check docs/ui/density/ui-density-lock.json
 python -m pytest -q tests/test_ui_density_phase0.py tests/test_ui_density_phase1.py
 ```
 
@@ -155,7 +155,7 @@ chiều cao hình thức và không thêm `setStyleSheet()` vào Python.
   chart, table/header, progress và thành phần kết cấu;
 - giảm inventory Python từ 67 lời gọi ở baseline Phase 0 xuống 33 ngoại lệ hợp lệ,
   với 0 mục `interactive` và 0 mục `review`;
-- cập nhật `docs/ui-density-lock.json` và bổ sung guard
+- cập nhật `docs/ui/density/ui-density-lock.json` và bổ sung guard
   `tests/test_ui_density_phase3.py` để ngăn helper hoặc screen tái chiếm quyền sở hữu
   chiều cao control;
 - cập nhật audit responsive để kiểm tra đúng 24 px với control chuẩn và 20 px với
@@ -165,7 +165,7 @@ Lệnh kiểm tra:
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_density_audit.py --check docs/ui-density-lock.json
+python tools/ui_density_audit.py --check docs/ui/density/ui-density-lock.json
 python -m pytest -q tests/test_ui_density_phase0.py tests/test_ui_density_phase1.py `
   tests/test_ui_density_phase2.py tests/test_ui_density_phase3.py
 ```
@@ -191,7 +191,7 @@ không còn screen/dialog tự đặt stylesheet hoặc chiều cao cho control 
   control tương tác;
 - bổ sung `tests/test_ui_density_phase4.py` kiểm tra toàn bộ cụm màn hình, quyền sở
   hữu QSS và contract runtime của dialog Scanner;
-- cập nhật `docs/ui-density-lock.json` sau khi các thay đổi được review.
+- cập nhật `docs/ui/density/ui-density-lock.json` sau khi các thay đổi được review.
 
 Phase 4 không thay đổi nghiệp vụ, dữ liệu, signal-slot hoặc hành vi giao dịch.
 
@@ -199,7 +199,7 @@ Lệnh kiểm tra:
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_density_audit.py --check docs/ui-density-lock.json
+python tools/ui_density_audit.py --check docs/ui/density/ui-density-lock.json
 python -m pytest -q tests/test_ui_density_phase0.py tests/test_ui_density_phase1.py `
   tests/test_ui_density_phase2.py tests/test_ui_density_phase3.py `
   tests/test_ui_density_phase4.py
@@ -221,13 +221,13 @@ không cắt nội dung theo chiều dọc và không phát sinh stylesheet cụ
 - thêm tùy chọn CLI `--validate-contract`, trả exit code khác 0 khi contract bị phá;
 - bổ sung `tests/test_ui_density_phase5.py` để khóa coverage runtime và bảo đảm chỉ
   `ui/theme_manager.py` được gọi `setStyleSheet()`;
-- cập nhật `docs/ui-density-lock.json` với tập số đo đã review.
+- cập nhật `docs/ui/density/ui-density-lock.json` với tập số đo đã review.
 
 Lệnh kiểm tra:
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_density_audit.py --check docs/ui-density-lock.json `
+python tools/ui_density_audit.py --check docs/ui/density/ui-density-lock.json `
   --validate-contract
 python -m pytest -q tests/test_ui_density_phase0.py tests/test_ui_density_phase1.py `
   tests/test_ui_density_phase2.py tests/test_ui_density_phase3.py `
@@ -252,8 +252,8 @@ python -m pytest -q tests/test_ui_density_phase0.py tests/test_ui_density_phase1
 - cố định DPI gốc 96 và nạp Segoe UI/Segoe UI Emoji trực tiếp cho Qt offscreen, giúp
   ảnh kiểm tra có chữ thật nhưng không bật cửa sổ hoặc gọi dịch vụ ngoài;
 - chạy đủ 288 trường hợp responsive (`8 màn hình × 6 viewport × 3 DPI × 2 theme`),
-  kết quả 0 lỗi tại `docs/ui-responsive-report.json`;
-- tạo 48 ảnh baseline tại `docs/ui-baseline/density-phase6` cho 8 màn hình, 3 DPI và
+  kết quả 0 lỗi tại `docs/ui/reports/ui-responsive-report.json`;
+- tạo 48 ảnh baseline tại `docs/ui/baseline/density-phase6` cho 8 màn hình, 3 DPI và
   2 theme ở viewport 1366×768; manifest không có failure;
 - kiểm tra trực quan Scanner và Journal tại 100%/150%: chữ, nút và cột không bị cắt,
   không chồng lấn, bố cục dark/light nhất quán;
@@ -272,10 +272,10 @@ Phase 6 không thay đổi nghiệp vụ, signal-slot hoặc hành vi giao dịc
 Lệnh tái tạo/kiểm tra:
 
 ```powershell
-python tools/ui_layout_audit.py --write docs/ui-responsive-report.json `
+python tools/ui_layout_audit.py --write docs/ui/reports/ui-responsive-report.json `
   --workers 3 --job-timeout 90
 python tools/capture_ui_density_visuals.py --suite --replace `
-  --output docs/ui-baseline/density-phase6 --viewport 1366x768 `
+  --output docs/ui/baseline/density-phase6 --viewport 1366x768 `
   --workers 3 --job-timeout 90
 python -m pytest -q tests/test_ui_density_phase6.py
 ```

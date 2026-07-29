@@ -62,12 +62,12 @@ thái tương tác theo theme.
   hàng hợp lý; không để control chồng lấn.
 
 Ma trận responsive bắt buộc gồm 14", 15.6", 16", 24", 27" và 32" cho cả dark
-và light theme. Báo cáo chuẩn nằm tại `docs/ui-responsive-report.json`.
+và light theme. Báo cáo chuẩn nằm tại `docs/ui/reports/ui-responsive-report.json`.
 
 ## 4. Ngoại lệ
 
 Ngoại lệ chỉ hợp lệ khi có lý do kỹ thuật và được ghi trong
-`docs/ui-style-allowlist.json`. Không thêm ngoại lệ tạm thời sau Phase 7. Các
+`docs/ui/style/ui-style-allowlist.json`. Không thêm ngoại lệ tạm thời sau Phase 7. Các
 nhóm hợp lệ hiện tại là loader stylesheet tập trung, semantic palette, runtime
 chart palette và rich-text template đã được review.
 
@@ -75,11 +75,11 @@ chart palette và rich-text template đã được review.
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_style_audit.py --check docs/ui-style-lock.json
-python tools/ui_density_audit.py --check docs/ui-density-lock.json --validate-contract
-python tools/ui_layout_audit.py --write docs/ui-responsive-report.json
+python tools/ui_style_audit.py --check docs/ui/style/ui-style-lock.json
+python tools/ui_density_audit.py --check docs/ui/density/ui-density-lock.json --validate-contract
+python tools/ui_layout_audit.py --write docs/ui/reports/ui-responsive-report.json
 python tools/capture_ui_density_visuals.py --suite --replace `
-  --output docs/ui-baseline/density-phase6 --viewport 1366x768
+  --output docs/ui/baseline/density-phase6 --viewport 1366x768
 python -m pytest -q tests/test_ui_density_phase5.py
 python -m pytest -q tests/test_ui_density_phase6.py
 python -m pytest -q tests/test_ui_style_phase7.py
@@ -88,5 +88,5 @@ python -m pytest -q
 
 Nếu thay đổi hình thức có chủ đích, chụp lại dark/light bằng
 `tools/capture_ui_style_baseline.py`, kiểm tra trực quan rồi tạo lại manifest.
-Chỉ cập nhật `docs/ui-style-lock.json` khi thay đổi kiến trúc đã được review;
+Chỉ cập nhật `docs/ui/style/ui-style-lock.json` khi thay đổi kiến trúc đã được review;
 không cập nhật lock chỉ để làm test hết lỗi.

@@ -12,9 +12,14 @@ from tools.ui_dark_surface_audit import analyze_image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REPORT = ROOT / "docs" / "dark-surface-report.json"
+REPORT = ROOT / "docs" / "ui" / "reports" / "dark-surface-report.json"
 MANIFEST = (
-    ROOT / "docs" / "ui-baseline" / "current" / "screenshot-manifest.json"
+    ROOT
+    / "docs"
+    / "ui"
+    / "baseline"
+    / "current"
+    / "screenshot-manifest.json"
 )
 
 

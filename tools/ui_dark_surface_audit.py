@@ -22,9 +22,14 @@ from PyQt6.QtGui import QImage
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = (
-    ROOT / "docs" / "ui-baseline" / "current" / "screenshot-manifest.json"
+    ROOT
+    / "docs"
+    / "ui"
+    / "baseline"
+    / "current"
+    / "screenshot-manifest.json"
 )
-DEFAULT_OUTPUT = ROOT / "docs" / "dark-surface-report.json"
+DEFAULT_OUTPUT = ROOT / "docs" / "ui" / "reports" / "dark-surface-report.json"
 
 
 def _relative(path: Path) -> str:

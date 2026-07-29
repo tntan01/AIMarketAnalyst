@@ -3,10 +3,10 @@
 > Cập nhật trạng thái 24/07/2026: đây là tài liệu review và nhật ký triển khai.
 > Các phát hiện ở đầu file mô tả kiến trúc cũ tại thời điểm rà soát. Chín giai
 > đoạn 0–8 đã hoàn tất về code/tooling; runtime contract sau nâng cấp nằm tại
-> `docs/scanner-flow.md` và `docs/technical-scoring-architecture.md`. Mã nguồn
+> `docs/scanner/scanner-flow.md` và `docs/scanner/technical-scoring-architecture.md`. Mã nguồn
 > vẫn mặc định `SHADOW`. Runtime trên máy hiện tại đã chọn `PRODUCTION`, nhưng
 > release readiness còn `false`; vì vậy chưa được xem là production-ready và
-> rollout guard vẫn chặn lệnh. Xem `docs/runtime-status.md`.
+> rollout guard vẫn chặn lệnh. Xem `docs/architecture/runtime-status.md`.
 >
 > Cập nhật SMC ngày 24/07/2026: decision path mặc định đã chuyển sang
 > `smc-v2`, làm contract Scanner tăng thành

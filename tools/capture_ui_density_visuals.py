@@ -32,7 +32,7 @@ from tools.ui_layout_audit import (
 from ui.theme_manager import ThemeManager
 
 
-DEFAULT_OUTPUT = ROOT / "docs" / "ui-baseline" / "density-phase6"
+DEFAULT_OUTPUT = ROOT / "docs" / "ui" / "baseline" / "density-phase6"
 VISUAL_VIEWPORT = (1366, 768)
 
 

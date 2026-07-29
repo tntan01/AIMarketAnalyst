@@ -8,7 +8,7 @@ Verifies:
   manual eligibility pre-filter still uses best-case expected_effective_rr).
 - Current RR guard only at execution time — not in checklist or eligibility.
 
-Consumer contract per docs/rr_anchor_semantics.md:
+Consumer contract per docs/trading/rr_anchor_semantics.md:
 - Entry checklist: best-case nominal (risk_reward)
 - Auto-trade candidate eligibility: best-case effective (expected_effective_rr)
 - Manual execution guard: current effective RR (Phase 5B)

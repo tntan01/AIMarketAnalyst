@@ -10,17 +10,17 @@ Trạng thái: Toàn bộ Phase 0 đến Phase 7 đã hoàn thành.
 
 Đã hoàn thành khóa an toàn mà không sửa giao diện sản phẩm:
 
-- Tạo inventory tại `docs/ui-style-baseline.json`.
+- Tạo inventory tại `docs/ui/style/ui-style-baseline.json`.
 - Tạo allowlist có lý do và disposition tại
-  `docs/ui-style-allowlist.json`.
+  `docs/ui/style/ui-style-allowlist.json`.
 - Tạo công cụ audit không phụ thuộc Qt tại `tools/ui_style_audit.py`.
 - Tạo harness chụp ảnh cô lập MT5, mạng, worker và persistence tại
   `tools/capture_ui_style_baseline.py`.
-- Chụp 74 ảnh trong `docs/ui-baseline/current`: 37 dark và 37 light.
+- Chụp 74 ảnh trong `docs/ui/baseline/current`: 37 dark và 37 light.
 - Ảnh bao phủ 8 màn hình, các tab chính, 14 dialog và 4 trạng thái component:
   default, focus, hover và pressed.
 - Manifest có SHA-256 và kích thước ảnh tại
-  `docs/ui-baseline/current/screenshot-manifest.json`.
+  `docs/ui/baseline/current/screenshot-manifest.json`.
 - Thêm 3 guardrail test tại `tests/test_ui_style_phase0_guardrails.py`.
 
 Lỗi nền được phát hiện trong quá trình chụp baseline và đã sửa trước Phase 2:
@@ -186,7 +186,7 @@ giữ nguyên logic nghiệp vụ và signal-slot:
 
 - Thêm `tools/ui_layout_audit.py`, kiểm tra tự động 8 route trên cả dark/light
   với sáu profile màn hình 14", 15.6", 16", 24", 27" và 32". Báo cáo tại
-  `docs/ui-responsive-report.json` đạt 96/96 lượt kiểm tra, 0 lỗi.
+  `docs/ui/reports/ui-responsive-report.json` đạt 96/96 lượt kiểm tra, 0 lỗi.
 - Sửa chiều cao nút tự động vào lệnh của Scanner và chuyển hàng cấu hình
   Backtest sang lưới hai dòng. Khu nghiên cứu nâng cao dùng danh sách tùy chọn
   một cột để không chồng lấn trên viewport nhỏ; logic và signal-slot giữ nguyên.
@@ -195,14 +195,14 @@ giữ nguyên logic nghiệp vụ và signal-slot:
   disabled, checked và validation state.
 - Cải tiến harness ảnh dùng render offscreen, tránh phụ thuộc native window và
   không gọi dịch vụ MT5/mạng trong kiểm thử giao diện.
-- Tạo strict lock tại `docs/ui-style-lock.json`; CI không cho tăng
+- Tạo strict lock tại `docs/ui/style/ui-style-lock.json`; CI không cho tăng
   `setStyleSheet`, inline HTML style hoặc literal màu theo từng file. Toàn bộ
   screen hiện có 0 lời gọi `setStyleSheet`; chỉ `ThemeManager` được phép có một
   lời gọi để nạp stylesheet ứng dụng.
 - Xóa palette dark-only `APP_COLORS`, `COLOR_UP`, `COLOR_DOWN` và helper màu
   liên kết Dashboard không còn consumer.
 - Thêm năm contract test tại `tests/test_ui_style_phase7.py` và tài liệu quy
-  chuẩn tại `docs/ui-style-guide.md`; allowlist chỉ còn disposition permanent
+  chuẩn tại `docs/ui/style-guide.md`; allowlist chỉ còn disposition permanent
   hoặc centralized.
 - Audit cuối: `setStyleSheet=1`, `html style attributes=450`, `hex literals=532`.
 - Toàn bộ test sau Phase 7: `1669 passed, 12 skipped, 17 xfailed` (5 cảnh báo

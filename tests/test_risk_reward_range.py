@@ -339,7 +339,7 @@ class TestRRRangeFieldPresent:
 class TestCrossContractAnchors:
     """Verify that a single trade plan is consumed consistently by all layers:
     plan → scanner row → gate → ranking.  These tests lock the anchor
-    semantics documented in docs/rr_anchor_semantics.md."""
+    semantics documented in docs/trading/rr_anchor_semantics.md."""
 
     # ------------------------------------------------------------------
     # Plan-level: build_trade_plan anchor correctness

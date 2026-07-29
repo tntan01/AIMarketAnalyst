@@ -598,7 +598,7 @@ Không code tất cả trong một lần.
   `decision_wait` (default 55), cùng `min_expected_rr` (default 1.3).
 - `core.risk_engine.build_trade_plan()` includes a **TP1 zone guard** after the 4-tier cascade: TP1 must be strictly outside the entry zone (`> entry_high` for BUY, `< entry_low` for SELL). Without this guard, a resistance/support zone inside the entry zone could be selected as TP1 when `entry_aggressiveness < ~0.32` — producing a take-profit target that hasn't left the entry zone. The guard rejects TP1 and allows the cascade to fall through; if no valid TP is found, the plan is cancelled rather than created with a bogus target.
 - `core.risk_engine.build_trade_plan()` includes a **TP2 minimum gap guard**: TP2 must be at least `_TP2_MIN_GAP_ATR` (0.15 × ATR) away from TP1. `next_target()` finds the nearest S/R zone but previously had no distance floor, so a resistance/support zone just 0.4 pips from TP1 could be selected as TP2 — producing two take-profit targets that are effectively identical. The guard runs after both `next_target` and the Fib 0.618 fallback; if the gap is too small, TP2 is set to None (plan proceeds with TP1 only).
-- `ui.main_window.MainWindow` có nút "🔄 Khởi động lại" trong sidebar footer (dưới dòng "Dữ liệu: MT5..."). Khi bấm: hiện QMessageBox xác nhận Yes/No; nếu Yes → shutdown MT5, khởi chạy process mới bằng `subprocess.Popen` (hỗ trợ cả PyInstaller `sys.executable` và `python main.py`), `QApplication.quit()`. Logic nằm trong `_restart_app()`. Tham khảo `docs/screen_design.md` phần Sidebar để biết vị trí UI.
+- `ui.main_window.MainWindow` có nút "🔄 Khởi động lại" trong sidebar footer (dưới dòng "Dữ liệu: MT5..."). Khi bấm: hiện QMessageBox xác nhận Yes/No; nếu Yes → shutdown MT5, khởi chạy process mới bằng `subprocess.Popen` (hỗ trợ cả PyInstaller `sys.executable` và `python main.py`), `QApplication.quit()`. Logic nằm trong `_restart_app()`. Tham khảo `docs/ui/screen_design.md` phần Sidebar để biết vị trí UI.
 
 ## Scanner V2 — kiến trúc hiện hành (24/07/2026)
 
@@ -651,7 +651,7 @@ Runtime trên máy hiện tại đã lưu stage `PRODUCTION`,
 `production_approved=true`, cho phép tài khoản real và bật các feature flag
 V2. Release readiness vẫn `false`, nên auto trade bị chặn bằng
 `RELEASE_GATE_NOT_READY`; thao tác manual trong dialog có override giới hạn.
-Xem `docs/runtime-status.md`.
+Xem `docs/architecture/runtime-status.md`.
 
 `ScannerScreen.AUTO_TRADE_UI_ENABLED=true` cho phép bật auto-entry ở chế độ
 quét định kỳ. Nút mặc định unchecked và bị reset khi chuyển sang quét một lần.
@@ -659,8 +659,8 @@ Auto order và manual order đều đi qua shared execution boundary. Auto order
 không bỏ qua rollout guard; manual order chỉ có thể override riêng release gate
 ở `PRODUCTION` đã phê duyệt.
 
-Xem chi tiết tại `docs/scanner-flow.md` và
-`docs/technical-scoring-architecture.md`.
+Xem chi tiết tại `docs/scanner/scanner-flow.md` và
+`docs/scanner/technical-scoring-architecture.md`.
 
 ## Implementation Addendum trước Scanner V2 (tham chiếu lịch sử)
 
@@ -720,7 +720,7 @@ Xem chi tiết tại `docs/scanner-flow.md` và
 - SL modifications are performed via `modify_position_sltp(pos_id, new_sl, new_tp=None)`, preserving the original TP.
 - Only positions opened by the system are managed; manual positions are ignored.
 - Configuration lives in `settings.json` under `order_management` with defaults: `be_trigger_r=1.0`, `be_plus_pips=2`, `trail_wide_atr_multiplier=2.5`, `trail_tight_atr_multiplier=1.5`, `trail_tight_trigger_r=2.0`, `poll_interval_seconds=5`.
-- Full design document: `docs/order_management.md`.
+- Full design document: `docs/trading/order_management.md`.
 
 ### Gemini API Migration (2026-07-17)
 

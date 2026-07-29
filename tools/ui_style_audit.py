@@ -21,7 +21,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 UI_ROOT = ROOT / "ui"
-DEFAULT_BASELINE = ROOT / "docs" / "ui-style-baseline.json"
+DEFAULT_BASELINE = ROOT / "docs" / "ui" / "style" / "ui-style-baseline.json"
 QSS_FILES = ("styles/base.qss", "styles/dark.qss", "styles/light.qss")
 REVIEWED_FOUNDATION_QSS = {"ui/styles/base.qss"}
 CENTRAL_STYLE_ALLOWANCE = {

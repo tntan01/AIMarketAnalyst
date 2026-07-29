@@ -15,7 +15,7 @@
       "theme": "dark",
       "name": "dialog-backtest-ai-analysis",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-backtest-ai-analysis.png",
+      "path": "docs/ui/baseline/current/dark/dialog-backtest-ai-analysis.png",
       "width": 800,
       "height": 600,
       "sha256": "9e31010a083a0967e101fe3a6a14b3a9d4c4eaf29ac6aff0205af52daa5c765a"
@@ -24,7 +24,7 @@
       "theme": "dark",
       "name": "dialog-backtest-config",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-backtest-config.png",
+      "path": "docs/ui/baseline/current/dark/dialog-backtest-config.png",
       "width": 908,
       "height": 329,
       "sha256": "7ea05fa93765c65266aa83f6c0dd47f3130a7c09597a95971ad70802d0a8b3e9"
@@ -33,7 +33,7 @@
       "theme": "dark",
       "name": "dialog-backtest-symbol-selection",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-backtest-symbol-selection.png",
+      "path": "docs/ui/baseline/current/dark/dialog-backtest-symbol-selection.png",
       "width": 420,
       "height": 425,
       "sha256": "6463afce8fb6ca62beed8c124ea4b965348882ad2023ee4e2471a7a55962adf4"
@@ -42,7 +42,7 @@
       "theme": "dark",
       "name": "dialog-dashboard-event",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-dashboard-event.png",
+      "path": "docs/ui/baseline/current/dark/dialog-dashboard-event.png",
       "width": 750,
       "height": 520,
       "sha256": "928d3590526ea7576ae0b920799909005dde9f5cd5b34b6f00876b971df3ddcd"
@@ -51,7 +51,7 @@
       "theme": "dark",
       "name": "dialog-dashboard-headline",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-dashboard-headline.png",
+      "path": "docs/ui/baseline/current/dark/dialog-dashboard-headline.png",
       "width": 750,
       "height": 480,
       "sha256": "fa2fa4196cd7f1684b2f72ff24a6246d526b472c45092f468636a3dd7f7abe92"
@@ -60,7 +60,7 @@
       "theme": "dark",
       "name": "dialog-dashboard-market-help",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-dashboard-market-help.png",
+      "path": "docs/ui/baseline/current/dark/dialog-dashboard-market-help.png",
       "width": 960,
       "height": 680,
       "sha256": "5cb0bfeb86ad3525bd4a8eea467cfecc683b8809c7e99e1af7504a2f171ef387"
@@ -69,7 +69,7 @@
       "theme": "dark",
       "name": "dialog-journal-metrics-help",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-journal-metrics-help.png",
+      "path": "docs/ui/baseline/current/dark/dialog-journal-metrics-help.png",
       "width": 920,
       "height": 620,
       "sha256": "d56bdfb7db29ebda31b56da54dfe926fc390fc719bb4f4d981377b92df1dacb2"
@@ -78,7 +78,7 @@
       "theme": "dark",
       "name": "dialog-orders-trailing-stop",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-orders-trailing-stop.png",
+      "path": "docs/ui/baseline/current/dark/dialog-orders-trailing-stop.png",
       "width": 939,
       "height": 610,
       "sha256": "b8c6478824f12ad860bc62d966ec4124a53051c11409eb17d988c770632e5d5e"
@@ -87,7 +87,7 @@
       "theme": "dark",
       "name": "dialog-scanner-analysis-detail",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-analysis-detail.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-analysis-detail.png",
       "width": 1298,
       "height": 680,
       "sha256": "ac019eb4269b871608587a53b66221258b3188121bf4432d0643115e87b11058"
@@ -96,7 +96,7 @@
       "theme": "dark",
       "name": "dialog-scanner-columns-help",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-columns-help.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-columns-help.png",
       "width": 1040,
       "height": 680,
       "sha256": "97d4974b6089848f92c610cc899ab838b5fd77a076d1c36794acddb37469b2a7"
@@ -105,7 +105,7 @@
       "theme": "dark",
       "name": "dialog-scanner-market-brief",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-market-brief.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-market-brief.png",
       "width": 850,
       "height": 650,
       "sha256": "b9bd100d3509175d9228ac9b95a149c5d3fb5b7b05c0a178c86d01450bd91e8f"
@@ -114,7 +114,7 @@
       "theme": "dark",
       "name": "dialog-scanner-orders",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-orders.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-orders.png",
       "width": 980,
       "height": 620,
       "sha256": "7c6628827c1c72541bc620d8186f0779492cc31ea99fdb27073a7ddfdde99f34"
@@ -123,7 +123,7 @@
       "theme": "dark",
       "name": "dialog-scanner-row-explanation",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-row-explanation.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-row-explanation.png",
       "width": 880,
       "height": 600,
       "sha256": "eaf530e8fc6d78053cb56987ea89094bb5a80ba3cf5cdf0427eccac401903135"
@@ -132,7 +132,7 @@
       "theme": "dark",
       "name": "dialog-scanner-symbol-selection",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-symbol-selection.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-symbol-selection.png",
       "width": 560,
       "height": 520,
       "sha256": "d86c6aadb25682af1ee16e727eaa981cee95bb52be6eadf2ea40af61da2ef84b"
@@ -141,7 +141,7 @@
       "theme": "dark",
       "name": "screen-backtest-tab-1-ng-cong-v-n",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
       "width": 1600,
       "height": 900,
       "sha256": "3b4b1964786bd539abc1d1f6c7b251adc0d041f00e8515a9afae20028c470027"
@@ -150,7 +150,7 @@
       "theme": "dark",
       "name": "screen-backtest-tab-2-l-nh",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-2-l-nh.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-2-l-nh.png",
       "width": 1600,
       "height": 900,
       "sha256": "37cce00c0f86abf21e4eb6ca831966e64d0d91ca54c752107207558ca7abb08e"
@@ -159,7 +159,7 @@
       "theme": "dark",
       "name": "screen-backtest-tab-3-nghi-n-c-u-n-ng-cao",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
       "width": 1600,
       "height": 900,
       "sha256": "98b184cd669bf6200982f9159390fb43b266ac3d9955328a158081085cb4d047"
@@ -168,7 +168,7 @@
       "theme": "dark",
       "name": "screen-backtest",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-backtest.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest.png",
       "width": 1600,
       "height": 900,
       "sha256": "54c7d5ed9522c213b9c8352c38d90f50fb7714bef4b10e56ea9995b134ced226"
@@ -177,7 +177,7 @@
       "theme": "dark",
       "name": "screen-dashboard",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-dashboard.png",
+      "path": "docs/ui/baseline/current/dark/screen-dashboard.png",
       "width": 1600,
       "height": 900,
       "sha256": "2af1f871253e7715a1b7c2cc55fe897b8fead1e52c7ee5ac1c170ecbbd182d98"
@@ -186,7 +186,7 @@
       "theme": "dark",
       "name": "screen-journal-detail",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-journal-detail.png",
+      "path": "docs/ui/baseline/current/dark/screen-journal-detail.png",
       "width": 1600,
       "height": 900,
       "sha256": "a50b400418afe9f7efdf2dfe6cb5b47e886acdc773b508629ea4ce79fea12e73"
@@ -195,7 +195,7 @@
       "theme": "dark",
       "name": "screen-journal-tab-1-th-ng-k-hi-u-su-t",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
+      "path": "docs/ui/baseline/current/dark/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
       "width": 1600,
       "height": 900,
       "sha256": "1e3b980fecfba61ae848ce11ffe4563f4cc2ac1f43239729a28e7e50f629b841"
@@ -204,7 +204,7 @@
       "theme": "dark",
       "name": "screen-journal",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-journal.png",
+      "path": "docs/ui/baseline/current/dark/screen-journal.png",
       "width": 1600,
       "height": 900,
       "sha256": "84a8938d4b081635a96b357b73c2e939975848d4ad74c1411b7531f84f5f3ba2"
@@ -213,7 +213,7 @@
       "theme": "dark",
       "name": "screen-orders",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-orders.png",
+      "path": "docs/ui/baseline/current/dark/screen-orders.png",
       "width": 1600,
       "height": 900,
       "sha256": "bf79ef982d63e69b321836989aceb8c194dde1275a43047874b9b3cac8060541"
@@ -222,7 +222,7 @@
       "theme": "dark",
       "name": "screen-scanner-detail-tab-1-ch-n-o-n",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-scanner-detail-tab-1-ch-n-o-n.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner-detail-tab-1-ch-n-o-n.png",
       "width": 1600,
       "height": 900,
       "sha256": "8801942df3b4e1208402a657bd64b5b36db5e4c6674534b9266a5d6c9f9464c4"
@@ -231,7 +231,7 @@
       "theme": "dark",
       "name": "screen-scanner-detail-tab-2-ki-m-nh-ai",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
       "width": 1600,
       "height": 900,
       "sha256": "dcb6162ce72e46c26f98b4200e232753d9dd028fa8e82305606f92e34bc0e2cc"
@@ -240,7 +240,7 @@
       "theme": "dark",
       "name": "screen-scanner-detail",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-scanner-detail.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner-detail.png",
       "width": 1600,
       "height": 900,
       "sha256": "5fa8c2f4f7eb4a65e17e43376e2cceb2004a69473f4e41211891781a26e818a6"
@@ -249,7 +249,7 @@
       "theme": "dark",
       "name": "screen-scanner",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-scanner.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner.png",
       "width": 1600,
       "height": 900,
       "sha256": "7f33eae12095cc3bc568861f2b2f3d9231d0b96898c9d22b33cc0ec341b42d04"
@@ -258,7 +258,7 @@
       "theme": "dark",
       "name": "screen-settings-tab-1-d-li-u",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-1-d-li-u.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
       "sha256": "ab8a7062cf9288d3d45a2c40798c5d60c1aa5961588122bba4011b106b1ec54f"
@@ -267,7 +267,7 @@
       "theme": "dark",
       "name": "screen-settings-tab-2-giao-d-ch",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
       "sha256": "7d2465bca3ea65f6c5516a27e83aeb8bcd8c24d57ba2f6c518f003e719aad19d"
@@ -276,7 +276,7 @@
       "theme": "dark",
       "name": "screen-settings-tab-3-rollout",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-3-rollout.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-rollout.png",
       "width": 1600,
       "height": 900,
       "sha256": "77526ad6e5a6bdaa3212261e53068410d9454a8e557fb0ea83f66a846e747140"
@@ -285,7 +285,7 @@
       "theme": "dark",
       "name": "screen-settings-tab-4-hi-n-th",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
       "sha256": "17a1a78f50b6a972e83f3182f716f1b0fe70b3c574f99c1f9ce18bb987cc4a70"
@@ -294,7 +294,7 @@
       "theme": "dark",
       "name": "screen-settings-tab-5-n-ng-cao",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
       "sha256": "94e9514e61bc45db36aabda834d10e3b2036cfeb98fb2ebf26805af9e776cea0"
@@ -303,7 +303,7 @@
       "theme": "dark",
       "name": "screen-settings",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/dark/screen-settings.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings.png",
       "width": 1600,
       "height": 900,
       "sha256": "f3ee8218d44c08e111928aee2c5de585dab511e9b3da7a794c5e796fade87b21"
@@ -312,7 +312,7 @@
       "theme": "dark",
       "name": "state-checked",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-checked.png",
+      "path": "docs/ui/baseline/current/dark/state-checked.png",
       "width": 640,
       "height": 480,
       "sha256": "c2f3ee129603c6a57733efd15aef2fa63da34c2c7454712032100597e3395e6c"
@@ -321,7 +321,7 @@
       "theme": "dark",
       "name": "state-default",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-default.png",
+      "path": "docs/ui/baseline/current/dark/state-default.png",
       "width": 640,
       "height": 480,
       "sha256": "c2f3ee129603c6a57733efd15aef2fa63da34c2c7454712032100597e3395e6c"
@@ -330,7 +330,7 @@
       "theme": "dark",
       "name": "state-disabled",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-disabled.png",
+      "path": "docs/ui/baseline/current/dark/state-disabled.png",
       "width": 640,
       "height": 480,
       "sha256": "c2f3ee129603c6a57733efd15aef2fa63da34c2c7454712032100597e3395e6c"
@@ -339,7 +339,7 @@
       "theme": "dark",
       "name": "state-focus",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-focus.png",
+      "path": "docs/ui/baseline/current/dark/state-focus.png",
       "width": 640,
       "height": 480,
       "sha256": "4ab61869758772e0682ab329af23633c36d61fd1edb8fdd4fba34d5017f4c5c7"
@@ -348,7 +348,7 @@
       "theme": "dark",
       "name": "state-hover",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-hover.png",
+      "path": "docs/ui/baseline/current/dark/state-hover.png",
       "width": 640,
       "height": 480,
       "sha256": "4ab61869758772e0682ab329af23633c36d61fd1edb8fdd4fba34d5017f4c5c7"
@@ -357,7 +357,7 @@
       "theme": "dark",
       "name": "state-pressed",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-pressed.png",
+      "path": "docs/ui/baseline/current/dark/state-pressed.png",
       "width": 640,
       "height": 480,
       "sha256": "46157f1daf0a9801ebe07f1e68053fdab913052fae5fbcc3e95dd6cf32d78914"
@@ -366,7 +366,7 @@
       "theme": "dark",
       "name": "state-validation",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/dark/state-validation.png",
+      "path": "docs/ui/baseline/current/dark/state-validation.png",
       "width": 640,
       "height": 480,
       "sha256": "1ef1e780e5b21e3a592a8044f42f3a7c120e8eab8d1bb756ba2df8e384a2cc97"
@@ -375,7 +375,7 @@
       "theme": "light",
       "name": "dialog-backtest-ai-analysis",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-backtest-ai-analysis.png",
+      "path": "docs/ui/baseline/current/light/dialog-backtest-ai-analysis.png",
       "width": 800,
       "height": 600,
       "sha256": "c48e8256840c1c576005b9b6de372b9d3dd9ce748be5a0df0c437d207f7e344a"
@@ -384,7 +384,7 @@
       "theme": "light",
       "name": "dialog-backtest-config",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-backtest-config.png",
+      "path": "docs/ui/baseline/current/light/dialog-backtest-config.png",
       "width": 908,
       "height": 329,
       "sha256": "445d279f8d04cb68193557c98ff414042f3a7bfd88bc7fdf848702a17188d221"
@@ -393,7 +393,7 @@
       "theme": "light",
       "name": "dialog-backtest-symbol-selection",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-backtest-symbol-selection.png",
+      "path": "docs/ui/baseline/current/light/dialog-backtest-symbol-selection.png",
       "width": 420,
       "height": 425,
       "sha256": "f59041a71333df18c953afc8b79651b366ff09416b73d87fe484b052240cf95e"
@@ -402,7 +402,7 @@
       "theme": "light",
       "name": "dialog-dashboard-event",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-dashboard-event.png",
+      "path": "docs/ui/baseline/current/light/dialog-dashboard-event.png",
       "width": 750,
       "height": 520,
       "sha256": "f73f7488d4be831f89b2fdfc8fca781790d17ec1fafdcbfb7632dafddea6cc28"
@@ -411,7 +411,7 @@
       "theme": "light",
       "name": "dialog-dashboard-headline",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-dashboard-headline.png",
+      "path": "docs/ui/baseline/current/light/dialog-dashboard-headline.png",
       "width": 750,
       "height": 480,
       "sha256": "c155a1e62b074fb1e858642e47e9bcdb5adaa85848c3aed818df5ba28cedaac0"
@@ -420,7 +420,7 @@
       "theme": "light",
       "name": "dialog-dashboard-market-help",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-dashboard-market-help.png",
+      "path": "docs/ui/baseline/current/light/dialog-dashboard-market-help.png",
       "width": 960,
       "height": 680,
       "sha256": "d7d1340185d476d7935026642c04e925366fd37400543748188f03a79afdf5b4"
@@ -429,7 +429,7 @@
       "theme": "light",
       "name": "dialog-journal-metrics-help",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-journal-metrics-help.png",
+      "path": "docs/ui/baseline/current/light/dialog-journal-metrics-help.png",
       "width": 920,
       "height": 620,
       "sha256": "2e1bb6cdb6cd6e447357866ea1c975dadbca80c2fd7f7eaf0aec262650e5b0f2"
@@ -438,7 +438,7 @@
       "theme": "light",
       "name": "dialog-orders-trailing-stop",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-orders-trailing-stop.png",
+      "path": "docs/ui/baseline/current/light/dialog-orders-trailing-stop.png",
       "width": 933,
       "height": 610,
       "sha256": "8f06b43c823d68488f190269c882861c3b33e98566fe7276f1e3bc4313f2aa0f"
@@ -447,7 +447,7 @@
       "theme": "light",
       "name": "dialog-scanner-analysis-detail",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-scanner-analysis-detail.png",
+      "path": "docs/ui/baseline/current/light/dialog-scanner-analysis-detail.png",
       "width": 1298,
       "height": 680,
       "sha256": "7b384fde32fcb7b6fde6bfc663543300e35095d53e54258c849dc1e82e01b35a"
@@ -456,7 +456,7 @@
       "theme": "light",
       "name": "dialog-scanner-columns-help",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-scanner-columns-help.png",
+      "path": "docs/ui/baseline/current/light/dialog-scanner-columns-help.png",
       "width": 1040,
       "height": 680,
       "sha256": "668846d38344c3bea548ffa70e8951b8b0a519915a2719fd0fbc67ab522f356c"
@@ -465,7 +465,7 @@
       "theme": "light",
       "name": "dialog-scanner-market-brief",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-scanner-market-brief.png",
+      "path": "docs/ui/baseline/current/light/dialog-scanner-market-brief.png",
       "width": 850,
       "height": 650,
       "sha256": "da3bf4575f06b15c46b0c0e4e35ec4ab434e7735cc81261debf44aa4ffed5cba"
@@ -474,7 +474,7 @@
       "theme": "light",
       "name": "dialog-scanner-orders",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-scanner-orders.png",
+      "path": "docs/ui/baseline/current/light/dialog-scanner-orders.png",
       "width": 980,
       "height": 620,
       "sha256": "16ae7326a7a800b52f72a2e8126ac891f870760f0bea9930e00cfa88c5203686"
@@ -483,7 +483,7 @@
       "theme": "light",
       "name": "dialog-scanner-row-explanation",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-scanner-row-explanation.png",
+      "path": "docs/ui/baseline/current/light/dialog-scanner-row-explanation.png",
       "width": 880,
       "height": 600,
       "sha256": "1cb402bcc942d9d59aa5a822cd272716b879701253b49ac6e76d516378518e09"
@@ -492,7 +492,7 @@
       "theme": "light",
       "name": "dialog-scanner-symbol-selection",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/dialog-scanner-symbol-selection.png",
+      "path": "docs/ui/baseline/current/light/dialog-scanner-symbol-selection.png",
       "width": 560,
       "height": 520,
       "sha256": "5cebdc16b6b91c1284ebe46e974dd32d441814e23377218e2767c3a0363cb48c"
@@ -501,7 +501,7 @@
       "theme": "light",
       "name": "screen-backtest-tab-1-ng-cong-v-n",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-backtest-tab-1-ng-cong-v-n.png",
+      "path": "docs/ui/baseline/current/light/screen-backtest-tab-1-ng-cong-v-n.png",
       "width": 1600,
       "height": 900,
       "sha256": "21389853b4e6acfab5dce04b0ab37e5dcbb7537d2b9a9acbcd7212a2da1e69ed"
@@ -510,7 +510,7 @@
       "theme": "light",
       "name": "screen-backtest-tab-2-l-nh",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-backtest-tab-2-l-nh.png",
+      "path": "docs/ui/baseline/current/light/screen-backtest-tab-2-l-nh.png",
       "width": 1600,
       "height": 900,
       "sha256": "8ce162c601c4e982a3141c75036cbec8687f7f4cb4d256ddddbbee4543947b5c"
@@ -519,7 +519,7 @@
       "theme": "light",
       "name": "screen-backtest-tab-3-nghi-n-c-u-n-ng-cao",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
+      "path": "docs/ui/baseline/current/light/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
       "width": 1600,
       "height": 900,
       "sha256": "c7022830817d9c42e7aa3a50f2753bcda1e384639b8a42bd3707a42eb0c4a7d0"
@@ -528,7 +528,7 @@
       "theme": "light",
       "name": "screen-backtest",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-backtest.png",
+      "path": "docs/ui/baseline/current/light/screen-backtest.png",
       "width": 1600,
       "height": 900,
       "sha256": "b0881eeaa1a6a1a64d6316c13a964affbfca1b54e8bd439956b20c0624d95ee0"
@@ -537,7 +537,7 @@
       "theme": "light",
       "name": "screen-dashboard",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-dashboard.png",
+      "path": "docs/ui/baseline/current/light/screen-dashboard.png",
       "width": 1600,
       "height": 900,
       "sha256": "4409e174c1f2710b8ceb249d0b7fef92a3610e46abf631d61933d4627c0360e2"
@@ -546,7 +546,7 @@
       "theme": "light",
       "name": "screen-journal-detail",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-journal-detail.png",
+      "path": "docs/ui/baseline/current/light/screen-journal-detail.png",
       "width": 1600,
       "height": 900,
       "sha256": "11c64bfae8e33c01f96886c560e2c80247c81de7017f4bc299d0223b17a4c930"
@@ -555,7 +555,7 @@
       "theme": "light",
       "name": "screen-journal-tab-1-th-ng-k-hi-u-su-t",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
+      "path": "docs/ui/baseline/current/light/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
       "width": 1600,
       "height": 900,
       "sha256": "906f19cd6115c4a3ced805786bcdcc3d03822787622ba36c74b53fe069716723"
@@ -564,7 +564,7 @@
       "theme": "light",
       "name": "screen-journal",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-journal.png",
+      "path": "docs/ui/baseline/current/light/screen-journal.png",
       "width": 1600,
       "height": 900,
       "sha256": "24f7c2f7b5654b47d04f971972063f9e8ae5bb059b808375a8da92f298091dbb"
@@ -573,7 +573,7 @@
       "theme": "light",
       "name": "screen-orders",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-orders.png",
+      "path": "docs/ui/baseline/current/light/screen-orders.png",
       "width": 1600,
       "height": 900,
       "sha256": "6c9609e526398afd1281a583004c443005005cd982dbd16672daea2fbb2a24a3"
@@ -582,7 +582,7 @@
       "theme": "light",
       "name": "screen-scanner-detail-tab-1-ch-n-o-n",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-scanner-detail-tab-1-ch-n-o-n.png",
+      "path": "docs/ui/baseline/current/light/screen-scanner-detail-tab-1-ch-n-o-n.png",
       "width": 1600,
       "height": 900,
       "sha256": "6f603371b93b1c0af00ed444193172cb4441543c8e8e7ea405fb48ab515d1139"
@@ -591,7 +591,7 @@
       "theme": "light",
       "name": "screen-scanner-detail-tab-2-ki-m-nh-ai",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
+      "path": "docs/ui/baseline/current/light/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
       "width": 1600,
       "height": 900,
       "sha256": "750d511c4f6b771186f43f160b8e1d5a788cd52cf8fd558d1ee27e5b84b193d3"
@@ -600,7 +600,7 @@
       "theme": "light",
       "name": "screen-scanner-detail",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-scanner-detail.png",
+      "path": "docs/ui/baseline/current/light/screen-scanner-detail.png",
       "width": 1600,
       "height": 900,
       "sha256": "bf43f1e5aa4ea6aa9f0135018eb7789543e73c53f07d86264b277e2541c5ed20"
@@ -609,7 +609,7 @@
       "theme": "light",
       "name": "screen-scanner",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-scanner.png",
+      "path": "docs/ui/baseline/current/light/screen-scanner.png",
       "width": 1600,
       "height": 900,
       "sha256": "7fa98caf8c064f4962ee6eaa7b0df4cbe8ec3492968873375b68fa5dbe5adad6"
@@ -618,7 +618,7 @@
       "theme": "light",
       "name": "screen-settings-tab-1-d-li-u",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-settings-tab-1-d-li-u.png",
+      "path": "docs/ui/baseline/current/light/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
       "sha256": "c59a43884082bb56289bfcd9948b07b967ffa300a94d26188973bfae8ebe46f9"
@@ -627,7 +627,7 @@
       "theme": "light",
       "name": "screen-settings-tab-2-giao-d-ch",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-settings-tab-2-giao-d-ch.png",
+      "path": "docs/ui/baseline/current/light/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
       "sha256": "77fed150b7981bd828bade8bc1f043f52ea70143031ef88d7be91428939c5b65"
@@ -636,7 +636,7 @@
       "theme": "light",
       "name": "screen-settings-tab-3-rollout",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-settings-tab-3-rollout.png",
+      "path": "docs/ui/baseline/current/light/screen-settings-tab-3-rollout.png",
       "width": 1600,
       "height": 900,
       "sha256": "8a84f62b194c6ebd7d9b9bee2ae1fd14d685121005df8f5b6519beacd59a8495"
@@ -645,7 +645,7 @@
       "theme": "light",
       "name": "screen-settings-tab-4-hi-n-th",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-settings-tab-4-hi-n-th.png",
+      "path": "docs/ui/baseline/current/light/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
       "sha256": "ffa2c0c01231306a7bd16ce076834ccd0401bcefa154b38bc737ebdb99d8053b"
@@ -654,7 +654,7 @@
       "theme": "light",
       "name": "screen-settings-tab-5-n-ng-cao",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-settings-tab-5-n-ng-cao.png",
+      "path": "docs/ui/baseline/current/light/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
       "sha256": "a6601c9c114a24fcfe0817ea05e340d7d087d54b9349112b2badf9024be35658"
@@ -663,7 +663,7 @@
       "theme": "light",
       "name": "screen-settings",
       "kind": "screen",
-      "path": "docs/ui-baseline/current/light/screen-settings.png",
+      "path": "docs/ui/baseline/current/light/screen-settings.png",
       "width": 1600,
       "height": 900,
       "sha256": "de7f7d04e73508f363ed8e1c92f108ce832a83c50bf42ce8540f1a43ad82246e"
@@ -672,7 +672,7 @@
       "theme": "light",
       "name": "state-checked",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-checked.png",
+      "path": "docs/ui/baseline/current/light/state-checked.png",
       "width": 640,
       "height": 480,
       "sha256": "6cb3c41d6cdd14daf46c85ed6d36715b4110e48a719d19c64e8325f9b1e05b5e"
@@ -681,7 +681,7 @@
       "theme": "light",
       "name": "state-default",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-default.png",
+      "path": "docs/ui/baseline/current/light/state-default.png",
       "width": 640,
       "height": 480,
       "sha256": "6cb3c41d6cdd14daf46c85ed6d36715b4110e48a719d19c64e8325f9b1e05b5e"
@@ -690,7 +690,7 @@
       "theme": "light",
       "name": "state-disabled",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-disabled.png",
+      "path": "docs/ui/baseline/current/light/state-disabled.png",
       "width": 640,
       "height": 480,
       "sha256": "6cb3c41d6cdd14daf46c85ed6d36715b4110e48a719d19c64e8325f9b1e05b5e"
@@ -699,7 +699,7 @@
       "theme": "light",
       "name": "state-focus",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-focus.png",
+      "path": "docs/ui/baseline/current/light/state-focus.png",
       "width": 640,
       "height": 480,
       "sha256": "e4b0370a45682ddfb38f36cf81116f401c00226ac1b66ff3bb683483966e0dc1"
@@ -708,7 +708,7 @@
       "theme": "light",
       "name": "state-hover",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-hover.png",
+      "path": "docs/ui/baseline/current/light/state-hover.png",
       "width": 640,
       "height": 480,
       "sha256": "e4b0370a45682ddfb38f36cf81116f401c00226ac1b66ff3bb683483966e0dc1"
@@ -717,7 +717,7 @@
       "theme": "light",
       "name": "state-pressed",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-pressed.png",
+      "path": "docs/ui/baseline/current/light/state-pressed.png",
       "width": 640,
       "height": 480,
       "sha256": "d240a7894b7cd2b0a3809d36ee49d769bcb801686f297555d3b9abc37cea8e3d"
@@ -726,7 +726,7 @@
       "theme": "light",
       "name": "state-validation",
       "kind": "dialog",
-      "path": "docs/ui-baseline/current/light/state-validation.png",
+      "path": "docs/ui/baseline/current/light/state-validation.png",
       "width": 640,
       "height": 480,
       "sha256": "37b6537ae52d3379fc28c61ca14d8d62293faac591a21dece4fc173913323e8b"

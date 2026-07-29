@@ -61,7 +61,7 @@ from ui.screens.scanner_screen import (
 )
 from ui.screens.settings_screen import SettingsScreen
 from ui.theme_manager import ThemeManager
-DEFAULT_OUTPUT = ROOT / "docs" / "ui-baseline" / "current"
+DEFAULT_OUTPUT = ROOT / "docs" / "ui" / "baseline" / "current"
 CANVAS = (1600, 900)
 SUITE_ROUTES = (
     "dashboard",

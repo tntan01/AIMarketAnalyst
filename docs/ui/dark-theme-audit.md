@@ -22,7 +22,7 @@ nguyên nhân; việc sửa được thực hiện từ Phase 1.
 - Kiểm tra thủ công ảnh bị cảnh báo và đối chiếu QSS, object name, palette,
   WebEngine và Matplotlib trong code.
 
-Báo cáo máy đọc được nằm tại `docs/dark-surface-report.json`.
+Báo cáo máy đọc được nằm tại `docs/ui/reports/dark-surface-report.json`.
 
 ## 3. Kết quả tổng hợp
 
@@ -111,7 +111,7 @@ vẫn là điểm không nhất quán cần xử lý trong Phase 4.
 
 ```powershell
 $env:QT_QPA_PLATFORM='offscreen'
-python tools/ui_dark_surface_audit.py --write docs/dark-surface-report.json
+python tools/ui_dark_surface_audit.py --write docs/ui/reports/dark-surface-report.json
 python -m pytest -q tests/test_ui_dark_surface_phase0.py
 ```
 
@@ -155,7 +155,7 @@ Kiểm thử Phase 1 nằm tại `tests/test_dark_theme_surface_phase1.py`, bao 
 - Contract selector dark/light cho các họ surface mặc định.
 - Guard không cho screen tái sử dụng stylesheet cục bộ.
 
-Ảnh trong `docs/ui-baseline/current` vẫn là baseline Phase 0 để giữ bằng chứng
+Ảnh trong `docs/ui/baseline/current` vẫn là baseline Phase 0 để giữ bằng chứng
 before/after. Baseline chính chỉ được thay thế đồng bộ dark/light sau khi hoàn
 tất Phase 2–4 và kiểm định ở Phase 5.
 
@@ -281,9 +281,9 @@ Phase 5 đã chốt lớp kiểm chứng tự động cho toàn bộ thay đổi
   và hoàn tất đủ bốn ảnh ở lượt thứ hai, thay vì treo toàn bộ harness.
 - Manifest lưu đúng canvas được yêu cầu, hỗ trợ đường dẫn output ngoài workspace
   và khóa SHA-256 cho từng ảnh.
-- Baseline chính tại `docs/ui-baseline/current` đã được thay bằng 80 ảnh mới,
+- Baseline chính tại `docs/ui/baseline/current` đã được thay bằng 80 ảnh mới,
   không có failure. State default dark/light đã được kiểm tra trực quan.
-- `docs/dark-surface-report.json` được tạo lại từ baseline mới: 40/40 ảnh dark,
+- `docs/ui/reports/dark-surface-report.json` được tạo lại từ baseline mới: 40/40 ảnh dark,
   `flagged_count = 0`.
 - `ui_layout_audit.py` cũng cô lập dark/light thành tiến trình riêng, có timeout
   và retry trước khi hợp nhất báo cáo. Lượt light đã timeout một lần rồi thành

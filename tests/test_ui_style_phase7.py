@@ -49,7 +49,7 @@ def _json(path: Path) -> dict:
 
 def test_current_ui_debt_does_not_exceed_phase7_lock() -> None:
     current = build_inventory()
-    lock = load_inventory(DOCS / "ui-style-lock.json")
+    lock = load_inventory(DOCS / "ui" / "style" / "ui-style-lock.json")
     assert compare_with_baseline(current, lock) == []
 
 
@@ -68,7 +68,7 @@ def test_stylesheet_application_remains_centralized() -> None:
 
 
 def test_responsive_matrix_is_complete_and_clean() -> None:
-    report = _json(DOCS / "ui-responsive-report.json")
+    report = _json(DOCS / "ui" / "reports" / "ui-responsive-report.json")
     assert report["issue_count"] == 0
     assert set(report["routes"]) == EXPECTED_ROUTES
     assert set(report["profiles"]) == EXPECTED_PROFILES
@@ -80,7 +80,11 @@ def test_responsive_matrix_is_complete_and_clean() -> None:
 
 def test_visual_baseline_covers_both_themes_and_interaction_states() -> None:
     manifest = _json(
-        DOCS / "ui-baseline" / "current" / "screenshot-manifest.json"
+        DOCS
+        / "ui"
+        / "baseline"
+        / "current"
+        / "screenshot-manifest.json"
     )
     assert manifest["failures"] == []
     captures = manifest["captures"]
@@ -96,7 +100,7 @@ def test_visual_baseline_covers_both_themes_and_interaction_states() -> None:
 
 
 def test_phase7_allowlist_contains_only_reviewed_dispositions() -> None:
-    allowlist = _json(DOCS / "ui-style-allowlist.json")
+    allowlist = _json(DOCS / "ui" / "style" / "ui-style-allowlist.json")
     assert allowlist["status"] == "phase-7-reviewed"
     assert {
         item["disposition"] for item in allowlist["exceptions"]

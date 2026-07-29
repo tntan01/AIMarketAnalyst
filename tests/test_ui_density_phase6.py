@@ -15,11 +15,14 @@ from tools.ui_layout_audit import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RESPONSIVE_REPORT = ROOT / "docs" / "ui-responsive-report.json"
+RESPONSIVE_REPORT = (
+    ROOT / "docs" / "ui" / "reports" / "ui-responsive-report.json"
+)
 VISUAL_MANIFEST = (
     ROOT
     / "docs"
-    / "ui-baseline"
+    / "ui"
+    / "baseline"
     / "density-phase6"
     / "screenshot-manifest.json"
 )

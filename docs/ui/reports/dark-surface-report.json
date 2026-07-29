@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "generated_at": "2026-07-27T12:44:03.036199+00:00",
-  "source_manifest": "docs/ui-baseline/current/screenshot-manifest.json",
+  "source_manifest": "docs/ui/baseline/current/screenshot-manifest.json",
   "theme": "dark",
   "policy": {
     "brightness_threshold": 215,
@@ -14,7 +14,7 @@
   "flagged_names": [],
   "results": [
     {
-      "path": "docs/ui-baseline/current/dark/dialog-backtest-ai-analysis.png",
+      "path": "docs/ui/baseline/current/dark/dialog-backtest-ai-analysis.png",
       "width": 800,
       "height": 600,
       "sample_step": 1,
@@ -31,7 +31,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-backtest-config.png",
+      "path": "docs/ui/baseline/current/dark/dialog-backtest-config.png",
       "width": 908,
       "height": 329,
       "sample_step": 2,
@@ -48,7 +48,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-backtest-symbol-selection.png",
+      "path": "docs/ui/baseline/current/dark/dialog-backtest-symbol-selection.png",
       "width": 420,
       "height": 425,
       "sample_step": 1,
@@ -65,7 +65,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-dashboard-event.png",
+      "path": "docs/ui/baseline/current/dark/dialog-dashboard-event.png",
       "width": 750,
       "height": 520,
       "sample_step": 1,
@@ -82,7 +82,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-dashboard-headline.png",
+      "path": "docs/ui/baseline/current/dark/dialog-dashboard-headline.png",
       "width": 750,
       "height": 480,
       "sample_step": 1,
@@ -99,7 +99,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-dashboard-market-help.png",
+      "path": "docs/ui/baseline/current/dark/dialog-dashboard-market-help.png",
       "width": 960,
       "height": 680,
       "sample_step": 2,
@@ -116,7 +116,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-journal-metrics-help.png",
+      "path": "docs/ui/baseline/current/dark/dialog-journal-metrics-help.png",
       "width": 920,
       "height": 620,
       "sample_step": 2,
@@ -133,7 +133,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-orders-trailing-stop.png",
+      "path": "docs/ui/baseline/current/dark/dialog-orders-trailing-stop.png",
       "width": 939,
       "height": 610,
       "sample_step": 2,
@@ -150,7 +150,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-analysis-detail.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-analysis-detail.png",
       "width": 1298,
       "height": 680,
       "sample_step": 2,
@@ -167,7 +167,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-columns-help.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-columns-help.png",
       "width": 1040,
       "height": 680,
       "sample_step": 2,
@@ -184,7 +184,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-market-brief.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-market-brief.png",
       "width": 850,
       "height": 650,
       "sample_step": 2,
@@ -201,7 +201,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-orders.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-orders.png",
       "width": 980,
       "height": 620,
       "sample_step": 2,
@@ -218,7 +218,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-row-explanation.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-row-explanation.png",
       "width": 880,
       "height": 600,
       "sample_step": 2,
@@ -235,7 +235,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/dialog-scanner-symbol-selection.png",
+      "path": "docs/ui/baseline/current/dark/dialog-scanner-symbol-selection.png",
       "width": 560,
       "height": 520,
       "sample_step": 1,
@@ -252,7 +252,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -269,7 +269,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-2-l-nh.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-2-l-nh.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -286,7 +286,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -303,7 +303,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-backtest.png",
+      "path": "docs/ui/baseline/current/dark/screen-backtest.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -320,7 +320,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-dashboard.png",
+      "path": "docs/ui/baseline/current/dark/screen-dashboard.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -337,7 +337,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-journal-detail.png",
+      "path": "docs/ui/baseline/current/dark/screen-journal-detail.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -354,7 +354,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
+      "path": "docs/ui/baseline/current/dark/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -371,7 +371,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-journal.png",
+      "path": "docs/ui/baseline/current/dark/screen-journal.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -388,7 +388,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-orders.png",
+      "path": "docs/ui/baseline/current/dark/screen-orders.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -405,7 +405,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-scanner-detail-tab-1-ch-n-o-n.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner-detail-tab-1-ch-n-o-n.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -422,7 +422,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -439,7 +439,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-scanner-detail.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner-detail.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -456,7 +456,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-scanner.png",
+      "path": "docs/ui/baseline/current/dark/screen-scanner.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -473,7 +473,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-1-d-li-u.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -490,7 +490,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -507,7 +507,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-3-rollout.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-rollout.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -524,7 +524,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -541,7 +541,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -558,7 +558,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/screen-settings.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
@@ -575,7 +575,7 @@
       "kind": "screen"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-checked.png",
+      "path": "docs/ui/baseline/current/dark/state-checked.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,
@@ -592,7 +592,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-default.png",
+      "path": "docs/ui/baseline/current/dark/state-default.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,
@@ -609,7 +609,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-disabled.png",
+      "path": "docs/ui/baseline/current/dark/state-disabled.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,
@@ -626,7 +626,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-focus.png",
+      "path": "docs/ui/baseline/current/dark/state-focus.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,
@@ -643,7 +643,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-hover.png",
+      "path": "docs/ui/baseline/current/dark/state-hover.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,
@@ -660,7 +660,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-pressed.png",
+      "path": "docs/ui/baseline/current/dark/state-pressed.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,
@@ -677,7 +677,7 @@
       "kind": "dialog"
     },
     {
-      "path": "docs/ui-baseline/current/dark/state-validation.png",
+      "path": "docs/ui/baseline/current/dark/state-validation.png",
       "width": 640,
       "height": 480,
       "sample_step": 1,

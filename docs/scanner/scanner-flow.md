@@ -363,7 +363,7 @@ Trạng thái runtime hiện tại:
 - do đó rollout guard hiện vẫn chặn auto trade trước khi gọi MT5; lệnh thủ
   công hợp lệ có override riêng cho `RELEASE_GATE_NOT_READY`.
 
-Chi tiết thay đổi theo thời điểm xem tại `docs/runtime-status.md`.
+Chi tiết thay đổi theo thời điểm xem tại `docs/architecture/runtime-status.md`.
 
 ## 12. Version contract
 

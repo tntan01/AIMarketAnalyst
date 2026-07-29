@@ -24,10 +24,12 @@ from ui.theme_manager import ThemeManager
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = ROOT / "docs" / "ui-baseline" / "current"
+BASELINE = ROOT / "docs" / "ui" / "baseline" / "current"
 MANIFEST = BASELINE / "screenshot-manifest.json"
-DARK_REPORT = ROOT / "docs" / "dark-surface-report.json"
-RESPONSIVE_REPORT = ROOT / "docs" / "ui-responsive-report.json"
+DARK_REPORT = ROOT / "docs" / "ui" / "reports" / "dark-surface-report.json"
+RESPONSIVE_REPORT = (
+    ROOT / "docs" / "ui" / "reports" / "ui-responsive-report.json"
+)
 _APP = QApplication.instance() or QApplication([])
 
 
@@ -95,7 +97,7 @@ def test_final_dark_baseline_has_no_bright_surface_alerts() -> None:
     report = _json(DARK_REPORT)
 
     assert report["source_manifest"] == (
-        "docs/ui-baseline/current/screenshot-manifest.json"
+        "docs/ui/baseline/current/screenshot-manifest.json"
     )
     assert report["capture_count"] == SUITE_EXPECTED_PER_THEME
     assert report["flagged_count"] == 0

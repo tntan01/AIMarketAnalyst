@@ -65,7 +65,7 @@
   symbol/side/time nhưng thiếu correlation vẫn bị chặn phát hành.
 - Config chỉ đạt `VALIDATED` khi release report đã review có `ready=true` và
   khớp dataset/provenance; report cũng nằm trong validation fingerprint.
-- Quy trình vận hành chi tiết nằm tại `docs/backtest-release-runbook.md`.
+- Quy trình vận hành chi tiết nằm tại `docs/backtest/backtest-release-runbook.md`.
 
 `core/system_backtest_engine.py` replay `analyze_symbol()` và tạo
 `BacktestResult` gồm request, summary, trades, equity curve, breakdowns,
@@ -1745,7 +1745,7 @@ Monte Carlo giúp trả lời: nếu thứ tự lệnh khác đi, kết quả c�
 - PowerShell khi đọc file nên dùng:
 
 ```powershell
-Get-Content docs\system_backtest_design.md -Encoding utf8
+Get-Content docs\backtest\system_backtest_design.md -Encoding utf8
 ```
 
 - Nếu terminal hiển thị sai dấu, sửa terminal trước, không sửa nội dung file hàng loạt:

@@ -160,7 +160,7 @@ Không chuyển thẳng từ cài đặt mới sang tài khoản thật.
 
 > Runtime trên máy hiện tại đã lưu stage `PRODUCTION`, nhưng release readiness
 > vẫn `false`, nên rollout guard tiếp tục chặn lệnh. Trạng thái và block code
-> thực tế được ghi tại `docs/runtime-status.md`; checklist dưới đây vẫn là
+> thực tế được ghi tại `docs/architecture/runtime-status.md`; checklist dưới đây vẫn là
 > điều kiện bắt buộc để production có hiệu lực.
 
 1. Giữ rollout stage mặc định `SHADOW`; xác nhận mọi yêu cầu order đều bị chặn

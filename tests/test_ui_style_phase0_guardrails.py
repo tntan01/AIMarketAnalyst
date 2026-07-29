@@ -12,11 +12,12 @@ from tools.ui_style_audit import (
 )
 
 
-ALLOWLIST = ROOT / "docs" / "ui-style-allowlist.json"
+ALLOWLIST = ROOT / "docs" / "ui" / "style" / "ui-style-allowlist.json"
 SCREENSHOT_MANIFEST = (
     ROOT
     / "docs"
-    / "ui-baseline"
+    / "ui"
+    / "baseline"
     / "current"
     / "screenshot-manifest.json"
 )

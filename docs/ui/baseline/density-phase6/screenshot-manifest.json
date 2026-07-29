@@ -29,7 +29,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-dashboard.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-dashboard.png",
       "sha256": "b66ed47b7a2402720f00047ccf22b6305fbb25deb0fe3f4d2490c947f2cda1f2"
     },
     {
@@ -45,7 +45,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-scanner.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-scanner.png",
       "sha256": "b1d85cdee2f7a38c4f16c7c2830acdbd538acf78ed36416114dfb79535cb6b01"
     },
     {
@@ -61,7 +61,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-orders.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-orders.png",
       "sha256": "2f67e05ec9be3f866b551108c8ed69c17e2a5485bfb3eb2916044008cc86b3df"
     },
     {
@@ -77,7 +77,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-scanner_detail.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-scanner_detail.png",
       "sha256": "572dac88d5a3e23a07288119bb896f9ad942a89ea791da1152e5be6247589e63"
     },
     {
@@ -93,7 +93,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-backtest.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-backtest.png",
       "sha256": "613a7c06ccf76ec57da8454dbeec2252c17b9d1048c01701da008128ad21cf19"
     },
     {
@@ -109,7 +109,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-journal.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-journal.png",
       "sha256": "b7d92ae420d1b8d06c736c97159ee06ac5eafea82d56be76d47177103f55535b"
     },
     {
@@ -125,7 +125,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-journal_detail.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-journal_detail.png",
       "sha256": "fef687787520eb9ccec60b3d68bbc0bc5c01bb0d1eeb2b52760aa2e133869066"
     },
     {
@@ -141,7 +141,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-100/screen-settings.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-100/screen-settings.png",
       "sha256": "9b1e248796fb57b9b860cc7f81b37776e7e6ef5638f8141a573fee67b34130ce"
     },
     {
@@ -157,7 +157,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-dashboard.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-dashboard.png",
       "sha256": "05c275565ace82ac4d9d7a942a0be41adb41b6f402650a9a8f106b8f20c9789b"
     },
     {
@@ -173,7 +173,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-scanner.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-scanner.png",
       "sha256": "b900a16a1b88e359330d8842e5d50ba55782a83edba49620663d5e2f98a940fe"
     },
     {
@@ -189,7 +189,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-orders.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-orders.png",
       "sha256": "68549c7762f35c3eb5403ae3795e1ca39e2462337dfc0a5e5282458339b4c835"
     },
     {
@@ -205,7 +205,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-scanner_detail.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-scanner_detail.png",
       "sha256": "11fb5f4c280398e0b20ff6070d664c084849772f2417cfc3908f2809772000a8"
     },
     {
@@ -221,7 +221,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-backtest.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-backtest.png",
       "sha256": "b036c98c81a581b40d3e32be5281837a356201cc5a9a1ff0ca10f3dca8d94935"
     },
     {
@@ -237,7 +237,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-journal.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-journal.png",
       "sha256": "6a4d9382902a8ce1664fa08350196db613ee82b332d7e0e8a87720951dca1152"
     },
     {
@@ -253,7 +253,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-journal_detail.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-journal_detail.png",
       "sha256": "c99ab91f53b568bfc9db6193c06ee18e05bc8a9bdd26d34ccc3c196bd5c253eb"
     },
     {
@@ -269,7 +269,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-125/screen-settings.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-125/screen-settings.png",
       "sha256": "f1eba91a0773381026c04fd37a53a2fe30fb24b60b0ae1429e9c641de900f0f7"
     },
     {
@@ -285,7 +285,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-dashboard.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-dashboard.png",
       "sha256": "9b6210d151fea3f42a8108d0ce3032d745704fe8c145cd8401fde49bd5ba29dc"
     },
     {
@@ -301,7 +301,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-scanner.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-scanner.png",
       "sha256": "af47bd877b83039f220b2ab8598e5e7df98cd308bcabb61e882b21b02e2cadba"
     },
     {
@@ -317,7 +317,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-orders.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-orders.png",
       "sha256": "20ac15a89763253bc43d7283d7270bf4c3eaad17b3e7f0991b705f9915e94f21"
     },
     {
@@ -333,7 +333,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-scanner_detail.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-scanner_detail.png",
       "sha256": "6cb3b182e79e441d63c08043c4a522472ecf83ed7418508df8852048657045bf"
     },
     {
@@ -349,7 +349,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-backtest.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-backtest.png",
       "sha256": "b0c19ad3494656b446613739910e5f4a0f0eb1518c00b7d0ac942ee45dba7520"
     },
     {
@@ -365,7 +365,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-journal.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-journal.png",
       "sha256": "d6a4bccf0eaba1a418eff6a8cd345ec1751bd7987e1b97fcca243c7177b69827"
     },
     {
@@ -381,7 +381,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-journal_detail.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-journal_detail.png",
       "sha256": "fd3329eabc11d4648f4cb2cf06dec969573d4fbf83802b6f828c95e7115aaa94"
     },
     {
@@ -397,7 +397,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/dark/dpi-150/screen-settings.png",
+      "path": "docs/ui/baseline/density-phase6/dark/dpi-150/screen-settings.png",
       "sha256": "dfc42bc0f67071c99aee77ece65cdf737b5142ba16fa30d7003df907863b1325"
     },
     {
@@ -413,7 +413,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-dashboard.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-dashboard.png",
       "sha256": "1597f40b7bc43f2fcfd9e897ad40803d1f0a12eb87780138936b6416a27e7d0b"
     },
     {
@@ -429,7 +429,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-scanner.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-scanner.png",
       "sha256": "3f175989b8e21cdb5e156823654760bbe69340adaa9c2730e4be36214f55c884"
     },
     {
@@ -445,7 +445,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-orders.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-orders.png",
       "sha256": "4f9ea2f5c4c16539384e717800778f12abd263b925dd4014b56a33ccb9ef419b"
     },
     {
@@ -461,7 +461,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-scanner_detail.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-scanner_detail.png",
       "sha256": "310e9e4b65ff6956a8278652c8a6a7d355c3e7d075314e507e9d898ec26ed56b"
     },
     {
@@ -477,7 +477,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-backtest.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-backtest.png",
       "sha256": "6135e9eb8f81579869af6d5291c134976fdcdf435e5abde2183053efcabd2e85"
     },
     {
@@ -493,7 +493,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-journal.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-journal.png",
       "sha256": "d8cfb3034893eacd0800ed57369f8f8d246e3b79f9a56d13023f4514d0f03d82"
     },
     {
@@ -509,7 +509,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-journal_detail.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-journal_detail.png",
       "sha256": "35fe70bf01b8b97d931de73d33f121c1b8ca0a296a9fcfc1fa751210b5b52236"
     },
     {
@@ -525,7 +525,7 @@
         "width": 1366,
         "height": 768
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-100/screen-settings.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-100/screen-settings.png",
       "sha256": "7cf372cf7b6f258f81bbded704fdce36821d5c81975ce4b02b20a139698fa6ee"
     },
     {
@@ -541,7 +541,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-dashboard.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-dashboard.png",
       "sha256": "2ebfe4bcd6253ad88e746acf51bd0d258a21167a2d36ca1105682ba887113ee8"
     },
     {
@@ -557,7 +557,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-scanner.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-scanner.png",
       "sha256": "a220379a055b8221357fba22d795e4df7da8ac41560e22043bbe1c7ff39aa55b"
     },
     {
@@ -573,7 +573,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-orders.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-orders.png",
       "sha256": "bbaefd1f5754f47cb7ef17bdb266a7558582f4f2791a9153d438fb2277ec6fa5"
     },
     {
@@ -589,7 +589,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-scanner_detail.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-scanner_detail.png",
       "sha256": "d8f21af7221b2b6503546723949ec6469e1686f581945dbc7db22ff94f9193e4"
     },
     {
@@ -605,7 +605,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-backtest.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-backtest.png",
       "sha256": "d3fc35f008ce3ce323ef5bbbdbd501d1519cd1e2c99bd488d0ef321894dc322d"
     },
     {
@@ -621,7 +621,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-journal.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-journal.png",
       "sha256": "cd514982a33e30eee2387acb57689c816644321360815c9e70195cc72469d675"
     },
     {
@@ -637,7 +637,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-journal_detail.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-journal_detail.png",
       "sha256": "bf6240e4d217a924fa3bb0f87ecef9463517034968d9821135fdf059f69cced4"
     },
     {
@@ -653,7 +653,7 @@
         "width": 1708,
         "height": 960
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-125/screen-settings.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-125/screen-settings.png",
       "sha256": "02bb9f25b1b139c530b928d9976240d373f661f7f81abe213ddc4924fb1349f2"
     },
     {
@@ -669,7 +669,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-dashboard.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-dashboard.png",
       "sha256": "efe2e4838e5eb7537e552e08da634e444e444a592bdd330beef25d69360be487"
     },
     {
@@ -685,7 +685,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-scanner.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-scanner.png",
       "sha256": "1605e529b4bc1095dc91627f5005c05084a52ebabefd8a6a4e92dfe797069919"
     },
     {
@@ -701,7 +701,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-orders.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-orders.png",
       "sha256": "28d8dd4c5289a5baec93a8165687331139bb2c59e02cfb241d2a2e710907faa4"
     },
     {
@@ -717,7 +717,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-scanner_detail.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-scanner_detail.png",
       "sha256": "cb3d45135ed3a4e9fd1ac6b96f4b4bdb369d57ff466d05bc4374e4b8ea1ea407"
     },
     {
@@ -733,7 +733,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-backtest.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-backtest.png",
       "sha256": "db0123ee292cb1d69edc820d7adbae00e6fe1f0e5958a87aefc38b8fd2199977"
     },
     {
@@ -749,7 +749,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-journal.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-journal.png",
       "sha256": "96829aea1eaffa68aab5f90b206fb34281ae9a6f7a44a3c49c62205562ad0703"
     },
     {
@@ -765,7 +765,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-journal_detail.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-journal_detail.png",
       "sha256": "ee9dc909973eda0c318f68d887f6677c700e8d752a415c8a58b5679346245d36"
     },
     {
@@ -781,7 +781,7 @@
         "width": 2049,
         "height": 1152
       },
-      "path": "docs/ui-baseline/density-phase6/light/dpi-150/screen-settings.png",
+      "path": "docs/ui/baseline/density-phase6/light/dpi-150/screen-settings.png",
       "sha256": "f8f49b63e82cd060cd731072763019b9697bda6895869303a8800eacd92dc209"
     }
   ],

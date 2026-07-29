@@ -442,7 +442,7 @@ def main() -> int:
     parser.add_argument(
         "--write",
         type=Path,
-        default=ROOT / "docs" / "ui-responsive-report.json",
+        default=ROOT / "docs" / "ui" / "reports" / "ui-responsive-report.json",
     )
     parser.add_argument("--theme", choices=("dark", "light"))
     parser.add_argument("--dpi", choices=tuple(DPI_PROFILES), default="dpi-100")

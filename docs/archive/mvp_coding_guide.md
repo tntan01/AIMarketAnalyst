@@ -2,8 +2,8 @@
 
 > **Tài liệu lịch sử.** Các “giai đoạn” trong file này là thứ tự xây MVP ban
 > đầu, không phải kế hoạch Scanner 0–8. Runtime contract của Scanner hiện hành
-> nằm tại `docs/scanner-flow.md`; trạng thái kế hoạch nâng cấp nằm tại
-> `docs/scanner-scoring-review.md`.
+> nằm tại `docs/scanner/scanner-flow.md`; trạng thái kế hoạch nâng cấp nằm tại
+> `docs/scanner/scanner-scoring-review.md`.
 
 ## Mục tiêu MVP
 

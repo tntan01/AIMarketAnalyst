@@ -733,7 +733,7 @@ Công việc:
 - test chuyên biệt Phase 7 bao phủ migration, golden replay, reconciliation,
   shadow, tamper detection và fail-closed Router.
 
-Runbook vận hành: `docs/backtest-release-runbook.md`.
+Runbook vận hành: `docs/backtest/backtest-release-runbook.md`.
 
 Kiểm chứng tại thời điểm triển khai:
 

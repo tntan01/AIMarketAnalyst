@@ -3,7 +3,7 @@
 Trạng thái tài liệu: **hiện hành**, đồng bộ với runtime ngày 25/07/2026.
 
 Khi phát hành cấu hình Backtest `VALIDATED`, thực hiện thêm quy trình golden,
-shadow, forward-demo và review tại `docs/backtest-release-runbook.md`.
+shadow, forward-demo và review tại `docs/backtest/backtest-release-runbook.md`.
 Không dùng OOS trade của snapshot validation thay cho forward evidence. Cần tạo
 snapshot current-forward và legacy-forward trên đúng khoảng thời gian chạy demo,
 rồi xuất các lệnh Scanner đã đóng bằng `scripts/export_mt5_forward_demo.py`.
