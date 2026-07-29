@@ -40,6 +40,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app_ctrl = AppController()
+    app.aboutToQuit.connect(app_ctrl.shutdown)
     ico = _icon_path()
     app_icon = QIcon(str(ico)) if ico.exists() else QIcon()
     if ico.exists():

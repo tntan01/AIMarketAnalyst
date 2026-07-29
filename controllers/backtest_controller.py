@@ -68,6 +68,55 @@ class BacktestController:
         thread.finished.connect(thread.deleteLater)
         return thread, worker
 
+    def create_backtest_worker_from_inputs(
+        self,
+        *,
+        build_args: dict[str, Any],
+        research_validation_enabled: bool = False,
+        monte_carlo_requested: bool = False,
+    ) -> tuple[QThread, BacktestWorker]:
+        """Create a worker that resolves broker data before running a backtest.
+
+        Building a request reads MT5 symbol metadata, so it belongs on the
+        worker thread just like the backtest itself.
+        """
+        thread = QThread()
+        worker = BacktestWorker(
+            self.prepare_and_run_backtest,
+            {
+                "build_args": dict(build_args),
+                "research_validation_enabled": research_validation_enabled,
+                "monte_carlo_requested": monte_carlo_requested,
+            },
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        return thread, worker
+
+    def prepare_and_run_backtest(
+        self,
+        *,
+        build_args: dict[str, Any],
+        research_validation_enabled: bool = False,
+        monte_carlo_requested: bool = False,
+        _progress_callback: Callable[[int, str], None] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve requests and execute them from the backtest worker."""
+        progress = _progress_callback or (lambda _percent, _message: None)
+        progress(5, "Đang chuẩn bị dữ liệu backtest...")
+        requests = self.build_requests(**build_args)
+        request: BacktestRequest | list[BacktestRequest]
+        request = requests[0] if len(requests) == 1 else requests
+        return self.run_backtest(
+            request=request,
+            research_validation_enabled=research_validation_enabled,
+            monte_carlo_requested=monte_carlo_requested,
+            _progress_callback=progress,
+        )
+
     def build_requests(
         self,
         *,
@@ -194,6 +243,15 @@ class BacktestController:
         _progress_callback: Callable[[int, str], None] | None = None,
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
+        if isinstance(request, list) and not request:
+            return self._run_batch_backtest(
+                request,
+                research_validation_enabled=research_validation_enabled,
+                monte_carlo_requested=monte_carlo_requested,
+                progress=progress,
+            )
+        progress(8, "Đang kiểm tra kết nối dữ liệu...")
+        self.mt5.ensure_ready(require_login=True)
         if isinstance(request, list):
             return self._run_batch_backtest(
                 request,
@@ -228,11 +286,6 @@ class BacktestController:
             purpose=run_policy.purpose,
             execution_mode=run_policy.execution_mode,
         )
-        progress(8, "Đang kiểm tra kết nối dữ liệu...")
-        status = self.mt5.connection_status()
-        if not status.connected or not status.logged_in:
-            raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
-
         progress(15, "Đang tải dữ liệu lịch sử...")
         candles = self._load_history(request)
         request = self._attach_quote_conversion_history(request)
@@ -297,11 +350,6 @@ class BacktestController:
     ) -> dict[str, Any]:
         if not requests:
             raise ValueError("Batch backtest cần ít nhất một mã.")
-        status = self.mt5.connection_status()
-        if not status.connected or not status.logged_in:
-            raise RuntimeError(
-                f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập."
-            )
         payloads: list[dict[str, Any]] = []
         engine_results = []
         total = len(requests)

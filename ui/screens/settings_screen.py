@@ -735,6 +735,7 @@ class SettingsScreen(QWidget):
     def refresh_mt5_status(self) -> None:
         if not hasattr(self, "mt5_status_label"):
             return
+        self.mt5.connect()
         status = self.mt5.connection_status()
         self._apply_mt5_status(status)
         self._refresh_mt5_symbol_table(status)

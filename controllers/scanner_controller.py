@@ -55,6 +55,7 @@ from core.scanner_safety import (
 from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot, calculate_current_effective_rr
 from services.ai_service import AIProviderConfig, AIService
+from services.data_provider import ProviderNotReadyError
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5Service
@@ -296,8 +297,10 @@ class ScannerController:
             },
         )
         progress(8, "Đang kiểm tra kết nối dữ liệu...")
-        status = self.mt5.connection_status()
-        if not status.connected or not status.logged_in:
+        try:
+            self.mt5.ensure_ready(require_login=True)
+        except ProviderNotReadyError as exc:
+            status = exc.status
             self._emit_observability(
                 "DATA_FETCH_FAILURE",
                 scan_id=scan_context.scan_id,
@@ -309,7 +312,7 @@ class ScannerController:
                     "logged_in": status.logged_in,
                 },
             )
-            raise RuntimeError(f"{status.provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập.")
+            raise
         rollout_settings = getattr(settings, "scanner_rollout", None)
         try:
             pre_scan_readiness = self.rollout_metrics.readiness(
@@ -1806,12 +1809,10 @@ def _scan_one_symbol(
     ai_service: object | None = None,
     smc_scoring_mode: str = "v2",
 ) -> dict[str, Any]:
-    """Process a single symbol — safe for ThreadPoolExecutor (each thread inits its own MT5)."""
-    import MetaTrader5 as _mt5
-
-    _mt5_ok = _mt5.initialize()
+    """Legacy single-symbol scan path retained for compatibility."""
+    mt5_svc = MT5Service()
     try:
-        mt5_svc = MT5Service()
+        mt5_svc.ensure_ready(require_login=True)
         broker_symbol = mt5_svc.resolve_symbol(symbol, available_symbols)
         if not broker_symbol:
             return blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
@@ -1876,8 +1877,7 @@ def _scan_one_symbol(
             pass
         return blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol)
     finally:
-        if _mt5_ok:
-            _mt5.shutdown()
+        mt5_svc.disconnect()
 
 
 # ---- Two-phase scan: Phase 1 fetches MT5 data on main thread,

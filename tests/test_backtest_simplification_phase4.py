@@ -150,19 +150,18 @@ def test_advanced_portfolio_is_explicit_and_validation_disables_it() -> None:
     app = MagicMock()
     screen = BacktestScreen(app=app)
     screen._set_selected_symbols(["EUR/USD", "GBP/USD"])
-    app.backtest_controller.build_requests.return_value = [MagicMock()]
-    app.backtest_controller.create_backtest_worker.return_value = (
+    app.backtest_controller.create_backtest_worker_from_inputs.return_value = (
         MagicMock(), MagicMock(),
     )
 
     screen._run_backtest()
-    assert app.backtest_controller.build_requests.call_args.kwargs["symbols"] == [
+    assert app.backtest_controller.create_backtest_worker_from_inputs.call_args.kwargs["build_args"]["symbols"] == [
         "EUR/USD"
     ]
 
     screen.portfolio_mode_checkbox.setChecked(True)
     screen._run_backtest()
-    assert app.backtest_controller.build_requests.call_args.kwargs["symbols"] == [
+    assert app.backtest_controller.create_backtest_worker_from_inputs.call_args.kwargs["build_args"]["symbols"] == [
         "EUR/USD", "GBP/USD"
     ]
 

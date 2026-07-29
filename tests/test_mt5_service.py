@@ -10,6 +10,7 @@ from services.mt5_service import MT5Service
 class FakeMT5:
     def __init__(self) -> None:
         self.initialize_calls = 0
+        self.shutdown_calls = 0
         self.initialized = False
         self.positions: tuple[SimpleNamespace, ...] = ()
         self.orders: tuple[SimpleNamespace, ...] = ()
@@ -18,6 +19,10 @@ class FakeMT5:
         self.initialize_calls += 1
         self.initialized = True
         return True
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
+        self.initialized = False
 
     def last_error(self) -> tuple[int, str]:
         return 0, ""
@@ -92,13 +97,30 @@ class FakeMT5:
         )
 
 
-def test_connection_status_initializes_mt5(monkeypatch, tmp_path):
+def test_connection_status_is_a_pure_query(monkeypatch, tmp_path):
     fake_mt5 = FakeMT5()
     monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
     profile_path = tmp_path / "symbol_profiles.json"
     profile_path.write_text("{}", encoding="utf-8")
 
     status = MT5Service(profile_path).connection_status()
+
+    assert fake_mt5.initialize_calls == 0
+    assert status.initialized is False
+    assert status.terminal_connected is False
+    assert status.logged_in is False
+
+
+def test_connect_initializes_mt5_and_connection_status_reports_it(monkeypatch, tmp_path):
+    fake_mt5 = FakeMT5()
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    service = MT5Service(profile_path)
+
+    assert service.connect() is True
+    assert service.connect() is True
+    status = service.connection_status()
 
     assert fake_mt5.initialize_calls == 1
     assert status.initialized is True
@@ -107,17 +129,48 @@ def test_connection_status_initializes_mt5(monkeypatch, tmp_path):
     assert status.login == 123456
 
 
-def test_connection_status_reuses_existing_mt5_connection(monkeypatch, tmp_path):
+def test_connect_reuses_existing_mt5_connection(monkeypatch, tmp_path):
     fake_mt5 = FakeMT5()
     fake_mt5.initialized = True
     monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
     profile_path = tmp_path / "symbol_profiles.json"
     profile_path.write_text("{}", encoding="utf-8")
 
-    status = MT5Service(profile_path).connection_status()
+    service = MT5Service(profile_path)
+    assert service.connect() is True
+    status = service.connection_status()
 
     assert fake_mt5.initialize_calls == 0
     assert status.terminal_connected is True
+
+
+def test_disconnect_only_closes_connection_owned_by_service(monkeypatch, tmp_path):
+    fake_mt5 = FakeMT5()
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    service = MT5Service(profile_path)
+
+    service.connect()
+    service.disconnect()
+    service.disconnect()
+
+    assert fake_mt5.shutdown_calls == 1
+
+
+def test_disconnect_does_not_close_preexisting_connection(monkeypatch, tmp_path):
+    fake_mt5 = FakeMT5()
+    fake_mt5.initialized = True
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    service = MT5Service(profile_path)
+
+    service.connect()
+    service.disconnect()
+
+    assert fake_mt5.initialize_calls == 0
+    assert fake_mt5.shutdown_calls == 0
 
 
 def test_available_symbols_initializes_mt5(monkeypatch, tmp_path):

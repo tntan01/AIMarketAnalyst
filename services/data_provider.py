@@ -45,6 +45,22 @@ class ConnectionStatus:
         return self.logged_in
 
 
+class ProviderNotReadyError(RuntimeError):
+    """Raised when a data provider cannot satisfy an operation's requirements."""
+
+    def __init__(
+        self,
+        status: ConnectionStatus,
+        reason_codes: tuple[str, ...],
+    ) -> None:
+        self.status = status
+        self.reason_codes = reason_codes
+        provider_name = status.provider_name or "Data provider"
+        super().__init__(
+            f"{provider_name} chưa kết nối đầy đủ hoặc chưa đăng nhập."
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class OrderResult:
     """Order result."""
@@ -82,6 +98,32 @@ class DataProvider(ABC):
     @abstractmethod
     def connection_status(self) -> ConnectionStatus:
         """Return the current connection & account status."""
+
+    def ensure_ready(
+        self,
+        *,
+        require_login: bool = True,
+        require_trade: bool = False,
+    ) -> ConnectionStatus:
+        """Return a ready status or raise with structured failure details.
+
+        Concrete providers define their own connection lifecycle; this method
+        centralises the readiness policy consumed by controllers.
+        """
+
+        status = self.connection_status()
+        reason_codes: list[str] = []
+        if not status.initialized:
+            reason_codes.append("PROVIDER_NOT_INITIALIZED")
+        if not status.connected:
+            reason_codes.append("PROVIDER_NOT_CONNECTED")
+        if require_login and not status.logged_in:
+            reason_codes.append("PROVIDER_NOT_LOGGED_IN")
+        if require_trade and not status.trade_allowed:
+            reason_codes.append("TRADING_NOT_ALLOWED")
+        if reason_codes:
+            raise ProviderNotReadyError(status, tuple(reason_codes))
+        return status
 
     def account_balance(self) -> float | None:
         """Convenience — extract balance from connection_status()."""

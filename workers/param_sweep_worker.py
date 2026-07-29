@@ -132,19 +132,13 @@ def _sweep_process_main(
     resume: bool,
     messages: Any,
 ) -> None:
-    mt5_module = None
-    initialized = False
+    provider = None
     try:
-        import MetaTrader5 as mt5_module
-        initialized = bool(mt5_module.initialize())
-        if not initialized:
-            raise RuntimeError(
-                "Không khởi tạo được MT5. Hãy mở terminal và đăng nhập trước khi chạy."
-            )
         from core.param_sensitivity import sweep_single_param
         from services.mt5_service import MT5Service
 
         provider = MT5Service()
+        provider.ensure_ready(require_login=True)
         completed = _load_checkpoint(Path(cache_path)) if resume else []
         by_key = {result.json_key: result for result in completed}
         total = max(1, len(configs))
@@ -180,8 +174,8 @@ def _sweep_process_main(
         import traceback
         messages.put(("error", f"{exc}\n\n{traceback.format_exc()}"))
     finally:
-        if initialized and mt5_module is not None:
-            mt5_module.shutdown()
+        if provider is not None:
+            provider.disconnect()
 
 
 def _cache_path(
