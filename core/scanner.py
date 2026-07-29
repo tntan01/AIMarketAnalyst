@@ -55,6 +55,7 @@ class ScannerRequest:
     thresholds: dict[str, dict[str, int | float]] = field(default_factory=dict)
     feature_flags: dict[str, bool] = field(default_factory=dict)
     smc_scoring_mode: str = "v2"
+    persistence_mode: str = "full"
     # Each auto-trade entry: regime, side, min_score, min_rr, score_metric.
 
 

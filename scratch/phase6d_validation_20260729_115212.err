@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "D:\Projects\AIMarketAnalyst\scratch\run_phase6d_validation.py", line 13, in <module>
+    from core.backtest_contract import (
+    ...<2 lines>...
+    )
+ImportError: cannot import name 'BACKTEST_EXECUTION_PARITY' from 'core.backtest_contract' (D:\Projects\AIMarketAnalyst\core\backtest_contract.py)

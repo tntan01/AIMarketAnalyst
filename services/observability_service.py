@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-import logging
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -16,13 +15,52 @@ from core.scanner_observability import (
 )
 
 
+STRUCTURED_LOG_MAX_BYTES = 20 * 1024 * 1024
+# Current file + four archived files = a 100 MiB budget for scanner events.
+STRUCTURED_LOG_BACKUP_COUNT = 4
+
+
 class StructuredObservabilityService:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        max_bytes: int = STRUCTURED_LOG_MAX_BYTES,
+        backup_count: int = STRUCTURED_LOG_BACKUP_COUNT,
+    ) -> None:
         self.path = path or (
             app_data_dir() / "logs" / "scanner-events.jsonl"
         )
+        self.max_bytes = max(0, int(max_bytes))
+        self.backup_count = max(0, int(backup_count))
         self._lock = RLock()
-        self._logger = logging.getLogger("scanner.events")
+
+    def _backup_path(self, index: int) -> Path:
+        return self.path.with_name(f"{self.path.name}.{index}")
+
+    def _rotate(self) -> None:
+        if self.backup_count <= 0:
+            self.path.unlink(missing_ok=True)
+            return
+        self._backup_path(self.backup_count).unlink(missing_ok=True)
+        for index in range(self.backup_count - 1, 0, -1):
+            source = self._backup_path(index)
+            if source.exists():
+                source.replace(self._backup_path(index + 1))
+        if self.path.exists():
+            self.path.replace(self._backup_path(1))
+
+    def _write(self, encoded: str) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        encoded_size = len(encoded.encode("utf-8")) + 1
+        if (
+            self.max_bytes
+            and self.path.exists()
+            and self.path.stat().st_size + encoded_size > self.max_bytes
+        ):
+            self._rotate()
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(encoded + "\n")
 
     def emit(
         self,
@@ -51,11 +89,7 @@ class StructuredObservabilityService:
             default=str,
         )
         with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as stream:
-                stream.write(encoded + "\n")
-        level = getattr(logging, event["severity"], logging.INFO)
-        self._logger.log(level, encoded)
+            self._write(encoded)
         return event
 
 

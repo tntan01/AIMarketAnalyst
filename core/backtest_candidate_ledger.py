@@ -18,6 +18,22 @@ CANDIDATE_REPLAY_VERSION = "candidate-replay-v1"
 SCORE_THRESHOLDS = (50, 55, 60, 65, 70, 75, 80)
 RR_THRESHOLDS = (1.0, 1.3, 1.5, 2.0)
 MIN_LEDGER_CANDIDATES = 8
+MIN_OPTIMIZER_EXPECTANCY_R = 0.10
+MIN_OPTIMIZER_PROFIT_FACTOR = 1.20
+RELEASE_ENTRY_ZONE_SOURCES = frozenset({
+    "smc",
+    "smc_selected",
+    "smc_v2_selected",
+})
+RELEASE_ENTRY_STATUS = "confirmed_entry"
+RELEASE_DECISION = "READY_TO_TRADE"
+RELEASE_M15_QUALITY = "strict"
+RELEASE_SCAN_READY_REJECTIONS = frozenset({
+    "blocked_by_trade_gate",
+    "blocked_by_permission",
+    "blocked_by_decision",
+    "blocked_by_entry_status",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +68,13 @@ class CandidateLedgerEntry:
     scenario_available: bool
     base_eligible: bool
     base_rejection_reason: str | None
+    simulation_rejection_reason: str | None = None
+    simulation_rejection_detail: dict[str, Any] | None = None
+    entry_zone_source: str | None = None
+    m15_quality: str | None = None
+    entry_status: str | None = None
+    decision: str | None = None
+    tp1_source: str | None = None
     scenario_source: str = "pipeline"
     research_only: bool = False
     frozen_config_id: str = ""
@@ -116,6 +139,11 @@ def build_candidate_ledger_entry(
     rejection = base_rejection_reason
     if not scenario_available:
         rejection = rejection or "NO_SIDE_SCENARIO"
+    decision_engine = (
+        analysis.get("decision_engine")
+        if isinstance(analysis.get("decision_engine"), dict)
+        else {}
+    )
     return CandidateLedgerEntry(
         candidate_id=candidate_id,
         symbol=symbol,
@@ -131,9 +159,21 @@ def build_candidate_ledger_entry(
         scenario_available=scenario_available,
         base_eligible=scenario_available and rejection is None,
         base_rejection_reason=rejection,
+        entry_zone_source=_optional_str(scenario_value.get("entry_zone_source")),
+        m15_quality=_optional_str(scenario_value.get("m15_quality")),
+        entry_status=_optional_str(scenario_value.get("entry_status")),
+        decision=_optional_str(decision_engine.get("decision")),
+        tp1_source=_optional_str(scenario_value.get("tp1_source")),
         scenario_source=scenario_source,
         research_only=research_only,
     )
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text or None
 
 
 def side_setup_score(
@@ -167,6 +207,7 @@ def evaluate_frozen_strategy(
     if config is None:
         return True, []
     reasons: list[str] = []
+    reasons.extend(release_candidate_rejection_reasons(entry))
     if entry.symbol != config.symbol:
         reasons.append("FROZEN_SYMBOL_MISMATCH")
     if entry.side != config.side:
@@ -177,17 +218,97 @@ def evaluate_frozen_strategy(
         reasons.append("FROZEN_SETUP_SCORE_MISSING")
     elif entry.setup_score < config.min_setup_score:
         reasons.append("FROZEN_SETUP_SCORE_BELOW_MIN")
-    if entry.expected_effective_rr is None:
-        reasons.append("FROZEN_EXPECTED_RR_MISSING")
-    elif entry.expected_effective_rr < config.min_expected_rr:
+    if (
+        entry.expected_effective_rr is not None
+        and entry.expected_effective_rr < config.min_expected_rr
+    ):
         reasons.append("FROZEN_EXPECTED_RR_BELOW_MIN")
-    if entry.research_only:
-        reasons.append("FROZEN_RESEARCH_ONLY_CANDIDATE")
-    if not entry.base_eligible:
-        reasons.append(
-            entry.base_rejection_reason or "FROZEN_BASE_PIPELINE_REJECTED"
-        )
     return not reasons, _unique(reasons)
+
+
+def release_candidate_rejection_reasons(
+    entry: CandidateLedgerEntry | dict[str, Any],
+) -> list[str]:
+    """Return reasons a ledger row cannot seed a frozen strategy config.
+
+    A release candidate can be clean in either of two ways:
+
+    * scan-ready: the live decision path already said READY_TO_TRADE and the
+      selected scenario was a confirmed entry; or
+    * simulated-fill-ready: the historical fill model produced a simulated
+      trade from a clean, non-fallback scenario.
+
+    The second path matters for validation replay.  A scan can legitimately
+    see a clean SMC setup as ``watch_zone`` / ``WAITING_CONFIRMATION`` while
+    the backtest execution model later confirms a fill inside the entry zone.
+    In that case ``simulated_trade`` is the execution confirmation evidence,
+    and scan-time caps such as M15/journal WATCH are diagnostics rather than
+    hard optimizer exclusions.  M15 quality is still a release gate: loose or
+    missing lower-timeframe confirmation is not allowed to seed a frozen config.
+    """
+    row = _ledger_dict(entry)
+    reasons: list[str] = []
+    has_simulated_trade = isinstance(row.get("simulated_trade"), dict)
+    base_rejection_reason = str(row.get("base_rejection_reason") or "")
+    scan_ready = (
+        row.get("base_eligible") is True
+        and str(row.get("entry_status") or "") == RELEASE_ENTRY_STATUS
+        and str(row.get("decision") or "") == RELEASE_DECISION
+    )
+    simulated_fill_ready = (
+        has_simulated_trade
+        and (
+            row.get("base_eligible") is True
+            or base_rejection_reason in RELEASE_SCAN_READY_REJECTIONS
+        )
+    )
+
+    if not scan_ready and not simulated_fill_ready:
+        reasons.append(
+            base_rejection_reason or "RELEASE_BASE_PIPELINE_REJECTED"
+        )
+    if row.get("research_only") is True:
+        reasons.append("RELEASE_RESEARCH_ONLY_CANDIDATE")
+    if row.get("setup_score") is None:
+        reasons.append("RELEASE_SETUP_SCORE_MISSING")
+    if not has_simulated_trade:
+        reasons.append("RELEASE_SIMULATED_TRADE_MISSING")
+    if optional_float(row.get("expected_effective_rr")) is None:
+        reasons.append("RELEASE_EXPECTED_RR_MISSING")
+
+    scenario_source = str(row.get("scenario_source") or "")
+    if scenario_source in {"fallback", "synthetic_fallback"}:
+        reasons.append("RELEASE_SCENARIO_SOURCE_NOT_CLEAN")
+
+    entry_zone_source = str(row.get("entry_zone_source") or "")
+    if entry_zone_source not in RELEASE_ENTRY_ZONE_SOURCES:
+        reasons.append("RELEASE_ENTRY_ZONE_SOURCE_NOT_CLEAN")
+    simulated_trade = (
+        row.get("simulated_trade")
+        if isinstance(row.get("simulated_trade"), dict)
+        else {}
+    )
+    m15_quality = str(
+        row.get("m15_quality")
+        or simulated_trade.get("m15_quality")
+        or ""
+    )
+    if m15_quality != RELEASE_M15_QUALITY:
+        reasons.append("RELEASE_M15_QUALITY_NOT_STRICT")
+    if (
+        not simulated_fill_ready
+        and str(row.get("entry_status") or "") != RELEASE_ENTRY_STATUS
+    ):
+        reasons.append("RELEASE_ENTRY_STATUS_NOT_CONFIRMED")
+    if (
+        not simulated_fill_ready
+        and str(row.get("decision") or "") != RELEASE_DECISION
+    ):
+        reasons.append("RELEASE_DECISION_NOT_READY")
+    tp1_source = str(row.get("tp1_source") or "")
+    if not tp1_source or tp1_source == "none":
+        reasons.append("RELEASE_TP1_MISSING")
+    return _unique(reasons)
 
 
 def optimize_frozen_strategy(
@@ -198,54 +319,26 @@ def optimize_frozen_strategy(
 ) -> FrozenStrategyConfig | None:
     """Select one config using only simulated, explicit-score IS candidates."""
 
-    rows = [_ledger_dict(entry) for entry in entries]
-    eligible = [
-        row for row in rows
-        if row.get("symbol") == symbol
-        and row.get("base_eligible") is True
-        and row.get("research_only") is not True
-        and row.get("setup_score") is not None
-        and isinstance(row.get("simulated_trade"), dict)
-    ]
+    eligible = release_optimizer_candidate_rows(entries, symbol=symbol)
     if len(eligible) < min_candidates:
         return None
 
     best: tuple[float, str, str, int, float] | None = None
-    for regime, side in sorted({
-        (str(row.get("market_regime") or "unknown"), str(row.get("side") or ""))
-        for row in eligible
-        if str(row.get("side") or "") in {"buy", "sell"}
-    }):
-        for min_score in SCORE_THRESHOLDS:
-            for min_rr in RR_THRESHOLDS:
-                selected = [
-                    row for row in eligible
-                    if row.get("market_regime") == regime
-                    and row.get("side") == side
-                    and int(row.get("setup_score") or 0) >= min_score
-                    and optional_float(row.get("expected_effective_rr")) is not None
-                    and float(row.get("expected_effective_rr") or 0) >= min_rr
-                ]
-                if len(selected) < min_candidates:
-                    continue
-                results = [
-                    float((row.get("simulated_trade") or {}).get("result_r", 0) or 0)
-                    for row in selected
-                ]
-                expectancy = sum(results) / len(results)
-                gross_profit = sum(value for value in results if value > 0)
-                gross_loss = abs(sum(value for value in results if value < 0))
-                profit_factor = (
-                    gross_profit / gross_loss
-                    if gross_loss > 0
-                    else gross_profit
-                )
-                if expectancy < 0.10 or profit_factor < 1.20:
-                    continue
-                composite = expectancy * 10 + profit_factor + len(selected) * 0.01
-                candidate = (composite, regime, side, min_score, min_rr)
-                if best is None or candidate > best:
-                    best = candidate
+    for bucket in _optimizer_threshold_buckets(
+        eligible,
+        min_candidates=min_candidates,
+    ):
+        if not bucket["passes_optimizer_thresholds"]:
+            continue
+        candidate = (
+            float(bucket["composite_score"]),
+            str(bucket["market_regime"]),
+            str(bucket["side"]),
+            int(bucket["min_setup_score"]),
+            float(bucket["min_expected_rr"]),
+        )
+        if best is None or candidate > best:
+            best = candidate
     if best is None:
         return None
     _score, regime, side, min_score, min_rr = best
@@ -268,6 +361,86 @@ def optimize_frozen_strategy(
         min_setup_score=min_score,
         min_expected_rr=min_rr,
     )
+
+
+def release_optimizer_candidate_rows(
+    entries: Iterable[CandidateLedgerEntry | dict[str, Any]],
+    *,
+    symbol: str,
+) -> list[dict[str, Any]]:
+    """Return the exact release-clean rows allowed to seed optimizer search."""
+
+    rows = [_ledger_dict(entry) for entry in entries]
+    return [
+        row for row in rows
+        if row.get("symbol") == symbol
+        and not release_candidate_rejection_reasons(row)
+    ]
+
+
+def release_optimizer_diagnostics(
+    entries: Iterable[CandidateLedgerEntry | dict[str, Any]],
+    *,
+    symbol: str,
+    min_candidates: int = MIN_LEDGER_CANDIDATES,
+) -> dict[str, Any]:
+    """Explain which IS candidates reached the optimizer and why search failed."""
+
+    rows = [_ledger_dict(entry) for entry in entries]
+    symbol_rows = [row for row in rows if row.get("symbol") == symbol]
+    eligible = [
+        row for row in symbol_rows
+        if not release_candidate_rejection_reasons(row)
+    ]
+    reason_counts: dict[str, int] = {}
+    for row in symbol_rows:
+        reasons = release_candidate_rejection_reasons(row) or ["<accepted>"]
+        for reason in reasons:
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    buckets = list(
+        _optimizer_threshold_buckets(
+            eligible,
+            min_candidates=min_candidates,
+        )
+    )
+    passing_buckets = [
+        bucket for bucket in buckets
+        if bucket["passes_optimizer_thresholds"]
+    ]
+    best_bucket = (
+        max(
+            buckets,
+            key=lambda bucket: (
+                float(bucket["composite_score"]),
+                str(bucket["market_regime"]),
+                str(bucket["side"]),
+                int(bucket["min_setup_score"]),
+                float(bucket["min_expected_rr"]),
+            ),
+        )
+        if buckets
+        else None
+    )
+    return {
+        "symbol": symbol,
+        "input_count": len(rows),
+        "symbol_candidate_count": len(symbol_rows),
+        "release_candidate_count": len(eligible),
+        "release_candidate_ids": [
+            str(row.get("candidate_id") or "") for row in eligible
+        ],
+        "min_candidates": min_candidates,
+        "score_thresholds": list(SCORE_THRESHOLDS),
+        "rr_thresholds": list(RR_THRESHOLDS),
+        "optimizer_thresholds": {
+            "min_expectancy_r": MIN_OPTIMIZER_EXPECTANCY_R,
+            "min_profit_factor": MIN_OPTIMIZER_PROFIT_FACTOR,
+        },
+        "rejection_reasons": dict(sorted(reason_counts.items())),
+        "threshold_bucket_count": len(buckets),
+        "passing_threshold_bucket_count": len(passing_buckets),
+        "best_threshold_bucket": best_bucket,
+    }
 
 
 def candidate_ledger_fingerprint(
@@ -318,6 +491,74 @@ def _ledger_dict(
     entry: CandidateLedgerEntry | dict[str, Any],
 ) -> dict[str, Any]:
     return entry.to_dict() if isinstance(entry, CandidateLedgerEntry) else dict(entry)
+
+
+def _optimizer_threshold_buckets(
+    eligible: list[dict[str, Any]],
+    *,
+    min_candidates: int,
+) -> Iterable[dict[str, Any]]:
+    for regime, side in sorted({
+        (str(row.get("market_regime") or "unknown"), str(row.get("side") or ""))
+        for row in eligible
+        if str(row.get("side") or "") in {"buy", "sell"}
+    }):
+        for min_score in SCORE_THRESHOLDS:
+            for min_rr in RR_THRESHOLDS:
+                selected = [
+                    row for row in eligible
+                    if row.get("market_regime") == regime
+                    and row.get("side") == side
+                    and int(row.get("setup_score") or 0) >= min_score
+                    and optional_float(
+                        row.get("expected_effective_rr")
+                    ) is not None
+                    and float(row.get("expected_effective_rr") or 0) >= min_rr
+                ]
+                if len(selected) < min_candidates:
+                    continue
+                results = [
+                    float(
+                        (row.get("simulated_trade") or {}).get(
+                            "result_r",
+                            0,
+                        ) or 0
+                    )
+                    for row in selected
+                ]
+                expectancy = sum(results) / len(results)
+                gross_profit = sum(value for value in results if value > 0)
+                gross_loss = abs(sum(value for value in results if value < 0))
+                profit_factor = (
+                    gross_profit / gross_loss
+                    if gross_loss > 0
+                    else gross_profit
+                )
+                yield {
+                    "market_regime": regime,
+                    "side": side,
+                    "min_setup_score": min_score,
+                    "min_expected_rr": min_rr,
+                    "selected_count": len(selected),
+                    "candidate_ids": [
+                        str(row.get("candidate_id") or "")
+                        for row in selected
+                    ],
+                    "total_r": round(sum(results), 6),
+                    "expectancy_r": round(expectancy, 6),
+                    "profit_factor": round(profit_factor, 6),
+                    "gross_profit_r": round(gross_profit, 6),
+                    "gross_loss_r": round(gross_loss, 6),
+                    "composite_score": (
+                        expectancy * 10
+                        + profit_factor
+                        + len(selected) * 0.01
+                    ),
+                    "passes_optimizer_thresholds": (
+                        expectancy >= MIN_OPTIMIZER_EXPECTANCY_R
+                        and profit_factor >= MIN_OPTIMIZER_PROFIT_FACTOR
+                    ),
+                }
 
 
 def _unique(values: Iterable[str]) -> list[str]:

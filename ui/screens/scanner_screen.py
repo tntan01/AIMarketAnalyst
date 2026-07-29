@@ -729,8 +729,6 @@ class ScannerScreen (QWidget ):
         self .settings_service =app .settings_service if app else SettingsService ()
         self .mt5 =app .mt5 if app else MT5Service ()
         self .scanner_controller =app .scanner_controller if app else ScannerController (self .settings_service ,mt5=self .mt5 )
-        # Session flag: chỉ auto-scan 1 lần khi mới mở tab Scanner
-        self ._auto_scanned_this_session =False
         self .scan_thread =None 
         self .scan_worker =None 
         self .scan_result :dict [str ,object ]|None =None
@@ -768,12 +766,6 @@ class ScannerScreen (QWidget ):
         root .addWidget (self ._settings_card ())
         root .addWidget (self ._table_card (),1 )
         self .refresh_status ()
-        # Luôn auto-scan lần đầu khi mở tab Scanner trong phiên
-        def _auto_scan_once ():
-            if not self ._auto_scanned_this_session:
-                self ._auto_scanned_this_session =True
-                self ._run_scan ()
-        QTimer .singleShot (1500 ,_auto_scan_once )
 
     def _settings_card (self )->QFrame :
         frame =card (None )
@@ -784,10 +776,6 @@ class ScannerScreen (QWidget ):
         self .scan_symbols =self ._configured_scan_symbols (settings )
         self .selected_scan_symbols =list (self .scan_symbols )
 
-        # Lần đầu mở tab Scanner trong phiên: chọn tất cả mã
-        if not self ._auto_scanned_this_session:
-            self .scan_symbols =list (SUPPORTED_SYMBOLS )
-            self .selected_scan_symbols =list (SUPPORTED_SYMBOLS )
 
         symbol_row =QHBoxLayout ()
         symbol_row .setSpacing (10 )
@@ -815,10 +803,6 @@ class ScannerScreen (QWidget ):
         tf_seconds =old_to_tf .get (settings .notifications .auto_scan_interval_minutes ,900 )
         interval_index =self .scan_interval_combo .findData (tf_seconds )
         self .scan_interval_combo .setCurrentIndex (interval_index if interval_index >=0 else 1 )
-        if not self ._auto_scanned_this_session:
-            self .scan_mode_combo .setCurrentIndex (1 )   # "Quét theo khoảng thời gian"
-            m5_idx =self .scan_interval_combo .findData (300 )
-            self .scan_interval_combo .setCurrentIndex (m5_idx if m5_idx >=0 else 0 )
         self .scan_mode_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
         self .scan_interval_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
         for combo in (self .scan_mode_combo ,self .scan_interval_combo ):
@@ -834,7 +818,7 @@ class ScannerScreen (QWidget ):
         )
         self .auto_trade_check .setChecked (False )
         self .auto_trade_check .toggled .connect (self ._update_auto_trade_toggle_style )
-        self .scan_mode_combo .currentIndexChanged .connect (self ._update_auto_trade_toggle_state )
+        self .scan_mode_combo .currentIndexChanged .connect (self ._on_scan_mode_changed )
         self ._update_auto_trade_toggle_state ()
 
         self.scan_button = action_button("🔍 Quét thị trường", primary=True, color="info")
@@ -936,6 +920,15 @@ class ScannerScreen (QWidget ):
         if not can_enable and self .auto_trade_check .isChecked ():
             self .auto_trade_check .setChecked (False )
         self ._update_auto_trade_toggle_style ()
+
+    def _on_scan_mode_changed(self) -> None:
+        """Keep auto-scan opt-in: changing back to one-shot stops its timer."""
+        self._update_auto_trade_toggle_state()
+        if (
+            self.scan_mode_combo.currentData() != "auto"
+            and self.auto_scan_active
+        ):
+            self._stop_auto_scan()
 
     # ------------------------------------------------------------------
     # Show Orders button
@@ -1607,9 +1600,6 @@ class ScannerScreen (QWidget ):
         if self .scan_thread is not None :
             return 
         symbols =self ._selected_symbols ()
-        # Lần đầu scan: MT5 có thể chưa kết nối → market_watch_symbols rỗng → dùng trực tiếp selected_scan_symbols
-        if not symbols and not self ._auto_scanned_this_session and self .selected_scan_symbols:
-            symbols =list (self .selected_scan_symbols )
         if not symbols :
             QMessageBox .warning (self ,'Không thể quét','Chọn ít nhất một mã giao dịch trước khi quét.')
             return 
@@ -1677,6 +1667,7 @@ class ScannerScreen (QWidget ):
         smc_scoring_mode =str (
             getattr (feature_settings ,"smc_scoring_mode","v2")or "v2"
         ),
+        persistence_mode =("summary" if hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto" else "full"),
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
         self .scan_thread =thread 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from config.paths import ensure_runtime_dirs
 from services.logging_service import configure_logging
+from services.runtime_retention_service import scanner_retention
 
 
 def _icon_path() -> Path:
@@ -20,6 +21,7 @@ def _icon_path() -> Path:
 def main() -> int:
     ensure_runtime_dirs()
     configure_logging()
+    scanner_retention.ensure_started()
 
     # Must be called BEFORE QApplication for Windows taskbar icon
     if sys.platform == "win32":

@@ -10,6 +10,7 @@ from core.backtest_candidate_ledger import (
     CANDIDATE_REPLAY_VERSION,
     candidate_ledger_fingerprint,
     optimize_frozen_strategy,
+    release_optimizer_diagnostics,
 )
 from core.backtest_contract import (
     BACKTEST_PURPOSE_RESEARCH,
@@ -72,6 +73,10 @@ def run_frozen_validation_replay(
             "is_candidate_ledger": is_result.candidate_ledger,
             "is_candidate_ledger_fingerprint": candidate_ledger_fingerprint(
                 is_result.candidate_ledger
+            ),
+            "is_optimizer_diagnostics": release_optimizer_diagnostics(
+                is_result.candidate_ledger,
+                symbol=request.symbol,
             ),
             "frozen_strategy_config": None,
             "oos_candidate_ledger": [],

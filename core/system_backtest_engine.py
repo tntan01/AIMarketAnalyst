@@ -91,6 +91,17 @@ BACKTEST_FUNNEL_KEYS = (
     "trade_opened",
 )
 
+SIMULATION_REJECTION_REASON_KEY = "simulation_rejection_reason"
+SIMULATION_REJECTION_DETAIL_KEY = "simulation_rejection_detail"
+INVALID_SIDE = "INVALID_SIDE"
+VALIDATION_RESEARCH_ONLY_SCENARIO = "VALIDATION_RESEARCH_ONLY_SCENARIO"
+MISSING_SL_TP = "MISSING_SL_TP"
+NO_VALID_TP1 = "NO_VALID_TP1"
+INVALID_ENTRY_ZONE = "INVALID_ENTRY_ZONE"
+ENTRY_ZONE_NOT_TOUCHED = "ENTRY_ZONE_NOT_TOUCHED"
+INVALID_TRADE_GEOMETRY = "INVALID_TRADE_GEOMETRY"
+QUOTE_CONVERSION_MISSING = "QUOTE_CONVERSION_MISSING"
+
 
 @dataclass(frozen=True, slots=True)
 class BacktestRequest:
@@ -550,6 +561,7 @@ def run_system_backtest(
                 next_allowed_time = next_day_local
             continue
 
+        simulation_diagnostics: dict[str, str] = {}
         trade = simulate_trade_from_analysis(
             request=request,
             analysis=analysis,
@@ -564,10 +576,18 @@ def run_system_backtest(
             execution_timeframe=execution_timeframe,
             signal_time=decision_time,
             account_balance=balance,
+            diagnostics=simulation_diagnostics,
         )
         if trade is None:
             ledger_entry.base_eligible = False
             ledger_entry.base_rejection_reason = "TRADE_SIMULATION_REJECTED"
+            ledger_entry.simulation_rejection_reason = (
+                simulation_diagnostics.get(SIMULATION_REJECTION_REASON_KEY)
+            )
+            detail = simulation_diagnostics.get(SIMULATION_REJECTION_DETAIL_KEY)
+            ledger_entry.simulation_rejection_detail = (
+                dict(detail) if isinstance(detail, dict) else None
+            )
             skip_funnel_key, skip_message = trade_plan_skip_reason(scenario)
             funnel[skip_funnel_key] += 1
             skipped.append(
@@ -1089,10 +1109,14 @@ def simulate_trade_from_analysis(
     execution_timeframe: str = "M15",
     signal_time: datetime | None = None,
     account_balance: float | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> BacktestTrade | None:
+    if diagnostics is not None:
+        diagnostics.pop(SIMULATION_REJECTION_REASON_KEY, None)
+        diagnostics.pop(SIMULATION_REJECTION_DETAIL_KEY, None)
     side = str(scenario.get("type") or "")
     if side not in {"buy", "sell"}:
-        return None
+        return _reject_trade_simulation(diagnostics, INVALID_SIDE)
     if (
         normalize_backtest_purpose(request.purpose)
         == BACKTEST_PURPOSE_VALIDATION
@@ -1102,17 +1126,21 @@ def simulate_trade_from_analysis(
             or scenario.get("synthetic") is True
         )
     ):
-        return None
+        return _reject_trade_simulation(
+            diagnostics,
+            VALIDATION_RESEARCH_ONLY_SCENARIO,
+        )
     try:
         stop_loss = float(scenario["stop_loss"])
-        take_profit_raw = scenario.get("take_profit")
-        take_profit = float(take_profit_raw[0] if isinstance(take_profit_raw, list) and len(take_profit_raw) > 0 else take_profit_raw)
     except (KeyError, TypeError, ValueError):
-        return None
+        return _reject_trade_simulation(diagnostics, MISSING_SL_TP)
+    take_profit = _scenario_tp1(scenario.get("take_profit"))
+    if take_profit is None:
+        return _reject_trade_simulation(diagnostics, NO_VALID_TP1)
 
     zone = _entry_zone_bounds(scenario.get("entry_zone"))
     if zone is None:
-        return None
+        return _reject_trade_simulation(diagnostics, INVALID_ENTRY_ZONE)
     if signal_time is not None:
         active_at = normalize_utc(signal_time)[0]
     elif isinstance(getattr(entry_candle, "time", None), datetime):
@@ -1123,7 +1151,7 @@ def simulate_trade_from_analysis(
     elif future_candles:
         active_at = normalize_utc(future_candles[0].time)[0]
     else:
-        return None
+        return _reject_trade_simulation(diagnostics, ENTRY_ZONE_NOT_TOUCHED)
     setup_expiry = timedelta(minutes=request.setup_expiry_minutes)
     parity_enabled = (
         normalize_execution_mode(request.execution_mode)
@@ -1141,7 +1169,7 @@ def simulate_trade_from_analysis(
         slippage_price=(0.0 if parity_enabled else request.slippage_price),
     )
     if entry_fill is None:
-        return None
+        return _reject_trade_simulation(diagnostics, ENTRY_ZONE_NOT_TOUCHED)
     execution_entry_price = entry_fill.price
     if parity_enabled:
         entry_spread = session_spread_price(
@@ -1165,7 +1193,25 @@ def simulate_trade_from_analysis(
         stop_loss,
         take_profit,
     ):
-        return None
+        _set_simulation_rejection_detail(
+            diagnostics,
+            {
+                "side": side,
+                "raw_fill_price": round(entry_fill.price, 8),
+                "execution_entry_price": round(execution_entry_price, 8),
+                "stop_loss": round(stop_loss, 8),
+                "take_profit": round(take_profit, 8),
+                "entry_spread": round(entry_spread, 8) if parity_enabled else 0.0,
+                "entry_slippage": (
+                    round(max(0.0, entry_slippage), 8)
+                    if parity_enabled
+                    else round(max(0.0, request.slippage_price), 8)
+                ),
+                "parity_enabled": parity_enabled,
+                "filled_at": entry_fill.filled_at.isoformat(),
+            },
+        )
+        return _reject_trade_simulation(diagnostics, INVALID_TRADE_GEOMETRY)
 
     same_bar_policy = (
         SAME_BAR_STOP_FIRST
@@ -1196,7 +1242,21 @@ def simulate_trade_from_analysis(
             exit_resolution.exited_at,
         )
         if quote_rate_entry is None or quote_rate_exit is None:
-            return None
+            _set_simulation_rejection_detail(
+                diagnostics,
+                {
+                    "quote_conversion_symbol": request.quote_conversion_symbol,
+                    "quote_conversion_inverted": request.quote_conversion_inverted,
+                    "entry_time": entry_fill.filled_at.isoformat(),
+                    "exit_time": exit_resolution.exited_at.isoformat(),
+                    "quote_rate_entry_present": quote_rate_entry is not None,
+                    "quote_rate_exit_present": quote_rate_exit is not None,
+                },
+            )
+            return _reject_trade_simulation(
+                diagnostics,
+                QUOTE_CONVERSION_MISSING,
+            )
         contract_size = float(request.contract_size_override or 100000.0)
         parity = apply_execution_costs(
             side=side,
@@ -1318,6 +1378,23 @@ def simulate_trade_from_analysis(
     )
 
 
+def _reject_trade_simulation(
+    diagnostics: dict[str, Any] | None,
+    reason: str,
+) -> None:
+    if diagnostics is not None:
+        diagnostics[SIMULATION_REJECTION_REASON_KEY] = reason
+    return None
+
+
+def _set_simulation_rejection_detail(
+    diagnostics: dict[str, Any] | None,
+    detail: dict[str, Any],
+) -> None:
+    if diagnostics is not None:
+        diagnostics[SIMULATION_REJECTION_DETAIL_KEY] = detail
+
+
 def find_entry_fill(
     *,
     side: str,
@@ -1364,10 +1441,10 @@ def trade_plan_skip_reason(scenario: dict[str, Any]) -> tuple[str, str]:
         return "invalid_trade_plan", "Thiếu entry zone hợp lệ."
     try:
         float(scenario["stop_loss"])
-        take_profit_raw = scenario.get("take_profit")
-        float(take_profit_raw[0] if isinstance(take_profit_raw, list) and len(take_profit_raw) > 0 else take_profit_raw)
     except (KeyError, TypeError, ValueError):
-        return "invalid_trade_plan", "Thiếu SL/TP hợp lệ."
+        return "invalid_trade_plan", "Thiếu stop_loss hợp lệ."
+    if _scenario_tp1(scenario.get("take_profit")) is None:
+        return "invalid_trade_plan", "Không có TP1 hợp lệ."
     return "entry_zone_not_touched", "Giá M15 chưa chạm entry zone trong thời hạn setup."
 
 
@@ -1384,6 +1461,18 @@ def _entry_zone_bounds(value: object) -> tuple[float, float] | None:
     except (TypeError, ValueError):
         return None
     return min(first, second), max(first, second)
+
+
+def _scenario_tp1(value: object) -> float | None:
+    raw = (
+        value[0]
+        if isinstance(value, (list, tuple)) and len(value) > 0
+        else value
+    )
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _candle_touches_zone(candle: Candle, zone_low: float, zone_high: float) -> bool:
@@ -2058,6 +2147,11 @@ def build_skip_debug(analysis: dict[str, Any] | None, scenario: dict[str, Any] |
         "trigger_type": scenario.get("trigger_type"),
         "m15_quality": scenario.get("m15_quality"),
         "m15_available": scenario.get("m15_available"),
+        "entry_zone": scenario.get("entry_zone"),
+        "stop_loss": scenario.get("stop_loss"),
+        "take_profit": scenario.get("take_profit"),
+        "tp1_source": scenario.get("tp1_source"),
+        "invalid_reason": scenario.get("invalid_reason"),
         "expected_effective_rr": optional_float(scenario.get("expected_effective_rr")),
         "risk_reward": scenario.get("risk_reward"),
         "market_regime": market_regime.get("primary"),

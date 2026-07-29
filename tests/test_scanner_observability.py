@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import logging
 from unittest.mock import patch
 
 from controllers.scanner_controller import ScannerController
@@ -30,6 +31,8 @@ from core.scanner_observability import (
 )
 from core.scanner_ranking_engine import rank_scanner_rows
 from services.observability_service import StructuredObservabilityService
+from services.storage_service import JsonStorage
+from services.scanner_persistence_service import ScannerPersistenceService
 from tests.phase7_helpers import ready_release_report
 
 
@@ -358,13 +361,38 @@ def test_snapshot_splits_summary_and_full_symbol_analysis(tmp_path):
         summary_path = controller.save_snapshot(result)
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    analysis_path = tmp_path / "scanner_analysis" / context.scan_id / "EURUSD.json"
-    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    analysis_path = tmp_path / "scanner_analysis" / context.scan_id / "EURUSD.json.gz"
+    analysis = JsonStorage(analysis_path).load()
     assert "analysis_result" not in summary["rows"][0]
     assert summary["rows"][0]["analysis_ref"] == str(analysis_path)
     assert summary["analysis_manifest"]["EUR/USD"] == str(analysis_path)
     assert analysis["analysis_result"]["technical"]["price"] == 1.086
     assert analysis["candidate_decision"]["status"] == "READY_NOW"
+
+
+def test_summary_snapshot_avoids_full_analysis_for_routine_auto_scan(tmp_path):
+    row, context = _observed_row()
+    row["observability"] = {"large": ["x"] * 100}
+    result = {
+        "scan_id": context.scan_id,
+        "timestamp": context.started_at,
+        "scan_context": context.to_dict(),
+        "rows": [row],
+        "summary": {"ready_now_count": 0},
+        "persistence_mode": "summary",
+    }
+    controller = ScannerController.__new__(ScannerController)
+    ScannerPersistenceService(tmp_path).record("full")
+
+    with patch("controllers.scanner_controller.app_data_dir", return_value=tmp_path):
+        summary_path = controller.save_snapshot(result)
+
+    summary = JsonStorage(summary_path).load()
+    assert summary["persistence_mode"] == "summary"
+    assert "analysis_manifest" not in summary
+    assert summary["rows"][0]["analysis_ref"] == ""
+    assert "observability" not in summary["rows"][0]
+    assert not (tmp_path / "scanner_analysis" / context.scan_id).exists()
 
 
 def test_structured_event_log_is_jsonl_and_redacts_secrets(tmp_path):
@@ -383,6 +411,88 @@ def test_structured_event_log_is_jsonl_and_redacts_secrets(tmp_path):
     assert saved["payload"]["api_key"] == "<redacted>"
     assert saved["payload"]["side"] == "buy"
     assert saved["scan_id"] == "scan-1"
+
+
+def test_structured_event_log_rotates_without_propagating_to_app_log(tmp_path):
+    events_path = tmp_path / "events.jsonl"
+    app_log_path = tmp_path / "app.log"
+    root_logger = logging.getLogger()
+    app_handler = logging.FileHandler(app_log_path, encoding="utf-8")
+    root_logger.addHandler(app_handler)
+    service = StructuredObservabilityService(
+        events_path,
+        max_bytes=300,
+        backup_count=2,
+    )
+
+    try:
+        for number in range(4):
+            service.emit(
+                "SMC_SHADOW_COMPARISON",
+                payload={"summary": "x" * 120, "number": number},
+            )
+    finally:
+        root_logger.removeHandler(app_handler)
+        app_handler.close()
+
+    assert events_path.exists()
+    assert events_path.with_name("events.jsonl.1").exists()
+    assert events_path.with_name("events.jsonl.2").exists()
+    assert app_log_path.read_text(encoding="utf-8") == ""
+
+
+def test_smc_shadow_event_payload_is_compact_and_omits_full_zone_data():
+    recorder = _EventRecorder()
+    controller = ScannerController.__new__(ScannerController)
+    controller.observability = recorder
+    large_zone_data = {"evaluated_zones": [{"raw": "x" * 2_000}] * 10}
+    side = {
+        "smc_quality": 72,
+        "smc_reason": "reason-" + "x" * 200,
+        "signal_score": 65,
+        "scoring_version": "smc-v2",
+        "selected_zone_id": "zone-1",
+        "selected_zone_type": "fvg",
+        "selected_zone_timeframe": "H1",
+        "selected_zone_quality_score": 61,
+        "selected_zone_relevance_score": 58,
+        "selected_zone_setup_score": 64,
+        "selected_zone_score": 60,
+        "breakdown": large_zone_data,
+        **large_zone_data,
+    }
+    row = {
+        "symbol": "EUR/USD",
+        "analysis_result": {
+            "smc_scoring": {
+                "policy": {"shadow_enabled": True, "effective_mode": "v2"},
+                "shadow_status": "available",
+                "comparison": {
+                    "best_side_changed": True,
+                    "score_delta": {"buy": 2.0, "sell": -1.0},
+                },
+                "active": {"buy": side, "sell": side},
+                "shadow": {"buy": side, "sell": side},
+                "consumer_contract": {
+                    "contract_version": "smc-consumer-v1",
+                    "sides": {"buy": large_zone_data},
+                },
+            }
+        },
+    }
+
+    controller._emit_candidate_events(row, "scan-1")
+
+    event = next(
+        item
+        for item in recorder.events
+        if item["event_type"] == "SMC_SHADOW_COMPARISON"
+    )
+    encoded = json.dumps(event["payload"], ensure_ascii=False).encode("utf-8")
+    assert len(encoded) < 4 * 1024
+    assert event["severity"] == "WARNING"
+    assert "evaluated_zones" not in json.dumps(event["payload"])
+    assert event["payload"]["active"]["buy"]["selected_zone_id"] == "zone-1"
 
 
 class _EventRecorder:

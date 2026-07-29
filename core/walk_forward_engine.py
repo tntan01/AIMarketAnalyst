@@ -12,6 +12,7 @@ from core.backtest_candidate_ledger import (
     CANDIDATE_REPLAY_VERSION,
     FrozenStrategyConfig,
     optimize_frozen_strategy,
+    release_optimizer_diagnostics,
 )
 from core.backtest_contract import (
     BACKTEST_PURPOSE_RESEARCH,
@@ -107,6 +108,10 @@ def run_walk_forward(
                     "is_summary": summarize_backtest_trades(is_result.trades),
                     "oos_summary": None,
                     "frozen_strategy_config": None,
+                    "is_optimizer_diagnostics": release_optimizer_diagnostics(
+                        is_result.candidate_ledger,
+                        symbol=request.symbol,
+                    ),
                     "error": "IS_CANDIDATE_LEDGER_NOT_OPTIMIZABLE",
                 })
                 continue

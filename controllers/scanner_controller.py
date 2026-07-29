@@ -67,10 +67,148 @@ from services.scanner_rollout_service import (
     ScannerRolloutMetricsService,
     scanner_rollout_metrics,
 )
+from services.runtime_retention_service import RuntimeRetentionService
+from services.scanner_persistence_service import (
+    PERSISTENCE_FULL,
+    ScannerPersistenceService,
+    summary_row,
+)
 from services.settings_service import SettingsService
 from services.storage_service import JsonStorage
 from services.telegram_alert_service import TelegramAlertService
 from workers.scanner_worker import ScannerWorker
+
+
+_SMC_EVENT_TEXT_LIMIT = 48
+_SMC_EVENT_SIDE_FIELDS = (
+    "smc_quality",
+    "smc_reason",
+    "signal_score",
+    "scoring_version",
+    "selected_zone_id",
+    "selected_zone_type",
+    "selected_zone_timeframe",
+    "selected_zone_quality_score",
+    "selected_zone_relevance_score",
+    "selected_zone_setup_score",
+    "selected_zone_score",
+)
+
+
+def _compact_event_value(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:_SMC_EVENT_TEXT_LIMIT]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item)[:_SMC_EVENT_TEXT_LIMIT] for item in list(value)[:6]]
+    return str(value)[:_SMC_EVENT_TEXT_LIMIT]
+
+
+def _compact_smc_side(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: _compact_event_value(value[key])
+        for key in _SMC_EVENT_SIDE_FIELDS
+        if key in value
+    }
+
+
+def _compact_smc_side_metrics(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        side: _compact_event_value(value[side])
+        for side in ("buy", "sell")
+        if side in value
+    }
+
+
+def _compact_smc_shadow_payload(smc_scoring: dict[str, Any]) -> dict[str, object]:
+    """Persist comparison evidence without full SMC zones/breakdowns per scan."""
+    policy = smc_scoring.get("policy")
+    comparison = smc_scoring.get("comparison")
+    contract = smc_scoring.get("consumer_contract")
+    policy = policy if isinstance(policy, dict) else {}
+    comparison = comparison if isinstance(comparison, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+
+    policy_fields = (
+        "requested_mode",
+        "effective_mode",
+        "decision_source",
+        "active_version",
+        "shadow_enabled",
+        "shadow_version",
+        "decision_impact_allowed",
+        "fallback_reason_codes",
+    )
+    comparison_fields = (
+        "available",
+        "active_best_side",
+        "shadow_best_side",
+        "direction_changed",
+        "decision_changed",
+        "best_side_changed",
+        "decision_input_changed",
+    )
+    metric_fields = (
+        "legacy_smc_quality",
+        "v2_smc_quality",
+        "score_delta",
+        "selected_zone_changed",
+    )
+    contract_fields = (
+        "contract_version",
+        "decision_source",
+        "decision_impact_allowed",
+    )
+    compact_comparison = {
+        key: _compact_event_value(comparison[key])
+        for key in comparison_fields
+        if key in comparison
+    }
+    compact_comparison.update(
+        {
+            key: _compact_smc_side_metrics(comparison.get(key))
+            for key in metric_fields
+            if key in comparison
+        }
+    )
+    return {
+        "event_schema_version": "smc-shadow-summary-v1",
+        "policy": {
+            key: _compact_event_value(policy[key])
+            for key in policy_fields
+            if key in policy
+        },
+        "shadow_status": _compact_event_value(
+            smc_scoring.get("shadow_status")
+        ),
+        "comparison": compact_comparison,
+        "active": {
+            side: _compact_smc_side(
+                (smc_scoring.get("active") or {}).get(side)
+                if isinstance(smc_scoring.get("active"), dict)
+                else None
+            )
+            for side in ("buy", "sell")
+        },
+        "shadow": {
+            side: _compact_smc_side(
+                (smc_scoring.get("shadow") or {}).get(side)
+                if isinstance(smc_scoring.get("shadow"), dict)
+                else None
+            )
+            for side in ("buy", "sell")
+        },
+        "consumer_contract": {
+            key: _compact_event_value(contract[key])
+            for key in contract_fields
+            if key in contract
+        },
+    }
 
 
 def _serialized_execution(method):
@@ -105,6 +243,7 @@ class ScannerController:
         orders_screen = None,
         observability_service: StructuredObservabilityService | None = None,
         rollout_metrics_service: ScannerRolloutMetricsService | None = None,
+        retention_service: RuntimeRetentionService | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.mt5: MT5Service = mt5 or MT5Service()
@@ -116,6 +255,7 @@ class ScannerController:
         self.rollout_metrics = (
             rollout_metrics_service or scanner_rollout_metrics
         )
+        self.retention = retention_service or RuntimeRetentionService()
         self._execution_lock = RLock()
         self._active_rollout_policy: ScannerRolloutPolicy | None = None
 
@@ -506,6 +646,7 @@ class ScannerController:
 
         progress(94, "Đang dựng bảng kết quả quét...")
         output = build_scanner_output(rows, request, 0)  # ai_called=0 since audit is now manual
+        output["persistence_mode"] = request.persistence_mode
         output["observability_version"] = SCANNER_OBSERVABILITY_VERSION
         output["scan_id"] = scan_context.scan_id
         output["scan_context"] = scan_context.to_dict()
@@ -571,16 +712,17 @@ class ScannerController:
                 payload={"reason": str(exc)},
             )
         output["telegram_alerts"] = self._send_telegram_alerts(rows)
-        try:
-            output["snapshot_path"] = str(self.save_snapshot(output))
-        except Exception as exc:
-            output["snapshot_error"] = str(exc)
-            self._emit_observability(
-                "SNAPSHOT_WRITE_FAILURE",
-                scan_id=scan_context.scan_id,
-                severity="ERROR",
-                payload={"reason": str(exc)},
-            )
+        if request.persistence_mode != "none":
+            try:
+                output["snapshot_path"] = str(self.save_snapshot(output))
+            except Exception as exc:
+                output["snapshot_error"] = str(exc)
+                self._emit_observability(
+                    "SNAPSHOT_WRITE_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={"reason": str(exc)},
+                )
         self._emit_observability(
             "SCAN_COMPLETED",
             scan_id=scan_context.scan_id,
@@ -1542,52 +1684,54 @@ class ScannerController:
                     if comparison.get("best_side_changed")
                     else "INFO"
                 ),
-                payload={
-                    "policy": smc_policy,
-                    "shadow_status": smc_scoring.get("shadow_status"),
-                    "comparison": comparison,
-                    "active": smc_scoring.get("active", {}),
-                    "shadow": smc_scoring.get("shadow", {}),
-                    "consumer_contract": smc_scoring.get(
-                        "consumer_contract",
-                        {},
-                    ),
-                },
+                payload=_compact_smc_shadow_payload(smc_scoring),
             )
 
     def save_snapshot(self, result: dict[str, Any]) -> Path:
+        runtime_root = app_data_dir()
+        retention = getattr(self, "retention", None) or RuntimeRetentionService(runtime_root)
+        retention.ensure_started()
+        persistence = ScannerPersistenceService(runtime_root)
+        mode = persistence.select_mode(result)
         scan_id = str(result.get("scan_id", "") or "").strip()
         if not scan_id:
             scan_id = str(result.get("timestamp", "scanner")).replace(
                 ":", ""
             ).replace("+", "_")
-        snapshot_dir = app_data_dir() / "scanner_snapshots"
+        snapshot_dir = runtime_root / "scanner_snapshots"
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        analysis_dir = app_data_dir() / "scanner_analysis" / scan_id
-        analysis_dir.mkdir(parents=True, exist_ok=True)
+        analysis_dir = runtime_root / "scanner_analysis" / scan_id
         context = (
             result.get("scan_context")
             if isinstance(result.get("scan_context"), dict)
             else {}
         )
         manifest: dict[str, str] = {}
-        for row in result.get("rows", []):
-            if not isinstance(row, dict):
-                continue
-            symbol = str(row.get("symbol", "UNKNOWN") or "UNKNOWN")
-            safe_symbol = "".join(
-                character
-                for character in symbol.upper()
-                if character.isalnum()
-            ) or "UNKNOWN"
-            analysis_path = analysis_dir / f"{safe_symbol}.json"
-            JsonStorage(analysis_path).save(
-                build_analysis_document(row, context)
-            )
-            manifest[symbol] = str(analysis_path)
+        if mode == PERSISTENCE_FULL:
+            analysis_dir.mkdir(parents=True, exist_ok=True)
+            for row in result.get("rows", []):
+                if not isinstance(row, dict):
+                    continue
+                symbol = str(row.get("symbol", "UNKNOWN") or "UNKNOWN")
+                safe_symbol = "".join(
+                    character
+                    for character in symbol.upper()
+                    if character.isalnum()
+                ) or "UNKNOWN"
+                analysis_path = analysis_dir / f"{safe_symbol}.json.gz"
+                JsonStorage(analysis_path).save(
+                    build_analysis_document(row, context), indent=None
+                )
+                manifest[symbol] = str(analysis_path)
 
         path = snapshot_dir / f"scanner_{scan_id}.json"
-        JsonStorage(path).save(self._snapshot_payload(result, manifest))
+        JsonStorage(path).save(self._snapshot_payload(result, manifest, mode), indent=None)
+        persistence.record(mode)
+        try:
+            retention.prune()
+        except OSError:
+            # Retention must never turn a successful scan into a failed scan.
+            pass
         return path
 
     def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
@@ -1622,22 +1766,26 @@ class ScannerController:
         self,
         result: dict[str, Any],
         manifest: dict[str, str] | None = None,
+        mode: str = PERSISTENCE_FULL,
     ) -> dict[str, Any]:
-        payload = dict(result)
+        payload = {
+            key: value
+            for key, value in result.items()
+            if key not in {"rows", "scan_context", "portfolio_state", "shadow_report"}
+        }
         references = manifest or {}
+        payload["persistence_schema_version"] = 1
+        payload["persistence_mode"] = mode
         payload["rows"] = [
             {
-                **{
-                    key: value
-                    for key, value in row.items()
-                    if key != "analysis_result"
-                },
+                **summary_row(row),
                 "analysis_ref": references.get(str(row.get("symbol", "")), ""),
             }
             for row in result.get("rows", [])
             if isinstance(row, dict)
         ]
-        payload["analysis_manifest"] = dict(references)
+        if references:
+            payload["analysis_manifest"] = dict(references)
         return payload
 
 
