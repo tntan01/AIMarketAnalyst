@@ -540,7 +540,7 @@ lệnh từ các field legacy.
   (100 nến nhìn thấy, `barSpacing=7`) để không phóng nến quá lớn.
 - Nút **Giải thích** có hai chế độ:
   - chưa chọn dòng: mở dialog ba cột theo style `EconTable`, mô tả chung đúng
-    12 cột Scanner V2 bằng thuật ngữ tiếng Việt;
+    14 cột Scanner V2 bằng thuật ngữ tiếng Việt;
   - đã chọn một dòng: mở dialog `Giải thích chi tiết - <mã>`, ưu tiên 11 thông
     tin hỗ trợ quyết định: trạng thái, hướng, việc nên làm, lý do chính, chất
     lượng thiết lập, tỷ lệ lời/lỗ, mức sẵn sàng, bối cảnh thị trường, độ tin
@@ -560,11 +560,13 @@ lệnh từ các field legacy.
 
 | Key | Nhãn |
 |---|---|
-| `rank` | STT |
+| `presentation_rank` | STT |
 | `symbol` | Mã |
 | `candidate_status` | Trạng thái |
 | `selected_side` | Hướng |
 | `market_regime` | Bối cảnh TT |
+| `zone_origin_class` | Loại vùng |
+| `price_vs_zone` | Vùng |
 | `setup_score` | Điểm thiết lập |
 | `opportunity_rank` | Ưu tiên |
 | `evidence_confidence` | Tin cậy LS |
@@ -572,6 +574,11 @@ lệnh từ các field legacy.
 | `expected_effective_rr` | R:R dự kiến |
 | `auto_trade_branch` | Quy tắc |
 | `strategy_config_status` | Cấu hình BT |
+
+Cột **Vùng** ánh xạ nhị phân: `in_zone` → **Trong vùng**; `near_zone`/`far` →
+**Ngoài vùng**; `unknown`/thiếu dữ liệu/fallback → `--`. Trạng thái được tính
+một lần tại thời điểm quét; không tự cập nhật real-time. Cột không tác động
+auto-trade, không thay thế execution revalidation (vẫn dùng bid/ask live).
 
 `opportunity_rank` là điểm xếp hạng 0–100, không phải gate vào lệnh.
 Trạng thái chuẩn gồm `READY_NOW`, `WAITING_CONFIRMATION`, `WATCH_ZONE`,
@@ -1244,7 +1251,7 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 
 ## Logic Updates
 
-- Scanner table phai co cot Entry hien thi `price_vs_zone`: `Trong vung`, `Gan vung`, `Con xa` hoac `--`, kem mau xanh/vang/xam de trader thay ngay gia dang o dau so voi entry zone.
+- Scanner table co cot **Vung** hien thi trang thai gia tai thoi diem quet so voi vung entry: `Trong vung` (gia nam trong hoac dung bien vung), `Ngoai vung` (gia nam ngoai hai bien), hoac `--` (chua co vung that hoac thieu du lieu). Cot khong tu cap nhat real-time; execution revalidation van dung bid/ask live truoc khi gui lenh.
 - Entry checklist muc `Xu huong` phai xet theo side cua setup; range market co the dat neu setup nam tai POI/bien gia tot, khong mac dinh fail.
 - Man hinh ket qua nen hien `confidence_reason` co breakdown diem trend/momentum/location/risk/macro, macro confidence va event caution gan nhat neu co.
 

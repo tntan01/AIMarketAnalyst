@@ -77,3 +77,35 @@ def test_summary_row_old_snapshot_missing_new_fields_does_not_crash():
     assert "entry_zone_source" not in compact
     assert "zone_origin_class" not in compact
     assert compact == {"symbol": "AUDUSD", "best_score": 70}
+
+
+def test_summary_row_preserves_price_vs_zone_all_values():
+    """summary must keep the internal enum, not the Vietnamese display text."""
+    for zone_value in ("in_zone", "near_zone", "far", "unknown"):
+        compact = summary_row({
+            "symbol": "EURUSD",
+            "price_vs_zone": zone_value,
+        })
+        assert compact["price_vs_zone"] == zone_value
+
+
+def test_summary_row_still_excludes_entry_zone_and_analysis_result():
+    compact = summary_row({
+        "symbol": "EURUSD",
+        "price_vs_zone": "in_zone",
+        "entry_zone": [1.09500, 1.09900],
+        "analysis_result": {"candles": [1]},
+    })
+    assert "price_vs_zone" in compact
+    assert "entry_zone" not in compact
+    assert "analysis_result" not in compact
+
+
+def test_summary_row_old_snapshot_without_price_vs_zone_does_not_crash():
+    """Backward compat: row without price_vs_zone is fine."""
+    compact = summary_row({
+        "symbol": "GBPUSD",
+        "best_score": 60,
+    })
+    assert "price_vs_zone" not in compact
+    assert compact == {"symbol": "GBPUSD", "best_score": 60}

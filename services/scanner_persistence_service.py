@@ -33,6 +33,7 @@ SUMMARY_ROW_FIELDS = (
     "fast_reject_reason",
     "entry_zone_source",
     "zone_origin_class",
+    "price_vs_zone",
 )
 
 

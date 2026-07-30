@@ -25,11 +25,29 @@ def test_columns_help_matches_current_scanner_table_contract() -> None:
     help_labels = [item["column"] for item in dialog.COLUMN_HELP]
 
     assert help_labels == expected_labels
-    assert dialog.help_table.rowCount() == len(expected_labels) == 13
+    assert dialog.help_table.rowCount() == len(expected_labels) == 14
     assert dialog.help_table.columnCount() == 3
     assert dialog.help_table.objectName() == "EconTable"
     assert dialog.help_table.showGrid() is False
     assert dialog.help_table.cellWidget(0, 0) is None
+
+    # Intro must not hard-code "13" — count comes from COLUMNS
+    intro_texts = [
+        child.text()
+        for child in dialog.children()
+        if hasattr(child, "text") and "giải thích" in str(child.text())
+    ]
+    assert any("13" not in t for t in intro_texts), (
+        "Intro text must not hard-code column count"
+    )
+
+    # Vùng is between Loại vùng and Điểm thiết lập
+    loai_idx = help_labels.index("Loại vùng")
+    vung_idx = help_labels.index("Vùng")
+    diem_idx = help_labels.index("Điểm thiết lập")
+    assert loai_idx < vung_idx < diem_idx, (
+        f"Order: Loại vùng={loai_idx}, Vùng={vung_idx}, Điểm thiết lập={diem_idx}"
+    )
     assert app is QApplication.instance()
 
     dialog.close()
@@ -269,4 +287,19 @@ def test_stt_column_uses_presentation_rank_not_rank():
         "Execution 'rank' must not be a table column key"
     assert "presentation_rank" in column_keys
     assert "zone_origin_class" in column_keys
-    assert len(ScannerTableModel.COLUMNS) == 13
+    assert "price_vs_zone" in column_keys
+    assert len(ScannerTableModel.COLUMNS) == 14
+
+
+def test_zone_columns_order_loai_vung_then_vung_then_diem_thiet_lap():
+    """'Loại vùng' → 'Vùng' → 'Điểm thiết lập' in that exact order."""
+    keys = [k for k, _ in ScannerTableModel.COLUMNS]
+    if "price_vs_zone" not in keys:
+        return
+    loai_idx = keys.index("zone_origin_class")
+    vung_idx = keys.index("price_vs_zone")
+    diem_idx = keys.index("setup_score")
+    assert loai_idx < vung_idx < diem_idx, (
+        f"Column order: Loại vùng={loai_idx}, Vùng={vung_idx}, "
+        f"Điểm thiết lập={diem_idx}"
+    )

@@ -263,11 +263,13 @@ Các cột hiện hành của `ScannerTableModel`:
 
 | Key | Nhãn |
 |---|---|
-| `rank` | STT |
+| `presentation_rank` | STT |
 | `symbol` | Mã |
 | `candidate_status` | Trạng thái |
 | `selected_side` | Hướng |
 | `market_regime` | Bối cảnh TT |
+| `zone_origin_class` | Loại vùng |
+| `price_vs_zone` | Vùng |
 | `setup_score` | Điểm thiết lập |
 | `opportunity_rank` | Ưu tiên |
 | `evidence_confidence` | Tin cậy LS |
@@ -275,6 +277,13 @@ Các cột hiện hành của `ScannerTableModel`:
 | `expected_effective_rr` | R:R dự kiến |
 | `auto_trade_branch` | Quy tắc |
 | `strategy_config_status` | Cấu hình BT |
+
+Cột **Vùng** (`price_vs_zone`) ánh xạ nhị phân từ trạng thái nội bộ ba mức:
+`in_zone` → **Trong vùng**; `near_zone` và `far` → **Ngoài vùng**;
+`unknown`/thiếu dữ liệu/fallback → `--`. Trạng thái được tính một lần
+tại thời điểm quét dựa trên giá close H1. Cột không tự cập nhật real-time,
+không tác động auto-trade, và execution revalidation vẫn dùng bid/ask live
+để kiểm tra `PRICE_OUTSIDE_ENTRY_ZONE` trước khi gửi lệnh.
 
 UI hiển thị rollout stage, disagreement và gate status để tránh hiểu `READY_NOW` là đã được phép đặt lệnh production.
 Độ rộng tối thiểu của từng cột phải bao phủ toàn bộ tiêu đề theo font/DPI hiện

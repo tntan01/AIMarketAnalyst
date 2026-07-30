@@ -61,6 +61,7 @@ class ScannerTableModel (QAbstractTableModel ):
     ("selected_side","Hướng"),
     ("market_regime","Bối cảnh TT"),
     ("zone_origin_class","Loại vùng"),
+    ("price_vs_zone","Vùng"),
     ("setup_score","Điểm thiết lập"),
     ("opportunity_rank","Ưu tiên"),
     ("evidence_confidence","Tin cậy LS"),
@@ -74,7 +75,7 @@ class ScannerTableModel (QAbstractTableModel ):
     BIAS_TEXT ={"buy":"Mua","sell":'Bán',"neutral":'Trung lập',"stand_aside":'Đứng ngoài'}
     PERMISSION_TEXT ={"allowed":'Được phép',"caution":'Cẩn trọng',"blocked":'Bị chặn'}
     MACRO_BIAS_TEXT ={"aligned":'Thuận',"neutral":'Trung tính',"divergent":'Ngược'}
-    ENTRY_ZONE_TEXT ={"in_zone":"Trong vùng","near_zone":"Gần vùng","far":"Còn xa","unknown":"Chưa có vùng"}
+    ENTRY_ZONE_TEXT ={"in_zone":"Trong vùng","near_zone":"Ngoài vùng","far":"Ngoài vùng","unknown":"--"}
     GROUP_TEXT ={"ready_now":"Sẵn sàng ngay","waiting_confirmation":"Chờ xác nhận","watch_zone":"Theo dõi","blocked":"Bị chặn"}
     STATUS_TEXT ={
         "READY_NOW":"Đạt điều kiện",
@@ -137,8 +138,7 @@ class ScannerTableModel (QAbstractTableModel ):
             if key =="entry_status":
                 return self ._entry_status_tooltip (value ,row )
             if key =="price_vs_zone":
-                entry_status_val =row .get ("entry_status")if row else None
-                return self ._entry_status_tooltip (entry_status_val ,row )
+                return self ._price_vs_zone_tooltip (row )
             if key in {"opportunity_score","opportunity_rank"}:
                 return self ._opportunity_score_tooltip (row )
             if key in {"journal_sample_size","journal_expectancy_r"}:
@@ -249,7 +249,8 @@ class ScannerTableModel (QAbstractTableModel ):
         if key =="direction_bias":
             return self ._format_direction_bias (value )
         if key =="price_vs_zone":
-            return self .ENTRY_ZONE_TEXT .get (str (value ),str (value or "--"))
+            normalized = str(value or "").strip().lower()
+            return self .ENTRY_ZONE_TEXT .get (normalized ,"--")
         if key =="market_regime":
             return vi_term(value)
         if key =="macro_score":
@@ -545,12 +546,15 @@ class ScannerTableModel (QAbstractTableModel ):
                 return colors["warning"]
             return colors["danger"]
         if key =="price_vs_zone":
+            if not self._has_real_plan(row):
+                return colors["subtle"]
+            normalized = str(row.get(key, "")).strip().lower()
             return {
             "in_zone":colors["success"],
-            "near_zone":colors["warning"],
+            "near_zone":colors["muted"],
             "far":colors["muted"],
-            "unknown":colors["muted"],
-            }.get (str (row .get (key )))
+            "unknown":colors["subtle"],
+            }.get (normalized ,colors["muted"])
         if key =="macro_bias":
             return {
             "aligned":colors["success"],
@@ -623,6 +627,16 @@ class ScannerTableModel (QAbstractTableModel ):
         if isinstance(value, str) and value.strip():
             return str(value)
         return "--"
+
+    @staticmethod
+    def _price_vs_zone_tooltip(row: dict[str, object] | None = None) -> str:
+        return (
+            "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\n"
+            "Trong vùng = giá nằm trong hoặc đúng biên vùng.\n"
+            "Ngoài vùng = giá nằm ngoài hai biên.\n"
+            "-- = chưa có vùng thật hoặc thiếu dữ liệu.\n"
+            "Giá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh."
+        )
 
     @staticmethod
     def _entry_status_tooltip(value: object, row: dict[str, object] | None = None) -> str:
@@ -1996,6 +2010,7 @@ class ScannerScreen (QWidget ):
             "selected_side": {"weight": 1, "min_width": 70},
             "market_regime": {"weight": 3, "min_width": 110},
             "zone_origin_class": {"weight": 2, "min_width": 90},
+            "price_vs_zone": {"weight": 1, "min_width": 95},
             "setup_score": {"weight": 0, "min_width": 110},
             "opportunity_rank": {"weight": 0, "min_width": 80},
             "evidence_confidence": {"weight": 0, "min_width": 100},
@@ -3030,6 +3045,17 @@ class ScannerColumnsHelpDialog(QDialog):
             ),
         },
         {
+            "column": "Vùng",
+            "meaning": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.",
+            "cases": (
+                "Trong vùng = giá nằm trong hoặc đúng biên vùng entry. "
+                "Ngoài vùng = giá nằm ngoài hai biên vùng. "
+                "-- = chưa có vùng thật (Fallback) hoặc thiếu dữ liệu. "
+                "Cột chỉ phản ánh giá tại thời điểm quét, không tự cập nhật. "
+                "Giá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh."
+            ),
+        },
+        {
             "column": "Điểm thiết lập",
             "meaning": "Điểm chất lượng của cơ hội theo đúng hướng đã chọn, thang 0–100.",
             "cases": (
@@ -3106,7 +3132,7 @@ class ScannerColumnsHelpDialog(QDialog):
         layout.setSpacing(12)
 
         intro = QLabel(
-            "Bảng dưới đây giải thích đúng 13 cột của Scanner V2. "
+            "Bảng dưới đây giải thích đúng 14 cột của Scanner V2. "
             "Cách đọc nhanh: Trạng thái → Quy tắc và Cấu hình BT → Hướng, "
             "Điểm thiết lập và R:R dự kiến → Tin cậy LS, Sẵn sàng và Ưu tiên."
         )

@@ -293,7 +293,7 @@ Yêu cầu:
 
 - tác vụ MT5/AI/scan chạy ngoài UI thread;
 - Scanner dùng model/view;
-- bảng Scanner dùng 13 cột theo `ScannerTableModel.COLUMNS`;
+- bảng Scanner dùng 14 cột theo `ScannerTableModel.COLUMNS`;
 - hiển thị rõ candidate status, strategy branch/config status và rollout stage;
 - Scanner Detail phải đọc canonical selected-side cho status, score,
   entry/SL/TP, vị trí giá, effective/nominal R:R, Gate và macro raw; thiếu dữ
