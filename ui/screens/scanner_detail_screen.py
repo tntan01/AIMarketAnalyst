@@ -1728,7 +1728,10 @@ class ScannerDetailScreen(QWidget):
             val.setObjectName("ScannerPanelValue")
             val.setProperty("metricTone", tone)
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
-            val.setWordWrap(True)
+            if label_text == "Chế độ chạy":
+                val.setWordWrap(False)
+            else:
+                val.setWordWrap(True)
             row_l.addWidget(lbl, 1)
             row_l.addWidget(val, 1)
             layout.addWidget(row_w)
