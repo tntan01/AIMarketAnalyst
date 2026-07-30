@@ -9,6 +9,7 @@ from core.backtest_config import (
 )
 from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot
 from core.reason_codes import codes_to_messages
+from core.scanner_zone_origin import zone_origin_from_row
 from PyQt6 .QtCore import QAbstractTableModel ,QEvent ,QModelIndex ,QRect ,QSize ,Qt ,QTimer
 from PyQt6 .QtGui import QColor ,QIcon
 from PyQt6 .QtWidgets import (
@@ -38,6 +39,7 @@ from services .mt5_service import MT5Service
 from services .settings_service import SettingsService
 from ui.layout_system import configure_table
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header
+from ui.scanner_presentation import sort_scanner_rows_for_display
 from ui.scanner_rr_formatters import (
     enrich_order_note_with_current_rr,
     format_order_entry_tooltip,
@@ -53,11 +55,12 @@ from ui.translation import vi_term
 
 class ScannerTableModel (QAbstractTableModel ):
     COLUMNS =[
-    ("rank","STT"),
+    ("presentation_rank","STT"),
     ("symbol","Mã"),
     ("candidate_status","Trạng thái"),
     ("selected_side","Hướng"),
     ("market_regime","Bối cảnh TT"),
+    ("zone_origin_class","Loại vùng"),
     ("setup_score","Điểm thiết lập"),
     ("opportunity_rank","Ưu tiên"),
     ("evidence_confidence","Tin cậy LS"),
@@ -164,7 +167,15 @@ class ScannerTableModel (QAbstractTableModel ):
 
     def set_rows (self ,rows :list [dict [str ,object ]])->None :
         self .beginResetModel ()
-        self .rows =rows 
+        display_rows :list [dict [str ,object ]]=[]
+        for source in rows :
+            if not isinstance (source ,dict ):
+                continue
+            display_row =dict (source )
+            display_row .pop ("presentation_rank",None )
+            display_row ["presentation_rank"]=len (display_rows )+1
+            display_rows .append (display_row )
+        self .rows =display_rows
         self .endResetModel ()
 
     def row_at (self ,row :int )->dict [str ,object ]|None :
@@ -173,19 +184,9 @@ class ScannerTableModel (QAbstractTableModel ):
         return None 
 
     def _has_real_plan(self, row: dict[str, object] | None) -> bool:
-        """Check if at least one scenario has a real (non-fallback) trade plan."""
-        if not row:
-            return False
-        analysis = row.get("analysis_result")
-        if not isinstance(analysis, dict):
-            return False
-        scenarios = analysis.get("scenarios", [])
-        if not isinstance(scenarios, list):
-            return False
-        return any(
-            isinstance(s, dict) and s.get("entry_zone_source") not in (None, "fallback")
-            for s in scenarios
-        )
+        """Check if the row has a real zone (SMC or technical), not fallback/none."""
+        origin = zone_origin_from_row(row)
+        return origin in ("smc", "technical")
 
     def _zone_tier(self, row: dict[str, object] | None) -> str:
         """Return zone quality tier by inspecting raw SMC/technical context.
@@ -223,17 +224,24 @@ class ScannerTableModel (QAbstractTableModel ):
         return "fallback"
 
     def _is_fallback_row(self, row: dict[str, object] | None) -> bool:
-        """Row is low-confidence when no real trade plan exists."""
-        return not self._has_real_plan(row)
+        """Row is classified as fallback (ATR display-only) zone origin."""
+        return zone_origin_from_row(row) == "fallback"
 
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
-        if self._is_fallback_row(row) and key in {
+        if not self._has_real_plan(row) and key in {
             "price_vs_zone",
             "m15_quality",
             "macro_bias",
             "expected_effective_rr",
         }:
             return "--"
+        if key =="zone_origin_class":
+            return {
+                "smc":"SMC thật",
+                "technical":"Technical",
+                "fallback":"Fallback",
+                "none":"--",
+            }.get(str(value or "").strip().lower(),"--")
         if key =="candidate_status":
             return self.STATUS_TEXT.get(str(value or "").upper(), str(value or "--"))
         if key =="selected_side":
@@ -502,6 +510,13 @@ class ScannerTableModel (QAbstractTableModel ):
         if key =="direction_bias":
             side =self ._direction_bias_side (row .get (key ))
             return {"buy":colors["buy"],"sell":colors["sell"]}.get (side )
+        if key =="zone_origin_class":
+            return {
+                "smc":colors["success"],
+                "technical":colors["warning"],
+                "fallback":colors["muted"],
+                "none":colors["subtle"],
+            }.get(str(row.get(key,"")).strip().lower())
         if key =="market_regime":
             regime =str (row .get (key ,""))
             return {
@@ -1725,11 +1740,13 @@ class ScannerScreen (QWidget ):
 
     def _scan_finished (self ,result :dict [str ,object ])->None :
         self .scan_result =result
-        rows =list (result .get ("rows",[]))
+        execution_rows =list (result .get ("rows",[]))
 
-        # Backend owns the canonical order.  UI must not re-rank by plan/SMC.
+        # Presentation order for the UI table only.
+        # Backend execution order is preserved in self.scan_result.
+        presentation_rows =sort_scanner_rows_for_display (execution_rows )
 
-        self .table_model .set_rows (rows )
+        self .table_model .set_rows (presentation_rows )
         self .status_labels ['Đã quét'].setText (f"{result .get ('symbols_scanned',0 )} / {len (self ._selected_symbols ())}")
         self.status_labels["AI đã gọi"].setText(f"{result.get('ai_called', 0)} mã")
         alerts =result .get ("telegram_alerts",{})if isinstance (result .get ("telegram_alerts",{}),dict )else {}
@@ -1771,8 +1788,8 @@ class ScannerScreen (QWidget ):
         if sent :
             self .scan_button .setText (f"Đã gửi {sent} alert Telegram")
         self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
-        self .detail_button .setEnabled (bool (rows ))
-        self .save_button .setEnabled (bool (rows ))
+        self .detail_button .setEnabled (bool (execution_rows ))
+        self .save_button .setEnabled (bool (execution_rows ))
         self ._highlight_show_orders_button ()
         self ._update_status_summary ()
 
@@ -1973,11 +1990,12 @@ class ScannerScreen (QWidget ):
         self .table .setTextElideMode (Qt .TextElideMode .ElideNone )
 
         column_configs = {
-            "rank": {"weight": 0, "min_width": 45},
+            "presentation_rank": {"weight": 0, "min_width": 45},
             "symbol": {"weight": 1, "min_width": 75},
             "candidate_status": {"weight": 3, "min_width": 145},
             "selected_side": {"weight": 1, "min_width": 70},
             "market_regime": {"weight": 3, "min_width": 110},
+            "zone_origin_class": {"weight": 2, "min_width": 90},
             "setup_score": {"weight": 0, "min_width": 110},
             "opportunity_rank": {"weight": 0, "min_width": 80},
             "evidence_confidence": {"weight": 0, "min_width": 100},
@@ -2298,7 +2316,7 @@ class ScannerRowExplanationDialog(QDialog):
 
         technical_fields: list[tuple[str, str, object, str]] = [
             (
-                "Vị trí xếp hạng",
+                "Hạng vận hành",
                 "rank",
                 row.get("rank"),
                 self._explain_value(
@@ -2438,9 +2456,11 @@ class ScannerRowExplanationDialog(QDialog):
         row = self.row_data
         if key == "rank":
             return (
-                f"{display_value} là vị trí ưu tiên hiện tại của mã sau khi "
+                f"{display_value} là hạng vận hành (execution rank) của mã sau khi "
                 "phân loại trạng thái. Trong cùng trạng thái, hệ thống so sánh "
-                "Ưu tiên, tin cậy lịch sử, mức sẵn sàng, R:R rồi mới dùng tên mã."
+                "Ưu tiên, tin cậy lịch sử, mức sẵn sàng, R:R rồi mới dùng tên mã. "
+                "Đây không phải STT trên bảng; STT trên bảng dùng thứ tự hiển thị "
+                "riêng theo loại vùng (SMC thật → Technical → Fallback → --)."
             )
         if key == "symbol":
             broker_symbol = str(row.get("broker_symbol") or "").strip()
@@ -2954,11 +2974,11 @@ class ScannerColumnsHelpDialog(QDialog):
     COLUMN_HELP: list[dict[str, str]] = [
         {
             "column": "STT",
-            "meaning": "Thứ tự ưu tiên sau khi Scanner hoàn tất phân loại và xếp hạng.",
+            "meaning": "Số thứ tự dòng 1..N theo thứ tự hiển thị SMC thật → Technical → Fallback → --.",
             "cases": (
-                "Ưu tiên theo Trạng thái trước, sau đó lần lượt theo điểm Ưu tiên, "
-                "độ tin cậy chiến lược, mức sẵn sàng thực thi, R:R và tên mã. "
-                "STT có thể thay đổi ở mỗi lần quét."
+                "STT được tính lại mỗi lần quét theo thứ tự ưu tiên loại vùng. "
+                "Không phải hạng chất lượng hay mức ưu tiên thực thi. "
+                "Hạng vận hành gốc (execution rank) vẫn được giữ nguyên trên từng dòng."
             ),
         },
         {
@@ -2996,6 +3016,17 @@ class ScannerColumnsHelpDialog(QDialog):
             "cases": (
                 "Xu hướng tăng, Xu hướng giảm, Đi ngang, Biến động mạnh hoặc "
                 "Chưa rõ. Quy tắc Backtest còn yêu cầu bối cảnh này khớp cấu hình."
+            ),
+        },
+        {
+            "column": "Loại vùng",
+            "meaning": "Phân loại nguồn gốc của vùng vào lệnh được chọn.",
+            "cases": (
+                "SMC thật = vùng SMC canonical (bao gồm smc_distant) — đây là "
+                "vùng cấu trúc thực được phát hiện bởi bộ dò SMC. "
+                "Technical = vùng swing kỹ thuật thực nhưng không phải SMC. "
+                "Fallback = vùng ATR giả lập để hiển thị khi không có vùng phù hợp. "
+                "-- = không có selected-side plan hoặc dữ liệu không đủ."
             ),
         },
         {
@@ -3075,7 +3106,7 @@ class ScannerColumnsHelpDialog(QDialog):
         layout.setSpacing(12)
 
         intro = QLabel(
-            "Bảng dưới đây giải thích đúng 12 cột của Scanner V2. "
+            "Bảng dưới đây giải thích đúng 13 cột của Scanner V2. "
             "Cách đọc nhanh: Trạng thái → Quy tắc và Cấu hình BT → Hướng, "
             "Điểm thiết lập và R:R dự kiến → Tin cậy LS, Sẵn sàng và Ưu tiên."
         )

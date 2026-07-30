@@ -13,6 +13,7 @@ from core.scanner_ranking_engine import (
     WATCH_ZONE,
     BLOCKED,
 )
+from core.scanner_zone_origin import classify_entry_zone_source, zone_origin_from_row
 from core.scanner_models import (
     BLOCKED as CANDIDATE_BLOCKED,
     DATA_UNAVAILABLE,
@@ -122,6 +123,12 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         if isinstance(item, dict) and item.get("type") in {"buy", "sell"}
     ]
     best_plan = next((item for item in scenarios if item.get("type") == best_side), None)
+    entry_zone_source = (
+        best_plan.get("entry_zone_source")
+        if isinstance(best_plan, dict)
+        else None
+    )
+    zone_origin_class = classify_entry_zone_source(entry_zone_source)
     risk_reward = best_plan.get("risk_reward") if best_plan else None
     technical = result.get("technical", {}) if isinstance(result.get("technical"), dict) else {}
     # Fallback plans have no real entry zone - don't compute fake distance
@@ -236,7 +243,8 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         # Phase 13A: entry zone & TP1 quality diagnostics
         "entry_zone_width": best_plan.get("entry_zone_width") if best_plan else None,
         "entry_zone_width_atr": best_plan.get("entry_zone_width_atr") if best_plan else None,
-        "entry_zone_source": best_plan.get("entry_zone_source") if best_plan else None,
+        "entry_zone_source": entry_zone_source,
+        "zone_origin_class": zone_origin_class,
         "source_zone": best_plan.get("source_zone") if best_plan else None,
         "tp1_source": best_plan.get("tp1_source") if best_plan else None,
         "tp1_clearance_from_far_edge": best_plan.get("tp1_clearance_from_far_edge") if best_plan else None,
@@ -378,6 +386,8 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
         "entry_status": "data_unavailable",
         "price_vs_zone": "unknown",
         "risk_reward": None,
+        "entry_zone_source": None,
+        "zone_origin_class": "none",
         "macro_score": 15,
         "macro_bias": "neutral",
         "macro_confidence": 0.0,
@@ -412,19 +422,8 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
 
 
 def _is_fallback_row(row: dict[str, Any]) -> bool:
-    """Check if a scanner row contains only fallback scenarios."""
-    if not isinstance(row, dict):
-        return False
-    analysis = row.get("analysis_result")
-    if not isinstance(analysis, dict):
-        return False
-    scenarios = analysis.get("scenarios", [])
-    if not isinstance(scenarios, list) or not scenarios:
-        return False
-    return all(
-        isinstance(s, dict) and s.get("entry_zone_source") == "fallback"
-        for s in scenarios
-    )
+    """Check if a scanner row is classified as fallback zone origin."""
+    return zone_origin_from_row(row) == "fallback"
 
 
 def _sort_priority(row: dict[str, Any]) -> int:

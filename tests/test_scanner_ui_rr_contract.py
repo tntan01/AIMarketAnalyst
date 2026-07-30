@@ -115,12 +115,98 @@ class TestScannerTableRRDisplay:
                 ],
             },
         }
-        # The _display_value checks _is_fallback_row internal — which checks
-        # _has_real_plan.  A row with only fallback scenarios should show "--"
-        # for expected_effective_rr.
+        # The _display_value checks _has_real_plan.  A row with only fallback
+        # scenarios should show "--" for expected_effective_rr.
         display = model._display_value("expected_effective_rr", 2.0, fallback_row)
         assert display == "--", \
             f"Fallback row must show '--' for expected_effective_rr, got: {display}"
+
+    def test_none_row_hides_rr_display(self):
+        """Rows with zone_origin_class 'none' must show '--' for RR/price."""
+        model = self._make_model()
+        none_row = {
+            "expected_effective_rr": 2.5,
+            "zone_origin_class": "none",
+        }
+        display = model._display_value("expected_effective_rr", 2.5, none_row)
+        assert display == "--", \
+            f"None row must show '--' for expected_effective_rr, got: {display}"
+
+    def test_none_row_missing_rr_shows_dash(self):
+        """None row with missing RR still shows '--' (not '-')."""
+        model = self._make_model()
+        none_row = {
+            "zone_origin_class": "none",
+        }
+        display = model._display_value("expected_effective_rr", None, none_row)
+        assert display == "--", \
+            f"None row with missing RR must show '--', got: {display}"
+
+    def test_smc_row_shows_rr_value(self):
+        """SMC rows show real RR value, not hidden."""
+        model = self._make_model()
+        smc_row = {
+            "expected_effective_rr": 2.3,
+            "zone_origin_class": "smc",
+        }
+        display = model._display_value("expected_effective_rr", 2.3, smc_row)
+        assert display == "2.3", \
+            f"SMC row must show real RR value, got: {display}"
+
+    def test_technical_row_shows_rr_value(self):
+        """Technical rows show real RR value, not hidden."""
+        model = self._make_model()
+        tech_row = {
+            "expected_effective_rr": 1.8,
+            "zone_origin_class": "technical",
+        }
+        display = model._display_value("expected_effective_rr", 1.8, tech_row)
+        assert display == "1.8", \
+            f"Technical row must show real RR value, got: {display}"
+
+    def test_zone_origin_display_mapping(self):
+        model = self._make_model()
+        assert model._display_value("zone_origin_class", "smc", {}) == "SMC thật"
+        assert model._display_value("zone_origin_class", "technical", {}) == "Technical"
+        assert model._display_value("zone_origin_class", "fallback", {}) == "Fallback"
+        assert model._display_value("zone_origin_class", "none", {}) == "--"
+        assert model._display_value("zone_origin_class", None, {}) == "--"
+        assert model._display_value("zone_origin_class", "bogus", {}) == "--"
+
+    def test_zone_origin_foreground_colors(self):
+        model = self._make_model()
+        smc_color = model._foreground({"zone_origin_class": "smc"}, "zone_origin_class")
+        assert smc_color is not None
+        assert smc_color.name() == DARK_PALETTE.success
+
+        tech_color = model._foreground({"zone_origin_class": "technical"}, "zone_origin_class")
+        assert tech_color is not None
+        assert tech_color.name() == DARK_PALETTE.warning
+
+        fallback_color = model._foreground({"zone_origin_class": "fallback"}, "zone_origin_class")
+        assert fallback_color is not None
+        assert fallback_color.name() == DARK_PALETTE.text_muted
+
+        none_color = model._foreground({"zone_origin_class": "none"}, "zone_origin_class")
+        assert none_color is not None
+        assert none_color.name() == DARK_PALETTE.text_subtle
+
+    def test_has_real_plan_all_classes(self):
+        model = self._make_model()
+        assert model._has_real_plan({"zone_origin_class": "smc"}) is True
+        assert model._has_real_plan({"zone_origin_class": "technical"}) is True
+        assert model._has_real_plan({"zone_origin_class": "fallback"}) is False
+        assert model._has_real_plan({"zone_origin_class": "none"}) is False
+        assert model._has_real_plan(None) is False
+        assert model._has_real_plan({}) is False
+
+    def test_is_fallback_row_all_classes(self):
+        model = self._make_model()
+        assert model._is_fallback_row({"zone_origin_class": "smc"}) is False
+        assert model._is_fallback_row({"zone_origin_class": "technical"}) is False
+        assert model._is_fallback_row({"zone_origin_class": "fallback"}) is True
+        assert model._is_fallback_row({"zone_origin_class": "none"}) is False
+        assert model._is_fallback_row(None) is False
 
     def test_entry_zone_display_format(self):
         model = self._make_model()

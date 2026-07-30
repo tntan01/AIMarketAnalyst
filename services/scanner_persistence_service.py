@@ -31,6 +31,8 @@ SUMMARY_ROW_FIELDS = (
     "settings_hash", "rollout_stage", "analysis_error",
     "analysis_status", "pipeline_route", "fast_path_version",
     "fast_reject_reason",
+    "entry_zone_source",
+    "zone_origin_class",
 )
 
 

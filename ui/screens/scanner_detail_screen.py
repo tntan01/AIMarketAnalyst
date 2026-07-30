@@ -3451,12 +3451,13 @@ class ScannerDetailScreen(QWidget):
         symbol = str(self.row.get("symbol", "scanner")).replace("/", "")
         rank = str(self.row.get("rank", "0"))
         path = export_dir / f"scanner_detail_{rank}_{symbol}.json"
-        payload = {key: value for key, value in self.row.items() if key != "analysis_result"}
+        payload = {key: value for key, value in self.row.items() if key not in ("analysis_result", "presentation_rank")}
         JsonStorage(path).save(payload)
 
     def _save_to_journal(self) -> None:
         if not self.row:
             return
-        self.journal_controller.save_scanner_row(self.row)
+        journal_row = {key: value for key, value in self.row.items() if key != "presentation_rank"}
+        self.journal_controller.save_scanner_row(journal_row)
         if self.navigate:
             self.navigate("journal")

@@ -25,7 +25,7 @@ def test_columns_help_matches_current_scanner_table_contract() -> None:
     help_labels = [item["column"] for item in dialog.COLUMN_HELP]
 
     assert help_labels == expected_labels
-    assert dialog.help_table.rowCount() == len(expected_labels) == 12
+    assert dialog.help_table.rowCount() == len(expected_labels) == 13
     assert dialog.help_table.columnCount() == 3
     assert dialog.help_table.objectName() == "EconTable"
     assert dialog.help_table.showGrid() is False
@@ -249,3 +249,24 @@ def test_selected_row_dialog_explains_actual_status_and_direction() -> None:
     assert app is QApplication.instance()
 
     dialog.close()
+
+
+# ---------------------------------------------------------------------------
+# STT column contract: MUST use presentation_rank, NOT rank
+# ---------------------------------------------------------------------------
+
+
+def test_stt_column_uses_presentation_rank_not_rank():
+    """The first COLUMNS entry must be ('presentation_rank', 'STT'),
+    not ('rank', 'STT').  Execution rank is a separate field."""
+    key, label = ScannerTableModel.COLUMNS[0]
+    assert key == "presentation_rank", \
+        f"STT column key must be 'presentation_rank', got: {key}"
+    assert label == "STT"
+
+    column_keys = {k for k, _ in ScannerTableModel.COLUMNS}
+    assert "rank" not in column_keys, \
+        "Execution 'rank' must not be a table column key"
+    assert "presentation_rank" in column_keys
+    assert "zone_origin_class" in column_keys
+    assert len(ScannerTableModel.COLUMNS) == 13
