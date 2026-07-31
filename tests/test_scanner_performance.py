@@ -410,6 +410,10 @@ def test_mocked_scan_persists_final_summary_and_failure_keeps_core_output(
     assert performance["counters"]["macro_context_cache_misses"] == 1
     assert performance["counters"]["macro_global_fetches"] == 1
     assert performance["counters"]["telegram_candidates"] == 0
+    assert (
+        performance["counters"]["telegram_skipped_non_candidates"]
+        == 1
+    )
     assert performance["counters"]["analysis_documents_written"] == 1
     assert set(performance["counters"]) == set(COUNTER_NAMES)
     assert set(PHASE_NAMES) <= set(spy.started_phases)
@@ -419,10 +423,16 @@ def test_mocked_scan_persists_final_summary_and_failure_keeps_core_output(
     encoded = json.dumps(performance, sort_keys=True)
     assert "super-secret-token" not in encoded
     assert "secret-chat-id" not in encoded
-    assert any(
-        event["event_type"] == "SCAN_PERFORMANCE_SUMMARY"
+    summary_event = next(
+        event
         for event in working.observability.events
+        if event["event_type"] == "SCAN_PERFORMANCE_SUMMARY"
     )
+    assert (
+        summary_event["payload"]["counters"]["telegram_requests"]
+        == 0
+    )
+    assert summary_event["payload"]["phases"]["telegram_ms"] >= 0
 
     class BrokenTracker:
         def __init__(self, **_kwargs):

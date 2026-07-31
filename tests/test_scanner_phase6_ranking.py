@@ -147,7 +147,18 @@ def test_telegram_candidates_preserve_the_same_backend_order():
     for row in rows:
         row["candidate_order_payload"] = {
             "symbol": row["symbol"],
+            "broker_symbol": row["symbol"].replace("/", ""),
+            "side": "buy",
+            "entry_zone": [1.1000, 1.1010],
+            "stop_loss": 1.0950,
+            "take_profit": 1.1100,
             "setup_score": row["setup_score"],
+            "candidate_status": "READY_NOW",
+            "scan_id": "scan-ranking",
+            "row_id": f"scan-ranking:{row['symbol']}",
+            "settings_hash": "settings-hash",
+            "scorer_version": "scanner-scorer-v1",
+            "ranking_version": "phase6-ranking-v1",
         }
     controller = ScannerController.__new__(ScannerController)
 

@@ -7,6 +7,7 @@ from dataclasses import asdict, replace
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
+from math import isfinite
 from pathlib import Path
 from threading import RLock
 from time import perf_counter
@@ -1536,88 +1537,256 @@ class ScannerController:
     ) -> AutoTradeSafetyDecision:
         return evaluate_auto_trade_safety(row, at_cfg)
 
-    def _get_alert_order_candidates(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _get_alert_order_candidates(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        performance_tracker: object | None = None,
+    ) -> list[dict[str, Any]]:
         """Return order candidates captured by the canonical scan decision."""
         candidates: list[dict[str, Any]] = []
         for row in rows:
-            if is_structural_reject_row(row):
-                continue
-            stored = row.get("candidate_order_payload")
-            if not isinstance(stored, dict):
-                # Compatibility for old snapshots created before the
-                # canonical payload was persisted. This path only prepares an
-                # alert/preview payload and never grants execution permission.
-                scenario = self._best_scenario(row)
-                final_zone = self._final_execution_zone(scenario)
-                if not scenario or final_zone is None:
-                    continue
-                raw_tp = scenario.get("take_profit")
-                take_profit = (
-                    raw_tp[0]
-                    if isinstance(raw_tp, list) and raw_tp
-                    else raw_tp
+            canonical = "candidate_order_payload" in row
+            if (
+                is_structural_reject_row(row)
+                or self._is_non_candidate_alert_row(
+                    row,
+                    legacy_compatibility=not canonical,
                 )
-                sizing = scenario.get("position_sizing")
-                if not isinstance(sizing, dict):
-                    sizing = {}
-                stored = {
-                    "symbol": str(row.get("symbol") or "--"),
-                    "broker_symbol": str(
-                        row.get("broker_symbol") or ""
-                    ).strip(),
-                    "side": str(
-                        scenario.get("type")
-                        or scenario.get("side")
-                        or ""
-                    ).lower(),
-                    "entry_zone": list(final_zone),
-                    "entry_price": scenario.get("entry_price"),
-                    "stop_loss": scenario.get("stop_loss"),
-                    "take_profit": take_profit,
-                    "volume": sizing.get("suggested_lot"),
-                    "risk_reward": scenario.get("risk_reward"),
-                    "risk_reward_range": scenario.get(
-                        "risk_reward_range"
-                    ),
-                    "expected_effective_rr": scenario.get(
-                        "expected_effective_rr"
-                    ),
-                    "expected_effective_rr_base": scenario.get(
-                        "expected_effective_rr_base"
-                    ),
-                    "source_zone": scenario.get("source_zone"),
-                    "structural_execution_zone": scenario.get(
-                        "structural_execution_zone"
-                    ),
-                    "rr_trimmed": bool(scenario.get("rr_trimmed")),
-                    "rr_trim_diagnostics": scenario.get(
-                        "rr_trim_diagnostics"
-                    ),
-                    "entry_zone_width": scenario.get(
-                        "entry_zone_width"
-                    ),
-                    "entry_zone_width_atr": scenario.get(
-                        "entry_zone_width_atr"
-                    ),
-                    "price_digits": scenario.get("price_digits"),
-                    "invalid_reason": scenario.get("invalid_reason"),
-                    "analysis_result": row.get("analysis_result"),
-                }
-            payload = dict(stored)
-            payload.update({
-                "rank": row.get("rank"),
-                "candidate_status": row.get("candidate_status"),
-                "opportunity_rank": row.get("opportunity_rank"),
-                "evidence_confidence": row.get("evidence_confidence"),
-                "execution_readiness": row.get("execution_readiness"),
-                "strategy_branch": row.get("auto_trade_branch"),
-                "config_health": row.get("strategy_config_status"),
-                "ranking_version": row.get("ranking_version"),
-            })
-            payload["best_score"] = int(payload.get("best_score") or 0)
+            ):
+                _record_performance(
+                    performance_tracker,
+                    "increment",
+                    "telegram_skipped_non_candidates",
+                )
+                continue
+            if canonical:
+                stored = row["candidate_order_payload"]
+                if not isinstance(stored, dict):
+                    _record_performance(
+                        performance_tracker,
+                        "increment",
+                        "telegram_skipped_non_candidates",
+                    )
+                    continue
+                payload = dict(stored)
+                if not self._is_valid_alert_order_payload(
+                    payload,
+                    require_canonical_contract=True,
+                ):
+                    _record_performance(
+                        performance_tracker,
+                        "increment",
+                        "telegram_skipped_non_candidates",
+                    )
+                    continue
+                _record_performance(
+                    performance_tracker,
+                    "increment",
+                    "telegram_canonical_candidates",
+                )
+            else:
+                payload = self._build_legacy_alert_order_payload(row)
+                if not self._is_valid_alert_order_payload(
+                    payload,
+                    require_canonical_contract=False,
+                ):
+                    _record_performance(
+                        performance_tracker,
+                        "increment",
+                        "telegram_skipped_non_candidates",
+                    )
+                    continue
+                _record_performance(
+                    performance_tracker,
+                    "increment",
+                    "telegram_legacy_fallback_candidates",
+                )
+
+            ranking_metadata = {
+                field: row.get(source)
+                for field, source in {
+                    "rank": "rank",
+                    "opportunity_rank": "opportunity_rank",
+                    "evidence_confidence": "evidence_confidence",
+                    "execution_readiness": "execution_readiness",
+                    "strategy_branch": "auto_trade_branch",
+                    "config_health": "strategy_config_status",
+                    "ranking_version": "ranking_version",
+                }.items()
+                if row.get(source) is not None
+            }
+            if not canonical:
+                ranking_metadata["candidate_status"] = row.get(
+                    "candidate_status"
+                )
+            payload.update(ranking_metadata)
+            try:
+                payload["best_score"] = int(
+                    payload.get("best_score") or 0
+                )
+            except (TypeError, ValueError, OverflowError):
+                payload["best_score"] = 0
             candidates.append(payload)
 
         return candidates
+
+    @staticmethod
+    def _is_non_candidate_alert_row(
+        row: dict[str, Any],
+        *,
+        legacy_compatibility: bool,
+    ) -> bool:
+        """Fail closed for every explicit non-candidate classification."""
+
+        status_fields = (
+            ("candidate_status", "legacy_candidate_status")
+            if legacy_compatibility
+            else ("candidate_status",)
+        )
+        for field in status_fields:
+            status = str(row.get(field, "") or "").strip().upper()
+            if status and status != "READY_NOW":
+                return True
+        if not legacy_compatibility:
+            return False
+        group = str(row.get("scanner_group", "") or "").strip().lower()
+        if group in {
+            "blocked",
+            "data_unavailable",
+            "out_of_strategy",
+            "waiting_confirmation",
+            "watch_zone",
+        }:
+            return True
+        action = str(
+            row.get("scanner_action", "") or ""
+        ).strip().lower()
+        return action in {
+            "stand_aside",
+            "skip",
+            "wait",
+            "wait_for_confirmation",
+            "watch",
+        }
+
+    def _build_legacy_alert_order_payload(
+        self,
+        row: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build compatibility data only for rows predating the payload key."""
+
+        scenario = self._best_scenario(row)
+        final_zone = self._final_execution_zone(scenario)
+        if not scenario or final_zone is None:
+            return {}
+        raw_tp = scenario.get("take_profit")
+        take_profit = (
+            raw_tp[0]
+            if isinstance(raw_tp, (list, tuple)) and raw_tp
+            else raw_tp
+        )
+        sizing = scenario.get("position_sizing")
+        if not isinstance(sizing, dict):
+            sizing = {}
+        return {
+            "symbol": str(row.get("symbol") or "--"),
+            "broker_symbol": str(
+                row.get("broker_symbol") or ""
+            ).strip(),
+            "side": str(
+                scenario.get("type")
+                or scenario.get("side")
+                or ""
+            ).lower(),
+            "entry_zone": list(final_zone),
+            "entry_price": scenario.get("entry_price"),
+            "stop_loss": scenario.get("stop_loss"),
+            "take_profit": take_profit,
+            "volume": sizing.get("suggested_lot"),
+            "risk_reward": scenario.get("risk_reward"),
+            "risk_reward_range": scenario.get("risk_reward_range"),
+            "expected_effective_rr": scenario.get(
+                "expected_effective_rr"
+            ),
+            "expected_effective_rr_base": scenario.get(
+                "expected_effective_rr_base"
+            ),
+            "source_zone": scenario.get("source_zone"),
+            "structural_execution_zone": scenario.get(
+                "structural_execution_zone"
+            ),
+            "rr_trimmed": bool(scenario.get("rr_trimmed")),
+            "rr_trim_diagnostics": scenario.get(
+                "rr_trim_diagnostics"
+            ),
+            "entry_zone_width": scenario.get("entry_zone_width"),
+            "entry_zone_width_atr": scenario.get(
+                "entry_zone_width_atr"
+            ),
+            "price_digits": scenario.get("price_digits"),
+            "invalid_reason": scenario.get("invalid_reason"),
+            "analysis_result": row.get("analysis_result"),
+        }
+
+    def _is_valid_alert_order_payload(
+        self,
+        payload: object,
+        *,
+        require_canonical_contract: bool,
+    ) -> bool:
+        """Validate order fields and, for new rows, status/provenance."""
+
+        if not isinstance(payload, dict):
+            return False
+        symbol = str(payload.get("symbol") or "").strip()
+        broker_symbol = str(
+            payload.get("broker_symbol") or ""
+        ).strip()
+        side = str(payload.get("side") or "").strip().lower()
+        execution_zone = self._final_execution_zone(payload)
+        if (
+            not symbol
+            or symbol == "--"
+            or not broker_symbol
+            or side not in {"buy", "sell"}
+            or execution_zone is None
+            or not all(isfinite(value) for value in execution_zone)
+            or self._positive_alert_price(payload.get("stop_loss")) is None
+        ):
+            return False
+        take_profit = payload.get("take_profit")
+        if isinstance(take_profit, (list, tuple)):
+            take_profit = take_profit[0] if take_profit else None
+        if self._positive_alert_price(take_profit) is None:
+            return False
+        if not require_canonical_contract:
+            return True
+        if (
+            str(
+                payload.get("candidate_status") or ""
+            ).strip().upper()
+            != "READY_NOW"
+        ):
+            return False
+        return all(
+            str(payload.get(field) or "").strip()
+            for field in (
+                "scan_id",
+                "row_id",
+                "settings_hash",
+                "scorer_version",
+                "ranking_version",
+            )
+        )
+
+    @staticmethod
+    def _positive_alert_price(value: object) -> float | None:
+        try:
+            price = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return price if isfinite(price) and price > 0 else None
 
     def _best_scenario(
         self,
@@ -1690,7 +1859,10 @@ class ScannerController:
         _record_performance(performance_tracker, "start_phase", "telegram")
         notifications = self.settings_service.load().notifications
         # Filter using the SAME gates as "Hiển thị lệnh" dialog
-        candidates = self._get_alert_order_candidates(rows)
+        candidates = self._get_alert_order_candidates(
+            rows,
+            performance_tracker=performance_tracker,
+        )
         _record_performance(
             performance_tracker,
             "increment",
