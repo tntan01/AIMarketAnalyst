@@ -16,6 +16,10 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 from config.paths import app_data_dir
+from core.scanner_performance import (
+    safe_performance_call,
+    safe_performance_phase,
+)
 from services.calendar_helpers import (
     _clean_economic_value,
     _event_time,
@@ -100,13 +104,48 @@ class NewsService:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def latest_macro_context(self, symbol: str, *, include_latest_statements: bool = True, ai_service: object | None = None) -> dict[str, object]:
+    def latest_macro_context(
+        self,
+        symbol: str,
+        *,
+        include_latest_statements: bool = True,
+        ai_service: object | None = None,
+        performance_tracker: object | None = None,
+    ) -> dict[str, object]:
         cache_key = f"{symbol}_{include_latest_statements}"
         if ai_service is not None:
             cache_key += "_ai"
         if cache_key in self._tier_scores_cache and self._tier_scores_cache[cache_key] is not None:
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "macro_context_cache_hits",
+            )
             return self._tier_scores_cache[cache_key]
+        safe_performance_call(
+            performance_tracker,
+            "increment",
+            "macro_context_cache_misses",
+        )
+        with safe_performance_phase(
+            performance_tracker,
+            "macro_pair_build",
+        ):
+            return self._build_latest_macro_context(
+                symbol,
+                include_latest_statements=include_latest_statements,
+                ai_service=ai_service,
+                performance_tracker=performance_tracker,
+            )
 
+    def _build_latest_macro_context(
+        self,
+        symbol: str,
+        *,
+        include_latest_statements: bool,
+        ai_service: object | None,
+        performance_tracker: object | None,
+    ) -> dict[str, object]:
         currencies = [part for part in symbol.split("/") if part]
         if len(currencies) == 1 and len(currencies[0]) >= 6:
             raw = currencies[0]
@@ -123,7 +162,16 @@ class NewsService:
         hotspots = self._geopolitical_hotspots(headlines + latest_statements)
 
         # Three-tier macro scoring (0-30 scale)
-        tier_scores = self._compute_macro_tiers(symbol, currencies, headlines, events, themes, hotspots, ai_service=ai_service)
+        tier_scores = self._compute_macro_tiers(
+            symbol,
+            currencies,
+            headlines,
+            events,
+            themes,
+            hotspots,
+            ai_service=ai_service,
+            performance_tracker=performance_tracker,
+        )
         data_quality = self._macro_data_quality(headlines, events)
         # Khong set _last_fetch_time neu dang preload (tranh ghi de thoi gian thuc)
         if not hasattr(self, '_preloading') or not self._preloading:
@@ -166,8 +214,14 @@ class NewsService:
         buffer_minutes: int = 30,
         include_latest_statements: bool = True,
         ai_service: object | None = None,
+        performance_tracker: object | None = None,
     ) -> dict[str, object]:
-        context = self.latest_macro_context(symbol, include_latest_statements=include_latest_statements, ai_service=ai_service)
+        context = self.latest_macro_context(
+            symbol,
+            include_latest_statements=include_latest_statements,
+            ai_service=ai_service,
+            performance_tracker=performance_tracker,
+        )
         events = context.get("events", [])
         if not isinstance(events, list):
             events = []
@@ -278,7 +332,14 @@ class NewsService:
         "https://www.investing.com/rss/news_301.rss",
     ]
 
-    def preload_macro_contexts(self, symbols: list[str], progress_callback=None, *, ai_service: object | None = None) -> None:
+    def preload_macro_contexts(
+        self,
+        symbols: list[str],
+        progress_callback=None,
+        *,
+        ai_service: object | None = None,
+        performance_tracker: object | None = None,
+    ) -> None:
         """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores.
 
         Results are cached for _preload_cache_ttl (5 min) to avoid redundant
@@ -293,6 +354,38 @@ class NewsService:
         if self._preload_cache_time is not None and now - self._preload_cache_time < self._preload_cache_ttl:
             return
 
+        with safe_performance_phase(
+            performance_tracker,
+            "macro_global_fetch",
+        ):
+            self._preload_global_macro_inputs(symbols, progress)
+
+        # Buoc 4: Pre-compute macro context cho TAT CA symbols
+        self._preloading = True
+        try:
+            total = max(1, len(symbols))
+            for idx, symbol in enumerate(symbols):
+                progress(17 + int((idx + 1) / total * 2), f"Đang phân tích vĩ mô {symbol} ({idx + 1}/{total})...")
+                for include_stmts in (True,):
+                    ctx = self.latest_macro_context(
+                        symbol,
+                        include_latest_statements=include_stmts,
+                        ai_service=ai_service,
+                        performance_tracker=performance_tracker,
+                    )
+                    cache_key = f"{symbol}_{include_stmts}"
+                    self._tier_scores_cache[cache_key] = ctx
+        finally:
+            self._preloading = False
+
+        self._last_fetch_time = now
+        self._preload_cache_time = now
+
+    def _preload_global_macro_inputs(
+        self,
+        symbols: list[str],
+        progress,
+    ) -> None:
         # Buoc 1: Fetch calendar 1 lan (uses disk cache with 12h TTL)
         progress(15, "Đang tải lịch kinh tế...")
         first = symbols[0]
@@ -304,24 +397,8 @@ class NewsService:
         with ThreadPoolExecutor(max_workers=2) as ex:
             headlines_future = ex.submit(self._fetch_global_forex_headlines)
             statements_future = ex.submit(self._latest_official_statements)
-            self._global_headlines: list[dict[str, object]] = headlines_future.result()
+            self._global_headlines = headlines_future.result()
             statements_future.result()  # caches internally
-
-        # Buoc 4: Pre-compute macro context cho TAT CA symbols
-        self._preloading = True
-        try:
-            total = max(1, len(symbols))
-            for idx, symbol in enumerate(symbols):
-                progress(17 + int((idx + 1) / total * 2), f"Đang phân tích vĩ mô {symbol} ({idx + 1}/{total})...")
-                for include_stmts in (True,):
-                    ctx = self.latest_macro_context(symbol, include_latest_statements=include_stmts, ai_service=ai_service)
-                    cache_key = f"{symbol}_{include_stmts}"
-                    self._tier_scores_cache[cache_key] = ctx
-        finally:
-            self._preloading = False
-
-        self._last_fetch_time = now
-        self._preload_cache_time = now
 
     # ------------------------------------------------------------------
     # News Window API (±7 days for Dashboard display)
@@ -728,17 +805,40 @@ class NewsService:
         hotspots: list[dict[str, object]],
         *,
         ai_service: object | None = None,
+        performance_tracker: object | None = None,
     ) -> dict[str, object]:
         base = currencies[0] if currencies else ""
         quote = currencies[1] if len(currencies) > 1 else ""
         base_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, base)]
         quote_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, quote)]
-        base_stance = self._ai_currency_stance(base, base_headlines, ai_service)
-        quote_stance = self._ai_currency_stance(quote, quote_headlines, ai_service)
+        base_stance = self._ai_currency_stance(
+            base,
+            base_headlines,
+            ai_service,
+            performance_tracker=performance_tracker,
+        )
+        quote_stance = self._ai_currency_stance(
+            quote,
+            quote_headlines,
+            ai_service,
+            performance_tracker=performance_tracker,
+        )
 
-        tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(base, quote, base_stance, quote_stance)
+        tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(
+            base,
+            quote,
+            base_stance,
+            quote_stance,
+            performance_tracker=performance_tracker,
+        )
         tier2_buy, tier2_sell, tier2_detail = self._macro_tier2(base, quote, events)
-        tier3_buy, tier3_sell, tier3_detail = self._macro_tier3(currencies, headlines, hotspots, ai_service=ai_service)
+        tier3_buy, tier3_sell, tier3_detail = self._macro_tier3(
+            currencies,
+            headlines,
+            hotspots,
+            ai_service=ai_service,
+            performance_tracker=performance_tracker,
+        )
 
         raw_buy = tier1_buy + tier2_buy + tier3_buy
         raw_sell = tier1_sell + tier2_sell + tier3_sell
@@ -765,6 +865,8 @@ class NewsService:
         currency: str,
         headlines: list[str],
         ai_service: object | None = None,
+        *,
+        performance_tracker: object | None = None,
     ) -> str:
         """Dùng AI đánh giá hawkish/dovish cho 1 tiền tệ từ danh sách headline.
         Trả về: "hawkish" | "dovish" | "neutral"
@@ -788,6 +890,11 @@ Headlines:
 Trả lời:"""
 
         try:
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "ai_stance_calls",
+            )
             response = ai_service.analyze(prompt, max_tokens=10)
             result = response.strip().lower().split()[0]
             if result in ("hawkish", "dovish", "neutral"):
@@ -804,9 +911,45 @@ Trả lời:"""
     # --- Tier 1: Interest Rate & Monetary Policy (0-12) ---
 
     @staticmethod
-    def _fetch_yield_spread() -> dict[str, object]:
+    def _fetch_yield_spread(
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, object]:
+        with safe_performance_phase(
+            performance_tracker,
+            "macro_global_fetch",
+        ):
+            return NewsService._fetch_yield_spread_value(
+                performance_tracker=performance_tracker,
+            )
+
+    @staticmethod
+    def _fetch_yield_spread_value(
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, object]:
         try:
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "macro_global_fetches",
+            )
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "yfinance_download_calls",
+            )
             tnx = yf.download("^TNX", period="5d", interval="1d", progress=False)
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "macro_global_fetches",
+            )
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "yfinance_download_calls",
+            )
             fvx = yf.download("^FVX", period="5d", interval="1d", progress=False)
             if tnx.empty or fvx.empty:
                 return {"spread": None, "tnx": None, "fvx": None}
@@ -952,7 +1095,15 @@ Trả lời:"""
             },
         }
 
-    def _macro_tier1(self, base: str, quote: str, base_stance: str, quote_stance: str) -> tuple[int, int, dict[str, object]]:
+    def _macro_tier1(
+        self,
+        base: str,
+        quote: str,
+        base_stance: str,
+        quote_stance: str,
+        *,
+        performance_tracker: object | None = None,
+    ) -> tuple[int, int, dict[str, object]]:
         rates = self._load_interest_rates()
         base_info = rates.get(base, {})
         quote_info = rates.get(quote, {})
@@ -999,7 +1150,9 @@ Trả lời:"""
         # Yield spread 2s10s adjustment (USD pairs only)
         yield_adj_buy = 0
         yield_adj_sell = 0
-        yield_spread_data = self._fetch_yield_spread()
+        yield_spread_data = self._fetch_yield_spread(
+            performance_tracker=performance_tracker,
+        )
         spread_val = yield_spread_data.get("spread")
         if spread_val is not None and "USD" in (base, quote):
             if spread_val < 0:
@@ -1155,8 +1308,34 @@ Trả lời:"""
     # --- Tier 3: Risk Sentiment & Geopolitical (0-12) ---
 
     @staticmethod
-    def _fetch_vix() -> dict[str, object]:
+    def _fetch_vix(
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, object]:
+        with safe_performance_phase(
+            performance_tracker,
+            "macro_global_fetch",
+        ):
+            return NewsService._fetch_vix_value(
+                performance_tracker=performance_tracker,
+            )
+
+    @staticmethod
+    def _fetch_vix_value(
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, object]:
         try:
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "macro_global_fetches",
+            )
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "yfinance_download_calls",
+            )
             vix = yf.download("^VIX", period="5d", interval="1d", progress=False)
             if vix.empty:
                 return {"vix": None}
@@ -1172,6 +1351,8 @@ Trả lời:"""
     def _macro_tier3(
         self, currencies: list[str], headlines: list[dict[str, object]], hotspots: list[dict[str, object]],
         ai_service: object | None = None,
+        *,
+        performance_tracker: object | None = None,
     ) -> tuple[int, int, dict[str, object]]:
         SENTIMENT_LEXICON = {
             "soft landing": 3, "dovish pivot": 3, "rate cuts confirmed": 3,
@@ -1206,8 +1387,18 @@ Trả lời:"""
             try:
                 base_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, base)]
                 quote_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, quote)]
-                base_stance = self._ai_currency_stance(base, base_headlines, ai_service)
-                quote_stance = self._ai_currency_stance(quote, quote_headlines, ai_service)
+                base_stance = self._ai_currency_stance(
+                    base,
+                    base_headlines,
+                    ai_service,
+                    performance_tracker=performance_tracker,
+                )
+                quote_stance = self._ai_currency_stance(
+                    quote,
+                    quote_headlines,
+                    ai_service,
+                    performance_tracker=performance_tracker,
+                )
                 stance_map = {"hawkish": -2, "dovish": 2, "neutral": 0}
                 ai_sentiment_score = stance_map.get(base_stance, 0) + stance_map.get(quote_stance, 0)
             except Exception:
@@ -1248,7 +1439,9 @@ Trả lời:"""
         # (ai_sentiment_score * 3 no longer added to raw_sentiment)
 
         # --- VIX adjustment ---
-        vix_data = self._fetch_vix()
+        vix_data = self._fetch_vix(
+            performance_tracker=performance_tracker,
+        )
         vix_level = vix_data.get("vix")
         vix_adj = 0
         if vix_level is not None:

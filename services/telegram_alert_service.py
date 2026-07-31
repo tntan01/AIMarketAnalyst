@@ -7,6 +7,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from core.scanner_performance import safe_performance_call
+
 
 @dataclass(frozen=True, slots=True)
 class TelegramAlertResult:
@@ -28,6 +30,7 @@ class TelegramAlertService:
         *,
         bot_token: str,
         chat_ids: list[str],
+        performance_tracker: object | None = None,
     ) -> TelegramAlertResult:
         token = bot_token.strip()
         recipients = [item.strip() for item in chat_ids if item.strip()]
@@ -41,9 +44,19 @@ class TelegramAlertService:
             message = self.format_order_alert(cand)
             for chat_id in recipients:
                 try:
+                    safe_performance_call(
+                        performance_tracker,
+                        "increment",
+                        "telegram_requests",
+                    )
                     self._send_message(token, chat_id, message)
                     sent += 1
                 except Exception as exc:
+                    safe_performance_call(
+                        performance_tracker,
+                        "increment",
+                        "telegram_errors",
+                    )
                     errors.append(f"{cand.get('symbol', '--')} -> {chat_id}: {exc}")
         return TelegramAlertResult(attempted=attempted, sent=sent, errors=errors)
 
@@ -109,6 +122,7 @@ class TelegramAlertService:
         bot_token: str,
         chat_ids: list[str],
         timestamp: str,
+        performance_tracker: object | None = None,
     ) -> int:
         token = bot_token.strip()
         recipients = [item.strip() for item in chat_ids if item.strip()]
@@ -120,9 +134,19 @@ class TelegramAlertService:
         sent = 0
         for chat_id in recipients:
             try:
+                safe_performance_call(
+                    performance_tracker,
+                    "increment",
+                    "telegram_requests",
+                )
                 self._send_message(token, chat_id, message)
                 sent += 1
             except Exception:
+                safe_performance_call(
+                    performance_tracker,
+                    "increment",
+                    "telegram_errors",
+                )
                 pass
         return sent
 

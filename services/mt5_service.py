@@ -9,6 +9,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from core.scanner_performance import safe_performance_call
+
 from config.paths import CONFIG_DIR
 from core.market_models import Candle
 from core.portfolio_models import (
@@ -647,7 +649,13 @@ class MT5Service(DataProvider):
             )
         return candles
 
-    def load_primary_timeframes(self, broker_symbol: str, bars_by_timeframe: dict[str, int]) -> dict[str, list[Candle]]:
+    def load_primary_timeframes(
+        self,
+        broker_symbol: str,
+        bars_by_timeframe: dict[str, int],
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, list[Candle]]:
         import MetaTrader5 as mt5
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -656,10 +664,28 @@ class MT5Service(DataProvider):
         if not selected:
             raise RuntimeError(f"Không chọn được mã {broker_symbol} trong MT5 Market Watch.")
 
+        def tracked_load(timeframe: str, bars: int) -> list[Candle]:
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "mt5_copy_rates_calls",
+            )
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "mt5_full_history_calls",
+            )
+            return self.load_ohlcv(
+                broker_symbol,
+                timeframe,
+                bars,
+                True,
+            )
+
         results: dict[str, list[Candle]] = {}
         with ThreadPoolExecutor(max_workers=min(len(bars_by_timeframe), 4)) as ex:
             futures = {
-                ex.submit(self.load_ohlcv, broker_symbol, timeframe, bars, True): timeframe
+                ex.submit(tracked_load, timeframe, bars): timeframe
                 for timeframe, bars in bars_by_timeframe.items()
             }
             for future in as_completed(futures):

@@ -46,6 +46,37 @@ def summary_row(row: dict[str, Any]) -> dict[str, Any]:
     return {key: row[key] for key in SUMMARY_ROW_FIELDS if key in row}
 
 
+def persist_performance_summary(
+    snapshot_path: Path,
+    performance: dict[str, Any],
+) -> Path:
+    """Atomically replace provisional snapshot telemetry with final metrics.
+
+    This small metadata rewrite is deliberately outside ``persistence_ms``:
+    including the write that stores its own duration would create a recursive
+    measurement. The primary scanner snapshot and analysis writes remain the
+    measured persistence operation.
+    """
+
+    document = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError("Scanner snapshot must contain a JSON object.")
+    document["performance"] = performance
+    document["performance_summary_path"] = str(snapshot_path)
+    temporary = snapshot_path.with_suffix(f"{snapshot_path.suffix}.perf.tmp")
+    temporary.write_text(
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+    temporary.replace(snapshot_path)
+    return snapshot_path
+
+
 class ScannerPersistenceService:
     """Choose full evidence only when it has material diagnostic value."""
 

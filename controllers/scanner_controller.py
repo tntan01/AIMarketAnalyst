@@ -43,6 +43,11 @@ from core.scanner_observability import (
     input_timestamps_from_candles,
     row_identity,
 )
+from core.scanner_performance import (
+    ScanPerformanceTracker,
+    safe_performance_call as _record_performance,
+    safe_performance_phase,
+)
 from core.scanner_rollout import (
     ROLLOUT_SHADOW,
     SCANNER_ROLLOUT_VERSION,
@@ -75,6 +80,7 @@ from services.runtime_retention_service import RuntimeRetentionService
 from services.scanner_persistence_service import (
     PERSISTENCE_FULL,
     ScannerPersistenceService,
+    persist_performance_summary,
     summary_row,
 )
 from services.settings_service import SettingsService
@@ -236,6 +242,17 @@ def _forward_order_comment(row_id: str, fallback: str) -> str:
     return f"AMA-FWD:{digest}"
 
 
+def _run_in_performance_phase(
+    tracker: object | None,
+    phase_name: str,
+    callback: Callable[..., Any],
+    *args: object,
+    **kwargs: object,
+) -> Any:
+    with safe_performance_phase(tracker, phase_name):
+        return callback(*args, **kwargs)
+
+
 class ScannerController:
     def __init__(
         self,
@@ -280,6 +297,13 @@ class ScannerController:
         _progress_callback: Callable[[int, str], None] | None = None,
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
+        try:
+            performance: object | None = ScanPerformanceTracker(
+                symbol_count=len(request.symbols)
+            )
+        except Exception:
+            performance = None
+        _record_performance(performance, "start_phase", "settings")
         settings = self.settings_service.load()
         effective_risk_percent = min(
             max(float(request.risk_percent), 0.0),
@@ -287,6 +311,8 @@ class ScannerController:
         )
         request = replace(request, risk_percent=effective_risk_percent)
         scan_context = create_scan_context(settings, request)
+        _record_performance(performance, "end_phase", "settings")
+        _record_performance(performance, "set_scan_id", scan_context.scan_id)
         self._emit_observability(
             "SCAN_STARTED",
             scan_id=scan_context.scan_id,
@@ -300,6 +326,7 @@ class ScannerController:
             },
         )
         progress(8, "Đang kiểm tra kết nối dữ liệu...")
+        _record_performance(performance, "start_phase", "readiness")
         try:
             status = self.mt5.ensure_ready(require_login=True)
         except ProviderNotReadyError as exc:
@@ -316,6 +343,8 @@ class ScannerController:
                 },
             )
             raise
+        finally:
+            _record_performance(performance, "end_phase", "readiness")
         rollout_settings = getattr(settings, "scanner_rollout", None)
         try:
             pre_scan_readiness = self.rollout_metrics.readiness(
@@ -350,6 +379,7 @@ class ScannerController:
             scan_id=scan_context.scan_id,
             payload=rollout_policy.to_dict(),
         )
+        _record_performance(performance, "start_phase", "account_portfolio")
         mt5_balance = self.mt5.account_balance()
         if mt5_balance is None:
             self._emit_observability(
@@ -368,6 +398,7 @@ class ScannerController:
                 "reason_codes": ["PORTFOLIO_STATE_UNAVAILABLE"],
                 "reason": str(exc),
             }
+        _record_performance(performance, "end_phase", "account_portfolio")
 
         bars_by_timeframe = {
             "D1": settings.advanced.d1_bars,
@@ -386,16 +417,25 @@ class ScannerController:
             ))
 
         with ThreadPoolExecutor(max_workers=2) as _bg:
-            _corr_future = _bg.submit(fetch_macro_correlation_context)
+            _corr_future = _bg.submit(
+                _run_in_performance_phase,
+                performance,
+                "correlation",
+                fetch_macro_correlation_context,
+                performance_tracker=performance,
+            )
             _preload_future = _bg.submit(
                 self.news_service.preload_macro_contexts,
                 request.symbols,
                 progress_callback=lambda p, m: progress(min(14 + p // 10, 18), m),
                 ai_service=ai_svc,
+                performance_tracker=performance,
             )
 
             progress(12, "Đang đọc danh sách mã giao dịch...")
+            _record_performance(performance, "start_phase", "available_symbols")
             available_symbols = self.mt5.available_symbols(market_watch_only=True)
+            _record_performance(performance, "end_phase", "available_symbols")
 
             # Wait for background I/O to complete before proceeding.
             progress(14, "Đang tải dữ liệu thị trường Mỹ...")
@@ -453,9 +493,11 @@ class ScannerController:
         }
 
         # ---- Phase 1: fetch MT5 data sequentially (MT5 works best single-threaded) ----
+        _record_performance(performance, "start_phase", "mt5_fetch")
         packets: list[dict[str, Any] | None] = []
         for i, symbol in enumerate(request.symbols):
             progress(19 + int(i / total * 30), f"Đang tải dữ liệu {symbol} ({i + 1}/{total})...")
+            symbol_fetch_started = perf_counter()
             try:
                 pkt = _fetch_one_symbol_mt5(
                     symbol,
@@ -465,6 +507,7 @@ class ScannerController:
                     news_service=self.news_service,
                     freshness=freshness,
                     ai_service=ai_svc,
+                    performance_tracker=performance,
                 )
             except Exception as exc:
                 pkt = None
@@ -475,9 +518,22 @@ class ScannerController:
                     severity="ERROR",
                     payload={"stage": "market_data", "reason": str(exc)},
                 )
+            finally:
+                symbol_fetch_ms = round(
+                    max(0.0, perf_counter() - symbol_fetch_started) * 1_000,
+                    3,
+                )
+                _record_performance(
+                    performance,
+                    "record_symbol",
+                    symbol,
+                    fetch_ms=symbol_fetch_ms,
+                )
             packets.append(pkt)
+        _record_performance(performance, "end_phase", "mt5_fetch")
 
         # ---- Phase 2: analyze all symbols in parallel (CPU-only, no MT5) ----
+        _record_performance(performance, "start_phase", "analysis_wall")
         progress(49, "Đang phân tích kỹ thuật các cặp tiền...")
         analyze_kwargs = {
             "correlation_context": correlation_context,
@@ -574,8 +630,16 @@ class ScannerController:
                     row.get("symbol"),
                 )
                 row["settings_hash"] = scan_context.settings_hash
+                _record_performance(
+                    performance,
+                    "record_symbol",
+                    symbol,
+                    analysis_ms=row.get("analysis_latency_ms", 0),
+                    pipeline_route=row.get("pipeline_route", ""),
+                )
                 rows.append(row)
 
+        _record_performance(performance, "end_phase", "analysis_wall")
         for row in rows:
             symbol = str(row.get("symbol", ""))
             row["legacy_candidate_status"] = {
@@ -612,7 +676,10 @@ class ScannerController:
             row["rollout_stage"] = rollout_policy.stage
 
         progress(74, "Đang áp dụng Strategy Router và execution filters...")
+        _record_performance(performance, "start_phase", "candidate_filter")
         rows = self._apply_scanner_filters(rows, request)
+        _record_performance(performance, "end_phase", "candidate_filter")
+        _record_performance(performance, "start_phase", "observability")
         rows = [
             attach_row_observability(
                 row,
@@ -640,9 +707,11 @@ class ScannerController:
                 ),
                 payload=comparison,
             )
+        _record_performance(performance, "end_phase", "observability")
         progress(78, "Đã xếp hạng lại candidate sau filters...")
 
         # AI Market Brief (1 call, after all individual audits)
+        _record_performance(performance, "start_phase", "market_brief")
         market_brief = ""
         market_brief_error = ""
         active_ai = settings.ai.active_provider()
@@ -660,6 +729,7 @@ class ScannerController:
                 market_brief_error = str(exc)
         elif not active_ai or not active_ai.api_key:
             market_brief_error = "Chưa cấu hình AI Provider hoặc API key trong Settings."
+        _record_performance(performance, "end_phase", "market_brief")
 
         progress(94, "Đang dựng bảng kết quả quét...")
         output = build_scanner_output(rows, request, 0)  # ai_called=0 since audit is now manual
@@ -677,6 +747,10 @@ class ScannerController:
         output["shadow_report"] = shadow_report
         output["market_brief"] = market_brief
         output["market_brief_error"] = market_brief_error
+        _record_performance(performance, "mark_core_ready")
+        performance_snapshot = _record_performance(performance, "snapshot")
+        if isinstance(performance_snapshot, dict):
+            output["performance"] = performance_snapshot
         auto_trade_results = (
             self._execute_auto_trades(
                 rows,
@@ -728,10 +802,15 @@ class ScannerController:
                 severity="ERROR",
                 payload={"reason": str(exc)},
             )
-        output["telegram_alerts"] = self._send_telegram_alerts(rows)
+        output["telegram_alerts"] = self._send_telegram_alerts(
+            rows,
+            performance_tracker=performance,
+        )
         if request.persistence_mode != "none":
             try:
-                output["snapshot_path"] = str(self.save_snapshot(output))
+                output["snapshot_path"] = str(
+                    self.save_snapshot(output, performance_tracker=performance)
+                )
             except Exception as exc:
                 output["snapshot_error"] = str(exc)
                 self._emit_observability(
@@ -740,6 +819,30 @@ class ScannerController:
                     severity="ERROR",
                     payload={"reason": str(exc)},
                 )
+        performance_summary = _record_performance(performance, "finalize")
+        if isinstance(performance_summary, dict):
+            output["performance"] = performance_summary
+            snapshot_path = str(output.get("snapshot_path", "") or "")
+            if snapshot_path:
+                try:
+                    output["performance_summary_path"] = str(
+                        persist_performance_summary(
+                            Path(snapshot_path),
+                            performance_summary,
+                        )
+                    )
+                except Exception as exc:
+                    self._emit_observability(
+                        "PERFORMANCE_SUMMARY_PERSIST_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        severity="ERROR",
+                        payload={"reason": str(exc)},
+                    )
+        self._emit_observability(
+            "SCAN_PERFORMANCE_SUMMARY",
+            scan_id=scan_context.scan_id,
+            payload=(performance_summary if isinstance(performance_summary, dict) else {}),
+        )
         self._emit_observability(
             "SCAN_COMPLETED",
             scan_id=scan_context.scan_id,
@@ -1578,23 +1681,40 @@ class ScannerController:
             sym_cfg = symbol_settings.get(symbol[:3] + "/" + symbol[3:])
         return serialize_backtest_config(sym_cfg, symbol=symbol)
 
-    def _send_telegram_alerts(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    def _send_telegram_alerts(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, Any]:
+        _record_performance(performance_tracker, "start_phase", "telegram")
         notifications = self.settings_service.load().notifications
         # Filter using the SAME gates as "Hiển thị lệnh" dialog
         candidates = self._get_alert_order_candidates(rows)
-        result = self.telegram_service.send_order_alerts(
-            candidates,
-            bot_token=notifications.telegram_bot_token,
-            chat_ids=notifications.telegram_chat_ids,
+        _record_performance(
+            performance_tracker,
+            "increment",
+            "telegram_candidates",
+            len(candidates),
         )
-        summary_sent = self.telegram_service.send_summary_alert(
-            rows,
-            candidates=candidates,
-            bot_token=notifications.telegram_bot_token,
-            chat_ids=notifications.telegram_chat_ids,
-            timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
-        )
-        return {"attempted": result.attempted, "sent": result.sent, "errors": result.errors, "summary_sent": summary_sent}
+        try:
+            result = self.telegram_service.send_order_alerts(
+                candidates,
+                bot_token=notifications.telegram_bot_token,
+                chat_ids=notifications.telegram_chat_ids,
+                performance_tracker=performance_tracker,
+            )
+            summary_sent = self.telegram_service.send_summary_alert(
+                rows,
+                candidates=candidates,
+                bot_token=notifications.telegram_bot_token,
+                chat_ids=notifications.telegram_chat_ids,
+                timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
+                performance_tracker=performance_tracker,
+            )
+            return {"attempted": result.attempted, "sent": result.sent, "errors": result.errors, "summary_sent": summary_sent}
+        finally:
+            _record_performance(performance_tracker, "end_phase", "telegram")
 
     def _emit_observability(
         self,
@@ -1707,7 +1827,13 @@ class ScannerController:
                 payload=_compact_smc_shadow_payload(smc_scoring),
             )
 
-    def save_snapshot(self, result: dict[str, Any]) -> Path:
+    def save_snapshot(
+        self,
+        result: dict[str, Any],
+        *,
+        performance_tracker: object | None = None,
+    ) -> Path:
+        _record_performance(performance_tracker, "start_phase", "persistence")
         runtime_root = app_data_dir()
         retention = getattr(self, "retention", None) or RuntimeRetentionService(runtime_root)
         retention.ensure_started()
@@ -1747,11 +1873,16 @@ class ScannerController:
         path = snapshot_dir / f"scanner_{scan_id}.json"
         JsonStorage(path).save(self._snapshot_payload(result, manifest, mode), indent=None)
         persistence.record(mode)
+        _record_performance(performance_tracker, "end_phase", "persistence")
+        _record_performance(performance_tracker, "increment", "analysis_documents_written", len(manifest))
+        _record_performance(performance_tracker, "start_phase", "retention")
         try:
             retention.prune()
         except OSError:
             # Retention must never turn a successful scan into a failed scan.
             pass
+        finally:
+            _record_performance(performance_tracker, "end_phase", "retention")
         return path
 
     def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
@@ -1908,23 +2039,65 @@ def _fetch_one_symbol_mt5(
     news_service: Any,
     freshness: dict[str, Any],
     ai_service: object | None = None,
+    performance_tracker: object | None = None,
 ) -> dict[str, Any] | None:
     """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
     consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved."""
+    mt5_started = perf_counter()
     broker_symbol = mt5.resolve_symbol(symbol, available_symbols)
     if not broker_symbol:
+        _record_performance(
+            performance_tracker,
+            "record_symbol",
+            symbol,
+            mt5_ms=round(
+                max(0.0, perf_counter() - mt5_started) * 1_000,
+                3,
+            ),
+        )
         return None
 
     all_candles = mt5.load_primary_timeframes(
         broker_symbol, {**bars_by_timeframe, "M15": 100},
+        performance_tracker=performance_tracker,
     )
     data_quality = mt5.symbol_data_quality(symbol, broker_symbol)
-    news_flags = news_service.data_quality_flags(symbol, ai_service=ai_service)
+    mt5_before_macro_ms = (
+        max(0.0, perf_counter() - mt5_started) * 1_000
+    )
+    macro_lookup_started = perf_counter()
+    try:
+        news_flags = news_service.data_quality_flags(
+            symbol,
+            ai_service=ai_service,
+            performance_tracker=performance_tracker,
+        )
+    finally:
+        _record_performance(
+            performance_tracker,
+            "record_symbol",
+            symbol,
+            macro_lookup_ms=round(
+                max(0.0, perf_counter() - macro_lookup_started) * 1_000,
+                3,
+            ),
+        )
     macro_context = news_flags.pop("macro_context", {"events": []})
     data_quality.update(news_flags)
     data_quality["macro_freshness"] = freshness
     quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
+    mt5_after_macro_started = perf_counter()
     quote_to_usd = mt5.quote_to_usd_rate(quote_currency)
+    _record_performance(
+        performance_tracker,
+        "record_symbol",
+        symbol,
+        mt5_ms=round(
+            mt5_before_macro_ms
+            + max(0.0, perf_counter() - mt5_after_macro_started) * 1_000,
+            3,
+        ),
+    )
 
     return {
         "symbol": symbol,

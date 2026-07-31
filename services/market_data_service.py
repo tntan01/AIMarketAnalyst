@@ -8,6 +8,7 @@ from typing import Any
 import requests
 
 from core.market_models import Candle
+from core.scanner_performance import safe_performance_call
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,7 @@ def fetch_macro_correlation_context(
     interval: str = "1d",
     downloader: Any | None = None,
     force_refresh: bool = False,
+    performance_tracker: object | None = None,
 ) -> dict[str, list[Candle] | None]:
     """Fetch DXY/VIX/US10Y candles for correlation checks.
 
@@ -149,9 +151,27 @@ def fetch_macro_correlation_context(
         "us10y_candles": None,
         "us2y_candles": None,
     }
+    def tracked_download(ticker: str) -> Any:
+        safe_performance_call(
+            performance_tracker,
+            "increment",
+            "macro_global_fetches",
+        )
+        safe_performance_call(
+            performance_tracker,
+            "increment",
+            "yfinance_download_calls",
+        )
+        return download(
+            ticker,
+            period=period,
+            interval=interval,
+            progress=False,
+        )
+
     with ThreadPoolExecutor(max_workers=len(MARKET_TICKERS)) as ex:
         futures = {
-            ex.submit(download, ticker, period=period, interval=interval, progress=False): tag
+            ex.submit(tracked_download, ticker): tag
             for tag, ticker in MARKET_TICKERS.items()
         }
         for future in as_completed(futures):
