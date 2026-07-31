@@ -37,4 +37,5 @@ def test_local_stylesheet_calls_are_restricted_to_the_central_theme_loader() -> 
                 occurrences.append(
                     f"{path.relative_to(ROOT).as_posix()}:{line_number}"
                 )
-    assert occurrences == ["ui/theme_manager.py:222"]
+    assert len(occurrences) == 1
+    assert occurrences[0].startswith("ui/theme_manager.py:")

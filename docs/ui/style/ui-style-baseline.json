@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-07-26T15:35:58.279984+00:00",
-  "scope": "ui/**/*.py plus ui/styles/dark.qss and ui/styles/light.qss",
+  "captured_at": "2026-07-31T04:13:55.555237+00:00",
+  "scope": "ui/**/*.py plus ui/styles/**/*.qss and theme overlays",
   "policy": {
     "comparison": "current counts must be less than or equal to baseline",
     "new_debt_files": "forbidden",
     "source_hashes": "informational visual-baseline traceability only"
   },
   "totals": {
-    "set_stylesheet_calls": 184,
-    "html_style_attributes": 467,
-    "hex_color_literals": 1024,
-    "object_name_calls": 259
+    "set_stylesheet_calls": 1,
+    "html_style_attributes": 451,
+    "hex_color_literals": 532,
+    "object_name_calls": 338
   },
   "python_files": {
     "ui/__init__.py": {
@@ -20,15 +20,15 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 1,
-      "sha256": "2e446e53cdd455e80dc49f715750c55ffd5f56ededfd38e84dc24c366d303cce"
+      "sha256": "d86473ffa339af0ecb1af6d68d36cbc0efec0293de9c212086ec24d8d497ba67"
     },
     "ui/chart_bridge.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 0,
-      "line_count": 27,
-      "sha256": "e391f8b299614aaf513502ae78e4b288f7e47381057de711af04198cdeb4a223"
+      "line_count": 39,
+      "sha256": "ddd9d2f53b40177d5c28fcf8e47f35987fb754c89463a57500fbaaa998b5b00b"
     },
     "ui/components/__init__.py": {
       "set_stylesheet_calls": 0,
@@ -36,7 +36,7 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 1,
-      "sha256": "e661a2a70477ca03f97705a874fac2da424084d113e442edcd94039181ce1243"
+      "sha256": "1b385f4471cf38b744b5bc85d13c2aae862ed409524afc5b12f74a0274f77d24"
     },
     "ui/components/app_button.py": {
       "set_stylesheet_calls": 0,
@@ -44,7 +44,7 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 7,
-      "sha256": "3a354a96685d79392120cfc57d1bd28c8abe51df5988fd72c11a0462651faae4"
+      "sha256": "abb1efe6e130c1d810d68855f050afad693b060a4e1eea8cbe76b62f4093d007"
     },
     "ui/components/card.py": {
       "set_stylesheet_calls": 0,
@@ -52,15 +52,15 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 7,
-      "sha256": "bf23c780184019d7416f183f8344ef19e6abaaec032ecf1e6ec7ec3d29b57ec0"
+      "sha256": "43894e1652cd6a6fa0d149a0fc8d9dc2f9512a189916871c1ca9d6c1f690e98e"
     },
     "ui/components/chart_view.py": {
-      "set_stylesheet_calls": 2,
-      "html_style_attributes": 1,
-      "hex_color_literals": 1,
-      "object_name_calls": 1,
-      "line_count": 114,
-      "sha256": "587e3ccd71dbcc704164b23168dd8fef7f37d511261354279800d787a7086039"
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 3,
+      "line_count": 190,
+      "sha256": "af6e64b8db230c50690dc98ba6023125b04a342676b6edf746a1e92fbc46ac23"
     },
     "ui/components/empty_state.py": {
       "set_stylesheet_calls": 0,
@@ -76,15 +76,15 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 7,
-      "sha256": "177e9cfb0429a7b1c4168fd35c35d54c3f9cc394c281edef64c814f3f8c19a25"
+      "sha256": "dc08f7198621f85a2940fbb81741b4972e6cb28db28047a62791446e0d38ba60"
     },
     "ui/components/info_card.py": {
-      "set_stylesheet_calls": 4,
+      "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
-      "hex_color_literals": 12,
+      "hex_color_literals": 0,
       "object_name_calls": 4,
-      "line_count": 90,
-      "sha256": "fc041697d349c95190f9400ca5ba0e98140bf867d3a3d6c8be93dd7bb8d7b591"
+      "line_count": 79,
+      "sha256": "cf4c26886f7d06a56f5032aab6bd9971d27790765351ab3b466acfe231d1dd2f"
     },
     "ui/components/loading_state.py": {
       "set_stylesheet_calls": 0,
@@ -100,7 +100,7 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 7,
-      "sha256": "e6aff045908cc305f43430becbb408fee63d9f2cc33246a56be1e6c6151f8528"
+      "sha256": "2e7fc3af0845c512f2355af335864bc221cff41ab52bce97ce6f25f86c1e2a55"
     },
     "ui/components/stat_card.py": {
       "set_stylesheet_calls": 0,
@@ -108,7 +108,7 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 7,
-      "sha256": "9a544e4d124e4205ad7992be5772c9fe9562b9c9a85712c93b2274801ed68107"
+      "sha256": "2157f099506b0fc116e83ffb43a072c23e1d3be33045bdff568aea01d66c1617"
     },
     "ui/components/toolbar.py": {
       "set_stylesheet_calls": 0,
@@ -116,23 +116,31 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 7,
-      "sha256": "4b86d18379cb5536d6d5714260ace510e999b95a855d135741055d0f13df4ea0"
+      "sha256": "91a6a0e6bd2399181fd29ca6faea5c7ea1fa7f10614142be4bddb07c75f2cc53"
     },
     "ui/layout_system.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 152,
-      "sha256": "7eecb9ea23e20a5946f51a3aada3332484df77539c5509f6a70d90c07b3dd621"
+      "object_name_calls": 1,
+      "line_count": 155,
+      "sha256": "3b34e16673e246b5936c2ff867038d787449d26762c29e13870d71ab1a728e43"
     },
     "ui/main_window.py": {
-      "set_stylesheet_calls": 4,
+      "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
-      "hex_color_literals": 10,
-      "object_name_calls": 9,
-      "line_count": 309,
-      "sha256": "2f5f43efd6047ae6fa380c7183bc6ba523ab0cab4e4fa6ee72f643bc39bf4e87"
+      "hex_color_literals": 0,
+      "object_name_calls": 10,
+      "line_count": 249,
+      "sha256": "b8118ce9616f63dbeb2cf2ee112c5d5a97c970d56a3d673a0dcb35fb184c35be"
+    },
+    "ui/matplotlib_theme.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 49,
+      "sha256": "320ba8df1280a5340bc00789be242a409778de034dc0e9bceee4b322ec7f9e37"
     },
     "ui/navigation.py": {
       "set_stylesheet_calls": 0,
@@ -141,6 +149,22 @@
       "object_name_calls": 0,
       "line_count": 10,
       "sha256": "fd55775a790c9a64444bc28e2fa2cfc8830d34321b140d3054d6fc217302415f"
+    },
+    "ui/rich_text.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 273,
+      "sha256": "6474662f8e72b79fb2ded1aa85ff7ea7499fb00fd834b78a8b434130f220942c"
+    },
+    "ui/scanner_presentation.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 71,
+      "sha256": "45ca0436b7b2de184c8b5c435cc3f44ffe541a613d31ea6c379cd6f4788eea5f"
     },
     "ui/scanner_rr_formatters.py": {
       "set_stylesheet_calls": 0,
@@ -156,79 +180,79 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 1,
-      "sha256": "26bdc9fb7d444fb32b626fe4cfb4a6b08e9bb857f07691c9fadef4c06bdfcaa4"
+      "sha256": "3388183364c6ac0bcb0a66c12f90e7865970ef79d0e49cee5dfceea821e642ba"
     },
     "ui/screens/backtest_screen.py": {
-      "set_stylesheet_calls": 13,
-      "html_style_attributes": 186,
-      "hex_color_literals": 224,
-      "object_name_calls": 38,
-      "line_count": 3045,
-      "sha256": "6f62f60a2b1c642b8db8dcc0758237e037b02d9e0ae23ea37d2e39e95e9d1731"
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 182,
+      "hex_color_literals": 153,
+      "object_name_calls": 40,
+      "line_count": 3066,
+      "sha256": "e8900d658e246d03942e8666ca59563acec41f30ac469a68728391ac45a59763"
     },
     "ui/screens/dashboard_screen.py": {
-      "set_stylesheet_calls": 20,
-      "html_style_attributes": 24,
-      "hex_color_literals": 138,
-      "object_name_calls": 36,
-      "line_count": 1801,
-      "sha256": "9945ebd41b7ab69f90c05bef0d24dd2a7c97b05482804f89ccba03004a896472"
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 19,
+      "hex_color_literals": 1,
+      "object_name_calls": 43,
+      "line_count": 1679,
+      "sha256": "b22e5f48e8fdf1ed467a85af2efa93624643fd3a748fb9f0ecc229d8abcfe468"
     },
     "ui/screens/journal_detail_screen.py": {
-      "set_stylesheet_calls": 25,
-      "html_style_attributes": 52,
-      "hex_color_literals": 38,
-      "object_name_calls": 9,
-      "line_count": 981,
-      "sha256": "d4714a3576b227d6a96ef429014491336c67d7d57f35067d7e8a95b01ecd4c89"
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 51,
+      "hex_color_literals": 35,
+      "object_name_calls": 23,
+      "line_count": 940,
+      "sha256": "adcc484eea4fbc41ec35366a512272ce94896529b48fc714c0fc1fd3d768a50a"
     },
     "ui/screens/journal_screen.py": {
-      "set_stylesheet_calls": 16,
-      "html_style_attributes": 3,
-      "hex_color_literals": 74,
-      "object_name_calls": 54,
-      "line_count": 2104,
-      "sha256": "f72244fc055389e552efa77689646a4d6f8bf1caca82dd6dc16ff9247e9a83f4"
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 2,
+      "hex_color_literals": 2,
+      "object_name_calls": 57,
+      "line_count": 2135,
+      "sha256": "87c95b90a915bc99f157f4b79b22dbf655edf75d9354014cf85fd260976a873f"
     },
     "ui/screens/orders_screen.py": {
-      "set_stylesheet_calls": 14,
+      "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
-      "hex_color_literals": 30,
-      "object_name_calls": 14,
-      "line_count": 1543,
-      "sha256": "ebfa360ba0354383b8202ff9ea1abd81ddf511abe2ef128bc039a957af8d3a3d"
+      "hex_color_literals": 0,
+      "object_name_calls": 13,
+      "line_count": 1551,
+      "sha256": "67a30dd86e65a7e373389e14843582ec9882ed3d8c1c14f65960f02a5321ad9e"
     },
     "ui/screens/scanner_detail_screen.py": {
-      "set_stylesheet_calls": 56,
-      "html_style_attributes": 196,
-      "hex_color_literals": 370,
-      "object_name_calls": 21,
-      "line_count": 3539,
-      "sha256": "fb7ac0064d50e7c5704e5d01ddbbb7c76ad9bda2b4f0da483f2ae00474232459"
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 192,
+      "hex_color_literals": 240,
+      "object_name_calls": 70,
+      "line_count": 3459,
+      "sha256": "ab6ba283922d140391809a120f0957d9ea2c2a748bd57b9ec14010e99a386be3"
     },
     "ui/screens/scanner_screen.py": {
-      "set_stylesheet_calls": 30,
+      "set_stylesheet_calls": 0,
       "html_style_attributes": 5,
-      "hex_color_literals": 119,
-      "object_name_calls": 33,
-      "line_count": 3442,
-      "sha256": "687a9a3f51b546a1c55c437497414c08952f3d69ae9db47593477466eafe1bf7"
+      "hex_color_literals": 14,
+      "object_name_calls": 35,
+      "line_count": 3448,
+      "sha256": "e3ecfd4dcee8cbbbb45f0095cde767dcd9decbc4716d391d8dbd6e9403b6c4e6"
     },
     "ui/screens/settings_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
-      "object_name_calls": 26,
-      "line_count": 1795,
-      "sha256": "47362cb7e4a5459dfcfac46ec36f4898f6563d55047c3385e2c9ca5cc1aaf3c8"
+      "object_name_calls": 25,
+      "line_count": 1792,
+      "sha256": "15cc3bc53663a72b5ff740bec4d53f90cc91f866450fde9bbf96ffdb51844683"
     },
     "ui/screens/shared.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 14,
-      "line_count": 150,
-      "sha256": "b57057d3e0e5edc9f7971b8ed49685efd8f725e4c1ffa088571aeb524103de66"
+      "line_count": 149,
+      "sha256": "c2bc2e4cf48c4c5b53b2c16b8d7a9fe7456fbd5be4cf1944ef3287829143a52f"
     },
     "ui/terminology.py": {
       "set_stylesheet_calls": 0,
@@ -238,13 +262,29 @@
       "line_count": 23,
       "sha256": "4ebff78db0070839ec3392a25ac8dc491de00d22083dd67d43890e2931cba627"
     },
-    "ui/theme.py": {
+    "ui/theme/__init__.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
-      "hex_color_literals": 8,
+      "hex_color_literals": 87,
       "object_name_calls": 0,
-      "line_count": 17,
-      "sha256": "d40db5b6b8f1f3b3ef140a26221139cfe02defb640ce2e1d9956e8569ba48e03"
+      "line_count": 218,
+      "sha256": "e74091f687981d6dbeaab918dade8fd271604725b581309ff07ea7dc09df2de1"
+    },
+    "ui/theme/fonts.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 97,
+      "sha256": "d97f4f92028832d3c7bb46bcaba9c5e58648ab7c07baad1ba986cc7c91754d9d"
+    },
+    "ui/theme_manager.py": {
+      "set_stylesheet_calls": 1,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 274,
+      "sha256": "ba9d0954cbbbfd3a1583a2b9bfd3564a3fed7e02ac01c472a590d9ec2343e576"
     },
     "ui/translation.py": {
       "set_stylesheet_calls": 0,
@@ -256,23 +296,32 @@
     }
   },
   "qss_files": {
+    "ui/styles/base.qss": {
+      "line_count": 989,
+      "rule_blocks": 153,
+      "selector_references": 237,
+      "unique_selectors": 237,
+      "duplicate_selectors": 0,
+      "hex_color_literals": 0,
+      "sha256": "be1f9f19b975b5d596afc2afeb544fe416422bb22bc57f7dfd53535dee7ebc0f"
+    },
     "ui/styles/dark.qss": {
-      "line_count": 1787,
-      "rule_blocks": 286,
-      "selector_references": 455,
-      "unique_selectors": 423,
-      "duplicate_selectors": 32,
-      "hex_color_literals": 451,
-      "sha256": "47411a74c23a4a9fd076116b7bf74ce8e5fc1ec36c3282eab4af8ab1ebf4d879"
+      "line_count": 2325,
+      "rule_blocks": 429,
+      "selector_references": 715,
+      "unique_selectors": 696,
+      "duplicate_selectors": 19,
+      "hex_color_literals": 660,
+      "sha256": "120dc2cc75e38eb060e7dbdbc9ef4bfa97e4b061f69f27f21b361e4cc20e40f1"
     },
     "ui/styles/light.qss": {
-      "line_count": 1742,
-      "rule_blocks": 282,
-      "selector_references": 456,
-      "unique_selectors": 423,
-      "duplicate_selectors": 33,
-      "hex_color_literals": 442,
-      "sha256": "40ce944acad3280101cd3dc6a2ccaa93105d2df7dc0b7a55759d7da52cf4a91b"
+      "line_count": 2308,
+      "rule_blocks": 428,
+      "selector_references": 716,
+      "unique_selectors": 696,
+      "duplicate_selectors": 20,
+      "hex_color_literals": 660,
+      "sha256": "5405d477e8da2197231d123414b77afac5bf3d46b7cbd52ffbc6c36693adbc1f"
     }
   }
 }

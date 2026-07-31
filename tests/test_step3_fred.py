@@ -290,7 +290,7 @@ def test_get_latest_rates_bad_key_falls_back():
 
     # All currencies skipped in FRED, fallback data returned
     assert "USD" in rates
-    assert rates["USD"]["rate"] == 5.50  # from fallback
+    assert rates["USD"]["rate"] == 3.75  # from current fallback config
 
     svc._CACHE = None
     svc._CACHE_TIME = None

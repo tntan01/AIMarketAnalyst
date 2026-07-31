@@ -22,9 +22,9 @@ def test_restart_button_base_contract_is_transparent_and_compact() -> None:
     assert "QPushButton#RestartButton {" in BASE
     assert "background: transparent;" in BASE
     assert "border: none;" in BASE
-    assert "font-size: 11px;" in BASE
+    assert "@QSS_BUTTON@" in BASE
     assert "padding: 4px 8px;" in BASE
-    assert "margin-top: 12px;" in BASE
+    assert "margin: 0;" in BASE
     assert "text-decoration: underline;" in BASE
 
 

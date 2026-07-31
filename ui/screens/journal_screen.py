@@ -915,8 +915,6 @@ class JournalScreen(QWidget):
         for label, group, attr, set_val, reset_val in self._QUICK_FILTER_DEFS:
             btn = action_button(label)
             btn.setProperty("quickFilter", True)
-            size_hint = btn.sizeHint()
-            btn.setMinimumSize(size_hint.width() + 12, size_hint.height() + 6)
             btn.setCheckable(True)
             btn.setProperty("qf_group", group)
             btn.setProperty("qf_attr", attr)

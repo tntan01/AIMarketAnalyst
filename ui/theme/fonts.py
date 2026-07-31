@@ -6,9 +6,9 @@ Cách dùng:
     from ui.theme.fonts import get_font, FONT_SIZE_TITLE
     label.setFont(get_font(FONT_SIZE_TITLE, bold=True))
 
-Hoặc dùng trong style sheet (QSS):
-    from ui.theme.fonts import FONT_FAMILY, FONT_SIZE_BODY
-    widget.setStyleSheet(f"font-family: {FONT_FAMILY}; font-size: {FONT_SIZE_BODY}pt;")
+Hoặc áp dụng trực tiếp:
+    from ui.theme.fonts import get_font, FONT_SIZE_BODY
+    widget.setFont(get_font(FONT_SIZE_BODY))
 """
 
 from PyQt6.QtGui import QFont
