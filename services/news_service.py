@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import re
 import time
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
 from pathlib import Path
+from threading import RLock
 from typing import Any
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -25,6 +28,7 @@ from services.calendar_helpers import (
 )
 from services.forex_factory_client import ForexFactoryClient
 from services.ai_service import AIService, AIProviderConfig
+from services.macro_market_cache import get_shared_cache
 from services.settings_service import SettingsService
 import yfinance as yf
 
@@ -33,6 +37,7 @@ import yfinance as yf
 # ---------------------------------------------------------------------------
 __all__ = [
     "NewsService",
+    "MacroGlobalSnapshot",
     "parse_event_time",
     "clean_text",
     "parse_rss_time",
@@ -40,6 +45,54 @@ __all__ = [
     "stance_value",
     "macro_score_from_delta",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class MacroGlobalSnapshot:
+    """One coherent set of market-global macro inputs for a scan/TTL."""
+
+    fetched_at_utc: datetime
+    expires_at_utc: datetime
+    tnx: float | None
+    fvx: float | None
+    yield_spread_10y_5y: float | None
+    yield_steepening: bool | None
+    vix: float | None
+    global_headlines: tuple[dict[str, object], ...]
+    official_statements: tuple[dict[str, object], ...]
+    calendar_payload: dict[str, object]
+    source_status: dict[str, dict[str, object]]
+    stale_fields: tuple[str, ...]
+
+    def yield_spread_payload(self) -> dict[str, object]:
+        spread = self.yield_spread_10y_5y
+        return {
+            "spread": spread,
+            "tnx": self.tnx,
+            "fvx": self.fvx,
+            "steepening": self.yield_steepening,
+            "ten_year_yield": round(self.tnx, 2) if self.tnx is not None else None,
+            "five_year_yield": round(self.fvx, 2) if self.fvx is not None else None,
+            "yield_spread_10y_5y": spread,
+            "yield_spread_2s10s": spread,
+        }
+
+    def provenance(self) -> dict[str, object]:
+        return {
+            "fetched_at_utc": self.fetched_at_utc.isoformat(),
+            "expires_at_utc": self.expires_at_utc.isoformat(),
+            "source_status": deepcopy(self.source_status),
+            "stale_fields": list(self.stale_fields),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _MacroContextCacheEntry:
+    value: dict[str, object]
+    fetched_at_utc: datetime
+    expires_at_utc: datetime
+    ai_fingerprint: str
+    source_freshness: dict[str, object]
 
 
 class NewsService:
@@ -62,12 +115,20 @@ class NewsService:
     DOVISH_TERMS = ["cut", "easing", "dovish", "slowdown", "recession", "yields fall", "weaker inflation"]
     HOTSPOT_TERMS = ["war", "strike", "sanction", "tariff", "oil", "geopolitical", "Middle East", "Ukraine", "Taiwan", "risk-off"]
     _interest_rates: dict[str, object] | None = None
-    _tier_scores_cache: dict[str, dict[str, object]] = {}
     _last_fetch_time: datetime | None = None
+    _macro_context_cache_ttl = timedelta(minutes=5)
+    _global_snapshot_ttl = timedelta(minutes=5)
+    _global_snapshot_stale_if_error = timedelta(minutes=30)
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
         self._stance_cache: dict[str, tuple[str, datetime]] = {}
+        self._tier_scores_cache: dict[str, _MacroContextCacheEntry] = {}
+        self._macro_context_cache_lock = RLock()
+        self._global_snapshot_lock = RLock()
+        self._global_snapshot: MacroGlobalSnapshot | None = None
+        self._preload_cache_time: datetime | None = None
+        self._preloading = False
 
     # ------------------------------------------------------------------
     # Interest rate config
@@ -97,37 +158,166 @@ class NewsService:
         quote_rate = float(rates.get(quote, {}).get("rate", 0))
         return base_rate - quote_rate
 
+    @staticmethod
+    def _ai_fingerprint(ai_service: object | None) -> str:
+        """Return a stable provider/model fingerprint without reading secrets."""
+        if ai_service is None:
+            payload = {"enabled": False, "provider": "", "model": ""}
+        else:
+            config = getattr(ai_service, "config", None)
+            provider = getattr(config, "provider", "")
+            model = getattr(config, "model", "")
+            payload = {
+                "enabled": True,
+                "provider": provider if isinstance(provider, str) else "unknown",
+                "model": model if isinstance(model, str) else "unknown",
+            }
+        return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _macro_context_cache_key(
+        symbol: str,
+        include_latest_statements: bool,
+        ai_fingerprint: str,
+    ) -> str:
+        """Canonical key used by every macro-context cache reader/writer."""
+        return json.dumps(
+            {
+                "symbol": str(symbol).strip().upper(),
+                "include_latest_statements": bool(include_latest_statements),
+                "ai": str(ai_fingerprint),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _symbol_currencies(symbol: str) -> list[str]:
+        currencies = [part for part in str(symbol).upper().split("/") if part]
+        if len(currencies) == 1 and len(currencies[0]) >= 6:
+            raw = currencies[0]
+            currencies = [raw[:3], raw[3:6]]
+        return currencies
+
+    def _fresh_context_entry(
+        self,
+        cache_key: str,
+        now: datetime,
+        expected_snapshot: MacroGlobalSnapshot | None = None,
+    ) -> _MacroContextCacheEntry | None:
+        entry = self._tier_scores_cache.get(cache_key)
+        if entry is None or now >= entry.expires_at_utc:
+            return None
+        if expected_snapshot is not None:
+            snapshot_fetched_at = entry.source_freshness.get("fetched_at_utc")
+            if snapshot_fetched_at != expected_snapshot.fetched_at_utc.isoformat():
+                return None
+        return entry
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def latest_macro_context(self, symbol: str, *, include_latest_statements: bool = True, ai_service: object | None = None) -> dict[str, object]:
-        cache_key = f"{symbol}_{include_latest_statements}"
-        if ai_service is not None:
-            cache_key += "_ai"
-        if cache_key in self._tier_scores_cache and self._tier_scores_cache[cache_key] is not None:
-            return self._tier_scores_cache[cache_key]
+    def latest_macro_context(
+        self,
+        symbol: str,
+        *,
+        include_latest_statements: bool = True,
+        ai_service: object | None = None,
+        _snapshot: MacroGlobalSnapshot | None = None,
+    ) -> dict[str, object]:
+        ai_fingerprint = self._ai_fingerprint(ai_service)
+        cache_key = self._macro_context_cache_key(
+            symbol,
+            include_latest_statements,
+            ai_fingerprint,
+        )
+        now = datetime.now(UTC)
 
-        currencies = [part for part in symbol.split("/") if part]
-        if len(currencies) == 1 and len(currencies[0]) >= 6:
-            raw = currencies[0]
-            currencies = [raw[:3], raw[3:]]
+        # Keep the lock through the build so concurrent consumers cannot build
+        # the same key twice. Different symbols are preloaded sequentially.
+        with self._macro_context_cache_lock:
+            cached = self._fresh_context_entry(cache_key, now, _snapshot)
+            if cached is not None:
+                return deepcopy(cached.value)
+
+            snapshot = _snapshot or self._get_global_macro_snapshot(now=now)
+            currencies = self._symbol_currencies(symbol)
+            context = self._build_macro_context(
+                symbol,
+                currencies,
+                include_latest_statements=include_latest_statements,
+                ai_service=ai_service,
+                snapshot=snapshot,
+            )
+            fetched_at = datetime.now(UTC)
+            # Context expiry is bounded by BOTH the local context TTL and the
+            # snapshot's own expiry: once the underlying source snapshot is
+            # stale/expired, cached contexts built from it must not keep being
+            # served as fresh (no silent +5 min extension past the source).
+            expires_at = min(
+                fetched_at + self._macro_context_cache_ttl,
+                snapshot.expires_at_utc,
+            )
+            source_freshness = snapshot.provenance()
+            context["macro_cache"] = {
+                "fetched_at_utc": fetched_at.isoformat(),
+                "expires_at_utc": expires_at.isoformat(),
+                "ai_fingerprint": ai_fingerprint,
+                "source_freshness": deepcopy(source_freshness),
+            }
+            entry = _MacroContextCacheEntry(
+                value=deepcopy(context),
+                fetched_at_utc=fetched_at,
+                expires_at_utc=expires_at,
+                ai_fingerprint=ai_fingerprint,
+                source_freshness=deepcopy(source_freshness),
+            )
+            self._tier_scores_cache[cache_key] = entry
+            if not self._preloading:
+                self._last_fetch_time = fetched_at
+            return deepcopy(entry.value)
+
+    def _build_macro_context(
+        self,
+        symbol: str,
+        currencies: list[str],
+        *,
+        include_latest_statements: bool,
+        ai_service: object | None,
+        snapshot: MacroGlobalSnapshot,
+    ) -> dict[str, object]:
         base = currencies[0] if currencies else ""
         quote = currencies[1] if len(currencies) > 1 else ""
-        calendar = self._ff_client.calendar_events(currencies)
+        calendar = self._calendar_context_from_snapshot(snapshot, currencies)
         events = calendar["events"]
         calendar_source = str(calendar["source"])
         calendar_warning = str(calendar["warning"])
-        headlines = self._get_headlines(symbol, currencies)
-        latest_statements = self._latest_official_statements() if include_latest_statements else []
+        headlines = [
+            deepcopy(item)
+            for item in snapshot.global_headlines
+            if self._filter_by_currencies(item, currencies)
+        ]
+        latest_statements = (
+            [deepcopy(item) for item in snapshot.official_statements]
+            if include_latest_statements
+            else []
+        )
         themes = self._macro_themes(symbol, currencies, headlines)
         hotspots = self._geopolitical_hotspots(headlines + latest_statements)
 
         # Three-tier macro scoring (0-30 scale)
-        tier_scores = self._compute_macro_tiers(symbol, currencies, headlines, events, themes, hotspots, ai_service=ai_service)
+        tier_scores = self._compute_macro_tiers(
+            symbol,
+            currencies,
+            headlines,
+            events,
+            themes,
+            hotspots,
+            ai_service=ai_service,
+            global_snapshot=snapshot,
+        )
         data_quality = self._macro_data_quality(headlines, events)
-        # Khong set _last_fetch_time neu dang preload (tranh ghi de thoi gian thuc)
-        if not hasattr(self, '_preloading') or not self._preloading:
-            self._last_fetch_time = datetime.now(UTC)
 
         return {
             "symbol": symbol,
@@ -268,7 +458,6 @@ class NewsService:
             ),
         }
 
-    _preload_cache_time: datetime | None = None
     _preload_cache_ttl = timedelta(minutes=5)
     NEWS_WINDOW_DAYS = 7
 
@@ -277,6 +466,566 @@ class NewsService:
         "https://www.fxstreet.com/rss/news",
         "https://www.investing.com/rss/news_301.rss",
     ]
+
+    def _download_macro_source(self, ticker: str, *, now: datetime | None = None) -> dict[str, object]:
+        """Fetch one Yahoo macro proxy via the shared single-flight cache."""
+        return get_shared_cache().get_scalar(ticker, now=now, period="5d", interval="1d")
+
+    def _fetch_global_calendar_payload(self) -> dict[str, object]:
+        currencies = sorted(self.CURRENCY_KEYWORDS)
+        result = self._ff_client.calendar_events(currencies)
+        if not isinstance(result, dict):
+            raise TypeError("Calendar provider returned a non-dict payload")
+        source = str(result.get("source", ""))
+        normalized_source = source.strip().lower()
+        if not source or normalized_source in {"error", "none"} or "unavailable" in normalized_source:
+            raise RuntimeError("Calendar source unavailable")
+        events = result.get("events", [])
+        cached_reader = getattr(self._ff_client, "_cached_calendar_events", None)
+        if callable(cached_reader):
+            try:
+                cached_events = cached_reader()
+                if isinstance(cached_events, list) and cached_events:
+                    events = cached_events
+            except Exception:
+                pass
+        return {
+            "events": deepcopy(events),
+            "source": source,
+            "warning": str(result.get("warning", "")),
+        }
+
+    @staticmethod
+    def _snapshot_source_status(
+        status: str,
+        *,
+        source: str,
+        now: datetime,
+        previous: dict[str, object] | None = None,
+        error_type: str = "",
+        data_fetched_at_utc: str = "",
+        origin_expires_at_utc: str = "",
+        raw_provenance: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        previous = previous or {}
+
+        # Yahoo-backed sources must retain the complete raw-cache provenance
+        # schema for every final status, including unavailable. Keep this path
+        # distinct from RSS/calendar metadata, which has no raw cache key.
+        if raw_provenance is not None:
+            raw = raw_provenance
+            checked_at = str(raw.get("checked_at_utc", "") or now.isoformat())
+            raw_data_fetched = str(
+                raw.get("data_fetched_at_utc", "")
+                or raw.get("fetched_at_utc", "")
+            )
+            raw_origin_expires = str(
+                raw.get("origin_expires_at_utc", "")
+                or raw.get("expires_at_utc", "")
+            )
+            previous_data_fetched = (
+                str(previous.get("data_fetched_at_utc", ""))
+                if status in {"stale", "unavailable"}
+                else ""
+            )
+            previous_origin_expires = (
+                str(previous.get("origin_expires_at_utc", ""))
+                if status in {"stale", "unavailable"}
+                else ""
+            )
+            served_data_fetched = (
+                data_fetched_at_utc
+                or raw_data_fetched
+                or previous_data_fetched
+            )
+            if not served_data_fetched and status in {"fresh", "degraded"}:
+                served_data_fetched = now.isoformat()
+            served_origin_expires = (
+                origin_expires_at_utc
+                or raw_origin_expires
+                or previous_origin_expires
+            )
+            if "next_retry_at_utc" in raw:
+                next_retry_at = str(raw.get("next_retry_at_utc", "") or "")
+            else:
+                next_retry_at = str(previous.get("next_retry_at_utc", ""))
+            if "cache_key" in raw:
+                cache_key = deepcopy(raw.get("cache_key"))
+            else:
+                cache_key = deepcopy(previous.get("cache_key", []))
+            refresh_error = str(
+                error_type
+                or raw.get("refresh_error_type", "")
+                or raw.get("error_type", "")
+                or ""
+            )
+            return {
+                "status": status,
+                "source": source,
+                "cache_key": cache_key,
+                "checked_at_utc": checked_at,
+                "data_fetched_at_utc": served_data_fetched,
+                "origin_expires_at_utc": served_origin_expires,
+                "next_retry_at_utc": next_retry_at,
+                "refresh_error_type": refresh_error,
+            }
+
+        payload: dict[str, object] = {
+            "status": status,
+            "source": source,
+            "checked_at_utc": now.isoformat(),
+        }
+        if status in {"fresh", "degraded"}:
+            # Prefer the cache's origin fetched_at over snapshot construction time.
+            payload["data_fetched_at_utc"] = data_fetched_at_utc or now.isoformat()
+        elif status == "stale":
+            # Use the cache's origin timestamp if available; fall back to
+            # the previous snapshot's record, then to checked_at. The origin
+            # expiry must be retained even when the served value comes from a
+            # previous snapshot (e.g. a discarded-fresh curve leg), so stale
+            # provenance never loses its data-expiry evidence.
+            if data_fetched_at_utc:
+                payload["data_fetched_at_utc"] = data_fetched_at_utc
+            elif previous:
+                payload["data_fetched_at_utc"] = previous.get(
+                    "data_fetched_at_utc", previous.get("checked_at_utc", "")
+                )
+            if not origin_expires_at_utc and previous:
+                origin_expires_at_utc = str(previous.get("origin_expires_at_utc", ""))
+        if origin_expires_at_utc:
+            payload["origin_expires_at_utc"] = origin_expires_at_utc
+        if error_type:
+            payload["refresh_error_type"] = error_type
+        return payload
+
+    @staticmethod
+    def _resolve_source_error(
+        result_dict: dict[str, object],
+        name: str,
+        errors: dict[str, str],
+    ) -> str:
+        """Resolve the real refresh error for one source, consistently.
+
+        ``get_scalar`` normalises stale errors to ``refresh_error_type`` while
+        total failures carry ``error_type``; task-level exceptions land in
+        ``errors``. Prefer the real source error in that order so provenance
+        never hides an upstream failure behind a generic label.
+        """
+        return str(
+            result_dict.get("refresh_error_type")
+            or result_dict.get("error_type")
+            or errors.get(name, "")
+        )
+
+    def _get_global_macro_snapshot(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> MacroGlobalSnapshot:
+        checked_at = now or datetime.now(UTC)
+        with self._global_snapshot_lock:
+            current = self._global_snapshot
+            if current is not None and checked_at < current.expires_at_utc:
+                return current
+            refreshed = self._refresh_global_macro_snapshot(checked_at, current)
+            self._global_snapshot = refreshed
+            self._global_headlines = [deepcopy(item) for item in refreshed.global_headlines]
+            return refreshed
+
+    def _refresh_global_macro_snapshot(
+        self,
+        now: datetime,
+        previous: MacroGlobalSnapshot | None,
+    ) -> MacroGlobalSnapshot:
+        tasks = {
+            "^TNX": lambda: self._download_macro_source("^TNX", now=now),
+            "^FVX": lambda: self._download_macro_source("^FVX", now=now),
+            "^VIX": lambda: self._download_macro_source("^VIX", now=now),
+            "global_headlines": self._fetch_global_forex_headlines_with_status,
+            "official_statements": self._latest_official_statements_with_status,
+            "calendar": lambda: {
+                "status": "fresh",
+                "value": self._fetch_global_calendar_payload(),
+                "attempted_sources": 1,
+                "successful_sources": 1,
+                "error_types": [],
+            },
+        }
+        results: dict[str, object] = {}
+        errors: dict[str, str] = {}
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = {executor.submit(task): name for name, task in tasks.items()}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    results[name] = future.result()
+                except Exception as exc:
+                    errors[name] = type(exc).__name__
+
+        def can_use_stale(source_name: str) -> bool:
+            if previous is None:
+                return False
+            status = previous.source_status.get(source_name, {})
+            if status.get("status") not in {"fresh", "degraded", "stale"}:
+                return False
+            raw_timestamp = status.get("data_fetched_at_utc")
+            if not raw_timestamp:
+                return False
+            try:
+                fetched_at = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                return False
+            if fetched_at.tzinfo is None:
+                fetched_at = fetched_at.replace(tzinfo=UTC)
+            else:
+                fetched_at = fetched_at.astimezone(UTC)
+            return now < fetched_at + self._global_snapshot_stale_if_error
+        stale_fields: list[str] = []
+        source_status: dict[str, dict[str, object]] = {}
+
+        scalar_values: dict[str, float | None] = {}
+        previous_scalars = {
+            "^TNX": previous.tnx if previous else None,
+            "^FVX": previous.fvx if previous else None,
+            "^VIX": previous.vix if previous else None,
+        }
+        for name in ("^TNX", "^FVX", "^VIX"):
+            result = results.get(name)
+            result_dict = result if isinstance(result, dict) else {}
+            status = str(result_dict.get("status", ""))
+            value = result_dict.get("value")
+            fresh = status == "fresh" and value is not None
+            cache_stale = status == "stale" and value is not None
+            # Pull origin provenance from the shared-cache result.
+            origin_fetched = str(
+                result_dict.get("data_fetched_at_utc", "")
+                or result_dict.get("fetched_at_utc", "")
+            )
+            origin_expires = str(
+                result_dict.get("origin_expires_at_utc", "")
+                or result_dict.get("expires_at_utc", "")
+            )
+            refresh_error = self._resolve_source_error(result_dict, name, errors)
+            if fresh:
+                scalar_values[name] = float(value)
+                source_status[name] = self._snapshot_source_status(
+                    "fresh", source=f"Yahoo Finance {name}", now=now,
+                    data_fetched_at_utc=origin_fetched,
+                    origin_expires_at_utc=origin_expires,
+                    raw_provenance=result_dict,
+                )
+            elif cache_stale:
+                scalar_values[name] = float(value)
+                stale_fields.append(name)
+                source_status[name] = self._snapshot_source_status(
+                    "stale",
+                    source=f"Yahoo Finance {name}",
+                    now=now,
+                    previous=previous.source_status.get(name) if previous else None,
+                    error_type=refresh_error,
+                    data_fetched_at_utc=origin_fetched,
+                    origin_expires_at_utc=origin_expires,
+                    raw_provenance=result_dict,
+                )
+            elif can_use_stale(name) and previous_scalars[name] is not None:
+                scalar_values[name] = previous_scalars[name]
+                stale_fields.append(name)
+                source_status[name] = self._snapshot_source_status(
+                    "stale",
+                    source=f"Yahoo Finance {name}",
+                    now=now,
+                    previous=previous.source_status.get(name) if previous else None,
+                    error_type=self._resolve_source_error(result_dict, name, errors),
+                    raw_provenance=result_dict,
+                )
+            else:
+                scalar_values[name] = None
+                source_status[name] = self._snapshot_source_status(
+                    "unavailable",
+                    source=f"Yahoo Finance {name}",
+                    now=now,
+                    previous=previous.source_status.get(name) if previous else None,
+                    error_type=self._resolve_source_error(result_dict, name, errors),
+                    raw_provenance=result_dict,
+                )
+
+        # TNX/FVX form one curve input. If only one leg refreshes, never mix
+        # fresh and stale observations; retain the prior coherent pair instead.
+        tnx_result = results.get("^TNX") if isinstance(results.get("^TNX"), dict) else {}
+        fvx_result = results.get("^FVX") if isinstance(results.get("^FVX"), dict) else {}
+        tnx_fresh = tnx_result.get("status") == "fresh" and tnx_result.get("value") is not None
+        fvx_fresh = fvx_result.get("status") == "fresh" and fvx_result.get("value") is not None
+        can_reuse_curve = bool(
+            previous is not None
+            and previous.tnx is not None
+            and previous.fvx is not None
+            and can_use_stale("^TNX")
+            and can_use_stale("^FVX")
+        )
+        curve_reused_from_previous = False
+        if tnx_fresh != fvx_fresh and can_reuse_curve:
+            scalar_values["^TNX"] = previous.tnx
+            scalar_values["^FVX"] = previous.fvx
+            curve_reused_from_previous = True
+            for name, result_dict in (("^TNX", tnx_result), ("^FVX", fvx_result)):
+                if name not in stale_fields:
+                    stale_fields.append(name)
+                # Keep the leg's REAL source error (e.g. RuntimeError from a
+                # failed download). Only fall back to the generic peer label
+                # when the leg itself reported no error — i.e. its fresh value
+                # is discarded solely because its curve peer is unusable.
+                error_type = self._resolve_source_error(result_dict, name, errors)
+                if not error_type:
+                    error_type = "YieldCurvePeerUnavailable"
+                # When the served value comes from the shared cache's stale
+                # entry, retain that entry's origin fetched/expires timestamps.
+                # For a discarded fresh leg the served value is previous's, so
+                # carry over the PREVIOUS record's origin fetched/expiry — the
+                # healthy leg must not lose its data-expiry evidence.
+                previous_status = previous.source_status.get(name) if previous else {}
+                served_from_stale_cache = result_dict.get("status") == "stale"
+                if served_from_stale_cache:
+                    origin_fetched = str(
+                        result_dict.get("data_fetched_at_utc", "")
+                        or result_dict.get("fetched_at_utc", "")
+                    )
+                    origin_expires = str(
+                        result_dict.get("origin_expires_at_utc", "")
+                        or result_dict.get("expires_at_utc", "")
+                    )
+                else:
+                    origin_fetched = str(previous_status.get("data_fetched_at_utc", ""))
+                    origin_expires = str(previous_status.get("origin_expires_at_utc", ""))
+                source_status[name] = self._snapshot_source_status(
+                    "stale",
+                    source=f"Yahoo Finance {name}",
+                    now=now,
+                    previous=previous_status,
+                    error_type=error_type,
+                    data_fetched_at_utc=origin_fetched,
+                    origin_expires_at_utc=origin_expires,
+                    raw_provenance=result_dict,
+                )
+                discarded_fresh = bool(result_dict.get("status") == "fresh")
+                source_status[name]["refresh_discarded_for_curve_consistency"] = discarded_fresh
+                if discarded_fresh:
+                    # Canonical fields above describe the old value actually
+                    # served. Preserve the healthy refresh's own origin too, so
+                    # coherent-curve fallback does not erase that observation.
+                    refreshed_status = self._snapshot_source_status(
+                        "fresh",
+                        source=f"Yahoo Finance {name}",
+                        now=now,
+                        raw_provenance=result_dict,
+                    )
+                    provenance_keys = (
+                        "cache_key",
+                        "checked_at_utc",
+                        "data_fetched_at_utc",
+                        "origin_expires_at_utc",
+                        "next_retry_at_utc",
+                        "refresh_error_type",
+                    )
+                    source_status[name]["discarded_refresh_provenance"] = {
+                        key: deepcopy(refreshed_status[key]) for key in provenance_keys
+                    }
+
+        curve_is_coherent = bool(
+            (tnx_fresh and fvx_fresh)
+            or curve_reused_from_previous
+            or (
+                not tnx_fresh
+                and not fvx_fresh
+                and can_reuse_curve
+                and scalar_values["^TNX"] == previous.tnx
+                and scalar_values["^FVX"] == previous.fvx
+            )
+        )
+        if not curve_is_coherent:
+            scalar_values["^TNX"] = None
+            scalar_values["^FVX"] = None
+            source_status["^TNX"]["discarded_for_curve_consistency"] = True
+            source_status["^FVX"]["discarded_for_curve_consistency"] = True
+
+        def collection_value(
+            name: str,
+            previous_value: object,
+            empty_value: object,
+            source: str,
+        ) -> object:
+            result = results.get(name)
+            result_dict = result if isinstance(result, dict) else {}
+            result_status = str(result_dict.get("status", ""))
+            result_value = result_dict.get("value")
+            refresh_error_types = (
+                list(result_dict.get("error_types", []))
+                if isinstance(result_dict.get("error_types"), (list, tuple))
+                else []
+            )
+            if name in errors:
+                refresh_error_types.append(errors[name])
+            refresh_error_types = sorted(set(str(item) for item in refresh_error_types if item))
+            use_previous = result_status == "degraded" and can_use_stale(name)
+            if result_status in {"fresh", "degraded"} and not use_previous:
+                source_status[name] = self._snapshot_source_status(
+                    result_status, source=source, now=now
+                )
+                source_status[name].update({
+                    "attempted_sources": int(result_dict.get("attempted_sources", 0) or 0),
+                    "successful_sources": int(result_dict.get("successful_sources", 0) or 0),
+                    "refresh_error_types": refresh_error_types,
+                })
+                return deepcopy(result_value)
+            if can_use_stale(name):
+                stale_fields.append(name)
+                source_status[name] = self._snapshot_source_status(
+                    "stale",
+                    source=source,
+                    now=now,
+                    previous=previous.source_status.get(name) if previous else None,
+                    error_type=",".join(refresh_error_types),
+                )
+                source_status[name].update({
+                    "attempted_sources": int(result_dict.get("attempted_sources", 0) or 0),
+                    "successful_sources": int(result_dict.get("successful_sources", 0) or 0),
+                    "refresh_error_types": refresh_error_types,
+                })
+                return deepcopy(previous_value)
+            source_status[name] = self._snapshot_source_status(
+                "unavailable",
+                source=source,
+                now=now,
+                error_type=",".join(refresh_error_types),
+            )
+            source_status[name].update({
+                "attempted_sources": int(result_dict.get("attempted_sources", 0) or 0),
+                "successful_sources": int(result_dict.get("successful_sources", 0) or 0),
+                "refresh_error_types": refresh_error_types,
+            })
+            return deepcopy(empty_value)
+
+        headlines = collection_value(
+            "global_headlines",
+            previous.global_headlines if previous else (),
+            [],
+            "Global RSS feeds",
+        )
+        statements = collection_value(
+            "official_statements",
+            previous.official_statements if previous else (),
+            [],
+            "Official-statement RSS queries",
+        )
+        calendar = collection_value(
+            "calendar",
+            previous.calendar_payload if previous else {},
+            {"events": [], "source": "Calendar unavailable", "warning": ""},
+            "Forex Factory calendar",
+        )
+
+        tnx = scalar_values["^TNX"]
+        fvx = scalar_values["^FVX"]
+        raw_spread = tnx - fvx if tnx is not None and fvx is not None else None
+        spread = round(raw_spread, 2) if raw_spread is not None else None
+        if "^TNX" in stale_fields or "^FVX" in stale_fields:
+            steepening = previous.yield_steepening if previous else None
+        else:
+            tnx_result = results.get("^TNX") if isinstance(results.get("^TNX"), dict) else {}
+            fvx_result = results.get("^FVX") if isinstance(results.get("^FVX"), dict) else {}
+            previous_tnx = tnx_result.get("previous")
+            previous_fvx = fvx_result.get("previous")
+            steepening = (
+                raw_spread > float(previous_tnx) - float(previous_fvx)
+                if raw_spread is not None and previous_tnx is not None and previous_fvx is not None
+                else False
+            )
+
+        # Expiry is derived from FINAL statuses (after coherent-curve/RSS
+        # fallback), not raw task results. A retry gate may shorten cache life,
+        # but can never extend the served data's hard stale deadline.
+        snapshot_expires = now + self._global_snapshot_ttl
+
+        def provenance_time(raw_value: object) -> datetime | None:
+            if not raw_value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(str(raw_value).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                return None
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
+
+        for final_status in source_status.values():
+            status_name = str(final_status.get("status", ""))
+            candidates: list[datetime] = []
+            if status_name in {"fresh", "degraded"}:
+                origin_expiry = provenance_time(
+                    final_status.get("origin_expires_at_utc")
+                )
+                if origin_expiry is not None:
+                    candidates.append(origin_expiry)
+            elif status_name == "stale":
+                next_retry = provenance_time(final_status.get("next_retry_at_utc"))
+                if next_retry is not None:
+                    candidates.append(next_retry)
+                origin_fetched = provenance_time(
+                    final_status.get("data_fetched_at_utc")
+                )
+                if origin_fetched is not None:
+                    candidates.append(
+                        origin_fetched + self._global_snapshot_stale_if_error
+                    )
+            elif status_name == "unavailable":
+                # Do not clamp unavailable by an already-expired stale
+                # deadline. It may be cached until the retry gate reopens.
+                next_retry = provenance_time(final_status.get("next_retry_at_utc"))
+                if next_retry is not None:
+                    candidates.append(next_retry)
+
+            for candidate in candidates:
+                if candidate < snapshot_expires:
+                    snapshot_expires = candidate
+
+        return MacroGlobalSnapshot(
+            fetched_at_utc=now,
+            expires_at_utc=snapshot_expires,
+            tnx=tnx,
+            fvx=fvx,
+            yield_spread_10y_5y=spread,
+            yield_steepening=steepening,
+            vix=scalar_values["^VIX"],
+            global_headlines=tuple(deepcopy(headlines)) if isinstance(headlines, (list, tuple)) else (),
+            official_statements=tuple(deepcopy(statements)) if isinstance(statements, (list, tuple)) else (),
+            calendar_payload=deepcopy(calendar) if isinstance(calendar, dict) else {},
+            source_status=source_status,
+            stale_fields=tuple(stale_fields),
+        )
+
+    def _calendar_context_from_snapshot(
+        self,
+        snapshot: MacroGlobalSnapshot,
+        currencies: list[str],
+    ) -> dict[str, object]:
+        payload = snapshot.calendar_payload
+        rows = payload.get("events", []) if isinstance(payload, dict) else []
+        rows = rows if isinstance(rows, list) else []
+        selector = getattr(self._ff_client, "_select_calendar_events", None)
+        if callable(selector):
+            events = selector(currencies, rows)
+        else:
+            wanted = {currency.upper() for currency in currencies}
+            events = [
+                deepcopy(row)
+                for row in rows
+                if isinstance(row, dict)
+                and str(row.get("currency", "")).upper() in wanted
+            ][:8]
+        return {
+            "events": deepcopy(events),
+            "source": str(payload.get("source", "")) if isinstance(payload, dict) else "",
+            "warning": str(payload.get("warning", "")) if isinstance(payload, dict) else "",
+        }
 
     def preload_macro_contexts(self, symbols: list[str], progress_callback=None, *, ai_service: object | None = None) -> None:
         """Pre-fetch RSS (1 query tong quat) + calendar + compute tier scores.
@@ -288,39 +1037,26 @@ class NewsService:
             return
         progress = progress_callback or (lambda _p, _m: None)
 
-        # Skip if preload was done recently (within 5 min)
         now = datetime.now(UTC)
-        if self._preload_cache_time is not None and now - self._preload_cache_time < self._preload_cache_ttl:
-            return
+        progress(15, "Đang tải snapshot vĩ mô toàn cầu...")
+        snapshot = self._get_global_macro_snapshot(now=now)
 
-        # Buoc 1: Fetch calendar 1 lan (uses disk cache with 12h TTL)
-        progress(15, "Đang tải lịch kinh tế...")
-        first = symbols[0]
-        currencies_first = [part for part in first.split("/") if part]
-        self._ff_client.calendar_events(currencies_first)
-
-        # Buoc 2+3: Fetch RSS + official statements in parallel
-        progress(16, "Đang tải tin tức toàn cầu...")
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            headlines_future = ex.submit(self._fetch_global_forex_headlines)
-            statements_future = ex.submit(self._latest_official_statements)
-            self._global_headlines: list[dict[str, object]] = headlines_future.result()
-            statements_future.result()  # caches internally
-
-        # Buoc 4: Pre-compute macro context cho TAT CA symbols
+        # Pre-compute every requested key against the exact same snapshot.
         self._preloading = True
         try:
             total = max(1, len(symbols))
             for idx, symbol in enumerate(symbols):
                 progress(17 + int((idx + 1) / total * 2), f"Đang phân tích vĩ mô {symbol} ({idx + 1}/{total})...")
-                for include_stmts in (True,):
-                    ctx = self.latest_macro_context(symbol, include_latest_statements=include_stmts, ai_service=ai_service)
-                    cache_key = f"{symbol}_{include_stmts}"
-                    self._tier_scores_cache[cache_key] = ctx
+                self.latest_macro_context(
+                    symbol,
+                    include_latest_statements=True,
+                    ai_service=ai_service,
+                    _snapshot=snapshot,
+                )
         finally:
             self._preloading = False
 
-        self._last_fetch_time = now
+        self._last_fetch_time = snapshot.fetched_at_utc
         self._preload_cache_time = now
 
     # ------------------------------------------------------------------
@@ -638,6 +1374,34 @@ class NewsService:
 
     def _fetch_global_forex_headlines(self) -> list[dict[str, object]]:
         """Fetch 3 broad queries in parallel to get headlines for all currency pairs."""
+        result = self._fetch_global_forex_headlines_with_status()
+        value = result.get("value", [])
+        return value if isinstance(value, list) else []
+
+    @staticmethod
+    def _rss_collection_result(
+        value: list[dict[str, object]],
+        *,
+        attempted_sources: int,
+        successful_sources: int,
+        error_types: list[str],
+    ) -> dict[str, object]:
+        if successful_sources <= 0:
+            status = "unavailable"
+        elif successful_sources < attempted_sources:
+            status = "degraded"
+        else:
+            status = "fresh"
+        return {
+            "status": status,
+            "value": value,
+            "attempted_sources": attempted_sources,
+            "successful_sources": successful_sources,
+            "error_types": sorted(set(error_types)),
+        }
+
+    def _fetch_global_forex_headlines_with_status(self) -> dict[str, object]:
+        """Fetch broad RSS queries while preserving success/error provenance."""
         rows: list[dict[str, object]] = []
         seen: set[str] = set()
         cutoff = datetime.now(UTC) - timedelta(hours=24)
@@ -647,10 +1411,11 @@ class NewsService:
             "forex geopolitical oil gold safe haven latest",
         ]
 
-        def _fetch_one(query: str) -> list[dict[str, object]]:
+        def _fetch_one(query: str) -> tuple[list[dict[str, object]], dict[str, object]]:
             items: list[dict[str, object]] = []
             url = "https://news.google.com/rss/search?q=" + quote_plus(query) + "&hl=en-US&gl=US&ceid=US:en"
-            for item in self._rss_items(url, query=query):
+            rss_items, fetch_status = self._rss_items_with_status(url, query=query)
+            for item in rss_items:
                 title_key = str(item.get("title", "")).lower()
                 if not title_key:
                     continue
@@ -658,21 +1423,35 @@ class NewsService:
                 if not published or published < cutoff:
                     continue
                 items.append(item)
-            return items
+            return items, fetch_status
 
+        successful_sources = 0
+        error_types: list[str] = []
         with ThreadPoolExecutor(max_workers=3) as ex:
             futures = {ex.submit(_fetch_one, q): q for q in broad_queries}
             for future in as_completed(futures):
                 try:
-                    for item in future.result():
+                    items, fetch_status = future.result()
+                    if fetch_status.get("status") == "fresh":
+                        successful_sources += 1
+                    else:
+                        error_type = str(fetch_status.get("error_type", ""))
+                        if error_type:
+                            error_types.append(error_type)
+                    for item in items:
                         title_key = str(item.get("title", "")).lower()
                         if title_key in seen:
                             continue
                         seen.add(title_key)
                         rows.append(item)
-                except Exception:
-                    pass
-        return rows
+                except Exception as exc:
+                    error_types.append(type(exc).__name__)
+        return self._rss_collection_result(
+            rows,
+            attempted_sources=len(broad_queries),
+            successful_sources=successful_sources,
+            error_types=error_types,
+        )
 
     def _get_headlines(self, symbol: str, currencies: list[str]) -> list[dict[str, object]]:
         """Lay headlines cho symbol tu cache neu co, hoac fetch rieng."""
@@ -728,7 +1507,9 @@ class NewsService:
         hotspots: list[dict[str, object]],
         *,
         ai_service: object | None = None,
+        global_snapshot: MacroGlobalSnapshot | None = None,
     ) -> dict[str, object]:
+        snapshot = global_snapshot or self._get_global_macro_snapshot()
         base = currencies[0] if currencies else ""
         quote = currencies[1] if len(currencies) > 1 else ""
         base_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, base)]
@@ -736,9 +1517,21 @@ class NewsService:
         base_stance = self._ai_currency_stance(base, base_headlines, ai_service)
         quote_stance = self._ai_currency_stance(quote, quote_headlines, ai_service)
 
-        tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(base, quote, base_stance, quote_stance)
+        tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(
+            base,
+            quote,
+            base_stance,
+            quote_stance,
+            yield_spread_data=snapshot.yield_spread_payload(),
+        )
         tier2_buy, tier2_sell, tier2_detail = self._macro_tier2(base, quote, events)
-        tier3_buy, tier3_sell, tier3_detail = self._macro_tier3(currencies, headlines, hotspots, ai_service=ai_service)
+        tier3_buy, tier3_sell, tier3_detail = self._macro_tier3(
+            currencies,
+            headlines,
+            hotspots,
+            ai_service=ai_service,
+            vix_data={"vix": snapshot.vix},
+        )
 
         raw_buy = tier1_buy + tier2_buy + tier3_buy
         raw_sell = tier1_sell + tier2_sell + tier3_sell
@@ -773,7 +1566,16 @@ class NewsService:
         if not ai_service or not headlines:
             return currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
 
-        cache_key = f"{currency}_{hash(tuple(headlines[:5]))}"
+        cache_key = json.dumps(
+            {
+                "currency": currency,
+                "headlines": headlines[:5],
+                "ai": self._ai_fingerprint(ai_service),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         cached = self._stance_cache.get(cache_key)
         if cached and (datetime.now(UTC) - cached[1]).total_seconds() < 1800:
             return cached[0]
@@ -952,7 +1754,15 @@ Trả lời:"""
             },
         }
 
-    def _macro_tier1(self, base: str, quote: str, base_stance: str, quote_stance: str) -> tuple[int, int, dict[str, object]]:
+    def _macro_tier1(
+        self,
+        base: str,
+        quote: str,
+        base_stance: str,
+        quote_stance: str,
+        *,
+        yield_spread_data: dict[str, object] | None = None,
+    ) -> tuple[int, int, dict[str, object]]:
         rates = self._load_interest_rates()
         base_info = rates.get(base, {})
         quote_info = rates.get(quote, {})
@@ -999,7 +1809,14 @@ Trả lời:"""
         # Yield spread 2s10s adjustment (USD pairs only)
         yield_adj_buy = 0
         yield_adj_sell = 0
-        yield_spread_data = self._fetch_yield_spread()
+        yield_spread_data = yield_spread_data or {
+            "spread": None,
+            "tnx": None,
+            "fvx": None,
+            "steepening": None,
+            "ten_year_yield": None,
+            "five_year_yield": None,
+        }
         spread_val = yield_spread_data.get("spread")
         if spread_val is not None and "USD" in (base, quote):
             if spread_val < 0:
@@ -1172,6 +1989,8 @@ Trả lời:"""
     def _macro_tier3(
         self, currencies: list[str], headlines: list[dict[str, object]], hotspots: list[dict[str, object]],
         ai_service: object | None = None,
+        *,
+        vix_data: dict[str, object] | None = None,
     ) -> tuple[int, int, dict[str, object]]:
         SENTIMENT_LEXICON = {
             "soft landing": 3, "dovish pivot": 3, "rate cuts confirmed": 3,
@@ -1248,7 +2067,7 @@ Trả lời:"""
         # (ai_sentiment_score * 3 no longer added to raw_sentiment)
 
         # --- VIX adjustment ---
-        vix_data = self._fetch_vix()
+        vix_data = vix_data or {"vix": None}
         vix_level = vix_data.get("vix")
         vix_adj = 0
         if vix_level is not None:
@@ -1636,6 +2455,12 @@ Trả lời:"""
         return rows
 
     def _latest_official_statements(self) -> list[dict[str, object]]:
+        result = self._latest_official_statements_with_status()
+        value = result.get("value", [])
+        return value if isinstance(value, list) else []
+
+    def _latest_official_statements_with_status(self) -> dict[str, object]:
+        """Fetch statement RSS queries with explicit partial/error provenance."""
         queries = [
             'Trump Truth Social tariffs dollar Fed "Truth Social"',
             "Trump remarks dollar tariffs Fed markets latest",
@@ -1648,10 +2473,11 @@ Trả lời:"""
         seen: set[str] = set()
         cutoff = datetime.now(UTC) - timedelta(hours=24)
 
-        def _fetch_one(query: str) -> list[dict[str, object]]:
+        def _fetch_one(query: str) -> tuple[list[dict[str, object]], dict[str, object]]:
             items: list[dict[str, object]] = []
             url = "https://news.google.com/rss/search?q=" + quote_plus(query) + "&hl=en-US&gl=US&ceid=US:en"
-            for item in self._rss_items(url, query=query):
+            rss_items, fetch_status = self._rss_items_with_status(url, query=query)
+            for item in rss_items:
                 title = str(item.get("title", ""))
                 title_key = title.lower()
                 if not title_key or title_key in seen:
@@ -1663,15 +2489,24 @@ Trả lời:"""
                 enriched["category"] = "official_statement"
                 enriched["impact_note"] = self._headline_impact_note(title)
                 items.append(enriched)
-            return items
+            return items, fetch_status
 
+        successful_sources = 0
+        error_types: list[str] = []
         with ThreadPoolExecutor(max_workers=6) as executor:
             futures = {executor.submit(_fetch_one, q): q for q in queries}
             for future in as_completed(futures):
                 try:
-                    items = future.result()
-                except Exception:
+                    items, fetch_status = future.result()
+                except Exception as exc:
+                    error_types.append(type(exc).__name__)
                     continue
+                if fetch_status.get("status") == "fresh":
+                    successful_sources += 1
+                else:
+                    error_type = str(fetch_status.get("error_type", ""))
+                    if error_type:
+                        error_types.append(error_type)
                 for enriched in items:
                     title = str(enriched.get("title", ""))
                     title_key = title.lower()
@@ -1679,9 +2514,12 @@ Trả lời:"""
                         continue
                     seen.add(title_key)
                     rows.append(enriched)
-                    if len(rows) >= 10:
-                        return rows
-        return rows
+        return self._rss_collection_result(
+            rows[:10],
+            attempted_sources=len(queries),
+            successful_sources=successful_sources,
+            error_types=error_types,
+        )
 
     def _headline_queries(self, symbol: str, currencies: list[str]) -> list[str]:
         base_terms = " OR ".join(currencies)
@@ -1699,16 +2537,29 @@ Trả lời:"""
         return [query for query in queries if query.strip()]
 
     def _rss_items(self, url: str, *, query: str) -> list[dict[str, object]]:
+        rows, _status = self._rss_items_with_status(url, query=query)
+        return rows
+
+    def _rss_items_with_status(
+        self,
+        url: str,
+        *,
+        query: str,
+    ) -> tuple[list[dict[str, object]], dict[str, object]]:
+        """Return RSS rows plus transport/parse status; an empty feed can be fresh."""
         request = Request(url, headers={"User-Agent": "AI Market Analyst/1.0"})
         try:
             with urlopen(request, timeout=5) as response:
                 payload = response.read()
-        except Exception:
-            return []
+        except Exception as exc:
+            return [], {"status": "unavailable", "error_type": type(exc).__name__}
         try:
             root = ElementTree.fromstring(payload)
-        except ElementTree.ParseError:
-            return []
+        except ElementTree.ParseError as exc:
+            return [], {"status": "unavailable", "error_type": type(exc).__name__}
+        root_name = str(root.tag).rsplit("}", 1)[-1].lower()
+        if root_name != "rss" or root.find(".//channel") is None:
+            return [], {"status": "unavailable", "error_type": "InvalidRSSStructure"}
         rows: list[dict[str, object]] = []
         for item in root.findall(".//item")[:8]:
             title = clean_text(item.findtext("title") or "")
@@ -1725,7 +2576,7 @@ Trả lời:"""
                     "tags": self._headline_tags(title),
                 }
             )
-        return rows
+        return rows, {"status": "fresh", "error_type": ""}
 
     def _macro_themes(self, symbol: str, currencies: list[str], headlines: list[dict[str, object]]) -> list[dict[str, object]]:
         themes: list[dict[str, object]] = []

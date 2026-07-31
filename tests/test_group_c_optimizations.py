@@ -57,12 +57,10 @@ class TestC1Ticker:
             tickers_seen.append(ticker)
             return type("EmptyDF", (), {"empty": True, "iterrows": lambda s: iter([])})()
 
-        original = mds._yf_download
-        mds._yf_download = fake_download
-        try:
-            mds.fetch_macro_correlation_context(force_refresh=True)
-        finally:
-            mds._yf_download = original
+        mds.fetch_macro_correlation_context(
+            force_refresh=True,
+            downloader=fake_download,
+        )
 
         assert "^IRX" in tickers_seen, (
             f"C1 FAILED: ^IRX not downloaded; tickers seen: {tickers_seen}"
@@ -140,12 +138,7 @@ class TestC1Integration:
         def fake_fetch(tag, ticker, *, timeout=10):
             return None  # fallback not needed, yfinance mock supplies data
 
-        with patch.object(mds, "_yf_download", side_effect=fake_download):
-            with patch(
-                "services.yahoo_chart_fetcher.fetch_single_yahoo_chart",
-                side_effect=fake_fetch,
-            ):
-                overview = mds.fetch_market_overview()
+        overview = mds.fetch_market_overview(downloader=fake_download)
 
         assert "US2Y" in overview, (
             f"C1 FAILED: US2Y missing from overview; got: {set(overview.keys())}"
