@@ -171,6 +171,8 @@ class FeatureFlagSettings:
     # Fast reject remains opt-in until its offline A/B gates pass.
     scanner_fast_tier1: bool = False
     scanner_fast_tier2: bool = False
+    # Phase 3: emit core result to the UI before Telegram/persistence run.
+    scanner_core_result_early: bool = False
     smc_scoring_mode: str = "v2"
 
 

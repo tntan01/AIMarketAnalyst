@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import deepcopy
 from dataclasses import asdict, replace
 from collections.abc import Callable
 from datetime import datetime
@@ -81,6 +82,10 @@ from services.settings_service import SettingsService
 from services.storage_service import JsonStorage
 from services.telegram_alert_service import TelegramAlertService
 from workers.scanner_worker import ScannerWorker
+
+# Guards race-free creation of the per-instance scan lock for test doubles that
+# bypass __init__ (object.__new__). Real controllers create the lock in __init__.
+_SCAN_LOCK_CREATION_GUARD = RLock()
 
 
 _SMC_EVENT_TEXT_LIMIT = 48
@@ -261,11 +266,54 @@ class ScannerController:
         )
         self.retention = retention_service or RuntimeRetentionService()
         self._execution_lock = RLock()
+        self._active_scan_id: str | None = None
+        self._active_scan_lock = RLock()
         self._active_rollout_policy: ScannerRolloutPolicy | None = None
+
+    def _scan_lock(self) -> RLock:
+        """Return the one per-instance scan lock.
+
+        Real controllers create the lock in ``__init__``. Test doubles built via
+        ``object.__new__`` get one here under a module guard so two concurrent
+        callers can never create two independent locks and both acquire.
+        """
+        lock = getattr(self, "_active_scan_lock", None)
+        if lock is not None:
+            return lock
+        with _SCAN_LOCK_CREATION_GUARD:
+            lock = getattr(self, "_active_scan_lock", None)
+            if lock is None:
+                lock = RLock()
+                self._active_scan_lock = lock
+        return lock
+
+    def _try_acquire_scan(self, scan_id: str) -> bool:
+        """Non-blocking controller-level guard against overlapping core scans."""
+        with self._scan_lock():
+            if getattr(self, "_active_scan_id", None) is not None:
+                return False
+            self._active_scan_id = scan_id
+            return True
+
+    def _release_scan(self, scan_id: str) -> None:
+        with self._scan_lock():
+            if getattr(self, "_active_scan_id", None) == scan_id:
+                self._active_scan_id = None
+
+    def _active_scan(self) -> str | None:
+        with self._scan_lock():
+            return getattr(self, "_active_scan_id", None)
 
     def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
         thread = QThread()
-        worker = ScannerWorker(self.run_market_scan, {"request": request})
+        split_aftercare = bool(
+            request.feature_flags.get("scanner_core_result_early", False)
+        )
+        worker = ScannerWorker(
+            self.run_market_scan,
+            {"request": request},
+            split_aftercare=split_aftercare,
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
@@ -278,8 +326,15 @@ class ScannerController:
         *,
         request: ScannerRequest,
         _progress_callback: Callable[[int, str], None] | None = None,
+        _core_ready_callback: Callable[[dict[str, Any]], None] | None = None,
+        _aftercare_progress_callback: Callable[[int, str], None] | None = None,
+        _return_aftercare_delta: bool = False,
     ) -> dict[str, Any]:
         progress = _progress_callback or (lambda _percent, _message: None)
+        aftercare_progress = (
+            _aftercare_progress_callback
+            or (lambda _percent, _message: None)
+        )
         settings = self.settings_service.load()
         effective_risk_percent = min(
             max(float(request.risk_percent), 0.0),
@@ -287,88 +342,161 @@ class ScannerController:
         )
         request = replace(request, risk_percent=effective_risk_percent)
         scan_context = create_scan_context(settings, request)
-        self._emit_observability(
-            "SCAN_STARTED",
-            scan_id=scan_context.scan_id,
-            payload={
-                "request_hash": scan_context.request_hash,
-                "settings_hash": scan_context.settings_hash,
-                "symbols": list(request.symbols),
-                "smc_scoring_mode": scan_context.smc_scoring_mode,
-                "smc_scorer_version": scan_context.smc_scorer_version,
-                "smc_domain_version": scan_context.smc_domain_version,
-            },
-        )
-        progress(8, "Đang kiểm tra kết nối dữ liệu...")
+        if not self._try_acquire_scan(scan_context.scan_id):
+            active = self._active_scan()
+            raise RuntimeError(
+                f"Scanner đang chạy (scan {active}). "
+                "Hãy chờ lần quét hiện tại hoàn tất."
+            )
         try:
-            status = self.mt5.ensure_ready(require_login=True)
-        except ProviderNotReadyError as exc:
-            status = exc.status
             self._emit_observability(
-                "DATA_FETCH_FAILURE",
+                "SCAN_STARTED",
                 scan_id=scan_context.scan_id,
-                severity="ERROR",
                 payload={
-                    "stage": "connection",
-                    "provider": status.provider_name,
-                    "connected": status.connected,
-                    "logged_in": status.logged_in,
+                    "request_hash": scan_context.request_hash,
+                    "settings_hash": scan_context.settings_hash,
+                    "symbols": list(request.symbols),
+                    "smc_scoring_mode": scan_context.smc_scoring_mode,
+                    "smc_scorer_version": scan_context.smc_scorer_version,
+                    "smc_domain_version": scan_context.smc_domain_version,
                 },
             )
-            raise
-        rollout_settings = getattr(settings, "scanner_rollout", None)
-        try:
-            pre_scan_readiness = self.rollout_metrics.readiness(
-                rollout_settings
-            )
-            pre_scan_canary_readiness = (
-                self.rollout_metrics.canary_readiness(
+            progress(8, "Đang kiểm tra kết nối dữ liệu...")
+            try:
+                status = self.mt5.ensure_ready(require_login=True)
+            except ProviderNotReadyError as exc:
+                status = exc.status
+                self._emit_observability(
+                    "DATA_FETCH_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={
+                        "stage": "connection",
+                        "provider": status.provider_name,
+                        "connected": status.connected,
+                        "logged_in": status.logged_in,
+                    },
+                )
+                raise
+            rollout_settings = getattr(settings, "scanner_rollout", None)
+            try:
+                pre_scan_readiness = self.rollout_metrics.readiness(
                     rollout_settings
                 )
+                pre_scan_canary_readiness = (
+                    self.rollout_metrics.canary_readiness(
+                        rollout_settings
+                    )
+                )
+                release_ready = pre_scan_readiness.get("ready") is True
+                canary_ready = (
+                    pre_scan_canary_readiness.get("ready") is True
+                )
+            except Exception:
+                pre_scan_readiness = {
+                    "ready": False,
+                    "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
+                }
+                pre_scan_canary_readiness = dict(pre_scan_readiness)
+                release_ready = False
+                canary_ready = False
+            rollout_policy = build_rollout_policy(
+                rollout_settings,
+                server=status.server,
+                canary_ready=canary_ready,
+                release_ready=release_ready,
             )
-            release_ready = pre_scan_readiness.get("ready") is True
-            canary_ready = (
-                pre_scan_canary_readiness.get("ready") is True
-            )
-        except Exception:
-            pre_scan_readiness = {
-                "ready": False,
-                "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
-            }
-            pre_scan_canary_readiness = dict(pre_scan_readiness)
-            release_ready = False
-            canary_ready = False
-        rollout_policy = build_rollout_policy(
-            rollout_settings,
-            server=status.server,
-            canary_ready=canary_ready,
-            release_ready=release_ready,
-        )
-        self._active_rollout_policy = rollout_policy
-        self._emit_observability(
-            "ROLLOUT_POLICY_EVALUATED",
-            scan_id=scan_context.scan_id,
-            payload=rollout_policy.to_dict(),
-        )
-        mt5_balance = self.mt5.account_balance()
-        if mt5_balance is None:
+            self._active_rollout_policy = rollout_policy
             self._emit_observability(
-                "DATA_FETCH_FAILURE",
+                "ROLLOUT_POLICY_EVALUATED",
                 scan_id=scan_context.scan_id,
-                severity="ERROR",
-                payload={"stage": "account_balance"},
+                payload=rollout_policy.to_dict(),
             )
-            raise RuntimeError("Không lấy được số dư từ tài khoản.")
-        try:
-            scan_portfolio = self.mt5.portfolio_snapshot()
-            portfolio_state = scan_portfolio.to_dict()
-        except Exception as exc:
-            portfolio_state = {
-                "available": False,
-                "reason_codes": ["PORTFOLIO_STATE_UNAVAILABLE"],
-                "reason": str(exc),
-            }
+            mt5_balance = self.mt5.account_balance()
+            if mt5_balance is None:
+                self._emit_observability(
+                    "DATA_FETCH_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={"stage": "account_balance"},
+                )
+                raise RuntimeError("Không lấy được số dư từ tài khoản.")
+            try:
+                scan_portfolio = self.mt5.portfolio_snapshot()
+                portfolio_state = scan_portfolio.to_dict()
+            except Exception as exc:
+                portfolio_state = {
+                    "available": False,
+                    "reason_codes": ["PORTFOLIO_STATE_UNAVAILABLE"],
+                    "reason": str(exc),
+                }
 
+            core_output, ctx = self._run_market_scan_core(
+                request,
+                progress,
+                scan_context=scan_context,
+                settings=settings,
+                rollout_policy=rollout_policy,
+                pre_scan_readiness=pre_scan_readiness,
+                pre_scan_canary_readiness=pre_scan_canary_readiness,
+                mt5_balance=mt5_balance,
+                portfolio_state=portfolio_state,
+            )
+            split = bool(
+                request.feature_flags.get("scanner_core_result_early", False)
+            )
+            if split and _core_ready_callback is not None:
+                _core_ready_callback(core_output)
+            if split:
+                try:
+                    delta = self._run_market_scan_aftercare(
+                        core_output,
+                        request,
+                        aftercare_progress,
+                        ctx=ctx,
+                        fatal_errors=False,
+                    )
+                except Exception as exc:
+                    # Aftercare must never lose the already-emitted core result.
+                    self._emit_observability(
+                        "AFTERCARE_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        severity="ERROR",
+                        payload={"reason": str(exc)},
+                    )
+                    delta = {
+                        "scan_id": scan_context.scan_id,
+                        "aftercare_error": str(exc),
+                    }
+                if _return_aftercare_delta:
+                    return delta
+                return {**core_output, **delta}
+            # Legacy flow (scanner_core_result_early=false): no early core
+            # signal, aftercare errors fail the scan exactly like the old path.
+            delta = self._run_market_scan_aftercare(
+                core_output,
+                request,
+                aftercare_progress,
+                ctx=ctx,
+                fatal_errors=True,
+            )
+            return {**core_output, **delta}
+        finally:
+            self._release_scan(scan_context.scan_id)
+
+    def _run_market_scan_core(
+        self,
+        request: ScannerRequest,
+        progress: Callable[[int, str], None],
+        *,
+        scan_context,
+        settings,
+        rollout_policy,
+        pre_scan_readiness,
+        pre_scan_canary_readiness,
+        mt5_balance,
+        portfolio_state,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         bars_by_timeframe = {
             "D1": settings.advanced.d1_bars,
             "H4": settings.advanced.h4_bars,
@@ -642,7 +770,192 @@ class ScannerController:
             )
         progress(78, "Đã xếp hạng lại candidate sau filters...")
 
+        progress(90, "Đang dựng bảng kết quả quét...")
+        output = build_scanner_output(rows, request, 0)  # ai_called=0 since audit is now manual
+        output["persistence_mode"] = request.persistence_mode
+        output["observability_version"] = SCANNER_OBSERVABILITY_VERSION
+        output["scan_id"] = scan_context.scan_id
+        output["scan_context"] = scan_context.to_dict()
+        output["portfolio_state"] = portfolio_state
+        output["rollout_version"] = SCANNER_ROLLOUT_VERSION
+        output["rollout_policy"] = rollout_policy.to_dict()
+        output["pre_scan_release_readiness"] = pre_scan_readiness
+        output["pre_scan_canary_readiness"] = (
+            pre_scan_canary_readiness
+        )
+        output["shadow_report"] = shadow_report
+        # Aftercare gets its own deep copy of rows: core_output["rows"] is the
+        # immutable snapshot already handed to the UI, and no aftercare step may
+        # mutate the object the UI is rendering (mục 11.3 / 19.3).
+        ctx: dict[str, Any] = {
+            "scan_context": scan_context,
+            "settings": settings,
+            "rollout_policy": rollout_policy,
+            "pre_scan_readiness": pre_scan_readiness,
+            "pre_scan_canary_readiness": pre_scan_canary_readiness,
+            "correlation_context": correlation_context,
+            "freshness": freshness,
+            "closed_trades": closed_trades,
+            "rows": deepcopy(rows),
+            "portfolio_state": portfolio_state,
+        }
+        return output, ctx
+
+    def _run_market_scan_aftercare(
+        self,
+        core_output: dict[str, Any],
+        request: ScannerRequest,
+        progress: Callable[[int, str], None],
+        *,
+        ctx: dict[str, Any],
+        fatal_errors: bool = False,
+    ) -> dict[str, Any]:
+        scan_context = ctx["scan_context"]
+        settings = ctx["settings"]
+        rows = ctx["rows"]
+        delta: dict[str, Any] = {}
+
         # AI Market Brief (1 call, after all individual audits)
+        progress(94, "Đang tạo bản tin thị trường...")
+        market_brief, market_brief_error = self._generate_market_brief(
+            rows,
+            correlation_context=ctx["correlation_context"],
+            freshness=ctx["freshness"],
+            settings=settings,
+        )
+        delta["market_brief"] = market_brief
+        delta["market_brief_error"] = market_brief_error
+
+        if request.auto_trade_enabled:
+            progress(95, "Đang kiểm tra và đặt lệnh tự động...")
+            try:
+                delta["auto_trade_results"] = self._execute_auto_trades(
+                    rows,
+                    request,
+                    rollout_policy=ctx["rollout_policy"],
+                )
+            except Exception as exc:
+                if fatal_errors:
+                    # Legacy flow: an auto-trade failure fails the whole scan.
+                    raise
+                delta["auto_trade_error"] = str(exc)
+                delta["auto_trade_results"] = {
+                    "enabled": True,
+                    "attempted": 0,
+                    "opened": 0,
+                    "skipped": 0,
+                    "rollout_blocked": 0,
+                    "errors": [str(exc)],
+                    "orders": [],
+                    "rollout_policy": ctx["rollout_policy"].to_dict(),
+                }
+                self._emit_observability(
+                    "AUTO_TRADE_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={"reason": str(exc)},
+                )
+        else:
+            delta["auto_trade_results"] = {
+                "enabled": False,
+                "attempted": 0,
+                "opened": 0,
+                "skipped": 0,
+                "rollout_blocked": 0,
+                "errors": [],
+                "orders": [],
+                "rollout_policy": ctx["rollout_policy"].to_dict(),
+            }
+
+        try:
+            delta["rollout_metrics"] = self.rollout_metrics.record_scan(
+                scan_id=scan_context.scan_id,
+                shadow_report=core_output.get("shadow_report", {}),
+                auto_trade_results=delta["auto_trade_results"],
+                rollout_policy=ctx["rollout_policy"].to_dict(),
+                closed_trades=ctx["closed_trades"],
+            )
+            delta["release_readiness"] = self.rollout_metrics.readiness(
+                getattr(settings, "scanner_rollout", None)
+            )
+            delta["canary_readiness"] = (
+                self.rollout_metrics.canary_readiness(
+                    getattr(settings, "scanner_rollout", None)
+                )
+            )
+        except Exception as exc:
+            delta["rollout_metrics_error"] = str(exc)
+            delta["release_readiness"] = {
+                "rollout_version": SCANNER_ROLLOUT_VERSION,
+                "ready": False,
+                "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
+            }
+            delta["canary_readiness"] = dict(
+                delta["release_readiness"]
+            )
+            self._emit_observability(
+                "ROLLOUT_METRICS_FAILURE",
+                scan_id=scan_context.scan_id,
+                severity="ERROR",
+                payload={"reason": str(exc)},
+            )
+
+        progress(97, "Đang gửi cảnh báo Telegram...")
+        try:
+            delta["telegram_alerts"] = self._send_telegram_alerts(rows)
+        except Exception as exc:
+            if fatal_errors:
+                # Legacy flow: a Telegram failure fails the whole scan.
+                raise
+            delta["telegram_error"] = str(exc)
+            delta["telegram_alerts"] = {
+                "attempted": 0,
+                "sent": 0,
+                "errors": [str(exc)],
+                "summary_sent": 0,
+            }
+            self._emit_observability(
+                "TELEGRAM_ALERT_FAILURE",
+                scan_id=scan_context.scan_id,
+                severity="ERROR",
+                payload={"reason": str(exc)},
+            )
+
+        if request.persistence_mode != "none":
+            progress(98, "Đang lưu snapshot quét...")
+            try:
+                delta["snapshot_path"] = str(
+                    self.save_snapshot({**core_output, **delta})
+                )
+            except Exception as exc:
+                delta["snapshot_error"] = str(exc)
+                self._emit_observability(
+                    "SNAPSHOT_WRITE_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={"reason": str(exc)},
+                )
+
+        delta["scan_id"] = scan_context.scan_id
+        self._emit_observability(
+            "SCAN_COMPLETED",
+            scan_id=scan_context.scan_id,
+            payload={
+                "symbols_scanned": len(rows),
+                "summary": core_output.get("summary", {}),
+                "snapshot_path": delta.get("snapshot_path", ""),
+            },
+        )
+        return delta
+
+    def _generate_market_brief(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        correlation_context: dict[str, Any],
+        freshness: dict[str, Any],
+        settings,
+    ) -> tuple[str, str]:
         market_brief = ""
         market_brief_error = ""
         active_ai = settings.ai.active_provider()
@@ -660,96 +973,9 @@ class ScannerController:
                 market_brief_error = str(exc)
         elif not active_ai or not active_ai.api_key:
             market_brief_error = "Chưa cấu hình AI Provider hoặc API key trong Settings."
+        return market_brief, market_brief_error
 
-        progress(94, "Đang dựng bảng kết quả quét...")
-        output = build_scanner_output(rows, request, 0)  # ai_called=0 since audit is now manual
-        output["persistence_mode"] = request.persistence_mode
-        output["observability_version"] = SCANNER_OBSERVABILITY_VERSION
-        output["scan_id"] = scan_context.scan_id
-        output["scan_context"] = scan_context.to_dict()
-        output["portfolio_state"] = portfolio_state
-        output["rollout_version"] = SCANNER_ROLLOUT_VERSION
-        output["rollout_policy"] = rollout_policy.to_dict()
-        output["pre_scan_release_readiness"] = pre_scan_readiness
-        output["pre_scan_canary_readiness"] = (
-            pre_scan_canary_readiness
-        )
-        output["shadow_report"] = shadow_report
-        output["market_brief"] = market_brief
-        output["market_brief_error"] = market_brief_error
-        auto_trade_results = (
-            self._execute_auto_trades(
-                rows,
-                request,
-                rollout_policy=rollout_policy,
-            )
-            if request.auto_trade_enabled
-            else {
-                "enabled": False,
-                "attempted": 0,
-                "opened": 0,
-                "skipped": 0,
-                "rollout_blocked": 0,
-                "errors": [],
-                "orders": [],
-                "rollout_policy": rollout_policy.to_dict(),
-            }
-        )
-        output["auto_trade_results"] = auto_trade_results
-        try:
-            output["rollout_metrics"] = self.rollout_metrics.record_scan(
-                scan_id=scan_context.scan_id,
-                shadow_report=shadow_report,
-                auto_trade_results=auto_trade_results,
-                rollout_policy=rollout_policy.to_dict(),
-                closed_trades=closed_trades,
-            )
-            output["release_readiness"] = self.rollout_metrics.readiness(
-                getattr(settings, "scanner_rollout", None)
-            )
-            output["canary_readiness"] = (
-                self.rollout_metrics.canary_readiness(
-                    getattr(settings, "scanner_rollout", None)
-                )
-            )
-        except Exception as exc:
-            output["rollout_metrics_error"] = str(exc)
-            output["release_readiness"] = {
-                "rollout_version": SCANNER_ROLLOUT_VERSION,
-                "ready": False,
-                "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
-            }
-            output["canary_readiness"] = dict(
-                output["release_readiness"]
-            )
-            self._emit_observability(
-                "ROLLOUT_METRICS_FAILURE",
-                scan_id=scan_context.scan_id,
-                severity="ERROR",
-                payload={"reason": str(exc)},
-            )
-        output["telegram_alerts"] = self._send_telegram_alerts(rows)
-        if request.persistence_mode != "none":
-            try:
-                output["snapshot_path"] = str(self.save_snapshot(output))
-            except Exception as exc:
-                output["snapshot_error"] = str(exc)
-                self._emit_observability(
-                    "SNAPSHOT_WRITE_FAILURE",
-                    scan_id=scan_context.scan_id,
-                    severity="ERROR",
-                    payload={"reason": str(exc)},
-                )
-        self._emit_observability(
-            "SCAN_COMPLETED",
-            scan_id=scan_context.scan_id,
-            payload={
-                "symbols_scanned": len(rows),
-                "summary": output.get("summary", {}),
-                "snapshot_path": output.get("snapshot_path", ""),
-            },
-        )
-        return output
+
 
     @staticmethod
     def _auto_trade_config(request: ScannerRequest, symbol: str) -> dict[str, object] | None:
