@@ -1291,7 +1291,7 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 
 ## Orders Screen (Quản lý lệnh) — BE & Trailing Stop
 
-> Thiết kế mới 2026-07-08. Xem `docs/trading/order_management.md` để biết chi tiết đầy đủ.
+> Thiết kế mới 2026-07-08. Chi tiết triển khai nằm tại `ui/screens/orders_screen.py`.
 
 ### Tổng quan
 

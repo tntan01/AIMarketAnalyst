@@ -720,7 +720,6 @@ Xem chi tiết tại `docs/scanner/scanner-flow.md` và
 - SL modifications are performed via `modify_position_sltp(pos_id, new_sl, new_tp=None)`, preserving the original TP.
 - Only positions opened by the system are managed; manual positions are ignored.
 - Configuration lives in `settings.json` under `order_management` with defaults: `be_trigger_r=1.0`, `be_plus_pips=2`, `trail_wide_atr_multiplier=2.5`, `trail_tight_atr_multiplier=1.5`, `trail_tight_trigger_r=2.0`, `poll_interval_seconds=5`.
-- Full design document: `docs/trading/order_management.md`.
 
 ### Gemini API Migration (2026-07-17)
 
