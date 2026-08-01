@@ -8,6 +8,7 @@ and keeps the small scheduled-scan record safe to retain for longer.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import gzip
 import json
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,22 @@ SUMMARY_ROW_FIELDS = (
 def normalize_persistence_mode(value: object, *, default: str = PERSISTENCE_FULL) -> str:
     mode = str(value or "").strip().lower()
     return mode if mode in _VALID_MODES else default
+
+
+def atomic_json_save(path: Path, data: Any, *, indent: int | None = None) -> None:
+    """Atomically persist JSON (optionally gzip) so a killed process can never
+    leave a truncated target file: write a temporary sibling, then replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp")
+    if path.suffix == ".gz":
+        with gzip.open(temporary, "wt", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=indent, ensure_ascii=False)
+    else:
+        temporary.write_text(
+            json.dumps(data, indent=indent, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    temporary.replace(path)
 
 
 def summary_row(row: dict[str, Any]) -> dict[str, Any]:

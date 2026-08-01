@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import asdict, replace
@@ -79,20 +80,25 @@ from services.scanner_rollout_service import (
     scanner_rollout_metrics,
 )
 from services.runtime_retention_service import RuntimeRetentionService
+from services.scanner_job_state import ScannerJobState
 from services.scanner_persistence_service import (
     PERSISTENCE_FULL,
     ScannerPersistenceService,
+    atomic_json_save,
     persist_performance_summary,
     summary_row,
 )
 from services.settings_service import SettingsService
-from services.storage_service import JsonStorage
 from services.telegram_alert_service import TelegramAlertService
 from workers.scanner_worker import ScannerWorker
 
 # Guards race-free creation of the per-instance scan lock for test doubles that
 # bypass __init__ (object.__new__). Real controllers create the lock in __init__.
 _SCAN_LOCK_CREATION_GUARD = RLock()
+
+# Bounded budget the app waits for the aftercare persistence job before it
+# marks the job interrupted and exits (mục 19.2).
+AFTERCARE_SHUTDOWN_WAIT_SECONDS = 20.0
 
 
 _SMC_EVENT_TEXT_LIMIT = 48
@@ -271,6 +277,7 @@ class ScannerController:
         observability_service: StructuredObservabilityService | None = None,
         rollout_metrics_service: ScannerRolloutMetricsService | None = None,
         retention_service: RuntimeRetentionService | None = None,
+        job_state: ScannerJobState | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.mt5: MT5Service = mt5 or MT5Service()
@@ -283,13 +290,16 @@ class ScannerController:
             rollout_metrics_service or scanner_rollout_metrics
         )
         self.retention = retention_service or RuntimeRetentionService()
+        self._job_state = job_state or ScannerJobState(
+            runtime_root=app_data_dir()
+        )
         self._execution_lock = RLock()
         self._active_scan_id: str | None = None
         self._active_scan_lock = RLock()
         self._active_rollout_policy: ScannerRolloutPolicy | None = None
 
     def _scan_lock(self) -> RLock:
-        """Return the one per-instance scan lock.
+        """Return the one per-instance scan lock (mục 12.3, Phase 5).
 
         Real controllers create the lock in ``__init__``. Test doubles built via
         ``object.__new__`` get one here under a module guard so two concurrent
@@ -307,11 +317,19 @@ class ScannerController:
 
     def _try_acquire_scan(self, scan_id: str) -> bool:
         """Non-blocking controller-level guard against overlapping core scans."""
+        acquired, _active_owner = self._try_acquire_scan_with_owner(scan_id)
+        return acquired
+
+    def _try_acquire_scan_with_owner(
+        self, scan_id: str
+    ) -> tuple[bool, str | None]:
+        """Try to acquire and atomically capture the rejecting owner, if any."""
         with self._scan_lock():
-            if getattr(self, "_active_scan_id", None) is not None:
-                return False
+            active_owner = getattr(self, "_active_scan_id", None)
+            if active_owner is not None:
+                return False, active_owner
             self._active_scan_id = scan_id
-            return True
+            return True, None
 
     def _release_scan(self, scan_id: str) -> None:
         with self._scan_lock():
@@ -321,6 +339,14 @@ class ScannerController:
     def _active_scan(self) -> str | None:
         with self._scan_lock():
             return getattr(self, "_active_scan_id", None)
+
+    def _scanner_job_state(self) -> ScannerJobState:
+        state = getattr(self, "_job_state", None)
+        if state is not None:
+            return state
+        state = ScannerJobState(runtime_root=app_data_dir())
+        self._job_state = state
+        return state
 
     def create_scan_worker(self, request: ScannerRequest) -> tuple[QThread, ScannerWorker]:
         thread = QThread()
@@ -369,8 +395,8 @@ class ScannerController:
         scan_context = create_scan_context(settings, request)
         _record_performance(performance, "end_phase", "settings")
         _record_performance(performance, "set_scan_id", scan_context.scan_id)
-        if not self._try_acquire_scan(scan_context.scan_id):
-            active = self._active_scan()
+        acquired, active = self._try_acquire_scan_with_owner(scan_context.scan_id)
+        if not acquired:
             raise RuntimeError(
                 f"Scanner đang chạy (scan {active}). "
                 "Hãy chờ lần quét hiện tại hoàn tất."
@@ -908,168 +934,224 @@ class ScannerController:
         rows = ctx["rows"]
         performance = ctx.get("performance")
         delta: dict[str, Any] = {}
-
-        # AI Market Brief (1 call, after all individual audits)
-        _record_performance(performance, "start_phase", "market_brief")
-        progress(94, "Đang tạo bản tin thị trường...")
-        market_brief, market_brief_error = self._generate_market_brief(
-            rows,
-            correlation_context=ctx["correlation_context"],
-            freshness=ctx["freshness"],
-            settings=settings,
+        # The aftercare job starts before any slow external I/O, so an app
+        # shutdown at ANY aftercare point either waits (bounded) for it or
+        # leaves an "interrupted" marker (mục 19.2).  Durable markers are only
+        # written when persistence is enabled.
+        job_state = self._scanner_job_state()
+        job_state.begin_aftercare(
+            scan_context.scan_id,
+            durable=request.persistence_mode != "none",
         )
-        delta["market_brief"] = market_brief
-        delta["market_brief_error"] = market_brief_error
-        _record_performance(performance, "end_phase", "market_brief")
-
-        if request.auto_trade_enabled:
-            progress(95, "Đang kiểm tra và đặt lệnh tự động...")
-            try:
-                delta["auto_trade_results"] = self._execute_auto_trades(
-                    rows,
-                    request,
-                    rollout_policy=ctx["rollout_policy"],
-                )
-            except Exception as exc:
-                if fatal_errors:
-                    # Legacy flow: an auto-trade failure fails the whole scan.
-                    raise
-                delta["auto_trade_error"] = str(exc)
-                delta["auto_trade_results"] = {
-                    "enabled": True,
-                    "attempted": 0,
-                    "opened": 0,
-                    "skipped": 0,
-                    "rollout_blocked": 0,
-                    "errors": [str(exc)],
-                    "orders": [],
-                    "rollout_policy": ctx["rollout_policy"].to_dict(),
-                }
-                self._emit_observability(
-                    "AUTO_TRADE_FAILURE",
-                    scan_id=scan_context.scan_id,
-                    severity="ERROR",
-                    payload={"reason": str(exc)},
-                )
-        else:
-            delta["auto_trade_results"] = {
-                "enabled": False,
-                "attempted": 0,
-                "opened": 0,
-                "skipped": 0,
-                "rollout_blocked": 0,
-                "errors": [],
-                "orders": [],
-                "rollout_policy": ctx["rollout_policy"].to_dict(),
-            }
-
+        persistence_incomplete = False
         try:
-            delta["rollout_metrics"] = self.rollout_metrics.record_scan(
-                scan_id=scan_context.scan_id,
-                shadow_report=core_output.get("shadow_report", {}),
-                auto_trade_results=delta["auto_trade_results"],
-                rollout_policy=ctx["rollout_policy"].to_dict(),
-                closed_trades=ctx["closed_trades"],
-            )
-            delta["release_readiness"] = self.rollout_metrics.readiness(
-                getattr(settings, "scanner_rollout", None)
-            )
-            delta["canary_readiness"] = (
-                self.rollout_metrics.canary_readiness(
-                    getattr(settings, "scanner_rollout", None)
-                )
-            )
-        except Exception as exc:
-            delta["rollout_metrics_error"] = str(exc)
-            delta["release_readiness"] = {
-                "rollout_version": SCANNER_ROLLOUT_VERSION,
-                "ready": False,
-                "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
-            }
-            delta["canary_readiness"] = dict(
-                delta["release_readiness"]
-            )
-            self._emit_observability(
-                "ROLLOUT_METRICS_FAILURE",
-                scan_id=scan_context.scan_id,
-                severity="ERROR",
-                payload={"reason": str(exc)},
-            )
-
-        progress(97, "Đang gửi cảnh báo Telegram...")
-        try:
-            delta["telegram_alerts"] = self._send_telegram_alerts(rows)
-        except Exception as exc:
-            if fatal_errors:
-                # Legacy flow: a Telegram failure fails the whole scan.
-                raise
-            delta["telegram_error"] = str(exc)
-            delta["telegram_alerts"] = {
-                "attempted": 0,
-                "sent": 0,
-                "errors": [str(exc)],
-                "summary_sent": 0,
-            }
-            self._emit_observability(
-                "TELEGRAM_ALERT_FAILURE",
-                scan_id=scan_context.scan_id,
-                severity="ERROR",
-                payload={"reason": str(exc)},
-            )
-
-        if request.persistence_mode != "none":
-            progress(98, "Đang lưu snapshot quét...")
-            try:
-                delta["snapshot_path"] = str(
-                    self.save_snapshot({**core_output, **delta})
-                )
-            except Exception as exc:
-                delta["snapshot_error"] = str(exc)
-                self._emit_observability(
-                    "SNAPSHOT_WRITE_FAILURE",
-                    scan_id=scan_context.scan_id,
-                    severity="ERROR",
-                    payload={"reason": str(exc)},
-                )
-
-        delta["scan_id"] = scan_context.scan_id
-        performance_summary = _record_performance(performance, "finalize")
-        if isinstance(performance_summary, dict):
-            delta["performance"] = performance_summary
-            snapshot_path = str(delta.get("snapshot_path", "") or "")
-            if snapshot_path:
+            # Compact summary first: the core result is durable on disk before
+            # market brief, Telegram or full persistence run.
+            if request.persistence_mode != "none":
+                progress(93, "Đang lưu snapshot quét...")
                 try:
-                    delta["performance_summary_path"] = str(
-                        persist_performance_summary(
-                            Path(snapshot_path),
-                            performance_summary,
-                        )
-                    )
+                    self._write_early_summary(core_output)
                 except Exception as exc:
+                    delta["snapshot_error"] = str(exc)
                     self._emit_observability(
-                        "PERFORMANCE_SUMMARY_PERSIST_FAILURE",
+                        "SNAPSHOT_WRITE_FAILURE",
                         scan_id=scan_context.scan_id,
                         severity="ERROR",
                         payload={"reason": str(exc)},
                     )
-        self._emit_observability(
-            "SCAN_PERFORMANCE_SUMMARY",
-            scan_id=scan_context.scan_id,
-            payload=(
-                performance_summary
-                if isinstance(performance_summary, dict)
-                else {}
-            ),
-        )
-        self._emit_observability(
-            "SCAN_COMPLETED",
-            scan_id=scan_context.scan_id,
-            payload={
-                "symbols_scanned": len(rows),
-                "summary": core_output.get("summary", {}),
-                "snapshot_path": delta.get("snapshot_path", ""),
-            },
-        )
+
+            # AI Market Brief (1 call, after all individual audits)
+            _record_performance(performance, "start_phase", "market_brief")
+            progress(94, "Đang tạo bản tin thị trường...")
+            market_brief, market_brief_error = self._generate_market_brief(
+                rows,
+                correlation_context=ctx["correlation_context"],
+                freshness=ctx["freshness"],
+                settings=settings,
+            )
+            delta["market_brief"] = market_brief
+            delta["market_brief_error"] = market_brief_error
+            _record_performance(performance, "end_phase", "market_brief")
+
+            if request.auto_trade_enabled:
+                progress(95, "Đang kiểm tra và đặt lệnh tự động...")
+                try:
+                    delta["auto_trade_results"] = self._execute_auto_trades(
+                        rows,
+                        request,
+                        rollout_policy=ctx["rollout_policy"],
+                    )
+                except Exception as exc:
+                    if fatal_errors:
+                        # Legacy flow: an auto-trade failure fails the whole scan.
+                        raise
+                    delta["auto_trade_error"] = str(exc)
+                    delta["auto_trade_results"] = {
+                        "enabled": True,
+                        "attempted": 0,
+                        "opened": 0,
+                        "skipped": 0,
+                        "rollout_blocked": 0,
+                        "errors": [str(exc)],
+                        "orders": [],
+                        "rollout_policy": ctx["rollout_policy"].to_dict(),
+                    }
+                    self._emit_observability(
+                        "AUTO_TRADE_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        severity="ERROR",
+                        payload={"reason": str(exc)},
+                    )
+            else:
+                delta["auto_trade_results"] = {
+                    "enabled": False,
+                    "attempted": 0,
+                    "opened": 0,
+                    "skipped": 0,
+                    "rollout_blocked": 0,
+                    "errors": [],
+                    "orders": [],
+                    "rollout_policy": ctx["rollout_policy"].to_dict(),
+                }
+
+            try:
+                delta["rollout_metrics"] = self.rollout_metrics.record_scan(
+                    scan_id=scan_context.scan_id,
+                    shadow_report=core_output.get("shadow_report", {}),
+                    auto_trade_results=delta["auto_trade_results"],
+                    rollout_policy=ctx["rollout_policy"].to_dict(),
+                    closed_trades=ctx["closed_trades"],
+                )
+                delta["release_readiness"] = self.rollout_metrics.readiness(
+                    getattr(settings, "scanner_rollout", None)
+                )
+                delta["canary_readiness"] = (
+                    self.rollout_metrics.canary_readiness(
+                        getattr(settings, "scanner_rollout", None)
+                    )
+                )
+            except Exception as exc:
+                delta["rollout_metrics_error"] = str(exc)
+                delta["release_readiness"] = {
+                    "rollout_version": SCANNER_ROLLOUT_VERSION,
+                    "ready": False,
+                    "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
+                }
+                delta["canary_readiness"] = dict(
+                    delta["release_readiness"]
+                )
+                self._emit_observability(
+                    "ROLLOUT_METRICS_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={"reason": str(exc)},
+                )
+
+            progress(97, "Đang gửi cảnh báo Telegram...")
+            try:
+                delta["telegram_alerts"] = self._send_telegram_alerts(rows)
+            except Exception as exc:
+                if fatal_errors:
+                    # Legacy flow: a Telegram failure fails the whole scan.
+                    raise
+                delta["telegram_error"] = str(exc)
+                delta["telegram_alerts"] = {
+                    "attempted": 0,
+                    "sent": 0,
+                    "errors": [str(exc)],
+                    "summary_sent": 0,
+                }
+                self._emit_observability(
+                    "TELEGRAM_ALERT_FAILURE",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={"reason": str(exc)},
+                )
+
+            if request.persistence_mode != "none":
+                progress(98, "Đang lưu snapshot quét...")
+                try:
+                    info = self.persist_scan(
+                        {**core_output, **delta},
+                        manage_job=False,
+                    )
+                    delta["snapshot_path"] = str(info["snapshot_path"])
+                    delta["persistence"] = {
+                        "mode": info["snapshot_mode"],
+                        "manifest": info["snapshot_manifest"],
+                        "write_count": info["snapshot_write_count"],
+                        "duration_ms": info["snapshot_duration_ms"],
+                        "errors": info["snapshot_errors"],
+                        "status": info["snapshot_status"],
+                    }
+                    if info["snapshot_status"] != "completed":
+                        persistence_incomplete = True
+                    # The full write supersedes the early compact summary.
+                    delta.pop("snapshot_error", None)
+                except Exception as exc:
+                    persistence_incomplete = True
+                    delta["snapshot_error"] = str(exc)
+                    self._emit_observability(
+                        "SNAPSHOT_WRITE_FAILURE",
+                        scan_id=scan_context.scan_id,
+                        severity="ERROR",
+                        payload={"reason": str(exc)},
+                    )
+
+            delta["scan_id"] = scan_context.scan_id
+            performance_summary = _record_performance(performance, "finalize")
+            if isinstance(performance_summary, dict):
+                delta["performance"] = performance_summary
+                snapshot_path = str(delta.get("snapshot_path", "") or "")
+                if snapshot_path:
+                    try:
+                        delta["performance_summary_path"] = str(
+                            persist_performance_summary(
+                                Path(snapshot_path),
+                                performance_summary,
+                            )
+                        )
+                    except Exception as exc:
+                        self._emit_observability(
+                            "PERFORMANCE_SUMMARY_PERSIST_FAILURE",
+                            scan_id=scan_context.scan_id,
+                            severity="ERROR",
+                            payload={"reason": str(exc)},
+                        )
+            self._emit_observability(
+                "SCAN_PERFORMANCE_SUMMARY",
+                scan_id=scan_context.scan_id,
+                payload=(
+                    performance_summary
+                    if isinstance(performance_summary, dict)
+                    else {}
+                ),
+            )
+            self._emit_observability(
+                "SCAN_COMPLETED",
+                scan_id=scan_context.scan_id,
+                payload={
+                    "symbols_scanned": len(rows),
+                    "summary": core_output.get("summary", {}),
+                    "snapshot_path": delta.get("snapshot_path", ""),
+                },
+            )
+        finally:
+            # The job completes only after persistence, retention and the
+            # performance summary rewrite finished.  Any failure (recorded
+            # persistence error or a propagating exception) leaves an
+            # interrupted marker instead.
+            if persistence_incomplete or sys.exc_info()[0] is not None:
+                job_state.mark_interrupted(
+                    scan_context.scan_id,
+                    reason=(
+                        "persistence_error"
+                        if persistence_incomplete
+                        else "aftercare_error"
+                    ),
+                )
+            else:
+                job_state.complete_aftercare(scan_context.scan_id)
         return delta
 
     def _generate_market_brief(
@@ -2251,63 +2333,245 @@ class ScannerController:
         self,
         result: dict[str, Any],
         *,
+        runtime_root: Path | None = None,
         performance_tracker: object | None = None,
     ) -> Path:
+        """Compatibility wrapper (manual "Lưu snapshot" button): return the path."""
+        info = self.persist_scan(
+            result,
+            runtime_root=runtime_root,
+            performance_tracker=performance_tracker,
+        )
+        return Path(info["snapshot_path"])
+
+    def persist_scan(
+        self,
+        result: dict[str, Any],
+        *,
+        runtime_root: Path | None = None,
+        performance_tracker: object | None = None,
+        manage_job: bool = True,
+    ) -> dict[str, Any]:
+        """Persist one scan without ever blocking the core result.
+
+        Ordering (Phase 5): the compact summary is written first so a killed
+        process always leaves a readable snapshot; the full per-symbol gzip
+        evidence follows; the summary is then rewritten with the manifest and
+        the actual persistence status. Every write is atomic (temp + replace),
+        so a forced exit between writes can leave at most an orphaned ``.tmp``
+        sibling, never a truncated target.
+
+        With ``manage_job=True`` (standalone manual save) the aftercare job is
+        started and completed around the writes.  The aftercare flow passes
+        ``manage_job=False`` because it already owns the job lifecycle across
+        the whole aftercare (begin + compact summary before market brief,
+        complete only after persistence, retention and performance summary).
+
+        Returns the persistence delta contract: snapshot_path, snapshot_mode,
+        snapshot_manifest, snapshot_write_count, snapshot_duration_ms,
+        snapshot_errors and snapshot_status.
+        """
+        started = perf_counter()
         if performance_tracker is None:
             performance_tracker = getattr(
                 self, "_active_performance_tracker", None
             )
         _record_performance(performance_tracker, "start_phase", "persistence")
-        runtime_root = app_data_dir()
-        retention = getattr(self, "retention", None) or RuntimeRetentionService(runtime_root)
+        root = Path(runtime_root) if runtime_root is not None else app_data_dir()
+        retention = getattr(self, "retention", None) or RuntimeRetentionService(root)
         retention.ensure_started()
-        persistence = ScannerPersistenceService(runtime_root)
+        persistence = ScannerPersistenceService(root)
         mode = persistence.select_mode(result)
-        scan_id = str(result.get("scan_id", "") or "").strip()
-        if not scan_id:
-            scan_id = str(result.get("timestamp", "scanner")).replace(
-                ":", ""
-            ).replace("+", "_")
-        snapshot_dir = runtime_root / "scanner_snapshots"
+        scan_id = self._persistence_scan_id(result)
+        snapshot_dir = root / "scanner_snapshots"
         snapshot_dir.mkdir(parents=True, exist_ok=True)
-        analysis_dir = runtime_root / "scanner_analysis" / scan_id
+        analysis_dir = root / "scanner_analysis" / scan_id
         context = (
             result.get("scan_context")
             if isinstance(result.get("scan_context"), dict)
             else {}
         )
         manifest: dict[str, str] = {}
-        if mode == PERSISTENCE_FULL:
-            analysis_dir.mkdir(parents=True, exist_ok=True)
-            for row in result.get("rows", []):
-                if not isinstance(row, dict):
-                    continue
-                symbol = str(row.get("symbol", "UNKNOWN") or "UNKNOWN")
-                safe_symbol = "".join(
-                    character
-                    for character in symbol.upper()
-                    if character.isalnum()
-                ) or "UNKNOWN"
-                analysis_path = analysis_dir / f"{safe_symbol}.json.gz"
-                JsonStorage(analysis_path).save(
-                    build_analysis_document(row, context), indent=None
-                )
-                manifest[symbol] = str(analysis_path)
-
-        path = snapshot_dir / f"scanner_{scan_id}.json"
-        JsonStorage(path).save(self._snapshot_payload(result, manifest, mode), indent=None)
-        persistence.record(mode)
-        _record_performance(performance_tracker, "end_phase", "persistence")
-        _record_performance(performance_tracker, "increment", "analysis_documents_written", len(manifest))
-        _record_performance(performance_tracker, "start_phase", "retention")
+        errors: list[str] = []
+        snapshot_path = snapshot_dir / f"scanner_{scan_id}.json"
+        job_state = self._scanner_job_state()
+        if manage_job:
+            job_state.begin_aftercare(scan_id, durable=True)
         try:
-            retention.prune()
-        except OSError:
-            # Retention must never turn a successful scan into a failed scan.
-            pass
+            # 1) Compact summary first: durable immediately, even if the
+            #    process dies during the heavier full-evidence writes below.
+            atomic_json_save(
+                snapshot_path,
+                self._snapshot_payload(
+                    result, manifest, mode, status="writing"
+                ),
+                indent=None,
+            )
+            # 2) Full analysis documents (aftercare, never on the core path).
+            if mode == PERSISTENCE_FULL:
+                analysis_dir.mkdir(parents=True, exist_ok=True)
+                for row in result.get("rows", []):
+                    if not isinstance(row, dict):
+                        continue
+                    symbol = str(row.get("symbol", "UNKNOWN") or "UNKNOWN")
+                    safe_symbol = "".join(
+                        character
+                        for character in symbol.upper()
+                        if character.isalnum()
+                    ) or "UNKNOWN"
+                    analysis_path = analysis_dir / f"{safe_symbol}.json.gz"
+                    try:
+                        atomic_json_save(
+                            analysis_path,
+                            build_analysis_document(row, context),
+                            indent=None,
+                        )
+                    except OSError as exc:
+                        errors.append(f"{symbol}: {exc}")
+                        continue
+                    manifest[symbol] = str(analysis_path)
+            # 3) Final summary: manifest + the actual persistence outcome.
+            snapshot_status = (
+                "completed" if not errors else "completed_with_errors"
+            )
+            atomic_json_save(
+                snapshot_path,
+                self._snapshot_payload(
+                    result, manifest, mode, status=snapshot_status
+                ),
+                indent=None,
+            )
+            if not errors:
+                persistence.record(mode)
+        except Exception as exc:
+            self._emit_observability(
+                "RETENTION_PRUNE_SKIPPED",
+                scan_id=scan_id,
+                severity="WARNING",
+                payload={
+                    "reason": "persistence_write_failed",
+                    "error": str(exc),
+                },
+            )
+            if manage_job:
+                job_state.mark_interrupted(scan_id, reason="persistence_error")
+            raise
+        else:
+            if errors:
+                self._emit_observability(
+                    "RETENTION_PRUNE_SKIPPED",
+                    scan_id=scan_id,
+                    severity="WARNING",
+                    payload={
+                        "reason": "persistence_write_incomplete",
+                        "error": "; ".join(errors),
+                    },
+                )
+            else:
+                _record_performance(
+                    performance_tracker, "start_phase", "retention"
+                )
+                try:
+                    retention.prune()
+                except OSError:
+                    # Retention must never turn a successful scan into a failed scan.
+                    pass
+                finally:
+                    _record_performance(
+                        performance_tracker, "end_phase", "retention"
+                    )
         finally:
-            _record_performance(performance_tracker, "end_phase", "retention")
-        return path
+            if manage_job:
+                if errors:
+                    job_state.mark_interrupted(
+                        scan_id, reason="persistence_write_errors"
+                    )
+                else:
+                    job_state.complete_aftercare(scan_id)
+            _record_performance(performance_tracker, "end_phase", "persistence")
+            _record_performance(
+                performance_tracker,
+                "increment",
+                "analysis_documents_written",
+                len(manifest),
+            )
+        if errors:
+            self._emit_observability(
+                "SNAPSHOT_WRITE_FAILURE",
+                scan_id=scan_id,
+                severity="ERROR",
+                payload={"reason": "; ".join(errors)},
+            )
+        return {
+            "snapshot_path": snapshot_path,
+            "snapshot_mode": mode,
+            "snapshot_manifest": manifest,
+            "snapshot_write_count": len(manifest),
+            "snapshot_duration_ms": round(
+                max(0.0, perf_counter() - started) * 1_000,
+                3,
+            ),
+            "snapshot_errors": errors,
+            "snapshot_status": snapshot_status,
+        }
+
+    @staticmethod
+    def _persistence_scan_id(result: dict[str, Any]) -> str:
+        scan_id = str(result.get("scan_id", "") or "").strip()
+        if not scan_id:
+            scan_id = str(result.get("timestamp", "scanner")).replace(
+                ":", ""
+            ).replace("+", "_")
+        return scan_id
+
+    def _write_early_summary(
+        self,
+        result: dict[str, Any],
+        *,
+        runtime_root: Path | None = None,
+        performance_tracker: object | None = None,
+    ) -> dict[str, Any]:
+        """Write the compact snapshot before any slow aftercare I/O.
+
+        This makes the core result durable on disk (status ``writing``) before
+        market brief, Telegram or persistence run, so an app shutdown at any
+        aftercare point leaves at least a readable snapshot plus an
+        ``interrupted`` job marker (mục 19.2).
+        """
+        if performance_tracker is None:
+            performance_tracker = getattr(
+                self, "_active_performance_tracker", None
+            )
+        root = Path(runtime_root) if runtime_root is not None else app_data_dir()
+        persistence = ScannerPersistenceService(root)
+        mode = persistence.select_mode(result)
+        scan_id = self._persistence_scan_id(result)
+        snapshot_dir = root / "scanner_snapshots"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path = snapshot_dir / f"scanner_{scan_id}.json"
+        atomic_json_save(
+            snapshot_path,
+            self._snapshot_payload(result, {}, mode, status="writing"),
+            indent=None,
+        )
+        return {"snapshot_path": snapshot_path, "snapshot_mode": mode}
+
+    def wait_for_aftercare_shutdown(
+        self,
+        *,
+        timeout: float = AFTERCARE_SHUTDOWN_WAIT_SECONDS,
+    ) -> bool:
+        """Bound the app-shutdown wait for in-flight aftercare persistence.
+
+        Returns True when every job finished within the budget.  When the
+        budget expires, the still-running jobs are recorded as interrupted so
+        the next launch can tell the snapshot was not fully written.
+        """
+        job_state = self._scanner_job_state()
+        return job_state.wait_for_aftercare_shutdown(
+            timeout,
+            reason="shutdown_timeout",
+        )
 
     def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
         prompt = build_ai_setup_audit_prompt(row)
@@ -2342,6 +2606,8 @@ class ScannerController:
         result: dict[str, Any],
         manifest: dict[str, str] | None = None,
         mode: str = PERSISTENCE_FULL,
+        *,
+        status: str = "completed",
     ) -> dict[str, Any]:
         payload = {
             key: value
@@ -2351,6 +2617,9 @@ class ScannerController:
         references = manifest or {}
         payload["persistence_schema_version"] = 1
         payload["persistence_mode"] = mode
+        # Added in Phase 5; absent on legacy snapshots, which readers treat as
+        # completed (schema stays backward compatible, mục 20.3).
+        payload["persistence_status"] = status
         payload["rows"] = [
             {
                 **summary_row(row),

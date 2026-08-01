@@ -96,9 +96,19 @@ class AppController:
         return self._telegram_service
 
     def shutdown(self) -> None:
-        """Release application-owned resources without creating new services."""
-        if self._mt5 is not None:
-            self._mt5.disconnect()
+        """Release application-owned resources without creating new services.
+
+        First waits (bounded) for an in-flight scanner aftercare persistence
+        job so a scan running while the app closes cannot corrupt its snapshot;
+        jobs that exceed the budget are recorded as interrupted (mục 19.2).
+        MT5 is always disconnected, even if the wait fails unexpectedly.
+        """
+        try:
+            if self._scanner_controller is not None:
+                self._scanner_controller.wait_for_aftercare_shutdown()
+        finally:
+            if self._mt5 is not None:
+                self._mt5.disconnect()
 
     # -- controllers -------------------------------------------------------
 

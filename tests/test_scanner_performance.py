@@ -319,6 +319,11 @@ def _strip_telemetry(output: dict) -> dict:
         "timestamp",
     ):
         comparable.pop(key, None)
+    persistence = comparable.get("persistence")
+    if isinstance(persistence, dict):
+        # Phase-5 persistence delta: wall-clock duration is telemetry, the
+        # manifest/write_count/status contract is deterministic.
+        persistence.pop("duration_ms", None)
     return comparable
 
 

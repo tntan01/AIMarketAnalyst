@@ -299,7 +299,10 @@ def test_unexpected_aftercare_crash_still_returns_core(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_full_scan_core_ready_before_telegram_and_persistence(monkeypatch):
+def test_full_scan_core_ready_before_telegram_and_persistence(monkeypatch, tmp_path):
+    # Phase 5: aftercare writes the compact summary and job markers before the
+    # slow steps; keep those artifacts in the test dir, never the real runtime.
+    monkeypatch.setattr(scanner_module, "app_data_dir", lambda: tmp_path)
     ctrl = _make_controller()
     request = _request(early=True, persistence="full")
     order: list[str] = []
@@ -320,12 +323,20 @@ def test_full_scan_core_ready_before_telegram_and_persistence(monkeypatch):
         order.append("telegram")
         return {"attempted": 0, "sent": 0, "errors": [], "summary_sent": 0}
 
-    def record_save(result):
+    def record_save(result, **kwargs):
         order.append("persistence")
-        return Path("/tmp/scan-snapshot.json")
+        return {
+            "snapshot_path": Path("/tmp/scan-snapshot.json"),
+            "snapshot_mode": "full",
+            "snapshot_manifest": {},
+            "snapshot_write_count": 0,
+            "snapshot_duration_ms": 1.0,
+            "snapshot_errors": [],
+            "snapshot_status": "completed",
+        }
 
     monkeypatch.setattr(ctrl, "_send_telegram_alerts", record_telegram)
-    monkeypatch.setattr(ctrl, "save_snapshot", record_save)
+    monkeypatch.setattr(ctrl, "persist_scan", record_save)
 
     result = ctrl.run_market_scan(
         request=request, _core_ready_callback=record_core
