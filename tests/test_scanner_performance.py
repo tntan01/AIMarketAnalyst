@@ -565,21 +565,24 @@ def test_news_phase_call_sites_close_when_provider_raises(
         ),
     )
 
-    with pytest.raises(RuntimeError, match="calendar unavailable"):
-        news.latest_macro_context(
-            "EUR/USD",
-            performance_tracker=pair_tracker,
-        )
+    context = news.latest_macro_context(
+        "EUR/USD",
+        performance_tracker=pair_tracker,
+    )
 
     assert pair_tracker.started_phases.count("macro_pair_build") == 1
     assert pair_tracker.ended_phases.count("macro_pair_build") == 1
+    source_freshness = context["macro_cache"]["source_freshness"]
+    assert source_freshness["source_status"]["calendar"]["status"] == (
+        "unavailable"
+    )
 
     preload_tracker = _SpyTracker()
     preload_news = NewsService()
     monkeypatch.setattr(
         preload_news,
-        "_preload_global_macro_inputs",
-        lambda *_args: (_ for _ in ()).throw(
+        "_get_global_macro_snapshot",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
             RuntimeError("news unavailable")
         ),
     )

@@ -547,6 +547,9 @@ class SettingsService:
             scanner_mt5_history_cache=bool(
                 data.get("scanner_mt5_history_cache", False)
             ),
+            scanner_core_result_early=bool(
+                data.get("scanner_core_result_early", False)
+            ),
             smc_scoring_mode=smc_scoring_mode,
         )
 

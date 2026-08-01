@@ -761,6 +761,7 @@ class ScannerScreen (QWidget ):
         self .scan_thread =None 
         self .scan_worker =None 
         self .scan_result :dict [str ,object ]|None =None
+        self._active_scan_id = ""
         self._market_brief_text = ""
         self .symbol_boxes :list [QCheckBox ]=[]
         self .market_watch_symbols :set [str ]=set ()
@@ -1690,6 +1691,9 @@ class ScannerScreen (QWidget ):
             "scanner_mt5_history_cache": bool(
                 getattr(feature_settings, "scanner_mt5_history_cache", False)
             ),
+            "scanner_core_result_early": bool(
+                getattr(feature_settings, "scanner_core_result_early", False)
+            ),
         }
         request =ScannerRequest (
         symbols =symbols ,
@@ -1708,10 +1712,15 @@ class ScannerScreen (QWidget ):
         persistence_mode =("summary" if hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto" else "full"),
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )
-        self .scan_thread =thread 
-        self .scan_worker =worker 
+        self .scan_thread =thread
+        self .scan_worker =worker
         worker .progress .connect (self ._scan_progress )
-        worker .succeeded .connect (self ._scan_finished )
+        if worker .split_aftercare :
+            worker .core_succeeded .connect (self ._scan_core_finished )
+            worker .aftercare_progress .connect (self ._scan_aftercare_progress )
+            worker .aftercare_succeeded .connect (self ._scan_aftercare_finished )
+        else :
+            worker .succeeded .connect (self ._scan_finished )
         worker .failed .connect (self ._scan_failed )
         thread .finished .connect (self ._scan_thread_finished )
         thread .start ()
@@ -1756,15 +1765,65 @@ class ScannerScreen (QWidget ):
         self .scan_button .setText (message )
 
     def _scan_finished (self ,result :dict [str ,object ])->None :
+        self ._active_scan_id =str (result .get ("scan_id","")or "")
         self .scan_result =result
-        execution_rows =list (result .get ("rows",[]))
+        self ._render_scan_table (result )
+        self ._apply_scan_status (result )
+        self ._apply_market_brief (result )
+        self .progress_bar .setValue (100 )
+        self .progress_bar .setVisible (False )
+        self .progress_container .setVisible (False )
+        self ._configure_table_columns ()
 
+    def _scan_core_finished (self ,result :dict [str ,object ])->None :
+        """Core analysis is done: render the table now; aftercare is pending."""
+        self ._active_scan_id =str (result .get ("scan_id","")or "")
+        self .scan_result =result
+        self ._render_scan_table (result )
+        self.status_labels["AI đã gọi"].setText("Đang tạo bản tin...")
+        if "Telegram" in self.status_labels:
+            self.status_labels["Telegram"].setText("Đang gửi...")
+        if "Rollout" in self.status_labels:
+            self.status_labels["Rollout"].setText("Đang ghi nhận...")
+        self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
+        self ._update_status_summary ()
+        self .progress_bar .setValue (96 )
+        self .scan_button .setText ("Đang gửi/lưu kết quả...")
+
+    def _scan_aftercare_finished (self ,delta :dict [str ,object ])->None :
+        """Merge the aftercare delta into the core result on the GUI thread.
+
+        A stale delta (scan_id mismatch) is dropped so it can never overwrite a
+        newer scan.
+        """
+        if str (delta .get ("scan_id","")or "")!=self ._active_scan_id :
+            return
+        base =self .scan_result if isinstance (self .scan_result ,dict )else {}
+        merged :dict [str ,object ]={**base ,**delta }
+        self .scan_result =merged
+        self ._apply_scan_status (merged )
+        self ._apply_market_brief (merged )
+        self .progress_bar .setValue (100 )
+        self .progress_bar .setVisible (False )
+        self .progress_container .setVisible (False )
+        self ._configure_table_columns ()
+
+    def _scan_aftercare_progress (self ,percent :int ,message :str )->None :
+        self .progress_bar .setValue (percent )
+        self .scan_button .setText (message )
+
+    def _render_scan_table (self ,result :dict [str ,object ])->None :
+        execution_rows =list (result .get ("rows",[]))
         # Presentation order for the UI table only.
         # Backend execution order is preserved in self.scan_result.
         presentation_rows =sort_scanner_rows_for_display (execution_rows )
-
         self .table_model .set_rows (presentation_rows )
         self .status_labels ['Đã quét'].setText (f"{result .get ('symbols_scanned',0 )} / {len (self ._selected_symbols ())}")
+        self .detail_button .setEnabled (bool (execution_rows ))
+        self .save_button .setEnabled (bool (execution_rows ))
+        self ._highlight_show_orders_button ()
+
+    def _apply_scan_status (self ,result :dict [str ,object ])->None :
         self.status_labels["AI đã gọi"].setText(f"{result.get('ai_called', 0)} mã")
         alerts =result .get ("telegram_alerts",{})if isinstance (result .get ("telegram_alerts",{}),dict )else {}
         sent =alerts .get ("sent",0 )
@@ -1805,12 +1864,9 @@ class ScannerScreen (QWidget ):
         if sent :
             self .scan_button .setText (f"Đã gửi {sent} alert Telegram")
         self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
-        self .detail_button .setEnabled (bool (execution_rows ))
-        self .save_button .setEnabled (bool (execution_rows ))
-        self ._highlight_show_orders_button ()
         self ._update_status_summary ()
 
-        # --- Market Brief ---
+    def _apply_market_brief (self ,result :dict [str ,object ])->None :
         market_brief = str(result.get("market_brief", "")).strip()
         if market_brief:
             self._market_brief_text = market_brief
@@ -1819,10 +1875,6 @@ class ScannerScreen (QWidget ):
             err = str(result.get("market_brief_error", ""))
             if err:
                 self._market_brief_text = f"Lỗi tạo bản tin: {err}"
-        self .progress_bar .setValue (100 )
-        self .progress_bar .setVisible (False )
-        self .progress_container .setVisible (False )
-        self ._configure_table_columns ()
 
     def _scan_failed (self ,message :str )->None :
         self .progress_bar .setVisible (False )
@@ -1831,6 +1883,7 @@ class ScannerScreen (QWidget ):
 
     def _scan_thread_finished (self )->None :
         self.scan_button.setText("🔍 Quét thị trường")
+        self ._active_scan_id =""
         self .scan_thread =None
         self .scan_worker =None
         self ._refresh_scan_button_state ()

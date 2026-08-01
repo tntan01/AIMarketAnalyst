@@ -9,6 +9,7 @@ import requests
 
 from core.market_models import Candle
 from core.scanner_performance import safe_performance_call
+from services.macro_market_cache import MacroMarketCache, get_shared_cache
 
 logger = logging.getLogger(__name__)
 
@@ -125,17 +126,37 @@ def fetch_macro_correlation_context(
     downloader: Any | None = None,
     force_refresh: bool = False,
     performance_tracker: object | None = None,
+    _macro_cache: MacroMarketCache | None = None,
 ) -> dict[str, list[Candle] | None]:
     """Fetch DXY/VIX/US10Y candles for correlation checks.
 
     Results are cached for _CORRELATION_CACHE_TTL (30 min) to avoid
     redundant yfinance downloads on repeated scans.
+
+    Downloads route through the shared MacroMarketCache so that concurrent
+    NewsService.preload_macro_contexts tasks reuse the same raw DataFrames.
     """
     global _CORRELATION_CACHE, _CORRELATION_CACHE_TIME, _CORRELATION_CACHE_KEY
 
     now = datetime.now()
-    download = downloader or _yf_download
-    cache_key = (period, interval, download)
+    shared_cache = _macro_cache or get_shared_cache()
+
+    # When a custom downloader is injected, use it directly (test mode).
+    if downloader is not None:
+        download = downloader
+    else:
+        # The scanner passes these same defaults — keep them in the closure
+        # so _cached_download matches the expected downloader signature.
+        _p = period
+        _i = interval
+        def _cached_download(ticker: str, **_kwargs: Any) -> Any:
+            return shared_cache.get_frame(ticker, period=_p, interval=_i, force_refresh=force_refresh)
+        download = _cached_download
+
+    # Correlation module-level cache key: (period, interval, source).
+    # "default" for the shared-cache production path (stable across calls),
+    # id(downloader) for test-injected custom downloaders.
+    cache_key = (period, interval, "default" if downloader is None else id(downloader))
     if (
         not force_refresh
         and _CORRELATION_CACHE is not None
