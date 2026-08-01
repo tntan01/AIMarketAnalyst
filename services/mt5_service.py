@@ -18,6 +18,11 @@ from core.portfolio_models import (
     PortfolioSnapshot,
 )
 from core.scanner_models import ExecutionMarketSnapshot
+from services.candle_history_cache import (
+    CacheFallbackReason,
+    CacheIdentity,
+    CandleHistoryCache,
+)
 from services.data_provider import ConnectionStatus, DataProvider, OrderResult
 
 
@@ -64,6 +69,60 @@ class MT5OrderResult:
     message: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class MT5HistoryCacheIdentity:
+    """Broker/account scope used by the in-memory OHLCV cache."""
+
+    server: str
+    broker: str
+    login: int | str
+
+    def __post_init__(self) -> None:
+        server = str(self.server or "").strip()
+        broker = str(self.broker or "").strip()
+        login = str(self.login if self.login is not None else "").strip()
+        if not server or not broker or not login:
+            raise ValueError(
+                "MT5 history cache identity requires server, broker, and login."
+            )
+        object.__setattr__(self, "server", server)
+        object.__setattr__(self, "broker", broker)
+        object.__setattr__(self, "login", login)
+
+    @classmethod
+    def from_connection_status(
+        cls,
+        status: ConnectionStatus,
+    ) -> MT5HistoryCacheIdentity | None:
+        """Build a complete identity, or disable reuse when metadata is missing."""
+
+        try:
+            return cls(
+                server=getattr(status, "server", ""),
+                broker=getattr(status, "broker", ""),
+                login=getattr(status, "login", ""),
+            )
+        except ValueError:
+            return None
+
+    @property
+    def account_fingerprint(self) -> str:
+        return json.dumps(
+            [self.broker, str(self.login)],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+
+
+_PRIMARY_TIMEFRAME_INTERVALS = {
+    "D1": timedelta(days=1),
+    "H4": timedelta(hours=4),
+    "H1": timedelta(hours=1),
+    "M15": timedelta(minutes=15),
+}
+_MT5_HISTORY_TAIL_BARS = 3
+
+
 class MT5Service(DataProvider):
     def __init__(self, symbol_profile_path: Path | None = None) -> None:
         path = symbol_profile_path or CONFIG_DIR / "symbol_profiles.json"
@@ -71,6 +130,7 @@ class MT5Service(DataProvider):
         self._quote_usd_cache: dict[str, float | None] = {}
         self._lifecycle_lock = RLock()
         self._operation_lock = RLock()
+        self._history_cache = CandleHistoryCache()
         self._owns_connection = False
 
     @staticmethod
@@ -697,6 +757,333 @@ class MT5Service(DataProvider):
                         f"Không lấy được OHLCV cho {broker_symbol} {timeframe}: {exc}"
                     ) from exc
         return results
+
+    @_serialized_mt5_operation
+    def load_primary_timeframes_cached(
+        self,
+        broker_symbol: str,
+        bars_by_timeframe: dict[str, int],
+        cache_identity: MT5HistoryCacheIdentity | None,
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, Any]:
+        """Load full history once, then refresh and merge a three-bar tail.
+
+        The entire cache transaction is protected by the existing MT5
+        operation lock.  A missing identity fails safe to an uncached full
+        load, so histories from different broker accounts can never collide.
+        """
+
+        normalized_bars = self._validate_history_request(
+            broker_symbol,
+            bars_by_timeframe,
+        )
+        if cache_identity is None:
+            candles, metrics = self._load_history_batch(
+                broker_symbol,
+                normalized_bars,
+                fetch_kind="full",
+                performance_tracker=performance_tracker,
+            )
+            return {
+                "candles_by_timeframe": {
+                    timeframe: list(values)
+                    for timeframe, values in candles.items()
+                },
+                "cache_status": "full_reload_identity_change",
+                "fetch_metrics": metrics,
+            }
+
+        connection_changed = self._history_cache.activate_connection(
+            cache_identity.server,
+            cache_identity.account_fingerprint,
+        )
+        identities = {
+            timeframe: CacheIdentity(
+                server=cache_identity.server,
+                account_fingerprint=cache_identity.account_fingerprint,
+                broker_symbol=broker_symbol,
+                timeframe=timeframe,
+            )
+            for timeframe in normalized_bars
+        }
+        lookups = {
+            timeframe: self._history_cache.lookup(
+                identities[timeframe],
+                expected_interval=_PRIMARY_TIMEFRAME_INTERVALS[timeframe],
+                max_count=max_count,
+            )
+            for timeframe, max_count in normalized_bars.items()
+        }
+
+        if not connection_changed and all(
+            lookup.usable for lookup in lookups.values()
+        ):
+            tail_request = {
+                timeframe: _MT5_HISTORY_TAIL_BARS
+                for timeframe in normalized_bars
+            }
+            tails, tail_metrics = self._load_history_batch(
+                broker_symbol,
+                tail_request,
+                fetch_kind="tail",
+                performance_tracker=performance_tracker,
+            )
+            staged = self._stage_tail_merge(
+                identities,
+                normalized_bars,
+                lookups,
+                tails,
+            )
+            if all(result.usable for result in staged.values()):
+                snapshots = self._commit_history_snapshots(
+                    identities,
+                    normalized_bars,
+                    {
+                        timeframe: result.candles
+                        for timeframe, result in staged.items()
+                    },
+                )
+                return {
+                    "candles_by_timeframe": snapshots,
+                    "cache_status": "warm_tail",
+                    "fetch_metrics": tail_metrics,
+                }
+            fallback_status = self._history_fallback_status(
+                [result.fallback_reason for result in staged.values()]
+            )
+            full, full_metrics = self._load_history_batch(
+                broker_symbol,
+                normalized_bars,
+                fetch_kind="full",
+                performance_tracker=performance_tracker,
+            )
+            snapshots = self._commit_history_snapshots(
+                identities,
+                normalized_bars,
+                full,
+            )
+            return {
+                "candles_by_timeframe": snapshots,
+                "cache_status": fallback_status,
+                "fetch_metrics": self._combine_fetch_metrics(
+                    tail_metrics,
+                    full_metrics,
+                ),
+            }
+
+        fallback_reasons = [
+            lookup.fallback_reason for lookup in lookups.values()
+        ]
+        if connection_changed:
+            cache_status = "full_reload_identity_change"
+        elif fallback_reasons and all(
+            reason is CacheFallbackReason.CACHE_MISSING
+            for reason in fallback_reasons
+        ):
+            cache_status = "cold_full"
+        else:
+            cache_status = self._history_fallback_status(fallback_reasons)
+
+        full, metrics = self._load_history_batch(
+            broker_symbol,
+            normalized_bars,
+            fetch_kind="full",
+            performance_tracker=performance_tracker,
+        )
+        snapshots = self._commit_history_snapshots(
+            identities,
+            normalized_bars,
+            full,
+        )
+        return {
+            "candles_by_timeframe": snapshots,
+            "cache_status": cache_status,
+            "fetch_metrics": metrics,
+        }
+
+    @staticmethod
+    def _validate_history_request(
+        broker_symbol: str,
+        bars_by_timeframe: dict[str, int],
+    ) -> dict[str, int]:
+        if not str(broker_symbol or "").strip():
+            raise ValueError("Broker symbol is required for MT5 history.")
+        if not isinstance(bars_by_timeframe, dict) or not bars_by_timeframe:
+            raise ValueError("At least one MT5 timeframe is required.")
+
+        normalized: dict[str, int] = {}
+        for raw_timeframe, raw_count in bars_by_timeframe.items():
+            timeframe = str(raw_timeframe or "").strip().upper()
+            if timeframe not in _PRIMARY_TIMEFRAME_INTERVALS:
+                raise ValueError(
+                    f"Timeframe khong ho tro cache: {raw_timeframe}"
+                )
+            if (
+                isinstance(raw_count, bool)
+                or not isinstance(raw_count, int)
+                or raw_count <= 0
+            ):
+                raise ValueError(
+                    f"So bar khong hop le cho timeframe {timeframe}."
+                )
+            normalized[timeframe] = raw_count
+        return normalized
+
+    def _load_history_batch(
+        self,
+        broker_symbol: str,
+        bars_by_timeframe: dict[str, int],
+        *,
+        fetch_kind: str,
+        performance_tracker: object | None,
+    ) -> tuple[dict[str, list[Candle]], dict[str, int]]:
+        """Run one serialized full or tail batch without a thread pool."""
+
+        try:
+            import MetaTrader5 as mt5
+        except ImportError as exc:
+            raise RuntimeError("Chua cai package MetaTrader5.") from exc
+
+        if fetch_kind not in {"full", "tail"}:
+            raise ValueError(f"Unknown MT5 history fetch kind: {fetch_kind}")
+        if not mt5.symbol_select(broker_symbol, True):
+            raise RuntimeError(
+                f"Khong chon duoc ma {broker_symbol} trong MT5 Market Watch."
+            )
+
+        metrics = {
+            "copy_rates_calls": 0,
+            "full_history_calls": 0,
+            "tail_calls": 0,
+            "bars_requested": 0,
+            "bars_received": 0,
+        }
+        results: dict[str, list[Candle]] = {}
+        counter_name = (
+            "mt5_full_history_calls"
+            if fetch_kind == "full"
+            else "mt5_tail_calls"
+        )
+        metric_name = (
+            "full_history_calls" if fetch_kind == "full" else "tail_calls"
+        )
+        for timeframe, bars in bars_by_timeframe.items():
+            metrics["copy_rates_calls"] += 1
+            metrics[metric_name] += 1
+            metrics["bars_requested"] += bars
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "mt5_copy_rates_calls",
+            )
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                counter_name,
+            )
+            try:
+                candles = self.load_ohlcv(
+                    broker_symbol,
+                    timeframe,
+                    bars,
+                    True,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Khong lay duoc OHLCV cho {broker_symbol} "
+                    f"{timeframe}: {exc}"
+                ) from exc
+            results[timeframe] = candles
+            metrics["bars_received"] += len(candles)
+        return results, metrics
+
+    @staticmethod
+    def _stage_tail_merge(
+        identities: dict[str, CacheIdentity],
+        bars_by_timeframe: dict[str, int],
+        lookups: dict[str, Any],
+        tails: dict[str, list[Candle]],
+    ) -> dict[str, Any]:
+        """Validate every tail on a staging cache before committing any one."""
+
+        staging = CandleHistoryCache()
+        for timeframe, identity in identities.items():
+            seeded = staging.store_full(
+                identity,
+                lookups[timeframe].candles,
+                expected_interval=_PRIMARY_TIMEFRAME_INTERVALS[timeframe],
+                max_count=bars_by_timeframe[timeframe],
+            )
+            if seeded.requires_full_reload:
+                return {timeframe: seeded}
+        return {
+            timeframe: staging.merge_tail(
+                identity,
+                tails[timeframe],
+                expected_interval=_PRIMARY_TIMEFRAME_INTERVALS[timeframe],
+                max_count=bars_by_timeframe[timeframe],
+            )
+            for timeframe, identity in identities.items()
+        }
+
+    def _commit_history_snapshots(
+        self,
+        identities: dict[str, CacheIdentity],
+        bars_by_timeframe: dict[str, int],
+        candles_by_timeframe: dict[str, list[Candle]],
+    ) -> dict[str, list[Candle]]:
+        """Validate all histories first, then replace the live cache entries."""
+
+        staging = CandleHistoryCache()
+        validated: dict[str, list[Candle]] = {}
+        for timeframe, identity in identities.items():
+            result = staging.store_full(
+                identity,
+                candles_by_timeframe[timeframe],
+                expected_interval=_PRIMARY_TIMEFRAME_INTERVALS[timeframe],
+                max_count=bars_by_timeframe[timeframe],
+            )
+            if result.requires_full_reload:
+                raise RuntimeError(
+                    f"MT5 returned invalid {timeframe} candle history."
+                )
+            validated[timeframe] = result.candles
+
+        committed: dict[str, list[Candle]] = {}
+        for timeframe, identity in identities.items():
+            result = self._history_cache.store_full(
+                identity,
+                validated[timeframe],
+                expected_interval=_PRIMARY_TIMEFRAME_INTERVALS[timeframe],
+                max_count=bars_by_timeframe[timeframe],
+            )
+            if result.requires_full_reload:
+                raise RuntimeError(
+                    f"Could not commit {timeframe} MT5 history cache."
+                )
+            committed[timeframe] = result.candles
+        return committed
+
+    @staticmethod
+    def _history_fallback_status(
+        reasons: list[CacheFallbackReason | None],
+    ) -> str:
+        if CacheFallbackReason.GAP_DETECTED in reasons:
+            return "full_reload_gap"
+        if CacheFallbackReason.IDENTITY_CHANGED in reasons:
+            return "full_reload_identity_change"
+        return "full_reload_validation_failure"
+
+    @staticmethod
+    def _combine_fetch_metrics(
+        first: dict[str, int],
+        second: dict[str, int],
+    ) -> dict[str, int]:
+        return {
+            key: int(first.get(key, 0)) + int(second.get(key, 0))
+            for key in set(first) | set(second)
+        }
 
     # -- DataProvider interface: trading ------------------------------------
 

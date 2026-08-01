@@ -171,6 +171,7 @@ class FeatureFlagSettings:
     # Fast reject remains opt-in until its offline A/B gates pass.
     scanner_fast_tier1: bool = False
     scanner_fast_tier2: bool = False
+    scanner_mt5_history_cache: bool = False
     smc_scoring_mode: str = "v2"
 
 

@@ -67,7 +67,7 @@ from services.ai_service import AIProviderConfig, AIService
 from services.data_provider import ProviderNotReadyError
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
-from services.mt5_service import MT5Service
+from services.mt5_service import MT5HistoryCacheIdentity, MT5Service
 from services.news_service import NewsService
 from services.observability_service import (
     StructuredObservabilityService,
@@ -346,6 +346,9 @@ class ScannerController:
             raise
         finally:
             _record_performance(performance, "end_phase", "readiness")
+        mt5_history_cache_identity = (
+            MT5HistoryCacheIdentity.from_connection_status(status)
+        )
         rollout_settings = getattr(settings, "scanner_rollout", None)
         try:
             pre_scan_readiness = self.rollout_metrics.readiness(
@@ -509,6 +512,13 @@ class ScannerController:
                     freshness=freshness,
                     ai_service=ai_svc,
                     performance_tracker=performance,
+                    history_cache_enabled=bool(
+                        request.feature_flags.get(
+                            "scanner_mt5_history_cache",
+                            False,
+                        )
+                    ),
+                    history_cache_identity=mt5_history_cache_identity,
                 )
             except Exception as exc:
                 pkt = None
@@ -2212,6 +2222,8 @@ def _fetch_one_symbol_mt5(
     freshness: dict[str, Any],
     ai_service: object | None = None,
     performance_tracker: object | None = None,
+    history_cache_enabled: bool = False,
+    history_cache_identity: MT5HistoryCacheIdentity | None = None,
 ) -> dict[str, Any] | None:
     """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
     consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved."""
@@ -2229,10 +2241,22 @@ def _fetch_one_symbol_mt5(
         )
         return None
 
-    all_candles = mt5.load_primary_timeframes(
-        broker_symbol, {**bars_by_timeframe, "M15": 100},
-        performance_tracker=performance_tracker,
-    )
+    requested_bars = {**bars_by_timeframe, "M15": 100}
+    history_cache_result: dict[str, Any] | None = None
+    if history_cache_enabled:
+        history_cache_result = mt5.load_primary_timeframes_cached(
+            broker_symbol,
+            requested_bars,
+            history_cache_identity,
+            performance_tracker=performance_tracker,
+        )
+        all_candles = history_cache_result["candles_by_timeframe"]
+    else:
+        all_candles = mt5.load_primary_timeframes(
+            broker_symbol,
+            requested_bars,
+            performance_tracker=performance_tracker,
+        )
     data_quality = mt5.symbol_data_quality(symbol, broker_symbol)
     mt5_before_macro_ms = (
         max(0.0, perf_counter() - mt5_started) * 1_000
@@ -2280,6 +2304,7 @@ def _fetch_one_symbol_mt5(
         "macro_context": macro_context,
         "quote_to_usd": quote_to_usd,
         "input_timestamps": input_timestamps_from_candles(all_candles),
+        "mt5_history_cache": history_cache_result,
     }
 
 

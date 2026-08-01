@@ -1687,6 +1687,9 @@ class ScannerScreen (QWidget ):
             "scanner_fast_tier2": bool(
                 getattr(feature_settings, "scanner_fast_tier2", False)
             ),
+            "scanner_mt5_history_cache": bool(
+                getattr(feature_settings, "scanner_mt5_history_cache", False)
+            ),
         }
         request =ScannerRequest (
         symbols =symbols ,

@@ -29,6 +29,7 @@ def test_feature_flags_load_backward_compatibly(tmp_path):
     assert settings.features.auto_trade_v2 is True
     assert settings.features.scanner_fast_tier1 is False
     assert settings.features.scanner_fast_tier2 is False
+    assert settings.features.scanner_mt5_history_cache is False
     assert not hasattr(settings.features, "backtest_config_v2")
     assert not hasattr(settings.features, "backtest_engine_v2")
 
@@ -41,6 +42,7 @@ def test_feature_flags_round_trip(tmp_path):
     settings.features.auto_trade_v2 = True
     settings.features.scanner_fast_tier1 = True
     settings.features.scanner_fast_tier2 = True
+    settings.features.scanner_mt5_history_cache = True
     service.save(settings)
 
     loaded = service.load()
@@ -48,6 +50,7 @@ def test_feature_flags_round_trip(tmp_path):
     assert loaded.features.auto_trade_v2 is True
     assert loaded.features.scanner_fast_tier1 is True
     assert loaded.features.scanner_fast_tier2 is True
+    assert loaded.features.scanner_mt5_history_cache is True
     stored = service.storage.load()
     assert "backtest_config_v2" not in stored["features"]
     assert "backtest_engine_v2" not in stored["features"]
@@ -63,6 +66,7 @@ def test_scanner_output_exposes_contract_and_flags():
             "auto_trade_v2": False,
             "scanner_fast_tier1": False,
             "scanner_fast_tier2": False,
+            "scanner_mt5_history_cache": False,
         },
     )
     output = build_scanner_output([], request, 0)
@@ -73,6 +77,7 @@ def test_scanner_output_exposes_contract_and_flags():
         "auto_trade_v2": False,
         "scanner_fast_tier1": False,
         "scanner_fast_tier2": False,
+        "scanner_mt5_history_cache": False,
     }
 
 
