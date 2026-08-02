@@ -1,6 +1,6 @@
 {
   "_description": "Central bank interest rates for macro scoring. Update manually when rates change.",
-  "_last_updated": "2026-08-02 15:07 UTC",
+  "_last_updated": "2026-08-02 15:52 UTC",
   "currencies": {
     "USD": {
       "central_bank": "Federal Reserve",
