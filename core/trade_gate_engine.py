@@ -196,8 +196,9 @@ def _gate_zone_relevance(
         return
     relevance = context.get("zone_relevance_score")
     if relevance is None:
-        # Legacy smc-v1 zones have no relevance semantic.  They remain
-        # explicitly versioned and are not interpreted as a v2 score.
+        # Zones without a canonical scoring version carry no relevance
+        # semantic.  They remain explicitly versioned and are not interpreted
+        # as a canonical score.
         if context.get("zone_scoring_version") != "smc-v2":
             return
         # A canonical selected zone MUST carry relevance.  Missing relevance

@@ -1,37 +1,16 @@
-"""SMC canonical runtime and legacy replay fixture tests."""
+"""SMC canonical runtime tests."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-import json
-from pathlib import Path
 
 from config.settings import default_settings
 from core.analysis_engine import analyze_symbol
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
-from core.smc_context import zone_quality_score
 from core.scanner import ScannerRequest, build_scanner_output
 from core.scanner_observability import create_scan_context
 from services.settings_service import SettingsService
-
-
-_FIXTURE_PATH = (
-    Path(__file__).parent / "fixtures" / "smc_phase0_replay.json"
-)
-
-
-def _replay_fixture() -> dict:
-    return json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
-
-
-def test_replay_fixture_locks_legacy_zone_quality_formula():
-    fixture = _replay_fixture()
-    for case in fixture["zone_quality_cases"]:
-        assert (
-            zone_quality_score(case["zone"], case["side"])
-            == case["expected"]
-        ), case["name"]
 
 
 def test_smc_scoring_mode_setting_is_gone_and_old_keys_ignored(tmp_path):
@@ -57,7 +36,7 @@ def test_smc_scoring_mode_setting_is_gone_and_old_keys_ignored(tmp_path):
     assert "smc_scoring_mode" not in saved.get("features", {})
 
 
-def test_default_scan_contract_uses_active_v2_version():
+def test_default_scan_contract_uses_canonical_scorer():
     request = ScannerRequest(
         symbols=["EUR/USD"],
         account_balance=10_000,

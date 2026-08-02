@@ -1,8 +1,9 @@
-"""Deterministic replay and calibration contract for SMC scorer v2.
+"""Deterministic replay and calibration contract for the canonical SMC scorer.
 
-Phase 7 proves scoring invariants and produces the evidence required by the
-rollout phase.  The module is deliberately read-only: it executes v2 through
-the existing shadow contract and never changes the active decision path.
+Phase 7 proves scoring invariants and produces the calibration, out-of-sample
+and walk-forward evidence for the canonical SMC scorer.  The module is
+deliberately read-only: it executes ``score_smc()`` and never changes the
+production decision path.  Legacy/shadow scorer comparisons no longer exist.
 """
 
 from __future__ import annotations
@@ -14,13 +15,12 @@ from typing import Any, Iterable
 
 from core.scanner_observability import stable_hash
 from core.smc_scorer import score_smc
-from core.smc_versions import SMC_RAW_ZONE_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 
 
-SMC_VALIDATION_CONTRACT_VERSION = "smc-phase7-validation-v1"
+SMC_VALIDATION_CONTRACT_VERSION = "smc-phase7-validation-v2"
 DEFAULT_MIN_OOS_SAMPLES = 30
 DEFAULT_MIN_CALIBRATION_BUCKET_SAMPLES = 5
-DEFAULT_OOS_DEGRADATION_TOLERANCE_R = 0.10
 DEFAULT_MIN_WALK_FORWARD_WINDOWS = 2
 DEFAULT_MIN_WALK_FORWARD_SAMPLES = 5
 
@@ -44,11 +44,11 @@ _PERCENT_BUCKETS = (
 def replay_smc_cases(
     cases: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Execute canonical SMC scoring and return normalized replay samples.
+    """Execute the canonical SMC scorer and return normalized replay samples.
 
-    A case supplies the immutable scorer inputs plus the observed legacy-side
-    scores.  Status is explicit because Phase 7 must not route the canonical
-    scorer into the production Candidate Engine.
+    A case supplies the immutable scorer inputs.  Status is explicit because
+    Phase 7 must not route the canonical scorer into the production Candidate
+    Engine.
     """
 
     samples: list[dict[str, Any]] = []
@@ -57,13 +57,13 @@ def replay_smc_cases(
         smc = _mapping(case.get("smc"))
         technical = _mapping(case.get("technical"))
         market_regime = _mapping(case.get("market_regime"))
-        shadow = score_smc(smc, technical, market_regime)
-        active = _legacy_side_snapshots(_mapping(case.get("active_scores")))
+        scored = score_smc(smc, technical, market_regime)
         side = _normalize_side(
-            case.get("side") or _best_side(active, score_key="signal_score")
+            case.get("side")
+            or _best_side(scored, score_key="smc_quality")
         )
-        shadow_side = _mapping(shadow.get(side))
-        selected_zone = _mapping(shadow_side.get("selected_zone"))
+        side_result = _mapping(scored.get(side))
+        selected_zone = _mapping(side_result.get("selected_zone"))
         sample = {
             "sample_id": str(
                 case.get("sample_id") or case.get("name") or f"sample-{index}"
@@ -84,10 +84,10 @@ def replay_smc_cases(
             "zone_family": _normalized_text(
                 selected_zone.get("family"), "none"
             ),
-            "zone_quality_score": shadow_side.get(
+            "zone_quality_score": side_result.get(
                 "selected_zone_quality_score"
             ),
-            "zone_relevance_score": shadow_side.get(
+            "zone_relevance_score": side_result.get(
                 "selected_zone_relevance_score"
             ),
             "lifecycle_state": _zone_lifecycle(selected_zone),
@@ -97,29 +97,16 @@ def replay_smc_cases(
             "h4_confirmed_choch_against": (
                 _h4_confirmed_choch_against(smc, side)
             ),
-            "legacy_scores": {
-                current_side: _mapping(active.get(current_side)).get(
+            "scores": {
+                current_side: _mapping(scored.get(current_side)).get(
                     "smc_quality"
                 )
                 for current_side in _SIDES
             },
-            "v2_scores": {
-                current_side: _mapping(shadow.get(current_side)).get(
-                    "smc_quality"
-                )
-                for current_side in _SIDES
-            },
-            "legacy_selected_zone_id": _mapping(active.get(side)).get(
-                "selected_zone_id"
-            ),
-            "v2_selected_zone_id": shadow_side.get("selected_zone_id"),
-            "legacy_status": _normalize_status(case.get("legacy_status")),
-            "v2_status": _normalize_status(case.get("v2_status")),
+            "selected_zone_id": side_result.get("selected_zone_id"),
+            "status": _normalize_status(case.get("status")),
             "result_r": case.get("result_r"),
-            "legacy_scoring_version": _mapping(active.get(side)).get(
-                "scoring_version"
-            ),
-            "v2_scoring_version": shadow_side.get("scoring_version"),
+            "scoring_version": side_result.get("scoring_version"),
         }
         normalized, reasons = normalize_smc_replay_sample(sample)
         normalized["valid"] = not reasons
@@ -128,72 +115,36 @@ def replay_smc_cases(
     return samples
 
 
-def _legacy_side_snapshots(
-    active_scores: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
-    """Normalize the observed legacy-side scores into a replay snapshot."""
-
-    source = active_scores if isinstance(active_scores, dict) else {}
-    result: dict[str, dict[str, Any]] = {}
-    for side in _SIDES:
-        score = (
-            source.get(side)
-            if isinstance(source.get(side), dict)
-            else {}
-        )
-        flags = (
-            score.get("smc_flags")
-            if isinstance(score.get("smc_flags"), dict)
-            else {}
-        )
-        result[side] = {
-            "smc_quality": _safe_score(score.get("smc_quality")),
-            "smc_reason": str(score.get("smc_reason", "") or ""),
-            "signal_score": _safe_score(score.get("signal_score")),
-            "scoring_version": SMC_RAW_ZONE_VERSION,
-            "selected_zone_id": flags.get("selected_zone_id"),
-            "selected_zone_type": flags.get("selected_zone_type"),
-            "selected_zone_score": flags.get("selected_zone_score"),
-            "selected_zone_quality_score": flags.get(
-                "selected_zone_quality_score"
-            ),
-            "selected_zone_relevance_score": flags.get(
-                "selected_zone_relevance_score"
-            ),
-            "selected_zone_setup_score": flags.get(
-                "selected_zone_setup_score"
-            ),
-        }
-    return result
-
-
 def replay_sample_from_analysis_document(
     document: dict[str, Any],
     *,
     result_r: float | None = None,
     dataset_split: str = "unknown",
     asset_class: str = "unknown",
-    v2_status: str | None = None,
 ) -> dict[str, Any]:
-    """Extract one replay sample from a saved scanner analysis document."""
+    """Extract one replay sample from a saved scanner analysis document.
+
+    Only the canonical ``smc_scoring.sides`` payload is used.  Documents that
+    predate the canonical contract carry no ``sides`` and fail closed instead
+    of selecting a legacy/shadow branch.
+    """
 
     payload = document if isinstance(document, dict) else {}
     row = _mapping(payload.get("row_summary"))
     analysis = _mapping(payload.get("analysis_result"))
     diagnostics = _mapping(analysis.get("smc_scoring"))
-    active = _mapping(diagnostics.get("active"))
-    shadow = _mapping(diagnostics.get("shadow"))
+    sides = _mapping(diagnostics.get("sides"))
+    consumer = _mapping(diagnostics.get("consumer_contract"))
+    consumer_sides = _mapping(consumer.get("sides"))
     candidate = _mapping(payload.get("candidate_decision"))
     side = _normalize_side(
         candidate.get("selected_side")
         or row.get("selected_side")
-        or _best_side(active, score_key="signal_score")
+        or _best_side(sides, score_key="score")
     )
-    active_side = _mapping(active.get(side))
-    shadow_side = _mapping(shadow.get(side))
-    shadow_zone = _mapping(shadow_side.get("selected_zone"))
-    consumer = _mapping(diagnostics.get("consumer_contract"))
-    consumer_side = _mapping(_mapping(consumer.get("sides")).get(side))
+    side_result = _mapping(sides.get(side))
+    consumer_side = _mapping(consumer_sides.get(side))
+    selected_zone = _mapping(consumer_side.get("selected_zone"))
     smc = _mapping(analysis.get("smc"))
 
     sample = {
@@ -219,16 +170,16 @@ def replay_sample_from_analysis_document(
         "side": side,
         "market_regime": _regime_text(analysis.get("market_regime")),
         "zone_family": _normalized_text(
-            shadow_zone.get("family"), "none"
+            selected_zone.get("family"), "none"
         ),
-        "zone_quality_score": shadow_side.get(
+        "zone_quality_score": side_result.get(
             "selected_zone_quality_score"
         ),
-        "zone_relevance_score": shadow_side.get(
+        "zone_relevance_score": side_result.get(
             "selected_zone_relevance_score"
         ),
-        "lifecycle_state": _zone_lifecycle(shadow_zone),
-        "linked_sweep": bool(shadow_zone.get("liquidity_sweep_linked")),
+        "lifecycle_state": _zone_lifecycle(selected_zone),
+        "linked_sweep": bool(selected_zone.get("liquidity_sweep_linked")),
         "h4_confirmed_choch_against": bool(
             row.get("h4_confirmed_choch_against_direction")
             or _mapping(analysis.get("trade_gate")).get(
@@ -236,33 +187,19 @@ def replay_sample_from_analysis_document(
             )
             or _h4_confirmed_choch_against(smc, side)
         ),
-        "legacy_scores": {
-            current_side: _mapping(active.get(current_side)).get("smc_quality")
+        "scores": {
+            current_side: _mapping(sides.get(current_side)).get("score")
             for current_side in _SIDES
         },
-        "v2_scores": {
-            current_side: _mapping(shadow.get(current_side)).get("smc_quality")
-            for current_side in _SIDES
-        },
-        "legacy_selected_zone_id": (
-            active_side.get("selected_zone_id")
+        "selected_zone_id": (
+            side_result.get("selected_zone_id")
             or consumer_side.get("selected_zone_id")
         ),
-        "v2_selected_zone_id": (
-            shadow_side.get("selected_zone_id")
-            or consumer_side.get("selected_zone_id")
-        ),
-        "legacy_status": _normalize_status(
+        "status": _normalize_status(
             candidate.get("status") or row.get("candidate_status")
         ),
-        "v2_status": _normalize_status(
-            v2_status
-            or row.get("shadow_candidate_status")
-            or _mapping(payload.get("smc_validation")).get("v2_status")
-        ),
         "result_r": result_r,
-        "legacy_scoring_version": active_side.get("scoring_version"),
-        "v2_scoring_version": shadow_side.get("scoring_version"),
+        "scoring_version": side_result.get("scoring_version"),
     }
     normalized, reasons = normalize_smc_replay_sample(sample)
     normalized["valid"] = not reasons
@@ -286,8 +223,7 @@ def normalize_smc_replay_sample(
         reasons.append("SIDE_INVALID")
         side = "buy"
 
-    legacy_scores = _normalize_scores(raw.get("legacy_scores"), reasons, "LEGACY")
-    v2_scores = _normalize_scores(raw.get("v2_scores"), reasons, "V2")
+    scores = _normalize_scores(raw.get("scores"), reasons)
     result_r = _optional_finite(raw.get("result_r"))
     if raw.get("result_r") is not None and result_r is None:
         reasons.append("RESULT_R_INVALID")
@@ -313,6 +249,12 @@ def normalize_smc_replay_sample(
     observed_at = _optional_text(raw.get("observed_at"))
     if dataset_split == "oos" and result_r is not None and observed_at is None:
         reasons.append("OOS_OBSERVED_AT_MISSING")
+
+    scoring_version = _optional_text(raw.get("scoring_version"))
+    if scoring_version is None:
+        reasons.append("SCORING_VERSION_MISSING")
+    elif scoring_version != SMC_SCORER_VERSION:
+        reasons.append("SCORING_VERSION_UNSUPPORTED")
 
     normalized = {
         "sample_id": sample_id,
@@ -343,34 +285,14 @@ def normalize_smc_replay_sample(
         "h4_confirmed_choch_against": bool(
             raw.get("h4_confirmed_choch_against")
         ),
-        "legacy_scores": legacy_scores,
-        "v2_scores": v2_scores,
-        "legacy_selected_zone_id": _optional_text(
-            raw.get("legacy_selected_zone_id")
+        "scores": scores,
+        "selected_zone_id": _optional_text(
+            raw.get("selected_zone_id")
         ),
-        "v2_selected_zone_id": _optional_text(
-            raw.get("v2_selected_zone_id")
-        ),
-        "legacy_status": _normalize_status(raw.get("legacy_status")),
-        "v2_status": _normalize_status(raw.get("v2_status")),
+        "status": _normalize_status(raw.get("status")),
         "result_r": result_r,
-        "legacy_scoring_version": _optional_text(
-            raw.get("legacy_scoring_version")
-        ),
-        "v2_scoring_version": _optional_text(
-            raw.get("v2_scoring_version")
-        ),
+        "scoring_version": scoring_version,
     }
-    if normalized["legacy_scoring_version"] is None:
-        reasons.append("LEGACY_SCORING_VERSION_MISSING")
-    if normalized["v2_scoring_version"] is None:
-        reasons.append("V2_SCORING_VERSION_MISSING")
-    if (
-        normalized["legacy_scoring_version"] is not None
-        and normalized["legacy_scoring_version"]
-        == normalized["v2_scoring_version"]
-    ):
-        reasons.append("SCORING_VERSION_PAIR_INVALID")
     return normalized, _unique(reasons)
 
 
@@ -380,9 +302,6 @@ def build_smc_validation_report(
     min_oos_samples: int = DEFAULT_MIN_OOS_SAMPLES,
     min_calibration_bucket_samples: int = (
         DEFAULT_MIN_CALIBRATION_BUCKET_SAMPLES
-    ),
-    oos_degradation_tolerance_r: float = (
-        DEFAULT_OOS_DEGRADATION_TOLERANCE_R
     ),
     min_walk_forward_windows: int = DEFAULT_MIN_WALK_FORWARD_WINDOWS,
     min_walk_forward_samples: int = DEFAULT_MIN_WALK_FORWARD_SAMPLES,
@@ -402,13 +321,6 @@ def build_smc_validation_report(
             normalized.append(item)
     normalized.sort(key=lambda item: item["sample_id"])
     duplicate_conflicts = _duplicate_conflicts(normalized)
-    version_pairs = sorted({
-        (
-            str(sample["legacy_scoring_version"]),
-            str(sample["v2_scoring_version"]),
-        )
-        for sample in normalized
-    })
     oos_samples = [
         sample
         for sample in normalized
@@ -421,10 +333,7 @@ def build_smc_validation_report(
         min_bucket_samples=max(1, int(min_calibration_bucket_samples)),
     )
     stratification = _stratification(oos_samples)
-    oos = _oos_comparison(
-        normalized,
-        tolerance_r=max(0.0, float(oos_degradation_tolerance_r)),
-    )
+    oos = _oos_quality(normalized)
     walk_forward = _walk_forward_validation(
         oos_samples,
         min_windows=max(1, int(min_walk_forward_windows)),
@@ -438,16 +347,12 @@ def build_smc_validation_report(
         blockers.append("INVALID_REPLAY_SAMPLE")
     if duplicate_conflicts:
         blockers.append("NON_DETERMINISTIC_DUPLICATE_SAMPLE")
-    if len(version_pairs) > 1:
-        blockers.append("MIXED_SCORING_VERSION_PAIR")
     if replay["choch_against_ready_count"]:
         blockers.append("CHOCH_AGAINST_READY")
-    if oos["v2_ready_sample_size"] < max(1, int(min_oos_samples)):
+    if oos["ready_sample_size"] < max(1, int(min_oos_samples)):
         blockers.append("OOS_SAMPLE_TOO_SMALL")
-    elif oos["degradation_r"] is None:
+    elif oos["metrics"]["expectancy_r"] is None:
         blockers.append("OOS_EVIDENCE_MISSING")
-    elif oos["degradation_exceeded"]:
-        blockers.append("OOS_DEGRADATION_EXCEEDED")
     if not calibration["sample_guard_passed"]:
         blockers.append("CALIBRATION_INSUFFICIENT")
     elif not calibration["reasonable_relationship"]:
@@ -459,24 +364,15 @@ def build_smc_validation_report(
 
     report = {
         "contract_version": SMC_VALIDATION_CONTRACT_VERSION,
+        "scoring_version": SMC_SCORER_VERSION,
         "sample_count": len(normalized),
         "invalid_sample_count": len(invalid),
         "invalid_samples": invalid,
         "duplicate_conflicts": duplicate_conflicts,
-        "scoring_version_pairs": [
-            {
-                "legacy": legacy_version,
-                "v2": v2_version,
-            }
-            for legacy_version, v2_version in version_pairs
-        ],
         "thresholds": {
             "min_oos_samples": max(1, int(min_oos_samples)),
             "min_calibration_bucket_samples": max(
                 1, int(min_calibration_bucket_samples)
-            ),
-            "oos_degradation_tolerance_r": max(
-                0.0, float(oos_degradation_tolerance_r)
             ),
             "min_walk_forward_windows": max(
                 1, int(min_walk_forward_windows)
@@ -501,127 +397,54 @@ def build_smc_validation_report(
 
 
 def _replay_metrics(samples: list[dict[str, Any]]) -> dict[str, Any]:
-    transitions: dict[str, int] = defaultdict(int)
-    legacy_gaps: list[float] = []
-    v2_gaps: list[float] = []
-    stable_zones = 0
-    comparable_zones = 0
-    direction_changes = 0
-    legacy_losing_ready = 0
-    v2_losing_ready = 0
-    false_ready_removed = 0
+    gaps: list[float] = []
     no_zone = 0
     choch_against_ready = 0
+    losing_ready = 0
 
     for sample in samples:
-        transitions[
-            f"{sample['legacy_status']}->{sample['v2_status']}"
-        ] += 1
-        legacy_gaps.append(abs(
-            sample["legacy_scores"]["buy"]
-            - sample["legacy_scores"]["sell"]
+        gaps.append(abs(
+            sample["scores"]["buy"]
+            - sample["scores"]["sell"]
         ))
-        v2_gaps.append(abs(
-            sample["v2_scores"]["buy"]
-            - sample["v2_scores"]["sell"]
-        ))
-        legacy_best = _best_side_from_scores(sample["legacy_scores"])
-        v2_best = _best_side_from_scores(sample["v2_scores"])
-        if legacy_best != v2_best:
-            direction_changes += 1
-        legacy_zone = sample.get("legacy_selected_zone_id")
-        v2_zone = sample.get("v2_selected_zone_id")
-        if legacy_zone is not None or v2_zone is not None:
-            comparable_zones += 1
-            if legacy_zone == v2_zone:
-                stable_zones += 1
-        if v2_zone is None:
+        if sample.get("selected_zone_id") is None:
             no_zone += 1
         losing_outcome = (
             sample.get("result_r") is not None
             and sample["result_r"] <= 0
         )
-        if _is_ready(sample["legacy_status"]) and losing_outcome:
-            legacy_losing_ready += 1
-        if _is_ready(sample["v2_status"]) and losing_outcome:
-            v2_losing_ready += 1
+        if _is_ready(sample["status"]) and losing_outcome:
+            losing_ready += 1
         if (
-            _is_ready(sample["legacy_status"])
-            and not _is_ready(sample["v2_status"])
-            and losing_outcome
-        ):
-            false_ready_removed += 1
-        if (
-            _is_ready(sample["v2_status"])
+            _is_ready(sample["status"])
             and sample["h4_confirmed_choch_against"]
         ):
             choch_against_ready += 1
 
     return {
-        "score_distribution": {
-            "legacy": _score_distribution(samples, "legacy_scores"),
-            "v2": _score_distribution(samples, "v2_scores"),
-        },
-        "buy_sell_gap": {
-            "legacy_mean": _rounded_mean(legacy_gaps),
-            "v2_mean": _rounded_mean(v2_gaps),
-        },
-        "selected_zone_stability": {
-            "comparable_count": comparable_zones,
-            "stable_count": stable_zones,
-            "stable_rate": (
-                round(stable_zones / comparable_zones, 4)
-                if comparable_zones
-                else None
-            ),
-        },
-        "status_transitions": dict(sorted(transitions.items())),
-        "direction_changed_count": direction_changes,
-        # Compatibility alias: the unresolved false-ready count under v2.
-        "false_ready_count": v2_losing_ready,
-        "legacy_losing_ready_count": legacy_losing_ready,
-        "v2_losing_ready_count": v2_losing_ready,
-        "false_ready_removed_count": false_ready_removed,
+        "score_distribution": _score_distribution(samples, "scores"),
+        "buy_sell_gap_mean": _rounded_mean(gaps),
+        "losing_ready_count": losing_ready,
         "no_zone_count": no_zone,
         "choch_against_ready_count": choch_against_ready,
     }
 
 
-def _oos_comparison(
+def _oos_quality(
     samples: list[dict[str, Any]],
-    *,
-    tolerance_r: float,
 ) -> dict[str, Any]:
     oos = [
         sample
         for sample in samples
         if sample["dataset_split"] == "oos"
     ]
-    legacy_ready = [
-        sample for sample in oos if _is_ready(sample["legacy_status"])
+    ready = [
+        sample for sample in oos if _is_ready(sample["status"])
     ]
-    v2_ready = [
-        sample for sample in oos if _is_ready(sample["v2_status"])
-    ]
-    legacy = _outcome_metrics(legacy_ready)
-    v2 = _outcome_metrics(v2_ready)
-    degradation = None
-    if legacy["expectancy_r"] is not None and v2["expectancy_r"] is not None:
-        degradation = round(
-            legacy["expectancy_r"] - v2["expectancy_r"],
-            4,
-        )
     return {
         "oos_sample_count": len(oos),
-        "legacy_ready_sample_size": legacy["sample_size"],
-        "v2_ready_sample_size": v2["sample_size"],
-        "legacy": legacy,
-        "v2": v2,
-        "degradation_r": degradation,
-        "tolerance_r": round(tolerance_r, 4),
-        "degradation_exceeded": (
-            degradation is not None and degradation > tolerance_r
-        ),
+        "ready_sample_size": len(ready),
+        "metrics": _outcome_metrics(ready),
     }
 
 
@@ -634,7 +457,7 @@ def _walk_forward_validation(
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for sample in samples:
         window = sample.get("walk_forward_window")
-        if window is not None and _is_ready(sample["v2_status"]):
+        if window is not None and _is_ready(sample["status"]):
             grouped[str(window)].append(sample)
 
     windows: list[dict[str, Any]] = []
@@ -665,7 +488,7 @@ def _walk_forward_validation(
         for sample in samples
         if (
             sample.get("walk_forward_window") is not None
-            and _is_ready(sample["v2_status"])
+            and _is_ready(sample["status"])
         )
     ])
     sample_guard_passed = len(eligible_windows) >= min_windows
@@ -702,7 +525,7 @@ def _calibration_curve(
 ) -> dict[str, Any]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for sample in samples:
-        score = sample["v2_scores"][sample["side"]]
+        score = sample["scores"][sample["side"]]
         grouped[_bucket_label(score, _SCORE_BUCKETS)].append(sample)
 
     buckets: list[dict[str, Any]] = []
@@ -758,8 +581,7 @@ def _stratification(
         "lifecycle_state",
         "linked_sweep",
         "h4_confirmed_choch_against",
-        "legacy_scoring_version",
-        "v2_scoring_version",
+        "scoring_version",
     )
     result: dict[str, dict[str, dict[str, Any]]] = {}
     for field in fields:
@@ -860,14 +682,13 @@ def _duplicate_conflicts(
 def _normalize_scores(
     value: object,
     reasons: list[str],
-    prefix: str,
 ) -> dict[str, float]:
     source = _mapping(value)
     result: dict[str, float] = {}
     for side in _SIDES:
         score = _optional_bounded(source.get(side), 0, 15)
         if score is None:
-            reasons.append(f"{prefix}_{side.upper()}_SCORE_INVALID")
+            reasons.append(f"{side.upper()}_SCORE_INVALID")
             score = 0.0
         result[side] = score
     return result
@@ -995,14 +816,6 @@ def _optional_bounded(
     if number is None or number < low or number > high:
         return None
     return number
-
-
-def _safe_score(value: object) -> int:
-    try:
-        number = int(value or 0)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-    return max(0, min(100, number))
 
 
 def _rounded_mean(values: list[float]) -> float | None:

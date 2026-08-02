@@ -974,7 +974,7 @@ def _legacy_timeframe_has_sweep(
     side: str,
     liquidity_sweeps: dict[str, list[dict[str, Any]]],
 ) -> bool:
-    """Compatibility-only broadcast used by the active smc-v1 scorer."""
+    """Compatibility-only broadcast for sweep-linking across timeframes."""
 
     return bool(liquidity_sweeps.get("swept_lows" if side == "buy" else "swept_highs"))
 

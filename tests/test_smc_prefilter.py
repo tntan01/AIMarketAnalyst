@@ -185,7 +185,7 @@ def test_malformed_context_fails_open() -> None:
     assert decision["fail_open"] is True
 
 
-def test_v2_scorer_exception_fails_closed() -> None:
+def test_scorer_exception_fails_closed() -> None:
     with patch(
         "core.smc_prefilter.score_smc",
         side_effect=RuntimeError("unexpected scorer error"),

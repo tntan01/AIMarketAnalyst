@@ -1,4 +1,4 @@
-"""Phase-5 contracts for canonical zone selection and SMC scorer v2."""
+"""Canonical SMC scorer contracts: zone selection, breakdown and determinism."""
 
 from __future__ import annotations
 
@@ -375,7 +375,7 @@ def test_missing_market_data_cannot_select_a_zone():
     assert 0 <= result["smc_quality"] <= 15
 
 
-def test_v2_scoring_is_deterministic():
+def test_scoring_is_deterministic():
     context = _smc("buy", zone=_zone("buy", linked_sweep=True))
     first = score_smc(
         context,

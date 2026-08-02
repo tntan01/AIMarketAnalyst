@@ -21,7 +21,6 @@ from core.smc_models import (
     ZoneVisit,
     build_zone_id,
 )
-from core.smc_versions import SMC_RAW_ZONE_VERSION
 
 
 def _legacy_zone(**overrides) -> dict:
@@ -93,7 +92,9 @@ def test_zone_dict_exposes_canonical_contract():
     assert adapted["zone_relevance_score"] is None
     assert adapted["zone_setup_score"] == 78
     assert adapted["zone_score"] == 78
-    assert adapted["scoring_version"] == SMC_RAW_ZONE_VERSION
+    # Raw candidates carry no scorer version; evaluated zones get their
+    # version from score_smc().
+    assert adapted["scoring_version"] == ""
     assert adapted["domain_version"] == SMC_DOMAIN_VERSION
 
 

@@ -485,7 +485,6 @@ def test_disabled_draft_is_preserved_for_later_but_not_routed_now():
         backtest_status="DRAFT",
         backtest_schema_version=4,
         backtest_smc_scorer_version="smc-v2",
-        backtest_smc_scoring_mode="v2",
         min_score=60,
     )
 
@@ -515,7 +514,6 @@ def test_settings_merge_cannot_activate_draft_but_preserves_it():
         backtest_scorer_version="scanner-v3",
         backtest_feature_version="scanner-features-v3",
         backtest_smc_scorer_version="smc-v2",
-        backtest_smc_scoring_mode="v2",
         backtest_score_metric="setup_score",
         min_score=68,
         auto_trade_regime="range",

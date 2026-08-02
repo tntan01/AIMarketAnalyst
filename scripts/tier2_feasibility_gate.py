@@ -221,7 +221,6 @@ def _time_one_run(case: dict[str, Any], *, tier1: bool) -> dict[str, Any]:
     """
 
     candles = make_candles(case)
-    mode = str(case.get("smc_scoring_mode", "v2"))
 
     # ---- Instrument the pipeline module to capture smc_end ----
     _original_technical = pipeline_module.build_technical_snapshot

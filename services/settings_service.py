@@ -283,9 +283,6 @@ class SettingsService:
                     backtest_smc_scorer_version=str(
                         item.get("backtest_smc_scorer_version", "") or ""
                     ).strip(),
-                    backtest_smc_scoring_mode=str(
-                        item.get("backtest_smc_scoring_mode", "") or ""
-                    ).strip().lower(),
                     backtest_score_metric=str(
                         item.get("backtest_score_metric", "") or ""
                     ).strip(),
@@ -534,7 +531,7 @@ class SettingsService:
 
     def _load_feature_flags(self, data: dict | None) -> FeatureFlagSettings:
         data = data if isinstance(data, dict) else {}
-        # smc_scoring_mode trong settings JSON cũ được bỏ qua; không còn
+        # Key mode cũ trong settings JSON được bỏ qua; không còn
         # config path nào kích hoạt scorer khác ngoài SMC canonical.
         return FeatureFlagSettings(
             scanner_architecture_v2=bool(data.get("scanner_architecture_v2", False)),

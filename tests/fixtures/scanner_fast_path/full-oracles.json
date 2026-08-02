@@ -187,66 +187,6 @@
       "candidate_selected_side": null,
       "scoring_version": "smc-v2",
       "baseline_elapsed_ms": 4.068
-    },
-    "mode_legacy": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 1,
-          "supply": 0,
-          "order_block": 2,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": "smcz-0bdfd05c3fa65211252e",
-        "sell": null
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.377
-    },
-    "mode_shadow": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 1,
-          "supply": 0,
-          "order_block": 2,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": "smcz-0bdfd05c3fa65211252e",
-        "sell": null
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.397
     }
   }
 }

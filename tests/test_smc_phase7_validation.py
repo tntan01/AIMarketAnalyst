@@ -38,7 +38,6 @@ def _zone(side: str) -> dict:
         "zone_quality_score": 75,
         "zone_setup_score": 75,
         "zone_score": 75,
-        "scoring_version": "smc-v1",
     }
 
 
@@ -54,25 +53,8 @@ def _case(side: str, *, sample_id: str, split: str = "oos") -> dict:
         "symbol": "EUR/USD",
         "asset_class": "forex",
         "side": side,
-        "legacy_status": "WATCH_ZONE",
-        "v2_status": "WATCH_ZONE",
+        "status": "WATCH_ZONE",
         "result_r": 0.5,
-        "active_scores": {
-            "buy": {
-                "smc_quality": 11 if is_buy else 3,
-                "signal_score": 75 if is_buy else 40,
-                "smc_flags": {
-                    "selected_zone_id": f"zone-{side}" if is_buy else None,
-                },
-            },
-            "sell": {
-                "smc_quality": 3 if is_buy else 11,
-                "signal_score": 40 if is_buy else 75,
-                "smc_flags": {
-                    "selected_zone_id": f"zone-{side}" if not is_buy else None,
-                },
-            },
-        },
         "technical": {
             "price": 100,
             "atr_h4": 10,
@@ -120,8 +102,7 @@ def _sample(
     score: int,
     result_r: float,
     side: str = "buy",
-    legacy_status: str = "READY_NOW",
-    v2_status: str = "READY_NOW",
+    status: str = "READY_NOW",
     choch: bool = False,
     split: str = "oos",
     walk_forward_window: str = "wf-1",
@@ -142,19 +123,15 @@ def _sample(
         "lifecycle_state": "fresh",
         "linked_sweep": score >= 10,
         "h4_confirmed_choch_against": choch,
-        "legacy_scores": {side: score, opposite: 2},
-        "v2_scores": {side: score, opposite: 2},
-        "legacy_selected_zone_id": f"zone-{sample_id}",
-        "v2_selected_zone_id": f"zone-{sample_id}",
-        "legacy_status": legacy_status,
-        "v2_status": v2_status,
+        "scores": {side: score, opposite: 2},
+        "selected_zone_id": f"zone-{sample_id}",
+        "status": status,
         "result_r": result_r,
-        "legacy_scoring_version": "smc-v1",
-        "v2_scoring_version": "smc-v2",
+        "scoring_version": "smc-v2",
     }
 
 
-def test_replay_runs_v2_deterministically_without_mutating_inputs():
+def test_replay_runs_canonical_scorer_deterministically_without_mutating_inputs():
     cases = [_case("buy", sample_id="buy-1"), _case("sell", sample_id="sell-1")]
     before = stable_hash(cases)
 
@@ -167,9 +144,9 @@ def test_replay_runs_v2_deterministically_without_mutating_inputs():
     assert all(
         0 <= score <= 15
         for sample in first
-        for score in sample["v2_scores"].values()
+        for score in sample["scores"].values()
     )
-    assert first[0]["v2_scoring_version"] == "smc-v2"
+    assert first[0]["scoring_version"] == "smc-v2"
 
 
 def test_live_and_backtest_replay_use_identical_scorer_features():
@@ -180,10 +157,10 @@ def test_live_and_backtest_replay_use_identical_scorer_features():
 
     live_sample, backtest_sample = replay_smc_cases([live, backtest])
 
-    assert live_sample["v2_scores"] == backtest_sample["v2_scores"]
+    assert live_sample["scores"] == backtest_sample["scores"]
     assert (
-        live_sample["v2_selected_zone_id"]
-        == backtest_sample["v2_selected_zone_id"]
+        live_sample["selected_zone_id"]
+        == backtest_sample["selected_zone_id"]
     )
     assert live_sample["zone_quality_score"] == backtest_sample[
         "zone_quality_score"
@@ -225,22 +202,20 @@ def test_validation_report_covers_replay_oos_calibration_and_strata():
         samples,
         min_oos_samples=4,
         min_calibration_bucket_samples=2,
-        oos_degradation_tolerance_r=0.10,
         min_walk_forward_windows=2,
         min_walk_forward_samples=2,
     )
 
     assert report["contract_version"] == SMC_VALIDATION_CONTRACT_VERSION
+    assert report["scoring_version"] == "smc-v2"
     assert report["sample_count"] == 4
     assert report["release_gate"]["ready"] is True
-    assert report["oos"]["degradation_r"] == 0
     assert report["calibration"]["sample_guard_passed"] is True
     assert report["calibration"]["reasonable_relationship"] is True
     assert report["walk_forward"]["verdict"] == "ROBUST"
-    assert report["replay"]["selected_zone_stability"]["stable_rate"] == 1
-    assert report["replay"]["status_transitions"] == {"READY_NOW->READY_NOW": 4}
-    assert report["replay"]["false_ready_count"] == 2
-    assert report["replay"]["false_ready_removed_count"] == 0
+    assert report["oos"]["ready_sample_size"] == 4
+    assert report["replay"]["score_distribution"]["0-3"] == 4
+    assert report["replay"]["score_distribution"]["12-15"] == 2
     for field in (
         "symbol",
         "asset_class",
@@ -252,8 +227,7 @@ def test_validation_report_covers_replay_oos_calibration_and_strata():
         "lifecycle_state",
         "linked_sweep",
         "h4_confirmed_choch_against",
-        "legacy_scoring_version",
-        "v2_scoring_version",
+        "scoring_version",
     ):
         assert field in report["stratification"]
     assert len(report["report_hash"]) == 64
@@ -303,17 +277,16 @@ def test_confirmed_h4_choch_can_never_pass_release_gate_as_ready():
     ]
 
 
-def test_false_ready_removed_is_distinct_from_v2_losing_ready():
-    removed = _sample(
-        "removed",
+def test_losing_ready_samples_are_counted():
+    losing = _sample(
+        "losing-ready",
         score=8,
         result_r=-1,
-        legacy_status="READY_NOW",
-        v2_status="WATCH_ZONE",
+        status="READY_NOW",
     )
 
     report = build_smc_validation_report(
-        [removed],
+        [losing],
         min_oos_samples=1,
         min_calibration_bucket_samples=1,
         min_walk_forward_windows=1,
@@ -321,14 +294,12 @@ def test_false_ready_removed_is_distinct_from_v2_losing_ready():
     )
     replay = report["replay"]
 
-    assert replay["legacy_losing_ready_count"] == 1
-    assert replay["v2_losing_ready_count"] == 0
-    assert replay["false_ready_removed_count"] == 1
+    assert replay["losing_ready_count"] == 1
 
 
 def test_invalid_or_out_of_bounds_samples_fail_closed():
     invalid = _sample("bad-score", score=5, result_r=1)
-    invalid["v2_scores"]["buy"] = 99
+    invalid["scores"]["buy"] = 99
 
     report = build_smc_validation_report(
         [invalid],
@@ -338,7 +309,26 @@ def test_invalid_or_out_of_bounds_samples_fail_closed():
 
     assert report["sample_count"] == 0
     assert report["invalid_sample_count"] == 1
-    assert "V2_BUY_SCORE_INVALID" in report["invalid_samples"][0][
+    assert "BUY_SCORE_INVALID" in report["invalid_samples"][0][
+        "reason_codes"
+    ]
+    assert "INVALID_REPLAY_SAMPLE" in report["release_gate"][
+        "block_reason_codes"
+    ]
+
+
+def test_unsupported_scorer_version_fails_closed():
+    unsupported = _sample("v1-sample", score=12, result_r=1)
+    unsupported["scoring_version"] = "smc-v1"
+
+    report = build_smc_validation_report(
+        [unsupported],
+        min_oos_samples=1,
+        min_calibration_bucket_samples=1,
+    )
+
+    assert report["sample_count"] == 0
+    assert "SCORING_VERSION_UNSUPPORTED" in report["invalid_samples"][0][
         "reason_codes"
     ]
     assert "INVALID_REPLAY_SAMPLE" in report["release_gate"][
@@ -362,7 +352,7 @@ def test_duplicate_sample_with_different_results_is_non_deterministic():
     ]
 
 
-def test_analysis_document_adapter_preserves_shadow_and_versions():
+def test_analysis_document_adapter_reads_canonical_sides():
     document = {
         "symbol": "EUR/USD",
         "scan_context": {
@@ -381,36 +371,35 @@ def test_analysis_document_adapter_preserves_shadow_and_versions():
             "market_regime": {"primary": "trend_up"},
             "smc": {"H4": {}, "H1": {}},
             "smc_scoring": {
-                "active": {
+                "contract_version": "smc-scoring-canonical-2026-08",
+                "scoring_version": "smc-v2",
+                "sides": {
                     "buy": {
-                        "smc_quality": 8,
-                        "signal_score": 65,
-                        "selected_zone_id": "legacy-zone",
-                        "scoring_version": "smc-v1",
-                    },
-                    "sell": {
-                        "smc_quality": 2,
-                        "signal_score": 40,
-                        "scoring_version": "smc-v1",
-                    },
-                },
-                "shadow": {
-                    "buy": {
-                        "smc_quality": 12,
+                        "score": 12,
                         "selected_zone_id": "v2-zone",
                         "selected_zone_quality_score": 82,
                         "selected_zone_relevance_score": 76,
                         "scoring_version": "smc-v2",
-                        "selected_zone": {
-                            "zone_id": "v2-zone",
-                            "family": "demand",
-                            "independent_retest_count": 0,
-                            "liquidity_sweep_linked": True,
-                        },
                     },
                     "sell": {
-                        "smc_quality": 1,
+                        "score": 1,
+                        "selected_zone_id": None,
                         "scoring_version": "smc-v2",
+                    },
+                },
+                "consumer_contract": {
+                    "contract_version": "smc-consumer-v2",
+                    "sides": {
+                        "buy": {
+                            "selected_zone_id": "v2-zone",
+                            "selected_zone": {
+                                "zone_id": "v2-zone",
+                                "family": "demand",
+                                "independent_retest_count": 0,
+                                "liquidity_sweep_linked": True,
+                            },
+                        },
+                        "sell": {},
                     },
                 },
             },
@@ -422,17 +411,14 @@ def test_analysis_document_adapter_preserves_shadow_and_versions():
         result_r=1.2,
         dataset_split="oos",
         asset_class="forex",
-        v2_status="READY_NOW",
     )
 
     assert sample["valid"] is True
     assert sample["sample_id"] == "scan-1:EURUSD"
-    assert sample["legacy_scores"] == {"buy": 8, "sell": 2}
-    assert sample["v2_scores"] == {"buy": 12, "sell": 1}
-    assert sample["legacy_selected_zone_id"] == "legacy-zone"
-    assert sample["v2_selected_zone_id"] == "v2-zone"
+    assert sample["scores"] == {"buy": 12, "sell": 1}
+    assert sample["selected_zone_id"] == "v2-zone"
     assert sample["linked_sweep"] is True
-    assert sample["v2_scoring_version"] == "smc-v2"
+    assert sample["scoring_version"] == "smc-v2"
 
 
 def test_calibration_and_stratification_use_only_oos_samples():
@@ -473,25 +459,6 @@ def test_calibration_and_stratification_use_only_oos_samples():
     assert report["stratification"]["symbol"]["eur/usd"][
         "sample_size"
     ] == 2
-
-
-def test_mixed_scorer_version_pairs_block_release():
-    first = _sample("v1-v2", score=12, result_r=1)
-    second = _sample("v1-v3", score=12, result_r=1)
-    second["v2_scoring_version"] = "smc-v3"
-
-    report = build_smc_validation_report(
-        [first, second],
-        min_oos_samples=1,
-        min_calibration_bucket_samples=1,
-        min_walk_forward_windows=1,
-        min_walk_forward_samples=1,
-    )
-
-    assert len(report["scoring_version_pairs"]) == 2
-    assert "MIXED_SCORING_VERSION_PAIR" in report["release_gate"][
-        "block_reason_codes"
-    ]
 
 
 def test_validation_cli_writes_deterministic_json_report(tmp_path):

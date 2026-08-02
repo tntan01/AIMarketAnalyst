@@ -86,7 +86,6 @@ def _derive_would_reject(case: dict[str, Any], full: dict[str, Any]) -> dict[str
     technical = full.get("technical", {}) if isinstance(full.get("technical"), dict) else {}
     market_regime = full.get("market_regime", {}) if isinstance(full.get("market_regime"), dict) else {}
     return evaluate_post_context_prefilter(
-        mode=str(case.get("smc_scoring_mode", "v2")),
         smc=smc,
         technical=technical,
         market_regime=market_regime,
@@ -98,20 +97,20 @@ def _derive_would_reject(case: dict[str, Any], full: dict[str, Any]) -> dict[str
 
 def _zone_ids(result: dict[str, Any]) -> dict[str, str | None]:
     scoring = result.get("smc_scoring", {})
-    decision = scoring.get("decision", {}) if isinstance(scoring, dict) else {}
+    sides = scoring.get("sides", {}) if isinstance(scoring, dict) else {}
     return {
-        side: decision.get(side, {}).get("selected_zone_id")
-        if isinstance(decision.get(side), dict) else None
+        side: sides.get(side, {}).get("selected_zone_id")
+        if isinstance(sides.get(side), dict) else None
         for side in ("buy", "sell")
     }
 
 
 def _zone_scores(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     scoring = result.get("smc_scoring", {})
-    decision = scoring.get("decision", {}) if isinstance(scoring, dict) else {}
+    sides = scoring.get("sides", {}) if isinstance(scoring, dict) else {}
     out: dict[str, dict[str, Any]] = {}
     for side in ("buy", "sell"):
-        side_data = decision.get(side, {}) if isinstance(decision, dict) else {}
+        side_data = sides.get(side, {}) if isinstance(sides.get(side), dict) else {}
         out[side] = {
             "timeframe": side_data.get("selected_zone_timeframe"),
             "score": side_data.get("selected_zone_score"),
@@ -159,15 +158,6 @@ def _scoring_provenance(result: dict[str, Any]) -> dict[str, Any]:
         "scorer_version": sp.get("scorer_version"),
         "gate_version": sp.get("gate_version"),
         "score_metric": sp.get("score_metric"),
-    }
-
-
-def _smc_policy(result: dict[str, Any]) -> dict[str, Any]:
-    scoring = result.get("smc_scoring", {})
-    policy = scoring.get("policy", {}) if isinstance(scoring, dict) else {}
-    return {
-        "requested_mode": policy.get("requested_mode"),
-        "effective_mode": policy.get("effective_mode"),
     }
 
 
@@ -237,11 +227,6 @@ def _check_survivor_parity(full: dict[str, Any], fast: dict[str, Any]) -> list[_
     if tsp != fsp:
         failures.append(("scoring_provenance", f"full={fsp} fast={tsp}"))
 
-    fpol = _smc_policy(full)
-    tpol = _smc_policy(fast)
-    if tpol != fpol:
-        failures.append(("smc_policy", f"full={fpol} fast={tpol}"))
-
     fcand = _candidate_status(full)
     tcand = _candidate_status(fast)
     if tcand != fcand:
@@ -278,8 +263,7 @@ def main() -> int:
 
     for case in cases:
         name = case["name"]
-        mode = str(case.get("smc_scoring_mode", "v2"))
-        print(f"\n--- {name} ({mode}) ---")
+        print(f"\n--- {name} ---")
 
         # 1. Full baseline
         t0 = perf_counter()
@@ -298,7 +282,6 @@ def main() -> int:
 
         full_zone_ids = _zone_ids(full)
         full_has_zone = any(full_zone_ids[side] is not None for side in ("buy", "sell"))
-        is_legacy_shadow = mode in ("legacy", "shadow")
         full_has_trade = _has_trade_setup(full)
         full_has_watch = _has_watch_signal(full)
         fast_status = fast.get("analysis_status")
@@ -307,7 +290,6 @@ def main() -> int:
 
         record: dict[str, Any] = {
             "name": name,
-            "mode": mode,
             "full_ms": full_ms,
             "fast_ms": fast_ms,
             "full_has_zone": full_has_zone,
@@ -329,9 +311,7 @@ def main() -> int:
         }
 
         # Classification
-        if is_legacy_shadow:
-            record["classification"] = "fail_open_legacy_shadow"
-        elif fast_is_reject and full_has_trade:
+        if fast_is_reject and full_has_trade:
             record["classification"] = "TRADE_FALSE_REJECT"
         elif fast_is_reject and full_has_watch:
             record["classification"] = "watch_false_reject"
@@ -341,7 +321,7 @@ def main() -> int:
             record["classification"] = "survivor"
 
         # Full mục 8.4 parity check for survivors
-        if is_legacy_shadow or full_has_zone:
+        if full_has_zone:
             parity_failures = _check_survivor_parity(full, fast)
             record["survivor_parity"] = len(parity_failures) == 0
             record["parity_failures"] = parity_failures
@@ -374,7 +354,6 @@ def main() -> int:
     watch_false = [r for r in results if r["classification"] == "watch_false_reject"]
     correct_reject = [r for r in results if r["classification"] == "correct_reject"]
     survivors = [r for r in results if r["classification"] == "survivor"]
-    fail_open = [r for r in results if r["classification"] == "fail_open_legacy_shadow"]
     parity_fail = [r for r in survivors if not r.get("survivor_parity", True)]
 
     post_context_reject_rate = (
@@ -393,7 +372,6 @@ def main() -> int:
     print(f"  watch_false_reject_count   = {len(watch_false)}")
     print(f"  correct_reject_count       = {len(correct_reject)}")
     print(f"  survivor_count             = {len(survivors)}")
-    print(f"  fail_open_count            = {len(fail_open)}")
     print(f"  survivor_parity_failures   = {len(parity_fail)}")
     print(f"  error_count                = 0")
 

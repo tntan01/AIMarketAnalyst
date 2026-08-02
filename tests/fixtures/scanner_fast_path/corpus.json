@@ -11,55 +11,59 @@
     "contract_size_override": 100000.0,
     "timezone_name": "Asia/Ho_Chi_Minh"
   },
-  "thresholds": {"ready": 65, "watch": 60, "wait": 55},
+  "thresholds": {
+    "ready": 65,
+    "watch": 60,
+    "wait": 55
+  },
   "cases": [
     {
       "name": "raw_empty_v2",
       "recipe": "plain",
-      "smc_scoring_mode": "v2",
-      "expected_raw_presence": {"H4": false, "H1": false}
+      "expected_raw_presence": {
+        "H4": false,
+        "H1": false
+      }
     },
     {
       "name": "h1_only_fvg_v2",
       "recipe": "bullish_fvg",
-      "smc_scoring_mode": "v2",
-      "expected_raw_presence": {"H4": false, "H1": true}
+      "expected_raw_presence": {
+        "H4": false,
+        "H1": true
+      }
     },
     {
       "name": "h1_order_block_v2",
       "recipe": "bearish_order_block",
-      "smc_scoring_mode": "v2",
-      "expected_raw_presence": {"H4": false, "H1": true}
+      "expected_raw_presence": {
+        "H4": false,
+        "H1": true
+      }
     },
     {
       "name": "broken_invalid_v2",
       "recipe": "broken_bullish_fvg",
-      "smc_scoring_mode": "v2",
-      "expected_raw_presence": {"H4": false, "H1": true}
+      "expected_raw_presence": {
+        "H4": false,
+        "H1": true
+      }
     },
     {
       "name": "buy_setup_v2",
       "recipe": "buy_setup",
-      "smc_scoring_mode": "v2",
-      "expected_raw_presence": {"H4": false, "H1": true}
+      "expected_raw_presence": {
+        "H4": false,
+        "H1": true
+      }
     },
     {
       "name": "sell_setup_v2",
       "recipe": "sell_setup",
-      "smc_scoring_mode": "v2",
-      "expected_raw_presence": {"H4": false, "H1": true}
-    },
-    {
-      "name": "mode_legacy",
-      "recipe": "buy_setup",
-      "smc_scoring_mode": "legacy",
-      "expected_raw_presence": {"H4": false, "H1": true}
-    },
-    {
-      "name": "mode_shadow",
-      "recipe": "buy_setup",
-      "smc_scoring_mode": "shadow",
-      "expected_raw_presence": {"H4": false, "H1": true}
+      "expected_raw_presence": {
+        "H4": false,
+        "H1": true
+      }
     }
   ]
 }

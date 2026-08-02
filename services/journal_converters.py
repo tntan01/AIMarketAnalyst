@@ -201,10 +201,6 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
             str(scoring_provenance.get("smc_scorer_version", "") or "")
             or zone_version
         ),
-        smc_scoring_mode=(
-            str(scoring_provenance.get("smc_scoring_mode", "") or "")
-            or None
-        ),
         trade_status="planned",
         opened_at=None,
         result_amount=None,
@@ -331,14 +327,6 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
                 row.get("smc_scorer_version")
                 or row_provenance.get("smc_scorer_version")
                 or row_zone_version
-                or ""
-            )
-            or None
-        ),
-        smc_scoring_mode=(
-            str(
-                row.get("smc_scoring_mode")
-                or row_provenance.get("smc_scoring_mode")
                 or ""
             )
             or None

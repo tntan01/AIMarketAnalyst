@@ -174,7 +174,6 @@ def _validated_config() -> dict:
         "scorer_version": SCANNER_SCORER_VERSION,
         "feature_version": SCANNER_FEATURE_VERSION,
         "smc_scorer_version": "smc-v2",
-        "smc_scoring_mode": "v2",
         "trained_from": "2025-01-01T00:00:00+00:00",
         "trained_to": "2025-06-30T00:00:00+00:00",
         "validated_from": "2025-07-01T00:00:00+00:00",
@@ -230,7 +229,6 @@ def _observed_row(config: dict | None = None) -> tuple[dict, object]:
         {
             "symbols": ["EUR/USD"],
             "feature_flags": {},
-            "smc_scoring_mode": "v2",
         },
         now=datetime(2026, 7, 24, 8, tzinfo=timezone.utc),
     )

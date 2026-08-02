@@ -68,7 +68,6 @@ class SymbolScanSettings:
     backtest_scorer_version: str = ""
     backtest_feature_version: str = ""
     backtest_smc_scorer_version: str = ""
-    backtest_smc_scoring_mode: str = ""
     backtest_score_metric: str = ""
     backtest_trained_from: str = ""
     backtest_trained_to: str = ""

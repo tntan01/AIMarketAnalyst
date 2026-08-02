@@ -78,11 +78,11 @@ def test_corpus_covers_required_fast_path_edge_groups() -> None:
     assert {
         "raw_empty_v2", "h1_only_fvg_v2", "h1_order_block_v2",
         "broken_invalid_v2", "buy_setup_v2", "sell_setup_v2",
-        "mode_legacy", "mode_shadow",
-    } <= names
-    assert {case["smc_scoring_mode"] for case in _CORPUS["cases"]} == {
-        "legacy", "shadow", "v2",
-    }
+    } == names
+    assert all(
+        "smc_scoring_mode" not in case
+        for case in _CORPUS["cases"]
+    )
     assert _ORACLES["h1_only_fvg_v2"]["raw_counts"]["H1"]["fvg"] > 0
     assert _ORACLES["h1_order_block_v2"]["raw_counts"]["H1"]["order_block"] > 0
     assert _ORACLES["broken_invalid_v2"]["selected_zone_ids"] == {

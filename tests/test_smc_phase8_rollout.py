@@ -84,7 +84,7 @@ def test_journal_persists_scoring_provenance_columns(tmp_path):
     assert loaded.scanner_scorer_version == "scanner-v3"
     assert loaded.scanner_feature_version == "scanner-features-v3"
     assert loaded.smc_scorer_version == "smc-v2"
-    assert loaded.smc_scoring_mode is None
+    assert not hasattr(loaded, "smc_scoring_mode")
     with sqlite3.connect(db_path) as connection:
         columns = {
             row[1]
@@ -100,7 +100,7 @@ def test_journal_persists_scoring_provenance_columns(tmp_path):
     }.issubset(columns)
 
 
-def test_shadow_report_collects_smc_operational_metrics():
+def test_shadow_report_collects_generic_rollout_metrics():
     report = build_shadow_report(
         [{
             "symbol": "EUR/USD",
@@ -110,20 +110,7 @@ def test_shadow_report_collects_smc_operational_metrics():
             "analysis_latency_ms": 12.5,
             "analysis_result": {
                 "smc_scoring": {
-                    "comparison": {
-                        "score_delta": {"buy": 3, "sell": -2},
-                        "selected_zone_changed": {
-                            "buy": True,
-                            "sell": False,
-                        },
-                        "direction_changed": True,
-                        "decision_changed": True,
-                        "decision_input_changed": True,
-                    },
-                    "decision": {
-                        "buy": {"selected_zone_id": "buy-zone"},
-                        "sell": {"selected_zone_id": None},
-                    },
+                    "sides": {"buy": {}, "sell": {}},
                 },
                 "scenarios": [],
             },
@@ -140,15 +127,11 @@ def test_shadow_report_collects_smc_operational_metrics():
         enabled=True,
     )
 
-    assert report["smc_direction_changes"] == 1
-    assert report["smc_zone_changes"] == 1
-    assert report["smc_score_delta_abs_sum"] == 5
-    assert report["smc_score_delta_samples"] == 2
-    assert report["smc_no_zone_sides"] == 1
-    assert report["smc_side_samples"] == 2
     assert report["data_unavailable"] == 1
     assert report["analysis_errors"] == 1
     assert report["analysis_latency_ms_total"] == 12.5
+    assert report["analysis_latency_samples"] == 1
+    assert report["analysis_latency_ms_max"] == 12.5
 
 
 def test_scorer_performance_separates_v1_and_v2():

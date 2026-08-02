@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Phase-7 SMC replay/calibration report from JSON or JSONL."""
+"""Build an SMC replay/calibration report from JSON or JSONL."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from core.smc_validation import (  # noqa: E402
     DEFAULT_MIN_OOS_SAMPLES,
     DEFAULT_MIN_WALK_FORWARD_SAMPLES,
     DEFAULT_MIN_WALK_FORWARD_WINDOWS,
-    DEFAULT_OOS_DEGRADATION_TOLERANCE_R,
     build_smc_validation_report,
     replay_sample_from_analysis_document,
 )
@@ -28,7 +27,7 @@ from core.smc_validation import (  # noqa: E402
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Tạo báo cáo replay, OOS và calibration cho SMC legacy/v2."
+            "Tạo báo cáo replay, OOS và calibration cho SMC canonical."
         )
     )
     parser.add_argument(
@@ -52,11 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--min-bucket-samples",
         type=int,
         default=DEFAULT_MIN_CALIBRATION_BUCKET_SAMPLES,
-    )
-    parser.add_argument(
-        "--oos-tolerance-r",
-        type=float,
-        default=DEFAULT_OOS_DEGRADATION_TOLERANCE_R,
     )
     parser.add_argument(
         "--min-walk-forward-windows",
@@ -103,7 +97,7 @@ def load_validation_samples(path: Path) -> list[dict[str, Any]]:
             continue
         if (
             isinstance(value.get("analysis_result"), dict)
-            and not isinstance(value.get("legacy_scores"), dict)
+            and not isinstance(value.get("scores"), dict)
         ):
             metadata = (
                 value.get("validation_metadata")
@@ -127,14 +121,6 @@ def load_validation_samples(path: Path) -> list[dict[str, Any]]:
                         value.get("asset_class", "unknown"),
                     )
                 ),
-                v2_status=str(
-                    metadata.get(
-                        "v2_status",
-                        value.get("v2_status", ""),
-                    )
-                    or ""
-                )
-                or None,
             ))
         else:
             samples.append(value)
@@ -149,7 +135,6 @@ def main(argv: list[str] | None = None) -> int:
             samples,
             min_oos_samples=args.min_oos_samples,
             min_calibration_bucket_samples=args.min_bucket_samples,
-            oos_degradation_tolerance_r=args.oos_tolerance_r,
             min_walk_forward_windows=args.min_walk_forward_windows,
             min_walk_forward_samples=args.min_walk_forward_samples,
         )

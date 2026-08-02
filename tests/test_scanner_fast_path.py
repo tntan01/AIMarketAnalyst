@@ -188,16 +188,12 @@ def _analyze_case(case: dict[str, Any]) -> dict[str, Any]:
     full = _run_full(case)
     would = _derive_would_reject(case)
     fast = _run_fast_tier1(case)
-    mode = str(case.get("smc_scoring_mode", "v2"))
     full_zone_ids = _zone_ids(full)
     full_has_zone = any(full_zone_ids[side] is not None for side in ("buy", "sell"))
-    is_legacy_shadow = mode in ("legacy", "shadow")
 
     return {
         "name": case["name"],
-        "mode": mode,
         "full_has_zone": full_has_zone,
-        "is_legacy_shadow": is_legacy_shadow,
         "full_has_trade": _has_trade_setup(full),
         "full_has_watch": _has_watch_signal(full),
         "would_should_reject": would.get("should_reject", False),
@@ -246,7 +242,7 @@ class TestTier1OfflineAB:
 
     @staticmethod
     def _is_survivor(r: dict[str, Any]) -> bool:
-        return r["is_legacy_shadow"] or r["full_has_zone"]
+        return r["full_has_zone"]
 
     # -- Cổng 1: trade false reject = 0 ---------------------------------------
 
@@ -433,10 +429,7 @@ class TestTier1OfflineAB:
     ) -> None:
         mismatches = []
         for name, r in analysis_results.items():
-            if r["is_legacy_shadow"]:
-                if r["would_should_reject"]:
-                    mismatches.append(f"{name}: legacy/shadow must not reject")
-            elif r["full_has_zone"] and r["would_should_reject"]:
+            if r["full_has_zone"] and r["would_should_reject"]:
                 mismatches.append(
                     f"{name}: would-reject but full has zone {r['full']['zone_ids']}"
                 )

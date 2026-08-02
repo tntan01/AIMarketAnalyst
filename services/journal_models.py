@@ -84,7 +84,6 @@ class JournalEntry:
     scanner_scorer_version: str | None = None
     scanner_feature_version: str | None = None
     smc_scorer_version: str | None = None
-    smc_scoring_mode: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
