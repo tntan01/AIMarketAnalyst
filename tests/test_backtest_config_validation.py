@@ -129,7 +129,6 @@ def _result() -> dict:
         "scorer_version": "scanner-v3",
         "feature_version": "scanner-features-v3",
         "smc_scorer_version": "smc-v2",
-        "smc_scoring_mode": "v2",
     }
     frozen_id = "EURUSD-frozen-test"
     is_ledger = []
@@ -470,7 +469,7 @@ def test_validated_config_round_trips_through_symbol_settings():
     assert len(payload["execution_fingerprint"]) == 64
     assert len(payload["provenance_fingerprint"]) == 64
     assert payload["smc_scorer_version"] == "smc-v2"
-    assert payload["smc_scoring_mode"] == "v2"
+    assert "smc_scoring_mode" not in payload
     assert payload["out_of_sample_trades"] == 9
     assert payload["statistics_version"] == "backtest-statistics-v1"
     assert payload["probability_positive_edge_pct"] == 100.0

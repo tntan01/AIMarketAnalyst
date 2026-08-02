@@ -6,8 +6,6 @@ from dataclasses import asdict, dataclass
 import re
 from typing import Any
 
-from core.smc_scoring_contract import resolve_smc_scoring_policy
-
 
 SCANNER_ROLLOUT_VERSION = "phase8-rollout-v1"
 ROLLBACK_DRILL_VERSION = "phase8-rollback-drill-v1"
@@ -508,7 +506,11 @@ def build_scorer_performance(
 
 
 def run_rollback_drill() -> dict[str, Any]:
-    """Exercise both safe rollback paths without touching a broker."""
+    """Exercise the safe rollback path without touching a broker.
+
+    There is no v1 scorer to restore any more; rollback is the kill switch and
+    the Scanner SHADOW order-suppression stage.
+    """
 
     class _Settings:
         stage = ROLLOUT_PRODUCTION
@@ -525,17 +527,11 @@ def run_rollback_drill() -> dict[str, Any]:
         canary_ready=True,
         release_ready=True,
     ).order_decision("EUR/USD")
-    legacy_policy = resolve_smc_scoring_policy("legacy")
     checks = {
         "kill_switch_blocks_order": (
             order_decision.allowed is False
             and "ROLLOUT_KILL_SWITCH_ACTIVE"
             in order_decision.reason_codes
-        ),
-        "legacy_restores_v1_decision": (
-            legacy_policy.active_version == "smc-v1"
-            and legacy_policy.decision_source == "smc-v1"
-            and legacy_policy.decision_impact_allowed is False
         ),
     }
     return {
@@ -543,7 +539,6 @@ def run_rollback_drill() -> dict[str, Any]:
         "passed": all(checks.values()),
         "checks": checks,
         "order_decision": order_decision.to_dict(),
-        "legacy_policy": legacy_policy.to_dict(),
     }
 
 

@@ -19,16 +19,15 @@ from services.scanner_rollout_service import ScannerRolloutMetricsService
 from services.scanner_rollout_service import ROLLOUT_METRICS_VERSION
 
 
-def test_scoring_provenance_follows_explicit_smc_mode():
-    active = build_scoring_provenance("v2")
-    rollback = build_scoring_provenance("legacy")
+def test_scoring_provenance_is_mode_independent_and_canonical():
+    provenance = build_scoring_provenance()
 
-    assert active["scanner_scorer_version"] == "scanner-v3"
-    assert active["scanner_feature_version"] == "scanner-features-v3"
-    assert active["smc_scorer_version"] == "smc-v2"
-    assert active["smc_decision_source"] == "smc-v2"
-    assert rollback["smc_scorer_version"] == "smc-v1"
-    assert rollback["smc_decision_source"] == "smc-v1"
+    assert provenance["scanner_scorer_version"] == "scanner-v3"
+    assert provenance["scanner_feature_version"] == "scanner-features-v3"
+    assert provenance["smc_scorer_version"] == "smc-v2"
+    assert provenance["smc_decision_source"] == "smc-v2"
+    assert provenance["smc_scoring_mode"] == "v2"
+    assert "smc-v1" not in provenance.values()
 
 
 def test_scanner_and_backtest_outputs_expose_same_v2_identity():
@@ -69,7 +68,7 @@ def test_scanner_and_backtest_outputs_expose_same_v2_identity():
 def test_journal_persists_scoring_provenance_columns(tmp_path):
     db_path = tmp_path / "journal.db"
     service = JournalService(db_path=db_path)
-    provenance = build_scoring_provenance("v2")
+    provenance = build_scoring_provenance()
     entry = journal_entry_from_analysis(
         {
             "symbol": "EUR/USD",
@@ -176,14 +175,13 @@ def test_scorer_performance_separates_v1_and_v2():
     assert performance["smc-v2"]["max_drawdown_r"] == 1.0
 
 
-def test_rollback_drill_blocks_orders_and_restores_v1(tmp_path):
+def test_rollback_drill_blocks_orders_and_drops_v1_rollback(tmp_path):
     direct = run_rollback_drill()
     service = ScannerRolloutMetricsService(tmp_path / "metrics.json")
     persisted = service.perform_rollback_drill()
 
     assert direct["passed"] is True
     assert direct["checks"]["kill_switch_blocks_order"] is True
-    assert direct["checks"]["legacy_restores_v1_decision"] is True
     assert persisted["passed"] is True
     metrics = service.load()
     assert metrics["rollback_tested"] is True

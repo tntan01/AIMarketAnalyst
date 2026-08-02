@@ -24,7 +24,7 @@ from core.scanner_candidate_engine import (
     evaluate_scanner_candidate,
 )
 from core.smc_prefilter import NO_ACTIONABLE_SMC_ZONE, NO_RAW_SMC_CANDIDATE
-from core.smc_scorer_v2 import score_smc_v2
+from core.smc_scorer import score_smc
 
 
 class _Context:
@@ -613,8 +613,8 @@ def test_tier1_reject_short_circuits_all_post_context_steps():
     assert result["scenarios"][0]["type"] == "stand_aside"
 
 
-def test_tier1_survivor_reuses_precomputed_v2_result_and_runs_full_pipeline():
-    """Tier-1 must not score v2 twice for symbols that remain on full route."""
+def test_tier1_survivor_reuses_precomputed_smc_and_runs_full_pipeline():
+    """Tier-1 must not score SMC twice for symbols that remain on full route."""
     pipeline = AnalysisPipeline()
 
     def survivor_decision(
@@ -627,7 +627,7 @@ def test_tier1_survivor_reuses_precomputed_v2_result_and_runs_full_pipeline():
         return {
             "should_reject": False,
             "fail_open": False,
-            "precomputed_v2_result": score_smc_v2(
+            "precomputed_smc": score_smc(
                 smc,
                 technical,
                 market_regime,
@@ -640,7 +640,7 @@ def test_tier1_survivor_reuses_precomputed_v2_result_and_runs_full_pipeline():
             side_effect=survivor_decision,
         ),
         patch(
-            "core.smc_scoring_contract.score_smc_v2",
+            "core.analysis_pipeline.score_smc",
             side_effect=AssertionError("v2 result must be reused"),
         ),
         patch.object(

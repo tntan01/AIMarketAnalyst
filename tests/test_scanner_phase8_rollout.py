@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,8 @@ import pytest
 from config.settings import ScannerRolloutSettings, default_settings
 import controllers.scanner_controller as scanner_controller_module
 from controllers.scanner_controller import ScannerController
-from core.scanner import ScannerRequest
+from core.scanner import ScannerRequest, blocked_scanner_row
+from core.scanner_observability import create_scan_context
 from core.scanner_rollout import (
     ROLLOUT_CANARY,
     ROLLOUT_DEMO_FULL,
@@ -531,3 +533,230 @@ def test_demo_account_detection_is_fail_closed(server, expected):
     )
 
     assert policy.account_is_demo is expected
+
+
+# ---------------------------------------------------------------------------
+# Bước 03 — lock the generic Scanner rollout safety layer.  These assertions
+# must stay green while the SMC scorer shadow is removed; they turn red if
+# someone deletes the generic Scanner SHADOW / comparison.
+# ---------------------------------------------------------------------------
+
+
+class _EventRecorder:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, event_type: str, **kwargs) -> dict:
+        event = {"event_type": event_type, **kwargs}
+        self.events.append(event)
+        return event
+
+
+class _ScanMT5:
+    def available_symbols(self, *, market_watch_only: bool):
+        return ["EURUSD"]
+
+
+class _ScanNews:
+    def preload_macro_contexts(
+        self,
+        symbols,
+        progress_callback=None,
+        *,
+        ai_service=None,
+        performance_tracker=None,
+    ):
+        del symbols, progress_callback, ai_service, performance_tracker
+        return None
+
+    def macro_freshness_status(self):
+        return {"confidence_multiplier": 1.0}
+
+
+def _scan_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        advanced=SimpleNamespace(d1_bars=120, h4_bars=240, h1_bars=300),
+        trading=SimpleNamespace(
+            account_currency="USD",
+            lot_step=0.01,
+            minimum_lot=0.01,
+            max_daily_loss_pct=3.0,
+            max_weekly_loss_pct=6.0,
+            max_consecutive_losses=3,
+            max_open_risk_pct=5.0,
+            contract_size_override={},
+        ),
+        display=SimpleNamespace(timezone="Asia/Ho_Chi_Minh"),
+        ai=SimpleNamespace(active_provider=lambda: None),
+        scanner_rollout=None,
+    )
+
+
+def _scan_request() -> ScannerRequest:
+    return ScannerRequest(
+        symbols=["EUR/USD"],
+        account_balance=10_000.0,
+        risk_percent=1.0,
+        timezone_name="Asia/Ho_Chi_Minh",
+        persistence_mode="full",
+    )
+
+
+def _shadow_row(symbol: str) -> dict:
+    row = blocked_scanner_row(symbol, "fixture")
+    row["scanner_group"] = "blocked"
+    row["analysis_result"] = {"scenarios": [], "smc_scoring": {}}
+    row["input_timestamps"] = {}
+    return row
+
+
+def _fake_fetch(symbol: str, **_kwargs):
+    return {
+        "symbol": symbol,
+        "broker_symbol": "EURUSD",
+        "input_timestamps": {},
+    }
+
+
+def _fake_analyze(pkt: dict, **_kwargs):
+    return _shadow_row(pkt["symbol"])
+
+
+def _set_candidate_status(rows: list[dict], _request):
+    for row in rows:
+        row["candidate_status"] = "READY_NOW"
+        row["selected_side"] = "buy"
+        row["scanner_candidate_decision"] = {
+            "auto_trade_candidate": False,
+            "reason_codes": ["SETUP_SCORE_BELOW_MINIMUM"],
+            "strategy": {
+                "eligible": False,
+                "score_value": 50,
+                "min_score": 65,
+            },
+        }
+    return rows
+
+
+def _run_core_scan(monkeypatch, *, rollout_override=None) -> _EventRecorder:
+    controller = ScannerController.__new__(ScannerController)
+    controller.mt5 = _ScanMT5()
+    controller.news_service = _ScanNews()
+    controller.journal_service = SimpleNamespace(
+        list_closed_trades_for_account_guard=lambda: []
+    )
+    controller.observability = _EventRecorder()
+    controller._apply_scanner_filters = _set_candidate_status
+    controller._active_performance_tracker = None
+    controller._active_mt5_history_cache_identity = None
+    monkeypatch.setattr(
+        scanner_controller_module,
+        "fetch_macro_correlation_context",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        scanner_controller_module,
+        "_fetch_one_symbol_mt5",
+        _fake_fetch,
+    )
+    monkeypatch.setattr(
+        scanner_controller_module,
+        "_analyze_one_symbol",
+        _fake_analyze,
+    )
+    settings = _scan_settings()
+    rollout_settings = rollout_override or settings.scanner_rollout
+    rollout_policy = build_rollout_policy(
+        rollout_settings,
+        server="Fixture-Demo",
+    )
+    request = _scan_request()
+    scan_context = create_scan_context(
+        settings,
+        request,
+        now=datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+    controller._run_market_scan_core(
+        request,
+        lambda _percent, _message: None,
+        scan_context=scan_context,
+        settings=settings,
+        rollout_policy=rollout_policy,
+        pre_scan_readiness={"ready": True},
+        pre_scan_canary_readiness={"ready": True},
+        mt5_balance=10_000.0,
+        portfolio_state={"available": True, "account_balance": 10_000},
+    )
+    return controller.observability
+
+
+def test_scan_emits_generic_shadow_decision_comparison_when_enabled(monkeypatch):
+    recorder = _run_core_scan(monkeypatch)
+
+    event_types = [event["event_type"] for event in recorder.events]
+    assert "SHADOW_DECISION_COMPARISON" in event_types
+    # The generic Scanner comparison must stay distinct from the SMC scorer
+    # shadow event, which this fixture does not produce.
+    assert "SMC_SHADOW_COMPARISON" not in event_types
+
+    event = next(
+        event
+        for event in recorder.events
+        if event["event_type"] == "SHADOW_DECISION_COMPARISON"
+    )
+    assert event["symbol"] == "EUR/USD"
+    assert event["payload"]["disagreement_codes"]
+    assert event["payload"]["v2_order_suppressed"] is True
+    assert set(event["payload"]).issuperset({"v1", "v2"})
+    assert "legacy_smc_quality" not in event["payload"]
+
+
+def test_scan_does_not_emit_shadow_comparison_when_disabled(monkeypatch):
+    recorder = _run_core_scan(
+        monkeypatch,
+        rollout_override=_settings(
+            stage=ROLLOUT_SHADOW,
+            shadow_compare_enabled=False,
+        ),
+    )
+
+    event_types = [event["event_type"] for event in recorder.events]
+    assert "SHADOW_DECISION_COMPARISON" not in event_types
+
+
+def test_generic_shadow_comparison_stays_gated_by_enabled_flag():
+    row = _shadow_row("EUR/USD")
+    row["legacy_candidate_status"] = "READY_NOW"
+    row["candidate_status"] = "BLOCKED"
+    row["selected_side"] = "buy"
+    row["scanner_candidate_decision"] = {
+        "auto_trade_candidate": False,
+        "reason_codes": ["SETUP_SCORE_BELOW_MINIMUM"],
+        "strategy": {"eligible": False, "min_score": 65},
+    }
+    row["legacy_candidate_input"] = {
+        "scanner_action": "ready",
+        "scanner_group": "ready_now",
+        "trade_permission": "allowed",
+        "best_side": "buy",
+        "best_score": 75,
+        "expected_effective_rr": 2.0,
+        "market_regime": "range",
+    }
+    row["analysis_result"] = {
+        "scenarios": [{"type": "buy", "entry_zone": [1.0, 1.1]}],
+        "smc_scoring": {},
+    }
+
+    enabled = build_shadow_report([row], enabled=True)
+    disabled = build_shadow_report([row], enabled=False)
+
+    assert enabled["enabled"] is True
+    assert enabled["samples"] == 1
+    assert enabled["comparisons"][0]["disagreement_codes"]
+    assert set(enabled["comparisons"][0]).issuperset(
+        {"v1", "v2", "v2_order_suppressed", "disagreement"}
+    )
+    assert disabled["enabled"] is False
+    assert disabled["comparisons"] == []
+    assert disabled["samples"] == 0

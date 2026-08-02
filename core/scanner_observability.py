@@ -18,12 +18,9 @@ from core.scanner_models import (
     STRATEGY_ROUTER_VERSION,
 )
 from core.scanner_rollout import SCANNER_ROLLOUT_VERSION
-from core.smc_scoring_contract import (
-    normalize_smc_scoring_mode,
-    resolve_smc_scoring_policy,
-)
 from core.scoring_provenance import build_scoring_provenance
 from core.smc_models import SMC_DOMAIN_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 
 
 SCANNER_OBSERVABILITY_VERSION = "phase7-observability-v1"
@@ -81,9 +78,6 @@ def create_scan_context(
     )
     request_payload = _to_plain(request)
     feature_flags = request_payload.get("feature_flags", {})
-    smc_policy = resolve_smc_scoring_policy(
-        request_payload.get("smc_scoring_mode")
-    )
     return ScannerScanContext(
         scan_id=scan_id,
         started_at=timestamp.isoformat(timespec="milliseconds"),
@@ -96,11 +90,9 @@ def create_scan_context(
         execution_revalidation_version=EXECUTION_REVALIDATION_VERSION,
         portfolio_engine_version=PORTFOLIO_ENGINE_VERSION,
         rollout_version=SCANNER_ROLLOUT_VERSION,
-        smc_scorer_version=smc_policy.active_version,
+        smc_scorer_version=SMC_SCORER_VERSION,
         smc_domain_version=SMC_DOMAIN_VERSION,
-        smc_scoring_mode=normalize_smc_scoring_mode(
-            request_payload.get("smc_scoring_mode")
-        ),
+        smc_scoring_mode="v2",
         settings_hash=stable_hash(settings),
         request_hash=stable_hash(request_payload),
         feature_flags=(
@@ -299,9 +291,7 @@ def attach_row_observability(
         "feature_version": context.feature_version,
         "smc_scorer_version": context.smc_scorer_version,
         "smc_scoring_mode": context.smc_scoring_mode,
-        "scoring_provenance": build_scoring_provenance(
-            context.smc_scoring_mode
-        ),
+        "scoring_provenance": build_scoring_provenance(),
         "observability": observability,
     })
     order_payload = enriched.get("candidate_order_payload")

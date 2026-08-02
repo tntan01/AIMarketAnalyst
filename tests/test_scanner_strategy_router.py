@@ -299,10 +299,9 @@ def test_previous_scanner_v2_config_is_invalid_after_smc_v2_activation():
     assert "BACKTEST_SCORER_VERSION_MISMATCH" in decision.reason_codes
 
 
-def test_config_without_explicit_smc_v2_identity_fails_closed():
+def test_config_without_smc_v2_scorer_version_fails_closed():
     config = _validated_config()
     config["smc_scorer_version"] = ""
-    config["smc_scoring_mode"] = ""
     config["validation_fingerprint"] = validation_fingerprint(config)
 
     decision = evaluate_scanner_candidate(_row(), config)
@@ -310,9 +309,6 @@ def test_config_without_explicit_smc_v2_identity_fails_closed():
     assert decision.branch == BRANCH_BACKTEST_INVALID
     assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
     assert "BACKTEST_SMC_SCORER_VERSION_MISMATCH" in (
-        decision.reason_codes
-    )
-    assert "BACKTEST_SMC_SCORING_MODE_MISMATCH" in (
         decision.reason_codes
     )
 
@@ -332,9 +328,6 @@ def test_legacy_runtime_cannot_use_thresholds_calibrated_for_v2():
     assert decision.branch == BRANCH_BACKTEST_INVALID
     assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
     assert "BACKTEST_RUNTIME_SMC_VERSION_MISMATCH" in (
-        decision.reason_codes
-    )
-    assert "BACKTEST_RUNTIME_SMC_MODE_MISMATCH" in (
         decision.reason_codes
     )
 

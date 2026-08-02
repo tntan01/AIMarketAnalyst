@@ -4,77 +4,74 @@ import json
 
 from core.decision_engine import WATCH_ONLY, make_final_decision
 from core.risk_engine import AnalysisInput, build_scenarios, build_trade_plan
-from core.smc_consumer_contract import build_smc_consumer_contract
+from core.smc_consumer_contract import (
+    build_smc_consumer_from_canonical_result,
+)
 from core.statistical_edge_engine import calculate_evidence_score
 from core.trade_gate_engine import check_trade_gates
 from services.journal_converters import journal_entry_from_analysis
 
 
-def _legacy_zone(zone_id: str = "zone-active") -> dict:
+def _canonical_side(side: str, *, zone_id: str) -> dict:
+    is_buy = side == "buy"
     return {
-        "zone_id": zone_id,
-        "type": "bullish_order_block",
-        "family": "order_block",
-        "direction": "buy",
-        "low": 99.0,
-        "high": 100.0,
-        "origin_index": 10,
-        "origin_time": "2026-01-01T00:00:00+00:00",
-        "departure_end_index": 12,
-        "zone_quality_score": 72,
-        "zone_relevance_score": 64,
-        "zone_setup_score": 69,
-        "zone_score": 69,
-        "scoring_version": "smc-v1",
-    }
-
-
-def test_consumer_contract_keeps_shadow_out_of_active_decision_path():
-    active_zone = _legacy_zone()
-    shadow_zone = {
-        **active_zone,
-        "zone_id": "zone-shadow",
+        "smc_quality": 12,
+        "smc_reason": "canonical reason",
+        "selected_zone": {
+            "zone_id": zone_id,
+            "type": "demand_zone" if is_buy else "supply_zone",
+            "family": "demand" if is_buy else "supply",
+            "direction": side,
+            "timeframe": "H4",
+            "zone_quality_score": 82,
+            "zone_relevance_score": 70,
+            "zone_setup_score": 77,
+            "scoring_version": "smc-v2",
+        },
+        "selected_zone_id": zone_id,
+        "selected_zone_type": "demand_zone" if is_buy else "supply_zone",
+        "selected_zone_timeframe": "H4",
+        "selected_zone_quality_score": 82,
+        "selected_zone_relevance_score": 70,
+        "selected_zone_setup_score": 77,
         "scoring_version": "smc-v2",
-        "zone_setup_score": 88,
-    }
-    diagnostics = {
-        "policy": {
-            "decision_source": "smc-v1",
-            "active_version": "smc-v1",
-            "decision_impact_allowed": False,
-        },
-        "active": {
-            "buy": {
-                "selected_zone_id": "zone-active",
-                "scoring_version": "smc-v1",
-                "breakdown": {"total": 9, "scoring_version": "smc-v1"},
-            },
-            "sell": {},
-        },
-        "shadow": {
-            "buy": {
-                "selected_zone": shadow_zone,
-                "selected_zone_id": "zone-shadow",
-                "scoring_version": "smc-v2",
-                "breakdown": {"total": 12, "scoring_version": "smc-v2"},
-            },
+        "breakdown": {
+            "side": side,
+            "total": 12,
+            "scoring_version": "smc-v2",
         },
     }
 
-    contract = build_smc_consumer_contract(
-        smc={
-            "symbol": "TEST",
-            "H4": {"order_blocks": [active_zone]},
-            "H1": {},
-        },
-        scoring_diagnostics=diagnostics,
+
+def test_consumer_contract_selects_buy_and_sell_from_one_result():
+    contract = build_smc_consumer_from_canonical_result(
+        result={
+            "buy": _canonical_side("buy", zone_id="zone-buy"),
+            "sell": _canonical_side("sell", zone_id="zone-sell"),
+        }
     )
-    buy = contract["sides"]["buy"]
 
-    assert buy["selected_zone_id"] == "zone-active"
-    assert buy["scoring_version"] == "smc-v1"
-    assert buy["shadow_selected_zone_id"] == "zone-shadow"
-    assert buy["selected_zone"]["smc_score_breakdown"]["total"] == 9
+    assert contract["contract_version"] == "smc-consumer-v2"
+    buy = contract["sides"]["buy"]
+    sell = contract["sides"]["sell"]
+
+    assert buy["selected_zone_id"] == "zone-buy"
+    assert buy["selected_zone_type"] == "demand_zone"
+    assert buy["selected_zone_timeframe"] == "H4"
+    assert buy["scoring_version"] == "smc-v2"
+    assert buy["score_breakdown"]["total"] == 12
+    assert buy["selected_zone"]["zone_id"] == "zone-buy"
+
+    assert sell["selected_zone_id"] == "zone-sell"
+    assert sell["selected_zone_type"] == "supply_zone"
+    assert sell["scoring_version"] == "smc-v2"
+    assert sell["score_breakdown"]["total"] == 12
+
+    # The canonical consumer has no shadow/legacy selection concept.
+    assert "shadow_selected_zone" not in buy
+    assert "shadow_selected_zone_id" not in buy
+    assert "selection_source" not in buy
+    assert "shadow_scoring_version" not in buy
 
 
 def test_strict_preferred_zone_does_not_reselect(monkeypatch):

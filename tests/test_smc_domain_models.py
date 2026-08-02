@@ -24,7 +24,7 @@ from core.smc_models import (
     adapt_legacy_zone_payload,
     build_zone_id,
 )
-from core.smc_versions import SMC_SCORER_VERSION
+from core.smc_versions import SMC_RAW_ZONE_VERSION
 
 
 def _legacy_zone(**overrides) -> dict:
@@ -96,7 +96,7 @@ def test_legacy_zone_adapter_adds_contract_without_changing_score():
     assert adapted["zone_relevance_score"] is None
     assert adapted["zone_setup_score"] == 78
     assert adapted["zone_score"] == 78
-    assert adapted["scoring_version"] == SMC_SCORER_VERSION
+    assert adapted["scoring_version"] == SMC_RAW_ZONE_VERSION
     assert adapted["domain_version"] == SMC_DOMAIN_VERSION
 
 

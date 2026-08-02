@@ -67,7 +67,6 @@ def _derive_would_reject(case: dict[str, Any]) -> dict[str, Any]:
     technical = full.get("technical", {}) if isinstance(full.get("technical"), dict) else {}
     market_regime = full.get("market_regime", {}) if isinstance(full.get("market_regime"), dict) else {}
     return evaluate_post_context_prefilter(
-        mode=str(case.get("smc_scoring_mode", "v2")),
         smc=smc,
         technical=technical,
         market_regime=market_regime,
@@ -81,10 +80,10 @@ def _derive_would_reject(case: dict[str, Any]) -> dict[str, Any]:
 
 def _zone_ids(result: dict[str, Any]) -> dict[str, str | None]:
     scoring = result.get("smc_scoring", {})
-    decision = scoring.get("decision", {}) if isinstance(scoring, dict) else {}
+    sides = scoring.get("sides", {}) if isinstance(scoring, dict) else {}
     return {
-        side: decision.get(side, {}).get("selected_zone_id")
-        if isinstance(decision.get(side), dict) else None
+        side: sides.get(side, {}).get("selected_zone_id")
+        if isinstance(sides.get(side), dict) else None
         for side in ("buy", "sell")
     }
 
@@ -92,15 +91,19 @@ def _zone_ids(result: dict[str, Any]) -> dict[str, str | None]:
 def _zone_scores(result: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Extract selected zone scores and timeframe per side (mục 8.4)."""
     scoring = result.get("smc_scoring", {})
-    decision = scoring.get("decision", {}) if isinstance(scoring, dict) else {}
+    sides = scoring.get("sides", {}) if isinstance(scoring, dict) else {}
     out: dict[str, dict[str, Any]] = {}
     for side in ("buy", "sell"):
-        side_data = decision.get(side, {}) if isinstance(decision, dict) else {}
+        side_data = sides.get(side, {}) if isinstance(sides.get(side), dict) else {}
         out[side] = {
             "selected_zone_timeframe": side_data.get("selected_zone_timeframe"),
             "selected_zone_score": side_data.get("selected_zone_score"),
-            "selected_zone_relevance_score": side_data.get("selected_zone_relevance_score"),
-            "selected_zone_setup_score": side_data.get("selected_zone_setup_score"),
+            "selected_zone_relevance_score": side_data.get(
+                "selected_zone_relevance_score"
+            ),
+            "selected_zone_setup_score": side_data.get(
+                "selected_zone_setup_score"
+            ),
         }
     return out
 
@@ -150,11 +153,13 @@ def _scoring_provenance(result: dict[str, Any]) -> dict[str, Any]:
 
 def _smc_policy(result: dict[str, Any]) -> dict[str, Any]:
     scoring = result.get("smc_scoring", {})
-    policy = scoring.get("policy", {}) if isinstance(scoring, dict) else {}
     return {
-        "requested_mode": policy.get("requested_mode"),
-        "effective_mode": policy.get("effective_mode"),
-        "decision_impact_allowed": policy.get("decision_impact_allowed"),
+        "decision_impact_allowed": True,
+        "scoring_version": (
+            scoring.get("scoring_version")
+            if isinstance(scoring, dict)
+            else None
+        ),
     }
 
 

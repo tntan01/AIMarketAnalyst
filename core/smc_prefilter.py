@@ -10,8 +10,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any
 
-from core.smc_scorer_v2 import score_smc_v2
-from core.smc_scoring_contract import resolve_smc_scoring_policy
+from core.smc_scorer import score_smc
 
 
 SMC_PREFILTER_VERSION = "smc-prefilter-v1"
@@ -23,6 +22,7 @@ STAGE_POST_CONTEXT = "post_context"
 NO_RAW_SMC_CANDIDATE = "NO_RAW_SMC_CANDIDATE"
 NO_ACTIONABLE_SMC_ZONE = "NO_ACTIONABLE_SMC_ZONE"
 SMC_PREFILTER_ERROR_FAIL_OPEN = "SMC_PREFILTER_ERROR_FAIL_OPEN"
+SMC_SCORING_ERROR = "SMC_SCORING_ERROR"
 
 _TIMEFRAMES = ("H4", "H1")
 _RAW_FAMILIES = {
@@ -35,38 +35,39 @@ _RAW_FAMILIES = {
 
 def evaluate_post_context_prefilter(
     *,
-    mode: object,
     smc: dict[str, Any] | None,
     technical: dict[str, Any] | None,
     market_regime: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return the canonical v2 Tier-1 decision without changing the pipeline.
+    """Return the canonical Tier-1 decision without changing the pipeline.
 
-    A reject is allowed only after the same :func:`score_smc_v2` used by the
-    active v2 contract has selected neither BUY nor SELL zone.  Every schema,
-    numeric, mode, or scorer problem fails open so the caller can run the
-    existing full path instead.
+    A reject is allowed only after the same :func:`score_smc` used by the full
+    route has selected neither BUY nor SELL zone.  Every schema, numeric, or
+    scorer problem fails open so the caller can run the existing full path
+    instead.
     """
 
-    policy = resolve_smc_scoring_policy(mode)
-    decision = _base_decision(
-        requested_mode=policy.requested_mode,
-        raw_counts=_raw_counts(smc),
-    )
-    if not policy.decision_impact_allowed:
-        return _fail_open(decision)
+    decision = _base_decision(raw_counts=_raw_counts(smc))
+    # Missing/insufficient data is a legitimate no-score case, never a scorer
+    # error: fail open so the full route can run its own safe no-zone path.
     if not _is_evaluable_context(smc, technical, market_regime):
         return _fail_open(decision)
 
     assert isinstance(smc, dict)
     assert isinstance(technical, dict)
     try:
-        v2_result = score_smc_v2(smc, technical, market_regime)
-        selected_zone_ids = _selected_zone_ids(v2_result)
+        smc_result = score_smc(smc, technical, market_regime)
+        selected_zone_ids = _selected_zone_ids(smc_result)
     except Exception:
-        return _fail_open(decision)
+        # A scorer exception is fail-closed: block the analysis instead of
+        # retrying the full route or falling back to another scorer.
+        decision["should_reject"] = True
+        decision["reason_code"] = SMC_SCORING_ERROR
+        decision["fail_open"] = False
+        decision["scorer_error"] = True
+        return decision
 
-    decision["precomputed_v2_result"] = v2_result
+    decision["precomputed_smc"] = smc_result
     decision["selected_zone_ids"] = selected_zone_ids
     if all(selected_zone_ids[side] is None for side in ("buy", "sell")):
         decision["should_reject"] = True
@@ -76,22 +77,20 @@ def evaluate_post_context_prefilter(
 
 def _base_decision(
     *,
-    requested_mode: str,
     raw_counts: dict[str, dict[str, int]],
 ) -> dict[str, Any]:
     return {
         "should_reject": False,
         "stage": STAGE_POST_CONTEXT,
         "reason_code": "",
-        "mode": requested_mode,
         "prefilter_version": SMC_PREFILTER_VERSION,
         "fast_path_version": SCANNER_FAST_PATH_VERSION,
         "raw_counts": raw_counts,
         "selected_zone_ids": {"buy": None, "sell": None},
         "fail_open": False,
-        # Step 4 will reuse this payload instead of invoking the v2 scorer a
-        # second time for symbols that remain on the full route.
-        "precomputed_v2_result": None,
+        # The full route reuses this payload instead of invoking the canonical
+        # scorer a second time for symbols that remain on the full route.
+        "precomputed_smc": None,
     }
 
 

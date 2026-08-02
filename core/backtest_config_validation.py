@@ -62,13 +62,12 @@ from core.scanner_models import (
     SCANNER_SCORER_VERSION,
     SETUP_SCORE_METRIC,
 )
-from core.smc_scoring_contract import SMC_MODE_V2
-from core.smc_versions import SMC_SCORER_V2_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 
 
-BACKTEST_CONFIG_SCHEMA_VERSION = 8
+BACKTEST_CONFIG_SCHEMA_VERSION = 9
 BACKTEST_FEATURE_VERSION = SCANNER_FEATURE_VERSION
-BACKTEST_VALIDATION_VERSION = "backtest-v8-statistical-validation-v1"
+BACKTEST_VALIDATION_VERSION = "backtest-v9-statistical-validation-v1"
 
 MIN_IN_SAMPLE_TRADES = 10
 MIN_OUT_OF_SAMPLE_TRADES = 8
@@ -124,7 +123,6 @@ _FINGERPRINT_FIELDS = (
     "scorer_version",
     "feature_version",
     "smc_scorer_version",
-    "smc_scoring_mode",
     "trained_from",
     "trained_to",
     "validated_from",
@@ -584,7 +582,6 @@ def _base_config(
         str(int(recommendation.get("min_score", 0) or 0)),
         str(float(recommendation.get("min_rr", 0) or 0)),
         str(contract.get("smc_scorer_version", "") or ""),
-        str(contract.get("smc_scoring_mode", "") or ""),
         str(engine_contract.get("engine_version", "") or ""),
         str(engine_contract.get("purpose", "") or ""),
         trained_from,
@@ -694,9 +691,6 @@ def _base_config(
         "smc_scorer_version": str(
             contract.get("smc_scorer_version", "") or ""
         ),
-        "smc_scoring_mode": str(
-            contract.get("smc_scoring_mode", "") or ""
-        ).lower(),
         "trained_from": trained_from,
         "trained_to": trained_to,
         "validated_from": validated_from,
@@ -905,11 +899,9 @@ def _validate_scoring_contract(value: Any) -> list[str]:
         reasons.append("BACKTEST_FEATURE_VERSION_MISMATCH")
     if (
         str(value.get("smc_scorer_version", "") or "")
-        != SMC_SCORER_V2_VERSION
+        != SMC_SCORER_VERSION
     ):
         reasons.append("BACKTEST_SMC_SCORER_VERSION_MISMATCH")
-    if str(value.get("smc_scoring_mode", "") or "").lower() != SMC_MODE_V2:
-        reasons.append("BACKTEST_SMC_SCORING_MODE_MISMATCH")
     return reasons
 
 

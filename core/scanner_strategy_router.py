@@ -60,8 +60,7 @@ from core.scanner_models import (
     SideEvaluation,
     StrategyEvaluation,
 )
-from core.smc_scoring_contract import SMC_MODE_V2
-from core.smc_versions import SMC_SCORER_V2_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 from core.backtest_config_validation import (
     BACKTEST_CONFIG_SCHEMA_VERSION,
     BACKTEST_VALIDATION_VERSION,
@@ -307,13 +306,8 @@ def validate_backtest_config(
     smc_scorer_version = str(
         config.get("smc_scorer_version", "") or ""
     ).strip()
-    if smc_scorer_version != SMC_SCORER_V2_VERSION:
+    if smc_scorer_version != SMC_SCORER_VERSION:
         reasons.append("BACKTEST_SMC_SCORER_VERSION_MISMATCH")
-    smc_scoring_mode = str(
-        config.get("smc_scoring_mode", "") or ""
-    ).strip().lower()
-    if smc_scoring_mode != SMC_MODE_V2:
-        reasons.append("BACKTEST_SMC_SCORING_MODE_MISMATCH")
     if isinstance(row, dict):
         provenance = (
             row.get("scoring_provenance")
@@ -325,18 +319,11 @@ def validate_backtest_config(
             or provenance.get("smc_scorer_version")
             or ""
         ).strip()
-        runtime_smc_mode = str(
-            row.get("smc_scoring_mode")
-            or provenance.get("smc_scoring_mode")
-            or ""
-        ).strip().lower()
         if (
             runtime_smc_version
             and runtime_smc_version != smc_scorer_version
         ):
             reasons.append("BACKTEST_RUNTIME_SMC_VERSION_MISMATCH")
-        if runtime_smc_mode and runtime_smc_mode != smc_scoring_mode:
-            reasons.append("BACKTEST_RUNTIME_SMC_MODE_MISMATCH")
 
     metric = str(config.get("score_metric", "") or "").strip()
     if metric != SETUP_SCORE_METRIC:
@@ -474,11 +461,7 @@ def validate_backtest_config(
         return CONFIG_VERSION_MISMATCH, codes
     if "BACKTEST_SMC_SCORER_VERSION_MISMATCH" in codes:
         return CONFIG_VERSION_MISMATCH, codes
-    if "BACKTEST_SMC_SCORING_MODE_MISMATCH" in codes:
-        return CONFIG_VERSION_MISMATCH, codes
     if "BACKTEST_RUNTIME_SMC_VERSION_MISMATCH" in codes:
-        return CONFIG_VERSION_MISMATCH, codes
-    if "BACKTEST_RUNTIME_SMC_MODE_MISMATCH" in codes:
         return CONFIG_VERSION_MISMATCH, codes
     if any(code.startswith("BACKTEST_RELEASE_") for code in codes):
         return CONFIG_VERSION_MISMATCH, codes

@@ -6,17 +6,13 @@ from dataclasses import replace
 
 from core.scanner_observability import stable_hash
 from core.smc_models import SmcZone
-from core.smc_scorer_v2 import (
+from core.smc_scorer import (
     EvaluatedSmcZone,
     evaluate_smc_zones,
-    score_smc_v2,
-    select_smc_zone_v2,
+    score_smc,
+    select_smc_zone,
 )
-from core.smc_scoring_contract import (
-    SMC_MODE_SHADOW,
-    build_smc_phase0_diagnostics,
-)
-from core.smc_versions import SMC_SCORER_V2_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 
 
 def _zone(
@@ -232,7 +228,7 @@ def _evaluated(
         zone_relevance_score=setup,
         zone_setup_score=setup,
         age_bars=age,
-        scoring_version=SMC_SCORER_V2_VERSION,
+        scoring_version=SMC_SCORER_VERSION,
     )
     return EvaluatedSmcZone(
         zone=model,
@@ -245,19 +241,19 @@ def _evaluated(
 
 
 def test_selection_uses_setup_then_distance_recency_and_id():
-    higher_setup = select_smc_zone_v2((
+    higher_setup = select_smc_zone((
         _evaluated("zone-near", setup=70, distance=0.1, age=1),
         _evaluated("zone-high", setup=80, distance=2.0, age=20),
     ))
-    nearest = select_smc_zone_v2((
+    nearest = select_smc_zone((
         _evaluated("zone-far", setup=80, distance=1.0, age=1),
         _evaluated("zone-near", setup=80, distance=0.5, age=20),
     ))
-    newest = select_smc_zone_v2((
+    newest = select_smc_zone((
         _evaluated("zone-old", setup=80, distance=0.5, age=20),
         _evaluated("zone-new", setup=80, distance=0.5, age=2),
     ))
-    stable_id = select_smc_zone_v2((
+    stable_id = select_smc_zone((
         _evaluated("zone-b", setup=80, distance=0.5, age=2),
         _evaluated("zone-a", setup=80, distance=0.5, age=2),
     ))
@@ -269,7 +265,7 @@ def test_selection_uses_setup_then_distance_recency_and_id():
 
 
 def test_breakdown_arithmetic_and_selected_zone_are_consistent():
-    result = score_smc_v2(
+    result = score_smc(
         _smc("buy"),
         _technical("buy"),
         {"primary": "trend_up"},
@@ -288,7 +284,7 @@ def test_breakdown_arithmetic_and_selected_zone_are_consistent():
     assert breakdown["total"] == expected == result["smc_quality"]
     assert breakdown["selected_zone_id"] == result["selected_zone_id"]
     assert result["selected_zone"]["zone_id"] == result["selected_zone_id"]
-    assert result["selected_zone"]["scoring_version"] == SMC_SCORER_V2_VERSION
+    assert result["selected_zone"]["scoring_version"] == SMC_SCORER_VERSION
 
 
 def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
@@ -304,7 +300,7 @@ def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
         "choch": False,
         "displacement": "neutral",
     })
-    linked = score_smc_v2(
+    linked = score_smc(
         context,
         _technical("buy"),
         {"primary": "trend_up"},
@@ -317,7 +313,7 @@ def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
         "choch": False,
         "displacement": "neutral",
     })
-    unlinked = score_smc_v2(
+    unlinked = score_smc(
         unlinked_context,
         _technical("buy"),
         {"primary": "trend_up"},
@@ -328,12 +324,12 @@ def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
 
 
 def test_buy_sell_mirror_symmetry():
-    buy = score_smc_v2(
+    buy = score_smc(
         _smc("buy", zone=_zone("buy", linked_sweep=True)),
         _technical("buy"),
         {"primary": "trend_up"},
     )["buy"]
-    sell = score_smc_v2(
+    sell = score_smc(
         _smc("sell", zone=_zone("sell", linked_sweep=True)),
         _technical("sell"),
         {"primary": "trend_down"},
@@ -348,12 +344,12 @@ def test_buy_sell_mirror_symmetry():
 
 
 def test_choch_penalty_and_caps_are_applied_after_subtotal():
-    h1_cap = score_smc_v2(
+    h1_cap = score_smc(
         _smc("buy", h1_choch_against=True),
         _technical("buy"),
         {"primary": "trend_up"},
     )["buy"]["breakdown"]
-    h4_cap = score_smc_v2(
+    h4_cap = score_smc(
         _smc("buy", h4_choch_against=True),
         _technical("buy"),
         {"primary": "trend_up"},
@@ -367,7 +363,7 @@ def test_choch_penalty_and_caps_are_applied_after_subtotal():
 
 
 def test_missing_market_data_cannot_select_a_zone():
-    result = score_smc_v2(
+    result = score_smc(
         _smc("buy"),
         {},
         {"primary": "trend_up"},
@@ -379,78 +375,14 @@ def test_missing_market_data_cannot_select_a_zone():
     assert 0 <= result["smc_quality"] <= 15
 
 
-def test_shadow_contract_runs_v2_without_mutating_active_scores():
-    context = _smc("buy")
-    active = {
-        "buy": {
-            "smc_quality": 9,
-            "smc_reason": "legacy buy",
-            "signal_score": 70,
-            "smc_flags": {"selected_zone_id": "legacy-buy"},
-        },
-        "sell": {
-            "smc_quality": 4,
-            "smc_reason": "legacy sell",
-            "signal_score": 40,
-            "smc_flags": {"selected_zone_id": None},
-        },
-    }
-    before = stable_hash(active)
-
-    diagnostics = build_smc_phase0_diagnostics(
-        requested_mode=SMC_MODE_SHADOW,
-        smc=context,
-        technical=_technical("buy"),
-        active_scores=active,
-        market_regime={"primary": "trend_up"},
-    )
-
-    assert stable_hash(active) == before
-    assert diagnostics["policy"]["effective_mode"] == "legacy"
-    assert diagnostics["policy"]["decision_impact_allowed"] is False
-    assert diagnostics["shadow"]["buy"]["scoring_version"] == SMC_SCORER_V2_VERSION
-    assert diagnostics["comparison"]["decision_changed"] is False
-    assert diagnostics["comparison"]["selected_zone_changed"]["buy"] is True
-    assert diagnostics["comparison"]["score_delta"]["buy"] == (
-        diagnostics["shadow"]["buy"]["smc_quality"] - 9
-    )
-
-
-def test_active_v2_contract_promotes_shadow_snapshot_to_decision_source():
-    diagnostics = build_smc_phase0_diagnostics(
-        requested_mode="v2",
-        smc=_smc("buy"),
-        technical=_technical("buy"),
-        active_scores={
-            "buy": {
-                "smc_quality": 0,
-                "signal_score": 50,
-                "smc_flags": {},
-            },
-            "sell": {
-                "smc_quality": 15,
-                "signal_score": 70,
-                "smc_flags": {},
-            },
-        },
-        market_regime={"primary": "trend_up"},
-    )
-
-    assert diagnostics["policy"]["decision_source"] == "smc-v2"
-    assert diagnostics["policy"]["decision_impact_allowed"] is True
-    assert diagnostics["decision"] == diagnostics["shadow"]
-    assert diagnostics["comparison"]["decision_input_changed"] is True
-    assert diagnostics["comparison"]["decision_changed"] is True
-
-
 def test_v2_scoring_is_deterministic():
     context = _smc("buy", zone=_zone("buy", linked_sweep=True))
-    first = score_smc_v2(
+    first = score_smc(
         context,
         _technical("buy"),
         {"primary": "trend_up"},
     )
-    second = score_smc_v2(
+    second = score_smc(
         context,
         _technical("buy"),
         {"primary": "trend_up"},

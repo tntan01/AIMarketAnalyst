@@ -57,12 +57,11 @@ def _full_signature(case: dict[str, Any]) -> tuple[dict[str, Any], float]:
     )
     elapsed_ms = round((perf_counter() - started) * 1_000, 3)
     candidate = evaluate_scanner_candidate(scanner_row_from_analysis(result))
-    decision = result["smc_scoring"]["decision"]
-    policy = result["smc_scoring"]["policy"]
+    smc_sides = result["smc_scoring"]["sides"]
     return {
         "raw_counts": _raw_counts(smc),
         "selected_zone_ids": {
-            side: decision[side]["selected_zone_id"]
+            side: smc_sides[side]["selected_zone_id"]
             for side in ("buy", "sell")
         },
         "scenario_types": [
@@ -71,12 +70,7 @@ def _full_signature(case: dict[str, Any]) -> tuple[dict[str, Any], float]:
         ],
         "candidate_status": candidate.status,
         "candidate_selected_side": candidate.selected_side,
-        "smc_policy": {
-            key: policy[key]
-            for key in (
-                "requested_mode", "effective_mode", "decision_impact_allowed",
-            )
-        },
+        "scoring_version": result["smc_scoring"]["scoring_version"],
     }, elapsed_ms
 
 

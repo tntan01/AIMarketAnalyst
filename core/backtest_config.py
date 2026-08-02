@@ -20,8 +20,7 @@ from core.scanner_models import (
     SETUP_SCORE_METRIC,
 )
 from core.scanner_strategy_router import validate_backtest_config
-from core.smc_scoring_contract import SMC_MODE_V2
-from core.smc_versions import SMC_SCORER_V2_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 
 
 _VALIDATION_SETTING_FIELDS = (
@@ -62,7 +61,6 @@ _VALIDATION_SETTING_FIELDS = (
     "backtest_scorer_version",
     "backtest_feature_version",
     "backtest_smc_scorer_version",
-    "backtest_smc_scoring_mode",
     "backtest_score_metric",
     "backtest_trained_from",
     "backtest_trained_to",
@@ -231,9 +229,6 @@ def apply_validated_backtest_config(
     settings.backtest_smc_scorer_version = str(
         recommendation.get("smc_scorer_version", "") or ""
     ).strip()
-    settings.backtest_smc_scoring_mode = str(
-        recommendation.get("smc_scoring_mode", "") or ""
-    ).strip().lower()
     settings.backtest_score_metric = str(
         recommendation.get("score_metric", SETUP_SCORE_METRIC)
         or SETUP_SCORE_METRIC
@@ -338,8 +333,7 @@ def preserve_or_invalidate_manual_config(
     proposed.backtest_validation_version = BACKTEST_VALIDATION_VERSION
     proposed.backtest_scorer_version = SCANNER_SCORER_VERSION
     proposed.backtest_feature_version = BACKTEST_FEATURE_VERSION
-    proposed.backtest_smc_scorer_version = SMC_SCORER_V2_VERSION
-    proposed.backtest_smc_scoring_mode = SMC_MODE_V2
+    proposed.backtest_smc_scorer_version = SMC_SCORER_VERSION
     proposed.backtest_score_metric = SETUP_SCORE_METRIC
     proposed.backtest = False
     return proposed
@@ -431,7 +425,6 @@ def serialize_backtest_config(
         "scorer_version": settings.backtest_scorer_version,
         "feature_version": settings.backtest_feature_version,
         "smc_scorer_version": settings.backtest_smc_scorer_version,
-        "smc_scoring_mode": settings.backtest_smc_scoring_mode,
         "trained_from": settings.backtest_trained_from,
         "trained_to": settings.backtest_trained_to,
         "validated_from": settings.backtest_validated_from,

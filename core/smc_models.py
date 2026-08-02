@@ -14,7 +14,11 @@ from math import isfinite
 from typing import Any
 
 from core.smc_sweep_linking import SMC_SWEEP_LINK_VERSION
-from core.smc_versions import SMC_CONFLUENCE_VERSION, SMC_SCORER_VERSION
+from core.smc_versions import (
+    SMC_CONFLUENCE_VERSION,
+    SMC_RAW_ZONE_VERSION,
+    SMC_SCORER_VERSION,
+)
 
 
 SMC_DOMAIN_VERSION = "smc-domain-v1"
@@ -123,7 +127,7 @@ class SmcZone:
     zone_quality_score: int
     zone_relevance_score: int | None
     zone_setup_score: int
-    scoring_version: str = SMC_SCORER_VERSION
+    scoring_version: str = SMC_RAW_ZONE_VERSION
     domain_version: str = SMC_DOMAIN_VERSION
     visits: tuple[ZoneVisit, ...] = ()
 
@@ -384,8 +388,8 @@ class SmcZone:
             zone_relevance_score=relevance,
             zone_setup_score=setup,
             scoring_version=str(
-                payload.get("scoring_version", SMC_SCORER_VERSION)
-                or SMC_SCORER_VERSION
+                payload.get("scoring_version", SMC_RAW_ZONE_VERSION)
+                or SMC_RAW_ZONE_VERSION
             ),
             domain_version=str(
                 payload.get("domain_version", SMC_DOMAIN_VERSION)

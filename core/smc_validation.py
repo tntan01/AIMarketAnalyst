@@ -13,10 +13,8 @@ from statistics import mean, stdev
 from typing import Any, Iterable
 
 from core.scanner_observability import stable_hash
-from core.smc_scoring_contract import (
-    SMC_MODE_SHADOW,
-    build_smc_phase0_diagnostics,
-)
+from core.smc_scorer import score_smc
+from core.smc_versions import SMC_RAW_ZONE_VERSION
 
 
 SMC_VALIDATION_CONTRACT_VERSION = "smc-phase7-validation-v1"
@@ -46,25 +44,21 @@ _PERCENT_BUCKETS = (
 def replay_smc_cases(
     cases: Iterable[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Execute legacy/v2 shadow scoring and return normalized replay samples.
+    """Execute canonical SMC scoring and return normalized replay samples.
 
-    A case supplies the immutable scorer inputs plus the observed active and
-    shadow candidate statuses.  Status is explicit because Phase 7 must not
-    route the shadow scorer into the production Candidate Engine.
+    A case supplies the immutable scorer inputs plus the observed legacy-side
+    scores.  Status is explicit because Phase 7 must not route the canonical
+    scorer into the production Candidate Engine.
     """
 
     samples: list[dict[str, Any]] = []
     for index, raw_case in enumerate(cases):
         case = raw_case if isinstance(raw_case, dict) else {}
-        diagnostics = build_smc_phase0_diagnostics(
-            requested_mode=SMC_MODE_SHADOW,
-            smc=_mapping(case.get("smc")),
-            technical=_mapping(case.get("technical")),
-            active_scores=_mapping(case.get("active_scores")),
-            market_regime=_mapping(case.get("market_regime")),
-        )
-        active = _mapping(diagnostics.get("active"))
-        shadow = _mapping(diagnostics.get("shadow"))
+        smc = _mapping(case.get("smc"))
+        technical = _mapping(case.get("technical"))
+        market_regime = _mapping(case.get("market_regime"))
+        shadow = score_smc(smc, technical, market_regime)
+        active = _legacy_side_snapshots(_mapping(case.get("active_scores")))
         side = _normalize_side(
             case.get("side") or _best_side(active, score_key="signal_score")
         )
@@ -101,10 +95,7 @@ def replay_smc_cases(
                 selected_zone.get("liquidity_sweep_linked")
             ),
             "h4_confirmed_choch_against": (
-                _h4_confirmed_choch_against(
-                    _mapping(case.get("smc")),
-                    side,
-                )
+                _h4_confirmed_choch_against(smc, side)
             ),
             "legacy_scores": {
                 current_side: _mapping(active.get(current_side)).get(
@@ -135,6 +126,45 @@ def replay_smc_cases(
         normalized["validation_reason_codes"] = reasons
         samples.append(normalized)
     return samples
+
+
+def _legacy_side_snapshots(
+    active_scores: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Normalize the observed legacy-side scores into a replay snapshot."""
+
+    source = active_scores if isinstance(active_scores, dict) else {}
+    result: dict[str, dict[str, Any]] = {}
+    for side in _SIDES:
+        score = (
+            source.get(side)
+            if isinstance(source.get(side), dict)
+            else {}
+        )
+        flags = (
+            score.get("smc_flags")
+            if isinstance(score.get("smc_flags"), dict)
+            else {}
+        )
+        result[side] = {
+            "smc_quality": _safe_score(score.get("smc_quality")),
+            "smc_reason": str(score.get("smc_reason", "") or ""),
+            "signal_score": _safe_score(score.get("signal_score")),
+            "scoring_version": SMC_RAW_ZONE_VERSION,
+            "selected_zone_id": flags.get("selected_zone_id"),
+            "selected_zone_type": flags.get("selected_zone_type"),
+            "selected_zone_score": flags.get("selected_zone_score"),
+            "selected_zone_quality_score": flags.get(
+                "selected_zone_quality_score"
+            ),
+            "selected_zone_relevance_score": flags.get(
+                "selected_zone_relevance_score"
+            ),
+            "selected_zone_setup_score": flags.get(
+                "selected_zone_setup_score"
+            ),
+        }
+    return result
 
 
 def replay_sample_from_analysis_document(
@@ -220,7 +250,7 @@ def replay_sample_from_analysis_document(
         ),
         "v2_selected_zone_id": (
             shadow_side.get("selected_zone_id")
-            or consumer_side.get("shadow_selected_zone_id")
+            or consumer_side.get("selected_zone_id")
         ),
         "legacy_status": _normalize_status(
             candidate.get("status") or row.get("candidate_status")
@@ -965,6 +995,14 @@ def _optional_bounded(
     if number is None or number < low or number > high:
         return None
     return number
+
+
+def _safe_score(value: object) -> int:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(0, min(100, number))
 
 
 def _rounded_mean(values: list[float]) -> float | None:

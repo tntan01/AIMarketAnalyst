@@ -1,4 +1,4 @@
-"""SMC legacy, shadow-isolation and active-v2 routing tests."""
+"""SMC canonical runtime and legacy replay fixture tests."""
 
 from __future__ import annotations
 
@@ -11,18 +11,10 @@ from core.analysis_engine import analyze_symbol
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
 from core.signal_engine import smc_quality_score
-from core.smc_scoring_contract import (
-    SMC_MODE_LEGACY,
-    SMC_MODE_SHADOW,
-    SMC_SCORER_VERSION,
-    build_smc_phase0_diagnostics,
-    normalize_smc_scoring_mode,
-    resolve_smc_scoring_policy,
-)
 from core.smc_context import zone_quality_score
-from core.smc_models import SMC_DOMAIN_VERSION
+from core.smc_versions import SMC_RAW_ZONE_VERSION
 from core.scanner import ScannerRequest, build_scanner_output
-from core.scanner_observability import create_scan_context, stable_hash
+from core.scanner_observability import create_scan_context
 from services.settings_service import SettingsService
 
 
@@ -49,7 +41,7 @@ def _active_scores(smc: dict, technical: dict) -> dict[str, dict]:
 
 def test_replay_fixture_locks_legacy_scores():
     fixture = _replay_fixture()
-    assert fixture["scorer_version"] == SMC_SCORER_VERSION
+    assert fixture["scorer_version"] == SMC_RAW_ZONE_VERSION
     assert len(fixture["cases"]) >= 9
 
     for case in fixture["cases"]:
@@ -67,52 +59,6 @@ def test_replay_fixture_locks_legacy_zone_quality_formula():
         ), case["name"]
 
 
-def test_shadow_replay_is_deterministic_and_read_only():
-    for case in _replay_fixture()["cases"]:
-        active = _active_scores(case["smc"], case["technical"])
-        before = stable_hash(active)
-        first = build_smc_phase0_diagnostics(
-            requested_mode=SMC_MODE_SHADOW,
-            smc=case["smc"],
-            technical=case["technical"],
-            active_scores=active,
-        )
-        second = build_smc_phase0_diagnostics(
-            requested_mode=SMC_MODE_SHADOW,
-            smc=case["smc"],
-            technical=case["technical"],
-            active_scores=active,
-        )
-
-        assert stable_hash(first) == stable_hash(second), case["name"]
-        assert stable_hash(active) == before, case["name"]
-        assert first["policy"]["effective_mode"] == SMC_MODE_LEGACY
-        assert first["policy"]["decision_impact_allowed"] is False
-        comparison = first["comparison"]
-        assert comparison["available"] is True
-        assert comparison["decision_changed"] is False
-        for side in ("buy", "sell"):
-            assert comparison["score_delta"][side] == (
-                comparison["v2_smc_quality"][side]
-                - comparison["legacy_smc_quality"][side]
-            )
-
-
-def test_v2_request_activates_v2_decision_source():
-    policy = resolve_smc_scoring_policy("v2")
-    assert policy.requested_mode == "v2"
-    assert policy.effective_mode == "v2"
-    assert policy.decision_source == "smc-v2"
-    assert policy.active_version == "smc-v2"
-    assert policy.decision_impact_allowed is True
-    assert policy.fallback_reason_codes == ()
-
-
-def test_invalid_mode_normalizes_to_legacy():
-    assert normalize_smc_scoring_mode("unexpected") == SMC_MODE_LEGACY
-    assert normalize_smc_scoring_mode(None) == SMC_MODE_LEGACY
-
-
 def test_smc_mode_settings_default_load_and_round_trip(tmp_path):
     assert default_settings().features == FeatureFlagSettings()
     assert default_settings().features.smc_scoring_mode == "v2"
@@ -122,31 +68,12 @@ def test_smc_mode_settings_default_load_and_round_trip(tmp_path):
         "ai": {},
         "features": {"smc_scoring_mode": "invalid"},
     })
-    assert service.load().features.smc_scoring_mode == SMC_MODE_LEGACY
+    assert service.load().features.smc_scoring_mode == "legacy"
 
     settings = default_settings()
-    settings.features.smc_scoring_mode = SMC_MODE_SHADOW
+    settings.features.smc_scoring_mode = "shadow"
     service.save(settings)
-    assert service.load().features.smc_scoring_mode == SMC_MODE_SHADOW
-
-
-def test_scan_contract_exposes_smc_mode_and_version():
-    request = ScannerRequest(
-        symbols=["EUR/USD"],
-        account_balance=10_000,
-        risk_percent=1.0,
-        timezone_name="Asia/Ho_Chi_Minh",
-        smc_scoring_mode=SMC_MODE_SHADOW,
-    )
-    context = create_scan_context(default_settings(), request)
-    output = build_scanner_output([], request, 0)
-
-    assert context.smc_scoring_mode == SMC_MODE_SHADOW
-    assert context.smc_scorer_version == SMC_SCORER_VERSION
-    assert context.smc_domain_version == SMC_DOMAIN_VERSION
-    assert output["smc_scoring_mode"] == SMC_MODE_SHADOW
-    assert output["smc_scorer_version"] == SMC_SCORER_VERSION
-    assert output["smc_domain_version"] == SMC_DOMAIN_VERSION
+    assert service.load().features.smc_scoring_mode == "shadow"
 
 
 def test_default_scan_contract_uses_active_v2_version():
@@ -214,17 +141,17 @@ def _pipeline_input() -> tuple[AnalysisInput, dict[str, list[Candle]]]:
     return request, candles
 
 
-def test_shadow_is_isolated_while_v2_enters_the_decision_path():
+def test_smc_modes_all_route_to_single_canonical_scorer():
     request, candles = _pipeline_input()
     legacy = analyze_symbol(
         request,
         candles,
-        smc_scoring_mode=SMC_MODE_LEGACY,
+        smc_scoring_mode="legacy",
     )
     shadow = analyze_symbol(
         request,
         candles,
-        smc_scoring_mode=SMC_MODE_SHADOW,
+        smc_scoring_mode="shadow",
     )
     requested_v2 = analyze_symbol(
         request,
@@ -232,6 +159,7 @@ def test_shadow_is_isolated_while_v2_enters_the_decision_path():
         smc_scoring_mode="v2",
     )
 
+    # No mode can route to a different scorer any more.
     for key in (
         "scenario_scores",
         "direction_bias",
@@ -242,40 +170,32 @@ def test_shadow_is_isolated_while_v2_enters_the_decision_path():
         "decision_engine",
     ):
         assert shadow[key] == legacy[key], key
+        assert requested_v2[key] == legacy[key], key
 
-    diagnostics = shadow["smc_scoring"]
-    assert diagnostics["policy"]["shadow_enabled"] is True
-    assert diagnostics["policy"]["decision_impact_allowed"] is False
-    assert diagnostics["comparison"]["available"] is True
-    assert diagnostics["comparison"]["decision_changed"] is False
-    assert diagnostics["shadow"]["buy"]["scoring_version"] == "smc-v2"
-    assert diagnostics["shadow"]["sell"]["scoring_version"] == "smc-v2"
-    v2_policy = requested_v2["smc_scoring"]["policy"]
-    assert v2_policy["effective_mode"] == "v2"
-    assert v2_policy["decision_source"] == "smc-v2"
-    assert v2_policy["decision_impact_allowed"] is True
-    assert v2_policy["fallback_reason_codes"] == []
-    v2_comparison = requested_v2["smc_scoring"]["comparison"]
-    assert v2_comparison["decision_changed"] == v2_comparison[
-        "decision_input_changed"
-    ]
+    # The canonical diagnostics carry a single scorer version, not a mode and
+    # not a shadow/legacy router payload.
+    for result in (legacy, shadow, requested_v2):
+        diagnostics = result["smc_scoring"]
+        assert diagnostics["contract_version"] == "smc-scoring-canonical-2026-08"
+        assert diagnostics["scoring_version"] == "smc-v2"
+        assert set(diagnostics["sides"]) == {"buy", "sell"}
+        assert "policy" not in diagnostics
+        assert "shadow" not in diagnostics
+        assert "active" not in diagnostics
+        assert "comparison" not in diagnostics
+
     for side in ("buy", "sell"):
         side_score = requested_v2["scenario_scores"][side]
         consumer = requested_v2["smc_consumer"]["sides"][side]
-        decision_score = requested_v2["smc_scoring"]["decision_scores"][side]
-        v2_snapshot = requested_v2["smc_scoring"]["shadow"][side]
+        diagnostics_side = requested_v2["smc_scoring"]["sides"][side]
         assert side_score["smc_scoring_version"] == "smc-v2"
-        assert side_score["smc_quality"] == v2_snapshot["smc_quality"]
+        assert side_score["smc_quality"] == diagnostics_side["score"]
         assert side_score["smc_scaled"] == int(
             side_score["smc_quality"]
             * side_score["regime_weights"]["smc"]
             / 15
         )
-        assert consumer["selection_source"] == "v2"
         assert consumer["scoring_version"] == "smc-v2"
-        assert decision_score["smc_quality"] == side_score["smc_quality"]
-        assert decision_score["signal_score"] == side_score["signal_score"]
-        assert (
-            decision_score["selected_zone_id"]
-            == consumer["selected_zone_id"]
-        )
+        assert consumer["selected_zone_id"] == side_score["smc_flags"][
+            "selected_zone_id"
+        ]

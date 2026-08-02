@@ -1,81 +1,252 @@
 {
   "oracle_version": "scanner-fast-path-full-oracle-v1",
   "normalization": {
-    "ignored_volatile_fields": ["timestamp", "scan_id"],
+    "ignored_volatile_fields": [
+      "timestamp",
+      "scan_id"
+    ],
     "baseline_elapsed_ms": "diagnostic only; never asserted as a timing threshold"
   },
   "cases": {
     "raw_empty_v2": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}},
-      "selected_zone_ids": {"buy": null, "sell": null},
-      "scenario_types": [{"type": "buy", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        }
+      },
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": null
+      },
+      "scenario_types": [
+        {
+          "type": "buy",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "v2", "effective_mode": "v2", "decision_impact_allowed": true},
-      "baseline_elapsed_ms": 8.052
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.559
     },
     "h1_only_fvg_v2": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 1, "supply": 0, "order_block": 2, "fvg": 1}},
-      "selected_zone_ids": {"buy": "smcz-0bdfd05c3fa65211252e", "sell": null},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 1,
+          "supply": 0,
+          "order_block": 2,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": "smcz-0bdfd05c3fa65211252e",
+        "sell": null
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "v2", "effective_mode": "v2", "decision_impact_allowed": true},
-      "baseline_elapsed_ms": 8.701
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.583
     },
     "h1_order_block_v2": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 0, "supply": 0, "order_block": 1, "fvg": 1}},
-      "selected_zone_ids": {"buy": null, "sell": "smcz-165e8c5c5d93f5b0f5d2"},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 1,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": "smcz-165e8c5c5d93f5b0f5d2"
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "v2", "effective_mode": "v2", "decision_impact_allowed": true},
-      "baseline_elapsed_ms": 7.032
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.014
     },
     "broken_invalid_v2": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 1, "supply": 0, "order_block": 3, "fvg": 1}},
-      "selected_zone_ids": {"buy": null, "sell": null},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 1,
+          "supply": 0,
+          "order_block": 3,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": null
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "v2", "effective_mode": "v2", "decision_impact_allowed": true},
-      "baseline_elapsed_ms": 8.99
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.651
     },
     "buy_setup_v2": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 1, "supply": 0, "order_block": 2, "fvg": 1}},
-      "selected_zone_ids": {"buy": "smcz-0bdfd05c3fa65211252e", "sell": null},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 1,
+          "supply": 0,
+          "order_block": 2,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": "smcz-0bdfd05c3fa65211252e",
+        "sell": null
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "v2", "effective_mode": "v2", "decision_impact_allowed": true},
-      "baseline_elapsed_ms": 7.545
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.345
     },
     "sell_setup_v2": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 0, "supply": 0, "order_block": 1, "fvg": 1}},
-      "selected_zone_ids": {"buy": null, "sell": "smcz-165e8c5c5d93f5b0f5d2"},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 1,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": "smcz-165e8c5c5d93f5b0f5d2"
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "v2", "effective_mode": "v2", "decision_impact_allowed": true},
-      "baseline_elapsed_ms": 6.554
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.068
     },
     "mode_legacy": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 1, "supply": 0, "order_block": 2, "fvg": 1}},
-      "selected_zone_ids": {"buy": null, "sell": null},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 1,
+          "supply": 0,
+          "order_block": 2,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": "smcz-0bdfd05c3fa65211252e",
+        "sell": null
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "legacy", "effective_mode": "legacy", "decision_impact_allowed": false},
-      "baseline_elapsed_ms": 5.789
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.377
     },
     "mode_shadow": {
-      "raw_counts": {"H4": {"demand": 0, "supply": 0, "order_block": 0, "fvg": 0}, "H1": {"demand": 1, "supply": 0, "order_block": 2, "fvg": 1}},
-      "selected_zone_ids": {"buy": null, "sell": null},
-      "scenario_types": [{"type": "sell", "entry_status": "watch_zone"}],
+      "raw_counts": {
+        "H4": {
+          "demand": 0,
+          "supply": 0,
+          "order_block": 0,
+          "fvg": 0
+        },
+        "H1": {
+          "demand": 1,
+          "supply": 0,
+          "order_block": 2,
+          "fvg": 1
+        }
+      },
+      "selected_zone_ids": {
+        "buy": "smcz-0bdfd05c3fa65211252e",
+        "sell": null
+      },
+      "scenario_types": [
+        {
+          "type": "sell",
+          "entry_status": "watch_zone"
+        }
+      ],
       "candidate_status": "OUT_OF_STRATEGY",
       "candidate_selected_side": null,
-      "smc_policy": {"requested_mode": "shadow", "effective_mode": "legacy", "decision_impact_allowed": false},
-      "baseline_elapsed_ms": 6.799
+      "scoring_version": "smc-v2",
+      "baseline_elapsed_ms": 4.397
     }
   }
 }

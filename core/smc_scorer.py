@@ -1,4 +1,4 @@
-"""Canonical SMC zone selection and side score used in shadow mode."""
+"""Canonical SMC zone selection and side score."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from math import isfinite
 from typing import Any
 
 from core.smc_models import SelectedSmcZone, SmcScoreBreakdown, SmcZone
-from core.smc_versions import SMC_SCORER_V2_VERSION
+from core.smc_versions import SMC_SCORER_VERSION
 
 
 _ZONE_HARD_DISTANCE_ATR = 3.0
@@ -39,7 +39,7 @@ class EvaluatedSmcZone:
         }
 
 
-def score_smc_v2(
+def score_smc(
     smc: dict[str, Any],
     technical: dict[str, Any],
     market_regime: dict[str, Any] | None = None,
@@ -107,7 +107,7 @@ def evaluate_smc_zones(
     return tuple(evaluations)
 
 
-def select_smc_zone_v2(
+def select_smc_zone(
     evaluations: tuple[EvaluatedSmcZone, ...],
 ) -> SelectedSmcZone | None:
     """Select by setup score, then distance, recency, and stable zone ID."""
@@ -152,7 +152,7 @@ def _score_side(
         atr_value=atr_value,
         market_regime=market_regime,
     )
-    selected = select_smc_zone_v2(evaluations)
+    selected = select_smc_zone(evaluations)
 
     confluence = (
         smc.get("confluence")
@@ -247,7 +247,7 @@ def _score_side(
             selected.zone_setup_score if selected else None
         ),
         reason_codes=tuple(reason_codes),
-        scoring_version=SMC_SCORER_V2_VERSION,
+        scoring_version=SMC_SCORER_VERSION,
     )
     selected_payload = (
         selected.to_dict(include_compatibility=False)
@@ -280,7 +280,7 @@ def _score_side(
             evaluation.to_dict()
             for evaluation in evaluations
         ],
-        "scoring_version": SMC_SCORER_V2_VERSION,
+        "scoring_version": SMC_SCORER_VERSION,
     }
 
 
@@ -351,7 +351,7 @@ def _evaluate_zone(
         zone_quality_score=quality,
         zone_relevance_score=relevance,
         zone_setup_score=max(0, min(100, setup)),
-        scoring_version=SMC_SCORER_V2_VERSION,
+        scoring_version=SMC_SCORER_VERSION,
     )
     return EvaluatedSmcZone(
         zone=scored_model,

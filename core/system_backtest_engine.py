@@ -262,9 +262,7 @@ class BacktestResult:
         from core.scoring_provenance import build_scoring_provenance
         from core.backtest_provenance import build_backtest_provenance
 
-        provenance = build_scoring_provenance(
-            self.request.smc_scoring_mode
-        )
+        provenance = build_scoring_provenance()
         parity_enabled = (
             normalize_execution_mode(self.request.execution_mode)
             == EXECUTION_MODE_PARITY
@@ -1729,7 +1727,6 @@ def build_trade_record(
     smc_flags = analysis.get("smc_trade_flags", {}) if isinstance(analysis.get("smc_trade_flags"), dict) else {}
     scoring_provenance = normalize_scoring_provenance(
         analysis.get("scoring_provenance"),
-        fallback_mode=request.smc_scoring_mode,
     )
     costs = execution_costs if isinstance(execution_costs, dict) else {}
     normalized_execution_mode = normalize_execution_mode(

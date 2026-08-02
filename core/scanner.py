@@ -22,10 +22,6 @@ from core.scanner_models import (
     STRATEGY_ROUTER_VERSION,
 )
 from core.portfolio_models import PORTFOLIO_ENGINE_VERSION
-from core.smc_scoring_contract import (
-    normalize_smc_scoring_mode,
-    resolve_smc_scoring_policy,
-)
 from core.smc_models import SMC_DOMAIN_VERSION
 from core.scoring_provenance import (
     build_scoring_provenance,
@@ -69,14 +65,6 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
     )
     scoring_provenance = normalize_scoring_provenance(
         result.get("scoring_provenance"),
-        fallback_mode=(
-            result.get("smc_scoring", {}).get("policy", {}).get(
-                "requested_mode",
-                "v2",
-            )
-            if isinstance(result.get("smc_scoring"), dict)
-            else "v2"
-        ),
     )
     scores = (
         result.get("scenario_scores")
@@ -369,7 +357,7 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
 
 
 def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") -> dict[str, Any]:
-    scoring_provenance = build_scoring_provenance("v2")
+    scoring_provenance = build_scoring_provenance()
     row = {
         "rank": 0,
         "symbol": symbol,
@@ -550,10 +538,7 @@ def scanner_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_scanner_output(rows: list[dict[str, Any]], request: ScannerRequest, ai_called: int) -> dict[str, Any]:
-    smc_policy = resolve_smc_scoring_policy(request.smc_scoring_mode)
-    scoring_provenance = build_scoring_provenance(
-        request.smc_scoring_mode
-    )
+    scoring_provenance = build_scoring_provenance()
     return {
         "mode": "scanner",
         "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -564,13 +549,11 @@ def build_scanner_output(rows: list[dict[str, Any]], request: ScannerRequest, ai
         "strategy_router_version": STRATEGY_ROUTER_VERSION,
         "portfolio_engine_version": PORTFOLIO_ENGINE_VERSION,
         "ranking_version": SCANNER_RANKING_VERSION,
-        "smc_scorer_version": smc_policy.active_version,
+        "smc_scorer_version": scoring_provenance["smc_scorer_version"],
         "smc_domain_version": SMC_DOMAIN_VERSION,
         "scoring_provenance": scoring_provenance,
         "feature_flags": dict(request.feature_flags),
-        "smc_scoring_mode": normalize_smc_scoring_mode(
-            request.smc_scoring_mode
-        ),
+        "smc_scoring_mode": scoring_provenance["smc_scoring_mode"],
         "summary": scanner_summary(rows),
         "rows": rows,
     }

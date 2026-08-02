@@ -88,22 +88,37 @@ def _detect_macro_status(macro_context: dict[str, Any] | None, direction: str) -
     return "unclear"
 
 
-def score_scenario(
+def compose_scenario_score(
     side: str,
     technical: dict[str, Any],
-    smc: dict[str, Any] | None,
-    risk_score: float,
-    macro_score: int,
     *,
+    smc_quality: object,
+    smc_reason: object = "",
+    smc_flags: dict[str, Any] | None = None,
+    risk_score: float = 0.0,
+    macro_score: int = 0,
     macro_confidence: float = 1.0,
     market_regime: dict[str, Any] | None = None,
     correlation_adjustment: float = 0.0,
     macro_context: dict[str, Any] | None = None,
+    scoring_version: object = None,
+    smc_score_breakdown: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Compose one side's scenario score from a precomputed SMC side result.
+
+    This is the single composition path.  The caller supplies the already-scored
+    SMC side (``smc_quality``, reason, flags, optional breakdown) so no SMC
+    scorer is invoked here.  Regime weights, the CHOCH cap, penalty cleanup and
+    score clamping are preserved exactly as in the legacy path.
+    """
+
     trend = trend_alignment_score(side, technical)
     momentum = momentum_alignment_score(side, technical)
     location = location_quality_score(side, technical)
-    smc_quality, smc_reason = smc_quality_score(side, smc or {}, technical)
+    try:
+        quality = int(clamp(float(smc_quality), 0, 15))
+    except (TypeError, ValueError, OverflowError):
+        quality = 0
 
     base_weights = DYNAMIC_WEIGHTS.get(
         _resolve_regime_key(market_regime or {}),
@@ -121,7 +136,7 @@ def score_scenario(
     trend_scaled = int(clamp(trend, 0, 25) * weights["trend"] / 25)
     momentum_scaled = int(clamp(momentum, 0, 20) * weights["momentum"] / 20)
     location_scaled = int(clamp(location, 0, 25) * weights["location"] / 25)
-    smc_scaled = int(clamp(smc_quality, 0, 15) * weights["smc"] / 15)
+    smc_scaled = int(quality * weights["smc"] / 15)
     tech_raw = int(clamp(trend, 0, 25) + clamp(momentum, 0, 20) + clamp(location, 0, 25))
     technical_scaled = int(trend_scaled + momentum_scaled + location_scaled + smc_scaled)
 
@@ -149,19 +164,19 @@ def score_scenario(
         append_code(reason_codes, MACRO_ALIGNED)
 
     # ---- SMC CHOCH cap (Phase 5 Prompt 3) ----
-    smc_flags = extract_smc_trade_flags(smc, side)
+    flags = dict(smc_flags or {})
     smc_score_cap = None
-    if smc_flags.get("choch_against_direction"):
+    if flags.get("choch_against_direction"):
         total = min(total, 60)
         smc_score_cap = 60
         append_code(penalty_codes, CHOCH_AGAINST_DIRECTION)
 
-    return {
+    result = {
         "trend_alignment": int(clamp(trend, 0, 25)),
         "momentum_alignment": int(clamp(momentum, 0, 20)),
         "location_quality": int(clamp(location, 0, 25)),
-        "smc_quality": smc_quality,
-        "smc_reason": smc_reason,
+        "smc_quality": quality,
+        "smc_reason": str(smc_reason or ""),
         "technical_raw": tech_raw,
         "trend_scaled": trend_scaled,
         "momentum_scaled": momentum_scaled,
@@ -181,8 +196,42 @@ def score_scenario(
         "reason_codes": normalize_codes(reason_codes),
         "penalty_codes": normalize_codes(penalty_codes),
         "smc_score_cap": smc_score_cap,
-        "smc_flags": smc_flags,
+        "smc_flags": flags,
     }
+    if scoring_version is not None:
+        result["smc_scoring_version"] = str(scoring_version or "")
+    if smc_score_breakdown is not None:
+        result["smc_score_breakdown"] = dict(smc_score_breakdown or {})
+    return result
+
+
+def score_scenario(
+    side: str,
+    technical: dict[str, Any],
+    smc: dict[str, Any] | None,
+    risk_score: float,
+    macro_score: int,
+    *,
+    macro_confidence: float = 1.0,
+    market_regime: dict[str, Any] | None = None,
+    correlation_adjustment: float = 0.0,
+    macro_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    smc_quality, smc_reason = smc_quality_score(side, smc or {}, technical)
+    smc_flags = extract_smc_trade_flags(smc, side)
+    return compose_scenario_score(
+        side,
+        technical,
+        smc_quality=smc_quality,
+        smc_reason=smc_reason,
+        smc_flags=smc_flags,
+        risk_score=risk_score,
+        macro_score=macro_score,
+        macro_confidence=macro_confidence,
+        market_regime=market_regime,
+        correlation_adjustment=correlation_adjustment,
+        macro_context=macro_context,
+    )
 
 
 def apply_smc_score_override(

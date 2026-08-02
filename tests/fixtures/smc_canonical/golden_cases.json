@@ -1,0 +1,2011 @@
+{
+  "fixture_version": "smc-canonical-golden-v1",
+  "runtime_mode": "v2-decision",
+  "locked_fields": [
+    "scenario_scores.<side>.smc_quality",
+    "scenario_scores.<side>.signal_score",
+    "smc_consumer.sides.<side>.selected_zone_id/type/timeframe",
+    "smc_consumer.sides.<side>.score_breakdown",
+    "direction_bias.best_side",
+    "trade_gate",
+    "decision_engine",
+    "primary scenario order payload"
+  ],
+  "ignored_fields": [
+    "timestamp",
+    "scan id",
+    "latency"
+  ],
+  "cases": [
+    {
+      "name": "buy_selected_zone",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [
+            {
+              "zone_id": "z-buy-h4",
+              "low": 1.098,
+              "high": 1.099,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "demand_zone"
+            }
+          ],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 68.0,
+          "sell_score": 18.0,
+          "score_gap": 50.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 12,
+            "signal_score": 68,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": "z-buy-h4",
+            "selected_zone_type": "demand_zone",
+            "selected_zone_timeframe": "H4",
+            "score_breakdown": {
+              "side": "buy",
+              "total": 12,
+              "structure_score": 5,
+              "zone_score": 4,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 1,
+              "subtotal": 12,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": "z-buy-h4",
+              "selected_zone_quality_score": 81,
+              "selected_zone_relevance_score": 88,
+              "selected_zone_setup_score": 84,
+              "reason_codes": [
+                "CANONICAL_ZONE_SELECTED",
+                "ZONE_FAMILY_DEMAND",
+                "H1_DIRECTIONAL_TRIGGER",
+                "TECHNICAL_ZONE_NEARBY"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 0,
+            "signal_score": 18,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 0,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 0,
+              "subtotal": 0,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "buy",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.09875,
+            1.099
+          ],
+          "entry_zone_id": "z-buy-h4",
+          "stop_loss": 1.0979,
+          "take_profit": [
+            1.10577,
+            1.106
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "account_balance": 10000,
+            "risk_pct": 1.0,
+            "risk_amount_usd": 100.0,
+            "entry_price": 1.09875,
+            "stop_loss": 1.0979,
+            "price_distance": 0.00085,
+            "contract_size": 100000,
+            "suggested_lot": 1.17,
+            "size_multiplier": 1.0
+          }
+        }
+      }
+    },
+    {
+      "name": "sell_selected_zone",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "LH/LL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bearish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [
+            {
+              "zone_id": "z-sell-h4",
+              "low": 1.101,
+              "high": 1.102,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "premium",
+              "zone_score": 80,
+              "type": "supply_zone"
+            }
+          ],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.08,
+        "ema200_d1": 1.09,
+        "ema50_h4": 1.085,
+        "rsi_h4": 45.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": -0.0002,
+          "previous_value": -0.0001,
+          "previous2_value": 0.0,
+          "direction": "decreasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.094,
+            "low": 1.0938,
+            "high": 1.0942,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.102,
+            "low": 1.1018,
+            "high": 1.1022,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "LH/LL",
+        "structure_h4": "LH/LL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_down",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "sell",
+        "direction_bias": {
+          "best_side": "sell",
+          "buy_score": 35.0,
+          "sell_score": 51.0,
+          "score_gap": 16.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 7,
+            "signal_score": 35,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "buy",
+              "total": 7,
+              "structure_score": 5,
+              "zone_score": 0,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 0,
+              "subtotal": 7,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE",
+                "H1_DIRECTIONAL_TRIGGER"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 5,
+            "signal_score": 51,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": "z-sell-h4",
+            "selected_zone_type": "supply_zone",
+            "selected_zone_timeframe": "H4",
+            "score_breakdown": {
+              "side": "sell",
+              "total": 5,
+              "structure_score": 0,
+              "zone_score": 4,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 1,
+              "subtotal": 5,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": "z-sell-h4",
+              "selected_zone_quality_score": 81,
+              "selected_zone_relevance_score": 88,
+              "selected_zone_setup_score": 84,
+              "reason_codes": [
+                "CANONICAL_ZONE_SELECTED",
+                "ZONE_FAMILY_SUPPLY",
+                "TECHNICAL_ZONE_NEARBY"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "sell",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.101,
+            1.10125
+          ],
+          "entry_zone_id": "z-sell-h4",
+          "stop_loss": 1.1021,
+          "take_profit": [
+            1.09423,
+            1.094
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "account_balance": 10000,
+            "risk_pct": 1.0,
+            "risk_amount_usd": 100.0,
+            "entry_price": 1.10125,
+            "stop_loss": 1.1021,
+            "price_distance": 0.00085,
+            "contract_size": 100000,
+            "suggested_lot": 1.17,
+            "size_multiplier": 1.0
+          }
+        }
+      }
+    },
+    {
+      "name": "no_zone",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 63.0,
+          "sell_score": 18.0,
+          "score_gap": 45.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 7,
+            "signal_score": 63,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "buy",
+              "total": 7,
+              "structure_score": 5,
+              "zone_score": 0,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 0,
+              "subtotal": 7,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE",
+                "H1_DIRECTIONAL_TRIGGER"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 0,
+            "signal_score": 18,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 0,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 0,
+              "subtotal": 0,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "buy",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.09975,
+            1.10025
+          ],
+          "entry_zone_id": null,
+          "stop_loss": 1.0988,
+          "take_profit": [
+            1.1024
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "suggested_lot": 0.01,
+            "risk_amount_usd": 0.0,
+            "entry_price": 1.1,
+            "stop_loss": 1.0988
+          }
+        }
+      }
+    },
+    {
+      "name": "fvg_h1_only",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [
+            {
+              "zone_id": "z-buy-h1-fvg",
+              "low": 1.0988,
+              "high": 1.0994,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "bullish_fvg"
+            }
+          ],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [
+            {
+              "zone_id": "z-buy-h1-fvg",
+              "low": 1.0988,
+              "high": 1.0994,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "bullish_fvg"
+            }
+          ],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 67.0,
+          "sell_score": 18.0,
+          "score_gap": 49.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 11,
+            "signal_score": 67,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": "z-buy-h1-fvg",
+            "selected_zone_type": "bullish_fvg",
+            "selected_zone_timeframe": "H1",
+            "score_breakdown": {
+              "side": "buy",
+              "total": 11,
+              "structure_score": 5,
+              "zone_score": 4,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 0,
+              "subtotal": 11,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": "z-buy-h1-fvg",
+              "selected_zone_quality_score": 81,
+              "selected_zone_relevance_score": 88,
+              "selected_zone_setup_score": 84,
+              "reason_codes": [
+                "CANONICAL_ZONE_SELECTED",
+                "ZONE_FAMILY_DEMAND",
+                "H1_DIRECTIONAL_TRIGGER"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 0,
+            "signal_score": 18,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 0,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 0,
+              "subtotal": 0,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "buy",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.09915,
+            1.0994
+          ],
+          "entry_zone_id": "z-buy-h1-fvg",
+          "stop_loss": 1.0987,
+          "take_profit": [
+            1.10577,
+            1.106
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "account_balance": 10000,
+            "risk_pct": 1.0,
+            "risk_amount_usd": 100.0,
+            "entry_price": 1.09915,
+            "stop_loss": 1.0987,
+            "price_distance": 0.00045,
+            "contract_size": 100000,
+            "suggested_lot": 2.22,
+            "size_multiplier": 1.0
+          }
+        }
+      }
+    },
+    {
+      "name": "order_block",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [
+            {
+              "zone_id": "z-buy-h4-ob",
+              "low": 1.0982,
+              "high": 1.0992,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "bullish_order_block"
+            }
+          ],
+          "supply_zones": [],
+          "order_blocks": [
+            {
+              "zone_id": "z-buy-h4-ob",
+              "low": 1.0982,
+              "high": 1.0992,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "bullish_order_block"
+            }
+          ],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 67.0,
+          "sell_score": 18.0,
+          "score_gap": 49.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 11,
+            "signal_score": 67,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": "z-buy-h4-ob",
+            "selected_zone_type": "bullish_order_block",
+            "selected_zone_timeframe": "H4",
+            "score_breakdown": {
+              "side": "buy",
+              "total": 11,
+              "structure_score": 5,
+              "zone_score": 4,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 0,
+              "subtotal": 11,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": "z-buy-h4-ob",
+              "selected_zone_quality_score": 81,
+              "selected_zone_relevance_score": 88,
+              "selected_zone_setup_score": 84,
+              "reason_codes": [
+                "CANONICAL_ZONE_SELECTED",
+                "ZONE_FAMILY_DEMAND",
+                "H1_DIRECTIONAL_TRIGGER"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 0,
+            "signal_score": 18,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 0,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 0,
+              "subtotal": 0,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "buy",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.09895,
+            1.0992
+          ],
+          "entry_zone_id": "z-buy-h4-ob",
+          "stop_loss": 1.0981,
+          "take_profit": [
+            1.10577,
+            1.106
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "account_balance": 10000,
+            "risk_pct": 1.0,
+            "risk_amount_usd": 100.0,
+            "entry_price": 1.09895,
+            "stop_loss": 1.0981,
+            "price_distance": 0.00085,
+            "contract_size": 100000,
+            "suggested_lot": 1.17,
+            "size_multiplier": 1.0
+          }
+        }
+      }
+    },
+    {
+      "name": "broken_stale",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [
+            {
+              "zone_id": "z-buy-stale",
+              "low": 1.098,
+              "high": 1.099,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": true,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "demand_zone"
+            }
+          ],
+          "supply_zones": [
+            {
+              "zone_id": "z-sell-broken",
+              "low": 1.101,
+              "high": 1.102,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": true,
+              "broken": true,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "premium",
+              "zone_score": 80,
+              "type": "supply_zone"
+            }
+          ],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 68.0,
+          "sell_score": 18.0,
+          "score_gap": 50.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 12,
+            "signal_score": 68,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": "z-buy-stale",
+            "selected_zone_type": "demand_zone",
+            "selected_zone_timeframe": "H4",
+            "score_breakdown": {
+              "side": "buy",
+              "total": 12,
+              "structure_score": 5,
+              "zone_score": 4,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 1,
+              "subtotal": 12,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": "z-buy-stale",
+              "selected_zone_quality_score": 73,
+              "selected_zone_relevance_score": 67,
+              "selected_zone_setup_score": 71,
+              "reason_codes": [
+                "CANONICAL_ZONE_SELECTED",
+                "ZONE_FAMILY_DEMAND",
+                "H1_DIRECTIONAL_TRIGGER",
+                "TECHNICAL_ZONE_NEARBY"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 0,
+            "signal_score": 18,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 0,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 0,
+              "subtotal": 0,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "buy",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.09875,
+            1.099
+          ],
+          "entry_zone_id": "z-buy-stale",
+          "stop_loss": 1.0979,
+          "take_profit": [
+            1.10577,
+            1.106
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "account_balance": 10000,
+            "risk_pct": 1.0,
+            "risk_amount_usd": 100.0,
+            "entry_price": 1.09875,
+            "stop_loss": 1.0979,
+            "price_distance": 0.00085,
+            "contract_size": 100000,
+            "suggested_lot": 1.17,
+            "size_multiplier": 1.0
+          }
+        }
+      }
+    },
+    {
+      "name": "choch_cap",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [
+            {
+              "zone_id": "z-buy-h4",
+              "low": 1.098,
+              "high": 1.099,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "demand_zone"
+            }
+          ],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "LH/LL",
+          "bos": false,
+          "choch": true,
+          "displacement": "bearish",
+          "bos_strength": "strong",
+          "choch_confirmed": true,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": 0.0015,
+        "atr_h4": 0.001,
+        "atr_avg_14d": 0.0015,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 60.0,
+          "sell_score": 20.0,
+          "score_gap": 40.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 8,
+            "signal_score": 60,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": "z-buy-h4",
+            "selected_zone_type": "demand_zone",
+            "selected_zone_timeframe": "H4",
+            "score_breakdown": {
+              "side": "buy",
+              "total": 8,
+              "structure_score": 5,
+              "zone_score": 4,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 1,
+              "subtotal": 10,
+              "penalty_points": 2,
+              "applied_cap": 8,
+              "penalties": [
+                "H1_CHOCH_AGAINST_SIDE"
+              ],
+              "caps": [
+                "H1_CONFIRMED_CHOCH_CAP_8"
+              ],
+              "selected_zone_id": "z-buy-h4",
+              "selected_zone_quality_score": 81,
+              "selected_zone_relevance_score": 88,
+              "selected_zone_setup_score": 84,
+              "reason_codes": [
+                "CANONICAL_ZONE_SELECTED",
+                "ZONE_FAMILY_DEMAND",
+                "TECHNICAL_ZONE_NEARBY"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 2,
+            "signal_score": 20,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 2,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 0,
+              "subtotal": 2,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE",
+                "H1_DIRECTIONAL_TRIGGER"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "buy",
+          "entry_status": "watch_zone",
+          "entry_zone": [
+            1.09875,
+            1.099
+          ],
+          "entry_zone_id": "z-buy-h4",
+          "stop_loss": 1.0979,
+          "take_profit": [
+            1.10577,
+            1.106
+          ],
+          "trigger_type": "none",
+          "ready_to_trade": false,
+          "position_sizing": {
+            "account_balance": 10000,
+            "risk_pct": 1.0,
+            "risk_amount_usd": 100.0,
+            "entry_price": 1.09875,
+            "stop_loss": 1.0979,
+            "price_distance": 0.00085,
+            "contract_size": 100000,
+            "suggested_lot": 1.17,
+            "size_multiplier": 1.0
+          }
+        }
+      }
+    },
+    {
+      "name": "missing_data_valid",
+      "smc": {
+        "symbol": "EUR/USD",
+        "domain_version": "smc-domain-v1",
+        "H4": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [
+            {
+              "zone_id": "z-buy-h4",
+              "low": 1.098,
+              "high": 1.099,
+              "origin_index": 220,
+              "origin_time": "2026-01-01T00:00:00+00:00",
+              "departure_end_index": 221,
+              "displacement_multiple": 2.0,
+              "independent_retest_count": 1,
+              "age_bars": 5,
+              "freshness_bars": 2,
+              "stale": false,
+              "broken": false,
+              "mitigated": false,
+              "mitigation_ratio": null,
+              "liquidity_sweep": false,
+              "liquidity_sweep_linked": false,
+              "linked_sweep_id": null,
+              "zone_location": "discount",
+              "zone_score": 80,
+              "type": "demand_zone"
+            }
+          ],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "H1": {
+          "structure": "HH/HL",
+          "bos": true,
+          "choch": false,
+          "displacement": "bullish",
+          "bos_strength": "strong",
+          "choch_confirmed": false,
+          "demand_zones": [],
+          "supply_zones": [],
+          "order_blocks": [],
+          "fvg": [],
+          "liquidity_sweeps": {
+            "swept_highs": [],
+            "swept_lows": []
+          }
+        },
+        "confluence": {
+          "confluence_score": 5,
+          "buy_score": 5,
+          "sell_score": 0,
+          "reason_codes": []
+        }
+      },
+      "technical": {
+        "price": 1.1,
+        "ema50_d1": 1.09,
+        "ema200_d1": 1.08,
+        "ema50_h4": 1.095,
+        "rsi_h4": 55.0,
+        "rsi_h4_previous": 50.0,
+        "macd_histogram_h4": {
+          "value": 0.0002,
+          "previous_value": 0.0001,
+          "previous2_value": 0.0,
+          "direction": "increasing"
+        },
+        "atr_d1": null,
+        "atr_h4": null,
+        "atr_avg_14d": null,
+        "support_zones": [
+          {
+            "level": 1.098,
+            "low": 1.0978,
+            "high": 1.0982,
+            "type": "recent_swing_low",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-support"
+          }
+        ],
+        "resistance_zones": [
+          {
+            "level": 1.106,
+            "low": 1.1058,
+            "high": 1.1062,
+            "type": "recent_swing_high",
+            "strength": "moderate",
+            "confluence_count": 1,
+            "consolidation_bars": 0,
+            "source": "technical",
+            "zone_score": 50,
+            "zone_id": "tech-resistance"
+          }
+        ],
+        "structure_d1": "HH/HL",
+        "structure_h4": "HH/HL",
+        "swings_h4": {
+          "highs": [],
+          "lows": []
+        },
+        "swings_d1": {
+          "highs": [],
+          "lows": []
+        },
+        "range_info": {
+          "is_range": false
+        }
+      },
+      "market_regime": {
+        "primary": "trend_up",
+        "secondary": []
+      },
+      "expected": {
+        "best_side": "buy",
+        "direction_bias": {
+          "best_side": "buy",
+          "buy_score": 62.0,
+          "sell_score": 17.0,
+          "score_gap": 45.0,
+          "is_clear_bias": true
+        },
+        "sides": {
+          "buy": {
+            "smc_quality": 7,
+            "signal_score": 62,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "buy",
+              "total": 7,
+              "structure_score": 5,
+              "zone_score": 0,
+              "ltf_confirmation_score": 2,
+              "technical_validation_score": 0,
+              "subtotal": 7,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE",
+                "H1_DIRECTIONAL_TRIGGER"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          },
+          "sell": {
+            "smc_quality": 0,
+            "signal_score": 17,
+            "smc_scoring_version": "smc-v2",
+            "selected_zone_id": null,
+            "selected_zone_type": null,
+            "selected_zone_timeframe": null,
+            "score_breakdown": {
+              "side": "sell",
+              "total": 0,
+              "structure_score": 0,
+              "zone_score": 0,
+              "ltf_confirmation_score": 0,
+              "technical_validation_score": 0,
+              "subtotal": 0,
+              "penalty_points": 0,
+              "applied_cap": null,
+              "penalties": [],
+              "caps": [],
+              "selected_zone_id": null,
+              "selected_zone_quality_score": null,
+              "selected_zone_relevance_score": null,
+              "selected_zone_setup_score": null,
+              "reason_codes": [
+                "NO_ELIGIBLE_CANONICAL_ZONE"
+              ],
+              "scoring_version": "smc-v2",
+              "domain_version": "smc-domain-v1"
+            }
+          }
+        },
+        "trade_gate": {
+          "allowed": true,
+          "decision_cap": "WATCH_ONLY",
+          "block_codes": [],
+          "warning_codes": [
+            "STAT_EDGE_NOT_ENOUGH_DATA",
+            "EXECUTION_DATA_INCOMPLETE",
+            "M15_NOT_CONFIRMED"
+          ]
+        },
+        "decision_engine": {
+          "decision": "WATCH_ONLY",
+          "legacy_action": "watch"
+        },
+        "scenario": {
+          "type": "stand_aside",
+          "entry_status": null,
+          "entry_zone": null,
+          "entry_zone_id": null,
+          "stop_loss": null,
+          "take_profit": null,
+          "trigger_type": null,
+          "ready_to_trade": null,
+          "position_sizing": null
+        }
+      }
+    }
+  ]
+}

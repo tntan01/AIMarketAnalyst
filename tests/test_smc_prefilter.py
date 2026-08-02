@@ -10,9 +10,10 @@ import pytest
 from core.smc_prefilter import (
     NO_ACTIONABLE_SMC_ZONE,
     SMC_PREFILTER_ERROR_FAIL_OPEN,
+    SMC_SCORING_ERROR,
     evaluate_post_context_prefilter,
 )
-from core.smc_scoring_contract import build_smc_phase0_diagnostics
+from core.smc_scorer import score_smc
 
 
 _FAMILY_KEYS = {
@@ -84,7 +85,6 @@ def test_canonical_prefilter_survives_each_raw_family_and_timeframe(
     )
 
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=context,
         technical=_technical(),
         market_regime={"primary": "trend_up"},
@@ -94,12 +94,11 @@ def test_canonical_prefilter_survives_each_raw_family_and_timeframe(
     assert decision["fail_open"] is False
     assert decision["selected_zone_ids"][side] == expected_id
     assert decision["raw_counts"][timeframe][family] == 1
-    assert decision["precomputed_v2_result"][side]["selected_zone_id"] == expected_id
+    assert decision["precomputed_smc"][side]["selected_zone_id"] == expected_id
 
 
 def test_canonical_prefilter_rejects_only_when_both_sides_lack_selected_zones() -> None:
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=_context(),
         technical=_technical(),
         market_regime={"primary": "range"},
@@ -121,7 +120,6 @@ def test_broken_or_invalid_zone_uses_canonical_reject(
     context["H4"]["demand_zones"].append(zone)
 
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=context,
         technical=_technical(),
     )
@@ -142,7 +140,6 @@ def test_buy_and_sell_selection_are_independent(family: str, side: str) -> None:
     )
 
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=context,
         technical=_technical(),
     )
@@ -153,21 +150,6 @@ def test_buy_and_sell_selection_are_independent(family: str, side: str) -> None:
         side: f"only-{side}",
         opposite: None,
     }
-
-
-@pytest.mark.parametrize("mode", ("legacy", "shadow"))
-def test_legacy_and_shadow_always_fail_open(mode: str) -> None:
-    decision = evaluate_post_context_prefilter(
-        mode=mode,
-        smc=_context(),
-        technical=_technical(),
-    )
-
-    assert decision["mode"] == mode
-    assert decision["should_reject"] is False
-    assert decision["fail_open"] is True
-    assert decision["reason_code"] == SMC_PREFILTER_ERROR_FAIL_OPEN
-    assert decision["precomputed_v2_result"] is None
 
 
 @pytest.mark.parametrize(
@@ -181,7 +163,6 @@ def test_legacy_and_shadow_always_fail_open(mode: str) -> None:
 )
 def test_invalid_price_or_atr_fails_open(technical: dict) -> None:
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=_context(),
         technical=technical,
     )
@@ -196,7 +177,6 @@ def test_malformed_context_fails_open() -> None:
     context["H1"]["fvg"] = {"not": "a list"}
 
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=context,
         technical=_technical(),
     )
@@ -205,23 +185,24 @@ def test_malformed_context_fails_open() -> None:
     assert decision["fail_open"] is True
 
 
-def test_v2_scorer_exception_fails_open() -> None:
+def test_v2_scorer_exception_fails_closed() -> None:
     with patch(
-        "core.smc_prefilter.score_smc_v2",
+        "core.smc_prefilter.score_smc",
         side_effect=RuntimeError("unexpected scorer error"),
     ):
         decision = evaluate_post_context_prefilter(
-            mode="v2",
             smc=_context(),
             technical=_technical(),
         )
 
-    assert decision["should_reject"] is False
-    assert decision["fail_open"] is True
-    assert decision["reason_code"] == SMC_PREFILTER_ERROR_FAIL_OPEN
+    assert decision["should_reject"] is True
+    assert decision["fail_open"] is False
+    assert decision["reason_code"] == SMC_SCORING_ERROR
+    assert decision["scorer_error"] is True
+    assert decision["precomputed_smc"] is None
 
 
-def test_helper_matches_canonical_v2_step3_decision_and_preserves_context() -> None:
+def test_prefilter_preserves_context_and_reuses_canonical_result() -> None:
     context = _context()
     context["H4"]["demand_zones"].append(
         _zone("demand", "buy", zone_id="h4-buy")
@@ -234,22 +215,15 @@ def test_helper_matches_canonical_v2_step3_decision_and_preserves_context() -> N
     regime = {"primary": "range"}
 
     decision = evaluate_post_context_prefilter(
-        mode="v2",
         smc=context,
         technical=technical,
         market_regime=regime,
     )
-    step3 = build_smc_phase0_diagnostics(
-        requested_mode="v2",
-        smc=context,
-        technical=technical,
-        active_scores={"buy": {}, "sell": {}},
-        market_regime=regime,
-    )
+    canonical = score_smc(context, technical, regime)
 
     assert context == before
     assert decision["selected_zone_ids"] == {
-        side: step3["decision"][side]["selected_zone_id"]
+        side: canonical[side]["selected_zone_id"]
         for side in ("buy", "sell")
     }
-    assert decision["precomputed_v2_result"] == step3["decision"]
+    assert decision["precomputed_smc"] == canonical
