@@ -1,6 +1,6 @@
 # Scanner V2 — Luồng chạy hiện hành
 
-Cập nhật: **25/07/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
+Cập nhật: **02/08/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
 
 ## 1. Tổng quan
 
@@ -16,7 +16,7 @@ ScannerScreen
           → Strategy Router
           → Execution Readiness tại thời điểm scan
       → lọc và canonical ranking
-      → observability + shadow V1/V2
+      → observability + Scanner shadow comparison (Candidate Engine V1/V2)
       → build output
       → auto trade qua rollout guard và shared execution path
       → metrics/readiness + Telegram + snapshot
@@ -26,14 +26,18 @@ Scanner không còn luồng “backtest ghi đè `stand_aside` thành `ready`”
 
 ### SMC scorer đang hoạt động
 
-- Runtime mặc định và settings đã lưu dùng `smc_scoring_mode=v2`.
-- SMC v2 quyết định điểm SMC theo BUY/SELL và canonical zone được đưa vào
+- SMC là scorer chuẩn duy nhất (`core.smc_scorer.score_smc()`). Không còn
+  mode `legacy/shadow/v2` để chọn scorer; `smc-v2` chỉ là metadata provenance
+  của công thức, không phải một lựa chọn runtime.
+- Mỗi symbol được chấm SMC đúng một lần cho cả BUY/SELL; selected zone của
+  quyết định giao dịch chỉ đến từ kết quả SMC canonical này.
+- SMC quyết định điểm SMC theo BUY/SELL và canonical zone được đưa vào
   scenario, trade plan và gate. Không có canonical zone hợp lệ thì không
-  fallback sang technical zone để tạo plan.
-- SMC v1 vẫn chạy làm dữ liệu đối chiếu và có thể được chọn lại bằng mode
-  `legacy`; mode `shadow` giữ quyết định v1 nhưng tính thêm v2 để so sánh.
+  fallback sang technical zone để tạo plan. Nếu scorer lỗi, phân tích bị
+  blocked/no-trade (`SMC_SCORING_ERROR`), không fallback sang scorer khác.
 - Scanner contract hiện là `scanner-v3/scanner-features-v3`; backtest config
-  dùng schema v8/`backtest-v8-statistical-validation-v1`, bắt buộc ghi rõ `smc-v2`,
+  dùng schema v9/`backtest-v9-statistical-validation-v1`, bắt buộc ghi rõ
+  `smc_scorer_version="smc-v2"`,
   Candidate Ledger/frozen OOS replay,
   statistical power, recency và provenance code/data/execution,
   execution/cost/quote-conversion version và cost-model fingerprint,
@@ -74,14 +78,14 @@ Nếu settings cũ chứa cấu hình backtest, migration chỉ tạo config `DR
 
 Trạng thái runtime ngày 24/07/2026: toàn bộ 31 config `DRAFT` đã tắt cờ
 `backtest` nhưng giữ nguyên metadata để dùng lại sau. Vì vậy ScannerRequest hiện
-không mang backtest config và Strategy Router dùng `DEFAULT_RULES` cùng SMC v2.
+không mang backtest config và Strategy Router dùng `DEFAULT_RULES` cùng SMC.
 Backtest/OOS không phải điều kiện để hiển thị quyết định v2, nhưng vẫn là điều
 kiện trước production rollout.
 
 Settings/Symbols cũng áp dụng fail-closed tại nguồn:
 
-- chỉ config được canonical validator xác nhận `VALIDATED`, đúng SMC-v2 và còn
-  hạn mới có thể bật;
+- chỉ config được canonical validator xác nhận `VALIDATED`, đúng scorer SMC
+  canonical và còn hạn mới có thể bật;
 - config `DRAFT/INVALID/EXPIRED` được giữ metadata nhưng bắt buộc
   `backtest=false`, đồng thời bị loại khỏi `enabled_symbols`;
 - Min Score/Regime/Hướng/RR của Backtest là dữ liệu chỉ đọc; Settings chỉ cho
@@ -229,7 +233,12 @@ Sau sort, `rank` được gán theo thứ tự canonical.
 
 **Nguồn chính:** `core/scanner_rollout.py`, `core/scanner_observability.py`, `services/observability_service.py`.
 
-Nếu bật shadow comparison, hệ thống tạo bản ghi V1/V2 cho từng symbol:
+Đây là lớp an toàn của **Scanner Candidate Engine** (so sánh V1/V2 của
+candidate), không phải SMC scorer shadow — SMC đã được đưa về một scorer
+canonical duy nhất và không còn so sánh v1/v2.
+
+Nếu bật shadow comparison, hệ thống tạo bản ghi V1/V2 của Candidate Engine
+cho từng symbol:
 
 - status, side và trade/wait decision;
 - score gate;

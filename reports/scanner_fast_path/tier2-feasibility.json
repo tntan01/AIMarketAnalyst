@@ -8,20 +8,18 @@
   "decision": "STOP_AFTER_TIER1",
   "metadata": {
     "fast_path_version": "scanner-fast-path-v1",
-    "fixture_count": 8,
+    "fixture_count": 6,
     "fixture_names": [
       "raw_empty_v2",
       "h1_only_fvg_v2",
       "h1_order_block_v2",
       "broken_invalid_v2",
       "buy_setup_v2",
-      "sell_setup_v2",
-      "mode_legacy",
-      "mode_shadow"
+      "sell_setup_v2"
     ],
     "fixture_version": "scanner-fast-path-corpus-v1",
     "prefilter_version": "smc-prefilter-v1",
-    "python_version": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "python_version": "3.14.4 (tags/v3.14.4:23116f9, Apr  7 2026, 14:10:54) [MSC v.1944 64 bit (AMD64)]",
     "repeats": 50,
     "scenario_order_alternate": true,
     "warmup": 5
@@ -29,233 +27,185 @@
   "paired_timing": {
     "full": {
       "aggregate": {
-        "other_pipeline_ms_p50": 0.0079,
-        "other_pipeline_ms_p95": 0.0168,
-        "post_smc_ms_p50": 1.4364,
-        "post_smc_ms_p95": 2.7082,
-        "post_smc_pct_of_total_p50": 0.425915,
-        "smc_ms_p50": 1.5172,
-        "smc_ms_p95": 2.7848,
-        "smc_pct_of_total_p50": 0.449874,
-        "technical_ms_p50": 0.4049,
-        "technical_ms_p95": 0.7516,
-        "total_ms_p50": 3.3725,
-        "total_ms_p95": 6.2054
+        "other_pipeline_ms_p50": 0.0131,
+        "other_pipeline_ms_p95": 0.0171,
+        "post_smc_ms_p50": 1.3323,
+        "post_smc_ms_p95": 1.5306,
+        "post_smc_pct_of_total_p50": 0.413347,
+        "smc_ms_p50": 1.46,
+        "smc_ms_p95": 1.6263,
+        "smc_pct_of_total_p50": 0.452966,
+        "technical_ms_p50": 0.4038,
+        "technical_ms_p95": 0.437,
+        "total_ms_p50": 3.2232,
+        "total_ms_p95": 3.583
       },
       "per_fixture": {
         "broken_invalid_v2": {
-          "other_pipeline_ms_p50": 0.0075,
-          "other_pipeline_ms_p95": 0.0163,
-          "post_smc_ms_p50": 1.6334,
-          "post_smc_ms_p95": 2.9713,
-          "smc_ms_p50": 1.668,
-          "smc_ms_p95": 2.9778,
-          "technical_ms_p50": 0.4045,
-          "technical_ms_p95": 0.7519,
-          "total_ms_p50": 3.8012,
-          "total_ms_p95": 6.6772
+          "other_pipeline_ms_p50": 0.0131,
+          "other_pipeline_ms_p95": 0.0166,
+          "post_smc_ms_p50": 1.4895,
+          "post_smc_ms_p95": 1.5868,
+          "smc_ms_p50": 1.5883,
+          "smc_ms_p95": 1.7349,
+          "technical_ms_p50": 0.4036,
+          "technical_ms_p95": 0.4374,
+          "total_ms_p50": 3.5137,
+          "total_ms_p95": 3.7346
         },
         "buy_setup_v2": {
-          "other_pipeline_ms_p50": 0.008,
-          "other_pipeline_ms_p95": 0.017,
-          "post_smc_ms_p50": 1.45,
-          "post_smc_ms_p95": 2.6726,
-          "smc_ms_p50": 1.5277,
-          "smc_ms_p95": 2.7848,
-          "technical_ms_p50": 0.4035,
-          "technical_ms_p95": 0.7378,
-          "total_ms_p50": 3.3828,
-          "total_ms_p95": 6.1903
+          "other_pipeline_ms_p50": 0.0135,
+          "other_pipeline_ms_p95": 0.0226,
+          "post_smc_ms_p50": 1.4061,
+          "post_smc_ms_p95": 1.4783,
+          "smc_ms_p50": 1.5145,
+          "smc_ms_p95": 1.5818,
+          "technical_ms_p50": 0.4053,
+          "technical_ms_p95": 0.4477,
+          "total_ms_p50": 3.3492,
+          "total_ms_p95": 3.5014
         },
         "h1_only_fvg_v2": {
-          "other_pipeline_ms_p50": 0.0077,
-          "other_pipeline_ms_p95": 0.0162,
-          "post_smc_ms_p50": 1.4791,
-          "post_smc_ms_p95": 2.7745,
-          "smc_ms_p50": 1.534,
-          "smc_ms_p95": 2.7809,
-          "technical_ms_p50": 0.4028,
-          "technical_ms_p95": 0.7506,
-          "total_ms_p50": 3.3958,
-          "total_ms_p95": 6.2358
+          "other_pipeline_ms_p50": 0.0129,
+          "other_pipeline_ms_p95": 0.0197,
+          "post_smc_ms_p50": 1.4003,
+          "post_smc_ms_p95": 1.4687,
+          "smc_ms_p50": 1.5079,
+          "smc_ms_p95": 1.6254,
+          "technical_ms_p50": 0.4002,
+          "technical_ms_p95": 0.4288,
+          "total_ms_p50": 3.3303,
+          "total_ms_p95": 3.5048
         },
         "h1_order_block_v2": {
-          "other_pipeline_ms_p50": 0.008,
-          "other_pipeline_ms_p95": 0.0169,
-          "post_smc_ms_p50": 1.2287,
-          "post_smc_ms_p95": 2.2359,
-          "smc_ms_p50": 1.4163,
-          "smc_ms_p95": 2.6025,
-          "technical_ms_p50": 0.4045,
-          "technical_ms_p95": 0.7467,
-          "total_ms_p50": 3.0685,
-          "total_ms_p95": 5.6628
-        },
-        "mode_legacy": {
-          "other_pipeline_ms_p50": 0.0077,
-          "other_pipeline_ms_p95": 0.0163,
-          "post_smc_ms_p50": 1.4466,
-          "post_smc_ms_p95": 2.6989,
-          "smc_ms_p50": 1.5363,
-          "smc_ms_p95": 2.7559,
-          "technical_ms_p50": 0.4073,
-          "technical_ms_p95": 0.7527,
-          "total_ms_p50": 3.4213,
-          "total_ms_p95": 6.153
-        },
-        "mode_shadow": {
-          "other_pipeline_ms_p50": 0.0085,
-          "other_pipeline_ms_p95": 0.0173,
-          "post_smc_ms_p50": 1.4885,
-          "post_smc_ms_p95": 2.8114,
-          "smc_ms_p50": 1.5567,
-          "smc_ms_p95": 2.8069,
-          "technical_ms_p50": 0.4028,
-          "technical_ms_p95": 0.7486,
-          "total_ms_p50": 3.4649,
-          "total_ms_p95": 6.2635
+          "other_pipeline_ms_p50": 0.0133,
+          "other_pipeline_ms_p95": 0.0161,
+          "post_smc_ms_p50": 1.252,
+          "post_smc_ms_p95": 1.3306,
+          "smc_ms_p50": 1.4207,
+          "smc_ms_p95": 1.5276,
+          "technical_ms_p50": 0.4049,
+          "technical_ms_p95": 0.435,
+          "total_ms_p50": 3.0886,
+          "total_ms_p95": 3.2863
         },
         "raw_empty_v2": {
-          "other_pipeline_ms_p50": 0.0077,
-          "other_pipeline_ms_p95": 0.0168,
-          "post_smc_ms_p50": 0.8794,
-          "post_smc_ms_p95": 1.568,
-          "smc_ms_p50": 1.2769,
-          "smc_ms_p95": 2.3663,
-          "technical_ms_p50": 0.4101,
-          "technical_ms_p95": 0.7592,
-          "total_ms_p50": 2.6111,
-          "total_ms_p95": 4.7277
+          "other_pipeline_ms_p50": 0.0128,
+          "other_pipeline_ms_p95": 0.0152,
+          "post_smc_ms_p50": 0.949,
+          "post_smc_ms_p95": 1.0035,
+          "smc_ms_p50": 1.2618,
+          "smc_ms_p95": 1.3711,
+          "technical_ms_p50": 0.4039,
+          "technical_ms_p95": 0.4266,
+          "total_ms_p50": 2.6403,
+          "total_ms_p95": 2.7727
         },
         "sell_setup_v2": {
-          "other_pipeline_ms_p50": 0.0085,
-          "other_pipeline_ms_p95": 0.0179,
-          "post_smc_ms_p50": 1.2238,
-          "post_smc_ms_p95": 2.2584,
-          "smc_ms_p50": 1.4162,
-          "smc_ms_p95": 2.5747,
-          "technical_ms_p50": 0.4075,
-          "technical_ms_p95": 0.7573,
-          "total_ms_p50": 3.082,
-          "total_ms_p95": 5.5772
+          "other_pipeline_ms_p50": 0.0133,
+          "other_pipeline_ms_p95": 0.0147,
+          "post_smc_ms_p50": 1.2567,
+          "post_smc_ms_p95": 1.3322,
+          "smc_ms_p50": 1.4164,
+          "smc_ms_p95": 1.5217,
+          "technical_ms_p50": 0.408,
+          "technical_ms_p95": 0.4437,
+          "total_ms_p50": 3.1,
+          "total_ms_p95": 3.2326
         }
       },
-      "scan_wall_ms_p50": 26.98
+      "scan_wall_ms_p50": 19.3392
     },
     "tier1": {
       "aggregate": {
-        "other_pipeline_ms_p50": 0.0078,
-        "other_pipeline_ms_p95": 0.017,
-        "post_smc_ms_p50": 1.4192,
-        "post_smc_ms_p95": 2.6641,
-        "post_smc_pct_of_total_p50": 0.421253,
-        "smc_ms_p50": 1.5175,
-        "smc_ms_p95": 2.8035,
-        "smc_pct_of_total_p50": 0.45043,
-        "technical_ms_p50": 0.4049,
-        "technical_ms_p95": 0.7553,
-        "total_ms_p50": 3.369,
-        "total_ms_p95": 6.168
+        "other_pipeline_ms_p50": 0.0133,
+        "other_pipeline_ms_p95": 0.0173,
+        "post_smc_ms_p50": 1.2739,
+        "post_smc_ms_p95": 1.4715,
+        "post_smc_pct_of_total_p50": 0.397522,
+        "smc_ms_p50": 1.466,
+        "smc_ms_p95": 1.6387,
+        "smc_pct_of_total_p50": 0.457467,
+        "technical_ms_p50": 0.4058,
+        "technical_ms_p95": 0.44,
+        "total_ms_p50": 3.2046,
+        "total_ms_p95": 3.4998
       },
       "per_fixture": {
         "broken_invalid_v2": {
-          "other_pipeline_ms_p50": 0.0077,
-          "other_pipeline_ms_p95": 0.017,
-          "post_smc_ms_p50": 1.3934,
-          "post_smc_ms_p95": 2.5875,
-          "smc_ms_p50": 1.6569,
-          "smc_ms_p95": 2.9972,
-          "technical_ms_p50": 0.4051,
-          "technical_ms_p95": 0.7779,
-          "total_ms_p50": 3.4682,
-          "total_ms_p95": 6.301
+          "other_pipeline_ms_p50": 0.0134,
+          "other_pipeline_ms_p95": 0.0165,
+          "post_smc_ms_p50": 1.2278,
+          "post_smc_ms_p95": 1.3193,
+          "smc_ms_p50": 1.606,
+          "smc_ms_p95": 1.6955,
+          "technical_ms_p50": 0.4054,
+          "technical_ms_p95": 0.4526,
+          "total_ms_p50": 3.2611,
+          "total_ms_p95": 3.5631
         },
         "buy_setup_v2": {
-          "other_pipeline_ms_p50": 0.0079,
-          "other_pipeline_ms_p95": 0.0173,
-          "post_smc_ms_p50": 1.4932,
-          "post_smc_ms_p95": 2.7415,
-          "smc_ms_p50": 1.526,
-          "smc_ms_p95": 2.8139,
-          "technical_ms_p50": 0.4024,
-          "technical_ms_p95": 0.752,
-          "total_ms_p50": 3.4291,
-          "total_ms_p95": 6.2389
+          "other_pipeline_ms_p50": 0.0134,
+          "other_pipeline_ms_p95": 0.0185,
+          "post_smc_ms_p50": 1.4227,
+          "post_smc_ms_p95": 1.4954,
+          "smc_ms_p50": 1.5216,
+          "smc_ms_p95": 1.6118,
+          "technical_ms_p50": 0.4095,
+          "technical_ms_p95": 0.4294,
+          "total_ms_p50": 3.3734,
+          "total_ms_p95": 3.5162
         },
         "h1_only_fvg_v2": {
-          "other_pipeline_ms_p50": 0.0077,
-          "other_pipeline_ms_p95": 0.0166,
-          "post_smc_ms_p50": 1.4859,
-          "post_smc_ms_p95": 2.6923,
-          "smc_ms_p50": 1.5362,
-          "smc_ms_p95": 2.8191,
-          "technical_ms_p50": 0.4041,
-          "technical_ms_p95": 0.7399,
-          "total_ms_p50": 3.4457,
-          "total_ms_p95": 6.1918
+          "other_pipeline_ms_p50": 0.013,
+          "other_pipeline_ms_p95": 0.0181,
+          "post_smc_ms_p50": 1.4288,
+          "post_smc_ms_p95": 1.5071,
+          "smc_ms_p50": 1.5117,
+          "smc_ms_p95": 1.6252,
+          "technical_ms_p50": 0.4057,
+          "technical_ms_p95": 0.4568,
+          "total_ms_p50": 3.3631,
+          "total_ms_p95": 3.6222
         },
         "h1_order_block_v2": {
-          "other_pipeline_ms_p50": 0.0078,
-          "other_pipeline_ms_p95": 0.0161,
-          "post_smc_ms_p50": 1.2325,
-          "post_smc_ms_p95": 2.2807,
-          "smc_ms_p50": 1.4146,
-          "smc_ms_p95": 2.5713,
-          "technical_ms_p50": 0.4052,
-          "technical_ms_p95": 0.7628,
-          "total_ms_p50": 3.0764,
-          "total_ms_p95": 5.5746
-        },
-        "mode_legacy": {
-          "other_pipeline_ms_p50": 0.0076,
-          "other_pipeline_ms_p95": 0.0164,
-          "post_smc_ms_p50": 1.4608,
-          "post_smc_ms_p95": 2.6951,
-          "smc_ms_p50": 1.561,
-          "smc_ms_p95": 2.7223,
-          "technical_ms_p50": 0.4021,
-          "technical_ms_p95": 0.7604,
-          "total_ms_p50": 3.4663,
-          "total_ms_p95": 6.1651
-        },
-        "mode_shadow": {
-          "other_pipeline_ms_p50": 0.0083,
-          "other_pipeline_ms_p95": 0.0173,
-          "post_smc_ms_p50": 1.4831,
-          "post_smc_ms_p95": 2.7388,
-          "smc_ms_p50": 1.527,
-          "smc_ms_p95": 2.8035,
-          "technical_ms_p50": 0.4064,
-          "technical_ms_p95": 0.7409,
-          "total_ms_p50": 3.4335,
-          "total_ms_p95": 6.2321
+          "other_pipeline_ms_p50": 0.0133,
+          "other_pipeline_ms_p95": 0.0146,
+          "post_smc_ms_p50": 1.2728,
+          "post_smc_ms_p95": 1.3743,
+          "smc_ms_p50": 1.4155,
+          "smc_ms_p95": 1.5372,
+          "technical_ms_p50": 0.4065,
+          "technical_ms_p95": 0.4306,
+          "total_ms_p50": 3.1215,
+          "total_ms_p95": 3.2824
         },
         "raw_empty_v2": {
-          "other_pipeline_ms_p50": 0.008,
-          "other_pipeline_ms_p95": 0.0177,
-          "post_smc_ms_p50": 0.6278,
-          "post_smc_ms_p95": 1.2052,
-          "smc_ms_p50": 1.2727,
-          "smc_ms_p95": 2.3038,
-          "technical_ms_p50": 0.4073,
-          "technical_ms_p95": 0.7206,
-          "total_ms_p50": 2.3184,
-          "total_ms_p95": 4.2458
+          "other_pipeline_ms_p50": 0.0133,
+          "other_pipeline_ms_p95": 0.0154,
+          "post_smc_ms_p50": 0.6875,
+          "post_smc_ms_p95": 0.7213,
+          "smc_ms_p50": 1.2789,
+          "smc_ms_p95": 1.3509,
+          "technical_ms_p50": 0.4036,
+          "technical_ms_p95": 0.4272,
+          "total_ms_p50": 2.3933,
+          "total_ms_p95": 2.5
         },
         "sell_setup_v2": {
-          "other_pipeline_ms_p50": 0.0078,
-          "other_pipeline_ms_p95": 0.0171,
-          "post_smc_ms_p50": 1.2553,
-          "post_smc_ms_p95": 2.3205,
-          "smc_ms_p50": 1.4065,
-          "smc_ms_p95": 2.5725,
-          "technical_ms_p50": 0.4067,
-          "technical_ms_p95": 0.7916,
-          "total_ms_p50": 3.0833,
-          "total_ms_p95": 5.5966
+          "other_pipeline_ms_p50": 0.0134,
+          "other_pipeline_ms_p95": 0.0152,
+          "post_smc_ms_p50": 1.2656,
+          "post_smc_ms_p95": 1.3491,
+          "smc_ms_p50": 1.4203,
+          "smc_ms_p95": 1.4724,
+          "technical_ms_p50": 0.4069,
+          "technical_ms_p95": 0.4525,
+          "total_ms_p50": 3.1093,
+          "total_ms_p95": 3.2596
         }
       },
-      "scan_wall_ms_p50": 26.952
+      "scan_wall_ms_p50": 19.2276
     }
   },
   "raw_empty": {
@@ -317,34 +267,6 @@
           "supply": 0
         }
       },
-      "mode_legacy": {
-        "H1": {
-          "demand": 1,
-          "fvg": 1,
-          "order_block": 2,
-          "supply": 0
-        },
-        "H4": {
-          "demand": 0,
-          "fvg": 0,
-          "order_block": 0,
-          "supply": 0
-        }
-      },
-      "mode_shadow": {
-        "H1": {
-          "demand": 1,
-          "fvg": 1,
-          "order_block": 2,
-          "supply": 0
-        },
-        "H4": {
-          "demand": 0,
-          "fvg": 0,
-          "order_block": 0,
-          "supply": 0
-        }
-      },
       "raw_empty_v2": {
         "H1": {
           "demand": 0,
@@ -379,35 +301,35 @@
     "fixtures": [
       "raw_empty_v2"
     ],
-    "rate": 0.125
+    "rate": 0.166667
   },
-  "raw_empty_smc_p50_ms": 1.2769,
+  "raw_empty_smc_p50_ms": 1.2618,
   "reasons": [
-    "RAW_EMPTY_RATE=0.1250 < MIN=0.20",
-    "SAVING_PER_RAW_EMPTY_MS=0.64 < MIN=10.0",
-    "SCAN_SAVING_PCT=0.0237 < MIN=0.08"
+    "RAW_EMPTY_RATE=0.1667 < MIN=0.20",
+    "SAVING_PER_RAW_EMPTY_MS=0.63 < MIN=10.0",
+    "SCAN_SAVING_PCT=0.0328 < MIN=0.08"
   ],
   "sensitivity": {
     "conservative": {
-      "discovery_cost_ms": 0.6384,
+      "discovery_cost_ms": 0.6309,
       "discovery_factor": 0.5,
-      "saving_per_raw_empty_ms": 0.6384,
-      "scan_saving_ms": 0.6384,
-      "scan_saving_pct": 0.023688
+      "saving_per_raw_empty_ms": 0.6309,
+      "scan_saving_ms": 0.6309,
+      "scan_saving_pct": 0.032812
     },
     "expected": {
-      "discovery_cost_ms": 0.4469,
+      "discovery_cost_ms": 0.4416,
       "discovery_factor": 0.35,
-      "saving_per_raw_empty_ms": 0.83,
-      "scan_saving_ms": 0.83,
-      "scan_saving_pct": 0.030795
+      "saving_per_raw_empty_ms": 0.8202,
+      "scan_saving_ms": 0.8202,
+      "scan_saving_pct": 0.042656
     },
     "optimistic": {
-      "discovery_cost_ms": 0.2554,
+      "discovery_cost_ms": 0.2524,
       "discovery_factor": 0.2,
-      "saving_per_raw_empty_ms": 1.0215,
-      "scan_saving_ms": 1.0215,
-      "scan_saving_pct": 0.037901
+      "saving_per_raw_empty_ms": 1.0094,
+      "scan_saving_ms": 1.0094,
+      "scan_saving_pct": 0.0525
     }
   },
   "thresholds": {
@@ -421,6 +343,6 @@
       "optimistic": 0.2
     }
   },
-  "tier1_scan_wall_ms": 26.952,
+  "tier1_scan_wall_ms": 19.2276,
   "timing_skipped_fixtures": []
 }

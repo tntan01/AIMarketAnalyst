@@ -1,5 +1,10 @@
 # Log triển khai — SMC single runtime migration
 
+> **⚠️ Tài liệu lịch sử (migration log).** Ghi lại các bước đã thực hiện để
+> đưa SMC về một runtime duy nhất. Không phải runtime contract hiện hành;
+> các tham chiếu SMC v1/v2/shadow trong file này mô tả trạng thái trước khi
+> migration hoàn tất.
+
 > Đi kèm: `docs/scanner/smc-single-runtime-migration-plan.md`
 > Bắt đầu: 2026-08-02
 

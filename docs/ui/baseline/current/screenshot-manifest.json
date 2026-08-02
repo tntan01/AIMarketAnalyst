@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-07-27T12:44:00.109229+00:00",
+  "captured_at": "2026-08-02T15:32:07.778320+00:00",
   "canvas": {
     "width": 1600,
     "height": 900
@@ -261,7 +261,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
-      "sha256": "ab8a7062cf9288d3d45a2c40798c5d60c1aa5961588122bba4011b106b1ec54f"
+      "sha256": "fd14264491caad133ef746e0a8a3f136c2ccfc58c88f348fb219558fc4d50344"
     },
     {
       "theme": "dark",
@@ -270,7 +270,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
-      "sha256": "7d2465bca3ea65f6c5516a27e83aeb8bcd8c24d57ba2f6c518f003e719aad19d"
+      "sha256": "ea8bb57d7ede27318c4eb4b4ddd2798854e036f2297a7165d38426bdec73b81c"
     },
     {
       "theme": "dark",
@@ -279,7 +279,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-rollout.png",
       "width": 1600,
       "height": 900,
-      "sha256": "77526ad6e5a6bdaa3212261e53068410d9454a8e557fb0ea83f66a846e747140"
+      "sha256": "fd2fad51fa31f3d5496f1ab0eefcaa82c5b7aa20f276bbaa07e8f742962f6df0"
     },
     {
       "theme": "dark",
@@ -288,7 +288,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
-      "sha256": "17a1a78f50b6a972e83f3182f716f1b0fe70b3c574f99c1f9ce18bb987cc4a70"
+      "sha256": "e6e4436e08fe6827d2f823a1d85a4cfce647660808c89e15b4387b4794dd1653"
     },
     {
       "theme": "dark",
@@ -297,7 +297,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
-      "sha256": "94e9514e61bc45db36aabda834d10e3b2036cfeb98fb2ebf26805af9e776cea0"
+      "sha256": "08382e55bbd15c569116a835023962dff874974f576b9022bb41e77ac8b17b14"
     },
     {
       "theme": "dark",
@@ -306,7 +306,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings.png",
       "width": 1600,
       "height": 900,
-      "sha256": "f3ee8218d44c08e111928aee2c5de585dab511e9b3da7a794c5e796fade87b21"
+      "sha256": "d0efa20a0a51ca237dc1a9e8003d6819430c1df77805320deb94080b980457a4"
     },
     {
       "theme": "dark",
@@ -621,7 +621,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
-      "sha256": "c59a43884082bb56289bfcd9948b07b967ffa300a94d26188973bfae8ebe46f9"
+      "sha256": "368e31ba17743dec1babd1e789b5c5d8d726ed434cf08f982c4f90815f7adcda"
     },
     {
       "theme": "light",
@@ -630,7 +630,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
-      "sha256": "77fed150b7981bd828bade8bc1f043f52ea70143031ef88d7be91428939c5b65"
+      "sha256": "bca2ec8e34104603a3cea18bc0affeb94f8c85bad221761f3daf89c93468089a"
     },
     {
       "theme": "light",
@@ -639,7 +639,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-3-rollout.png",
       "width": 1600,
       "height": 900,
-      "sha256": "8a84f62b194c6ebd7d9b9bee2ae1fd14d685121005df8f5b6519beacd59a8495"
+      "sha256": "fee3bd3e3c6a98be70ffe695b912e141d33fd11259df6ffb5dae59540022afe5"
     },
     {
       "theme": "light",
@@ -648,7 +648,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
-      "sha256": "ffa2c0c01231306a7bd16ce076834ccd0401bcefa154b38bc737ebdb99d8053b"
+      "sha256": "4b62bb738bf91a7c56c94c3536b8d67394785fc1cf1daf76e6e9885d701a4d59"
     },
     {
       "theme": "light",
@@ -657,7 +657,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
-      "sha256": "a6601c9c114a24fcfe0817ea05e340d7d087d54b9349112b2badf9024be35658"
+      "sha256": "5f6ec4239105a8ba2677bb6ea3b0cd423596ebd6b408e4e9431261458c0939d3"
     },
     {
       "theme": "light",
@@ -666,7 +666,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings.png",
       "width": 1600,
       "height": 900,
-      "sha256": "de7f7d04e73508f363ed8e1c92f108ce832a83c50bf42ce8540f1a43ad82246e"
+      "sha256": "a9b3fbdae6dac4405bf2b3d9e94d66b993cb5ebd3c2fae8e4e80c1364b4e0216"
     },
     {
       "theme": "light",

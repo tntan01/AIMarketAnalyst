@@ -1058,10 +1058,10 @@ Quy tắc phần Symbols:
 - `Ready/Watch/Wait` là ngưỡng live của Decision Engine và được phép chỉnh.
 - `Min Score BT/Regime BT/Hướng BT/RR tối thiểu BT` là bằng chứng do Backtest
   tạo, chỉ đọc tại Settings; muốn đổi phải chạy lại Backtest.
-- Chỉ config `VALIDATED`, đúng contract SMC-v2 và còn hạn mới cho phép tick
+- Chỉ config `VALIDATED`, đúng contract SMC và còn hạn mới cho phép tick
   **Dùng BT đã duyệt**.
 - `DRAFT/INVALID/EXPIRED` vẫn được hiển thị và lưu để kiểm tra lại sau nhưng
-  luôn inactive. Scanner của mã đó dùng SMC-v2 + `DEFAULT_RULES`.
+  luôn inactive. Scanner của mã đó dùng SMC + `DEFAULT_RULES`.
 - Dán JSON phải chạy canonical validator trước khi cho phép kích hoạt; thao tác
   dán hoặc tick không được tự nâng một bản nháp thành `VALIDATED`.
 
@@ -1193,7 +1193,8 @@ Tab Rollout là control an toàn cho Scanner V2, gồm:
 - stage: `DISABLED`, `SHADOW`, `DEMO_LIMITED`, `DEMO_FULL`, `CANARY`,
   `PRODUCTION`;
 - kill switch;
-- bật/tắt shadow comparison;
+- bật/tắt so sánh **Scanner V1/V2** (shadow comparison của Candidate Engine,
+  không liên quan đến SMC scorer);
 - allowlist symbol cho `DEMO_LIMITED`;
 - canary risk percent;
 - yêu cầu demo account và production approval;

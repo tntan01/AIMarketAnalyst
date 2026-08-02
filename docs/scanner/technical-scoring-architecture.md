@@ -1,6 +1,6 @@
 # Kiến trúc chấm điểm Scanner V2
 
-Trạng thái: **hiện hành**, cập nhật 25/07/2026.
+Trạng thái: **hiện hành**, cập nhật 02/08/2026.
 
 ## 1. Mục tiêu
 
@@ -151,8 +151,8 @@ Các nguyên tắc:
 
 Backtest config version hiện hành:
 
-- schema `v8`;
-- validation `backtest-v8-statistical-validation-v1`;
+- schema `v9`;
+- validation `backtest-v9-statistical-validation-v1`;
 - Candidate Ledger `backtest-candidate-ledger-v1` và frozen OOS replay
   `candidate-replay-v1`;
 - statistical contract `backtest-statistics-v1` và provenance

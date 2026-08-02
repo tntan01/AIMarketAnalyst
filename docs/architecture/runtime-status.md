@@ -1,6 +1,6 @@
 # Runtime Status
 
-Cập nhật: **25/07/2026 (Asia/Ho_Chi_Minh)**.
+Cập nhật: **02/08/2026 (Asia/Ho_Chi_Minh)**.
 
 Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tại. Đây không
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
@@ -16,7 +16,7 @@ phải giá trị mặc định của mã nguồn và không thay thế contract
 | Production approved | `true` |
 | Bắt buộc tài khoản demo | `false` |
 | Allowlist rollout | Rỗng; `PRODUCTION` không giới hạn symbol bằng allowlist |
-| SMC scoring mode | `v2` |
+| SMC scorer | `smc-v2` (canonical duy nhất, không có mode để chọn) |
 | Feature flags runtime | `scanner_architecture_v2=true`, `auto_trade_v2=true`; hai flag Backtest cũ không còn được runtime sử dụng |
 
 `backtest_config_v2` hoặc `backtest_engine_v2` có thể vẫn còn trong file

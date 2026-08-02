@@ -1,5 +1,11 @@
 # Kế hoạch chuyển SMC về một runtime duy nhất
 
+> **⚠️ Tài liệu lịch sử (migration runbook).** File này mô tả quá trình đưa
+> SMC về một runtime duy nhất và phản ánh trạng thái **trước** khi migration
+> hoàn tất (các khái niệm SMC v1/v2/shadow mode bên dưới chỉ để tham chiếu).
+> Không phải runtime contract hiện hành. Runtime hiện tại chỉ có
+> `core.smc_scorer.score_smc()` là scorer SMC duy nhất.
+
 > **Trạng thái:** Kế hoạch triển khai — chưa thay đổi runtime  
 > **Ngày lập:** 2026-08-01  
 > **Vai trò:** Product Owner (PO)  
