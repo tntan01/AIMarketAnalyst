@@ -12,7 +12,6 @@ from pathlib import Path
 from core.signal_engine import (
     calc_risk_condition,
     compose_scenario_score,
-    score_scenario,
 )
 from core.smc_context import extract_smc_trade_flags
 
@@ -71,52 +70,16 @@ def test_composition_reproduces_golden_v2_final_scores():
             )
 
 
-def test_composition_does_not_call_smc_quality_score(monkeypatch):
-    def _boom(*_args, **_kwargs):
-        raise AssertionError("smc_quality_score must not be called")
+def test_signal_engine_has_no_v1_scorer():
+    """Bước 13: scorer v1 và override path đã bị xóa khỏi signal_engine."""
+    import core.signal_engine as engine
 
-    monkeypatch.setattr("core.signal_engine.smc_quality_score", _boom)
+    assert not hasattr(engine, "smc_quality_score")
+    assert not hasattr(engine, "apply_smc_score_override")
+    assert not hasattr(engine, "_best_smc_zone")
+
     case = _golden()["cases"][0]
-
     composed = _compose("buy", case)
-
     assert composed["smc_quality"] == case["expected"]["sides"]["buy"][
         "smc_quality"
     ]
-
-
-def test_score_scenario_matches_composition_with_v1_quality():
-    case = _golden()["cases"][0]
-    technical = case["technical"]
-    smc = case["smc"]
-    risk_score = _risk_score(technical)
-
-    legacy = score_scenario(
-        "buy",
-        technical,
-        smc,
-        risk_score,
-        15,
-        macro_confidence=1.0,
-        market_regime=case["market_regime"],
-        correlation_adjustment=0.0,
-        macro_context={"buy": 15, "sell": 15},
-    )
-    composed = compose_scenario_score(
-        "buy",
-        technical,
-        smc_quality=legacy["smc_quality"],
-        smc_reason=legacy["smc_reason"],
-        smc_flags=legacy["smc_flags"],
-        risk_score=risk_score,
-        macro_score=15,
-        macro_confidence=1.0,
-        market_regime=case["market_regime"],
-        correlation_adjustment=0.0,
-        macro_context={"buy": 15, "sell": 15},
-    )
-
-    assert composed["signal_score"] == legacy["signal_score"]
-    assert composed["smc_quality"] == legacy["smc_quality"]
-    assert composed["penalty_codes"] == legacy["penalty_codes"]
-    assert composed["smc_score_cap"] == legacy["smc_score_cap"]

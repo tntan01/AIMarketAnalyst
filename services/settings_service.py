@@ -534,11 +534,8 @@ class SettingsService:
 
     def _load_feature_flags(self, data: dict | None) -> FeatureFlagSettings:
         data = data if isinstance(data, dict) else {}
-        smc_scoring_mode = str(
-            data.get("smc_scoring_mode", "v2") or "v2"
-        ).strip().lower()
-        if smc_scoring_mode not in {"legacy", "shadow", "v2"}:
-            smc_scoring_mode = "legacy"
+        # smc_scoring_mode trong settings JSON cũ được bỏ qua; không còn
+        # config path nào kích hoạt scorer khác ngoài SMC canonical.
         return FeatureFlagSettings(
             scanner_architecture_v2=bool(data.get("scanner_architecture_v2", False)),
             auto_trade_v2=bool(data.get("auto_trade_v2", False)),
@@ -550,7 +547,6 @@ class SettingsService:
             scanner_core_result_early=bool(
                 data.get("scanner_core_result_early", False)
             ),
-            smc_scoring_mode=smc_scoring_mode,
         )
 
     def _load_scanner_rollout(

@@ -250,7 +250,6 @@ def _time_one_run(case: dict[str, Any], *, tier1: bool) -> dict[str, Any]:
             candles,
             m15_candles=candles["M15"],
             thresholds=_CORPUS["thresholds"],
-            smc_scoring_mode=mode,
             scanner_fast_tier1=tier1,
         )
         pipeline_end = perf_counter()

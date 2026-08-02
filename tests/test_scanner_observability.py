@@ -278,6 +278,39 @@ class _Candle:
     time: datetime
 
 
+def test_new_telemetry_has_no_smc_mode_or_decision_source_keys():
+    """Bước 18: telemetry mới chỉ có SMC canonical provenance.
+
+    Event/context/payload mới không chứa smc_scoring_mode hay
+    smc_decision_source; reader vẫn chịu được event lịch sử có field cũ.
+    """
+    from core.scoring_provenance import build_scoring_provenance
+
+    provenance = build_scoring_provenance()
+    assert "smc_scoring_mode" not in provenance
+    assert "smc_decision_source" not in provenance
+
+    _row_value, context = _observed_row()
+    context_payload = context.to_dict()
+    assert "smc_scoring_mode" not in context_payload
+    assert "smc_scoring_mode" not in _row_value["observability"]
+    assert "smc_scoring_mode" not in _row_value["candidate_order_payload"]
+    assert "smc_scoring_mode" not in _row_value
+    assert "smc_decision_source" not in _row_value["observability"]
+
+    # Historical event có field cũ vẫn đọc được (reader không chọn nhánh v1).
+    historical_context = create_scan_context(
+        {"trading": {"max_risk_percent": 2}, "ai": {"api_key": "secret-a"}},
+        {
+            "symbols": ["EUR/USD"],
+            "feature_flags": {},
+            "smc_scoring_mode": "legacy",
+        },
+        now=datetime(2026, 7, 24, 8, tzinfo=timezone.utc),
+    )
+    assert historical_context.smc_scorer_version == "smc-v2"
+
+
 def test_input_timestamps_capture_last_bar_per_timeframe():
     timestamps = input_timestamps_from_candles({
         "H1": [
@@ -434,7 +467,7 @@ def test_structured_event_log_rotates_without_propagating_to_app_log(tmp_path):
     try:
         for number in range(4):
             service.emit(
-                "SMC_SHADOW_COMPARISON",
+                "SCAN_STARTED",
                 payload={"summary": "x" * 120, "number": number},
             )
     finally:
@@ -445,60 +478,6 @@ def test_structured_event_log_rotates_without_propagating_to_app_log(tmp_path):
     assert events_path.with_name("events.jsonl.1").exists()
     assert events_path.with_name("events.jsonl.2").exists()
     assert app_log_path.read_text(encoding="utf-8") == ""
-
-
-def test_smc_shadow_event_payload_is_compact_and_omits_full_zone_data():
-    recorder = _EventRecorder()
-    controller = ScannerController.__new__(ScannerController)
-    controller.observability = recorder
-    large_zone_data = {"evaluated_zones": [{"raw": "x" * 2_000}] * 10}
-    side = {
-        "smc_quality": 72,
-        "smc_reason": "reason-" + "x" * 200,
-        "signal_score": 65,
-        "scoring_version": "smc-v2",
-        "selected_zone_id": "zone-1",
-        "selected_zone_type": "fvg",
-        "selected_zone_timeframe": "H1",
-        "selected_zone_quality_score": 61,
-        "selected_zone_relevance_score": 58,
-        "selected_zone_setup_score": 64,
-        "selected_zone_score": 60,
-        "breakdown": large_zone_data,
-        **large_zone_data,
-    }
-    row = {
-        "symbol": "EUR/USD",
-        "analysis_result": {
-            "smc_scoring": {
-                "policy": {"shadow_enabled": True, "effective_mode": "v2"},
-                "shadow_status": "available",
-                "comparison": {
-                    "best_side_changed": True,
-                    "score_delta": {"buy": 2.0, "sell": -1.0},
-                },
-                "active": {"buy": side, "sell": side},
-                "shadow": {"buy": side, "sell": side},
-                "consumer_contract": {
-                    "contract_version": "smc-consumer-v1",
-                    "sides": {"buy": large_zone_data},
-                },
-            }
-        },
-    }
-
-    controller._emit_candidate_events(row, "scan-1")
-
-    event = next(
-        item
-        for item in recorder.events
-        if item["event_type"] == "SMC_SHADOW_COMPARISON"
-    )
-    encoded = json.dumps(event["payload"], ensure_ascii=False).encode("utf-8")
-    assert len(encoded) < 4 * 1024
-    assert event["severity"] == "WARNING"
-    assert "evaluated_zones" not in json.dumps(event["payload"])
-    assert event["payload"]["active"]["buy"]["selected_zone_id"] == "zone-1"
 
 
 class _EventRecorder:

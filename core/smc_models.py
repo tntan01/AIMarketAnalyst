@@ -1,8 +1,8 @@
 """Canonical immutable domain models for SMC scoring.
 
-Phase 1 introduces typed identities and compatibility adapters without changing
-legacy score semantics. Dictionaries remain at the public pipeline boundary for
-now, but every enriched SMC zone can be losslessly adapted to these models.
+Phase 1 introduces typed identities without changing legacy score semantics.
+Dictionaries remain at the public pipeline boundary for now, but every
+enriched SMC zone can be losslessly adapted to these models.
 """
 
 from __future__ import annotations
@@ -110,11 +110,6 @@ class SmcZone:
     lifecycle_mitigated: bool
     stale: bool
     broken: bool
-    legacy_test_count: int
-    legacy_mitigated: bool
-    legacy_stale: bool
-    legacy_broken: bool
-    legacy_liquidity_sweep: bool
     liquidity_sweep_linked: bool
     linked_sweep_id: str | None
     linked_sweep_kind: str | None
@@ -145,12 +140,6 @@ class SmcZone:
                 "SMC zone direction conflicts with zone type/family"
             )
 
-    @property
-    def zone_score(self) -> int:
-        """Compatibility alias used by the legacy scorer and consumers."""
-
-        return self.zone_setup_score
-
     def to_dict(self, *, include_compatibility: bool = True) -> dict[str, Any]:
         payload = asdict(self)
         payload["visits"] = [visit.to_dict() for visit in self.visits]
@@ -160,16 +149,16 @@ class SmcZone:
         payload["lifecycle_stale"] = self.stale
         payload["lifecycle_broken"] = self.broken
         if include_compatibility:
-            payload["zone_score"] = self.zone_score
-            payload["test_count"] = self.legacy_test_count
-            payload["mitigated"] = self.legacy_mitigated
-            payload["stale"] = self.legacy_stale
-            payload["broken"] = self.legacy_broken
-            payload["liquidity_sweep"] = self.legacy_liquidity_sweep
+            payload["zone_score"] = self.zone_setup_score
+            payload["test_count"] = self.independent_retest_count
+            payload["mitigated"] = self.lifecycle_mitigated
+            payload["stale"] = self.stale
+            payload["broken"] = self.broken
+            payload["liquidity_sweep"] = self.liquidity_sweep_linked
         return payload
 
     @classmethod
-    def from_legacy_dict(
+    def from_dict(
         cls,
         value: dict[str, Any],
         *,
@@ -316,40 +305,6 @@ class SmcZone:
                     payload.get("broken", False),
                 )
             ),
-            legacy_test_count=max(
-                0,
-                _int(
-                    payload.get(
-                        "legacy_test_count",
-                        payload.get("test_count", 0),
-                    ),
-                    0,
-                ),
-            ),
-            legacy_mitigated=bool(
-                payload.get(
-                    "legacy_mitigated",
-                    payload.get("mitigated", False),
-                )
-            ),
-            legacy_stale=bool(
-                payload.get(
-                    "legacy_stale",
-                    payload.get("stale", False),
-                )
-            ),
-            legacy_broken=bool(
-                payload.get(
-                    "legacy_broken",
-                    payload.get("broken", False),
-                )
-            ),
-            legacy_liquidity_sweep=bool(
-                payload.get(
-                    "legacy_liquidity_sweep",
-                    payload.get("liquidity_sweep", False),
-                )
-            ),
             liquidity_sweep_linked=bool(
                 payload.get(
                     "liquidity_sweep_linked",
@@ -456,7 +411,6 @@ class DirectionalConfluence:
     h4_h1_aligned: bool
     h1_against_h4: bool
     all_aligned: bool
-    legacy_score: int | None
     h1_relationship: str = "unknown"
     data_status: str = "insufficient"
     buy_reason_codes: tuple[str, ...] = ()
@@ -488,12 +442,10 @@ class DirectionalConfluence:
         }
         payload["h4_aligns_d1"] = self.d1_h4_aligned
         payload["h1_aligns_h4"] = self.h4_h1_aligned
-        if include_compatibility:
-            payload["confluence_score"] = self.legacy_score or 0
         return payload
 
     @classmethod
-    def from_legacy_dict(
+    def from_dict(
         cls,
         value: dict[str, Any],
     ) -> "DirectionalConfluence":
@@ -540,7 +492,6 @@ class DirectionalConfluence:
             ),
             h1_against_h4=bool(payload.get("h1_against_h4", False)),
             all_aligned=bool(payload.get("all_aligned", False)),
-            legacy_score=_optional_int(payload.get("confluence_score")),
             h1_relationship=str(
                 payload.get("h1_relationship", "unknown") or "unknown"
             ),
@@ -709,7 +660,7 @@ class SmcScoreBreakdown:
         return payload
 
     @classmethod
-    def from_legacy_score(
+    def from_score(
         cls,
         side: str,
         score: object,
@@ -724,37 +675,6 @@ class SmcScoreBreakdown:
             selected_zone_id=_optional_text(selected_zone_id),
             reason_codes=(reason_text,) if reason_text else (),
         )
-
-
-def adapt_legacy_zone_payload(
-    value: dict[str, Any],
-    *,
-    symbol: object = "",
-    timeframe: object = "",
-    family: object = "",
-    direction: object = "",
-) -> dict[str, Any]:
-    """Return a compatibility dict enriched by the canonical zone contract."""
-
-    model = SmcZone.from_legacy_dict(
-        value,
-        symbol=symbol,
-        timeframe=timeframe,
-        family=family,
-        direction=direction,
-    )
-    result = dict(value)
-    result.update(model.to_dict(include_compatibility=True))
-    return result
-
-
-def adapt_legacy_confluence_payload(
-    value: dict[str, Any],
-) -> dict[str, Any]:
-    model = DirectionalConfluence.from_legacy_dict(value)
-    result = dict(value)
-    result.update(model.to_dict(include_compatibility=True))
-    return result
 
 
 def _normalize_symbol(value: object) -> str:

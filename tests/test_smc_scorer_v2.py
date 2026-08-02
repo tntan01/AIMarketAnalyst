@@ -217,7 +217,7 @@ def _evaluated(
     distance: float,
     age: int,
 ) -> EvaluatedSmcZone:
-    model = SmcZone.from_legacy_dict(
+    model = SmcZone.from_dict(
         _zone("buy", zone_id=zone_id, age_bars=age),
         symbol="TEST",
         timeframe="H4",

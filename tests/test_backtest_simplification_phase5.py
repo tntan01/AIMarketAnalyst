@@ -61,7 +61,7 @@ def test_obsolete_backtest_flags_are_read_compatible_but_not_rewritten(
     symbol = settings.trading.symbol_settings["EUR/USD"]
     assert settings.features.scanner_architecture_v2 is True
     assert settings.features.auto_trade_v2 is True
-    assert settings.features.smc_scoring_mode == "v2"
+    assert not hasattr(settings.features, "smc_scoring_mode")
     assert not hasattr(settings.features, "backtest_config_v2")
     assert not hasattr(settings.features, "backtest_engine_v2")
     assert symbol.min_score == 77

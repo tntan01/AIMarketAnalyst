@@ -11,7 +11,6 @@ from core.risk_engine import _smc_zones_to_levels
 from core.smc_context import (
     enrich_zones,
     extract_smc_trade_flags,
-    get_preferred_zone,
 )
 from core.smc_models import (
     SMC_DOMAIN_VERSION,
@@ -20,8 +19,6 @@ from core.smc_models import (
     SmcScoreBreakdown,
     SmcZone,
     ZoneVisit,
-    adapt_legacy_confluence_payload,
-    adapt_legacy_zone_payload,
     build_zone_id,
 )
 from core.smc_versions import SMC_RAW_ZONE_VERSION
@@ -78,14 +75,14 @@ def test_zone_id_is_deterministic_and_normalizes_symbol():
     assert changed != first
 
 
-def test_legacy_zone_adapter_adds_contract_without_changing_score():
-    adapted = adapt_legacy_zone_payload(
+def test_zone_dict_exposes_canonical_contract():
+    adapted = SmcZone.from_dict(
         _legacy_zone(),
         symbol="EUR/USD",
         timeframe="H4",
         family="order_block",
         direction="buy",
-    )
+    ).to_dict()
 
     assert adapted["zone_id"].startswith("smcz-")
     assert adapted["symbol"] == "EURUSD"
@@ -114,17 +111,17 @@ def test_zone_model_round_trip_is_stable_and_immutable():
         zone_quality_score=78,
         zone_setup_score=78,
     )
-    first = SmcZone.from_legacy_dict(
+    first = SmcZone.from_dict(
         payload,
         symbol="EUR/USD",
         timeframe="H4",
         family="order_block",
         direction="buy",
     )
-    second = SmcZone.from_legacy_dict(first.to_dict())
+    second = SmcZone.from_dict(first.to_dict())
 
     assert first == second
-    assert first.zone_score == 78
+    assert first.zone_setup_score == 78
     assert first.visits == (visit,)
     with pytest.raises((AttributeError, TypeError)):
         first.zone_setup_score = 99
@@ -132,7 +129,7 @@ def test_zone_model_round_trip_is_stable_and_immutable():
 
 def test_model_rejects_direction_conflicting_with_zone_type():
     with pytest.raises(ValueError):
-        SmcZone.from_legacy_dict(
+        SmcZone.from_dict(
             _legacy_zone(),
             symbol="EUR/USD",
             timeframe="H4",
@@ -142,7 +139,7 @@ def test_model_rejects_direction_conflicting_with_zone_type():
 
 
 def test_selected_zone_keeps_compatibility_aliases():
-    zone = SmcZone.from_legacy_dict(
+    zone = SmcZone.from_dict(
         _legacy_zone(),
         symbol="EUR/USD",
         timeframe="H4",
@@ -159,7 +156,7 @@ def test_selected_zone_keeps_compatibility_aliases():
     assert payload["source"] == "smc_selected"
 
 
-def test_directional_confluence_adapter_preserves_legacy_contract():
+def test_directional_confluence_from_dict_preserves_contract():
     legacy = {
         "h1_aligns_h4": True,
         "h4_aligns_d1": True,
@@ -167,19 +164,18 @@ def test_directional_confluence_adapter_preserves_legacy_contract():
         "all_aligned": True,
         "confluence_score": 5,
     }
-    adapted = adapt_legacy_confluence_payload(legacy)
-    model = DirectionalConfluence.from_legacy_dict(adapted)
+    model = DirectionalConfluence.from_dict(legacy)
 
-    assert adapted["confluence_score"] == 5
-    assert adapted["direction"] == "unknown"
-    assert adapted["buy_score"] is None
-    assert adapted["sell_score"] is None
-    assert model.legacy_score == 5
     assert model.all_aligned is True
+    assert model.direction == "unknown"
+    assert model.buy_score is None
+    assert model.sell_score is None
+    assert not hasattr(model, "legacy_score")
+    assert "confluence_score" not in model.to_dict()
 
 
-def test_legacy_score_breakdown_is_typed_and_bounded():
-    breakdown = SmcScoreBreakdown.from_legacy_score(
+def test_score_breakdown_is_typed_and_bounded():
+    breakdown = SmcScoreBreakdown.from_score(
         "buy",
         18,
         selected_zone_id="smcz-example",
@@ -206,7 +202,7 @@ def _candles(count: int) -> list[Candle]:
     ]
 
 
-def test_enriched_zone_identity_reaches_selection_flags_and_risk_adapter():
+def test_enriched_zone_identity_reaches_structural_flags_and_risk_adapter():
     zone = {
         "type": "demand_zone",
         "low": 1.0950,
@@ -237,14 +233,14 @@ def test_enriched_zone_identity_reaches_selection_flags_and_risk_adapter():
         "H1": {},
     }
 
-    preferred = get_preferred_zone(context, "buy", price=1.1000)
     flags = extract_smc_trade_flags(context, "buy")
     levels = _smc_zones_to_levels([enriched])
 
-    assert preferred is not None
-    assert preferred["zone_id"] == enriched["zone_id"]
-    assert flags["selected_zone_id"] == enriched["zone_id"]
-    assert flags["selected_zone_quality_score"] == enriched["zone_score"]
-    assert flags["selected_zone_setup_score"] == enriched["zone_score"]
+    # Bước 14: extract_smc_trade_flags chỉ trả structural flags; selected zone
+    # chỉ đến từ SMC result/consumer canonical.
+    assert "selected_zone_id" not in flags
+    assert flags["displacement_aligned"] is False
+    assert flags["choch_against_direction"] is False
+    assert flags["liquidity_sweep_aligned"] is False
     assert levels[0]["zone_id"] == enriched["zone_id"]
     assert levels[0]["zone_setup_score"] == enriched["zone_score"]

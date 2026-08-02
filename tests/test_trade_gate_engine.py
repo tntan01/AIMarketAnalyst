@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from core.trade_gate_engine import check_trade_gates
-from core.reason_codes import EXPECTED_RR_TOO_LOW
+from core.reason_codes import EXPECTED_RR_TOO_LOW, ZONE_RELEVANCE_LOW
 
 
 # ---------------------------------------------------------------------------
@@ -174,3 +174,51 @@ class TestGateContextFields:
         result = check_trade_gates(ctx)
         # Gate should not modify these context fields
         assert result["allowed"] is True
+
+
+class TestZoneRelevanceFailClosed:
+    """Bước 14: canonical zone thiếu relevance bắt buộc → fail-closed.
+
+    Legacy smc-v1 zone (không có zone_scoring_version="smc-v2") vẫn được
+    bỏ qua theo historical reader; zone canonical phải chịu WATCH_ONLY.
+    """
+
+    def test_canonical_zone_missing_relevance_fails_closed(self):
+        ctx = _base_context(
+            zone_id="smcz-canonical",
+            zone_scoring_version="smc-v2",
+            zone_relevance_score=None,
+            expected_effective_rr_for_gate=1.5,
+            expected_effective_rr_source="base",
+            min_expected_effective_rr=1.3,
+        )
+        result = check_trade_gates(ctx)
+        assert ZONE_RELEVANCE_LOW in result["warning_codes"]
+        assert result["decision_cap"] == "WATCH_ONLY"
+        assert any("thiếu điểm liên quan" in reason for reason in result["reasons"])
+
+    def test_legacy_zone_missing_relevance_stays_historical(self):
+        ctx = _base_context(
+            zone_id="smcz-legacy",
+            zone_scoring_version="smc-v1",
+            zone_relevance_score=None,
+            expected_effective_rr_for_gate=1.5,
+            expected_effective_rr_source="base",
+            min_expected_effective_rr=1.3,
+        )
+        result = check_trade_gates(ctx)
+        assert ZONE_RELEVANCE_LOW not in result["warning_codes"]
+        assert result["decision_cap"] is None
+
+    def test_low_relevance_still_caps_watch_only(self):
+        ctx = _base_context(
+            zone_id="smcz-canonical",
+            zone_scoring_version="smc-v2",
+            zone_relevance_score=35,
+            expected_effective_rr_for_gate=1.5,
+            expected_effective_rr_source="base",
+            min_expected_effective_rr=1.3,
+        )
+        result = check_trade_gates(ctx)
+        assert ZONE_RELEVANCE_LOW in result["warning_codes"]
+        assert result["decision_cap"] == "WATCH_ONLY"

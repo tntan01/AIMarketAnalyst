@@ -174,7 +174,6 @@ class FeatureFlagSettings:
     scanner_mt5_history_cache: bool = False
     # Phase 3: emit core result to the UI before Telegram/persistence run.
     scanner_core_result_early: bool = False
-    smc_scoring_mode: str = "v2"
 
 
 @dataclass(slots=True)

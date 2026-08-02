@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from math import isfinite
 from typing import Any
 
 from core.indicators import atr
@@ -10,10 +9,7 @@ from core.smc_confluence import build_directional_confluence
 from core.smc_lifecycle import analyze_zone_lifecycle
 from core.smc_models import (
     SMC_DOMAIN_VERSION,
-    SelectedSmcZone,
     SmcZone,
-    adapt_legacy_confluence_payload,
-    adapt_legacy_zone_payload,
     build_zone_id,
 )
 from core.smc_sweep_linking import (
@@ -63,8 +59,6 @@ _EFFECTIVE_ZONE_LIQUIDITY_SWEEP_BONUS = 10
 _EFFECTIVE_ZONE_LOCATION_CORRECT_BONUS = 12
 _EFFECTIVE_ZONE_LOCATION_EQUILIBRIUM_BONUS = 4
 _EFFECTIVE_ZONE_LOCATION_WRONG_PENALTY = 8
-_EFFECTIVE_ZONE_PREFERRED_MIN_SCORE = 50
-_EFFECTIVE_ZONE_HIGH_TEST_COUNT = 5
 
 _DIRECTIONAL_ZONE_TYPES = {
     "buy": frozenset(
@@ -106,54 +100,6 @@ _ZONE_PD_EQUILIBRIUM_BONUS = 4
 _ZONE_PD_WRONG_PENALTY = 8
 
 
-def _cross_validate_structure(d1_smc: dict[str, Any], h4_smc: dict[str, Any], h1_smc: dict[str, Any]) -> dict[str, Any]:
-    """Cross-validate structure alignment across D1, H4, H1 timeframes.
-
-    Returns confluence dict with alignment flags and a confluence_score (0-5).
-    """
-    d1_struct = str(d1_smc.get("structure", "unknown"))
-    h4_struct = str(h4_smc.get("structure", "unknown"))
-    h4_up = h4_struct == "HH/HL"
-    h4_down = h4_struct == "LH/LL"
-    d1_up = d1_struct == "HH/HL"
-    d1_down = d1_struct == "LH/LL"
-
-    h1_aligns_h4 = False
-    h1_against_h4 = False
-    if h4_up and h1_smc.get("structure") == "HH/HL":
-        h1_aligns_h4 = True
-    elif h4_down and h1_smc.get("structure") == "LH/LL":
-        h1_aligns_h4 = True
-    if h4_up and h1_smc.get("structure") == "LH/LL":
-        h1_against_h4 = True
-    elif h4_down and h1_smc.get("structure") == "HH/HL":
-        h1_against_h4 = True
-
-    h4_aligns_d1 = False
-    if d1_up and h4_up:
-        h4_aligns_d1 = True
-    elif d1_down and h4_down:
-        h4_aligns_d1 = True
-
-    score = 0
-    if h1_aligns_h4:
-        score += 2
-    if h4_aligns_d1:
-        score += 2
-    if h1_aligns_h4 and h4_aligns_d1:
-        score += 1
-    if h1_against_h4:
-        score -= 3
-
-    return {
-        "h1_aligns_h4": h1_aligns_h4,
-        "h4_aligns_d1": h4_aligns_d1,
-        "h1_against_h4": h1_against_h4,
-        "all_aligned": h1_aligns_h4 and h4_aligns_d1,
-        "confluence_score": max(-3, min(5, score)),
-    }
-
-
 def build_smc_context(
     d1: list[Candle], h4: list[Candle], h1: list[Candle],
     *, scan_interval_min: int = 15, symbol: str = "",
@@ -179,22 +125,12 @@ def build_smc_context(
         symbol=symbol,
         timeframe="H1",
     )
-    legacy_confluence = _cross_validate_structure(
-        d1_smc,
-        h4_smc,
-        h1_smc,
-    )
     directional_confluence = build_directional_confluence(
         d1_smc,
         h4_smc,
         h1_smc,
-        legacy_score=int(
-            legacy_confluence.get("confluence_score", 0) or 0
-        ),
     )
-    confluence = adapt_legacy_confluence_payload(
-        directional_confluence.to_dict(include_compatibility=True)
-    )
+    confluence = directional_confluence.to_dict()
     return {
         "domain_version": SMC_DOMAIN_VERSION,
         "symbol": symbol,
@@ -942,13 +878,13 @@ def enrich_zones(
         low = float(item.get("low", 0.0))
         high = float(item.get("high", 0.0))
         side = zone_side(item, family)
-        legacy_test_count = count_zone_tests(future, low, high)
-        legacy_broken = zone_broken(future, low, high, side)
-        legacy_mitigated = legacy_test_count > 0
+        test_count = count_zone_tests(future, low, high)
+        zone_broken_flag = zone_broken(future, low, high, side)
+        mitigated = test_count > 0
         freshness_bars = max(0, len(candles) - 1 - index)
-        legacy_stale = freshness_bars > stale_threshold
+        stale = freshness_bars > stale_threshold
         zone_location = zone_premium_discount(low, high, premium_discount_range)
-        legacy_liquidity_sweep = (
+        liquidity_sweep = (
             bool(item.get("liquidity_sweep"))
             or _legacy_timeframe_has_sweep(side, liquidity_sweeps)
         )
@@ -981,35 +917,23 @@ def enrich_zones(
                 "origin_index": index,
                 "origin_time": origin_time,
                 "freshness_bars": freshness_bars,
-                "stale": legacy_stale,
-                "mitigated": legacy_mitigated,
-                "broken": legacy_broken,
-                "test_count": legacy_test_count,
-                "legacy_stale": legacy_stale,
-                "legacy_mitigated": legacy_mitigated,
-                "legacy_broken": legacy_broken,
-                "legacy_test_count": legacy_test_count,
-                "liquidity_sweep": legacy_liquidity_sweep,
-                "legacy_liquidity_sweep": legacy_liquidity_sweep,
+                "stale": stale,
+                "mitigated": mitigated,
+                "broken": zone_broken_flag,
+                "test_count": test_count,
+                "liquidity_sweep": liquidity_sweep,
                 "zone_location": zone_location,
             }
         )
         item.update(lifecycle.to_dict())
-        legacy_zone_score = zone_quality_score(item, side)
+        zone_quality = zone_quality_score(item, side)
         item.update({
-            "zone_quality_score": legacy_zone_score,
+            "zone_quality_score": zone_quality,
             "zone_relevance_score": None,
-            "zone_setup_score": legacy_zone_score,
-            "zone_score": legacy_zone_score,
+            "zone_setup_score": zone_quality,
+            "zone_score": zone_quality,
         })
-        item["strength"] = score_to_strength(legacy_zone_score)
-        item = adapt_legacy_zone_payload(
-            item,
-            symbol=symbol,
-            timeframe=timeframe or str(tf_minutes),
-            family=family,
-            direction=side,
-        )
+        item["strength"] = score_to_strength(zone_quality)
         enriched.append(item)
     return sorted(enriched, key=lambda zone: zone.get("zone_score", 0), reverse=True)
 
@@ -1268,247 +1192,15 @@ def swept_recent_high(candle: Candle, previous: list[Candle]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _find_best_zone_for_direction(tf: dict[str, Any], direction: str) -> dict[str, Any] | None:
-    """Tim zone SMC co zone_score cao nhat phu hop voi huong giao dich."""
-    if not isinstance(tf, dict):
-        return None
-
-    if direction == "buy":
-        zone_keys = ["demand_zones", "order_blocks", "fvg"]
-    else:
-        zone_keys = ["supply_zones", "order_blocks", "fvg"]
-
-    candidates: list[dict[str, Any]] = []
-    for key in zone_keys:
-        zones = tf.get(key, [])
-        if not isinstance(zones, list):
-            continue
-        for zone in zones:
-            if not isinstance(zone, dict) or zone.get("broken"):
-                continue
-            if not zone_matches_direction(zone, direction):
-                continue
-            candidates.append(zone)
-
-    if not candidates:
-        return None
-    return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
-
-
-def get_preferred_zone(
-    smc_context: dict[str, Any] | None,
-    direction: str,
-    price: float | None = None,
-    atr_value: float | int | None = None,
-) -> dict[str, Any] | None:
-    """Select an SMC zone by effective quality with deterministic tie-breaks.
-
-    Zones below the preferred threshold, or stale zones consumed by at least
-    five tests, remain available only as WATCH_ONLY structural fallbacks.
-    """
-    if not isinstance(smc_context, dict):
-        return None
-    h4 = smc_context.get("H4", {})
-    if not isinstance(h4, dict):
-        return None
-    normalized_direction = str(direction or "").strip().lower()
-    if normalized_direction not in {"buy", "sell"}:
-        return None
-
-    try:
-        price_value = float(price) if price is not None else None
-        if price_value is not None and not isfinite(price_value):
-            price_value = None
-    except (TypeError, ValueError):
-        price_value = None
-    try:
-        atr = float(atr_value) if atr_value is not None else None
-        if atr is not None and (not isfinite(atr) or atr <= 0):
-            atr = None
-    except (TypeError, ValueError):
-        atr = None
-
-    if normalized_direction == "buy":
-        zone_keys = ["demand_zones", "order_blocks", "fvg"]
-    else:
-        zone_keys = ["supply_zones", "order_blocks", "fvg"]
-
-    candidates: list[dict[str, Any]] = []
-    for key in zone_keys:
-        zones = h4.get(key, [])
-        if not isinstance(zones, list):
-            continue
-        for zone in zones:
-            if not isinstance(zone, dict) or zone.get("broken"):
-                continue
-            if not zone_matches_direction(zone, normalized_direction):
-                continue
-            try:
-                low = float(zone.get("low"))
-                high = float(zone.get("high"))
-            except (TypeError, ValueError):
-                continue
-            if not all(isfinite(value) for value in (low, high)) or high <= low:
-                continue
-            level = (low + high) / 2
-            if price_value is not None:
-                on_correct_side = (
-                    normalized_direction == "buy" and level < price_value
-                ) or (
-                    normalized_direction == "sell" and level > price_value
-                )
-                if not on_correct_side:
-                    continue
-
-            effective = calculate_effective_zone_score(
-                zone,
-                normalized_direction,
-                atr,
-            )
-            breakdown = effective["effective_zone_score_breakdown"]
-            try:
-                freshness = max(
-                    0,
-                    int(zone.get("freshness_bars", 999999) or 999999),
-                )
-            except (TypeError, ValueError):
-                freshness = 999999
-            try:
-                test_count = max(
-                    0,
-                    int(zone.get("test_count", 0) or 0),
-                )
-            except (TypeError, ValueError):
-                test_count = 0
-            distance = (
-                abs(price_value - level)
-                if price_value is not None
-                else float("inf")
-            )
-            width_atr = breakdown.get("source_zone_width_atr")
-            width_sort = (
-                float(width_atr)
-                if isinstance(width_atr, (int, float))
-                else float("inf")
-            )
-            candidate = dict(zone)
-            candidate.update(
-                {
-                    "_selection_low": low,
-                    "_selection_high": high,
-                    "_selection_level": level,
-                    "_selection_freshness": freshness,
-                    "_selection_test_count": test_count,
-                    "_selection_distance": distance,
-                    "_selection_width_atr": width_sort,
-                    **effective,
-                }
-            )
-            candidates.append(candidate)
-
-    if not candidates:
-        return None
-
-    def _sort_key(
-        item: dict[str, Any],
-    ) -> tuple[float, int, float, float, float, float]:
-        return (
-            -float(item["effective_zone_score"]),
-            int(item["_selection_freshness"]),
-            float(item["_selection_distance"]),
-            float(item["_selection_width_atr"]),
-            float(item["_selection_low"]),
-            float(item["_selection_high"]),
-        )
-
-    candidates.sort(key=_sort_key)
-    preferred_candidates = [
-        item
-        for item in candidates
-        if item["effective_zone_score"] >= _EFFECTIVE_ZONE_PREFERRED_MIN_SCORE
-        and not (
-            item.get("stale")
-            and int(item["_selection_test_count"])
-            >= _EFFECTIVE_ZONE_HIGH_TEST_COUNT
-        )
-    ]
-    watch_only_fallback = not preferred_candidates
-    zone = preferred_candidates[0] if preferred_candidates else candidates[0]
-    low = float(zone["_selection_low"])
-    high = float(zone["_selection_high"])
-    level = float(zone["_selection_level"])
-    if watch_only_fallback:
-        if (
-            zone.get("stale")
-            and int(zone["_selection_test_count"])
-            >= _EFFECTIVE_ZONE_HIGH_TEST_COUNT
-        ):
-            selection_reason = "stale_high_test_count"
-        else:
-            selection_reason = "effective_score_below_preferred"
-    else:
-        selection_reason = "effective_score_eligible"
-
-    # Fallback: use the highest-scored zone regardless of position
-    if zone is None:
-        zone = candidates[0]
-
-    low = zone.get("low")
-    high = zone.get("high")
-    if low is None or high is None:
-        return None
-    try:
-        zone_model = SmcZone.from_legacy_dict(
-            zone,
-            symbol=smc_context.get("symbol", ""),
-            timeframe="H4",
-            direction=direction,
-        )
-        selected = SelectedSmcZone.from_zone(zone_model).to_dict(
-            include_compatibility=True
-        )
-        selected.update({
-            "effective_zone_score": zone["effective_zone_score"],
-            "effective_zone_score_breakdown": zone[
-                "effective_zone_score_breakdown"
-            ],
-            "selection_status": (
-                "watch_only_fallback"
-                if watch_only_fallback
-                else "preferred"
-            ),
-            "selection_reason": selection_reason,
-            "watch_only_fallback": watch_only_fallback,
-            "selection_distance": (
-                round(float(zone["_selection_distance"]), 8)
-                if price_value is not None
-                else None
-            ),
-            "source_zone_width_atr": zone[
-                "effective_zone_score_breakdown"
-            ].get("source_zone_width_atr"),
-            "strength": zone.get("strength"),
-            "stale": zone.get("stale"),
-            "mitigated": zone.get("mitigated"),
-            "broken": zone.get("broken"),
-            "test_count": zone.get("test_count"),
-            "freshness_bars": zone.get("freshness_bars"),
-            "displacement_multiple": zone.get(
-                "displacement_multiple"
-            ),
-            "liquidity_sweep": zone.get("liquidity_sweep"),
-            "zone_location": zone.get("zone_location"),
-        })
-        return selected
-    except (TypeError, ValueError):
-        return None
-
-
 def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) -> dict[str, Any]:
     """Trich xuat cac flag SMC an toan cho trade gate.
 
     Tra ve dict cac flag doc tu SMC context, khong crash neu thieu du lieu.
     Dung H4 lam timeframe chinh cho structural signals, H1 cho liquidity.
+
+    Chi tra ve structural flags (CHOCH, displacement, sweep). Selected zone
+    khong duoc chon o day — selected zone luon den tu SMC result/consumer
+    canonical.
 
     Parameters
     ----------
@@ -1521,36 +1213,16 @@ def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) 
     -------
     dict
         {
-            "zone_broken": bool,
             "choch_against_direction": bool,
             "liquidity_sweep_aligned": bool,
             "displacement_aligned": bool,
-            "has_selected_zone": bool,
-            "selected_zone_id": str | None,
-            "selected_zone_type": str | None,
-            "selected_zone_score": int | None,
             "raw": dict,
         }
     """
     result: dict[str, Any] = {
-        "zone_broken": False,
         "choch_against_direction": False,
         "liquidity_sweep_aligned": False,
         "displacement_aligned": False,
-        "has_selected_zone": False,
-        "selected_zone_id": None,
-        "selected_zone_type": None,
-        "selected_zone_score": None,
-        "selected_zone_quality_score": None,
-        "selected_zone_relevance_score": None,
-        "selected_zone_setup_score": None,
-        "selected_zone_timeframe": None,
-        "selected_zone_family": None,
-        "selected_zone_scoring_version": None,
-        "selected_zone_liquidity_sweep_linked": False,
-        "selected_zone_linked_sweep_id": None,
-        "selected_zone_linked_sweep_distance_atr": None,
-        "selected_zone_linked_sweep_time_delta": None,
         "raw": {},
     }
 
@@ -1586,83 +1258,6 @@ def extract_smc_trade_flags(smc_context: dict[str, Any] | None, direction: str) 
     expected_disp = "bullish" if direction == "buy" else "bearish"
     if h4.get("displacement") == expected_disp:
         result["displacement_aligned"] = True
-
-    # --- Selected zone ---
-    zone = _find_best_zone_for_direction(h4, direction)
-    if zone:
-        try:
-            zone_model = SmcZone.from_legacy_dict(
-                zone,
-                symbol=smc_context.get("symbol", ""),
-                timeframe="H4",
-                direction=direction,
-            )
-        except (TypeError, ValueError):
-            zone_model = None
-        result["has_selected_zone"] = True
-        result["selected_zone_id"] = (
-            zone_model.zone_id if zone_model is not None else zone.get("zone_id")
-        )
-        result["selected_zone_type"] = (
-            zone_model.zone_type if zone_model is not None else zone.get("type")
-        )
-        result["selected_zone_score"] = (
-            zone_model.zone_score
-            if zone_model is not None
-            else zone.get("zone_score")
-        )
-        result["selected_zone_quality_score"] = (
-            zone_model.zone_quality_score
-            if zone_model is not None
-            else zone.get("zone_quality_score", zone.get("zone_score"))
-        )
-        result["selected_zone_relevance_score"] = (
-            zone_model.zone_relevance_score
-            if zone_model is not None
-            else zone.get("zone_relevance_score")
-        )
-        result["selected_zone_setup_score"] = (
-            zone_model.zone_setup_score
-            if zone_model is not None
-            else zone.get("zone_setup_score", zone.get("zone_score"))
-        )
-        result["selected_zone_timeframe"] = (
-            zone_model.timeframe
-            if zone_model is not None
-            else zone.get("timeframe", "H4")
-        )
-        result["selected_zone_family"] = (
-            zone_model.family
-            if zone_model is not None
-            else zone.get("family")
-        )
-        result["selected_zone_scoring_version"] = (
-            zone_model.scoring_version
-            if zone_model is not None
-            else zone.get("scoring_version")
-        )
-        result["selected_zone_liquidity_sweep_linked"] = (
-            zone_model.liquidity_sweep_linked
-            if zone_model is not None
-            else bool(zone.get("liquidity_sweep_linked"))
-        )
-        result["selected_zone_linked_sweep_id"] = (
-            zone_model.linked_sweep_id
-            if zone_model is not None
-            else zone.get("linked_sweep_id")
-        )
-        result["selected_zone_linked_sweep_distance_atr"] = (
-            zone_model.linked_sweep_distance_atr
-            if zone_model is not None
-            else zone.get("linked_sweep_distance_atr")
-        )
-        result["selected_zone_linked_sweep_time_delta"] = (
-            zone_model.linked_sweep_time_delta
-            if zone_model is not None
-            else zone.get("linked_sweep_time_delta")
-        )
-        if zone.get("broken"):
-            result["zone_broken"] = True
 
     # --- Raw snapshot ---
     result["raw"] = {

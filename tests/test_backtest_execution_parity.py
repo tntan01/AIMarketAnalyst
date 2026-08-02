@@ -293,3 +293,37 @@ def test_controller_maps_settings_to_execution_parity_request() -> None:
     assert request.maximum_lot == 3.0
     assert request.spread_price == pytest.approx(0.0002)
     assert request.commission_per_lot_round_turn == 7.0
+
+
+def test_backtest_blocks_trade_on_scorer_error_analysis() -> None:
+    """Bước 22: analysis bị SMC scorer error (structural reject SMC_SCORING_ERROR)
+    không thể tạo trade — backtest fail-closed cùng contract live."""
+    request = _request()
+    analysis = {
+        "decision_engine": {"decision": "STAND_ASIDE", "legacy_action": "stand_aside"},
+        "scenario_scores": {
+            "buy": {"signal_score": 0},
+            "sell": {"signal_score": 0},
+        },
+        "trade_permission": {"status": "blocked", "reason_code": "SMC_SCORING_ERROR"},
+        "scenarios": [{
+            "type": "stand_aside",
+            "priority": "primary",
+            "entry_status": "no_setup",
+            "reason_code": "SMC_SCORING_ERROR",
+        }],
+        "market_regime": {"primary": "unknown"},
+    }
+    scenario = analysis["scenarios"][0]
+    candle = _candle(
+        datetime(2026, 1, 5, 9, tzinfo=UTC),
+        1.10, 1.11, 1.09, 1.105,
+    )
+    trade = simulate_trade_from_analysis(
+        request=request,
+        analysis=analysis,
+        scenario=scenario,
+        entry_candle=candle,
+        future_candles=[candle],
+    )
+    assert trade is None

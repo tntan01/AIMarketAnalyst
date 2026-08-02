@@ -13,7 +13,6 @@ from core.smc_context import (
     detect_liquidity_sweeps,
     enrich_zones,
     extract_smc_trade_flags,
-    get_preferred_zone,
 )
 from core.smc_models import SmcZone
 from core.smc_sweep_linking import (
@@ -330,7 +329,7 @@ def test_enrichment_preserves_legacy_broadcast_but_canonical_link_is_explicit():
     )[0]
 
     assert result["liquidity_sweep"] is True
-    assert result["legacy_liquidity_sweep"] is True
+    assert "legacy_liquidity_sweep" not in result
     assert result["liquidity_sweep_linked"] is False
     assert result["linked_sweep_id"] is None
     assert result["sweep_link_version"] == SMC_SWEEP_LINK_VERSION
@@ -347,7 +346,6 @@ def test_link_metadata_survives_zone_model_round_trip():
         "time": "2026-07-01T10:00:00+00:00",
         "zone_score": 70,
         "liquidity_sweep": True,
-        "legacy_liquidity_sweep": True,
         "liquidity_sweep_linked": True,
         "linked_sweep_id": "smcs-example",
         "linked_sweep_kind": "swept_low",
@@ -357,18 +355,18 @@ def test_link_metadata_survives_zone_model_round_trip():
         "linked_sweep_distance_atr": 0.2,
         "linked_sweep_time_delta": 1,
     }
-    first = SmcZone.from_legacy_dict(
+    first = SmcZone.from_dict(
         payload,
         symbol="EUR/USD",
         timeframe="H1",
     )
-    second = SmcZone.from_legacy_dict(first.to_dict())
+    second = SmcZone.from_dict(first.to_dict())
 
     assert first == second
     assert first.liquidity_sweep_linked is True
     assert first.linked_sweep_id == "smcs-example"
     assert first.linked_sweep_distance_atr == pytest.approx(0.2)
-    assert first.legacy_liquidity_sweep is True
+    assert not hasattr(first, "legacy_liquidity_sweep")
 
     adapted = first.to_dict()
     context = {
@@ -376,14 +374,12 @@ def test_link_metadata_survives_zone_model_round_trip():
         "H4": {"demand_zones": [adapted]},
         "H1": {},
     }
-    selected = get_preferred_zone(context, "buy", price=120)
     flags = extract_smc_trade_flags(context, "buy")
     levels = _smc_zones_to_levels([adapted])
 
-    assert selected is not None
-    assert selected["linked_sweep_id"] == "smcs-example"
-    assert selected["liquidity_sweep_linked"] is True
-    assert flags["selected_zone_linked_sweep_id"] == "smcs-example"
-    assert flags["selected_zone_liquidity_sweep_linked"] is True
+    # Bước 14: flags chỉ mang structural signals; linked sweep của selected
+    # zone đi qua consumer canonical (levels là risk adapter).
+    assert "selected_zone_linked_sweep_id" not in flags
+    assert flags["liquidity_sweep_aligned"] is False
     assert levels[0]["linked_sweep_id"] == "smcs-example"
     assert levels[0]["linked_sweep_distance_atr"] == pytest.approx(0.2)

@@ -198,6 +198,18 @@ def _gate_zone_relevance(
     if relevance is None:
         # Legacy smc-v1 zones have no relevance semantic.  They remain
         # explicitly versioned and are not interpreted as a v2 score.
+        if context.get("zone_scoring_version") != "smc-v2":
+            return
+        # A canonical selected zone MUST carry relevance.  Missing relevance
+        # on a canonical zone is fail-closed, not skipped.
+        append_code(result["warning_codes"], ZONE_RELEVANCE_LOW)
+        result["decision_cap"] = _resolve_cap(
+            result["decision_cap"],
+            "WATCH_ONLY",
+        )
+        result["reasons"].append(
+            "Vùng giá canonical thiếu điểm liên quan (relevance) bắt buộc."
+        )
         return
     try:
         numeric_relevance = float(relevance)

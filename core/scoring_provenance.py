@@ -30,8 +30,6 @@ def build_scoring_provenance() -> dict[str, Any]:
         "scanner_feature_version": SCANNER_FEATURE_VERSION,
         "smc_scorer_version": SMC_SCORER_VERSION,
         "smc_domain_version": SMC_DOMAIN_VERSION,
-        "smc_scoring_mode": "v2",
-        "smc_decision_source": SMC_SCORER_VERSION,
     }
 
 

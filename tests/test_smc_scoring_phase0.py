@@ -6,13 +6,11 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
-from config.settings import FeatureFlagSettings, default_settings
+from config.settings import default_settings
 from core.analysis_engine import analyze_symbol
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
-from core.signal_engine import smc_quality_score
 from core.smc_context import zone_quality_score
-from core.smc_versions import SMC_RAW_ZONE_VERSION
 from core.scanner import ScannerRequest, build_scanner_output
 from core.scanner_observability import create_scan_context
 from services.settings_service import SettingsService
@@ -27,29 +25,6 @@ def _replay_fixture() -> dict:
     return json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
-def _active_scores(smc: dict, technical: dict) -> dict[str, dict]:
-    result: dict[str, dict] = {}
-    for side in ("buy", "sell"):
-        quality, reason = smc_quality_score(side, smc, technical)
-        result[side] = {
-            "smc_quality": quality,
-            "smc_reason": reason,
-            "signal_score": 0,
-        }
-    return result
-
-
-def test_replay_fixture_locks_legacy_scores():
-    fixture = _replay_fixture()
-    assert fixture["scorer_version"] == SMC_RAW_ZONE_VERSION
-    assert len(fixture["cases"]) >= 9
-
-    for case in fixture["cases"]:
-        actual = _active_scores(case["smc"], case["technical"])
-        assert actual["buy"]["smc_quality"] == case["expected"]["buy"], case["name"]
-        assert actual["sell"]["smc_quality"] == case["expected"]["sell"], case["name"]
-
-
 def test_replay_fixture_locks_legacy_zone_quality_formula():
     fixture = _replay_fixture()
     for case in fixture["zone_quality_cases"]:
@@ -59,21 +34,27 @@ def test_replay_fixture_locks_legacy_zone_quality_formula():
         ), case["name"]
 
 
-def test_smc_mode_settings_default_load_and_round_trip(tmp_path):
-    assert default_settings().features == FeatureFlagSettings()
-    assert default_settings().features.smc_scoring_mode == "v2"
+def test_smc_scoring_mode_setting_is_gone_and_old_keys_ignored(tmp_path):
+    """Bước 15: không còn config path nào kích hoạt scorer khác.
+
+    Settings JSON cũ với smc_scoring_mode (legacy/shadow/v2/invalid) đều
+    được bỏ qua — mọi runtime dùng SMC canonical; round-trip không ghi lại
+    key cũ.
+    """
     service = SettingsService(tmp_path / "settings.json")
-    assert service.load().features.smc_scoring_mode == "v2"
-    service.storage.save({
-        "ai": {},
-        "features": {"smc_scoring_mode": "invalid"},
-    })
-    assert service.load().features.smc_scoring_mode == "legacy"
+    for value in ("legacy", "shadow", "v2", "invalid", ""):
+        service.storage.save({
+            "ai": {},
+            "features": {"smc_scoring_mode": value},
+        })
+        loaded = service.load()
+        assert not hasattr(loaded.features, "smc_scoring_mode"), value
 
     settings = default_settings()
-    settings.features.smc_scoring_mode = "shadow"
+    assert not hasattr(settings.features, "smc_scoring_mode")
     service.save(settings)
-    assert service.load().features.smc_scoring_mode == "shadow"
+    saved = service.storage.load()
+    assert "smc_scoring_mode" not in saved.get("features", {})
 
 
 def test_default_scan_contract_uses_active_v2_version():
@@ -86,10 +67,9 @@ def test_default_scan_contract_uses_active_v2_version():
     context = create_scan_context(default_settings(), request)
     output = build_scanner_output([], request, 0)
 
-    assert request.smc_scoring_mode == "v2"
-    assert context.smc_scoring_mode == "v2"
+    assert not hasattr(request, "smc_scoring_mode")
+    assert "smc_scoring_mode" not in output
     assert context.smc_scorer_version == "smc-v2"
-    assert output["smc_scoring_mode"] == "v2"
     assert output["smc_scorer_version"] == "smc-v2"
 
 
@@ -141,25 +121,12 @@ def _pipeline_input() -> tuple[AnalysisInput, dict[str, list[Candle]]]:
     return request, candles
 
 
-def test_smc_modes_all_route_to_single_canonical_scorer():
+def test_analysis_outputs_single_canonical_scorer():
     request, candles = _pipeline_input()
-    legacy = analyze_symbol(
-        request,
-        candles,
-        smc_scoring_mode="legacy",
-    )
-    shadow = analyze_symbol(
-        request,
-        candles,
-        smc_scoring_mode="shadow",
-    )
-    requested_v2 = analyze_symbol(
-        request,
-        candles,
-        smc_scoring_mode="v2",
-    )
+    first = analyze_symbol(request, candles)
+    second = analyze_symbol(request, candles)
 
-    # No mode can route to a different scorer any more.
+    # Deterministic single canonical scorer — no mode can route elsewhere.
     for key in (
         "scenario_scores",
         "direction_bias",
@@ -169,12 +136,11 @@ def test_smc_modes_all_route_to_single_canonical_scorer():
         "side_scores",
         "decision_engine",
     ):
-        assert shadow[key] == legacy[key], key
-        assert requested_v2[key] == legacy[key], key
+        assert second[key] == first[key], key
 
     # The canonical diagnostics carry a single scorer version, not a mode and
     # not a shadow/legacy router payload.
-    for result in (legacy, shadow, requested_v2):
+    for result in (first, second):
         diagnostics = result["smc_scoring"]
         assert diagnostics["contract_version"] == "smc-scoring-canonical-2026-08"
         assert diagnostics["scoring_version"] == "smc-v2"
@@ -185,9 +151,9 @@ def test_smc_modes_all_route_to_single_canonical_scorer():
         assert "comparison" not in diagnostics
 
     for side in ("buy", "sell"):
-        side_score = requested_v2["scenario_scores"][side]
-        consumer = requested_v2["smc_consumer"]["sides"][side]
-        diagnostics_side = requested_v2["smc_scoring"]["sides"][side]
+        side_score = first["scenario_scores"][side]
+        consumer = first["smc_consumer"]["sides"][side]
+        diagnostics_side = first["smc_scoring"]["sides"][side]
         assert side_score["smc_scoring_version"] == "smc-v2"
         assert side_score["smc_quality"] == diagnostics_side["score"]
         assert side_score["smc_scaled"] == int(

@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 
 from core.reason_codes import CHOCH_AGAINST_DIRECTION, MACRO_CONFLICT
-from core.signal_engine import calculate_direction_bias, score_scenario
+from core.signal_engine import (
+    calculate_direction_bias,
+    compose_scenario_score,
+)
+from core.smc_context import extract_smc_trade_flags
 
 
 def _technical_buy_context() -> dict:
@@ -94,24 +98,20 @@ def test_calculate_direction_bias_marks_clear_sell_when_gap_is_large():
                    "'Macro status (display-only, does not affect score)'. "
                    "Phase 15B should decide whether to add numerical penalty.")
 def test_score_scenario_applies_macro_conflict_penalty():
-    aligned = score_scenario(
-        "buy",
-        _technical_buy_context(),
-        _smc_buy_context(),
-        risk_score=15,
-        macro_score=25,
-        market_regime={"primary": "trend_up"},
-        macro_context={"bias": "buy"},
-    )
-    conflict = score_scenario(
-        "buy",
-        _technical_buy_context(),
-        _smc_buy_context(),
-        risk_score=15,
-        macro_score=25,
-        market_regime={"primary": "trend_up"},
-        macro_context={"bias": "sell"},
-    )
+    def _compose(macro_context):
+        return compose_scenario_score(
+            "buy",
+            _technical_buy_context(),
+            smc_quality=15,
+            smc_flags=extract_smc_trade_flags(_smc_buy_context(), "buy"),
+            risk_score=15,
+            macro_score=25,
+            market_regime={"primary": "trend_up"},
+            macro_context=macro_context,
+        )
+
+    aligned = _compose({"bias": "buy"})
+    conflict = _compose({"bias": "sell"})
 
     assert aligned["signal_score"] > conflict["signal_score"]
     assert conflict["macro_status"] == "conflict"
@@ -119,10 +119,13 @@ def test_score_scenario_applies_macro_conflict_penalty():
 
 
 def test_score_scenario_caps_when_choch_is_against_direction():
-    result = score_scenario(
+    result = compose_scenario_score(
         "buy",
         _technical_buy_context(),
-        _smc_buy_context(choch_against=True),
+        smc_quality=4,
+        smc_flags=extract_smc_trade_flags(
+            _smc_buy_context(choch_against=True), "buy"
+        ),
         risk_score=15,
         macro_score=30,
         market_regime={"primary": "trend_up"},

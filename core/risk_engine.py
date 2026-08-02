@@ -716,7 +716,8 @@ def build_trade_plan(
         + bearish_order_blocks
     )
 
-    # Try preferred SMC zone first (from get_preferred_zone)
+    # Try preferred SMC zone first (canonical selected zone from the
+    # SMC result/consumer).
     # Must be on the correct side of price AND within reasonable distance.
     # Without distance check, stale zones far from price produce meaningless plans.
     use_preferred = False
@@ -1421,10 +1422,6 @@ def _smc_zones_to_levels(zones: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "test_count": zone.get("test_count", 0),
                 "displacement_multiple": zone.get("displacement_multiple", 0),
                 "liquidity_sweep": zone.get("liquidity_sweep", False),
-                "legacy_liquidity_sweep": zone.get(
-                    "legacy_liquidity_sweep",
-                    zone.get("liquidity_sweep", False),
-                ),
                 "liquidity_sweep_linked": bool(
                     zone.get("liquidity_sweep_linked")
                 ),

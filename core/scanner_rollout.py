@@ -521,24 +521,42 @@ def run_rollback_drill() -> dict[str, Any]:
         require_demo_account = False
         production_approved = True
 
-    order_decision = build_rollout_policy(
+    kill_decision = build_rollout_policy(
         _Settings(),
         server="Rollback-Drill-Live",
         canary_ready=True,
         release_ready=True,
     ).order_decision("EUR/USD")
+
+    class _ShadowSettings(_Settings):
+        stage = ROLLOUT_SHADOW
+        kill_switch = False
+
+    shadow_decision = build_rollout_policy(
+        _ShadowSettings(),
+        server="Rollback-Drill-Live",
+        canary_ready=True,
+        release_ready=True,
+    ).order_decision("EUR/USD")
+
     checks = {
         "kill_switch_blocks_order": (
-            order_decision.allowed is False
+            kill_decision.allowed is False
             and "ROLLOUT_KILL_SWITCH_ACTIVE"
-            in order_decision.reason_codes
+            in kill_decision.reason_codes
+        ),
+        "shadow_stage_blocks_order": (
+            shadow_decision.allowed is False
+            and "SHADOW_MODE_ORDER_SUPPRESSED"
+            in shadow_decision.reason_codes
         ),
     }
     return {
         "drill_version": ROLLBACK_DRILL_VERSION,
         "passed": all(checks.values()),
         "checks": checks,
-        "order_decision": order_decision.to_dict(),
+        "order_decision": kill_decision.to_dict(),
+        "shadow_order_decision": shadow_decision.to_dict(),
     }
 
 

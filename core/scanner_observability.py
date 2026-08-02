@@ -52,7 +52,6 @@ class ScannerScanContext:
     rollout_version: str
     smc_scorer_version: str
     smc_domain_version: str
-    smc_scoring_mode: str
     settings_hash: str
     request_hash: str
     feature_flags: dict[str, bool]
@@ -92,7 +91,6 @@ def create_scan_context(
         rollout_version=SCANNER_ROLLOUT_VERSION,
         smc_scorer_version=SMC_SCORER_VERSION,
         smc_domain_version=SMC_DOMAIN_VERSION,
-        smc_scoring_mode="v2",
         settings_hash=stable_hash(settings),
         request_hash=stable_hash(request_payload),
         feature_flags=(
@@ -235,7 +233,6 @@ def attach_row_observability(
         "rollout_version": context.rollout_version,
         "smc_scorer_version": context.smc_scorer_version,
         "smc_domain_version": context.smc_domain_version,
-        "smc_scoring_mode": context.smc_scoring_mode,
         "rollout_stage": enriched.get("rollout_stage"),
         "backtest_config_id": str(config.get("config_id", "") or ""),
         "input_timestamps": dict(
@@ -290,7 +287,6 @@ def attach_row_observability(
         "scorer_version": context.scorer_version,
         "feature_version": context.feature_version,
         "smc_scorer_version": context.smc_scorer_version,
-        "smc_scoring_mode": context.smc_scoring_mode,
         "scoring_provenance": build_scoring_provenance(),
         "observability": observability,
     })
@@ -308,7 +304,6 @@ def attach_row_observability(
             "rollout_stage": enriched.get("rollout_stage"),
             "smc_scorer_version": context.smc_scorer_version,
             "smc_domain_version": context.smc_domain_version,
-            "smc_scoring_mode": context.smc_scoring_mode,
         })
         enriched["candidate_order_payload"] = order_payload
     return enriched

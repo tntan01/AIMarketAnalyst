@@ -82,7 +82,7 @@ def evaluate_smc_zones(
         for family, zone in _zone_payloads(timeframe_data, normalized_side):
             raw_direction = _zone_direction(zone, family)
             try:
-                model = SmcZone.from_legacy_dict(
+                model = SmcZone.from_dict(
                     zone,
                     symbol=symbol,
                     timeframe=timeframe,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import core.smc_context as smc_context_module
 from core.smc_confluence import build_directional_confluence
-from core.smc_context import _cross_validate_structure, build_smc_context
+from core.smc_context import build_smc_context
 from core.smc_models import DirectionalConfluence
 from core.smc_versions import SMC_CONFLUENCE_VERSION
 
@@ -27,13 +27,7 @@ def _tf(
 
 
 def _build(d1: dict, h4: dict, h1: dict) -> DirectionalConfluence:
-    legacy = _cross_validate_structure(d1, h4, h1)
-    return build_directional_confluence(
-        d1,
-        h4,
-        h1,
-        legacy_score=legacy["confluence_score"],
-    )
+    return build_directional_confluence(d1, h4, h1)
 
 
 def test_all_bullish_only_rewards_buy_side():
@@ -150,17 +144,16 @@ def test_partial_data_scores_only_observed_alignment():
     assert result.h4_h1_aligned is True
 
 
-def test_legacy_score_and_canonical_evidence_round_trip():
+def test_canonical_evidence_round_trip():
     result = _build(
         _tf("LH/LL"),
         _tf("LH/LL"),
         _tf("LH/LL"),
     )
-    payload = result.to_dict(include_compatibility=True)
-    restored = DirectionalConfluence.from_legacy_dict(payload)
+    payload = result.to_dict()
+    restored = DirectionalConfluence.from_dict(payload)
 
-    assert payload["confluence_score"] == 5
-    assert result.legacy_score == 5
+    assert "confluence_score" not in payload
     assert restored == result
     assert restored.confluence_version == SMC_CONFLUENCE_VERSION
     assert [item.timeframe for item in restored.timeframe_evidence] == [
@@ -170,7 +163,7 @@ def test_legacy_score_and_canonical_evidence_round_trip():
     ]
 
 
-def test_build_smc_context_exposes_directional_and_legacy_contracts(
+def test_build_smc_context_exposes_directional_contract(
     monkeypatch,
 ):
     timeframe_results = iter([
@@ -190,5 +183,5 @@ def test_build_smc_context_exposes_directional_and_legacy_contracts(
     assert confluence["buy_score"] == 5
     assert confluence["sell_score"] == 0
     assert confluence["direction"] == "bullish"
-    assert confluence["confluence_score"] == 5
+    assert "confluence_score" not in confluence
     assert set(confluence["timeframe_evidence"]) == {"D1", "H4", "H1"}

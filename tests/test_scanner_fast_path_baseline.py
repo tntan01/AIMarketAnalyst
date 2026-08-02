@@ -53,7 +53,6 @@ def _full_signature(case: dict[str, Any]) -> tuple[dict[str, Any], float]:
         candles,
         m15_candles=candles["M15"],
         thresholds=_CORPUS["thresholds"],
-        smc_scoring_mode=str(case["smc_scoring_mode"]),
     )
     elapsed_ms = round((perf_counter() - started) * 1_000, 3)
     candidate = evaluate_scanner_candidate(scanner_row_from_analysis(result))

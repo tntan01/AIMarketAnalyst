@@ -18,10 +18,8 @@ def build_directional_confluence(
     d1_smc: dict[str, Any],
     h4_smc: dict[str, Any],
     h1_smc: dict[str, Any],
-    *,
-    legacy_score: int | None,
 ) -> DirectionalConfluence:
-    """Build side-aware D1/H4/H1 confluence without changing legacy score."""
+    """Build side-aware D1/H4/H1 confluence from canonical evidence."""
 
     d1 = _timeframe_evidence("D1", d1_smc)
     h4 = _timeframe_evidence("H4", h4_smc)
@@ -137,7 +135,6 @@ def build_directional_confluence(
         h4_h1_aligned=h4_h1_aligned,
         h1_against_h4=h1_against_h4,
         all_aligned=all_aligned,
-        legacy_score=legacy_score,
         h1_relationship=h1_relationship,
         data_status=data_status,
         buy_reason_codes=tuple(buy_reasons),

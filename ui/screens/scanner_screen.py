@@ -1706,9 +1706,6 @@ class ScannerScreen (QWidget ):
         symbol_auto_trade =symbol_auto_trade ,
         thresholds =thresholds ,
         feature_flags =feature_flags ,
-        smc_scoring_mode =str (
-            getattr (feature_settings ,"smc_scoring_mode","v2")or "v2"
-        ),
         persistence_mode =("summary" if hasattr (self ,"scan_mode_combo")and self .scan_mode_combo .currentData ()=="auto" else "full"),
         )
         thread ,worker =self .scanner_controller .create_scan_worker (request )

@@ -41,7 +41,6 @@ def _run_full(case: dict[str, Any]) -> dict[str, Any]:
         candles,
         m15_candles=candles["M15"],
         thresholds=_CORPUS["thresholds"],
-        smc_scoring_mode=str(case.get("smc_scoring_mode", "v2")),
     )
 
 
@@ -52,7 +51,6 @@ def _run_fast_tier1(case: dict[str, Any]) -> dict[str, Any]:
         candles,
         m15_candles=candles["M15"],
         thresholds=_CORPUS["thresholds"],
-        smc_scoring_mode=str(case.get("smc_scoring_mode", "v2")),
         scanner_fast_tier1=True,
     )
 

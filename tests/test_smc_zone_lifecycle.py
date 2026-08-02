@@ -177,17 +177,15 @@ def test_enrichment_keeps_legacy_fields_while_exposing_canonical_lifecycle():
 
     assert result["test_count"] == 1
     assert result["mitigated"] is True
-    assert result["legacy_test_count"] == 1
     assert result["independent_retest_count"] == 0
     assert result["lifecycle_mitigated"] is False
     assert result["first_retest_index"] is None
 
-    model = SmcZone.from_legacy_dict(result)
+    model = SmcZone.from_dict(result)
     assert model.independent_retest_count == 0
     assert model.lifecycle_mitigated is False
-    assert model.legacy_test_count == 1
-    assert model.legacy_mitigated is True
-    assert SmcZone.from_legacy_dict(model.to_dict()) == model
+    assert not hasattr(model, "legacy_test_count")
+    assert SmcZone.from_dict(model.to_dict()) == model
 
 
 def test_canonical_stale_state_does_not_depend_on_scan_interval():

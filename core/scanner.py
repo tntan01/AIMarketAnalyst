@@ -51,7 +51,6 @@ class ScannerRequest:
     symbol_auto_trade: dict[str, dict] = field(default_factory=dict)
     thresholds: dict[str, dict[str, int | float]] = field(default_factory=dict)
     feature_flags: dict[str, bool] = field(default_factory=dict)
-    smc_scoring_mode: str = "v2"
     persistence_mode: str = "full"
     # Each auto-trade entry: regime, side, min_score, min_rr, score_metric.
 
@@ -260,9 +259,6 @@ def scanner_row_from_analysis(result: dict[str, Any], *, broker_symbol: str | No
         "smc_scorer_version": scoring_provenance[
             "smc_scorer_version"
         ],
-        "smc_scoring_mode": scoring_provenance[
-            "smc_scoring_mode"
-        ],
         "side_scores": side_score_results,
         # ---- Phase 15 ranking fields ----
         "final_score": row_final_score,
@@ -394,9 +390,6 @@ def blocked_scanner_row(symbol: str, reason: str, *, broker_symbol: str = "") ->
         ],
         "smc_scorer_version": scoring_provenance[
             "smc_scorer_version"
-        ],
-        "smc_scoring_mode": scoring_provenance[
-            "smc_scoring_mode"
         ],
         # Phase 15 ranking fields
         "final_score": 0,
@@ -553,7 +546,6 @@ def build_scanner_output(rows: list[dict[str, Any]], request: ScannerRequest, ai
         "smc_domain_version": SMC_DOMAIN_VERSION,
         "scoring_provenance": scoring_provenance,
         "feature_flags": dict(request.feature_flags),
-        "smc_scoring_mode": scoring_provenance["smc_scoring_mode"],
         "summary": scanner_summary(rows),
         "rows": rows,
     }

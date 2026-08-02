@@ -216,7 +216,6 @@ class AnalysisPipeline:
         thresholds: dict[str, int | float] | None = None,
         is_backtest: bool = False,
         scan_interval_min: int = 15,
-        smc_scoring_mode: str = "v2",
         scanner_fast_tier1: bool = False,
         scanner_fast_tier2: bool = False,
     ) -> dict[str, Any]:
@@ -242,7 +241,6 @@ class AnalysisPipeline:
         self._execution_quality_score_in = execution_quality_score
         self._thresholds = thresholds
         self._is_backtest = is_backtest
-        self._smc_scoring_mode = smc_scoring_mode
         # Only the bulk scanner supplies these flags.  Backtests always retain
         # the full pipeline even if an external caller supplies fast-path flags.
         self._scanner_fast_tier1 = bool(scanner_fast_tier1) and not is_backtest

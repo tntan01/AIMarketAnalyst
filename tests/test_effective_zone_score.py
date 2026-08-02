@@ -6,7 +6,6 @@ from core.risk_engine import build_source_zone_diagnostics
 from core.scanner_ranking_engine import calculate_opportunity_score
 from core.smc_context import (
     calculate_effective_zone_score,
-    get_preferred_zone,
 )
 from core.trade_gate_engine import check_trade_gates
 
@@ -131,42 +130,6 @@ def test_missing_test_count_is_neutral_not_fresh_zone_bonus() -> None:
         == 0
     )
     assert _score(explicit_zero) > _score(unknown)
-
-
-def test_effective_selection_replaces_raw_selection_in_phase_16c() -> None:
-    high_raw_low_effective = _zone(
-        zone_score=95,
-        low=1.0900,
-        high=1.0990,
-        stale=True,
-        mitigated=True,
-        test_count=12,
-        freshness_bars=20,
-        displacement_multiple=0.0,
-        liquidity_sweep=False,
-        zone_location="premium",
-    )
-    lower_raw_high_effective = _zone(
-        zone_score=80,
-        low=1.0978,
-        high=1.0984,
-        test_count=0,
-    )
-    smc = {
-        "H4": {
-            "order_blocks": [
-                high_raw_low_effective,
-                lower_raw_high_effective,
-            ]
-        }
-    }
-
-    selected = get_preferred_zone(smc, "buy", price=1.1000)
-
-    assert selected is not None
-    assert selected["zone_score"] == 80
-    assert selected["low"] == 1.0978
-    assert selected["selection_status"] == "preferred"
 
 
 def test_effective_score_does_not_affect_scanner_ranking() -> None:

@@ -7,7 +7,6 @@ from core.risk_engine import (
     build_trade_plan,
 )
 from core.scanner import scanner_row_from_analysis
-from core.smc_context import get_preferred_zone
 from tests.test_entry_tp_quality_diagnostics import (
     _base_smc,
     _base_tech,
@@ -63,25 +62,6 @@ def _valid_plan(preferred_zone: dict[str, object]) -> dict[str, object]:
     )
     assert plan is not None
     return plan
-
-
-def test_preferred_zone_preserves_source_metadata() -> None:
-    zone = _preferred_zone()
-    smc = _base_smc()
-    smc["H4"]["order_blocks"] = [zone]
-
-    selected = get_preferred_zone(smc, "buy", price=1.1000)
-
-    assert selected is not None
-    for key in (
-        "type",
-        "stale",
-        "mitigated",
-        "broken",
-        "test_count",
-        "freshness_bars",
-    ):
-        assert selected[key] == zone[key]
 
 
 def test_trade_plan_contains_complete_source_zone_diagnostics() -> None:

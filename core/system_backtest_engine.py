@@ -150,7 +150,6 @@ class BacktestRequest:
     min_final_score: int = 0
     correlation_context: dict[str, Any] | None = None
     macro_alignment_override: dict[str, int] | None = None
-    smc_scoring_mode: str = "v2"
     purpose: str = BACKTEST_PURPOSE_RESEARCH
     execution_mode: str = EXECUTION_MODE_RESEARCH
     code_revision: str = ""
@@ -204,7 +203,6 @@ class BacktestTrade:
     scanner_scorer_version: str | None = None
     scanner_feature_version: str | None = None
     smc_scorer_version: str | None = None
-    smc_scoring_mode: str | None = None
     reason_codes: list[str] = field(default_factory=list)
     warning_codes: list[str] = field(default_factory=list)
     block_codes: list[str] = field(default_factory=list)
@@ -324,7 +322,6 @@ class BacktestResult:
             "scorer_version": SCANNER_SCORER_VERSION,
             "feature_version": SCANNER_FEATURE_VERSION,
             "smc_scorer_version": provenance["smc_scorer_version"],
-            "smc_scoring_mode": provenance["smc_scoring_mode"],
         }
         request_payload = _request_to_dict(self.request)
         backtest_provenance = build_backtest_provenance(
@@ -1802,7 +1799,6 @@ def build_trade_record(
             "scanner_feature_version"
         ],
         smc_scorer_version=scoring_provenance["smc_scorer_version"],
-        smc_scoring_mode=scoring_provenance["smc_scoring_mode"],
         reason_codes=list(analysis.get("reason_codes", []) or []),
         warning_codes=list(analysis.get("warning_codes", []) or []),
         block_codes=list(analysis.get("block_codes", []) or []),
@@ -1950,7 +1946,6 @@ def _run_analysis_snapshot(
             account_guard_settings=_account_guard_settings(request),
             trade_date=current_time,
             is_backtest=True,
-            smc_scoring_mode=request.smc_scoring_mode,
         )
 
 

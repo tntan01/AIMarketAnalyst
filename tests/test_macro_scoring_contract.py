@@ -14,11 +14,30 @@ import pytest
 
 from core.signal_engine import (
     _detect_macro_status,
-    score_scenario,
+    compose_scenario_score,
 )
+from core.smc_context import extract_smc_trade_flags
 
 # Real production fixtures — same as test_signal_engine.py uses
 from tests.test_signal_engine import _technical_buy_context, _smc_buy_context
+
+# Characterization từ scorer v1 (Bước 13 đã xóa): giữ cố định để output của
+# các test macro contract không đổi sau khi signal_engine chỉ còn canonical.
+_SMC_BUY_QUALITY_V1 = {"buy": 15, "sell": 0}
+
+
+def _scenario(side, technical, smc, risk_score, macro_score, *,
+              macro_confidence=1.0, market_regime=None,
+              correlation_adjustment=0.0, macro_context=None):
+    return compose_scenario_score(
+        side, technical,
+        smc_quality=_SMC_BUY_QUALITY_V1[side],
+        smc_flags=extract_smc_trade_flags(smc, side),
+        risk_score=risk_score, macro_score=macro_score,
+        macro_confidence=macro_confidence, market_regime=market_regime,
+        correlation_adjustment=correlation_adjustment,
+        macro_context=macro_context,
+    )
 
 
 # ===========================================================================
@@ -41,7 +60,7 @@ class TestConfidenceMonotonic:
     MACRO_CTX = {"buy": 15, "sell": 15}
 
     def test_confidence_1_0_gives_84(self):
-        s = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+        s = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                            risk_score=self.RISK, macro_score=self.MACRO_RAW,
                            macro_confidence=1.0, market_regime=self.REGIME,
                            macro_context=self.MACRO_CTX)
@@ -50,7 +69,7 @@ class TestConfidenceMonotonic:
 
     def test_confidence_0_5_gives_80(self):
         """Phase 15B fix: surplus discarded. Score drops 84 → 80 (not 87)."""
-        s = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+        s = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                            risk_score=self.RISK, macro_score=self.MACRO_RAW,
                            macro_confidence=0.5, market_regime=self.REGIME,
                            macro_context=self.MACRO_CTX)
@@ -60,7 +79,7 @@ class TestConfidenceMonotonic:
     def test_confidence_0_1_gives_77(self):
         """Score at conf=0.1 drops to 77 — macro_effective ≈ 0, technical
         scores unchanged (no surplus redistribution)."""
-        s = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+        s = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                            risk_score=self.RISK, macro_score=self.MACRO_RAW,
                            macro_confidence=0.1, market_regime=self.REGIME,
                            macro_context=self.MACRO_CTX)
@@ -71,7 +90,7 @@ class TestConfidenceMonotonic:
         """Phase 15B: confidence drop does NOT increase score."""
         prev = None
         for conf in [1.0, 0.5, 0.1]:
-            s = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+            s = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                                risk_score=15, macro_score=15,
                                macro_confidence=conf,
                                market_regime={"primary": "trend_up"},
@@ -84,11 +103,11 @@ class TestConfidenceMonotonic:
     def test_macro_effective_shrinks_with_confidence(self):
         """macro_effective does scale down correctly — the defect is in
         weight redistribution, not in the macro computation itself."""
-        s_full = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+        s_full = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                                 risk_score=15, macro_score=15,
                                 macro_confidence=1.0, market_regime={"primary": "trend_up"},
                                 macro_context={"buy": 15, "sell": 15})
-        s_half = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+        s_half = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                                 risk_score=15, macro_score=15,
                                 macro_confidence=0.5, market_regime={"primary": "trend_up"},
                                 macro_context={"buy": 15, "sell": 15})
@@ -100,7 +119,7 @@ class TestConfidenceMonotonic:
         for regime in ["trend_up", "trend_down", "range", "volatile", "unknown"]:
             prev = None
             for conf in [1.0, 0.5, 0.1]:
-                s = score_scenario("buy", _technical_buy_context(), _smc_buy_context(),
+                s = _scenario("buy", _technical_buy_context(), _smc_buy_context(),
                                    risk_score=15, macro_score=15,
                                    macro_confidence=conf,
                                    market_regime={"primary": regime},
@@ -114,7 +133,7 @@ class TestConfidenceMonotonic:
         """Monotonicity holds for SELL side too."""
         prev = None
         for conf in [1.0, 0.5, 0.1]:
-            s = score_scenario("sell", _technical_buy_context(), _smc_buy_context(),
+            s = _scenario("sell", _technical_buy_context(), _smc_buy_context(),
                                risk_score=15, macro_score=15,
                                macro_confidence=conf,
                                market_regime={"primary": "trend_down"},
@@ -250,24 +269,24 @@ class TestBaseQuoteReversal:
 
 class TestVIXDualPath:
     """VIX enters scoring through TWO independent paths:
-    A. correlation_adjustment (score_scenario parameter, from M15/DXY candles)
+    A. correlation_adjustment (compose_scenario_score parameter, from M15/DXY candles)
     B. Tier 3 sentiment → macro_raw (from Yahoo Finance _fetch_vix)
 
     These are independent data sources.  The contract is that each
     path works correctly in isolation.  The macro_raw path is tested
-    via score_scenario; the correlation path via its adjustment.
+    via compose_scenario_score; the correlation path via its adjustment.
     """
 
     def test_correlation_adjustment_reduces_score(self):
         """Negative correlation_adjustment (high VIX) reduces signal_score."""
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s1 = score_scenario("buy", tech, smc, 15, 15,
+        s1 = _scenario("buy", tech, smc, 15, 15,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"buy": 15, "sell": 15},
                             correlation_adjustment=0.0)
-        s2 = score_scenario("buy", tech, smc, 15, 15,
+        s2 = _scenario("buy", tech, smc, 15, 15,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"buy": 15, "sell": 15},
@@ -276,15 +295,15 @@ class TestVIXDualPath:
             "Negative correlation must reduce score"
 
     def test_macro_raw_with_vix_encoded(self):
-        """Tier 3 VIX is encoded in macro_raw (0-30) passed to score_scenario.
+        """Tier 3 VIX is encoded in macro_raw (0-30) passed to compose_scenario_score.
         A lower macro_raw (from high VIX in Tier 3) reduces macro_effective."""
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s_low = score_scenario("buy", tech, smc, 15, 10,  # low macro = high VIX
+        s_low = _scenario("buy", tech, smc, 15, 10,  # low macro = high VIX
                                macro_confidence=1.0,
                                market_regime={"primary": "trend_up"},
                                macro_context={"buy": 10, "sell": 20})
-        s_high = score_scenario("buy", tech, smc, 15, 25,  # high macro = low VIX
+        s_high = _scenario("buy", tech, smc, 15, 25,  # high macro = low VIX
                                 macro_confidence=1.0,
                                 market_regime={"primary": "trend_up"},
                                 macro_context={"buy": 25, "sell": 5})
@@ -300,21 +319,21 @@ class TestAIStanceDualPath:
 
     def test_score_scenario_is_deterministic(self):
         """Same inputs → same output, regardless of how AI stance is
-        encoded in macro_context.  score_scenario does not read AI keys."""
+        encoded in macro_context.  _scenario does not read AI keys."""
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s1 = score_scenario("buy", tech, smc, 15, 20,
+        s1 = _scenario("buy", tech, smc, 15, 20,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"buy": 20, "sell": 10})
-        s2 = score_scenario("buy", tech, smc, 15, 20,
+        s2 = _scenario("buy", tech, smc, 15, 20,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"buy": 20, "sell": 10,
                                            "ai_stance_base": "hawkish",
                                            "ai_stance_quote": "dovish"})
         assert s1["signal_score"] == s2["signal_score"], \
-            "AI stance keys in macro_context must not affect score_scenario"
+            "AI stance keys in macro_context must not affect _scenario"
 
 
 # ===========================================================================
@@ -332,7 +351,7 @@ class TestMacroConflictPenalty:
         from core.reason_codes import MACRO_CONFLICT
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s = score_scenario("buy", tech, smc, 15, 25,
+        s = _scenario("buy", tech, smc, 15, 25,
                            macro_confidence=1.0,
                            market_regime={"primary": "trend_up"},
                            macro_context={"bias": "sell"})
@@ -342,11 +361,11 @@ class TestMacroConflictPenalty:
         """macro_effective is purely raw*weight/30, not status-dependent."""
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s1 = score_scenario("buy", tech, smc, 15, 25,
+        s1 = _scenario("buy", tech, smc, 15, 25,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"bias": "buy"})
-        s2 = score_scenario("buy", tech, smc, 15, 25,
+        s2 = _scenario("buy", tech, smc, 15, 25,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"bias": "sell"})
@@ -360,11 +379,11 @@ class TestMacroConflictPenalty:
     def test_high_conflict_beats_low_aligned(self):
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s_aligned = score_scenario("buy", tech, smc, 15, 25,
+        s_aligned = _scenario("buy", tech, smc, 15, 25,
                                    macro_confidence=0.5,
                                    market_regime={"primary": "trend_up"},
                                    macro_context={"bias": "buy"})
-        s_conflict = score_scenario("buy", tech, smc, 15, 25,
+        s_conflict = _scenario("buy", tech, smc, 15, 25,
                                     macro_confidence=1.0,
                                     market_regime={"primary": "trend_up"},
                                     macro_context={"bias": "sell"})
@@ -548,12 +567,12 @@ class TestPhase15EDedup:
     def test_vix_via_correlation_adjustment_only(self):
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s_no = score_scenario("buy", tech, smc, 15, 20,
+        s_no = _scenario("buy", tech, smc, 15, 20,
                               macro_confidence=1.0,
                               market_regime={"primary": "trend_up"},
                               macro_context={"buy": 20, "sell": 10},
                               correlation_adjustment=0.0)
-        s_vix = score_scenario("buy", tech, smc, 15, 20,
+        s_vix = _scenario("buy", tech, smc, 15, 20,
                                macro_confidence=1.0,
                                market_regime={"primary": "trend_up"},
                                macro_context={"buy": 20, "sell": 10},
@@ -563,11 +582,11 @@ class TestPhase15EDedup:
     def test_score_deterministic_without_ai_vix_in_t3(self):
         tech = _technical_buy_context()
         smc = _smc_buy_context()
-        s1 = score_scenario("buy", tech, smc, 15, 20,
+        s1 = _scenario("buy", tech, smc, 15, 20,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"buy": 20, "sell": 10})
-        s2 = score_scenario("buy", tech, smc, 15, 20,
+        s2 = _scenario("buy", tech, smc, 15, 20,
                             macro_confidence=1.0,
                             market_regime={"primary": "trend_up"},
                             macro_context={"buy": 20, "sell": 10})

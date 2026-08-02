@@ -115,7 +115,7 @@ def _run_case(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
         "detect_market_regime",
         lambda technical, news_in_3h=False: case["market_regime"],
     )
-    return analyze_symbol(request, candles, smc_scoring_mode="v2")
+    return analyze_symbol(request, candles)
 
 
 def _run_case_tier1(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
@@ -140,7 +140,6 @@ def _run_case_tier1(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
     return analyze_symbol(
         request,
         candles,
-        smc_scoring_mode="v2",
         scanner_fast_tier1=True,
     )
 

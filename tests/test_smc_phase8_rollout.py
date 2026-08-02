@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import sqlite3
 
 from core.scanner import ScannerRequest, build_scanner_output
@@ -25,8 +26,8 @@ def test_scoring_provenance_is_mode_independent_and_canonical():
     assert provenance["scanner_scorer_version"] == "scanner-v3"
     assert provenance["scanner_feature_version"] == "scanner-features-v3"
     assert provenance["smc_scorer_version"] == "smc-v2"
-    assert provenance["smc_decision_source"] == "smc-v2"
-    assert provenance["smc_scoring_mode"] == "v2"
+    assert "smc_scoring_mode" not in provenance
+    assert "smc_decision_source" not in provenance
     assert "smc-v1" not in provenance.values()
 
 
@@ -59,7 +60,7 @@ def test_scanner_and_backtest_outputs_expose_same_v2_identity():
         "smc_scorer_version"
     ] == "smc-v2"
     assert backtest["scoring_contract"]["smc_scorer_version"] == "smc-v2"
-    assert backtest["scoring_contract"]["smc_scoring_mode"] == "v2"
+    assert "smc_scoring_mode" not in backtest["scoring_contract"]
     assert backtest["backtest_contract"]["purpose"] == "RESEARCH"
     assert backtest["backtest_contract"]["execution_parity"] is False
     assert backtest["backtest_contract"]["validation_eligible"] is False
@@ -83,7 +84,7 @@ def test_journal_persists_scoring_provenance_columns(tmp_path):
     assert loaded.scanner_scorer_version == "scanner-v3"
     assert loaded.scanner_feature_version == "scanner-features-v3"
     assert loaded.smc_scorer_version == "smc-v2"
-    assert loaded.smc_scoring_mode == "v2"
+    assert loaded.smc_scoring_mode is None
     with sqlite3.connect(db_path) as connection:
         columns = {
             row[1]
@@ -182,6 +183,8 @@ def test_rollback_drill_blocks_orders_and_drops_v1_rollback(tmp_path):
 
     assert direct["passed"] is True
     assert direct["checks"]["kill_switch_blocks_order"] is True
+    assert direct["checks"]["shadow_stage_blocks_order"] is True
+    assert "v1" not in json.dumps(direct.get("checks", {}))
     assert persisted["passed"] is True
     metrics = service.load()
     assert metrics["rollback_tested"] is True

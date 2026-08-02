@@ -1,0 +1,628 @@
+# BỘ PROMPT MIGRATION SMC — SINGLE RUNTIME (34 bước)
+Nguồn: docs/scanner/smc-single-runtime-migration-plan.md
+Dùng cho: AI Coder (Claude Code / Codex) trên máy local, chạy lần lượt từng bước, review sau mỗi bước.
+
+============================================================
+## PROMPT 0 — KHỞI ĐỘNG (chạy 1 lần đầu tiên, trước Bước 00)
+============================================================
+Đọc file docs/scanner/smc-single-runtime-migration-plan.md (34 bước). Đây là spec toàn bộ task của mày:
+chuyển SMC về một runtime duy nhất, xóa SMC v1 + SMC shadow scorer, chỉ giữ SMC canonical (score_smc()).
+Ngấm kỹ: mục 2.2 (phân biệt SMC scorer shadow phải xóa vs Scanner rollout SHADOW phải GIỮ),
+mục 3 (contract đích), mục 4 (quy tắc triển khai), mục 6 (Definition of Done).
+Mày sẽ được yêu cầu làm từng bước theo đúng plan. KHÔNG làm tắt, KHÔNG gộp bước khi bước trước chưa xanh.
+Trả lời ngắn: "Đã đọc plan, sẵn sàng." kèm 3 điểm mày hiểu là quan trọng nhất.
+
+OK
+============================================================
+## RÀNG BUỘC CHUNG — dán vào CUỐI mọi prompt (bắt buộc)
+============================================================
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 00 — Xác nhận workspace, tạo điểm khôi phục
+============================================================
+Chạy git status --short. Ghi lại các file dirty có sẵn. Xác nhận config/interest_rates.json không thuộc phạm vi (không sửa/format/revert). Nếu dự án dùng branch, tạo branch prefix codex/. Không tự commit nếu chưa được yêu cầu.
+Hoàn thành khi: có danh sách file người dùng đang sửa, không file nào bị ghi đè.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 01 — Chạy baseline kiểm thử hiện tại
+============================================================
+Chạy:
+python -m pytest -q tests/test_smc_scorer_v2.py tests/test_smc_scoring_phase0.py tests/test_smc_consumer_phase6.py tests/test_smc_prefilter.py tests/test_analysis_pipeline_integration.py tests/test_scanner_observability.py tests/test_smc_phase8_rollout.py tests/test_backtest_config_validation.py
+Ghi số pass/fail, thời gian, warning vào log triển khai. Baseline mục tiêu: 98 pass.
+Hoàn thành khi: baseline xanh hoặc mọi lỗi có sẵn ghi rõ và được PO chấp nhận.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 02 — Tạo golden fixture SMC canonical (KHÓA hành vi v2 trước khi xóa v1)
+============================================================
+Tạo fixture mới tests/fixtures/smc_canonical/ + test characterization riêng. Case tối thiểu: BUY có selected zone, SELL có selected zone, No-zone, FVG H1-only, Order block, Broken/stale zone, CHOCH cap, Thiếu dữ liệu nhưng hợp lệ.
+Khóa field: SMC side score, selected zone ID/type/timeframe, score breakdown, scenario score cuối, direction, trade gate, candidate decision, order payload.
+Bỏ qua field: timestamp, scan ID, latency, giá trị không xác định theo thời gian.
+Hoàn thành khi: golden test pass trên code chưa refactor, không phụ thuộc payload legacy/shadow/comparison.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 03 — Khóa lớp an toàn Scanner rollout
+============================================================
+File: tests/test_scanner_phase8_rollout.py, tests/test_scanner_observability.py.
+Thêm/giữ assertions: Stage SHADOW chặn order với SHADOW_MODE_ORDER_SUPPRESSED; SHADOW_DECISION_COMPARISON vẫn emit khi generic comparison bật; Kill switch ưu tiên chặn execution; Release gate dùng generic sample/disagreement.
+Hoàn thành khi: có test đỏ nếu ai xóa generic Scanner shadow.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 04 — Định nghĩa kết quả SMC canonical duy nhất (contract đích)
+============================================================
+File: core/smc_models.py hoặc module contract mới tên trung tính (KHÔNG chứa v1/v2/legacy/shadow trong tên public).
+1. Định nghĩa result chứa contract_version, scoring_version, sides. 2. Mỗi side chứa score, selected zone, breakdown cần cho consumer/risk/UI. 3. Serializer/deserializer trung tính. 4. Parser bỏ qua key lạ để đọc snapshot cũ.
+Kiểm tra: unit test round-trip; old payload có field thừa vẫn đọc được không chọn nhánh v1.
+Hoàn thành khi: contract mới đứng độc lập, chưa thay runtime, không có mode selector.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 05 — Đổi scorer v2 thành module SMC canonical
+============================================================
+File: core/smc_scorer_v2.py -> core/smc_scorer.py (+ import trực tiếp).
+1. Chuyển implementation sang core.smc_scorer. 2. Đổi score_smc_v2() -> score_smc(). 3. Đổi type/helper public hậu tố _v2 nếu không phải provenance. 4. Giữ nguyên công thức/threshold, KHÔNG tối ưu. 5. KHÔNG tạo wrapper runtime tên score_smc_v2.
+Kiểm tra: chuyển direct unit test trong tests/test_smc_scorer_v2.py sang API canonical, toàn bộ vector công thức pass.
+Hoàn thành khi: một scorer canonical output BẰNG implementation v2 cũ.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 06 — Chuẩn hóa version provenance
+============================================================
+File: core/smc_versions.py, core/scoring_provenance.py.
+1. Chỉ giữ một hằng public SMC_SCORER_VERSION = "smc-v2". 2. Xóa SMC_SCORER_V2_VERSION, baseline v1, shadow-only constants. 3. build_scoring_provenance() không nhận mode, luôn trả version canonical. 4. Chưa đổi default version raw zone (Bước 24).
+Kiểm tra: provenance unit test không truyền mode, chỉ một scorer version.
+Hoàn thành khi: version là metadata, không thể route sang scorer khác.
+
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 07 — Tách composition khỏi scorer v1
+============================================================
+File: core/signal_engine.py.
+1. Tách phần non-SMC của score_scenario() thành hàm composition rõ ràng. 2. Composition nhận SMC side score/breakdown đã tính sẵn. 3. Giữ nguyên regime weight, CHOCH cap, penalty cleanup, score clamping. 4. CHƯA xóa hàm v1 bước này.
+Kiểm tra: unit test so sánh output composition mới vs output cuối mode v2 trong golden fixture.
+Hoàn thành khi: tính được final scenario score KHÔNG cần gọi smc_quality_score().
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 08 — Pipeline gọi SMC canonical đúng MỘT lần
+============================================================
+File: core/analysis_pipeline.py.
+1. Sau khi có SMC context, gọi score_smc() một lần nhận cả BUY/SELL. 2. Dùng side result tương ứng compose BUY và SELL. 3. Tạo consumer từ cùng result. 4. KHÔNG gọi build_smc_phase0_diagnostics(). 5. KHÔNG gọi apply_smc_score_override(). 6. KHÔNG đọc decision/active/shadow.
+Kiểm tra: golden parity test pass; dùng spy/mock xác nhận score_smc() gọi đúng 1 lần/symbol.
+Hoàn thành khi: full analysis không qua scorer v1 hoặc shadow router.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 09 — Tái sử dụng kết quả Tier-1 prefilter
+============================================================
+File: core/smc_prefilter.py, core/analysis_pipeline.py.
+1. Xóa tham số mode + policy resolution khỏi prefilter. 2. Prefilter gọi score_smc() trả result canonical khi cần. 3. Full pipeline nhận precomputed_smc tái sử dụng nguyên object. 4. Không serialize/deserialize chỉ để truyền nội bộ.
+Kiểm tra: integration test Tier-1 survivor xác nhận tổng call count vẫn 1.
+Hoàn thành khi: fast path và full route cùng một scorer + một kết quả.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 10 — Fail-closed khi SMC lỗi
+============================================================
+File: core/smc_prefilter.py, core/analysis_pipeline.py, controllers/scanner_controller.py.
+1. Phân biệt insufficient-data hợp lệ vs scorer exception. 2. Scorer exception -> blocked analysis với SMC_SCORING_ERROR. 3. Không retry full route nếu prefilter đã gặp exception. 4. Blocked row không tạo candidate/order.
+Kiểm tra: test inject exception, assert không scorer thứ 2, không candidate, không order.
+Hoàn thành khi: mọi lỗi scorer fail-closed, không fallback.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 11 — Đơn giản hóa SMC consumer
+============================================================
+File: core/smc_consumer_contract.py.
+1. Bỏ resolve_smc_scoring_policy(). 2. Bỏ active/shadow selection. 3. Xóa field shadow_selected_zone*. 4. Giữ selected zone, side score, breakdown risk engine/UI dùng. 5. Bump consumer contract version nếu shape đổi.
+Kiểm tra: tests/test_smc_consumer_phase6.py dùng một result, xác nhận BUY/SELL selection.
+Hoàn thành khi: consumer không biết khái niệm mode/shadow.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 23 (CHÈN SỚM, TRƯỚC BƯỚC 12) — Bump Backtest config schema + revalidation
+============================================================
+⚠️ LÀM BƯỚC NÀY TRƯỚC BƯỚC 12 để tránh vỡ import: hiện core/scanner_strategy_router.py vẫn `from core.smc_scoring_contract import SMC_MODE_V2`.
+File: core/backtest_config.py, core/backtest_config_validation.py, core/scanner_strategy_router.py.
+1. Bump BACKTEST_CONFIG_SCHEMA_VERSION từ 8 lên kế tiếp. 2. Xóa smc_scoring_mode khỏi schema, ID, fingerprint. 3. Vẫn yêu cầu smc_scorer_version == "smc-v2" cho config mới. 4. Config cũ chuyển DRAFT/invalid yêu cầu revalidation, không tự coi hợp lệ. 5. Xóa dependency SMC_MODE_V2 khỏi scanner_strategy_router (dùng hằng canonical). 6. Kiểm kê config enabled trước deployment.
+Kiểm tra: validation tests config mới pass; config cũ fail-closed reason rõ; strategy router không route v1.
+Hoàn thành khi: mọi Backtest config dùng cho Scanner chứng minh chạy SMC canonical.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 12 — Xóa SMC scoring router cũ
+============================================================
+File: core/smc_scoring_contract.py + mọi import (đã xử lý scanner_strategy_router ở Bước 23).
+1. Di chuyển contract thật cần thiết sang model canonical. 2. Xóa constants SMC_MODE_LEGACY/SHADOW/V2. 3. Xóa normalizer/fallback mode. 4. Xóa diagnostics builder + comparison builder. 5. Xóa file khi không còn import.
+Kiểm tra: rg -n "smc_scoring_contract|SMC_MODE_" core controllers services config ui scripts tests không còn runtime import (test chỉ tham chiếu nếu đang xóa cùng bước).
+Hoàn thành khi: không còn router chọn v1/shadow.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 13 — Xóa scorer v1 và override path
+============================================================
+File: core/signal_engine.py. Xóa: smc_quality_score(), _best_smc_zone() phục vụ v1, apply_smc_score_override() sau khi composition mới thay thế đủ, import/constants/helper chỉ còn các hàm trên dùng.
+Kiểm tra: golden + signal engine tests pass. rg -n "smc_quality_score|apply_smc_score_override|_best_smc_zone" core controllers services không có kết quả.
+Hoàn thành khi: source runtime không chứa thuật toán chấm điểm v1.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+
+============================================================
+## BƯỚC 14 — Một nguồn selected zone duy nhất
+============================================================
+File: core/smc_context.py, core/analysis_pipeline.py, core/trade_gate_engine.py, core/risk_engine.py.
+1. Tách structural flags của extract_smc_trade_flags() khỏi phần tự chọn zone. 2. Giữ CHOCH, displacement, sweep, cờ cấu trúc cần thiết. 3. Xóa _find_best_zone_for_direction()/get_preferred_zone() cũ khi không còn caller. 4. Selected zone luôn từ SMC result/consumer. 5. Khi selected zone canonical thiếu relevance bắt buộc, trade gate fail-closed thay vì ngoại lệ legacy.
+Kiểm tra: test BUY/SELL/no-zone/broken-zone xác nhận selected zone ID khớp golden, gate không đổi với dữ liệu hợp lệ.
+Hoàn thành khi: chỉ scorer canonical có quyền chọn zone cho quyết định giao dịch.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 15 — Xóa setting SMC mode
+============================================================
+File: config/settings.py, services/settings_service.py.
+1. Xóa FeatureFlagSettings.smc_scoring_mode. 2. Xóa parser legacy/shadow/v2. 3. Settings JSON cũ có key này phải bỏ qua. 4. Khi save lần sau, key cũ không được ghi lại. 5. Không thêm env variable thay thế.
+Kiểm tra: test load settings cũ legacy/shadow/v2/invalid/missing đều tạo cùng runtime canonical; round-trip xác nhận key biến mất.
+Hoàn thành khi: không config path nào kích hoạt scorer khác.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 16 — Xóa SMC mode khỏi UI
+============================================================
+File: ui/screens/settings_screen.py, ui/screens/scanner_screen.py.
+1. Xóa selector "SMC scoring mode", tooltip, load/save binding. 2. Scanner screen không đọc/truyền SMC mode. 3. GIỮ Scanner rollout controls. 4. Đổi label shadow_compare_enabled thành "So sánh Scanner V1/V2" (phân biệt subsystem).
+Kiểm tra: UI/screenshot baseline; mở Settings không còn SMC mode nhưng rollout stage + generic comparison vẫn hiện.
+Hoàn thành khi: không control SMC v1/v2/shadow trên UI.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 17 — Xóa mode khỏi Scanner call chain
+============================================================
+File: core/scanner.py, core/analysis_engine.py, controllers/scanner_controller.py, workers/scanner_worker.py + call sites.
+1. Xóa smc_scoring_mode khỏi ScannerRequest. 2. Xóa tham số khỏi analyze_symbol() và AnalysisPipeline. 3. Xóa propagation UI -> worker -> controller -> engine -> pipeline. 4. Giữ smc_scorer_version trong provenance nếu consumer cần audit.
+Kiểm tra: scanner integration tests + static search smc_scoring_mode trong runtime dirs.
+Hoàn thành khi: không mode trong Scanner API hoặc call chain.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 18 — Đơn giản hóa observability + provenance
+============================================================
+File: core/scanner_observability.py, core/scoring_provenance.py.
+1. Bỏ policy lookup + mode fields khỏi event mới. 2. Ghi một scorer version + contract version. 3. Không ghi decision_source=shadow. 4. Reader/log viewer chịu được event lịch sử còn field cũ.
+Kiểm tra: observability tests assert event mới không chứa SMC legacy/shadow keys.
+Hoàn thành khi: telemetry mới chỉ có SMC canonical provenance.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 19 — Xóa SMC shadow event
+============================================================
+File: controllers/scanner_controller.py. Xóa: _compact_smc_shadow_payload(), schema smc-shadow-summary-v1, emit path SMC_SHADOW_COMPARISON, helper/import chỉ phục vụ event này.
+Kiểm tra: test scan không phát sinh SMC_SHADOW_COMPARISON; generic SHADOW_DECISION_COMPARISON vẫn phát khi bật.
+Hoàn thành khi: không SMC comparison event trong code runtime.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 20 — Tách SMC metrics khỏi generic Scanner rollout
+============================================================
+File: core/scanner_rollout.py, services/scanner_rollout_service.py.
+1. Trong build_shadow_report() giữ status/side/trade comparison của Scanner Candidate Engine. 2. Xóa phần đọc analysis_result.smc_scoring.comparison. 3. Xóa smc_direction_changes, smc_zone_changes, smc_score_delta_*. 4. Nếu cần health metric, tạo metric độc lập như smc_no_zone_rate, không gọi là shadow comparison. 5. Bump ROLLOUT_METRICS_VERSION. 6. Metrics cũ archive qua legacy_metrics, không đưa vào gate mới.
+Kiểm tra: generic rollout tests pass; metrics mới không chứa SMC comparison counters.
+Hoàn thành khi: Scanner shadow còn nguyên nhưng không tham chiếu SMC v1/v2 comparison.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 21 — Cập nhật rollback drill
+============================================================
+File: core/scanner_rollout.py, scripts/run_scanner_rollback_drill.py.
+1. Xóa kiểm tra "rollback SMC về legacy/v1". 2. Drill xác nhận kill switch chặn order. 3. Drill xác nhận Scanner SHADOW chặn order. 4. Runbook deployment trỏ artifact phát hành trước.
+Kiểm tra: rollback drill pass KHÔNG import scorer v1.
+Hoàn thành khi: rollback vận hành đầy đủ với SMC canonical.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 22 — Xóa mode khỏi Backtest runtime
+============================================================
+File: core/system_backtest_engine.py + controller/call sites.
+1. Xóa smc_scoring_mode khỏi BacktestRequest. 2. Xóa propagation vào analyze_symbol(). 3. Kết quả trade mới chỉ ghi scorer version canonical. 4. Backtest scorer error fail-closed cùng contract live.
+Kiểm tra: backtest/live parity trên golden corpus; request không mode.
+Hoàn thành khi: không thể chạy backtest bằng v1 hoặc shadow.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OK
+============================================================
+## BƯỚC 24 — Dọn domain model + producer legacy
+============================================================
+File: core/smc_models.py, core/smc_context.py, core/smc_confluence.py, core/risk_engine.py.
+Theo thứ tự: 1. Tách raw zone candidate khỏi evaluated SMC zone nếu cùng model. 2. Raw candidate chỉ identity/geometry/timeframe/lifecycle canonical, không mang scorer version/score giả. 3. Evaluated zone nhận score/version từ score_smc(). 4. Xóa legacy_test_count/legacy_mitigated/legacy_stale/legacy_broken/legacy_liquidity_sweep khỏi record mới. 5. Xóa scalar confluence chỉ phục vụ v1 nếu không còn consumer. 6. Xóa legacy zone score producer zone_quality_score() nếu không còn caller. 7. Giữ calculate_effective_zone_score() chỉ khi là diagnostic/risk signal độc lập, không phải scorer v1 trá hình. 8. Đổi from_legacy_dict thành parser trung tính/cô lập historical reader; xóa public legacy adapter khỏi runtime model.
+Kiểm tra: domain/lifecycle/sweep/risk tests; static caller search trước khi xóa từng helper; record mới không legacy fields.
+Hoàn thành khi: runtime domain model không sản xuất/dùng score/lifecycle alias v1.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+OKs
+============================================================
+## BƯỚC 25 — Cập nhật persistence + historical reader
+============================================================
+File: services/journal_models.py, services/journal_converters.py, snapshot readers + migrations liên quan.
+1. Ngừng ghi smc_scoring_mode cho record mới. 2. Giữ smc_scorer_version, selected zone metadata, score breakdown cần audit. 3. KHÔNG xóa data/migrations/009_add_scoring_provenance.sql. 4. KHÔNG drop cột SQLite release này. 5. Converter chỉ map field dataclass hiện hành, bỏ qua cột dư. 6. Snapshot cũ legacy/shadow/comparison đọc như historical, không tham gia quyết định mới. 7. Snapshot mới chỉ một SMC result.
+Kiểm tra: round-trip journal mới; mở journal/snapshot cũ; assert new write không mode/shadow.
+Hoàn thành khi: không mất dữ liệu lịch sử, không đường tái kích hoạt v1.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 26 — Chuyển offline validation sang SMC-only
+============================================================
+File: core/smc_validation.py, scripts/run_smc_validation.py.
+1. Xóa imports/replay path scorer v1. 2. Xóa metrics chênh lệch legacy-vs-v2. 3. Giữ calibration, out-of-sample, walk-forward, absolute quality checks cho SMC canonical. 4. Nếu module không còn giá trị sau khi bỏ comparison, retire module + script + tests trong một bước có kiểm chứng caller.
+Kiểm tra: validation script chạy trên golden/current dataset không import v1.
+Hoàn thành khi: offline tooling cũng chỉ gọi score_smc().
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 27 — Cập nhật fast-path + feasibility scripts
+============================================================
+File: scripts/compare_scanner_fast_path.py, scripts/tier2_feasibility_gate.py, scripts/backfill_zone_metadata.py + reports.
+1. Xóa input/loop theo SMC mode. 2. Chỉ dùng SMC canonical result. 3. Rewrite/retire backfill_zone_metadata.py nếu còn gọi legacy zone score. 4. Regenerate feasibility reports không mode legacy/shadow.
+Kiểm tra: scripts chạy thành công; rg không thấy SMC mode trong scripts.
+Hoàn thành khi: không công cụ vận hành nào gọi v1.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 28 — Viết lại tests + fixtures phụ thuộc v1/shadow
+============================================================
+Xóa/viết lại: tests/test_smc_scoring_phase0.py (bỏ mode matrix -> canonical contract + golden parity); tests/test_smc_scorer_v2.py (đổi tên về canonical, bỏ shadow promotion tests); tests/test_smc_consumer_phase6.py (một result/selected zone); tests/test_smc_prefilter.py (không parametrized legacy/shadow); tests/test_smc_phase7_validation.py (SMC-only hoặc retire); tests/test_smc_phase8_rollout.py (bỏ SMC comparison/rollback-v1, GIỮ generic rollout assertions); tests/test_scanner_observability.py (assert không emit SMC_SHADOW_COMPARISON); fast-path corpus/oracles xóa mode_legacy/mode_shadow; tests/fixtures/smc_phase0_replay.json thay bằng canonical golden fixture.
+Compatibility tests: chỉ giữ test đọc historical snapshot/journal, đặt tên rõ historical, KHÔNG import scorer v1.
+Hoàn thành khi: không test nào coi v1 là runtime option, targeted suite xanh.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 29 — Thêm static forbidden-symbol gate
+============================================================
+Phạm vi gate: core controllers services config ui workers scripts. Cấm: SMC_MODE_LEGACY, SMC_MODE_SHADOW, SMC_SHADOW_BASELINE_VERSION, SMC_V2_SHADOW_ONLY, SMC_SHADOW_COMPARISON, smc_quality_score, score_smc_v2, smc_scorer_v2, smc_scoring_mode, smc-v1.
+Kiểm tra manual: rg -n "SMC_MODE_LEGACY|SMC_MODE_SHADOW|SMC_SHADOW_BASELINE_VERSION|SMC_V2_SHADOW_ONLY|SMC_SHADOW_COMPARISON|smc_quality_score|score_smc_v2|smc_scorer_v2|smc_scoring_mode|smc-v1" core controllers services config ui workers scripts -> không match.
+Gate ngược bảo vệ Scanner rollout: rg -n "ROLLOUT_SHADOW|SHADOW_MODE_ORDER_SUPPRESSED|SHADOW_DECISION_COMPARISON" core controllers services tests -> vẫn tồn tại + có tests.
+Hoàn thành khi: gate tự động hóa trong test/CI và pass.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 30 — Cập nhật tài liệu runtime + UI baseline
+============================================================
+File tối thiểu: docs/scanner/scanner-flow.md, docs/scanner/technical-scoring-architecture.md, docs/architecture/runtime-status.md, docs/scanner/scanner-scoring-review.md, docs/scanner/smc-scoring-plan.md, docs/ui/screen_design.md + screenshot/manifest Settings bị ảnh hưởng.
+1. Runtime docs gọi scorer là "SMC", không phải SMC v1/v2 mode. 2. Tài liệu lịch sử rollout v1/v2 chuyển docs/archive hoặc banner rõ không phải runtime contract. 3. Scanner rollout SHADOW ghi rõ là Candidate Engine safety stage. 4. Regenerate Settings screenshots sau khi xóa selector.
+Hoàn thành khi: tìm kiếm docs hiện hành không thấy v1 là lựa chọn đang hỗ trợ.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 31 — Chạy regression đầy đủ
+============================================================
+Thứ tự: 1. static forbidden-symbol gate. 2. Direct SMC unit tests. 3. Golden parity tests. 4. Prefilter/full-route call-count tests. 5. Scanner integration + observability tests. 6. Generic Scanner rollout safety tests. 7. Backtest validation/router/system backtest tests. 8. Journal/snapshot historical compatibility tests. 9. Full suite: python -m pytest -q. 10. PyInstaller build + startup smoke theo packaging/build_windows.ps1.
+Hoàn thành khi: tất cả test/build xanh; không test bị skip chỉ để né lỗi migration.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 32 — Benchmark + kiểm tra artifact
+============================================================
+Đo: số lần gọi scorer mỗi symbol (tối đa 1); p50/p95 analysis latency không tăng vs baseline (kỳ vọng giảm); kích thước snapshot mới không còn payload nhân đôi shadow/decision; error rate + blocked reason; no-zone rate; candidate/order count không đổi ngoài case scorer error fail-closed.
+Hoàn thành khi: không regression ngoài ngưỡng PO phê duyệt.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 33 — Phát hành có kiểm soát
+============================================================
+Trước: lưu artifact/build hiện tại; backup settings + runtime DB; kiểm kê Backtest configs enabled + revalidate schema mới; chạy kill-switch/Scanner-SHADOW drill.
+Trong: khởi động Scanner rollout SHADOW / không gửi lệnh; smoke scan tập symbol chuẩn; xác nhận provenance canonical + không SMC shadow event; chuyển canary/production theo release gate.
+Sau: theo dõi latency, SMC error, no-zone rate, blocked reason, candidate/order volume.
+Hoàn thành khi: production ổn định qua cửa sổ PO/QA quy định.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## BƯỚC 34 — Rollback nếu có sự cố
+============================================================
+Thứ tự: 1. Bật kill switch. 2. Đưa Scanner rollout về SHADOW chặn order. 3. Thu thập snapshot/log lỗi. 4. Redeploy artifact phát hành trước. 5. Khôi phục settings backup nếu schema settings có vấn đề. 6. KHÔNG thêm lại feature flag v1 vào nhánh mới.
+Lưu ý: rollback artifact có thể là build cũ từng chứa dual-run — biện pháp khẩn cấp. Nhánh dev hiện hành phải giữ invariant không có v1.
+CHỈ sửa những file thuộc phạm vi bước này theo plan. TUYỆT ĐỐI KHÔNG:
+- Không xóa/rename chữ "shadow" một cách global. Chỉ xóa SMC scorer shadow (event SMC_SHADOW_COMPARISON, field legacy/active/shadow/comparison của SMC contract). PHẢI GIỮ: Scanner rollout stage SHADOW, SHADOW_MODE_ORDER_SUPPRESSED, SHADOW_DECISION_COMPARISON, kill switch, canary, rollback.
+- Không refactor, không sửa tên biến, không định dạng, không thêm/xóa import không cần thiết ngoài phạm vi.
+- Không sửa config/interest_rates.json (thuộc người dùng).
+- Không xóa v1 trước khi golden fixture (Bước 02) đã pass.
+- Không đổi hằng version raw zone một cách cơ học.
+- Không dùng runtime feature flag để giữ v1 làm rollback.
+Sau khi sửa: chạy targeted tests của bước đó, báo kết quả pass/fail cụ thể. XONG MỚI BÁO.
+
+============================================================
+## QUY TRÌNH REVIEW SAU MỖI BƯỚC
+============================================================
+Sau khi AI Coder báo "bước X xong":
+1. Chạy lại targeted tests của bước đó trên máy local (không chỉ đọc code).
+2. Bắt buộc có dòng kết quả: "✅ PASS" hoặc "❌ FAIL".
+3. FAIL -> phân tích lỗi -> prompt fix -> chạy lại (vòng lặp).
+4. PASS mới chuyển sang bước tiếp theo.
+Lưu ý dependency: Bước 23 phải xong TRƯỚC Bước 12 (tránh vỡ import SMC_MODE_V2 trong scanner_strategy_router).
+Không gộp bước. Mỗi prompt = 1-2 file = 1 vấn đề.

@@ -10,7 +10,6 @@ from core.reason_codes import (
     append_code,
     normalize_codes,
 )
-from core.smc_context import extract_smc_trade_flags
 
 
 def clamp(value: float, min_value: float = 0.0, max_value: float = 100.0) -> float:
@@ -205,107 +204,6 @@ def compose_scenario_score(
     return result
 
 
-def score_scenario(
-    side: str,
-    technical: dict[str, Any],
-    smc: dict[str, Any] | None,
-    risk_score: float,
-    macro_score: int,
-    *,
-    macro_confidence: float = 1.0,
-    market_regime: dict[str, Any] | None = None,
-    correlation_adjustment: float = 0.0,
-    macro_context: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    smc_quality, smc_reason = smc_quality_score(side, smc or {}, technical)
-    smc_flags = extract_smc_trade_flags(smc, side)
-    return compose_scenario_score(
-        side,
-        technical,
-        smc_quality=smc_quality,
-        smc_reason=smc_reason,
-        smc_flags=smc_flags,
-        risk_score=risk_score,
-        macro_score=macro_score,
-        macro_confidence=macro_confidence,
-        market_regime=market_regime,
-        correlation_adjustment=correlation_adjustment,
-        macro_context=macro_context,
-    )
-
-
-def apply_smc_score_override(
-    score: dict[str, Any],
-    *,
-    smc_quality: object,
-    smc_reason: object,
-    smc_flags: dict[str, Any] | None = None,
-    scoring_version: object = None,
-    score_breakdown: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Recompute one side score with a versioned SMC component.
-
-    All non-SMC inputs and regime weights remain identical to the legacy
-    evaluation.  This makes a v1/v2 decision comparison attributable only to
-    the SMC scorer and prevents a second feature extraction pass.
-    """
-
-    result = dict(score if isinstance(score, dict) else {})
-    try:
-        quality = int(clamp(float(smc_quality), 0, 15))
-    except (TypeError, ValueError, OverflowError):
-        quality = 0
-    weights = (
-        result.get("regime_weights")
-        if isinstance(result.get("regime_weights"), dict)
-        else DYNAMIC_WEIGHTS["unknown"]
-    )
-    smc_weight = int(weights.get("smc", 15) or 15)
-    smc_scaled = int(quality * smc_weight / 15)
-    technical_scaled = int(
-        int(result.get("trend_scaled", 0) or 0)
-        + int(result.get("momentum_scaled", 0) or 0)
-        + int(result.get("location_scaled", 0) or 0)
-        + smc_scaled
-    )
-    total = int(clamp(
-        technical_scaled
-        + int(result.get("risk_condition", 0) or 0)
-        + int(result.get("macro_alignment", 0) or 0),
-        0,
-        100,
-    ))
-    flags = dict(smc_flags or {})
-    # The legacy score may already carry this SMC-specific code. Rebuild it
-    # from the promoted flags so rollback/v2 cannot inherit a stale cap.
-    penalty_codes = [
-        code
-        for code in list(result.get("penalty_codes", []) or [])
-        if code != CHOCH_AGAINST_DIRECTION
-    ]
-    smc_score_cap = None
-    if flags.get("choch_against_direction"):
-        total = min(total, 60)
-        smc_score_cap = 60
-        append_code(penalty_codes, CHOCH_AGAINST_DIRECTION)
-
-    result.update({
-        "smc_quality": quality,
-        "smc_reason": str(smc_reason or ""),
-        "smc_scaled": smc_scaled,
-        "technical_scaled": technical_scaled,
-        "signal_score": total,
-        "total": total,
-        "rating": score_rating(total),
-        "penalty_codes": normalize_codes(penalty_codes),
-        "smc_score_cap": smc_score_cap,
-        "smc_flags": flags,
-        "smc_scoring_version": str(scoring_version or ""),
-        "smc_score_breakdown": dict(score_breakdown or {}),
-    })
-    return result
-
-
 def score_rating(score: int) -> str:
     if score >= 80:
         return "chất lượng cao"
@@ -451,149 +349,6 @@ def location_quality_score(side: str, t: dict[str, Any]) -> int:
     return int(clamp(base + bonus, 0, 25))
 
 
-def smc_quality_score(side: str, smc: dict[str, Any], technical: dict[str, Any]) -> tuple[int, str]:
-    h4 = smc.get("H4", {}) if isinstance(smc, dict) else {}
-    h1 = smc.get("H1", {}) if isinstance(smc, dict) else {}
-    expected = "bullish" if side == "buy" else "bearish"
-    opposite = "bearish" if side == "buy" else "bullish"
-    score = 0
-    reasons: list[str] = []
-
-    if h4.get("displacement") == expected and h4.get("bos"):
-        h4_strength = str(h4.get("bos_strength", "weak"))
-        bos_points = 5 if h4_strength == "strong" else 4 if h4_strength == "normal" else 3
-        score += bos_points
-        reasons.append(f"H4 BOS {expected} ({h4_strength})")
-    if h1.get("displacement") == expected and (h1.get("bos") or h1.get("choch")):
-        h1_strength = str(h1.get("bos_strength", "weak"))
-        signal_points = 4 if h1_strength == "strong" else 3 if h1_strength == "normal" else 2
-        score += signal_points
-        h1_signal = "BOS" if h1.get("bos") else "CHOCH"
-        h1_confirmed = " confirmed" if h1.get("choch_confirmed") else ""
-        reasons.append(f"H1 {h1_signal} {expected} ({h1_strength}{h1_confirmed})")
-
-    confluence = smc.get("confluence", {}) if isinstance(smc, dict) else {}
-    confluence_score = int(confluence.get("confluence_score", 0) or 0)
-    if confluence_score != 0:
-        score += confluence_score
-        if confluence_score > 0:
-            reasons.append(f"Multi-TF confluence +{confluence_score}")
-        else:
-            reasons.append(f"Multi-TF divergence {confluence_score}")
-
-    zone = _best_smc_zone(side, h4, h1)
-    if zone:
-        zone_score = int(zone.get("zone_score", 0) or 0)
-
-        if zone_score >= 75:
-            zone_points = 4
-        elif zone_score >= 55:
-            zone_points = 3
-        else:
-            zone_points = 1
-        if zone.get("broken"):
-            zone_points = 0
-        if zone.get("mitigated"):
-            zone_points = max(0, zone_points - 1)
-        if int(zone.get("test_count", 0) or 0) >= 3:
-            zone_points = max(0, zone_points - 1)
-        if zone.get("_h1_fallback"):
-            zone_points = max(0, zone_points - 1)
-        score += zone_points
-        reasons.append(f"zone_score={zone_score}")
-
-        location = str(zone.get("zone_location", "unknown"))
-        if (side == "buy" and location == "discount") or (side == "sell" and location == "premium"):
-            score += 3
-            reasons.append(location)
-        elif location == "equilibrium":
-            score += 1
-            reasons.append("equilibrium")
-        elif location in {"premium", "discount"}:
-            score -= 2
-            reasons.append(f"ngược vị trí {location}")
-
-        if zone.get("liquidity_sweep"):
-            score += 1
-            reasons.append("liquidity sweep")
-
-        # Cross-validate SMC zone with technical swing points
-        atr_value = float(technical.get("atr_h4") or technical.get("atr_d1") or 0.0)
-        if atr_value > 0:
-            zone_low = zone.get("low")
-            zone_high = zone.get("high")
-            if zone_low is not None and zone_high is not None:
-                zone_level = (float(zone_low) + float(zone_high)) / 2
-                swing_candidates = technical.get("support_zones" if side == "buy" else "resistance_zones", [])
-                if isinstance(swing_candidates, list):
-                    nearest_swing = None
-                    min_dist = float("inf")
-                    for s in swing_candidates:
-                        if isinstance(s, dict):
-                            lev = s.get("level")
-                            if lev is not None:
-                                dist = abs(float(lev) - zone_level)
-                                if dist < min_dist:
-                                    min_dist = dist
-                                    nearest_swing = s
-                    if nearest_swing is not None and min_dist < atr_value * 0.3:
-                        score += 2
-                        reasons.append("cross-validated with technical swing")
-    else:
-        reasons.append("không có SMC zone thuận")
-
-    sweeps = h1.get("liquidity_sweeps", {}) if isinstance(h1, dict) else {}
-    if side == "buy" and sweeps.get("swept_lows"):
-        score += 2
-        reasons.append("sweep low H1")
-    if side == "sell" and sweeps.get("swept_highs"):
-        score += 2
-        reasons.append("sweep high H1")
-
-    if h4.get("choch") and h4.get("displacement") == opposite:
-        score = min(score, 4)
-        reasons.append(f"cap: H4 CHOCH {opposite}")
-    if h1.get("choch") and h1.get("displacement") == opposite:
-        score = min(score, 6)
-        reasons.append(f"cap: H1 CHOCH {opposite}")
-
-    score = int(clamp(score, 0, 15))
-    return score, "; ".join(reasons) if reasons else "SMC chưa có tín hiệu rõ."
-
-
-def _best_smc_zone(side: str, h4: dict[str, Any], h1: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    zone_keys = ["demand_zones", "order_blocks", "fvg"] if side == "buy" else ["supply_zones", "order_blocks", "fvg"]
-
-    def _search(tf_data: dict[str, Any]) -> dict[str, Any] | None:
-        candidates: list[dict[str, Any]] = []
-        for key in zone_keys:
-            zones = tf_data.get(key, [])
-            if not isinstance(zones, list):
-                continue
-            for zone in zones:
-                if not isinstance(zone, dict) or zone.get("broken"):
-                    continue
-                zone_type = str(zone.get("type", ""))
-                if side == "buy" and any(term in zone_type for term in ("bearish", "supply")):
-                    continue
-                if side == "sell" and any(term in zone_type for term in ("bullish", "demand")):
-                    continue
-                candidates.append(zone)
-        if not candidates:
-            return None
-        return sorted(candidates, key=lambda item: int(item.get("zone_score", 0) or 0), reverse=True)[0]
-
-    best = _search(h4)
-    if best is not None:
-        return best
-    if isinstance(h1, dict):
-        best = _search(h1)
-        if best is not None:
-            best = dict(best)
-            best["_h1_fallback"] = True
-    return best
-
-
 def calc_risk_condition(atr_current: float, atr_avg_14d: float, news_in_3h: bool, spread_status: str) -> int:
     """Market risk gate — volatility, news, spread. Distinct from trade-level risk in risk_engine.py."""
     score = 0
@@ -637,9 +392,9 @@ def calculate_direction_bias(
     Parameters
     ----------
     buy_result : dict | None
-        Ket qua score_scenario() cho phep mua.
+        Ket qua compose_scenario_score() cho phep mua.
     sell_result : dict | None
-        Ket qua score_scenario() cho phep ban.
+        Ket qua compose_scenario_score() cho phep ban.
     min_gap : float
         Nguong toi thieu de coi huong la ro rang (mac dinh 10.0).
 

@@ -27,6 +27,17 @@ DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated
 
 **Kết luận:** Baseline XANH — khớp mục tiêu 98 pass. Không có lỗi có sẵn cần PO chấp nhận.
 
+**Re-run xác nhận (2026-08-02, sau Bước 12 — commit `eac0c07`):**
+
+| Chỉ số | Giá trị |
+|---|---|
+| Pass | 91 |
+| Fail | 0 |
+| Thời gian | 2.25s (lần chạy đầu 4.85s) |
+| Warning | 0 |
+
+Chênh lệch 91 vs 98 do suite đã đổi trong các bước 02–12 (test chuyển sang API canonical, xóa test router shadow). Baseline XANH — mọi lỗi có sẵn: không có.
+
 ## Bước 02 — Golden fixture của kết quả SMC chuẩn
 
 **File tạo mới:**
@@ -350,3 +361,271 @@ DeprecationWarning: datetime.datetime.utcfromtimestamp() is deprecated
 | Full `python -m pytest -q` | 2222 passed, 8 skipped, 17 xfailed |
 
 **Kết luận:** Không còn router chọn v1/shadow trong runtime. Điều kiện hoàn thành Bước 12 đạt.
+
+## Bước 13 — Xóa scorer v1 và override path
+
+**File chính:**
+
+- `core/signal_engine.py` — xóa hoàn toàn:
+  - `score_scenario()` (wrapper v1 gọi `smc_quality_score`; không còn caller runtime sau Bước 08 — bắt buộc xóa cùng v1).
+  - `apply_smc_score_override()` (override path đã được `compose_scenario_score` thay thế từ Bước 07/08).
+  - `smc_quality_score()` — thuật toán chấm điểm v1.
+  - `_best_smc_zone()` — zone selector chỉ phục vụ scorer v1.
+  - Import `extract_smc_trade_flags` (chỉ còn `score_scenario` dùng trong file; runtime vẫn dùng ở `analysis_pipeline.py`).
+  - Docstring `calculate_direction_bias` trỏ `score_scenario` → `compose_scenario_score`.
+
+**Tests xử lý (hệ quả bắt buộc — import/call v1 vỡ nếu không sửa):**
+
+- `tests/test_signal_engine.py` — 2 test dùng `score_scenario` chuyển sang `compose_scenario_score` với `smc_quality` characterization cố định (plain buy=15, choch buy=4) + `extract_smc_trade_flags`; 1 test xfail strict giữ nguyên trạng thái xfail.
+- `tests/test_macro_scoring_contract.py` — thêm wrapper `_scenario()` (compose + `_SMC_BUY_QUALITY_V1={"buy":15,"sell":0}` characterization) thay toàn bộ 23 call `score_scenario`; docstrings cập nhật tên hàm.
+- `tests/test_smc_composition.py` — xóa `test_score_scenario_matches_composition_with_v1_quality`; `test_composition_does_not_call_smc_quality_score` → guard test `test_signal_engine_has_no_v1_scorer` (khẳng định module không còn 3 symbol v1).
+- `tests/test_smc_scoring_phase0.py` — bỏ import `smc_quality_score`, helper `_active_scores` và `test_replay_fixture_locks_legacy_scores` (test khóa legacy score bằng scorer v1 — retire; Bước 28 sẽ thay bằng canonical golden fixture); bỏ import `SMC_RAW_ZONE_VERSION` không còn dùng.
+- `tests/test_zone_score_single_source.py` — **retire** (xóa file): test khóa behavior v1 "đọc zone_score trực tiếp, không rescore internal" — behavior không tồn tại trong `evaluate_smc_zones` canonical (zone score tính từ components, không đọc `zone_score` từ dict).
+
+**Xác minh theo plan:**
+
+- `rg -n "smc_quality_score|apply_smc_score_override|_best_smc_zone" core controllers services` → **không có kết quả** (exit 1).
+- `rg` toàn repo (ngoài docs): chỉ còn tên test functions, guard test và forbidden-key list — không còn import/call v1.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Golden + signal engine + macro + composition + phase0 | 77 passed, 2 xfailed |
+| Full `python -m pytest -q` | 2217 passed, 8 skipped, 17 xfailed, 4 warnings (58.20s) |
+
+Warnings (4, đều có sẵn từ trước, ngoài phạm vi): `PytestCollectionWarning` `TestHarness` (test_ai_eval_worker) + 3× `PytestReturnNotNoneWarning` (test_ai_eval_worker, test_lot_calculation, test_sse_parser).
+
+**Kết luận:** Source runtime không còn chứa thuật toán chấm điểm v1; không còn đường gọi `smc_quality_score`/`apply_smc_score_override`/`_best_smc_zone`. Điều kiện hoàn thành Bước 13 đạt.
+
+## Bước 14 — Một nguồn selected zone duy nhất
+
+**File chính:**
+
+- `core/smc_context.py`:
+  - **Tách** `extract_smc_trade_flags()`: chỉ còn structural flags (`choch_against_direction`, `liquidity_sweep_aligned`, `displacement_aligned`, `raw`). Bỏ toàn bộ phần tự chọn zone (`has_selected_zone`/`selected_zone_*`) vốn được chọn qua `_find_best_zone_for_direction` — dead code vì `_merge_active_smc_flags` (analysis_pipeline) đã ghi đè selected zone từ consumer canonical. `zone_broken` cũng bỏ (selector legacy đã lọc zone broken nên nó luôn False; nguồn chính xác là consumer).
+  - **Xóa** `_find_best_zone_for_direction()` + `get_preferred_zone()` (không còn caller runtime; `get_preferred_zone` chỉ còn tests) cùng 2 hằng `_EFFECTIVE_ZONE_PREFERRED_MIN_SCORE`/`_EFFECTIVE_ZONE_HIGH_TEST_COUNT` và import `isfinite`/`SelectedSmcZone` chỉ chúng dùng.
+  - Giữ `calculate_effective_zone_score`/`zone_matches_direction` (Bước 24 sẽ quyết định số phận).
+- `core/trade_gate_engine.py` — `_gate_zone_relevance` fail-closed: zone canonical (`zone_scoring_version="smc-v2"`) thiếu `zone_relevance_score` → WATCH_ONLY + `ZONE_RELEVANCE_LOW` + reason thay vì bỏ qua; zone legacy (`smc-v1`/không version) vẫn là historical, bỏ qua.
+- `core/risk_engine.py` — comment line 719 tham chiếu `get_preferred_zone` đã xóa → "canonical selected zone from the SMC result/consumer". Branch `watch_only_fallback` (line ~1176) giữ nguyên: chỉ kích hoạt với field từ selector đã xóa, consumer zone không có field này → dead-safe.
+
+**Tests xử lý:**
+
+- `tests/test_effective_zone_selection.py` — **retire** (7 test khóa `get_preferred_zone`).
+- `tests/test_effective_zone_score.py` — xóa `test_effective_selection_replaces_raw_selection_in_phase_16c` (dùng get_preferred_zone); giữ 10 test `calculate_effective_zone_score`/diagnostics/gate.
+- `tests/test_source_zone_diagnostics.py` — xóa `test_preferred_zone_preserves_source_metadata`.
+- `tests/test_smc_domain_models.py` — `test_enriched_zone_identity_reaches_selection_flags_and_risk_adapter` → `..._structural_flags_and_risk_adapter`: bỏ get_preferred_zone, assert `"selected_zone_id" not in flags` (khóa tách), giữ structural flags + `_smc_zones_to_levels` adapter.
+- `tests/test_smc_sweep_linking.py` — bỏ get_preferred_zone; assert `"selected_zone_linked_sweep_id" not in flags`, giữ level adapter.
+- `tests/test_trade_gate_engine.py` — thêm `TestZoneRelevanceFailClosed` (3 test): canonical thiếu relevance → WATCH_ONLY; legacy thiếu relevance → không cap; relevance thấp (35) → WATCH_ONLY.
+
+**Xác minh:**
+
+- `rg "get_preferred_zone|_find_best_zone_for_direction"` (ngoài docs) → không có kết quả.
+- Selected zone cho quyết định giao dịch chỉ từ SMC result/consumer: pipeline vốn đã truyền `preferred_zones` từ `selected_zone_for_side()` (canonical) vào `build_trade_plan`; golden test khóa selected zone ID/type/timeframe cho BUY/SELL/no-zone/broken/stale.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (golden + domain + sweep + effective + diagnostics + gate + pipeline + composition + signal + macro + prefilter) | 152 passed, 2 xfailed |
+| Full `python -m pytest -q` | 2211 passed, 8 skipped, 17 xfailed, 4 warnings (60.12s) |
+
+Chênh lệch -6 vs Bước 13: -7 (selection retired) -1 (effective_score) -1 (source_zone_diagnostics) +3 (trade gate fail-closed) = khớp.
+
+**Kết luận:** Chỉ scorer canonical có quyền chọn zone cho quyết định giao dịch; structural flags giữ CHOCH/displacement/sweep; trade gate fail-closed khi zone canonical thiếu relevance. Điều kiện hoàn thành Bước 14 đạt.
+
+## Bước 15 — Xóa setting SMC mode
+
+**File:**
+
+- `config/settings.py` — xóa `FeatureFlagSettings.smc_scoring_mode`.
+- `services/settings_service.py` — `_load_feature_flags` bỏ parser `legacy/shadow/v2` (kể cả fallback invalid → legacy) và field; settings JSON cũ có key này tự nhiên bị bỏ qua; `asdict()` khi save không còn field → key cũ không ghi lại. Không thêm env variable.
+- `ui/screens/settings_screen.py` — sửa tối thiểu để không vỡ UI (ripple bắt buộc): bỏ 3 dòng ghi `features.smc_scoring_mode` khi save rollout; label bỏ chữ "và SMC mode". Widget combo `smc_mode` vẫn hiện đến Bước 16 (đọc bằng `getattr` an toàn, không crash).
+
+**Tests:**
+
+- `tests/test_smc_scoring_phase0.py` — `test_smc_mode_settings_default_load_and_round_trip` → `test_smc_scoring_mode_setting_is_gone_and_old_keys_ignored`: load JSON cũ với `legacy`/`shadow`/`v2`/`invalid`/`""` đều không còn field; round-trip save → `smc_scoring_mode` không xuất hiện trong file; bỏ import `FeatureFlagSettings` không còn dùng.
+- `tests/test_backtest_simplification_phase5.py` — assert `settings.features.smc_scoring_mode == "v2"` → `not hasattr(settings.features, "smc_scoring_mode")`.
+
+**Xác minh:** `rg "features.smc_scoring_mode" core controllers services config ui workers scripts` → không có kết quả (chỉ còn `getattr(..., "smc_scoring_mode", "v2")` ở scanner_screen — Bước 16 xóa hẳn).
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (phase0 + backtest_simplification + scanner_phase0_settings + backtest_config_validation + golden) | 44 passed |
+| Full `python -m pytest -q` | 2211 passed, 8 skipped, 17 xfailed, 4 warnings (57.19s) |
+
+**Kết luận:** Không có config path nào kích hoạt scorer khác — settings cũ bị bỏ qua, save không tái ghi key. Điều kiện hoàn thành Bước 15 đạt.
+
+## Bước 16 — Xóa SMC mode khỏi UI
+
+**File:**
+
+- `ui/screens/settings_screen.py`:
+  - Xóa widget combo `smc_mode` ("legacy"/"shadow"/"v2") + tooltip (1341-1356 cũ).
+  - Xóa `self.rollout_smc_mode_input = smc_mode` và row `"SMC scoring mode"`.
+  - Đổi label `shadow_compare` từ "Ghi so sánh V1/V2" → **"So sánh Scanner V1/V2"** (phân biệt subsystem: Scanner Candidate Engine comparison, không phải SMC).
+  - Giữ nguyên: rollout stage combo (DISABLED/SHADOW/DEMO_LIMITED/DEMO_FULL/CANARY/PRODUCTION), kill switch, allowed_symbols, canary risk, min_shadow/demo/canary, disagreement/revalidation/degradation.
+- `ui/screens/scanner_screen.py` — bỏ `smc_scoring_mode=...` khỏi `ScannerRequest(...)` (param vẫn còn default trong ScannerRequest đến Bước 17).
+
+**Xác minh:**
+
+- `rg "smc_scoring_mode|smc_mode|rollout_smc_mode_input|SMC scoring mode" ui` → không có kết quả.
+- Import cả 2 module UI: OK.
+- UI tests: 27 passed (layout + density + improvements).
+- Không có screenshot baseline tự động trong repo; mở Settings không còn control SMC mode — rollout stage + generic comparison vẫn hiện (giữ nguyên code path).
+
+| Chỉ số | Giá trị |
+|---|---|
+| UI tests | 27 passed |
+| Full `python -m pytest -q` | 2211 passed, 8 skipped, 17 xfailed, 4 warnings (57.73s) |
+
+**Kết luận:** Không còn control SMC v1/v2/shadow trên UI; Scanner rollout controls giữ nguyên. Điều kiện hoàn thành Bước 16 đạt.
+
+## Bước 17 — Xóa mode khỏi Scanner call chain
+
+**Runtime (signature không còn khái niệm lựa chọn scorer):**
+
+- `core/scanner.py` — xóa `smc_scoring_mode` khỏi `ScannerRequest`; xóa 3 output mappings (`smc_scoring_mode` trong row, fallback row, summary) — giữ `smc_scorer_version` trong provenance/output cho audit.
+- `core/analysis_engine.py` — xóa param `smc_scoring_mode` khỏi `analyze_symbol()` + propagation vào pipeline.
+- `core/analysis_pipeline.py` — xóa param khỏi `AnalysisPipeline.execute()` + field `self._smc_scoring_mode`.
+- `controllers/scanner_controller.py` — xóa: `"smc_scoring_mode"` khỏi SCAN_STARTED telemetry payload (dòng 413), khỏi `analyze_kwargs` (dòng 719, truyền `request.smc_scoring_mode`), khỏi 2 helper `_scan_one_symbol`/`_analyze_one_symbol` (param + dòng truyền vào `analyze_symbol`).
+- `core/system_backtest_engine.py` — ripple bắt buộc: bỏ `smc_scoring_mode=request.smc_scoring_mode` khi gọi `analyze_symbol` (Bước 22 sẽ xóa field khỏi `BacktestRequest`).
+- `scripts/compare_scanner_fast_path.py` (2 call), `scripts/tier2_feasibility_gate.py` (1 call) — ripple bắt buộc: bỏ param khỏi `analyze_symbol` (Bước 27 dọn vòng lặp mode trong script).
+
+**Tests (ripple bắt buộc — call `analyze_symbol`/đọc `ScannerRequest` field):**
+
+- `test_smc_canonical_golden.py` — bỏ `smc_scoring_mode="v2"` ở 2 helpers (full + tier1).
+- `test_smc_scoring_phase0.py` — `test_default_scan_contract_uses_active_v2_version`: bỏ assert `request.smc_scoring_mode`/`output["smc_scoring_mode"]`, thêm assert `not hasattr`/key không tồn tại; `test_smc_modes_all_route_to_single_canonical_scorer` → `test_analysis_outputs_single_canonical_scorer` (2 lần chạy cùng input → cùng output; diagnostics canonical không policy/shadow/active/comparison).
+- `test_scanner_fast_path.py` (2 helpers), `test_scanner_fast_path_baseline.py` (1 helper) — bỏ param.
+
+**Xác minh:** `rg "smc_scoring_mode"` trong `core/scanner.py analysis_engine.py analysis_pipeline.py controllers/scanner_controller.py workers` → không có kết quả. Còn lại đúng theo plan: `core/scanner_observability.py` (Bước 18), `core/system_backtest_engine.py` (Bước 22), `services/journal_*` (Bước 25), scripts (Bước 27) — chưa đụng.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (golden + phase0 + fast_path ×2 + pipeline_integration + phase8_rollout + backtest point-in-time/parity/replay) | 111 passed |
+| Full `python -m pytest -q` | 2211 passed, 8 skipped, 17 xfailed, 4 warnings (53.71s) |
+
+**Kết luận:** Không còn mode trong Scanner API hoặc call chain; `smc_scorer_version` giữ trong provenance. Điều kiện hoàn thành Bước 17 đạt.
+
+## Bước 18 — Đơn giản hóa observability + provenance
+
+**File:**
+
+- `core/scoring_provenance.py` — xóa `"smc_scoring_mode": "v2"` và `"smc_decision_source": SMC_SCORER_VERSION` khỏi `build_scoring_provenance()`. Provenance giờ chỉ còn: `provenance_version` (contract), `score_metric`, `scanner_scorer_version`, `scanner_feature_version`, `smc_scorer_version`, `smc_domain_version` — một scorer version + contract version, không còn mode/decision source. `normalize_scoring_provenance` tự bỏ key lạ (fallback keys) → reader chịu được event lịch sử có field cũ.
+- `core/scanner_observability.py` — xóa field `smc_scoring_mode` khỏi `ScannerScanContext` + `create_scan_context`; xóa 3 chỗ ghi `"smc_scoring_mode"` trong `attach_row_observability` (observability payload, row update, candidate order payload). Giữ `smc_scorer_version` + `smc_domain_version`.
+
+**Ripple bắt buộc (consumer đọc key đã xóa):**
+
+- `core/system_backtest_engine.py` — bỏ `smc_scoring_mode` khỏi `scoring_contract` (dòng 327) và khỏi `BacktestResult` init (dòng 1805); field `BacktestResult.smc_scoring_mode` còn đến Bước 22.
+- `tests/test_smc_phase8_rollout.py` — assert provenance: `smc_scoring_mode`/`smc_decision_source` → `not in provenance`; scoring_contract: `"smc_scoring_mode" not in ...`; journal: `loaded.smc_scoring_mode is None` (không còn nguồn ghi — Bước 25 tiếp).
+
+**Test mới:** `test_scanner_observability.py::test_new_telemetry_has_no_smc_mode_or_decision_source_keys` — provenance/context/observability/order payload không chứa 2 key; request cũ truyền `smc_scoring_mode="legacy"` vào `create_scan_context` vẫn chạy và context vẫn `smc_scorer_version=="smc-v2"` (historical tolerance).
+
+**Xác minh:** `rg "smc_scoring_mode|smc_decision_source" core/scanner_observability.py core/scoring_provenance.py` → không có kết quả.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (observability + phase8_rollout + persistence_aftercare + backtest point-in-time + golden + phase0) | 78 passed |
+| Full `python -m pytest -q` | 2212 passed, 8 skipped, 17 xfailed, 4 warnings (53.80s) |
+
+**Kết luận:** Telemetry mới chỉ có SMC canonical provenance; không ghi mode/decision source; reader chịu được event lịch sử. Điều kiện hoàn thành Bước 18 đạt.
+
+## Bước 19 — Xóa SMC shadow event
+
+**File:** `controllers/scanner_controller.py`.
+
+**Xóa:**
+
+- `_compact_smc_shadow_payload()` — builder payload comparison (policy/shadow_status/comparison/active/shadow/consumer_contract) + schema `smc-shadow-summary-v1`.
+- Helper chỉ phục vụ event này: `_compact_event_value()`, `_compact_smc_side()`, `_compact_smc_side_metrics()` + hằng `_SMC_EVENT_TEXT_LIMIT`/`_SMC_EVENT_SIDE_FIELDS` (kiểm tra caller trước khi xóa — chỉ dùng trong 4 hàm trên).
+- Emit path `SMC_SHADOW_COMPARISON` trong `_emit_candidate_events` (block đọc `smc_policy.shadow_enabled`/`comparison` — field không còn trong `smc_scoring` nên block đã chết).
+
+**Tests:**
+
+- `test_scanner_observability.py` — xóa `test_smc_shadow_event_payload_is_compact_and_omits_full_zone_data` (khóa event đã xóa); rotation test đổi event_type placeholder `SMC_SHADOW_COMPARISON` → `SCAN_STARTED` (tránh quảng bá tên cấm).
+- Giữ guard `test_scanner_phase8_rollout.py:700` (`"SMC_SHADOW_COMPARISON" not in event_types`) — đúng yêu cầu plan: test scan không phát sinh event; generic `SHADOW_DECISION_COMPARISON` vẫn phát khi bật (test_scanner_observability giữ).
+
+**Xác minh:** `rg "SMC_SHADOW_COMPARISON|_compact_smc_shadow_payload|smc-shadow-summary" controllers core services` → chỉ còn guard test `not in event_types`.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (observability + phase8_rollout ×2 + persistence_aftercare) | 72 passed |
+| Full `python -m pytest -q` | 2211 passed, 8 skipped, 17 xfailed, 4 warnings (54.60s) |
+
+**Kết luận:** Không còn SMC comparison event trong code runtime; generic Scanner shadow vẫn hoạt động. Điều kiện hoàn thành Bước 19 đạt.
+
+## Bước 21 — Cập nhật rollback drill
+
+**File:**
+
+- `core/scanner_rollout.py` — `run_rollback_drill()`:
+  - Kiểm tra "rollback SMC về legacy/v1" đã được xóa từ Bước 06/12 (chỉ còn kill-switch check).
+  - Thêm check **`shadow_stage_blocks_order`**: policy `stage=SHADOW`, `kill_switch=False` → `order_decision.allowed is False` + reason `SHADOW_MODE_ORDER_SUPPRESSED`.
+  - Giữ check `kill_switch_blocks_order` (`ROLLOUT_KILL_SWITCH_ACTIVE`).
+  - Output thêm `shadow_order_decision` (bằng chứng SHADOW chặn order).
+- `scripts/run_scanner_rollback_drill.py` — không đổi logic (đã gọi `perform_rollback_drill()`); chạy thực tế exit 0, không import scorer v1 (chỉ import `ScannerRolloutMetricsService`).
+
+**Tests:** `test_smc_phase8_rollout.py::test_rollback_drill_blocks_orders_and_drops_v1_rollback` — thêm assert `shadow_stage_blocks_order is True` + `"v1" not in json.dumps(checks)`; thêm import json.
+
+**Ghi chú vận hành (mục 4 plan — runbook deployment trỏ artifact phát hành trước):** repo không có runbook deployment Scanner riêng; hướng dẫn nằm ở Bước 33/34 của plan ("Lưu artifact/build hiện tại để deployment rollback", "Redeploy artifact phát hành trước"). Không tạo file runbook mới trong bước này.
+
+**Xác minh:** `python scripts/run_scanner_rollback_drill.py` → `passed: true` (cả 2 checks), exit 0, không import `smc_quality_score`/scorer v1.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (phase8_rollout ×2) | 34 passed |
+| Full `python -m pytest -q` | 2211 passed, 8 skipped, 17 xfailed, 4 warnings (57.23s) |
+
+**Kết luận:** Rollback vận hành đầy đủ với SMC canonical: kill switch và Scanner SHADOW stage đều chặn order; không còn kiểm tra rollback về v1. Điều kiện hoàn thành Bước 21 đạt.
+
+## Bước 22 — Xóa mode khỏi Backtest runtime
+
+**File:** `core/system_backtest_engine.py` (+ ripple đã xử lý từ Bước 17/18).
+
+**Thay đổi:**
+
+- Xóa `BacktestRequest.smc_scoring_mode` (field default "v2") — request không còn mode.
+- Xóa `BacktestTrade.smc_scoring_mode` — kết quả trade mới chỉ ghi `smc_scorer_version` (canonical).
+- Propagation vào `analyze_symbol()` đã bỏ từ Bước 17 (dòng `smc_scoring_mode=request.smc_scoring_mode`); đọc provenance mode đã bỏ từ Bước 18 (scoring_contract + BacktestTrade init).
+
+**Fail-closed scorer error (mục 4):** pipeline đã fail-closed từ Bước 10 — scorer exception → structural reject với `SMC_SCORING_ERROR` → scenario `stand_aside`/`entry_status=no_setup`, `trade_permission.status=blocked` → backtest funnel không tạo trade. Thêm test khóa: `test_backtest_execution_parity.py::test_backtest_blocks_trade_on_scorer_error_analysis` — `simulate_trade_from_analysis` với analysis blocked shape → `None`.
+
+**Xác minh:** `rg "smc_scoring_mode" core/system_backtest_engine.py controllers/backtest_controller.py scripts/run_baseline_validation.py core/param_sensitivity.py` → không có kết quả. Backtest/live parity trên golden corpus: full suite backtest + golden pass.
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (parity + point-in-time + candidate_replay + execution_sequence + simulation_diagnostics + phase8_rollout + config_validation + run_baseline_validation) | 120 passed |
+| Full `python -m pytest -q` | 2212 passed, 8 skipped, 17 xfailed, 4 warnings (60.49s) |
+
+**Kết luận:** Không thể chạy backtest bằng v1 hoặc shadow — request không mode, trade chỉ ghi scorer version canonical, scorer error fail-closed. Điều kiện hoàn thành Bước 22 đạt.
+
+## Bước 24 — Dọn domain model + producer legacy
+
+**File:** `core/smc_models.py`, `core/smc_context.py`, `core/smc_confluence.py`, `core/risk_engine.py`.
+
+**Mục 4 — Xóa legacy lifecycle fields (hoàn thành):**
+- `SmcZone`: xóa 5 fields `legacy_test_count/legacy_mitigated/legacy_stale/legacy_broken/legacy_liquidity_sweep` + parse khỏi `from_dict` + compat keys trong `to_dict` giờ lấy từ canonical (`test_count←independent_retest_count`, `mitigated←lifecycle_mitigated`, `stale←stale`, `broken←broken`, `liquidity_sweep←liquidity_sweep_linked`).
+- Xóa property `SmcZone.zone_score` ("Compatibility alias used by the legacy scorer" — scorer v1 đã xóa Bước 13); `to_dict` dùng `zone_setup_score`.
+- `enrich_zones`: bỏ `legacy_*` keys khỏi record; đổi tên biến local legacy_* → trung tính (test_count/broken/mitigated/stale/liquidity_sweep).
+- `risk_engine.py` (~1425): bỏ đọc `legacy_liquidity_sweep` (giữ `liquidity_sweep` + `liquidity_sweep_linked`).
+
+**Mục 5 — Xóa scalar confluence v1 (hoàn thành):**
+- `DirectionalConfluence.legacy_score` field + `confluence_score` compat key trong `to_dict` + parse — xóa.
+- `build_directional_confluence()` bỏ param `legacy_score`.
+- `_cross_validate_structure()` (producer scalar confluence) — không còn caller → xóa.
+- `build_smc_context` không còn bọc adapter; `confluence = directional_confluence.to_dict()`.
+
+**Mục 6 — `zone_quality_score()` (giữ, có điều kiện):** vẫn còn caller runtime `enrich_zones` (gắn `zone_score/zone_quality_score/zone_setup_score` cho consumer dict — risk_engine/trade plan/UI đọc trực tiếp) + `scripts/backfill_zone_metadata.py` (Bước 27 xử lý). Điều kiện "nếu không còn caller" không thỏa → giữ, ghi chú PO.
+
+**Mục 7 — `calculate_effective_zone_score()` (giữ):** xác nhận là diagnostic/risk signal độc lập (dùng ở `build_source_zone_diagnostics` + test_effective_zone_score), không phải scorer v1 trá hình.
+
+**Mục 8 — Parser trung tính + xóa public legacy adapter (hoàn thành):**
+- `SmcZone.from_legacy_dict` → `SmcZone.from_dict`; `DirectionalConfluence.from_legacy_dict` → `from_dict`; `SmcScoreBreakdown.from_legacy_score` → `from_score`. Parser vẫn đọc dict cũ (key lạ bị bỏ qua — historical tolerance).
+- Xóa `adapt_legacy_zone_payload` + `adapt_legacy_confluence_payload`; chuyển callers: `smc_context` (enrich_zones dùng `from_dict(...).to_dict()` không cần — item đã đủ keys), `smc_scorer.py` (`from_dict`).
+
+**Mục 1-3 (tách raw/evaluated — giới hạn đã ghi nhận):** raw/evaluated đã phân lớp qua `EvaluatedSmcZone` wrapper (smc_scorer) + `SelectedSmcZone` canonical; evaluated scores chỉ từ `score_smc()`. `SmcZone` giữ score fields vì consumer dict (risk_engine/trade plan/UI) đọc zone scores trực tiếp — không tách field trong bước này (tránh phá trade plan/UI); `scoring_version` mặc định `SMC_RAW_ZONE_VERSION` là identity raw zone, không thể route scorer (Bước 06 đã khóa). Ghi chú PO nếu cần tách sâu hơn.
+
+**Tests:** sửa `test_smc_domain_models` (adapter → from_dict/to_dict, legacy_score/legacy_score asserts → not hasattr/not in), `test_smc_zone_lifecycle` (legacy fields → not hasattr), `test_smc_sweep_linking` (legacy_liquidity_sweep → not in/not hasattr; from_dict), `test_smc_directional_confluence` (bỏ legacy_score/confluence_score asserts; bỏ import `_cross_validate_structure`), `test_smc_scorer_v2` (from_dict).
+
+| Chỉ số | Giá trị |
+|---|---|
+| Targeted (domain + lifecycle + sweep + confluence + scorer + golden + phase0 + effective + diagnostics + pipeline) | 91 passed |
+| Full `python -m pytest -q` | 2212 passed, 8 skipped, 17 xfailed, 4 warnings (61.88s) |
+
+**Kết luận:** Record mới không còn legacy_* lifecycle fields và scalar confluence v1; parser trung tính `from_dict`; public legacy adapters đã xóa; `zone_quality_score` giữ vì còn caller runtime. Điều kiện hoàn thành Bước 24 đạt (với ghi chú mục 1-3/6 nêu trên).

@@ -101,138 +101,6 @@ _SCAN_LOCK_CREATION_GUARD = RLock()
 AFTERCARE_SHUTDOWN_WAIT_SECONDS = 20.0
 
 
-_SMC_EVENT_TEXT_LIMIT = 48
-_SMC_EVENT_SIDE_FIELDS = (
-    "smc_quality",
-    "smc_reason",
-    "signal_score",
-    "scoring_version",
-    "selected_zone_id",
-    "selected_zone_type",
-    "selected_zone_timeframe",
-    "selected_zone_quality_score",
-    "selected_zone_relevance_score",
-    "selected_zone_setup_score",
-    "selected_zone_score",
-)
-
-
-def _compact_event_value(value: object) -> object:
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    if isinstance(value, str):
-        return value[:_SMC_EVENT_TEXT_LIMIT]
-    if isinstance(value, (list, tuple, set)):
-        return [str(item)[:_SMC_EVENT_TEXT_LIMIT] for item in list(value)[:6]]
-    return str(value)[:_SMC_EVENT_TEXT_LIMIT]
-
-
-def _compact_smc_side(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        return {}
-    return {
-        key: _compact_event_value(value[key])
-        for key in _SMC_EVENT_SIDE_FIELDS
-        if key in value
-    }
-
-
-def _compact_smc_side_metrics(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        return {}
-    return {
-        side: _compact_event_value(value[side])
-        for side in ("buy", "sell")
-        if side in value
-    }
-
-
-def _compact_smc_shadow_payload(smc_scoring: dict[str, Any]) -> dict[str, object]:
-    """Persist comparison evidence without full SMC zones/breakdowns per scan."""
-    policy = smc_scoring.get("policy")
-    comparison = smc_scoring.get("comparison")
-    contract = smc_scoring.get("consumer_contract")
-    policy = policy if isinstance(policy, dict) else {}
-    comparison = comparison if isinstance(comparison, dict) else {}
-    contract = contract if isinstance(contract, dict) else {}
-
-    policy_fields = (
-        "requested_mode",
-        "effective_mode",
-        "decision_source",
-        "active_version",
-        "shadow_enabled",
-        "shadow_version",
-        "decision_impact_allowed",
-        "fallback_reason_codes",
-    )
-    comparison_fields = (
-        "available",
-        "active_best_side",
-        "shadow_best_side",
-        "direction_changed",
-        "decision_changed",
-        "best_side_changed",
-        "decision_input_changed",
-    )
-    metric_fields = (
-        "legacy_smc_quality",
-        "v2_smc_quality",
-        "score_delta",
-        "selected_zone_changed",
-    )
-    contract_fields = (
-        "contract_version",
-        "decision_source",
-        "decision_impact_allowed",
-    )
-    compact_comparison = {
-        key: _compact_event_value(comparison[key])
-        for key in comparison_fields
-        if key in comparison
-    }
-    compact_comparison.update(
-        {
-            key: _compact_smc_side_metrics(comparison.get(key))
-            for key in metric_fields
-            if key in comparison
-        }
-    )
-    return {
-        "event_schema_version": "smc-shadow-summary-v1",
-        "policy": {
-            key: _compact_event_value(policy[key])
-            for key in policy_fields
-            if key in policy
-        },
-        "shadow_status": _compact_event_value(
-            smc_scoring.get("shadow_status")
-        ),
-        "comparison": compact_comparison,
-        "active": {
-            side: _compact_smc_side(
-                (smc_scoring.get("active") or {}).get(side)
-                if isinstance(smc_scoring.get("active"), dict)
-                else None
-            )
-            for side in ("buy", "sell")
-        },
-        "shadow": {
-            side: _compact_smc_side(
-                (smc_scoring.get("shadow") or {}).get(side)
-                if isinstance(smc_scoring.get("shadow"), dict)
-                else None
-            )
-            for side in ("buy", "sell")
-        },
-        "consumer_contract": {
-            key: _compact_event_value(contract[key])
-            for key in contract_fields
-            if key in contract
-        },
-    }
-
-
 def _serialized_execution(method):
     """Serialize live order checks so concurrent callers share fresh state."""
 
@@ -410,7 +278,6 @@ class ScannerController:
                     "request_hash": scan_context.request_hash,
                     "settings_hash": scan_context.settings_hash,
                     "symbols": list(request.symbols),
-                    "smc_scoring_mode": scan_context.smc_scoring_mode,
                     "smc_scorer_version": scan_context.smc_scorer_version,
                     "smc_domain_version": scan_context.smc_domain_version,
                 },
@@ -716,7 +583,6 @@ class ScannerController:
             "analysis_input_kwargs": analysis_input_kwargs,
             "closed_trades": closed_trades,
             "account_guard_settings": account_guard_settings,
-            "smc_scoring_mode": request.smc_scoring_mode,
             "scanner_fast_tier1": bool(
                 request.feature_flags.get("scanner_fast_tier1", False)
             ),
@@ -2301,33 +2167,6 @@ class ScannerController:
                     "reason_codes": row.get("auto_trade_reason_codes", []),
                 },
             )
-        smc_scoring = (
-            analysis.get("smc_scoring")
-            if isinstance(analysis.get("smc_scoring"), dict)
-            else {}
-        )
-        smc_policy = (
-            smc_scoring.get("policy")
-            if isinstance(smc_scoring.get("policy"), dict)
-            else {}
-        )
-        if smc_policy.get("shadow_enabled") is True:
-            comparison = (
-                smc_scoring.get("comparison")
-                if isinstance(smc_scoring.get("comparison"), dict)
-                else {}
-            )
-            self._emit_observability(
-                "SMC_SHADOW_COMPARISON",
-                scan_id=scan_id,
-                symbol=symbol,
-                severity=(
-                    "WARNING"
-                    if comparison.get("best_side_changed")
-                    else "INFO"
-                ),
-                payload=_compact_smc_shadow_payload(smc_scoring),
-            )
 
     def save_snapshot(
         self,
@@ -2648,7 +2487,6 @@ def _scan_one_symbol(
     account_guard_settings: dict[str, Any],
     thresholds: dict[str, int | float] | None = None,
     ai_service: object | None = None,
-    smc_scoring_mode: str = "v2",
 ) -> dict[str, Any]:
     """Legacy single-symbol scan path retained for compatibility."""
     mt5_svc = MT5Service()
@@ -2700,7 +2538,6 @@ def _scan_one_symbol(
             open_trades=[],
             account_guard_settings=account_guard_settings,
             thresholds=thresholds,
-            smc_scoring_mode=smc_scoring_mode,
         )
         result["economic_events"] = macro_context.get("events", [])
         result["macro"]["driver_context"] = macro_context
@@ -2829,7 +2666,6 @@ def _analyze_one_symbol(
     closed_trades: list[dict[str, Any]],
     account_guard_settings: dict[str, Any],
     thresholds: dict[str, int | float] | None = None,
-    smc_scoring_mode: str = "v2",
     scanner_fast_tier1: bool = False,
     scanner_fast_tier2: bool = False,
 ) -> dict[str, Any]:
@@ -2867,7 +2703,6 @@ def _analyze_one_symbol(
             open_trades=[],
             account_guard_settings=account_guard_settings,
             thresholds=thresholds,
-            smc_scoring_mode=smc_scoring_mode,
             scanner_fast_tier1=scanner_fast_tier1,
             scanner_fast_tier2=scanner_fast_tier2,
         )

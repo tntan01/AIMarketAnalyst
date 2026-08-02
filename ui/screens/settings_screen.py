@@ -1338,26 +1338,9 @@ class SettingsScreen(QWidget):
         ])
         stage.setCurrentText(rollout.stage)
 
-        smc_mode = QComboBox()
-        smc_mode.addItems(["legacy", "shadow", "v2"])
-        smc_mode.setCurrentText(
-            str(
-                getattr(
-                    self.app_settings.features,
-                    "smc_scoring_mode",
-                    "v2",
-                )
-                or "v2"
-            ).lower()
-        )
-        smc_mode.setToolTip(
-            "v2: dùng SMC v2 cho quyết định; shadow: quyết định v1 và "
-            "đối chiếu v2; legacy: rollback hoàn toàn về SMC v1."
-        )
-
         kill_switch = QCheckBox("Dừng toàn bộ lệnh từ Scanner")
         kill_switch.setChecked(rollout.kill_switch)
-        shadow_compare = QCheckBox("Ghi so sánh V1/V2")
+        shadow_compare = QCheckBox("So sánh Scanner V1/V2")
         shadow_compare.setChecked(rollout.shadow_compare_enabled)
         allowed_symbols = QLineEdit()
         allowed_symbols.setPlaceholderText("EURUSD, GBPUSD")
@@ -1408,7 +1391,6 @@ class SettingsScreen(QWidget):
         )
 
         self.rollout_stage_input = stage
-        self.rollout_smc_mode_input = smc_mode
         self.rollout_kill_switch_input = kill_switch
         self.rollout_shadow_compare_input = shadow_compare
         self.rollout_symbols_input = allowed_symbols
@@ -1423,9 +1405,6 @@ class SettingsScreen(QWidget):
         self.rollout_max_degradation_input = max_degradation
 
         form_layout.addWidget(self._compact_form_row("Giai đoạn", stage))
-        form_layout.addWidget(
-            self._compact_form_row("SMC scoring mode", smc_mode)
-        )
         form_layout.addWidget(kill_switch)
         form_layout.addWidget(shadow_compare)
         form_layout.addWidget(
@@ -1518,13 +1497,9 @@ class SettingsScreen(QWidget):
                 self.rollout_max_degradation_input.value()
             ),
         )
-        self.app_settings.features.smc_scoring_mode = (
-            self.rollout_smc_mode_input.currentText().strip().lower()
-        )
         self.settings_service.save(self.app_settings)
         self.rollout_status_label.setText(
-            "Đã lưu rollout và SMC mode. Kill switch và SHADOW luôn chặn "
-            "gửi lệnh."
+            "Đã lưu rollout. Kill switch và SHADOW luôn chặn gửi lệnh."
         )
         self.rollout_status_label.setProperty("state", "ok")
         self.rollout_status_label.style().unpolish(
