@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from html import escape
 
 from config.paths import app_data_dir
@@ -8,7 +9,7 @@ from core.scanner_models import (
     BRANCH_BACKTEST_VALIDATED,
 )
 from core.reason_codes import REASON_CODE_MESSAGES
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QProgressBar,
     QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
@@ -119,6 +120,10 @@ class ScannerDetailScreen(QWidget):
         self.row: dict[str, object] = {}
         self.scanner_result: dict[str, object] = {}
         self.setObjectName("FormScreen")
+        self._scan_timer = QTimer(self)
+        self._scan_timer.setInterval(60000)
+        self._scan_timer.timeout.connect(self._refresh_scan_time_label)
+        self._scan_timer.start()
         self._build_ui()
 
     def _is_light_theme(self) -> bool:
@@ -1410,7 +1415,12 @@ class ScannerDetailScreen(QWidget):
                 symbol,
             )
         )
-        
+        self.scan_time_label = QLabel("")
+        self.scan_time_label.setObjectName("PageSubtitle")
+        self.scan_time_label.setWordWrap(True)
+        self.header_slot.addWidget(self.scan_time_label)
+        self._refresh_scan_time_label()
+
         self._refresh_hero()
         self._refresh_trade_panel()
         self._refresh_score_panel()
@@ -1418,6 +1428,42 @@ class ScannerDetailScreen(QWidget):
         self._refresh_chart()
         self._refresh_diagnostics()
         self._refresh_ai_audit()
+
+    def _scan_timestamp(self) -> str | None:
+        for source in (self.scanner_result, self.row):
+            if isinstance(source, dict):
+                value = source.get("timestamp")
+                if value:
+                    return str(value)
+        return None
+
+    def _refresh_scan_time_label(self) -> None:
+        if not hasattr(self, "scan_time_label"):
+            return
+        ts = self._scan_timestamp()
+        if not ts:
+            self.scan_time_label.setText("Thời điểm quét: không có sẵn")
+            return
+        try:
+            scanned = datetime.fromisoformat(ts)
+        except (TypeError, ValueError):
+            self.scan_time_label.setText("Thời điểm quét: không xác định")
+            return
+        now = datetime.now().astimezone()
+        if scanned.tzinfo is None:
+            scanned = scanned.replace(tzinfo=now.tzinfo)
+        total_min = max(0, int((now - scanned).total_seconds() // 60))
+        if total_min < 1:
+            relative = "vừa xong"
+        elif total_min < 60:
+            relative = f"{total_min} phút trước"
+        elif total_min < 1440:
+            relative = f"{total_min // 60} giờ trước"
+        else:
+            relative = f"{total_min // 1440} ngày trước"
+        self.scan_time_label.setText(
+            f"Quét lúc {scanned.strftime('%H:%M')} ({relative})"
+        )
 
     def _refresh_chart(self) -> None:
         if not hasattr(self, "chart"):
