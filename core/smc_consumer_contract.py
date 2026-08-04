@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.smc_scoring_result import SmcScoringResult
+from core.smc_scoring_result import SmcScoringResult, validate_smc_result
 
 
 SMC_CONSUMER_CONTRACT_VERSION = "smc-consumer-v2"
@@ -17,8 +17,12 @@ def build_smc_consumer_from_canonical_result(
     """Build the decision-path consumer from one canonical scorer result.
 
     The canonical result already carries the selected zone for each side, so no
-    shadow/legacy selection or context lookup is needed.
+    shadow/legacy selection or context lookup is needed.  A malformed or
+    incomplete result is rejected rather than silently producing empty sides.
     """
+
+    if not validate_smc_result(result):
+        raise ValueError("SMC scoring result is malformed or missing a side")
 
     contract: dict[str, Any] = {
         "contract_version": SMC_CONSUMER_CONTRACT_VERSION,

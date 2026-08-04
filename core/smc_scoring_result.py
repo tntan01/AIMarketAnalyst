@@ -145,6 +145,26 @@ class SmcScoringResult:
         )
 
 
+def validate_smc_result(value: object) -> bool:
+    """Return whether *value* is a structurally valid canonical SMC result.
+
+    A valid result carries both BUY and SELL sides, each with a valid score and
+    breakdown.  A missing or malformed side makes the result invalid so the
+    caller can fail closed instead of synthesizing empty sides.
+    """
+    if not isinstance(value, SmcScoringResult):
+        return False
+    for side in ("buy", "sell"):
+        side_result = value.side(side)
+        if side_result is None:
+            return False
+        if not isinstance(side_result.score, int):
+            return False
+        if not isinstance(side_result.breakdown, dict):
+            return False
+    return True
+
+
 def _optional_dict(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 

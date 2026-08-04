@@ -77,6 +77,18 @@ def test_consumer_contract_selects_buy_and_sell_from_one_result():
     assert "shadow_scoring_version" not in buy
 
 
+def test_consumer_rejects_malformed_result():
+    malformed = SmcScoringResult(
+        scoring_version="smc-v2",
+        sides={"buy": _canonical_side("buy", zone_id="zone-buy")},
+    )
+    try:
+        build_smc_consumer_from_canonical_result(result=malformed)
+        raise AssertionError("expected ValueError for malformed result")
+    except ValueError:
+        pass
+
+
 def test_strict_preferred_zone_does_not_reselect(monkeypatch):
     def _unexpected_reselection(*args, **kwargs):
         raise AssertionError("risk engine reselected another zone")

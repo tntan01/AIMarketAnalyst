@@ -12,6 +12,7 @@ from core.smc_scoring_result import (
     SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
     SmcSideScoringResult,
+    validate_smc_result,
 )
 
 
@@ -243,3 +244,32 @@ def test_public_names_are_neutral():
         lowered = name.lower()
         for forbidden in ("v1", "v2", "legacy", "shadow"):
             assert forbidden not in lowered, name
+
+
+def test_validate_smc_result_accepts_full_result():
+    assert validate_smc_result(_full_result()) is True
+
+
+def test_validate_smc_result_rejects_missing_side():
+    result = SmcScoringResult(
+        scoring_version="smc-v2",
+        sides={"buy": SmcSideScoringResult.from_dict(_side_payload(12))},
+    )
+    assert validate_smc_result(result) is False
+
+
+def test_validate_smc_result_rejects_non_result_input():
+    assert validate_smc_result(None) is False
+    assert validate_smc_result({"buy": {}, "sell": {}}) is False
+    assert validate_smc_result("not-a-result") is False
+
+
+def test_validate_smc_result_rejects_malformed_side():
+    result = SmcScoringResult(
+        scoring_version="smc-v2",
+        sides={
+            "buy": SmcSideScoringResult(score=None, breakdown={"total": 1}),
+            "sell": SmcSideScoringResult(score=0, breakdown={"total": 0}),
+        },
+    )
+    assert validate_smc_result(result) is False

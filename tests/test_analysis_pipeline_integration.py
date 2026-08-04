@@ -23,8 +23,13 @@ from core.scanner_candidate_engine import (
     build_candidate_order_payload,
     evaluate_scanner_candidate,
 )
-from core.smc_prefilter import NO_ACTIONABLE_SMC_ZONE, NO_RAW_SMC_CANDIDATE
+from core.smc_prefilter import (
+    NO_ACTIONABLE_SMC_ZONE,
+    NO_RAW_SMC_CANDIDATE,
+    SMC_SCORING_ERROR,
+)
 from core.smc_scorer import score_smc
+from core.smc_scoring_result import SmcScoringResult, SmcSideScoringResult
 
 
 class _Context:
@@ -660,6 +665,33 @@ def test_tier1_survivor_reuses_precomputed_smc_and_runs_full_pipeline():
     steps = [item["step"] for item in result["pipeline_diagnostics"]]
     assert {"correlation", "score", "scenarios", "direction", "gate", "final_score"} <= set(steps)
     enrich.assert_called_once()
+
+
+def test_tier1_malformed_precomputed_smc_fails_closed():
+    """A malformed precomputed SMC result must block with SMC_SCORING_ERROR."""
+    pipeline = AnalysisPipeline()
+    malformed = SmcScoringResult(
+        scoring_version="smc-v2",
+        sides={"buy": SmcSideScoringResult(score=12, breakdown={"total": 12})},
+    )
+    decision = {
+        "should_reject": False,
+        "fail_open": False,
+        "precomputed_smc": malformed,
+    }
+    with patch(
+        "core.analysis_pipeline.evaluate_post_context_prefilter",
+        return_value=decision,
+    ):
+        result = pipeline.execute(
+            _default_input(),
+            _build_candles_by_timeframe(regime="range"),
+            scanner_fast_tier1=True,
+        )
+
+    assert result["analysis_status"] == "structural_reject"
+    assert result["pipeline_route"] == "post_context_reject"
+    assert result["fast_reject_reason"] == SMC_SCORING_ERROR
 
 
 def test_disabled_tier_flags_keep_exact_baseline_except_timestamp():

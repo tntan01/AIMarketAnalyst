@@ -53,7 +53,11 @@ from core.smc_consumer_contract import (
 )
 from core.smc_prefilter import SMC_SCORING_ERROR, evaluate_post_context_prefilter
 from core.smc_scorer import score_smc
-from core.smc_scoring_result import SMC_SCORING_CONTRACT_VERSION, SmcScoringResult
+from core.smc_scoring_result import (
+    SMC_SCORING_CONTRACT_VERSION,
+    SmcScoringResult,
+    validate_smc_result,
+)
 from core.smc_versions import SMC_SCORER_VERSION
 from core.scoring_provenance import build_scoring_provenance
 from core.technical_context import build_technical_snapshot, detect_market_regime
@@ -648,6 +652,18 @@ class AnalysisPipeline:
         except Exception:
             # Scorer failure is fail-closed: block the analysis with
             # SMC_SCORING_ERROR instead of retrying or falling back.
+            self._prepare_structural_reject("post_context", {
+                "reason_code": SMC_SCORING_ERROR,
+                "should_reject": True,
+                "fail_open": False,
+                "fast_path_version": "scanner-fast-path-v1",
+                "prefilter_version": "smc-prefilter-v1",
+            })
+            return
+
+        if not validate_smc_result(smc_sides):
+            # A malformed or incomplete canonical result must fail closed with
+            # SMC_SCORING_ERROR rather than synthesizing empty sides.
             self._prepare_structural_reject("post_context", {
                 "reason_code": SMC_SCORING_ERROR,
                 "should_reject": True,
