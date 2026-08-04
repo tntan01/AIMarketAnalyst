@@ -422,6 +422,30 @@
       } catch(e) {}
     }
 
+    function _captureVisibleRange() {
+      if (!_chart) return null;
+      try {
+        var range = _chart.timeScale().getVisibleLogicalRange();
+        if (!range) return null;
+        return { from: range.from, to: range.to };
+      } catch(e) {
+        return null;
+      }
+    }
+
+    function _restoreVisibleRange(range) {
+      if (!_chart || !range) return false;
+      try {
+        var from = range.from;
+        var to = range.to;
+        if (typeof from !== 'number' || typeof to !== 'number') return false;
+        _chart.timeScale().setVisibleLogicalRange({ from: from, to: to });
+        return true;
+      } catch(e) {
+        return false;
+      }
+    }
+
     // === Public API ===
 
     function applyChartTheme(theme, palette) {
@@ -491,6 +515,7 @@
           return;
         }
 
+        var savedRange = _chart ? _captureVisibleRange() : null;
         if (!_initChart()) {
           showError('Không thể khởi tạo biểu đồ.');
           return;
@@ -501,6 +526,9 @@
         _renderCurrentPrice();
         _fitPriceScale();
         _updateActiveButton();
+        if (savedRange) {
+          _restoreVisibleRange(savedRange);
+        }
 
         // Legend
         if (_chart) {
