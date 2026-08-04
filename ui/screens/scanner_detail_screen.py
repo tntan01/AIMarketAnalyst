@@ -123,7 +123,6 @@ class ScannerDetailScreen(QWidget):
         self._scan_timer = QTimer(self)
         self._scan_timer.setInterval(60000)
         self._scan_timer.timeout.connect(self._refresh_scan_time_label)
-        self._scan_timer.start()
         self._candle_fetch_active = False
         self._auto_refresh_timer = QTimer(self)
         self._auto_refresh_timer.setInterval(60000)
@@ -1521,11 +1520,15 @@ class ScannerDetailScreen(QWidget):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        if hasattr(self, "_scan_timer"):
+            self._scan_timer.start()
         if hasattr(self, "_auto_refresh_timer"):
             self._auto_refresh_timer.start()
 
     def hideEvent(self, event) -> None:
         super().hideEvent(event)
+        if hasattr(self, "_scan_timer"):
+            self._scan_timer.stop()
         if hasattr(self, "_auto_refresh_timer"):
             self._auto_refresh_timer.stop()
 
