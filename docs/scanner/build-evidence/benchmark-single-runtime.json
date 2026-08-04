@@ -1,0 +1,165 @@
+{
+  "migration": "smc-single-runtime",
+  "benchmark_step": "Bước 32",
+  "corpus": "tests/fixtures/smc_canonical/golden_cases.json",
+  "samples": 8,
+  "baseline_comparison": {
+    "method": "Pre-migration dual-run scored SMC twice per symbol (v1 score path + v2 shadow). Current canonical runtime scores once; scorer_calls_per_symbol.max=1 verifies the dual-run was removed. Single-run latency is therefore strictly bounded by the dual-run cost.",
+    "scorer_calls_before": 2,
+    "scorer_calls_now": 1,
+    "snapshot_before": "smc_scoring carried duplicated shadow/decision/active/comparison payload per side",
+    "snapshot_now": "smc_scoring carries a single canonical sides + consumer_contract (no shadow/decision/comparison keys)"
+  },
+  "scorer_calls_per_symbol": {
+    "distribution": [
+      1
+    ],
+    "max": 1,
+    "expected_max": 1,
+    "pass": true
+  },
+  "latency_ms": {
+    "p50": 2.175,
+    "p95": 2.58,
+    "min": 1.69,
+    "max": 25.945,
+    "note": "single-run scorer (dual-run removed): call count 1/symbol proves no 2x scorer cost"
+  },
+  "snapshot": {
+    "bytes_min": 3361,
+    "bytes_max": 4068,
+    "bytes_avg": 3829.75,
+    "forbidden_keys_present": [],
+    "pass": true
+  },
+  "error_rate": {
+    "errors": 0,
+    "total": 8,
+    "rate": 0.0
+  },
+  "blocked_reasons": [],
+  "no_zone_rate": {
+    "no_zone_cases": 2,
+    "total": 8,
+    "rate": 0.25
+  },
+  "candidate_order": {
+    "ready_to_trade_scenarios": 0,
+    "order_ready_decisions": 0,
+    "total_cases": 8
+  },
+  "rows": [
+    {
+      "case": "buy_selected_zone",
+      "scorer_calls": 1,
+      "latency_ms": 25.945,
+      "snapshot_bytes": 3979,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": "z-buy-h4",
+        "sell": null
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "sell_selected_zone",
+      "scorer_calls": 1,
+      "latency_ms": 2.58,
+      "snapshot_bytes": 3992,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": null,
+        "sell": "z-sell-h4"
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "no_zone",
+      "scorer_calls": 1,
+      "latency_ms": 1.69,
+      "snapshot_bytes": 3361,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": null,
+        "sell": null
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "fvg_h1_only",
+      "scorer_calls": 1,
+      "latency_ms": 2.178,
+      "snapshot_bytes": 3928,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": "z-buy-h1-fvg",
+        "sell": null
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "order_block",
+      "scorer_calls": 1,
+      "latency_ms": 2.22,
+      "snapshot_bytes": 3955,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": "z-buy-h4-ob",
+        "sell": null
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "broken_stale",
+      "scorer_calls": 1,
+      "latency_ms": 2.173,
+      "snapshot_bytes": 3994,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": "z-buy-stale",
+        "sell": null
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "choch_cap",
+      "scorer_calls": 1,
+      "latency_ms": 2.032,
+      "snapshot_bytes": 4068,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": "z-buy-h4",
+        "sell": null
+      },
+      "ready_to_trade": false
+    },
+    {
+      "case": "missing_data_valid",
+      "scorer_calls": 1,
+      "latency_ms": 1.716,
+      "snapshot_bytes": 3361,
+      "has_forbidden_keys": false,
+      "analysis_status": "completed",
+      "pipeline_route": "full",
+      "selected_zone": {
+        "buy": null,
+        "sell": null
+      },
+      "ready_to_trade": false
+    }
+  ]
+}
