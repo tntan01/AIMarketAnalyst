@@ -244,4 +244,10 @@ def test_enriched_zone_identity_reaches_structural_flags_and_risk_adapter():
     assert flags["choch_against_direction"] is False
     assert flags["liquidity_sweep_aligned"] is False
     assert levels[0]["zone_id"] == enriched["zone_id"]
-    assert levels[0]["zone_setup_score"] == enriched["zone_score"]
+    # Raw candidate carries no scorer score/version; only the canonical scorer
+    # attaches evaluated scores. The risk adapter falls back to a neutral score.
+    assert "zone_score" not in enriched
+    assert "zone_setup_score" not in enriched
+    assert "zone_quality_score" not in enriched
+    assert "strength" not in enriched
+    assert isinstance(levels[0]["zone_setup_score"], int)

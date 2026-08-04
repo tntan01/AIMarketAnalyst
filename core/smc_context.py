@@ -926,14 +926,6 @@ def enrich_zones(
             }
         )
         item.update(lifecycle.to_dict())
-        zone_quality = zone_quality_score(item, side)
-        item.update({
-            "zone_quality_score": zone_quality,
-            "zone_relevance_score": None,
-            "zone_setup_score": zone_quality,
-            "zone_score": zone_quality,
-        })
-        item["strength"] = score_to_strength(zone_quality)
         enriched.append(item)
     return sorted(enriched, key=lambda zone: zone.get("zone_score", 0), reverse=True)
 
