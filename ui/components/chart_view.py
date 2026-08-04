@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from PyQt6.QtCore import QUrl, Qt
+from PyQt6.QtCore import QObject, QUrl, Qt, pyqtSlot
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 from ui.rich_text import empty_state_html
@@ -52,6 +52,18 @@ def chart_bootstrap_html(source: str, palette: ThemePalette) -> str:
     return themed.replace("</head>", bootstrap + "</head>", 1)
 
 
+class _ChartTimeframeBridge(QObject):
+    """Bridge so JS timeframe switches notify the Python chart state."""
+
+    def __init__(self, chart: "AnalysisChartView") -> None:
+        super().__init__()
+        self._chart = chart
+
+    @pyqtSlot(str)
+    def onTimeframeChanged(self, timeframe: str) -> None:
+        self._chart._active_tf = timeframe
+
+
 class AnalysisChartView(QWidget):
     """Chart component wrapping QWebEngineView + Lightweight Charts."""
 
@@ -92,6 +104,13 @@ class AnalysisChartView(QWidget):
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ShowScrollBars, False)
+
+        from PyQt6.QtWebChannel import QWebChannel
+
+        self._bridge = _ChartTimeframeBridge(self)
+        self._channel = QWebChannel(self._webview.page())
+        self._channel.registerObject("chartBridge", self._bridge)
+        self._webview.page().setWebChannel(self._channel)
 
         # Load chart HTML voi base path de load duoc JS tu cung thu muc
         chart_html = Path(__file__).parent.parent.parent / "assets" / "chart" / "index.html"

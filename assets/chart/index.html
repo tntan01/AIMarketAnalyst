@@ -62,6 +62,7 @@
   </div>
 
   <script src="lightweight-charts.standalone.production.js"></script>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
   <script>
     // State
     var _chart = null;
@@ -72,6 +73,7 @@
     var _payload = null;
     var _activeTF = 'D1';
     var _showSourceZone = false;
+    var _pyBridge = null;
 
     var COLORS = {
       bg: '#101214', text: '#f3f4f6', grid: '#1e2227', border: '#2d3238',
@@ -593,12 +595,22 @@
     window.showEmpty = showEmpty;
     window.showError = showError;
 
+    // Connect to Python bridge so timeframe switches reach the Python side
+    if (window.qt && window.qt.webChannelTransport && typeof QWebChannel !== 'undefined') {
+      new QWebChannel(window.qt.webChannelTransport, function(channel) {
+        _pyBridge = channel.objects.chartBridge;
+      });
+    }
+
     // Timeframe selector click handlers
     var buttons = document.querySelectorAll('#timeframe-selector button');
     for (var i = 0; i < buttons.length; i++) {
       buttons[i].addEventListener('click', function(e) {
         var tf = this.getAttribute('data-tf');
-        if (tf) switchTimeframe(tf);
+        if (tf) {
+          switchTimeframe(tf);
+          if (_pyBridge) _pyBridge.onTimeframeChanged(tf);
+        }
       });
     }
 
