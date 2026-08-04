@@ -1,0 +1,174 @@
+134 INFO: PyInstaller: 6.20.0, contrib hooks: 2026.5
+134 INFO: Python: 3.14.4
+171 INFO: Platform: Windows-11-10.0.26200-SP0
+171 INFO: Python environment: C:\Python314
+172 INFO: Removing temporary files and cleaning cache in C:\Users\tntan\AppData\Local\pyinstaller
+179 INFO: Module search paths (PYTHONPATH):
+['D:\\Projects\\AIMarketAnalyst\\packaging',
+ 'C:\\Python314\\python314.zip',
+ 'C:\\Python314\\DLLs',
+ 'C:\\Python314\\Lib',
+ 'C:\\Python314',
+ 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages',
+ 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\win32',
+ 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\win32\\lib',
+ 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\Pythonwin',
+ 'C:\\Python314\\Lib\\site-packages',
+ 'D:\\Projects\\AIMarketAnalyst']
+468 INFO: Appending 'datas' from .spec
+470 INFO: checking Analysis
+470 INFO: Building Analysis because Analysis-00.toc is non existent
+470 INFO: Looking for Python shared library...
+470 INFO: Using Python shared library: C:\Python314\python314.dll
+470 INFO: Running Analysis Analysis-00.toc
+470 INFO: Target bytecode optimization level: 0
+470 INFO: Initializing module dependency graph...
+471 INFO: Initializing module graph hook caches...
+515 INFO: Analyzing modules for base_library.zip ...
+2208 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+2624 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+2923 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+2934 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+5435 INFO: Caching module dependency graph...
+5467 INFO: Analyzing D:\Projects\AIMarketAnalyst\main.py
+5508 INFO: Processing standard module hook 'hook-urllib3.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+5643 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5645 INFO: SetuptoolsInfo: initializing cached setuptools info...
+6438 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+6445 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+6500 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+6543 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+6548 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+6554 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6588 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6589 INFO: Setuptools: 'jaraco' appears to be a partial setuptools-vendored copy - extending search paths to ['C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\jaraco', 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\setuptools\\_vendor\\jaraco']!
+6589 INFO: Processing pre-safe-import-module hook 'hook-jaraco.functools.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6601 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6771 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7076 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+7192 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+8028 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8290 INFO: Processing pre-safe-import-module hook 'hook-jaraco.text.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8290 INFO: Setuptools: 'jaraco.text' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco.text'!
+8304 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+8306 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8307 INFO: Processing pre-safe-import-module hook 'hook-jaraco.context.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8526 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8527 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+8561 INFO: Processing standard module hook 'hook-setuptools._vendor.importlib_metadata.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+8592 INFO: Processing pre-safe-import-module hook 'hook-zipp.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8592 INFO: Setuptools: 'zipp' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.zipp'!
+8915 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8915 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+9576 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+9577 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+10162 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+10430 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+11771 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+12314 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+12895 INFO: Processing standard module hook 'hook-PyQt6.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+13976 INFO: Processing standard module hook 'hook-PyQt6.QtGui.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+21140 INFO: Processing standard module hook 'hook-PyQt6.QtCore.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+24648 INFO: Processing standard module hook 'hook-PyQt6.QtWidgets.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+26868 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+27913 INFO: Processing standard module hook 'hook-keyring.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+28602 INFO: Processing standard module hook 'hook-sqlite3.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+29277 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+32291 INFO: Processing standard module hook 'hook-pandas.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+35542 INFO: Processing standard module hook 'hook-pandas.io.formats.style.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+38274 INFO: Processing standard module hook 'hook-pandas.plotting.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+38334 INFO: Processing standard module hook 'hook-matplotlib.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+39097 INFO: Processing standard module hook 'hook-matplotlib.backend_bases.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+39265 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+39398 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+39863 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+40159 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+41251 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+41379 INFO: Processing standard module hook 'hook-matplotlib.pyplot.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+42425 INFO: Processing standard module hook 'hook-dateutil.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+42523 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45361 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+47456 INFO: Processing standard module hook 'hook-pandas.io.clipboard.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+47602 INFO: Processing standard module hook 'hook-lxml.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+48011 INFO: Processing standard module hook 'hook-lxml.etree.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+48020 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+48477 INFO: Processing standard module hook 'hook-pytest.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+48768 INFO: Processing standard module hook 'hook-pygments.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+50159 INFO: Processing standard module hook 'hook-py.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+52303 INFO: Processing standard module hook 'hook-pytz.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+53295 INFO: Processing pre-safe-import-module hook 'hook-platformdirs.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+53315 INFO: Processing standard module hook 'hook-platformdirs.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+53487 INFO: Processing standard module hook 'hook-websockets.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+55585 INFO: Processing standard module hook 'hook-matplotlib.backends.backend_qtagg.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+55591 INFO: Processing standard module hook 'hook-matplotlib.backends.qt_compat.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+55592 INFO: hook-matplotlib.backends.qt_compat: selected 'PyQt6' as Qt bindings because hook for 'PyQt6' has been run before.
+55607 INFO: Processing standard module hook 'hook-PyQt6.QtSvg.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+57031 INFO: Processing standard module hook 'hook-PyQt6.QtWebEngineWidgets.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+58558 INFO: Processing standard module hook 'hook-PyQt6.QtNetwork.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+62779 INFO: Processing standard module hook 'hook-PyQt6.QtPrintSupport.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+63927 INFO: Processing standard module hook 'hook-PyQt6.QtWebChannel.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+64916 INFO: Processing standard module hook 'hook-PyQt6.QtWebEngineCore.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+69411 INFO: Processing module hooks (post-graph stage)...
+69652 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+69842 INFO: Processing standard module hook 'hook-zope.interface.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+70840 INFO: Processing standard module hook 'hook-pywintypes.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+71979 INFO: Processing standard module hook 'hook-win32ctypes.core.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+72937 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+73863 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+73864 INFO: Matplotlib backend selection method: automatic discovery of used backends
+74249 INFO: Trying determine the default backend as first importable candidate from the list: ['QtAgg', 'Qt5Agg', 'Gtk4Agg', 'Gtk3Agg', 'TkAgg', 'WxAgg']
+74826 INFO: Selected matplotlib backends: ['QtAgg']
+75545 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+78640 INFO: Processing standard module hook 'hook-PyQt6.QtPositioning.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+80720 INFO: Processing standard module hook 'hook-PyQt6.QtQuick.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+82345 INFO: Processing standard module hook 'hook-PyQt6.QtQml.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+108716 INFO: Processing standard module hook 'hook-PyQt6.QtOpenGL.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+109818 INFO: Processing standard module hook 'hook-PyQt6.QtQuickWidgets.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+111001 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+111002 WARNING: Hidden import "pycparser.lextab" not found!
+111002 WARNING: Hidden import "pycparser.yacctab" not found!
+111003 INFO: Processing standard module hook 'hook-tzdata.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+111691 INFO: Performing binary vs. data reclassification (3081 entries)
+112295 INFO: Looking for ctypes DLLs
+112405 INFO: Analyzing run-time hooks ...
+112415 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+112418 INFO: Including run-time hook 'pyi_rth_pyqt6.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+112420 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+112423 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+112426 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+112429 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+112432 INFO: Including run-time hook 'pyi_rth_pywintypes.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+112433 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+112435 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+112436 INFO: Including run-time hook 'pyi_rth_mplconfig.py' from 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+112540 INFO: Creating base_library.zip...
+112560 INFO: Looking for dynamic libraries
+115598 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyQt6\\Qt6\\bin', 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\numpy.libs', 'C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\pandas.libs']
+115598 INFO: Extra DLL search directories (PATH): ['C:\\Users\\tntan\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyQt6\\Qt6\\bin']
+125288 INFO: Warnings written to D:\Projects\AIMarketAnalyst\packaging\build\pyinstaller\warn-pyinstaller.txt
+125737 INFO: Graph cross-reference written to D:\Projects\AIMarketAnalyst\packaging\build\pyinstaller\xref-pyinstaller.html
+126084 INFO: checking PYZ
+126084 INFO: Building PYZ because PYZ-00.toc is non existent
+126084 INFO: Building PYZ (ZlibArchive) D:\Projects\AIMarketAnalyst\packaging\build\pyinstaller\PYZ-00.pyz
+129938 INFO: Building PYZ (ZlibArchive) D:\Projects\AIMarketAnalyst\packaging\build\pyinstaller\PYZ-00.pyz completed successfully.
+130073 INFO: checking PKG
+130074 INFO: Building PKG because PKG-00.toc is non existent
+130074 INFO: Building PKG (CArchive) AI Market Analyst.pkg
+130141 INFO: Building PKG (CArchive) AI Market Analyst.pkg completed successfully.
+130144 INFO: Bootloader C:\Users\tntan\AppData\Roaming\Python\Python314\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+130144 INFO: checking EXE
+130145 INFO: Building EXE because EXE-00.toc is non existent
+130145 INFO: Building EXE from EXE-00.toc
+130145 INFO: Copying bootloader EXE to D:\Projects\AIMarketAnalyst\packaging\build\pyinstaller\AI Market Analyst.exe
+130156 INFO: Copying icon to EXE
+130166 INFO: Copying 0 resources to EXE
+130167 INFO: Embedding manifest in EXE
+130175 INFO: Appending PKG archive to EXE
+130214 INFO: Fixing EXE headers
+130538 INFO: Building EXE from EXE-00.toc completed successfully.
+130601 INFO: checking COLLECT
+130601 INFO: Building COLLECT because COLLECT-00.toc is non existent
+130601 INFO: Removing dir D:\Projects\AIMarketAnalyst\packaging\dist\AI Market Analyst
+132621 INFO: Building COLLECT COLLECT-00.toc
+169161 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+171068 INFO: Build complete! The results are available in: D:\Projects\AIMarketAnalyst\packaging\dist
