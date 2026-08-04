@@ -202,7 +202,7 @@ def test_ui_presentation_order_does_not_mutate_execution_result():
     # NOT already in presentation order (smc→technical→fallback→none)
     rows_exec = [
         {"symbol": "AUD/USD", "rank": 1, "entry_zone_source": None,              "zone_origin_class": "none"},
-        {"symbol": "EUR/USD", "rank": 2, "entry_zone_source": "smc_v2_selected", "zone_origin_class": "smc"},
+        {"symbol": "EUR/USD", "rank": 2, "entry_zone_source": "smc_selected", "zone_origin_class": "smc"},
         {"symbol": "GBP/USD", "rank": 3, "entry_zone_source": "technical",       "zone_origin_class": "technical"},
         {"symbol": "USD/JPY", "rank": 4, "entry_zone_source": "fallback",         "zone_origin_class": "fallback"},
     ]

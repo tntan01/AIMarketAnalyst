@@ -135,7 +135,7 @@ def test_walk_forward_deduplicates_overlapping_oos_trades(monkeypatch) -> None:
             "expected_effective_rr": 1.6,
             "base_eligible": True,
             "research_only": False,
-            "entry_zone_source": "smc_v2_selected",
+            "entry_zone_source": "smc_selected",
             "m15_quality": "strict",
             "entry_status": "confirmed_entry",
             "decision": "READY_TO_TRADE",

@@ -64,7 +64,7 @@ def test_smc_before_technical_before_fallback_before_none():
         _row("F1", "fallback", rank=1),
         _row("T1", "technical", rank=2),
         _row("N1", None, rank=3),
-        _row("S1", "smc_v2_selected", rank=4),
+        _row("S1", "smc_selected", rank=4),
         _row("T2", "technical", rank=5),
         _row("S2", "smc", rank=6),
     ]
@@ -74,7 +74,7 @@ def test_smc_before_technical_before_fallback_before_none():
         for r in result
     ]
     # smc sources first
-    assert classes[0] == "smc_v2_selected"
+    assert classes[0] == "smc_selected"
     assert classes[1] == "smc"
     # then technical
     assert classes[2] == "technical"
@@ -119,7 +119,7 @@ def test_raw_rank_preserved_across_presentation_reorder():
     """Technical rank=1 should appear after SMC rank=3, but both keep raw rank."""
     rows = [
         _row("TECH", "technical", rank=1),
-        _row("SMC", "smc_v2_selected", rank=3),
+        _row("SMC", "smc_selected", rank=3),
     ]
     result = sort_scanner_rows_for_display(rows)
     assert result[0]["symbol"] == "SMC"

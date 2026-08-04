@@ -47,10 +47,10 @@ def test_summary_row_keeps_entry_zone_source_and_zone_origin_class():
     compact = summary_row({
         "symbol": "EURUSD",
         "best_score": 80,
-        "entry_zone_source": "smc_v2_selected",
+        "entry_zone_source": "smc_selected",
         "zone_origin_class": "smc",
     })
-    assert compact["entry_zone_source"] == "smc_v2_selected"
+    assert compact["entry_zone_source"] == "smc_selected"
     assert compact["zone_origin_class"] == "smc"
 
 

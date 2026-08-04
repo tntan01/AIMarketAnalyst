@@ -132,7 +132,7 @@ def select_smc_zone(
             item.zone.zone_id,
         ),
     )
-    return SelectedSmcZone.from_zone(selected.zone, source="smc_v2_selected")
+    return SelectedSmcZone.from_zone(selected.zone, source="smc_selected")
 
 
 def _score_side(

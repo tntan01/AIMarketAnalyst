@@ -342,7 +342,7 @@ def test_candidate_ledger_serializes_execution_metadata() -> None:
             "decision_engine": {"decision": "WATCH_ONLY"},
         },
         scenario=_scenario(
-            entry_zone_source="smc_v2_selected",
+            entry_zone_source="smc_selected",
             m15_quality="strict",
             entry_status="watch_zone",
             tp1_source="none",
@@ -352,7 +352,7 @@ def test_candidate_ledger_serializes_execution_metadata() -> None:
 
     payload = entry.to_dict()
 
-    assert payload["entry_zone_source"] == "smc_v2_selected"
+    assert payload["entry_zone_source"] == "smc_selected"
     assert payload["m15_quality"] == "strict"
     assert payload["entry_status"] == "watch_zone"
     assert payload["decision"] == "WATCH_ONLY"
