@@ -83,5 +83,5 @@ def test_chart_uses_medium_default_candle_density() -> None:
 
     assert "var _activeTF = 'D1';" in html
     assert "var visibleBars = 100;" in html
-    assert "barSpacing: 7," in html
+    assert "barSpacing: 3," in html
     assert "minBarSpacing: 3," in html

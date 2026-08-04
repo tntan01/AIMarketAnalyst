@@ -1570,14 +1570,7 @@ class ScannerDetailScreen(QWidget):
         chart_payload = analysis_result.get("chart_payload")
         if not isinstance(chart_payload, dict):
             return
-        active_tf = next(
-            (
-                tf
-                for tf in ("D1", "H4", "H1", "M15")
-                if chart_payload.get(tf)
-            ),
-            next(iter(chart_payload), "D1"),
-        )
+        active_tf = str(getattr(self.chart, "_active_tf", "H1"))
         existing = chart_payload.get(active_tf)
         if not isinstance(existing, list) or not existing:
             return
