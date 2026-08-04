@@ -14,6 +14,21 @@ class Candle:
     volume: float = 0.0
 
 
+def merge_candles(old_candles: list[Candle], new_candles: list[Candle]) -> list[Candle]:
+    """Merge two time-keyed candle lists, preferring the newest data.
+
+    Candles sharing the same open time are replaced by the newer sample, which
+    also refreshes the still-forming last candle. New candles are appended in
+    time order; closed candles are never dropped and no duplicates are created.
+    """
+    by_time: dict[datetime, Candle] = {}
+    for candle in old_candles:
+        by_time[candle.time] = candle
+    for candle in new_candles:
+        by_time[candle.time] = candle
+    return [by_time[time] for time in sorted(by_time)]
+
+
 @dataclass(frozen=True, slots=True)
 class MarketContext:
     symbol: str
