@@ -18,7 +18,7 @@ from core.scanner_rollout import (
 from services.storage_service import JsonStorage
 
 
-ROLLOUT_METRICS_VERSION = "phase8-smc-rollout-metrics-v2"
+ROLLOUT_METRICS_VERSION = "phase8-smc-rollout-metrics-v3"
 
 
 class ScannerRolloutMetricsService:
@@ -58,9 +58,6 @@ class ScannerRolloutMetricsService:
                 "false_ready_removed",
                 "new_trade_candidates",
                 "unsafe_disagreements",
-                "smc_direction_changes",
-                "smc_zone_changes",
-                "smc_score_delta_samples",
                 "smc_no_zone_sides",
                 "smc_side_samples",
                 "data_unavailable",
@@ -70,9 +67,6 @@ class ScannerRolloutMetricsService:
                 metrics[metric_name] += int(
                     shadow_report.get(metric_name, 0) or 0
                 )
-            metrics["smc_score_delta_abs_sum"] += float(
-                shadow_report.get("smc_score_delta_abs_sum", 0.0) or 0.0
-            )
             metrics["analysis_latency_ms_total"] += float(
                 shadow_report.get("analysis_latency_ms_total", 0.0) or 0.0
             )
@@ -144,13 +138,6 @@ class ScannerRolloutMetricsService:
                 metrics["scorer_performance"] = build_scorer_performance(
                     closed_trades
                 )
-            metrics["smc_score_delta_abs_average"] = round(
-                metrics["smc_score_delta_abs_sum"]
-                / metrics["smc_score_delta_samples"]
-                if metrics["smc_score_delta_samples"]
-                else 0.0,
-                6,
-            )
             metrics["smc_no_zone_rate"] = round(
                 metrics["smc_no_zone_sides"]
                 / metrics["smc_side_samples"]
@@ -239,11 +226,6 @@ class ScannerRolloutMetricsService:
             "false_ready_removed": 0,
             "new_trade_candidates": 0,
             "unsafe_disagreements": 0,
-            "smc_direction_changes": 0,
-            "smc_zone_changes": 0,
-            "smc_score_delta_abs_sum": 0.0,
-            "smc_score_delta_samples": 0,
-            "smc_score_delta_abs_average": 0.0,
             "smc_no_zone_sides": 0,
             "smc_side_samples": 0,
             "smc_no_zone_rate": 0.0,

@@ -231,10 +231,6 @@ def build_shadow_report(
             "false_ready_removed": 0,
             "new_trade_candidates": 0,
             "unsafe_disagreements": 0,
-            "smc_direction_changes": 0,
-            "smc_zone_changes": 0,
-            "smc_score_delta_abs_sum": 0.0,
-            "smc_score_delta_samples": 0,
             "smc_no_zone_sides": 0,
             "smc_side_samples": 0,
             "data_unavailable": 0,
@@ -248,10 +244,6 @@ def build_shadow_report(
     false_ready_removed = 0
     new_trade_candidates = 0
     unsafe_disagreements = 0
-    smc_direction_changes = 0
-    smc_zone_changes = 0
-    smc_score_delta_abs_sum = 0.0
-    smc_score_delta_samples = 0
     smc_no_zone_sides = 0
     smc_side_samples = 0
     data_unavailable = 0
@@ -320,56 +312,23 @@ def build_shadow_report(
             if isinstance(analysis.get("smc_scoring"), dict)
             else {}
         )
-        smc_comparison = (
-            smc_diagnostics.get("comparison")
-            if isinstance(smc_diagnostics.get("comparison"), dict)
-            else {}
-        )
-        score_delta = (
-            smc_comparison.get("score_delta")
-            if isinstance(smc_comparison.get("score_delta"), dict)
-            else {}
-        )
-        selected_zone_changed = (
-            smc_comparison.get("selected_zone_changed")
-            if isinstance(
-                smc_comparison.get("selected_zone_changed"),
-                dict,
-            )
-            else {}
-        )
-        direction_changed = bool(
-            smc_comparison.get("direction_changed")
-        )
-        if direction_changed:
-            smc_direction_changes += 1
-        smc_zone_changes += sum(
-            1
-            for side in ("buy", "sell")
-            if selected_zone_changed.get(side) is True
-        )
-        for side in ("buy", "sell"):
-            if side in score_delta:
-                smc_score_delta_abs_sum += abs(
-                    _finite_float(score_delta.get(side), 0.0)
-                )
-                smc_score_delta_samples += 1
-
-        decision_snapshots = (
-            smc_diagnostics.get("decision")
-            if isinstance(smc_diagnostics.get("decision"), dict)
+        # Independent no-zone health metric from the canonical sides, not a
+        # v1/v2 comparison payload.
+        smc_sides = (
+            smc_diagnostics.get("sides")
+            if isinstance(smc_diagnostics.get("sides"), dict)
             else {}
         )
         for side in ("buy", "sell"):
-            snapshot = (
-                decision_snapshots.get(side)
-                if isinstance(decision_snapshots.get(side), dict)
+            side_payload = (
+                smc_sides.get(side)
+                if isinstance(smc_sides.get(side), dict)
                 else None
             )
-            if snapshot is None:
+            if side_payload is None:
                 continue
             smc_side_samples += 1
-            if not snapshot.get("selected_zone_id"):
+            if not side_payload.get("selected_zone_id"):
                 smc_no_zone_sides += 1
 
         if v2_status == "DATA_UNAVAILABLE":
@@ -401,19 +360,6 @@ def build_shadow_report(
             "disagreement": bool(codes),
             "disagreement_codes": codes,
             "v2_order_suppressed": suppress_v2_orders,
-            "smc": {
-                "score_delta": dict(score_delta),
-                "selected_zone_changed": dict(
-                    selected_zone_changed
-                ),
-                "direction_changed": direction_changed,
-                "decision_changed": bool(
-                    smc_comparison.get("decision_changed")
-                ),
-                "decision_input_changed": bool(
-                    smc_comparison.get("decision_input_changed")
-                ),
-            },
         })
 
     samples = len(comparisons)
@@ -438,13 +384,6 @@ def build_shadow_report(
         "false_ready_removed": false_ready_removed,
         "new_trade_candidates": new_trade_candidates,
         "unsafe_disagreements": unsafe_disagreements,
-        "smc_direction_changes": smc_direction_changes,
-        "smc_zone_changes": smc_zone_changes,
-        "smc_score_delta_abs_sum": round(
-            smc_score_delta_abs_sum,
-            6,
-        ),
-        "smc_score_delta_samples": smc_score_delta_samples,
         "smc_no_zone_sides": smc_no_zone_sides,
         "smc_side_samples": smc_side_samples,
         "data_unavailable": data_unavailable,
