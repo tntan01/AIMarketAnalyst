@@ -214,6 +214,11 @@ class ScannerDetailScreen(QWidget):
 
         # -- Chart --
         self.chart = AnalysisChartView()
+        self.chart_notice = QLabel("")
+        self.chart_notice.setObjectName("PageSubtitle")
+        self.chart_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.chart_notice.setVisible(False)
+        right_col.addWidget(self.chart_notice)
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("AnalysisChartFrame")
         cl = QVBoxLayout(self.chart_frame)
@@ -1468,6 +1473,7 @@ class ScannerDetailScreen(QWidget):
     def _refresh_chart(self) -> None:
         if not hasattr(self, "chart"):
             return
+        self._set_chart_notice("")
         analysis_result = self.row.get("analysis_result") if self.row else None
         if not isinstance(analysis_result, dict):
             self.chart.show_empty()
@@ -1490,6 +1496,129 @@ class ScannerDetailScreen(QWidget):
             self.chart.set_payload(payload)
         except Exception:
             self.chart.show_error("Không thể tạo dữ liệu biểu đồ từ kết quả quét.")
+            return
+        self._start_candle_refresh_symbol(symbol, analysis_result)
+
+    def _set_chart_notice(self, text: str) -> None:
+        if not hasattr(self, "chart_notice"):
+            return
+        self.chart_notice.setText(text)
+        self.chart_notice.setVisible(bool(text))
+
+    def _start_candle_refresh_symbol(self, symbol: str, analysis_result: dict) -> None:
+        """Fetch the latest candles in the background and merge into the chart."""
+        if not symbol or not self.app or not hasattr(self.app, "mt5"):
+            return
+        chart_payload = analysis_result.get("chart_payload")
+        if not isinstance(chart_payload, dict):
+            return
+        active_tf = next(
+            (
+                tf
+                for tf in ("D1", "H4", "H1", "M15")
+                if chart_payload.get(tf)
+            ),
+            next(iter(chart_payload), "D1"),
+        )
+        existing = chart_payload.get(active_tf)
+        if not isinstance(existing, list) or not existing:
+            return
+        bars = len(existing)
+        self._set_chart_notice("Đang cập nhật nến mới nhất...")
+
+        from PyQt6.QtCore import QThread, pyqtSignal
+
+        class CandleRefreshWorker(QThread):
+            finished_candles = pyqtSignal(list)
+            failed = pyqtSignal(str)
+
+            def __init__(self, mt5, symbol, timeframe, bars):
+                super().__init__()
+                self.mt5 = mt5
+                self.symbol = symbol
+                self.timeframe = timeframe
+                self.bars = bars
+
+            def run(self):
+                try:
+                    status = self.mt5.connection_status()
+                    if not status.connected or not status.logged_in:
+                        self.failed.emit("Data provider chưa kết nối.")
+                        return
+                    available = self.mt5.available_symbols(market_watch_only=True)
+                    broker = self.mt5.resolve_symbol(self.symbol, available)
+                    if not broker:
+                        self.failed.emit("Không tìm thấy mã broker cho symbol.")
+                        return
+                    candles = self.mt5.load_ohlcv(
+                        broker, self.timeframe, self.bars, skip_select=True
+                    )
+                    self.finished_candles.emit(candles)
+                except Exception as exc:
+                    self.failed.emit(str(exc))
+
+        self._candle_worker = CandleRefreshWorker(
+            self.app.mt5, symbol, active_tf, bars
+        )
+        self._candle_worker.finished_candles.connect(
+            lambda candles: self._on_candle_refresh_done(
+                symbol, active_tf, existing, candles
+            )
+        )
+        self._candle_worker.failed.connect(self._on_candle_refresh_failed)
+        self._candle_worker.start()
+
+    def _on_candle_refresh_failed(self, message: str) -> None:
+        self._set_chart_notice(
+            f"Đang hiển thị dữ liệu snapshot (không cập nhật được nến). {message}"
+        )
+
+    def _on_candle_refresh_done(
+        self, symbol: str, active_tf: str, old_dicts: list, new_candles: list
+    ) -> None:
+        if not new_candles:
+            self._set_chart_notice("Đang hiển thị dữ liệu snapshot (không có nến mới).")
+            return
+        current_result = self.row.get("analysis_result") if self.row else None
+        current_symbol = (
+            str(current_result.get("symbol") or self.row.get("symbol") or "")
+            if isinstance(current_result, dict)
+            else ""
+        )
+        if symbol != current_symbol:
+            return
+        try:
+            from core.market_models import (
+                candles_from_dicts,
+                candles_to_dicts,
+                merge_candles,
+                normalize_candles,
+            )
+
+            old_candles = candles_from_dicts(old_dicts)
+            merged = merge_candles(old_candles, normalize_candles(new_candles))
+            merged_dicts = candles_to_dicts(merged)
+
+            chart_payload = dict(current_result.get("chart_payload") or {})
+            chart_payload[active_tf] = merged_dicts
+            updated = dict(current_result)
+            updated["chart_payload"] = chart_payload
+
+            from core.chart_payload import build_full_chart_payload
+
+            light = self._is_light_theme()
+            payload = build_full_chart_payload(
+                current_symbol, updated, active_timeframe="D1"
+            )
+            payload["theme"] = "light" if light else "dark"
+            payload["palette"] = chart_palette(current_palette())
+            self.chart.set_payload(payload)
+        except Exception:
+            self._set_chart_notice(
+                "Đang hiển thị dữ liệu snapshot (không cập nhật được nến)."
+            )
+            return
+        self._set_chart_notice("Đã cập nhật nến mới nhất.")
 
     def refresh_theme_styles(self) -> None:
         """Keep the embedded WebEngine chart in sync with the active theme."""

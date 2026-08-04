@@ -40,7 +40,6 @@ _PD_THRESHOLD = 0.05
 _LEG_STRONG = 3
 _LEG_NORMAL = 2
 _CHOCH_CONFIRMED_LEGS = 3
-_ZONE_SCORE_BASE = 50
 # Phase 16B shadow policy. Named constants keep every adjustment auditable;
 # they must be calibrated on production snapshots before any consumer uses it.
 _EFFECTIVE_ZONE_SCORE_BASE = 50
@@ -85,19 +84,7 @@ def zone_matches_direction(
         zone.get("zone_type") or zone.get("type") or ""
     ).strip().lower()
     return zone_type in allowed_types
-_ZONE_SCORE_STRONG = 75
-_ZONE_SCORE_MODERATE = 55
-_ZONE_MAX_TEST_BONUS = 20
-_ZONE_TEST_POINTS = 5
-_ZONE_MAX_FRESHNESS_BONUS = 10
-_ZONE_FRESHNESS_DIVISOR = 5
-_ZONE_BROKEN_PENALTY = 35
-_ZONE_MAX_DISPLACEMENT_BONUS = 15
 _ZONE_DISPLACEMENT_MULTIPLIER = 5
-_ZONE_SWEEP_BONUS = 10
-_ZONE_PD_CORRECT_BONUS = 12
-_ZONE_PD_EQUILIBRIUM_BONUS = 4
-_ZONE_PD_WRONG_PENALTY = 8
 
 
 def build_smc_context(
@@ -985,41 +972,6 @@ def _legacy_timeframe_has_sweep(
     return bool(liquidity_sweeps.get("swept_lows" if side == "buy" else "swept_highs"))
 
 
-def zone_quality_score(zone: dict[str, Any], side: str) -> int:
-    """Cham diem chat luong SMC zone (0-100).
-
-    Nguyen tac: zone da duoc test nhieu lan va giu duoc = dang tin cay hon
-    zone moi hinh thanh chua tung bi test. Diem thuong cho:
-    - Da test va giu duoc (toi da +20)
-    - Con moi (toi da +10)
-    - Displacement lon (toi da +15)
-    - Quet liquidity (+10)
-    - Nam dung vi tri premium/discount (+12)
-    """
-    score = _ZONE_SCORE_BASE
-    test_count = int(zone.get("test_count", 0))
-    # Zone da test nhieu lan + giu duoc = tin cay cao
-    score += min(_ZONE_MAX_TEST_BONUS, test_count * _ZONE_TEST_POINTS)
-    # Zone con moi: bonus nhe (moi la tin hieu tot nhung chua duoc kiem chung)
-    freshness = int(zone.get("freshness_bars", 999))
-    score += max(0, _ZONE_MAX_FRESHNESS_BONUS - freshness // _ZONE_FRESHNESS_DIVISOR)
-    # Zone da bi broken = khong con gia tri
-    score -= _ZONE_BROKEN_PENALTY if zone.get("broken") else 0
-    # Displacement impulse: move cang manh → zone cang quan trong
-    score += min(_ZONE_MAX_DISPLACEMENT_BONUS, int(float(zone.get("displacement_multiple", 0)) * _ZONE_DISPLACEMENT_MULTIPLIER))
-    # Liquidity sweep: quet stop-loss truoc khi dao chieu = tin hieu manh
-    score += _ZONE_SWEEP_BONUS if zone.get("liquidity_sweep") else 0
-    # Vi tri trong cau truc premium/discount
-    location = zone.get("zone_location")
-    if (side == "buy" and location == "discount") or (side == "sell" and location == "premium"):
-        score += _ZONE_PD_CORRECT_BONUS
-    elif location == "equilibrium":
-        score += _ZONE_PD_EQUILIBRIUM_BONUS
-    elif location in {"premium", "discount"}:
-        score -= _ZONE_PD_WRONG_PENALTY
-    return max(0, min(100, int(score)))
-
-
 def calculate_effective_zone_score(
     zone: dict[str, Any],
     side: str,
@@ -1161,14 +1113,6 @@ def calculate_effective_zone_score(
             "broken_override": broken,
         },
     }
-
-
-def score_to_strength(score: int) -> str:
-    if score >= _ZONE_SCORE_STRONG:
-        return "strong"
-    if score >= _ZONE_SCORE_MODERATE:
-        return "moderate"
-    return "weak"
 
 
 def displacement_multiple_at(candles: list[Candle], index: int) -> float:

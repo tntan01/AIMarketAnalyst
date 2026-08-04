@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +27,74 @@ def merge_candles(old_candles: list[Candle], new_candles: list[Candle]) -> list[
     for candle in new_candles:
         by_time[candle.time] = candle
     return [by_time[time] for time in sorted(by_time)]
+
+
+def normalize_candles(candles: list[Candle]) -> list[Candle]:
+    """Return candles with times normalized to aware UTC.
+
+    Snapshot candle dicts and provider OHLCV may disagree on timezone awareness
+    (one side naive, the other aware). Normalizing both to aware UTC keeps the
+    time-keyed comparison in ``merge_candles`` safe.
+    """
+    result = []
+    for candle in candles:
+        t = candle.time
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        else:
+            t = t.astimezone(timezone.utc)
+        result.append(
+            Candle(
+                time=t,
+                open=candle.open,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+                volume=candle.volume,
+            )
+        )
+    return result
+
+
+def candles_from_dicts(candles: list[dict]) -> list[Candle]:
+    """Parse snapshot candle dicts into Candle objects, normalized to aware UTC."""
+    result = []
+    for candle in candles:
+        raw = candle.get("time")
+        if isinstance(raw, datetime):
+            parsed = raw
+        else:
+            parsed = datetime.fromisoformat(str(raw))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        else:
+            parsed = parsed.astimezone(timezone.utc)
+        result.append(
+            Candle(
+                time=parsed,
+                open=float(candle["open"]),
+                high=float(candle["high"]),
+                low=float(candle["low"]),
+                close=float(candle["close"]),
+                volume=float(candle.get("volume", 0.0)),
+            )
+        )
+    return result
+
+
+def candles_to_dicts(candles: list[Candle]) -> list[dict]:
+    """Serialize Candle objects back to chart payload dicts (ISO time strings)."""
+    return [
+        {
+            "time": candle.time.isoformat(),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+        }
+        for candle in candles
+    ]
 
 
 @dataclass(frozen=True, slots=True)
