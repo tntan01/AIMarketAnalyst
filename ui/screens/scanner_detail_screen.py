@@ -124,8 +124,10 @@ class ScannerDetailScreen(QWidget):
         self._scan_timer.setInterval(60000)
         self._scan_timer.timeout.connect(self._refresh_scan_time_label)
         self._candle_fetch_active = False
+        self._countdown_seconds = 60
+        self._hero_base_text = ""
         self._auto_refresh_timer = QTimer(self)
-        self._auto_refresh_timer.setInterval(60000)
+        self._auto_refresh_timer.setInterval(1000)
         self._auto_refresh_timer.timeout.connect(self._auto_refresh_tick)
         self._build_ui()
 
@@ -1550,9 +1552,27 @@ class ScannerDetailScreen(QWidget):
         self._trigger_candle_refresh()
 
     def _auto_refresh_tick(self) -> None:
+        if self._candle_fetch_active:
+            self._refresh_hero_countdown()
+            return
         if not self._provider_ready():
             return
-        self._trigger_candle_refresh()
+        self._countdown_seconds -= 1
+        if self._countdown_seconds <= 0:
+            self._countdown_seconds = 60
+            self._trigger_candle_refresh()
+        self._refresh_hero_countdown()
+
+    def _refresh_hero_countdown(self) -> None:
+        if not hasattr(self, "hero_bar") or not getattr(self, "_hero_base_text", ""):
+            return
+        if self.__dict__.get("_candle_fetch_active", False):
+            self.hero_bar.setText(self._hero_base_text + " (đang cập nhật nến mới nhất...)")
+        else:
+            self.hero_bar.setText(
+                self._hero_base_text
+                + f" (sẽ cập nhật nến mới nhất sau {max(1, self.__dict__.get('_countdown_seconds', 60))} giây)"
+            )
 
     def _trigger_candle_refresh(self) -> None:
         if self._candle_fetch_active:
@@ -1575,7 +1595,6 @@ class ScannerDetailScreen(QWidget):
         if not isinstance(existing, list) or not existing:
             return
         bars = len(existing)
-        self._set_chart_notice("Đang cập nhật nến mới nhất...")
 
         from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -1714,7 +1733,9 @@ class ScannerDetailScreen(QWidget):
             visual_state,
         )
 
-        self.hero_bar.setText(status_text)
+        self._countdown_seconds = 60
+        self._hero_base_text = status_text
+        self._refresh_hero_countdown()
         reasons = self._candidate_reason_messages()
         self.hero_bar.setToolTip(
             "\n".join(reasons[:6])
