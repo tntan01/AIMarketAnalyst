@@ -124,7 +124,7 @@ class ScannerDetailScreen(QWidget):
         self._scan_timer.setInterval(60000)
         self._scan_timer.timeout.connect(self._refresh_scan_time_label)
         self._candle_fetch_active = False
-        self._countdown_seconds = 15
+        self._countdown_seconds = 5
         self._hero_base_text = ""
         self._auto_refresh_timer = QTimer(self)
         self._auto_refresh_timer.setInterval(1000)
@@ -1563,7 +1563,7 @@ class ScannerDetailScreen(QWidget):
             return
         self._countdown_seconds -= 1
         if self._countdown_seconds <= 0:
-            self._countdown_seconds = 15
+            self._countdown_seconds = 5
             self._trigger_candle_refresh()
         self._refresh_hero_countdown()
 
@@ -1575,7 +1575,7 @@ class ScannerDetailScreen(QWidget):
         else:
             self.hero_bar.setText(
                 self._hero_base_text
-                + f" (sẽ cập nhật nến mới nhất sau {max(1, self.__dict__.get('_countdown_seconds', 15))} giây)"
+                + f" (sẽ cập nhật nến mới nhất sau {max(1, self.__dict__.get('_countdown_seconds', 5))} giây)"
             )
 
     def _trigger_candle_refresh(self) -> None:
@@ -1737,7 +1737,7 @@ class ScannerDetailScreen(QWidget):
             visual_state,
         )
 
-        self._countdown_seconds = 15
+        self._countdown_seconds = 5
         self._hero_base_text = status_text
         self._refresh_hero_countdown()
         reasons = self._candidate_reason_messages()
