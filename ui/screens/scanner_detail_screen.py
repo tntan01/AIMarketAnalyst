@@ -124,6 +124,10 @@ class ScannerDetailScreen(QWidget):
         self._scan_timer.setInterval(60000)
         self._scan_timer.timeout.connect(self._refresh_scan_time_label)
         self._scan_timer.start()
+        self._candle_fetch_active = False
+        self._auto_refresh_timer = QTimer(self)
+        self._auto_refresh_timer.setInterval(60000)
+        self._auto_refresh_timer.timeout.connect(self._auto_refresh_tick)
         self._build_ui()
 
     def _is_light_theme(self) -> bool:
@@ -214,11 +218,21 @@ class ScannerDetailScreen(QWidget):
 
         # -- Chart --
         self.chart = AnalysisChartView()
+        chart_status_row = QHBoxLayout()
+        chart_status_row.setContentsMargins(0, 0, 0, 0)
+        chart_status_row.setSpacing(8)
         self.chart_notice = QLabel("")
         self.chart_notice.setObjectName("PageSubtitle")
         self.chart_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.chart_notice.setVisible(False)
-        right_col.addWidget(self.chart_notice)
+        chart_status_row.addWidget(self.chart_notice, 1)
+        self.chart_refresh_btn = action_button("🔄 Làm mới")
+        self.chart_refresh_btn.setObjectName("ScannerChartRefreshButton")
+        self.chart_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.chart_refresh_btn.setToolTip("Fetch lại nến mới nhất cho biểu đồ")
+        self.chart_refresh_btn.clicked.connect(self._manual_candle_refresh)
+        chart_status_row.addWidget(self.chart_refresh_btn)
+        right_col.addLayout(chart_status_row)
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("AnalysisChartFrame")
         cl = QVBoxLayout(self.chart_frame)
@@ -1505,6 +1519,47 @@ class ScannerDetailScreen(QWidget):
         self.chart_notice.setText(text)
         self.chart_notice.setVisible(bool(text))
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if hasattr(self, "_auto_refresh_timer"):
+            self._auto_refresh_timer.start()
+
+    def hideEvent(self, event) -> None:
+        super().hideEvent(event)
+        if hasattr(self, "_auto_refresh_timer"):
+            self._auto_refresh_timer.stop()
+
+    def _provider_ready(self) -> bool:
+        if not self.app or not hasattr(self.app, "mt5"):
+            return False
+        try:
+            status = self.app.mt5.connection_status()
+        except Exception:
+            return False
+        return bool(status.connected and status.logged_in)
+
+    def _manual_candle_refresh(self) -> None:
+        if not self._provider_ready():
+            self._set_chart_notice(
+                "Data provider chưa sẵn sàng — đang hiển thị dữ liệu snapshot."
+            )
+            return
+        self._trigger_candle_refresh()
+
+    def _auto_refresh_tick(self) -> None:
+        if not self._provider_ready():
+            return
+        self._trigger_candle_refresh()
+
+    def _trigger_candle_refresh(self) -> None:
+        if self._candle_fetch_active:
+            return
+        analysis_result = self.row.get("analysis_result") if self.row else None
+        if not isinstance(analysis_result, dict):
+            return
+        symbol = str(analysis_result.get("symbol") or self.row.get("symbol") or "")
+        self._start_candle_refresh_symbol(symbol, analysis_result)
+
     def _start_candle_refresh_symbol(self, symbol: str, analysis_result: dict) -> None:
         """Fetch the latest candles in the background and merge into the chart."""
         if not symbol or not self.app or not hasattr(self.app, "mt5"):
@@ -1566,9 +1621,11 @@ class ScannerDetailScreen(QWidget):
             )
         )
         self._candle_worker.failed.connect(self._on_candle_refresh_failed)
+        self._candle_fetch_active = True
         self._candle_worker.start()
 
     def _on_candle_refresh_failed(self, message: str) -> None:
+        self._candle_fetch_active = False
         self._set_chart_notice(
             f"Đang hiển thị dữ liệu snapshot (không cập nhật được nến). {message}"
         )
@@ -1576,6 +1633,7 @@ class ScannerDetailScreen(QWidget):
     def _on_candle_refresh_done(
         self, symbol: str, active_tf: str, old_dicts: list, new_candles: list
     ) -> None:
+        self._candle_fetch_active = False
         if not new_candles:
             self._set_chart_notice("Đang hiển thị dữ liệu snapshot (không có nến mới).")
             return
