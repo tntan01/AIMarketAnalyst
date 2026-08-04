@@ -124,7 +124,7 @@ class ScannerDetailScreen(QWidget):
         self._scan_timer.setInterval(60000)
         self._scan_timer.timeout.connect(self._refresh_scan_time_label)
         self._candle_fetch_active = False
-        self._countdown_seconds = 60
+        self._countdown_seconds = 15
         self._hero_base_text = ""
         self._auto_refresh_timer = QTimer(self)
         self._auto_refresh_timer.setInterval(1000)
@@ -209,13 +209,23 @@ class ScannerDetailScreen(QWidget):
         right_col.setContentsMargins(0, 0, 0, 0)
         right_col.setSpacing(4)
 
-        # -- Hero verdict bar --
+        # -- Hero verdict bar + refresh button --
+        hero_row = QHBoxLayout()
+        hero_row.setContentsMargins(0, 0, 0, 0)
+        hero_row.setSpacing(8)
         self.hero_bar = QLabel("")
         self.hero_bar.setObjectName("ScannerDetailHero")
         self.hero_bar.setWordWrap(False)
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
         self.hero_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_col.addWidget(self.hero_bar)
+        hero_row.addWidget(self.hero_bar, 1)
+        self.chart_refresh_btn = action_button("🔄 Làm mới")
+        self.chart_refresh_btn.setObjectName("ScannerChartRefreshButton")
+        self.chart_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.chart_refresh_btn.setToolTip("Fetch lại nến mới nhất cho biểu đồ")
+        self.chart_refresh_btn.clicked.connect(self._manual_candle_refresh)
+        hero_row.addWidget(self.chart_refresh_btn)
+        right_col.addLayout(hero_row)
 
         # -- Chart --
         self.chart = AnalysisChartView()
@@ -227,12 +237,6 @@ class ScannerDetailScreen(QWidget):
         self.chart_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.chart_notice.setVisible(False)
         chart_status_row.addWidget(self.chart_notice, 1)
-        self.chart_refresh_btn = action_button("🔄 Làm mới")
-        self.chart_refresh_btn.setObjectName("ScannerChartRefreshButton")
-        self.chart_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chart_refresh_btn.setToolTip("Fetch lại nến mới nhất cho biểu đồ")
-        self.chart_refresh_btn.clicked.connect(self._manual_candle_refresh)
-        chart_status_row.addWidget(self.chart_refresh_btn)
         right_col.addLayout(chart_status_row)
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("AnalysisChartFrame")
@@ -1559,7 +1563,7 @@ class ScannerDetailScreen(QWidget):
             return
         self._countdown_seconds -= 1
         if self._countdown_seconds <= 0:
-            self._countdown_seconds = 60
+            self._countdown_seconds = 15
             self._trigger_candle_refresh()
         self._refresh_hero_countdown()
 
@@ -1571,7 +1575,7 @@ class ScannerDetailScreen(QWidget):
         else:
             self.hero_bar.setText(
                 self._hero_base_text
-                + f" (sẽ cập nhật nến mới nhất sau {max(1, self.__dict__.get('_countdown_seconds', 60))} giây)"
+                + f" (sẽ cập nhật nến mới nhất sau {max(1, self.__dict__.get('_countdown_seconds', 15))} giây)"
             )
 
     def _trigger_candle_refresh(self) -> None:
@@ -1733,7 +1737,7 @@ class ScannerDetailScreen(QWidget):
             visual_state,
         )
 
-        self._countdown_seconds = 60
+        self._countdown_seconds = 15
         self._hero_base_text = status_text
         self._refresh_hero_countdown()
         reasons = self._candidate_reason_messages()
