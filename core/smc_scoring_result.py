@@ -29,6 +29,11 @@ class SmcSideScoringResult:
     selected_zone_type: str | None = None
     selected_zone_timeframe: str | None = None
     reason_codes: tuple[str, ...] = ()
+    smc_reason: str = ""
+    selected_zone_score: int | None = None
+    selected_zone_quality_score: int | None = None
+    selected_zone_relevance_score: int | None = None
+    selected_zone_setup_score: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "breakdown", dict(self.breakdown))
@@ -43,6 +48,11 @@ class SmcSideScoringResult:
             "selected_zone_type": self.selected_zone_type,
             "selected_zone_timeframe": self.selected_zone_timeframe,
             "reason_codes": list(self.reason_codes),
+            "smc_reason": self.smc_reason,
+            "selected_zone_score": self.selected_zone_score,
+            "selected_zone_quality_score": self.selected_zone_quality_score,
+            "selected_zone_relevance_score": self.selected_zone_relevance_score,
+            "selected_zone_setup_score": self.selected_zone_setup_score,
         }
         return {key: value for key, value in payload.items() if value is not None}
 
@@ -64,6 +74,17 @@ class SmcSideScoringResult:
                 payload.get("selected_zone_timeframe")
             ),
             reason_codes=_tuple_of_text(payload.get("reason_codes")),
+            smc_reason=(_optional_text(payload.get("smc_reason")) or ""),
+            selected_zone_score=_optional_int(payload.get("selected_zone_score")),
+            selected_zone_quality_score=_optional_int(
+                payload.get("selected_zone_quality_score")
+            ),
+            selected_zone_relevance_score=_optional_int(
+                payload.get("selected_zone_relevance_score")
+            ),
+            selected_zone_setup_score=_optional_int(
+                payload.get("selected_zone_setup_score")
+            ),
         )
 
 

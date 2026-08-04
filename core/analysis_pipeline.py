@@ -53,7 +53,7 @@ from core.smc_consumer_contract import (
 )
 from core.smc_prefilter import SMC_SCORING_ERROR, evaluate_post_context_prefilter
 from core.smc_scorer import score_smc
-from core.smc_scoring_result import SMC_SCORING_CONTRACT_VERSION
+from core.smc_scoring_result import SMC_SCORING_CONTRACT_VERSION, SmcScoringResult
 from core.smc_versions import SMC_SCORER_VERSION
 from core.scoring_provenance import build_scoring_provenance
 from core.technical_context import build_technical_snapshot, detect_market_regime
@@ -128,47 +128,50 @@ def _merge_active_smc_flags(
 
 
 def _build_canonical_smc_diagnostics(
-    smc_sides: dict[str, Any],
+    smc_result: SmcScoringResult,
     consumer_contract: dict[str, Any],
 ) -> dict[str, Any]:
     """Represent the single canonical SMC result for the assembled output."""
 
     sides: dict[str, Any] = {}
     for side in ("buy", "sell"):
-        side_result = (
-            smc_sides.get(side)
-            if isinstance(smc_sides.get(side), dict)
-            else {}
-        )
+        side_result = smc_result.side(side)
         sides[side] = {
-            "score": side_result.get("smc_quality"),
-            "smc_reason": side_result.get("smc_reason"),
-            "selected_zone_id": side_result.get("selected_zone_id"),
-            "selected_zone_type": side_result.get("selected_zone_type"),
-            "selected_zone_timeframe": side_result.get(
-                "selected_zone_timeframe"
+            "score": side_result.score if side_result else None,
+            "smc_reason": side_result.smc_reason if side_result else None,
+            "selected_zone_id": (
+                side_result.selected_zone_id if side_result else None
             ),
-            "selected_zone_score": side_result.get("selected_zone_score"),
-            "selected_zone_quality_score": side_result.get(
-                "selected_zone_quality_score"
+            "selected_zone_type": (
+                side_result.selected_zone_type if side_result else None
             ),
-            "selected_zone_relevance_score": side_result.get(
-                "selected_zone_relevance_score"
+            "selected_zone_timeframe": (
+                side_result.selected_zone_timeframe if side_result else None
             ),
-            "selected_zone_setup_score": side_result.get(
-                "selected_zone_setup_score"
+            "selected_zone_score": (
+                side_result.selected_zone_score if side_result else None
             ),
-            "scoring_version": side_result.get("scoring_version"),
-            "breakdown": side_result.get("breakdown"),
+            "selected_zone_quality_score": (
+                side_result.selected_zone_quality_score
+                if side_result
+                else None
+            ),
+            "selected_zone_relevance_score": (
+                side_result.selected_zone_relevance_score
+                if side_result
+                else None
+            ),
+            "selected_zone_setup_score": (
+                side_result.selected_zone_setup_score
+                if side_result
+                else None
+            ),
+            "scoring_version": smc_result.scoring_version,
+            "breakdown": side_result.breakdown if side_result else {},
         }
-    scoring_version = (
-        sides.get("buy", {}).get("scoring_version")
-        or sides.get("sell", {}).get("scoring_version")
-        or SMC_SCORER_VERSION
-    )
     return {
         "contract_version": SMC_SCORING_CONTRACT_VERSION,
-        "scoring_version": scoring_version,
+        "scoring_version": smc_result.scoring_version or SMC_SCORER_VERSION,
         "sides": sides,
         "consumer_contract": consumer_contract,
     }
@@ -246,7 +249,7 @@ class AnalysisPipeline:
         self._scanner_fast_tier1 = bool(scanner_fast_tier1) and not is_backtest
         self._scanner_fast_tier2 = bool(scanner_fast_tier2) and not is_backtest
         self._structural_reject: dict[str, Any] | None = None
-        self._precomputed_smc: dict[str, Any] | None = None
+        self._precomputed_smc: SmcScoringResult | None = None
         self._decision_engine_enabled = True
 
         # ---- Pipeline diagnostics ------------------------------------------
@@ -279,7 +282,7 @@ class AnalysisPipeline:
                 fast_decision = None
             if isinstance(fast_decision, dict):
                 precomputed_smc = fast_decision.get("precomputed_smc")
-                if isinstance(precomputed_smc, dict):
+                if isinstance(precomputed_smc, SmcScoringResult):
                     self._precomputed_smc = precomputed_smc
                 if (
                     fast_decision.get("should_reject") is True
@@ -634,7 +637,7 @@ class AnalysisPipeline:
         # Score the canonical SMC sides exactly once.  Tier-1 survivors reuse
         # the precomputed canonical result instead of scoring a second time.
         try:
-            if isinstance(self._precomputed_smc, dict):
+            if isinstance(self._precomputed_smc, SmcScoringResult):
                 smc_sides = self._precomputed_smc
             else:
                 smc_sides = score_smc(
@@ -664,11 +667,7 @@ class AnalysisPipeline:
 
         self._scores = {}
         for side in ("buy", "sell"):
-            side_result = (
-                smc_sides.get(side)
-                if isinstance(smc_sides.get(side), dict)
-                else {}
-            )
+            side_result = smc_sides.side(side)
             base_flags = extract_smc_trade_flags(self._smc, side)
             consumer_side = side_consumer_metadata(
                 self._smc_consumer_contract,
@@ -678,8 +677,8 @@ class AnalysisPipeline:
             self._scores[side] = compose_scenario_score(
                 side,
                 self._technical,
-                smc_quality=side_result.get("smc_quality"),
-                smc_reason=side_result.get("smc_reason"),
+                smc_quality=side_result.score if side_result else None,
+                smc_reason=side_result.smc_reason if side_result else None,
                 smc_flags=active_flags,
                 risk_score=self._risk_score,
                 macro_score=self._macro_alignment.get(side, 15),
@@ -691,8 +690,10 @@ class AnalysisPipeline:
                     else self._sell_corr_adj
                 ),
                 macro_context=self._macro_alignment,
-                scoring_version=side_result.get("scoring_version"),
-                smc_score_breakdown=side_result.get("breakdown"),
+                scoring_version=smc_sides.scoring_version,
+                smc_score_breakdown=(
+                    side_result.breakdown if side_result else {}
+                ),
             )
             if side == "buy":
                 self._buy_smc_flags = active_flags

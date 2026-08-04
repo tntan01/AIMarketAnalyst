@@ -7,17 +7,22 @@ from core.risk_engine import AnalysisInput, build_scenarios, build_trade_plan
 from core.smc_consumer_contract import (
     build_smc_consumer_from_canonical_result,
 )
+from core.smc_scoring_result import SmcScoringResult, SmcSideScoringResult
 from core.statistical_edge_engine import calculate_evidence_score
 from core.trade_gate_engine import check_trade_gates
 from services.journal_converters import journal_entry_from_analysis
 
 
-def _canonical_side(side: str, *, zone_id: str) -> dict:
+def _canonical_side(side: str, *, zone_id: str) -> SmcSideScoringResult:
     is_buy = side == "buy"
-    return {
-        "smc_quality": 12,
-        "smc_reason": "canonical reason",
-        "selected_zone": {
+    return SmcSideScoringResult(
+        score=12,
+        breakdown={
+            "side": side,
+            "total": 12,
+            "scoring_version": "smc-v2",
+        },
+        selected_zone={
             "zone_id": zone_id,
             "type": "demand_zone" if is_buy else "supply_zone",
             "family": "demand" if is_buy else "supply",
@@ -28,27 +33,25 @@ def _canonical_side(side: str, *, zone_id: str) -> dict:
             "zone_setup_score": 77,
             "scoring_version": "smc-v2",
         },
-        "selected_zone_id": zone_id,
-        "selected_zone_type": "demand_zone" if is_buy else "supply_zone",
-        "selected_zone_timeframe": "H4",
-        "selected_zone_quality_score": 82,
-        "selected_zone_relevance_score": 70,
-        "selected_zone_setup_score": 77,
-        "scoring_version": "smc-v2",
-        "breakdown": {
-            "side": side,
-            "total": 12,
-            "scoring_version": "smc-v2",
-        },
-    }
+        selected_zone_id=zone_id,
+        selected_zone_type="demand_zone" if is_buy else "supply_zone",
+        selected_zone_timeframe="H4",
+        selected_zone_quality_score=82,
+        selected_zone_relevance_score=70,
+        selected_zone_setup_score=77,
+        smc_reason="canonical reason",
+    )
 
 
 def test_consumer_contract_selects_buy_and_sell_from_one_result():
     contract = build_smc_consumer_from_canonical_result(
-        result={
-            "buy": _canonical_side("buy", zone_id="zone-buy"),
-            "sell": _canonical_side("sell", zone_id="zone-sell"),
-        }
+        result=SmcScoringResult(
+            scoring_version="smc-v2",
+            sides={
+                "buy": _canonical_side("buy", zone_id="zone-buy"),
+                "sell": _canonical_side("sell", zone_id="zone-sell"),
+            },
+        )
     )
 
     assert contract["contract_version"] == "smc-consumer-v2"

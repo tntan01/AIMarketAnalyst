@@ -269,8 +269,8 @@ def test_breakdown_arithmetic_and_selected_zone_are_consistent():
         _smc("buy"),
         _technical("buy"),
         {"primary": "trend_up"},
-    )["buy"]
-    breakdown = result["breakdown"]
+    ).side("buy")
+    breakdown = result.breakdown
 
     assert breakdown["subtotal"] == sum((
         breakdown["structure_score"],
@@ -281,10 +281,10 @@ def test_breakdown_arithmetic_and_selected_zone_are_consistent():
     expected = max(0, breakdown["subtotal"] - breakdown["penalty_points"])
     if breakdown["applied_cap"] is not None:
         expected = min(expected, breakdown["applied_cap"])
-    assert breakdown["total"] == expected == result["smc_quality"]
-    assert breakdown["selected_zone_id"] == result["selected_zone_id"]
-    assert result["selected_zone"]["zone_id"] == result["selected_zone_id"]
-    assert result["selected_zone"]["scoring_version"] == SMC_SCORER_VERSION
+    assert breakdown["total"] == expected == result.score
+    assert breakdown["selected_zone_id"] == result.selected_zone_id
+    assert result.selected_zone["zone_id"] == result.selected_zone_id
+    assert result.selected_zone["scoring_version"] == SMC_SCORER_VERSION
 
 
 def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
@@ -304,7 +304,7 @@ def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
         context,
         _technical("buy"),
         {"primary": "trend_up"},
-    )["buy"]["breakdown"]
+    ).side("buy").breakdown
 
     unlinked_context = _smc("buy", zone=_zone("buy"))
     unlinked_context["H1"].update({
@@ -317,7 +317,7 @@ def test_zone_linked_sweep_is_not_counted_again_in_ltf_component():
         unlinked_context,
         _technical("buy"),
         {"primary": "trend_up"},
-    )["buy"]["breakdown"]
+    ).side("buy").breakdown
 
     assert linked["ltf_confirmation_score"] == 0
     assert unlinked["ltf_confirmation_score"] == 1
@@ -328,19 +328,19 @@ def test_buy_sell_mirror_symmetry():
         _smc("buy", zone=_zone("buy", linked_sweep=True)),
         _technical("buy"),
         {"primary": "trend_up"},
-    )["buy"]
+    ).side("buy")
     sell = score_smc(
         _smc("sell", zone=_zone("sell", linked_sweep=True)),
         _technical("sell"),
         {"primary": "trend_down"},
-    )["sell"]
+    ).side("sell")
 
-    assert buy["smc_quality"] == sell["smc_quality"]
-    assert buy["selected_zone_quality_score"] == sell["selected_zone_quality_score"]
-    assert buy["selected_zone_relevance_score"] == sell["selected_zone_relevance_score"]
-    assert buy["selected_zone_setup_score"] == sell["selected_zone_setup_score"]
-    assert buy["breakdown"]["structure_score"] == sell["breakdown"]["structure_score"]
-    assert buy["breakdown"]["zone_score"] == sell["breakdown"]["zone_score"]
+    assert buy.score == sell.score
+    assert buy.selected_zone_quality_score == sell.selected_zone_quality_score
+    assert buy.selected_zone_relevance_score == sell.selected_zone_relevance_score
+    assert buy.selected_zone_setup_score == sell.selected_zone_setup_score
+    assert buy.breakdown["structure_score"] == sell.breakdown["structure_score"]
+    assert buy.breakdown["zone_score"] == sell.breakdown["zone_score"]
 
 
 def test_choch_penalty_and_caps_are_applied_after_subtotal():
@@ -348,12 +348,12 @@ def test_choch_penalty_and_caps_are_applied_after_subtotal():
         _smc("buy", h1_choch_against=True),
         _technical("buy"),
         {"primary": "trend_up"},
-    )["buy"]["breakdown"]
+    ).side("buy").breakdown
     h4_cap = score_smc(
         _smc("buy", h4_choch_against=True),
         _technical("buy"),
         {"primary": "trend_up"},
-    )["buy"]["breakdown"]
+    ).side("buy").breakdown
 
     assert h1_cap["penalty_points"] == 2
     assert h1_cap["applied_cap"] == 8
@@ -367,12 +367,12 @@ def test_missing_market_data_cannot_select_a_zone():
         _smc("buy"),
         {},
         {"primary": "trend_up"},
-    )["buy"]
+    ).side("buy")
 
-    assert result["selected_zone"] is None
-    assert result["selected_zone_id"] is None
-    assert result["breakdown"]["zone_score"] == 0
-    assert 0 <= result["smc_quality"] <= 15
+    assert result.selected_zone is None
+    assert result.selected_zone_id is None
+    assert result.breakdown["zone_score"] == 0
+    assert 0 <= result.score <= 15
 
 
 def test_scoring_is_deterministic():

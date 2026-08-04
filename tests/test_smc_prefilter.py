@@ -94,7 +94,7 @@ def test_canonical_prefilter_survives_each_raw_family_and_timeframe(
     assert decision["fail_open"] is False
     assert decision["selected_zone_ids"][side] == expected_id
     assert decision["raw_counts"][timeframe][family] == 1
-    assert decision["precomputed_smc"][side]["selected_zone_id"] == expected_id
+    assert decision["precomputed_smc"].side(side).selected_zone_id == expected_id
 
 
 def test_canonical_prefilter_rejects_only_when_both_sides_lack_selected_zones() -> None:
@@ -223,7 +223,7 @@ def test_prefilter_preserves_context_and_reuses_canonical_result() -> None:
 
     assert context == before
     assert decision["selected_zone_ids"] == {
-        side: canonical[side]["selected_zone_id"]
+        side: canonical.side(side).selected_zone_id
         for side in ("buy", "sell")
     }
     assert decision["precomputed_smc"] == canonical

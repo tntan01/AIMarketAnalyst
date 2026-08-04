@@ -11,6 +11,7 @@ from math import isfinite
 from typing import Any
 
 from core.smc_scorer import score_smc
+from core.smc_scoring_result import SmcScoringResult
 
 
 SMC_PREFILTER_VERSION = "smc-prefilter-v1"
@@ -153,16 +154,12 @@ def _is_positive_finite(value: object) -> bool:
     return isfinite(number) and number > 0
 
 
-def _selected_zone_ids(v2_result: object) -> dict[str, str | None]:
-    if not isinstance(v2_result, dict):
-        raise TypeError("SMC v2 result must be a dictionary")
+def _selected_zone_ids(result: SmcScoringResult) -> dict[str, str | None]:
+    if not isinstance(result, SmcScoringResult):
+        raise TypeError("SMC result must be an SmcScoringResult")
     selected: dict[str, str | None] = {}
     for side in ("buy", "sell"):
-        snapshot = v2_result.get(side)
-        if not isinstance(snapshot, dict):
-            raise TypeError(f"SMC v2 {side} result must be a dictionary")
-        zone_id = snapshot.get("selected_zone_id")
-        if zone_id is not None and not isinstance(zone_id, str):
-            raise TypeError(f"SMC v2 {side} selected zone ID must be text")
+        side_result = result.side(side)
+        zone_id = side_result.selected_zone_id if side_result else None
         selected[side] = zone_id
     return selected

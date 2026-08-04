@@ -7,6 +7,7 @@ from math import isfinite
 from typing import Any
 
 from core.smc_models import SelectedSmcZone, SmcScoreBreakdown, SmcZone
+from core.smc_scoring_result import SmcScoringResult, SmcSideScoringResult
 from core.smc_versions import SMC_SCORER_VERSION
 
 
@@ -43,18 +44,34 @@ def score_smc(
     smc: dict[str, Any],
     technical: dict[str, Any],
     market_regime: dict[str, Any] | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> SmcScoringResult:
     """Score BUY and SELL independently without mutating the active context."""
 
-    return {
-        side: _score_side(
+    sides: dict[str, SmcSideScoringResult] = {}
+    for side in ("buy", "sell"):
+        side_payload = _score_side(
             side,
             smc if isinstance(smc, dict) else {},
             technical if isinstance(technical, dict) else {},
             market_regime if isinstance(market_regime, dict) else {},
         )
-        for side in ("buy", "sell")
-    }
+        sides[side] = SmcSideScoringResult(
+            score=side_payload["smc_quality"],
+            breakdown=side_payload["breakdown"],
+            selected_zone=side_payload["selected_zone"],
+            selected_zone_id=side_payload["selected_zone_id"],
+            selected_zone_type=side_payload["selected_zone_type"],
+            selected_zone_timeframe=side_payload["selected_zone_timeframe"],
+            reason_codes=tuple(
+                side_payload["breakdown"].get("reason_codes", [])
+            ),
+            smc_reason=side_payload["smc_reason"],
+            selected_zone_score=side_payload["selected_zone_score"],
+            selected_zone_quality_score=side_payload["selected_zone_quality_score"],
+            selected_zone_relevance_score=side_payload["selected_zone_relevance_score"],
+            selected_zone_setup_score=side_payload["selected_zone_setup_score"],
+        )
+    return SmcScoringResult(scoring_version=SMC_SCORER_VERSION, sides=sides)
 
 
 def evaluate_smc_zones(

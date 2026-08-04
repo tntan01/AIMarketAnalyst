@@ -15,6 +15,7 @@ from typing import Any, Iterable
 
 from core.scanner_observability import stable_hash
 from core.smc_scorer import score_smc
+from core.smc_scoring_result import SmcScoringResult
 from core.smc_versions import SMC_SCORER_VERSION
 
 
@@ -62,8 +63,12 @@ def replay_smc_cases(
             case.get("side")
             or _best_side(scored, score_key="smc_quality")
         )
-        side_result = _mapping(scored.get(side))
-        selected_zone = _mapping(side_result.get("selected_zone"))
+        side_result = scored.side(side)
+        selected_zone = (
+            _mapping(side_result.selected_zone)
+            if side_result is not None
+            else {}
+        )
         sample = {
             "sample_id": str(
                 case.get("sample_id") or case.get("name") or f"sample-{index}"
@@ -84,11 +89,15 @@ def replay_smc_cases(
             "zone_family": _normalized_text(
                 selected_zone.get("family"), "none"
             ),
-            "zone_quality_score": side_result.get(
-                "selected_zone_quality_score"
+            "zone_quality_score": (
+                side_result.selected_zone_quality_score
+                if side_result is not None
+                else None
             ),
-            "zone_relevance_score": side_result.get(
-                "selected_zone_relevance_score"
+            "zone_relevance_score": (
+                side_result.selected_zone_relevance_score
+                if side_result is not None
+                else None
             ),
             "lifecycle_state": _zone_lifecycle(selected_zone),
             "linked_sweep": bool(
@@ -98,15 +107,19 @@ def replay_smc_cases(
                 _h4_confirmed_choch_against(smc, side)
             ),
             "scores": {
-                current_side: _mapping(scored.get(current_side)).get(
-                    "smc_quality"
+                current_side: (
+                    scored.side(current_side).score
+                    if scored.side(current_side) is not None
+                    else None
                 )
                 for current_side in _SIDES
             },
-            "selected_zone_id": side_result.get("selected_zone_id"),
+            "selected_zone_id": (
+                side_result.selected_zone_id if side_result is not None else None
+            ),
             "status": _normalize_status(case.get("status")),
             "result_r": case.get("result_r"),
-            "scoring_version": side_result.get("scoring_version"),
+            "scoring_version": scored.scoring_version,
         }
         normalized, reasons = normalize_smc_replay_sample(sample)
         normalized["valid"] = not reasons
@@ -707,16 +720,28 @@ def _bucket_label(
 
 
 def _best_side(
-    values: dict[str, Any],
+    values: object,
     *,
     score_key: str,
 ) -> str:
     scores = {
-        side: _optional_finite(_mapping(values.get(side)).get(score_key))
+        side: _optional_finite(_best_side_score(values, side, score_key))
         or 0.0
         for side in _SIDES
     }
     return _best_side_from_scores(scores)
+
+
+def _best_side_score(values: object, side: str, score_key: str) -> object:
+    if isinstance(values, SmcScoringResult):
+        side_result = values.side(side)
+        if side_result is None:
+            return None
+        if score_key == "smc_quality":
+            return side_result.score
+        return _mapping(side_result.breakdown).get(score_key)
+    mapped = _mapping(values.get(side))
+    return mapped.get(score_key)
 
 
 def _best_side_from_scores(scores: dict[str, float]) -> str:

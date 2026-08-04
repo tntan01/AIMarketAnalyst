@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.smc_scoring_result import SmcScoringResult
+
 
 SMC_CONSUMER_CONTRACT_VERSION = "smc-consumer-v2"
 
 
 def build_smc_consumer_from_canonical_result(
     *,
-    result: dict[str, dict[str, Any]] | None,
+    result: SmcScoringResult | None,
 ) -> dict[str, Any]:
     """Build the decision-path consumer from one canonical scorer result.
 
@@ -18,36 +20,59 @@ def build_smc_consumer_from_canonical_result(
     shadow/legacy selection or context lookup is needed.
     """
 
-    sides = result if isinstance(result, dict) else {}
     contract: dict[str, Any] = {
         "contract_version": SMC_CONSUMER_CONTRACT_VERSION,
         "sides": {},
     }
     for side in ("buy", "sell"):
         side_result = (
-            sides.get(side)
-            if isinstance(sides.get(side), dict)
-            else {}
+            result.side(side)
+            if isinstance(result, SmcScoringResult)
+            else None
         )
         contract["sides"][side] = {
             "side": side,
-            "scoring_version": side_result.get("scoring_version"),
-            "selected_zone": side_result.get("selected_zone"),
-            "selected_zone_id": side_result.get("selected_zone_id"),
-            "selected_zone_type": side_result.get("selected_zone_type"),
-            "selected_zone_timeframe": side_result.get(
-                "selected_zone_timeframe"
+            "scoring_version": (
+                result.scoring_version
+                if isinstance(result, SmcScoringResult)
+                else None
             ),
-            "selected_zone_quality_score": side_result.get(
-                "selected_zone_quality_score"
+            "selected_zone": (
+                side_result.selected_zone if side_result is not None else None
             ),
-            "selected_zone_relevance_score": side_result.get(
-                "selected_zone_relevance_score"
+            "selected_zone_id": (
+                side_result.selected_zone_id
+                if side_result is not None
+                else None
             ),
-            "selected_zone_setup_score": side_result.get(
-                "selected_zone_setup_score"
+            "selected_zone_type": (
+                side_result.selected_zone_type
+                if side_result is not None
+                else None
             ),
-            "score_breakdown": side_result.get("breakdown"),
+            "selected_zone_timeframe": (
+                side_result.selected_zone_timeframe
+                if side_result is not None
+                else None
+            ),
+            "selected_zone_quality_score": (
+                side_result.selected_zone_quality_score
+                if side_result is not None
+                else None
+            ),
+            "selected_zone_relevance_score": (
+                side_result.selected_zone_relevance_score
+                if side_result is not None
+                else None
+            ),
+            "selected_zone_setup_score": (
+                side_result.selected_zone_setup_score
+                if side_result is not None
+                else None
+            ),
+            "score_breakdown": (
+                side_result.breakdown if side_result is not None else {}
+            ),
         }
     return contract
 
