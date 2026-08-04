@@ -1691,7 +1691,7 @@ class ScannerDetailScreen(QWidget):
                 "Đang hiển thị dữ liệu snapshot (không cập nhật được nến)."
             )
             return
-        self._set_chart_notice("Đã cập nhật nến mới nhất.")
+        self._set_chart_notice("")
 
     def refresh_theme_styles(self) -> None:
         """Keep the embedded WebEngine chart in sync with the active theme."""
