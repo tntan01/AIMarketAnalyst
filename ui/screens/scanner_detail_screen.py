@@ -1685,7 +1685,9 @@ class ScannerDetailScreen(QWidget):
 
             light = self._is_light_theme()
             payload = build_full_chart_payload(
-                current_symbol, updated, active_timeframe="H1"
+                current_symbol,
+                updated,
+                active_timeframe=str(getattr(self.chart, "_active_tf", "H1")),
             )
             payload["theme"] = "light" if light else "dark"
             payload["palette"] = chart_palette(current_palette())
