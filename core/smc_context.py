@@ -927,7 +927,21 @@ def enrich_zones(
         )
         item.update(lifecycle.to_dict())
         enriched.append(item)
-    return sorted(enriched, key=lambda zone: zone.get("zone_score", 0), reverse=True)
+    # Raw candidates carry no scorer score, so order by deterministic raw
+    # lifecycle signals: actionable (non-broken, non-stale) and stronger
+    # (tested, swept, recent, high displacement) zones first.
+    return sorted(
+        enriched,
+        key=lambda zone: (
+            bool(zone.get("broken", False)),
+            bool(zone.get("stale", False)),
+            -int(zone.get("test_count", 0) or 0),
+            -int(bool(zone.get("liquidity_sweep", False))),
+            -int(zone.get("origin_index", 0) or 0),
+            -float(zone.get("displacement_multiple") or 0.0),
+            str(zone.get("zone_id", "") or ""),
+        ),
+    )
 
 
 def zone_side(zone: dict[str, Any], family: str) -> str:
