@@ -36,6 +36,10 @@ QAbstractItemView::item:selected {
   color: #111827;
 }
 
+QAbstractItemView#DataTable {
+  outline: 0;
+}
+
 QScrollBar:horizontal,
 QScrollBar:vertical {
   background: #EAE6DF;
