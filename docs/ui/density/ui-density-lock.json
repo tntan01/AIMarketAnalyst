@@ -106,11 +106,11 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 186,
+      "line": 212,
       "method": "setFixedHeight",
       "receiver": "frame",
       "arguments": [
-        "44"
+        "60"
       ],
       "category": "structural"
     },

@@ -1143,6 +1143,14 @@ QFrame#StatusCard[state="ok"] {
   border: 1px solid #10b981;
 }
 
+QFrame#StatusCard QLabel#CardValue {
+  color: #9ca3af;
+}
+
+QFrame#StatusCard QLabel#CardDetailLabel {
+  color: #f9fafb;
+}
+
 QFrame#StatusDot[state="danger"],
 QFrame#StatusDot[state="error"] {
   background: #ef4444;

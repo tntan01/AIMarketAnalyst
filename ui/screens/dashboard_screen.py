@@ -92,6 +92,32 @@ class ActualLookupWorker(QThread):
         self.result_ready.emit(result)
 
 
+class _ElidedLabel(QLabel):
+    """QLabel that truncates long text with "..." instead of wrapping."""
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._full_text = text
+        self.setWordWrap(False)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def setText(self, text: str) -> None:
+        self._full_text = text or ""
+        super().setText(self._full_text)
+        self._apply_elide()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.width()
+        )
+        if elided != self.text():
+            super().setText(elided)
+
+
 class StatusCardEventFilter(QObject):
     def __init__(self, screen, dot, value_label, parent=None):
         super().__init__(parent)
@@ -183,7 +209,7 @@ class DashboardScreen(QWidget):
         frame.setObjectName("StatusCard")
         frame.setProperty("state", state)
         frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        frame.setFixedHeight(44)
+        frame.setFixedHeight(60)
 
         layout = QHBoxLayout(frame)
         layout.setContentsMargins(12, 0, 12, 0)
@@ -201,21 +227,15 @@ class DashboardScreen(QWidget):
         text_layout.setSpacing(1)
         text_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        # Text hiển thị 1 dòng duy nhất (không wrap)
-        value_label = QLabel(value)
+        # Dòng 1: tên thẻ (nhỏ, nhạt) — Dòng 2: thông tin chi tiết (đậm)
+        value_label = _ElidedLabel(value)
         value_label.setObjectName("CardValue")
-        value_label.setWordWrap(False)
-        value_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
-        detail_label = QLabel(detail)
+        detail_label = _ElidedLabel(detail)
         detail_label.setObjectName("CardDetailLabel")
-        detail_label.setWordWrap(False)
-        detail_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
         text_layout.addWidget(value_label)
-        # Keep the detail label in the public card tuple for status updates,
-        # but the compact card intentionally renders one text line only.
-        detail_label.hide()
+        text_layout.addWidget(detail_label)
 
         layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(text_layout, 1)

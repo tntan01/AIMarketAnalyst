@@ -26,12 +26,14 @@ class MockEvent(QEvent):
 def test_dashboard_status_cards():
     screen = DashboardScreen(None, app=None)
     
-    # 1. 4 card tồn tại và có chiều cao 44px
+    # 1. 4 card tồn tại và có chiều cao cố định trong khoảng 56–64px
     assert len(screen.status_cards) == 4, "Should have exactly 4 status cards"
     for key, (frame, value_lbl, detail_lbl) in screen.status_cards.items():
-        # Kiểm tra chiều cao cố định 44px
-        assert frame.height() == 44 or frame.maximumHeight() == 44 or frame.minimumHeight() == 44, \
-            f"Card '{key}' height should be fixed to 44px"
+        # Kiểm tra chiều cao cố định trong khoảng 56–64px
+        assert 56 <= frame.minimumHeight() <= 64, \
+            f"Card '{key}' min height {frame.minimumHeight()} outside 56-64px"
+        assert 56 <= frame.maximumHeight() <= 64, \
+            f"Card '{key}' max height {frame.maximumHeight()} outside 56-64px"
         
         # 2. Card dùng contract QSS chung, không còn stylesheet cục bộ.
         assert frame.styleSheet() == ""

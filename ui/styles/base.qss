@@ -87,8 +87,15 @@ QFrame#StatusDot {
 QFrame#StatusCard QLabel#CardValue {
   background: transparent;
   border: none;
-  @QSS_BODY@
+  @QSS_SMALL@
   font-weight: 600;
+}
+
+QFrame#StatusCard QLabel#CardDetailLabel {
+  background: transparent;
+  border: none;
+  @QSS_BODY@
+  font-weight: 700;
 }
 
 QLabel#ScannerDecisionAction {
