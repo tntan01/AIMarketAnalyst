@@ -67,7 +67,7 @@ class AIProviderCatalogService:
                 result[info.display_name] = list(info.default_models)
         return result
 
-    def refresh_models(self, provider_name: str, api_key: str) -> dict[str, list[str]]:
+    def refresh_models(self, provider_name: str, api_key: str, base_url: str = "") -> dict[str, list[str]]:
         """Discover models from *provider_name*'s API and cache to disk.
 
         On API error, falls back to disk cache (offline mode).  Only raises
@@ -84,7 +84,10 @@ class AIProviderCatalogService:
 
         # Try API — on failure, fall back to disk cache
         try:
-            discovered = adapter.discover_models(api_key)
+            # Only the OpenAI-Compatible adapter accepts base_url; forward it
+            # solely when set so fixed-vendor adapters are called unchanged.
+            extra = {"base_url": base_url} if base_url else {}
+            discovered = adapter.discover_models(api_key, **extra)
         except Exception:
             disk = self._load_from_disk(info.name)
             if disk:

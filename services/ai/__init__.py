@@ -16,6 +16,7 @@ from services.ai.providers import deepseek_adapter   # noqa: F401
 from services.ai.providers import openai_adapter     # noqa: F401
 from services.ai.providers import anthropic_adapter  # noqa: F401
 from services.ai.providers import gemini_adapter     # noqa: F401
+from services.ai.providers import openai_compatible_adapter  # noqa: F401
 
 __all__ = [
     "BaseProviderAdapter",

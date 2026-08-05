@@ -11,6 +11,7 @@ class AIProviderSettings:
     model: str
     api_key: str = ""
     api_key_ref: str | None = None
+    base_url: str = ""
     is_active: bool = False
 
 

@@ -75,6 +75,7 @@ class SettingsService:
                 model=self._normalize_ai_model(item.get("provider", ""), item.get("model", "")),
                 api_key=item.get("api_key", ""),
                 api_key_ref=item.get("api_key_ref"),
+                base_url=str(item.get("base_url", "") or ""),
                 is_active=bool(item.get("is_active", False)),
             )
             for item in data.get("providers", [])

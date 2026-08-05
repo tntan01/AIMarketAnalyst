@@ -33,16 +33,22 @@ class TestProviderCatalog:
         assert "openai" in names
         assert "anthropic" in names
         assert "gemini" in names
-        assert len(names) == 4
+        assert "openai_compatible" in names
+        assert len(names) == 5
 
     def test_display_names_match_ui_expectations(self):
         from services.ai.provider_catalog import provider_catalog
         display = provider_catalog.list_display_names()
-        assert display == ["DeepSeek", "OpenAI", "Anthropic", "Gemini"]
+        assert display == [
+            "DeepSeek", "OpenAI", "Anthropic", "Gemini",
+            "OpenAI Compatible (Tùy chỉnh)",
+        ]
 
     def test_each_provider_has_default_models(self):
         from services.ai.provider_catalog import provider_catalog
         for info in provider_catalog.list_infos():
+            if info.name == "openai_compatible":
+                continue  # user-supplied endpoint: no fixed default models
             assert len(info.default_models) >= 2, (
                 f"{info.display_name} has only {len(info.default_models)} default models"
             )
@@ -113,7 +119,7 @@ class TestCapabilities:
 
     def test_only_discovery_providers_have_discovery_flag(self):
         from services.ai.provider_catalog import ProviderCapability, provider_catalog
-        discovery_providers = {"openai", "gemini"}
+        discovery_providers = {"openai", "gemini", "openai_compatible"}
         for info in provider_catalog.list_infos():
             has = ProviderCapability.MODEL_DISCOVERY in info.capabilities
             if info.name in discovery_providers:

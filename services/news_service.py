@@ -2888,7 +2888,7 @@ Trả lời:"""
             if not active or not active.api_key:
                 return self._parse_fallback_regex(text)
 
-            config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key)
+            config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key, base_url=active.base_url)
             ai = AIService(config)
 
             prompt = (

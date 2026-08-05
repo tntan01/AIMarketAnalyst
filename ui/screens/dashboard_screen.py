@@ -986,6 +986,7 @@ class DashboardScreen(QWidget):
                     provider=active.provider,
                     model=active.model,
                     api_key=active.api_key,
+                    base_url=active.base_url,
                 )
                 ai = AIService(ai_config)
 
@@ -1183,6 +1184,7 @@ class DashboardScreen(QWidget):
             provider=active.provider,
             model=active.model,
             api_key=active.api_key,
+            base_url=active.base_url,
         )
         ai = AIService(ai_config)
 
@@ -1455,6 +1457,7 @@ class DashboardScreen(QWidget):
                 provider=active.provider,
                 model=active.model,
                 api_key=active.api_key,
+                base_url=active.base_url,
             )
             ai = AIService(ai_config)
 

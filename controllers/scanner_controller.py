@@ -448,6 +448,7 @@ class ScannerController:
                 provider=active_ai.provider,
                 model=active_ai.model,
                 api_key=active_ai.api_key,
+                base_url=active_ai.base_url,
             ))
 
         with ThreadPoolExecutor(max_workers=2) as _bg:
@@ -1011,7 +1012,7 @@ class ScannerController:
                     freshness=freshness,
                 )
                 market_brief = AIService(
-                    AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)
+                    AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key, base_url=active_ai.base_url)
                 ).analyze(brief_prompt, max_tokens=4000)
             except Exception as exc:
                 market_brief_error = str(exc)
@@ -2372,7 +2373,7 @@ class ScannerController:
     def _write_scanner_ai_audit(self, row: dict[str, Any], active_ai) -> dict[str, Any]:
         prompt = build_ai_setup_audit_prompt(row)
         try:
-            raw = AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key)).analyze(prompt, max_tokens=4000)
+            raw = AIService(AIProviderConfig(active_ai.provider, active_ai.model, active_ai.api_key, base_url=active_ai.base_url)).analyze(prompt, max_tokens=4000)
             return parse_ai_setup_audit(raw)
         except Exception as exc:
             return {

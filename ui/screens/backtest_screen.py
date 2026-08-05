@@ -1225,7 +1225,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         self.analyze_btn.setEnabled(False)
 
         prompt = self._build_analysis_prompt()
-        config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key)
+        config = AIProviderConfig(provider=active.provider, model=active.model, api_key=active.api_key, base_url=active.base_url)
         ai = self.app.create_ai_service(config) if self.app else AIService(config)
 
         self._ai_thread = QThread()

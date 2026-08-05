@@ -143,6 +143,16 @@ class SettingsScreen(QWidget):
         self.ai_api_key_input.textChanged.connect(self._update_ai_button_state)
         right_layout.addWidget(self.ai_api_key_input)
 
+        # Base URL — only shown for the OpenAI-compatible provider
+        self.ai_base_url_label = QLabel("Base URL")
+        self.ai_base_url_label.setVisible(False)
+        right_layout.addWidget(self.ai_base_url_label)
+        self.ai_base_url_input = QLineEdit()
+        self.ai_base_url_input.setPlaceholderText("vd: http://localhost:1234/v1")
+        self.ai_base_url_input.setFixedWidth(260)
+        self.ai_base_url_input.setVisible(False)
+        right_layout.addWidget(self.ai_base_url_input)
+
         # Model row: combobox + sync button
         right_layout.addWidget(QLabel("Model"))
         model_row = QHBoxLayout()
@@ -237,14 +247,21 @@ class SettingsScreen(QWidget):
             ProviderCapability.MODEL_DISCOVERY in info.capabilities
         )
 
+        # Base URL field — only for the OpenAI-compatible provider
+        is_compatible = provider_key == "openai_compatible"
+        self.ai_base_url_label.setVisible(is_compatible)
+        self.ai_base_url_input.setVisible(is_compatible)
+
         # Load saved config for this provider (if any)
         saved = self._saved_config_for(info.display_name)
         if saved:
             self.ai_api_key_input.setText(saved.api_key)
             self.ai_default_check.setChecked(saved.is_active)
+            self.ai_base_url_input.setText(saved.base_url)
         else:
             self.ai_api_key_input.clear()
             self.ai_default_check.setChecked(False)
+            self.ai_base_url_input.clear()
 
         # Populate model dropdown
         self._refresh_ai_models(info.display_name, saved.model if saved else None)
@@ -279,9 +296,13 @@ class SettingsScreen(QWidget):
         item = self.ai_provider_list.item(row)
         provider_key = item.data(Qt.ItemDataRole.UserRole) if item else ""
         api_key = self.ai_api_key_input.text().strip()
+        base_url = self.ai_base_url_input.text().strip()
 
         if not api_key:
             self._set_ai_status("Cần nhập API Key trước khi làm mới model.", "error")
+            return
+        if provider_key == "openai_compatible" and not base_url:
+            self._set_ai_status("Cần nhập Base URL trước khi làm mới model.", "error")
             return
 
         self.ai_refresh_models_btn.setEnabled(False)
@@ -289,7 +310,7 @@ class SettingsScreen(QWidget):
         QApplication.processEvents()
 
         try:
-            self.ai_catalog_service.refresh_models(provider_key, api_key)
+            self.ai_catalog_service.refresh_models(provider_key, api_key, base_url)
             info = provider_catalog.get(provider_key)
             display = info.display_name if info else provider_key
             self._refresh_ai_models(display)
@@ -315,6 +336,7 @@ class SettingsScreen(QWidget):
         provider = self._current_provider_display()
         model = self.ai_model_combo.currentText().strip()
         api_key = self.ai_api_key_input.text().strip()
+        base_url = self.ai_base_url_input.text().strip()
         if not provider:
             return
         if not model:
@@ -329,17 +351,20 @@ class SettingsScreen(QWidget):
                 existing.api_key = api_key
                 existing.model = model
                 existing.api_key_ref = self._mask_api_key(api_key)
+                existing.base_url = base_url
             else:
                 providers.append(AIProviderSettings(
                     provider=provider,
                     model=model,
                     api_key=api_key,
                     api_key_ref=self._mask_api_key(api_key),
+                    base_url=base_url,
                     is_active=not providers,
                 ))
         elif existing and not api_key:
             # Keep existing config but update model
             existing.model = model
+            existing.base_url = base_url
         else:
             self._set_ai_status("Nhập API Key trước khi lưu.", "error")
             return
@@ -394,7 +419,10 @@ class SettingsScreen(QWidget):
             self._set_ai_status("Chọn nhà cung cấp và model.", "error")
             return
 
-        config = AIProviderConfig(provider=provider, model=model, api_key=api_key)
+        config = AIProviderConfig(
+            provider=provider, model=model, api_key=api_key,
+            base_url=self.ai_base_url_input.text().strip(),
+        )
         self.ai_test_button.setEnabled(False)
         self.ai_test_button.setText("Đang kiểm tra...")
         self._set_ai_status("Đang kiểm tra...", "ok")

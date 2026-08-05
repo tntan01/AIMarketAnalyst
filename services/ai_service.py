@@ -24,6 +24,7 @@ class AIProviderConfig:
     provider: str
     model: str
     api_key: str
+    base_url: str = ""
 
 
 class AIService:
@@ -65,13 +66,23 @@ class AIService:
         """Generate a text response from *prompt*."""
         return self._adapter.generate(
             prompt, self.config.model, self.config.api_key, max_tokens,
+            **self._base_url_kwargs(),
         )
 
     def analyze_stream(self, prompt: str, *, max_tokens: int = 1800) -> Generator[str, None, None]:
         """Stream response chunks via SSE (falls back to single chunk)."""
         yield from self._adapter.generate_stream(
             prompt, self.config.model, self.config.api_key, max_tokens,
+            **self._base_url_kwargs(),
         )
+
+    def _base_url_kwargs(self) -> dict[str, str]:
+        """Forward ``base_url`` only when set.
+
+        Only the OpenAI-Compatible adapter accepts ``base_url``; the fixed-vendor
+        adapters do not, so an empty value must not be forwarded to them.
+        """
+        return {"base_url": self.config.base_url} if self.config.base_url else {}
 
     # ------------------------------------------------------------------
     # Provider-specific helpers (kept for backward compat)
