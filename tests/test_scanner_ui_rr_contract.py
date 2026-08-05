@@ -236,15 +236,24 @@ class TestOrderDialogRRContract:
 
     # ── R:R column text ────────────────────────────────────────────────
 
-    def test_main_text_is_best_case_not_base(self):
+    def test_main_text_is_base_with_range(self):
         order = {
             "risk_reward": "1:2.5",
             "risk_reward_range": {"best": 2.5, "base": 1.8, "worst": 1.2},
         }
         text = format_order_rr_text(order)
-        assert "2.5" in text
-        assert "1.2" in text
-        assert "1.8" not in text, "Main text must not show base RR"
+        # Primary number is base; worst–best range stays alongside; best only
+        # appears inside the range.
+        assert text.startswith("1.8 ")
+        assert "(1.2–2.5)" in text
+
+    def test_main_text_falls_back_to_best_without_base(self):
+        order = {"risk_reward_range": {"best": 2.5, "worst": 1.2}}
+        assert format_order_rr_text(order) == "2.5 (1.2–2.5)"
+
+    def test_main_text_uses_base_field_without_range(self):
+        order = {"risk_reward": "1:2.5", "risk_reward_base": 1.8}
+        assert format_order_rr_text(order) == "1.8"
 
     def test_single_best_no_range(self):
         assert format_order_rr_text({"risk_reward": "1:1.8"}) == "1:1.8"
@@ -264,16 +273,17 @@ class TestOrderDialogRRContract:
             "current_price_in_entry_zone": True,
         }
         tip = format_order_rr_tooltip(order)
-        assert "Best: 2.5 (1.2–2.5)" in tip
-        assert "Base: 1.8" in tip
+        # Base is primary (with the worst–best range); best is a secondary line.
+        assert "Base: 1.8 (1.2–2.5)" in tip
+        assert "Best: 2.5" in tip
         assert "Current @ 1.09850: 1.75 in zone" in tip
 
     def test_tooltip_without_current(self):
         order = {"risk_reward": "1:2.0", "risk_reward_range": {"best": 2.0, "base": 1.5, "worst": 1.0}}
         tip = format_order_rr_tooltip(order)
         assert "Current" not in tip
-        assert "Best" in tip
-        assert "Base: 1.5" in tip
+        assert "Base: 1.5 (1.0–2.0)" in tip
+        assert "Best: 2.0" in tip
 
     # ── Entry tooltip ──────────────────────────────────────────────────
 
@@ -323,13 +333,14 @@ class TestOrderDialogRRContract:
 
 
 # ---------------------------------------------------------------------------
-# Cross-check: scanner model uses best-case, order dialog uses best range
+# Cross-check: scanner model uses best-case effective, order dialog uses
+# base-primary nominal with the worst–best range
 # ---------------------------------------------------------------------------
 
 
 def test_scanner_main_column_and_order_dialog_use_different_formats():
-    """Scanner column shows '2.5', order dialog shows '2.5 (1.2-2.5)'.
-    Both are best-case anchored — just formatted differently."""
+    """Scanner column shows best-case effective '2.5', order dialog shows
+    base-primary '1.8 (1.2–2.5)' — different anchors by design."""
     row_for_scanner = {
         "expected_effective_rr": 2.5,
         "analysis_result": {
@@ -341,16 +352,15 @@ def test_scanner_main_column_and_order_dialog_use_different_formats():
         "risk_reward_range": {"best": 2.5, "base": 1.8, "worst": 1.2},
     }
 
-    # Scanner: just the number
+    # Scanner: just the number (best-case effective RR)
     model = ScannerTableModel()
     model.rows = [row_for_scanner]
     scanner_display = model._display_value("expected_effective_rr", 2.5, row_for_scanner)
     assert scanner_display == "2.5"
 
-    # Order dialog: best (worst–best) — use production formatter
+    # Order dialog: base (worst–best) — use production formatter
     dialog_display = format_order_rr_text(order_for_dialog)
-    assert "2.5 (1.2–2.5)" in dialog_display
+    assert "1.8 (1.2–2.5)" in dialog_display
 
-    # Both use best-case — just different presentation
     assert "2.5" in scanner_display
-    assert "2.5" in dialog_display
+    assert "1.2–2.5" in dialog_display

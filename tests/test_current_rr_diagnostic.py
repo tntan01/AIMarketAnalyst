@@ -325,8 +325,8 @@ class TestOrderRowRRFormatting:
         }
         from ui.scanner_rr_formatters import format_order_rr_tooltip
         tooltip = format_order_rr_tooltip(order)
-        assert "Best: 2.5 (1.2–2.5)" in tooltip
-        assert "Base: 1.8" in tooltip
+        assert "Base: 1.8 (1.2–2.5)" in tooltip
+        assert "Best: 2.5" in tooltip
         assert "Current @ 1.09850: 1.75 in zone" in tooltip
 
     def test_rr_tooltip_without_current_rr_still_works(self):
@@ -339,8 +339,8 @@ class TestOrderRowRRFormatting:
         }
         from ui.scanner_rr_formatters import format_order_rr_tooltip
         tooltip = format_order_rr_tooltip(order)
-        assert "Best: 2.0 (1.0–2.0)" in tooltip
-        assert "Base: 1.5" in tooltip
+        assert "Base: 1.5 (1.0–2.0)" in tooltip
+        assert "Best: 2.0" in tooltip
         assert "Current" not in tooltip
 
     def test_note_shows_current_rr_when_available(self):

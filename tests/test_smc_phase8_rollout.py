@@ -114,17 +114,11 @@ def test_shadow_report_collects_generic_rollout_metrics():
                 },
                 "scenarios": [],
             },
-            "legacy_candidate_input": {
-                "scanner_action": "stand_aside",
-                "trade_permission": "blocked",
-                "best_side": "buy",
-            },
             "scanner_candidate_decision": {
                 "auto_trade_candidate": False,
                 "strategy": {},
             },
         }],
-        enabled=True,
     )
 
     assert report["data_unavailable"] == 1
@@ -132,6 +126,8 @@ def test_shadow_report_collects_generic_rollout_metrics():
     assert report["analysis_latency_ms_total"] == 12.5
     assert report["analysis_latency_samples"] == 1
     assert report["analysis_latency_ms_max"] == 12.5
+    assert report["smc_side_samples"] == 2
+    assert report["smc_no_zone_sides"] == 2
 
 
 def test_scorer_performance_separates_v1_and_v2():
@@ -187,7 +183,9 @@ def test_old_rollout_metrics_are_archived_instead_of_mixed(tmp_path):
     migrated = service.load()
 
     assert migrated["metrics_version"] == ROLLOUT_METRICS_VERSION
-    assert migrated["shadow_samples"] == 0
-    assert migrated["disagreements"] == 0
+    # Comparison counters were removed with the V1/V2 shadow mechanism and
+    # must not resurface in the fresh metric set.
+    assert "shadow_samples" not in migrated
+    assert "disagreements" not in migrated
     assert migrated["legacy_metrics"]["shadow_samples"] == 1456
     assert migrated["rollback_tested"] is True

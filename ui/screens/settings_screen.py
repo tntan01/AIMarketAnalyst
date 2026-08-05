@@ -1340,8 +1340,6 @@ class SettingsScreen(QWidget):
 
         kill_switch = QCheckBox("Dừng toàn bộ lệnh từ Scanner")
         kill_switch.setChecked(rollout.kill_switch)
-        shadow_compare = QCheckBox("So sánh Scanner V1/V2")
-        shadow_compare.setChecked(rollout.shadow_compare_enabled)
         allowed_symbols = QLineEdit()
         allowed_symbols.setPlaceholderText("EURUSD, GBPUSD")
         allowed_symbols.setText(", ".join(rollout.allowed_symbols))
@@ -1360,9 +1358,6 @@ class SettingsScreen(QWidget):
         )
         production_approved.setChecked(rollout.production_approved)
 
-        min_shadow = QSpinBox()
-        min_shadow.setRange(1, 1_000_000)
-        min_shadow.setValue(rollout.min_shadow_samples)
         min_demo = QSpinBox()
         min_demo.setRange(1, 1_000_000)
         min_demo.setValue(rollout.min_demo_orders)
@@ -1370,11 +1365,6 @@ class SettingsScreen(QWidget):
         min_canary.setRange(1, 1_000_000)
         min_canary.setValue(rollout.min_canary_orders)
 
-        max_disagreement = QDoubleSpinBox()
-        max_disagreement.setRange(0, 100)
-        max_disagreement.setDecimals(1)
-        max_disagreement.setSuffix(" %")
-        max_disagreement.setValue(rollout.max_disagreement_rate * 100)
         max_revalidation = QDoubleSpinBox()
         max_revalidation.setRange(0, 100)
         max_revalidation.setDecimals(1)
@@ -1392,21 +1382,17 @@ class SettingsScreen(QWidget):
 
         self.rollout_stage_input = stage
         self.rollout_kill_switch_input = kill_switch
-        self.rollout_shadow_compare_input = shadow_compare
         self.rollout_symbols_input = allowed_symbols
         self.rollout_canary_risk_input = canary_risk
         self.rollout_require_demo_input = require_demo
         self.rollout_production_approved_input = production_approved
-        self.rollout_min_shadow_input = min_shadow
         self.rollout_min_demo_input = min_demo
         self.rollout_min_canary_input = min_canary
-        self.rollout_max_disagreement_input = max_disagreement
         self.rollout_max_revalidation_input = max_revalidation
         self.rollout_max_degradation_input = max_degradation
 
         form_layout.addWidget(self._compact_form_row("Giai đoạn", stage))
         form_layout.addWidget(kill_switch)
-        form_layout.addWidget(shadow_compare)
         form_layout.addWidget(
             self._compact_form_row("Mã DEMO_LIMITED", allowed_symbols)
         )
@@ -1416,19 +1402,10 @@ class SettingsScreen(QWidget):
         form_layout.addWidget(require_demo)
         form_layout.addWidget(production_approved)
         form_layout.addWidget(
-            self._compact_form_row("Mẫu shadow tối thiểu", min_shadow)
-        )
-        form_layout.addWidget(
             self._compact_form_row("Lệnh demo tối thiểu", min_demo)
         )
         form_layout.addWidget(
             self._compact_form_row("Lệnh canary tối thiểu", min_canary)
-        )
-        form_layout.addWidget(
-            self._compact_form_row(
-                "Disagreement tối đa",
-                max_disagreement,
-            )
         )
         form_layout.addWidget(
             self._compact_form_row(
@@ -1453,7 +1430,7 @@ class SettingsScreen(QWidget):
         )
         form_layout.addWidget(self.rollout_save_button)
         self.rollout_status_label = QLabel(
-            "Mặc định SHADOW: V2 chỉ so sánh và tuyệt đối không gửi lệnh."
+            "Mặc định SHADOW: tuyệt đối không gửi lệnh."
         )
         self.rollout_status_label.setObjectName("HelperText")
         self.rollout_status_label.setWordWrap(True)
@@ -1475,21 +1452,14 @@ class SettingsScreen(QWidget):
         self.app_settings.scanner_rollout = ScannerRolloutSettings(
             stage=self.rollout_stage_input.currentText(),
             kill_switch=self.rollout_kill_switch_input.isChecked(),
-            shadow_compare_enabled=(
-                self.rollout_shadow_compare_input.isChecked()
-            ),
             allowed_symbols=list(dict.fromkeys(symbols)),
             canary_risk_percent=self.rollout_canary_risk_input.value(),
             require_demo_account=self.rollout_require_demo_input.isChecked(),
             production_approved=(
                 self.rollout_production_approved_input.isChecked()
             ),
-            min_shadow_samples=self.rollout_min_shadow_input.value(),
             min_demo_orders=self.rollout_min_demo_input.value(),
             min_canary_orders=self.rollout_min_canary_input.value(),
-            max_disagreement_rate=(
-                self.rollout_max_disagreement_input.value() / 100
-            ),
             max_revalidation_failure_rate=(
                 self.rollout_max_revalidation_input.value() / 100
             ),

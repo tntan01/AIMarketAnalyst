@@ -567,7 +567,10 @@ def test_overview_checklist_uses_effective_rr_and_canonical_permission():
     assert "không được phép" in items[6]["label"]
 
     _, rr_detail, _ = screen._dialog_card_rr()
+    # The row only carries the best-case string (no base anchor), so the
+    # adaptive label must not claim "(base)".
     assert "danh nghĩa 1:2.0" in rr_detail
+    assert "(base)" not in rr_detail
     assert "1:5.0" not in rr_detail
 
     macro_value, macro_detail, _ = screen._dialog_card_macro()

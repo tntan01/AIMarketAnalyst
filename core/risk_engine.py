@@ -1241,7 +1241,9 @@ def build_trade_plan(
     )
     if use_preferred and preferred_zone.get("watch_only_fallback"):
         entry_state = dict(entry_state)
-        entry_state["entry_status"] = "watch_zone"
+        # Never upgrade an already-worse state (e.g. broken zone).
+        if entry_state.get("entry_status") not in ("invalidated", "no_setup"):
+            entry_state["entry_status"] = "watch_zone"
         entry_state["ready_to_trade"] = False
         fallback_reason = str(
             preferred_zone.get("selection_reason")
@@ -1253,11 +1255,38 @@ def build_trade_plan(
             if current_reason
             else f"Zone fallback: {fallback_reason}"
         )
+    if tp1 is None:
+        # SMC/preferred plan with no valid TP1: keep it visible for manual
+        # monitoring but never tradeable.  Without this downgrade the decision
+        # engine (entry_status + score only, no TP check) could judge
+        # READY_TO_TRADE while the readiness engine blocks on
+        # TAKE_PROFIT_MISSING — two contradictory verdicts for one plan, and
+        # a manual trader would enter with no defined exit.
+        entry_state = dict(entry_state)
+        # Never upgrade an already-worse state (broken zone → STAND_ASIDE
+        # must not become WATCH_ONLY); ready_to_trade and the reason still
+        # apply to every TP-less plan.
+        if entry_state.get("entry_status") not in ("invalidated", "no_setup"):
+            entry_state["entry_status"] = "watch_zone"
+        entry_state["ready_to_trade"] = False
+        current_reason = str(entry_state.get("invalid_reason") or "").strip()
+        entry_state["invalid_reason"] = (
+            f"{current_reason} | Không có TP1 cấu trúc — chỉ theo dõi, chưa phải lệnh giao dịch."
+            if current_reason
+            else "Không có TP1 cấu trúc — chỉ theo dõi, chưa phải lệnh giao dịch."
+        )
     # Entry Ladder Phase 1: scale size by price position within zone
     entry_ladder = entry_state.get("entry_ladder", {})
     size_multiplier = float(entry_ladder.get("size_multiplier", 1.0)) if isinstance(entry_ladder, dict) else 1.0
+    # Conservative sizing anchor: the far edge of the execution zone (worst
+    # fill, aggressiveness=1.0).  Sizing at the nearest edge (smallest risk
+    # distance -> biggest lot) would exceed the risk budget whenever the fill
+    # lands anywhere deeper in the zone.  Worst-edge sizing keeps real money
+    # risk at or below the configured percent for EVERY fill inside the zone;
+    # the price is only a slightly smaller lot.
+    entry_worst = entry_high if side == "buy" else entry_low
     sizing = position_sizing(
-        request, entry_for_rr, stop_loss,
+        request, entry_worst, stop_loss,
         quote_to_usd_rate=quote_to_usd_rate,
         size_multiplier=size_multiplier,
     )
@@ -1276,9 +1305,6 @@ def build_trade_plan(
     if tp1 is not None:
         rr_best = round(reward_risk(entry_for_rr, stop_loss, tp1), 1)
         rr_base = round(reward_risk(entry_for_selection, stop_loss, tp1), 1)
-        entry_worst = (
-            entry_high if side == "buy" else entry_low
-        )
         rr_worst = round(reward_risk(entry_worst, stop_loss, tp1), 1)
         risk_reward_str = f"1:{rr_best:.1f}"
         effective_rr = calculate_expected_effective_rr(

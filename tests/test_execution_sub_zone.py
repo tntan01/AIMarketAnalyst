@@ -142,8 +142,12 @@ def test_trade_plan_anchors_rr_and_lot_use_execution_zone() -> None:
     assert plan["source_zone"]["original_high"] == 1.0982
     assert 1.0968 <= execution_low < execution_high <= 1.0982
     assert plan["entry_price"] == execution_low
-    assert plan["position_sizing"]["entry_price"] == plan["entry_price"]
+    # Sizing anchors the far edge (worst fill); display entry stays nearest.
+    assert plan["position_sizing"]["entry_price"] == execution_high
     assert plan["position_sizing"]["stop_loss"] == plan["stop_loss"]
+    assert plan["position_sizing"]["price_distance"] == pytest.approx(
+        execution_high - float(plan["stop_loss"]), abs=1e-5
+    )
 
     tp1 = plan["take_profit"][0]
     expected_best = round(

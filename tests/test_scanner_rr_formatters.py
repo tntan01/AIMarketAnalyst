@@ -55,7 +55,14 @@ class TestPublicAPI:
 class TestSmokeOutput:
     """Quick smoke test — detailed formatting is covered by Phase 8 tests."""
 
-    def test_format_order_rr_text_range(self):
+    def test_format_order_rr_text_base_primary_with_range(self):
+        from ui.scanner_rr_formatters import format_order_rr_text
+        result = format_order_rr_text({
+            "risk_reward_range": {"best": 2.5, "base": 1.8, "worst": 1.2},
+        })
+        assert result == "1.8 (1.2–2.5)"
+
+    def test_format_order_rr_text_range_without_base_falls_back_to_best(self):
         from ui.scanner_rr_formatters import format_order_rr_text
         result = format_order_rr_text({
             "risk_reward_range": {"best": 2.5, "worst": 1.2},

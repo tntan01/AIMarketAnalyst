@@ -12,7 +12,7 @@ cost deducted). They exist mainly for display / human consumption.
 
 | Field | Anchor | Formula | Consumer |
 |---|---|---|---|
-| `risk_reward` | **best edge** (`entry_for_rr`, aggressiveness=0.0) | `f"1:{reward_risk(entry_best, sl, tp):.1f}"` | Scanner table, order dialog R:R column, Telegram alert, entry checklist |
+| `risk_reward` | **best edge** (`entry_for_rr`, aggressiveness=0.0) | `f"1:{reward_risk(entry_best, sl, tp):.1f}"` | Scanner row field (parsers), Telegram alert nominal reference, entry checklist, display fallback |
 | `risk_reward_base` | **midpoint** (`entry_for_selection`, aggressiveness=0.5) | `reward_risk(entry_mid, sl, tp)` rounded | Tooltip detail, diagnostic reference |
 | `risk_reward_worst` | **far edge** (aggressiveness=1.0) | `reward_risk(entry_far, sl, tp)` rounded | Tooltip detail, diagnostic reference |
 | `risk_reward_range` | dict `{best, base, worst}` | See above | Order dialog R:R tooltip, scanner detail screen |
@@ -20,6 +20,11 @@ cost deducted). They exist mainly for display / human consumption.
 **Backward compat:** `risk_reward` must always be the best-case "1:X.X" string.
 Consumers that parse it (e.g., `_parse_rr()`, `parse_risk_reward()`) must be
 aware it is best-case. Do NOT change its meaning.
+
+**Display primary anchor:** the human-facing main R:R number is **base**
+(zone midpoint), with the worst–best range shown alongside; best is secondary.
+`ui.scanner_rr_formatters.format_order_rr_text()` and the scanner detail
+R:R card implement this. `risk_reward` itself stays best-case for parsers.
 
 ### Effective RR (spread-adjusted)
 
@@ -167,7 +172,7 @@ No consumer may fall back from a missing final execution zone to
 | **Ranking RR bonus** (`calculate_opportunity_score`) | `expected_effective_rr_base` → `expected_effective_rr` → `risk_reward` | base → best fallback | Phase 4A |
 | **Sort `_safe_rr`** | `expected_effective_rr_base` → `expected_effective_rr` → `risk_reward` | base → best fallback | Phase 4A |
 | **Scanner table column** | `expected_effective_rr` | best display; color thresholds also use best | Phase 8 |
-| **Order dialog R:R column** | `risk_reward` (best string) + tooltip shows best/base/current | best display + diagnostic | Phase 5C, 8 |
+| **Order dialog R:R column** | `risk_reward_range`/`risk_reward_base` (base) primary + worst–best range alongside; tooltip base/best/current; `risk_reward` (best string) only as fallback | base display + diagnostic | Phase 5C, 8 |
 | **Auto-trade guard** | `current_effective_rr` at live/fallback price | live current | Phase 5B |
 | **Manual order guard** | `current_effective_rr` at live/order_entry_fallback price | live current | Phase 5B |
 | **Telegram alert** | `risk_reward` (best string) as nominal reference; primary display uses `expected_effective_rr_base` (base) with fallback `expected_effective_rr` (best) | base primary + best reference | Phase 7 |
@@ -182,11 +187,11 @@ No consumer may fall back from a missing final execution zone to
 ```
 build_trade_plan()
   ├─ entry_for_rr (best edge, agg=0.0) ──► risk_reward, expected_effective_rr,
-  │                                         entry_price, position_sizing
+  │                                         entry_price (display)
   ├─ entry_for_selection (midpoint, agg=0.5) ──► risk_reward_base,
-  │     expected_effective_rr_base, TP validation
+  │     expected_effective_rr_base, TP validation, display primary anchor
   ├─ entry_worst (far edge, agg=1.0) ──► risk_reward_worst,
-  │     expected_effective_rr_worst
+  │     expected_effective_rr_worst, position_sizing (conservative lot)
   └─ TP1 candidate validation ──► tp1_source, tp1_clearance_atr,
         tp1_effective_rr_base, tp1_selection_diagnostics
 
@@ -226,6 +231,8 @@ Manual order dialog
 3. `risk_reward_range` keys `{best, base, worst}` MUST NOT be reordered or renamed.
 4. Any new field must be ADDITIVE — do not remove or rename existing keys.
 5. Thresholds (`_RR_STRONG=2.0`, `_RR_WEAK=1.3`, `min_rr=1.3`) must only change in a dedicated recalibration phase with data-driven justification.
+6. `position_sizing` is anchored to the **far edge** (`entry_worst`, aggressiveness=1.0). This keeps real money risk at or below the configured percent for every fill inside the zone. Do not re-anchor to the best edge.
+7. The human-facing main R:R display is **base** with the worst–best range alongside; best is secondary. Do not restore best-case as the primary display number.
 
 ## Config-backed quality parameters
 

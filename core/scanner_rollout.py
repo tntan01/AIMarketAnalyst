@@ -1,4 +1,9 @@
-"""Phase-8 shadow comparison, rollout guard and release-readiness contracts."""
+"""Phase-8 rollout guard, scan health metrics and release-readiness contracts.
+
+The V1/V2 shadow decision comparison was removed once the SMC migration
+finished and only one runtime remained; independent scan health metrics
+(no-zone rate, latency, data availability) are still collected here.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ import re
 from typing import Any
 
 
-SCANNER_ROLLOUT_VERSION = "phase8-rollout-v1"
+SCANNER_ROLLOUT_VERSION = "phase8-rollout-v2"
 ROLLBACK_DRILL_VERSION = "phase8-rollback-drill-v1"
 
 ROLLOUT_DISABLED = "DISABLED"
@@ -46,7 +51,6 @@ class RolloutOrderDecision:
 class ScannerRolloutPolicy:
     stage: str
     kill_switch: bool
-    shadow_compare_enabled: bool
     allowed_symbols: tuple[str, ...]
     canary_risk_percent: float
     require_demo_account: bool
@@ -121,7 +125,6 @@ class ScannerRolloutPolicy:
             "rollout_version": SCANNER_ROLLOUT_VERSION,
             "stage": self.stage,
             "kill_switch": self.kill_switch,
-            "shadow_compare_enabled": self.shadow_compare_enabled,
             "allowed_symbols": list(self.allowed_symbols),
             "canary_risk_percent": self.canary_risk_percent,
             "require_demo_account": self.require_demo_account,
@@ -176,9 +179,6 @@ def build_rollout_policy(
     return ScannerRolloutPolicy(
         stage=stage,
         kill_switch=bool(getattr(settings, "kill_switch", False)),
-        shadow_compare_enabled=bool(
-            getattr(settings, "shadow_compare_enabled", True)
-        ),
         allowed_symbols=allowed_symbols,
         canary_risk_percent=min(
             max(
@@ -215,35 +215,13 @@ def is_demo_server(server: object) -> bool:
 
 def build_shadow_report(
     rows: list[dict[str, Any]] | None,
-    *,
-    enabled: bool,
-    suppress_v2_orders: bool = True,
 ) -> dict[str, Any]:
-    comparisons: list[dict[str, Any]] = []
-    if not enabled:
-        return {
-            "rollout_version": SCANNER_ROLLOUT_VERSION,
-            "enabled": False,
-            "samples": 0,
-            "disagreements": 0,
-            "disagreement_rate": 0.0,
-            "side_mismatches": 0,
-            "false_ready_removed": 0,
-            "new_trade_candidates": 0,
-            "unsafe_disagreements": 0,
-            "smc_no_zone_sides": 0,
-            "smc_side_samples": 0,
-            "data_unavailable": 0,
-            "analysis_errors": 0,
-            "analysis_latency_ms_total": 0.0,
-            "analysis_latency_samples": 0,
-            "analysis_latency_ms_max": 0.0,
-            "comparisons": [],
-        }
+    """Collect independent scan health metrics.
 
-    false_ready_removed = 0
-    new_trade_candidates = 0
-    unsafe_disagreements = 0
+    The V1/V2 decision comparison was removed with the SMC migration; this
+    report keeps only the health metrics that do not depend on any legacy
+    logic: SMC no-zone rate, data availability and analysis latency.
+    """
     smc_no_zone_sides = 0
     smc_side_samples = 0
     data_unavailable = 0
@@ -252,55 +230,6 @@ def build_shadow_report(
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
-        v1 = evaluate_legacy_v1(row)
-        v1_status = str(v1["status"])
-        v2_status = str(
-            row.get("candidate_status", "DATA_UNAVAILABLE") or
-            "DATA_UNAVAILABLE"
-        ).upper()
-        v1_side = str(v1.get("side", "") or "").lower()
-        v2_side = str(row.get("selected_side", "") or "").lower()
-        v1_trade = bool(v1["trade"])
-        decision = (
-            row.get("scanner_candidate_decision")
-            if isinstance(row.get("scanner_candidate_decision"), dict)
-            else {}
-        )
-        strategy = (
-            decision.get("strategy")
-            if isinstance(decision.get("strategy"), dict)
-            else {}
-        )
-        v2_trade = bool(decision.get("auto_trade_candidate", False))
-        v1_score_passed = bool(v1["score_passed"])
-        v2_score = strategy.get("score_value")
-        v2_min_score = strategy.get("min_score")
-        v2_score_passed = (
-            v2_score is not None
-            and v2_min_score is not None
-            and _finite_float(v2_score, float("-inf"))
-            >= _finite_float(v2_min_score, float("inf"))
-        )
-        codes: list[str] = []
-        if v1_trade != v2_trade:
-            codes.append("TRADE_WAIT_DISAGREEMENT")
-        if (
-            v1_side in {"buy", "sell"}
-            and v2_side in {"buy", "sell"}
-            and v1_side != v2_side
-        ):
-            codes.append("SIDE_DISAGREEMENT")
-        if v1_status != v2_status:
-            codes.append("STATUS_DISAGREEMENT")
-        if v1_score_passed != v2_score_passed:
-            codes.append("SCORE_GATE_DISAGREEMENT")
-        if v1.get("side_scenario_mismatch") is True:
-            codes.append("V1_SIDE_SCENARIO_MISMATCH")
-        if v1_trade and not v2_trade:
-            false_ready_removed += 1
-        if not v1_trade and v2_trade:
-            new_trade_candidates += 1
-            unsafe_disagreements += 1
 
         analysis = (
             row.get("analysis_result")
@@ -331,7 +260,10 @@ def build_shadow_report(
             if not side_payload.get("selected_zone_id"):
                 smc_no_zone_sides += 1
 
-        if v2_status == "DATA_UNAVAILABLE":
+        if str(
+            row.get("candidate_status", "DATA_UNAVAILABLE")
+            or "DATA_UNAVAILABLE"
+        ).upper() == "DATA_UNAVAILABLE":
             data_unavailable += 1
         if row.get("analysis_error") is True:
             analysis_errors += 1
@@ -342,48 +274,8 @@ def build_shadow_report(
         if latency >= 0:
             latency_values.append(latency)
 
-        comparisons.append({
-            "scan_id": row.get("scan_id"),
-            "row_id": row.get("row_id"),
-            "symbol": row.get("symbol"),
-            "v1": v1,
-            "v2": {
-                "status": v2_status,
-                "side": v2_side or None,
-                "trade": v2_trade,
-                "score_passed": v2_score_passed,
-                "score_metric": strategy.get("score_metric"),
-                "score_value": v2_score,
-                "min_score": v2_min_score,
-                "reason_codes": decision.get("reason_codes", []),
-            },
-            "disagreement": bool(codes),
-            "disagreement_codes": codes,
-            "v2_order_suppressed": suppress_v2_orders,
-        })
-
-    samples = len(comparisons)
-    disagreements = sum(
-        1 for item in comparisons if item["disagreement"]
-    )
-    side_mismatches = sum(
-        1
-        for item in comparisons
-        if "SIDE_DISAGREEMENT" in item["disagreement_codes"]
-    )
     return {
         "rollout_version": SCANNER_ROLLOUT_VERSION,
-        "enabled": True,
-        "samples": samples,
-        "disagreements": disagreements,
-        "disagreement_rate": round(
-            disagreements / samples if samples else 0.0,
-            6,
-        ),
-        "side_mismatches": side_mismatches,
-        "false_ready_removed": false_ready_removed,
-        "new_trade_candidates": new_trade_candidates,
-        "unsafe_disagreements": unsafe_disagreements,
         "smc_no_zone_sides": smc_no_zone_sides,
         "smc_side_samples": smc_side_samples,
         "data_unavailable": data_unavailable,
@@ -394,7 +286,6 @@ def build_shadow_report(
             max(latency_values) if latency_values else 0.0,
             3,
         ),
-        "comparisons": comparisons,
     }
 
 
@@ -454,7 +345,6 @@ def run_rollback_drill() -> dict[str, Any]:
     class _Settings:
         stage = ROLLOUT_PRODUCTION
         kill_switch = True
-        shadow_compare_enabled = True
         allowed_symbols: tuple[str, ...] = ()
         canary_risk_percent = 0.1
         require_demo_account = False
@@ -499,131 +389,11 @@ def run_rollback_drill() -> dict[str, Any]:
     }
 
 
-def evaluate_legacy_v1(row: dict[str, Any]) -> dict[str, Any]:
-    """Reproduce the pre-migration V1 auto-trade candidate behavior."""
-
-    source = (
-        row.get("legacy_candidate_input")
-        if isinstance(row.get("legacy_candidate_input"), dict)
-        else row
-    )
-    analysis = (
-        row.get("analysis_result")
-        if isinstance(row.get("analysis_result"), dict)
-        else None
-    )
-    status = str(
-        row.get("legacy_candidate_status", "DATA_UNAVAILABLE")
-        or "DATA_UNAVAILABLE"
-    ).upper()
-    best_side = str(source.get("best_side", "") or "").lower()
-    selected_side = best_side
-    reasons: list[str] = []
-    score_passed = False
-    scenario: dict[str, Any] | None = None
-
-    if analysis is None:
-        reasons.append("V1_MISSING_ANALYSIS")
-    if status == "BLOCKED":
-        reasons.append("V1_SCANNER_GROUP_BLOCKED")
-    if str(source.get("trade_permission", "") or "").lower() == "blocked":
-        reasons.append("V1_TRADE_PERMISSION_BLOCKED")
-    journal = (
-        row.get("journal_feedback")
-        if isinstance(row.get("journal_feedback"), dict)
-        else {}
-    )
-    if journal.get("decision_cap") in {"TRADE_BLOCKED", "WATCH_ONLY"}:
-        reasons.append("V1_JOURNAL_CAP_BLOCKED")
-
-    config = (
-        row.get("auto_trade_config")
-        if isinstance(row.get("auto_trade_config"), dict)
-        else None
-    )
-    if config is None:
-        score_passed = True
-        if str(source.get("scanner_action", "") or "") != "ready":
-            reasons.append("V1_SCANNER_ACTION_NOT_READY")
-        if str(source.get("trade_permission", "") or "") != "allowed":
-            reasons.append("V1_TRADE_PERMISSION_NOT_ALLOWED")
-        scenario = _legacy_scenario(row, best_side)
-    else:
-        configured_regime = str(
-            config.get("regime", "") or ""
-        ).strip().lower()
-        configured_side = str(
-            config.get("side", "") or ""
-        ).strip().lower()
-        if configured_side in {"buy", "sell"}:
-            selected_side = configured_side
-        if (
-            configured_regime
-            and str(source.get("market_regime", "") or "").lower()
-            != configured_regime
-        ):
-            reasons.append("V1_REGIME_MISMATCH")
-        min_rr = _finite_float(config.get("min_rr"), 0.0)
-        effective_rr = _finite_float(
-            source.get("expected_effective_rr"),
-            -1.0,
-        )
-        if min_rr > 0 and effective_rr < min_rr:
-            reasons.append("V1_RR_BELOW_MINIMUM")
-        min_score = _finite_float(config.get("min_score"), 0.0)
-        if min_score <= 0:
-            min_score = 65.0
-        score_passed = (
-            _finite_float(source.get("best_score"), 0.0) >= min_score
-        )
-        if not score_passed:
-            reasons.append("V1_SCORE_BELOW_MINIMUM")
-        scenario = _legacy_scenario(
-            row,
-            selected_side,
-            fallback_side=best_side,
-        )
-
-    if scenario is None:
-        reasons.append("V1_SCENARIO_MISSING")
-    scenario_side = (
-        str(scenario.get("type", "") or "").lower()
-        if isinstance(scenario, dict)
-        else ""
-    )
-    side_mismatch = bool(
-        scenario_side in {"buy", "sell"}
-        and selected_side in {"buy", "sell"}
-        and scenario_side != selected_side
-    )
-    return {
-        "status": status,
-        "side": selected_side or None,
-        "scenario_side": scenario_side or None,
-        "side_scenario_mismatch": side_mismatch,
-        "trade": not reasons,
-        "score_passed": score_passed,
-        "reason_codes": reasons,
-    }
-
-
 def evaluate_release_readiness(
     metrics: dict[str, Any] | None,
     settings: object,
 ) -> ReleaseReadiness:
     values = dict(metrics or {})
-    shadow_samples = max(int(values.get("shadow_samples", 0) or 0), 0)
-    disagreements = max(int(values.get("disagreements", 0) or 0), 0)
-    unsafe_disagreements = max(
-        int(
-            values.get(
-                "unsafe_disagreements",
-                disagreements,
-            )
-            or 0
-        ),
-        0,
-    )
     revalidation_attempts = max(
         int(values.get("revalidation_attempts", 0) or 0),
         0,
@@ -632,22 +402,12 @@ def evaluate_release_readiness(
         int(values.get("revalidation_failures", 0) or 0),
         0,
     )
-    disagreement_rate = (
-        disagreements / shadow_samples if shadow_samples else 0.0
-    )
-    unsafe_disagreement_rate = (
-        unsafe_disagreements / shadow_samples if shadow_samples else 0.0
-    )
     revalidation_failure_rate = (
         revalidation_failures / revalidation_attempts
         if revalidation_attempts
         else 0.0
     )
     thresholds = {
-        "min_shadow_samples": max(
-            int(getattr(settings, "min_shadow_samples", 100) or 100),
-            1,
-        ),
         "min_demo_orders": max(
             int(getattr(settings, "min_demo_orders", 20) or 20),
             1,
@@ -655,10 +415,6 @@ def evaluate_release_readiness(
         "min_canary_orders": max(
             int(getattr(settings, "min_canary_orders", 5) or 5),
             1,
-        ),
-        "max_disagreement_rate": _finite_float(
-            getattr(settings, "max_disagreement_rate", 0.1),
-            0.1,
         ),
         "max_revalidation_failure_rate": _finite_float(
             getattr(settings, "max_revalidation_failure_rate", 0.05),
@@ -671,14 +427,6 @@ def evaluate_release_readiness(
     }
     normalized_metrics = {
         **values,
-        "shadow_samples": shadow_samples,
-        "disagreements": disagreements,
-        "disagreement_rate": round(disagreement_rate, 6),
-        "unsafe_disagreements": unsafe_disagreements,
-        "unsafe_disagreement_rate": round(
-            unsafe_disagreement_rate,
-            6,
-        ),
         "revalidation_attempts": revalidation_attempts,
         "revalidation_failures": revalidation_failures,
         "revalidation_failure_rate": round(
@@ -687,8 +435,6 @@ def evaluate_release_readiness(
         ),
     }
     blocks: list[str] = []
-    if shadow_samples < thresholds["min_shadow_samples"]:
-        blocks.append("SHADOW_SAMPLE_INSUFFICIENT")
     if int(values.get("demo_orders", 0) or 0) < thresholds["min_demo_orders"]:
         blocks.append("DEMO_ORDER_SAMPLE_INSUFFICIENT")
     if (
@@ -696,8 +442,6 @@ def evaluate_release_readiness(
         < thresholds["min_canary_orders"]
     ):
         blocks.append("CANARY_ORDER_SAMPLE_INSUFFICIENT")
-    if unsafe_disagreement_rate > thresholds["max_disagreement_rate"]:
-        blocks.append("DISAGREEMENT_RATE_EXCEEDED")
     if int(values.get("side_mismatches", 0) or 0) > 0:
         blocks.append("SIDE_MISMATCH_DETECTED")
     if int(values.get("premature_orders", 0) or 0) > 0:
@@ -757,35 +501,6 @@ def _normalize_symbol(symbol: object) -> str:
         for character in str(symbol or "").upper()
         if character.isalnum()
     )
-
-
-def _legacy_scenario(
-    row: dict[str, Any],
-    side: str,
-    *,
-    fallback_side: str = "",
-) -> dict[str, Any] | None:
-    analysis = (
-        row.get("analysis_result")
-        if isinstance(row.get("analysis_result"), dict)
-        else {}
-    )
-    scenarios = (
-        analysis.get("scenarios")
-        if isinstance(analysis.get("scenarios"), list)
-        else []
-    )
-    for target_side in (side, fallback_side):
-        if target_side not in {"buy", "sell"}:
-            continue
-        for scenario in scenarios:
-            if (
-                isinstance(scenario, dict)
-                and scenario.get("type") == target_side
-                and scenario.get("entry_zone_source") != "fallback"
-            ):
-                return scenario
-    return None
 
 
 def _finite_float(value: object, default: float) -> float:

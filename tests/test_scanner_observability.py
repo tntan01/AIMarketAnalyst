@@ -30,7 +30,6 @@ from core.scanner_observability import (
     stable_hash,
 )
 from core.scanner_ranking_engine import rank_scanner_rows
-from core.scanner_rollout import build_shadow_report
 from services.observability_service import StructuredObservabilityService
 from services.storage_service import JsonStorage
 from services.scanner_persistence_service import ScannerPersistenceService
@@ -486,7 +485,7 @@ class _EventRecorder:
         self.events.append({"event_type": event_type, **kwargs})
 
 
-def test_candidate_events_cover_strategy_gate_and_v1_v2_disagreement():
+def test_candidate_events_cover_strategy_and_gate_rejections():
     recorder = _EventRecorder()
     controller = ScannerController.__new__(ScannerController)
     controller.observability = recorder
@@ -518,74 +517,6 @@ def test_candidate_events_cover_strategy_gate_and_v1_v2_disagreement():
     assert event_types == [
         "STRATEGY_REJECTION",
         "GATE_REJECTION",
-        "DECISION_DISAGREEMENT",
     ]
     assert all(event["scan_id"] == "scan-1" for event in recorder.events)
     assert all(event["symbol"] == "EUR/USD" for event in recorder.events)
-
-
-def test_generic_shadow_comparison_feeds_candidate_not_smc_payload():
-    """The SHADOW_DECISION_COMPARISON event sources the generic candidate
-    comparison, never the SMC scorer shadow/comparison payload."""
-
-    row = {
-        "scan_id": "scan-1",
-        "row_id": "row-1",
-        "symbol": "EUR/USD",
-        "legacy_candidate_status": "READY_NOW",
-        "candidate_status": "BLOCKED",
-        "best_side": "buy",
-        "selected_side": "sell",
-        "best_score": 75,
-        "min_score": 65,
-        "legacy_candidate_input": {
-            "scanner_action": "ready",
-            "scanner_group": "ready_now",
-            "trade_permission": "allowed",
-            "best_side": "buy",
-            "best_score": 75,
-            "expected_effective_rr": 2.0,
-            "market_regime": "range",
-        },
-        "analysis_result": {
-            "scenarios": [{"type": "buy", "entry_zone": [1.0, 1.1]}],
-            "smc_scoring": {
-                "policy": {"shadow_enabled": True, "effective_mode": "v2"},
-                "shadow_status": "available",
-                "comparison": {"best_side_changed": True},
-            },
-        },
-        "scanner_candidate_decision": {
-            "auto_trade_candidate": False,
-            "reason_codes": ["SETUP_SCORE_BELOW_MINIMUM"],
-            "strategy": {
-                "eligible": False,
-                "score_value": 50,
-                "min_score": 65,
-            },
-        },
-    }
-
-    report = build_shadow_report([row], enabled=True, suppress_v2_orders=True)
-
-    assert report["enabled"] is True
-    comparison = report["comparisons"][0]
-    assert comparison["disagreement"] is True
-    # Generic candidate-engine comparison fields.
-    assert set(comparison).issuperset(
-        {"v1", "v2", "disagreement_codes", "v2_order_suppressed"}
-    )
-    assert comparison["v1"]["status"] == "READY_NOW"
-    assert comparison["v2"]["status"] == "BLOCKED"
-    # The comparison is NOT the SMC shadow payload; it only summarizes the
-    # candidate decision and must never carry the SMC shadow router shape.
-    for forbidden in (
-        "shadow_status",
-        "legacy_smc_quality",
-        "v2_smc_quality",
-        "active",
-        "legacy",
-        "comparison",
-        "decision",
-    ):
-        assert forbidden not in comparison, forbidden

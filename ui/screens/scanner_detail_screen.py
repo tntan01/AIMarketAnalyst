@@ -327,9 +327,14 @@ class ScannerDetailScreen(QWidget):
     @staticmethod
     def _number(value: object) -> float | None:
         try:
-            return float(value) if value is not None else None
+            number = float(value) if value is not None else None
         except (TypeError, ValueError, OverflowError):
             return None
+        if number is not None and (
+            number != number or number in (float("inf"), float("-inf"))
+        ):
+            return None
+        return number
 
     @staticmethod
     def _score_text(value: object) -> str:
@@ -1226,13 +1231,40 @@ class ScannerDetailScreen(QWidget):
     def _dialog_card_rr(self) -> tuple[str, str, str]:
         scenario = self._selected_scenario()
         if self._candidate_decision():
-            rr = scenario.get("risk_reward") or "--"
             rr_range = scenario.get("risk_reward_range")
+            base = None
+            if isinstance(rr_range, dict):
+                base = self._number(rr_range.get("base"))
+            if base is None:
+                base = self._number(scenario.get("risk_reward_base"))
+            is_base = base is not None
+            rr = (
+                f"1:{base:.1f}"
+                if is_base
+                else (scenario.get("risk_reward") or "--")
+            )
         else:
             rr = self._rr_main_text()
             rr_range = self._rr_field("risk_reward_range")
+            base = None
+            if isinstance(rr_range, dict):
+                base = self._number(rr_range.get("base"))
+            if base is None:
+                base = self._number(self._rr_field("risk_reward_base"))
+            is_base = base is not None
         eff_rr = self._effective_rr()
         min_rr = self._required_min_rr()
+        # Label follows the anchor actually used: "(base)" only when the
+        # nominal value really is base — a best-case fallback stays unlabeled.
+        nominal_label = "danh nghĩa (base)" if is_base else "danh nghĩa"
+
+        range_text = ""
+        if isinstance(rr_range, dict):
+            worst = self._number(rr_range.get("worst"))
+            best = self._number(rr_range.get("best"))
+            if worst is not None and best is not None:
+                range_text = f"; dải {worst:.1f}–{best:.1f}"
+
         if not self._candidate_decision():
             if rr == "N/A":
                 return (
@@ -1240,7 +1272,7 @@ class ScannerDetailScreen(QWidget):
                     "Chưa có TP1 hợp lệ để tính R:R.",
                     "#94a3b8",
                 )
-            detail = f"danh nghĩa {rr}"
+            detail = f"{nominal_label} {rr}{range_text}"
             if eff_rr is not None:
                 detail += f"; base sau spread ~{eff_rr:.1f}"
             if min_rr is not None:
@@ -1251,18 +1283,7 @@ class ScannerDetailScreen(QWidget):
             if eff_rr is not None
             else "--"
         )
-        if rr_range and isinstance(rr_range, dict):
-            worst = rr_range.get("worst")
-            if worst is not None:
-                best = self._number(rr_range.get("best"))
-                detail = (
-                    f"danh nghĩa {rr}; dải {worst:.1f}–"
-                    f"{best:.1f}" if best is not None else f"danh nghĩa {rr}"
-                )
-                if min_rr is not None:
-                    detail += f"; tối thiểu {min_rr:.2f}"
-                return primary, detail, "#ea580c"
-        detail = f"danh nghĩa {rr}"
+        detail = f"{nominal_label} {rr}{range_text}"
         if min_rr is not None:
             detail += f"; tối thiểu {min_rr:.2f}"
         return primary, detail, "#ea580c"
@@ -1317,17 +1338,22 @@ class ScannerDetailScreen(QWidget):
         return bool(entry_zone)
 
     def _rr_main_text(self) -> str:
+        """Main nominal R:R text — base anchor primary, best is fallback."""
+        base = None
+        rr_range = self._rr_field("risk_reward_range")
+        if isinstance(rr_range, dict):
+            base = self._number(rr_range.get("base"))
+        if base is None:
+            base = self._number(self._rr_field("risk_reward_base"))
+        if base is not None:
+            return f"1:{base:.1f}"
         rr = self._rr_field("risk_reward")
         if rr:
             return str(rr)
-        rr_range = self._rr_field("risk_reward_range")
         if isinstance(rr_range, dict):
-            try:
-                best = rr_range.get("best")
-                if best is not None:
-                    return f"1:{float(best):.1f}"
-            except (TypeError, ValueError):
-                pass
+            best = ScannerDetailScreen._number(rr_range.get("best"))
+            if best is not None:
+                return f"1:{best:.1f}"
         if self._has_entry_without_rr():
             return "N/A"
         return "--"

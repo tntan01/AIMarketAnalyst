@@ -1,8 +1,7 @@
-"""Phase-8 shadow, rollout guard and release-gate tests."""
+"""Phase-8 rollout guard and release-gate tests."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -10,8 +9,7 @@ import pytest
 from config.settings import ScannerRolloutSettings, default_settings
 import controllers.scanner_controller as scanner_controller_module
 from controllers.scanner_controller import ScannerController
-from core.scanner import ScannerRequest, blocked_scanner_row
-from core.scanner_observability import create_scan_context
+from core.scanner import ScannerRequest
 from core.scanner_rollout import (
     ROLLOUT_CANARY,
     ROLLOUT_DEMO_FULL,
@@ -19,9 +17,7 @@ from core.scanner_rollout import (
     ROLLOUT_PRODUCTION,
     ROLLOUT_SHADOW,
     build_rollout_policy,
-    build_shadow_report,
     evaluate_canary_readiness,
-    evaluate_legacy_v1,
     evaluate_release_readiness,
 )
 from services.scanner_rollout_service import ScannerRolloutMetricsService
@@ -163,97 +159,10 @@ def test_production_is_blocked_when_release_evidence_is_not_ready():
     assert "RELEASE_GATE_NOT_READY" in decision.reason_codes
 
 
-def test_shadow_report_captures_trade_side_and_score_disagreements():
-    report = build_shadow_report(
-        [{
-            "scan_id": "scan-1",
-            "row_id": "row-1",
-            "symbol": "EUR/USD",
-            "legacy_candidate_status": "READY_NOW",
-            "candidate_status": "BLOCKED",
-            "best_side": "buy",
-            "selected_side": "sell",
-            "best_score": 75,
-            "min_score": 65,
-            "legacy_candidate_input": {
-                "scanner_action": "ready",
-                "scanner_group": "ready_now",
-                "trade_permission": "allowed",
-                "best_side": "buy",
-                "best_score": 75,
-                "expected_effective_rr": 2.0,
-                "market_regime": "range",
-            },
-            "analysis_result": {
-                "scenarios": [{
-                    "type": "buy",
-                    "entry_zone": [1.0, 1.1],
-                }],
-            },
-            "scanner_candidate_decision": {
-                "auto_trade_candidate": False,
-                "reason_codes": ["SETUP_SCORE_BELOW_MINIMUM"],
-                "strategy": {
-                    "eligible": False,
-                    "min_score": 65,
-                },
-            },
-        }],
-        enabled=True,
-    )
-
-    comparison = report["comparisons"][0]
-    assert report["disagreements"] == 1
-    assert report["side_mismatches"] == 1
-    assert report["false_ready_removed"] == 1
-    assert report["new_trade_candidates"] == 0
-    assert report["unsafe_disagreements"] == 0
-    assert set(comparison["disagreement_codes"]) == {
-        "TRADE_WAIT_DISAGREEMENT",
-        "SIDE_DISAGREEMENT",
-        "STATUS_DISAGREEMENT",
-        "SCORE_GATE_DISAGREEMENT",
-    }
-    assert comparison["v2_order_suppressed"] is True
-
-
-def test_shadow_v1_reproduction_exposes_forced_side_scenario_bug():
-    legacy = evaluate_legacy_v1({
-        "legacy_candidate_status": "READY_NOW",
-        "legacy_candidate_input": {
-            "scanner_action": "ready",
-            "scanner_group": "ready_now",
-            "trade_permission": "allowed",
-            "best_side": "buy",
-            "best_score": 75,
-            "expected_effective_rr": 2.0,
-            "market_regime": "range",
-        },
-        "auto_trade_config": {
-            "regime": "range",
-            "side": "sell",
-            "min_score": 65,
-            "min_rr": 1.5,
-        },
-        "analysis_result": {
-            "scenarios": [{
-                "type": "buy",
-                "entry_zone": [1.0, 1.1],
-            }],
-        },
-    })
-
-    assert legacy["trade"] is True
-    assert legacy["side"] == "sell"
-    assert legacy["scenario_side"] == "buy"
-    assert legacy["side_scenario_mismatch"] is True
-
-
 def test_release_gate_fails_closed_when_evidence_is_missing():
     readiness = evaluate_release_readiness({}, _settings())
 
     assert readiness.ready is False
-    assert "SHADOW_SAMPLE_INSUFFICIENT" in readiness.block_codes
     assert "DEMO_ORDER_SAMPLE_INSUFFICIENT" in readiness.block_codes
     assert "CANARY_ORDER_SAMPLE_INSUFFICIENT" in readiness.block_codes
     assert "OOS_EVIDENCE_MISSING" in readiness.block_codes
@@ -263,8 +172,6 @@ def test_release_gate_fails_closed_when_evidence_is_missing():
 
 def test_release_gate_passes_only_when_all_thresholds_hold():
     readiness = evaluate_release_readiness({
-        "shadow_samples": 200,
-        "disagreements": 10,
         "side_mismatches": 0,
         "demo_orders": 30,
         "canary_orders": 5,
@@ -281,37 +188,10 @@ def test_release_gate_passes_only_when_all_thresholds_hold():
 
     assert readiness.ready is True
     assert readiness.block_codes == ()
-    assert readiness.metrics["disagreement_rate"] == 0.05
-
-
-def test_release_gate_allows_safe_false_ready_removals():
-    readiness = evaluate_release_readiness({
-        "shadow_samples": 200,
-        "disagreements": 200,
-        "unsafe_disagreements": 0,
-        "side_mismatches": 0,
-        "demo_orders": 30,
-        "canary_orders": 5,
-        "revalidation_attempts": 100,
-        "revalidation_failures": 0,
-        "premature_orders": 0,
-        "portfolio_violations": 0,
-        "oos_degradation_pct": 5,
-        "demo_degradation_pct": 7,
-        "oos_evidence_recorded": True,
-        "demo_evidence_recorded": True,
-        "rollback_tested": True,
-    }, _settings())
-
-    assert readiness.metrics["disagreement_rate"] == 1.0
-    assert readiness.metrics["unsafe_disagreement_rate"] == 0.0
-    assert readiness.ready is True
 
 
 def test_canary_gate_opens_before_production_gate():
     metrics = {
-        "shadow_samples": 200,
-        "disagreements": 5,
         "side_mismatches": 0,
         "demo_orders": 30,
         "canary_orders": 0,
@@ -339,9 +219,13 @@ def test_rollout_metrics_persist_and_mark_verified_kill_switch(tmp_path):
     metrics = service.record_scan(
         scan_id="scan-1",
         shadow_report={
-            "samples": 2,
-            "disagreements": 1,
-            "side_mismatches": 0,
+            "smc_no_zone_sides": 1,
+            "smc_side_samples": 2,
+            "data_unavailable": 0,
+            "analysis_errors": 0,
+            "analysis_latency_ms_total": 25.0,
+            "analysis_latency_samples": 2,
+            "analysis_latency_ms_max": 13.0,
         },
         auto_trade_results={
             "opened": 0,
@@ -355,8 +239,9 @@ def test_rollout_metrics_persist_and_mark_verified_kill_switch(tmp_path):
         },
     )
 
-    assert metrics["shadow_samples"] == 2
-    assert metrics["disagreements"] == 1
+    assert metrics["smc_no_zone_sides"] == 1
+    assert metrics["smc_side_samples"] == 2
+    assert metrics["smc_no_zone_rate"] == 0.5
     assert metrics["rollback_tested"] is True
     assert service.load()["last_scan_id"] == "scan-1"
     evidence = service.update_release_evidence(
@@ -535,228 +420,64 @@ def test_demo_account_detection_is_fail_closed(server, expected):
     assert policy.account_is_demo is expected
 
 
-# ---------------------------------------------------------------------------
-# Bước 03 — lock the generic Scanner rollout safety layer.  These assertions
-# must stay green while the SMC scorer shadow is removed; they turn red if
-# someone deletes the generic Scanner SHADOW / comparison.
-# ---------------------------------------------------------------------------
+def test_legacy_settings_file_with_removed_fields_still_loads(tmp_path):
+    """An old settings.json that still carries the removed V1/V2 shadow
+    comparison fields must load cleanly (unknown keys ignored) and re-save
+    without error."""
+    service = SettingsService(tmp_path / "settings.json")
+    service.storage.save({
+        "ai": {},
+        "scanner_rollout": {
+            "stage": "SHADOW",
+            "kill_switch": False,
+            "shadow_compare_enabled": True,
+            "min_shadow_samples": 100,
+            "max_disagreement_rate": 0.1,
+            "min_demo_orders": 20,
+        },
+    })
+
+    loaded = service.load()
+    assert loaded.scanner_rollout.stage == "SHADOW"
+    assert loaded.scanner_rollout.min_demo_orders == 20
+    assert not hasattr(loaded.scanner_rollout, "shadow_compare_enabled")
+    assert not hasattr(loaded.scanner_rollout, "min_shadow_samples")
+    assert not hasattr(loaded.scanner_rollout, "max_disagreement_rate")
+
+    # Re-saving must not raise and must drop the removed fields.
+    service.save(loaded)
+    reloaded = service.load()
+    assert reloaded.scanner_rollout.stage == "SHADOW"
+    assert reloaded.scanner_rollout.min_demo_orders == 20
 
 
-class _EventRecorder:
-    def __init__(self) -> None:
-        self.events: list[dict] = []
+def test_rollout_tab_builds_and_saves_without_shadow_compare_controls(tmp_path):
+    import os
 
-    def emit(self, event_type: str, **kwargs) -> dict:
-        event = {"event_type": event_type, **kwargs}
-        self.events.append(event)
-        return event
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication, QCheckBox
+    from ui.screens.settings_screen import SettingsScreen
 
+    _ = QApplication.instance() or QApplication([])
 
-class _ScanMT5:
-    def available_symbols(self, *, market_watch_only: bool):
-        return ["EURUSD"]
+    screen = SettingsScreen.__new__(SettingsScreen)
+    screen.app_settings = default_settings()
+    screen.settings_service = SettingsService(tmp_path / "settings.json")
 
+    frame = screen._rollout_tab()
 
-class _ScanNews:
-    def preload_macro_contexts(
-        self,
-        symbols,
-        progress_callback=None,
-        *,
-        ai_service=None,
-        performance_tracker=None,
-    ):
-        del symbols, progress_callback, ai_service, performance_tracker
-        return None
+    # The three removed controls must be gone (check the instance dict:
+    # hasattr() raises on an uninitialized PyQt wrapper).
+    widget_attrs = screen.__dict__
+    assert "rollout_shadow_compare_input" not in widget_attrs
+    assert "rollout_min_shadow_input" not in widget_attrs
+    assert "rollout_max_disagreement_input" not in widget_attrs
+    checkbox_texts = [cb.text() for cb in frame.findChildren(QCheckBox)]
+    assert not any("V1/V2" in text for text in checkbox_texts)
+    # Helper text must no longer describe the removed V2 comparison.
+    assert "V2" not in screen.rollout_status_label.text()
 
-    def macro_freshness_status(self):
-        return {"confidence_multiplier": 1.0}
-
-
-def _scan_settings() -> SimpleNamespace:
-    return SimpleNamespace(
-        advanced=SimpleNamespace(d1_bars=120, h4_bars=240, h1_bars=300),
-        trading=SimpleNamespace(
-            account_currency="USD",
-            lot_step=0.01,
-            minimum_lot=0.01,
-            max_daily_loss_pct=3.0,
-            max_weekly_loss_pct=6.0,
-            max_consecutive_losses=3,
-            max_open_risk_pct=5.0,
-            contract_size_override={},
-        ),
-        display=SimpleNamespace(timezone="Asia/Ho_Chi_Minh"),
-        ai=SimpleNamespace(active_provider=lambda: None),
-        scanner_rollout=None,
-    )
-
-
-def _scan_request() -> ScannerRequest:
-    return ScannerRequest(
-        symbols=["EUR/USD"],
-        account_balance=10_000.0,
-        risk_percent=1.0,
-        timezone_name="Asia/Ho_Chi_Minh",
-        persistence_mode="full",
-    )
-
-
-def _shadow_row(symbol: str) -> dict:
-    row = blocked_scanner_row(symbol, "fixture")
-    row["scanner_group"] = "blocked"
-    row["analysis_result"] = {"scenarios": [], "smc_scoring": {}}
-    row["input_timestamps"] = {}
-    return row
-
-
-def _fake_fetch(symbol: str, **_kwargs):
-    return {
-        "symbol": symbol,
-        "broker_symbol": "EURUSD",
-        "input_timestamps": {},
-    }
-
-
-def _fake_analyze(pkt: dict, **_kwargs):
-    return _shadow_row(pkt["symbol"])
-
-
-def _set_candidate_status(rows: list[dict], _request):
-    for row in rows:
-        row["candidate_status"] = "READY_NOW"
-        row["selected_side"] = "buy"
-        row["scanner_candidate_decision"] = {
-            "auto_trade_candidate": False,
-            "reason_codes": ["SETUP_SCORE_BELOW_MINIMUM"],
-            "strategy": {
-                "eligible": False,
-                "score_value": 50,
-                "min_score": 65,
-            },
-        }
-    return rows
-
-
-def _run_core_scan(monkeypatch, *, rollout_override=None) -> _EventRecorder:
-    controller = ScannerController.__new__(ScannerController)
-    controller.mt5 = _ScanMT5()
-    controller.news_service = _ScanNews()
-    controller.journal_service = SimpleNamespace(
-        list_closed_trades_for_account_guard=lambda: []
-    )
-    controller.observability = _EventRecorder()
-    controller._apply_scanner_filters = _set_candidate_status
-    controller._active_performance_tracker = None
-    controller._active_mt5_history_cache_identity = None
-    monkeypatch.setattr(
-        scanner_controller_module,
-        "fetch_macro_correlation_context",
-        lambda: {},
-    )
-    monkeypatch.setattr(
-        scanner_controller_module,
-        "_fetch_one_symbol_mt5",
-        _fake_fetch,
-    )
-    monkeypatch.setattr(
-        scanner_controller_module,
-        "_analyze_one_symbol",
-        _fake_analyze,
-    )
-    settings = _scan_settings()
-    rollout_settings = rollout_override or settings.scanner_rollout
-    rollout_policy = build_rollout_policy(
-        rollout_settings,
-        server="Fixture-Demo",
-    )
-    request = _scan_request()
-    scan_context = create_scan_context(
-        settings,
-        request,
-        now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-    )
-    controller._run_market_scan_core(
-        request,
-        lambda _percent, _message: None,
-        scan_context=scan_context,
-        settings=settings,
-        rollout_policy=rollout_policy,
-        pre_scan_readiness={"ready": True},
-        pre_scan_canary_readiness={"ready": True},
-        mt5_balance=10_000.0,
-        portfolio_state={"available": True, "account_balance": 10_000},
-    )
-    return controller.observability
-
-
-def test_scan_emits_generic_shadow_decision_comparison_when_enabled(monkeypatch):
-    recorder = _run_core_scan(monkeypatch)
-
-    event_types = [event["event_type"] for event in recorder.events]
-    assert "SHADOW_DECISION_COMPARISON" in event_types
-    # The generic Scanner comparison must stay distinct from the SMC scorer
-    # shadow event, which this fixture does not produce.
-    assert "SMC_SHADOW_COMPARISON" not in event_types
-
-    event = next(
-        event
-        for event in recorder.events
-        if event["event_type"] == "SHADOW_DECISION_COMPARISON"
-    )
-    assert event["symbol"] == "EUR/USD"
-    assert event["payload"]["disagreement_codes"]
-    assert event["payload"]["v2_order_suppressed"] is True
-    assert set(event["payload"]).issuperset({"v1", "v2"})
-    assert "legacy_smc_quality" not in event["payload"]
-
-
-def test_scan_does_not_emit_shadow_comparison_when_disabled(monkeypatch):
-    recorder = _run_core_scan(
-        monkeypatch,
-        rollout_override=_settings(
-            stage=ROLLOUT_SHADOW,
-            shadow_compare_enabled=False,
-        ),
-    )
-
-    event_types = [event["event_type"] for event in recorder.events]
-    assert "SHADOW_DECISION_COMPARISON" not in event_types
-
-
-def test_generic_shadow_comparison_stays_gated_by_enabled_flag():
-    row = _shadow_row("EUR/USD")
-    row["legacy_candidate_status"] = "READY_NOW"
-    row["candidate_status"] = "BLOCKED"
-    row["selected_side"] = "buy"
-    row["scanner_candidate_decision"] = {
-        "auto_trade_candidate": False,
-        "reason_codes": ["SETUP_SCORE_BELOW_MINIMUM"],
-        "strategy": {"eligible": False, "min_score": 65},
-    }
-    row["legacy_candidate_input"] = {
-        "scanner_action": "ready",
-        "scanner_group": "ready_now",
-        "trade_permission": "allowed",
-        "best_side": "buy",
-        "best_score": 75,
-        "expected_effective_rr": 2.0,
-        "market_regime": "range",
-    }
-    row["analysis_result"] = {
-        "scenarios": [{"type": "buy", "entry_zone": [1.0, 1.1]}],
-        "smc_scoring": {},
-    }
-
-    enabled = build_shadow_report([row], enabled=True)
-    disabled = build_shadow_report([row], enabled=False)
-
-    assert enabled["enabled"] is True
-    assert enabled["samples"] == 1
-    assert enabled["comparisons"][0]["disagreement_codes"]
-    assert set(enabled["comparisons"][0]).issuperset(
-        {"v1", "v2", "v2_order_suppressed", "disagreement"}
-    )
-    assert disabled["enabled"] is False
-    assert disabled["comparisons"] == []
-    assert disabled["samples"] == 0
+    # Saving the rollout tab must not raise.
+    screen._save_rollout_settings()
+    reloaded = screen.settings_service.load()
+    assert reloaded.scanner_rollout.stage == "SHADOW"

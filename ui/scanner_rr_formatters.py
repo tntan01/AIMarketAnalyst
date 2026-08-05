@@ -93,36 +93,71 @@ def format_rr_trim_reason(item: dict[str, Any]) -> str:
     return ""
 
 
+def _safe_rr_number(value: object) -> float | None:
+    """Coerce an RR range value to float; None when missing/invalid."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return number
+
+
 def format_order_rr_text(order: dict[str, Any]) -> str:
     """Return the main R:R column text for an order row.
 
-    Uses best-case anchor (``risk_reward_range`` or ``risk_reward`` string).
-    Never uses base or current RR as the primary display.
+    Primary anchor is **base** (zone midpoint — the same anchor used to
+    validate TP1); the worst–best range stays alongside it and best is only
+    secondary.  Falls back to best when base is unavailable.
     """
-    rr = order.get("risk_reward")
     rr_range = order.get("risk_reward_range")
-    if rr_range and isinstance(rr_range, dict):
-        best = rr_range.get("best")
-        worst = rr_range.get("worst")
-        if best is not None and worst is not None and best != worst:
-            return f"{best:.1f} ({worst:.1f}–{best:.1f})"
-        elif best is not None:
-            return f"{best:.1f}"
+    if isinstance(rr_range, dict):
+        base = _safe_rr_number(rr_range.get("base"))
+        best = _safe_rr_number(rr_range.get("best"))
+        worst = _safe_rr_number(rr_range.get("worst"))
+        primary = base if base is not None else best
+        if primary is not None:
+            if best is not None and worst is not None and best != worst:
+                return f"{primary:.1f} ({worst:.1f}–{best:.1f})"
+            return f"{primary:.1f}"
+    base_field = _safe_rr_number(order.get("risk_reward_base"))
+    if base_field is not None:
+        return f"{base_field:.1f}"
+    rr = order.get("risk_reward")
     return str(rr) if rr else "--"
 
 
 def format_order_rr_tooltip(order: dict[str, Any]) -> str:
-    """Return the R:R column tooltip with best/base/current breakdown."""
-    rr_text = format_order_rr_text(order)
-    parts = [f"Best: {rr_text}"]
+    """Return the R:R column tooltip: base primary, worst–best range, current.
 
-    base_rr = order.get("expected_effective_rr_base")
-    if base_rr is None:
-        rr_range = order.get("risk_reward_range")
-        if isinstance(rr_range, dict):
-            base_rr = rr_range.get("base")
-    if base_rr is not None:
-        parts.append(f"Base: {base_rr:.1f}")
+    Best is demoted to its own secondary line.
+    """
+    parts: list[str] = []
+    base: float | None = None
+    best: float | None = None
+    worst: float | None = None
+    rr_range = order.get("risk_reward_range")
+    if isinstance(rr_range, dict):
+        base = _safe_rr_number(rr_range.get("base"))
+        best = _safe_rr_number(rr_range.get("best"))
+        worst = _safe_rr_number(rr_range.get("worst"))
+    has_range = worst is not None and best is not None and best != worst
+    range_suffix = f" ({worst:.1f}–{best:.1f})" if has_range else ""
+
+    if base is None:
+        base = _safe_rr_number(order.get("expected_effective_rr_base"))
+
+    if base is not None:
+        parts.append(f"Base: {base:.1f}{range_suffix}")
+        if best is not None:
+            parts.append(f"Best: {best:.1f}")
+    elif best is not None:
+        # No base available — keep the legacy best-primary display.
+        parts.append(f"Best: {best:.1f}{range_suffix}")
+    else:
+        rr = order.get("risk_reward")
+        parts.append(f"Best: {rr}" if rr else "--")
 
     cur_rr = order.get("current_effective_rr")
     cur_px = order.get("current_entry_price")

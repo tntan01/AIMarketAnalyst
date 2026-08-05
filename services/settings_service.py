@@ -575,9 +575,6 @@ class SettingsService:
         return ScannerRolloutSettings(
             stage=stage,
             kill_switch=bool(data.get("kill_switch", False)),
-            shadow_compare_enabled=bool(
-                data.get("shadow_compare_enabled", True)
-            ),
             allowed_symbols=list(dict.fromkeys(symbols)),
             canary_risk_percent=min(
                 max(_safe_float(data.get("canary_risk_percent", 0.1)), 0.01),
@@ -589,10 +586,6 @@ class SettingsService:
             production_approved=bool(
                 data.get("production_approved", False)
             ),
-            min_shadow_samples=max(
-                _safe_int(data.get("min_shadow_samples", 100)),
-                1,
-            ),
             min_demo_orders=max(
                 _safe_int(data.get("min_demo_orders", 20)),
                 1,
@@ -600,13 +593,6 @@ class SettingsService:
             min_canary_orders=max(
                 _safe_int(data.get("min_canary_orders", 5)),
                 1,
-            ),
-            max_disagreement_rate=min(
-                max(
-                    _safe_float(data.get("max_disagreement_rate", 0.1)),
-                    0.0,
-                ),
-                1.0,
             ),
             max_revalidation_failure_rate=min(
                 max(

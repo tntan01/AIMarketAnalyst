@@ -181,15 +181,12 @@ class ScannerRolloutSettings:
 
     stage: str = "SHADOW"
     kill_switch: bool = False
-    shadow_compare_enabled: bool = True
     allowed_symbols: list[str] = field(default_factory=list)
     canary_risk_percent: float = 0.1
     require_demo_account: bool = True
     production_approved: bool = False
-    min_shadow_samples: int = 100
     min_demo_orders: int = 20
     min_canary_orders: int = 5
-    max_disagreement_rate: float = 0.1
     max_revalidation_failure_rate: float = 0.05
     max_performance_degradation_pct: float = 15.0
 

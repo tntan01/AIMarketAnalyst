@@ -18,7 +18,7 @@ from core.scanner_rollout import (
 from services.storage_service import JsonStorage
 
 
-ROLLOUT_METRICS_VERSION = "phase8-smc-rollout-metrics-v3"
+ROLLOUT_METRICS_VERSION = "phase8-smc-rollout-metrics-v4"
 
 
 class ScannerRolloutMetricsService:
@@ -45,19 +45,7 @@ class ScannerRolloutMetricsService:
         with self._lock:
             metrics = self._normalized(self.load())
             metrics["scans"] += 1
-            metrics["shadow_samples"] += int(
-                shadow_report.get("samples", 0) or 0
-            )
-            metrics["disagreements"] += int(
-                shadow_report.get("disagreements", 0) or 0
-            )
-            metrics["side_mismatches"] += int(
-                shadow_report.get("side_mismatches", 0) or 0
-            )
             for metric_name in (
-                "false_ready_removed",
-                "new_trade_candidates",
-                "unsafe_disagreements",
                 "smc_no_zone_sides",
                 "smc_side_samples",
                 "data_unavailable",
@@ -220,12 +208,7 @@ class ScannerRolloutMetricsService:
         defaults: dict[str, Any] = {
             "metrics_version": ROLLOUT_METRICS_VERSION,
             "scans": 0,
-            "shadow_samples": 0,
-            "disagreements": 0,
             "side_mismatches": 0,
-            "false_ready_removed": 0,
-            "new_trade_candidates": 0,
-            "unsafe_disagreements": 0,
             "smc_no_zone_sides": 0,
             "smc_side_samples": 0,
             "smc_no_zone_rate": 0.0,

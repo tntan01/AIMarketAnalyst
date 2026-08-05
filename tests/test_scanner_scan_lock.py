@@ -47,7 +47,7 @@ def _settings():
         notifications=SimpleNamespace(
             telegram_bot_token="", telegram_chat_ids=[]
         ),
-        scanner_rollout=ScannerRolloutSettings(shadow_compare_enabled=False),
+        scanner_rollout=ScannerRolloutSettings(),
     )
 
 

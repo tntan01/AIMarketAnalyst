@@ -1835,22 +1835,12 @@ class ScannerScreen (QWidget ):
             if isinstance(result.get("rollout_policy"), dict)
             else {}
         )
-        shadow_report = (
-            result.get("shadow_report")
-            if isinstance(result.get("shadow_report"), dict)
-            else {}
-        )
         readiness = (
             result.get("release_readiness")
             if isinstance(result.get("release_readiness"), dict)
             else {}
         )
         rollout_text = str(rollout_policy.get("stage", "--") or "--")
-        if shadow_report.get("enabled") is True:
-            rollout_text += (
-                f", Δ {shadow_report.get('disagreements', 0)}"
-                f"/{shadow_report.get('samples', 0)}"
-            )
         rollout_text += (
             ", cổng phát hành đạt"
             if readiness.get("ready") is True

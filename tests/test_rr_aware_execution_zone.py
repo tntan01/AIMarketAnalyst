@@ -152,7 +152,11 @@ def test_trade_plan_recomputes_rr_anchors_and_lot_on_final_zone() -> None:
     assert plan["rr_trim_diagnostics"]["post_trim_effective_rr_worst"] >= 1.3
     assert plan["structural_execution_zone"][0] <= low < high
     assert high <= plan["structural_execution_zone"][1]
-    assert plan["position_sizing"]["entry_price"] == plan["entry_price"]
+    # Sizing anchors the far edge (worst fill), not the display entry.
+    assert plan["position_sizing"]["entry_price"] == worst_entry
+    assert plan["position_sizing"]["price_distance"] == pytest.approx(
+        worst_entry - float(plan["stop_loss"]), abs=1e-5
+    )
     assert plan["expected_effective_rr_worst"] == calculate_expected_effective_rr(
         direction="buy",
         entry=worst_entry,

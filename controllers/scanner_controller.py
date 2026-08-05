@@ -52,7 +52,6 @@ from core.scanner_performance import (
     safe_performance_phase,
 )
 from core.scanner_rollout import (
-    ROLLOUT_SHADOW,
     SCANNER_ROLLOUT_VERSION,
     ScannerRolloutPolicy,
     build_rollout_policy,
@@ -699,17 +698,6 @@ class ScannerController:
             at_cfg = self._auto_trade_config(request, symbol)
             if at_cfg is not None and "auto_trade_config" not in row:
                 row["auto_trade_config"] = dict(at_cfg)
-            row["legacy_candidate_input"] = {
-                "scanner_action": row.get("scanner_action"),
-                "scanner_group": row.get("scanner_group"),
-                "trade_permission": row.get("trade_permission"),
-                "best_side": row.get("best_side"),
-                "best_score": row.get("best_score"),
-                "expected_effective_rr": row.get(
-                    "expected_effective_rr"
-                ),
-                "market_regime": row.get("market_regime"),
-            }
             row["scan_id"] = scan_context.scan_id
             row["row_id"] = row_identity(scan_context.scan_id, symbol)
             row["settings_hash"] = scan_context.settings_hash
@@ -730,23 +718,7 @@ class ScannerController:
         ]
         for row in rows:
             self._emit_candidate_events(row, scan_context.scan_id)
-        shadow_report = build_shadow_report(
-            rows,
-            enabled=rollout_policy.shadow_compare_enabled,
-            suppress_v2_orders=rollout_policy.stage == ROLLOUT_SHADOW,
-        )
-        for comparison in shadow_report.get("comparisons", []):
-            self._emit_observability(
-                "SHADOW_DECISION_COMPARISON",
-                scan_id=scan_context.scan_id,
-                symbol=str(comparison.get("symbol", "") or ""),
-                severity=(
-                    "WARNING"
-                    if comparison.get("disagreement")
-                    else "INFO"
-                ),
-                payload=comparison,
-            )
+        shadow_report = build_shadow_report(rows)
         _record_performance(performance, "end_phase", "observability")
         progress(78, "Đã xếp hạng lại candidate sau filters...")
 
@@ -2150,21 +2122,6 @@ class ScannerController:
                     "status": decision.get("status"),
                     "reason_codes": execution.get("reason_codes", []),
                     "block_codes": execution.get("block_codes", []),
-                },
-            )
-        legacy = str(row.get("legacy_candidate_status", "") or "")
-        canonical = str(row.get("candidate_status", "") or "")
-        if legacy and canonical and legacy != canonical:
-            self._emit_observability(
-                "DECISION_DISAGREEMENT",
-                scan_id=scan_id,
-                symbol=symbol,
-                severity="WARNING",
-                payload={
-                    "v1_status": legacy,
-                    "v2_status": canonical,
-                    "selected_side": row.get("selected_side"),
-                    "reason_codes": row.get("auto_trade_reason_codes", []),
                 },
             )
 
