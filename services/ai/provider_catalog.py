@@ -149,17 +149,35 @@ class _ProviderCatalog:
 
     # -- lookup --------------------------------------------------------------
 
+    def _resolve_key(self, name: str) -> str:
+        """Map an internal key or a display name to the canonical internal key.
+
+        Callers historically pass display names (e.g. ``"OpenAI Compatible
+        (Tùy chỉnh)"``) which do not always equal the internal key
+        (``"openai_compatible"``); the four original providers only worked
+        because their display names lowercase to their keys.  Unknown names
+        are returned as-is so the existing unknown-provider error path holds.
+        """
+        key = (name or "").strip().lower()
+        if key in self._providers:
+            return key
+        for info in self._providers.values():
+            if info.display_name.strip().lower() == key:
+                return info.name
+        return key
+
     def get(self, name: str) -> ProviderInfo | None:
-        """Look up :class:`ProviderInfo` by provider name (case-insensitive)."""
-        return self._providers.get(name.lower().strip())
+        """Look up :class:`ProviderInfo` by internal key or display name (case-insensitive)."""
+        return self._providers.get(self._resolve_key(name))
 
     def get_adapter(self, name: str) -> BaseProviderAdapter | None:
         """Return a cached singleton adapter instance for *name*.
 
+        Accepts either the internal key or the display name.
         Returns ``None`` when the provider is not registered or has no
         ``adapter_class`` set.
         """
-        key = name.lower().strip()
+        key = self._resolve_key(name)
         if key in self._adapters:
             return self._adapters[key]
         info = self._providers.get(key)
