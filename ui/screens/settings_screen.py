@@ -165,7 +165,7 @@ class SettingsScreen(QWidget):
         model_row.addWidget(self.ai_model_combo)
         self.ai_refresh_models_btn = action_button("↻ Đồng bộ model", primary=True, color="info")
         self.ai_refresh_models_btn.setToolTip("Lấy model mới nhất từ API")
-        self.ai_refresh_models_btn.clicked.connect(self._refresh_provider_models)
+        self.ai_refresh_models_btn.clicked.connect(lambda: self._refresh_provider_models())
         self.ai_refresh_models_btn.setVisible(False)
         model_row.addWidget(self.ai_refresh_models_btn)
         model_row.addStretch(1)
@@ -288,7 +288,7 @@ class SettingsScreen(QWidget):
             self.ai_model_combo.setCurrentText(target)
         self.ai_model_combo.blockSignals(False)
 
-    def _refresh_provider_models(self) -> None:
+    def _refresh_provider_models(self, success_prefix: str = "") -> None:
         """Refresh models for the currently selected provider via its API."""
         row = self.ai_provider_list.currentRow()
         if row < 0:
@@ -315,7 +315,10 @@ class SettingsScreen(QWidget):
             display = info.display_name if info else provider_key
             self._refresh_ai_models(display)
             models = self.ai_model_combo.count()
-            self._set_ai_status(f"Đã cập nhật {models} model.", "ok")
+            if success_prefix:
+                self._set_ai_status(f"{success_prefix} Đã cập nhật {models} model.", "ok")
+            else:
+                self._set_ai_status(f"Đã cập nhật {models} model.", "ok")
         except Exception as exc:
             self._set_ai_status(f"Lỗi: {exc}", "error")
         finally:
@@ -452,7 +455,9 @@ class SettingsScreen(QWidget):
             provider_key = item.data(Qt.ItemDataRole.UserRole) if item else ""
             info = provider_catalog.get(provider_key)
             if info and ProviderCapability.MODEL_DISCOVERY in info.capabilities:
-                self._refresh_provider_models()
+                self._refresh_provider_models(
+                    success_prefix="Kết nối thành công — API Key hợp lệ."
+                )
 
     def _ai_test_failed(self, message: str) -> None:
         self._set_ai_status(f"Kiểm tra thất bại: {message}", "error")
