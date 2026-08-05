@@ -199,6 +199,7 @@ Ví dụ ánh xạ đúng theo code hiện tại:
 
 - kết quả tối ưu `min_sl_distance_atr` (Khoảng SL tối thiểu theo ATR — Biên độ dao động trung bình) được xem xét và chép thủ công vào khóa cùng tên trong `config/risk_params.json`;
 - `zone_sl_buffer_atr` (Đệm SL vùng theo ATR), `swing_sl_buffer_atr` (Đệm SL điểm xoay theo ATR) và `sl_floor_buffer_atr` (Đệm sàn SL theo ATR) cũng chép vào khóa cùng tên sau khi duyệt;
+- `zone_sl_cap_ratio_high_score` (Trần SL nới cho vùng chất lượng cao) và `zone_sl_high_score_threshold` (Ngưỡng điểm hiệu dụng để vùng được coi là chất lượng cao) chỉnh trực tiếp trong `config/risk_params.json`: vùng đạt ngưỡng được nới trần để SL nằm sau cấu trúc thật; vùng chất lượng cao nhưng quá xa — SL cấu trúc vượt cả trần nới — bị từ chối kế hoạch thay vì đặt SL giữa vùng; vùng điểm thấp giữ trần chặt cũ;
 - phải khởi động lại ứng dụng sau khi thay đổi `config/risk_params.json`, vì module (Mô-đun) rủi ro đọc file này khi được nạp.
 
 Có một giới hạn cần lưu ý: bộ quét 10 tham số hiện xuất khóa `min_stop_distance_atr_mult` (Hệ số khoảng dừng tối thiểu theo ATR), trong khi cấu hình chạy thật đọc khóa `min_sl_distance_atr_mult` (Hệ số khoảng SL tối thiểu theo ATR). Do hai tên không trùng nhau, không chép khóa thứ 10 này theo suy đoán; cần sửa và kiểm chứng liên kết trong code trước khi dùng.

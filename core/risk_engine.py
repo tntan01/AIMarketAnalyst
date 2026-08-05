@@ -61,6 +61,11 @@ _DEFAULT_SL_MULT = _rp.get("default_sl_mult", 0.50)
 _DEFAULT_ZONE_DISTANCE_MULT = _rp.get("default_zone_distance_mult", 1.5)
 _ZONE_SL_BUFFER_ATR = _rp.get("zone_sl_buffer_atr", 0.10)
 _ZONE_SL_CAP_RATIO = _rp.get("zone_sl_cap_ratio", 1.5)
+# Relaxed zone-SL cap for high-quality zones: allows the stop to sit behind
+# real structure instead of inside the zone.  Zones whose effective score is
+# below _ZONE_SL_HIGH_SCORE_THRESHOLD keep the tight legacy cap.
+_ZONE_SL_CAP_RATIO_HIGH_SCORE = _rp.get("zone_sl_cap_ratio_high_score", 2.5)
+_ZONE_SL_HIGH_SCORE_THRESHOLD = _rp.get("zone_sl_high_score_threshold", 80)
 ENTRY_ZONE_ATR_MULT = _rp.get("entry_zone_atr_mult", 0.35)
 _ENTRY_ZONE_ATR_MIN = _rp.get("entry_zone_atr_min", 0.10)
 _ENTRY_ZONE_ATR_MAX = _rp.get("entry_zone_atr_max", 0.30)
@@ -454,27 +459,65 @@ def _find_nearest_equal_level(
         return max(below) if below else None
 
 
+def _zone_sl_cap_ratio(zone_score: float | None) -> tuple[float, bool]:
+    """Pick the zone-SL cap ratio from the zone's effective quality score.
+
+    High-quality zones (effective score >= ``zone_sl_high_score_threshold``)
+    earn the relaxed ``zone_sl_cap_ratio_high_score`` cap so the stop can sit
+    behind real structure.  Every other zone keeps the tight legacy
+    ``zone_sl_cap_ratio`` cap that blocks garbage/anomalous far zones.
+
+    Returns ``(cap_ratio, is_high_score)``.  A ``None`` score is treated as
+    low-quality (legacy cap).  All three keys go through ``risk_parameter``
+    so backtest sweeps can override them uniformly.
+    """
+    threshold = risk_parameter(
+        "zone_sl_high_score_threshold", _ZONE_SL_HIGH_SCORE_THRESHOLD
+    )
+    if zone_score is not None and float(zone_score) >= threshold:
+        return (
+            risk_parameter(
+                "zone_sl_cap_ratio_high_score", _ZONE_SL_CAP_RATIO_HIGH_SCORE
+            ),
+            True,
+        )
+    return risk_parameter("zone_sl_cap_ratio", _ZONE_SL_CAP_RATIO), False
+
+
 def _calc_stop_loss_buy(
     level: float,
     atr_value: float,
     sl_mult: float,
     min_stop_distance: float,
     zone: dict[str, Any] | None,
-) -> float:
-    """Calculate BUY stop loss: prefer below-zone-low, capped at 1.5× ATR."""
+    zone_score: float | None = None,
+) -> float | None:
+    """Calculate BUY stop loss: prefer below-zone-low, capped by zone quality.
+
+    The widest allowed stop is ``level - ATR × sl_mult × cap_ratio`` where
+    ``cap_ratio`` comes from :func:`_zone_sl_cap_ratio`.  For a high-quality
+    zone whose structural stop (below the zone low) still exceeds even the
+    relaxed cap, returns ``None`` — the caller must reject the plan rather
+    than place the stop inside the zone, where normal oscillation sweeps it
+    while position sizing simultaneously inflates the lot.
+    """
     atr_sl = level - max(atr_value * sl_mult, min_stop_distance)
-    max_sl = level - atr_value * sl_mult * _ZONE_SL_CAP_RATIO  # widest allowed
 
     zone_low = zone.get("low") if isinstance(zone, dict) else None
     if zone_low is None or zone_low >= level:
         return atr_sl  # no valid zone boundary below level, use ATR-based
 
+    cap_ratio, high_score = _zone_sl_cap_ratio(zone_score)
+    cap_sl = level - atr_value * sl_mult * cap_ratio  # widest allowed
+
     zone_sl = zone_low - atr_value * risk_parameter(
         "zone_sl_buffer_atr", _ZONE_SL_BUFFER_ATR
     )
-    if zone_sl >= max_sl:
+    if zone_sl >= cap_sl:
         return zone_sl  # zone is close enough, place SL below it
-    return max_sl       # zone too far, cap at 1.5×
+    if high_score:
+        return None     # structural SL beyond relaxed cap → refuse the plan
+    return cap_sl       # low-score zone: keep the legacy tight cap
 
 
 def _calc_stop_loss_sell(
@@ -483,21 +526,31 @@ def _calc_stop_loss_sell(
     sl_mult: float,
     min_stop_distance: float,
     zone: dict[str, Any] | None,
-) -> float:
-    """Calculate SELL stop loss: prefer above-zone-high, capped at 1.5× ATR."""
+    zone_score: float | None = None,
+) -> float | None:
+    """Calculate SELL stop loss: prefer above-zone-high, capped by zone quality.
+
+    Mirror of :func:`_calc_stop_loss_buy`.  Returns ``None`` when a
+    high-quality zone's structural stop exceeds even the relaxed cap, so the
+    caller rejects the plan instead of hiding the stop inside the zone.
+    """
     atr_sl = level + max(atr_value * sl_mult, min_stop_distance)
-    min_sl = level + atr_value * sl_mult * _ZONE_SL_CAP_RATIO  # tightest allowed
 
     zone_high = zone.get("high") if isinstance(zone, dict) else None
     if zone_high is None or zone_high <= level:
         return atr_sl  # no valid zone boundary above level, use ATR-based
 
+    cap_ratio, high_score = _zone_sl_cap_ratio(zone_score)
+    cap_sl = level + atr_value * sl_mult * cap_ratio  # widest allowed
+
     zone_sl = zone_high + atr_value * risk_parameter(
         "zone_sl_buffer_atr", _ZONE_SL_BUFFER_ATR
     )
-    if zone_sl <= min_sl:
+    if zone_sl <= cap_sl:
         return zone_sl  # zone is close enough, place SL above it
-    return min_sl       # zone too far, cap at 1.5×
+    if high_score:
+        return None     # structural SL beyond relaxed cap → refuse the plan
+    return cap_sl       # low-score zone: keep the legacy tight cap
 
 
 @dataclass(frozen=True, slots=True)
@@ -841,9 +894,21 @@ def build_trade_plan(
             stop_loss = level - sign * min_stop_distance
         sl_source = "zone_boundary"
     elif side == "buy":
-        stop_loss = _calc_stop_loss_buy(level, atr_value, sl_mult, min_stop_distance, zone)
+        stop_loss = _calc_stop_loss_buy(
+            level, atr_value, sl_mult, min_stop_distance, zone,
+            zone_score=effective_zone_score,
+        )
     else:
-        stop_loss = _calc_stop_loss_sell(level, atr_value, sl_mult, min_stop_distance, zone)
+        stop_loss = _calc_stop_loss_sell(
+            level, atr_value, sl_mult, min_stop_distance, zone,
+            zone_score=effective_zone_score,
+        )
+    if stop_loss is None:
+        # High-quality zone sits too far away: its structural SL exceeds even
+        # the relaxed cap.  Refuse the plan — placing the stop inside the zone
+        # gets swept by normal oscillation while sizing inflates the lot
+        # (doubly negative expectancy).
+        return None
 
     # Guard: SL must be on the correct side of the entry zone
     sl_edge = (entry_low if side == "buy" else entry_high) - sign * atr_value * risk_parameter(

@@ -6,6 +6,8 @@
   "min_stop_spread_mult": 3,
   "zone_sl_buffer_atr": 0.10,
   "zone_sl_cap_ratio": 1.5,
+  "zone_sl_cap_ratio_high_score": 2.5,
+  "zone_sl_high_score_threshold": 80,
   "swing_sl_buffer_atr": 0.15,
   "sl_floor_buffer_atr": 0.20,
   "default_sl_mult": 0.50,
