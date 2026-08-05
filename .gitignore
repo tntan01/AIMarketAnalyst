@@ -11,4 +11,3 @@ build/
 dist/
 .pytest_cache/
 .claude/
-config/interest_rates.json
