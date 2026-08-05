@@ -24,6 +24,10 @@ def iter_chat_completion_chunks(response, *, content_key: str = "content") -> Ge
     Yields:
         Plain-text content chunks as they arrive via SSE.
     """
+    # SSE payloads are always UTF-8 (spec), but requests decodes text streams
+    # with ISO-8859-1 when the server omits charset in Content-Type — which
+    # garbles Vietnamese (e.g. "xin chào" -> "xin chÃ o"). Force UTF-8.
+    response.encoding = "utf-8"
     for line in response.iter_lines(decode_unicode=True):
         if not line:
             continue
