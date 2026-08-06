@@ -539,12 +539,22 @@ class SelectedSmcZone:
     source: str = "smc_selected"
     scoring_version: str = SMC_SCORER_VERSION
     domain_version: str = SMC_DOMAIN_VERSION
+    selection_reason_codes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.direction not in VALID_ZONE_DIRECTIONS:
             raise ValueError(
                 f"Invalid selected SMC zone direction: {self.direction}"
             )
+        object.__setattr__(
+            self,
+            "selection_reason_codes",
+            tuple(
+                str(code)
+                for code in self.selection_reason_codes
+                if str(code).strip()
+            ),
+        )
 
     @property
     def selected_zone_score(self) -> int:
@@ -564,6 +574,7 @@ class SelectedSmcZone:
         zone: SmcZone,
         *,
         source: str = "smc_selected",
+        selection_reason_codes: tuple[str, ...] = (),
     ) -> "SelectedSmcZone":
         return cls(
             zone_id=zone.zone_id,
@@ -584,6 +595,7 @@ class SelectedSmcZone:
             source=source,
             scoring_version=zone.scoring_version,
             domain_version=zone.domain_version,
+            selection_reason_codes=tuple(selection_reason_codes),
         )
 
 

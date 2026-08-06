@@ -281,6 +281,7 @@ class AnalysisPipeline:
                     smc=self._smc,
                     technical=self._technical,
                     market_regime=self._market_regime,
+                    m15_candles=self._m15_candles,
                 )
             except Exception:
                 fast_decision = None
@@ -648,6 +649,7 @@ class AnalysisPipeline:
                     self._smc,
                     self._technical,
                     self._market_regime,
+                    m15_candles=self._m15_candles,
                 )
         except Exception:
             # Scorer failure is fail-closed: block the analysis with

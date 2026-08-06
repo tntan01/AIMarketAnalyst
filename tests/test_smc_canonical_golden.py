@@ -230,9 +230,11 @@ def test_score_smc_is_called_exactly_once_per_symbol(monkeypatch):
 
     calls: list[str] = []
 
-    def _spy(smc, technical, market_regime=None):
+    def _spy(smc, technical, market_regime=None, m15_candles=None):
         calls.append("score_smc")
-        return _real_score_smc(smc, technical, market_regime)
+        return _real_score_smc(
+            smc, technical, market_regime, m15_candles=m15_candles
+        )
 
     monkeypatch.setattr(pipeline_module, "score_smc", _spy)
     case = _fixture()["cases"][0]
@@ -249,9 +251,11 @@ def test_tier1_survivor_total_score_smc_calls_is_one(monkeypatch):
 
     calls: list[str] = []
 
-    def _spy(smc, technical, market_regime=None):
+    def _spy(smc, technical, market_regime=None, m15_candles=None):
         calls.append("score_smc")
-        return _real_score_smc(smc, technical, market_regime)
+        return _real_score_smc(
+            smc, technical, market_regime, m15_candles=m15_candles
+        )
 
     monkeypatch.setattr(prefilter_module, "score_smc", _spy)
     monkeypatch.setattr(pipeline_module, "score_smc", _spy)
@@ -271,11 +275,11 @@ def test_tier1_scorer_error_fails_closed_without_retry(monkeypatch):
 
     prefilter_calls: list[str] = []
 
-    def _explode(smc, technical, market_regime=None):
+    def _explode(smc, technical, market_regime=None, m15_candles=None):
         prefilter_calls.append("score_smc")
         raise RuntimeError("scorer blew up")
 
-    def _must_not_run(smc, technical, market_regime=None):
+    def _must_not_run(smc, technical, market_regime=None, m15_candles=None):
         raise AssertionError("full route must not re-score after Tier-1 error")
 
     monkeypatch.setattr(prefilter_module, "score_smc", _explode)
@@ -297,7 +301,7 @@ def test_full_route_scorer_error_fails_closed(monkeypatch):
     from core.scanner import scanner_row_from_analysis
     from core.scanner_candidate_engine import evaluate_scanner_candidate
 
-    def _explode(smc, technical, market_regime=None):
+    def _explode(smc, technical, market_regime=None, m15_candles=None):
         raise RuntimeError("scorer blew up")
 
     monkeypatch.setattr(pipeline_module, "score_smc", _explode)

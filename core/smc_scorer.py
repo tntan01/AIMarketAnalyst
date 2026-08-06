@@ -6,9 +6,11 @@ from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Any
 
+from core.smc_m15_confirmation import evaluate_m15_confirmation
 from core.smc_models import SelectedSmcZone, SmcScoreBreakdown, SmcZone
 from core.smc_scoring_result import SmcScoringResult, SmcSideScoringResult
 from core.smc_versions import SMC_SCORER_VERSION
+from core.smc_zone_ai_review import review_zone_with_cache
 
 
 _ZONE_HARD_DISTANCE_ATR = 3.0
@@ -18,6 +20,39 @@ _VALID_FAMILIES = frozenset({
     "order_block",
     "fvg",
 })
+
+# Zone-selection timeframe priority.  H4 zones are structurally thicker and
+# less prone to liquidity sweeps, so they are preferred whenever at least one
+# eligible H4 zone exists.  An H1 zone is selectable only as a fallback when
+# no eligible H4 zone is available.  The decision is recorded on the selected
+# zone as a reason code for traceability.
+ZONE_TIMEFRAME_H4 = "H4"
+SELECTION_REASON_H4_PREFERRED = "H4_TIMEFRAME_PREFERRED"
+SELECTION_REASON_H1_FALLBACK = "H1_TIMEFRAME_NO_VALID_H4"
+
+# D1 zones never participate in entry-zone selection (evaluate_smc_zones only
+# iterates H4/H1), but they still carry confluence evidence: when price reacts
+# at an unmitigated D1 order block / FVG while H4 is aligned with the D1
+# direction, a bonus is folded into the structure (confluence) component and
+# traced with its own reason code.  The entry zone remains H4/H1.
+D1_ZONE_REACTION_BONUS_REASON = "D1_ZONE_REACTION_BONUS"
+_D1_REACTION_BONUS_POINTS = 2
+_D1_REACTION_NEAR_ATR = 0.5
+_D1_REACTION_FAMILIES = (
+    ("order_block", "order_blocks"),
+    ("fvg", "fvg"),
+)
+
+# Asymmetric AI audit of the selected zone.  The AI is consulted only when the
+# deterministic subtotal already reaches the threshold, and only a confident
+# weak verdict subtracts points; a positive verdict never adds any.  The
+# penalty runs through the same penalty/cap pipeline, so the AI can never
+# override the existing gates.
+AI_ZONE_WEAK_REASON = "AI_ZONE_WEAK"
+_AI_REVIEW_SUBTOTAL_THRESHOLD = 8
+_AI_ZONE_WEAK_PENALTY = 2
+_AI_REVIEW_MIN_CONFIDENCE = 0.7
+_AI_ZONE_WEAK_COMBINED_THRESHOLD = 4.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +79,28 @@ def score_smc(
     smc: dict[str, Any],
     technical: dict[str, Any],
     market_regime: dict[str, Any] | None = None,
+    *,
+    ai_service: Any | None = None,
+    zone_audit_cache: dict[str, Any] | None = None,
+    m15_candles: Any | None = None,
 ) -> SmcScoringResult:
-    """Score BUY and SELL independently without mutating the active context."""
+    """Score BUY and SELL independently without mutating the active context.
+
+    When ``ai_service`` is provided, sides whose deterministic subtotal
+    reaches the audit threshold are reviewed by the AI zone auditor under
+    asymmetric rules (a confident weak verdict subtracts points; a positive
+    verdict never adds any).  Without it scoring stays fully deterministic.
+
+    When ``zone_audit_cache`` is provided, AI verdicts are read and stored
+    by zone id (see :mod:`core.smc_zone_ai_review`), so a backtest replay
+    over the same data reuses cached verdicts instead of calling the AI
+    again.
+
+    When ``m15_candles`` is provided, the selected zone is checked for M15
+    confirmation (small-timeframe CHoCH or clear price reaction): a tested
+    zone without confirmation subtracts points, while confirmation and the
+    warning cases only trace reason codes.  Without it the step is inert.
+    """
 
     sides: dict[str, SmcSideScoringResult] = {}
     for side in ("buy", "sell"):
@@ -54,6 +109,9 @@ def score_smc(
             smc if isinstance(smc, dict) else {},
             technical if isinstance(technical, dict) else {},
             market_regime if isinstance(market_regime, dict) else {},
+            ai_service=ai_service,
+            zone_audit_cache=zone_audit_cache,
+            m15_candles=m15_candles,
         )
         sides[side] = SmcSideScoringResult(
             score=side_payload["smc_quality"],
@@ -127,7 +185,15 @@ def evaluate_smc_zones(
 def select_smc_zone(
     evaluations: tuple[EvaluatedSmcZone, ...],
 ) -> SelectedSmcZone | None:
-    """Select by setup score, then distance, recency, and stable zone ID."""
+    """Select the canonical zone for one side.
+
+    Timeframe priority is applied first: eligible H4 zones are always
+    preferred over H1 zones, so an H1 zone is only selectable when no
+    eligible H4 zone exists.  Within the chosen timeframe tier the winner is
+    picked by setup score, then distance, recency, and stable zone ID.  The
+    timeframe decision is recorded on the returned zone as a reason code for
+    traceability.
+    """
 
     eligible = [
         evaluation
@@ -136,8 +202,19 @@ def select_smc_zone(
     ]
     if not eligible:
         return None
+    h4_eligible = [
+        evaluation
+        for evaluation in eligible
+        if evaluation.zone.timeframe == ZONE_TIMEFRAME_H4
+    ]
+    if h4_eligible:
+        candidates = h4_eligible
+        selection_reason = SELECTION_REASON_H4_PREFERRED
+    else:
+        candidates = eligible
+        selection_reason = SELECTION_REASON_H1_FALLBACK
     selected = min(
-        eligible,
+        candidates,
         key=lambda item: (
             -item.zone.zone_setup_score,
             (
@@ -149,7 +226,11 @@ def select_smc_zone(
             item.zone.zone_id,
         ),
     )
-    return SelectedSmcZone.from_zone(selected.zone, source="smc_selected")
+    return SelectedSmcZone.from_zone(
+        selected.zone,
+        source="smc_selected",
+        selection_reason_codes=(selection_reason,),
+    )
 
 
 def _score_side(
@@ -157,6 +238,9 @@ def _score_side(
     smc: dict[str, Any],
     technical: dict[str, Any],
     market_regime: dict[str, Any],
+    ai_service: Any | None = None,
+    zone_audit_cache: dict[str, Any] | None = None,
+    m15_candles: Any | None = None,
 ) -> dict[str, Any]:
     price = _positive_float(technical.get("price"))
     atr_value = _positive_float(
@@ -180,6 +264,13 @@ def _score_side(
         confluence.get(f"{side}_score"),
         5,
     )
+    d1_bonus, d1_bonus_reasons = _d1_zone_reaction_bonus(
+        side,
+        smc,
+        price,
+        atr_value,
+    )
+    structure_score = min(5, structure_score + d1_bonus)
     zone_score = _selected_zone_component(selected)
     ltf_score, ltf_reasons = _ltf_confirmation_score(
         side,
@@ -220,6 +311,28 @@ def _score_side(
         applied_cap = 4 if applied_cap is None else min(applied_cap, 4)
         caps.append("H4_CONFIRMED_CHOCH_CAP_4")
 
+    ai_penalty, ai_reasons = _ai_zone_review_penalty(
+        side,
+        selected,
+        subtotal,
+        smc,
+        price,
+        atr_value,
+        ai_service,
+        zone_audit_cache,
+    )
+    penalty_points += ai_penalty
+    penalties.extend(ai_reasons)
+
+    m15_penalty, m15_reasons = _m15_confirmation_penalty(
+        side,
+        selected,
+        m15_candles,
+    )
+    penalty_points += m15_penalty
+    if m15_penalty:
+        penalties.extend(m15_reasons)
+
     total = max(0, subtotal - penalty_points)
     if applied_cap is not None:
         total = min(total, applied_cap)
@@ -238,8 +351,11 @@ def _score_side(
             "CANONICAL_ZONE_SELECTED",
             f"ZONE_FAMILY_{selected.family.upper()}",
         ])
+    reason_codes.extend(d1_bonus_reasons)
     reason_codes.extend(ltf_reasons)
     reason_codes.extend(technical_reasons)
+    reason_codes.extend(ai_reasons)
+    reason_codes.extend(m15_reasons)
 
     breakdown = SmcScoreBreakdown(
         side=side,
@@ -599,6 +715,162 @@ def _technical_validation_score(
     if nearest <= 0.60:
         return 1, ["TECHNICAL_ZONE_NEARBY"]
     return 0, []
+
+
+def _d1_zone_reaction_bonus(
+    side: str,
+    smc: dict[str, Any],
+    price: float | None,
+    atr_value: float | None,
+) -> tuple[int, list[str]]:
+    """Confluence bonus when price reacts at an unmitigated D1 OB/FVG.
+
+    The D1 zone only contributes evidence; it is never an entry-zone
+    candidate (selection stays restricted to H4/H1).  The bonus is granted
+    when price sits inside or near an unbroken, unmitigated D1 order block
+    or FVG matching the side while the H4 structure is aligned with that D1
+    direction.
+    """
+
+    if price is None or atr_value is None:
+        return 0, []
+    d1 = smc.get("D1", {}) if isinstance(smc.get("D1"), dict) else {}
+    if not d1:
+        return 0, []
+    h4 = smc.get("H4", {}) if isinstance(smc.get("H4"), dict) else {}
+    expected_structure = "HH/HL" if side == "buy" else "LH/LL"
+    if h4.get("structure") != expected_structure:
+        return 0, []
+    near_distance = _D1_REACTION_NEAR_ATR * atr_value
+    for family, key in _D1_REACTION_FAMILIES:
+        zones = d1.get(key, [])
+        if not isinstance(zones, list):
+            continue
+        for zone in zones:
+            if not isinstance(zone, dict):
+                continue
+            if _zone_direction(zone, family) != side:
+                continue
+            if zone.get("broken") or zone.get("mitigated"):
+                continue
+            low = _optional_float(zone.get("low"))
+            high = _optional_float(zone.get("high"))
+            if low is None or high is None or high <= low:
+                continue
+            if _distance_to_zone(price, low, high) <= near_distance:
+                return (
+                    _D1_REACTION_BONUS_POINTS,
+                    [D1_ZONE_REACTION_BONUS_REASON],
+                )
+    return 0, []
+
+
+def _ai_zone_review_penalty(
+    side: str,
+    selected: SelectedSmcZone | None,
+    subtotal: int,
+    smc: dict[str, Any],
+    price: float | None,
+    atr_value: float | None,
+    ai_service: Any | None,
+    zone_audit_cache: dict[str, Any] | None = None,
+) -> tuple[int, list[str]]:
+    """Asymmetric AI audit of the selected zone.
+
+    The AI is consulted only when the deterministic subtotal reaches the
+    threshold and a zone was actually selected.  Only a confident weak
+    verdict (combined zone_validity and displacement_quality at or below the
+    weak threshold with confidence >= 0.7) subtracts points.  Positive or
+    uncertain verdicts never change the score, and nothing is ever added.
+
+    Verdicts are cached by zone id when ``zone_audit_cache`` is provided:
+    a backtest replay over the same data reads the cached verdict (no AI
+    call), keeping the replay reproducible and free.
+    """
+
+    if ai_service is None and zone_audit_cache is None:
+        return 0, []
+    if subtotal < _AI_REVIEW_SUBTOTAL_THRESHOLD:
+        return 0, []
+    if selected is None:
+        return 0, []
+    review = review_zone_with_cache(
+        _ai_zone_review_data(side, selected, smc, price, atr_value),
+        zone_audit_cache,
+        ai_service,
+    )
+    if review.get("status") != "valid":
+        return 0, []
+    if float(review.get("confidence") or 0.0) < _AI_REVIEW_MIN_CONFIDENCE:
+        return 0, []
+    combined = (
+        float(review.get("zone_validity") or 0.0)
+        + float(review.get("displacement_quality") or 0.0)
+    ) / 2
+    if combined > _AI_ZONE_WEAK_COMBINED_THRESHOLD:
+        return 0, []
+    return _AI_ZONE_WEAK_PENALTY, [AI_ZONE_WEAK_REASON]
+
+
+def _ai_zone_review_data(
+    side: str,
+    selected: SelectedSmcZone,
+    smc: dict[str, Any],
+    price: float | None,
+    atr_value: float | None,
+) -> dict[str, Any]:
+    timeframe_data = smc.get(selected.timeframe, {})
+    if not isinstance(timeframe_data, dict):
+        timeframe_data = {}
+    return {
+        "zone_id": selected.zone_id,
+        "symbol": smc.get("symbol"),
+        "zone_type": selected.zone_type,
+        "family": selected.family,
+        "direction": side,
+        "timeframe": selected.timeframe,
+        "low": selected.low,
+        "high": selected.high,
+        "price": price,
+        "atr": atr_value,
+        "displacement": timeframe_data.get("displacement"),
+        "liquidity": timeframe_data.get("zone_link_sweeps"),
+        "liquidity_sweep_linked": selected.liquidity_sweep_linked,
+    }
+
+
+def _m15_confirmation_penalty(
+    side: str,
+    selected: SelectedSmcZone | None,
+    m15_candles: Any | None,
+) -> tuple[int, list[str]]:
+    """M15 confirmation at the selected zone.
+
+    When M15 candles are available and a zone was selected, the zone's M15
+    reaction is evaluated.  A tested zone without confirmation subtracts
+    points; confirmation, an untested zone and insufficient data only trace
+    reason codes (asymmetric: confirmation never adds points).  Without M15
+    data the step is inert, keeping callers that do not supply candles on
+    the previous behaviour.
+    """
+
+    if m15_candles is None:
+        return 0, []
+    if selected is None:
+        return 0, []
+    result = evaluate_m15_confirmation(
+        side,
+        selected.low,
+        selected.high,
+        m15_candles,
+    )
+    penalty = int(result.get("penalty") or 0)
+    reasons = [
+        str(code)
+        for code in result.get("reason_codes", [])
+        if str(code).strip()
+    ]
+    return penalty, reasons
 
 
 def _zone_payloads(

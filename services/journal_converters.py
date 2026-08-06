@@ -122,6 +122,12 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
         if isinstance(analysis.get("scoring_provenance"), dict)
         else {}
     )
+    ai_zone_review = scenario.get("ai_zone_review")
+    if (
+        not isinstance(ai_zone_review, dict)
+        or ai_zone_review.get("status") != "valid"
+    ):
+        ai_zone_review = {}
 
     eq = analysis.get("execution_quality")
     if not isinstance(eq, dict):
@@ -201,6 +207,14 @@ def journal_entry_from_analysis(analysis: dict[str, Any], *, mode: str, note: st
             str(scoring_provenance.get("smc_scorer_version", "") or "")
             or zone_version
         ),
+        ai_zone_validity=optional_float(ai_zone_review.get("zone_validity")),
+        ai_zone_liquidity_setup=(
+            str(ai_zone_review.get("liquidity_setup") or "") or None
+        ),
+        ai_zone_displacement_quality=optional_float(
+            ai_zone_review.get("displacement_quality")
+        ),
+        ai_zone_confidence=optional_float(ai_zone_review.get("confidence")),
         trade_status="planned",
         opened_at=None,
         result_amount=None,
@@ -253,6 +267,12 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
         if isinstance(row.get("scoring_provenance"), dict)
         else {}
     )
+    row_ai_zone_review = row.get("ai_zone_review")
+    if (
+        not isinstance(row_ai_zone_review, dict)
+        or row_ai_zone_review.get("status") != "valid"
+    ):
+        row_ai_zone_review = {}
 
     return JournalEntry(
         id=None,
@@ -330,6 +350,18 @@ def journal_entry_from_scanner_row(row: dict[str, Any], *, note: str = "") -> Jo
                 or ""
             )
             or None
+        ),
+        ai_zone_validity=optional_float(
+            row_ai_zone_review.get("zone_validity")
+        ),
+        ai_zone_liquidity_setup=(
+            str(row_ai_zone_review.get("liquidity_setup") or "") or None
+        ),
+        ai_zone_displacement_quality=optional_float(
+            row_ai_zone_review.get("displacement_quality")
+        ),
+        ai_zone_confidence=optional_float(
+            row_ai_zone_review.get("confidence")
         ),
         trade_status="planned",
         opened_at=None,

@@ -39,6 +39,7 @@ def evaluate_post_context_prefilter(
     smc: dict[str, Any] | None,
     technical: dict[str, Any] | None,
     market_regime: dict[str, Any] | None = None,
+    m15_candles: Any | None = None,
 ) -> dict[str, Any]:
     """Return the canonical Tier-1 decision without changing the pipeline.
 
@@ -57,7 +58,12 @@ def evaluate_post_context_prefilter(
     assert isinstance(smc, dict)
     assert isinstance(technical, dict)
     try:
-        smc_result = score_smc(smc, technical, market_regime)
+        smc_result = score_smc(
+            smc,
+            technical,
+            market_regime,
+            m15_candles=m15_candles,
+        )
         selected_zone_ids = _selected_zone_ids(smc_result)
     except Exception:
         # A scorer exception is fail-closed: block the analysis instead of

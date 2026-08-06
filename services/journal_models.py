@@ -84,6 +84,11 @@ class JournalEntry:
     scanner_scorer_version: str | None = None
     scanner_feature_version: str | None = None
     smc_scorer_version: str | None = None
+    # AI zone audit fields (zone_id is stored in selected_zone_id)
+    ai_zone_validity: float | None = None
+    ai_zone_liquidity_setup: str | None = None
+    ai_zone_displacement_quality: float | None = None
+    ai_zone_confidence: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
