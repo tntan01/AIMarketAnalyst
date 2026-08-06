@@ -96,6 +96,21 @@ def _pipeline_input() -> tuple[AnalysisInput, dict[str, list[Candle]]]:
     return request, candles
 
 
+def _full_correlation_context() -> dict[str, Any]:
+    """All 4 macro sources present but neutral -> macro_confidence giữ 1.0, corr_adj = 0.
+
+    The golden fixture was captured with full macro data available (confidence
+    1.0, no adjustment).  Supplying present-but-neutral sources (1 candle each,
+    VIX trong vùng trung lập) keeps the pipeline on that baseline.
+    """
+    return {
+        "dxy_candles": _candles(1, start=100.0, step=0.0, bar_minutes=1440),
+        "vix_candles": _candles(1, start=18.0, step=0.0, bar_minutes=1440),
+        "us10y_candles": _candles(1, start=4.2, step=0.0, bar_minutes=1440),
+        "us2y_candles": _candles(1, start=4.0, step=0.0, bar_minutes=1440),
+    }
+
+
 def _run_case(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
     import core.analysis_pipeline as pipeline_module
 
@@ -115,7 +130,11 @@ def _run_case(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
         "detect_market_regime",
         lambda technical, news_in_3h=False: case["market_regime"],
     )
-    return analyze_symbol(request, candles)
+    return analyze_symbol(
+        request,
+        candles,
+        correlation_context=_full_correlation_context(),
+    )
 
 
 def _run_case_tier1(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +160,7 @@ def _run_case_tier1(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
         request,
         candles,
         scanner_fast_tier1=True,
+        correlation_context=_full_correlation_context(),
     )
 
 

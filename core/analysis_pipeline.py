@@ -41,6 +41,9 @@ from core.journal_feedback_engine import build_journal_feedback
 from core.statistical_edge_engine import calculate_evidence_score
 from core.reason_codes import (
     DAILY_LOSS_LIMIT_REACHED,
+    MACRO_DATA_PARTIAL,
+    MACRO_DATA_UNAVAILABLE,
+    MACRO_HIGH_IMPACT_EVENT_NEARBY,
     WEEKLY_LOSS_LIMIT_REACHED,
     codes_to_messages,
     normalize_codes,
@@ -346,6 +349,8 @@ class AnalysisPipeline:
             ("_market_regime", {"primary": "unknown"}), ("_risk_score", 0),
             ("_macro_alignment", {"buy": 15, "sell": 15}),
             ("_macro_confidence_in", 1.0),
+            ("_macro_data_reason_code", None),
+            ("_macro_event_reason_code", None),
             ("_buy_corr_adj", 0), ("_sell_corr_adj", 0),
             ("_scores", {"buy": {}, "sell": {}}),
             ("_buy_smc_flags", {}), ("_sell_smc_flags", {}),
@@ -613,6 +618,33 @@ class AnalysisPipeline:
         has_us2y = bool(corr_ctx.get("us2y_candles"))
         any_macro = has_dxy or has_vix or has_us10y or has_us2y
         corr_status = "pass" if any_macro else "warning"
+
+        # Thiếu dữ liệu correlation → giảm macro confidence (không sửa điểm trực tiếp).
+        # Nhóm sức mạnh USD gồm 4 nguồn: DXY, VIX, US10Y, US2Y.
+        missing_macro_sources = 4 - (int(has_dxy) + int(has_vix) + int(has_us10y) + int(has_us2y))
+        if missing_macro_sources == 4:
+            self._macro_confidence_in *= 0.4  # thiếu toàn bộ → giảm mạnh
+            self._macro_data_reason_code = MACRO_DATA_UNAVAILABLE
+        elif missing_macro_sources > 0:
+            self._macro_confidence_in *= 0.8  # thiếu một phần → giảm nhẹ
+            self._macro_data_reason_code = MACRO_DATA_PARTIAL
+        else:
+            self._macro_data_reason_code = None
+
+        # Sự kiện vĩ mô tác động mạnh liên quan đến đồng tiền của cặp sắp diễn ra
+        # trong 4 giờ tới (nhưng ngoài cửa sổ blackout 30 phút) → giảm macro confidence.
+        # Cửa sổ blackout 30 phút hiện có được giữ nguyên, không thay đổi.
+        self._macro_event_reason_code = None
+        next_event = self._data_quality.get("next_high_impact_event")
+        hours_until = self._hours_until_high_impact(next_event)
+        if hours_until is not None and 0.5 < hours_until <= 4.0:
+            event_currency = str(
+                next_event.get("currency", "") if isinstance(next_event, dict) else ""
+            ).upper()
+            if event_currency and self._pair_involves_currency(event_currency):
+                self._macro_confidence_in *= 0.8  # sự kiện sắp tới → giảm nhẹ
+                self._macro_event_reason_code = MACRO_HIGH_IMPACT_EVENT_NEARBY
+
         corr_summary = (
             f"DXY={'yes' if has_dxy else 'no'}, VIX={'yes' if has_vix else 'no'}, "
             f"US10Y={'yes' if has_us10y else 'no'}, US2Y={'yes' if has_us2y else 'no'} "
@@ -633,6 +665,30 @@ class AnalysisPipeline:
                 "sell_correlation_adjustment": self._sell_corr_adj,
             },
         )
+
+    def _hours_until_high_impact(self, event: object) -> float | None:
+        """Return giờ còn lại đến sự kiện high-impact (UTC), None nếu không xác định."""
+        if not isinstance(event, dict):
+            return None
+        raw = str(event.get("time_utc") or "")
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return (parsed - now).total_seconds() / 3600.0
+
+    def _pair_involves_currency(self, currency: str) -> bool:
+        """True nếu đồng tiền sự kiện thuộc cặp đang phân tích."""
+        symbol = self._request.symbol.upper()
+        if "/" in symbol:
+            base, quote = symbol.split("/", 1)
+            return currency in (base, quote)
+        return currency in symbol
 
     # ------------------------------------------------------------------
     # Step 3 — score buy & sell scenarios + extract SMC flags
@@ -1309,6 +1365,11 @@ class AnalysisPipeline:
             combined_warning_codes.append(code)
         for code in self._account_guard_result.get("block_codes", []):
             combined_block_codes.append(code)
+
+        if self._macro_data_reason_code:
+            combined_reason_codes.append(self._macro_data_reason_code)
+        if self._macro_event_reason_code:
+            combined_reason_codes.append(self._macro_event_reason_code)
 
         self._reason_codes = normalize_codes(combined_reason_codes)
         self._penalty_codes = normalize_codes(combined_penalty_codes)

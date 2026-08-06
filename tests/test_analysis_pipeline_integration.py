@@ -18,6 +18,11 @@ from core.analysis_engine import analyze_symbol, build_analysis_context
 from core.analysis_pipeline import AnalysisPipeline
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
+from core.reason_codes import (
+    MACRO_DATA_PARTIAL,
+    MACRO_DATA_UNAVAILABLE,
+    MACRO_HIGH_IMPACT_EVENT_NEARBY,
+)
 from core.scanner import scanner_row_from_analysis
 from core.scanner_candidate_engine import (
     build_candidate_order_payload,
@@ -730,3 +735,182 @@ def test_analyze_symbol_scenarios_have_required_fields():
         assert isinstance(sizing, dict)
         for f2 in ("suggested_lot", "risk_amount_usd", "entry_price", "stop_loss"):
             assert f2 in sizing, f"position_sizing missing '{f2}'"
+
+
+# ---------------------------------------------------------------------------
+# Macro confidence — thiếu dữ liệu correlation
+# ---------------------------------------------------------------------------
+
+
+def _corr_candle_list(closes: list[float]) -> list[Candle]:
+    """Build minimal candle list for one correlation source."""
+    return [
+        Candle(time=datetime(2026, 6, 10, tzinfo=timezone.utc),
+               open=c, high=c, low=c, close=c, volume=0)
+        for c in closes
+    ]
+
+
+def _correlation_context(present: set[str]) -> dict[str, Any]:
+    """Build a correlation context with only the given sources present."""
+    sources = {
+        "dxy_candles": _corr_candle_list([100.0, 100.5]),
+        "vix_candles": _corr_candle_list([18.0, 18.5]),
+        "us10y_candles": _corr_candle_list([4.2, 4.3]),
+        "us2y_candles": _corr_candle_list([4.0, 4.1]),
+    }
+    return {k: v for k, v in sources.items() if k in present}
+
+
+def _run_correlation_step(corr_ctx: dict[str, Any]) -> tuple[float, str | None]:
+    """Run only the correlation step on a fresh pipeline; return (confidence, reason_code)."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input("EUR/USD")
+    pipe._correlation_context = corr_ctx
+    pipe._data_quality = {}
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    pipe._step_compute_correlation()
+    return pipe._macro_confidence_in, pipe._macro_data_reason_code
+
+
+def test_macro_confidence_kept_when_all_sources_present():
+    conf, code = _run_correlation_step(_correlation_context(
+        {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+    ))
+    assert conf == 1.0
+    assert code is None
+
+
+def test_macro_confidence_reduced_when_partial_missing():
+    conf, code = _run_correlation_step(_correlation_context({"dxy_candles"}))
+    assert conf == 0.8
+    assert code == MACRO_DATA_PARTIAL
+
+
+def test_macro_confidence_reduced_strongly_when_all_missing():
+    conf, code = _run_correlation_step({})
+    assert conf == 0.4
+    assert code == MACRO_DATA_UNAVAILABLE
+
+
+def test_macro_data_reason_code_flows_into_result():
+    """End-to-end: thiếu toàn bộ dữ liệu vĩ mô -> reason code xuất hiện trong kết quả."""
+    candles = _build_candles_by_timeframe(regime="trending_up")
+    request = _default_input("EUR/USD")
+
+    result = analyze_symbol(request, candles, correlation_context={})
+
+    assert MACRO_DATA_UNAVAILABLE in result["reason_codes"], (
+        f"MACRO_DATA_UNAVAILABLE missing from reason_codes: {result['reason_codes']}"
+    )
+    assert result["macro"]["macro_confidence"] < 1.0
+
+
+def _run_event_window_step(hours_until: float | None) -> tuple[float, str | None]:
+    """Run correlation step với sự kiện high-impact USD cách `hours_until` giờ; return (confidence, event_reason_code)."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input("EUR/USD")
+    pipe._correlation_context = _correlation_context(
+        {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+    )
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    if hours_until is None:
+        pipe._data_quality = {}
+    else:
+        event_time = datetime.now(timezone.utc) + timedelta(hours=hours_until)
+        pipe._data_quality = {
+            "next_high_impact_event": {
+                "currency": "USD",
+                "impact": "high",
+                "time_utc": event_time.isoformat(),
+            }
+        }
+    pipe._step_compute_correlation()
+    return pipe._macro_confidence_in, pipe._macro_event_reason_code
+
+
+def test_event_window_within_blackout_keeps_confidence():
+    """Sự kiện trong vòng 30 phút (blackout hiện có) → không giảm macro confidence."""
+    conf, code = _run_event_window_step(hours_until=0.2)
+    assert conf == 1.0
+    assert code is None
+
+
+def test_event_window_within_4h_reduces_confidence():
+    """Sự kiện trong 4 giờ tới (ngoài blackout 30 phút) → giảm macro confidence + reason code."""
+    conf, code = _run_event_window_step(hours_until=2.0)
+    assert conf == 0.8
+    assert code == MACRO_HIGH_IMPACT_EVENT_NEARBY
+
+
+def test_event_window_outside_4h_keeps_confidence():
+    """Sự kiện ngoài 4 giờ tới → không giảm macro confidence."""
+    conf, code = _run_event_window_step(hours_until=6.0)
+    assert conf == 1.0
+    assert code is None
+
+
+def test_event_window_no_event_keeps_confidence():
+    """Không có sự kiện high-impact → không giảm macro confidence."""
+    conf, code = _run_event_window_step(hours_until=None)
+    assert conf == 1.0
+    assert code is None
+
+
+def test_event_window_unrelated_currency_keeps_confidence():
+    """Sự kiện high-impact không thuộc đồng tiền của cặp → không giảm."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input("EUR/GBP")
+    pipe._correlation_context = _correlation_context(
+        {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+    )
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    event_time = datetime.now(timezone.utc) + timedelta(hours=2.0)
+    pipe._data_quality = {
+        "next_high_impact_event": {
+            "currency": "USD",
+            "impact": "high",
+            "time_utc": event_time.isoformat(),
+        }
+    }
+    pipe._step_compute_correlation()
+    assert pipe._macro_confidence_in == 1.0
+    assert pipe._macro_event_reason_code is None
+
+
+def test_event_window_reason_code_flows_into_result():
+    """End-to-end: sự kiện high-impact liên quan trong 4h → reason code xuất hiện trong kết quả."""
+    candles = _build_candles_by_timeframe(regime="trending_up")
+    request = _default_input("EUR/USD")
+    now = datetime.now(timezone.utc)
+    event_time = now + timedelta(hours=2.0)
+    data_quality = {
+        "next_high_impact_event": {
+            "currency": "USD",
+            "impact": "high",
+            "time_utc": event_time.isoformat(),
+        }
+    }
+
+    result = analyze_symbol(
+        request,
+        candles,
+        correlation_context=_correlation_context(
+            {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+        ),
+        data_quality=data_quality,
+    )
+
+    assert MACRO_HIGH_IMPACT_EVENT_NEARBY in result["reason_codes"], (
+        f"MACRO_HIGH_IMPACT_EVENT_NEARBY missing from reason_codes: {result['reason_codes']}"
+    )
+    assert result["macro"]["macro_confidence"] < 1.0
