@@ -18,7 +18,7 @@ MARKET_TICKERS: dict[str, str] = {
     "DXY": "DX-Y.NYB",
     "VIX": "^VIX",
     "US10Y": "^TNX",
-    "US2Y": "^IRX",
+    "US2Y": "2YY=F",
 }
 
 _CORRELATION_KEYS: dict[str, str] = {

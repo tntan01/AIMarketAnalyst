@@ -372,7 +372,7 @@ class TestIntegration:
 
         # Simulate yfinance returning good data for DXY/VIX/US10Y but empty for US2Y
         def fake_download(ticker, *, period, interval, progress):
-            if ticker == "^IRX":
+            if ticker == "2YY=F":
                 return type("EmptyDF", (), {"empty": True, "iterrows": lambda s: iter([])})()
             # Return a mock DataFrame-like with 2 rows
             class FakeRow:

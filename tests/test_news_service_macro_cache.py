@@ -332,7 +332,7 @@ def test_full_scanner_concurrent_cold_each_ticker_once(monkeypatch: pytest.Monke
         preload_future.result()
 
     counts = Counter(calls)
-    assert counts == Counter({"^TNX": 1, "^FVX": 1, "^VIX": 1, "DX-Y.NYB": 1, "^IRX": 1})
+    assert counts == Counter({"^TNX": 1, "^FVX": 1, "^VIX": 1, "DX-Y.NYB": 1, "2YY=F": 1})
     assert len(calls) == 5
 
     # Correlation context has all 4 keys populated
@@ -403,7 +403,7 @@ def test_correlation_first_then_news_scoring_parity(monkeypatch: pytest.MonkeyPa
         "^FVX": _frame([4.000, 4.000]),
         "^VIX": _frame([18.0, 18.0]),
         "DX-Y.NYB": _frame([104.0, 105.0]),
-        "^IRX": _frame([4.3, 4.4]),
+        "2YY=F": _frame([4.3, 4.4]),
     }
 
     calls: list[str] = []
@@ -470,7 +470,7 @@ def test_news_first_then_correlation_same_generation_and_scoring(monkeypatch: py
         "^FVX": _frame([4.000, 4.000]),
         "^VIX": _frame([18.0, 18.0]),
         "DX-Y.NYB": _frame([104.0, 105.0]),
-        "^IRX": _frame([4.3, 4.4]),
+        "2YY=F": _frame([4.3, 4.4]),
     }
 
     calls: list[str] = []
