@@ -76,12 +76,14 @@ QFrame#JournalExpectancyCard {
 
 QFrame#StatusCard {
   background: transparent;
-  border-radius: 6px;
+  border-radius: 10px;
 }
 
-QFrame#StatusDot {
+QFrame#StatusCard QLabel#StatusIcon {
+  background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: 14px;
+  @QSS_TITLE@
 }
 
 QFrame#StatusCard QLabel#CardValue {
@@ -95,6 +97,7 @@ QFrame#StatusCard QLabel#CardDetailLabel {
   background: transparent;
   border: none;
   @QSS_BODY@
+  font-size: 10pt;
   font-weight: 700;
 }
 

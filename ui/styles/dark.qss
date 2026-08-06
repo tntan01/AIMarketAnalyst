@@ -1132,15 +1132,21 @@ QLabel#CompactInfoValue {
 
 QFrame#StatusCard[state="danger"],
 QFrame#StatusCard[state="error"] {
-  border: 1px solid #ef4444;
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.30);
+  border-left: 3px solid #ef4444;
 }
 
 QFrame#StatusCard[state="warning"] {
-  border: 1px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  border-left: 3px solid #f59e0b;
 }
 
 QFrame#StatusCard[state="ok"] {
-  border: 1px solid #10b981;
+  background: rgba(16, 185, 129, 0.10);
+  border: 1px solid rgba(16, 185, 129, 0.30);
+  border-left: 3px solid #10b981;
 }
 
 QFrame#StatusCard QLabel#CardValue {
@@ -1151,17 +1157,17 @@ QFrame#StatusCard QLabel#CardDetailLabel {
   color: #f9fafb;
 }
 
-QFrame#StatusDot[state="danger"],
-QFrame#StatusDot[state="error"] {
-  background: #ef4444;
+QLabel#StatusIcon[state="danger"],
+QLabel#StatusIcon[state="error"] {
+  background: rgba(239, 68, 68, 0.18);
 }
 
-QFrame#StatusDot[state="warning"] {
-  background: #f59e0b;
+QLabel#StatusIcon[state="warning"] {
+  background: rgba(245, 158, 11, 0.18);
 }
 
-QFrame#StatusDot[state="ok"] {
-  background: #10b981;
+QLabel#StatusIcon[state="ok"] {
+  background: rgba(16, 185, 129, 0.18);
 }
 
 QLabel#CardTitle {

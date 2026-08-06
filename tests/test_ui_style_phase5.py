@@ -50,7 +50,7 @@ def test_scanner_residual_styles_have_migrated_to_phase6_contracts() -> None:
 
 def test_phase5_shared_component_selectors_exist_in_both_themes() -> None:
     required = (
-        'QFrame#StatusDot[state="warning"]',
+        'QLabel#StatusIcon[state="warning"]',
         'QPushButton#DialogAiButton',
         'QLabel#BacktestVerdict[verdictState="success"]',
         'QLabel#OrderDirectionPill[direction="buy"]',

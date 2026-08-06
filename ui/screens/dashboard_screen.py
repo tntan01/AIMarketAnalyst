@@ -118,11 +118,20 @@ class _ElidedLabel(QLabel):
             super().setText(elided)
 
 
+# Icon (emoji) cho mỗi thẻ trạng thái — đặt trong nền tròn mờ bên trái thẻ.
+STATUS_CARD_ICONS = {
+    "Kết nối": "🔌",
+    "Broker": "👤",
+    "AI": "🤖",
+    "Nguồn dữ liệu": "📊",
+}
+
+
 class StatusCardEventFilter(QObject):
-    def __init__(self, screen, dot, value_label, parent=None):
+    def __init__(self, screen, icon, value_label, parent=None):
         super().__init__(parent)
         self.screen = screen
-        self.dot = dot
+        self.icon = icon
         self.value_label = value_label
 
     def eventFilter(self, obj, event):
@@ -132,7 +141,7 @@ class StatusCardEventFilter(QObject):
                 
             state = obj.property("state") or "warning"
             
-            set_dynamic_property(self.dot, "state", state)
+            set_dynamic_property(self.icon, "state", state)
         return super().eventFilter(obj, event)
 
 
@@ -209,22 +218,23 @@ class DashboardScreen(QWidget):
         frame.setObjectName("StatusCard")
         frame.setProperty("state", state)
         frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        frame.setFixedHeight(60)
+        frame.setFixedHeight(64)
 
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(12, 0, 12, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setSpacing(10)
 
-        # Chấm tròn 8px bên trái
-        dot = QFrame()
-        dot.setObjectName("StatusDot")
-        dot.setFixedSize(8, 8)
-        dot.setProperty("state", state)
+        # Icon trong nền tròn mờ bên trái thẻ (thay cho chấm tròn cũ)
+        icon_label = QLabel(STATUS_CARD_ICONS.get(title, "•"))
+        icon_label.setObjectName("StatusIcon")
+        icon_label.setFixedSize(28, 28)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setProperty("state", state)
 
         # Vertical layout for text (value + detail)
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(1)
+        text_layout.setSpacing(2)
         text_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         # Dòng 1: tên thẻ (nhỏ, nhạt) — Dòng 2: thông tin chi tiết (đậm)
@@ -237,13 +247,13 @@ class DashboardScreen(QWidget):
         text_layout.addWidget(value_label)
         text_layout.addWidget(detail_label)
 
-        layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(text_layout, 1)
-        
-        # Install event filter to dynamically update dot color and frame border on state change
-        event_filter = StatusCardEventFilter(self, dot, value_label, frame)
+
+        # Propagate state changes to the icon so its tinted background follows
+        event_filter = StatusCardEventFilter(self, icon_label, value_label, frame)
         frame.installEventFilter(event_filter)
-        
+
         self.status_cards[title] = (frame, value_label, detail_label)
         return frame
 

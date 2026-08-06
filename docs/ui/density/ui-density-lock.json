@@ -106,22 +106,22 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 212,
+      "line": 221,
       "method": "setFixedHeight",
       "receiver": "frame",
       "arguments": [
-        "60"
+        "64"
       ],
       "category": "structural"
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 195,
+      "line": 230,
       "method": "setFixedSize",
-      "receiver": "dot",
+      "receiver": "icon_label",
       "arguments": [
-        "8",
-        "8"
+        "28",
+        "28"
       ],
       "category": "structural"
     },
