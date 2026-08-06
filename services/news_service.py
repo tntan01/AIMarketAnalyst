@@ -1613,8 +1613,9 @@ class NewsService:
         performance_tracker: object | None = None,
     ) -> str:
         """Dùng AI đánh giá hawkish/dovish cho 1 tiền tệ từ danh sách headline.
-        Trả về: "hawkish" | "dovish" | "neutral"
-        Fallback về keyword matching nếu AI không khả dụng.
+        AI trả về JSON có cấu trúc {stance, strength, confidence, drivers}; hàm
+        validate schema và trả về stance ("hawkish" | "dovish" | "neutral").
+        Fallback về keyword matching nếu AI không khả dụng, lỗi, hoặc JSON hỏng.
         """
         if not ai_service or not headlines:
             return currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
@@ -1635,12 +1636,18 @@ class NewsService:
 
         prompt = f"""Bạn là chuyên gia phân tích vĩ mô forex.
 Đọc các headline dưới đây liên quan đến {currency} và đánh giá xu hướng chính sách tiền tệ.
-Trả lời DUY NHẤT 1 từ: hawkish, dovish, hoặc neutral. Không giải thích.
+Trả lời DUY NHẤT một đối tượng JSON hợp lệ với đúng schema sau, không thêm văn bản nào khác:
+{{
+  "stance": "hawkish" hoặc "dovish" hoặc "neutral",
+  "strength": <số từ 0 đến 10>,
+  "confidence": <số từ 0 đến 1>,
+  "drivers": ["lý do ngắn 1", "lý do ngắn 2"]
+}}
 
 Headlines:
 {chr(10).join(f'- {h}' for h in headlines[:8])}
 
-Trả lời:"""
+Trả lời JSON:"""
 
         try:
             safe_performance_call(
@@ -1648,18 +1655,58 @@ Trả lời:"""
                 "increment",
                 "ai_stance_calls",
             )
-            response = ai_service.analyze(prompt, max_tokens=10)
-            result = response.strip().lower().split()[0]
-            if result in ("hawkish", "dovish", "neutral"):
+            response = ai_service.analyze(prompt, max_tokens=200)
+            result = self._parse_ai_stance_json(response)
+            if result is not None:
                 self._stance_cache[cache_key] = (result, datetime.now(UTC))
                 return result
         except Exception:
             pass
 
-        # Fallback nếu AI lỗi hoặc trả về không hợp lệ
+        # Fallback nếu AI lỗi hoặc trả về JSON sai schema/thiếu field
         fallback = currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
         self._stance_cache[cache_key] = (fallback, datetime.now(UTC))
         return fallback
+
+    @staticmethod
+    def _parse_ai_stance_json(response: object) -> str | None:
+        """Parse và validate phản hồi JSON của AI cho stance currency.
+
+        Trả về "hawkish"/"dovish"/"neutral" nếu JSON hợp lệ và đủ schema
+        (stance, strength 0-10, confidence 0-1, drivers: list[str]).
+        Trả None để caller fallback về keyword matching khi JSON hỏng/sai schema.
+        """
+        if not isinstance(response, str):
+            return None
+        text = response.strip()
+        if not text:
+            return None
+        candidates = [text.strip("`").strip()]
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            candidates.append(text[start : end + 1])
+        for candidate in candidates:
+            try:
+                data = json.loads(candidate)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            stance = data.get("stance")
+            if not isinstance(stance, str) or stance.strip().lower() not in ("hawkish", "dovish", "neutral"):
+                continue
+            strength = data.get("strength")
+            if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not (0 <= strength <= 10):
+                continue
+            confidence = data.get("confidence")
+            if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not (0 <= confidence <= 1):
+                continue
+            drivers = data.get("drivers")
+            if not isinstance(drivers, list) or not all(isinstance(d, str) for d in drivers):
+                continue
+            return stance.strip().lower()
+        return None
 
     # --- Tier 1: Interest Rate & Monetary Policy (0-12) ---
 

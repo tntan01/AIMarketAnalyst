@@ -5,6 +5,7 @@ Usage: python tests/test_step4_ai_stance.py
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, UTC
 from unittest.mock import MagicMock, patch
 
@@ -17,6 +18,18 @@ from services.news_service import NewsService, currency_stance
 
 def _make_headline(title: str) -> dict[str, object]:
     return {"title": title}
+
+
+def _json_stance(
+    stance: str,
+    strength: float = 5.0,
+    confidence: float = 0.8,
+    drivers: tuple[str, ...] = ("data",),
+) -> str:
+    return json.dumps(
+        {"stance": stance, "strength": strength, "confidence": confidence, "drivers": list(drivers)},
+        ensure_ascii=False,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -58,45 +71,56 @@ def test_ai_stance_fallback_dovish_keywords():
 
 
 def test_ai_stance_tra_ve_hawkish():
-    """AI returns 'hawkish' -> parsed and returned."""
+    """AI returns valid JSON with hawkish -> parsed and returned."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "hawkish"
+    mock_ai.analyze.return_value = _json_stance("hawkish", strength=8, confidence=0.9, drivers=("Fed hikes",))
     svc = NewsService()
     result = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
     assert result == "hawkish"
 
 
 def test_ai_stance_tra_ve_dovish():
-    """AI returns 'dovish' -> parsed and returned."""
+    """AI returns valid JSON with dovish -> parsed and returned."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "dovish"
+    mock_ai.analyze.return_value = _json_stance("dovish")
     svc = NewsService()
     result = svc._ai_currency_stance("JPY", ["BOJ maintains easing"], ai_service=mock_ai)
     assert result == "dovish"
 
 
 def test_ai_stance_tra_ve_neutral():
-    """AI returns 'neutral' -> parsed and returned."""
+    """AI returns valid JSON with neutral -> parsed and returned."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "neutral"
+    mock_ai.analyze.return_value = _json_stance("neutral")
     svc = NewsService()
     result = svc._ai_currency_stance("GBP", ["BOE holds steady"], ai_service=mock_ai)
     assert result == "neutral"
 
 
 def test_ai_stance_strips_extra_text():
-    """AI response with extra text -> first word extracted."""
+    """AI response with extra prose around JSON -> JSON block extracted."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "hawkish because inflation is rising"
+    mock_ai.analyze.return_value = (
+        "Here you go: " + _json_stance("hawkish", strength=7, confidence=0.85, drivers=("rate hike",)) + " Best regards."
+    )
+    svc = NewsService()
+    result = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
+    assert result == "hawkish"
+
+
+def test_ai_stance_json_trong_fence_markdown():
+    """AI returns JSON wrapped in ```json fence -> parsed and returned."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = "```json\n" + _json_stance("hawkish") + "\n```"
     svc = NewsService()
     result = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
     assert result == "hawkish"
 
 
 def test_ai_stance_case_insensitive():
-    """AI returns 'HAWKISH' -> normalized to lowercase."""
+    """AI returns JSON with 'HAWKISH' stance -> normalized to lowercase."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "  HAWKISH  "
+    mock_ai.analyze.return_value = _json_stance("HAWKISH", strength=6, confidence=0.7)
     svc = NewsService()
     result = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
     assert result == "hawkish"
@@ -112,7 +136,7 @@ def test_ai_stance_fallback_khi_ai_loi():
 
 
 def test_ai_stance_fallback_khi_ai_tra_ve_invalid():
-    """AI returns invalid word -> fallback to keyword matching."""
+    """AI returns non-JSON text -> fallback to keyword matching."""
     mock_ai = MagicMock()
     mock_ai.analyze.return_value = "uncertain"
     svc = NewsService()
@@ -130,6 +154,47 @@ def test_ai_stance_fallback_khi_ai_tra_ve_empty():
 
 
 # ---------------------------------------------------------------------------
+# _ai_currency_stance — JSON schema validation (fallback on broken schema)
+# ---------------------------------------------------------------------------
+
+
+def test_ai_stance_fallback_khi_json_thieu_field():
+    """JSON missing 'strength' -> fallback to keyword matching."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = '{"stance": "hawkish", "confidence": 0.8, "drivers": ["hike"]}'
+    svc = NewsService()
+    result = svc._ai_currency_stance("USD", ["Fed hikes rate"], ai_service=mock_ai)
+    assert result in ("hawkish", "dovish", "neutral")
+
+
+def test_ai_stance_fallback_khi_stance_khong_hop_le():
+    """JSON with invalid stance value -> fallback to keyword matching."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = _json_stance("aggressive", strength=8, confidence=0.9)
+    svc = NewsService()
+    result = svc._ai_currency_stance("USD", ["Fed hikes rate"], ai_service=mock_ai)
+    assert result in ("hawkish", "dovish", "neutral")
+
+
+def test_ai_stance_fallback_khi_strength_sai_kieu():
+    """JSON with strength as string -> fallback to keyword matching."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = '{"stance": "hawkish", "strength": "8", "confidence": 0.9, "drivers": ["hike"]}'
+    svc = NewsService()
+    result = svc._ai_currency_stance("USD", ["Fed hikes rate"], ai_service=mock_ai)
+    assert result in ("hawkish", "dovish", "neutral")
+
+
+def test_ai_stance_fallback_khi_drivers_sai_kieu():
+    """JSON with drivers not a list of strings -> fallback to keyword matching."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = '{"stance": "hawkish", "strength": 8, "confidence": 0.9, "drivers": "hike"}'
+    svc = NewsService()
+    result = svc._ai_currency_stance("USD", ["Fed hikes rate"], ai_service=mock_ai)
+    assert result in ("hawkish", "dovish", "neutral")
+
+
+# ---------------------------------------------------------------------------
 # _ai_currency_stance — cache
 # ---------------------------------------------------------------------------
 
@@ -137,7 +202,7 @@ def test_ai_stance_fallback_khi_ai_tra_ve_empty():
 def test_ai_stance_cache_hit():
     """Second call with same headlines returns cached result (no AI call)."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "hawkish"
+    mock_ai.analyze.return_value = _json_stance("hawkish")
     svc = NewsService()
 
     result1 = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
@@ -154,7 +219,7 @@ def test_ai_stance_cache_hit():
 def test_ai_stance_cache_miss_different_currency():
     """Different currency -> different cache key -> new AI call."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "dovish"
+    mock_ai.analyze.return_value = _json_stance("dovish")
     svc = NewsService()
 
     svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
@@ -172,7 +237,7 @@ def test_ai_stance_cache_miss_different_currency():
 def test_compute_macro_tiers_uses_ai_stance_with_service():
     """_compute_macro_tiers passes ai_service to _ai_currency_stance."""
     mock_ai = MagicMock()
-    mock_ai.analyze.return_value = "hawkish"
+    mock_ai.analyze.return_value = _json_stance("hawkish")
     svc = NewsService()
 
     headlines = [_make_headline("Fed hikes rate"), _make_headline("EUR inflation drops")]
@@ -243,10 +308,16 @@ if __name__ == "__main__":
         test_ai_stance_tra_ve_dovish,
         test_ai_stance_tra_ve_neutral,
         test_ai_stance_strips_extra_text,
+        test_ai_stance_json_trong_fence_markdown,
         test_ai_stance_case_insensitive,
         test_ai_stance_fallback_khi_ai_loi,
         test_ai_stance_fallback_khi_ai_tra_ve_invalid,
         test_ai_stance_fallback_khi_ai_tra_ve_empty,
+        # JSON schema validation
+        test_ai_stance_fallback_khi_json_thieu_field,
+        test_ai_stance_fallback_khi_stance_khong_hop_le,
+        test_ai_stance_fallback_khi_strength_sai_kieu,
+        test_ai_stance_fallback_khi_drivers_sai_kieu,
         # cache
         test_ai_stance_cache_hit,
         test_ai_stance_cache_miss_different_currency,
