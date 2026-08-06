@@ -539,7 +539,11 @@ def test_macro_counter_call_sites_record_cache_network_and_ai_attempts(
         performance_tracker=tracker,
     )
 
-    ai = SimpleNamespace(analyze=lambda *_args, **_kwargs: "hawkish")
+    ai = SimpleNamespace(
+        analyze=lambda *_args, **_kwargs: json.dumps(
+            {"stance": "hawkish", "strength": 8, "confidence": 0.9, "drivers": ["tighter policy"]}
+        )
+    )
     assert news._ai_currency_stance(
         "CHF",
         ["SNB signals tighter policy"],
