@@ -434,8 +434,9 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
         if not sym_upper.endswith("/USD"):
             return 0.0
 
-    current = us10y_candles[-1].close
-    prev_day = us10y_candles[-2].close
+    # ^TNX trả về giá trị gấp 10 lần lợi suất % (44.5 ≈ 4.45%) — chuẩn hóa về %.
+    current = us10y_candles[-1].close / 10.0
+    prev_day = us10y_candles[-2].close / 10.0
     y_up = current > prev_day
 
     # --- Tầng 1: Directional (60%) ---
@@ -477,7 +478,7 @@ def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
     # --- Tầng 3: Momentum 5 ngày (15%) ---
     momentum_score = 0.0
     if len(us10y_candles) >= 5:
-        five_day_ago = us10y_candles[-5].close
+        five_day_ago = us10y_candles[-5].close / 10.0
         if five_day_ago > 0:
             change = abs(current - five_day_ago)
             if change > 0.5:
