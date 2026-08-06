@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from core.correlation_check import _us10y_score, _us2y_score, _dxy_score
+from core.correlation_check import _us10y_score, _us2y_score, _dxy_score, compute_correlation_adjustment
 from core.market_models import Candle
 
 
@@ -185,6 +185,67 @@ def test_dxy_eurusd_buy_buy_usd_false():
     assert score < 0
 
 
+def test_dxy_change_below_01_percent_returns_zero():
+    """Dead zone: biến động < 0.1% chỉ là nhiễu -> 0 điểm, không thưởng không phạt."""
+    # 0.05% change (100.0 -> 100.05), aligned hướng nhưng vẫn bị triệt điểm
+    assert _dxy_score("sell", "EUR/USD", _candles([100.0, 100.05])) == 0.0
+    # 0.05% change, ngược hướng -> cũng không phạt
+    assert _dxy_score("buy", "EUR/USD", _candles([100.0, 100.05])) == 0.0
+    # 0.2% change: trên dead zone -> vẫn chấm điểm (+1)
+    assert _dxy_score("sell", "EUR/USD", _candles([100.0, 100.2])) > 0
+
+
+# ---------------------------------------------------------------------------
+# compute_correlation_adjustment — nhóm USD kẹp trong [-6, +5], VIX ngoài
+# ---------------------------------------------------------------------------
+
+
+def test_corr_adj_usd_group_clamped_at_minus_6():
+    """Cả DXY + US10Y + US2Y phạt nặng cùng lúc -> tổng USD không vượt quá -6."""
+    # DXY down ~2%: -5; US10Y down: -1.5; US2Y down: -1.0 -> raw -7.5, kẹp -6
+    result = compute_correlation_adjustment(
+        "EUR/USD", "sell",
+        dxy_candles=_candles([101.0, 99.0]),
+        us10y_candles=_candles([4.5, 4.0]),
+        us2y_candles=_candles([4.0, 3.5]),
+    )
+    assert result == -6.0
+
+
+def test_corr_adj_usd_group_clamped_at_plus_5():
+    """Cả DXY + US10Y + US2Y thưởng cùng lúc -> tổng USD không vượt quá +5."""
+    # DXY up ~2%: +3; US10Y up: +1.5; US2Y up: +1.0 -> raw +5.5, kẹp +5
+    result = compute_correlation_adjustment(
+        "EUR/USD", "sell",
+        dxy_candles=_candles([99.0, 101.0]),
+        us10y_candles=_candles([4.0, 4.5]),
+        us2y_candles=_candles([3.5, 4.0]),
+    )
+    assert result == 5.0
+
+
+def test_corr_adj_vix_not_affected_by_usd_clamp():
+    """VIX nằm ngoài giới hạn: vẫn cộng thêm ngoài khoảng [-6, +5]."""
+    # USD nhóm kẹp -6, VIX > 25 = -5 -> tổng -11 (dưới -6 vẫn được)
+    result = compute_correlation_adjustment(
+        "EUR/USD", "sell",
+        dxy_candles=_candles([101.0, 99.0]),
+        us10y_candles=_candles([4.5, 4.0]),
+        us2y_candles=_candles([4.0, 3.5]),
+        vix_candles=_candles([30.0]),
+    )
+    assert result == -11.0
+    # USD nhóm kẹp +5, VIX < 15 = +2 -> tổng +7 (trên +5 vẫn được)
+    result = compute_correlation_adjustment(
+        "EUR/USD", "sell",
+        dxy_candles=_candles([99.0, 101.0]),
+        us10y_candles=_candles([4.0, 4.5]),
+        us2y_candles=_candles([3.5, 4.0]),
+        vix_candles=_candles([10.0]),
+    )
+    assert result == 7.0
+
+
 # ---------------------------------------------------------------------------
 # edge cases
 # ---------------------------------------------------------------------------
@@ -256,6 +317,11 @@ if __name__ == "__main__":
         # _dxy_score — verify
         test_dxy_eurusd_sell_buy_usd_true,
         test_dxy_eurusd_buy_buy_usd_false,
+        test_dxy_change_below_01_percent_returns_zero,
+        # compute_correlation_adjustment — clamp
+        test_corr_adj_usd_group_clamped_at_minus_6,
+        test_corr_adj_usd_group_clamped_at_plus_5,
+        test_corr_adj_vix_not_affected_by_usd_clamp,
         # edge cases
         test_us10y_case_insensitive,
         test_us2y_case_insensitive,

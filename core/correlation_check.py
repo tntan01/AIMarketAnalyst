@@ -363,6 +363,10 @@ def _dxy_score(side: str, symbol: str, dxy_candles: list | None) -> float:
 
     aligned = (buy_usd and dxy_up) or (not buy_usd and not dxy_up)
 
+    # Dead zone (<0.1%): biến động chỉ là nhiễu, không thưởng không phạt
+    if dxy_change < 0.001:
+        return 0.0
+
     # Tính magnitude
     if dxy_change > 0.005:
         mag = 3.0
@@ -580,7 +584,10 @@ def compute_correlation_adjustment(
 ) -> float:
     """
     Tổng hợp điều chỉnh điểm Macro từ DXY + VIX + US10Y + US2Y.
-    Trả về float từ -18 đến +7.
+    Trả về float từ -11 đến +7.
+
+    Nhóm DXY + US10Y + US2Y cùng đo sức mạnh USD nên được kẹp trong
+    [-6, +5]; điểm VIX (hiện tượng khác) nằm ngoài giới hạn này.
 
     Returns:
         float: Số điểm điều chỉnh (có thể âm hoặc dương)
@@ -590,13 +597,16 @@ def compute_correlation_adjustment(
     if dxy_candles is not None:
         adjustment += _dxy_score(side, symbol, dxy_candles)
 
-    if vix_candles is not None:
-        adjustment += _vix_score(vix_candles)
-
     if us10y_candles is not None:
         adjustment += _us10y_score(side, symbol, us10y_candles)
 
     if us2y_candles is not None:
         adjustment += _us2y_score(side, symbol, us2y_candles)
+
+    # Nhóm sức mạnh USD: kẹp trong [-6, +5] để tránh tính trùng 3 lần
+    adjustment = max(-6.0, min(5.0, adjustment))
+
+    if vix_candles is not None:
+        adjustment += _vix_score(vix_candles)
 
     return round(adjustment, 1)
