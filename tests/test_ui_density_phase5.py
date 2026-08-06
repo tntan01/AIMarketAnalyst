@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tools.ui_density_audit import (
     COMPACT_CONTROL_NAMES,
     STANDARD_CONTROL_NAMES,
@@ -14,13 +16,28 @@ ROOT = Path(__file__).resolve().parents[1]
 UI_ROOT = ROOT / "ui"
 
 
+def _measure_or_skip() -> dict:
+    # Some PyQt builds refuse access to protected members of the tab bar
+    # that QTabWidget creates internally; the runtime measurement cannot
+    # run there and must be skipped instead of failing.
+    try:
+        return measure_representative_controls()
+    except RuntimeError as exc:
+        if "protected functions" not in str(exc):
+            raise
+        pytest.skip(
+            "Qt runtime density measurement is unsupported by this "
+            f"PyQt build: {exc}"
+        )
+
+
 def test_runtime_density_contract_has_no_height_parity_or_clipping_errors() -> None:
-    measurements = measure_representative_controls()
+    measurements = _measure_or_skip()
     assert validate_runtime_contract(measurements) == []
 
 
 def test_runtime_contract_covers_every_declared_representative_control() -> None:
-    measurements = measure_representative_controls()
+    measurements = _measure_or_skip()
     expected = STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES
     assert expected <= set(measurements["dark"])
     assert expected <= set(measurements["light"])
