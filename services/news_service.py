@@ -31,7 +31,7 @@ from services.calendar_helpers import (
     parse_event_time,
 )
 from services.forex_factory_client import ForexFactoryClient
-from services.event_impact_assessor import EventImpactAssessor
+from services.event_impact_assessor import EventImpactAssessor, EventImpactAssessment
 from services.ai_service import AIService, AIProviderConfig
 from services.macro_market_cache import get_shared_cache
 from services.settings_service import SettingsService
@@ -137,6 +137,10 @@ class NewsService:
         self._preloading = False
         # Bước 5 (shadow): đánh giá sự kiện high-impact 4-48h bằng AI.
         self._event_assessor = EventImpactAssessor()
+        # Kết quả assessment của lần preload gần nhất — data_quality_flags đọc
+        # từ đây (KHÔNG đọc private cache của assessor).
+        self._last_event_assessments: list[EventImpactAssessment] | None = None
+        self._last_event_assessments_at: datetime | None = None
 
     # ------------------------------------------------------------------
     # Interest rate config
@@ -428,14 +432,23 @@ class NewsService:
         snapshot: object,
         ai_service: object | None,
         performance_tracker: object | None,
+        *,
+        now: datetime | None = None,
     ) -> None:
         """Bước 5 (shadow): đánh giá sự kiện high-impact 4-48h từ snapshot vĩ mô.
 
         Đọc calendar events + headlines từ snapshot đang có, stance đọc từ
-        self._stance_cache (không gọi AI lại cho stance). Assessment mới do AI
-        tạo (source="ai") được ghi journal. Mọi lỗi chỉ log/emit — KHÔNG được
-        làm hỏng preload (fail-closed, D6).
+        self._stance_cache (không gọi AI lại cho stance). hours_until được TÍNH
+        LẠI từ time_utc so với now — không tin field hours_until cũ trong
+        calendar cache (có thể stale tới 24h); event quá khứ hoặc không parse
+        được time_utc sẽ bị LOẠI. Truyền bản copy dict mới (không mutate
+        snapshot gốc). Kết quả lưu vào self._last_event_assessments để
+        data_quality_flags đọc lại (KHÔNG đọc private cache của assessor).
+        Assessment mới do AI tạo (source="ai") được ghi journal. Mọi lỗi chỉ
+        log/emit — KHÔNG được làm hỏng preload (fail-closed, D6).
         """
+        if now is None:
+            now = datetime.now(UTC)
         try:
             payload = (
                 snapshot.calendar_payload
@@ -445,6 +458,19 @@ class NewsService:
             events = payload.get("events", []) if isinstance(payload, dict) else []
             if not isinstance(events, list):
                 events = []
+            fresh_events: list[dict[str, object]] = []
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                event_time = parse_event_time(str(event.get("time_utc") or ""))
+                if event_time is None:
+                    continue
+                hours_until = (event_time - now).total_seconds() / 3600
+                if hours_until <= 0:
+                    continue
+                fresh = dict(event)
+                fresh["hours_until"] = hours_until
+                fresh_events.append(fresh)
             headlines = (
                 snapshot.global_headlines
                 if isinstance(snapshot, MacroGlobalSnapshot)
@@ -452,23 +478,28 @@ class NewsService:
             )
             headlines_by_currency = self._build_headlines_by_currency(headlines)
             stance_lookup = self._make_stance_lookup(ai_service)
+            # Counter đếm số chu kỳ preload assessment (các lời gọi AI thật nằm
+            # sâu trong assessor nên không đếm được từ đây).
             safe_performance_call(
                 performance_tracker,
                 "increment",
-                "ai_event_assessment_calls",
+                "ai_event_assessment_cycles",
             )
             assessments = self._event_assessor.assess_upcoming_events(
-                events,
+                fresh_events,
                 ai_service,
                 stance_lookup,
                 headlines_by_currency,
             )
+            self._last_event_assessments = list(assessments)
+            self._last_event_assessments_at = now
             for assessment in assessments:
                 if assessment.source == "ai":
                     self._journal_event_assessment(assessment)
         except Exception:
             # Bước 5 chạy shadow — lỗi không được phá hỏng preload.
-            pass
+            self._last_event_assessments = []
+            self._last_event_assessments_at = now
 
     def _build_headlines_by_currency(
         self, global_headlines: object
@@ -543,24 +574,23 @@ class NewsService:
         symbol: str,
         ai_service: object | None,
     ) -> list[dict[str, object]]:
-        """Đọc assessment từ cache của assessor, lọc theo currency thuộc cặp.
+        """Bước 5 (shadow): assessment của lần preload gần nhất, lọc theo cặp.
 
-        KHÔNG gọi AI tại đây — chỉ đọc cache đã có từ preload. Entry quá hạn
-        sẽ tự bị loại ở pipeline (4 < hours_until ≤ 48) hoặc ở cache.get.
+        Đọc từ self._last_event_assessments (kết quả preload đã lưu) — KHÔNG
+        đọc private cache của assessor, KHÔNG gọi AI tại đây. Dữ liệu cũ hơn
+        _preload_cache_ttl → trả rỗng (fail-closed).
         """
         try:
-            wanted = {currency.upper() for currency in self._symbol_currencies(symbol)}
-            cache = getattr(self._event_assessor, "cache", None)
-            entries = getattr(cache, "_entries", None) if cache is not None else None
-            if not isinstance(entries, dict):
+            at = self._last_event_assessments_at
+            if at is None or (datetime.now(UTC) - at) > self._preload_cache_ttl:
                 return []
-            result: list[dict[str, object]] = []
-            for item in entries.values():
-                if not isinstance(item, tuple) or not item:
-                    continue
-                assessment = item[0]
-                if getattr(assessment, "currency", "") in wanted:
-                    result.append(asdict(assessment))
+            stored = self._last_event_assessments or []
+            wanted = {currency.upper() for currency in self._symbol_currencies(symbol)}
+            result: list[dict[str, object]] = [
+                asdict(assessment)
+                for assessment in stored
+                if getattr(assessment, "currency", "") in wanted
+            ]
             result.sort(key=lambda d: float(d.get("hours_until") or 0))
             return result
         except Exception:

@@ -33,6 +33,14 @@ class _BrokenAssessor:
         raise RuntimeError("AI down")
 
 
+class _FrozenDatetime(datetime):
+    """datetime đóng băng tại T0 — deterministic cho test phụ thuộc thời gian."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 8, 7, 9, 0, 0, tzinfo=UTC)
+
+
 def _fake_snapshot() -> Any:
     return type(
         "FakeSnapshot",
@@ -87,18 +95,50 @@ def _assessment_payload(
     return asdict(assessment)
 
 
-def _seed_assessor_cache(svc: NewsService, rows: list[tuple[str, float]]) -> None:
-    """Gieo trực tiếp assessment vào cache của assessor (không gọi AI)."""
-    cache = svc._event_assessor.cache
-    for currency, hours_until in rows:
-        payload = _assessment_payload(currency, hours_until)
-        event = {"currency": currency, "event": "FOMC Meeting", "impact": "high"}
-        cache.put(
-            make_event_key(event),
-            "test-fp",
-            EventImpactAssessment(**payload),
-            T0,
-        )
+def _seed_last_assessments(
+    svc: NewsService,
+    rows: list[tuple[str, float]],
+    *,
+    at: datetime | None = None,
+) -> None:
+    """Gieo trực tiếp kết quả preload (self._last_event_assessments) — không gọi AI.
+
+    Mặc định at = bây giờ để lọt qua freshness gate _preload_cache_ttl.
+    """
+    svc._last_event_assessments = [
+        EventImpactAssessment(**_assessment_payload(currency, hours_until))
+        for currency, hours_until in rows
+    ]
+    svc._last_event_assessments_at = at if at is not None else datetime.now(UTC)
+
+
+def _snapshot_with_event(time_utc: str, hours_until: float) -> Any:
+    """Snapshot với 1 event USD high-impact có time_utc/hours_until theo ý muốn."""
+    return type(
+        "FakeSnapshot",
+        (),
+        {
+            "calendar_payload": {
+                "source": "test",
+                "events": [
+                    {
+                        "currency": "USD",
+                        "event": "FOMC Meeting",
+                        "impact": "high",
+                        "time_utc": time_utc,
+                        "hours_until": hours_until,
+                        "forecast": "5.25%",
+                        "previous": "5.00%",
+                        "actual": "",
+                    }
+                ],
+                "warning": "",
+            },
+            "global_headlines": ({"title": "Fed hikes rate sharply"},),
+            "fetched_at_utc": T0,
+            "expires_at_utc": T0 + timedelta(minutes=5),
+        },
+    )()
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +203,13 @@ def test_preload_assessor_loi_khong_pha_preload():
         svc.preload_macro_contexts(["EUR/USD", "GBP/USD"])
     # Không exception; preload đánh dấu xong.
     assert svc._preload_cache_time is not None
+    # Fail-closed (Lỗi 2): không có kết quả khả dụng, không bom cache cũ.
+    assert svc._last_event_assessments == []
 
 
 def test_preload_ai_event_assessment_ghi_journal_moi_ai():
     """Assessment source='ai' được ghi journal (data/event_assessment_journal.jsonl)."""
     svc = NewsService()
-    svc._event_assessor = _BrokenAssessor()  # thay bằng stub ghi journal thật qua preload
     events = [
         {
             "currency": "USD",
@@ -192,7 +233,7 @@ def test_preload_ai_event_assessment_ghi_journal_moi_ai():
                     currency="USD",
                     event_name="FOMC Meeting",
                     time_utc="2026-08-08T12:00:00Z",
-                    hours_until=20.0,
+                    hours_until=27.0,
                     magnitude="high",
                     priced_in="not_priced_in",
                     expected_direction="currency_up",
@@ -203,22 +244,83 @@ def test_preload_ai_event_assessment_ghi_journal_moi_ai():
                 )
             ]
 
-    with patch.object(svc, "_get_global_macro_snapshot", return_value=_fake_snapshot()), patch.object(
-        svc, "latest_macro_context", return_value={}
-    ), patch.object(
-        svc, "_journal_event_assessment", side_effect=lambda a: captured.append(
+    with patch.object(
+        svc,
+        "_journal_event_assessment",
+        side_effect=lambda a: captured.append(
             {
                 "event_key": a.event_key,
                 "source": a.source,
                 "currency": a.currency,
                 "priced_in": a.priced_in,
             }
-        )
+        ),
     ):
         svc._event_assessor = _GoodAssessor()
-        svc.preload_macro_contexts(["EUR/USD"])
+        svc._preload_event_impact_assessments(
+            _fake_snapshot(),
+            ai_service=None,
+            performance_tracker=None,
+            now=T0,  # deterministic: event 2026-08-08T12:00Z còn 27h tính từ T0
+        )
     assert captured, "assessment source='ai' phải được ghi journal"
     assert captured[0]["source"] == "ai"
+
+
+def test_preload_loc_event_da_qua_dua_tren_time_utc():
+    """Bổ sung review: event có field hours_until trong cửa sổ (10.0) nhưng
+    time_utc ĐÃ QUA → bị loại: không vào _last_event_assessments, không ghi journal."""
+    svc = NewsService()
+    snapshot = _snapshot_with_event(time_utc="2026-08-07T07:00:00Z", hours_until=10.0)
+    journal_calls: list[Any] = []
+    with patch("services.news_service.datetime", _FrozenDatetime):
+        with patch.object(svc, "_journal_event_assessment", side_effect=lambda a: journal_calls.append(a)):
+            svc._preload_event_impact_assessments(snapshot, ai_service=None, performance_tracker=None, now=T0)
+        # T0 = 2026-08-07T09:00Z, time_utc = 07:00Z → hours_until = -2.0 → loại.
+        assert svc._last_event_assessments == []
+        assert journal_calls == []
+        with patch.object(svc, "latest_macro_context", return_value={"events": [], "source": "test", "warning": ""}):
+            flags = svc.data_quality_flags("EUR/USD")
+        assert flags["upcoming_event_assessments"] == []
+
+
+def test_preload_tinh_lai_hours_until_tu_time_utc():
+    """Bổ sung review: event time_utc tương lai hợp lệ nhưng field hours_until
+    sai (99.0) → assessment có hours_until tính lại đúng từ time_utc."""
+    svc = NewsService()
+    snapshot = _snapshot_with_event(time_utc="2026-08-07T15:00:00Z", hours_until=99.0)
+    with patch("services.news_service.datetime", _FrozenDatetime):
+        svc._preload_event_impact_assessments(snapshot, ai_service=None, performance_tracker=None, now=T0)
+        # T0 = 09:00Z, time_utc = 15:00Z → hours_until = 6.0 (không còn 99.0).
+        assert svc._last_event_assessments is not None
+        assert len(svc._last_event_assessments) == 1
+        assert abs(svc._last_event_assessments[0].hours_until - 6.0) < 1e-6
+        with patch.object(svc, "latest_macro_context", return_value={"events": [], "source": "test", "warning": ""}):
+            flags = svc.data_quality_flags("EUR/USD")
+        upcoming = flags["upcoming_event_assessments"]
+        assert len(upcoming) == 1
+        assert abs(float(upcoming[0]["hours_until"]) - 6.0) < 1e-6
+
+
+def test_preload_khong_derate_ma_cho_event_da_qua_cache_24h():
+    """Bổ sung review — tái hiện đúng kịch bản PO: calendar cache fetch cách đây
+    20h, lúc fetch event có hours_until=6.0 (time_utc = fetch+6h). Tới now (T0)
+    sự kiện ĐÃ QUA 14h, nhưng field hours_until stale vẫn nói 6.0 (trong cửa sổ
+    4-48). Nếu không tính lại từ time_utc → tạo assessment gây derate ma khi bật
+    Prompt 4. Fix phải LOẠI event này."""
+    svc = NewsService()
+    # time_utc = T0 - 14h = 2026-08-06T19:00Z (đã qua); field hours_until stale = 6.0.
+    snapshot = _snapshot_with_event(time_utc="2026-08-06T19:00:00Z", hours_until=6.0)
+    journal_calls: list[Any] = []
+    with patch("services.news_service.datetime", _FrozenDatetime):
+        with patch.object(svc, "_journal_event_assessment", side_effect=lambda a: journal_calls.append(a)):
+            svc._preload_event_impact_assessments(snapshot, ai_service=None, performance_tracker=None, now=T0)
+        # hours_until tính lại = (06T19:00Z - 07T09:00Z)/3600 = -14.0 → loại.
+        assert svc._last_event_assessments == []
+        assert journal_calls == []
+        with patch.object(svc, "latest_macro_context", return_value={"events": [], "source": "test", "warning": ""}):
+            flags = svc.data_quality_flags("EUR/USD")
+        assert flags["upcoming_event_assessments"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +330,7 @@ def test_preload_ai_event_assessment_ghi_journal_moi_ai():
 def test_data_quality_flags_them_field_moi_loc_dung_currency():
     """data_quality_flags trả field mới chỉ chứa assessment thuộc cặp."""
     svc = NewsService()
-    _seed_assessor_cache(svc, [("USD", 6.0), ("EUR", 20.0), ("JPY", 10.0)])
+    _seed_last_assessments(svc, [("USD", 6.0), ("EUR", 20.0), ("JPY", 10.0)])
     with patch.object(svc, "latest_macro_context", return_value={"events": [], "source": "test", "warning": ""}):
         flags = svc.data_quality_flags("EUR/USD")
     upcoming = flags["upcoming_event_assessments"]
