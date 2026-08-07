@@ -64,6 +64,7 @@ MACRO_CONFLICT = "MACRO_CONFLICT"
 MACRO_DATA_PARTIAL = "MACRO_DATA_PARTIAL"
 MACRO_DATA_UNAVAILABLE = "MACRO_DATA_UNAVAILABLE"
 MACRO_HIGH_IMPACT_EVENT_NEARBY = "MACRO_HIGH_IMPACT_EVENT_NEARBY"
+MACRO_HIGH_IMPACT_EVENT_AHEAD = "MACRO_HIGH_IMPACT_EVENT_AHEAD"
 
 # ---------------------------------------------------------------------------
 # Score gap
@@ -192,6 +193,7 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     MACRO_DATA_PARTIAL: "Thiếu một phần dữ liệu vĩ mô, giảm nhẹ mức tin cậy.",
     MACRO_DATA_UNAVAILABLE: "Thiếu toàn bộ dữ liệu vĩ mô, giảm mạnh mức tin cậy.",
     MACRO_HIGH_IMPACT_EVENT_NEARBY: "Sắp có sự kiện vĩ mô tác động mạnh liên quan đến đồng tiền của cặp, giảm mức tin cậy.",
+    MACRO_HIGH_IMPACT_EVENT_AHEAD: "Có sự kiện vĩ mô tác động mạnh trong 4-48 giờ tới, giảm mức tin cậy vĩ mô.",
     # Score gap
     BUY_SELL_SCORE_GAP_LOW: "Điểm Buy và Sell quá sát nhau, thị trường chưa rõ hướng.",
     # Statistical edge

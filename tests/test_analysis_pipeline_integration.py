@@ -21,6 +21,7 @@ from core.risk_engine import AnalysisInput
 from core.reason_codes import (
     MACRO_DATA_PARTIAL,
     MACRO_DATA_UNAVAILABLE,
+    MACRO_HIGH_IMPACT_EVENT_AHEAD,
     MACRO_HIGH_IMPACT_EVENT_NEARBY,
 )
 from core.scanner import scanner_row_from_analysis
@@ -914,3 +915,277 @@ def test_event_window_reason_code_flows_into_result():
         f"MACRO_HIGH_IMPACT_EVENT_NEARBY missing from reason_codes: {result['reason_codes']}"
     )
     assert result["macro"]["macro_confidence"] < 1.0
+
+
+# ---------------------------------------------------------------------------
+# Bước 5 (Prompt 4) — Event Impact Derate integration tests
+# ---------------------------------------------------------------------------
+
+def _make_assessment(
+    *,
+    currency: str = "USD",
+    magnitude: str = "high",
+    priced_in: str = "not_priced_in",
+    hours_until: float = 6.0,
+    ai_confidence: float = 0.8,
+    risk_window_hours: float = 24.0,
+    expected_direction: str = "two_way",
+    event_name: str = "NFP",
+    event_key: str = "test_key",
+    time_utc: str = "",
+    source: str = "test",
+    evidence: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build a single assessment dict for use in upcoming_event_assessments."""
+    if not time_utc:
+        time_utc = (datetime.now(timezone.utc) + timedelta(hours=hours_until)).isoformat()
+    return {
+        "currency": currency,
+        "magnitude": magnitude,
+        "priced_in": priced_in,
+        "hours_until": hours_until,
+        "ai_confidence": ai_confidence,
+        "risk_window_hours": risk_window_hours,
+        "expected_direction": expected_direction,
+        "event_name": event_name,
+        "event_key": event_key,
+        "time_utc": time_utc,
+        "source": source,
+        "evidence": evidence or [],
+    }
+
+
+def _run_step5_derate(
+    symbol: str = "EUR/USD",
+    *,
+    derate_enabled: bool = True,
+    assessments: list[dict[str, Any]] | None = None,
+    data_quality_extra: dict[str, Any] | None = None,
+    correlation_sources: set[str] | None = None,
+) -> tuple[float, str | None, float | None]:
+    """Run correlation step with Bước 5 derate, return (confidence, reason_code, derate_factor)."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input(symbol)
+    if correlation_sources is None:
+        correlation_sources = {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+    pipe._correlation_context = _correlation_context(correlation_sources)
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    pipe._macro_event_ahead_assessment = None
+    pipe._macro_event_ahead_reason_code = None
+    pipe._macro_event_ahead_derate_factor = None
+
+    dq: dict[str, Any] = {
+        "event_impact_derate_enabled": derate_enabled,
+        "upcoming_event_assessments": assessments if assessments is not None else [],
+    }
+    if data_quality_extra:
+        dq.update(data_quality_extra)
+    pipe._data_quality = dq
+
+    pipe._step_compute_correlation()
+    return (
+        pipe._macro_confidence_in,
+        pipe._macro_event_ahead_reason_code,
+        pipe._macro_event_ahead_derate_factor,
+    )
+
+
+# --- Test 1: Event 6h, currency matches, high/not_priced_in → factor 0.70 + reason code ---
+
+
+def test_step5_derate_6h_high_not_priced_in():
+    conf, code, factor = _run_step5_derate(
+        assessments=[_make_assessment(hours_until=6.0, magnitude="high", priced_in="not_priced_in")],
+    )
+    # factor = 1 - 0.30 * 1.0 = 0.70
+    assert conf == pytest.approx(0.70)
+    assert code == MACRO_HIGH_IMPACT_EVENT_AHEAD
+    assert factor == pytest.approx(0.70)
+
+
+# --- Test 2: Event 3h → only Bước 3 derate (0.8), no Bước 5 code, no double derate ---
+
+
+def test_step5_derate_3h_only_step3():
+    """Event at 3h is in Bước 3 window (0.5-4h), not Bước 5 (4-48h)."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input("EUR/USD")
+    pipe._correlation_context = _correlation_context(
+        {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+    )
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    pipe._macro_event_ahead_reason_code = None
+    pipe._macro_event_ahead_derate_factor = None
+
+    event_time = datetime.now(timezone.utc) + timedelta(hours=3.0)
+    # Both Bước 3 (next_high_impact_event) and Bước 5 (upcoming_event_assessments)
+    # are present. Bước 5 should NOT fire because hours_until=3h is outside 4-48h.
+    pipe._data_quality = {
+        "event_impact_derate_enabled": True,
+        "next_high_impact_event": {
+            "currency": "USD",
+            "impact": "high",
+            "time_utc": event_time.isoformat(),
+        },
+        "upcoming_event_assessments": [
+            _make_assessment(hours_until=3.0, magnitude="high", priced_in="not_priced_in"),
+        ],
+    }
+
+    pipe._step_compute_correlation()
+    # Bước 3: 0.8 derate
+    assert pipe._macro_confidence_in == pytest.approx(0.8)
+    # Bước 3 code present
+    assert pipe._macro_event_reason_code == MACRO_HIGH_IMPACT_EVENT_NEARBY
+    # Bước 5 code NOT present (hours_until=3h is outside Bước 5 window)
+    assert pipe._macro_event_ahead_reason_code is None
+    assert pipe._macro_event_ahead_derate_factor is None
+
+
+# --- Test 3: Event 30h but currency doesn't match → no derate ---
+
+
+def test_step5_derate_wrong_currency():
+    """Event currency JPY doesn't match EUR/USD → no derate."""
+    conf, code, factor = _run_step5_derate(
+        symbol="EUR/USD",
+        assessments=[_make_assessment(currency="JPY", hours_until=30.0)],
+    )
+    assert conf == 1.0
+    assert code is None
+    assert factor is None
+
+
+# --- Test 4: Event 60h → outside window → no derate ---
+
+
+def test_step5_derate_60h_outside_window():
+    """Event at 60h is outside 4-48h window → no derate."""
+    conf, code, factor = _run_step5_derate(
+        assessments=[_make_assessment(hours_until=60.0, magnitude="high", priced_in="not_priced_in")],
+    )
+    assert conf == 1.0
+    assert code is None
+    assert factor is None
+
+
+# --- Test 5: Two events → only most severe derate ---
+
+
+def test_step5_derate_two_events_most_severe():
+    """6h medium/partial (factor=0.91) + 20h high/not_priced_in (factor=0.70)
+    → only the most severe (high → 0.70) is applied."""
+    conf, code, factor = _run_step5_derate(
+        assessments=[
+            _make_assessment(
+                event_key="evt1", event_name="Medium Event",
+                hours_until=6.0, magnitude="medium", priced_in="partial",
+            ),
+            _make_assessment(
+                event_key="evt2", event_name="NFP",
+                hours_until=20.0, magnitude="high", priced_in="not_priced_in",
+            ),
+        ],
+    )
+    # Most severe = high/not_priced_in → factor = 1 - 0.30 * 1.0 = 0.70
+    assert conf == pytest.approx(0.70)
+    assert code == MACRO_HIGH_IMPACT_EVENT_AHEAD
+    assert factor == pytest.approx(0.70)
+
+
+# --- Test 6: Stacking worst-case → floored at 0.15 ---
+
+
+def test_step5_derate_stacking_worst_case():
+    """Thiếu toàn bộ correlation (0.4) × Bước 3 (0.8) × Bước 5 (0.70)
+    = 0.224. Floor 0.15 không kích hoạt vì 0.224 > 0.15.
+    Xác minh cả 3 tầng derate đều chạy và floor có mặt (kết quả ≥ 0.15)."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input("EUR/USD")
+    pipe._correlation_context = {}  # thiếu toàn bộ → 0.4
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    pipe._macro_event_ahead_reason_code = None
+    pipe._macro_event_ahead_derate_factor = None
+
+    event_time = datetime.now(timezone.utc) + timedelta(hours=2.0)
+    pipe._data_quality = {
+        "event_impact_derate_enabled": True,
+        "next_high_impact_event": {
+            "currency": "USD",
+            "impact": "high",
+            "time_utc": event_time.isoformat(),
+        },
+        "upcoming_event_assessments": [
+            _make_assessment(hours_until=6.0, magnitude="high", priced_in="not_priced_in"),
+        ],
+    }
+
+    pipe._step_compute_correlation()
+    # 1.0 × 0.4 (missing correlation) × 0.8 (Bước 3) × 0.70 (Bước 5) = 0.224
+    expected = 0.4 * 0.8 * 0.70
+    assert pipe._macro_confidence_in == pytest.approx(expected)
+    # Floor is present: confidence >= 0.15
+    assert pipe._macro_confidence_in >= 0.15
+    assert pipe._macro_data_reason_code == MACRO_DATA_UNAVAILABLE
+    assert pipe._macro_event_reason_code == MACRO_HIGH_IMPACT_EVENT_NEARBY
+    assert pipe._macro_event_ahead_reason_code == MACRO_HIGH_IMPACT_EVENT_AHEAD
+    assert pipe._macro_event_ahead_derate_factor == pytest.approx(0.70)
+
+
+# --- Test 7: Flag OFF → bit-identical to before ---
+
+
+def test_step5_derate_flag_off_no_effect():
+    """Khi flag tắt, kết quả giống hệt như khi không có tính năng."""
+    # Run with flag OFF
+    conf_off, code_off, factor_off = _run_step5_derate(
+        derate_enabled=False,
+        assessments=[_make_assessment(hours_until=6.0, magnitude="high", priced_in="not_priced_in")],
+    )
+    # Confidence should be untouched (1.0) because flag is off
+    assert conf_off == 1.0
+    assert code_off is None
+    assert factor_off is None
+
+    # Run with flag ON to confirm it WOULD derate if enabled
+    conf_on, code_on, factor_on = _run_step5_derate(
+        derate_enabled=True,
+        assessments=[_make_assessment(hours_until=6.0, magnitude="high", priced_in="not_priced_in")],
+    )
+    assert conf_on == pytest.approx(0.70)
+    assert code_on == MACRO_HIGH_IMPACT_EVENT_AHEAD
+    assert factor_on == pytest.approx(0.70)
+
+
+# --- Test 8: No assessments field → no crash, no derate ---
+
+
+def test_step5_derate_no_assessments_field():
+    """data_quality không có field 'upcoming_event_assessments' → không crash, không derate."""
+    pipe = AnalysisPipeline()
+    pipe._diag = []
+    pipe._request = _default_input("EUR/USD")
+    pipe._correlation_context = _correlation_context(
+        {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
+    )
+    pipe._macro_confidence_in = 1.0
+    pipe._macro_data_reason_code = None
+    pipe._macro_event_reason_code = None
+    pipe._macro_event_ahead_reason_code = None
+    pipe._macro_event_ahead_derate_factor = None
+    # data_quality without 'upcoming_event_assessments' key
+    pipe._data_quality = {"event_impact_derate_enabled": True}
+
+    pipe._step_compute_correlation()
+    assert pipe._macro_confidence_in == 1.0
+    assert pipe._macro_event_ahead_reason_code is None
+    assert pipe._macro_event_ahead_derate_factor is None

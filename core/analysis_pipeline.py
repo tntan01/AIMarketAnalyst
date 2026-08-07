@@ -44,6 +44,7 @@ from core.reason_codes import (
     DAILY_LOSS_LIMIT_REACHED,
     MACRO_DATA_PARTIAL,
     MACRO_DATA_UNAVAILABLE,
+    MACRO_HIGH_IMPACT_EVENT_AHEAD,
     MACRO_HIGH_IMPACT_EVENT_NEARBY,
     WEEKLY_LOSS_LIMIT_REACHED,
     codes_to_messages,
@@ -59,6 +60,7 @@ from core.smc_prefilter import SMC_SCORING_ERROR, evaluate_post_context_prefilte
 from core.smc_scorer import score_smc
 from services.event_impact_assessor import (
     EventImpactAssessment,
+    derate_factor,
     select_dominant_assessment,
 )
 from core.smc_scoring_result import (
@@ -358,6 +360,7 @@ class AnalysisPipeline:
             ("_macro_event_reason_code", None),
             ("_macro_event_ahead_assessment", None),
             ("_macro_event_ahead_reason_code", None),
+            ("_macro_event_ahead_derate_factor", None),
             ("_buy_corr_adj", 0), ("_sell_corr_adj", 0),
             ("_scores", {"buy": {}, "sell": {}}),
             ("_buy_smc_flags", {}), ("_sell_smc_flags", {}),
@@ -658,6 +661,34 @@ class AnalysisPipeline:
         # nhân vào _macro_confidence_in (bật derate ở Prompt 4).
         self._macro_event_ahead_assessment = self._select_event_ahead_payload()
         self._macro_event_ahead_reason_code = None
+        self._macro_event_ahead_derate_factor: float | None = None
+
+        # Bước 5 (DERATE — Prompt 4): khi flag bật, nhân derate vào macro_confidence.
+        derate_enabled = bool(
+            self._data_quality.get("event_impact_derate_enabled", False)
+        )
+        if derate_enabled and self._macro_event_ahead_assessment is not None:
+            try:
+                assessment = EventImpactAssessment(
+                    **self._macro_event_ahead_assessment
+                )
+                hours = float(
+                    self._macro_event_ahead_assessment.get("hours_until", 0)
+                )
+                factor = derate_factor(assessment, hours)
+                if factor < 1.0:
+                    self._macro_confidence_in *= factor
+                    self._macro_event_ahead_reason_code = (
+                        MACRO_HIGH_IMPACT_EVENT_AHEAD
+                    )
+                    self._macro_event_ahead_derate_factor = factor
+            except Exception:
+                # Fail-closed: bỏ derate nếu có lỗi.
+                pass
+
+        # Floor an toàn chung cho macro_confidence sau tất cả các bước derate
+        # (thiếu dữ liệu, Bước 3, Bước 5). Floor áp cả khi flag tắt.
+        self._macro_confidence_in = max(self._macro_confidence_in, 0.15)
 
         corr_summary = (
             f"DXY={'yes' if has_dxy else 'no'}, VIX={'yes' if has_vix else 'no'}, "
@@ -1424,6 +1455,8 @@ class AnalysisPipeline:
             combined_reason_codes.append(self._macro_data_reason_code)
         if self._macro_event_reason_code:
             combined_reason_codes.append(self._macro_event_reason_code)
+        if self._macro_event_ahead_reason_code:
+            combined_reason_codes.append(self._macro_event_ahead_reason_code)
 
         self._reason_codes = normalize_codes(combined_reason_codes)
         self._penalty_codes = normalize_codes(combined_penalty_codes)
@@ -1779,7 +1812,10 @@ class AnalysisPipeline:
                 ),
                 "macro_confidence": self._macro_confidence_in,
                 "event_assessments": (
-                    [self._macro_event_ahead_assessment]
+                    [{
+                        **self._macro_event_ahead_assessment,
+                        "applied_derate": self._macro_event_ahead_derate_factor,
+                    }]
                     if self._macro_event_ahead_assessment else []
                 ),
             },

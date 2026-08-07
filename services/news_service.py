@@ -171,6 +171,16 @@ class NewsService:
         return base_rate - quote_rate
 
     @staticmethod
+    def _read_derate_enabled() -> bool:
+        """Đọc flag event_impact_derate_enabled từ settings (fail-closed: False)."""
+        try:
+            from services.settings_service import SettingsService
+            settings = SettingsService().load()
+            return bool(getattr(settings.advanced, "event_impact_derate_enabled", False))
+        except Exception:
+            return False
+
+    @staticmethod
     def _ai_fingerprint(ai_service: object | None) -> str:
         """Return a stable provider/model fingerprint without reading secrets."""
         if ai_service is None:
@@ -421,6 +431,7 @@ class NewsService:
             "next_high_impact_event": next_high,
             "resume_after": resume_after,
             "upcoming_event_assessments": upcoming_event_assessments,
+            "event_impact_derate_enabled": self._read_derate_enabled(),
         }
 
     # ------------------------------------------------------------------
