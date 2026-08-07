@@ -228,22 +228,23 @@ def test_preload_ai_event_assessment_ghi_journal_moi_ai():
 
     class _GoodAssessor:
         def assess_upcoming_events(self, events_, ai_service, stance_lookup, headlines_by_currency, **kwargs):
-            return [
-                EventImpactAssessment(
-                    event_key=make_event_key(events_[0]),
-                    currency="USD",
-                    event_name="FOMC Meeting",
-                    time_utc="2026-08-08T12:00:00Z",
-                    hours_until=27.0,
-                    magnitude="high",
-                    priced_in="not_priced_in",
-                    expected_direction="currency_up",
-                    risk_window_hours=12.0,
-                    ai_confidence=0.8,
-                    evidence=["forecast lệch"],
-                    source="ai",
-                )
-            ]
+            assessment = EventImpactAssessment(
+                event_key=make_event_key(events_[0]),
+                currency="USD",
+                event_name="FOMC Meeting",
+                time_utc="2026-08-08T12:00:00Z",
+                hours_until=27.0,
+                magnitude="high",
+                priced_in="not_priced_in",
+                expected_direction="currency_up",
+                risk_window_hours=12.0,
+                ai_confidence=0.8,
+                evidence=["forecast lệch"],
+                source="ai",
+            )
+            # Contract mới: (assessments, fresh_ai_keys) — key này vừa được
+            # gọi AI thật nên phải nằm trong tập fresh để được ghi journal.
+            return [assessment], {assessment.event_key}
 
     with patch.object(
         svc,
@@ -355,7 +356,7 @@ def test_preload_step5_dau_ngay_van_co_boi_canh_stance():
     class _CapturingAssessor:
         def assess_upcoming_events(self, events_, ai_service, stance_lookup, headlines_by_currency, **kwargs):
             captured["USD"] = stance_lookup("USD")
-            return []
+            return [], set()
 
     svc._event_assessor = _CapturingAssessor()
     with patch("services.news_service.datetime", _FrozenDatetime), patch.object(

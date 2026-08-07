@@ -131,6 +131,13 @@ def build_event_prompt(event: dict, stance_info: dict | None, headlines: list[st
       hours_until, forecast, previous, actual).
     - stance_info: dict {stance, strength, confidence, source} hoặc None/rỗng.
     - headlines: tối đa 8 headline, mỗi dòng gạch đầu dòng.
+
+    Thiết kế đã chốt (Bước 5, minor-3 trong báo cáo review): prompt KHÔNG nhận
+    dữ liệu biến động giá gần đây. Headlines được chọn làm proxy cho mức độ
+    price-in — tin là thứ thị trường phản ứng trước tiên, và forecast/previous
+    + headlines đủ để AI phán đoán "đã price-in chưa". Nếu sau này cần tín
+    hiệu giá, chỉ cần bổ sung 1 trường vào đây (thay đổi cục bộ, không đụng
+    decision table/cache).
     """
     lines = [
         "Bạn là trợ lý phân tích vĩ mô cho trading forex. Hãy đánh giá một \"sự kiện kinh tế\" sắp diễn ra.",
@@ -275,7 +282,9 @@ def derate_factor(assessment: EventImpactAssessment, hours_until: float) -> floa
     Điều kiện đủ:
     - hours_until ≤ 4 hoặc > 48 → 1.0 (ngoài cửa sổ Bước 5).
     - hours_until > risk_window_hours → 1.0 (ngoài cửa sổ rủi ro của sự kiện).
-    - ai_confidence < 0.5 → coi priced_in như "unknown" (giữ nguyên magnitude).
+    - ai_confidence < 0.5 (confidence gate) → coi priced_in như "unknown" (giữ
+      nguyên magnitude) ĐỒNG THỜI cap factor ≤ 0.85 — AI thiếu tự tin không được
+      phòng thủ NHẸ hơn AI chết hẳn (fallback medium/unknown = 0.85, D6).
     - Backstop: hours_until ≤ 24 và magnitude == "high" → kết quả không vượt 0.85.
     - Không bao giờ trả dưới 0.15 hoặc trên 1.0.
     """
@@ -290,9 +299,16 @@ def derate_factor(assessment: EventImpactAssessment, hours_until: float) -> floa
     if priced_in not in PRICED_IN_FACTOR:
         priced_in = "unknown"
     # Confidence gate: AI tự tin thấp → không tin phán đoán price-in của AI.
-    if assessment.ai_confidence is not None and assessment.ai_confidence < AI_CONFIDENCE_GATE:
+    gate_active = (
+        assessment.ai_confidence is not None
+        and assessment.ai_confidence < AI_CONFIDENCE_GATE
+    )
+    if gate_active:
         priced_in = "unknown"
     factor = 1.0 - MAGNITUDE_PENALTY[magnitude] * PRICED_IN_FACTOR[priced_in]
+    if gate_active:
+        # Ngưỡng phòng thủ tối thiểu khi AI thiếu tự tin: không nhẹ hơn fallback.
+        factor = min(factor, HIGH_BACKSTOP_FACTOR)
     # Backstop: sự kiện high rất gần (≤ 24h) thì không bao giờ được nhẹ nhàng.
     if magnitude == "high" and hours_until <= HIGH_BACKSTOP_HOURS:
         factor = min(factor, HIGH_BACKSTOP_FACTOR)
@@ -519,8 +535,15 @@ class EventImpactAssessor:
         *,
         now: datetime | None = None,
         max_ai_calls: int = 2,
-    ) -> list[EventImpactAssessment]:
+    ) -> tuple[list[EventImpactAssessment], set[str]]:
         """Đánh giá toàn bộ event high-impact trong 4-48 giờ, tối đa max_ai_calls lời gọi AI.
+
+        Trả về (assessments, fresh_ai_keys):
+        - assessments: toàn bộ đánh giá (cache hit, AI mới, fallback).
+        - fresh_ai_keys: tập event_key VỪA được gọi AI thật trong chu kỳ này
+          (cả nhánh miss-cache lẫn nhánh refresh khi priced_in hết hạn 6h, kể cả
+          lời gọi AI bị lỗi). Caller chỉ được coi là "assessment mới do AI tạo"
+          khi event_key nằm trong tập này — cache hit KHÔNG phải assessment mới.
 
         - Event đã có cache hợp lệ → dùng cache (gọi lại AI nếu priced_in_stale
           và còn quota).
@@ -537,6 +560,7 @@ class EventImpactAssessor:
                 now = datetime.now(UTC)
             candidates = self._filter_candidates(events)
             results: list[EventImpactAssessment] = []
+            fresh_ai_keys: set[str] = set()
             calls_left = max_ai_calls
             fingerprint = _ai_fingerprint(ai_service)
             for event in candidates:
@@ -550,6 +574,7 @@ class EventImpactAssessor:
                             event, event_key, currency, ai_service, stance_lookup, headlines_by_currency
                         )
                         calls_left -= 1
+                        fresh_ai_keys.add(event_key)
                         self.cache.put(event_key, fingerprint, fresh, now)
                         assessment = fresh
                     else:
@@ -565,15 +590,19 @@ class EventImpactAssessor:
                         event, event_key, currency, ai_service, stance_lookup, headlines_by_currency
                     )
                     calls_left -= 1
+                    fresh_ai_keys.add(event_key)
                     self.cache.put(event_key, fingerprint, assessment, now)
                 else:
                     assessment = self._fallback_assessment(event, event_key, currency)
                 results.append(assessment)
-            return results
+            return results, fresh_ai_keys
         except Exception:
             # Fail-closed: lỗi bất ngờ → fallback toàn bộ event đầu vào hợp lệ.
             candidates = self._filter_candidates(events)
-            return [
-                self._fallback_assessment(event, make_event_key(event), self._currency_of(event))
-                for event in candidates
-            ]
+            return (
+                [
+                    self._fallback_assessment(event, make_event_key(event), self._currency_of(event))
+                    for event in candidates
+                ],
+                set(),
+            )

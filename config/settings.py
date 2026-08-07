@@ -150,6 +150,7 @@ class AdvancedSettings:
     brave_api_key: str = ""
     fred_api_key: str = ""
     event_impact_derate_enabled: bool = False
+    macro_ai_verdict_enabled: bool = False
 
 
 @dataclass(slots=True)

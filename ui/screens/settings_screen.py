@@ -1654,6 +1654,10 @@ class SettingsScreen(QWidget):
 
         block_news = QCheckBox("Chặn giao dịch quanh tin đỏ")
         block_news.setChecked(advanced.block_high_impact_news)
+        derate_events = QCheckBox("Giảm điểm vĩ mô khi có sự kiện lớn trước 4-48h (Bước 5)")
+        derate_events.setChecked(advanced.event_impact_derate_enabled)
+        macro_verdict = QCheckBox("AI trọng tài vĩ mô cho tín hiệu mạnh (Bước 6)")
+        macro_verdict.setChecked(advanced.macro_ai_verdict_enabled)
         notifications = self.app_settings.notifications
 
         auto_interval = QComboBox()
@@ -1685,6 +1689,8 @@ class SettingsScreen(QWidget):
         self.advanced_db_path_input = db_path
         self.advanced_storage_input = storage
         self.advanced_block_news_input = block_news
+        self.advanced_derate_input = derate_events
+        self.advanced_macro_verdict_input = macro_verdict
         self.notification_auto_interval_input = auto_interval
         self.telegram_token_input = telegram_token
         self.telegram_chats_input = telegram_chats
@@ -1698,6 +1704,8 @@ class SettingsScreen(QWidget):
         form_layout.addWidget(self._compact_form_row("SQLite database", db_path, field_width=320))
         form_layout.addWidget(self._compact_form_row("Nơi lưu cài đặt", storage))
         form_layout.addWidget(block_news)
+        form_layout.addWidget(derate_events)
+        form_layout.addWidget(macro_verdict)
         form_layout.addWidget(self._compact_form_row("Auto-scan mặc định", auto_interval))
         form_layout.addWidget(self._compact_form_row("Telegram bot token", telegram_token, field_width=320))
         form_layout.addWidget(self._compact_form_row("Telegram chat ID", telegram_chats, field_width=320))
@@ -1726,6 +1734,7 @@ class SettingsScreen(QWidget):
         return frame
 
     def _save_advanced_settings(self) -> None:
+        current = self.app_settings.advanced
         self.app_settings.advanced = AdvancedSettings(
             d1_bars=self.advanced_d1_bars_input.value(),
             h4_bars=self.advanced_h4_bars_input.value(),
@@ -1736,6 +1745,12 @@ class SettingsScreen(QWidget):
             sqlite_database_path=self.advanced_db_path_input.text().strip() or "./data/journal.db",
             settings_storage=self.advanced_storage_input.currentText(),
             block_high_impact_news=self.advanced_block_news_input.isChecked(),
+            # Các trường không có ô nhập trên form phải được carry-over,
+            # nếu không mỗi lần lưu cài đặt là chúng bị reset về mặc định.
+            brave_api_key=current.brave_api_key,
+            fred_api_key=current.fred_api_key,
+            event_impact_derate_enabled=self.advanced_derate_input.isChecked(),
+            macro_ai_verdict_enabled=self.advanced_macro_verdict_input.isChecked(),
         )
         self.app_settings.notifications = NotificationSettings(
             telegram_bot_token=self.telegram_token_input.text().strip(),

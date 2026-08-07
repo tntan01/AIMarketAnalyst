@@ -509,6 +509,8 @@ class SettingsService:
             block_high_impact_news=bool(data.get("block_high_impact_news", True)),
             brave_api_key=data.get("brave_api_key", ""),
             fred_api_key=data.get("fred_api_key", ""),
+            event_impact_derate_enabled=bool(data.get("event_impact_derate_enabled", False)),
+            macro_ai_verdict_enabled=bool(data.get("macro_ai_verdict_enabled", False)),
         )
 
     def _load_notification_settings(self, data: dict | None) -> NotificationSettings:

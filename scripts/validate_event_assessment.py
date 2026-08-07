@@ -94,6 +94,24 @@ def _append_label(labels_path: Path, label: dict[str, Any]) -> None:
         fh.write(json.dumps(label, ensure_ascii=False) + "\n")
 
 
+def _latest_by_event_key(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Dedup theo event_key, giữ dòng MUỘN NHẤT theo thứ tự file.
+
+    Journal có thể chứa nhiều dòng cho cùng 1 event: bản ghi trùng từ các chu
+    kỳ preload trước khi có dedup (Bước 5 review fix), hoặc dự đoán mới khi
+    trường priced_in hết hạn 6h và AI được gọi refresh. Ma trận kiểm chứng chỉ
+    được đếm MỖI EVENT MỘT LẦN theo dự đoán mới nhất — nếu không, số chu kỳ
+    chạy scan thổi phồng mọi ô ma trận, và 1 event refresh đổi prediction sẽ
+    rơi vào nhiều ô.
+    """
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        event_key = str(entry.get("event_key", ""))
+        if event_key:
+            latest[event_key] = entry
+    return list(latest.values())
+
+
 # ---------------------------------------------------------------------------
 # label
 # ---------------------------------------------------------------------------
@@ -115,6 +133,8 @@ def _label_past_events(journal_path: Path, labels_path: Path) -> int:
             continue
         if ev_time < now:
             past.append(entry)
+    # Mỗi event chỉ liệt kê 1 lần theo dự đoán mới nhất (dedup dòng trùng).
+    past = _latest_by_event_key(past)
     past.sort(key=lambda e: str(e.get("time_utc", "")))
 
     if not past:
@@ -223,6 +243,8 @@ def _report(journal_path: Path, labels_path: Path) -> int:
             continue
         if ev_time < now:
             past.append(entry)
+    # Mỗi event chỉ đếm 1 lần theo dự đoán mới nhất — xem _latest_by_event_key.
+    past = _latest_by_event_key(past)
     past.sort(key=lambda e: str(e.get("time_utc", "")))
 
     if not past:

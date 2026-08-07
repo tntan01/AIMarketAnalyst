@@ -360,11 +360,13 @@ def test_cache_negative_entry_ton_tai_sau_loi():
     event = _make_event(hours_until=20.0)
     ai = FakeAI(response=None, error=TimeoutError("timeout"))
     assessor = EventImpactAssessor()
-    results = assessor.assess_upcoming_events(
+    results, fresh_keys = assessor.assess_upcoming_events(
         [event], ai, _noop_stance, {}, now=T0, max_ai_calls=2
     )
     assert len(results) == 1
     assert results[0].source == "fallback"
+    # Lời gọi AI lỗi vẫn là "gọi AI thật" → key nằm trong fresh keys.
+    assert make_event_key(event) in fresh_keys
     cached = assessor.cache.get(make_event_key(event), _ai_fingerprint(ai), T0)
     assert cached is not None
     assert cached[0].source == "fallback"
@@ -410,9 +412,11 @@ def test_orchestrator_max_ai_calls_2_4_event():
     ]
     ai = FakeAI(response=_json_assessment())
     assessor = EventImpactAssessor()
-    results = assessor.assess_upcoming_events(events, ai, _noop_stance, {}, now=T0, max_ai_calls=2)
+    results, fresh_keys = assessor.assess_upcoming_events(events, ai, _noop_stance, {}, now=T0, max_ai_calls=2)
     assert ai.call_count == 2
     assert [r.source for r in results] == ["ai", "ai", "fallback", "fallback"]
+    # Chỉ 2 event được gọi AI thật nằm trong fresh keys; 2 event hết quota không có.
+    assert fresh_keys == {make_event_key(events[0]), make_event_key(events[1])}
     # Fallback medium/unknown trong cửa sổ → hệ số 0.85.
     assert round(derate_factor(results[2], results[2].hours_until), 3) == 0.85
     assert round(derate_factor(results[3], results[3].hours_until), 3) == 0.85
@@ -426,10 +430,12 @@ def test_orchestrator_ai_loi_toan_fallback():
     ]
     ai = FakeAI(response=None, error=TimeoutError("timeout"))
     assessor = EventImpactAssessor()
-    results = assessor.assess_upcoming_events(events, ai, _noop_stance, {}, now=T0, max_ai_calls=2)
+    results, fresh_keys = assessor.assess_upcoming_events(events, ai, _noop_stance, {}, now=T0, max_ai_calls=2)
     assert len(results) == 2
     assert all(r.source == "fallback" for r in results)
     assert all(r.magnitude == "medium" and r.priced_in == "unknown" for r in results)
+    # AI lỗi vẫn là lời gọi AI thật → cả 2 key đều fresh.
+    assert fresh_keys == {make_event_key(e) for e in events}
 
 
 def test_orchestrator_ai_service_none_toan_fallback():
@@ -439,9 +445,11 @@ def test_orchestrator_ai_service_none_toan_fallback():
         _make_event(name="B", time_utc="2026-08-08T12:00:00Z", hours_until=12.0),
     ]
     assessor = EventImpactAssessor()
-    results = assessor.assess_upcoming_events(events, None, _noop_stance, {}, now=T0, max_ai_calls=2)
+    results, fresh_keys = assessor.assess_upcoming_events(events, None, _noop_stance, {}, now=T0, max_ai_calls=2)
     assert len(results) == 2
     assert all(r.source == "fallback" for r in results)
+    # Không có AI → không có lời gọi AI thật nào → fresh keys rỗng.
+    assert fresh_keys == set()
 
 
 def test_orchestrator_loc_dung_cua_so():
@@ -454,7 +462,7 @@ def test_orchestrator_loc_dung_cua_so():
     ]
     ai = FakeAI(response=_json_assessment())
     assessor = EventImpactAssessor()
-    results = assessor.assess_upcoming_events(events, ai, _noop_stance, {}, now=T0, max_ai_calls=2)
+    results, _fresh = assessor.assess_upcoming_events(events, ai, _noop_stance, {}, now=T0, max_ai_calls=2)
     assert len(results) == 1
     assert results[0].event_name == "Hợp lệ"
     assert results[0].source == "ai"
@@ -466,7 +474,7 @@ def test_orchestrator_ai_tra_ve_json_hong_fallback():
     event = _make_event(name="Hợp lệ", hours_until=20.0)
     ai = FakeAI(response="không phải JSON hợp lệ")
     assessor = EventImpactAssessor()
-    results = assessor.assess_upcoming_events([event], ai, _noop_stance, {}, now=T0, max_ai_calls=2)
+    results, _fresh = assessor.assess_upcoming_events([event], ai, _noop_stance, {}, now=T0, max_ai_calls=2)
     assert len(results) == 1
     assert results[0].source == "fallback"
     assert results[0].magnitude == "medium"

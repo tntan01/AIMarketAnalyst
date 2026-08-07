@@ -1,0 +1,297 @@
+{
+  "meta": {
+    "generated_at_utc": "2026-08-07T11:11:24.672974+00:00",
+    "lookback_days": 0,
+    "data_start": "N/A (seed data)",
+    "data_end": "N/A (seed data)",
+    "vix_source": "market_knowledge_seed",
+    "version": "1.0.0",
+    "ttl_days": 90,
+    "pair_count": 31,
+    "vix_data_points": 0,
+    "is_seed": true,
+    "methodology": "currency_level_appreciation_propagation",
+    "warning": "SEED DATA dựa trên kiến thức thị trường, CHƯA được backtest xác nhận. Chạy compute_vix_pair_sensitivity() với data thực tế để thay thế."
+  },
+  "pairs": {
+    "AUD/CAD": {
+      "correlation": -0.1,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "AUD/CAD không có tương quan rõ ràng với VIX (r=-0.10).",
+      "data_points": 0
+    },
+    "AUD/CHF": {
+      "correlation": -0.65,
+      "sensitivity_score": -2.9,
+      "sensitivity_factor": 0.23,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "CHF là safe haven — VIX↑ → CHF↑ → AUD/CHF↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "AUD/JPY": {
+      "correlation": -0.8,
+      "sensitivity_score": -3.8,
+      "sensitivity_factor": 0.0,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "JPY là safe haven — VIX↑ → JPY↑ → AUD/JPY↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "AUD/NZD": {
+      "correlation": -0.03,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "AUD/NZD không có tương quan rõ ràng với VIX (r=-0.03).",
+      "data_points": 0
+    },
+    "AUD/USD": {
+      "correlation": -0.45,
+      "sensitivity_score": -1.8,
+      "sensitivity_factor": 0.54,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "USD là safe haven — VIX↑ → USD↑ → AUD/USD↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "BTC/USD": {
+      "correlation": -0.32,
+      "sensitivity_score": -1.0,
+      "sensitivity_factor": 0.74,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "USD là safe haven — VIX↑ → USD↑ → BTC/USD↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "CAD/CHF": {
+      "correlation": -0.55,
+      "sensitivity_score": -2.4,
+      "sensitivity_factor": 0.38,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "CHF là safe haven — VIX↑ → CHF↑ → CAD/CHF↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "CAD/JPY": {
+      "correlation": -0.7,
+      "sensitivity_score": -3.2,
+      "sensitivity_factor": 0.15,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "JPY là safe haven — VIX↑ → JPY↑ → CAD/JPY↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "CHF/JPY": {
+      "correlation": -0.15,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "CHF/JPY không có tương quan rõ ràng với VIX (r=-0.15).",
+      "data_points": 0
+    },
+    "EUR/AUD": {
+      "correlation": 0.35,
+      "sensitivity_score": 1.2,
+      "sensitivity_factor": 0.69,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "risk_sensitive",
+      "note": "AUD là risk-on — VIX↑ → AUD↓ → EUR/AUD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "EUR/CAD": {
+      "correlation": 0.25,
+      "sensitivity_score": 0.6,
+      "sensitivity_factor": 0.85,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "mild_risk_sensitive",
+      "note": "CAD là risk-on — VIX↑ → CAD↓ → EUR/CAD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "EUR/CHF": {
+      "correlation": -0.3,
+      "sensitivity_score": -0.9,
+      "sensitivity_factor": 0.77,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "CHF là safe haven — VIX↑ → CHF↑ → EUR/CHF↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "EUR/GBP": {
+      "correlation": 0.0,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "EUR/GBP không có tương quan rõ ràng với VIX (r=0.00).",
+      "data_points": 0
+    },
+    "EUR/JPY": {
+      "correlation": -0.45,
+      "sensitivity_score": -1.8,
+      "sensitivity_factor": 0.54,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "JPY là safe haven — VIX↑ → JPY↑ → EUR/JPY↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "EUR/NZD": {
+      "correlation": 0.32,
+      "sensitivity_score": 1.0,
+      "sensitivity_factor": 0.74,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "risk_sensitive",
+      "note": "NZD là risk-on — VIX↑ → NZD↓ → EUR/NZD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "EUR/USD": {
+      "correlation": -0.1,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "EUR/USD không có tương quan rõ ràng với VIX (r=-0.10).",
+      "data_points": 0
+    },
+    "GBP/AUD": {
+      "correlation": 0.35,
+      "sensitivity_score": 1.2,
+      "sensitivity_factor": 0.69,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "risk_sensitive",
+      "note": "AUD là risk-on — VIX↑ → AUD↓ → GBP/AUD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "GBP/CAD": {
+      "correlation": 0.25,
+      "sensitivity_score": 0.6,
+      "sensitivity_factor": 0.85,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "mild_risk_sensitive",
+      "note": "CAD là risk-on — VIX↑ → CAD↓ → GBP/CAD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "GBP/CHF": {
+      "correlation": -0.3,
+      "sensitivity_score": -0.9,
+      "sensitivity_factor": 0.77,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "CHF là safe haven — VIX↑ → CHF↑ → GBP/CHF↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "GBP/JPY": {
+      "correlation": -0.45,
+      "sensitivity_score": -1.8,
+      "sensitivity_factor": 0.54,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "JPY là safe haven — VIX↑ → JPY↑ → GBP/JPY↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "GBP/NZD": {
+      "correlation": 0.32,
+      "sensitivity_score": 1.0,
+      "sensitivity_factor": 0.74,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "risk_sensitive",
+      "note": "NZD là risk-on — VIX↑ → NZD↓ → GBP/NZD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "GBP/USD": {
+      "correlation": -0.1,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "GBP/USD không có tương quan rõ ràng với VIX (r=-0.10).",
+      "data_points": 0
+    },
+    "NZD/CAD": {
+      "correlation": -0.07,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "NZD/CAD không có tương quan rõ ràng với VIX (r=-0.07).",
+      "data_points": 0
+    },
+    "NZD/CHF": {
+      "correlation": -0.62,
+      "sensitivity_score": -2.8,
+      "sensitivity_factor": 0.28,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "CHF là safe haven — VIX↑ → CHF↑ → NZD/CHF↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "NZD/JPY": {
+      "correlation": -0.77,
+      "sensitivity_score": -3.6,
+      "sensitivity_factor": 0.05,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "JPY là safe haven — VIX↑ → JPY↑ → NZD/JPY↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "NZD/USD": {
+      "correlation": -0.42,
+      "sensitivity_score": -1.6,
+      "sensitivity_factor": 0.58,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "USD là safe haven — VIX↑ → USD↑ → NZD/USD↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "USD/CAD": {
+      "correlation": 0.35,
+      "sensitivity_score": 1.2,
+      "sensitivity_factor": 0.69,
+      "vix_direction": "rises_on_vix_up",
+      "interpretation": "risk_sensitive",
+      "note": "CAD là risk-on — VIX↑ → CAD↓ → USD/CAD↑. BUY hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "USD/CHF": {
+      "correlation": -0.2,
+      "sensitivity_score": -0.3,
+      "sensitivity_factor": 0.92,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "mild_safe_haven",
+      "note": "CHF là safe haven — VIX↑ → CHF↑ → USD/CHF↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "USD/JPY": {
+      "correlation": -0.35,
+      "sensitivity_score": -1.2,
+      "sensitivity_factor": 0.69,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "safe_haven",
+      "note": "JPY là safe haven — VIX↑ → JPY↑ → USD/JPY↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "XAG/USD": {
+      "correlation": -0.2,
+      "sensitivity_score": -0.3,
+      "sensitivity_factor": 0.92,
+      "vix_direction": "falls_on_vix_up",
+      "interpretation": "mild_safe_haven",
+      "note": "USD là safe haven — VIX↑ → USD↑ → XAG/USD↓. SELL hưởng lợi khi risk-off.",
+      "data_points": 0
+    },
+    "XAU/USD": {
+      "correlation": 0.05,
+      "sensitivity_score": 0.0,
+      "sensitivity_factor": 1.0,
+      "vix_direction": "indeterminate",
+      "interpretation": "neutral",
+      "note": "XAU/USD không có tương quan rõ ràng với VIX (r=0.05).",
+      "data_points": 0
+    }
+  }
+}

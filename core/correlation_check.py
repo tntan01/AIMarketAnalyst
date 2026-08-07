@@ -1,8 +1,75 @@
 from __future__ import annotations
 
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
 from core.market_models import Candle
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# VIX sensitivity map — lazy-loaded from data/vix_pair_sensitivity.json
+# ---------------------------------------------------------------------------
+
+_VIX_SENSITIVITY_CACHE: dict[str, dict[str, Any]] | None = None
+_VIX_SENSITIVITY_LOADED: bool = False
+
+
+def _load_vix_sensitivity() -> dict[str, dict[str, Any]]:
+    """Load pair→VIX sensitivity mapping from data/vix_pair_sensitivity.json.
+
+    Returns empty dict if the file is missing or malformed (fail-open:
+    missing data means flat scoring, preserving current behavior).
+    Cached in module-level variable after first load.
+    """
+    global _VIX_SENSITIVITY_CACHE, _VIX_SENSITIVITY_LOADED
+    if _VIX_SENSITIVITY_LOADED:
+        return _VIX_SENSITIVITY_CACHE or {}
+
+    _VIX_SENSITIVITY_LOADED = True
+
+    # Try multiple paths: project-relative, then app-data
+    candidates = [
+        Path(__file__).resolve().parents[1] / "data" / "vix_pair_sensitivity.json",
+    ]
+    try:
+        from config.paths import app_data_dir
+        candidates.append(app_data_dir() / "vix_pair_sensitivity.json")
+    except Exception:
+        pass
+
+    for path in candidates:
+        try:
+            data = json.loads(path.read_text("utf-8"))
+            if isinstance(data, dict) and "pairs" in data:
+                _VIX_SENSITIVITY_CACHE = data["pairs"]
+                logger.info(
+                    "VIX sensitivity map loaded from %s (%d pairs)",
+                    path, len(_VIX_SENSITIVITY_CACHE),
+                )
+                # Log warning if seed data
+                meta = data.get("meta", {})
+                if isinstance(meta, dict) and meta.get("is_seed") is True:
+                    logger.warning(
+                        "VIX sensitivity map is SEED DATA (market knowledge based). "
+                        "Run backtest with real data to validate."
+                    )
+                return _VIX_SENSITIVITY_CACHE
+        except (OSError, json.JSONDecodeError, KeyError):
+            continue
+
+    logger.info("No VIX sensitivity map found — using flat scoring (current behavior).")
+    _VIX_SENSITIVITY_CACHE = {}
+    return {}
+
+
+def _reset_vix_sensitivity_cache() -> None:
+    """Reset sensitivity cache (for testing)."""
+    global _VIX_SENSITIVITY_CACHE, _VIX_SENSITIVITY_LOADED
+    _VIX_SENSITIVITY_CACHE = None
+    _VIX_SENSITIVITY_LOADED = False
 
 
 def _dxy_direction(candles: list[Candle] | None) -> str | None:
@@ -387,14 +454,31 @@ def _dxy_score(side: str, symbol: str, dxy_candles: list | None) -> float:
             return -2.0
 
 
-def _vix_score(vix_candles: list | None) -> float:
-    """
-    VIX adjustment cho TẤT CẢ các cặp.
+def _vix_score(symbol: str, side: str, vix_candles: list | None) -> float:
+    """VIX adjustment CÓ NHẬN THỨC CẶP TIỀN (Bước 7).
 
-    VIX < 15 (bình tĩnh):  +2  (thuận lợi swing trade)
-    VIX 15-20 (bình thường): 0
-    VIX 20-25 (căng thẳng): -2  (thận trọng)
-    VIX > 25 (risk-off):    -5  (phạt nặng, cân nhắc đứng ngoài)
+    Dựa trên backtest correlation giữa ΔVIX và pair returns để điều chỉnh
+    mức phạt/thưởng theo độ nhạy thực tế của từng cặp với risk-off.
+
+    Logic:
+    1. Base penalty từ mức VIX tuyệt đối (giữ nguyên threshold cũ)
+    2. Điều chỉnh theo sensitivity_factor từ data:
+       - factor ~0: VIX giải thích tốt chuyển động của cặp → giảm phạt
+       - factor ~1: VIX không liên quan → giữ nguyên phạt
+    3. Điều chỉnh theo hướng giao dịch (side-aware):
+       - Nếu giao dịch THUẬN với VIX-driven flow → giảm phạt mạnh
+       - Nếu giao dịch NGƯỢC → giữ phạt gần như nguyên
+
+    Fallback: nếu không có sensitivity data → flat scoring (giữ nguyên behavior cũ).
+
+    Parameters
+    ----------
+    symbol : str
+        Cặp tiền (EUR/USD, USD/JPY, ...).
+    side : str
+        Hướng giao dịch ("buy" hoặc "sell").
+    vix_candles : list | None
+        VIX daily candles.
     """
     if not vix_candles or len(vix_candles) < 1:
         return 0.0
@@ -403,14 +487,59 @@ def _vix_score(vix_candles: list | None) -> float:
     if current <= 0:
         return 0.0
 
+    # ---- Base penalty từ mức VIX tuyệt đối (giữ nguyên) ----
     if current > 25:
-        return -5.0
+        base_penalty = -5.0
     elif current > 20:
-        return -2.0
+        base_penalty = -2.0
     elif current < 15:
-        return 2.0
+        base_penalty = 2.0   # bonus — low vol always helps
     else:
+        base_penalty = 0.0
+
+    if base_penalty == 0.0:
         return 0.0
+
+    # VIX bonus (< 15) không bị điều chỉnh — low vol luôn tốt cho mọi cặp
+    if base_penalty > 0:
+        return base_penalty
+
+    # ---- Pair-aware modulation (chỉ áp dụng cho penalty, không cho bonus) ----
+    sensitivity_data = _load_vix_sensitivity()
+    pair_data = sensitivity_data.get(symbol.upper())
+
+    if pair_data is None:
+        return base_penalty  # unknown pair → flat scoring
+
+    corr = float(pair_data.get("correlation", 0.0))
+    factor = float(pair_data.get("sensitivity_factor", 1.0))
+    vix_dir = str(pair_data.get("vix_direction", "indeterminate"))
+
+    # sensitivity_factor: 0 = VIX fully explains movement → no penalty
+    #                     1 = VIX is noise → full penalty
+    factor = max(0.0, min(1.0, factor))
+
+    # Side-aware adjustment:
+    # - falls_on_vix_up (corr < -0.15): pair↓ when VIX↑ → SELL is with the flow
+    # - rises_on_vix_up  (corr > +0.15): pair↑ when VIX↑ → BUY is with the flow
+    # - indeterminate: no clear direction → use factor as-is
+    trade_aligned = False
+    if vix_dir == "falls_on_vix_up" and side == "sell":
+        trade_aligned = True
+    elif vix_dir == "rises_on_vix_up" and side == "buy":
+        trade_aligned = True
+
+    if trade_aligned:
+        # Trading WITH the VIX-driven flow → reduce penalty significantly
+        # Stronger correlation → more reduction
+        effective_factor = factor * 0.3  # 70% reduction for aligned trades
+    else:
+        # Trading AGAINST the flow → keep most of the penalty
+        # Floor at 0.2 so even uncorrelated pairs get some penalty
+        effective_factor = factor * 0.8 + 0.2
+
+    adjusted = base_penalty * effective_factor
+    return round(adjusted, 1)
 
 
 def _us10y_score(side: str, symbol: str, us10y_candles: list | None) -> float:
@@ -607,6 +736,6 @@ def compute_correlation_adjustment(
     adjustment = max(-6.0, min(5.0, adjustment))
 
     if vix_candles is not None:
-        adjustment += _vix_score(vix_candles)
+        adjustment += _vix_score(symbol, side, vix_candles)
 
     return round(adjustment, 1)

@@ -125,6 +125,11 @@ class NewsService:
     _global_snapshot_ttl = timedelta(minutes=5)
     _global_snapshot_stale_if_error = timedelta(minutes=30)
     _stance_cache_ttl = timedelta(hours=24)
+    # Cache cặp flag Bước 5/6 đọc từ settings.json — tránh đọc lại đĩa mỗi
+    # symbol mỗi chu kỳ scan (tối ưu I/O). TTL ngắn đủ để bật/tắt flag trong
+    # UI phản tác dụng ở chu kỳ scan kế tiếp.
+    _advanced_flag_cache_ttl = timedelta(seconds=60)
+    _advanced_flag_cache: tuple[datetime, bool, bool] | None = None
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
@@ -170,15 +175,36 @@ class NewsService:
         quote_rate = float(rates.get(quote, {}).get("rate", 0))
         return base_rate - quote_rate
 
+    @classmethod
+    def _read_advanced_flags(cls) -> tuple[bool, bool]:
+        """Đọc cặp flag (event_impact_derate, macro_ai_verdict) từ settings.
+
+        Fail-closed: mọi lỗi → (False, False). Kết quả cache tối đa
+        _advanced_flag_cache_ttl để không đọc lại settings.json mỗi symbol mỗi
+        chu kỳ scan. Test có thể reset cls._advanced_flag_cache = None.
+        """
+        now = datetime.now(UTC)
+        cached = cls._advanced_flag_cache
+        if cached is not None and (now - cached[0]) < cls._advanced_flag_cache_ttl:
+            return cached[1], cached[2]
+        try:
+            settings = SettingsService().load()
+            derate = bool(getattr(settings.advanced, "event_impact_derate_enabled", False))
+            verdict = bool(getattr(settings.advanced, "macro_ai_verdict_enabled", False))
+        except Exception:
+            derate, verdict = False, False
+        cls._advanced_flag_cache = (now, derate, verdict)
+        return derate, verdict
+
     @staticmethod
     def _read_derate_enabled() -> bool:
         """Đọc flag event_impact_derate_enabled từ settings (fail-closed: False)."""
-        try:
-            from services.settings_service import SettingsService
-            settings = SettingsService().load()
-            return bool(getattr(settings.advanced, "event_impact_derate_enabled", False))
-        except Exception:
-            return False
+        return NewsService._read_advanced_flags()[0]
+
+    @staticmethod
+    def _read_macro_verdict_enabled() -> bool:
+        """Đọc flag macro_ai_verdict_enabled từ settings (fail-closed: False)."""
+        return NewsService._read_advanced_flags()[1]
 
     @staticmethod
     def _ai_fingerprint(ai_service: object | None) -> str:
@@ -432,6 +458,7 @@ class NewsService:
             "resume_after": resume_after,
             "upcoming_event_assessments": upcoming_event_assessments,
             "event_impact_derate_enabled": self._read_derate_enabled(),
+            "macro_ai_verdict_enabled": self._read_macro_verdict_enabled(),
         }
 
     # ------------------------------------------------------------------
@@ -455,8 +482,10 @@ class NewsService:
         được time_utc sẽ bị LOẠI. Truyền bản copy dict mới (không mutate
         snapshot gốc). Kết quả lưu vào self._last_event_assessments để
         data_quality_flags đọc lại (KHÔNG đọc private cache của assessor).
-        Assessment mới do AI tạo (source="ai") được ghi journal. Mọi lỗi chỉ
-        log/emit — KHÔNG được làm hỏng preload (fail-closed, D6).
+        Assessment MỚI do AI tạo trong chu kỳ (event_key thuộc tập fresh_ai_keys
+        do assessor trả về — KHÔNG phải mọi assessment source="ai", vì cache hit
+        cũng giữ source="ai") được ghi journal. Mọi lỗi chỉ log/emit — KHÔNG
+        được làm hỏng preload (fail-closed, D6).
         """
         if now is None:
             now = datetime.now(UTC)
@@ -496,7 +525,7 @@ class NewsService:
                 "increment",
                 "ai_event_assessment_cycles",
             )
-            assessments = self._event_assessor.assess_upcoming_events(
+            assessments, fresh_ai_keys = self._event_assessor.assess_upcoming_events(
                 fresh_events,
                 ai_service,
                 stance_lookup,
@@ -504,8 +533,15 @@ class NewsService:
             )
             self._last_event_assessments = list(assessments)
             self._last_event_assessments_at = now
+            # Chỉ ghi journal assessment MỚI do AI tạo ra trong chu kỳ này
+            # (event_key thuộc tập vừa được gọi AI thật — kể cả nhánh refresh
+            # khi priced_in hết hạn 6h). Cache hit giữ source="ai" nhưng KHÔNG
+            # phải assessment mới → không ghi trùng mỗi chu kỳ preload.
             for assessment in assessments:
-                if assessment.source == "ai":
+                if (
+                    assessment.source == "ai"
+                    and assessment.event_key in fresh_ai_keys
+                ):
                     self._journal_event_assessment(assessment)
         except Exception:
             # Bước 5 chạy shadow — lỗi không được phá hỏng preload.
@@ -551,15 +587,21 @@ class NewsService:
 
         return lookup
 
+    def _event_journal_path(self) -> Path:
+        """Đường dẫn journal Bước 5 — method riêng để test có thể trỏ sang tmp."""
+        return (
+            Path(__file__).resolve().parent.parent
+            / "data"
+            / "event_assessment_journal.jsonl"
+        )
+
     def _journal_event_assessment(self, assessment: object) -> None:
         """Append 1 dòng JSON vào data/event_assessment_journal.jsonl (Bước 5).
 
         Lỗi ghi file không được ảnh hưởng luồng chính.
         """
         try:
-            journal_path = (
-                Path(__file__).resolve().parent.parent / "data" / "event_assessment_journal.jsonl"
-            )
+            journal_path = self._event_journal_path()
             line = {
                 "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
                 "event_key": assessment.event_key,
