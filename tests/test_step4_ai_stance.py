@@ -6,7 +6,7 @@ Usage: python tests/test_step4_ai_stance.py
 from __future__ import annotations
 
 import json
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from unittest.mock import MagicMock, patch
 
 from services.news_service import NewsService, currency_stance
@@ -229,6 +229,67 @@ def test_ai_stance_cache_miss_different_currency():
     assert mock_ai.analyze.call_count == 2  # different cache key
 
 
+def test_ai_stance_cache_hit_khi_headline_doi_cung_currency():
+    """Headline đổi nhưng cùng đồng tiền và còn trong TTL -> cache hit, không gọi AI lại."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = _json_stance("hawkish")
+    svc = NewsService()
+
+    result1 = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
+    assert result1 == "hawkish"
+    assert mock_ai.analyze.call_count == 1
+
+    # Headline thay đổi trong TTL, cùng currency + cùng AI -> cache hit
+    mock_ai.analyze.reset_mock()
+    result2 = svc._ai_currency_stance(
+        "USD", ["ECB cuts rates sharply today"], ai_service=mock_ai
+    )
+    assert result2 == "hawkish"  # kết quả cached từ lần đầu, không phải dovish
+    assert mock_ai.analyze.call_count == 0  # cache hit
+
+
+def test_ai_stance_fallback_cached_cung_currency():
+    """Kết quả fallback keyword matching cũng được cache: cùng currency trong TTL
+    trả về kết quả cũ dù headline đổi."""
+    svc = NewsService()
+
+    result1 = svc._ai_currency_stance(
+        "USD", ["Fed hikes rate aggressively"], ai_service=None
+    )
+    assert result1 == "hawkish"
+
+    # Headline đổi nhưng cùng currency -> cache hit của fallback, không tính lại
+    result2 = svc._ai_currency_stance("USD", ["ECB cuts rates"], ai_service=None)
+    assert result2 == "hawkish"  # cached, không phải dovish
+
+
+def test_ai_stance_cache_expired_tai_24h():
+    """Hết TTL 24h -> cache miss -> gọi AI lại."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = _json_stance("hawkish")
+    svc = NewsService()
+
+    result1 = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
+    assert result1 == "hawkish"
+    assert mock_ai.analyze.call_count == 1
+
+    # Giả lập entry đã hết hạn sau 24h
+    cache_key = json.dumps(
+        {"currency": "USD", "ai": svc._ai_fingerprint(mock_ai)},
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    svc._stance_cache[cache_key] = (
+        "hawkish",
+        datetime.now(UTC) - svc._stance_cache_ttl - timedelta(seconds=1),
+    )
+
+    result2 = svc._ai_currency_stance("USD", ["Fed raises rate"], ai_service=mock_ai)
+    assert result2 == "hawkish"
+    assert mock_ai.analyze.call_count == 2  # cache miss -> gọi AI lại
+
+
 # ---------------------------------------------------------------------------
 # _compute_macro_tiers — uses _ai_currency_stance
 # ---------------------------------------------------------------------------
@@ -321,6 +382,9 @@ if __name__ == "__main__":
         # cache
         test_ai_stance_cache_hit,
         test_ai_stance_cache_miss_different_currency,
+        test_ai_stance_cache_hit_khi_headline_doi_cung_currency,
+        test_ai_stance_fallback_cached_cung_currency,
+        test_ai_stance_cache_expired_tai_24h,
         # _compute_macro_tiers
         test_compute_macro_tiers_uses_ai_stance_with_service,
         test_compute_macro_tiers_without_ai_uses_keyword_fallback,

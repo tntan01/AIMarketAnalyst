@@ -123,6 +123,7 @@ class NewsService:
     _macro_context_cache_ttl = timedelta(minutes=5)
     _global_snapshot_ttl = timedelta(minutes=5)
     _global_snapshot_stale_if_error = timedelta(minutes=30)
+    _stance_cache_ttl = timedelta(hours=24)
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
@@ -1616,14 +1617,12 @@ class NewsService:
         AI trả về JSON có cấu trúc {stance, strength, confidence, drivers}; hàm
         validate schema và trả về stance ("hawkish" | "dovish" | "neutral").
         Fallback về keyword matching nếu AI không khả dụng, lỗi, hoặc JSON hỏng.
+        Cache key chỉ theo đồng tiền + fingerprint AI (không phụ thuộc headline),
+        TTL 24h để mỗi đồng tiền chỉ gọi AI tối đa 1 lần mỗi ngày.
         """
-        if not ai_service or not headlines:
-            return currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
-
         cache_key = json.dumps(
             {
                 "currency": currency,
-                "headlines": headlines[:5],
                 "ai": self._ai_fingerprint(ai_service),
             },
             ensure_ascii=True,
@@ -1631,8 +1630,13 @@ class NewsService:
             separators=(",", ":"),
         )
         cached = self._stance_cache.get(cache_key)
-        if cached and (datetime.now(UTC) - cached[1]).total_seconds() < 1800:
+        if cached and (datetime.now(UTC) - cached[1]) < self._stance_cache_ttl:
             return cached[0]
+
+        if not ai_service or not headlines:
+            fallback = currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
+            self._stance_cache[cache_key] = (fallback, datetime.now(UTC))
+            return fallback
 
         prompt = f"""Bạn là chuyên gia phân tích vĩ mô forex.
 Đọc các headline dưới đây liên quan đến {currency} và đánh giá xu hướng chính sách tiền tệ.
