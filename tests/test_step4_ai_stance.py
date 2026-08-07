@@ -281,7 +281,7 @@ def test_ai_stance_cache_expired_tai_24h():
         separators=(",", ":"),
     )
     svc._stance_cache[cache_key] = (
-        "hawkish",
+        {"stance": "hawkish", "strength": None, "confidence": None, "source": "fallback"},
         datetime.now(UTC) - svc._stance_cache_ttl - timedelta(seconds=1),
     )
 
@@ -338,6 +338,161 @@ def test_compute_macro_tiers_without_ai_uses_keyword_fallback():
 
 
 # ---------------------------------------------------------------------------
+# _stance_score — phản ánh strength và confidence (dải 0-4)
+# ---------------------------------------------------------------------------
+
+
+def _v2_base_stance(stance: str, strength: float | None, confidence: float | None) -> int:
+    """Chấm stance component (0-4) qua _compute_macro_v2 với strength/confidence cho trước."""
+    old = NewsService._interest_rates
+    NewsService._interest_rates = {}
+    try:
+        svc = NewsService()
+        detail = {
+            "stance": stance,
+            "strength": strength,
+            "confidence": confidence,
+            "source": "test",
+        }
+        v2 = svc._compute_macro_v2(
+            "EUR", "USD", stance, "neutral", {},
+            base_stance_detail=detail,
+            quote_stance_detail={"stance": "neutral", "strength": None, "confidence": None, "source": "fallback"},
+        )
+        return int(v2["components"]["base"]["stance"])
+    finally:
+        NewsService._interest_rates = old
+
+
+def test_stance_score_hawkish_theo_strength():
+    """Hawkish + confidence đạt: điểm tăng theo strength, tối đa 4."""
+    assert _v2_base_stance("hawkish", 10, 0.9) == 4
+    assert _v2_base_stance("hawkish", 5, 0.9) == 3
+    assert _v2_base_stance("hawkish", 0, 0.9) == 2
+
+
+def test_stance_score_dovish_theo_strength():
+    """Dovish + confidence đạt: điểm giảm theo strength, tối thiểu 0."""
+    assert _v2_base_stance("dovish", 10, 0.9) == 0
+    assert _v2_base_stance("dovish", 5, 0.9) == 1
+    assert _v2_base_stance("dovish", 0, 0.9) == 2
+
+
+def test_stance_score_confidence_thap_coi_nhu_neutral():
+    """Confidence < 0.7 (kể cả strength cao) → neutral (2), không tin tưởng."""
+    assert _v2_base_stance("hawkish", 10, 0.5) == 2
+    assert _v2_base_stance("dovish", 10, 0.5) == 2
+    assert _v2_base_stance("hawkish", 10, 0.69) == 2
+
+
+def test_stance_score_confidence_nguong_07():
+    """Confidence đúng ngưỡng 0.7 trở lên → tin tưởng, chấm theo strength."""
+    assert _v2_base_stance("hawkish", 10, 0.7) == 4
+    assert _v2_base_stance("dovish", 10, 0.7) == 0
+
+
+def test_stance_score_neutral_luon_la_2():
+    """Neutral dù strength cao → 2."""
+    assert _v2_base_stance("neutral", 10, 0.9) == 2
+
+
+def test_stance_score_fallback_khong_strength_conf():
+    """Fallback (không có strength/confidence) → neutral (2), không tin tưởng."""
+    assert _v2_base_stance("hawkish", None, None) == 2
+    assert _v2_base_stance("dovish", None, None) == 2
+
+
+# ---------------------------------------------------------------------------
+# _ai_currency_stance_detail — chi tiết stance/strength/confidence
+# ---------------------------------------------------------------------------
+
+
+def test_ai_stance_detail_tra_ve_strength_confidence():
+    """_ai_currency_stance_detail trả về stance, strength, confidence, source."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = _json_stance("hawkish", strength=8, confidence=0.9, drivers=("hike",))
+    svc = NewsService()
+    detail = svc._ai_currency_stance_detail("USD", ["Fed raises rate"], ai_service=mock_ai)
+    assert detail["stance"] == "hawkish"
+    assert detail["strength"] == 8
+    assert detail["confidence"] == 0.9
+    assert detail["source"] == "ai"
+
+
+def test_ai_stance_detail_fallback_khong_strength_confidence():
+    """Fallback keyword matching: strength/confidence = None, source=fallback."""
+    svc = NewsService()
+    detail = svc._ai_currency_stance_detail("USD", ["Fed hikes rate"], ai_service=None)
+    assert detail["stance"] == "hawkish"
+    assert detail["strength"] is None
+    assert detail["confidence"] is None
+    assert detail["source"] == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# stance_journal — ghi stance/strength/confidence của từng đồng tiền
+# ---------------------------------------------------------------------------
+
+
+def test_compute_macro_tiers_ghi_stance_journal():
+    """_compute_macro_tiers ghi stance_journal chứa stance/strength/confidence mỗi đồng tiền."""
+    mock_ai = MagicMock()
+    mock_ai.analyze.return_value = _json_stance("hawkish", strength=8, confidence=0.9)
+    svc = NewsService()
+    old = NewsService._interest_rates
+    NewsService._interest_rates = {}
+    try:
+        result = svc._compute_macro_tiers(
+            "EUR/USD",
+            ["EUR", "USD"],
+            [_make_headline("ECB cuts rate"), _make_headline("Fed hikes rate")],
+            events=[],
+            themes=[],
+            hotspots=[],
+            ai_service=mock_ai,
+        )
+    finally:
+        NewsService._interest_rates = old
+
+    journal = result["stance_journal"]
+    assert journal["base"]["currency"] == "EUR"
+    assert journal["base"]["stance"] == "hawkish"
+    assert journal["base"]["strength"] == 8
+    assert journal["base"]["confidence"] == 0.9
+    assert journal["base"]["source"] == "ai"
+    assert journal["quote"]["currency"] == "USD"
+    assert journal["quote"]["stance"] == "hawkish"
+    assert journal["quote"]["strength"] == 8
+    assert journal["quote"]["confidence"] == 0.9
+    assert journal["quote"]["source"] == "ai"
+
+
+def test_compute_macro_tiers_stance_journal_fallback():
+    """Không có AI: stance_journal ghi nguồn fallback, strength/confidence = None."""
+    svc = NewsService()
+    old = NewsService._interest_rates
+    NewsService._interest_rates = {}
+    try:
+        result = svc._compute_macro_tiers(
+            "EUR/USD",
+            ["EUR", "USD"],
+            [_make_headline("ECB cuts rate")],
+            events=[],
+            themes=[],
+            hotspots=[],
+            ai_service=None,
+        )
+    finally:
+        NewsService._interest_rates = old
+
+    journal = result["stance_journal"]
+    assert journal["quote"]["currency"] == "USD"
+    assert journal["quote"]["source"] == "fallback"
+    assert journal["quote"]["strength"] is None
+    assert journal["quote"]["confidence"] is None
+
+
+# ---------------------------------------------------------------------------
 # currency_stance — unchanged
 # ---------------------------------------------------------------------------
 
@@ -388,6 +543,19 @@ if __name__ == "__main__":
         # _compute_macro_tiers
         test_compute_macro_tiers_uses_ai_stance_with_service,
         test_compute_macro_tiers_without_ai_uses_keyword_fallback,
+        # _stance_score — strength & confidence
+        test_stance_score_hawkish_theo_strength,
+        test_stance_score_dovish_theo_strength,
+        test_stance_score_confidence_thap_coi_nhu_neutral,
+        test_stance_score_confidence_nguong_07,
+        test_stance_score_neutral_luon_la_2,
+        test_stance_score_fallback_khong_strength_conf,
+        # _ai_currency_stance_detail
+        test_ai_stance_detail_tra_ve_strength_confidence,
+        test_ai_stance_detail_fallback_khong_strength_confidence,
+        # stance_journal
+        test_compute_macro_tiers_ghi_stance_journal,
+        test_compute_macro_tiers_stance_journal_fallback,
         # currency_stance unchanged
         test_currency_stance_unchanged,
     ]

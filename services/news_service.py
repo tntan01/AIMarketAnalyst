@@ -127,7 +127,7 @@ class NewsService:
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
-        self._stance_cache: dict[str, tuple[str, datetime]] = {}
+        self._stance_cache: dict[str, tuple[dict[str, object], datetime]] = {}
         self._tier_scores_cache: dict[str, _MacroContextCacheEntry] = {}
         self._macro_context_cache_lock = RLock()
         self._global_snapshot_lock = RLock()
@@ -367,6 +367,7 @@ class NewsService:
                 ai_available=ai_service is not None,
             ),  # Phase 15F.1: provenance from pre-fetched data
             "macro_v2": tier_scores.get("macro_v2"),  # Phase 15D.2: shadow diagnostics
+            "stance_journal": tier_scores.get("stance_journal"),
             "warning": calendar_warning
             or ("" if events else "Không có dữ liệu sự kiện kinh tế sắp tới khớp cặp tiền trong nguồn đã kiểm tra."),
         }
@@ -1554,18 +1555,20 @@ class NewsService:
         quote = currencies[1] if len(currencies) > 1 else ""
         base_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, base)]
         quote_headlines = [str(h.get("title", "")) for h in headlines if self._matches_currency(h, quote)]
-        base_stance = self._ai_currency_stance(
+        base_stance_detail = self._ai_currency_stance_detail(
             base,
             base_headlines,
             ai_service,
             performance_tracker=performance_tracker,
         )
-        quote_stance = self._ai_currency_stance(
+        quote_stance_detail = self._ai_currency_stance_detail(
             quote,
             quote_headlines,
             ai_service,
             performance_tracker=performance_tracker,
         )
+        base_stance = str(base_stance_detail.get("stance") or "neutral")
+        quote_stance = str(quote_stance_detail.get("stance") or "neutral")
 
         tier1_buy, tier1_sell, tier1_detail = self._macro_tier1(
             base,
@@ -1590,7 +1593,7 @@ class NewsService:
 
         # Phase 15D: Macro V2 — pair-relative currency strength (shadow mode)
         macro_v2 = self._compute_macro_v2(base, quote, base_stance, quote_stance,
-                                          tier1_detail)
+                                          tier1_detail, base_stance_detail, quote_stance_detail)
 
         return {
             "tier1": {"buy": tier1_buy, "sell": tier1_sell, "detail": tier1_detail},
@@ -1603,6 +1606,12 @@ class NewsService:
                 "sell": self._build_macro_reason(base, quote, base_stance, quote_stance, "sell", tier1_detail, tier2_detail, tier3_detail),
             },
             "macro_v2": macro_v2,
+            # Journal stance/strength/confidence của từng đồng tiền để sau này
+            # đối chiếu với kết quả lệnh thực tế trong journal giao dịch.
+            "stance_journal": {
+                "base": dict(base_stance_detail, currency=base),
+                "quote": dict(quote_stance_detail, currency=quote),
+            },
         }
 
     def _ai_currency_stance(
@@ -1615,7 +1624,8 @@ class NewsService:
     ) -> str:
         """Dùng AI đánh giá hawkish/dovish cho 1 tiền tệ từ danh sách headline.
         AI trả về JSON có cấu trúc {stance, strength, confidence, drivers}; hàm
-        validate schema và trả về stance ("hawkish" | "dovish" | "neutral").
+        validate schema, giữ lại strength/confidence trong cache và trả về stance
+        ("hawkish" | "dovish" | "neutral").
         Fallback về keyword matching nếu AI không khả dụng, lỗi, hoặc JSON hỏng.
         Cache key chỉ theo đồng tiền + fingerprint AI (không phụ thuộc headline),
         TTL 24h để mỗi đồng tiền chỉ gọi AI tối đa 1 lần mỗi ngày.
@@ -1631,11 +1641,12 @@ class NewsService:
         )
         cached = self._stance_cache.get(cache_key)
         if cached and (datetime.now(UTC) - cached[1]) < self._stance_cache_ttl:
-            return cached[0]
+            return cached[0]["stance"]
 
         if not ai_service or not headlines:
             fallback = currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
-            self._stance_cache[cache_key] = (fallback, datetime.now(UTC))
+            detail = {"stance": fallback, "strength": None, "confidence": None, "source": "fallback"}
+            self._stance_cache[cache_key] = (detail, datetime.now(UTC))
             return fallback
 
         prompt = f"""Bạn là chuyên gia phân tích vĩ mô forex.
@@ -1662,22 +1673,63 @@ Trả lời JSON:"""
             response = ai_service.analyze(prompt, max_tokens=200)
             result = self._parse_ai_stance_json(response)
             if result is not None:
-                self._stance_cache[cache_key] = (result, datetime.now(UTC))
-                return result
+                detail = {
+                    "stance": result["stance"],
+                    "strength": result.get("strength"),
+                    "confidence": result.get("confidence"),
+                    "source": "ai",
+                }
+                self._stance_cache[cache_key] = (detail, datetime.now(UTC))
+                return detail["stance"]
         except Exception:
             pass
 
         # Fallback nếu AI lỗi hoặc trả về JSON sai schema/thiếu field
         fallback = currency_stance(headlines, self.HAWKISH_TERMS, self.DOVISH_TERMS)
-        self._stance_cache[cache_key] = (fallback, datetime.now(UTC))
+        detail = {"stance": fallback, "strength": None, "confidence": None, "source": "fallback"}
+        self._stance_cache[cache_key] = (detail, datetime.now(UTC))
         return fallback
 
+    def _ai_currency_stance_detail(
+        self,
+        currency: str,
+        headlines: list[str],
+        ai_service: object | None = None,
+        *,
+        performance_tracker: object | None = None,
+    ) -> dict[str, object]:
+        """Chi tiết đánh giá stance cho 1 đồng tiền: stance, strength, confidence, source.
+
+        Gọi _ai_currency_stance (cache 24h theo đồng tiền) để đảm bảo đánh giá đã
+        được thực hiện, rồi đọc chi tiết từ cache. Dùng cho chấm điểm theo
+        strength/confidence và ghi journal stance của từng đồng tiền.
+        """
+        cache_key = json.dumps(
+            {
+                "currency": currency,
+                "ai": self._ai_fingerprint(ai_service),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self._ai_currency_stance(
+            currency,
+            headlines,
+            ai_service,
+            performance_tracker=performance_tracker,
+        )
+        cached = self._stance_cache.get(cache_key)
+        if cached:
+            return dict(cached[0])
+        return {"stance": "neutral", "strength": None, "confidence": None, "source": "fallback"}
+
     @staticmethod
-    def _parse_ai_stance_json(response: object) -> str | None:
+    def _parse_ai_stance_json(response: object) -> dict[str, object] | None:
         """Parse và validate phản hồi JSON của AI cho stance currency.
 
-        Trả về "hawkish"/"dovish"/"neutral" nếu JSON hợp lệ và đủ schema
-        (stance, strength 0-10, confidence 0-1, drivers: list[str]).
+        Trả về dict {stance, strength, confidence, drivers} nếu JSON hợp lệ và
+        đủ schema (stance, strength 0-10, confidence 0-1, drivers: list[str]).
         Trả None để caller fallback về keyword matching khi JSON hỏng/sai schema.
         """
         if not isinstance(response, str):
@@ -1709,7 +1761,12 @@ Trả lời JSON:"""
             drivers = data.get("drivers")
             if not isinstance(drivers, list) or not all(isinstance(d, str) for d in drivers):
                 continue
-            return stance.strip().lower()
+            return {
+                "stance": stance.strip().lower(),
+                "strength": float(strength),
+                "confidence": float(confidence),
+                "drivers": [str(d) for d in drivers],
+            }
         return None
 
     # --- Tier 1: Interest Rate & Monetary Policy (0-12) ---
@@ -1799,6 +1856,8 @@ Trả lời JSON:"""
     def _compute_macro_v2(
         self, base: str, quote: str, base_stance: str, quote_stance: str,
         tier1_detail: dict[str, object],
+        base_stance_detail: dict[str, object] | None = None,
+        quote_stance_detail: dict[str, object] | None = None,
     ) -> dict[str, object]:
         """Compute pair-relative macro scores from currency strength.
 
@@ -1852,18 +1911,47 @@ Trả lời JSON:"""
                 return 2, False
             return int(trend_map.get(str(info.get("trend", "hold")), 2)), True
 
-        def _stance_score(stance: str, available: bool) -> tuple[int, bool]:
+        def _stance_score(stance: str, strength: object, confidence: object, available: bool) -> tuple[int, bool]:
             stance_map = {"hawkish": 4, "neutral": 2, "dovish": 0}
             if not available:
                 return 2, False
-            return int(stance_map.get(stance.strip().lower(), 2)), True
+            norm = stance.strip().lower()
+            if norm not in stance_map:
+                return 2, False
+            # Confidence dưới 0.7 (hoặc không xác định) → coi như neutral (không tin tưởng)
+            try:
+                conf = float(confidence)
+            except (TypeError, ValueError):
+                conf = 0.0
+            if conf < 0.7:
+                return 2, True
+            # Confidence đạt → chấm theo hướng stance và strength, giữ nguyên dải 0-4
+            try:
+                s = max(0.0, min(10.0, float(strength)))
+            except (TypeError, ValueError):
+                s = 0.0
+            if norm == "hawkish":
+                return round(2 + 2 * s / 10.0), True  # hawkish mạnh nhất = 4
+            if norm == "dovish":
+                return round(2 - 2 * s / 10.0), True  # dovish mạnh nhất = 0
+            return 2, True  # neutral
 
         base_rate, br_ok = _rate_score(base_info, base_rate_avail)
         quote_rate, qr_ok = _rate_score(quote_info, quote_rate_avail)
         base_trend, bt_ok = _trend_score(base_info, base_trend_avail)
         quote_trend, qt_ok = _trend_score(quote_info, quote_trend_avail)
-        base_st, bs_ok = _stance_score(base_stance, base_stance_avail)
-        quote_st, qs_ok = _stance_score(quote_stance, quote_stance_avail)
+        base_st, bs_ok = _stance_score(
+            base_stance,
+            (base_stance_detail or {}).get("strength"),
+            (base_stance_detail or {}).get("confidence"),
+            base_stance_avail,
+        )
+        quote_st, qs_ok = _stance_score(
+            quote_stance,
+            (quote_stance_detail or {}).get("strength"),
+            (quote_stance_detail or {}).get("confidence"),
+            quote_stance_avail,
+        )
 
         # --- Currency strength (0-12) ---
         base_strength = base_rate + base_trend + base_st
