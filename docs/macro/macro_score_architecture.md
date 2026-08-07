@@ -1,7 +1,7 @@
 # Macro Score Architecture & Phase 15 Changelog
 
-**Last updated**: 2026-07-23
-**Status**: Production V1 stable, V2 in shadow data collection
+**Last updated**: 2026-08-07
+**Status**: Production V1 stable, V2 in shadow data collection, Bước 5 AI Event Impact active
 
 ---
 
@@ -23,6 +23,7 @@
 | **15G** | 2026-07-23 | V1 vs V2 comparison script + shadow metrics | `scripts/compare_macro_v1_v2.py` |
 | **15G.1–6** | 2026-07-23 | Sensitivity grid, fix symbol parsing, edge deadband | Config A (db=2) and B (db=3) candidates |
 | **15G.7** | 2026-07-23 | Forward outcome validation tool | `scripts/validate_macro_v2.py` — record/label/report |
+| **Bước 5** | 2026-08-07 | AI Event Impact Assessment — derate macro_confidence cho sự kiện high-impact trong 4-48h (shadow → active) | Module `event_impact_assessor.py`, derate trong pipeline, reason code mới, UI warning |
 
 ---
 
@@ -39,6 +40,13 @@
 | `core/scanner_ai_auditor.py` | AI audit — truyền `macro_score` vào prompt audit |
 | `controllers/scanner_controller.py` | Controller — gọi `NewsService.data_quality_flags()` lấy `macro_context` |
 | `services/news_service.py` | Service — `_compute_macro_tiers()` tính 3-tier (0-30) + `_compute_macro_v2()` shadow |
+| `services/event_impact_assessor.py` | Bước 5 — AI event impact assessment logic, cache, decision table |
+| `services/event_impact_cache.py` | Bước 5 — disk cache for event assessments |
+| `scripts/validate_event_assessment.py` | Bước 5 — công cụ kiểm chứng priced_in (record/label/report) |
+| `data/event_assessment_journal.jsonl` | Bước 5 — journal assessments (gitignored) |
+| `data/event_assessment_labels.jsonl` | Bước 5 — ground-truth labels (gitignored) |
+| `tests/test_step5_event_impact.py` | Test — 39 tests cho parser, decision table, cache, orchestrator |
+| `tests/test_step5_shadow_wiring.py` | Test — 11 tests cho shadow wiring news_service → pipeline |
 | `services/forex_factory_client.py` | Data — `calendar_events()` lấy lịch kinh tế từ ForexFactory |
 | `services/interest_rate_service.py` | Data — `get_latest_rates()` lấy lãi suất từ FRED + FF |
 | `services/calendar_helpers.py` | Utility — shared helpers |
@@ -57,6 +65,9 @@
 | `ForexFactoryClient` | `forex_factory_client.py` | Lấy dữ liệu lịch kinh tế |
 | `AnalysisPipeline` | `analysis_pipeline.py` | Pipeline phân tích — tích hợp macro vào điểm tổng |
 | `ScannerController` | `scanner_controller.py` | Controller quét — điều phối NewsService + AnalysisPipeline |
+| `EventImpactAssessor` | `event_impact_assessor.py` | Bước 5 — đánh giá tác động sự kiện 4-48h, gọi AI, cache, decision table |
+| `EventImpactAssessment` | `event_impact_assessor.py` | Bước 5 — dataclass kết quả đánh giá 1 sự kiện |
+| `EventImpactAssessmentCache` | `event_impact_assessor.py` | Bước 5 — disk cache 2 tầng TTL cho assessment |
 
 ---
 
@@ -77,6 +88,13 @@
 | `_macro_tier3()` | `news_service.py:918` | Tier 3: Tâm lý rủi ro & Địa chính trị (0-8) |
 | `_macro_data_quality()` | `news_service.py:1099` | Chất lượng dữ liệu vĩ mô (0.0-1.0) |
 | `score_scenario()` | `signal_engine.py:88` | Điểm tổng hợp (technical + macro + risk) |
+| `assess_upcoming_events()` | `event_impact_assessor.py:390` | Bước 5 — gọi AI đánh giá tác động, cache, fallback |
+| `derate_factor()` | `event_impact_assessor.py:272` | Bước 5 — tính hệ số derate từ decision table |
+| `select_dominant_assessment()` | `event_impact_assessor.py:302` | Bước 5 — chọn assessment nghiêm trọng nhất cho cặp |
+| `_preload_event_impact_assessments()` | `news_service.py:430` | Bước 5 — preload assessment trong background |
+| `_upcoming_event_assessments_for_symbol()` | `news_service.py:572` | Bước 5 — lọc assessment khớp cặp tiền |
+| `_select_event_ahead_payload()` | `analysis_pipeline.py:748` | Bước 5 — chọn assessment từ data_quality |
+| `_step_compute_correlation()` | `analysis_pipeline.py:620` | Bước 5 derate + floor tích hợp trong bước correlation |
 
 ---
 
@@ -470,6 +488,133 @@ AI không tham gia trực tiếp vào Tier 2 (calendar). AI stance ảnh hưởn
 - **Hardcode trong Tier 2**: `EVENT_SEVERITY` dictionary chỉ có ~15 patterns, bỏ lỡ nhiều sự kiện
 - **Không có trọng số động**: Các tier luôn cố định 12+10+8, không thay đổi theo market regime
 - **Không dùng actual values trong Tier 2**: Chỉ dùng impact + time, không xét actual đã công bố
+
+---
+
+---
+
+## 16. Bước 5 — AI Event Impact Assessment (4-48h)
+
+**Status**: Active (Prompt 4 — derate enabled behind flag `event_impact_derate_enabled`)
+**Files**: `services/event_impact_assessor.py`, `core/analysis_pipeline.py`, `services/news_service.py`
+
+### Mục đích
+
+Bước 5 dùng AI để đánh giá tác động của sự kiện kinh tế high-impact trong cửa sổ 4-48 giờ tới. Kết quả được dùng **chỉ để phòng thủ**: giảm `macro_confidence` và hiển thị cảnh báo — không bao giờ tăng điểm hoặc tạo directional bias.
+
+### Ranh giới với Bước 3
+
+| | Bước 3 | Bước 5 |
+|---|---|---|
+| **Cửa sổ** | 0.5h < hours_until ≤ 4.0h | 4.0h < hours_until ≤ 48.0h |
+| **Cơ chế** | Hardcode factor 0.8 | AI decision table (0.70-1.0) |
+| **Reason code** | `MACRO_HIGH_IMPACT_EVENT_NEARBY` | `MACRO_HIGH_IMPACT_EVENT_AHEAD` |
+| **Mốc 4.0h** | Thuộc Bước 3 | Không overlap |
+
+### Luồng dữ liệu
+
+```
+ForexFactory Calendar
+        │
+        ▼
+NewsService._preload_event_impact_assessments()
+  ├─ Lọc sự kiện high-impact, tính lại hours_until từ time_utc
+  ├─ Gọi EventImpactAssessor.assess_upcoming_events()
+  │   ├─ Kiểm tra cache (key = sha1(time_utc|currency|event_name))
+  │   ├─ Gọi AI (Gemini/DeepSeek) → parse JSON → EventImpactAssessment
+  │   └─ Fallback: magnitude="medium", priced_in="unknown" → factor 0.85
+  ├─ Lưu kết quả vào self._last_event_assessments
+  └─ Ghi journal → data/event_assessment_journal.jsonl
+        │
+        ▼
+NewsService.data_quality_flags()
+  ├─ _upcoming_event_assessments_for_symbol() → lọc theo currency
+  └─ Trả về data_quality["upcoming_event_assessments"]
+        │
+        ▼
+AnalysisPipeline._step_compute_correlation()
+  ├─ _select_event_ahead_payload() → select_dominant_assessment()
+  ├─ Nếu flag event_impact_derate_enabled = True:
+  │   ├─ derate_factor(assessment, hours_until)
+  │   ├─ self._macro_confidence_in *= factor
+  │   └─ self._macro_event_ahead_reason_code = MACRO_HIGH_IMPACT_EVENT_AHEAD
+  ├─ Floor: max(self._macro_confidence_in, 0.15)
+  └─ Payload: result["macro"]["event_assessments"][0]["applied_derate"]
+        │
+        ▼
+ScannerDetailScreen._dialog_card_macro()
+  └─ Nếu applied_derate ≠ None → hiển thị ⚠ warning
+```
+
+### Schema JSON AI Response
+
+```json
+{
+  "assessment": {
+    "magnitude": "high" | "medium" | "low",
+    "priced_in": "priced_in" | "partial" | "not_priced_in" | "unknown",
+    "expected_direction": "currency_up" | "currency_down" | "two_way" | "unknown",
+    "risk_window_hours": 4-48,
+    "ai_confidence": 0.0-1.0,
+    "evidence": ["string", ...]
+  }
+}
+```
+
+### Decision Table
+
+| Magnitude | Penalty | Priced-in | Surplus | Factor |
+|-----------|---------|-----------|---------|--------|
+| high | 0.30 | not_priced_in | 1.0 | **0.70** |
+| high | 0.30 | partial | 0.6 | **0.82** |
+| high | 0.30 | priced_in | 0.3 | **0.91** |
+| medium | 0.15 | not_priced_in | 1.0 | **0.85** |
+| medium | 0.15 | partial | 0.6 | **0.91** |
+| medium | 0.15 | priced_in | 0.3 | **0.955** |
+| low | 0.05 | not_priced_in | 1.0 | **0.95** |
+| low | 0.05 | partial | 0.6 | **0.97** |
+| low | 0.05 | priced_in | 0.3 | **0.985** |
+
+**Công thức**: `factor = 1.0 - penalty × surplus`
+
+**Quy tắc đặc biệt**:
+- `ai_confidence < 0.5` → coi `priced_in` như `"unknown"` (surplus = 1.0)
+- `priced_in = "unknown"` → surplus = 1.0 (an toàn: giả định chưa price-in)
+- Backstop: `magnitude = "high"` + `hours_until ≤ 24` → factor ≤ 0.85
+- Floor: factor không bao giờ dưới 0.15
+- Cap: factor không bao giờ trên 1.0
+
+### Cache 2 tầng
+
+| Cache | Key | TTL |
+|-------|-----|-----|
+| Assessment (magnitude + risk_window) | `sha1(time_utc\|currency\|event_name)` + AI fingerprint | `min(hours_until, 24h)` |
+| Priced-in | key + `_priced_in` suffix | 6h (thay đổi khi sự kiện đến gần) |
+| Negative cache | key + `_negative` suffix | 30 min (tránh gọi lại AI khi lỗi) |
+
+### Fail-safe
+
+- **AI error**: fallback `{magnitude: "medium", priced_in: "unknown"}` → factor 0.85
+- **Pipeline error**: try/except bỏ qua derate, không crash
+- **UI error**: try/except bỏ qua warning, không crash
+- **Flag mặc định TẮT**: `event_impact_derate_enabled = False` trong AdvancedSettings
+
+### Reason Code
+
+| Code | Message |
+|------|---------|
+| `MACRO_HIGH_IMPACT_EVENT_AHEAD` | "Có sự kiện vĩ mô tác động mạnh trong 4-48 giờ tới, giảm mức tin cậy vĩ mô." |
+
+### Kiểm chứng
+
+**Tool**: `scripts/validate_event_assessment.py`
+- `label` — nhập nhãn thực tế cho sự kiện đã diễn ra
+- `report` — in ma trận 3×3 (predicted vs actual priced_in) + độ chính xác hướng
+
+**Tests**:
+- `tests/test_step5_event_impact.py` — 39 tests (parser, decision table, cache, orchestrator)
+- `tests/test_step5_shadow_wiring.py` — 11 tests (shadow wiring)
+- `tests/test_analysis_pipeline_integration.py` — 8 tests (derate integration)
 
 ---
 

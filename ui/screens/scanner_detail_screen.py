@@ -1226,6 +1226,40 @@ class ScannerDetailScreen(QWidget):
                 )
 
         detail = f"{bias}<br><br>{'<br>'.join(parts)}" if parts else bias
+
+        # Bước 5: cảnh báo sự kiện high-impact 4-48h có applied_derate
+        try:
+            ar = self._as_dict(self.row.get("analysis_result"))
+            macro = self._as_dict(ar.get("macro"))
+            event_assessments = macro.get("event_assessments")
+            if isinstance(event_assessments, list):
+                for ea in event_assessments:
+                    if not isinstance(ea, dict):
+                        continue
+                    if ea.get("applied_derate") is not None:
+                        event_name = str(ea.get("event_name") or "Sự kiện")
+                        currency = str(ea.get("currency") or "?")
+                        hours_until = float(ea.get("hours_until") or 0)
+                        magnitude = str(ea.get("magnitude") or "?")
+                        priced_in_raw = str(ea.get("priced_in") or "unknown")
+                        priced_in_map = {
+                            "priced_in": "đã price-in",
+                            "partial": "price-in một phần",
+                            "not_priced_in": "chưa price-in",
+                            "unknown": "không rõ price-in",
+                        }
+                        priced_in_vn = priced_in_map.get(priced_in_raw, priced_in_raw)
+                        warn_line = (
+                            f"<br><span style='{_HTML_SMALL}color:#f59e0b;'>"
+                            f"⚠ {event_name} ({currency}) trong {hours_until:.1f}h "
+                            f"— mức {magnitude}, {priced_in_vn}"
+                            f"</span>"
+                        )
+                        detail += warn_line
+                        break  # chỉ 1 dòng cảnh báo
+        except Exception:
+            pass  # fail-safe: bỏ qua nếu dữ liệu không đúng kiểu
+
         return f"{dot} {self._score_text(macro_num)}/30", detail, accent
 
     def _dialog_card_rr(self) -> tuple[str, str, str]:

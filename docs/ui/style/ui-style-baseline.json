@@ -9,7 +9,7 @@
   },
   "totals": {
     "set_stylesheet_calls": 1,
-    "html_style_attributes": 451,
+    "html_style_attributes": 452,
     "hex_color_literals": 532,
     "object_name_calls": 338
   },
@@ -224,10 +224,10 @@
     },
     "ui/screens/scanner_detail_screen.py": {
       "set_stylesheet_calls": 0,
-      "html_style_attributes": 192,
+      "html_style_attributes": 193,
       "hex_color_literals": 240,
       "object_name_calls": 70,
-      "line_count": 3459,
+      "line_count": 3493,
       "sha256": "ab6ba283922d140391809a120f0957d9ea2c2a748bd57b9ec14010e99a386be3"
     },
     "ui/screens/scanner_screen.py": {
