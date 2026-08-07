@@ -8,6 +8,7 @@ the same output dict as the original function.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -56,6 +57,10 @@ from core.smc_consumer_contract import (
 )
 from core.smc_prefilter import SMC_SCORING_ERROR, evaluate_post_context_prefilter
 from core.smc_scorer import score_smc
+from services.event_impact_assessor import (
+    EventImpactAssessment,
+    select_dominant_assessment,
+)
 from core.smc_scoring_result import (
     SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
@@ -351,6 +356,8 @@ class AnalysisPipeline:
             ("_macro_confidence_in", 1.0),
             ("_macro_data_reason_code", None),
             ("_macro_event_reason_code", None),
+            ("_macro_event_ahead_assessment", None),
+            ("_macro_event_ahead_reason_code", None),
             ("_buy_corr_adj", 0), ("_sell_corr_adj", 0),
             ("_scores", {"buy": {}, "sell": {}}),
             ("_buy_smc_flags", {}), ("_sell_smc_flags", {}),
@@ -645,6 +652,13 @@ class AnalysisPipeline:
                 self._macro_confidence_in *= 0.8  # sự kiện sắp tới → giảm nhẹ
                 self._macro_event_reason_code = MACRO_HIGH_IMPACT_EVENT_NEARBY
 
+        # Bước 5 (SHADOW — chưa derate): chọn assessment sự kiện high-impact
+        # 4-48h nghiêm trọng nhất cho cặp đang phân tích. Kết quả chỉ được đưa
+        # vào payload (result["macro"]["event_assessments"]) + journal — CHƯA
+        # nhân vào _macro_confidence_in (bật derate ở Prompt 4).
+        self._macro_event_ahead_assessment = self._select_event_ahead_payload()
+        self._macro_event_ahead_reason_code = None
+
         corr_summary = (
             f"DXY={'yes' if has_dxy else 'no'}, VIX={'yes' if has_vix else 'no'}, "
             f"US10Y={'yes' if has_us10y else 'no'}, US2Y={'yes' if has_us2y else 'no'} "
@@ -689,6 +703,46 @@ class AnalysisPipeline:
             base, quote = symbol.split("/", 1)
             return currency in (base, quote)
         return currency in symbol
+
+    def _pair_currencies(self, symbol: str) -> tuple[str, str]:
+        """Tách base/quote từ symbol (EUR/USD hoặc XAUUSD)."""
+        sym = str(symbol).upper()
+        if "/" in sym:
+            base, quote = sym.split("/", 1)
+            return base, quote
+        if len(sym) >= 6:
+            return sym[:3], sym[3:6]
+        return sym, ""
+
+    def _select_event_ahead_payload(self) -> dict[str, Any] | None:
+        """Bước 5 (shadow): chọn assessment sự kiện 4-48h nghiêm trọng nhất cho cặp.
+
+        Đọc danh sách assessment từ data_quality (được NewsService gắn vào
+        "upcoming_event_assessments"), dùng select_dominant_assessment với
+        base/quote của symbol. Trả payload dict của assessment chọn (kèm
+        hours_until) hoặc None. Mọi lỗi → None (shadow an toàn).
+        """
+        try:
+            upcoming = self._data_quality.get("upcoming_event_assessments", [])
+            if not isinstance(upcoming, list) or not upcoming:
+                return None
+            assessments: list[EventImpactAssessment] = []
+            for item in upcoming:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    assessments.append(EventImpactAssessment(**item))
+                except Exception:
+                    continue
+            if not assessments:
+                return None
+            base, quote = self._pair_currencies(self._request.symbol)
+            selected = select_dominant_assessment(assessments, base, quote)
+            if selected is None:
+                return None
+            return {**asdict(selected), "hours_until": selected.hours_until}
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Step 3 — score buy & sell scenarios + extract SMC flags
@@ -1724,6 +1778,10 @@ class AnalysisPipeline:
                     self._trade_permission,
                 ),
                 "macro_confidence": self._macro_confidence_in,
+                "event_assessments": (
+                    [self._macro_event_ahead_assessment]
+                    if self._macro_event_ahead_assessment else []
+                ),
             },
             "economic_events": [],
             "scenarios": self._scenarios or fallback_scenarios,

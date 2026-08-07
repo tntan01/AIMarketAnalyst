@@ -7,7 +7,7 @@ import re
 import time
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -31,6 +31,7 @@ from services.calendar_helpers import (
     parse_event_time,
 )
 from services.forex_factory_client import ForexFactoryClient
+from services.event_impact_assessor import EventImpactAssessor
 from services.ai_service import AIService, AIProviderConfig
 from services.macro_market_cache import get_shared_cache
 from services.settings_service import SettingsService
@@ -134,6 +135,8 @@ class NewsService:
         self._global_snapshot: MacroGlobalSnapshot | None = None
         self._preload_cache_time: datetime | None = None
         self._preloading = False
+        # Bước 5 (shadow): đánh giá sự kiện high-impact 4-48h bằng AI.
+        self._event_assessor = EventImpactAssessor()
 
     # ------------------------------------------------------------------
     # Interest rate config
@@ -402,13 +405,166 @@ class NewsService:
         event_time = _event_time(next_high) if next_high else None
         hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
         resume_after = (event_time + timedelta(minutes=buffer_minutes)).isoformat() if event_time else None
+        # Bước 5 (shadow): danh sách assessment sự kiện high-impact 4-48h khớp
+        # cặp đang phân tích. Đọc từ cache của assessor — KHÔNG gọi AI tại đây.
+        upcoming_event_assessments = self._upcoming_event_assessments_for_symbol(
+            symbol, ai_service
+        )
         return {
             "macro_context": context,
             "news_in_3h": bool(hours_until is not None and 0 <= hours_until <= 3),
             "high_impact_event_within_30m": bool(hours_until is not None and 0 <= hours_until <= 0.5),
             "next_high_impact_event": next_high,
             "resume_after": resume_after,
+            "upcoming_event_assessments": upcoming_event_assessments,
         }
+
+    # ------------------------------------------------------------------
+    # Bước 5 (shadow) — AI Event Impact Assessment
+    # ------------------------------------------------------------------
+
+    def _preload_event_impact_assessments(
+        self,
+        snapshot: object,
+        ai_service: object | None,
+        performance_tracker: object | None,
+    ) -> None:
+        """Bước 5 (shadow): đánh giá sự kiện high-impact 4-48h từ snapshot vĩ mô.
+
+        Đọc calendar events + headlines từ snapshot đang có, stance đọc từ
+        self._stance_cache (không gọi AI lại cho stance). Assessment mới do AI
+        tạo (source="ai") được ghi journal. Mọi lỗi chỉ log/emit — KHÔNG được
+        làm hỏng preload (fail-closed, D6).
+        """
+        try:
+            payload = (
+                snapshot.calendar_payload
+                if isinstance(snapshot, MacroGlobalSnapshot)
+                else getattr(snapshot, "calendar_payload", {})
+            )
+            events = payload.get("events", []) if isinstance(payload, dict) else []
+            if not isinstance(events, list):
+                events = []
+            headlines = (
+                snapshot.global_headlines
+                if isinstance(snapshot, MacroGlobalSnapshot)
+                else getattr(snapshot, "global_headlines", ())
+            )
+            headlines_by_currency = self._build_headlines_by_currency(headlines)
+            stance_lookup = self._make_stance_lookup(ai_service)
+            safe_performance_call(
+                performance_tracker,
+                "increment",
+                "ai_event_assessment_calls",
+            )
+            assessments = self._event_assessor.assess_upcoming_events(
+                events,
+                ai_service,
+                stance_lookup,
+                headlines_by_currency,
+            )
+            for assessment in assessments:
+                if assessment.source == "ai":
+                    self._journal_event_assessment(assessment)
+        except Exception:
+            # Bước 5 chạy shadow — lỗi không được phá hỏng preload.
+            pass
+
+    def _build_headlines_by_currency(
+        self, global_headlines: object
+    ) -> dict[str, list[str]]:
+        """Gom global headlines thành {currency: [title, ...]} theo đồng tiền liên quan."""
+        result: dict[str, list[str]] = {}
+        for currency in sorted(self.CURRENCY_KEYWORDS):
+            titles = [
+                str(item.get("title", ""))
+                for item in (global_headlines or ())
+                if isinstance(item, dict) and self._matches_currency(item, currency)
+            ]
+            if titles:
+                result[currency] = titles
+        return result
+
+    def _make_stance_lookup(self, ai_service: object | None):
+        """Closure đọc stance đã cache theo đồng tiền (không gọi AI lại cho stance)."""
+        fingerprint = self._ai_fingerprint(ai_service)
+
+        def lookup(currency: str) -> dict[str, object] | None:
+            try:
+                cache_key = json.dumps(
+                    {
+                        "currency": currency,
+                        "ai": fingerprint,
+                    },
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                cached = self._stance_cache.get(cache_key)
+                if cached and (datetime.now(UTC) - cached[1]) < self._stance_cache_ttl:
+                    return dict(cached[0])
+            except Exception:
+                pass
+            return None
+
+        return lookup
+
+    def _journal_event_assessment(self, assessment: object) -> None:
+        """Append 1 dòng JSON vào data/event_assessment_journal.jsonl (Bước 5).
+
+        Lỗi ghi file không được ảnh hưởng luồng chính.
+        """
+        try:
+            journal_path = (
+                Path(__file__).resolve().parent.parent / "data" / "event_assessment_journal.jsonl"
+            )
+            line = {
+                "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+                "event_key": assessment.event_key,
+                "currency": assessment.currency,
+                "event_name": assessment.event_name,
+                "time_utc": assessment.time_utc,
+                "hours_until": assessment.hours_until,
+                "magnitude": assessment.magnitude,
+                "priced_in": assessment.priced_in,
+                "expected_direction": assessment.expected_direction,
+                "risk_window_hours": assessment.risk_window_hours,
+                "ai_confidence": assessment.ai_confidence,
+                "evidence": list(assessment.evidence),
+                "source": assessment.source,
+            }
+            with open(journal_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+    def _upcoming_event_assessments_for_symbol(
+        self,
+        symbol: str,
+        ai_service: object | None,
+    ) -> list[dict[str, object]]:
+        """Đọc assessment từ cache của assessor, lọc theo currency thuộc cặp.
+
+        KHÔNG gọi AI tại đây — chỉ đọc cache đã có từ preload. Entry quá hạn
+        sẽ tự bị loại ở pipeline (4 < hours_until ≤ 48) hoặc ở cache.get.
+        """
+        try:
+            wanted = {currency.upper() for currency in self._symbol_currencies(symbol)}
+            cache = getattr(self._event_assessor, "cache", None)
+            entries = getattr(cache, "_entries", None) if cache is not None else None
+            if not isinstance(entries, dict):
+                return []
+            result: list[dict[str, object]] = []
+            for item in entries.values():
+                if not isinstance(item, tuple) or not item:
+                    continue
+                assessment = item[0]
+                if getattr(assessment, "currency", "") in wanted:
+                    result.append(asdict(assessment))
+            result.sort(key=lambda d: float(d.get("hours_until") or 0))
+            return result
+        except Exception:
+            return []
 
     def execution_news_status(
         self,
@@ -1080,6 +1236,10 @@ class NewsService:
             "macro_global_fetch",
         ):
             snapshot = self._get_global_macro_snapshot(now=now)
+
+        # Bước 5 (shadow — chưa derate): đánh giá sự kiện high-impact 4-48h từ
+        # snapshot. Mọi lỗi ở đây chỉ log/emit, KHÔNG được làm hỏng preload.
+        self._preload_event_impact_assessments(snapshot, ai_service, performance_tracker)
 
         # Pre-compute every requested key against the exact same snapshot.
         self._preloading = True
