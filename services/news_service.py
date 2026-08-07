@@ -1267,10 +1267,6 @@ class NewsService:
         ):
             snapshot = self._get_global_macro_snapshot(now=now)
 
-        # Bước 5 (shadow — chưa derate): đánh giá sự kiện high-impact 4-48h từ
-        # snapshot. Mọi lỗi ở đây chỉ log/emit, KHÔNG được làm hỏng preload.
-        self._preload_event_impact_assessments(snapshot, ai_service, performance_tracker)
-
         # Pre-compute every requested key against the exact same snapshot.
         self._preloading = True
         try:
@@ -1286,6 +1282,14 @@ class NewsService:
                 )
         finally:
             self._preloading = False
+
+        # Bước 5 (shadow — chưa derate): đánh giá sự kiện high-impact 4-48h từ
+        # snapshot. CHẠY SAU vòng lặp per-symbol ở trên — nơi _macro_tier3 gọi
+        # _ai_currency_stance đổ đầy _stance_cache. Nhờ vậy ngay chu kỳ preload
+        # đầu tiên trong ngày (cache stance còn trống), assessment đã có bối cảnh
+        # stance cho priced_in. Mọi lỗi ở đây chỉ log/emit, KHÔNG được làm hỏng
+        # preload (fail-closed, D6).
+        self._preload_event_impact_assessments(snapshot, ai_service, performance_tracker)
 
         self._last_fetch_time = snapshot.fetched_at_utc
         self._preload_cache_time = now

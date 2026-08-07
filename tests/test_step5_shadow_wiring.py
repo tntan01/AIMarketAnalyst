@@ -8,6 +8,7 @@ macro_confidence (chưa derate). Mock toàn bộ, không network.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
@@ -321,6 +322,51 @@ def test_preload_khong_derate_ma_cho_event_da_qua_cache_24h():
         with patch.object(svc, "latest_macro_context", return_value={"events": [], "source": "test", "warning": ""}):
             flags = svc.data_quality_flags("EUR/USD")
         assert flags["upcoming_event_assessments"] == []
+
+
+def test_preload_step5_dau_ngay_van_co_boi_canh_stance():
+    """Lỗi 4: hook Bước 5 phải chạy SAU vòng lặp per-symbol (nơi _macro_tier3
+    gọi _ai_currency_stance đổ đầy _stance_cache). Nhờ vậy ngay chu kỳ preload
+    đầu tiên trong ngày (cache stance còn trống), stance_lookup đã trả dữ liệu —
+    không phải None (input quan trọng nhất cho priced_in)."""
+    svc = NewsService()
+    snapshot = _snapshot_with_event(time_utc="2026-08-08T12:00:00Z", hours_until=20.0)
+
+    # Đúng cache key mà _make_stance_lookup sẽ đọc (currency + fingerprint AI).
+    fp = NewsService._ai_fingerprint(None)
+    stance_key = json.dumps(
+        {"currency": "USD", "ai": fp},
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    # Giả lập _macro_tier3: mỗi lần latest_macro_context chạy trong vòng lặp
+    # per-symbol thì đổ đầy _stance_cache cho USD (mô phỏng _ai_currency_stance).
+    def fake_latest_macro_context(symbol, **kwargs):
+        svc._stance_cache[stance_key] = (
+            {"stance": "hawkish", "strength": 7, "confidence": 0.8, "source": "ai"},
+            T0,
+        )
+        return {}
+
+    captured: dict[str, object] = {}
+
+    class _CapturingAssessor:
+        def assess_upcoming_events(self, events_, ai_service, stance_lookup, headlines_by_currency, **kwargs):
+            captured["USD"] = stance_lookup("USD")
+            return []
+
+    svc._event_assessor = _CapturingAssessor()
+    with patch("services.news_service.datetime", _FrozenDatetime), patch.object(
+        svc, "_get_global_macro_snapshot", return_value=snapshot
+    ), patch.object(svc, "latest_macro_context", side_effect=fake_latest_macro_context):
+        svc.preload_macro_contexts(["EUR/USD"], ai_service=None)
+
+    # Nếu hook chạy TRƯỚC vòng lặp → _stance_cache trống → stance_lookup trả None.
+    # Fix (hook chạy SAU vòng lặp) → cache đã đầy → stance_lookup trả dict stance.
+    assert captured.get("USD") is not None, "stance_lookup phải có dữ liệu ngay chu kỳ preload đầu"
+    assert captured["USD"]["stance"] == "hawkish"
 
 
 # ---------------------------------------------------------------------------
