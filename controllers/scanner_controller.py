@@ -589,6 +589,7 @@ class ScannerController:
             "scanner_fast_tier2": bool(
                 request.feature_flags.get("scanner_fast_tier2", False)
             ),
+            "ai_service": ai_svc,
         }
 
         with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 4)) as ex:
@@ -2430,6 +2431,28 @@ class ScannerController:
         return payload
 
 
+def _build_macro_verdict_context(macro_context: dict[str, Any]) -> dict[str, Any]:
+    """Critical 2: gói tín hiệu macro đầy đủ cho AI Macro Verdict.
+
+    Map từ ``macro_context`` mà NewsService trả về (``macro_tier_detail`` chứa
+    tier1_interest_rate/tier2_calendar/tier3_sentiment + macro_v2 +
+    stance_journal) sang shape mà ``build_verdict_prompt`` chờ. Pipeline tự
+    bổ sung alignment/data_quality/correlation/DXY từ chính nó.
+    """
+    if not isinstance(macro_context, dict):
+        return {}
+    tier_detail = macro_context.get("macro_tier_detail", {})
+    if not isinstance(tier_detail, dict):
+        tier_detail = {}
+    return {
+        "tier1": tier_detail.get("tier1_interest_rate", {}),
+        "tier2": tier_detail.get("tier2_calendar", {}),
+        "tier3": tier_detail.get("tier3_sentiment", {}),
+        "macro_v2": macro_context.get("macro_v2", {}),
+        "stance": macro_context.get("stance_journal", {}),
+    }
+
+
 def _scan_one_symbol(
     symbol: str,
     *,
@@ -2496,6 +2519,8 @@ def _scan_one_symbol(
             open_trades=[],
             account_guard_settings=account_guard_settings,
             thresholds=thresholds,
+            ai_service=ai_service,
+            macro_verdict_context=_build_macro_verdict_context(macro_context),
         )
         result["economic_events"] = macro_context.get("events", [])
         result["macro"]["driver_context"] = macro_context
@@ -2626,6 +2651,7 @@ def _analyze_one_symbol(
     thresholds: dict[str, int | float] | None = None,
     scanner_fast_tier1: bool = False,
     scanner_fast_tier2: bool = False,
+    ai_service: object | None = None,
 ) -> dict[str, Any]:
     """Run the analysis pipeline for one symbol (CPU-only, thread-safe)."""
     started_at = perf_counter()
@@ -2663,6 +2689,8 @@ def _analyze_one_symbol(
             thresholds=thresholds,
             scanner_fast_tier1=scanner_fast_tier1,
             scanner_fast_tier2=scanner_fast_tier2,
+            ai_service=ai_service,
+            macro_verdict_context=_build_macro_verdict_context(macro_context),
         )
     except Exception as exc:
         blocked = blocked_scanner_row(

@@ -14,15 +14,17 @@ Không thay đổi điểm deterministic — chỉ hiệu chỉnh đè lên trê
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
+import logging
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from config.paths import app_data_dir
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -40,6 +42,13 @@ ADJUSTMENT_MAX = 0
 
 # AI call timeout (seconds).
 AI_TIMEOUT_S = 15.0
+
+# Negative cache: khi AI hỏng, không gọi lại trong cửa sổ này (Minor 9).
+NEGATIVE_CACHE_TTL = timedelta(minutes=30)
+
+# Thread pool dùng chung cho AI call — timeout tạo thread zombie được chấp nhận
+# (Major 7); pool có 2 workers để lần gọi sau không nghẽn bởi zombie.
+_AI_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="macro-verdict-ai")
 
 # Valid enum values for bias field.
 BIAS_VALUES = frozenset({"aligned", "conflict", "unclear"})
@@ -77,6 +86,7 @@ class MacroVerdict:
     evidence: list[str]  # Short justifications from AI
     source: str  # "ai" | "fallback" | "skip_low_conviction" | "skip_below_threshold" | "skip_disabled"
     ai_blocking_time_s: float = 0.0
+    best_side: str = "buy"  # Hướng đang xét khi verdict được tạo (Major 6)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -90,10 +100,11 @@ class MacroVerdict:
             "evidence": list(self.evidence),
             "source": self.source,
             "ai_blocking_time_s": self.ai_blocking_time_s,
+            "best_side": self.best_side,
         }
 
     @classmethod
-    def skip(cls, pair: str, date: str, reason: str) -> MacroVerdict:
+    def skip(cls, pair: str, date: str, reason: str, *, best_side: str = "buy") -> MacroVerdict:
         """Factory for skipped verdicts (below threshold, disabled, etc.)."""
         return cls(
             pair=pair,
@@ -106,10 +117,11 @@ class MacroVerdict:
             evidence=[],
             source=reason,
             ai_blocking_time_s=0.0,
+            best_side=best_side,
         )
 
     @classmethod
-    def fallback(cls, pair: str, date: str) -> MacroVerdict:
+    def fallback(cls, pair: str, date: str, *, best_side: str = "buy") -> MacroVerdict:
         """Factory for AI-failure fallback verdict."""
         return cls(
             pair=pair,
@@ -122,6 +134,7 @@ class MacroVerdict:
             evidence=list(FALLBACK_VERDICT["evidence"]),
             source="fallback",
             ai_blocking_time_s=0.0,
+            best_side=best_side,
         )
 
 
@@ -150,9 +163,14 @@ def _ai_fingerprint(ai_service: object | None) -> str:
     return json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
-def verdict_cache_key(pair: str, date_str: str, fingerprint: str) -> str:
-    """Cache key: sha1(pair|date|fingerprint)."""
-    raw = f"{pair.strip().upper()}|{date_str}|{fingerprint}"
+def _repo_data_dir() -> Path:
+    """Thư mục dữ liệu trong repo (thống nhất với Bước 5 — Minor 10)."""
+    return Path(__file__).resolve().parents[1] / "data"
+
+
+def verdict_cache_key(pair: str, date_str: str, fingerprint: str, best_side: str = "buy") -> str:
+    """Cache key: sha1(pair|date|side|fingerprint)."""
+    raw = f"{pair.strip().upper()}|{date_str}|{best_side.strip().lower()}|{fingerprint}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -217,8 +235,20 @@ def build_verdict_prompt(
         f"  Correlation: {json.dumps(correlation, ensure_ascii=False)}",
         f"  Stance: {json.dumps(stance, ensure_ascii=False)}",
         "",
-        "=== SỰ KIỆN SẮP TỚI (4-48h) ===",
     ]
+
+    # V6: dữ liệu chuyển động DXY thực tế — nguyên liệu cho phát hiện mâu thuẫn
+    # "Tier 1 nói USD mạnh nhưng DXY đang giảm" (Critical 2 fix).
+    dxy = correlation.get("dxy") if isinstance(correlation, dict) else None
+    if isinstance(dxy, dict) and dxy.get("has_data"):
+        lines.append(
+            f"  DXY (2 nến gần nhất): {dxy.get('direction', '?').upper()} "
+            f"({dxy.get('change_pct', '?')}%, close={dxy.get('last_close', '?')})"
+        )
+    else:
+        lines.append("  DXY: không có dữ liệu")
+
+    lines.append("")
 
     if events:
         for ev in (events or [])[:5]:
@@ -384,21 +414,23 @@ def _validate_verdict(data: dict) -> dict | None:
 
 
 class MacroVerdictCache:
-    """Disk cache cho MacroVerdict, keyed by (pair, date).
+    """Disk cache cho MacroVerdict, keyed by (pair, date, best_side).
 
     Lưu tại ``data/macro_verdict_cache/``, mỗi file JSON chứa 1 verdict.
-    TTL = đến cuối ngày giao dịch (date_str != today → stale).
+    TTL = đến cuối ngày giao dịch (date_str != today → stale); entry negative
+    cache có ``expires_at_utc`` hết hạn trong 30 phút.
     """
 
     def __init__(self, cache_dir: Path | None = None) -> None:
         if cache_dir is None:
-            cache_dir = app_data_dir() / "cache" / "macro_verdict"
+            cache_dir = _repo_data_dir() / "macro_verdict_cache"
         self._dir = Path(cache_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
 
-    def _file_path(self, pair: str, date_str: str) -> Path:
+    def _file_path(self, pair: str, date_str: str, best_side: str = "buy") -> Path:
         safe_pair = pair.replace("/", "_").replace("\\", "_")
-        return self._dir / f"{safe_pair}_{date_str}.json"
+        side = str(best_side or "buy").strip().lower() or "buy"
+        return self._dir / f"{safe_pair}_{date_str}_{side}.json"
 
     # ------------------------------------------------------------------
     # Public API
@@ -410,10 +442,19 @@ class MacroVerdictCache:
         date_str: str,
         fingerprint: str,
         *,
+        best_side: str = "buy",
+        match_fingerprint: bool = True,
         now: datetime | None = None,
     ) -> MacroVerdict | None:
-        """Đọc verdict từ cache. None nếu miss, khác fingerprint, hoặc khác ngày."""
-        filepath = self._file_path(pair, date_str)
+        """Đọc verdict từ cache. None nếu miss, khác fingerprint, hoặc khác ngày.
+
+        ``match_fingerprint=False`` (backtest read-cache-only) bỏ qua kiểm tra
+        fingerprint — đọc lại verdict mà hệ thống live đã ghi cho (pair, date, side).
+        Entry negative cache hết hạn (``expires_at_utc`` trong quá khứ) → miss.
+        """
+        if now is None:
+            now = datetime.now(UTC)
+        filepath = self._file_path(pair, date_str, best_side)
         if not filepath.exists():
             return None
         try:
@@ -423,14 +464,26 @@ class MacroVerdictCache:
         if not isinstance(data, dict):
             return None
 
-        # Fingerprint mismatch → cache miss
-        cached_fp = data.get("fingerprint", "")
-        if cached_fp != fingerprint:
-            return None
+        # Fingerprint mismatch → cache miss (backtest có thể bỏ qua — Major 5)
+        if match_fingerprint:
+            cached_fp = data.get("fingerprint", "")
+            if cached_fp != fingerprint:
+                return None
 
         # Date mismatch → stale
         if data.get("date") != date_str:
             return None
+
+        # Negative cache hết hạn → miss
+        expires_at = data.get("expires_at_utc")
+        if isinstance(expires_at, str) and expires_at:
+            try:
+                parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                # Không parse được → coi như hết hạn, không dùng.
+                return None
+            if parsed <= now:
+                return None
 
         return MacroVerdict(
             pair=data.get("pair", pair),
@@ -443,16 +496,29 @@ class MacroVerdictCache:
             evidence=list(data.get("evidence", [])),
             source=data.get("source", "unknown"),
             ai_blocking_time_s=float(data.get("ai_blocking_time_s", 0.0)),
+            best_side=str(data.get("best_side", best_side)),
         )
 
-    def put(self, verdict: MacroVerdict, fingerprint: str) -> None:
-        """Ghi verdict vào disk cache."""
-        filepath = self._file_path(verdict.pair, verdict.date)
+    def put(
+        self,
+        verdict: MacroVerdict,
+        fingerprint: str,
+        *,
+        negative_ttl: timedelta | None = None,
+    ) -> None:
+        """Ghi verdict vào disk cache.
+
+        ``negative_ttl`` (vd 30 phút) đánh dấu entry là negative cache: khi đọc
+        quá hạn sẽ miss để thử lại AI (Minor 9).
+        """
+        filepath = self._file_path(verdict.pair, verdict.date, verdict.best_side)
         payload = {
             **verdict.to_dict(),
             "fingerprint": fingerprint,
             "cached_at_utc": datetime.now(UTC).isoformat(),
         }
+        if negative_ttl is not None:
+            payload["expires_at_utc"] = (datetime.now(UTC) + negative_ttl).isoformat()
         try:
             filepath.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
         except OSError:
@@ -473,7 +539,7 @@ def _journal_verdict(
     Journal dùng để sau này đối chiếu verdict với kết quả lệnh thực tế.
     """
     if journal_path is None:
-        journal_path = app_data_dir() / "macro_verdict_journal.jsonl"
+        journal_path = _repo_data_dir() / "macro_verdict_journal.jsonl"
     try:
         record = {
             **verdict.to_dict(),
@@ -523,6 +589,7 @@ class MacroVerdictAssessor:
         best_side: str = "buy",
         verdict_enabled: bool = False,
         now: datetime | None = None,
+        is_backtest: bool = False,
     ) -> MacroVerdict:
         """Đánh giá macro verdict cho 1 cặp trong 1 ngày.
 
@@ -542,6 +609,10 @@ class MacroVerdictAssessor:
             Feature flag từ settings.
         now : datetime | None
             Thời điểm hiện tại (test injection).
+        is_backtest : bool
+            True → chế độ read-cache-only (Major 5): chỉ đọc cache theo
+            (pair, date, best_side), không kiểm tra fingerprint; miss → skip
+            trung tính, TUYỆT ĐỐI không gọi AI. Đảm bảo backtest reproducible.
 
         Returns
         -------
@@ -556,36 +627,71 @@ class MacroVerdictAssessor:
 
             # ---- Guard 1: feature flag ----
             if not verdict_enabled:
-                return MacroVerdict.skip(pair, date_str, "skip_disabled")
+                return MacroVerdict.skip(pair, date_str, "skip_disabled", best_side=best_side)
 
             # ---- Guard 2: top candidate threshold ----
             alignment = (macro_context or {}).get("alignment", {})
             macro_buy = alignment.get("buy", 15) if isinstance(alignment, dict) else 15
             macro_sell = alignment.get("sell", 15) if isinstance(alignment, dict) else 15
             if max(macro_buy, macro_sell) < MIN_MACRO_SCORE_FOR_VERDICT:
-                return MacroVerdict.skip(pair, date_str, "skip_below_threshold")
+                return MacroVerdict.skip(pair, date_str, "skip_below_threshold", best_side=best_side)
 
             # ---- Cache check ----
             fingerprint = _ai_fingerprint(ai_service)
-            cached = self.cache.get(pair, date_str, fingerprint, now=now)
+            cached = self.cache.get(
+                pair, date_str, fingerprint,
+                best_side=best_side,
+                # Backtest read-cache-only: đọc lại verdict live đã ghi, không
+                # cần khớp fingerprint (Major 5).
+                match_fingerprint=not is_backtest,
+                now=now,
+            )
             if cached is not None:
                 return cached
 
+            # ---- Backtest: read-cache-only — miss thì skip trung tính ----
+            if is_backtest:
+                return MacroVerdict.skip(
+                    pair, date_str, "skip_backtest_no_cache", best_side=best_side,
+                )
+
             # ---- AI call ----
             if ai_service is None:
-                return MacroVerdict.fallback(pair, date_str)
+                failure = MacroVerdict.fallback(pair, date_str, best_side=best_side)
+                self.cache.put(failure, fingerprint, negative_ttl=NEGATIVE_CACHE_TTL)
+                _journal_verdict(failure, self._journal_path)
+                return failure
 
             t0 = time.monotonic()
             try:
                 prompt = build_verdict_prompt(pair, macro_context, best_side)
-                response = ai_service.analyze(prompt, max_tokens=300)
+                # Major 7: thực thi budget timeout — chạy AI trong thread riêng,
+                # chờ tối đa self._timeout_s. Thread zombie được chấp nhận.
+                future = _AI_EXECUTOR.submit(ai_service.analyze, prompt, max_tokens=300)
+                response = future.result(timeout=self._timeout_s)
                 elapsed = time.monotonic() - t0
+            except concurrent.futures.TimeoutError:
+                logger.warning(
+                    "macro_ai_verdict timeout sau %.1fs (pair=%s, side=%s) — fallback",
+                    self._timeout_s, pair, best_side,
+                )
+                failure = MacroVerdict.fallback(pair, date_str, best_side=best_side)
+                failure.ai_blocking_time_s = round(self._timeout_s, 3)
+                self.cache.put(failure, fingerprint, negative_ttl=NEGATIVE_CACHE_TTL)
+                _journal_verdict(failure, self._journal_path)
+                return failure
             except Exception:
-                return MacroVerdict.fallback(pair, date_str)
+                failure = MacroVerdict.fallback(pair, date_str, best_side=best_side)
+                self.cache.put(failure, fingerprint, negative_ttl=NEGATIVE_CACHE_TTL)
+                _journal_verdict(failure, self._journal_path)
+                return failure
 
             parsed = parse_verdict_json(response)
             if parsed is None:
-                return MacroVerdict.fallback(pair, date_str)
+                failure = MacroVerdict.fallback(pair, date_str, best_side=best_side)
+                self.cache.put(failure, fingerprint, negative_ttl=NEGATIVE_CACHE_TTL)
+                _journal_verdict(failure, self._journal_path)
+                return failure
 
             verdict = MacroVerdict(
                 pair=pair,
@@ -598,6 +704,7 @@ class MacroVerdictAssessor:
                 evidence=list(parsed["evidence"]),
                 source="ai",
                 ai_blocking_time_s=round(elapsed, 3),
+                best_side=best_side,
             )
 
             # ---- Cache + journal ----

@@ -37,6 +37,8 @@ def analyze_symbol(
     is_backtest: bool = False,
     scanner_fast_tier1: bool = False,
     scanner_fast_tier2: bool = False,
+    ai_service: object | None = None,
+    macro_verdict_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Orchestrate the full market analysis pipeline.
 
@@ -44,6 +46,10 @@ def analyze_symbol(
     engine, and integration tests.  It delegates to
     :class:`~core.analysis_pipeline.AnalysisPipeline` while keeping the
     exact same signature and output contract.
+
+    ``ai_service`` (Bước 6) cung cấp cho AI Macro Verdict; ``macro_verdict_context``
+    là gói tín hiệu macro đầy đủ (tier1/tier2/tier3/macro_v2/stance) mà scanner
+    đã fetch sẵn — xem Critical 1/2 của step6 review.
 
     Returns a dict with keys documented in ``test_analyze_symbol_all_keys_present``.
     """
@@ -68,4 +74,6 @@ def analyze_symbol(
         is_backtest=is_backtest,
         scanner_fast_tier1=scanner_fast_tier1,
         scanner_fast_tier2=scanner_fast_tier2,
+        ai_service=ai_service,
+        macro_verdict_context=macro_verdict_context,
     )

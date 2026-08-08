@@ -642,6 +642,122 @@ Validate (`_validate_event_json`): đủ 6 trường, enum đúng tập cho phé
 
 ---
 
+## 17. Bước 6 — AI Macro Verdict (Trọng tài vĩ mô)
+
+### Mục đích
+
+AI nhìn TOÀN BỘ tín hiệu macro cùng lúc (Tier 1 lãi suất, Tier 2 calendar,
+Tier 3 sentiment, correlation, stance, sự kiện, chuyển động DXY) và phát hiện
+mâu thuẫn giữa các tầng — thứ từng tầng riêng lẻ không thấy. AI có quyền làm
+KHÓ setup, không bao giờ được làm dễ (bất đối xứng).
+
+### Luồng dữ liệu
+
+```
+Scanner (news_service.data_quality_flags + macro_context)
+  │  macro_alignment_scores {"buy","sell"} + macro_tier_detail
+  │  (tier1_interest_rate / tier2_calendar / tier3_sentiment / macro_v2 / stance_journal)
+  ▼
+scanner_controller._build_macro_verdict_context()          [C2 fix]
+  │  map tier1_interest_rate→"tier1", tier2_calendar→"tier2",
+  │  tier3_sentiment→"tier3" + macro_v2 + stance
+  ▼
+analyze_symbol(..., ai_service=ai_svc,                    [C1 fix]
+               macro_verdict_context=pkg)
+  ▼
+AnalysisPipeline._step_ai_macro_verdict (Step 5.5)
+  │  Guard 1: flag macro_ai_verdict_enabled (data_quality)
+  │  Guard 2: best_side ∈ {buy, sell}
+  │  Guard 3: macro score của best_side ≥ 20 (top ~33%)
+  │  _build_macro_verdict_context() bổ sung alignment, data_quality,
+  │     correlation + DXY movement (_dxy_movement — 2 nến D1 gần nhất)
+  ▼
+MacroVerdictAssessor.assess(pair, macro_context, ai_service,
+                            best_side, is_backtest)
+  │  cache get → hit? trả về
+  │  is_backtest=True → miss → skip_backtest_no_cache (KHÔNG gọi AI)  [M5]
+  │  else → AI call trong thread riêng, timeout 15s                     [M7]
+  │       → parse + validate JSON (bất đối xứng)
+  │       → cache.put + journal                                         [M6/M9/M10]
+  ▼
+Verdict áp dụng:
+  │  source ≠ "ai" → skip (fallback/skip trung tính)
+  │  conviction < 0.7 → bỏ qua (reason MACRO_AI_VERDICT_SKIPPED)
+  │  veto=true → gate engine giáng READY → WATCH (mac_ai_veto)
+  │  adjustment ∈ [-5,0] → Step 7 trừ TRỰC TIẾP vào component macro   [C3]
+  │     (0-30) của best_side rồi tính lại signal_score
+  ▼
+Result: macro.macro_ai_verdict (to_dict) + macro.macro_ai_deducted
+        reason codes: MACRO_AI_VETO / MACRO_AI_ADJUSTMENT / MACRO_AI_VERDICT_SKIPPED
+```
+
+### Schema JSON AI Response
+
+```json
+{
+  "bias": "aligned"|"conflict"|"unclear",
+  "conviction": 0.0-1.0,
+  "conflicts": ["mô tả mâu thuẫn 1", "..."],
+  "veto": true|false,
+  "adjustment": -5..0,
+  "evidence": ["căn cứ 1", "..."]
+}
+```
+
+Parser nghiêm ngặt (`parse_verdict_json`): bias ngoài enum → reject; conviction
+ngoài [0,1] → reject; adjustment ngoài [-5,0] → reject (bất đối xứng tuyệt đối);
+`veto=true` mà không có conflicts → vô hiệu hóa veto; `bias=conflict` mà không
+có conflicts → hạ thành `unclear`.
+
+### Decision Rules
+
+| Tín hiệu | Hành động | Lý do |
+|---|---|---|
+| `veto=true`, conviction ≥ 0.7 | Gate engine → `WATCH_ONLY` | Mâu thuẫn nghiêm trọng giữa các tầng |
+| `adjustment=-N` (N=1..5) | Trừ N điểm macro component (0-30) của best_side | Làm khó, không làm dễ |
+| `conviction < 0.7` | Bỏ qua toàn bộ verdict | Không chắc chắn thì không can thiệp |
+| `source ≠ "ai"` (fallback/skip) | Không áp dụng gì | Fail-closed |
+
+### Cache & Journal
+
+- **Cache disk**: `<repo>/data/macro_verdict_cache/{pair}_{date}_{side}.json`
+  (Minor 10 — thống nhất với Bước 5 trong repo `data/`). Key gồm fingerprint
+  (provider/model) + best_side (Major 6 — setup SELL không lãnh verdict của BUY).
+- **Negative cache** (Minor 9): AI hỏng/timeout → fallback được cache với
+  `expires_at_utc` = 30 phút; trong cửa sổ không gọi lại AI.
+- **Journal**: `<repo>/data/macro_verdict_journal.jsonl` — 1 dòng JSONL mỗi
+  verdict AI, gồm `pair`, `date`, `best_side`, `trade_result_r: null`,
+  `trade_outcome: null` (Major 8 — script `scripts/validate_macro_verdict.py`
+  `label` backfill outcome từ trade DB, `report` in ma trận chính xác).
+
+### Backtest policy (Major 5)
+
+Backtest KHÔNG gọi AI (reproducible). `BacktestRequest.macro_ai_verdict_enabled`
+được set từ settings trong `backtest_controller.build_request`, đi vào
+`data_quality` của `_run_analysis_snapshot`. `assess(is_backtest=True)` chạy
+**read-cache-only**: đọc cache theo (pair, date, side) KHÔNG kiểm tra fingerprint
+(đọc lại verdict live đã ghi); miss → `skip_backtest_no_cache` trung tính.
+
+### Flag
+
+`config/settings.py → advanced.macro_ai_verdict_enabled` → SettingsService →
+UI checkbox (`ui/screens/settings_screen.py`) → `news_service.data_quality_flags`
+→ pipeline `data_quality["macro_ai_verdict_enabled"]`. Fail-closed: mặc định
+False.
+
+### Kiểm chứng
+
+- `tests/test_step6_macro_verdict.py` — parser, constraints, cache, assessor,
+  prompt, fingerprint, gate engine
+- `tests/test_step6_review_fixes.py` — fix của báo cáo review: pipeline wiring
+  e2e (C1), macro_verdict_context + DXY (C2), adjustment trừ thẳng (C3),
+  reason codes giữ được (M4), backtest read-cache-only (M5), cache/journal
+  best_side (M6), timeout (M7), negative cache (M9), diagnostics contract (M11)
+- `scripts/validate_macro_verdict.py` — `label` (backfill outcome) + `report`
+  (ma trận chính xác bias/veto/adjustment)
+
+---
+
 ## 14. Các vấn đề phát hiện
 
 | # | Vấn đề | Mức độ | Vị trí |
