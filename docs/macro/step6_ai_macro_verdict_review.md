@@ -172,3 +172,99 @@ Merge agent đã loại 10 finding thô sau khi đọc code thật, gồm: "flag
 ---
 
 *Review tạo bởi quy trình đa agent: 6 reviewer độc lập (bất đối xứng, nối dây runtime, cache/reproducible, journal/feedback, timeout/fallback, chất lượng test) → merge kiểm chứng bằng đọc code thật → xác minh đối kháng từng cụm. 20 agent, 0 lỗi, toàn bộ 10 cụm sống sót sau bước bác bỏ.*
+
+---
+---
+
+# BÁO CÁO RE-REVIEW BẢN FIX BƯỚC 6 — 2026-08-08
+
+**Đối tượng**: xác minh commit `7fc4725` ("Bước 6 review fixes — AI Macro Verdict (12 findings)") đã fix TRIỆT ĐỂ 12 finding ở phần trên chưa, và bản fix có tự gây lỗi mới không.
+**Phương pháp**: chạy độc lập full test suite (✅ **2579 passed, 8 skipped, 17 xfailed** — khớp commit message, không FAIL); đọc trực tiếp diff `7fc4725` + code thật tại các điểm trọng yếu; workflow **98 agent** (15 verifier độc lập theo 12 finding + 3 chiều review chéo bất-đối-xứng/regression/test-quality → bác bỏ đối kháng 2 lens cho từng issue → completeness critic). Mọi issue nặng dưới đây đều đã được **tự reproduce bằng code thật** trước khi ghi nhận.
+
+## Kết luận
+
+**Cả 12 finding đều đã được xử lý ở phần lõi** — wiring sống thật, test suite xanh, bất đối xứng V2 được giữ (truy vết 6 cửa không tìm được đường nào AI/cache làm setup *dễ* hơn). Nhưng **chưa triệt để**: 3 finding ở trạng thái *partial* (C3, M8, m10), và **bản fix tự gây regression mới** — nặng nhất là nạn "bỏ đói" AI call khiến tính năng có thể lại **chết lặng lẽ trên hầu hết các cặp**, đúng loại lỗi Critical 1 từng mắc.
+
+## Trạng thái 12 finding sau bản fix
+
+| Finding | Trạng thái | Ghi chú |
+|---|---|---|
+| C1 wiring `ai_service` | ✅ triệt để* | Nối đúng cả 2 call site; *nhưng gây starvation (A1) và thiếu test lớp scanner (A7) |
+| C2 context đầy đủ | ✅ triệt để* | Tier data + DXY sống thật; *1 field prompt luôn "?" (A4) |
+| C3 adjustment trừ điểm | ⚠️ **partial** | Trừ thật (reproduce −3 → signal/final giảm 3) nhưng **phantom deduction khi cap CHOCH binds** + **best_score/trade_permission stale** (A2, A3) |
+| M4 reason codes | ✅ triệt để | Đúng pattern Bước 3/5, cả 3 code sống sót (nit: VETO ở cả reason_codes lẫn warning_codes — chấp nhận được, 2 kênh khác mục đích) |
+| M5 backtest read-cache-only | ⚠️ **partial** | Cơ chế đúng (thread `is_backtest` xuyên pipeline, miss→skip trung tính) nhưng **thiếu integration test khóa chuỗi** + giới hạn thực tế (chỉ hữu ích cho ngày live đã quét, cùng side) |
+| M6 cache/journal best_side | ✅ triệt để* | *outermost exception path không truyền `best_side` (nhóm 🟡) |
+| M7 timeout 15s | ✅ triệt để* | ThreadPool + `result(timeout=15)` đúng; *pool 2 worker là nguồn cơn A1 |
+| M8 vòng V8 | ⚠️ **partial** | Script `label/report` chạy được, join (pair,date,side) đúng — đạt mức "tối thiểu"; nhưng **0 test** + R-multiple chết trên dữ liệu thật (mt5_sync không có result_r) |
+| m9 negative cache | ✅ triệt để* | TTL 30', phân biệt fingerprint; *negative entry ghi đè verdict tích cực khi đổi fingerprint (A6) |
+| m10 path `data/` | ⚠️ **partial** | Path đúng; nhưng **3 test cũ giờ ghi rác thẳng vào `data/` thật** (đã xác nhận tại chỗ: journal 187 dòng test + file negative cache) (A5) |
+| m11 diagnostics contract | ✅ triệt để* | Suite xanh; *UI vẽ "skip" thành 🟢 QUA, backtest aggregator ghi key "skip" thô (nhóm 🟡) |
+| m12 tài liệu | ✅ triệt để | Section 17 mô tả đúng code sau fix (nit: thiếu dòng changelog đầu file, mô tả `verdict_cache_key` vốn là code chết) |
+
+## A. Các vấn đề CẦN SỬA (theo mức độ)
+
+### 🔴 A1 — Starvation AI call: pool 2 worker vs 6 luồng scan (regression MỚI, major)
+`services/macro_ai_verdict.py:51` — `_AI_EXECUTOR` singleton **max_workers=2**; scanner chạy **tối đa 6** pipeline song song (`controllers/scanner_controller.py:595`). `future.result(timeout=15)` tính từ lúc *submit* nên thời gian xếp hàng bị tính vào budget. Đã **reproduce với 6 luồng thật, AI 12s/call: chỉ 2 "ok", 4 TimeoutError** → fallback + **negative cache 30 phút**. Hệ quả: scan có ≥3 top candidate → đa số cặp âm thầm không có verdict AI trong 30 phút tiếp theo. Fail-closed nên không sai quyết định, nhưng đây chính là biến thể "flag bật mà tính năng chết lặng" của Critical 1.
+**Fix**: nâng `max_workers` ≥ số thread scan (6), hoặc tách budget thành queue-timeout + exec-timeout; và **không ghi negative cache khi lỗi chỉ là timeout xếp hàng** (AI chưa từng được gọi).
+
+### 🔴 A2 — Phantom deduction khi cap CHOCH binds (major — Critical 3 chưa triệt để ở nhánh này)
+Đã reproduce trực tiếp: `{technical_scaled:30, risk_condition:15, macro_alignment:20, smc_score_cap:60}`, adjustment=−5 → `deducted=5` nhưng **signal_score giữ nguyên 60**. `core/analysis_pipeline.py:1763-1773` trừ vào component rồi áp lại cap — khi cap đã bind, deduction vô hình trong khi `macro_ai_deducted` và log vẫn báo "trừ 5 điểm".
+**Fix**: trừ SAU cap (`new_total = min(total, cap) − deduction`, floor 0) — adjustment có răng cả trên setup capped; và/hoặc tính `deducted` = chênh lệch total thực tế để log/payload không nói sai.
+
+### 🔴 A3 — `best_score` / `trade_permission` dùng điểm TRƯỚC deduction (major — lỗi MỚI do fix)
+`_best_score` chốt ở Step 5 (`core/analysis_pipeline.py:1032`), `calc_trade_permission` chạy ở Step 6 với `_best_score` cũ (`:1287-1290`) — đều **trước** deduction ở Step 7 (`:1797`). Payload cuối chứa cả hai: `decision_summary.best_score` (`:2091`) = điểm cũ, `final_score`/`scenario_scores` = điểm mới. Permission READY xét điểm chưa trừ → adjustment không chạm được ngưỡng READY.
+**Fix**: tính lại `_best_score` + `trade_permission` sau deduction, hoặc dời deduction lên trước Step 6.
+
+### 🟠 A4 — Prompt đọc `event_risk_level` sai tầng (minor — C2 còn lỗ nhỏ)
+`services/macro_ai_verdict.py:224` đọc `tier2.get('event_risk_level')` nhưng shape production là `tier2 = {buy, sell, detail:{...}}` với field nằm trong `detail` (`services/news_service.py:1847, 2439-2447`) → prompt luôn hiện **"Event risk level: ?"**. Test mock shape top-level nên không phát hiện (`tests/test_step6_macro_verdict.py:65`, `tests/test_step6_review_fixes.py:246`).
+**Fix**: `tier2.get('detail', {}).get('event_risk_level')` + sửa mock về đúng shape production.
+
+### 🟠 A5 — Unit test ghi rác vào `data/` production (minor→major, đã xác nhận LIVE)
+`tests/test_step6_macro_verdict.py:400/411/420` khởi tạo `MacroVerdictAssessor()` không inject storage → sau fix m10, default là `<repo>/data/`. Trên máy dev đang có **187 dòng journal test** + 1 file negative cache trong `data/` — chính đầu vào mà script M8 sẽ đọc để tính win-rate.
+**Fix**: inject temp dir cho 3 test này (pattern `_assessor_with_temp_storage` có sẵn trong `tests/test_step6_review_fixes.py`); dọn 2 file đang ô nhiễm.
+
+### 🟠 A6 — Negative cache ghi đè verdict tích cực cùng file path (minor, mất veto)
+Đã được 2 refuter reproduce: positive verdict (fp-A, veto=true) → user đổi model AI (fp-B) → miss → AI fail → `put()` **ghi đè** fallback lên file verdict cũ. Trong 30 phút tiếp theo, verdict veto của ngày biến mất. Chiều an toàn (không làm dễ) nhưng làm mất lớp bảo vệ.
+**Fix**: entry negative tách namespace (vd suffix `_neg`) hoặc policy "không ghi đè positive entry còn hạn trong ngày".
+
+### 🟠 A7 — Thiếu test cho các lớp wiring/logic mới (major về mặt khóa regression)
+Đúng lớp từng gây Critical 1: (1) forward `ai_service`/`macro_verdict_context` trong `_analyze_one_symbol` (`controllers/scanner_controller.py:2692`) — 0 test; (2) `_build_macro_verdict_context` (`:2434`) — 0 test; (3) chuỗi backtest `is_backtest=True` từ `_run_analysis_snapshot` — test dùng fake nuốt kwargs; (4) script `validate_macro_verdict.py` — 0 test; (5) convention `data/` (m10) — 0 test.
+**Fix**: mỗi lớp 1 test nhỏ (unit cho `_analyze_one_symbol`/mapping; integration backtest thật với cache có sẵn; test `_match_trade`/`_label`/`_report` với sqlite tmp).
+
+### 🟠 A8 — Các vấn đề của script M8 trên dữ liệu thật (minor)
+Toàn bộ 74 lệnh đóng trong DB thật là `mode='mt5_sync'` với `result_r=None` (`services/journal_converters.py:402`) → mục "Trung bình R-multiple theo adjustment" của report **chết**; report đếm cả verdict bị bỏ do conviction<0.7; label không refresh khi outcome trong DB bị sửa; `except Exception: return []` nuốt lỗi DB thành "chưa có dữ liệu".
+
+### 🟡 Nhóm nhỏ khác (gộp 1 commit dọn dẹp)
+- `except Exception` chung trong `assess()` không log (`services/macro_ai_verdict.py:683-687`) — chỉ nhánh timeout có log.
+- `_AI_EXECUTOR` không bao giờ `shutdown()` — thoát app có thể chờ zombie AI call tới timeout adapter; token vẫn đốt sau khi scan đã bỏ cuộc.
+- UI vẽ status `skip` thành 🟢 "QUA" (`ui/screens/scanner_detail_screen.py:3646-3650`); `_aggregate_pipeline_diag` ghi key "skip" thô vào `pipeline_stats` (`core/system_backtest_engine.py:2283`).
+- Outermost exception path không truyền `best_side` (`services/macro_ai_verdict.py:719-721`).
+- Journal append từ 6 thread pipeline không atomic (Windows) — thêm lock module-level.
+- Cache read không re-validate: `bool(data.get('veto'))` coerce string `"false"`→`True`; backtest `match_fingerprint=False` tin mọi file.
+- Log `core/analysis_pipeline.py:1182` báo số adjustment *yêu cầu*, `macro_ai_deducted` là số *thực trừ* — lệch khi component bị floor.
+- Không migration dữ liệu cũ ở `%APPDATA%` (chấp nhận mất thì nên ghi chú trong docs).
+- `macro_ai_deducted`/verdict chưa có consumer ở scanner row/UI — "răng" của feature vô hình với người dùng.
+
+## B. Cần chủ hệ thống quyết định (thiết kế)
+
+1. **Deduction trừ vào component đã SCALE (0..~15-20 theo confidence) thay vì raw (0-30)** như docstring/commit/docs tuyên bố. Hệ quả: khi `macro_confidence` thấp, adjustment gần như không có răng (probe: raw=25 qua guard, conf=0.3 → scaled≈0 → deducted=0 dù payload vẫn báo adjustment=−5). Bước 7 VIX penalty (−2..−5) cũng ăn cùng component → đúng cặp VIX cao (nơi cần trọng tài nhất) lại dễ bị floor nhất. Muốn "đúng nghĩa đen thang −5..0" thì trừ vào raw hoặc trừ sau cap (kết hợp fix A2).
+2. **Backtest V7** chỉ hữu ích khi replay ngày live đã quét và trùng side — nên ghi rõ giới hạn này trong docs section 17.
+
+## C. Điểm làm tốt (xác nhận qua truy vết đối kháng)
+
+Bất đối xứng tuyệt đối được giữ qua mọi đường mới; công thức tính lại Step 7 khớp từng thành phần với `compose_scenario_score`; integration test mới (`tests/test_step6_review_fixes.py:153`) chạy pipeline thật end-to-end — đúng bài học Bước 5; journal/cache không rò API key (đã kiểm tra log sensitivity); dedup journal trên cache hit giữ nguyên.
+
+## Thứ tự sửa đề xuất
+
+1. **A1** (starvation — khóa tính năng sống thật)
+2. **A2 + A3** (điểm số nhất quán)
+3. **A4 + A5** (nhanh, vệ sinh)
+4. **A7** (test khóa wiring)
+5. **A6 + A8**
+6. Nhóm 🟡
+7. Quyết định thiết kế **B1**
+
+---
+
+*Re-review tạo bởi quy trình đa agent (98 agent, model `deepseek-v4-flash` cho tầng verifier/refuter) kết hợp đọc code + reproduce trực tiếp ở tầng điều phối. Full test suite độc lập: 2579 passed, 8 skipped, 17 xfailed.*
