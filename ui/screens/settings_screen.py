@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from config.constants import DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
 from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, ScannerRolloutSettings, SymbolScanSettings, TradingSettings
 from core.backtest_config import (
@@ -85,6 +87,7 @@ class SettingsScreen(QWidget):
         tabs.addTab(self._rollout_tab(), "🚦 Rollout")
         tabs.addTab(self._display_tab(), "🎨 Hiển thị")
         tabs.addTab(self._advanced_tab(), "⚙️ Nâng cao")
+        tabs.insertTab(4, self._order_management_tab(), "🛡️ Quản lý lệnh")
         root.addWidget(tabs, 1)
 
     def _ai_tab(self) -> QFrame:
@@ -1511,6 +1514,410 @@ class SettingsScreen(QWidget):
         self.rollout_status_label.style().polish(
             self.rollout_status_label
         )
+
+    def _order_management_tab(self) -> QFrame:
+        frame = card("Quản lý lệnh V2")
+        frame.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+        settings = self.app_settings.order_management
+
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        configure_layout(content_layout, spacing=LayoutTokens.SPACE_4)
+
+        safety_panel = QFrame()
+        safety_panel.setObjectName("CompactFormPanel")
+        safety_layout = QVBoxLayout(safety_panel)
+        configure_layout(safety_layout, spacing=LayoutTokens.SPACE_2)
+
+        safety_title = QLabel("Triển khai an toàn")
+        safety_title.setObjectName("PanelTitle")
+        safety_layout.addWidget(safety_title)
+
+        enabled = QCheckBox("Bật Order Management V2")
+        enabled.setChecked(self.app_settings.features.order_management_v2)
+
+        stage = QComboBox()
+        stage.addItems([
+            "DISABLED",
+            "SHADOW",
+            "DEMO",
+            "CANARY",
+            "PRODUCTION",
+        ])
+        stage.setCurrentText(settings.stage)
+
+        kill_switch = QCheckBox("Kill switch — chặn mọi thay đổi tại broker")
+        kill_switch.setChecked(settings.kill_switch)
+
+        require_demo = QCheckBox("Bắt buộc tài khoản demo")
+        require_demo.setChecked(settings.require_demo_account)
+
+        production_approved = QCheckBox(
+            "Đã phê duyệt production sau release gate"
+        )
+        production_approved.setChecked(settings.production_approved)
+
+        manage_scope = QComboBox()
+        manage_scope.addItems(["AMA", "ALL"])
+        manage_scope.setCurrentText(settings.manage_scope)
+        manage_scope.setToolTip(
+            "AMA chỉ quản lý lệnh do ứng dụng tạo; ALL bao gồm cả lệnh ngoài ứng dụng."
+        )
+
+        canary_symbol = QLineEdit()
+        canary_symbol.setPlaceholderText("Ví dụ: EURUSD.a")
+        canary_symbol.setText(settings.canary_broker_symbol)
+
+        canary_position = QLineEdit()
+        canary_position.setPlaceholderText("Position ticket")
+        canary_position.setText(
+            str(settings.canary_position_id)
+            if settings.canary_position_id > 0
+            else ""
+        )
+
+        self.order_management_enabled_input = enabled
+        self.order_management_stage_input = stage
+        self.order_management_kill_switch_input = kill_switch
+        self.order_management_require_demo_input = require_demo
+        self.order_management_production_approved_input = production_approved
+        self.order_management_scope_input = manage_scope
+        self.order_management_canary_symbol_input = canary_symbol
+        self.order_management_canary_position_input = canary_position
+
+        safety_layout.addWidget(enabled)
+        safety_layout.addWidget(self._compact_form_row("Giai đoạn", stage))
+        safety_layout.addWidget(kill_switch)
+        safety_layout.addWidget(require_demo)
+        safety_layout.addWidget(production_approved)
+        safety_layout.addWidget(
+            self._compact_form_row("Phạm vi quản lý", manage_scope)
+        )
+        canary_symbol_row = self._compact_form_row(
+            "Broker symbol CANARY",
+            canary_symbol,
+        )
+        canary_position_row = self._compact_form_row(
+            "Position ID CANARY",
+            canary_position,
+        )
+        self.order_management_canary_symbol_row = canary_symbol_row
+        self.order_management_canary_position_row = canary_position_row
+        safety_layout.addWidget(canary_symbol_row)
+        safety_layout.addWidget(canary_position_row)
+        safety_layout.addStretch(1)
+
+        runtime_panel = QFrame()
+        runtime_panel.setObjectName("CompactFormPanel")
+        runtime_layout = QVBoxLayout(runtime_panel)
+        configure_layout(runtime_layout, spacing=LayoutTokens.SPACE_2)
+
+        runtime_title = QLabel("Tham số runtime")
+        runtime_title.setObjectName("PanelTitle")
+        runtime_layout.addWidget(runtime_title)
+
+        poll_interval = self._order_management_decimal_input(
+            settings.poll_interval_seconds,
+            minimum=0.5,
+            maximum=60.0,
+            step=0.5,
+            suffix=" giây",
+        )
+        refresh_interval = self._order_management_decimal_input(
+            settings.refresh_interval_seconds,
+            minimum=1.0,
+            maximum=300.0,
+            step=1.0,
+            suffix=" giây",
+        )
+        be_trigger = self._order_management_decimal_input(
+            settings.be_trigger_r,
+            minimum=0.1,
+            maximum=10.0,
+            step=0.1,
+            suffix=" R",
+        )
+        be_plus_pips = self._order_management_decimal_input(
+            settings.be_plus_pips,
+            minimum=0.0,
+            maximum=100.0,
+            step=0.5,
+            suffix=" pip",
+        )
+        trail_wide = self._order_management_decimal_input(
+            settings.trail_wide_atr_multiplier,
+            minimum=0.1,
+            maximum=20.0,
+            step=0.1,
+            suffix=" ATR",
+        )
+        trail_tight = self._order_management_decimal_input(
+            settings.trail_tight_atr_multiplier,
+            minimum=0.1,
+            maximum=20.0,
+            step=0.1,
+            suffix=" ATR",
+        )
+        trail_tight_trigger = self._order_management_decimal_input(
+            settings.trail_tight_trigger_r,
+            minimum=0.1,
+            maximum=20.0,
+            step=0.1,
+            suffix=" R",
+        )
+        retry_initial = self._order_management_decimal_input(
+            settings.retry_initial_seconds,
+            minimum=0.1,
+            maximum=60.0,
+            step=0.5,
+            suffix=" giây",
+        )
+        retry_max = self._order_management_decimal_input(
+            settings.retry_max_seconds,
+            minimum=1.0,
+            maximum=600.0,
+            step=1.0,
+            suffix=" giây",
+        )
+        retry_attempts = QSpinBox()
+        retry_attempts.setRange(1, 100)
+        retry_attempts.setValue(settings.max_retry_attempts)
+
+        self.order_management_poll_interval_input = poll_interval
+        self.order_management_refresh_interval_input = refresh_interval
+        self.order_management_be_trigger_input = be_trigger
+        self.order_management_be_plus_pips_input = be_plus_pips
+        self.order_management_trail_wide_input = trail_wide
+        self.order_management_trail_tight_input = trail_tight
+        self.order_management_trail_tight_trigger_input = trail_tight_trigger
+        self.order_management_retry_initial_input = retry_initial
+        self.order_management_retry_max_input = retry_max
+        self.order_management_retry_attempts_input = retry_attempts
+
+        runtime_rows = (
+            ("Chu kỳ đánh giá", poll_interval),
+            ("Chu kỳ làm mới", refresh_interval),
+            ("Kích hoạt hòa vốn", be_trigger),
+            ("Hòa vốn cộng thêm", be_plus_pips),
+            ("Trailing rộng", trail_wide),
+            ("Trailing chặt", trail_tight),
+            ("Kích hoạt trailing chặt", trail_tight_trigger),
+            ("Retry ban đầu", retry_initial),
+            ("Retry tối đa", retry_max),
+            ("Số lần retry", retry_attempts),
+        )
+        for label, control in runtime_rows:
+            runtime_layout.addWidget(self._compact_form_row(label, control))
+        runtime_layout.addStretch(1)
+
+        content_layout.addWidget(safety_panel, 1)
+        content_layout.addWidget(runtime_panel, 1)
+        frame.layout().addWidget(content)
+
+        self.order_management_status_label = QLabel()
+        self.order_management_status_label.setObjectName("HelperText")
+        self.order_management_status_label.setWordWrap(True)
+        frame.layout().addWidget(self.order_management_status_label)
+
+        self.order_management_save_button = action_button(
+            "💾 Lưu quản lý lệnh",
+            primary=True,
+            color="success",
+        )
+        configure_button(self.order_management_save_button)
+        self.order_management_save_button.clicked.connect(
+            self._save_order_management_settings
+        )
+        frame.layout().addWidget(self.order_management_save_button)
+        frame.layout().addStretch(1)
+
+        enabled.toggled.connect(self._update_order_management_safety_state)
+        stage.currentTextChanged.connect(
+            self._update_order_management_safety_state
+        )
+        kill_switch.toggled.connect(
+            self._update_order_management_safety_state
+        )
+        require_demo.toggled.connect(
+            self._update_order_management_safety_state
+        )
+        production_approved.toggled.connect(
+            self._update_order_management_safety_state
+        )
+        manage_scope.currentTextChanged.connect(
+            self._update_order_management_safety_state
+        )
+        canary_symbol.textChanged.connect(
+            self._update_order_management_safety_state
+        )
+        canary_position.textChanged.connect(
+            self._update_order_management_safety_state
+        )
+        self._update_order_management_safety_state()
+        return frame
+
+    def _order_management_decimal_input(
+        self,
+        value: float,
+        *,
+        minimum: float,
+        maximum: float,
+        step: float,
+        suffix: str,
+    ) -> QDoubleSpinBox:
+        control = QDoubleSpinBox()
+        control.setRange(minimum, maximum)
+        control.setDecimals(1)
+        control.setSingleStep(step)
+        control.setSuffix(suffix)
+        control.setValue(value)
+        return control
+
+    def _order_management_canary_position_id(self) -> int:
+        raw_value = self.order_management_canary_position_input.text().strip()
+        try:
+            return max(int(raw_value), 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _update_order_management_safety_state(
+        self,
+        *_args,
+        saved: bool = False,
+    ) -> None:
+        stage = self.order_management_stage_input.currentText()
+        is_canary = stage == "CANARY"
+        self.order_management_canary_symbol_row.setVisible(is_canary)
+        self.order_management_canary_position_row.setVisible(is_canary)
+        self.order_management_canary_symbol_input.setEnabled(is_canary)
+        self.order_management_canary_position_input.setEnabled(is_canary)
+
+        enabled = self.order_management_enabled_input.isChecked()
+        kill_switch = self.order_management_kill_switch_input.isChecked()
+        require_demo = self.order_management_require_demo_input.isChecked()
+        approved = (
+            self.order_management_production_approved_input.isChecked()
+        )
+        scope = self.order_management_scope_input.currentText()
+        canary_target_complete = bool(
+            self.order_management_canary_symbol_input.text().strip()
+            and self._order_management_canary_position_id() > 0
+        )
+
+        state = "warning"
+        if not enabled:
+            message = (
+                "Automation V2 đang tắt; thao tác manual vẫn cần xác nhận riêng."
+            )
+        elif kill_switch:
+            message = "Kill switch đang bật; mọi thay đổi tại broker bị chặn."
+        elif stage == "DISABLED":
+            message = "DISABLED chặn automation; thao tác manual vẫn cần xác nhận riêng."
+        elif stage == "SHADOW":
+            state = "ok"
+            message = (
+                "SHADOW chỉ tính toán automation; thao tác manual vẫn cần xác nhận riêng."
+            )
+        elif stage == "CANARY" and not canary_target_complete:
+            message = (
+                "CANARY thiếu broker symbol hoặc position ID; thực thi phải "
+                "fail-closed."
+            )
+        elif stage == "PRODUCTION" and not approved:
+            message = (
+                "PRODUCTION chưa được phê duyệt; thực thi phải fail-closed."
+            )
+        elif stage == "PRODUCTION" and require_demo:
+            message = (
+                "PRODUCTION vẫn bắt buộc tài khoản demo; tài khoản live bị chặn."
+            )
+        elif scope == "ALL":
+            message = (
+                "Phạm vi ALL có thể quản lý cả lệnh ngoài ứng dụng; chỉ dùng "
+                "sau khi đã xác minh tài khoản và release gate."
+            )
+        elif stage == "DEMO" and require_demo:
+            state = "ok"
+            message = "DEMO chỉ cho phép thực thi trên tài khoản demo."
+        elif stage == "CANARY":
+            state = "ok"
+            message = "CANARY chỉ được phép tác động đúng symbol và position ID đã chọn."
+        else:
+            message = (
+                "Cấu hình cho phép thực thi; hãy xác minh tài khoản và release gate."
+            )
+
+        if saved:
+            message = f"Đã lưu. {message}"
+        self.order_management_status_label.setText(message)
+        self.order_management_status_label.setProperty("state", state)
+        self.order_management_status_label.style().unpolish(
+            self.order_management_status_label
+        )
+        self.order_management_status_label.style().polish(
+            self.order_management_status_label
+        )
+
+    def _save_order_management_settings(self) -> None:
+        self.app_settings.features.order_management_v2 = (
+            self.order_management_enabled_input.isChecked()
+        )
+        current = self.app_settings.order_management
+        self.app_settings.order_management = replace(
+            current,
+            stage=self.order_management_stage_input.currentText(),
+            kill_switch=self.order_management_kill_switch_input.isChecked(),
+            require_demo_account=(
+                self.order_management_require_demo_input.isChecked()
+            ),
+            production_approved=(
+                self.order_management_production_approved_input.isChecked()
+            ),
+            manage_scope=self.order_management_scope_input.currentText(),
+            canary_broker_symbol=(
+                self.order_management_canary_symbol_input.text().strip()
+            ),
+            canary_position_id=self._order_management_canary_position_id(),
+            poll_interval_seconds=(
+                self.order_management_poll_interval_input.value()
+            ),
+            refresh_interval_seconds=(
+                self.order_management_refresh_interval_input.value()
+            ),
+            be_trigger_r=self.order_management_be_trigger_input.value(),
+            be_plus_pips=self.order_management_be_plus_pips_input.value(),
+            trail_wide_atr_multiplier=(
+                self.order_management_trail_wide_input.value()
+            ),
+            trail_tight_atr_multiplier=(
+                self.order_management_trail_tight_input.value()
+            ),
+            trail_tight_trigger_r=(
+                self.order_management_trail_tight_trigger_input.value()
+            ),
+            retry_initial_seconds=(
+                self.order_management_retry_initial_input.value()
+            ),
+            retry_max_seconds=self.order_management_retry_max_input.value(),
+            max_retry_attempts=(
+                self.order_management_retry_attempts_input.value()
+            ),
+        )
+        self.settings_service.save(self.app_settings)
+        app = self.__dict__.get("app")
+        if app is not None:
+            # Keep the already-running service in sync without creating a new
+            # broker worker merely because Settings was opened.
+            manager = getattr(app, "_order_management_service", None)
+            if manager is not None:
+                manager.update_policy(
+                    feature_enabled=(
+                        self.app_settings.features.order_management_v2
+                    ),
+                    rollout_settings=self.app_settings.order_management,
+                )
+            app.settings = self.app_settings
+        self._update_order_management_safety_state(saved=True)
 
     def _display_tab(self) -> QFrame:
         frame = card("Hiển thị")

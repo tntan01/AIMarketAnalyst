@@ -25,45 +25,59 @@ from PyQt6.QtWidgets import (
     QTabBar,
     QToolTip,
 )
-from services.mt5_service import MT5Service
+from services.order_management_models import SnapshotStatus
 from services.settings_service import SettingsService
 from ui.layout_system import configure_table
 from ui.theme.fonts import get_body_font, get_subtitle_font
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.screens.shared import action_button, card, page_header, labeled_value
-
-
-
-
-
-def _pip_multiplier(symbol: str) -> float:
-    """Return pip multiplier: 10000 for non-JPY, 100 for JPY pairs."""
-    return 100.0 if "JPY" in symbol.upper() else 10000.0
-
-
-def _pips_to_price(pips: int, symbol: str) -> float:
-    return pips / _pip_multiplier(symbol)
-
-
-def _price_to_pips(price_diff: float, symbol: str) -> float:
-    return price_diff * _pip_multiplier(symbol)
-
-
 class OrdersScreen(QWidget):
     def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
         self.navigate = navigate
         self.app = app
-        self.mt5 = app.mt5 if app else MT5Service()
+        self.order_manager = app.order_management_service if app else None
         self.settings_service = app.settings_service if app else SettingsService()
         self._light = self._is_light_theme()
         self._active_tab = "positions"
         self._positions: list[dict] = []
         self._pending_orders: list[dict] = []
+        self._positions_snapshot_status = SnapshotStatus.UNAVAILABLE
+        self._pending_snapshot_status = SnapshotStatus.UNAVAILABLE
+        self._last_broker_refresh: datetime | None = None
+        self._snapshot_message = ""
+        self._account_currency = ""
+        self._pending_ui_operation: dict[str, object] | None = None
         self._trailing_configs: dict[int, dict] = {}  # key = position_id
         self._position_original_sl: dict[int, float] = {}  # position_id -> original SL (captured once, never overwritten)
         self.setObjectName("FormScreen")
         self._build_ui()
+
+        # Restore protection state before the first broker refresh/timer tick.
+        self._save_debounce = QTimer(self)
+        self._save_debounce.setSingleShot(True)
+        self._save_debounce.setInterval(2000)
+        self._save_debounce.timeout.connect(self._save_trailing_state)
+        if self.order_manager is None:
+            self._load_trailing_state()
+
+        if self.order_manager is not None:
+            self.order_manager.snapshot_updated.connect(
+                self._on_order_management_snapshot
+            )
+            self.order_manager.state_changed.connect(
+                self._on_order_management_state
+            )
+            self.order_manager.health_changed.connect(
+                self._on_order_management_health
+            )
+            self.order_manager.operation_completed.connect(
+                self._on_order_management_operation
+            )
+            self.order_manager.operation_failed.connect(
+                self._on_order_management_failure
+            )
+
         self.refresh_orders()
 
         self._refresh_timer = QTimer(self)
@@ -74,13 +88,8 @@ class OrdersScreen(QWidget):
         self._trail_timer = QTimer(self)
         self._trail_timer.setInterval(1500)
         self._trail_timer.timeout.connect(self._trailing_tick)
-        self._trail_timer.start()
-
-        self._save_debounce = QTimer(self)
-        self._save_debounce.setSingleShot(True)
-        self._save_debounce.setInterval(2000)
-        self._save_debounce.timeout.connect(self._save_trailing_state)
-        self._load_trailing_state()
+        # The legacy in-widget engine is never restored when V2 is disabled.
+        # App-owned OrderManagementService schedules the production loop.
 
     def _is_light_theme(self) -> bool:
         return is_light_theme(self.settings_service)
@@ -131,7 +140,10 @@ class OrdersScreen(QWidget):
         self.trail_count_card = labeled_value("🎯 Trail", "0")
         self.trail_count_label = self.trail_count_card.findChild(QLabel, "MiniStatValue")
 
-        for card_widget in (self.balance_card, self.position_count_card, self.pending_count_card, self.pl_card, self.trail_count_card):
+        self.protection_card = labeled_value("🛡️ Bảo vệ", "STALE")
+        self.protection_label = self.protection_card.findChild(QLabel, "MiniStatValue")
+
+        for card_widget in (self.balance_card, self.position_count_card, self.pending_count_card, self.pl_card, self.trail_count_card, self.protection_card):
             card_widget.setMinimumHeight(50)
             card_layout = card_widget.layout()
             if card_layout:
@@ -147,6 +159,7 @@ class OrdersScreen(QWidget):
         layout.addWidget(self.pending_count_card)
         layout.addWidget(self.pl_card)
         layout.addWidget(self.trail_count_card)
+        layout.addWidget(self.protection_card)
 
         return container
 
@@ -200,7 +213,7 @@ class OrdersScreen(QWidget):
         table.setColumnWidth(6, 110)
         table.setColumnWidth(7, 95)
         table.setColumnWidth(8, 65)
-        table.setColumnWidth(10, 0)
+        table.setColumnWidth(10, 105)
 
         self.order_table = table
         table.itemSelectionChanged.connect(self._update_clear_trail_visibility)
@@ -225,6 +238,18 @@ class OrdersScreen(QWidget):
         self.clear_trail_btn.setVisible(False)
         layout.addWidget(self.clear_trail_btn)
 
+        self.modify_position_btn = action_button(
+            "✏️ Sửa SL/TP", primary=True, color="warning"
+        )
+        self.modify_position_btn.clicked.connect(self._modify_selected_position)
+        layout.addWidget(self.modify_position_btn)
+
+        self.partial_close_btn = action_button(
+            "◐ Đóng một phần", primary=True, color="warning"
+        )
+        self.partial_close_btn.clicked.connect(self._partial_close_selected)
+        layout.addWidget(self.partial_close_btn)
+
         self.close_selected_btn = action_button("❌ Đóng lệnh đã chọn", primary=True, color="danger")
         self.close_selected_btn.setToolTip("Đóng vị thế đang chọn trong bảng")
         self.close_selected_btn.clicked.connect(self._close_selected)
@@ -234,6 +259,29 @@ class OrdersScreen(QWidget):
         self.close_all_btn.setToolTip("Đóng toàn bộ vị thế đang mở (có xác nhận)")
         self.close_all_btn.clicked.connect(self._close_all)
         layout.addWidget(self.close_all_btn)
+
+        self.modify_pending_btn = action_button(
+            "✏️ Sửa lệnh chờ", primary=True, color="warning"
+        )
+        self.modify_pending_btn.clicked.connect(self._modify_selected_pending)
+        self.modify_pending_btn.setVisible(False)
+        layout.addWidget(self.modify_pending_btn)
+
+        self.cancel_pending_btn = action_button(
+            "🗑️ Hủy lệnh chờ", primary=True, color="danger"
+        )
+        self.cancel_pending_btn.clicked.connect(self._cancel_selected_pending)
+        self.cancel_pending_btn.setVisible(False)
+        layout.addWidget(self.cancel_pending_btn)
+
+        self.flatten_btn = action_button(
+            "⚠️ Flatten tài khoản", primary=True, color="danger"
+        )
+        self.flatten_btn.setToolTip(
+            "Đóng tất cả positions và hủy tất cả pending orders trong snapshot xác nhận"
+        )
+        self.flatten_btn.clicked.connect(self._flatten_account)
+        layout.addWidget(self.flatten_btn)
 
         layout.addStretch(1)
         return layout
@@ -260,21 +308,173 @@ class OrdersScreen(QWidget):
             except ValueError:
                 pass
 
+    def _sync_managed_views(self) -> None:
+        """Project service state into the legacy table view without owning it."""
+
+        if self.order_manager is None:
+            return
+        broker_by_id = {
+            int(position.get("position_id", 0)): position
+            for position in self._positions
+        }
+        projected: dict[int, dict] = {}
+        for view in self.order_manager.cached_states():
+            position = broker_by_id.get(view.position_id, {})
+            broker_sl = float(position.get("sl", 0) or 0)
+            be_done = view.phase in {
+                "be_active",
+                "trail_wide",
+                "trail_tight",
+            }
+            projected[view.position_id] = {
+                "position_id": view.position_id,
+                "symbol": view.broker_symbol,
+                "side": view.side,
+                "enabled": view.phase not in {
+                    "paused",
+                    "closed",
+                    "unmanaged",
+                    "error_non_retryable",
+                },
+                "phase": (
+                    "atr_unavailable"
+                    if view.last_error == "atr_unavailable"
+                    else view.phase
+                ),
+                "entry_price": view.entry_price,
+                "initial_sl": view.initial_sl,
+                "current_sl": broker_sl,
+                "extreme_price": view.extreme_price or 0.0,
+                "be_done": be_done,
+                "trail_mode": (
+                    "tight" if view.phase == "trail_tight" else "wide"
+                ),
+                "atr_h1": view.atr or 0.0,
+                "retry_count": view.retry_count,
+                "last_error": view.last_error,
+                "last_confirmed_at_utc": view.last_confirmed_at_utc,
+            }
+            self._position_original_sl[view.position_id] = view.initial_sl
+        self._trailing_configs = projected
+
+    def _on_order_management_snapshot(self, _payload: object) -> None:
+        self.refresh_orders()
+
+    def _on_order_management_state(self, _payload: object) -> None:
+        self.refresh_orders()
+
+    def _on_order_management_health(self, health: object) -> None:
+        status = getattr(health, "snapshot_status", SnapshotStatus.UNAVAILABLE)
+        stage = str(getattr(health, "stage", "SHADOW") or "SHADOW")
+        account = getattr(health, "account", None)
+        if getattr(self, "protection_label", None):
+            if status is SnapshotStatus.AVAILABLE:
+                self.protection_label.setText(stage)
+            else:
+                self.protection_label.setText("STALE")
+            account_text = ""
+            if account is not None:
+                account_text = (
+                    f"\nTài khoản: {account.login} @ {account.server} "
+                    f"({account.trade_mode.value})"
+                )
+            self.protection_card.setToolTip(
+                str(getattr(health, "message", "") or "") + account_text
+            )
+
+    def _on_order_management_failure(self, payload: object) -> None:
+        if getattr(self, "protection_label", None):
+            self.protection_label.setText("ERROR")
+            self.protection_card.setToolTip(str(payload))
+
+    def _on_order_management_operation(self, payload: object) -> None:
+        self.refresh_orders()
+        context = self._pending_ui_operation
+        if not context or not isinstance(payload, dict):
+            return
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return
+        context["remaining"] = max(int(context.get("remaining", 1)) - 1, 0)
+        status = str(result.get("status") or "unknown")
+        if result.get("success"):
+            context["confirmed"] = int(context.get("confirmed", 0)) + 1
+        elif status == "partial":
+            context["partial"] = int(context.get("partial", 0)) + 1
+        else:
+            context["failed"] = int(context.get("failed", 0)) + 1
+        if int(context["remaining"]) > 0:
+            return
+        confirmed = int(context.get("confirmed", 0))
+        partial = int(context.get("partial", 0))
+        failed = int(context.get("failed", 0))
+        QMessageBox.information(
+            self,
+            "Kết quả thao tác",
+            f"Đã xác nhận: {confirmed}\nKhớp một phần: {partial}\nThất bại/chưa rõ: {failed}",
+        )
+        self._pending_ui_operation = None
+
     # ------------------------------------------------------------------
     # Data refresh
     # ------------------------------------------------------------------
     def refresh_orders(self) -> None:
         self._light = self._is_light_theme()
-        try:
-            balance = self.mt5.account_balance()
-            if self.balance_label:
-                self.balance_label.setText(f"${balance:,.2f}" if balance is not None else "--")
-        except Exception:
+        positions_are_fresh = False
+        if self.order_manager is not None:
+            # Cache-only UI path. All MT5 reads were produced by the service's
+            # single worker executor and delivered through queued Qt signals.
+            self._positions = [
+                position.to_legacy_dict()
+                for position in self.order_manager.cached_positions()
+            ]
+            self._pending_orders = [
+                order.to_legacy_dict()
+                for order in self.order_manager.cached_pending_orders()
+            ]
+            health = self.order_manager.cached_health()
+            self._positions_snapshot_status = health.snapshot_status
+            self._snapshot_message = health.message
+            self._last_broker_refresh = health.observed_at_utc
+            positions_are_fresh = (
+                health.snapshot_status is SnapshotStatus.AVAILABLE
+            )
+            self._sync_managed_views()
+            if getattr(self, "balance_label", None):
+                account = health.account
+                self._account_currency = (
+                    str(account.currency or "") if account is not None else ""
+                )
+                balance = account.balance if account is not None else None
+                self.balance_label.setText(
+                    f"{balance:,.2f} {self._account_currency}".strip()
+                    if balance is not None
+                    else "--"
+                )
+        else:
+            # Fail-safe standalone mode: no service means no broker I/O from
+            # QWidget. The screen remains a read-only empty/stale view.
+            self._snapshot_message = "Order Management Service chưa sẵn sàng."
             if getattr(self, "balance_label", None):
                 self.balance_label.setText("--")
 
-        self._positions = self.mt5.get_open_positions() if hasattr(self.mt5, "get_open_positions") else []
-        self._pending_orders = self.mt5.get_pending_orders() if hasattr(self.mt5, "get_pending_orders") else []
+        if getattr(self, "protection_label", None):
+            if positions_are_fresh:
+                self.protection_label.setText("HEALTHY")
+                self.protection_card.setToolTip(
+                    "Broker snapshot đã xác nhận lúc "
+                    + (
+                        self._last_broker_refresh.astimezone().strftime("%H:%M:%S")
+                        if self._last_broker_refresh is not None
+                        else "hiện tại"
+                    )
+                )
+            else:
+                self.protection_label.setText("STALE")
+                self.protection_card.setToolTip(
+                    self._snapshot_message
+                    or "Không xác nhận được trạng thái broker; tracking được giữ nguyên."
+                )
 
         # Capture original SL for newly detected positions (once, never overwrite)
         for pos in self._positions:
@@ -284,7 +484,9 @@ class OrdersScreen(QWidget):
                 if sl > 0:
                     self._position_original_sl[pos_id] = sl
 
-        self._cleanup_trailing()
+        # A failed/unknown read is not proof that a broker position closed.
+        if positions_are_fresh and self.order_manager is None:
+            self._cleanup_trailing()
 
         if getattr(self, "position_count_label", None):
             self.position_count_label.setText(f"{len(self._positions)}")
@@ -293,7 +495,9 @@ class OrdersScreen(QWidget):
 
         total_pl = sum(float(p.get("profit", 0) or 0) + float(p.get("swap", 0) or 0) + float(p.get("commission", 0) or 0) for p in self._positions)
         if getattr(self, "pl_label", None):
-            self.pl_label.setText(f"${total_pl:+,.2f}")
+            self.pl_label.setText(
+                f"{total_pl:+,.2f} {self._account_currency}".strip()
+            )
             set_dynamic_property(
                 self.pl_label,
                 "metricTone",
@@ -324,19 +528,35 @@ class OrdersScreen(QWidget):
 
         if self._active_tab == "positions":
             data = self._positions
+            table.setHorizontalHeaderLabels([
+                "Mã", "Hướng", "KL", "Entry", "Hiện tại", "SL", "TP",
+                "P/L", "R", "Bảo vệ", "Ticket",
+            ])
             self.close_selected_btn.setVisible(True)
             self.close_all_btn.setVisible(True)
             self.trail_btn.setVisible(True)
+            self.modify_position_btn.setVisible(True)
+            self.partial_close_btn.setVisible(True)
+            self.modify_pending_btn.setVisible(False)
+            self.cancel_pending_btn.setVisible(False)
             # Show clear trail button only if selected position has trailing
             pos = self._get_selected_position()
             has_trail = bool(pos and int(pos.get("position_id", 0)) in self._trailing_configs)
             self.clear_trail_btn.setVisible(has_trail)
         else:
             data = self._pending_orders
+            table.setHorizontalHeaderLabels([
+                "Mã", "Hướng", "KL", "Entry", "Hiện tại", "SL", "TP",
+                "P/L", "R", "Loại lệnh", "Ticket",
+            ])
             self.close_selected_btn.setVisible(False)
             self.close_all_btn.setVisible(False)
             self.trail_btn.setVisible(False)
+            self.modify_position_btn.setVisible(False)
+            self.partial_close_btn.setVisible(False)
             self.clear_trail_btn.setVisible(False)
+            self.modify_pending_btn.setVisible(True)
+            self.cancel_pending_btn.setVisible(True)
 
         palette = current_palette(self.settings_service)
         if not data:
@@ -346,6 +566,7 @@ class OrdersScreen(QWidget):
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             item.setForeground(QColor(palette.text_muted))
             table.setItem(0, 0, item)
+            table.blockSignals(False)
             return
 
         buy_color = QColor(palette.buy)
@@ -386,6 +607,11 @@ class OrdersScreen(QWidget):
         is_buy = side == "buy"
         pos_id = int(row.get("position_id", 0))
         symbol = str(row.get("symbol", "--"))
+        digits = max(0, int(row.get("digits", 5) or 5))
+        price_format = f".{digits}f"
+
+        def price_text(value: object) -> str:
+            return format(float(value or 0), price_format)
 
         table.setItem(idx, 0, sitem(symbol))
         symbol_font = get_body_font()
@@ -400,21 +626,21 @@ class OrdersScreen(QWidget):
         table.setItem(idx, 1, dir_item)
 
         table.setItem(idx, 2, sitem(f"{float(row.get('volume', 0)):.2f}"))
-        table.setItem(idx, 3, sitem(f"{float(row.get('open_price', 0)):.5f}"))
-        table.setItem(idx, 4, sitem(f"{float(row.get('current_price', 0)):.5f}"))
+        table.setItem(idx, 3, sitem(price_text(row.get("open_price", 0))))
+        table.setItem(idx, 4, sitem(price_text(row.get("current_price", 0))))
 
         sl_val = float(row.get("sl", 0) or 0)
-        sl_item = sitem(f"{sl_val:.5f}" if sl_val else "--")
+        sl_item = sitem(format(sl_val, price_format) if sl_val else "--")
         if sl_val: sl_item.setForeground(sell_color)
         table.setItem(idx, 5, sl_item)
 
         tp_val = float(row.get("tp", 0) or 0)
-        tp_item = sitem(f"{tp_val:.5f}" if tp_val else "--")
+        tp_item = sitem(format(tp_val, price_format) if tp_val else "--")
         if tp_val: tp_item.setForeground(buy_color)
         table.setItem(idx, 6, tp_item)
 
         profit = float(row.get("profit", 0) or 0) + float(row.get("swap", 0) or 0) + float(row.get("commission", 0) or 0)
-        pl_item = sitem(f"${profit:+,.2f}")
+        pl_item = sitem(f"{profit:+,.2f} {self._account_currency}".strip())
         pl_item.setForeground(buy_color if profit >= 0 else sell_color)
         table.setItem(idx, 7, pl_item)
 
@@ -449,7 +675,21 @@ class OrdersScreen(QWidget):
         # Trailing / BE status
         cfg = self._trailing_configs.get(pos_id)
         semantic = self._table_semantic_colors
-        if cfg and cfg.get("enabled"):
+        phase = str(cfg.get("phase", "") if cfg else "")
+        phase_display = {
+            "waiting_be": ("⏳ Chờ BE", semantic["muted"]),
+            "be_active": ("✅ BE đã xác nhận", semantic["success"]),
+            "trail_wide": ("🟢 Trail Wide", semantic["info"]),
+            "trail_tight": ("🔒 Trail Tight", semantic["warning"]),
+            "paused": ("⏸️ Tạm dừng", semantic["muted"]),
+            "stale": ("⚠️ Stale", semantic["warning"]),
+            "error_retryable": ("↻ Đang retry", semantic["warning"]),
+            "error_non_retryable": ("❌ Lỗi broker", semantic["warning"]),
+            "atr_unavailable": ("⚠️ Thiếu ATR H1", semantic["warning"]),
+        }
+        if phase in phase_display:
+            trail_text, trail_color = phase_display[phase]
+        elif cfg and cfg.get("enabled"):
             be_done = cfg.get("be_done", False)
             trail_mode = str(cfg.get("trail_mode", "wide"))
             if not be_done:
@@ -479,6 +719,7 @@ class OrdersScreen(QWidget):
         if cfg:
             trail_item.setForeground(trail_color)
         table.setItem(idx, 9, trail_item)
+        table.setItem(idx, 10, sitem(str(pos_id)))
 
     def _render_pending_row(self, table, idx, row, buy_color, sell_color, neutral_fg) -> None:
         def sitem(text, align=Qt.AlignmentFlag.AlignCenter):
@@ -488,6 +729,8 @@ class OrdersScreen(QWidget):
 
         otype = str(row.get("type", ""))
         is_buy_type = "buy" in otype
+        digits = max(0, int(row.get("digits", 5) or 5))
+        price_format = f".{digits}f"
 
         sym = sitem(str(row.get("symbol", "--")))
         symbol_font = get_body_font()
@@ -503,22 +746,31 @@ class OrdersScreen(QWidget):
         table.setItem(idx, 1, dir_item)
 
         table.setItem(idx, 2, sitem(f"{float(row.get('volume', 0)):.2f}"))
-        table.setItem(idx, 3, sitem(f"{float(row.get('price', 0)):.5f}"))
+        table.setItem(idx, 3, sitem(format(float(row.get("price", 0) or 0), price_format)))
         table.setItem(idx, 4, sitem("--"))
 
         sl_val = float(row.get("sl", 0) or 0)
-        sl_item = sitem(f"{sl_val:.5f}" if sl_val else "--")
+        sl_item = sitem(format(sl_val, price_format) if sl_val else "--")
         if sl_val: sl_item.setForeground(sell_color)
         table.setItem(idx, 5, sl_item)
 
         tp_val = float(row.get("tp", 0) or 0)
-        tp_item = sitem(f"{tp_val:.5f}" if tp_val else "--")
+        tp_item = sitem(format(tp_val, price_format) if tp_val else "--")
         if tp_val: tp_item.setForeground(buy_color)
         table.setItem(idx, 6, tp_item)
 
         table.setItem(idx, 7, sitem("--"))
         table.setItem(idx, 8, sitem("--"))
-        table.setItem(idx, 9, sitem("--"))
+        table.setItem(idx, 9, sitem(otype.replace("_", " ").upper() or "--"))
+        order_id = int(row.get("order_id", 0) or 0)
+        ticket_item = sitem(str(order_id) if order_id else "--")
+        setup_time = int(row.get("setup_time", 0) or 0)
+        comment = str(row.get("comment", "") or "")
+        ticket_item.setToolTip(
+            f"Magic: {int(row.get('magic', 0) or 0)}\n"
+            f"Setup time: {setup_time or '--'}\nComment: {comment or '--'}"
+        )
+        table.setItem(idx, 10, ticket_item)
 
     # ------------------------------------------------------------------
     # Trailing stop engine
@@ -536,111 +788,10 @@ class OrdersScreen(QWidget):
             self._debounce_save()
 
     def _trailing_tick(self) -> None:
-        """Called every 1.5s: update extreme price & adjust SL if needed."""
-        if not hasattr(self.mt5, "modify_position_sltp"):
-            return
-        try:
-            import MetaTrader5 as mt5
-        except ImportError:
-            return
+        """Compatibility hook: schedule the service, never execute MT5 in UI."""
 
-        for pos_id, cfg in list(self._trailing_configs.items()):
-            if not cfg.get("enabled"):
-                continue
-            symbol = str(cfg.get("symbol", ""))
-            side = str(cfg.get("side", ""))
-            trail_pips = int(cfg.get("trail_pips", 20))
-
-            try:
-                tick = mt5.symbol_info_tick(symbol)
-                if not tick:
-                    continue
-                current = float(tick.bid) if side == "sell" else float(tick.ask)
-            except Exception:
-                continue
-
-            # --- BE (Breakeven) logic ---
-            if not cfg.get("be_done"):
-                be_trigger = cfg.get("be_trigger_price")
-                entry_price = cfg.get("entry_price")
-                if be_trigger is None or entry_price is None:
-                    entry_price = float(cfg.get("entry_price", 0) or 0)
-                    initial_sl = float(cfg.get("initial_sl", 0) or 0)
-                    be_trigger = 2.0 * entry_price - initial_sl
-                    cfg["be_trigger_price"] = be_trigger
-                    cfg["entry_price"] = entry_price
-                    cfg["initial_sl"] = initial_sl
-                if entry_price and be_trigger:
-                    triggered = (side == "buy" and current >= be_trigger) or \
-                                (side == "sell" and current <= be_trigger)
-                    if triggered:
-                        pip_m = float(cfg.get("pip_multiplier", 10000) or 10000)
-                        be_plus = 2.0 / pip_m
-                        be_sl = entry_price + be_plus if side == "buy" else entry_price - be_plus
-                        result = self.mt5.modify_position_sltp(pos_id, sl=be_sl)
-                        if result.get("success"):
-                            cfg["current_sl"] = be_sl
-                        cfg["be_done"] = True
-                        cfg["extreme_price"] = current
-                        self._debounce_save()
-                        continue
-
-            if trail_pips <= 0:
-                continue
-
-            # --- ATR-based trail distance ---
-            atr_h1 = float(cfg.get("atr_h1", 0) or 0)
-            entry_price = float(cfg.get("entry_price", 0) or 0)
-            initial_sl = float(cfg.get("initial_sl", 0) or 0)
-            one_r = abs(entry_price - initial_sl) if entry_price and initial_sl else 0.0
-
-            # Switch trail_mode when profit >= 2R (only for ATR modes, not fixed)
-            trail_mode = str(cfg.get("trail_mode", "wide"))
-            if trail_mode != "fixed" and one_r > 0:
-                profit = (current - entry_price) if side == "buy" else (entry_price - current)
-                if profit >= 2.0 * one_r and trail_mode != "tight":
-                    cfg["trail_mode"] = "tight"
-                    trail_mode = "tight"
-
-            if trail_mode == "fixed":
-                trail_price = _pips_to_price(trail_pips, symbol)
-            elif atr_h1 > 0:
-                multiplier = 2.5 if trail_mode == "wide" else 1.5
-                trail_price = atr_h1 * multiplier
-            else:
-                trail_price = _pips_to_price(trail_pips, symbol)
-
-            extreme = float(cfg.get("extreme_price", 0) or 0)
-            if extreme == 0:
-                extreme = current
-                cfg["extreme_price"] = extreme
-
-            if side == "buy":
-                if current > extreme:
-                    extreme = current
-                    cfg["extreme_price"] = extreme
-                new_sl = extreme - trail_price
-            else:
-                if current < extreme:
-                    extreme = current
-                    cfg["extreme_price"] = extreme
-                new_sl = extreme + trail_price
-
-            current_sl = float(cfg.get("current_sl", 0) or 0)
-            if current_sl == 0:
-                # First tick: read actual SL from MT5
-                pos_info = mt5.positions_get(ticket=pos_id)
-                if pos_info:
-                    current_sl = float(getattr(pos_info[0], "sl", 0) or 0)
-                    cfg["current_sl"] = current_sl
-
-            should_update = (side == "buy" and new_sl > current_sl + trail_price * 0.2) or \
-                            (side == "sell" and new_sl < current_sl - trail_price * 0.2)
-
-            if should_update:
-                result = self.mt5.modify_position_sltp(pos_id, sl=new_sl)
-                if result.get("success"):
-                    cfg["current_sl"] = new_sl
+        if self.order_manager is not None:
+            self.order_manager.request_refresh()
 
     def _show_trailing_dialog(self) -> None:
         pos = self._get_selected_position()
@@ -659,15 +810,19 @@ class OrdersScreen(QWidget):
         # ---- Fetch live Bid/Ask ----
         _dlg_bid = 0.0
         _dlg_ask = 0.0
-        try:
-            import MetaTrader5 as _mt5
-            _tick = _mt5.symbol_info_tick(symbol)
-            if _tick is not None:
-                _dlg_bid = float(_tick.bid)
-                _dlg_ask = float(_tick.ask)
-        except Exception:
-            pass
-        current_price = _dlg_bid if side == "sell" else _dlg_ask if side == "buy" else 0.0
+        _tick_snapshot = (
+            self.order_manager.latest_tick(symbol)
+            if self.order_manager is not None
+            else None
+        )
+        if _tick_snapshot is not None and _tick_snapshot.available:
+            _dlg_bid = float(_tick_snapshot.tick.bid)
+            _dlg_ask = float(_tick_snapshot.tick.ask)
+        else:
+            cached_price = float(pos.get("current_price", 0) or 0)
+            _dlg_bid = cached_price
+            _dlg_ask = cached_price
+        current_price = _dlg_bid if side == "buy" else _dlg_ask if side == "sell" else 0.0
 
         existing = self._trailing_configs.get(pos_id)
         default_pips = existing.get("trail_pips", 20) if existing else 20
@@ -711,6 +866,11 @@ class OrdersScreen(QWidget):
         summary_card.layout().setContentsMargins(16, 12, 16, 12)
 
         entry_price = float(pos.get("open_price", 0) or 0)
+        digits = int(pos.get("digits", 5) or 5)
+        point = float(pos.get("point", 0) or 10 ** (-digits))
+        tick_size = float(pos.get("trade_tick_size", 0) or point)
+        pip_size = max(tick_size, point * (10 if digits in {3, 5} else 1))
+        pip_m = 1.0 / pip_size
 
         # ---- Single Source of Truth: effective initial SL ----
         # Priority: cfg["initial_sl"] (set when trailing was enabled)
@@ -730,7 +890,7 @@ class OrdersScreen(QWidget):
 
         # Helpers for live-updating labels
         def _profit_pips(cp: float) -> float:
-            p = _price_to_pips(abs(entry_price - cp), symbol)
+            p = abs(entry_price - cp) / pip_size
             return p if (is_buy and cp >= entry_price) or (not is_buy and cp <= entry_price) else -p
 
         def _r_multiple(cp: float) -> float:
@@ -759,7 +919,9 @@ class OrdersScreen(QWidget):
         self._dlg_cp_label = info_cp.findChild(QLabel, "MiniStatValue")
         row2.addWidget(info_cp)
 
-        info_pl = labeled_value("P/L", f"${profit:+,.2f}")
+        info_pl = labeled_value(
+            "P/L", f"{profit:+,.2f} {self._account_currency}".strip()
+        )
         self._dlg_pl_label = info_pl.findChild(QLabel, "MiniStatValue")
         row2.addWidget(info_pl)
 
@@ -781,7 +943,9 @@ class OrdersScreen(QWidget):
                 set_dynamic_property(self._dlg_cp_label, "metricTone", "positive")
 
             if self._dlg_pl_label:
-                self._dlg_pl_label.setText(f"${prof:+,.2f}")
+                self._dlg_pl_label.setText(
+                    f"{prof:+,.2f} {self._account_currency}".strip()
+                )
                 set_dynamic_property(
                     self._dlg_pl_label,
                     "metricTone",
@@ -819,24 +983,11 @@ class OrdersScreen(QWidget):
         settings_card.layout().setSpacing(10)
 
         # Cache ATR H1 once for preview
-        _dlg_atr_h1 = 0.0
-        try:
-            import MetaTrader5 as _mt5
-            _rates = _mt5.copy_rates_from_pos(symbol, _mt5.TIMEFRAME_H1, 0, 30)
-            if _rates is not None and len(_rates) >= 14:
-                _highs = [float(r[2]) for r in _rates[-14:]]
-                _lows = [float(r[3]) for r in _rates[-14:]]
-                _closes = [float(r[4]) for r in _rates[-15:-1]]
-                _trs = []
-                for _i in range(14):
-                    _trs.append(max(_highs[_i] - _lows[_i], abs(_highs[_i] - _closes[_i]), abs(_lows[_i] - _closes[_i])))
-                _dlg_atr_h1 = sum(_trs) / len(_trs)
-        except Exception:
-            pass
+        # ATR is supplied by the closed-H1 Scanner analysis and persisted by
+        # OrderManagementService. The UI never fetches a forming candle.
+        _dlg_atr_h1 = float(existing.get("atr_h1", 0) or 0) if existing else 0.0
 
         initial_sl_raw = effective_initial_sl
-        pip_m = 100.0 if "JPY" in symbol.upper() else 10000.0
-
         # Row 0: Trail mode radio buttons
         mode_row = QHBoxLayout()
         mode_row.setSpacing(6)
@@ -845,6 +996,11 @@ class OrdersScreen(QWidget):
         self._dlg_mode_wide = QRadioButton("Wide (2.5× ATR)")
         self._dlg_mode_tight = QRadioButton("Tight (1.5× ATR)")
         self._dlg_mode_fixed = QRadioButton("Cố định (pip)")
+        if self.order_manager is not None:
+            self._dlg_mode_fixed.setEnabled(False)
+            self._dlg_mode_fixed.setToolTip(
+                "Order Management V2 dùng ATR H1 đã đóng; fixed-pip không được fallback âm thầm."
+            )
         existing_mode = existing.get("trail_mode", "wide") if existing else "wide"
         self._dlg_mode_wide.setChecked(existing_mode == "wide")
         self._dlg_mode_tight.setChecked(existing_mode == "tight")
@@ -1022,7 +1178,7 @@ class OrdersScreen(QWidget):
             if _dlg_atr_h1 > 0 and mode != "fixed":
                 mult = 2.5 if mode == "wide" else 1.5
                 trail_price = _dlg_atr_h1 * mult
-                trail_pip = _price_to_pips(trail_price, symbol)
+                trail_pip = trail_price / pip_size
                 self._dlg_trail_dist_label.setText(
                     f"Khoảng cách trail:  {trail_price:.5f}  (~{trail_pip:.0f} pip)"
                 )
@@ -1085,31 +1241,38 @@ class OrdersScreen(QWidget):
         _live_timer.setInterval(2000)
 
         def _on_live_tick():
-            """Fetch fresh tick + position, update live labels and BE status."""
-            try:
-                import MetaTrader5 as _mt5
-                _t = _mt5.symbol_info_tick(symbol)
-                if _t is None:
-                    return
-                _cp = float(_t.bid) if side == "sell" else float(_t.ask)
-                if _cp <= 0:
-                    return
+            """Render only service cache; broker I/O remains on its executor."""
 
-                # Re-read position for updated P/L and SL
-                _positions = _mt5.positions_get(ticket=pos_id)
-                if _positions and len(_positions) > 0:
-                    _p = _positions[0]
-                    _prof = float(getattr(_p, "profit", 0) or 0) + float(getattr(_p, "swap", 0) or 0)
-                    _live_sl = float(getattr(_p, "sl", 0) or 0)
-                else:
-                    return
-
-                _pips = _profit_pips(_cp)
-                _r = _r_multiple(_cp)
-                _refresh_live_labels(_cp, _prof, _pips, _r)
-                _update_be_live(_cp, _live_sl)
-            except Exception:
-                pass
+            latest = next(
+                (
+                    item
+                    for item in self._positions
+                    if int(item.get("position_id", 0)) == pos_id
+                ),
+                None,
+            )
+            if latest is None:
+                return
+            tick_snapshot = (
+                self.order_manager.latest_tick(symbol)
+                if self.order_manager is not None
+                else None
+            )
+            if tick_snapshot is not None and tick_snapshot.available:
+                tick = tick_snapshot.tick
+                _cp = float(tick.bid) if side == "buy" else float(tick.ask)
+            else:
+                _cp = float(latest.get("current_price", 0) or 0)
+            if _cp <= 0:
+                return
+            _prof = float(latest.get("profit", 0) or 0) + float(
+                latest.get("swap", 0) or 0
+            )
+            _live_sl = float(latest.get("sl", 0) or 0)
+            _pips = _profit_pips(_cp)
+            _r = _r_multiple(_cp)
+            _refresh_live_labels(_cp, _prof, _pips, _r)
+            _update_be_live(_cp, _live_sl)
 
         _live_timer.timeout.connect(_on_live_tick)
         _live_timer.start()
@@ -1192,7 +1355,6 @@ class OrdersScreen(QWidget):
         enable_btn = self._dlg_enable_btn
         _begin_op(enable_btn, close_btn)
         enable_btn.setText("Đang bật...")
-        pip_m = 100.0 if "JPY" in symbol.upper() else 10000.0
 
         try:
             trail_pips = self._dlg_pip_spin.value()
@@ -1206,24 +1368,35 @@ class OrdersScreen(QWidget):
                 raise ValueError("Không xác định được giá entry.")
             if initial_sl <= 0:
                 raise ValueError("Vị thế chưa có Stop Loss — cần đặt SL trước khi bật Trailing Stop.")
+            digits = int(pos.get("digits", 5) or 5)
+            point = float(pos.get("point", 0) or 10 ** (-digits))
+            tick_size = float(pos.get("trade_tick_size", 0) or point)
+            pip_size = max(
+                tick_size,
+                point * (10 if digits in {3, 5} else 1),
+            )
+            pip_m = 1.0 / pip_size
 
             trail_mode = getattr(self, "_dlg_trail_mode", None) or "wide"
             be_trigger_price = 2.0 * entry_price - initial_sl
 
-            atr_h1 = 0.0
-            try:
-                import MetaTrader5 as mt5
-                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
-                if rates is not None and len(rates) >= 14:
-                    highs = [float(r[2]) for r in rates[-14:]]
-                    lows = [float(r[3]) for r in rates[-14:]]
-                    closes = [float(r[4]) for r in rates[-15:-1]]
-                    trs = []
-                    for i in range(14):
-                        trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
-                    atr_h1 = sum(trs) / len(trs)
-            except Exception:
-                pass
+            atr_h1 = float(
+                (self._trailing_configs.get(pos_id) or {}).get("atr_h1", 0)
+                or 0
+            )
+
+            if self.order_manager is not None:
+                self.order_manager.register_position(
+                    verified_ticket=pos_id,
+                    broker_symbol=str(pos.get("broker_symbol") or symbol),
+                    side=side,
+                    actual_entry_price=entry_price,
+                    initial_sl=initial_sl,
+                    atr=atr_h1 or None,
+                    magic=int(pos.get("magic", 0) or 0) or None,
+                    correlation_id=str(pos.get("comment") or ""),
+                )
+                self.order_manager.resume_position(pos_id)
 
             self._trailing_configs[pos_id] = {
                 "position_id": pos_id, "symbol": symbol, "side": side,
@@ -1282,21 +1455,8 @@ class OrdersScreen(QWidget):
             old_mode = str(cfg.get("trail_mode", "wide"))
             old_pips = int(cfg.get("trail_pips", 20))
 
-            # Tính lại ATR H1
+            # ATR is broker/scanner-service data, never fetched in the dialog.
             atr_h1 = float(cfg.get("atr_h1", 0) or 0)
-            try:
-                import MetaTrader5 as mt5
-                rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 30)
-                if rates is not None and len(rates) >= 14:
-                    highs = [float(r[2]) for r in rates[-14:]]
-                    lows = [float(r[3]) for r in rates[-14:]]
-                    closes = [float(r[4]) for r in rates[-15:-1]]
-                    trs = []
-                    for i in range(14):
-                        trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i]), abs(lows[i] - closes[i])))
-                    atr_h1 = sum(trs) / len(trs)
-            except Exception:
-                pass
 
             # Cập nhật config in-place — giữ nguyên runtime state
             cfg["trail_pips"] = trail_pips
@@ -1356,10 +1516,14 @@ class OrdersScreen(QWidget):
         symbol = str(cfg.get("symbol", "--"))
 
         try:
-            cfg["enabled"] = False
-            cfg["extreme_price"] = 0.0
-            cfg["current_sl"] = 0.0
-            self._debounce_save()
+            if self.order_manager is not None:
+                self.order_manager.pause_position(pos_id)
+                self._sync_managed_views()
+            else:
+                cfg["enabled"] = False
+                cfg["extreme_price"] = 0.0
+                cfg["current_sl"] = 0.0
+                self._debounce_save()
             self._render_table()
 
             QMessageBox.information(dlg, "Đã tắt Trailing Stop",
@@ -1378,6 +1542,19 @@ class OrdersScreen(QWidget):
 
     def auto_enable_tracking(self, pos_id: int, symbol: str, side: str,
                              entry: float, sl: float, atr_h1: float) -> None:
+        manager = self.__dict__.get("order_manager")
+        if manager is not None:
+            manager.register_position(
+                verified_ticket=pos_id,
+                broker_symbol=symbol,
+                side=side,
+                actual_entry_price=entry,
+                initial_sl=sl,
+                atr=atr_h1 or None,
+            )
+            self._sync_managed_views()
+            self._render_table()
+            return
         pip_multiplier = 100.0 if "JPY" in symbol.upper() else 10000.0
         self._position_original_sl[pos_id] = sl
         self._trailing_configs[pos_id] = {
@@ -1407,6 +1584,11 @@ class OrdersScreen(QWidget):
         if not pos:
             return
         pos_id = int(pos.get("position_id", 0))
+        if self.__dict__.get("order_manager") is not None:
+            self.order_manager.unregister_position(pos_id)
+            self._sync_managed_views()
+            self._render_table()
+            return
         if pos_id in self._trailing_configs:
             del self._trailing_configs[pos_id]
             self._debounce_save()
@@ -1430,6 +1612,8 @@ class OrdersScreen(QWidget):
         return d / "be_trailing_state.json"
 
     def _save_trailing_state(self) -> None:
+        if self.__dict__.get("order_manager") is not None:
+            return
         import json as _json
         try:
             if not self._trailing_configs and not self._position_original_sl:
@@ -1446,6 +1630,8 @@ class OrdersScreen(QWidget):
             pass
 
     def _load_trailing_state(self) -> None:
+        if self.__dict__.get("order_manager") is not None:
+            return
         import json as _json
         try:
             p = self._state_path()
@@ -1468,8 +1654,9 @@ class OrdersScreen(QWidget):
             pass
 
     def _debounce_save(self) -> None:
-        if hasattr(self, "_save_debounce"):
-            self._save_debounce.start()
+        save_timer = self.__dict__.get("_save_debounce")
+        if self.__dict__.get("order_manager") is None and save_timer is not None:
+            save_timer.start()
 
     # ------------------------------------------------------------------
     # Actions
@@ -1479,6 +1666,287 @@ class OrdersScreen(QWidget):
         if self._active_tab == "pending" or row_idx < 0 or row_idx >= len(self._positions):
             return None
         return self._positions[row_idx]
+
+    def _get_selected_pending_order(self) -> dict | None:
+        row_idx = self.order_table.currentRow()
+        if (
+            self._active_tab != "pending"
+            or row_idx < 0
+            or row_idx >= len(self._pending_orders)
+        ):
+            return None
+        return self._pending_orders[row_idx]
+
+    def _modify_selected_position(self) -> None:
+        position = self._get_selected_position()
+        if position is None:
+            QMessageBox.information(
+                self, "Sửa SL/TP", "Chọn một vị thế trong bảng trước."
+            )
+            return
+        if self.order_manager is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Order Management Service chưa sẵn sàng."
+            )
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Sửa Stop Loss / Take Profit")
+        layout = QVBoxLayout(dialog)
+        sl_input = QLineEdit(str(float(position.get("sl", 0) or 0)))
+        tp_input = QLineEdit(str(float(position.get("tp", 0) or 0)))
+        for label, control in (("Stop Loss", sl_input), ("Take Profit", tp_input)):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(control, 1)
+            layout.addLayout(row)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        submit = QPushButton("Gửi thay đổi")
+        cancel = QPushButton("Hủy")
+        submit.clicked.connect(dialog.accept)
+        cancel.clicked.connect(dialog.reject)
+        buttons.addWidget(submit)
+        buttons.addWidget(cancel)
+        layout.addLayout(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            sl = float(sl_input.text().strip())
+            tp = float(tp_input.text().strip())
+        except ValueError:
+            QMessageBox.warning(
+                self, "Dữ liệu không hợp lệ", "SL và TP phải là số."
+            )
+            return
+        future = self.order_manager.modify_position(
+            int(position.get("position_id", 0)), sl=sl, tp=tp
+        )
+        if future is None:
+            QMessageBox.warning(self, "Không hỗ trợ", "Không thể xếp hàng thao tác.")
+            return
+        self._pending_ui_operation = {
+            "kind": "modify_position",
+            "remaining": 1,
+            "confirmed": 0,
+            "partial": 0,
+            "failed": 0,
+        }
+
+    def _partial_close_selected(self) -> None:
+        position = self._get_selected_position()
+        if position is None:
+            QMessageBox.information(
+                self, "Đóng một phần", "Chọn một vị thế trong bảng trước."
+            )
+            return
+        if self.order_manager is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Order Management Service chưa sẵn sàng."
+            )
+            return
+        current_volume = float(position.get("volume", 0) or 0)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Đóng một phần vị thế")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel(f"Volume đang mở: {current_volume:g}"))
+        volume_input = QLineEdit(str(current_volume / 2))
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Volume cần đóng"))
+        row.addWidget(volume_input, 1)
+        layout.addLayout(row)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        submit = QPushButton("Xác nhận")
+        cancel = QPushButton("Hủy")
+        submit.clicked.connect(dialog.accept)
+        cancel.clicked.connect(dialog.reject)
+        buttons.addWidget(submit)
+        buttons.addWidget(cancel)
+        layout.addLayout(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            volume = float(volume_input.text().strip())
+        except ValueError:
+            volume = 0.0
+        if volume <= 0 or volume >= current_volume:
+            QMessageBox.warning(
+                self,
+                "Volume không hợp lệ",
+                "Volume đóng một phần phải lớn hơn 0 và nhỏ hơn volume đang mở.",
+            )
+            return
+        future = self.order_manager.close_position(
+            int(position.get("position_id", 0)), volume=volume
+        )
+        if future is None:
+            QMessageBox.warning(self, "Không hỗ trợ", "Không thể xếp hàng thao tác.")
+            return
+        self._pending_ui_operation = {
+            "kind": "partial_close",
+            "remaining": 1,
+            "confirmed": 0,
+            "partial": 0,
+            "failed": 0,
+        }
+
+    def _cancel_selected_pending(self) -> None:
+        order = self._get_selected_pending_order()
+        if order is None:
+            QMessageBox.information(
+                self, "Hủy lệnh chờ", "Chọn một lệnh chờ trong bảng trước."
+            )
+            return
+        order_id = int(order.get("order_id", 0) or 0)
+        symbol = str(order.get("symbol", "--"))
+        reply = QMessageBox.question(
+            self,
+            "Xác nhận hủy lệnh chờ",
+            f"Hủy pending order {symbol} (ticket={order_id})?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if self.order_manager is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Order Management Service chưa sẵn sàng."
+            )
+            return
+        future = self.order_manager.cancel_pending_order(order_id)
+        if future is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Broker không hỗ trợ hủy pending order."
+            )
+            return
+        self._pending_ui_operation = {
+            "kind": "cancel_pending",
+            "remaining": 1,
+            "confirmed": 0,
+            "partial": 0,
+            "failed": 0,
+        }
+
+    def _modify_selected_pending(self) -> None:
+        order = self._get_selected_pending_order()
+        if order is None:
+            QMessageBox.information(
+                self, "Sửa lệnh chờ", "Chọn một lệnh chờ trong bảng trước."
+            )
+            return
+        if self.order_manager is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Order Management Service chưa sẵn sàng."
+            )
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Sửa pending order")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 16, 18, 16)
+        inputs: dict[str, QLineEdit] = {}
+        fields = (
+            ("price", "Entry", order.get("price", 0)),
+            ("sl", "Stop Loss", order.get("sl", 0)),
+            ("tp", "Take Profit", order.get("tp", 0)),
+            (
+                "expiration",
+                "Expiration (Unix time, 0 = GTC)",
+                order.get("expiration_time", 0),
+            ),
+        )
+        for key, label, value in fields:
+            control = QLineEdit(str(value or 0))
+            inputs[key] = control
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(control, 1)
+            layout.addLayout(row)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        save_button = QPushButton("Gửi thay đổi")
+        cancel_button = QPushButton("Hủy")
+        save_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        buttons.addWidget(save_button)
+        buttons.addWidget(cancel_button)
+        layout.addLayout(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            changes = {
+                "price": float(inputs["price"].text().strip()),
+                "sl": float(inputs["sl"].text().strip()),
+                "tp": float(inputs["tp"].text().strip()),
+                "expiration": int(inputs["expiration"].text().strip()),
+            }
+        except ValueError:
+            QMessageBox.warning(
+                self, "Dữ liệu không hợp lệ", "Entry/SL/TP/expiration phải là số."
+            )
+            return
+        order_id = int(order.get("order_id", 0) or 0)
+        future = self.order_manager.modify_pending_order(order_id, **changes)
+        if future is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Broker không hỗ trợ sửa pending order."
+            )
+            return
+        self._pending_ui_operation = {
+            "kind": "modify_pending",
+            "remaining": 1,
+            "confirmed": 0,
+            "partial": 0,
+            "failed": 0,
+        }
+
+    def _flatten_account(self) -> None:
+        """Freeze and flatten the exact position + pending snapshot."""
+
+        positions = tuple(dict(item) for item in self._positions)
+        pending = tuple(dict(item) for item in self._pending_orders)
+        if not positions and not pending:
+            QMessageBox.information(
+                self, "Flatten tài khoản", "Tài khoản không có lệnh để flatten."
+            )
+            return
+        reply = QMessageBox.question(
+            self,
+            "⚠️ Xác nhận FLATTEN tài khoản",
+            "Hành động này tác động toàn bộ snapshot tài khoản, gồm cả lệnh "
+            "manual/EA khác.\n\n"
+            f"Đóng positions: {len(positions)}\n"
+            f"Hủy pending orders: {len(pending)}\n\n"
+            "Các lệnh mở mới sau hộp thoại này sẽ không bị đưa vào target.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if self.order_manager is None:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Order Management Service chưa sẵn sàng."
+            )
+            return
+        queued = 0
+        for position in positions:
+            ticket = int(position.get("position_id", 0) or 0)
+            if ticket and self.order_manager.close_position(ticket) is not None:
+                queued += 1
+        for order in pending:
+            ticket = int(order.get("order_id", 0) or 0)
+            if ticket and self.order_manager.cancel_pending_order(ticket) is not None:
+                queued += 1
+        if queued == 0:
+            QMessageBox.warning(
+                self, "Không hỗ trợ", "Không có thao tác nào được xếp hàng."
+            )
+            return
+        self._pending_ui_operation = {
+            "kind": "flatten",
+            "remaining": queued,
+            "confirmed": 0,
+            "partial": 0,
+            "failed": 0,
+        }
 
     def _close_selected(self) -> None:
         pos = self._get_selected_position()
@@ -1498,54 +1966,90 @@ class OrdersScreen(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        if hasattr(self.mt5, "close_position"):
-            result = self.mt5.close_position(pos_id)
-            # Clean up trailing config
-            self._trailing_configs.pop(pos_id, None)
-            if result.get("success"):
-                QMessageBox.information(self, "Thành công", f"Đã đóng {symbol}.\n{result.get('message', '')}")
-            else:
-                QMessageBox.warning(self, "Thất bại", f"Không thể đóng {symbol}:\n{result.get('message', '')}")
-        else:
-            QMessageBox.warning(self, "Không hỗ trợ", "Data provider không hỗ trợ đóng lệnh.")
-        self.refresh_orders()
+        if self.order_manager is not None:
+            future = self.order_manager.close_position(pos_id)
+            if future is None:
+                QMessageBox.warning(
+                    self, "Không hỗ trợ", "Không thể xếp hàng thao tác đóng lệnh."
+                )
+                return
+            self._pending_ui_operation = {
+                "kind": "close_selected",
+                "remaining": 1,
+                "confirmed": 0,
+                "partial": 0,
+                "failed": 0,
+            }
+            return
+
+        QMessageBox.warning(
+            self,
+            "Không hỗ trợ",
+            "Không đóng lệnh trực tiếp từ UI khi Order Management Service chưa sẵn sàng.",
+        )
 
     def _close_all(self) -> None:
         if not self._positions:
             QMessageBox.information(self, "Đóng tất cả", "Không có vị thế nào đang mở.")
             return
 
-        total_pl = sum(float(p.get("profit", 0) or 0) + float(p.get("swap", 0) or 0) + float(p.get("commission", 0) or 0) for p in self._positions)
+        # Freeze the exact target set before confirmation. A position opened
+        # while the modal dialog is visible must never join the bulk action.
+        order_settings = getattr(
+            getattr(self.app, "settings", None),
+            "order_management",
+            None,
+        )
+        scope = str(getattr(order_settings, "manage_scope", "AMA")).upper()
+        targets = tuple(
+            dict(position)
+            for position in self._positions
+            if scope == "ALL"
+            or int(position.get("magic", 0) or 0) == 260609
+            or str(position.get("comment", "") or "").upper().startswith("AMA")
+        )
+        if not targets:
+            QMessageBox.information(
+                self,
+                "Đóng tất cả",
+                "Không có vị thế nào trong phạm vi AMA đang hiển thị.",
+            )
+            return
+        total_pl = sum(float(p.get("profit", 0) or 0) + float(p.get("swap", 0) or 0) + float(p.get("commission", 0) or 0) for p in targets)
         reply = QMessageBox.question(
             self, "Xác nhận đóng tất cả",
-            f"Đóng toàn bộ {len(self._positions)} vị thế?\nTổng P/L hiện tại: ${total_pl:+,.2f}",
+            f"Đóng toàn bộ {len(targets)} vị thế?\n"
+            f"Tổng P/L hiện tại: {total_pl:+,.2f} {self._account_currency}".strip(),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        if not hasattr(self.mt5, "close_position"):
-            QMessageBox.warning(self, "Không hỗ trợ", "Data provider không hỗ trợ đóng lệnh.")
+        if self.order_manager is not None:
+            queued = 0
+            for pos in targets:
+                pos_id = int(pos.get("position_id", 0))
+                if pos_id and self.order_manager.close_position(pos_id) is not None:
+                    queued += 1
+            if queued == 0:
+                QMessageBox.warning(
+                    self, "Không hỗ trợ", "Không thể xếp hàng thao tác đóng lệnh."
+                )
+                return
+            self._pending_ui_operation = {
+                "kind": "close_all",
+                "remaining": queued,
+                "confirmed": 0,
+                "partial": 0,
+                "failed": 0,
+            }
             return
 
-        closed = 0
-        failed = 0
-        for pos in self._positions:
-            pos_id = int(pos.get("position_id", 0))
-            if not pos_id:
-                continue
-            result = self.mt5.close_position(pos_id)
-            self._trailing_configs.pop(pos_id, None)
-            if result.get("success"):
-                closed += 1
-            else:
-                failed += 1
-
-        msg = f"Đã đóng: {closed}"
-        if failed:
-            msg += f"\nThất bại: {failed}"
-        QMessageBox.information(self, "Kết quả đóng tất cả", msg)
-        self.refresh_orders()
+        QMessageBox.warning(
+            self,
+            "Không hỗ trợ",
+            "Không đóng lệnh trực tiếp từ UI khi Order Management Service chưa sẵn sàng.",
+        )
 
     def refresh_status(self) -> None:
         self.refresh_orders()

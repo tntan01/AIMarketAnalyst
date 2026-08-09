@@ -141,6 +141,7 @@ class ScannerController:
         telegram_service: TelegramAlertService | None = None,
         journal_service: JournalService | None = None,
         orders_screen = None,
+        order_management_service = None,
         observability_service: StructuredObservabilityService | None = None,
         rollout_metrics_service: ScannerRolloutMetricsService | None = None,
         retention_service: RuntimeRetentionService | None = None,
@@ -151,6 +152,9 @@ class ScannerController:
         self.news_service = news_service or NewsService()
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
+        self.order_management_service = order_management_service
+        # Retained only as a source-compatible attribute for older callers.
+        # Production auto-tracking never invokes QWidget methods from workers.
         self.orders_screen = orders_screen
         self.observability = observability_service or structured_observability
         self.rollout_metrics = (
@@ -1434,6 +1438,7 @@ class ScannerController:
                 "take_profit": order.get("take_profit"),
             },
         )
+        order_sent_after = datetime.utcnow()
         try:
             mt5_comment = _forward_order_comment(row_id, comment)
             mt5_result = self.mt5.place_market_order(
@@ -1473,6 +1478,94 @@ class ScannerController:
                 else ""
             ),
         })
+        if payload.get("success"):
+            # An order/deal id is not a position ticket. Reconcile the actual
+            # broker position by broker symbol + AMA correlation before
+            # exposing an id to Order Management.
+            reconcile = getattr(self.mt5, "reconcile_open_position", None)
+            if callable(reconcile):
+                try:
+                    broker_position = reconcile(
+                        broker_symbol,
+                        expected_ticket=(
+                            int(payload["position_id"])
+                            if isinstance(payload.get("position_id"), int)
+                            and int(payload["position_id"]) > 0
+                            else None
+                        ),
+                        magic=260609,
+                        comment_prefix=mt5_comment,
+                        expected_side=side,
+                        expected_volume=float(order.get("volume") or 0),
+                        opened_after=order_sent_after,
+                    )
+                except Exception as exc:
+                    broker_position = None
+                    payload["position_reconciliation"] = {
+                        "status": "unavailable",
+                        "message": str(exc),
+                    }
+                if broker_position is not None:
+                    raw_position_id = getattr(
+                        broker_position, "position_id", None
+                    )
+                    if isinstance(raw_position_id, int) and raw_position_id > 0:
+                        actual_side = str(
+                            getattr(broker_position, "side", "") or ""
+                        ).lower()
+                        actual_volume = float(
+                            getattr(broker_position, "volume", 0) or 0
+                        )
+                        requested_volume = float(order.get("volume") or 0)
+                        volume_step = float(
+                            getattr(
+                                getattr(
+                                    broker_position,
+                                    "symbol_metadata",
+                                    None,
+                                ),
+                                "volume_step",
+                                0,
+                            )
+                            or 0.01
+                        )
+                        if (
+                            actual_side == side
+                            and abs(actual_volume - requested_volume)
+                            <= max(volume_step / 2, 1e-9)
+                        ):
+                            payload["position_id"] = raw_position_id
+                            payload["actual_entry_price"] = float(
+                                getattr(broker_position, "open_price", 0) or 0
+                            )
+                            payload["broker_symbol"] = str(
+                                getattr(
+                                    broker_position,
+                                    "broker_symbol",
+                                    broker_symbol,
+                                )
+                                or broker_symbol
+                            )
+                            payload["position_reconciliation"] = {
+                                "status": "verified",
+                                "position_id": raw_position_id,
+                            }
+                        else:
+                            payload["position_reconciliation"] = {
+                                "status": "identity_mismatch",
+                                "expected_side": side,
+                                "actual_side": actual_side,
+                                "expected_volume": requested_volume,
+                                "actual_volume": actual_volume,
+                            }
+                    else:
+                        payload["position_reconciliation"] = {
+                            "status": "invalid_position_identity"
+                        }
+                elif "position_reconciliation" not in payload:
+                    payload["position_reconciliation"] = {
+                        "status": "not_found"
+                    }
         if payload.get("success"):
             try:
                 post_snapshot = self.mt5.portfolio_snapshot()
@@ -1634,40 +1727,60 @@ class ScannerController:
             results.append(result)
             if result.get("success"):
                 opened += 1
-                if self.orders_screen is not None:
+                manager = getattr(self, "order_management_service", None)
+                if manager is not None:
                     try:
-                        position_id = int(
-                            result.get("position_id")
-                            or result.get("ticket")
-                            or result.get("order_id")
-                            or 0
-                        )
-                        if position_id > 0:
-                            validation = result.get("revalidation", {})
-                            analysis = row.get("analysis_result", {})
-                            technical = (
-                                analysis.get("technical", {})
-                                if isinstance(analysis, dict)
-                                else {}
+                        position_id = int(result.get("position_id") or 0)
+                        broker_symbol = str(
+                            result.get("broker_symbol") or ""
+                        ).strip()
+                        if position_id <= 0 or not broker_symbol:
+                            raise ValueError(
+                                "Broker did not return a verified position identity."
                             )
-                            self.orders_screen.auto_enable_tracking(
-                                position_id,
-                                symbol,
-                                str(result.get("side") or ""),
-                                float(
+                        validation = result.get("revalidation", {})
+                        analysis = row.get("analysis_result", {})
+                        technical = (
+                            analysis.get("technical", {})
+                            if isinstance(analysis, dict)
+                            else {}
+                        )
+                        manager.register_position(
+                            verified_ticket=position_id,
+                            broker_symbol=broker_symbol,
+                            side=str(result.get("side") or ""),
+                            actual_entry_price=float(
+                                result.get("actual_entry_price")
+                                or result.get("price")
+                                or (
                                     validation.get("execution_price")
                                     if isinstance(validation, dict)
                                     else 0.0
-                                ),
-                                float(result.get("stop_loss") or 0.0),
-                                float(
-                                    technical.get("atr_h1", 0.0)
-                                    if isinstance(technical, dict)
-                                    else 0.0
-                                ),
-                            )
-                    except Exception:
-                        pass
+                                )
+                            ),
+                            initial_sl=float(result.get("stop_loss") or 0.0),
+                            atr=float(
+                                technical.get("atr_h1", 0.0)
+                                if isinstance(technical, dict)
+                                else 0.0
+                            ),
+                            correlation_id=str(
+                                result.get("forward_correlation_id") or ""
+                            ),
+                        )
+                    except Exception as exc:
+                        self._emit_observability(
+                            "STATE_RECONCILIATION_FAILED",
+                            scan_id=str(row.get("scan_id", "") or ""),
+                            symbol=symbol,
+                            severity="ERROR",
+                            payload={
+                                "reason": "auto_tracking_registration_failed",
+                                "message": str(exc),
+                                "broker_symbol": result.get("broker_symbol"),
+                                "position_id": result.get("position_id"),
+                            },
+                        )
             else:
                 skipped += 1
                 errors.append(

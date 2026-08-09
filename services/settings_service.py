@@ -13,6 +13,7 @@ from config.settings import (
     DisplaySettings,
     FeatureFlagSettings,
     NotificationSettings,
+    OrderManagementSettings,
     ScannerRolloutSettings,
     SymbolScanSettings,
     TradingSettings,
@@ -39,6 +40,9 @@ class SettingsService:
             features=self._load_feature_flags(data.get("features", {})),
             scanner_rollout=self._load_scanner_rollout(
                 data.get("scanner_rollout", {})
+            ),
+            order_management=self._load_order_management(
+                data.get("order_management", {})
             ),
             default_symbol=data.get("default_symbol", "EUR/USD"),
             default_timeframe=data.get("default_timeframe", "H1"),
@@ -547,6 +551,81 @@ class SettingsService:
             ),
             scanner_core_result_early=bool(
                 data.get("scanner_core_result_early", False)
+            ),
+            order_management_v2=bool(
+                data.get("order_management_v2", False)
+            ),
+        )
+
+    def _load_order_management(
+        self,
+        data: dict | None,
+    ) -> OrderManagementSettings:
+        data = data if isinstance(data, dict) else {}
+        stage = str(data.get("stage", "SHADOW") or "SHADOW").upper()
+        if stage not in {"DISABLED", "SHADOW", "DEMO", "CANARY", "PRODUCTION"}:
+            stage = "SHADOW"
+        scope = str(data.get("manage_scope", "AMA") or "AMA").upper()
+        if scope not in {"AMA", "ALL"}:
+            scope = "AMA"
+        return OrderManagementSettings(
+            stage=stage,
+            kill_switch=bool(data.get("kill_switch", False)),
+            require_demo_account=bool(data.get("require_demo_account", True)),
+            production_approved=bool(data.get("production_approved", False)),
+            manage_scope=scope,
+            canary_broker_symbol=str(
+                data.get("canary_broker_symbol", "") or ""
+            ).strip(),
+            canary_position_id=max(
+                _safe_int(data.get("canary_position_id", 0)),
+                0,
+            ),
+            poll_interval_seconds=min(
+                max(_safe_float(data.get("poll_interval_seconds", 1.5)), 0.5),
+                60.0,
+            ),
+            refresh_interval_seconds=min(
+                max(_safe_float(data.get("refresh_interval_seconds", 5.0)), 1.0),
+                300.0,
+            ),
+            be_trigger_r=min(
+                max(_safe_float(data.get("be_trigger_r", 1.0)), 0.1),
+                10.0,
+            ),
+            be_plus_pips=min(
+                max(_safe_float(data.get("be_plus_pips", 2.0)), 0.0),
+                100.0,
+            ),
+            trail_wide_atr_multiplier=min(
+                max(
+                    _safe_float(data.get("trail_wide_atr_multiplier", 2.5)),
+                    0.1,
+                ),
+                20.0,
+            ),
+            trail_tight_atr_multiplier=min(
+                max(
+                    _safe_float(data.get("trail_tight_atr_multiplier", 1.5)),
+                    0.1,
+                ),
+                20.0,
+            ),
+            trail_tight_trigger_r=min(
+                max(_safe_float(data.get("trail_tight_trigger_r", 2.0)), 0.1),
+                20.0,
+            ),
+            retry_initial_seconds=min(
+                max(_safe_float(data.get("retry_initial_seconds", 2.0)), 0.1),
+                60.0,
+            ),
+            retry_max_seconds=min(
+                max(_safe_float(data.get("retry_max_seconds", 30.0)), 1.0),
+                600.0,
+            ),
+            max_retry_attempts=min(
+                max(_safe_int(data.get("max_retry_attempts", 5)), 1),
+                100,
             ),
         )
 

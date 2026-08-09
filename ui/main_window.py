@@ -118,10 +118,11 @@ class MainWindow(QMainWindow):
             screen = factory(self.navigate, app=self.app)
             self.screens[route] = screen
             self.stack.addWidget(screen)
-        # Kết nối orders_screen vào scanner_controller để auto-enable BE+trailing
-        orders = self.screens.get("orders")
-        if orders and self.app and self.app.scanner_controller:
-            self.app.scanner_controller.orders_screen = orders
+        # Order Management is application-owned and remains active regardless
+        # of which screen is visible. Scanner workers publish registrations to
+        # this service; they never call OrdersScreen/QWidget directly.
+        if self.app:
+            self.app.order_management_service.start()
 
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()

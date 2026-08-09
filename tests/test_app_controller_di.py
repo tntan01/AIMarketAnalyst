@@ -16,6 +16,9 @@ def test_app_controller_services_are_singletons():
     assert app.mt5 is app.mt5
     assert app.scanner_controller is app.scanner_controller
     assert app.scanner_controller.mt5 is app.mt5
+    assert app.order_management_service is app.order_management_service
+    assert app.order_management_service.mt5 is app.mt5
+    assert app.scanner_controller.order_management_service is app.order_management_service
 
 
 def test_app_controller_creates_configured_ai_service():
@@ -67,6 +70,19 @@ def test_app_controller_shutdown_disconnects_mt5_when_aftercare_wait_raises():
     with pytest.raises(RuntimeError, match="wait failed"):
         app.shutdown()
 
+    mt5.disconnect.assert_called_once_with()
+
+
+def test_app_controller_shutdown_flushes_order_management_before_disconnect():
+    app = AppController()
+    manager = MagicMock()
+    mt5 = MagicMock()
+    app._order_management_service = manager
+    app._mt5 = mt5
+
+    app.shutdown()
+
+    manager.shutdown.assert_called_once_with()
     mt5.disconnect.assert_called_once_with()
 
 

@@ -6,6 +6,42 @@ Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tạ
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
 `scanner-flow.md`.
 
+## Order Management V2
+
+Contract runtime đã được triển khai trong code và đang chờ release validation,
+xem
+[`order-management-contract.md`](../trading/order-management-contract.md). Các
+contract snapshot MT5, postcondition position/pending, state machine,
+persistence account-scoped và `OrderManagementService` single-executor đã được
+triển khai cùng targeted automated test.
+
+Targeted final suite ngày 09/08/2026 đạt **191 passed in 3.15s** trên 17 file
+liên quan, bao phủ broker/pending contract, state machine, persistence,
+service/executor, settings/UI và integration boundary.
+
+Full suite cuối cùng đạt **2740 passed, 8 skipped, 17 xfailed, 5 warnings in
+178.62s (179.5s wall)**. Full-suite gate đã đạt cho worktree tích hợp hiện tại.
+
+`AppController` sở hữu và shutdown service; `MainWindow` start service; Scanner
+reconcile position broker rồi register vào service; Orders UI đọc cache và nhận
+Qt signals thay vì gọi native MetaTrader5. Service load/persist/flush state theo
+account, phát health/operation events và đưa broker I/O qua một executor tuần tự.
+Pending cancel/modify, manual/partial close, scoped frozen close-all và frozen
+flatten cũng đi qua boundary này.
+
+Mặc định mã nguồn/settings migrate là `order_management_v2=false`, stage
+`SHADOW`, `require_demo_account=true`, `production_approved=false` và phạm vi
+`AMA`. Đây là default fail-safe, không phải mô tả giá trị đã lưu trên máy nếu
+người dùng đã thay đổi Settings. Feature/stage/account/CANARY/PRODUCTION gate
+điều khiển automation; thao tác manual vẫn cần dialog xác nhận riêng. Kill switch
+chặn cả automation lẫn manual mutation. Settings cập nhật policy của service
+đang chạy mà không cần restart.
+
+Order Management V2 hiện **chưa live-safe, chưa GA**. Forward demo qua nhiều
+phiên/reconnect MT5 vẫn là release blocker cuối chưa có evidence. Targeted/full
+suite không thay thế bằng chứng Qt + broker thật. Checklist chi tiết nằm trong
+[`order-management-implementation-plan.md`](../trading/order-management-implementation-plan.md).
+
 ## Scanner rollout
 
 | Thuộc tính | Giá trị hiện tại |

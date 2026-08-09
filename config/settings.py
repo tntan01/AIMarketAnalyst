@@ -177,6 +177,9 @@ class FeatureFlagSettings:
     scanner_mt5_history_cache: bool = False
     # Phase 3: emit core result to the UI before Telegram/persistence run.
     scanner_core_result_early: bool = False
+    # Disabling V2 must never restore the legacy in-widget trailing engine.
+    # Its own rollout policy remains SHADOW by default.
+    order_management_v2: bool = False
 
 
 @dataclass(slots=True)
@@ -196,6 +199,33 @@ class ScannerRolloutSettings:
 
 
 @dataclass(slots=True)
+class OrderManagementSettings:
+    """Fail-safe rollout and runtime policy for Order Management V2.
+
+    ``SHADOW`` computes desired protection changes without mutating broker
+    state. A demo/live stage must be selected explicitly before execution.
+    """
+
+    stage: str = "SHADOW"
+    kill_switch: bool = False
+    require_demo_account: bool = True
+    production_approved: bool = False
+    manage_scope: str = "AMA"
+    canary_broker_symbol: str = ""
+    canary_position_id: int = 0
+    poll_interval_seconds: float = 1.5
+    refresh_interval_seconds: float = 5.0
+    be_trigger_r: float = 1.0
+    be_plus_pips: float = 2.0
+    trail_wide_atr_multiplier: float = 2.5
+    trail_tight_atr_multiplier: float = 1.5
+    trail_tight_trigger_r: float = 2.0
+    retry_initial_seconds: float = 2.0
+    retry_max_seconds: float = 30.0
+    max_retry_attempts: int = 5
+
+
+@dataclass(slots=True)
 class AppSettings:
     ai: AISettings
     trading: TradingSettings = field(default_factory=TradingSettings)
@@ -205,6 +235,9 @@ class AppSettings:
     features: FeatureFlagSettings = field(default_factory=FeatureFlagSettings)
     scanner_rollout: ScannerRolloutSettings = field(
         default_factory=ScannerRolloutSettings
+    )
+    order_management: OrderManagementSettings = field(
+        default_factory=OrderManagementSettings
     )
     default_symbol: str = "EUR/USD"
     default_timeframe: str = "H1"

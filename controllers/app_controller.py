@@ -18,6 +18,7 @@ from services.ai_service import AIProviderConfig, AIService
 from services.journal_service import JournalService
 from services.mt5_service import MT5Service
 from services.news_service import NewsService
+from services.order_management_service import OrderManagementService
 from services.settings_service import SettingsService
 from services.telegram_alert_service import TelegramAlertService
 
@@ -44,6 +45,7 @@ class AppController:
         self._journal_service: JournalService | None = None
         self._ai_catalog_service: AIProviderCatalogService | None = None
         self._telegram_service: TelegramAlertService | None = None
+        self._order_management_service: OrderManagementService | None = None
 
         # Controllers (also lazy)
         self._scanner_controller: ScannerController | None = None
@@ -95,6 +97,16 @@ class AppController:
             self._telegram_service = TelegramAlertService()
         return self._telegram_service
 
+    @property
+    def order_management_service(self) -> OrderManagementService:
+        if self._order_management_service is None:
+            self._order_management_service = OrderManagementService(
+                self.mt5,
+                feature_enabled=self.settings.features.order_management_v2,
+                rollout_settings=self.settings.order_management,
+            )
+        return self._order_management_service
+
     def shutdown(self) -> None:
         """Release application-owned resources without creating new services.
 
@@ -104,8 +116,12 @@ class AppController:
         MT5 is always disconnected, even if the wait fails unexpectedly.
         """
         try:
-            if self._scanner_controller is not None:
-                self._scanner_controller.wait_for_aftercare_shutdown()
+            try:
+                if self._scanner_controller is not None:
+                    self._scanner_controller.wait_for_aftercare_shutdown()
+            finally:
+                if self._order_management_service is not None:
+                    self._order_management_service.shutdown()
         finally:
             if self._mt5 is not None:
                 self._mt5.disconnect()
@@ -121,6 +137,7 @@ class AppController:
                 news_service=self.news_service,
                 telegram_service=self.telegram_service,
                 journal_service=self.journal_service,
+                order_management_service=self.order_management_service,
             )
         return self._scanner_controller
 

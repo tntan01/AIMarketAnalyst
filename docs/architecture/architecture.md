@@ -736,19 +736,28 @@ Xem chi tiết tại `docs/scanner/scanner-flow.md` và
 - Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
 - Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`, and `diagnostics`.
 
-### Order Management — BE & Trailing Stop (Design 2026-07-08)
+### Order Management V2 — đã triển khai, chờ release validation (09/08/2026)
 
-- `ui/screens/orders_screen.py` contains the full order management UI: open positions table, pending orders table, close single/all, and a real-time trailing stop engine running on a 1.5-second QTimer.
-- The trailing stop engine (`_trailing_tick()`) is being upgraded from manual pips-based trailing to an automatic 3-stage BE + ATR-based trailing system.
-- **Stage 1 — BE (Breakeven):** When profit reaches 1R (distance equal to initial SL), SL is moved to entry + 2 pips. This is a one-time operation per position.
-- **Stage 2 — Wide Trail (2.5×ATR H1):** After BE, SL trails the extreme price using ATR(H1) × 2.5 as the trail distance. SL never moves backward.
-- **Stage 3 — Tight Trail (1.5×ATR H1):** When profit reaches 2R, the trail multiplier tightens to 1.5×ATR to lock in profits more aggressively.
-- `_trailing_configs[position_id]` stores per-position state: `be_done`, `be_trigger_price`, `entry_price`, `initial_sl`, `atr_h1`, `trail_mode` ("wide"/"tight"), `extreme_price`.
-- When the scanner auto-opens a position, `scanner_controller` calls `orders_screen.auto_enable_tracking(pos_id, symbol, side, entry, sl, atr)` to automatically register the position for BE + trailing management.
-- The orders_screen timers run even when the tab is not active, ensuring BE/trailing operates regardless of which screen the user is viewing.
-- SL modifications are performed via `modify_position_sltp(pos_id, new_sl, new_tp=None)`, preserving the original TP.
-- Only positions opened by the system are managed; manual positions are ignored.
-- Configuration lives in `settings.json` under `order_management` with defaults: `be_trigger_r=1.0`, `be_plus_pips=2`, `trail_wide_atr_multiplier=2.5`, `trail_tight_atr_multiplier=1.5`, `trail_tight_trigger_r=2.0`, `poll_interval_seconds=5`.
+Order Management V2 tách broker DTO, state machine thuần và persistence
+account-scoped khỏi widget. Snapshot typed phân biệt `AVAILABLE` với
+`UNAVAILABLE`; SL/TP và close chỉ thành công sau postcondition broker; state
+machine giữ invariant BUY/Bid, SELL/Ask, BE trước trailing, TP không đổi và SL
+không dời lùi.
+
+`AppController` hiện sở hữu `OrderManagementService` ở application scope. MT5
+I/O chạy qua single-executor/serialization boundary; Scanner reconcile rồi
+register position broker; Orders UI đọc cache và nhận Qt signal; shutdown
+persist/flush state trước khi disconnect MT5. Pending/manual/bulk action cũng
+dùng service với broker postcondition.
+
+Targeted suite và full suite tích hợp đều xanh: targeted đạt **191 passed in
+3.15s** trên 17 file; full suite đạt **2740 passed, 8 skipped, 17 xfailed,
+5 warnings in 178.62s (179.5s wall)**.
+Forward-demo/reconnect evidence vẫn chưa có, nên implementation chưa được coi là
+live-safe hoặc GA. Xem
+[`order-management-contract.md`](../trading/order-management-contract.md),
+[`order-management-implementation-plan.md`](../trading/order-management-implementation-plan.md)
+và [`runtime-status.md`](runtime-status.md).
 
 ### Gemini API Migration (2026-07-17)
 
