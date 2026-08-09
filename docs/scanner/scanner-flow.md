@@ -1,6 +1,6 @@
 # Scanner V2 — Luồng chạy hiện hành
 
-Cập nhật: **02/08/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
+Cập nhật: **09/08/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
 
 ## 1. Tổng quan
 
@@ -121,6 +121,21 @@ công từ dialog Scanner có override có chủ đích cho riêng block này kh
 Controller kiểm tra kết nối MT5, resolve broker symbol, lấy candle các timeframe cần thiết và macro context. Các symbol được phân tích song song.
 
 Pipeline phân tích tạo dữ liệu kỹ thuật/macro, scenario theo từng side, score, entry status, gate result và R:R. Candidate Engine không được dùng scenario của BUY cho SELL hoặc ngược lại.
+
+Trong macro correlation, `vix_pair_aware_enabled` đi từ Advanced Settings qua
+`NewsService.data_quality_flags` vào `AnalysisPipeline` cho cả BUY và SELL.
+Flag mặc định OFF. Chỉ schema-2 map data-backed còn TTL và pair actionable mới
+được modulate VIX penalty. Candidate seed/stale/malformed bị bỏ qua để loader
+thử fallback; chỉ flag OFF, không còn eligible candidate hoặc pair
+non-actionable mới giữ flat scoring. Trade thuận validated flow được giảm
+penalty theo factor; trade ngược flow không được discount.
+
+Thay đổi này chỉ sửa input macro component của đúng side, không bypass logic của
+Decision Engine, Strategy Router, entry/trade gate, rollout hoặc execution.
+Score thay đổi có thể làm kết quả threshold/decision/ranking downstream thay đổi
+theo contract bình thường. Kết quả calibration hiện tại không xác nhận
+JPY/AUD-NZD; runbook nằm tại
+`../macro/step7_vix_pair_sensitivity_operations.md`.
 
 Các lỗi dữ liệu phải được biểu diễn bằng status/reason code; không được coi giá trị thiếu là điều kiện đã đạt.
 

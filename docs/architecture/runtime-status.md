@@ -1,6 +1,6 @@
 # Runtime Status
 
-Cập nhật: **02/08/2026 (Asia/Ho_Chi_Minh)**.
+Cập nhật: **09/08/2026 (Asia/Ho_Chi_Minh)**.
 
 Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tại. Đây không
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
@@ -17,7 +17,7 @@ phải giá trị mặc định của mã nguồn và không thay thế contract
 | Bắt buộc tài khoản demo | `false` |
 | Allowlist rollout | Rỗng; `PRODUCTION` không giới hạn symbol bằng allowlist |
 | SMC scorer | `smc-v2` (canonical duy nhất, không có mode để chọn) |
-| Feature flags runtime | `scanner_architecture_v2=true`, `auto_trade_v2=true`; hai flag Backtest cũ không còn được runtime sử dụng |
+| Feature flags runtime | `scanner_architecture_v2=true`, `auto_trade_v2=true`; `vix_pair_aware_enabled=false` hiệu lực do settings cũ chưa có key; hai flag Backtest cũ không còn được runtime sử dụng |
 
 `backtest_config_v2` hoặc `backtest_engine_v2` có thể vẫn còn trong file
 Settings được tạo bởi bản cũ. Loader hiện bỏ qua hai key này và lần lưu Settings
@@ -28,6 +28,31 @@ Settings hiện có bản ghi cấu hình riêng cho **31 symbol**. Danh sách
 Backtest đã duyệt, không phải danh sách symbol mà Scanner được phép quét.
 Scanner vẫn lấy phạm vi mặc định từ 31 mã trong `SUPPORTED_SYMBOLS`. Việc một
 symbol được quét hoặc có cấu hình không tự yêu cầu đặt lệnh.
+
+## Trạng thái VIX pair sensitivity
+
+Settings đang lưu trên máy hiện tại chưa có key
+`advanced.vix_pair_aware_enabled`. Loader dùng default `false`, vì vậy Bước 7
+đang **OFF** và VIX contribution vẫn phẳng ở runtime mặc định.
+
+Probe loader ngày 09/08/2026 cho thấy:
+
+- APPDATA có một seed map cũ; runtime từ chối với
+  `seed_or_unverified_origin` rồi tiếp tục candidate kế tiếp;
+- `data/vix_pair_sensitivity.json` trong repo là schema-2 map eligible và được
+  dùng làm fallback, gồm 31/31 pair đủ mẫu;
+- map được tạo lúc `2026-08-09T07:15:01.945180Z`, TTL 90 ngày và sẽ stale xấp
+  xỉ `2026-11-07T07:15:01.945180Z`;
+- ba pair actionable theo raw gate là BTC/USD, XAG/USD và XAU/USD; cả 7 JPY
+  pairs cùng AUD/NZD đều non-actionable.
+
+Map hợp lệ không tự bật feature. Kết quả hiện tại không xác nhận mục tiêu JPY,
+nên không có phê duyệt bật toàn cục được suy ra từ việc map load thành công.
+Runbook: `../macro/step7_vix_pair_sensitivity_operations.md`.
+
+Gap vận hành đang mở: lần re-validation đủ dữ liệu nhưng `0 actionable` không
+overwrite map trước. Trước khi contract tombstone/disable được sửa, phải tắt
+flag trước re-validation và giữ OFF nếu hypothesis không được xác nhận.
 
 ## Trạng thái gửi lệnh
 

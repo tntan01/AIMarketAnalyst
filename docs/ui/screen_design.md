@@ -1179,10 +1179,31 @@ SQLite Database Path (đường dẫn cơ sở dữ liệu SQLite):
 Settings Storage (nơi lưu cài đặt):
 [ settings.json ▼ ]
 
+[ ] Chặn giao dịch quanh tin đỏ
+[ ] Giảm điểm vĩ mô khi có sự kiện lớn trước 4-48h (Bước 5)
+[ ] AI trọng tài vĩ mô cho tín hiệu mạnh (Bước 6)
+[ ] VIX theo độ nhạy từng cặp tiền (Bước 7 — chỉ bật sau backtest)
+
+Auto-scan mặc định: [ 5 phút ▼ ]
+Telegram bot token: [ ... ]
+Telegram chat ID: [ ... ]
+
 [Backup Settings (Sao lưu cài đặt)]
 [Restore Settings (Khôi phục cài đặt)]
 [Reset to Default (Đặt lại mặc định)]
 ```
+
+Checkbox VIX pair-aware mặc định unchecked, phải load/save qua
+`AdvancedSettings.vix_pair_aware_enabled` và không được tự bật sau calibration.
+Flag ON không bảo đảm modulation được áp dụng: candidate
+seed/stale/schema cũ/malformed bị bỏ qua để thử fallback; runtime chỉ flat nếu
+không còn candidate eligible hoặc pair không actionable. UI hiện hành mới có
+toggle; chưa có nút revalidate hay trạng thái map source/age/expiry. Đây là gap
+vận hành cần hiển thị trước khi coi tính năng production-complete.
+
+Ảnh `docs/ui/baseline/current/*/screen-settings*.png` chưa được capture lại
+trong thay đổi Bước 7 này, nên chưa phải bằng chứng visual cho checkbox mới.
+Phải regenerate baseline trước khi dùng bộ ảnh đó làm release evidence UI.
 
 ---
 

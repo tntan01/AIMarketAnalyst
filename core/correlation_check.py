@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -15,61 +16,125 @@ logger = logging.getLogger(__name__)
 
 _VIX_SENSITIVITY_CACHE: dict[str, dict[str, Any]] | None = None
 _VIX_SENSITIVITY_LOADED: bool = False
+_VIX_SENSITIVITY_DOCUMENT: dict[str, Any] | None = None
+_VIX_SENSITIVITY_FINGERPRINT: tuple[tuple[str, int | None, int | None], ...] | None = None
+_VIX_SENSITIVITY_SOURCE: Path | None = None
 
 
-def _load_vix_sensitivity() -> dict[str, dict[str, Any]]:
-    """Load pair→VIX sensitivity mapping from data/vix_pair_sensitivity.json.
+def _vix_sensitivity_candidates() -> list[Path]:
+    """Runtime read order matching the backtest writer.
 
-    Returns empty dict if the file is missing or malformed (fail-open:
-    missing data means flat scoring, preserving current behavior).
-    Cached in module-level variable after first load.
+    The runner saves to app-data by default, so that location must win over a
+    repo/bundled seed. The repo path remains a deterministic fallback for
+    development and packaged validated maps.
     """
-    global _VIX_SENSITIVITY_CACHE, _VIX_SENSITIVITY_LOADED
-    if _VIX_SENSITIVITY_LOADED:
-        return _VIX_SENSITIVITY_CACHE or {}
-
-    _VIX_SENSITIVITY_LOADED = True
-
-    # Try multiple paths: project-relative, then app-data
-    candidates = [
-        Path(__file__).resolve().parents[1] / "data" / "vix_pair_sensitivity.json",
-    ]
+    candidates: list[Path] = []
     try:
         from config.paths import app_data_dir
+
         candidates.append(app_data_dir() / "vix_pair_sensitivity.json")
     except Exception:
         pass
+    candidates.append(
+        Path(__file__).resolve().parents[1] / "data" / "vix_pair_sensitivity.json"
+    )
+    deduplicated: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve(strict=False)).casefold()
+        if key not in seen:
+            seen.add(key)
+            deduplicated.append(candidate)
+    return deduplicated
+
+
+def _vix_sensitivity_fingerprint(
+    candidates: list[Path],
+) -> tuple[tuple[str, int | None, int | None], ...]:
+    """Cheap cache key that notices a runner replacing the map in-process."""
+    result: list[tuple[str, int | None, int | None]] = []
+    for path in candidates:
+        try:
+            stat = path.stat()
+            result.append((str(path), stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            result.append((str(path), None, None))
+    return tuple(result)
+
+
+def _load_vix_sensitivity() -> dict[str, dict[str, Any]]:
+    """Load an eligible pair→VIX sensitivity mapping.
+
+    Seed, stale, legacy position-aligned and statistically incomplete maps are
+    rejected (flat scoring). Cache invalidates on path mtime/size changes and
+    eligibility is rechecked on every call so TTL cannot become dead code.
+    """
+    global _VIX_SENSITIVITY_CACHE, _VIX_SENSITIVITY_LOADED
+    global _VIX_SENSITIVITY_DOCUMENT, _VIX_SENSITIVITY_FINGERPRINT
+    global _VIX_SENSITIVITY_SOURCE
+
+    from core.vix_pair_backtest import (
+        is_sensitivity_map_eligible,
+        sensitivity_map_ineligibility_reason,
+    )
+
+    candidates = _vix_sensitivity_candidates()
+    fingerprint = _vix_sensitivity_fingerprint(candidates)
+    if _VIX_SENSITIVITY_LOADED and fingerprint == _VIX_SENSITIVITY_FINGERPRINT:
+        if _VIX_SENSITIVITY_DOCUMENT is None:
+            return {}
+        if is_sensitivity_map_eligible(_VIX_SENSITIVITY_DOCUMENT):
+            return _VIX_SENSITIVITY_CACHE or {}
+        # A previously fresh document may cross its TTL without a file change.
+
+    _VIX_SENSITIVITY_LOADED = True
+    _VIX_SENSITIVITY_FINGERPRINT = fingerprint
+    _VIX_SENSITIVITY_CACHE = {}
+    _VIX_SENSITIVITY_DOCUMENT = None
+    _VIX_SENSITIVITY_SOURCE = None
 
     for path in candidates:
         try:
             data = json.loads(path.read_text("utf-8"))
-            if isinstance(data, dict) and "pairs" in data:
-                _VIX_SENSITIVITY_CACHE = data["pairs"]
-                logger.info(
-                    "VIX sensitivity map loaded from %s (%d pairs)",
-                    path, len(_VIX_SENSITIVITY_CACHE),
-                )
-                # Log warning if seed data
-                meta = data.get("meta", {})
-                if isinstance(meta, dict) and meta.get("is_seed") is True:
-                    logger.warning(
-                        "VIX sensitivity map is SEED DATA (market knowledge based). "
-                        "Run backtest with real data to validate."
-                    )
-                return _VIX_SENSITIVITY_CACHE
-        except (OSError, json.JSONDecodeError, KeyError):
+        except (OSError, json.JSONDecodeError, TypeError):
             continue
 
-    logger.info("No VIX sensitivity map found — using flat scoring (current behavior).")
-    _VIX_SENSITIVITY_CACHE = {}
+        reason = sensitivity_map_ineligibility_reason(data)
+        if reason is not None:
+            logger.warning(
+                "Ignoring ineligible VIX sensitivity map at %s (%s). "
+                "Trying the next candidate; scoring stays flat if none is eligible.",
+                path,
+                reason,
+            )
+            continue
+        pairs = data.get("pairs")
+        if not isinstance(pairs, dict):  # defensive; eligibility already checks
+            continue
+        _VIX_SENSITIVITY_CACHE = pairs
+        _VIX_SENSITIVITY_DOCUMENT = data
+        _VIX_SENSITIVITY_SOURCE = path
+        logger.info(
+            "Eligible VIX sensitivity map loaded from %s (%d pairs)",
+            path,
+            len(pairs),
+        )
+        return pairs
+
+    logger.info("No eligible VIX sensitivity map found — using flat scoring.")
     return {}
 
 
 def _reset_vix_sensitivity_cache() -> None:
     """Reset sensitivity cache (for testing)."""
     global _VIX_SENSITIVITY_CACHE, _VIX_SENSITIVITY_LOADED
+    global _VIX_SENSITIVITY_DOCUMENT, _VIX_SENSITIVITY_FINGERPRINT
+    global _VIX_SENSITIVITY_SOURCE
     _VIX_SENSITIVITY_CACHE = None
     _VIX_SENSITIVITY_LOADED = False
+    _VIX_SENSITIVITY_DOCUMENT = None
+    _VIX_SENSITIVITY_FINGERPRINT = None
+    _VIX_SENSITIVITY_SOURCE = None
 
 
 def _dxy_direction(candles: list[Candle] | None) -> str | None:
@@ -454,7 +519,13 @@ def _dxy_score(side: str, symbol: str, dxy_candles: list | None) -> float:
             return -2.0
 
 
-def _vix_score(symbol: str, side: str, vix_candles: list | None) -> float:
+def _vix_score(
+    symbol: str,
+    side: str,
+    vix_candles: list | None,
+    *,
+    pair_aware_enabled: bool = False,
+) -> float:
     """VIX adjustment CÓ NHẬN THỨC CẶP TIỀN (Bước 7).
 
     Dựa trên backtest correlation giữa ΔVIX và pair returns để điều chỉnh
@@ -469,7 +540,8 @@ def _vix_score(symbol: str, side: str, vix_candles: list | None) -> float:
        - Nếu giao dịch THUẬN với VIX-driven flow → giảm phạt mạnh
        - Nếu giao dịch NGƯỢC → giữ phạt gần như nguyên
 
-    Fallback: nếu không có sensitivity data → flat scoring (giữ nguyên behavior cũ).
+    Pair-aware mặc định OFF. Nếu flag tắt hoặc không có map đủ điều kiện thì
+    dùng flat scoring cũ.
 
     Parameters
     ----------
@@ -504,39 +576,55 @@ def _vix_score(symbol: str, side: str, vix_candles: list | None) -> float:
     if base_penalty > 0:
         return base_penalty
 
+    if not pair_aware_enabled:
+        return base_penalty
+
     # ---- Pair-aware modulation (chỉ áp dụng cho penalty, không cho bonus) ----
     sensitivity_data = _load_vix_sensitivity()
     pair_data = sensitivity_data.get(symbol.upper())
 
-    if pair_data is None:
+    if not isinstance(pair_data, dict):
         return base_penalty  # unknown pair → flat scoring
 
-    corr = float(pair_data.get("correlation", 0.0))
-    factor = float(pair_data.get("sensitivity_factor", 1.0))
-    vix_dir = str(pair_data.get("vix_direction", "indeterminate"))
+    # A non-actionable (including non-significant) result must remain flat even
+    # if a malformed file accidentally carries a directional field.
+    if pair_data.get("actionable") is False:
+        return base_penalty
 
-    # sensitivity_factor: 0 = VIX fully explains movement → no penalty
-    #                     1 = VIX is noise → full penalty
-    factor = max(0.0, min(1.0, factor))
+    try:
+        factor = float(pair_data.get("sensitivity_factor", 1.0))
+    except (TypeError, ValueError, OverflowError):
+        return base_penalty
+    if not math.isfinite(factor) or not 0.0 <= factor <= 1.0:
+        return base_penalty
+    vix_dir = str(pair_data.get("vix_direction", "indeterminate"))
+    normalized_side = str(side).strip().lower()
 
     # Side-aware adjustment:
     # - falls_on_vix_up (corr < -0.15): pair↓ when VIX↑ → SELL is with the flow
     # - rises_on_vix_up  (corr > +0.15): pair↑ when VIX↑ → BUY is with the flow
-    # - indeterminate: no clear direction → use factor as-is
-    trade_aligned = False
-    if vix_dir == "falls_on_vix_up" and side == "sell":
-        trade_aligned = True
-    elif vix_dir == "rises_on_vix_up" and side == "buy":
-        trade_aligned = True
+    # - indeterminate: no clear direction → keep the flat base penalty
+    trade_aligned = (
+        (vix_dir == "falls_on_vix_up" and normalized_side == "sell")
+        or (vix_dir == "rises_on_vix_up" and normalized_side == "buy")
+    )
+    trade_opposed = (
+        (vix_dir == "falls_on_vix_up" and normalized_side == "buy")
+        or (vix_dir == "rises_on_vix_up" and normalized_side == "sell")
+    )
 
     if trade_aligned:
-        # Trading WITH the VIX-driven flow → reduce penalty significantly
-        # Stronger correlation → more reduction
-        effective_factor = factor * 0.3  # 70% reduction for aligned trades
+        # Trading WITH the validated flow: the data-derived factor itself
+        # controls the discount. factor≈1 (weak edge) stays near the flat
+        # penalty; factor≈0 (strong edge) removes most of it.
+        effective_factor = factor
+    elif trade_opposed:
+        # Trading AGAINST a statistically validated flow must never receive a
+        # discount. Stronger evidence increases the base penalty up to 20%.
+        effective_factor = 1.0 + (1.0 - factor) * 0.2
     else:
-        # Trading AGAINST the flow → keep most of the penalty
-        # Floor at 0.2 so even uncorrelated pairs get some penalty
-        effective_factor = factor * 0.8 + 0.2
+        # Indeterminate direction or invalid side → preserve flat behavior.
+        effective_factor = 1.0
 
     adjusted = base_penalty * effective_factor
     return round(adjusted, 1)
@@ -710,10 +798,12 @@ def compute_correlation_adjustment(
     us10y_candles: list | None = None,
     us2y_candles: list | None = None,
     vix_candles: list | None = None,
+    vix_pair_aware_enabled: bool = False,
 ) -> float:
     """
     Tổng hợp điều chỉnh điểm Macro từ DXY + VIX + US10Y + US2Y.
-    Trả về float từ -11 đến +7.
+    Trả về float từ -12 đến +7 (pair-aware against-flow có thể tăng VIX
+    penalty tối đa 20%; khi flag tắt vẫn là range cũ -11 đến +7).
 
     Nhóm DXY + US10Y + US2Y cùng đo sức mạnh USD nên được kẹp trong
     [-6, +5]; điểm VIX (hiện tượng khác) nằm ngoài giới hạn này.
@@ -736,6 +826,11 @@ def compute_correlation_adjustment(
     adjustment = max(-6.0, min(5.0, adjustment))
 
     if vix_candles is not None:
-        adjustment += _vix_score(symbol, side, vix_candles)
+        adjustment += _vix_score(
+            symbol,
+            side,
+            vix_candles,
+            pair_aware_enabled=vix_pair_aware_enabled,
+        )
 
     return round(adjustment, 1)

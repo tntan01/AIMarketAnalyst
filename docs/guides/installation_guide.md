@@ -42,7 +42,7 @@ yfinance
 Ứng dụng phải tự tạo thư mục user data khi chạy lần đầu:
 
 ```text
-%APPDATA%/AI Market Analyst/
+%APPDATA%/ai-market-analyst/
   settings.json
   journal.db
   logs/
@@ -97,7 +97,7 @@ Checklist tối thiểu:
 * Dashboard không lỗi khi MT5 chưa mở.
 * Settings lưu và đọc lại được.
 * Journal database tự tạo nếu chưa tồn tại.
-* Log file được tạo trong `%APPDATA%/AI Market Analyst/logs/`.
+* Log file được tạo trong `%APPDATA%/ai-market-analyst/logs/`.
 * Không có API key xuất hiện trong log.
 * UI không bị tràn ở 1366x768 và 1920x1080.
 
@@ -119,6 +119,7 @@ Spec phải include:
 * `assets/chart`.
 * `ui/styles/dark.qss`.
 * `data/migrations`.
+* validated `data/vix_pair_sensitivity.json` làm readonly runtime fallback.
 * Các package hidden import cần cho PyQt6, PyQt6-WebEngine và MetaTrader5.
 
 ## Kiểm tra bản đóng gói
@@ -133,6 +134,15 @@ Sau khi build, test trên máy sạch hoặc Windows user profile mới:
 * Nếu thiếu AI key, app vẫn chạy rule-based.
 * Chart trong `QWebEngineView` render được khi chạy file `.exe`.
 * Export JSON hoạt động.
+* Checkbox VIX pair-aware mặc định OFF và sống sót qua save/reload Settings.
+* Bundled schema-2 VIX map đọc được; APPDATA map hợp lệ override bundle;
+  APPDATA seed/stale bị bỏ qua và loader thử bundle; thiếu mọi eligible map vẫn
+  giữ flat scoring.
+
+`scripts/run_vix_pair_backtest.py` hiện là công cụ vận hành từ source checkout,
+không được PyInstaller bundle và packaged UI chưa có nút revalidate/status. Bản
+phát hành không được hướng dẫn người dùng bật VIX pair-aware nếu chưa có quy
+trình operator tạo, review và phân phối map còn hạn.
 
 ## Cài đặt trên máy khác
 
@@ -142,6 +152,7 @@ Gói phát hành nên gồm:
 AI-Market-Analyst/
   AI Market Analyst.exe
   assets/
+  data/vix_pair_sensitivity.json
   README_USER.md
   LICENSE.txt
 ```

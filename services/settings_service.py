@@ -511,6 +511,7 @@ class SettingsService:
             fred_api_key=data.get("fred_api_key", ""),
             event_impact_derate_enabled=bool(data.get("event_impact_derate_enabled", False)),
             macro_ai_verdict_enabled=bool(data.get("macro_ai_verdict_enabled", False)),
+            vix_pair_aware_enabled=bool(data.get("vix_pair_aware_enabled", False)),
         )
 
     def _load_notification_settings(self, data: dict | None) -> NotificationSettings:

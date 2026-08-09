@@ -629,12 +629,16 @@ class AnalysisPipeline:
 
     def _step_compute_correlation(self) -> None:
         corr_ctx = self._correlation_context or {}
+        vix_pair_aware_enabled = bool(
+            self._data_quality.get("vix_pair_aware_enabled", False)
+        )
         self._buy_corr_adj = compute_correlation_adjustment(
             symbol=self._request.symbol, side="buy",
             dxy_candles=corr_ctx.get("dxy_candles"),
             us10y_candles=corr_ctx.get("us10y_candles"),
             us2y_candles=corr_ctx.get("us2y_candles"),
             vix_candles=corr_ctx.get("vix_candles"),
+            vix_pair_aware_enabled=vix_pair_aware_enabled,
         )
         self._sell_corr_adj = compute_correlation_adjustment(
             symbol=self._request.symbol, side="sell",
@@ -642,6 +646,7 @@ class AnalysisPipeline:
             us10y_candles=corr_ctx.get("us10y_candles"),
             us2y_candles=corr_ctx.get("us2y_candles"),
             vix_candles=corr_ctx.get("vix_candles"),
+            vix_pair_aware_enabled=vix_pair_aware_enabled,
         )
 
         has_dxy = bool(corr_ctx.get("dxy_candles"))

@@ -30,6 +30,14 @@
 > `backtest_config_v2`/`backtest_engine_v2` không còn trong runtime; Settings cũ
 > vẫn đọc được và snapshot lịch sử vẫn được giữ fail-closed.
 
+> Cập nhật 09/08/2026 — VIX pair sensitivity: calibration runner
+> `scripts/run_vix_pair_backtest.py` là tooling riêng, không phải System
+> Backtest. System Backtest hiện chưa truyền
+> `vix_pair_aware_enabled` vào pipeline nên replay giữ flat VIX scoring kể cả
+> khi live Settings bật. Đây là parity gap đã biết và cũng tránh việc áp map
+> hiện tại ngược về quá khứ gây look-ahead. Chỉ được nối feature này vào
+> validation khi có point-in-time/versioned map theo từng decision date.
+
 ## Runtime Contract Hiện Hành
 
 ### Portfolio và workload nghiên cứu — kiến trúc hiện hành
@@ -121,6 +129,11 @@ Quy tắc runtime:
 6. Macro correlation context, khi bật, chỉ nhận nến D1 đã đóng tại
    `decision_time`.
 7. IS/OOS dùng `[start, end)`: boundary thuộc OOS, không thuộc IS.
+
+VIX pair sensitivity map hiện là một calibration snapshot có TTL, không phải
+point-in-time dataset cho historical replay. Không được đưa map mới nhất vào
+mọi step quá khứ. Runtime/evidence contract của feature nằm tại
+`../macro/step7_vix_pair_sensitivity_operations.md`.
 
 `DataManifest` lưu timezone, coverage, số nến input/normalized, duplicate,
 duplicate xung đột, gap trong phiên, khoảng đóng hợp lệ, OHLC lỗi, session

@@ -75,6 +75,7 @@ ai-market-analyst/
     decision_engine.py
     trade_gate_engine.py
     correlation_check.py
+    vix_pair_backtest.py
     account_guard.py
     journal_feedback_engine.py
     statistical_edge_engine.py
@@ -148,8 +149,15 @@ ai-market-analyst/
       output_schema.md
 
   data/
+    vix_pair_sensitivity.json
     migrations/
     seed/
+
+  reports/
+    vix_pair_sensitivity_2026-08-09.json
+
+  scripts/
+    run_vix_pair_backtest.py
 
   packaging/
     pyinstaller.spec
@@ -197,7 +205,7 @@ Không hard-code đường dẫn tuyệt đối trong code. Mọi đường dẫ
 
 * Development: thư mục project.
 * Packaged app: thư mục cài đặt cho asset readonly.
-* User data: `%APPDATA%/AI Market Analyst/` cho settings, database, log và export.
+* User data: `%APPDATA%/ai-market-analyst/` cho settings, database, log và export.
 
 ### `core/`
 
@@ -335,6 +343,21 @@ Nếu lịch kinh tế bị rate limit, ví dụ HTTP 429 từ Forex Factory, ap
 * Cache 30 phút để giảm số lần gọi mạng.
 * Parse response thành `list[Candle]` chuẩn hóa cho `core/correlation_check.py`.
 
+VIX có hai horizon tách biệt:
+
+* live correlation context dùng số nến ngắn để chấm setup hiện tại;
+* `scripts/run_vix_pair_backtest.py` là calibration runner riêng, tải daily
+  `2y` cho `^VIX` và 31 symbol rồi dùng 252 common-date returns để tạo schema-2
+  map. Runner không phải System Backtest và không tự bật scoring.
+
+Đường Bước 7 là
+`AdvancedSettings.vix_pair_aware_enabled → SettingsService → NewsService.data_quality_flags → AnalysisPipeline → correlation_check`.
+Loader chỉ dùng data-backed map còn TTL, ưu tiên APPDATA rồi repo/bundled
+fallback. Candidate seed/stale/legacy/malformed bị bỏ qua; chỉ flag OFF, không
+còn candidate eligible hoặc pair non-actionable mới giữ VIX penalty phẳng.
+Chi tiết và evidence hiện hành xem
+`docs/macro/step7_vix_pair_sensitivity_operations.md`.
+
 `services/interest_rate_service.py` chịu trách nhiệm cập nhật lãi suất ngân hàng trung ương:
 
 * Tự động fetch từ FRED API (miễn phí, cần API key) cho 8 loại tiền tệ: USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF.
@@ -448,7 +471,8 @@ Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
   bật chủ động; AI, Monte Carlo theo yêu cầu và sweep cũng chỉ nằm trong tab
   nâng cao.
 * `journal_screen.py`: Nhật ký giao dịch.
-* `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao.
+* `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao;
+  gồm kill-switch VIX pair-aware mặc định OFF với cảnh báo chỉ bật sau backtest.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.
 
@@ -524,8 +548,11 @@ UI phải luôn có trạng thái loading, progress, cancel hoặc retry phù h�
 Phân biệt rõ:
 
 * App assets: icon, font, QSS, sample data; readonly sau khi đóng gói.
-* User data: settings, API key metadata, journal database, exports, logs; nằm trong `%APPDATA%/AI Market Analyst/`.
+* User data: settings, API key metadata, journal database, exports, logs; nằm trong `%APPDATA%/ai-market-analyst/`.
 * Cache: dữ liệu tạm có thể xóa được.
+* VIX sensitivity: mutable map nằm trong app-data và được ưu tiên; validated
+  `data/vix_pair_sensitivity.json` trong package là readonly fallback. Map hết
+  TTL hoặc không eligible không được tác động scoring.
 
 Không lưu database, log hoặc settings vào thư mục cài đặt ứng dụng khi đã đóng gói.
 
@@ -548,6 +575,8 @@ Ngay từ MVP phải giữ code tương thích đóng gói Windows:
 * Có kiểm tra MT5 terminal, Python package MetaTrader5, Visual C++ runtime nếu cần.
 * Có bản build chạy được bằng double click.
 * Có checklist test trên máy sạch hoặc Windows user profile mới.
+* Bundle validated `data/vix_pair_sensitivity.json`; calibration runner hiện
+  chưa được bundle nên packaged UI chưa tự revalidate được.
 
 ## Nguyên tắc phát triển từng bước
 

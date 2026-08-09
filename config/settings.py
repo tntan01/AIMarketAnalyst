@@ -151,6 +151,7 @@ class AdvancedSettings:
     fred_api_key: str = ""
     event_impact_derate_enabled: bool = False
     macro_ai_verdict_enabled: bool = False
+    vix_pair_aware_enabled: bool = False
 
 
 @dataclass(slots=True)

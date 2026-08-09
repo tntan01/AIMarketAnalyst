@@ -1,6 +1,6 @@
 # Kiến trúc chấm điểm Scanner V2
 
-Trạng thái: **hiện hành**, cập nhật 02/08/2026.
+Trạng thái: **hiện hành**, cập nhật 09/08/2026.
 
 ## 1. Mục tiêu
 
@@ -76,6 +76,15 @@ reason_codes
 ```
 
 Thiếu score/scenario/entry/gate không được mặc định thành pass. Các trường thiếu sinh reason code và thường dẫn đến `DATA_UNAVAILABLE`, `WATCH_ZONE`, `OUT_OF_STRATEGY` hoặc `BLOCKED` tùy ngữ cảnh.
+
+`correlation_adjustment` là một phần của macro input khi tạo `signal_score` cho
+từng side. Bước 7 có thể modulate riêng VIX contribution theo pair/side, nhưng
+chỉ khi opt-in flag bật và loader tìm được eligible map; candidate lỗi bị bỏ qua
+để thử fallback, pair non-actionable giữ flat VIX behavior. Opposed-flow không
+được giảm phạt. Đây là score input chứ không phải quyền bypass gate; thay đổi
+score có thể ảnh hưởng threshold, decision và ranking downstream theo contract
+bình thường. Công thức và evidence không lặp lại tại đây; xem
+`../macro/step7_vix_pair_sensitivity_operations.md`.
 
 ## 5. Strategy branch
 

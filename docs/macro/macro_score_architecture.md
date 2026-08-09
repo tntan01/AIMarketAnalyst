@@ -1,7 +1,9 @@
 # Macro Score Architecture & Phase 15 Changelog
 
-**Last updated**: 2026-08-07
-**Status**: Production V1 stable, V2 in shadow data collection, Bước 5 AI Event Impact active
+**Last updated**: 2026-08-09
+**Status**: Production V1 stable, V2 in shadow data collection; Bước 7 VIX
+pair-aware đã có data-backed map nhưng vẫn opt-in/default OFF và chưa xác nhận
+giả thuyết JPY/AUD/NZD
 
 ---
 
@@ -25,6 +27,7 @@
 | **15G.7** | 2026-07-23 | Forward outcome validation tool | `scripts/validate_macro_v2.py` — record/label/report |
 | **Bước 5** | 2026-08-07 | AI Event Impact Assessment — derate macro_confidence cho sự kiện high-impact trong 4-48h (shadow → active) | Module `event_impact_assessor.py`, derate trong pipeline, reason code mới, UI warning |
 | **Bước 5 review fixes** | 2026-08-07 | Fix theo báo cáo review: cờ derate/verdict bật được từ UI + sống sót qua lưu cài đặt; journal chỉ ghi assessment AI mới (dedup); tính lại hours_until trước derate (hết double-derate quanh mốc 4h); confidence gate cap ≤ 0.85; tài liệu sửa theo code thật | R9 (kết quả nhìn thấy được) hoạt động thực tế |
+| **Bước 7 remediation** | 2026-08-09 | Pair-aware VIX trở thành opt-in, data-gated; sửa opposed-flow penalty, common-date alignment, runtime path/TTL/cache và thêm runner | Candidate ineligible bị bỏ qua; không còn eligible candidate → flat; backtest thật 31/31 pair, 3 raw-actionable |
 
 ---
 
@@ -53,6 +56,18 @@
 | `config/interest_rates.json` | Config — lãi suất fallback |
 | `tests/test_news_service.py` | Test — `TestMacroTier1` kiểm tra tier 1 |
 | `scripts/backtest_macro_score.py` | Script — backtest điểm vĩ mô |
+| `core/correlation_check.py` | Bước 7 runtime — tính VIX base contribution, đọc eligible map và modulate theo pair/side khi flag bật |
+| `core/vix_pair_backtest.py` | Bước 7 engine — align common dates, Pearson/Fisher-z gate, schema/TTL/eligibility và atomic persistence |
+| `scripts/run_vix_pair_backtest.py` | Bước 7 runner — tải `^VIX` + 31 symbol, in summary và chỉ lưu map đủ điều kiện |
+| `data/vix_pair_sensitivity.json` | Bước 7 — schema-2 map data-backed được bundle làm runtime fallback |
+| `reports/vix_pair_sensitivity_2026-08-09.json` | Bước 7 — evidence snapshot được giữ để review, không phải archive tự sinh của runner |
+| `config/settings.py`, `services/settings_service.py` | Bước 7 — flag mặc định OFF và persistence fail-closed |
+| `services/news_service.py`, `core/analysis_pipeline.py` | Bước 7 — truyền flag qua data quality cho cả BUY/SELL scoring |
+| `ui/screens/settings_screen.py` | Bước 7 — checkbox Advanced, cảnh báo chỉ bật sau backtest |
+| `packaging/pyinstaller.spec` | Bước 7 — bundle tracked validated map làm fallback |
+| `tests/test_vix_pair_sensitivity.py` | Bước 7 — scoring, map, loader và regression |
+| `tests/test_step7_review_fixes.py` | Bước 7 — review regressions: path, stale, reload, malformed, flag và alignment |
+| `tests/test_vix_pair_backtest_runner.py` | Bước 7 — ticker/fetch/validate/save contract của runner |
 
 ---
 
@@ -78,23 +93,27 @@
 | `_dialog_card_macro()` | `scanner_detail_screen.py:1119` | Render card Vĩ mô (X/30 + trạng thái) |
 | `_classify_macro_bias()` | `scanner.py:647` | Phân loại Thuận/Trung lập/Phân kỳ |
 | `scanner_row_from_analysis()` | `scanner.py:60` | Tạo scanner row với `macro_score`, `macro_bias` |
-| `_step_score_scenarios()` | `analysis_pipeline.py:816` | Tích hợp `macro_alignment` vào `score_scenario()` |
-| `_fetch_one_symbol_mt5()` | `scanner_controller.py:2522` | Lấy `macro_context` từ `NewsService` |
-| `latest_macro_context()` | `news_service.py:269` | Full pipeline: calendar + headlines + tier scoring |
-| `data_quality_flags()` | `news_service.py:418` | Trả về `macro_context` + quality flags |
-| `_compute_macro_tiers()` | `news_service.py:1787` | Tính 3-tier macro score |
-| `_macro_tier1()` | `news_service.py:2237` | Tier 1: Lãi suất & Chính sách tiền tệ (0-12) |
-| `_macro_tier2()` | `news_service.py:2340` | Tier 2: Lịch kinh tế (0-10) |
-| `_macro_tier3()` | `news_service.py:2496` | Tier 3: Tâm lý rủi ro & Địa chính trị (0-8) |
-| `_macro_data_quality()` | `news_service.py:2694` | Chất lượng dữ liệu vĩ mô (0.0-1.0) |
+| `_step_score_scenarios()` | `analysis_pipeline.py:836` | Tích hợp `macro_alignment` vào `score_scenario()` |
+| `_fetch_one_symbol_mt5()` | `scanner_controller.py:2547` | Lấy `macro_context` từ `NewsService` |
+| `latest_macro_context()` | `news_service.py:283` | Full pipeline: calendar + headlines + tier scoring |
+| `data_quality_flags()` | `news_service.py:432` | Trả về `macro_context` + quality flags |
+| `_compute_macro_tiers()` | `news_service.py:1802` | Tính 3-tier macro score |
+| `_macro_tier1()` | `news_service.py:2252` | Tier 1: Lãi suất & Chính sách tiền tệ (0-12) |
+| `_macro_tier2()` | `news_service.py:2355` | Tier 2: Lịch kinh tế (0-10) |
+| `_macro_tier3()` | `news_service.py:2511` | Tier 3: Tâm lý rủi ro & Địa chính trị (0-8) |
+| `_macro_data_quality()` | `news_service.py:2709` | Chất lượng dữ liệu vĩ mô (0.0-1.0) |
 | `compose_scenario_score()` | `signal_engine.py:90` | Điểm tổng hợp (technical + macro + risk) |
 | `assess_upcoming_events()` | `event_impact_assessor.py:529` | Bước 5 — gọi AI đánh giá tác động, cache, fallback |
 | `derate_factor()` | `event_impact_assessor.py:279` | Bước 5 — tính hệ số derate từ decision table |
 | `select_dominant_assessment()` | `event_impact_assessor.py:318` | Bước 5 — chọn assessment nghiêm trọng nhất cho cặp |
-| `_preload_event_impact_assessments()` | `news_service.py:468` | Bước 5 — preload assessment trong background |
-| `_upcoming_event_assessments_for_symbol()` | `news_service.py:625` | Bước 5 — lọc assessment khớp cặp tiền |
-| `_select_event_ahead_payload()` | `analysis_pipeline.py:782` | Bước 5 — chọn assessment từ data_quality |
-| `_step_compute_correlation()` | `analysis_pipeline.py:620` | Bước 5 derate + floor tích hợp trong bước correlation |
+| `_preload_event_impact_assessments()` | `news_service.py:483` | Bước 5 — preload assessment trong background |
+| `_upcoming_event_assessments_for_symbol()` | `news_service.py:640` | Bước 5 — lọc assessment khớp cặp tiền |
+| `_select_event_ahead_payload()` | `analysis_pipeline.py:802` | Bước 5 — chọn assessment từ data_quality |
+| `_step_compute_correlation()` | `analysis_pipeline.py:630` | Bước 5 derate + floor và Bước 7 flag wiring trong bước correlation |
+| `compute_correlation_adjustment()` | `correlation_check.py:794` | Tổng hợp DXY/VIX/yields; nhận flag pair-aware và gọi `_vix_score()` |
+| `_vix_score()` | `correlation_check.py:522` | Bước 7 — base VIX score, eligible-map lookup và side-aware modulation |
+| `compute_vix_pair_sensitivity()` | `vix_pair_backtest.py:319` | Backtest ΔVIX% so với pair returns trên common close dates |
+| `sensitivity_map_ineligibility_reason()` | `vix_pair_backtest.py:716` | Giải thích vì sao map không được phép tác động runtime |
 
 ---
 
@@ -109,7 +128,8 @@
 | **config/interest_rates.json** | `interest_rates.json` | `_load_fallback()` | Lãi suất tĩnh | Tier 1: fallback cuối cùng |
 | **Google News RSS** | `news_service.py` | `_macro_headlines()` | Headlines (title, published_utc) | Tier 1: stance analysis, Tier 3: sentiment |
 | **Official Statements RSS** | `news_service.py` | `_latest_official_statements()` | Phát biểu chính thức | Hotspot detection |
-| **Yahoo Finance (^VIX)** | `news_service.py` | `_fetch_vix()` | VIX index | Diagnostic only — Tier3 `vix_applied_to_score=false` (Phase 15E) |
+| **Yahoo Finance (^VIX)** | `news_service.py`, `market_data_service.py` | `_fetch_vix()`, correlation context | VIX index | Tier3 diagnostic-only (`vix_applied_to_score=false`); scoring chỉ qua `correlation_adjustment`, pair modulation là opt-in Bước 7 |
+| **Yahoo Finance (pair history)** | `scripts/run_vix_pair_backtest.py` | `run_vix_pair_backtest()` | FX `BASEQUOTE=X`, XAU `GC=F`, XAG `SI=F`, BTC `BTC-USD` | Tạo schema-2 VIX sensitivity map; XAU/XAG là futures proxy |
 | **Yahoo Finance (^TNX, ^FVX)** | `news_service.py` | `_fetch_yield_spread()` | 10Y-5Y yield spread | Tier 1: yield curve (Phase 15F.2: renamed from 2s10s) |
 | **AI Service (Gemini/DeepSeek)** | `news_service.py` | `_ai_currency_stance()` | hawkish/dovish/neutral per currency | Tier 1 stance only (Phase 15E: removed from Tier 3) |
 | **Static Rules** | `news_service.py` | `SENTIMENT_LEXICON`, `EVENT_SEVERITY` | Keyword weights | Tier 2 + Tier 3: severity/sentiment |
@@ -127,9 +147,9 @@
                             │ ForexFactory JSON    │──► Calendar events (Tier 2)
                             │ ForexFactory HTML    │──► Actual merge
                             │ FRED API             │──► Interest rates (Tier 1)
-                            │ Yahoo Finance        │──► VIX, TNX, FVX (Tier 1,3)
+                            │ Yahoo Finance        │──► TNX/FVX (Tier 1), VIX diagnostic
                             │ Google News RSS      │──► Headlines (Tier 1,3)
-                            │ AI (Gemini/DeepSeek) │──► Stance analysis (Tier 1,3)
+                            │ AI (Gemini/DeepSeek) │──► Stance analysis (Tier 1)
                             │ Static config/rules  │──► Severity, sentiment weights
                             └──────────┬───────────┘
                                        │
@@ -172,6 +192,9 @@
                             │   AnalysisPipeline    │
                             │      analyze()       │
                             ├──────────────────────┤
+                            │ _step_compute_       │
+                            │  correlation()       │──► DXY/VIX/yields adjustment
+                            │  └─ pair-aware VIX   │    opt-in, eligible map only
                             │ _step_score_scenarios│
                             │  └─ score_scenario() │──► signal_engine.py
                             │      macro_alignment  │    (0-30) → scaled to
@@ -381,9 +404,12 @@ Trả lời câu hỏi: "Trong 72h tới, currency nào có nhiều sự kiện 
 
 Trả lời câu hỏi: "Tâm lý thị trường hiện tại ủng hộ risk hay safe haven?"
 
-- Risk_on → AUD, NZD, CAD được lợi
-- Risk_off → USD, JPY, CHF, XAU được lợi
-- VIX cao → risk_off → điều chỉnh điểm
+- Các nhóm risk-on/safe-haven ở đây là heuristic từ headline sentiment, không
+  phải kết luận của VIX pair backtest.
+- Từ Phase 15E, `vix_adj` không còn cộng vào Tier 3; VIX trong Tier 3 chỉ là
+  diagnostic. VIX scoring thật đi qua `correlation_adjustment`.
+- Bước 7 chỉ modulate VIX penalty khi flag bật và pair có bằng chứng actionable
+  trong eligible map. Snapshot 2026-08-09 không xác nhận bất kỳ JPY pair nào.
 
 ---
 
@@ -452,6 +478,8 @@ else:                                              → "divergent" (Xung đột/
 | `_stance_cache` | `news_service.py:70` | 30 phút | AI stance per currency |
 | `interest_rate_service._CACHE` | `interest_rate_service.py:40` | 6 giờ | Lãi suất từ FRED |
 | Preload cache | `news_service.py:179` | 5 phút | Toàn bộ macro context cho tất cả symbols |
+| `_advanced_flag_cache` | `news_service.py:131` | 60 giây | Cache flags Bước 5/6/7; lỗi đọc settings → mọi flag false |
+| VIX sensitivity cache | `correlation_check.py:18-124` | Fingerprint + TTL map 90 ngày | Reload khi path/mtime/size đổi; eligibility được recheck mỗi call nên stale tự flat |
 
 **Refresh**: Scanner gọi `preload_macro_contexts()` mỗi lần quét (có 5-min guard). Sau đó mỗi symbol gọi `data_quality_flags()` → `latest_macro_context()` có cache check.
 
@@ -758,7 +786,133 @@ False.
 
 ---
 
-## 14. Các vấn đề phát hiện
+## 18. Bước 7 — VIX Pair Sensitivity
+
+### Mục đích và ranh giới
+
+Bước 7 thay penalty VIX cào bằng bằng một modulation theo symbol và side, nhưng
+chỉ khi dữ liệu của chính hệ thống xác nhận quan hệ. Production scoring không
+hardcode JPY/AUD/NZD; seed diagnostic còn assumption tĩnh nhưng luôn ineligible.
+Bước 7 không thay VIX ở các nơi khác:
+
+- Tier 3 tiếp tục có `vix_applied_to_score=false`;
+- `check_vix_context` và VIX diagnostics không đổi;
+- VIX trong `risk_engine` không đổi;
+- bonus VIX `<15` vẫn là `+2` cho mọi pair.
+
+### Flag và luồng dữ liệu
+
+```text
+config.settings.AdvancedSettings.vix_pair_aware_enabled=false
+  → SettingsService load/save
+  → SettingsScreen checkbox (Advanced)
+  → NewsService._read_all_advanced_flags() [cache 60s, fail-closed]
+  → data_quality_flags["vix_pair_aware_enabled"]
+  → AnalysisPipeline._step_compute_correlation()
+  → compute_correlation_adjustment(..., vix_pair_aware_enabled=flag)
+  → _vix_score(..., pair_aware_enabled=flag)
+```
+
+Flag OFF, pair không actionable, direction không rõ hoặc không còn candidate map
+eligible đều trả về VIX base contribution. Candidate APPDATA lỗi/stale bị bỏ
+qua trước khi loader thử repo/bundled fallback. Runner không được quyền tự bật
+flag.
+
+### Map và runtime eligibility
+
+Loader ưu tiên `%APPDATA%/ai-market-analyst/vix_pair_sensitivity.json`, rồi mới
+dùng `data/vix_pair_sensitivity.json` trong repo/bundle. Cache fingerprint theo
+path/mtime/size để hot-reload và recheck TTL mỗi lần dùng.
+
+Schema-2 eligibility yêu cầu:
+
+- `is_seed=false`, `status=validated`, schema/alignment method hiện hành;
+- tối thiểu 120 VIX/pair common-date returns;
+- pair records có finite correlation, p-value, factor và significance fields
+  nhất quán;
+- TTL 90 ngày chưa hết;
+- có ít nhất một pair `actionable=true`.
+
+Seed map chỉ còn phục vụ sanity/tooling và luôn bị runtime từ chối. Writer dùng
+temporary file + atomic replace để tránh map nửa chừng.
+
+### Backtest engine và runner
+
+`scripts/run_vix_pair_backtest.py` tải daily data `2y` cho `^VIX` và 31 symbol,
+dùng 252 return observations. Engine intersect **close dates trước khi tính
+returns**, do đó cả hai chuỗi dùng cùng interval cho từng observation.
+
+Pair actionable khi:
+
+```text
+common-date observations >= 120
+AND abs(Pearson r) > 0.15
+AND two-sided Fisher-z approximate p <= 0.05
+```
+
+Không actionable thì factor bị neutralize về `1.0`, direction về
+`indeterminate`; correlation thô vẫn được giữ trong report để review.
+
+### Công thức runtime
+
+```text
+base VIX: >25 => -5; >20 => -2; <15 => +2; còn lại => 0
+
+aligned contribution = base_penalty × factor
+opposed contribution = base_penalty × [1 + (1-factor) × 0.2]
+indeterminate/fallback = base_penalty
+```
+
+Factor do backtest engine hiện hành sinh có floor 0.10; eligibility layer chỉ
+kiểm tra factor finite trong `[0,1]` và chưa enforce floor như schema invariant.
+Opposed-flow không bao giờ được discount và có thể tăng penalty tối đa 20%; tổng
+range của `compute_correlation_adjustment` khi pair-aware có thể xuống `-12`
+thay vì range flat cũ `-11`.
+
+### Evidence snapshot 2026-08-09
+
+Run thật dùng window 2025-08-07 → 2026-08-07, 252 VIX returns, 31/31 pair đủ dữ
+liệu. Chỉ ba pair qua gate raw hiện hành:
+
+| Pair | r | p | Factor |
+|---|---:|---:|---:|
+| BTC/USD | -0.4341 | <0.000001 (report round thành 0) | 0.56 |
+| XAG/USD | -0.1786 | 0.004385 | 0.96 |
+| XAU/USD | -0.1716 | 0.006233 | 0.97 |
+
+Cả 7 JPY pairs và AUD/NZD không actionable. Bước 7 vì vậy **không chứng minh**
+JPY là safe haven trong sample này; hệ thống giữ các pair đó ở flat VIX
+penalty. XAU/XAG dùng futures proxy `GC=F`/`SI=F`.
+
+### Trạng thái và gap còn mở
+
+- Feature vẫn default OFF; runtime settings hiện hành được ghi riêng trong
+  `../architecture/runtime-status.md`.
+- Raw p-values chưa có multiple-testing correction; BH-FDR 5% trên snapshot
+  chỉ giữ BTC/USD. Chưa có rolling/regime split hay spike-conditioned test.
+- Runner không overwrite map cũ khi run mới đủ dữ liệu nhưng `0 actionable`,
+  nên operator phải tắt flag trước revalidation và giữ OFF nếu hypothesis bị
+  từ chối bởi gate hiện hành.
+- Journal mới có analysis/correlation aggregate, chưa có map provenance,
+  factor/direction hay VIX contribution riêng.
+- PyInstaller bundle tracked map, nhưng chưa bundle runner/docs và UI chưa có
+  source/age/stale status.
+
+Runbook chi tiết: `step7_vix_pair_sensitivity_operations.md`. Review lịch sử và
+ma trận remediation: `step7_vix_pair_sensitivity_review.md`.
+
+### Kiểm chứng
+
+- `tests/test_vix_pair_sensitivity.py`;
+- `tests/test_step7_review_fixes.py`;
+- `tests/test_vix_pair_backtest_runner.py`;
+- regression `tests/test_step2_correlation.py`.
+
+Full suite sau remediation: **2615 passed, 8 skipped, 17 xfailed, 4 warnings**.
+
+---
+
+## 19. Các vấn đề phát hiện
 
 | # | Vấn đề | Mức độ | Vị trí |
 |---|--------|--------|--------|
@@ -769,10 +923,12 @@ False.
 
 ---
 
-## 15. Đề xuất cải tiến (KHÔNG sửa code — chỉ đề xuất)
+## 20. Đề xuất cải tiến (KHÔNG sửa code — chỉ đề xuất)
 
 1. **Sửa mismatch "divergent" → "conflict"**: Thêm "divergent" vào `_VN_MACRO` và inline dict ở line 678
 2. **Clamp Tier 1 về 0-12**: `max(0, min(12, total))` để giữ tổng 0-30
 3. **Mở rộng EVENT_SEVERITY**: Thêm patterns từ calendar parser hoặc dùng impact field thay vì keyword match
 4. **Thêm actual values vào Tier 2**: Sự kiện đã có actual tốt hơn/bằng/kém hơn forecast → điều chỉnh quality
-5. **Dynamic tier weights**: Trong thị trường biến động cao (VIX > 25), tăng trọng số Tier 3
+5. **Không đưa VIX trở lại Tier 3**: đề xuất lịch sử “VIX > 25 tăng trọng số
+   Tier 3” bị loại bởi Phase 15E/Bước 7; VIX chỉ đi qua
+   `correlation_adjustment` để tránh double-count.

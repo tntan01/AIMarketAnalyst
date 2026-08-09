@@ -1658,6 +1658,10 @@ class SettingsScreen(QWidget):
         derate_events.setChecked(advanced.event_impact_derate_enabled)
         macro_verdict = QCheckBox("AI trọng tài vĩ mô cho tín hiệu mạnh (Bước 6)")
         macro_verdict.setChecked(advanced.macro_ai_verdict_enabled)
+        vix_pair_aware = QCheckBox(
+            "VIX theo độ nhạy từng cặp tiền (Bước 7 — chỉ bật sau backtest)"
+        )
+        vix_pair_aware.setChecked(advanced.vix_pair_aware_enabled)
         notifications = self.app_settings.notifications
 
         auto_interval = QComboBox()
@@ -1691,6 +1695,7 @@ class SettingsScreen(QWidget):
         self.advanced_block_news_input = block_news
         self.advanced_derate_input = derate_events
         self.advanced_macro_verdict_input = macro_verdict
+        self.advanced_vix_pair_aware_input = vix_pair_aware
         self.notification_auto_interval_input = auto_interval
         self.telegram_token_input = telegram_token
         self.telegram_chats_input = telegram_chats
@@ -1706,6 +1711,7 @@ class SettingsScreen(QWidget):
         form_layout.addWidget(block_news)
         form_layout.addWidget(derate_events)
         form_layout.addWidget(macro_verdict)
+        form_layout.addWidget(vix_pair_aware)
         form_layout.addWidget(self._compact_form_row("Auto-scan mặc định", auto_interval))
         form_layout.addWidget(self._compact_form_row("Telegram bot token", telegram_token, field_width=320))
         form_layout.addWidget(self._compact_form_row("Telegram chat ID", telegram_chats, field_width=320))
@@ -1751,6 +1757,7 @@ class SettingsScreen(QWidget):
             fred_api_key=current.fred_api_key,
             event_impact_derate_enabled=self.advanced_derate_input.isChecked(),
             macro_ai_verdict_enabled=self.advanced_macro_verdict_input.isChecked(),
+            vix_pair_aware_enabled=self.advanced_vix_pair_aware_input.isChecked(),
         )
         self.app_settings.notifications = NotificationSettings(
             telegram_bot_token=self.telegram_token_input.text().strip(),

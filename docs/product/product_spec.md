@@ -112,6 +112,12 @@ advanced, notification, feature flags và Scanner rollout. Hai flag Backtest cũ
 `backtest_config_v2`/`backtest_engine_v2` đã bị loại khỏi runtime; Settings cũ
 vẫn đọc được nhưng không ghi lại hai key này khi lưu.
 
+`advanced.vix_pair_aware_enabled` là kill-switch cho Bước 7, mặc định `false`.
+Checkbox chỉ cho phép runtime thử dùng map VIX sensitivity. Candidate
+seed/stale/schema cũ/thiếu bằng chứng bị bỏ qua; loader có thể dùng bundled
+fallback hợp lệ và chỉ flat khi không còn candidate eligible. Runner calibration
+không được tự bật flag.
+
 ## 4. Contract quyết định Scanner
 
 ### 4.1 Decision thresholds
@@ -162,6 +168,26 @@ Status chuẩn:
 - `evidence_confidence` và `execution_readiness`: tín hiệu bổ sung phục vụ hiểu/rank candidate.
 
 Ranking diễn ra sau filter và ưu tiên status trước điểm cơ hội. Điểm cao không thể đưa row bị block lên trước row ready hoặc mở khóa order.
+
+### 5.1 VIX pair-aware trong macro component
+
+VIX pair-aware chỉ modulate phần VIX trong `correlation_adjustment` của macro
+score theo đúng symbol và side. Nó không sửa hoặc bypass contract của
+Decision/Strategy/Trade Gate, portfolio guard, rollout hay execution
+revalidation; score thay đổi vẫn có thể ảnh hưởng kết quả threshold, decision
+và ranking downstream theo luồng bình thường.
+
+Khi flag OFF hoặc không còn candidate map eligible, VIX giữ công thức phẳng.
+Khi flag ON và pair actionable, trade thuận flow được giảm penalty theo
+data-derived factor;
+trade ngược flow không được discount và có thể tăng penalty tối đa 20%.
+Mapping phải đến từ common-date ΔVIX-vs-return backtest, không được hardcode theo
+tên currency. Runtime contract và bằng chứng hiện hành nằm tại
+`../macro/step7_vix_pair_sensitivity_operations.md`.
+
+Calibration runner này không phải System Backtest. Historical replay hiện giữ
+flat VIX scoring; chỉ được bổ sung parity khi có map point-in-time/versioned để
+không dùng bằng chứng tương lai cho decision date quá khứ.
 
 ## 6. Backtest config contract
 
@@ -269,8 +295,15 @@ App-data lưu:
 - `logs/scanner-events.jsonl`;
 - `rollout/scanner-rollout-metrics.json`;
 - journal SQLite và settings theo `config.paths`.
+- `vix_pair_sensitivity.json` do runner calibration ghi; runtime ưu tiên file
+  này trước bundled fallback và recheck TTL 90 ngày.
 
 Snapshot/replay không được chứa credential nhạy cảm.
+
+Journal hiện chỉ cho phép audit VIX pair-aware gián tiếp qua analysis payload và
+correlation adjustment tổng hợp; chưa có provenance riêng cho map/factor/VIX
+contribution. Đây là giới hạn observability đang mở, không được mô tả là đã có
+attribution đầy đủ.
 
 ## 10. Telegram
 
@@ -303,7 +336,11 @@ Yêu cầu:
 
 ## 12. Packaging
 
-Ứng dụng phải đóng gói được trên Windows, gồm assets, QSS, chart assets, migrations và hidden imports của PyQt6/PyQt6-WebEngine/MetaTrader5. User data nằm trong app-data, không ghi đè source/package.
+Ứng dụng phải đóng gói được trên Windows, gồm assets, QSS, chart assets,
+migrations, validated `data/vix_pair_sensitivity.json` fallback và hidden
+imports của PyQt6/PyQt6-WebEngine/MetaTrader5. User data nằm trong app-data,
+không ghi đè source/package. Runner VIX calibration hiện là source-only và chưa
+có luồng revalidate trong packaged UI.
 
 ## 13. Testing và tiêu chí hoàn thành
 
@@ -319,6 +356,8 @@ Nhóm test trọng yếu:
 - observability/replay;
 - rollout/migration/readiness;
 - MT5, Telegram, journal và backtest integration.
+- VIX pair map eligibility/path/hot-reload, common-date calibration, side-aware
+  scoring, runner failure handling và default-OFF wiring.
 
 Code/tooling của kế hoạch Scanner 0–8 đã hoàn tất. Trạng thái production vẫn phụ thuộc validation thực tế: shadow, demo, canary, OOS/demo evidence, rollback và soak test.
 

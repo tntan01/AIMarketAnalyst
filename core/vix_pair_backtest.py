@@ -5,10 +5,12 @@ Tính tương quan giữa thay đổi VIX hàng ngày và returns của từng c
 
 Cung cấp:
 - compute_vix_pair_sensitivity(): tính Pearson correlation ΔVIX% vs pair returns
+  trên đúng các khoảng ngày giao dịch chung
 - get_vix_sensitivity_map(): đọc map từ disk
 - is_sensitivity_map_stale(): kiểm tra TTL
-- generate_seed_sensitivity_map(): tạo seed map từ kiến thức thị trường
-  (dùng làm fallback trước khi có backtest data thực tế)
+- is_sensitivity_map_eligible(): chặn seed/map cũ/map thiếu bằng chứng
+- generate_seed_sensitivity_map(): tạo seed chẩn đoán từ kiến thức thị trường;
+  seed không bao giờ đủ điều kiện dùng cho scoring runtime
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +31,13 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-# Ngưỡng correlation để phân loại
-SAFE_HAVEN_THRESHOLD = -0.25       # correlation < -0.25 → safe haven
-RISK_SENSITIVE_THRESHOLD = 0.25    # correlation > +0.25 → risk sensitive
-MILD_SAFE_HAVEN_THRESHOLD = -0.15
-MILD_RISK_SENSITIVE_THRESHOLD = 0.15
+# Ngưỡng correlation để mô tả quan hệ theo hướng. Tên gọi cố ý không gán
+# nguyên nhân "safe haven"/"risk-on": correlation ở cấp pair không thể phân
+# biệt base yếu với quote được mua vào.
+STRONG_NEGATIVE_THRESHOLD = -0.25
+STRONG_POSITIVE_THRESHOLD = 0.25
+MILD_NEGATIVE_THRESHOLD = -0.15
+MILD_POSITIVE_THRESHOLD = 0.15
 
 # Dải sensitivity score
 SENSITIVITY_MIN = -5.0
@@ -42,8 +46,19 @@ SENSITIVITY_MAX = 5.0
 # Lookback mặc định: ~1 năm giao dịch
 DEFAULT_LOOKBACK_DAYS = 252
 
-# Số ngày tối thiểu để backtest có ý nghĩa
-MIN_LOOKBACK_DAYS = 20
+# Số daily-return observations tối thiểu để một pair được phép tác động
+# production scoring. 20 điểm như bản cũ quá ít để kết luận về regime.
+MIN_LOOKBACK_DAYS = 120
+
+# Significance gate hai phía. Tương quan không vượt gate vẫn được báo cáo,
+# nhưng direction/factor bị neutralize nên không thể thay đổi điểm.
+SIGNIFICANCE_ALPHA = 0.05
+
+# Không cho một correlation duy nhất triệt tiêu tuyệt đối VIX penalty.
+MIN_SENSITIVITY_FACTOR = 0.10
+
+# Schema 2 khóa hai invariant: align trên common close dates và significance.
+SENSITIVITY_SCHEMA_VERSION = 2
 
 # TTL mặc định cho sensitivity map: 90 ngày
 DEFAULT_TTL_DAYS = 90
@@ -53,11 +68,12 @@ DEFAULT_SENSITIVITY_PATH: Path | None = None
 
 
 def _default_sensitivity_path() -> Path:
-    """Đường dẫn mặc định tới file sensitivity map trong data/."""
+    """Đường dẫn runtime chuẩn trong app-data của người dùng."""
     global DEFAULT_SENSITIVITY_PATH
     if DEFAULT_SENSITIVITY_PATH is not None:
         return DEFAULT_SENSITIVITY_PATH
-    # Project data dir — app_data_dir() trả về ./data trong project
+    # app_data_dir() là %APPDATA%/ai-market-analyst trên Windows (không phải
+    # <repo>/data). Runtime loader ưu tiên chính đường dẫn này.
     path = app_data_dir() / "vix_pair_sensitivity.json"
     DEFAULT_SENSITIVITY_PATH = path
     return path
@@ -68,20 +84,97 @@ def _default_sensitivity_path() -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _daily_pct_changes(candles: list[Candle]) -> list[float]:
-    """Tính chuỗi phần trăm thay đổi ngày-qua-ngày từ list candles.
+def _daily_closes_by_date(candles: list[Candle]) -> tuple[dict[date, float], int]:
+    """Chuẩn hóa candles thành ``date -> positive close``.
 
-    Returns:
-        list[float]: len = len(candles) - 1, mỗi phần tử là (close[t] - close[t-1]) / close[t-1] * 100
+    Input được sort/deduplicate theo ngày; nếu có nhiều bar cùng ngày thì bar
+    có timestamp muộn nhất thắng. Số bar time/close không hợp lệ được trả kèm
+    để report không âm thầm nuốt dữ liệu lỗi.
     """
-    changes: list[float] = []
-    for i in range(1, len(candles)):
-        prev = candles[i - 1].close
-        curr = candles[i].close
-        if prev <= 0 or curr <= 0:
-            continue
-        changes.append((curr - prev) / prev * 100.0)
-    return changes
+    by_date: dict[date, tuple[datetime, float]] = {}
+    invalid = 0
+    for candle in candles:
+        try:
+            timestamp = candle.time
+            close = float(candle.close)
+            if not isinstance(timestamp, datetime) or not math.isfinite(close) or close <= 0:
+                invalid += 1
+                continue
+            day = timestamp.date()
+            comparable_time = timestamp.replace(tzinfo=None)
+            previous = by_date.get(day)
+            if previous is None or comparable_time >= previous[0]:
+                by_date[day] = (comparable_time, close)
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            invalid += 1
+    return {day: item[1] for day, item in by_date.items()}, invalid
+
+
+def _daily_pct_changes(candles: list[Candle]) -> list[float]:
+    """Tính daily returns sau khi sort/deduplicate theo calendar date."""
+    closes, _invalid = _daily_closes_by_date(candles)
+    days = sorted(closes)
+    return [
+        (closes[days[i]] - closes[days[i - 1]]) / closes[days[i - 1]] * 100.0
+        for i in range(1, len(days))
+    ]
+
+
+def _aligned_daily_pct_changes(
+    vix_candles: list[Candle],
+    pair_candles: list[Candle],
+    *,
+    lookback_days: int,
+) -> tuple[list[float], list[float], dict[str, Any]]:
+    """Tạo hai chuỗi return trên cùng start/end date cho từng observation.
+
+    Chỉ join return theo endpoint là chưa đủ: nếu FX thiếu bar thứ Ba nhưng VIX
+    có bar đó, return thứ Tư của hai chuỗi sẽ có horizon khác nhau. Vì vậy hàm
+    này intersect *close dates trước*, rồi mới tính cả hai return qua cùng cặp
+    ngày liên tiếp trong intersection.
+    """
+    vix_closes, invalid_vix = _daily_closes_by_date(vix_candles)
+    pair_closes, invalid_pair = _daily_closes_by_date(pair_candles)
+    common_dates = sorted(set(vix_closes).intersection(pair_closes))
+    if len(common_dates) > lookback_days + 1:
+        common_dates = common_dates[-(lookback_days + 1):]
+
+    metadata: dict[str, Any] = {
+        "invalid_vix_bars": invalid_vix,
+        "invalid_pair_bars": invalid_pair,
+        "dropped_vix_dates": 0,
+        "dropped_pair_dates": 0,
+        "data_start": "unknown",
+        "data_end": "unknown",
+    }
+    if not common_dates:
+        return [], [], metadata
+
+    start, end = common_dates[0], common_dates[-1]
+    common_set = set(common_dates)
+    vix_window_dates = {day for day in vix_closes if start <= day <= end}
+    pair_window_dates = {day for day in pair_closes if start <= day <= end}
+    metadata.update({
+        "dropped_vix_dates": len(vix_window_dates - common_set),
+        "dropped_pair_dates": len(pair_window_dates - common_set),
+        "data_start": start.isoformat(),
+        "data_end": end.isoformat(),
+    })
+
+    vix_returns: list[float] = []
+    pair_returns: list[float] = []
+    for previous_day, current_day in zip(common_dates, common_dates[1:]):
+        vix_returns.append(
+            (vix_closes[current_day] - vix_closes[previous_day])
+            / vix_closes[previous_day]
+            * 100.0
+        )
+        pair_returns.append(
+            (pair_closes[current_day] - pair_closes[previous_day])
+            / pair_closes[previous_day]
+            * 100.0
+        )
+    return vix_returns, pair_returns, metadata
 
 
 def _pearson_correlation(x: list[float], y: list[float]) -> float:
@@ -113,14 +206,31 @@ def _pearson_correlation(x: list[float], y: list[float]) -> float:
     return cov / (math.sqrt(var_x) * math.sqrt(var_y))
 
 
+def _correlation_p_value(corr: float, sample_size: int) -> float:
+    """Two-sided p-value via Fisher's z normal approximation.
+
+    Với n>=120 (gate ở trên), approximation đủ ổn định cho mục đích loại bỏ
+    correlation nhiễu mà không kéo thêm scipy vào runtime desktop.
+    """
+    if sample_size < 4 or not math.isfinite(corr):
+        return 1.0
+    bounded = max(-1.0, min(1.0, corr))
+    if abs(bounded) >= 1.0:
+        return 0.0
+    z_score = math.atanh(bounded) * math.sqrt(sample_size - 3)
+    return max(0.0, min(1.0, math.erfc(abs(z_score) / math.sqrt(2.0))))
+
+
 def _correlation_to_sensitivity(corr: float) -> float:
     """Quy đổi Pearson correlation → sensitivity score trong [-5, +5].
 
     sensitivity_score mang dấu của correlation:
-    - correlation < 0: VIX↑ → pair↓ (safe haven behavior)
-    - correlation > 0: VIX↑ → pair↑ hoặc VIX↓ → pair↓ (risk-on behavior)
+    - correlation < 0: VIX↑ → pair↓
+    - correlation > 0: VIX↑ → pair↑
 
-    Quy đổi phi tuyến: dùng correlation^2 để khuếch đại tín hiệu mạnh.
+    Dấu ở cấp pair không tự cho biết chuyển động đến từ base hay quote.
+
+    Quy đổi piecewise-linear sau dead zone |r| <= 0.15.
     """
     if -0.15 <= corr <= 0.15:
         return 0.0
@@ -148,33 +258,62 @@ def _correlation_to_vix_direction(corr: float) -> str:
 def _correlation_to_sensitivity_factor(corr: float) -> float:
     """Quy đổi correlation → sensitivity_factor (0-1).
 
-    0.0 = VIX fully explains pair movement (|corr| ≈ 1.0) → minimal penalty
+    0.10 = VIX giải thích rất mạnh (|corr| >= 0.80) → gần-minimal penalty
     1.0 = VIX is noise (|corr| ≈ 0.0)       → full penalty
 
     Uses piecewise mapping:
-    - |corr| >= 0.80 → factor = 0.00 (fully explained)
+    - |corr| >= 0.80 → factor = 0.10 (không triệt tiêu tuyệt đối penalty)
     - |corr| <= 0.15 → factor = 1.00 (pure noise)
     - Linear between: factor = 1.0 - (|corr| - 0.15) / 0.65
     """
     abs_corr = abs(corr)
     if abs_corr >= 0.80:
-        return 0.0
+        return MIN_SENSITIVITY_FACTOR
     if abs_corr <= 0.15:
         return 1.0
-    return round(1.0 - (abs_corr - 0.15) / 0.65, 2)
+    return round(
+        max(
+            MIN_SENSITIVITY_FACTOR,
+            1.0 - (abs_corr - 0.15) / 0.65,
+        ),
+        2,
+    )
 
 
 def _classify_pair(corr: float) -> str:
-    """Phân loại cặp dựa trên correlation với VIX."""
-    if corr < SAFE_HAVEN_THRESHOLD:
-        return "safe_haven"
-    if corr > RISK_SENSITIVE_THRESHOLD:
-        return "risk_sensitive"
-    if corr < MILD_SAFE_HAVEN_THRESHOLD:
-        return "mild_safe_haven"
-    if corr > MILD_RISK_SENSITIVE_THRESHOLD:
-        return "mild_risk_sensitive"
+    """Mô tả hướng/độ mạnh, không suy diễn nguyên nhân ở currency-level."""
+    if corr < STRONG_NEGATIVE_THRESHOLD:
+        return "strong_negative"
+    if corr > STRONG_POSITIVE_THRESHOLD:
+        return "strong_positive"
+    if corr < MILD_NEGATIVE_THRESHOLD:
+        return "mild_negative"
+    if corr > MILD_POSITIVE_THRESHOLD:
+        return "mild_positive"
     return "neutral"
+
+
+def _unknown_pair_result(
+    note: str,
+    *,
+    data_points: int = 0,
+    alignment: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "correlation": 0.0,
+        "p_value": 1.0,
+        "statistically_significant": False,
+        "actionable": False,
+        "sensitivity_score": 0.0,
+        "sensitivity_factor": 1.0,
+        "vix_direction": "indeterminate",
+        "interpretation": "unknown",
+        "note": note,
+        "data_points": data_points,
+    }
+    if alignment:
+        result.update(alignment)
+    return result
 
 
 def compute_vix_pair_sensitivity(
@@ -188,7 +327,7 @@ def compute_vix_pair_sensitivity(
     Parameters
     ----------
     vix_candles : list[Candle]
-        Dữ liệu VIX daily candles. Cần ít nhất MIN_LOOKBACK_DAYS candles.
+        Dữ liệu VIX daily candles.
     pair_candles_map : dict[str, list[Candle]]
         Map symbol → daily candles cho từng cặp cần phân tích.
     lookback_days : int
@@ -205,106 +344,127 @@ def compute_vix_pair_sensitivity(
     """
     warnings: list[str] = []
 
-    # Validate VIX data
-    if not vix_candles or len(vix_candles) < MIN_LOOKBACK_DAYS:
+    if (
+        isinstance(lookback_days, bool)
+        or not isinstance(lookback_days, int)
+        or lookback_days < MIN_LOOKBACK_DAYS
+    ):
+        return {
+            "meta": {
+                "generated_at_utc": datetime.now(UTC).isoformat(),
+                "lookback_days": lookback_days,
+                "status": "invalid_configuration",
+                "is_seed": False,
+                "schema_version": SENSITIVITY_SCHEMA_VERSION,
+                "error": (
+                    f"lookback_days must be an integer >= {MIN_LOOKBACK_DAYS}"
+                ),
+            },
+            "pairs": {},
+            "warnings": ["Lookback không đủ dài để kiểm chứng VIX sensitivity."],
+        }
+
+    vix_closes, invalid_vix_bars = _daily_closes_by_date(vix_candles or [])
+    required_closes = MIN_LOOKBACK_DAYS + 1
+    if len(vix_closes) < required_closes:
         return {
             "meta": {
                 "generated_at_utc": datetime.now(UTC).isoformat(),
                 "lookback_days": lookback_days,
                 "status": "insufficient_data",
-                "error": f"VIX data has {len(vix_candles) if vix_candles else 0} candles, need >= {MIN_LOOKBACK_DAYS}",
+                "is_seed": False,
+                "schema_version": SENSITIVITY_SCHEMA_VERSION,
+                "error": (
+                    f"VIX has {len(vix_closes)} valid daily closes; "
+                    f"need >= {required_closes}"
+                ),
             },
             "pairs": {},
-            "warnings": ["Không đủ dữ liệu VIX để backtest."],
+            "warnings": ["Không đủ dữ liệu VIX hợp lệ để backtest."],
         }
 
-    # Cắt về lookback_days gần nhất
-    effective_candles = vix_candles[-lookback_days:] if len(vix_candles) > lookback_days else vix_candles
-    if len(effective_candles) < MIN_LOOKBACK_DAYS:
+    selected_vix_dates = sorted(vix_closes)[-(lookback_days + 1):]
+    data_start = selected_vix_dates[0].isoformat()
+    data_end = selected_vix_dates[-1].isoformat()
+    if invalid_vix_bars:
         warnings.append(
-            f"Chỉ có {len(effective_candles)} ngày dữ liệu VIX sau khi cắt lookback "
-            f"(cần >= {MIN_LOOKBACK_DAYS}). Kết quả có thể không ổn định."
+            f"VIX: loại {invalid_vix_bars} bar có time/close không hợp lệ."
         )
 
-    # Tính chuỗi ΔVIX%
-    vix_changes = _daily_pct_changes(effective_candles)
-    if len(vix_changes) < MIN_LOOKBACK_DAYS - 1:
-        return {
-            "meta": {
-                "generated_at_utc": datetime.now(UTC).isoformat(),
-                "lookback_days": lookback_days,
-                "status": "insufficient_data",
-                "error": f"Only {len(vix_changes)} valid daily changes from {len(effective_candles)} candles",
-            },
-            "pairs": {},
-            "warnings": warnings + ["Không đủ dữ liệu VIX sau khi tính daily changes."],
-        }
-
-    # Xác định data range
-    try:
-        data_start = effective_candles[0].time.strftime("%Y-%m-%d")
-        data_end = effective_candles[-1].time.strftime("%Y-%m-%d")
-    except (AttributeError, IndexError):
-        data_start = "unknown"
-        data_end = "unknown"
-
-    # Tính correlation cho từng cặp
     pairs_result: dict[str, dict[str, Any]] = {}
+    validated_pair_count = 0
+    actionable_pair_count = 0
     for symbol, pair_candles in sorted(pair_candles_map.items()):
-        if not pair_candles or len(pair_candles) < MIN_LOOKBACK_DAYS:
+        normalized_symbol = str(symbol).upper()
+        pair_closes, invalid_pair_bars = _daily_closes_by_date(pair_candles or [])
+        if len(pair_closes) < required_closes:
             warnings.append(
-                f"{symbol}: không đủ dữ liệu candles ({len(pair_candles) if pair_candles else 0}), bỏ qua."
+                f"{normalized_symbol}: chỉ có {len(pair_closes)} daily closes hợp lệ "
+                f"(cần >= {required_closes}), neutralize."
             )
-            pairs_result[symbol] = {
-                "correlation": 0.0,
-                "sensitivity_score": 0.0,
-                "sensitivity_factor": 1.0,
-                "vix_direction": "indeterminate",
-                "interpretation": "unknown",
-                "note": "Không đủ dữ liệu để backtest.",
-                "data_points": 0,
-            }
+            pairs_result[normalized_symbol] = _unknown_pair_result(
+                "Không đủ dữ liệu để backtest.",
+                alignment={"invalid_pair_bars": invalid_pair_bars},
+            )
             continue
 
-        # Cắt về cùng độ dài với VIX
-        pair_effective = pair_candles[-lookback_days:] if len(pair_candles) > lookback_days else pair_candles
-        pair_returns = _daily_pct_changes(pair_effective)
-
-        # Align 2 chuỗi về cùng độ dài (lấy min)
-        min_len = min(len(vix_changes), len(pair_returns))
-        if min_len < 10:
+        vix_aligned, pair_aligned, alignment = _aligned_daily_pct_changes(
+            vix_candles,
+            pair_candles,
+            lookback_days=lookback_days,
+        )
+        overlap = len(vix_aligned)
+        dropped_vix = int(alignment.get("dropped_vix_dates", 0))
+        dropped_pair = int(alignment.get("dropped_pair_dates", 0))
+        invalid_pair = int(alignment.get("invalid_pair_bars", 0))
+        if dropped_vix or dropped_pair or invalid_pair:
             warnings.append(
-                f"{symbol}: chỉ có {min_len} điểm dữ liệu aligned, bỏ qua."
+                f"{normalized_symbol}: align theo ngày loại "
+                f"{dropped_vix} ngày chỉ có VIX, {dropped_pair} ngày chỉ có pair; "
+                f"{invalid_pair} pair bars không hợp lệ."
             )
-            pairs_result[symbol] = {
-                "correlation": 0.0,
-                "sensitivity_score": 0.0,
-                "sensitivity_factor": 1.0,
-                "vix_direction": "indeterminate",
-                "interpretation": "unknown",
-                "note": f"Quá ít điểm dữ liệu ({min_len}).",
-                "data_points": min_len,
-            }
+        if overlap < MIN_LOOKBACK_DAYS:
+            warnings.append(
+                f"{normalized_symbol}: chỉ có {overlap} common-date returns "
+                f"(cần >= {MIN_LOOKBACK_DAYS}), neutralize."
+            )
+            pairs_result[normalized_symbol] = _unknown_pair_result(
+                f"Quá ít common-date observations ({overlap}).",
+                data_points=overlap,
+                alignment=alignment,
+            )
             continue
-
-        vix_aligned = vix_changes[-min_len:]
-        pair_aligned = pair_returns[-min_len:]
 
         corr = _pearson_correlation(vix_aligned, pair_aligned)
-        sensitivity = _correlation_to_sensitivity(corr)
-        interpretation = _classify_pair(corr)
+        p_value = _correlation_p_value(corr, overlap)
+        significant = p_value <= SIGNIFICANCE_ALPHA
+        actionable = significant and abs(corr) > MILD_POSITIVE_THRESHOLD
+        effective_corr = corr if actionable else 0.0
+        sensitivity = _correlation_to_sensitivity(effective_corr)
+        interpretation = _classify_pair(effective_corr)
+        note = _build_pair_note(
+            normalized_symbol,
+            corr,
+            interpretation,
+            statistically_significant=significant,
+            actionable=actionable,
+            p_value=p_value,
+        )
 
-        # Tạo note mô tả
-        note = _build_pair_note(symbol, corr, interpretation)
-
-        pairs_result[symbol] = {
+        validated_pair_count += 1
+        actionable_pair_count += int(actionable)
+        pairs_result[normalized_symbol] = {
             "correlation": round(corr, 4),
+            "p_value": round(p_value, 6),
+            "statistically_significant": significant,
+            "actionable": actionable,
             "sensitivity_score": round(sensitivity, 1),
-            "sensitivity_factor": _correlation_to_sensitivity_factor(corr),
-            "vix_direction": _correlation_to_vix_direction(corr),
+            "sensitivity_factor": _correlation_to_sensitivity_factor(effective_corr),
+            "vix_direction": _correlation_to_vix_direction(effective_corr),
             "interpretation": interpretation,
             "note": note,
-            "data_points": min_len,
+            "data_points": overlap,
+            **alignment,
         }
 
     return {
@@ -314,64 +474,59 @@ def compute_vix_pair_sensitivity(
             "data_start": data_start,
             "data_end": data_end,
             "vix_source": "yahoo",
-            "version": "1.0.0",
+            "version": "2.0.0",
+            "schema_version": SENSITIVITY_SCHEMA_VERSION,
+            "status": "validated" if validated_pair_count else "insufficient_data",
+            "is_seed": False,
             "ttl_days": DEFAULT_TTL_DAYS,
             "pair_count": len(pairs_result),
-            "vix_data_points": len(vix_changes),
+            "validated_pair_count": validated_pair_count,
+            "actionable_pair_count": actionable_pair_count,
+            "vix_data_points": min(lookback_days, len(selected_vix_dates) - 1),
+            "minimum_overlap_days": MIN_LOOKBACK_DAYS,
+            "significance_alpha": SIGNIFICANCE_ALPHA,
+            "significance_method": "two_sided_fisher_z_normal_approximation",
+            "alignment_method": "intersect_close_dates_before_returns",
+            "methodology": "pearson_delta_vix_pct_vs_pair_return",
         },
         "pairs": pairs_result,
         "warnings": warnings,
     }
 
 
-def _build_pair_note(symbol: str, corr: float, interpretation: str) -> str:
-    """Tạo human-readable note cho một cặp."""
+def _build_pair_note(
+    symbol: str,
+    corr: float,
+    interpretation: str,
+    *,
+    statistically_significant: bool = True,
+    actionable: bool = True,
+    p_value: float | None = None,
+) -> str:
+    """Mô tả bằng chứng quan sát, không gán nhân quả cho currency nào."""
     sym = symbol.upper()
-
-    if "JPY" in sym:
-        base = sym.split("/")[0] if "/" in sym else sym[:3]
-        if corr < -0.2:
-            return (
-                f"JPY là safe haven — VIX tăng → JPY mạnh → {sym} giảm. "
-                f"SELL hưởng lợi khi risk-off."
-            )
-        else:
-            return (
-                f"Mặc dù JPY thường là safe haven, dữ liệu gần đây ({corr:.2f}) "
-                f"không thể hiện rõ hành vi này. Có thể do BOJ phân kỳ chính sách."
-            )
-
-    if "AUD" in sym and interpretation == "risk_sensitive":
+    p_text = f", p={p_value:.3f}" if p_value is not None else ""
+    if not statistically_significant:
         return (
-            f"AUD là risk-on currency — VIX tăng → AUD yếu → {sym} giảm. "
-            f"SELL hưởng lợi khi risk-off, BUY bị phạt nặng hơn."
+            f"{sym}: correlation với ΔVIX chưa có ý nghĩa thống kê "
+            f"(r={corr:.2f}{p_text}); giữ VIX scoring phẳng."
         )
-
-    if "NZD" in sym and interpretation == "risk_sensitive":
+    if not actionable or interpretation == "neutral":
         return (
-            f"NZD là risk-on currency — VIX tăng → NZD yếu → {sym} giảm. "
-            f"SELL hưởng lợi khi risk-off, BUY bị phạt nặng hơn."
+            f"{sym}: correlation có ý nghĩa nhưng độ lớn chưa đủ ngưỡng hành động "
+            f"(r={corr:.2f}{p_text}); giữ VIX scoring phẳng."
         )
-
-    if "CAD" in sym and interpretation == "risk_sensitive":
+    if corr < 0:
         return (
-            f"CAD nhạy với giá dầu và risk sentiment — VIX tăng có thể gây áp lực "
-            f"lên {sym}. SELL hưởng lợi nhẹ khi risk-off."
+            f"Dữ liệu cho thấy {sym} thường giảm khi VIX tăng "
+            f"(r={corr:.2f}{p_text}); SELL thuận flow, BUY ngược flow. "
+            "Correlation không tự xác định nguyên nhân ở base hay quote."
         )
-
-    if interpretation == "neutral":
-        return f"{sym} không có tương quan rõ ràng với VIX (r={corr:.2f})."
-
-    if interpretation == "safe_haven":
-        return f"{sym} thể hiện hành vi safe haven — VIX tăng → {sym} giảm."
-
-    if interpretation == "mild_safe_haven":
-        return f"{sym} có xu hướng safe haven nhẹ — VIX tăng → {sym} giảm nhẹ."
-
-    if interpretation == "mild_risk_sensitive":
-        return f"{sym} nhạy cảm nhẹ với risk-off — VIX tăng → {sym} có xu hướng giảm."
-
-    return f"{sym}: correlation={corr:.2f} với ΔVIX."
+    return (
+        f"Dữ liệu cho thấy {sym} thường tăng khi VIX tăng "
+        f"(r={corr:.2f}{p_text}); BUY thuận flow, SELL ngược flow. "
+        "Correlation không tự xác định nguyên nhân ở base hay quote."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -389,8 +544,8 @@ def generate_seed_sensitivity_map() -> dict[str, Any]:
     - Công thức này tự động xử lý đúng trường hợp như EUR/AUD (AUD ở mẫu số
       nên khi AUD weakens → pair RISE, correlation dương)
 
-    Dùng làm fallback trước khi có backtest data thực tế. Các giá trị được
-    calibrate dựa trên hành vi lịch sử đã biết của từng nhóm tiền tệ.
+    Chỉ dùng để minh họa/sanity-check tooling trước khi có data thực tế. Seed
+    luôn bị runtime eligibility gate từ chối và không phải fallback scoring.
 
     QUAN TRỌNG: Đây là seed dựa trên assumption, cần được backtest thực tế
     xác nhận hoặc điều chỉnh. Xem docstring của module để biết cơ chế
@@ -470,6 +625,9 @@ def generate_seed_sensitivity_map() -> dict[str, Any]:
 
         pairs[symbol] = {
             "correlation": corr,
+            "p_value": None,
+            "statistically_significant": False,
+            "actionable": False,
             "sensitivity_score": round(sensitivity, 1),
             "sensitivity_factor": factor,
             "vix_direction": vix_dir,
@@ -486,6 +644,8 @@ def generate_seed_sensitivity_map() -> dict[str, Any]:
             "data_end": "N/A (seed data)",
             "vix_source": "market_knowledge_seed",
             "version": "1.0.0",
+            "schema_version": 1,
+            "status": "seed_only",
             "ttl_days": DEFAULT_TTL_DAYS,
             "pair_count": len(pairs),
             "vix_data_points": 0,
@@ -545,9 +705,101 @@ def is_sensitivity_map_stale(
         if _now.tzinfo is None:
             _now = _now.replace(tzinfo=UTC)
         age_days = (_now - generated).total_seconds() / 86400.0
-        return age_days > float(ttl_days)
+        ttl = float(ttl_days)
+        # Future timestamps beyond a small clock-skew tolerance and invalid TTL
+        # are both unsafe, not "fresh forever".
+        return ttl <= 0 or age_days < -1.0 or age_days > ttl
     except (ValueError, TypeError, OverflowError):
         return True  # fail-safe
+
+
+def sensitivity_map_ineligibility_reason(
+    sensitivity_map: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    """Trả lý do map không được phép tác động production scoring."""
+    if not isinstance(sensitivity_map, dict):
+        return "map_not_dict"
+    meta = sensitivity_map.get("meta")
+    pairs = sensitivity_map.get("pairs")
+    if not isinstance(meta, dict):
+        return "missing_meta"
+    if not isinstance(pairs, dict) or not pairs:
+        return "missing_pairs"
+    if meta.get("is_seed") is not False:
+        return "seed_or_unverified_origin"
+    if meta.get("status") != "validated":
+        return "backtest_not_validated"
+    try:
+        schema_version = int(meta.get("schema_version", 0))
+        vix_points = int(meta.get("vix_data_points", 0))
+    except (TypeError, ValueError, OverflowError):
+        return "invalid_evidence_metadata"
+    if schema_version < SENSITIVITY_SCHEMA_VERSION:
+        return "legacy_alignment_schema"
+    if meta.get("alignment_method") != "intersect_close_dates_before_returns":
+        return "unsafe_alignment_method"
+    if vix_points < MIN_LOOKBACK_DAYS:
+        return "insufficient_vix_observations"
+    if is_sensitivity_map_stale(sensitivity_map, now=now):
+        return "stale"
+
+    has_validated_pair = False
+    has_actionable_pair = False
+    for pair_data in pairs.values():
+        if not isinstance(pair_data, dict):
+            return "malformed_pair_entry"
+        try:
+            data_points = int(pair_data.get("data_points", 0))
+        except (TypeError, ValueError, OverflowError):
+            return "malformed_pair_entry"
+        if data_points >= MIN_LOOKBACK_DAYS:
+            # Schema-2 results explicitly retain significance evidence even
+            # when the pair is neutral/non-actionable.
+            if "p_value" not in pair_data or "statistically_significant" not in pair_data:
+                return "missing_significance_evidence"
+            has_validated_pair = True
+            try:
+                corr = float(pair_data.get("correlation", 0.0))
+                p_value = float(pair_data.get("p_value", 1.0))
+                factor = float(pair_data.get("sensitivity_factor", 1.0))
+            except (TypeError, ValueError, OverflowError):
+                return "malformed_pair_entry"
+            if not all(math.isfinite(value) for value in (corr, p_value, factor)):
+                return "malformed_pair_entry"
+            if not 0.0 <= p_value <= 1.0 or not 0.0 <= factor <= 1.0:
+                return "malformed_pair_entry"
+            significant = pair_data.get("statistically_significant")
+            actionable = pair_data.get("actionable")
+            direction = pair_data.get("vix_direction")
+            if not isinstance(significant, bool) or not isinstance(actionable, bool):
+                return "malformed_significance_evidence"
+            if actionable:
+                if (
+                    not significant
+                    or p_value > SIGNIFICANCE_ALPHA
+                    or abs(corr) <= MILD_POSITIVE_THRESHOLD
+                    or direction not in {"falls_on_vix_up", "rises_on_vix_up"}
+                ):
+                    return "inconsistent_actionable_pair"
+                has_actionable_pair = True
+            elif direction != "indeterminate" or factor != 1.0:
+                return "non_actionable_pair_not_neutral"
+    if not has_validated_pair:
+        return "insufficient_pair_observations"
+    if not has_actionable_pair:
+        return "hypothesis_not_confirmed"
+    return None
+
+
+def is_sensitivity_map_eligible(
+    sensitivity_map: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """True chỉ cho map data-backed, schema mới, đủ mẫu và còn TTL."""
+    return sensitivity_map_ineligibility_reason(sensitivity_map, now=now) is None
 
 
 def save_sensitivity_map(
@@ -576,8 +828,10 @@ def save_sensitivity_map(
         "pairs": result.get("pairs", {}),
     }
 
-    with open(dest, "w", encoding="utf-8") as f:
+    temp_dest = dest.with_name(f"{dest.name}.tmp")
+    with open(temp_dest, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+    temp_dest.replace(dest)
 
     logger.info("VIX sensitivity map saved to %s (%d pairs)", dest, len(payload.get("pairs", {})))
     return dest
@@ -619,7 +873,7 @@ def load_sensitivity_map(
         logger.warning("VIX sensitivity map is not a dict")
         return None
 
-    if "pairs" not in data:
+    if not isinstance(data.get("pairs"), dict):
         logger.warning("VIX sensitivity map missing 'pairs' key")
         return None
 
@@ -629,8 +883,7 @@ def load_sensitivity_map(
         ttl = meta.get("ttl_days", DEFAULT_TTL_DAYS)
         logger.warning(
             "VIX sensitivity map is STALE (generated %s, TTL %d days). "
-            "Consider re-running backtest. "
-            "Journal from Bước 6 will catch systematic scoring errors.",
+            "Re-run scripts/run_vix_pair_backtest.py before enabling pair-aware scoring.",
             generated, ttl,
         )
 
@@ -641,11 +894,9 @@ def get_vix_sensitivity_map(
     path: Path | None = None,
     *,
     warn_stale: bool = True,
-    auto_generate_seed: bool = True,
+    auto_generate_seed: bool = False,
 ) -> dict[str, Any] | None:
-    """Đọc sensitivity map, tự động fallback về seed nếu cần.
-
-    Đây là hàm chính để pipeline gọi.
+    """Đọc sensitivity map; chỉ tạo seed khi caller yêu cầu tường minh.
 
     Parameters
     ----------
@@ -654,7 +905,8 @@ def get_vix_sensitivity_map(
     warn_stale : bool
         Nếu True → log warning khi map hết hạn.
     auto_generate_seed : bool
-        Nếu True và không tìm thấy file → tự động tạo + lưu seed map.
+        Nếu True và không tìm thấy file → tạo + lưu seed để chẩn đoán. Seed
+        vẫn không đủ điều kiện production scoring.
 
     Returns
     -------

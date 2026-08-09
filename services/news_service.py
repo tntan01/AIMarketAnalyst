@@ -125,11 +125,11 @@ class NewsService:
     _global_snapshot_ttl = timedelta(minutes=5)
     _global_snapshot_stale_if_error = timedelta(minutes=30)
     _stance_cache_ttl = timedelta(hours=24)
-    # Cache cặp flag Bước 5/6 đọc từ settings.json — tránh đọc lại đĩa mỗi
+    # Cache các flag Bước 5/6/7 đọc từ settings.json — tránh đọc lại đĩa mỗi
     # symbol mỗi chu kỳ scan (tối ưu I/O). TTL ngắn đủ để bật/tắt flag trong
     # UI phản tác dụng ở chu kỳ scan kế tiếp.
     _advanced_flag_cache_ttl = timedelta(seconds=60)
-    _advanced_flag_cache: tuple[datetime, bool, bool] | None = None
+    _advanced_flag_cache: tuple[datetime, bool, bool, bool] | None = None
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
@@ -176,24 +176,33 @@ class NewsService:
         return base_rate - quote_rate
 
     @classmethod
-    def _read_advanced_flags(cls) -> tuple[bool, bool]:
-        """Đọc cặp flag (event_impact_derate, macro_ai_verdict) từ settings.
+    def _read_all_advanced_flags(cls) -> tuple[bool, bool, bool]:
+        """Đọc và cache các flag Bước 5/6/7 từ settings.
 
-        Fail-closed: mọi lỗi → (False, False). Kết quả cache tối đa
+        Fail-closed: mọi lỗi → (False, False, False). Kết quả cache tối đa
         _advanced_flag_cache_ttl để không đọc lại settings.json mỗi symbol mỗi
         chu kỳ scan. Test có thể reset cls._advanced_flag_cache = None.
         """
         now = datetime.now(UTC)
         cached = cls._advanced_flag_cache
         if cached is not None and (now - cached[0]) < cls._advanced_flag_cache_ttl:
-            return cached[1], cached[2]
+            return cached[1], cached[2], cached[3]
         try:
             settings = SettingsService().load()
             derate = bool(getattr(settings.advanced, "event_impact_derate_enabled", False))
             verdict = bool(getattr(settings.advanced, "macro_ai_verdict_enabled", False))
+            vix_pair_aware = bool(
+                getattr(settings.advanced, "vix_pair_aware_enabled", False)
+            )
         except Exception:
-            derate, verdict = False, False
-        cls._advanced_flag_cache = (now, derate, verdict)
+            derate, verdict, vix_pair_aware = False, False, False
+        cls._advanced_flag_cache = (now, derate, verdict, vix_pair_aware)
+        return derate, verdict, vix_pair_aware
+
+    @classmethod
+    def _read_advanced_flags(cls) -> tuple[bool, bool]:
+        """Giữ API cặp flag Bước 5/6 để tương thích các caller hiện tại."""
+        derate, verdict, _vix_pair_aware = cls._read_all_advanced_flags()
         return derate, verdict
 
     @staticmethod
@@ -205,6 +214,11 @@ class NewsService:
     def _read_macro_verdict_enabled() -> bool:
         """Đọc flag macro_ai_verdict_enabled từ settings (fail-closed: False)."""
         return NewsService._read_advanced_flags()[1]
+
+    @staticmethod
+    def _read_vix_pair_aware_enabled() -> bool:
+        """Đọc flag vix_pair_aware_enabled từ settings (fail-closed: False)."""
+        return NewsService._read_all_advanced_flags()[2]
 
     @staticmethod
     def _ai_fingerprint(ai_service: object | None) -> str:
@@ -459,6 +473,7 @@ class NewsService:
             "upcoming_event_assessments": upcoming_event_assessments,
             "event_impact_derate_enabled": self._read_derate_enabled(),
             "macro_ai_verdict_enabled": self._read_macro_verdict_enabled(),
+            "vix_pair_aware_enabled": self._read_vix_pair_aware_enabled(),
         }
 
     # ------------------------------------------------------------------

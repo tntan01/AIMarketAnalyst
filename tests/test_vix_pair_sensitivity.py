@@ -28,6 +28,7 @@ from core.vix_pair_backtest import (
     compute_vix_pair_sensitivity,
     generate_seed_sensitivity_map,
     get_vix_sensitivity_map,
+    is_sensitivity_map_eligible,
     is_sensitivity_map_stale,
     load_sensitivity_map,
     lookup_pair_sensitivity,
@@ -43,6 +44,14 @@ from core.correlation_check import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_vix_sensitivity_cache():
+    """Không để cache module-level làm kết quả phụ thuộc thứ tự test."""
+    _reset_vix_sensitivity_cache()
+    yield
+    _reset_vix_sensitivity_cache()
 
 
 def _make_candles(closes: list[float], start_date: datetime | None = None) -> list[Candle]:
@@ -88,35 +97,45 @@ def _sample_sensitivity_map() -> dict:
                 "correlation": -0.35,
                 "sensitivity_factor": 0.3,
                 "vix_direction": "falls_on_vix_up",
-                "interpretation": "safe_haven",
+                "statistically_significant": True,
+                "actionable": True,
+                "interpretation": "strong_negative",
                 "note": "JPY safe haven — SELL benefits from risk-off.",
             },
             "AUD/USD": {
                 "correlation": -0.45,
                 "sensitivity_factor": 0.1,
                 "vix_direction": "falls_on_vix_up",
-                "interpretation": "safe_haven",
+                "statistically_significant": True,
+                "actionable": True,
+                "interpretation": "strong_negative",
                 "note": "AUD risk-on — SELL benefits from risk-off.",
             },
             "EUR/AUD": {
                 "correlation": 0.35,
                 "sensitivity_factor": 0.3,
                 "vix_direction": "rises_on_vix_up",
-                "interpretation": "risk_sensitive",
+                "statistically_significant": True,
+                "actionable": True,
+                "interpretation": "strong_positive",
                 "note": "AUD ở mẫu — BUY benefits from risk-off.",
             },
             "EUR/USD": {
                 "correlation": -0.10,
-                "sensitivity_factor": 0.8,
+                "sensitivity_factor": 1.0,
                 "vix_direction": "indeterminate",
+                "statistically_significant": False,
+                "actionable": False,
                 "interpretation": "neutral",
                 "note": "No clear VIX correlation.",
             },
             "AUD/JPY": {
                 "correlation": -0.80,
-                "sensitivity_factor": 0.0,
+                "sensitivity_factor": 0.1,
                 "vix_direction": "falls_on_vix_up",
-                "interpretation": "safe_haven",
+                "statistically_significant": True,
+                "actionable": True,
+                "interpretation": "strong_negative",
                 "note": "Both effects reinforce — SELL benefits strongly.",
             },
         }
@@ -150,8 +169,8 @@ def _inject_sensitivity_map(monkeypatch, sensitivity_map: dict | None = None):
 class TestComputeVixPairSensitivity:
     """Nhóm A: compute_vix_pair_sensitivity() — tính correlation từ data."""
 
-    def test_correlation_safe_haven(self):
-        """VIX↑ → USD/JPY↓ → correlation âm (safe haven)."""
+    def test_strong_negative_correlation(self):
+        """Chuỗi pair ngược ΔVIX phải được phân loại strong_negative."""
         import random
         random.seed(123)
         # Generate 300 candles with random walk
@@ -180,10 +199,10 @@ class TestComputeVixPairSensitivity:
         assert "USD/JPY" in pairs
         assert pairs["USD/JPY"]["correlation"] < -0.3  # strong negative
         assert pairs["USD/JPY"]["vix_direction"] == "falls_on_vix_up"
-        assert pairs["USD/JPY"]["interpretation"] == "safe_haven"
+        assert pairs["USD/JPY"]["interpretation"] == "strong_negative"
 
-    def test_correlation_risk_sensitive(self):
-        """VIX↑ → AUD/USD↓ → correlation âm (risk-on currency yếu)."""
+    def test_second_strong_negative_series(self):
+        """Một symbol khác với cùng quan hệ data cho cùng hướng correlation."""
         import random
         random.seed(456)
         vix_close = 20.0
@@ -222,7 +241,11 @@ class TestComputeVixPairSensitivity:
         result = compute_vix_pair_sensitivity(vix, {"EUR/USD": eurusd})
         pairs = result["pairs"]
         assert abs(pairs["EUR/USD"]["correlation"]) < 0.25
-        assert pairs["EUR/USD"]["interpretation"] in ("neutral", "mild_safe_haven", "mild_risk_sensitive")
+        assert pairs["EUR/USD"]["interpretation"] in (
+            "neutral",
+            "mild_negative",
+            "mild_positive",
+        )
 
     def test_insufficient_vix_data(self):
         """Không đủ VIX data → warning."""
@@ -323,117 +346,160 @@ class TestVixScorePairAware:
     def test_jpy_sell_reduced_penalty_high_vix(self, monkeypatch):
         """VIX>25, SELL USD/JPY → penalty giảm mạnh (safe haven flow)."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("USD/JPY", "sell", _vix_high())
-        # USD/JPY: factor=0.3, SELL aligned → 0.3*0.3=0.09 → -5*0.09=-0.45→-0.5
-        assert result > -1.0  # Much better than -5.0
+        result = _vix_score(
+            "USD/JPY", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        # USD/JPY: factor=0.3, SELL aligned → -5*0.3=-1.5
+        assert result == -1.5
         assert result < 0.0   # Still negative (penalty), but reduced
 
-    def test_jpy_buy_still_penalized_high_vix(self, monkeypatch):
-        """VIX>25, BUY USD/JPY → penalty vẫn còn (đi ngược safe haven flow)."""
+    def test_jpy_buy_opposite_flow_not_discounted(self, monkeypatch):
+        """VIX>25, BUY USD/JPY ngược flow không được giảm penalty."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("USD/JPY", "buy", _vix_high())
-        # BUY: not aligned → 0.3*0.8+0.2=0.44 → -5*0.44=-2.2
-        assert result < -1.5  # Still penalized
-        assert result > -3.0  # But less than full -5
+        result = _vix_score(
+            "USD/JPY", "buy", _vix_high(), pair_aware_enabled=True
+        )
+        assert result <= -5.0
 
     def test_aud_sell_reduced_penalty_high_vix(self, monkeypatch):
         """VIX>25, SELL AUD/USD → penalty giảm (risk-on, sell benefits)."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("AUD/USD", "sell", _vix_high())
-        # AUD/USD: factor=0.1, SELL aligned → 0.1*0.3=0.03 → -5*0.03=-0.15→-0.2
+        result = _vix_score(
+            "AUD/USD", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        # AUD/USD: factor=0.1, SELL aligned → -5*0.1=-0.5
         assert result > -1.0
         assert result <= 0.0
 
     def test_eur_aud_buy_reduced_penalty_high_vix(self, monkeypatch):
         """VIX>25, BUY EUR/AUD → penalty giảm (AUD yếu → EUR/AUD↑)."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("EUR/AUD", "buy", _vix_high())
-        # EUR/AUD: factor=0.3, rises_on_vix_up, BUY aligned → 0.09 → -0.5
-        assert result > -1.0
+        result = _vix_score(
+            "EUR/AUD", "buy", _vix_high(), pair_aware_enabled=True
+        )
+        # EUR/AUD: factor=0.3, rises_on_vix_up, BUY aligned → -1.5
+        assert result == -1.5
         assert result < 0.0
 
-    def test_eur_aud_sell_still_penalized(self, monkeypatch):
-        """VIX>25, SELL EUR/AUD → penalty gần như nguyên (đi ngược flow)."""
+    def test_eur_aud_sell_opposite_flow_not_discounted(self, monkeypatch):
+        """VIX>25, SELL EUR/AUD ngược flow không được giảm penalty."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("EUR/AUD", "sell", _vix_high())
-        # SELL: not aligned → 0.3*0.8+0.2=0.44 → -5*0.44=-2.2
-        assert result < -1.5
+        result = _vix_score(
+            "EUR/AUD", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        assert result <= -5.0
 
-    def test_neutral_pair_near_flat_penalty(self, monkeypatch):
-        """EUR/USD (indeterminate) → penalty gần như flat cũ."""
+    def test_neutral_pair_keeps_exact_flat_penalty(self, monkeypatch):
+        """EUR/USD indeterminate giữ nguyên penalty cào bằng."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result_buy = _vix_score("EUR/USD", "buy", _vix_high())
-        result_sell = _vix_score("EUR/USD", "sell", _vix_high())
-        # EUR/USD: factor=0.8, indeterminate → 0.8*0.8+0.2=0.84 → -5*0.84=-4.2
-        assert result_buy < -3.5  # Close to original -5
-        assert result_sell < -3.5
-        # Both sides should get same penalty for indeterminate pairs
-        assert result_buy == result_sell
+        result_buy = _vix_score(
+            "EUR/USD", "buy", _vix_high(), pair_aware_enabled=True
+        )
+        result_sell = _vix_score(
+            "EUR/USD", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        assert result_buy == -5.0
+        assert result_sell == -5.0
 
     def test_fallback_without_sensitivity_map(self, monkeypatch):
         """Không có sensitivity map → flat scoring cũ."""
         _inject_sensitivity_map(monkeypatch, None)
-        result = _vix_score("USD/JPY", "sell", _vix_high())
+        result = _vix_score(
+            "USD/JPY", "sell", _vix_high(), pair_aware_enabled=True
+        )
         assert result == -5.0  # Original flat behavior
-        result = _vix_score("EUR/USD", "buy", _vix_high())
+        result = _vix_score(
+            "EUR/USD", "buy", _vix_high(), pair_aware_enabled=True
+        )
         assert result == -5.0
 
     def test_unknown_pair_fallback(self, monkeypatch):
         """Cặp không có trong map → flat scoring."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("XXX/YYY", "buy", _vix_high())
+        result = _vix_score(
+            "XXX/YYY", "buy", _vix_high(), pair_aware_enabled=True
+        )
         assert result == -5.0  # Unknown → flat
 
     def test_low_vix_bonus_not_modulated(self, monkeypatch):
         """VIX < 15 bonus không bị điều chỉnh (áp dụng cho mọi cặp)."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
         # Bonus should be +2.0 for all pairs regardless of sensitivity
-        assert _vix_score("USD/JPY", "sell", _vix_low()) == 2.0
-        assert _vix_score("USD/JPY", "buy", _vix_low()) == 2.0
-        assert _vix_score("AUD/USD", "sell", _vix_low()) == 2.0
-        assert _vix_score("EUR/USD", "buy", _vix_low()) == 2.0
+        assert _vix_score(
+            "USD/JPY", "sell", _vix_low(), pair_aware_enabled=True
+        ) == 2.0
+        assert _vix_score(
+            "USD/JPY", "buy", _vix_low(), pair_aware_enabled=True
+        ) == 2.0
+        assert _vix_score(
+            "AUD/USD", "sell", _vix_low(), pair_aware_enabled=True
+        ) == 2.0
+        assert _vix_score(
+            "EUR/USD", "buy", _vix_low(), pair_aware_enabled=True
+        ) == 2.0
 
     def test_normal_vix_no_penalty(self, monkeypatch):
         """VIX 15-20 → không penalty."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        assert _vix_score("USD/JPY", "sell", _vix_normal()) == 0.0
-        assert _vix_score("EUR/USD", "buy", _vix_normal()) == 0.0
+        assert _vix_score(
+            "USD/JPY", "sell", _vix_normal(), pair_aware_enabled=True
+        ) == 0.0
+        assert _vix_score(
+            "EUR/USD", "buy", _vix_normal(), pair_aware_enabled=True
+        ) == 0.0
 
     def test_medium_vix_reduced_penalty(self, monkeypatch):
         """VIX 20-25: base=-2, được giảm theo sensitivity."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        # USD/JPY SELL: factor=0.3, aligned → 0.09 → -2*0.09=-0.18→-0.2
-        result = _vix_score("USD/JPY", "sell", _vix_medium())
-        assert result > -0.5
+        # USD/JPY SELL: factor=0.3, aligned → -2*0.3=-0.6
+        result = _vix_score(
+            "USD/JPY", "sell", _vix_medium(), pair_aware_enabled=True
+        )
+        assert result == -0.6
 
     def test_empty_candles_returns_zero(self):
         """Không có candles → 0."""
-        assert _vix_score("EUR/USD", "buy", []) == 0.0
-        assert _vix_score("EUR/USD", "sell", None) == 0.0
+        assert _vix_score(
+            "EUR/USD", "buy", [], pair_aware_enabled=True
+        ) == 0.0
+        assert _vix_score(
+            "EUR/USD", "sell", None, pair_aware_enabled=True
+        ) == 0.0
 
     def test_zero_close_returns_zero(self):
         """Close = 0 → 0."""
         bad = [Candle(time=datetime(2026, 8, 7, tzinfo=UTC), open=0, high=0, low=0, close=0)]
-        assert _vix_score("EUR/USD", "buy", bad) == 0.0
+        assert _vix_score(
+            "EUR/USD", "buy", bad, pair_aware_enabled=True
+        ) == 0.0
 
-    def test_aud_jpy_fully_explained(self, monkeypatch):
-        """AUD/JPY: factor=0.0 → SELL penalty triệt tiêu hoàn toàn."""
+    def test_aud_jpy_factor_floor_never_eliminates_penalty(self, monkeypatch):
+        """Factor engine có sàn 0.1 nên aligned penalty không bị triệt tiêu."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = _vix_score("AUD/JPY", "sell", _vix_high())
-        # factor=0.0, SELL aligned → 0.0*0.3=0.0 → -5*0.0=0.0
-        assert result == 0.0
+        result = _vix_score(
+            "AUD/JPY", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        assert -5.0 < result < 0.0
 
     def test_sell_vs_buy_asymmetry(self, monkeypatch):
         """Cùng cặp, SELL luôn ≤ BUY về penalty (falls_on_vix_up) hoặc ngược lại."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
         # USD/JPY: falls_on_vix_up → SELL should be LESS penalized than BUY
-        sell_penalty = _vix_score("USD/JPY", "sell", _vix_high())
-        buy_penalty = _vix_score("USD/JPY", "buy", _vix_high())
+        sell_penalty = _vix_score(
+            "USD/JPY", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        buy_penalty = _vix_score(
+            "USD/JPY", "buy", _vix_high(), pair_aware_enabled=True
+        )
         assert sell_penalty > buy_penalty  # SELL better (less negative)
 
         # EUR/AUD: rises_on_vix_up → BUY should be LESS penalized than SELL
-        sell_penalty2 = _vix_score("EUR/AUD", "sell", _vix_high())
-        buy_penalty2 = _vix_score("EUR/AUD", "buy", _vix_high())
+        sell_penalty2 = _vix_score(
+            "EUR/AUD", "sell", _vix_high(), pair_aware_enabled=True
+        )
+        buy_penalty2 = _vix_score(
+            "EUR/AUD", "buy", _vix_high(), pair_aware_enabled=True
+        )
         assert buy_penalty2 > sell_penalty2  # BUY better (less negative)
 
 
@@ -608,13 +674,20 @@ class TestCorrelationAdjustmentIntegration:
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
 
         # USD/JPY SELL: VIX>25 → penalty reduced
-        result = compute_correlation_adjustment("USD/JPY", "sell", vix_candles=_vix_high())
+        result = compute_correlation_adjustment(
+            "USD/JPY",
+            "sell",
+            vix_candles=_vix_high(),
+            vix_pair_aware_enabled=True,
+        )
         assert result > -5.0  # Reduced from -5
         assert result < 0.0
 
     def test_adjustment_no_vix_returns_zero(self):
         """Không có VIX candles → VIX không đóng góp."""
-        result = compute_correlation_adjustment("EUR/USD", "buy")
+        result = compute_correlation_adjustment(
+            "EUR/USD", "buy", vix_pair_aware_enabled=True
+        )
         assert result == 0.0
 
     def test_adjustment_with_all_sources(self, monkeypatch):
@@ -630,6 +703,7 @@ class TestCorrelationAdjustmentIntegration:
             "EUR/USD", "buy",
             dxy_candles=dxy,
             vix_candles=_vix_high(),
+            vix_pair_aware_enabled=True,
         )
         # DXY contribution + VIX contribution
         # EUR/USD BUY với DXY up → SELL USD → BUY EUR/USD = against DXY → penalty
@@ -640,15 +714,25 @@ class TestCorrelationAdjustmentIntegration:
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
 
         # VIX only → pair-aware adjustment applied
-        result = compute_correlation_adjustment("USD/JPY", "sell", vix_candles=_vix_high())
-        # USD/JPY SELL: ~-0.4
-        assert result > -1.0
+        result = compute_correlation_adjustment(
+            "USD/JPY",
+            "sell",
+            vix_candles=_vix_high(),
+            vix_pair_aware_enabled=True,
+        )
+        # USD/JPY SELL: factor 0.3 → -1.5
+        assert result == -1.5
         assert result <= 0.0
 
     def test_unknown_pair_no_sensitivity_effect(self, monkeypatch):
         """Cặp không có → flat VIX scoring trong adjustment."""
         _inject_sensitivity_map(monkeypatch, _sample_sensitivity_map())
-        result = compute_correlation_adjustment("XXX/YYY", "buy", vix_candles=_vix_high())
+        result = compute_correlation_adjustment(
+            "XXX/YYY",
+            "buy",
+            vix_candles=_vix_high(),
+            vix_pair_aware_enabled=True,
+        )
         assert result == -5.0  # Flat
 
 
@@ -658,7 +742,7 @@ class TestCorrelationAdjustmentIntegration:
 
 
 class TestSeedSensitivityMap:
-    """Nhóm F: generate_seed_sensitivity_map() — seed data quality."""
+    """Nhóm F: seed chỉ là diagnostic scaffold, không xác nhận giả thuyết."""
 
     def test_generates_all_supported_pairs(self):
         """Seed map phủ tất cả các cặp trong SUPPORTED_SYMBOLS."""
@@ -668,32 +752,22 @@ class TestSeedSensitivityMap:
         for sym in SUPPORTED_SYMBOLS:
             assert sym in pairs, f"Missing {sym} in seed map"
 
-    def test_jpy_pairs_are_safe_haven(self):
-        """Tất cả cặp JPY (quote) → falls_on_vix_up."""
+    def test_seed_entries_have_diagnostic_shape_only(self):
+        """Seed có shape đọc được nhưng không mang sample backtest."""
         seed = generate_seed_sensitivity_map()
-        pairs = seed["pairs"]
-        for sym, data in pairs.items():
-            if sym.endswith("/JPY") or sym.startswith("JPY/"):
-                if sym == "CHF/JPY":
-                    continue  # both safe havens → indeterminate
-                # JPY ở quote (XXX/JPY): VIX↑ → JPY↑ → pair↓ → negative corr
-                if sym.endswith("/JPY"):
-                    assert data["correlation"] < -0.15, \
-                        f"{sym}: expected negative corr, got {data['correlation']}"
-                    assert data["vix_direction"] == "falls_on_vix_up", \
-                        f"{sym}: expected falls_on_vix_up, got {data['vix_direction']}"
+        for symbol, data in seed["pairs"].items():
+            assert isinstance(symbol, str)
+            assert isinstance(data, dict)
+            assert data["data_points"] == 0
+            assert "correlation" in data
+            assert "sensitivity_factor" in data
+            assert "vix_direction" in data
 
-    def test_aud_nzd_pairs_risk_sensitive(self):
-        """AUD/NZD base pairs → falls_on_vix_up (risk-on base weakens)."""
+    def test_seed_is_always_ineligible_for_runtime_scoring(self):
+        """Không được biến giả thuyết viết tay thành acceptance criterion."""
         seed = generate_seed_sensitivity_map()
-        pairs = seed["pairs"]
-        for sym, data in pairs.items():
-            if sym.startswith("AUD/") and sym != "AUD/NZD":
-                if sym.endswith("/JPY") or sym.endswith("/CHF"):
-                    continue  # đã test ở trên
-                # AUD as base: VIX↑ → AUD↓ → pair↓
-                assert data["correlation"] <= -0.1, \
-                    f"{sym}: AUD base should have negative corr, got {data['correlation']}"
+        assert is_sensitivity_map_stale(seed) is True
+        assert is_sensitivity_map_eligible(seed) is False
 
     def test_seed_meta_has_is_seed(self):
         """Seed map có flag is_seed=True."""
@@ -701,12 +775,12 @@ class TestSeedSensitivityMap:
         assert seed["meta"]["is_seed"] is True
 
     def test_seed_sensitivity_factors_in_range(self):
-        """Tất cả sensitivity_factor trong [0, 1]."""
+        """Factor engine giữ sàn 0.1, không triệt tiêu VIX penalty."""
         seed = generate_seed_sensitivity_map()
         for sym, data in seed["pairs"].items():
             factor = data["sensitivity_factor"]
-            assert 0.0 <= factor <= 1.0, \
-                f"{sym}: factor={factor} out of range [0, 1]"
+            assert 0.1 <= factor <= 1.0, \
+                f"{sym}: factor={factor} out of range [0.1, 1]"
 
     def test_save_and_load_roundtrip(self, tmp_path: Path):
         """Ghi seed map ra file rồi đọc lại — dữ liệu nguyên vẹn."""
