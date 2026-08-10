@@ -61,10 +61,15 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 ### Vào lệnh MT5 (auto-entry)
 - `core/entry_engine.py` — logic vào lệnh
 - `core/execution_*_engine.py` — readiness, quality, revalidation
-- `core/order_management_state_machine.py` — state machine lệnh
-- `services/order_management_service.py` + `order_management_state_store.py`
 - `core/account_guard.py` — bảo vệ tài khoản
 - `core/portfolio_risk_engine.py` — rủi ro danh mục
+
+### Quản lý lệnh (order management — BE/trailing stop)
+- `core/order_management_state_machine.py` — **state machine thuần** (không biết MT5/Qt/persistence): nhận snapshot broker → trả `DesiredAction` (modify SL). Các phase: UNMANAGED → WAITING_BE → BE_ACTIVE → TRAIL_WIDE → TRAIL_TIGHT → CLOSED (kèm PAUSED/STALE/ERROR). Snapshot broker là nguồn chân lý cho SL/TP hiện tại
+- `services/order_management_service.py` — **cầu nối duy nhất** giữa state machine và MT5: thread-safe, mọi broker call chạy trên 1 serial executor, Qt timer chỉ lên lịch. Scanner worker đăng ký vị thế mới mà không đụng QWidget
+- `services/order_management_models.py` — contract broker: phân biệt rõ snapshot rỗng vs query lỗi (`SnapshotStatus`, `OperationStatus`, `AccountTradeMode`)
+- `services/order_management_state_store.py` — persist trạng thái quản lý lệnh
+- `ui/screens/orders_screen.py` — hiển thị lệnh (render snapshot cache, không block GUI)
 
 ### Journal (nhật ký giao dịch)
 - `services/journal_service.py` + `journal_models.py` + `journal_converters.py`
