@@ -1397,17 +1397,21 @@ class OrdersScreen(QWidget):
                     correlation_id=str(pos.get("comment") or ""),
                 )
                 self.order_manager.resume_position(pos_id)
-
-            self._trailing_configs[pos_id] = {
-                "position_id": pos_id, "symbol": symbol, "side": side,
-                "enabled": True, "trail_pips": trail_pips,
-                "extreme_price": 0.0, "current_sl": 0.0, "be_done": False,
-                "be_trigger_price": be_trigger_price,
-                "entry_price": entry_price, "initial_sl": initial_sl,
-                "atr_h1": atr_h1, "trail_mode": trail_mode,
-                "pip_multiplier": pip_m,
-            }
-            self._debounce_save()
+                self._sync_managed_views()
+                projected = self._trailing_configs.get(pos_id) or {}
+                if projected.get("phase") in {"trail_wide", "trail_tight"}:
+                    trail_mode = str(projected.get("trail_mode") or trail_mode)
+            else:
+                self._trailing_configs[pos_id] = {
+                    "position_id": pos_id, "symbol": symbol, "side": side,
+                    "enabled": True, "trail_pips": trail_pips,
+                    "extreme_price": 0.0, "current_sl": 0.0, "be_done": False,
+                    "be_trigger_price": be_trigger_price,
+                    "entry_price": entry_price, "initial_sl": initial_sl,
+                    "atr_h1": atr_h1, "trail_mode": trail_mode,
+                    "pip_multiplier": pip_m,
+                }
+                self._debounce_save()
             self._render_table()
 
             mode_labels = {"wide": "Wide (2.5× ATR)", "tight": "Tight (1.5× ATR)", "fixed": "Cố định"}
