@@ -226,6 +226,11 @@ Có một giới hạn cần lưu ý: bộ quét 10 tham số hiện xuất khó
 
 (Đang cập nhật)
 
+> Ứng dụng hiện vẫn chạy Scanner V3. Scanner V4 mới là thiết kế đã được phê duyệt,
+> chưa phải hành vi runtime; người dùng không nên kỳ vọng các field hoặc tỷ trọng V4
+> trước thời điểm cutover. Xem
+> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+
 ## 5. Journal (Nhật ký)
 
 Journal lưu analysis payload và correlation adjustment tổng hợp. Với VIX theo
@@ -258,7 +263,8 @@ giữ penalty phẳng.
 Trước khi bật:
 
 1. chạy và review calibration theo
-   `../macro/step7_vix_pair_sensitivity_operations.md`;
+   [`macro_score_architecture.md`](../macro/macro_score_architecture.md), mục
+   **Bước 7 — VIX Pair Sensitivity**;
 2. kiểm tra window, sample overlap, p-value, factor, Yahoo ticker/proxy và mọi
    warning;
 3. xác nhận người chịu trách nhiệm chấp nhận giới hạn thống kê;

@@ -1,9 +1,11 @@
 # Quy trình vận hành Backtest → Scanner → Rollout
 
-Trạng thái tài liệu: **hiện hành**, đồng bộ với runtime ngày 25/07/2026.
+Trạng thái tài liệu: **hiện hành** cho runtime V3 ngày 25/07/2026; target
+Scanner V4 cập nhật ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**.
 
 Khi phát hành cấu hình Backtest `VALIDATED`, thực hiện thêm quy trình golden,
-shadow, forward-demo và review tại `docs/backtest/backtest-release-runbook.md`.
+shadow, forward-demo và review tại
+[Backtest Release Runbook](../backtest/backtest-release-runbook.md).
 Không dùng OOS trade của snapshot validation thay cho forward evidence. Cần tạo
 snapshot current-forward và legacy-forward trên đúng khoảng thời gian chạy demo,
 rồi xuất các lệnh Scanner đã đóng bằng `scripts/export_mt5_forward_demo.py`.
@@ -29,6 +31,22 @@ Ngưỡng Decision Engine mặc định cho từng symbol:
 | `min_expected_rr` | 1.3 | R:R tối thiểu của pipeline phân tích. |
 
 Các ngưỡng này độc lập với `min_score` và `min_rr` của chiến lược đã backtest.
+
+### 1.1 Target Scanner V4 đã chốt — chưa áp dụng cho thao tác runtime
+
+Target V4 chỉ đưa Trend, Momentum, Location và SMC vào
+`TechnicalSignalScore`; trọng số theo regime không được định nghĩa lại trong
+workflow này. Final/Setup score blend Technical/Evidence/Execution theo tỷ trọng
+65/20/15. Risk được đánh giá bằng safety gates; Macro được hiển thị như
+assessment theo side và tác động qua policy/gate. Risk, Macro và kết quả gate
+không được tái nhập vào Technical/Final/Setup score hoặc ranking số.
+
+Migration dùng direct cutover sang `scanner-v4` / `scanner-features-v4`, không
+chạy score V3/V4 song song và không shadow V4 so với V3. Vì V4 chưa runtime,
+toàn bộ thao tác ở các mục tiếp theo vẫn phải tuân theo version V3 hiện hành.
+Nguồn normative duy nhất cho target là
+[Scanner V4 architecture](../scanner/scanner-v4-architecture.md);
+luồng đang chạy xem [Scanner flow](../scanner/scanner-flow.md).
 
 ## 2. Chạy và xác thực backtest
 
@@ -95,7 +113,7 @@ Các trường manifest/hash đã nằm trong validation fingerprint; sửa th�
 Settings hoặc làm mất metadata sẽ khiến Router chuyển config sang
 `BACKTEST_INVALID`/`VERSION_MISMATCH`.
 
-Config được Router chấp nhận cần phù hợp với các version hiện hành:
+Config được Router chấp nhận ở runtime V3 cần phù hợp với các version hiện hành:
 
 - backtest config schema `v8`;
 - engine contract `phase0-backtest-safety-v1`;
@@ -144,10 +162,14 @@ Trong tab **Rollout**, cấu hình stage và safety gate:
 
 `kill_switch=true` luôn chặn lệnh, bất kể stage.
 
+`SHADOW` trong bảng là rollout V3 để so Candidate Engine V1/V2 và thu metrics;
+đây không phải V4 migration shadow hay dual scoring. Bằng chứng disagreement V3
+không được dùng làm tiêu chí chấp nhận score V4.
+
 Runtime hiện tại trên máy này đã chọn `PRODUCTION`,
 `production_approved=true` và không bắt buộc demo account. Release readiness
 vẫn chưa đạt nên cấu hình này chưa được phép gửi lệnh thật. Xem
-`runtime-status.md`.
+[trạng thái runtime](../architecture/runtime-status.md).
 
 ## 4. Quét thị trường
 
@@ -229,6 +251,10 @@ Code và test nội bộ hoàn tất không đồng nghĩa production-ready. C�
 - đã ghi nhận OOS evidence, demo evidence và kiểm thử rollback;
 - MT5 demo, UI và Telegram đã được soak test;
 - `production_approved=true` chỉ sau review có trách nhiệm.
+
+Checklist này là release evidence của rollout V3 hiện hành. Nó không cho phép
+chạy dual scorer để migration V4; V4 phải có bộ test/calibration/version contract
+riêng rồi chuyển trực tiếp trong một release.
 
 Metrics được lưu tại app-data trong `rollout/scanner-rollout-metrics.json`. Bằng chứng release được cập nhật qua `ScannerRolloutMetricsService.update_release_evidence()`.
 

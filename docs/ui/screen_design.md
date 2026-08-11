@@ -1,7 +1,11 @@
 # Thiết kế màn hình phần mềm AI Market Analyst (Nhà phân tích thị trường AI)
 
-> Tài liệu này được xây dựng từ bản phân tích phần mềm **AI Market Analyst (Nhà phân tích thị trường AI)**.  
+> Tài liệu này được xây dựng từ bản phân tích phần mềm **AI Market Analyst (Nhà phân tích thị trường AI)**.
 > Quy ước hiển thị: giao diện ưu tiên tiếng Việt ngắn gọn. Thuật ngữ tiếng Anh chỉ giữ khi cần thiết và phải có giải thích tiếng Việt ở lần hiển thị đầu tiên, tooltip hoặc mô tả phụ. Ví dụ ưu tiên **Bảng điều khiển**, nếu cần có thể ghi **Bảng điều khiển (Dashboard)**.
+>
+> Scanner V2/Candidate Engine và scorer V3 vẫn là runtime hiện hành. Thiết kế
+> Scanner V4 ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**; các yêu cầu
+> gắn nhãn V4 trong tài liệu này chỉ là target sau direct cutover.
 
 ---
 
@@ -58,7 +62,11 @@ Quyết định thiết kế bắt buộc:
 - Entry phải hiển thị kèm `entry_status` và `confirmation_score`. Nếu trạng thái là `watch_zone` hoặc `waiting_confirmation`, UI phải thể hiện rõ đây là vùng theo dõi/chờ xác nhận, không phải lệnh đã sẵn sàng.
 - Kết quả phân tích phải có checklist entry dễ đọc gồm: Xu hướng, Vùng POI, Xác nhận H1, Tin tức, Spread, R:R, Lot. Mỗi dòng hiển thị trạng thái `Đạt` hoặc `Chờ`, giá trị liên quan và ghi chú ngắn.
 - Kết quả phân tích phải có phần Replay/Backtest tóm tắt: số lệnh replay, win rate, expectancy R, average R, MFE/MAE trung bình, max drawdown và hiệu quả theo phiên. Phần này không thay thế quyết định vào lệnh realtime, chỉ dùng để kiểm chứng setup có lịch sử hợp lý hay không.
-- Kết quả phân tích phải có phần Vĩ mô hiển thị: điểm vĩ mô mua/bán, macro theme theo từng đồng tiền, Tin mới nhất, điểm nóng thế giới và lịch kinh tế. Nếu không có dữ liệu, phải hiển thị rõ “không có dữ liệu” thay vì để trống.
+- Kết quả phân tích phải có phần Vĩ mô hiển thị assessment BUY/SELL, confidence,
+  status, macro theme theo từng đồng tiền, Tin mới nhất, điểm nóng thế giới và
+  lịch kinh tế. Trong target V4, phần này không được trình bày như component hay
+  contribution của score. Nếu không có dữ liệu, phải hiển thị rõ “không có dữ
+  liệu” thay vì để trống.
 - Mục Tin mới nhất chỉ hiển thị headline thị trường và phát biểu đáng chú ý trong 24h qua, mỗi dòng riêng. Dòng tin mới nhất dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm `-> ảnh hưởng tới đồng tiền đang xét` khi đã có nhận định tác động cụ thể. Lịch kinh tế vẫn hiển thị tác động vì bản thân event có mức impact.
 - Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ M5, M15, H1, H4. Khi đang auto-scan phải có nút `Dừng quét tự động`.
 - Khi mở tab Scanner lần đầu trong phiên, tự động chọn tất cả mã, đặt chế độ
@@ -365,24 +373,44 @@ D1 (nến ngày) đang trên EMA200 (đường trung bình động hàm mũ 200)
 3. SETUP QUALITY SCORE (ĐIỂM CHẤT LƯỢNG KỊCH BẢN)
 --------------------------------------------------
 
-Buy Scenario Score (điểm kịch bản mua): 78 / 100
-Sell Scenario Score (điểm kịch bản bán): 42 / 100
+Mẫu target Scanner V4 (APPROVED DESIGN — NON-RUNTIME), regime `trending_up`:
+
+Final / Setup Score BUY (điểm cuối/thiết lập mua): 78 / 100
+Final / Setup Score SELL (điểm cuối/thiết lập bán): 42 / 100
+
+Technical Signal BUY: 78 / 100
+Evidence BUY: 80 / 100
+Execution Quality BUY: 75 / 100
+
+Technical Signal SELL: 42 / 100
+Evidence SELL: 45 / 100
+Execution Quality SELL: 38 / 100
 
 Bảng điểm BUY (mua):
 
-Trend Alignment (mức độ thuận xu hướng): 22 / 25
-Momentum Alignment (mức độ thuận động lượng): 14 / 20
-Location Quality (chất lượng vị trí giá): 20 / 25
-Risk Condition (điều kiện rủi ro): 10 / 15
-Macro Alignment (mức độ thuận vĩ mô): 12 / 15
+Trend contribution (đóng góp xu hướng): 34 điểm
+Momentum contribution (đóng góp động lượng): 14 điểm
+Location contribution (đóng góp vị trí): 14 điểm
+SMC contribution (đóng góp cấu trúc SMC): 16 điểm
 
 Bảng điểm SELL (bán):
 
-Trend Alignment (mức độ thuận xu hướng): 5 / 25
-Momentum Alignment (mức độ thuận động lượng): 10 / 20
-Location Quality (chất lượng vị trí giá): 8 / 25
-Risk Condition (điều kiện rủi ro): 10 / 15
-Macro Alignment (mức độ thuận vĩ mô): 9 / 15
+Trend contribution (đóng góp xu hướng): 8 điểm
+Momentum contribution (đóng góp động lượng): 10 điểm
+Location contribution (đóng góp vị trí): 8 điểm
+SMC contribution (đóng góp cấu trúc SMC): 16 điểm
+
+Đánh giá tách khỏi bảng điểm:
+
+- Market Safety Gate: CAUTION — có tin đỏ sau 30 phút nhưng trong 3 giờ tới.
+- Macro Assessment BUY: aligned, confidence cao.
+- Macro Assessment SELL: conflict, confidence trung bình.
+- Macro Gate cho side đã chọn BUY: PASS — không cộng điểm.
+
+Final/Setup score trong mẫu được blend `Technical × 65% + Evidence × 20% +
+Execution × 15%` rồi làm tròn để hiển thị. Risk/Macro và output gate không được
+tái nhập vào score; Gate hiển thị `PASS/CAUTION/BLOCK/UNKNOWN`, decision cap và
+reason code.
 
 --------------------------------------------------
 4. TRADE PLAN (KẾ HOẠCH GIAO DỊCH)
@@ -516,6 +544,19 @@ Mỗi kết quả phân tích phải luôn có:
 ---
 
 ## Màn hình 4: Scanner V2 — runtime contract hiện hành (25/07/2026)
+
+> **Ranh giới version:** phần runtime bên dưới mô tả Candidate Engine V2 với
+> scorer `scanner-v3` / `scanner-features-v3`. Target V4 sẽ chuyển trực tiếp sang
+> scorer/feature V4, không chạy V3/V4 song song và không dùng shadow V3 làm score
+> so sánh. Nguồn chuẩn target:
+> [Scanner V4 architecture](../scanner/scanner-v4-architecture.md).
+
+Ở target V4, breakdown điểm chỉ có Trend/Momentum/Location/SMC; UI đọc metadata
+weight/breakdown theo contract V4 và không định nghĩa lại bảng regime. UI phải
+đặt `MarketSafetyGate`, `MacroAssessment` và `MacroGate` thành card/section riêng,
+không đặt trong bảng cộng điểm. Final/Setup score phải ghi rõ ba input
+Technical/Evidence/Execution theo tỷ trọng 65/20/15; không hiển thị Risk/Macro
+như input thứ tư/thứ năm.
 
 ### Mục đích
 
@@ -767,6 +808,11 @@ tham khảo. Gate thiếu dữ liệu phải hiện "chưa kiểm tra", không �
 Gate và scenario phải lấy đúng `selected_side`; không được mượn kết quả Gate
 của hướng còn lại.
 
+Khi V4 cutover, phần phân rã BUY/SELL chỉ có bốn dòng
+Trend/Momentum/Location/SMC. `MarketSafetyGate`, `MacroAssessment` và kết quả
+`MacroGate` nằm sau bảng điểm dưới dạng đánh giá độc lập; PASS/aligned không cộng
+điểm, CAUTION/conflict chỉ cap hoặc block theo policy và không sửa số đã hiển thị.
+
 **Tab Kiểm định AI** — nút chạy kiểm định + kết quả AI audit
 
 ### Nút chức năng
@@ -785,8 +831,11 @@ của hướng còn lại.
   legacy chỉ dùng để đọc snapshot cũ. Vị trí giá được đối chiếu lại với vùng
   entry của đúng hướng đã chọn; R:R danh nghĩa/dải R:R trong phần giải thích
   cũng lấy từ scenario của hướng này.
-- **Vĩ mô:** giá trị hiển thị `/30` là `macro_raw` của đúng hướng đã chọn,
-  không phải `macro_alignment` đã co giãn theo trọng số chế độ thị trường.
+- **Vĩ mô runtime V3:** giá trị hiển thị `/30` là `macro_raw` của đúng hướng đã
+  chọn, không phải `macro_alignment` đã co giãn theo trọng số chế độ thị trường.
+  Ở target V4, raw này chỉ là diagnostic trong `MacroAssessment`, đi kèm
+  confidence/status và tuyệt đối không mang nhãn contribution hoặc được cộng vào
+  Technical/Final/Setup score.
 - **Không giả dữ liệu:** thiếu điểm vĩ mô/Gate/evidence phải hiển thị `--`,
   “chưa rõ” hoặc “chưa kiểm tra”; không tự điền điểm trung lập hay coi Gate là
   đạt.
@@ -1180,8 +1229,8 @@ Settings Storage (nơi lưu cài đặt):
 [ settings.json ▼ ]
 
 [ ] Chặn giao dịch quanh tin đỏ
-[ ] Giảm điểm vĩ mô khi có sự kiện lớn trước 4-48h (Bước 5)
-[ ] AI trọng tài vĩ mô cho tín hiệu mạnh (Bước 6)
+[ ] Đánh giá sự kiện lớn trước 4-48h cho MacroGate (Bước 5; target V4)
+[ ] AI veto/cap vĩ mô cho tín hiệu mạnh (Bước 6; target V4)
 [ ] VIX theo độ nhạy từng cặp tiền (Bước 7 — chỉ bật sau backtest)
 
 Auto-scan mặc định: [ 5 phút ▼ ]
@@ -1215,7 +1264,7 @@ Tab Rollout là control an toàn cho Scanner V2, gồm:
   `PRODUCTION`;
 - kill switch;
 - bật/tắt so sánh **Scanner V1/V2** (shadow comparison của Candidate Engine,
-  không liên quan đến SMC scorer);
+  không liên quan đến SMC scorer hay migration Scanner V4);
 - allowlist symbol cho `DEMO_LIMITED`;
 - canary risk percent;
 - yêu cầu demo account và production approval;
@@ -1227,6 +1276,10 @@ Mã nguồn/settings mới mặc định là `SHADOW`. Runtime hiện tại đã
 `PRODUCTION`, nhưng release gate vẫn chưa đạt. UI phải hiển thị cảnh báo rõ
 trước khi đổi stage và không được diễn giải `production_approved` như việc bỏ
 qua release gate.
+
+Tab này là rollout operational của V3. Không bổ sung toggle dual-score V3/V4,
+không hiển thị disagreement V3/V4 và không dùng V3 shadow làm migration gate;
+V4 chỉ xuất hiện sau direct cutover của cả scorer/feature version.
 
 # 3. Cấu trúc menu đề xuất
 
@@ -1275,12 +1328,15 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
 
 - Scanner table co cot **Vung** hien thi trang thai gia tai thoi diem quet so voi vung entry: `Trong vung` (gia nam trong hoac dung bien vung), `Ngoai vung` (gia nam ngoai hai bien), hoac `--` (chua co vung that hoac thieu du lieu). Cot khong tu cap nhat real-time; execution revalidation van dung bid/ask live truoc khi gui lenh.
 - Entry checklist muc `Xu huong` phai xet theo side cua setup; range market co the dat neu setup nam tai POI/bien gia tot, khong mac dinh fail.
-- Man hinh ket qua nen hien `confidence_reason` co breakdown diem trend/momentum/location/risk/macro, macro confidence va event caution gan nhat neu co.
+- Màn hình kết quả target V4 hiển thị `confidence_reason` với breakdown điểm chỉ
+  gồm trend/momentum/location/SMC; safety gate, macro status/confidence và event
+  caution gần nhất nằm ở assessment riêng, không có điểm contribution.
 
 ## Legacy Scanner Automation Behavior (đã bị thay thế bởi Scanner V2)
 
 > Nội dung trong mục này chỉ lưu lại hành vi trước migration. Runtime contract
-> hiện hành nằm tại “Màn hình 4: Scanner V2” và `scanner-flow.md`. Các hàm
+> hiện hành nằm tại “Màn hình 4: Scanner V2” và
+> [Scanner flow](../scanner/scanner-flow.md). Các hàm
 > `_best_scenario`, `_is_auto_trade_candidate` kiểu cũ và mô hình Nhánh 1/2
 > không còn là nguồn quyết định đặt lệnh.
 

@@ -1,6 +1,12 @@
-# Scanner V2 — Luồng chạy hiện hành
+# Scanner V3 — Luồng runtime hiện hành
 
-Cập nhật: **09/08/2026**. Tài liệu này là runtime contract cho tính năng Quét thị trường.
+Runtime contract cập nhật: **09/08/2026**. Target V4: **11/08/2026**.
+Tài liệu này là runtime contract cho tính năng Quét thị trường.
+
+> **Target đã chốt:** Scanner V4 tách Risk/Macro khỏi score, TechnicalScore chỉ
+> còn Trend/Momentum/Location/SMC và direct cutover không dual scoring/shadow.
+> Xem [`scanner-v4-architecture.md`](scanner-v4-architecture.md). Luồng bên dưới
+> vẫn mô tả code V3 cho tới khi từng bước V4 được implement.
 
 ## 1. Tổng quan
 
@@ -122,6 +128,10 @@ Controller kiểm tra kết nối MT5, resolve broker symbol, lấy candle các 
 
 Pipeline phân tích tạo dữ liệu kỹ thuật/macro, scenario theo từng side, score, entry status, gate result và R:R. Candidate Engine không được dùng scenario của BUY cho SELL hoặc ngược lại.
 
+Trong runtime `scanner-v3`, macro raw/confidence/correlation vẫn được compose vào
+`signal_score`, nên có thể ảnh hưởng best side, score gap, scenario, decision và
+ranking. Proposal tách score không được dùng để diễn giải snapshot hiện hành.
+
 Trong macro correlation, `vix_pair_aware_enabled` đi từ Advanced Settings qua
 `NewsService.data_quality_flags` vào `AnalysisPipeline` cho cả BUY và SELL.
 Flag mặc định OFF. Chỉ schema-2 map data-backed còn TTL và pair actionable mới
@@ -135,7 +145,8 @@ Decision Engine, Strategy Router, entry/trade gate, rollout hoặc execution.
 Score thay đổi có thể làm kết quả threshold/decision/ranking downstream thay đổi
 theo contract bình thường. Kết quả calibration hiện tại không xác nhận
 JPY/AUD-NZD; runbook nằm tại
-`../macro/step7_vix_pair_sensitivity_operations.md`.
+[`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md),
+mục Bước 7.
 
 Các lỗi dữ liệu phải được biểu diễn bằng status/reason code; không được coi giá trị thiếu là điều kiện đã đạt.
 
@@ -251,6 +262,10 @@ Sau sort, `rank` được gán theo thứ tự canonical.
 Đây là lớp an toàn của **Scanner Candidate Engine** (so sánh V1/V2 của
 candidate), không phải SMC scorer shadow — SMC đã được đưa về một scorer
 canonical duy nhất và không còn so sánh v1/v2.
+
+Đây cũng **không phải** kế hoạch migration Scanner V4. Target V4 direct-cutover
+không chạy score V3/V4 song song và không dùng disagreement với V3 làm release
+evidence. Control/metric V1/V2 hiện hành sẽ được rà soát để loại bỏ ở Bước 12.
 
 Nếu bật shadow comparison, hệ thống tạo bản ghi V1/V2 của Candidate Engine
 cho từng symbol:
@@ -414,3 +429,8 @@ Chi tiết thay đổi theo thời điểm xem tại `docs/architecture/runtime-
 | Runtime | `scanner-runtime-v2` |
 
 Config hoặc snapshot không tương thích version phải bị từ chối hoặc chỉ dùng cho mục đích hiển thị/replay có kiểm soát.
+
+Target V4 bắt buộc đổi thành `scanner-v4` và `scanner-features-v4` trong một
+direct cutover. Score/config/snapshot V3 phải fail-closed cho live hoặc chỉ phục
+vụ replay có kiểm soát; không có router dual-score V3/V4. Chi tiết và trạng thái
+từng bước nằm tại [`scanner-v4-architecture.md`](scanner-v4-architecture.md).

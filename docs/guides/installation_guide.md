@@ -165,14 +165,21 @@ Nếu dùng installer, installer chỉ đặt file app vào `Program Files` ho�
 * Không ghi API key vào `settings.json` dạng plain text nếu có thể dùng keyring.
 * Không gửi journal hoặc log ra ngoài nếu người dùng chưa đồng ý.
 
-## Scanner V2 Rollout Safety Checklist (hiện hành)
+## Scanner V3 — Rollout Safety Checklist vận hành hiện hành
 
 Không chuyển thẳng từ cài đặt mới sang tài khoản thật.
 
+> Checklist `SHADOW`/demo/canary dưới đây thuộc cơ chế rollout an toàn của runtime
+> V3 hiện hành. Đây không phải yêu cầu migration sang Scanner V4. Thiết kế V4 đã
+> được phê duyệt nhưng chưa triển khai và quy định direct cutover, không chạy dual
+> scoring/shadow giữa V3 và V4. Xem
+> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+
 > Runtime trên máy hiện tại đã lưu stage `PRODUCTION`, nhưng release readiness
 > vẫn `false`, nên rollout guard tiếp tục chặn lệnh. Trạng thái và block code
-> thực tế được ghi tại `docs/architecture/runtime-status.md`; checklist dưới đây vẫn là
-> điều kiện bắt buộc để production có hiệu lực.
+> thực tế được ghi tại
+> [`runtime-status.md`](../architecture/runtime-status.md); checklist dưới đây vẫn
+> là điều kiện bắt buộc để production có hiệu lực.
 
 1. Giữ rollout stage mặc định `SHADOW`; xác nhận mọi yêu cầu order đều bị chặn
    với `SHADOW_MODE_ORDER_SUPPRESSED`.
@@ -202,8 +209,8 @@ account và portfolio. Không kiểm thử production bằng cách gọi
 
 ## Auto Trade Safety Checklist trước Scanner V2 (lịch sử)
 
-> Mục dưới đây chỉ lưu tham chiếu cho phiên bản cũ. Checklist rollout phía trên
-> là yêu cầu hiện hành.
+> Mục dưới đây chỉ lưu tham chiếu cho phiên bản cũ. Checklist rollout V3 phía trên
+> là yêu cầu vận hành hiện hành.
 
 Before enabling auto-scan with MT5 auto-entry on a real account:
 

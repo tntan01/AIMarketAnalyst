@@ -1,3 +1,0 @@
-launched pid=17284 exe=dist\AI Market Analyst\AI Market Analyst.exe
-SMOKE_PASS: process alive after 20s (no early crash)
-SMOKE_RESULT=pass

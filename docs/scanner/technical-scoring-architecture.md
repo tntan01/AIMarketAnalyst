@@ -1,6 +1,13 @@
-# Kiến trúc chấm điểm Scanner V2
+# Kiến trúc chấm điểm Scanner V3 — runtime hiện hành
 
-Trạng thái: **hiện hành**, cập nhật 09/08/2026.
+Trạng thái: **runtime hiện hành trước cutover V4**. Runtime contract cập nhật
+09/08/2026; target architecture cập nhật 11/08/2026.
+
+> **Target đã chốt:** Scanner V4 dùng TechnicalScore chỉ gồm Trend, Momentum,
+> Location và SMC; Risk/Macro chuyển thành gate; direct cutover không dual
+> scoring/shadow. Xem
+> [`scanner-v4-architecture.md`](scanner-v4-architecture.md). Cho đến khi từng
+> bước được implement, các metric/version V3 bên dưới vẫn mô tả code đang chạy.
 
 ## 1. Mục tiêu
 
@@ -17,7 +24,7 @@ Một điểm số không được trả lời thay cả bốn câu hỏi.
 
 | Metric | Phạm vi | Có quyền mở lệnh? |
 |---|---|---|
-| `signal_score` | Sức mạnh tín hiệu thô của từng side. | Không. |
+| `signal_score` | Sức mạnh tín hiệu thô hiện hành của từng side, gồm technical/SMC/risk/macro. | Không. |
 | `final_score` | Điểm setup sau các điều chỉnh phân tích. | Không trực tiếp. |
 | `setup_score` | Metric chuẩn dùng chung live/backtest; hiện alias `final_score`. | Chỉ là một điều kiện của Router. |
 | `opportunity_rank` | Điểm 0–100 để xếp hạng hiển thị sau phân loại. | Không. |
@@ -84,7 +91,8 @@ chỉ khi opt-in flag bật và loader tìm được eligible map; candidate l�
 được giảm phạt. Đây là score input chứ không phải quyền bypass gate; thay đổi
 score có thể ảnh hưởng threshold, decision và ranking downstream theo contract
 bình thường. Công thức và evidence không lặp lại tại đây; xem
-`../macro/step7_vix_pair_sensitivity_operations.md`.
+[`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md),
+mục Bước 7.
 
 ## 5. Strategy branch
 
@@ -250,3 +258,22 @@ Reason code là contract cho UI, log, replay và kiểm thử; không chỉ là 
 | Rollout | `core/scanner_rollout.py` |
 | Observability | `core/scanner_observability.py` |
 | Orchestration/execution | `controllers/scanner_controller.py` |
+
+## 13. Target Scanner V4 đã phê duyệt
+
+Target ngày 11/08/2026 đã khóa:
+
+- `technical_signal_score` 0–100 chỉ gồm Trend, Momentum, Location và SMC;
+- `market_safety` giữ data/connectivity, spread, news và volatility dưới dạng
+  `PASS/CAUTION/BLOCK/UNKNOWN`, không cộng điểm;
+- `macro_assessment` giữ raw BUY/SELL, confidence, status, correlation, AI
+  verdict và provenance; Macro chỉ được cap/block/warn qua gate;
+- `setup_score = Technical × 0.65 + Evidence × 0.20 + Execution × 0.15`;
+  Evidence/Execution thiếu dùng 50 neutral, không copy Technical;
+- direct cutover sang `scanner-v4/scanner-features-v4`, không chạy score V3/V4
+  song song; config V3 fail-closed cho live và chỉ giữ replay/audit.
+
+Trọng số bốn component, gate matrix, output schema và kế hoạch phân tích từng
+bước nằm duy nhất tại
+[`scanner-v4-architecture.md`](scanner-v4-architecture.md). Khi cutover hoàn tất,
+tài liệu này sẽ được rewrite thành runtime contract V4 ở Bước 13 của kế hoạch.

@@ -324,6 +324,14 @@ OOS theo trade identity trước khi tính `oos_is_expectancy_ratio` và
 
 Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nhất, macro theme theo đồng tiền và điểm nóng thế giới trong controller trước khi gọi `core.analysis_engine.analyze_symbol()`. Controller đưa `news_in_3h`, `high_impact_event_within_30m`, `next_high_impact_event` và `resume_after` vào `data_quality`; đồng thời đưa `macro_alignment_scores` vào `analysis_engine` để macro thật sự tham gia `scenario_scores`.
 
+> **Runtime V3 và kiến trúc V4 đã chốt (11/08/2026):** Đoạn trên mô tả code
+> hiện hành của Scanner V3. Kiến trúc mục tiêu Scanner V4 đã được phê duyệt:
+> `TechnicalSignalScore` chỉ gồm Trend, Momentum, Location và SMC; Macro và Risk
+> trở thành gate/assessment độc lập, không cộng hoặc trừ điểm. V4 sẽ cutover trực
+> tiếp, không chạy dual scoring/shadow với V3. Đây vẫn là thiết kế non-runtime cho
+> tới khi code và version được đổi. Xem
+> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+
 `services/news_service.py` chịu trách nhiệm gom:
 
 * Lịch kinh tế theo chuỗi fallback: Forex Factory JSON, Forex Factory HTML scrape nhẹ, file cache gần nhất, cuối cùng là `Calendar unavailable` kèm warning.
@@ -332,7 +340,7 @@ Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nh
 * Macro theme theo từng đồng tiền: hawkish, dovish hoặc neutral — xác định qua AI (có fallback keyword matching) hoặc keyword matching thuần nếu không có AI service.
 * Macro theme cho XAU, XAG và BTC dựa trên real yields, DXY, risk sentiment, ETF/flow và catalyst liên quan từng tài sản.
 * Điểm nóng thế giới liên quan risk-off, dầu, chiến sự, trừng phạt, tariff.
-* **Macro alignment score 3 tầng (0-30):** T1 lãi suất & chính sách tiền tệ (0-12) — lãi suất tự động cập nhật từ FRED API (fallback về `config/interest_rates.json` nếu không có API key) + stance từ AI hoặc keyword; T2 lịch kinh tế (0-10) dùng calendar events 72h; T3 tâm lý rủi ro & địa chính trị (0-8) dùng sentiment + hotspot count. Score được điều chỉnh theo `macro_confidence` (0.10-1.0) dựa trên chất lượng dữ liệu.
+* **Macro alignment score 3 tầng (raw được clamp 0-30 khi compose):** T1 lãi suất & chính sách tiền tệ (0-12) — lãi suất tự động cập nhật từ FRED API (fallback về `config/interest_rates.json` nếu không có API key) + stance từ AI hoặc keyword; T2 giữ contract 0-10 nhưng runtime hiện luôn 5/5 directional-neutral và đưa event severity vào diagnostic/gate; T3 tâm lý rủi ro (0-8) + địa chính trị (0-4). Contribution vào signal còn được co theo `macro_confidence` dựa trên chất lượng/freshness dữ liệu.
 * AI chỉ được dịch, tóm tắt và nhận định tác động dựa trên dữ liệu app đã lấy, không tự bịa headline, phát biểu hoặc sự kiện.
 
 Nếu lịch kinh tế bị rate limit, ví dụ HTTP 429 từ Forex Factory, app không được làm mất toàn bộ macro context. `news_service.py` phải thử HTML calendar, sau đó dùng cache lịch kinh tế gần nhất nếu có, và ghi warning rõ ràng. Khi không có cache, `events` để rỗng nhưng `latest_headlines`, `latest_statements`, `macro_themes`, `geopolitical_hotspots` và `macro_alignment_scores` vẫn được trả về nếu nguồn headline còn hoạt động.
@@ -355,8 +363,8 @@ VIX có hai horizon tách biệt:
 Loader chỉ dùng data-backed map còn TTL, ưu tiên APPDATA rồi repo/bundled
 fallback. Candidate seed/stale/legacy/malformed bị bỏ qua; chỉ flag OFF, không
 còn candidate eligible hoặc pair non-actionable mới giữ VIX penalty phẳng.
-Chi tiết và evidence hiện hành xem
-`docs/macro/step7_vix_pair_sensitivity_operations.md`.
+Chi tiết và evidence hiện hành xem mục **Bước 7 — VIX Pair Sensitivity** trong
+[`macro_score_architecture.md`](../macro/macro_score_architecture.md).
 
 `services/interest_rate_service.py` chịu trách nhiệm cập nhật lãi suất ngân hàng trung ương:
 
@@ -691,6 +699,11 @@ không bỏ qua rollout guard; manual order chỉ có thể override riêng rele
 Xem chi tiết tại `docs/scanner/scanner-flow.md` và
 `docs/scanner/technical-scoring-architecture.md`.
 
+Kiến trúc Scanner V4 đã chốt nhưng chưa chạy runtime:
+[`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md). Mọi bước
+phân tích/triển khai tiếp theo phải được cập nhật vào tài liệu này trước khi sửa
+code; V4 dùng direct cutover và không yêu cầu so sánh shadow với V3.
+
 ## Implementation Addendum trước Scanner V2 (tham chiếu lịch sử)
 
 > Hai mục Telegram/Auto-entry ngay dưới đây mô tả contract cũ. Chúng đã được
@@ -754,10 +767,10 @@ Targeted suite và full suite tích hợp đều xanh: targeted đạt **191 pas
 3.15s** trên 17 file; full suite đạt **2740 passed, 8 skipped, 17 xfailed,
 5 warnings in 178.62s (179.5s wall)**.
 Forward-demo/reconnect evidence vẫn chưa có, nên implementation chưa được coi là
-live-safe hoặc GA. Xem
-[`order-management-contract.md`](../trading/order-management-contract.md),
-[`order-management-implementation-plan.md`](../trading/order-management-implementation-plan.md)
-và [`runtime-status.md`](runtime-status.md).
+live-safe hoặc GA. Kế hoạch và review triển khai đã được hợp nhất vào
+[`order-management-contract.md`](../trading/order-management-contract.md); trạng
+thái vận hành xem [`runtime-status.md`](runtime-status.md). Chi tiết lịch sử vẫn
+có trong Git.
 
 ### Gemini API Migration (2026-07-17)
 

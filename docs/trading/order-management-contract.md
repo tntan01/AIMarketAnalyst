@@ -1,9 +1,10 @@
 # Runtime contract quản lý lệnh V2
 
-- Cập nhật: 09/08/2026
+- Cập nhật contract: 09/08/2026; hợp nhất tài liệu lịch sử: 11/08/2026
 - Trạng thái contract: **đã triển khai trong code; chờ release validation**
-- Kế hoạch: [`order-management-implementation-plan.md`](order-management-implementation-plan.md)
-- Rà soát đầu vào: [`order-management-review.md`](order-management-review.md)
+- Lịch sử thiết kế: nội dung của kế hoạch triển khai và báo cáo rà soát đầu vào đã
+  được hợp nhất vào contract này. Hai tài liệu nguồn đã được gỡ khỏi cây tài liệu
+  hiện hành và vẫn có thể truy xuất qua Git history.
 
 Tài liệu này định nghĩa contract fail-closed cho việc đọc trạng thái broker, quản
 lý Break-even/Trailing Stop và xác minh thao tác SL/TP/close. Đây chưa phải xác

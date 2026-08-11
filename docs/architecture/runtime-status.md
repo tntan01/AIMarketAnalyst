@@ -1,10 +1,17 @@
 # Runtime Status
 
-Cập nhật: **09/08/2026 (Asia/Ho_Chi_Minh)**.
+Cập nhật trạng thái runtime: **09/08/2026 (Asia/Ho_Chi_Minh)**. Ghi chú target
+Scanner V4: **11/08/2026**.
 
 Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tại. Đây không
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
-`scanner-flow.md`.
+[`scanner-flow.md`](../scanner/scanner-flow.md).
+
+> **Scanner V4 chưa phải runtime:** kiến trúc V4 đã được phê duyệt ở mức thiết kế,
+> nhưng chưa được triển khai. Các trạng thái và số liệu Scanner bên dưới vẫn mô tả
+> runtime V3 hiện hành. Target V4 dùng direct cutover, không coi shadow comparison
+> giữa V3/V4 là yêu cầu migration. Xem
+> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
 
 ## Order Management V2
 
@@ -39,8 +46,10 @@ chặn cả automation lẫn manual mutation. Settings cập nhật policy của
 
 Order Management V2 hiện **chưa live-safe, chưa GA**. Forward demo qua nhiều
 phiên/reconnect MT5 vẫn là release blocker cuối chưa có evidence. Targeted/full
-suite không thay thế bằng chứng Qt + broker thật. Checklist chi tiết nằm trong
-[`order-management-implementation-plan.md`](../trading/order-management-implementation-plan.md).
+suite không thay thế bằng chứng Qt + broker thật. Release blockers và checklist
+còn mở được hợp nhất tại
+[`order-management-contract.md`](../trading/order-management-contract.md), mục 10;
+kế hoạch/rà soát nguồn chỉ còn trong Git history.
 
 ## Scanner rollout
 
@@ -84,7 +93,9 @@ Probe loader ngày 09/08/2026 cho thấy:
 
 Map hợp lệ không tự bật feature. Kết quả hiện tại không xác nhận mục tiêu JPY,
 nên không có phê duyệt bật toàn cục được suy ra từ việc map load thành công.
-Runbook: `../macro/step7_vix_pair_sensitivity_operations.md`.
+Quy trình calibration và vận hành: xem
+[`macro_score_architecture.md`](../macro/macro_score_architecture.md), mục
+**Bước 7 — VIX Pair Sensitivity**.
 
 Gap vận hành đang mở: lần re-validation đủ dữ liệu nhưng `0 actionable` không
 overwrite map trước. Trước khi contract tombstone/disable được sửa, phải tắt

@@ -1,9 +1,21 @@
 # Macro Score Architecture & Phase 15 Changelog
 
-**Last updated**: 2026-08-09
-**Status**: Production V1 stable, V2 in shadow data collection; Bước 7 VIX
-pair-aware đã có data-backed map nhưng vẫn opt-in/default OFF và chưa xác nhận
-giả thuyết JPY/AUD/NZD
+**Last updated**: 2026-08-11
+**Status**: Scanner V3 runtime dùng Macro V1 production; Macro V2 vẫn chỉ thu
+thập diagnostic shadow. Bước 7 VIX pair-aware đã có data-backed map nhưng vẫn
+opt-in/default OFF và chưa xác nhận giả thuyết JPY/AUD/NZD.
+
+> **Ranh giới version 11/08/2026:** Các mục 1–20 bên dưới mô tả
+> **Scanner V3 runtime hiện hành**, nơi macro vẫn là contribution của composite
+> score. Kiến trúc **Scanner V4 đã được duyệt nhưng chưa triển khai runtime** nằm
+> tại
+> [`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+> Trong V4, `TechnicalSignalScore` chỉ gồm Trend/Momentum/Location/SMC;
+> `MacroAssessment`/`MacroGate` và `MarketSafetyGate` không cộng hoặc trừ điểm.
+> Cutover là atomic/direct: không dual scoring, không chạy V3/V4 song song và
+> không dùng shadow comparison với V3. Từ “shadow” trong lịch sử Macro V2 của
+> file này chỉ là diagnostic của mô hình macro, không phải kế hoạch migration
+> scorer V4.
 
 ---
 
@@ -100,7 +112,7 @@ giả thuyết JPY/AUD/NZD
 | `_compute_macro_tiers()` | `news_service.py:1802` | Tính 3-tier macro score |
 | `_macro_tier1()` | `news_service.py:2252` | Tier 1: Lãi suất & Chính sách tiền tệ (0-12) |
 | `_macro_tier2()` | `news_service.py:2355` | Tier 2: Lịch kinh tế (0-10) |
-| `_macro_tier3()` | `news_service.py:2511` | Tier 3: Tâm lý rủi ro & Địa chính trị (0-8) |
+| `_macro_tier3()` | `news_service.py:2511` | Tier 3: Tâm lý rủi ro (0-8) + Địa chính trị (0-4), tổng 0-12 |
 | `_macro_data_quality()` | `news_service.py:2709` | Chất lượng dữ liệu vĩ mô (0.0-1.0) |
 | `compose_scenario_score()` | `signal_engine.py:90` | Điểm tổng hợp (technical + macro + risk) |
 | `assess_upcoming_events()` | `event_impact_assessor.py:529` | Bước 5 — gọi AI đánh giá tác động, cache, fallback |
@@ -138,7 +150,7 @@ giả thuyết JPY/AUD/NZD
 
 ---
 
-## 5. Pipeline đầy đủ
+## 5. Pipeline đầy đủ — Scanner V3 runtime
 
 ```
                             ┌──────────────────────┐
@@ -165,7 +177,7 @@ giả thuyết JPY/AUD/NZD
                             │    tiers()            │
                             │    ├─ _macro_tier1()  │──► Interest rate (0-12)
                             │    ├─ _macro_tier2()  │──► Calendar (0-10)
-                            │    └─ _macro_tier3()  │──► Sentiment/Geo (0-8)
+                            │    └─ _macro_tier3()  │──► Sentiment/Geo (0-12)
                             │ 5. _macro_data_       │
                             │    quality()          │──► Confidence (0.0-1.0)
                             └──────────┬───────────┘
@@ -197,11 +209,13 @@ giả thuyết JPY/AUD/NZD
                             │  └─ pair-aware VIX   │    opt-in, eligible map only
                             │ _step_score_scenarios│
                             │  └─ score_scenario() │──► signal_engine.py
-                            │      macro_alignment  │    (0-30) → scaled to
-                            │      macro_confidence │    signal_score /100
+                            │      macro input raw  │    (0-30) → scaled to
+                            │      macro_confidence │    effective contribution
                             └──────────┬───────────┘
                                        │
                               result["scenario_scores"]
+                              ├─ macro_raw: raw input 0-30
+                              └─ macro_alignment: 0-effective_macro_weight
                                        │
                                        ▼
                             ┌──────────────────────┐
@@ -217,9 +231,10 @@ giả thuyết JPY/AUD/NZD
                             │   bias(result, side)  │
                             └──────────┬───────────┘
                                        │
-                              row["macro_score"]     (0-30)
+                              row["macro_score"]     (compat lossy từ effective)
                               row["macro_bias"]      (aligned/neutral/divergent)
                               row["macro_confidence"] (0.0-1.0)
+                              canonical detail reads scenario macro_raw/30
                                        │
                                        ▼
                             ┌──────────────────────┐
@@ -247,13 +262,13 @@ giả thuyết JPY/AUD/NZD
 
 ---
 
-## 6. Công thức tính điểm
+## 6. Công thức tính điểm — Scanner V3 runtime
 
 ### Tổng quan
 
 ```
-macro_score (0-30) = tier1_buy + tier2_buy + tier3_buy   (nếu best_side=buy)
-macro_score (0-30) = tier1_sell + tier2_sell + tier3_sell (nếu best_side=sell)
+macro_raw (0-30) = tier1_buy + tier2_buy + tier3_buy   (nếu best_side=buy)
+macro_raw (0-30) = tier1_sell + tier2_sell + tier3_sell (nếu best_side=sell)
 ```
 
 Mỗi tier đóng góp vào điểm buy VÀ sell riêng biệt.
@@ -271,7 +286,8 @@ Mỗi tier đóng góp vào điểm buy VÀ sell riêng biệt.
 | Yield spread (2s10s) | -2 đến +2 | Chỉ cho cặp có USD; âm = recession signal |
 | **Tổng Tier 1** | **0-12** | `diff + trend + stance + yield_adj` |
 
-**Lưu ý**: Yield spread có thể làm Tier 1 vượt quá 12 hoặc dưới 0 (không clamp).
+**Lưu ý hiện hành**: Tier 1 đã clamp từng side về 0-12 sau khi cộng yield
+adjustment (`news_service.py:2351-2352`).
 
 ### Tier 2 — Lịch kinh tế (0-10 → luôn 5/5 trung lập)
 
@@ -299,7 +315,7 @@ Trước đây: `buy_cal = clamp(5 - base_quality, 1, 9)` — sự kiện cho ba
 
 ---
 
-## 7. Phase 15B: `score_scenario` macro confidence fix
+## 7. Phase 15B: `score_scenario` macro confidence fix — Scanner V3
 
 **File**: `core/signal_engine.py:score_scenario()`
 
@@ -325,6 +341,9 @@ weights["macro"] = effective_macro_weight
 
 **File**: `services/news_service.py:_compute_macro_v2()`
 **Status**: Shadow mode — NOT used in scoring/gate/ranking
+
+Shadow ở mục này chỉ ghi diagnostic Macro V1/V2 trong runtime V3. Nó không tạo
+đường chấm điểm V4 song song và không phải bước trong direct cutover V4.
 
 ### Formula
 
@@ -392,22 +411,25 @@ Trả lời câu hỏi: "Base currency có lợi thế lãi suất so với quot
 - **Stance**: AI hoặc keyword phân tích hawkish/dovish từ headlines.
 - **Yield spread**: Đường cong lợi suất Mỹ đảo ngược (2s10s < 0) → cảnh báo suy thoái.
 
-### Tier 2 (0-10): Calendar — "Có sự kiện nào sắp gây biến động không?"
+### Tier 2 (contract 0-10, runtime directional score luôn 5/5): Calendar
 
-Trả lời câu hỏi: "Trong 72h tới, currency nào có nhiều sự kiện quan trọng?"
+Runtime hiện hành không suy ra hướng từ calendar khi chưa có surprise-direction
+engine chuẩn. `buy_cal = sell_cal = 5`; event count, severity, time weight và
+actual/forecast chỉ tạo diagnostic `event_risk_score`, `event_risk_level` và
+`has_surprise_data`. Event risk được xử lý riêng qua confidence/gate, không làm
+calendar BUY/SELL lệch nhau.
 
-- Ít sự kiện cho base → ít bất định → điểm buy cao
-- Nhiều sự kiện → rủi ro biến động → điểm thấp
-- Sự kiện càng gần, severity càng cao → quality càng lớn
-
-### Tier 3 (0-8): Sentiment — "Thị trường đang risk_on hay risk_off?"
+### Tier 3 (0-12): Sentiment & Geopolitical
 
 Trả lời câu hỏi: "Tâm lý thị trường hiện tại ủng hộ risk hay safe haven?"
 
+- Risk sentiment tạo 0-8 điểm và geopolitical tạo thêm 0-4 điểm cho mỗi side.
 - Các nhóm risk-on/safe-haven ở đây là heuristic từ headline sentiment, không
   phải kết luận của VIX pair backtest.
 - Từ Phase 15E, `vix_adj` không còn cộng vào Tier 3; VIX trong Tier 3 chỉ là
-  diagnostic. VIX scoring thật đi qua `correlation_adjustment`.
+  diagnostic. Trong Scanner V3, contribution VIX đi qua
+  `correlation_adjustment`. Target V4 chỉ giữ dữ liệu này trong
+  `MacroAssessment`/`MacroGate`, không đưa vào `TechnicalSignalScore`.
 - Bước 7 chỉ modulate VIX penalty khi flag bật và pair có bằng chứng actionable
   trong eligible map. Snapshot 2026-08-09 không xác nhận bất kỳ JPY pair nào.
 
@@ -418,23 +440,24 @@ Trả lời câu hỏi: "Tâm lý thị trường hiện tại ủng hộ risk h
 | Tier | Phạm vi | Trọng số trong 30 |
 |------|--------|-------------------|
 | Tier 1 (Lãi suất) | 0-12 | 40% |
-| Tier 2 (Calendar) | 1-9 | ~27% |
+| Tier 2 (Calendar) | runtime luôn 5 | 16.7% của raw scale 30 ở trạng thái hiện hành |
 | Tier 3 (Sentiment) | 0-8 (risk) + 0-4 (geo) = 0-12 | 40% |
 
-Tier 1 và Tier 3 có trọng số bằng nhau (0-12). Tier 2 nhẹ hơn (1-9, không bao giờ đạt 0 hoặc 10).
+Tier 1 và Tier 3 đều có cap 12. Tier 2 giữ contract 0-10 nhưng runtime hiện hành
+phát hành 5/5 trung lập cho tới khi có surprise-direction engine chuẩn.
 
 **Lưu ý**: Điểm trung lập mặc định là 15/30 (không có lợi thế cho bên nào).
 
 ---
 
-## 9. Điều kiện "Thuận lợi / Trung lập / Bất lợi"
+## 9. Điều kiện "Thuận lợi / Trung lập / Bất lợi" — Scanner V3
 
 **File**: `core/scanner.py:438-456` — `_classify_macro_bias()`
 
 ```python
-macro_buy  = scores["buy"]["macro_alignment"]     # 0-30
-macro_sell = scores["sell"]["macro_alignment"]    # 0-30
-macro_diff = macro_buy - macro_sell               # -30 đến +30
+macro_buy  = scores["buy"]["macro_alignment"]     # 0-effective_macro_weight
+macro_sell = scores["sell"]["macro_alignment"]    # 0-effective_macro_weight
+macro_diff = macro_buy - macro_sell                 # ±effective_macro_weight
 
 if abs(macro_diff) < 5:                           → "neutral" (Trung lập)
 elif best_side == "buy" and macro_diff >= 5:      → "aligned" (Thuận)
@@ -449,15 +472,26 @@ else:                                              → "divergent" (Xung đột/
 | `best_side=sell AND macro_buy - macro_sell ≤ -5` | **Thuận** | Vĩ mô ủng hộ hướng sell |
 | Còn lại (best_side trái ngược với macro) | **Xung đột** | Kỹ thuật nói buy nhưng vĩ mô nói sell (hoặc ngược lại) |
 
-**Threshold**: ±5 điểm trên thang 30 (~17% của thang điểm).
+**Threshold compatibility row**: ±5 trên effective contribution, không phải ±5
+trên raw scale 30. Tỷ lệ khoảng 33% base cap 15 hoặc 25% base cap 20 chỉ đúng khi
+confidence=1; confidence thấp làm `effective_macro_weight` nhỏ hơn, nên threshold
+có thể chiếm tỷ lệ lớn hơn hoặc không thể đạt.
 
-**Ghi chú**: UI mapping (`scanner_detail_screen.py:678`) dùng key `"conflict"` nhưng `_classify_macro_bias()` trả về `"divergent"`. Đây là mismatch — nếu `macro_bias = "divergent"`, UI hiển thị `"—"` (không map được). Đây có thể là một bug tiềm ẩn.
+**Ghi chú hiện hành**: UI đã map cả `"conflict"` và `"divergent"`. Canonical
+Scanner Detail ưu tiên `scenario_scores[selected_side].macro_raw` và
+`macro_status`; `row["macro_score"]`/`macro_bias` chỉ là compatibility path.
+Riêng `row["macro_score"]` dùng `int(value or 15)`, nên effective 0 bị coercion
+thành 15; không được dùng field này để suy ngược canonical raw/effective score.
 
 ---
 
 ## 10. Giải thích điểm 3/30
 
-Điểm 3/30 là trường hợp **cực kỳ bất lợi** cho một hướng. Để đạt 3/30:
+Mô tả 3/30 bên dưới là **ví dụ lịch sử trước Phase 15C.1**, khi Tier 2 từng tạo
+directional score. Runtime hiện hành giữ Tier 2 ở 5/5, nên không được dùng ví dụ
+này để giải thích score mới.
+
+Điểm 3/30 từng là trường hợp **cực kỳ bất lợi** cho một hướng:
 
 1. **Tier 1 (lãi suất)**: Quote có lãi suất cao hơn nhiều + base đang cut + quote đang hike + stance dồn về quote
 2. **Tier 2 (calendar)**: Nhiều sự kiện quan trọng cho base, ít cho quote → base quality cao → `5 - quality` thấp
@@ -491,7 +525,7 @@ else:                                              → "divergent" (Xung đột/
 |------|--------|-----------|
 | **Stance analysis** | `_ai_currency_stance()` (news_service.py:666) | Đọc headlines → phân loại hawkish/dovish/neutral |
 | **Tier 1** | `_compute_macro_tiers()` → `_macro_tier1()` | Dùng stance từ AI để tính stance score |
-| **Tier 3** | `_macro_tier3()` | AI sentiment score (dùng stance map: hawkish=-2, dovish=2) |
+| **Tier 3** | `_macro_tier3()` | AI stance vẫn được thu làm diagnostic nhưng `ai_applied_to_score=false`; scoring dùng keyword sentiment + geopolitical |
 | **Fallback** | `_ai_currency_stance()` | Nếu AI lỗi → `currency_stance()` keyword-based |
 
 AI không tham gia trực tiếp vào Tier 2 (calendar). AI stance ảnh hưởng Tier 1 qua `base_stance`/`quote_stance`.
@@ -510,12 +544,17 @@ AI không tham gia trực tiếp vào Tier 2 (calendar). AI stance ảnh hưởn
 
 ### Điểm yếu
 
-- **`_classify_macro_bias` trả về "divergent" nhưng UI lookup dùng "conflict"**: Mismatch key → UI hiển thị "—" thay vì "Xung đột" khi macro bất lợi
-- **Tier 1 không clamp**: Yield spread có thể đẩy tier1 vượt ngoài 0-12, làm tổng >30 hoặc <0
-- **Tier 2 không bao giờ đạt 0 hoặc 10**: Luôn clamp 1-9 → mất 2 điểm phân biệt
-- **Hardcode trong Tier 2**: `EVENT_SEVERITY` dictionary chỉ có ~15 patterns, bỏ lỡ nhiều sự kiện
-- **Không có trọng số động**: Các tier luôn cố định 12+10+8, không thay đổi theo market regime
-- **Không dùng actual values trong Tier 2**: Chỉ dùng impact + time, không xét actual đã công bố
+- **Compatibility field lossy**: `row["macro_score"]` lấy effective contribution
+  qua `value or 15`, nên effective 0 bị đổi thành 15; canonical consumer phải đọc
+  `scenario_scores[selected_side]`.
+- **Tier 2 chưa có directional edge**: runtime cố ý giữ 5/5 cho tới khi có
+  surprise-direction engine được chuẩn hóa.
+- **Hardcode trong Tier 2 diagnostic**: `EVENT_SEVERITY` chỉ có một tập pattern
+  giới hạn, có thể bỏ lỡ event khi tính event-risk diagnostic.
+- **Không có trọng số tier động**: composition macro giữ cấu trúc cố định, không
+  tự đổi theo regime.
+- **Actual/forecast chỉ là diagnostic**: chưa có normalization theo từng loại
+  event/currency để dùng an toàn cho hướng BUY/SELL.
 
 ---
 
@@ -672,6 +711,10 @@ Validate (`_validate_event_json`): đủ 6 trường, enum đúng tập cho phé
 
 ## 17. Bước 6 — AI Macro Verdict (Trọng tài vĩ mô)
 
+> **Version boundary:** Đường `adjustment` số bên dưới là hành vi Scanner V3
+> hiện hành. Target V4 loại bỏ hoàn toàn việc trừ điểm và chỉ giữ verdict dưới
+> dạng `MacroGate`/decision cap có reason code.
+
 ### Mục đích
 
 AI nhìn TOÀN BỘ tín hiệu macro cùng lúc (Tier 1 lãi suất, Tier 2 calendar,
@@ -712,7 +755,7 @@ Verdict áp dụng:
   │  source ≠ "ai" → skip (fallback/skip trung tính)
   │  conviction < 0.7 → bỏ qua (reason MACRO_AI_VERDICT_SKIPPED)
   │  veto=true → gate engine giáng READY → WATCH (mac_ai_veto)
-  │  adjustment ∈ [-5,0] → Step 7 trừ TRỰC TIẾP vào component macro   [C3]
+  │  adjustment ∈ [-5,0] → [V3 only] trừ trực tiếp component macro    [C3]
   │     (0-30) của best_side rồi tính lại signal_score
   ▼
 Result: macro.macro_ai_verdict (to_dict) + macro.macro_ai_deducted
@@ -742,7 +785,7 @@ có conflicts → hạ thành `unclear`.
 | Tín hiệu | Hành động | Lý do |
 |---|---|---|
 | `veto=true`, conviction ≥ 0.7 | Gate engine → `WATCH_ONLY` | Mâu thuẫn nghiêm trọng giữa các tầng |
-| `adjustment=-N` (N=1..5) | Trừ N điểm macro component (0-30) của best_side | Làm khó, không làm dễ |
+| `adjustment=-N` (N=1..5) | **V3 only:** trừ N điểm macro component (0-30) của best_side | Làm khó, không làm dễ |
 | `conviction < 0.7` | Bỏ qua toàn bộ verdict | Không chắc chắn thì không can thiệp |
 | `source ≠ "ai"` (fallback/skip) | Không áp dụng gì | Fail-closed |
 
@@ -793,6 +836,11 @@ False.
 Bước 7 thay penalty VIX cào bằng bằng một modulation theo symbol và side, nhưng
 chỉ khi dữ liệu của chính hệ thống xác nhận quan hệ. Production scoring không
 hardcode JPY/AUD/NZD; seed diagnostic còn assumption tĩnh nhưng luôn ineligible.
+
+Đây là contract VIX của Scanner V3. Với target V4, cùng dữ liệu pair-aware là
+input của `MacroAssessment`/`MacroGate`; nó không được sửa
+`TechnicalSignalScore`, `FinalScore` hoặc ranking bằng phép cộng/trừ điểm.
+
 Bước 7 không thay VIX ở các nơi khác:
 
 - Tier 3 tiếp tục có `vix_applied_to_score=false`;
@@ -898,8 +946,10 @@ penalty. XAU/XAG dùng futures proxy `GC=F`/`SI=F`.
 - PyInstaller bundle tracked map, nhưng chưa bundle runner/docs và UI chưa có
   source/age/stale status.
 
-Runbook chi tiết: `step7_vix_pair_sensitivity_operations.md`. Review lịch sử và
-ma trận remediation: `step7_vix_pair_sensitivity_review.md`.
+Runbook, evidence và các giới hạn vận hành được hợp nhất ngay trong
+[mục Bước 7 của tài liệu này](#18-bước-7--vix-pair-sensitivity), gồm Flag/luồng
+dữ liệu, map eligibility, backtest runner, công thức runtime, evidence snapshot
+và gap còn mở. Không tham chiếu các file Step 7 tách rời không tồn tại.
 
 ### Kiểm chứng
 
@@ -916,19 +966,47 @@ Full suite sau remediation: **2615 passed, 8 skipped, 17 xfailed, 4 warnings**.
 
 | # | Vấn đề | Mức độ | Vị trí |
 |---|--------|--------|--------|
-| **1** | `_classify_macro_bias` trả về "divergent", UI map expect "conflict" → hiển thị sai | Medium | `scanner.py:456` vs `scanner_detail_screen.py:678` |
-| **2** | Tier 1 có thể vượt 12 do yield_adj không clamp | Low | `news_service.py:818-819` |
+| **1** | Lịch sử: `_classify_macro_bias` trả về "divergent" trong khi UI từng chỉ map "conflict" | Resolved | UI hiện map cả `divergent` và `conflict` |
+| **2** | Lịch sử: Tier 1 từng có thể vượt 12 do yield adjustment | Resolved | Runtime hiện clamp 0-12 tại `news_service.py:2351-2352` |
 | **3** | `EVENT_SEVERITY` hardcode, thiếu nhiều sự kiện quan trọng | Low | `news_service.py:823-828` |
-| **4** | Tier 2 luôn 1-9, mất khả năng đạt 0 hoặc 10 | Low | `news_service.py:887-888` |
+| **4** | Tier 2 contract 0-10 nhưng runtime cố ý luôn 5/5 directional-neutral | Accepted constraint | Chờ surprise-direction engine chuẩn |
 
 ---
 
 ## 20. Đề xuất cải tiến (KHÔNG sửa code — chỉ đề xuất)
 
-1. **Sửa mismatch "divergent" → "conflict"**: Thêm "divergent" vào `_VN_MACRO` và inline dict ở line 678
-2. **Clamp Tier 1 về 0-12**: `max(0, min(12, total))` để giữ tổng 0-30
+1. **Resolved — mismatch "divergent" / "conflict"**: UI hiện hỗ trợ cả hai key; giữ compatibility khi đọc snapshot cũ.
+2. **Resolved — clamp Tier 1 về 0-12**: runtime đã clamp từng side sau yield adjustment.
 3. **Mở rộng EVENT_SEVERITY**: Thêm patterns từ calendar parser hoặc dùng impact field thay vì keyword match
-4. **Thêm actual values vào Tier 2**: Sự kiện đã có actual tốt hơn/bằng/kém hơn forecast → điều chỉnh quality
+4. **Thiết kế surprise-direction engine trước khi đổi Tier 2**: chỉ dùng actual
+   tốt hơn/bằng/kém forecast khi có normalization theo từng event/currency; cho
+   tới lúc đó giữ directional score 5/5.
 5. **Không đưa VIX trở lại Tier 3**: đề xuất lịch sử “VIX > 25 tăng trọng số
    Tier 3” bị loại bởi Phase 15E/Bước 7; VIX chỉ đi qua
    `correlation_adjustment` để tránh double-count.
+
+## 21. Scanner V4 approved target — NON-RUNTIME
+
+Quyết định ngày 11/08/2026 không bỏ tính năng macro, nhưng thay đổi boundary:
+
+- `TechnicalSignalScore` 0–100 chỉ gồm Trend, Momentum, Location và SMC;
+- Risk/news/spread/data/connectivity/volatility đi qua `MarketSafetyGate`, không
+  tạo điểm thưởng hoặc penalty;
+- macro raw BUY/SELL, confidence, status, correlation, event context, AI verdict
+  và provenance được giữ trong `MacroAssessment`;
+- macro chỉ có thể cap/block/caution qua `MacroGate`; macro thuận không cộng
+  điểm, không promote setup yếu và không làm tie-break số trong ranking;
+- AI macro adjustment số bị loại; veto/cap có reason code vẫn được giữ;
+- `FinalScore` không được tái đưa Macro hoặc Risk vào score qua fallback.
+
+Migration đã chốt là **direct atomic cutover** sang `scanner-v4` /
+`scanner-features-v4`: không phát hành legacy/new score song song, không shadow
+V3/V4 và không dùng disagreement với V3 làm tiêu chí validation. Artifact/config
+V3 chỉ được giữ read-only cho audit/replay; V4 phải được backtest/validate bằng
+chính contract V4 trước khi trở thành runtime duy nhất.
+
+Nguồn chuẩn duy nhất cho target và kế hoạch triển khai là
+[`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+Cho đến khi atomic cutover hoàn tất, mọi `macro_alignment`/`signal_score` ở các
+mục 1–20 vẫn phải được hiểu là contract composite Scanner V3 hiện hành, không
+phải mô tả runtime V4.

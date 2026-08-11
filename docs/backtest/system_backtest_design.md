@@ -13,6 +13,15 @@
 > (`backtest-v8-statistical-validation-v1`) có purpose `VALIDATION`, đúng validation
 > engine version và `execution_parity=true`.
 >
+> **Ranh giới Scanner V3/V4 (11/08/2026):** Runtime và code được mô tả trong
+> file này vẫn là composite `scanner-v3`/`scanner-features-v3`. Kiến trúc
+> `scanner-v4`/`scanner-features-v4` đã được duyệt nhưng **chưa phải runtime**:
+> `TechnicalSignalScore` chỉ gồm Trend/Momentum/Location/SMC;
+> `MacroAssessment`/`MacroGate` và `MarketSafetyGate` không cộng hoặc trừ điểm.
+> V4 sẽ direct atomic cutover, không dual scoring và không shadow V3/V4. Nguồn
+> chuẩn của target là
+> [`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+>
 > Giai đoạn 1 của kiến trúc point-in-time đã chuyển replay sang dữ liệu
 > point-in-time: `Candle.time` là
 > thời điểm mở nến, `close_time = open_time + timeframe_duration`, snapshot
@@ -67,7 +76,9 @@
   khoảng thời gian với tài khoản demo; không tái sử dụng trade OOS lịch sử của
   snapshot validation. Báo cáo đo sample, fill, rejection, adverse slippage và
   suy giảm expectancy.
-- Engine shadow so candidate/outcome của output cũ và mới theo cùng identity.
+- Phase 7 có engine shadow để đối soát **backtest engine release** cũ/mới theo
+  cùng identity. Đây không phải dual scoring/shadow migration Scanner V4 và
+  không cho phép chạy scorer V3/V4 song song.
 - Lệnh Scanner gửi sang MT5 mang comment correlation `AMA-FWD:*`; exporter chỉ
   nhận lịch sử đóng trên tài khoản demo có correlation này. Ghép được bằng
   symbol/side/time nhưng thiếu correlation vẫn bị chặn phát hành.
@@ -133,7 +144,7 @@ Quy tắc runtime:
 VIX pair sensitivity map hiện là một calibration snapshot có TTL, không phải
 point-in-time dataset cho historical replay. Không được đưa map mới nhất vào
 mọi step quá khứ. Runtime/evidence contract của feature nằm tại
-`../macro/step7_vix_pair_sensitivity_operations.md`.
+[`../macro/macro_score_architecture.md`, mục Bước 7 — VIX Pair Sensitivity](../macro/macro_score_architecture.md#18-bước-7--vix-pair-sensitivity).
 
 `DataManifest` lưu timezone, coverage, số nến input/normalized, duplicate,
 duplicate xung đột, gap trong phiên, khoảng đóng hợp lệ, OHLC lỗi, session
@@ -206,6 +217,10 @@ Entry filter thống nhất:
    `watch_zone`;
 5. đạt `min_final_score` nếu request cấu hình giá trị lớn hơn 0.
 
+Danh sách này là entry filter V3. Config V4 phải mang scorer/feature/gate
+version mới, áp score threshold và gate policy như hai điều kiện độc lập; không
+được dùng lại `min_final_score` V3 nếu chưa re-validate bằng V4.
+
 Đây là logic lấy mẫu nghiên cứu/backtest, không phải quyền đặt lệnh live.
 Auto-trade live vẫn phải qua Candidate Engine, Strategy Router, rollout guard,
 portfolio gate và execution revalidation.
@@ -224,15 +239,28 @@ Khi áp dụng kết quả Backtest cho Scanner:
 
 Chức năng System Backtest dùng để đo hiệu quả của toàn bộ hệ thống phân tích hiện tại, không chỉ kiểm tra riêng một indicator hay một module SMC.
 
-Hệ thống hiện tại có nhiều lớp quyết định:
+Hệ thống Scanner V3 hiện tại có nhiều lớp quyết định:
 
 - Dữ liệu MT5: D1, H4, H1, M15.
 - Technical context: EMA, RSI, MACD, ATR, support/resistance, market regime.
 - SMC context: BOS, CHOCH, displacement, supply/demand, order block, FVG, liquidity sweep, premium/discount.
-- Score engine: buy/sell score, macro alignment, risk condition, correlation adjustment.
+- Score engine V3: buy/sell composite score gồm technical/SMC, macro alignment,
+  risk condition và correlation adjustment.
 - Entry engine: entry zone, H1 confirmation, M15 quality, ready_to_trade.
 - Trade gate: MT5 status, spread, news, score gap, M15, expected effective R:R, account guard.
 - Final score và decision engine.
+
+Target Scanner V4 giữ cùng mục tiêu replay end-to-end nhưng đổi boundary, chưa
+đổi runtime hiện hành:
+
+- `TechnicalSignalScore` chỉ replay Trend/Momentum/Location/SMC theo đúng side;
+- Risk/news/spread/data/connectivity/volatility replay qua
+  `MarketSafetyGate`, không thành component điểm;
+- macro/correlation/AI verdict replay thành `MacroAssessment` và
+  `MacroGate`, không cộng/trừ `TechnicalSignalScore` hoặc `FinalScore`;
+- gate `BLOCK` không thể được score cao bù lại; gate `CAUTION` chỉ cap decision;
+- mọi dataset/gate policy/scorer version phải point-in-time và nằm trong
+  provenance của backtest V4.
 
 Backtest cần replay lại các lớp này theo dữ liệu lịch sử để trả lời các câu hỏi:
 
@@ -407,6 +435,12 @@ class BacktestResult:
     diagnostics: dict[str, Any]
 ```
 
+Đây là schema runtime V3. `allow_macro`, `signal_score`, `buy_score` và
+`sell_score` không phải schema target V4. Bước thiết kế Backtest V4 phải phát
+hành field/version mới cho `technical_signal_score`, `technical_breakdown`,
+`market_safety` và `macro_assessment`/`macro_gate`; không được âm thầm đổi nghĩa
+field V3 hoặc dual-write V3/V4 trong production.
+
 ### Public API
 
 ```python
@@ -451,7 +485,7 @@ def run_system_backtest(
    - Tính summary và breakdown.
 ```
 
-## Gọi `analyze_symbol()` Trong Backtest
+## Gọi `analyze_symbol()` Trong Backtest — Scanner V3 runtime
 
 Tại mỗi snapshot:
 
@@ -507,18 +541,29 @@ result = analyze_symbol(
 )
 ```
 
-Giai đoạn MVP nên đặt macro trung tính:
+Đường V3 hiện hành đặt macro trung tính khi không có historical macro:
 
 ```python
 macro_alignment = {"buy": 15, "sell": 15}
 macro_confidence = 1.0
 ```
 
-Lý do: hệ thống news/macro hiện tại lấy dữ liệu live. Nếu dùng live data để backtest quá khứ sẽ gây sai lệch nghiêm trọng.
+Lý do: hệ thống news/macro hiện tại lấy dữ liệu live. Nếu dùng live data để
+backtest quá khứ sẽ gây sai lệch nghiêm trọng.
+
+Không được port cách cấp `{buy: 15, sell: 15}` này sang V4: macro không còn là
+score contribution. Backtest V4 phải replay point-in-time `MacroAssessment` và
+`MacroGate`; khi thiếu nguồn bắt buộc, gate trả `UNKNOWN` theo policy thay vì
+giả dữ liệu trung tính hoặc cấp điểm. Tương tự, `news_in_3h=false` và
+`spread_status="normal"` chỉ hợp lệ khi snapshot lịch sử chứng minh được trạng
+thái đó; chúng là input `MarketSafetyGate`, không phải điểm Risk.
 
 ## Pipeline Diagnostics — Log Từng Bước Phân Tích
 
-Từ Phase 2, `AnalysisPipeline` trong `core/analysis_pipeline.py` tự động ghi lại chẩn đoán (diagnostics) cho từng bước trong pipeline. Mỗi lần `execute()` được gọi, pipeline tạo một danh sách `pipeline_diagnostics` chứa thông tin pass/fail/warning của từng bước.
+Từ Phase 2, `AnalysisPipeline` V3 trong `core/analysis_pipeline.py` tự động ghi
+lại chẩn đoán (diagnostics) cho từng bước trong pipeline. Mỗi lần `execute()`
+được gọi, pipeline tạo một danh sách `pipeline_diagnostics` chứa thông tin
+pass/fail/warning của từng bước.
 
 ### Cấu Trúc Diagnostic Entry
 
@@ -535,15 +580,20 @@ Mỗi entry trong `pipeline_diagnostics` có dạng:
 
 ### Nội Dung Log Từng Bước
 
+> Bảng ngay dưới là output V3 đang chạy. Diagnostic target V4 phải tách bước
+> `technical_score` (đúng bốn component), `market_safety_gate` và `macro_gate`;
+> không được ghi Risk/Macro như contribution trong breakdown điểm. Đây là target
+> schema cho atomic cutover, chưa phải mô tả output runtime hiện tại.
+
 | Bước | Thông tin chính | Khi nào fail/warning |
 |------|----------------|---------------------|
 | **validate** | Số lượng candle D1/H4/H1, market regime, risk_score, ATR, spread_status | Fail nếu < 60 D1 hoặc < 60 H4 hoặc < 30 H1 |
 | **correlation** | DXY/VIX/US10Y availability, buy/sell adjustment values | Luôn pass (dùng neutral nếu thiếu data) |
-| **score** | 6 components (T/M/L/S/R/Ma) cho BUY và SELL, signal_score tổng | Luôn pass (chỉ tính toán) |
+| **score** | **V3:** 6 components (T/M/L/S/R/Ma) cho BUY và SELL, `signal_score` tổng | Luôn pass (chỉ tính toán) |
 | **scenarios** | Số lượng scenario, entry_status, M15 quality, R:R (kèm `risk_reward_range`), ready_to_trade | Warning nếu không có scenario nào |
 | **direction** | buy_score vs sell_score, score_gap, best_side, is_clear_bias | Warning nếu best_side = neutral |
 | **gate** | **11 gate checks riêng lẻ** (MT5, Spread, DataQuality, News, DailyWeeklyLoss, AccountGuard, Journal, M15, ExpectedRR, ScoreGap, ZoneBroken) — mỗi gate có pass/block/warning + detail | Fail nếu allowed=false; Warning nếu có warning_codes |
-| **final_score** | signal_score, evidence_score, execution_quality, final_score, decision, action | Warning nếu final_score < 65 |
+| **final_score** | **V3:** signal_score, evidence_score, execution_quality, final_score, decision, action | Warning nếu final_score < 65 |
 
 ### Gate Diagnostics Chi Tiết
 
@@ -602,7 +652,15 @@ Dialog phân tích hiển thị:
 - **Bảng chi tiết gate** — gate nào chặn/cảnh báo bao nhiêu lần
 - AI nhận xét & đánh giá
 
-## Chuẩn Hóa Điểm Số Khi Thiếu Macro (Phase 1)
+## Chuẩn Hóa Điểm Số Khi Thiếu Macro (Phase 1 — Scanner V3)
+
+> **Phạm vi V3 historical/replay-only:** Công thức bên dưới ghi lại composite
+> score Scanner V3. Nó vẫn khớp runtime hiện hành cho tới ngày cutover, nhưng từ
+> V4 chỉ được dùng để audit/replay artifact V3, không làm target implementation
+> hoặc nguồn quy đổi threshold. Scanner V4 đã được duyệt nhưng chưa triển khai;
+> V4 không dùng `{buy:15, sell:15}` như contribution trung tính và không đưa
+> Macro/Risk vào `TechnicalSignalScore`. Contract V4 nằm tại
+> [`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
 
 ### Vấn Đề
 
@@ -633,6 +691,32 @@ total = clamp(technical_scaled + risk_scaled + macro_effective, 0, 100)
 | Không có (0) | 0 | 45/85 | **45** |
 
 Điểm tối đa 100 chỉ đạt được khi cả technical, risk, và macro đều hoàn hảo.
+
+Bảng và nguyên lý trên phải được giữ làm baseline legacy cho replay
+`scanner-v3`; không được dùng để quy đổi cơ học threshold V4.
+Không có một offset chung vì delta còn phụ thuộc regime, macro raw, confidence,
+correlation và phân phối BUY/SELL score gap.
+
+### Target Scanner V4 — approved, non-runtime
+
+Backtest V4 phải áp đúng score/fallback/rounding contract canonical tại
+[`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md),
+không lặp lại hoặc tạo một bảng trọng số riêng trong tài liệu Backtest.
+
+- `TechnicalSignalScore` chỉ gồm Trend/Momentum/Location/SMC;
+- `MarketSafetyGate` sở hữu data/connectivity/spread/news/volatility;
+- `MacroAssessment`/`MacroGate` sở hữu macro raw/confidence/status,
+  correlation và AI verdict;
+- các gate không cộng/trừ `TechnicalSignalScore` hoặc `FinalScore`;
+- Macro aligned không promote/tie-break; conflict/unknown chỉ cap/block/caution
+  theo policy có version;
+- V4 backtest phải dùng point-in-time gate inputs. Thiếu safety/macro data bắt
+  buộc được ghi `UNKNOWN`, không tự điền neutral để làm đẹp score;
+- threshold/config V3 không được chuyển bằng offset hoặc normalization cơ học.
+
+Cutover là atomic: build/test/backtest V4 độc lập, bump scorer/feature/config,
+cho artifact V3 về read-only replay rồi đưa V4 thành một runtime duy nhất. Không
+dual-write score, không shadow V3/V4 và không trộn score bucket của hai version.
 
 ## Điều Kiện Vào Lệnh (thiết kế nhiều mode lịch sử)
 
@@ -1035,7 +1119,7 @@ STAND_ASIDE
 
 Mục tiêu: xác nhận `READY_TO_TRADE` có tốt hơn các nhóm khác không.
 
-### Theo Score Bucket
+### Theo Score Bucket — Scanner V3
 
 ```text
 50-59
@@ -1047,11 +1131,15 @@ Mục tiêu: xác nhận `READY_TO_TRADE` có tốt hơn các nhóm khác không
 
 Mục tiêu: tìm ngưỡng score nên trade. Ví dụ nếu `80-89` lợi nhuận tốt nhưng `70-79` âm, rule auto trade nên đặt ngưỡng 80.
 
-### Theo Final Score Bucket
+### Theo Final Score Bucket — Scanner V3
 
 Tương tự signal score, nhưng dùng `result["final_score"]`.
 
 Mục tiêu: kiểm tra final score có giá trị hơn signal score không.
+
+V4 phải xuất bucket `TechnicalSignalScore` và `FinalScore` theo contract
+canonical, đồng thời breakdown riêng theo `MarketSafetyGate`/`MacroGate`.
+Không aggregate hoặc so trực tiếp bucket V3 và V4 như cùng một population.
 
 ### Theo M15 Quality
 
@@ -1517,6 +1605,10 @@ Zone score
 Reason
 ```
 
+Tên `Signal score`/`Final score` trong mockup trên là V3. UI Backtest V4 phải
+đọc field V4 có version, hiển thị `TechnicalSignalScore`, `FinalScore` và gate
+status riêng; không dùng compatibility alias để trộn artifact V3/V4.
+
 Click vào một trade mở detail panel:
 
 ```text
@@ -1573,6 +1665,10 @@ Score gap bucket    | Trades | Expectancy | PF | Win rate
 ```
 
 Dùng tab này để quyết định ngưỡng auto trade.
+
+Các label trên là V3. Target V4 thay `Signal score bucket` bằng
+`TechnicalSignalScore bucket`, giữ `FinalScore` theo contract canonical và thêm
+breakdown gate; mọi bảng phải partition theo scorer/feature version.
 
 ### SMC Tab
 
@@ -1708,6 +1804,8 @@ Closed trade TP/SL
 - Chỉ làm sau khi core technical/SMC backtest đã ổn.
 - Cần nguồn historical calendar/headlines đúng thời điểm.
 - Không dùng news live cho quá khứ.
+- Với V4, dữ liệu này phục vụ point-in-time `MacroAssessment`/`MacroGate` và
+  news sub-gate của `MarketSafetyGate`, không phục vụ score contribution.
 
 ## Rủi Ro Và Giới Hạn
 
@@ -1721,7 +1819,9 @@ MT5 broker data có thể khác nhau theo broker. Backtest trên broker nào th�
 
 ### Macro Live Không Đúng Cho Quá Khứ
 
-Không được lấy macro/news hiện tại để đánh giá setup quá khứ.
+Không được lấy macro/news hiện tại để đánh giá setup quá khứ. Thiếu dữ liệu V4
+phải thành gate `UNKNOWN` theo policy có version, không được giả macro neutral
+hoặc “không có news” để cho qua.
 
 ### Speed
 

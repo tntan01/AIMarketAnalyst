@@ -1,10 +1,14 @@
 # Backtest Release Runbook
 
+> **Phạm vi vận hành:** quy trình Phase 7 bên dưới áp dụng cho runtime
+> `scanner-v3` / `scanner-features-v3`. Scanner V4 là **APPROVED DESIGN —
+> NON-RUNTIME** và dùng direct cutover; xem mục cuối tài liệu.
+
 ## Mục đích
 
-Phase 7 không tự coi một backtest tốt là đủ để phát hành. Một config chỉ được
-Scanner Router chấp nhận khi có release report đã khóa với đúng dataset và
-provenance của lần validation.
+Phase 7 không tự coi một backtest tốt là đủ để phát hành. Trong runtime V3, một
+config chỉ được Scanner Router chấp nhận khi có release report đã khóa với đúng
+dataset và provenance của lần validation.
 
 Release report phải đồng thời đạt:
 
@@ -23,8 +27,9 @@ Chuẩn bị bốn file JSON:
 1. Snapshot `VALIDATION` từ engine hiện tại, có `validation_replay` hoàn chỉnh.
 2. Snapshot forward của engine hiện tại, chạy frozen config trên đúng khoảng
    thời gian tài khoản demo hoạt động.
-3. Snapshot engine cũ chạy trên cùng khoảng forward để so shadow. File này được giữ
-   làm audit và tự gắn `LEGACY_RESEARCH`.
+3. Snapshot engine cũ chạy trên cùng khoảng forward để so shadow Candidate
+   Engine V1/V2 của V3. File này được giữ làm audit và tự gắn
+   `LEGACY_RESEARCH`; đây không phải snapshot score V4.
 4. Danh sách lệnh đóng trên tài khoản demo. Mỗi dòng phải có `candidate_id`;
    nếu thiếu, hệ thống ghép theo symbol, side và thời gian trong sai số 240
    phút để chẩn đoán nhưng release vẫn bị chặn bởi
@@ -44,6 +49,9 @@ Exporter từ chối tài khoản thật và chỉ xuất các lệnh có correl
 dùng lệnh tay hoặc lịch sử không truy được về Scanner làm bằng chứng.
 
 ## Tạo báo cáo
+
+Các lệnh trong mục này, gồm `--legacy-snapshot`, thuộc release evidence V3 hiện
+hành. Không tái sử dụng chúng để chạy hoặc phê duyệt dual scoring V3/V4.
 
 Chạy lần đầu không có `--approve` để xem các block code:
 
@@ -73,7 +81,7 @@ python scripts/backtest_release_report.py `
 Mã thoát `0` nghĩa là `ready=true`; mã `2` nghĩa là report đã tạo nhưng còn
 block. Không sửa tay report vì fingerprint sẽ không còn hợp lệ.
 
-## Phát hành vào Scanner
+## Phát hành vào Scanner V3 hiện hành
 
 Tải file `*-reviewed.json` trong màn hình Backtest, mở “Áp dụng cấu hình” và
 kiểm tra trạng thái `VALIDATED` trước khi lưu. Snapshot legacy chỉ được xem và
@@ -82,9 +90,9 @@ phân tích; nút áp dụng bị ẩn. Settings sẽ tự hạ config cũ/thi�
 
 ## Khi chưa đủ dữ liệu
 
-Không hạ ngưỡng và không sửa `ready` thủ công. Tiếp tục thu thập demo/shadow,
+Không hạ ngưỡng và không sửa `ready` thủ công. Tiếp tục thu thập demo/shadow V3,
 tạo lại report, rồi review lại. Đây là trạng thái chờ bằng chứng, không phải lỗi
-Scanner hay MT5.
+Scanner hay MT5 và không phải migration shadow V4.
 
 Trình tự để đóng hai điều kiện vận hành còn lại:
 
@@ -104,3 +112,28 @@ Trình tự để đóng hai điều kiện vận hành còn lại:
 Trạng thái kiểm tra ngày 25/07/2026: full test suite đã đạt **1550 passed,
 12 skipped, 17 xfailed, 0 failed**. MT5 đang kết nối `Exness-MT5Real36`, nên
 exporter đã từ chối đúng thiết kế và chưa có forward-demo evidence hợp lệ.
+
+## Scanner V4 — direct cutover đã phê duyệt, chưa chạy runtime
+
+V4 chỉ chấm Trend, Momentum, Location và SMC. Final/Setup score blend
+Technical/Evidence/Execution theo tỷ trọng 65/20/15. Risk là safety gate; Macro
+là assessment tác động qua policy/gate. Risk, Macro và gate output không được
+tái nhập vào Technical/Final/Setup score hoặc ranking số. Runbook không định
+nghĩa lại trọng số regime, rounding hay gate matrix.
+
+Phát hành V4 phải là một lần chuyển version nguyên tử sang `scanner-v4` /
+`scanner-features-v4` sau khi hoàn tất golden/offline replay, OOS, calibration,
+schema/config/snapshot compatibility, consumer tests và rollback rehearsal. Cấm:
+
+- chạy scorer V3 và V4 song song trong live runtime;
+- dùng `legacy-shadow.json`, `--legacy-snapshot` hoặc disagreement với V3 làm
+  tiêu chí đúng/sai cho V4;
+- trộn config/snapshot/artifact V3 vào quyết định live V4;
+- giữ router dual-score làm đường rollback production.
+
+Rollback V4 dùng release artifact/build/Git đã kiểm thử, không dùng mixed-score
+router. Artifact V3 sau cutover chỉ được đọc cho audit/replay có kiểm soát và
+phải fail-closed nếu đi vào quyết định live. Nguồn normative duy nhất cho score,
+rounding và gate policy là
+[Scanner V4 architecture](../scanner/scanner-v4-architecture.md); runtime trước
+cutover nằm tại [Scanner flow](../scanner/scanner-flow.md).

@@ -1,10 +1,12 @@
 # AI Market Analyst — Đặc tả sản phẩm
 
-> Phiên bản tài liệu: 24/07/2026
+> Phiên bản tài liệu: 11/08/2026
 >
-> Trạng thái: đồng bộ với chương trình hiện tại
+> Trạng thái: đồng bộ với runtime `scanner-v3` / `scanner-features-v3`; đồng thời
+> ghi nhận Scanner V4 là **APPROVED DESIGN — NON-RUNTIME**
 >
-> Phạm vi: desktop PyQt6, MT5, phân tích, Scanner V2, backtest, journal, Telegram và order execution có kiểm soát
+> Phạm vi: desktop PyQt6, MT5, phân tích, Candidate Engine V2/scorer V3,
+> Scanner V4 target, backtest, journal, Telegram và order execution có kiểm soát
 
 ## 1. Mục tiêu
 
@@ -38,14 +40,14 @@ MT5 service phải resolve symbol chuẩn sang broker symbol thực, kể cả h
 Scanner phân tích danh sách symbol qua pipeline đầy đủ và tạo:
 
 - market regime và BUY/SELL evaluation;
-- signal/final/setup score;
+- signal/final/setup score theo runtime V3 hiện hành;
 - scenario Entry/SL/TP theo đúng side;
 - trade permission, gate và entry status;
 - Strategy Router decision;
 - candidate status và reason codes;
 - effective R:R, evidence/execution readiness;
 - canonical ranking;
-- observability, snapshot, shadow comparison;
+- observability, snapshot và shadow comparison Candidate Engine V1/V2 của V3;
 - Telegram và auto-trade result khi áp dụng.
 
 Scanner hỗ trợ quét một lần và quét định kỳ. Nút **Tự động vào lệnh MT5** chỉ
@@ -160,6 +162,9 @@ Status chuẩn:
 
 ## 5. Chấm điểm và xếp hạng
 
+Các field dưới đây mô tả runtime V3 hiện hành; chúng không được dùng để suy
+diễn rằng target V4 đã được triển khai:
+
 - `signal_score`: tín hiệu thô của từng side.
 - `final_score`: điểm setup đã điều chỉnh.
 - `setup_score`: metric chuẩn dùng live/backtest, hiện alias `final_score`.
@@ -169,7 +174,7 @@ Status chuẩn:
 
 Ranking diễn ra sau filter và ưu tiên status trước điểm cơ hội. Điểm cao không thể đưa row bị block lên trước row ready hoặc mở khóa order.
 
-### 5.1 VIX pair-aware trong macro component
+### 5.1 Runtime V3 — VIX pair-aware trong macro component
 
 VIX pair-aware chỉ modulate phần VIX trong `correlation_adjustment` của macro
 score theo đúng symbol và side. Nó không sửa hoặc bypass contract của
@@ -183,15 +188,32 @@ data-derived factor;
 trade ngược flow không được discount và có thể tăng penalty tối đa 20%.
 Mapping phải đến từ common-date ΔVIX-vs-return backtest, không được hardcode theo
 tên currency. Runtime contract và bằng chứng hiện hành nằm tại
-`../macro/step7_vix_pair_sensitivity_operations.md`.
+[kiến trúc macro](../macro/macro_score_architecture.md).
 
 Calibration runner này không phải System Backtest. Historical replay hiện giữ
 flat VIX scoring; chỉ được bổ sung parity khi có map point-in-time/versioned để
 không dùng bằng chứng tương lai cho decision date quá khứ.
 
+### 5.2 Target Scanner V4 đã phê duyệt — chưa chạy runtime
+
+V4 chỉ chấm bốn thành phần kỹ thuật theo từng side: Trend, Momentum, Location và
+SMC. Trọng số theo regime và quy tắc rounding chỉ được định nghĩa tại tài liệu
+canonical bên dưới. Final/Setup score blend Technical/Evidence/Execution theo tỷ
+trọng 65/20/15. Risk chuyển sang safety gate; Macro được giữ như assessment theo
+side và tác động qua policy/gate. Risk, Macro và output gate không được tái nhập
+vào Technical/Final/Setup score hoặc một thành phần ranking số.
+
+Migration V4 dùng **direct cutover** sang `scanner-v4` /
+`scanner-features-v4`: không dual scoring V3/V4, không shadow V4 so với V3 và
+không giữ hai scorer live sau cutover. Cho đến khi code, test, calibration và
+version contract V4 hoàn tất, runtime và backtest config vẫn là V3. Nguồn
+normative duy nhất cho target là
+[Scanner V4 architecture](../scanner/scanner-v4-architecture.md);
+runtime hiện hành xem [Scanner flow](../scanner/scanner-flow.md).
+
 ## 6. Backtest config contract
 
-Config được thực thi cần:
+Config được thực thi trong runtime V3 hiện tại cần:
 
 - schema `v8`;
 - validation `backtest-v8-statistical-validation-v1`;
@@ -267,11 +289,14 @@ Stage:
 | `PRODUCTION` | Approval và release readiness. |
 
 `kill_switch` luôn chặn. Settings mới và settings migrate đều mặc định `SHADOW`.
+Stage `SHADOW` ở đây là cơ chế vận hành V3 để so Candidate Engine V1/V2 và thu
+release evidence. Nó không phải migration shadow hoặc dual scoring V3/V4;
+cutover V4 không dùng disagreement với V3 làm tiêu chí đúng/sai.
 
 Runtime hiện tại đã chọn `PRODUCTION`, bật V2 và
 `production_approved=true`, nhưng release readiness vẫn `false`. Đây không
 phải trạng thái production-ready và không bỏ qua các yêu cầu dưới đây. Xem
-`runtime-status.md`.
+[trạng thái runtime](../architecture/runtime-status.md).
 
 Release readiness mặc định yêu cầu:
 

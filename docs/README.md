@@ -1,13 +1,14 @@
 # Tài liệu dự án AI Market Analyst
 
-Cập nhật cấu trúc: **09/08/2026**.
+Cập nhật cấu trúc: **11/08/2026**.
 
 Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Market Analyst.
 Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 
 1. Domain model, controller và test đang chạy.
 2. Tài liệu contract/kiến trúc hiện hành.
-3. Tài liệu kế hoạch, review, proposal và archive lịch sử.
+3. Tài liệu target đã được phê duyệt nhưng chưa implement.
+4. Git history cho kế hoạch/review/migration đã hoàn tất.
 
 ## Lối đọc nhanh
 
@@ -18,10 +19,11 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | Cài đặt và sử dụng | `guides/installation_guide.md`, `guides/USER_GUIDE.md` |
 | Vận hành Backtest -> Scanner -> Rollout | `guides/workflow_guide.md` |
 | Scanner runtime contract | `scanner/scanner-flow.md` |
-| Chấm điểm Scanner V2 | `scanner/technical-scoring-architecture.md` |
+| Chấm điểm Scanner V3 hiện hành | `scanner/technical-scoring-architecture.md` |
+| Kiến trúc đích Scanner V4 | `scanner/scanner-v4-architecture.md` — approved design, chưa phải runtime |
 | Backtest runtime/validation | `backtest/system_backtest_design.md` |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
-| Vận hành/re-validate VIX theo pair | `macro/step7_vix_pair_sensitivity_operations.md` |
+| Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
 
 ## Cấu trúc thư mục
@@ -31,25 +33,23 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | `product/` | Đặc tả sản phẩm và hành vi cấp cao. |
 | `architecture/` | Kiến trúc tổng thể, trạng thái runtime, baseline dữ liệu runtime. |
 | `guides/` | Hướng dẫn cài đặt, sử dụng và vận hành. |
-| `scanner/` | Scanner V2, scoring, SMC và kế hoạch tối ưu quét. |
-| `backtest/` | Thiết kế Backtest, runbook release, review, simplification và điều tra validation. |
+| `scanner/` | Runtime Scanner V3 và kiến trúc đích Scanner V4. |
+| `backtest/` | Thiết kế Backtest hiện hành và runbook release. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
-| `macro/` | Macro score, economic calendar, VIX pair sensitivity, runbook và review lịch sử. |
+| `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
 | `ui/` | Thiết kế màn hình, style guide, audit/report/lock/baseline UI. |
-| `archive/` | Tài liệu lịch sử, không phải runtime contract hiện hành. |
 
 ## Tài liệu hiện hành quan trọng
 
-- `scanner/scanner-flow.md`: contract luồng Scanner V2.
+- `scanner/scanner-flow.md`: contract luồng Scanner V3 hiện hành.
 - `scanner/technical-scoring-architecture.md`: contract chấm điểm và ranking.
+- `scanner/scanner-v4-architecture.md`: quyết định target TechnicalScore chỉ gồm
+  Trend/Momentum/Location/SMC, Risk và Macro chuyển thành gate, direct cutover
+  không shadow; **chưa phải runtime contract cho tới khi code v4 hoàn tất**.
 - `backtest/system_backtest_design.md`: thiết kế Backtest hiện hành.
 - `backtest/backtest-release-runbook.md`: quy trình golden, shadow, forward-demo và release.
 - `architecture/runtime-status.md`: trạng thái rollout/settings thực tế trên máy hiện tại.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
-- `macro/step7_vix_pair_sensitivity_operations.md`: runbook VIX pair-aware,
-  evidence snapshot, re-validation và giới hạn còn mở.
-- `macro/step7_vix_pair_sensitivity_review.md`: review lịch sử ngày 07/08 và
-  addendum remediation ngày 09/08; không thay thế runtime contract.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
 
 ## Bằng chứng kiểm thử UI
@@ -69,6 +69,16 @@ Các file này không phải tài liệu đọc chính, nhưng đang được to
   hoặc runbook tương ứng.
 - Thay đổi UI contract phải cập nhật `ui/style-guide.md` và các lock/report nếu cần.
 - Thay đổi macro scoring phải cập nhật `macro/macro_score_architecture.md`; nếu
-  liên quan calibration/TTL/map runtime thì phải cập nhật thêm runbook
-  `macro/step7_vix_pair_sensitivity_operations.md`.
-- Tài liệu proposal hoặc archive phải ghi rõ trạng thái để không bị hiểu là runtime contract.
+  liên quan calibration/TTL/map runtime thì cập nhật mục Bước 7 trong cùng file.
+- Mỗi bước Scanner V4 phải được phân tích và cập nhật vào
+  `scanner/scanner-v4-architecture.md` trước khi sửa code.
+- Scanner V4 direct-cutover không dùng dual scoring/shadow v3-v4. Tài liệu
+  runtime V3 chỉ được đổi thành V4 khi code, test và version của bước tương ứng
+  đã hoàn tất.
+
+## Tài liệu đã hợp nhất hoặc loại bỏ
+
+Các proposal năm thành phần, SMC migration plan/log và build-evidence bundle,
+MVP coding guide, Order Management review/implementation plan đã hoàn tất được
+loại khỏi cây tài liệu. Contract còn hiệu lực đã được giữ trong tài liệu
+canonical tương ứng; lịch sử chi tiết vẫn truy được qua Git.
