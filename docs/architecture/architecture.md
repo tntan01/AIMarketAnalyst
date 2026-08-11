@@ -38,7 +38,6 @@ ai-market-analyst/
     constants.py
     paths.py
     settings.py
-    currency_drivers.json
     symbol_profiles.json
     ai_providers.json
     interest_rates.json
@@ -93,7 +92,6 @@ ai-market-analyst/
     base_worker.py
     scanner_worker.py
     backtest_worker.py
-    analyze_worker.py
 
   services/
     mt5_service.py
@@ -139,14 +137,6 @@ ai-market-analyst/
     icons/
     fonts/
     chart/
-
-  prompts/
-    full_analysis_prompt.md
-    sections/
-      macro_flow.md
-      behavior_model.md
-      technical_smc.md
-      output_schema.md
 
   data/
     vix_pair_sensitivity.json
@@ -495,24 +485,6 @@ Không sửa trực tiếp schema bằng code rải rác. Khi thay đổi databa
 Chứa script đóng gói và ghi chú release.
 
 Mọi asset cần dùng khi đóng gói như icon, font, QSS, sample config và migration phải được liệt kê trong spec/script.
-
-### `prompts/`
-
-Chứa prompt template dạng markdown.
-
-Prompt không nên hard-code riêng cho từng cặp. Cách đúng:
-
-```text
-Base Prompt Template
-+ Currency Drivers
-+ Symbol Profile
-+ Macro Snapshot
-+ Technical/SMC Context do Python tính
-+ Output Schema
-= Prompt cuối gửi AI
-```
-
-AI service chỉ nhận prompt cuối từ `core/prompt_builder.py`.
 
 ## Nguyên tắc dependency
 

@@ -34,7 +34,6 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 | `ui/` | **Giao diện PyQt6**: screens, components, theme, chart bridge |
 | `config/` | Cấu hình: constants, paths, settings, risk params, AI providers, symbol profiles |
 | `data/` | SQL migrations + seed data (journal DB) |
-| `prompts/` | Prompt AI (full analysis + sections) |
 | `tools/`, `scripts/` | Tiện ích dev/audit/validation (chạy thủ công, không phải runtime) |
 | `packaging/` | Build Windows (PyInstaller) |
 | `tests/` | Pytest |
@@ -92,7 +91,6 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `services/ai_service.py` — facade AI
 - `services/ai/provider_adapter.py` + `providers/*.py` — adapter từng provider (openai, anthropic, gemini, deepseek, openai_compatible)
 - `services/ai_provider_catalog_service.py` — catalog provider
-- `prompts/` — nội dung prompt
 
 ### Dữ liệu thị trường
 - `services/mt5_service.py` — MT5

@@ -7,7 +7,6 @@ a = Analysis(
     datas=[
         ("../assets", "assets"),
         ("../config/*.json", "config"),
-        ("../prompts", "prompts"),
         ("../data/migrations/*.sql", "data/migrations"),
         ("../data/vix_pair_sensitivity.json", "data"),
         ("../ui/styles/*.qss", "ui/styles"),

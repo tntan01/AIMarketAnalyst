@@ -7,7 +7,6 @@ from config.constants import APP_ID
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = PROJECT_ROOT / "config"
-PROMPTS_DIR = PROJECT_ROOT / "prompts"
 ASSETS_DIR = PROJECT_ROOT / "assets"
 
 

@@ -37,12 +37,6 @@
       "reason": "Nền trong suốt của widget/WebEngine đã chuyển vào QSS chung; QColor trong suốt của trang WebEngine vẫn là cấu hình runtime bắt buộc."
     },
     {
-      "path": "ui/components/info_card.py",
-      "category": "semantic_component_property",
-      "disposition": "centralized",
-      "reason": "InfoCard không còn stylesheet cục bộ; màu accent dùng semantic property và selector chung."
-    },
-    {
       "path": "ui/screens/dashboard_screen.py",
       "category": "runtime_state_and_dialog_style",
       "disposition": "centralized",

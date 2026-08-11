@@ -3,7 +3,6 @@ Test empty/whitespace response guard trong _analyze_loaded_result.
 """
 import sys
 import unittest
-from unittest.mock import patch
 from PyQt6.QtWidgets import QApplication
 
 
@@ -39,44 +38,6 @@ class TestEmptyAiResponseGuard(unittest.TestCase):
         """None → guard kích hoạt."""
         response = None
         self.assertTrue(not response or not response.strip())
-
-    # ── Worker still emits succeeded for empty response ────────────
-
-    def test_worker_emits_succeeded_for_empty_response(self):
-        """Worker emit succeeded với chuỗi rỗng — UI layer tự xử lý."""
-        from services.ai_service import AIProviderConfig
-        from workers.analyze_worker import AnalyzeWorker
-
-        config = AIProviderConfig(provider="deepseek", model="deepseek-chat", api_key="sk-test")
-        worker = AnalyzeWorker(config, "prompt")
-
-        responses = []
-        worker.succeeded.connect(lambda r: responses.append(r))
-
-        with patch("workers.analyze_worker.AIService") as MockAIService:
-            MockAIService.return_value.analyze.return_value = ""
-            worker.run()
-
-        self.assertEqual(len(responses), 1)
-        self.assertEqual(responses[0], "")
-
-    def test_worker_emits_succeeded_for_whitespace_response(self):
-        """Worker emit succeeded với whitespace — UI layer tự xử lý."""
-        from services.ai_service import AIProviderConfig
-        from workers.analyze_worker import AnalyzeWorker
-
-        config = AIProviderConfig(provider="deepseek", model="deepseek-chat", api_key="sk-test")
-        worker = AnalyzeWorker(config, "prompt")
-
-        responses = []
-        worker.succeeded.connect(lambda r: responses.append(r))
-
-        with patch("workers.analyze_worker.AIService") as MockAIService:
-            MockAIService.return_value.analyze.return_value = "   \n  "
-            worker.run()
-
-        self.assertEqual(len(responses), 1)
-        self.assertEqual(responses[0], "   \n  ")
 
     # ── _format_ai_to_html handles empty input gracefully ──────────
 
