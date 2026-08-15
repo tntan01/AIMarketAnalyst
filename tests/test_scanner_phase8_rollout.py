@@ -332,9 +332,6 @@ def _request() -> ScannerRequest:
 def test_auto_trade_loop_never_calls_execution_in_shadow():
     controller = ScannerController.__new__(ScannerController)
     controller.observability = _EventSink()
-    controller._auto_trade_safety_decision = lambda *_args: SimpleNamespace(
-        auto_trade_candidate=True
-    )
     controller.execute_order_candidate = lambda *_args, **_kwargs: (
         pytest.fail("SHADOW must not call execution")
     )
@@ -344,7 +341,14 @@ def test_auto_trade_loop_never_calls_execution_in_shadow():
     )
 
     result = controller._execute_auto_trades(
-        [{"symbol": "EUR/USD", "scan_id": "scan-1"}],
+        [{
+            "symbol": "EUR/USD",
+            "scan_id": "scan-1",
+            # Genuine V4 READY_NOW candidate so the auto-trade gate lets it
+            # through to the rollout guard; the shadow stage must still block it.
+            "candidate_status": "READY_NOW",
+            "auto_trade_candidate": True,
+        }],
         _request(),
         rollout_policy=policy,
     )
@@ -357,13 +361,10 @@ def test_auto_trade_loop_never_calls_execution_in_shadow():
     )
 
 
-def test_auto_trade_canary_caps_risk_before_shared_execution(monkeypatch):
+def test_auto_trade_canary_caps_risk_before_shared_execution():
     controller = ScannerController.__new__(ScannerController)
     controller.observability = _EventSink()
     controller.orders_screen = None
-    controller._auto_trade_safety_decision = lambda *_args: SimpleNamespace(
-        auto_trade_candidate=True
-    )
     captured: dict = {}
 
     def _execute(proposal, *, risk_percent, comment):
@@ -375,11 +376,6 @@ def test_auto_trade_canary_caps_risk_before_shared_execution(monkeypatch):
         return {"success": True, "order_id": 1}
 
     controller.execute_order_candidate = _execute
-    monkeypatch.setattr(
-        scanner_controller_module,
-        "build_candidate_order_payload",
-        lambda *_args, **_kwargs: {"symbol": "EUR/USD"},
-    )
     policy = build_rollout_policy(
         _settings(
             stage=ROLLOUT_CANARY,
@@ -391,7 +387,19 @@ def test_auto_trade_canary_caps_risk_before_shared_execution(monkeypatch):
     )
 
     result = controller._execute_auto_trades(
-        [{"symbol": "EUR/USD"}],
+        [{
+            "symbol": "EUR/USD",
+            "candidate_status": "READY_NOW",
+            "auto_trade_candidate": True,
+            "candidate_order_payload": {
+                "symbol": "EUR/USD",
+                "side": "buy",
+                "entry": 1.1000,
+                "stop_loss": 1.0980,
+                "take_profit": 1.1080,
+                "scoring_version": "scanner-v4",
+            },
+        }],
         _request(),
         rollout_policy=policy,
     )

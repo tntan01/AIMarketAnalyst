@@ -1,0 +1,484 @@
+{
+  "smoke_version": "scanner-v4-release-v1",
+  "generated_at_utc": "2026-08-14T12:00:00+00:00",
+  "threshold_policy": {
+    "policy_version": "scanner-threshold-policy-v4",
+    "technical_floor": 40,
+    "setup_floor": 35,
+    "min_score_gap": 5,
+    "min_risk_reward": "2"
+  },
+  "ranked_symbols": [
+    "EURUSD",
+    "US30",
+    "XAUUSD"
+  ],
+  "ranked_statuses": [
+    "BLOCKED",
+    "BLOCKED",
+    "BLOCKED"
+  ],
+  "grouped_status_counts": {
+    "BLOCKED": 3
+  },
+  "ready_above_default_setup_floor": [
+    "buy",
+    "buy",
+    "buy"
+  ],
+  "ready_order_intents": [],
+  "default_v3_artifact": {
+    "kind": "v3_audit_only",
+    "version_field": "candidate_ledger_version",
+    "version": "backtest-candidate-ledger-v1",
+    "reason_codes": [
+      "SCANNER_V4_LEGACY_V3_AUDIT_ONLY"
+    ]
+  },
+  "pairs": [
+    {
+      "composition_version": "scanner-composition-v4",
+      "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:6ca0ba2e27e8",
+      "symbol": "XAUUSD",
+      "route_status": "routed",
+      "row": {
+        "row_version": "scanner-v4-row-v1",
+        "composition_version": "scanner-composition-v4",
+        "scoring_version": "scanner-v4",
+        "feature_version": "scanner-features-v4",
+        "output_schema_version": "scanner-output-v4",
+        "safety_policy_version": "scanner-safety-policy-v4",
+        "macro_policy_version": "scanner-macro-policy-v4",
+        "snapshot_version": "scanner-pair-snapshot-v4",
+        "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:6ca0ba2e27e8",
+        "symbol": "XAUUSD",
+        "captured_at": "2026-08-14T12:00:00+00:00",
+        "capture_source": "live",
+        "candidate_status": "BLOCKED",
+        "selected_side": "buy",
+        "score_gap": 44,
+        "decision_cap": null,
+        "side_scores": [
+          {
+            "side": "buy",
+            "technical_signal_score": 76,
+            "setup_score": 72,
+            "evidence_score": 60,
+            "evidence_source": "evidence_feed",
+            "execution_quality_score": 70,
+            "execution_quality_source": "exec_feed",
+            "reason_codes": []
+          },
+          {
+            "side": "sell",
+            "technical_signal_score": 32,
+            "setup_score": 43,
+            "evidence_score": 60,
+            "evidence_source": "evidence_feed",
+            "execution_quality_score": 70,
+            "execution_quality_source": "exec_feed",
+            "reason_codes": []
+          }
+        ],
+        "selected_technical_signal_score": 76,
+        "selected_setup_score": 72,
+        "safety_status": "UNKNOWN",
+        "safety_reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET"
+        ],
+        "macro_status": "UNKNOWN",
+        "macro_reason_codes": [
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET"
+        ],
+        "gate_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN",
+          "GATE_JOURNAL_POLICY_OPEN"
+        ],
+        "reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "block_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ]
+      },
+      "candidate": {
+        "symbol": "XAUUSD",
+        "captured_at": "2026-08-14T12:00:00+00:00",
+        "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:6ca0ba2e27e8",
+        "composition_version": "scanner-composition-v4",
+        "scoring_version": "scanner-v4",
+        "feature_version": "scanner-features-v4",
+        "output_schema_version": "scanner-output-v4",
+        "snapshot_version": "scanner-pair-snapshot-v4",
+        "safety_policy_version": "scanner-safety-policy-v4",
+        "macro_policy_version": "scanner-macro-policy-v4",
+        "threshold_policy_version": "scanner-threshold-policy-v4",
+        "entry_confirmation": "confirmed",
+        "candidate_status": "BLOCKED",
+        "selected_side": "buy",
+        "technical_signal_score": 76,
+        "setup_score": 72,
+        "score_gap": 44,
+        "risk_reward_ratio": "3",
+        "proximity": null,
+        "evidence_score": 60,
+        "execution_quality_score": 70,
+        "decision_cap": null,
+        "gate_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN",
+          "GATE_JOURNAL_POLICY_OPEN"
+        ],
+        "reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "block_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "execution": {
+          "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:6ca0ba2e27e8",
+          "captured_at": "2026-08-14T12:00:00+00:00",
+          "fresh_snapshot": true,
+          "can_execute": false,
+          "prepared": false,
+          "revalidation_required": true,
+          "reason_codes": [
+            "V4_EXECUTION_FRESH_OK",
+            "V4_EXECUTION_NOT_READY",
+            "V4_EXECUTION_REVALIDATION_REQUIRED",
+            "V4_ORDER_NOT_PREPARED"
+          ]
+        },
+        "order_payload": null
+      }
+    },
+    {
+      "composition_version": "scanner-composition-v4",
+      "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:eee2edc46326",
+      "symbol": "EURUSD",
+      "route_status": "routed",
+      "row": {
+        "row_version": "scanner-v4-row-v1",
+        "composition_version": "scanner-composition-v4",
+        "scoring_version": "scanner-v4",
+        "feature_version": "scanner-features-v4",
+        "output_schema_version": "scanner-output-v4",
+        "safety_policy_version": "scanner-safety-policy-v4",
+        "macro_policy_version": "scanner-macro-policy-v4",
+        "snapshot_version": "scanner-pair-snapshot-v4",
+        "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:eee2edc46326",
+        "symbol": "EURUSD",
+        "captured_at": "2026-08-14T12:00:00+00:00",
+        "capture_source": "live",
+        "candidate_status": "BLOCKED",
+        "selected_side": "buy",
+        "score_gap": 44,
+        "decision_cap": null,
+        "side_scores": [
+          {
+            "side": "buy",
+            "technical_signal_score": 76,
+            "setup_score": 72,
+            "evidence_score": 60,
+            "evidence_source": "evidence_feed",
+            "execution_quality_score": 70,
+            "execution_quality_source": "exec_feed",
+            "reason_codes": []
+          },
+          {
+            "side": "sell",
+            "technical_signal_score": 32,
+            "setup_score": 43,
+            "evidence_score": 60,
+            "evidence_source": "evidence_feed",
+            "execution_quality_score": 70,
+            "execution_quality_source": "exec_feed",
+            "reason_codes": []
+          }
+        ],
+        "selected_technical_signal_score": 76,
+        "selected_setup_score": 72,
+        "safety_status": "UNKNOWN",
+        "safety_reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET"
+        ],
+        "macro_status": "UNKNOWN",
+        "macro_reason_codes": [
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET"
+        ],
+        "gate_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN",
+          "GATE_JOURNAL_POLICY_OPEN"
+        ],
+        "reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "block_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ]
+      },
+      "candidate": {
+        "symbol": "EURUSD",
+        "captured_at": "2026-08-14T12:00:00+00:00",
+        "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:eee2edc46326",
+        "composition_version": "scanner-composition-v4",
+        "scoring_version": "scanner-v4",
+        "feature_version": "scanner-features-v4",
+        "output_schema_version": "scanner-output-v4",
+        "snapshot_version": "scanner-pair-snapshot-v4",
+        "safety_policy_version": "scanner-safety-policy-v4",
+        "macro_policy_version": "scanner-macro-policy-v4",
+        "threshold_policy_version": "scanner-threshold-policy-v4",
+        "entry_confirmation": "confirmed",
+        "candidate_status": "BLOCKED",
+        "selected_side": "buy",
+        "technical_signal_score": 76,
+        "setup_score": 72,
+        "score_gap": 44,
+        "risk_reward_ratio": "3",
+        "proximity": null,
+        "evidence_score": 60,
+        "execution_quality_score": 70,
+        "decision_cap": null,
+        "gate_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN",
+          "GATE_JOURNAL_POLICY_OPEN"
+        ],
+        "reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "block_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "execution": {
+          "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:eee2edc46326",
+          "captured_at": "2026-08-14T12:00:00+00:00",
+          "fresh_snapshot": true,
+          "can_execute": false,
+          "prepared": false,
+          "revalidation_required": true,
+          "reason_codes": [
+            "V4_EXECUTION_FRESH_OK",
+            "V4_EXECUTION_NOT_READY",
+            "V4_EXECUTION_REVALIDATION_REQUIRED",
+            "V4_ORDER_NOT_PREPARED"
+          ]
+        },
+        "order_payload": null
+      }
+    },
+    {
+      "composition_version": "scanner-composition-v4",
+      "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:a5d95426d9c4",
+      "symbol": "US30",
+      "route_status": "routed",
+      "row": {
+        "row_version": "scanner-v4-row-v1",
+        "composition_version": "scanner-composition-v4",
+        "scoring_version": "scanner-v4",
+        "feature_version": "scanner-features-v4",
+        "output_schema_version": "scanner-output-v4",
+        "safety_policy_version": "scanner-safety-policy-v4",
+        "macro_policy_version": "scanner-macro-policy-v4",
+        "snapshot_version": "scanner-pair-snapshot-v4",
+        "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:a5d95426d9c4",
+        "symbol": "US30",
+        "captured_at": "2026-08-14T12:00:00+00:00",
+        "capture_source": "live",
+        "candidate_status": "BLOCKED",
+        "selected_side": "buy",
+        "score_gap": 44,
+        "decision_cap": null,
+        "side_scores": [
+          {
+            "side": "buy",
+            "technical_signal_score": 76,
+            "setup_score": 72,
+            "evidence_score": 60,
+            "evidence_source": "evidence_feed",
+            "execution_quality_score": 70,
+            "execution_quality_source": "exec_feed",
+            "reason_codes": []
+          },
+          {
+            "side": "sell",
+            "technical_signal_score": 32,
+            "setup_score": 43,
+            "evidence_score": 60,
+            "evidence_source": "evidence_feed",
+            "execution_quality_score": 70,
+            "execution_quality_source": "exec_feed",
+            "reason_codes": []
+          }
+        ],
+        "selected_technical_signal_score": 76,
+        "selected_setup_score": 72,
+        "safety_status": "UNKNOWN",
+        "safety_reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET"
+        ],
+        "macro_status": "UNKNOWN",
+        "macro_reason_codes": [
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET"
+        ],
+        "gate_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN",
+          "GATE_JOURNAL_POLICY_OPEN"
+        ],
+        "reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "block_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ]
+      },
+      "candidate": {
+        "symbol": "US30",
+        "captured_at": "2026-08-14T12:00:00+00:00",
+        "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:a5d95426d9c4",
+        "composition_version": "scanner-composition-v4",
+        "scoring_version": "scanner-v4",
+        "feature_version": "scanner-features-v4",
+        "output_schema_version": "scanner-output-v4",
+        "snapshot_version": "scanner-pair-snapshot-v4",
+        "safety_policy_version": "scanner-safety-policy-v4",
+        "macro_policy_version": "scanner-macro-policy-v4",
+        "threshold_policy_version": "scanner-threshold-policy-v4",
+        "entry_confirmation": "confirmed",
+        "candidate_status": "BLOCKED",
+        "selected_side": "buy",
+        "technical_signal_score": 76,
+        "setup_score": 72,
+        "score_gap": 44,
+        "risk_reward_ratio": "3",
+        "proximity": null,
+        "evidence_score": 60,
+        "execution_quality_score": 70,
+        "decision_cap": null,
+        "gate_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN",
+          "GATE_JOURNAL_POLICY_OPEN"
+        ],
+        "reason_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "block_codes": [
+          "SAFETY_DATA_FRESHNESS_UNKNOWN",
+          "SAFETY_SPREAD_THRESHOLD_UNSET",
+          "SAFETY_VOLATILITY_BAND_UNSET",
+          "MACRO_DEADBAND_UNSET",
+          "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_PORTFOLIO_POLICY_OPEN"
+        ],
+        "execution": {
+          "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:a5d95426d9c4",
+          "captured_at": "2026-08-14T12:00:00+00:00",
+          "fresh_snapshot": true,
+          "can_execute": false,
+          "prepared": false,
+          "revalidation_required": true,
+          "reason_codes": [
+            "V4_EXECUTION_FRESH_OK",
+            "V4_EXECUTION_NOT_READY",
+            "V4_EXECUTION_REVALIDATION_REQUIRED",
+            "V4_ORDER_NOT_PREPARED"
+          ]
+        },
+        "order_payload": null
+      }
+    }
+  ]
+}

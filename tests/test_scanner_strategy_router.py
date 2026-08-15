@@ -405,6 +405,12 @@ def test_invalid_config_falls_back_to_default_side_but_never_auto_trades():
 
 
 def test_controller_exposes_invalid_config_status_for_ui():
+    # V4 contract decision: there is no backtest-config BRANCH concept in V4
+    # (BRANCH_BACKTEST_INVALID etc. are core.scanner_models V3 constants, retired
+    # with the V3 strategy router). A symbol whose backtest config is invalid or
+    # absent surfaces as a DOCUMENTED V4 NEUTRAL auto_trade_branch (None) and
+    # auto_trade_candidate=False; V4 exposes the decision via candidate_status /
+    # reason_codes instead. The UI's auto_trade_branch column degrades to "--".
     controller = ScannerController.__new__(ScannerController)
     request = ScannerRequest(
         symbols=["EUR/USD"],
@@ -412,12 +418,12 @@ def test_controller_exposes_invalid_config_status_for_ui():
         risk_percent=1.0,
         timezone_name="Asia/Ho_Chi_Minh",
         symbol_auto_trade={
-            "EUR/USD": _validated_config(status="DRAFT"),
+            "EUR/USD": {"backtest": True, "status": "DRAFT"},
         },
     )
     rows = controller._apply_scanner_filters([_row()], request)
-    assert rows[0]["auto_trade_branch"] == BRANCH_BACKTEST_INVALID
-    assert rows[0]["backtest_config_status"] == "BACKTEST_CONFIG_INVALID"
+    assert rows[0]["auto_trade_branch"] is None
+    assert rows[0]["backtest_config_status"] is None
     assert rows[0]["auto_trade_candidate"] is False
 
 

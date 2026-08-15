@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 
+
 BUY = "buy"
 SELL = "sell"
 VALID_SIDES = frozenset({BUY, SELL})
@@ -361,3 +362,37 @@ class ScannerRankingEvaluation:
             "expected_value_r": self.expected_value_r,
             "breakdown": dict(self.breakdown),
         }
+
+
+# Target-only Scanner V4 contract exports.  Keeping these imports after all
+# executable V3 definitions prevents target identities from changing the current
+# runtime constants or serialization paths before direct cutover.
+from core.scanner_v4_models import (  # noqa: E402
+    CanonicalPairSnapshot,
+    DecisionResult,
+    GateCheck,
+    MacroAssessment,
+    MacroGateResult,
+    MarketSafetyResult,
+    PAYLOAD_INVALID,
+    PAYLOAD_LEGACY_V3,
+    PAYLOAD_V4,
+    SCANNER_V4_FEATURE_VERSION,
+    SCANNER_V4_MACRO_POLICY_VERSION,
+    SCANNER_V4_OUTPUT_SCHEMA_VERSION,
+    SCANNER_V4_RANKING_VERSION,
+    SCANNER_V4_SAFETY_POLICY_VERSION,
+    SCANNER_V4_SCORING_VERSION,
+    SCANNER_V4_SNAPSHOT_VERSION,
+    SCANNER_V4_VERSION_FIELDS,
+    ScannerPayloadClassification,
+    ScannerV4ContractError,
+    SideScore,
+    TechnicalBreakdown,
+    TechnicalComponent,
+    classify_scanner_payload,
+    classify_scanner_payload_json,
+    deserialize_canonical_pair_snapshot,
+    serialize_canonical_pair_snapshot,
+    validate_canonical_pair_snapshot,
+)

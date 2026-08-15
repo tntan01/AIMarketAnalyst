@@ -15,6 +15,15 @@ from core.smc_versions import SMC_SCORER_VERSION
 
 SCORING_PROVENANCE_VERSION = "phase8-scoring-provenance-v1"
 
+_SCORING_PROVENANCE_FIELDS = (
+    "provenance_version",
+    "score_metric",
+    "scanner_scorer_version",
+    "scanner_feature_version",
+    "smc_scorer_version",
+    "smc_domain_version",
+)
+
 
 def build_scoring_provenance() -> dict[str, Any]:
     """Return the immutable version identity for one analysis decision.
@@ -34,12 +43,24 @@ def build_scoring_provenance() -> dict[str, Any]:
 
 
 def normalize_scoring_provenance(value: object) -> dict[str, Any]:
-    """Normalize a payload without allowing missing fields to look current."""
+    """Accept only the exact executable V3 identity; otherwise fail closed.
 
-    fallback = build_scoring_provenance()
-    if not isinstance(value, dict):
-        return fallback
-    return {
-        key: value.get(key, default)
-        for key, default in fallback.items()
-    }
+    This compatibility normalizer is intentionally *not* a V4 reader.  Missing,
+    blank, incorrectly typed, foreign, or target-V4 fields become a fully blank
+    identity so the V3 row adapter cannot relabel an untrusted payload. New V3
+    artifacts must use :func:`build_scoring_provenance`; Scanner V4 payloads use
+    the strict validator in ``core.scanner_v4_models``.
+    """
+
+    rejected = {key: "" for key in _SCORING_PROVENANCE_FIELDS}
+    if type(value) is not dict:
+        return rejected
+    if set(value) != set(_SCORING_PROVENANCE_FIELDS):
+        return rejected
+    expected = build_scoring_provenance()
+    if any(
+        type(value.get(key)) is not str or value.get(key) != expected[key]
+        for key in _SCORING_PROVENANCE_FIELDS
+    ):
+        return rejected
+    return {key: value[key] for key in _SCORING_PROVENANCE_FIELDS}

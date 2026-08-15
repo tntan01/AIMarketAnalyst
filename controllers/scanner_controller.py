@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import asdict, replace
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from math import isfinite
 from pathlib import Path
@@ -18,25 +18,35 @@ from typing import Any
 from PyQt6.QtCore import QThread
 
 from config.paths import app_data_dir
-from core.scanner import (
-    ScannerRequest,
-    blocked_scanner_row,
-    build_scanner_output,
-    scanner_row_from_analysis,
-    sort_scanner_rows,
-)
+from core.scanner import ScannerRequest  # retained request model (V3 row helpers re-platformed; see C2b)
 from core.scanner_ai_auditor import (
     build_ai_setup_audit_prompt,
     parse_ai_setup_audit,
 )
+from core.scanner_v4_composition import AccountState, JournalState, PortfolioState
+from core.scanner_v4_live_producers import (
+    build_live_market_safety_context,
+    derive_live_analysis,
+)
+from core.scanner_v4_models import (
+    READY_NOW,
+    WAITING_CONFIRMATION,
+    WATCH_ZONE,
+    BLOCKED,
+    DATA_UNAVAILABLE,
+)
+from core.scanner_v4_release import run_v4_pair_from_live
+from core.scanner_v4_ui_adapter import (
+    ANALYSIS_OK,
+    AdapterContractError,
+    blocked_ui_row,
+    build_scanner_output,
+    pair_to_ui_row,
+    scanner_summary,
+)
 from core.backtest_config import serialize_backtest_config
 from core.execution_revalidation_engine import revalidate_execution
 from core.portfolio_risk_engine import evaluate_portfolio_risk
-from core.scanner_candidate_engine import (
-    build_candidate_order_payload,
-    is_structural_reject_row,
-)
-from core.scanner_ranking_engine import _find_scenario_for_side
 from core.scanner_session_review import build_market_brief_prompt
 from core.scanner_observability import (
     SCANNER_OBSERVABILITY_VERSION,
@@ -57,12 +67,6 @@ from core.scanner_rollout import (
     build_rollout_policy,
     build_shadow_report,
 )
-from core.scanner_safety import (
-    AutoTradeSafetyDecision,
-    BRANCH_BACKTEST_INVALID,
-    evaluate_auto_trade_safety,
-)
-from core.analysis_engine import analyze_symbol
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot, calculate_current_effective_rr
 from services.ai_service import AIProviderConfig, AIService
 from services.data_provider import ProviderNotReadyError
@@ -130,6 +134,153 @@ def _run_in_performance_phase(
 ) -> Any:
     with safe_performance_phase(tracker, phase_name):
         return callback(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# C2b — V4 re-platform local helpers (never fabricate; read real V4 sources)
+# ---------------------------------------------------------------------------
+
+# V4 candidate_status -> the legacy scanner_group label run_market_scan maps for
+# ``legacy_candidate_status``. Read from the real row candidate_status only.
+_V4_SCANNER_GROUP_BY_STATUS: dict[str, str] = {
+    READY_NOW: "ready_now",
+    WAITING_CONFIRMATION: "waiting_confirmation",
+    WATCH_ZONE: "watch_zone",
+    BLOCKED: "blocked",
+    DATA_UNAVAILABLE: "data_unavailable",
+}
+
+# Statuses that make a row an auto-trade candidate (mirrors the adapter's
+# AUTO_TRADE_CANDIDATE_STATUSES set copy for local convenience).
+_AUTO_TRADE_STATUSES = {READY_NOW, WAITING_CONFIRMATION}
+
+
+def _v4_candidate_status(row: dict[str, Any]) -> str:
+    """Normalize a row's candidate_status to upper-case, failing closed."""
+    value = str(row.get("candidate_status") or ("DATA_UNAVAILABLE" if row.get("candidate_status") is None else "")).strip().upper()
+    return value if value else DATA_UNAVAILABLE
+
+
+def _is_structural_reject_row(row: object) -> bool:
+    """V4 has no structural-reject; stable predicate for V3-era callers.
+
+    Always False for real V4 rows (analysis_status is ``ok``), so the rows the
+    adapter emits are never mislabelled as fast-path rejects.
+    """
+    return bool(
+        isinstance(row, dict)
+        and str(row.get("analysis_status", "") or "").strip().lower()
+        == "structural_reject"
+    )
+
+
+def _find_scenario_for_side(
+    scenarios: object,
+    side: str,
+    fallback_to_first: bool = False,
+) -> object:
+    """Return the scenario whose side matches (V4 scenario dicts carry ``side``)."""
+    if not isinstance(scenarios, list):
+        return None
+    side = str(side or "").strip().lower()
+    for scenario in scenarios:
+        if isinstance(scenario, dict) and str(
+            scenario.get("side") or scenario.get("type") or ""
+        ).strip().lower() == side:
+            return scenario
+    if fallback_to_first and scenarios:
+        return scenarios[0]
+    return None
+
+
+def _v4_sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Stable V4 sort (no V3 deletion import): real candidate_status + score_gap.
+
+    Ranking order mirrors the locked V4 status precedence; ties keep input
+    order (stable). All sort keys are REAL V4 values the adapter emits.
+    """
+    _priority = {
+        READY_NOW: 0,
+        WAITING_CONFIRMATION: 1,
+        WATCH_ZONE: 2,
+        BLOCKED: 3,
+        DATA_UNAVAILABLE: 4,
+    }
+
+    def _key(row: dict[str, Any]) -> tuple[int, float]:
+        status = _v4_candidate_status(row)
+        priority = _priority.get(status, 5)
+        try:
+            gap = float(row.get("score_gap") or 0.0)
+        except (TypeError, ValueError):
+            gap = 0.0
+        return (priority, -gap)
+
+    return sorted(rows, key=_key)
+
+
+def _v4_order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
+    """Build the executable-order proposal from the row's V4 order payload.
+
+    Uses ONLY real V4 fields (``candidate_order_payload`` + row identity).  The
+    payload tracks entry/SL/TP from the candidate's selected-side plan; volume
+    is re-computed at dispatch by ``execute_order_candidate``. Returns None when
+    there is no real payload (never fabricates an order intent).
+    """
+    payload = row.get("candidate_order_payload")
+    if not isinstance(payload, dict):
+        return None
+    symbol = str(row.get("symbol") or "")
+    broker_symbol = str(row.get("broker_symbol") or "").strip() or symbol
+    side = str(payload.get("side") or "").strip()
+    stop_loss = payload.get("stop_loss")
+    take_profit = payload.get("take_profit")
+    if not symbol or side.lower() not in {"buy", "sell"}:
+        return None
+    proposal: dict[str, Any] = {
+        "symbol": symbol,
+        "broker_symbol": broker_symbol,
+        "side": side,
+        "entry_price": payload.get("entry"),
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "volume": payload.get("volume"),
+        "scan_id": row.get("scan_id", ""),
+        "row_id": row.get("row_id", ""),
+        "settings_hash": row.get("settings_hash", ""),
+        "setup_score": payload.get("setup_score"),
+        "required_min_rr": payload.get("risk_reward_ratio"),
+        "scorer_version": payload.get("scoring_version"),
+        "ranking_version": payload.get("feature_version"),
+    }
+    return proposal
+
+
+def _v4_consecutive_losses(closed_trades: object) -> int | None:
+    """Trailing consecutive losing trades from real closed_trades (fail-closed).
+
+    ``closed_trades`` is newest-first; counts contiguous losses via the REAL
+    ``result_r`` / ``result_pct`` fields. Returns None when the data cannot be
+    read honestly (never invents a count).
+    """
+    if not isinstance(closed_trades, list):
+        return None
+    count = 0
+    for trade in closed_trades:
+        if not isinstance(trade, dict):
+            return None
+        result = trade.get("result_r", trade.get("result_pct"))
+        if result is None:
+            return None
+        try:
+            value = float(result)
+        except (TypeError, ValueError):
+            return None
+        if value < 0:
+            count += 1
+        else:
+            break
+    return count
 
 
 class ScannerController:
@@ -530,6 +681,26 @@ class ScannerController:
             "timezone_name": request.timezone_name,
         }
 
+        # ---- C2b: build the V4 account/portfolio/journal state ONCE (main thread)
+        # and thread it through the fetch packet (never fabricate; fail-closed).
+        v4_consecutive_losses = _v4_consecutive_losses(closed_trades)
+        try:
+            mt5_open_positions = getattr(self.mt5, "open_positions_count", None)
+            v4_open_positions = (
+                int(mt5_open_positions())
+                if callable(mt5_open_positions)
+                else None
+            )
+        except Exception:
+            v4_open_positions = None
+        v4_account = AccountState(free_margin=mt5_balance, required_margin=None)
+        v4_portfolio = PortfolioState(
+            open_positions=v4_open_positions, exposure_ratio=None
+        )
+        v4_journal = JournalState(
+            consecutive_losses=v4_consecutive_losses, recent_drawdown_ratio=None
+        )
+
         # ---- Phase 1: fetch MT5 data sequentially (MT5 works best single-threaded) ----
         _record_performance(performance, "start_phase", "mt5_fetch")
         packets: list[dict[str, Any] | None] = []
@@ -553,6 +724,9 @@ class ScannerController:
                         )
                     ),
                     history_cache_identity=mt5_history_cache_identity,
+                    v4_account=v4_account,
+                    v4_portfolio=v4_portfolio,
+                    v4_journal=v4_journal,
                 )
             except Exception as exc:
                 pkt = None
@@ -601,7 +775,7 @@ class ScannerController:
             for i, pkt in enumerate(packets):
                 symbol = request.symbols[i]
                 if pkt is None:
-                    row = blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
+                    row = blocked_ui_row(symbol, "Không tìm thấy mã broker.")
                     row["input_timestamps"] = {}
                     rows.append(row)
                     self._emit_observability(
@@ -633,7 +807,11 @@ class ScannerController:
                 try:
                     row = future.result()
                 except Exception as exc:
-                    row = blocked_scanner_row(symbol, f"Lỗi không mong đợi: {exc}")
+                    row = blocked_ui_row(
+                        symbol,
+                        f"Lỗi không mong đợi: {exc}",
+                        broker_symbol="",
+                    )
                     row["analysis_error"] = True
                     row["input_timestamps"] = dict(
                         (
@@ -697,7 +875,7 @@ class ScannerController:
                 str(row.get("scanner_group", "") or "").lower(),
                 (
                     "OUT_OF_STRATEGY"
-                    if is_structural_reject_row(row)
+                    if _is_structural_reject_row(row)
                     else "DATA_UNAVAILABLE"
                 ),
             )
@@ -1051,41 +1229,70 @@ class ScannerController:
         rows: list[dict[str, Any]],
         request: ScannerRequest,
     ) -> list[dict[str, Any]]:
-        """Annotate auto-trade safety without changing scanner decisions.
+        """Annotate auto-trade/execution keys WITHOUT changing scanner decisions (C2b).
 
-        Scanning and execution are deliberately separate in Phase 0.  A WATCH
-        row remains visible as WATCH, but can never become an order candidate.
+        Scanning and execution are deliberately separate in Phase 0 (unchanged).  The
+        V4 rows from ``_analyze_one_symbol`` already carry the real V4 candidate fields
+        (``candidate_status``, ``selected_side``, ``auto_trade_candidate``,
+        ``candidate_order_payload``, ``scanner_candidate_decision``) via
+        ``pair_to_ui_row``.  This pass only annotates the V3-only compatibility keys,
+        reading them from the REAL candidate_status / reason_codes — never from any V3
+        deletion module, and failing closed to None/False where there is no equivalent.
         """
         for row in rows:
-            symbol = str(row.get("symbol", ""))
-            at_cfg = self._auto_trade_config(request, symbol)
-            decision = self._auto_trade_safety_decision(row, at_cfg)
-            row["auto_trade_branch"] = decision.branch
-            row["strategy_config_status"] = decision.strategy.config_status
-            row["backtest_config_status"] = (
-                "BACKTEST_CONFIG_INVALID"
-                if decision.branch == BRANCH_BACKTEST_INVALID
-                else decision.strategy.config_status
-            )
-            row["candidate_status"] = decision.status
-            row["selected_side"] = decision.selected_side
-            row["auto_trade_candidate"] = decision.auto_trade_candidate
-            row["strategy_eligible"] = decision.strategy_eligible
-            row["execution_ready"] = decision.execution_ready
-            row["trade_allowed"] = decision.trade_allowed
-            row["auto_trade_selected_side"] = decision.selected_side
-            row["auto_trade_reason_codes"] = list(decision.reason_codes)
-            row["scanner_candidate_decision"] = decision.to_dict()
-            candidate_payload = (
-                None
-                if is_structural_reject_row(row)
-                else build_candidate_order_payload(row, decision)
-            )
-            if isinstance(candidate_payload, dict):
-                candidate_payload.pop("analysis_result", None)
-            row["candidate_order_payload"] = candidate_payload
+            candidate_status = _v4_candidate_status(row)
+            is_auto_status = candidate_status in _AUTO_TRADE_STATUSES
+            auto_trade_candidate = bool(row.get("auto_trade_candidate"))
 
-        return sort_scanner_rows(rows)
+            # V4 status discipline: READY_NOW / WAITING_CONFIRMATION can ONLY be
+            # produced by a real routed V4 candidate (pair_to_ui_row sets
+            # auto_trade_candidate=True for genuine ready candidates). A row that
+            # CLAIMS an auto-trade status but carries no real candidate is stale
+            # or fabricated — demote it to DATA_UNAVAILABLE so it can never enter
+            # the dispatch loop with an unsupported status (never trusts a stale
+            # rank/status; never downgrades a genuine V4 ready row).
+            if is_auto_status and not auto_trade_candidate:
+                candidate_status = DATA_UNAVAILABLE
+                is_auto_status = False
+                row["candidate_status"] = DATA_UNAVAILABLE
+                row["selected_side"] = None
+                row["auto_trade_candidate"] = False
+                # V3-only composite rank has no V4 equivalent — reset to the
+                # documented neutral so a stale rank is never preserved.
+                row["opportunity_rank"] = None
+
+            # V3-only keys with no V4 equivalent stay a documented neutral.
+            row.setdefault("auto_trade_branch", None)
+            row.setdefault("strategy_config_status", None)
+            row.setdefault("direction_bias", None)
+            # backtest-config status no longer exists in V4.
+            row["backtest_config_status"] = None
+            # Candidate fields are authoritative already; keep them consistent but
+            # never optimistic (a non-auto status can't become an order candidate).
+            row["auto_trade_candidate"] = auto_trade_candidate and is_auto_status
+            row["strategy_eligible"] = is_auto_status
+            row["execution_ready"] = candidate_status == READY_NOW
+            row["trade_allowed"] = (
+                row["auto_trade_candidate"] and candidate_status == READY_NOW
+            )
+            row["auto_trade_selected_side"] = row.get("selected_side")
+            row["auto_trade_reason_codes"] = list(row.get("reason_codes") or [])
+            if not isinstance(row.get("scanner_candidate_decision"), dict):
+                row["scanner_candidate_decision"] = {
+                    "strategy": {
+                        "reason_codes": [],
+                        "score_value": None,
+                        "setup_score": None,
+                        "expected_effective_rr": None,
+                    },
+                    "reason_codes": list(row.get("reason_codes") or []),
+                    "candidate_status": candidate_status,
+                    "selected_side": row.get("selected_side"),
+                }
+            if not isinstance(row.get("candidate_order_payload"), dict):
+                row["candidate_order_payload"] = None
+
+        return _v4_sort_rows(rows)
 
     @_serialized_execution
     def execute_order_candidate(
@@ -1654,8 +1861,12 @@ class ScannerController:
         for row in rows:
             symbol = str(row.get("symbol") or "--")
             config = self._auto_trade_config(request, symbol)
-            decision = self._auto_trade_safety_decision(row, config)
-            if not decision.auto_trade_candidate:
+            # C2b: the auto-trade gate reads the row's REAL V4 flag (set by the
+            # adapter/filters); candidate_status must also be an auto-trade status.
+            if not (
+                bool(row.get("auto_trade_candidate"))
+                and _v4_candidate_status(row) in _AUTO_TRADE_STATUSES
+            ):
                 continue
 
             attempted += 1
@@ -1687,11 +1898,10 @@ class ScannerController:
                     payload=blocked,
                 )
                 continue
-            proposal = build_candidate_order_payload(
-                row,
-                decision,
-                require_price_in_zone=False,
-            )
+            # C2b: build the executable proposal from the REAL V4 order payload
+            # (intent only; execute_order_candidate always revalidates before any
+            # real dispatch). Never fabricated — None when no payload exists.
+            proposal = _v4_order_proposal(row)
             if proposal is None:
                 skipped += 1
                 errors.append(f"{symbol}: order proposal không hợp lệ.")
@@ -1806,15 +2016,51 @@ class ScannerController:
         }
 
     def _is_auto_trade_candidate(self, row: dict[str, Any], at_cfg: dict[str, object] | None) -> bool:
-        """Compatibility wrapper around the shared Phase-0 safety contract."""
-        return self._auto_trade_safety_decision(row, at_cfg).auto_trade_candidate
+        """Compatibility wrapper reading the REAL V4 candidate fields (C2b)."""
+        return bool(
+            self._auto_trade_safety_decision(row, at_cfg)["auto_trade_candidate"]
+        )
 
     @staticmethod
     def _auto_trade_safety_decision(
         row: dict[str, Any],
         at_cfg: dict[str, object] | None,
-    ) -> AutoTradeSafetyDecision:
-        return evaluate_auto_trade_safety(row, at_cfg)
+    ) -> dict[str, Any]:
+        """C2b V4-compat decision: read the adapter's real candidate fields.
+
+        Replaces the V3 ``evaluate_auto_trade_safety`` (deletion) call. Every
+        value traces to the row's real V4 ``candidate_status`` / ``reason_codes``
+        / ``auto_trade_candidate`` or fails closed. No V3 backtest-config branch /
+        strategy-config concept exists in V4, so those stay ``None``.
+        """
+        candidate_status = _v4_candidate_status(row)
+        is_auto_status = candidate_status in _AUTO_TRADE_STATUSES
+        auto_candidate = bool(row.get("auto_trade_candidate")) and is_auto_status
+        return {
+            "auto_trade_candidate": auto_candidate,
+            "branch": None,
+            "status": candidate_status,
+            "selected_side": row.get("selected_side"),
+            "strategy": {
+                "config_status": None,
+                "eligible": is_auto_status,
+            },
+            "strategy_eligible": is_auto_status,
+            "execution_ready": candidate_status == READY_NOW,
+            "trade_allowed": auto_candidate and candidate_status == READY_NOW,
+            "reason_codes": list(row.get("reason_codes") or []),
+            "to_dict": lambda: {
+                "auto_trade_candidate": auto_candidate,
+                "branch": None,
+                "status": candidate_status,
+                "selected_side": row.get("selected_side"),
+                "strategy": {"config_status": None, "eligible": is_auto_status},
+                "strategy_eligible": is_auto_status,
+                "execution_ready": candidate_status == READY_NOW,
+                "trade_allowed": auto_candidate and candidate_status == READY_NOW,
+                "reason_codes": list(row.get("reason_codes") or []),
+            },
+        }
 
     def _get_alert_order_candidates(
         self,
@@ -1827,7 +2073,7 @@ class ScannerController:
         for row in rows:
             canonical = "candidate_order_payload" in row
             if (
-                is_structural_reject_row(row)
+                _is_structural_reject_row(row)
                 or self._is_non_candidate_alert_row(
                     row,
                     legacy_compatibility=not canonical,
@@ -2582,76 +2828,16 @@ def _scan_one_symbol(
     thresholds: dict[str, int | float] | None = None,
     ai_service: object | None = None,
 ) -> dict[str, Any]:
-    """Legacy single-symbol scan path retained for compatibility."""
-    mt5_svc = MT5Service()
-    try:
-        mt5_svc.ensure_ready(require_login=True)
-        broker_symbol = mt5_svc.resolve_symbol(symbol, available_symbols)
-        if not broker_symbol:
-            return blocked_scanner_row(symbol, "Không tìm thấy mã broker.")
+    """C2b V4 stub for the legacy single-symbol scan path.
 
-        all_candles = mt5_svc.load_primary_timeframes(
-            broker_symbol,
-            {**bars_by_timeframe, "M15": 200},
-        )
-        candles = {tf: all_candles[tf] for tf in bars_by_timeframe}
-        m15_candles = all_candles["M15"]
-        data_quality = mt5_svc.symbol_data_quality(symbol, broker_symbol)
-        news_flags = news_service.data_quality_flags(symbol)
-        macro_context = news_flags.pop("macro_context", {"events": []})
-        data_quality.update(news_flags)
-        data_quality["macro_freshness"] = freshness
-
-        contract_override = contract_size_override_for_symbol(
-            symbol,
-            data_quality,
-            contract_size_overrides,
-        )
-        analysis_input = AnalysisInput(
-            symbol=symbol,
-            broker_symbol=broker_symbol,
-            **analysis_input_kwargs,
-            contract_size_override=float(contract_override) if contract_override else None,
-        )
-        macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
-        macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
-        macro_confidence = macro_confidence * freshness_multiplier
-        quote_currency = symbol.split("/")[-1] if "/" in symbol else symbol[-3:]
-        quote_to_usd = mt5_svc.quote_to_usd_rate(quote_currency)
-
-        result = analyze_symbol(
-            analysis_input,
-            candles,
-            data_quality=data_quality,
-            macro_alignment=macro_alignment if isinstance(macro_alignment, dict) else None,
-            macro_confidence=macro_confidence,
-            m15_candles=m15_candles,
-            correlation_context=correlation_context,
-            quote_to_usd_rate=quote_to_usd,
-            closed_trades=closed_trades,
-            open_trades=[],
-            account_guard_settings=account_guard_settings,
-            thresholds=thresholds,
-            ai_service=ai_service,
-            macro_verdict_context=_build_macro_verdict_context(macro_context),
-        )
-        result["economic_events"] = macro_context.get("events", [])
-        result["macro"]["driver_context"] = macro_context
-        if isinstance(macro_context, dict):
-            result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
-            result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
-        row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
-        return row
-    except Exception as exc:
-        broker_symbol = None
-        try:
-            temp = MT5Service()
-            broker_symbol = temp.resolve_symbol(symbol, available_symbols)
-        except Exception:
-            pass
-        return blocked_scanner_row(symbol, f"Không quét được dữ liệu: {exc}", broker_symbol=broker_symbol)
-    finally:
-        mt5_svc.disconnect()
+    ``_scan_one_symbol`` is DEAD — nothing references it (the live two-phase scan
+    uses ``_fetch_one_symbol_mt5`` → ``_analyze_one_symbol``).  Its old V3 body
+    imported the analysis_engine / scanner / scanner_row_from_analysis deletion
+    modules, so it is replaced with a fail-closed V4 blocked row.  Supported V4
+    live analysis is the responsibility of ``_fetch_one_symbol_mt5`` /
+    ``_analyze_one_symbol``; this stub never dispatches and never fabricates.
+    """
+    return blocked_ui_row(symbol, "Legacy sequential scan path retired (V4 C2b).")
 
 
 # ---- Two-phase scan: Phase 1 fetches MT5 data on main thread,
@@ -2668,9 +2854,17 @@ def _fetch_one_symbol_mt5(
     performance_tracker: object | None = None,
     history_cache_enabled: bool = False,
     history_cache_identity: MT5HistoryCacheIdentity | None = None,
+    v4_account: object | None = None,
+    v4_portfolio: object | None = None,
+    v4_journal: object | None = None,
 ) -> dict[str, Any] | None:
     """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
-    consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved."""
+    consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved.
+
+    C2b: also attaches the V4 ``MarketSafetyContext`` (built from the live MT5
+    data-quality state, fail-closed) and the account/portfolio/journal states so
+    the CPU-thread ``_analyze_one_symbol`` reads them from the packet.
+    """
     mt5_started = perf_counter()
     broker_symbol = mt5.resolve_symbol(symbol, available_symbols)
     if not broker_symbol:
@@ -2739,6 +2933,38 @@ def _fetch_one_symbol_mt5(
         ),
     )
 
+    # ---- C2b: build the V4 safety context from the live MT5 data-quality state.
+    # Every field is sourced from REAL MT5 data; anything unavailable stays None
+    # (fail-closed -> MarketSafetyGate reports UNKNOWN/MISSING).
+    captured_at = datetime.now(timezone.utc)
+    connectivity_checked_at = captured_at
+    data_checked_at = captured_at
+    spread_checked_at = captured_at
+    spread_points = data_quality.get("spread_points") if isinstance(data_quality, dict) else None
+    terminal_connected = data_quality.get("terminal_connected") if isinstance(data_quality, dict) else None
+    broker_logged_in = data_quality.get("broker_logged_in") if isinstance(data_quality, dict) else None
+    # News-source verification: only mark verified when the macro context carries a
+    # real fetch scope; otherwise fail closed (None -> NewsSource MISSING).
+    news_verified = (
+        bool(macro_context)
+        and "macro_tier_detail" in (macro_context if isinstance(macro_context, dict) else {})
+    )
+    v4_safety = build_live_market_safety_context(
+        symbol,
+        captured_at,
+        terminal_connected=terminal_connected,
+        broker_logged_in=broker_logged_in,
+        connectivity_checked_at=connectivity_checked_at,
+        last_candle_time_utc=_newest_last_candle_time_utc(all_candles),
+        data_checked_at=data_checked_at,
+        spread_points=spread_points,
+        spread_checked_at=spread_checked_at,
+        news_source_verified=bool(news_verified),
+        news_checked_at=captured_at,
+        volatility_ratio=None,
+        volatility_checked_at=captured_at,
+    )
+
     return {
         "symbol": symbol,
         "broker_symbol": broker_symbol,
@@ -2749,7 +2975,39 @@ def _fetch_one_symbol_mt5(
         "quote_to_usd": quote_to_usd,
         "input_timestamps": input_timestamps_from_candles(all_candles),
         "mt5_history_cache": history_cache_result,
+        "v4_safety": v4_safety,
+        "v4_captured_at": captured_at,
+        "account": v4_account,
+        "portfolio": v4_portfolio,
+        "journal": v4_journal,
     }
+
+
+def _newest_last_candle_time_utc(all_candles: object) -> object:
+    """Newest last-candle time across every timeframe (real, or None).
+
+    Candle ``time`` values come tz-aware UTC from MT5Service; a naive value is
+    NOT coerced (no fabricated timezone) and stays out of the freshness source.
+    """
+    if not isinstance(all_candles, dict):
+        return None
+    newest = None
+    for timeframes in all_candles.values():
+        if not isinstance(timeframes, list) or not timeframes:
+            continue
+        last = timeframes[-1]
+        value = None
+        if hasattr(last, "time"):
+            value = last.time
+        elif isinstance(last, dict):
+            value = last.get("time")
+        if value is None:
+            continue
+        if getattr(value, "tzinfo", None) is None:
+            continue  # fail-closed: never assume a timezone
+        if newest is None or value > newest:
+            newest = value
+    return newest
 
 
 def _analyze_one_symbol(
@@ -2766,71 +3024,124 @@ def _analyze_one_symbol(
     scanner_fast_tier2: bool = False,
     ai_service: object | None = None,
 ) -> dict[str, Any]:
-    """Run the analysis pipeline for one symbol (CPU-only, thread-safe)."""
+    """Run the V4 analysis path for one symbol (CPU-only, thread-safe, C2b).
+
+    Re-platformed from the V3 ``analyze_symbol``+``scanner_row_from_analysis``
+    (deletion) path: composes the live V4 snapshot and maps the release pair via
+    ``pair_to_ui_row``. Every emitted value comes from the real V4 sources (or
+    fails closed to a ``blocked_ui_row``). V3-only kwargs are kept for signature
+    compatibility with ``_run_market_scan_core``'s submit and are not used here.
+    """
     started_at = perf_counter()
     symbol = pkt["symbol"]
     broker_symbol = pkt["broker_symbol"]
-    data_quality = pkt["data_quality"]
-    macro_context = pkt["macro_context"]
-
-    contract_override = contract_size_override_for_symbol(
-        symbol, data_quality, contract_size_overrides,
+    macro_context = (
+        pkt["macro_context"]
+        if isinstance(pkt.get("macro_context"), dict)
+        else {}
     )
-    analysis_input = AnalysisInput(
-        symbol=symbol,
-        broker_symbol=broker_symbol,
-        **analysis_input_kwargs,
-        contract_size_override=float(contract_override) if contract_override else None,
-    )
-    macro_alignment = macro_context.get("macro_alignment_scores") if isinstance(macro_context, dict) else None
-    macro_confidence = float(macro_context.get("macro_data_quality", 1.0)) if isinstance(macro_context, dict) else 1.0
-    macro_confidence = macro_confidence * freshness_multiplier
-
+    now = datetime.now(timezone.utc)
     try:
-        result = analyze_symbol(
-            analysis_input,
-            pkt["candles"],
-            data_quality=data_quality,
-            macro_alignment=macro_alignment if isinstance(macro_alignment, dict) else None,
-            macro_confidence=macro_confidence,
-            m15_candles=pkt["m15_candles"],
-            correlation_context=correlation_context,
-            quote_to_usd_rate=pkt["quote_to_usd"],
-            closed_trades=closed_trades,
-            open_trades=[],
-            account_guard_settings=account_guard_settings,
-            thresholds=thresholds,
-            scanner_fast_tier1=scanner_fast_tier1,
-            scanner_fast_tier2=scanner_fast_tier2,
-            ai_service=ai_service,
-            macro_verdict_context=_build_macro_verdict_context(macro_context),
+        candles = pkt["candles"] if isinstance(pkt.get("candles"), dict) else {}
+        d1 = candles.get("D1") or []
+        h4 = candles.get("H4") or []
+        h1 = candles.get("H1") or []
+        safety = pkt.get("v4_safety")
+        if safety is None:
+            # No live safety context -> fail closed (all sources MISSING).
+            safety = build_live_market_safety_context(
+                symbol,
+                now,
+                terminal_connected=None,
+                broker_logged_in=None,
+                connectivity_checked_at=None,
+                last_candle_time_utc=None,
+                data_checked_at=None,
+                spread_points=None,
+                spread_checked_at=None,
+                news_source_verified=False,
+                news_checked_at=None,
+                volatility_ratio=None,
+                volatility_checked_at=None,
+            )
+        # Real macro derivation (mirrors the V3 analysis_engine consumption).
+        macro_alignment = (
+            macro_context.get("macro_alignment_scores")
+            if isinstance(macro_context.get("macro_alignment_scores"), dict)
+            else {}
         )
+        macro_buy = macro_alignment.get("buy")
+        macro_sell = macro_alignment.get("sell")
+        macro_raw_buy = int(macro_buy) if isinstance(macro_buy, (int, float)) else None
+        macro_raw_sell = int(macro_sell) if isinstance(macro_sell, (int, float)) else None
+        macro_confidence = float(
+            macro_context.get("macro_data_quality", 1.0)
+        ) * freshness_multiplier
+
+        # Failure-safe derivation + the V4 one-symbol release pair.
+        analysis = derive_live_analysis(
+            d1,
+            h4,
+            h1,
+            symbol=symbol,
+            captured_at=now,
+            news_in_3h=False,
+        )
+        pair = run_v4_pair_from_live(
+            d1,
+            h4,
+            h1,
+            symbol,
+            safety,
+            now=now,
+            captured_at=now,
+            news_in_3h=False,
+            macro_raw_buy=macro_raw_buy,
+            macro_raw_sell=macro_raw_sell,
+            macro_confidence=macro_confidence,
+            account=pkt.get("account"),
+            portfolio=pkt.get("portfolio"),
+            journal=pkt.get("journal"),
+        )
+        row = pair_to_ui_row(
+            pair,
+            broker_symbol=broker_symbol,
+            technical=analysis.get("technical"),
+        )
+    except AdapterContractError:
+        raise
     except Exception as exc:
-        blocked = blocked_scanner_row(
+        blocked = blocked_ui_row(
             symbol,
             f"Không quét được dữ liệu: {exc}",
             broker_symbol=broker_symbol,
+            analysis_latency_ms=round(
+                max(0.0, perf_counter() - started_at) * 1000, 3
+            ),
+            input_timestamps=dict(pkt.get("input_timestamps", {})),
+            analysis_error=str(exc),
         )
         blocked["_analysis_error"] = str(exc)
-        blocked["input_timestamps"] = dict(
-            pkt.get("input_timestamps", {})
-        )
-        blocked["analysis_latency_ms"] = round(
-            (perf_counter() - started_at) * 1000,
-            3,
-        )
         return blocked
 
-    result["economic_events"] = macro_context.get("events", [])
-    result["macro"]["driver_context"] = macro_context
-    if isinstance(macro_context, dict):
-        result["macro"]["macro_tier_detail"] = macro_context.get("macro_tier_detail", {})
-        result["macro"]["macro_data_quality"] = macro_context.get("macro_data_quality", 1.0)
-    row = scanner_row_from_analysis(result, broker_symbol=broker_symbol)
+    # Controller bookkeeping ``_run_market_scan_core`` expects.
+    row["scanner_group"] = (
+        _V4_SCANNER_GROUP_BY_STATUS.get(_v4_candidate_status(row))
+        or "data_unavailable"
+    )
     row["input_timestamps"] = dict(pkt.get("input_timestamps", {}))
     row["analysis_latency_ms"] = round(
-        (perf_counter() - started_at) * 1000,
-        3,
+        max(0.0, perf_counter() - started_at) * 1000, 3
     )
+    row["economic_events"] = macro_context.get("events", [])
+    macro_bucket = row.get("macro")
+    if not isinstance(macro_bucket, dict):
+        macro_bucket = {}
+    macro_bucket["driver_context"] = macro_context
+    macro_bucket["macro_confidence"] = macro_confidence
+    macro_bucket["macro_data_quality"] = macro_context.get(
+        "macro_data_quality", 1.0
+    )
+    row["macro"] = macro_bucket
     return row
 

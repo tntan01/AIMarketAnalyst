@@ -8,6 +8,8 @@ import json
 import logging
 from unittest.mock import patch
 
+import pytest
+
 from controllers.scanner_controller import ScannerController
 from core.backtest_contract import validation_engine_contract
 from core.backtest_config_validation import (
@@ -268,6 +270,88 @@ def test_scan_context_contains_all_runtime_versions_and_hashes():
     assert payload["ranking_version"] == "phase6-ranking-v1"
     assert len(payload["settings_hash"]) == 64
     assert len(payload["request_hash"]) == 64
+
+
+def test_missing_legacy_provenance_is_not_stamped_as_current_or_v4():
+    from core.scoring_provenance import (
+        build_scoring_provenance,
+        normalize_scoring_provenance,
+    )
+
+    missing = normalize_scoring_provenance(None)
+    partial = normalize_scoring_provenance({
+        "scanner_scorer_version": "scanner-v2",
+    })
+
+    assert set(missing.values()) == {""}
+    assert set(partial.values()) == {""}
+    assert normalize_scoring_provenance(build_scoring_provenance()) == (
+        build_scoring_provenance()
+    )
+    assert "scanner-v3" not in missing.values()
+    assert "scanner-v4" not in missing.values()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("unexpected", "extra"),
+        ("scorer_version", "scanner-v4"),
+        ("feature_version", "scanner-features-v4"),
+    ],
+)
+def test_legacy_provenance_rejects_extra_or_conflicting_aliases(
+    field: str,
+    value: str,
+):
+    from core.scoring_provenance import (
+        build_scoring_provenance,
+        normalize_scoring_provenance,
+    )
+
+    provenance = build_scoring_provenance()
+    provenance[field] = value
+
+    assert set(normalize_scoring_provenance(provenance).values()) == {""}
+
+
+def test_v3_row_adapter_rejects_extra_conflicting_provenance_identity():
+    from core.scanner import scanner_row_from_analysis
+    from core.scoring_provenance import build_scoring_provenance
+    from tests.test_scanner_domain_models import _row
+
+    analysis = _row()["analysis_result"]
+    analysis["scoring_provenance"] = build_scoring_provenance()
+    analysis["scoring_provenance"]["scorer_version"] = "scanner-v4"
+
+    row = scanner_row_from_analysis(analysis)
+
+    assert row["scorer_version"] == ""
+    assert row["feature_version"] == ""
+
+
+def test_v3_row_adapter_rejects_target_v4_provenance_injection():
+    from core.scanner import scanner_row_from_analysis
+    from core.scoring_provenance import build_scoring_provenance
+    from tests.test_scanner_domain_models import _row
+
+    analysis = _row()["analysis_result"]
+    analysis["scenario_scores"]["buy"].update({
+        "risk_condition": 12,
+        "macro_alignment": 15,
+    })
+    analysis["scoring_provenance"] = build_scoring_provenance()
+    analysis["scoring_provenance"].update({
+        "scanner_scorer_version": "scanner-v4",
+        "scanner_feature_version": "scanner-features-v4",
+    })
+
+    row = scanner_row_from_analysis(analysis)
+
+    assert row["scorer_version"] == ""
+    assert row["feature_version"] == ""
+    assert "risk_condition" in analysis["scenario_scores"]["buy"]
+    assert "macro_alignment" in analysis["scenario_scores"]["buy"]
 
 
 @dataclass

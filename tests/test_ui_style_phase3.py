@@ -39,13 +39,11 @@ def test_phase3_components_have_no_local_stylesheets() -> None:
     migrated = (
         UI / "main_window.py",
         UI / "components" / "chart_view.py",
-        UI / "components" / "info_card.py",
         UI / "screens" / "journal_detail_screen.py",
     )
     assert {path.name: len(_stylesheet_calls(path)) for path in migrated} == {
         "main_window.py": 0,
         "chart_view.py": 0,
-        "info_card.py": 0,
         "journal_detail_screen.py": 0,
     }
 

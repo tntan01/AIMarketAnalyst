@@ -1,0 +1,33 @@
+{
+  "_trial": "2026-08-14 owner-accepted PROVISIONAL values (TRIAL). NOT final calibration — must be re-audited in Bước 13 before treating as official. doc: docs/scanner/scanner-v4-architecture.md §13.1.",
+  "order_policy_version": "scanner-order-policy-v1",
+  "threshold": {
+    "policy_version": "scanner-threshold-policy-v4",
+    "technical_floor": 40,
+    "setup_floor": 35,
+    "min_score_gap": 5,
+    "min_risk_reward": "2/1"
+  },
+  "safety": {
+    "policy_version": "scanner-safety-policy-v4",
+    "connectivity_max_age_minutes": 5,
+    "max_candle_age_minutes": 3,
+    "spread_threshold_by_symbol": {
+      "XAUUSD": 40,
+      "EURUSD": 25
+    },
+    "volatility_upper_ratio": 2.0
+  },
+  "macro": {
+    "policy_version": "scanner-macro-policy-v4",
+    "deadband_points": 3,
+    "confidence_threshold": 0.6,
+    "conflict_cap": "WATCH_ZONE",
+    "unknown_cap": "DATA_UNAVAILABLE",
+    "ai_conviction_threshold": 0.7
+  },
+  "portfolio_position_limit": 1,
+  "portfolio_exposure_limit": 0.3,
+  "journal_max_consecutive_losses": 3,
+  "journal_drawdown_caution_ratio": 0.1
+}

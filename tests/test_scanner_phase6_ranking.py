@@ -284,8 +284,17 @@ def test_output_exposes_ranking_contract_and_summary_uses_canonical_status():
 
 
 def test_controller_recalculates_stale_ranking_after_candidate_filter():
-    stale = _row("EUR/USD", "READY_NOW", setup_score=99, rr=4.0)
-    stale["opportunity_rank"] = 100
+    # A row that CLAIMS READY_NOW but carries no real V4 candidate is stale or
+    # fabricated. The V4 filter demotes it to DATA_UNAVAILABLE and resets the
+    # V3-only rank/opportunity fields to their documented neutrals, so it can
+    # never enter the dispatch loop with an unsupported status.
+    stale = {
+        "symbol": "EUR/USD",
+        "candidate_status": "READY_NOW",
+        "setup_score": 99,
+        "opportunity_rank": 100,
+        "expected_effective_rr": 4.0,
+    }
     controller = ScannerController.__new__(ScannerController)
     request = ScannerRequest(
         symbols=["EUR/USD"],
@@ -297,9 +306,10 @@ def test_controller_recalculates_stale_ranking_after_candidate_filter():
     rows = controller._apply_scanner_filters([stale], request)
 
     assert rows[0]["candidate_status"] == "DATA_UNAVAILABLE"
-    assert rows[0]["opportunity_rank"] == 0
-    assert rows[0]["ranking_score_breakdown"]["status"] == "DATA_UNAVAILABLE"
-    assert rows[0]["rank"] == 1
+    assert rows[0]["auto_trade_candidate"] is False
+    # V3-only rank/opportunity fields are reset to the documented neutral —
+    # the stale rank is never preserved.
+    assert rows[0]["opportunity_rank"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -313,26 +323,34 @@ def test_auto_trade_receives_execution_order_not_presentation_order():
     Uses unittest.mock.patch to spy on execute_order_candidate()."""
     from unittest.mock import MagicMock, patch
 
+    def _v4_row(symbol: str, setup_score: float, zone: str) -> dict:
+        return {
+            "symbol": symbol,
+            "broker_symbol": symbol.replace("/", ""),
+            "candidate_status": "READY_NOW",
+            "selected_side": "buy",
+            "auto_trade_candidate": True,
+            "setup_score": setup_score,
+            "expected_effective_rr": 2.0,
+            "score_gap": 10,
+            "zone_origin_class": zone,
+            "reason_codes": [],
+            "block_codes": [],
+            "candidate_order_payload": {
+                "symbol": symbol,
+                "side": "buy",
+                "entry": 1.1000,
+                "stop_loss": 1.0980,
+                "take_profit": 1.1080,
+                "scoring_version": "scanner-v4",
+            },
+            "analysis_result": {},
+        }
+
     controller = ScannerController.__new__(ScannerController)
     controller.mt5 = None
     controller.settings_service = None
     controller.orders_screen = None
-
-    # Stub safety decision: both candidates are eligible
-    def _safety_decision(row, _cfg):
-        decision = MagicMock()
-        decision.auto_trade_candidate = True
-        decision.selected_side = "buy"
-        decision.side_evaluation = MagicMock()
-        decision.scenario = {
-            "entry_zone": [1.1000, 1.1020],
-            "stop_loss": 1.0980,
-            "take_profit": [1.1080],
-        }
-        return decision
-
-    controller._auto_trade_config = lambda _req, sym: {}  # type: ignore[method-assign]
-    controller._auto_trade_safety_decision = _safety_decision  # type: ignore[method-assign]
     controller._emit_observability = lambda *a, **kw: None  # type: ignore[method-assign]
 
     # Mock rollout: allow all orders
@@ -342,19 +360,12 @@ def test_auto_trade_receives_execution_order_not_presentation_order():
     rollout_decision.risk_cap_percent = None
     rollout.order_decision.return_value = rollout_decision
 
-    from core.scanner_ranking_engine import rank_scanner_rows, READY_NOW
-
-    rows = rank_scanner_rows([
-        _row("EUR/USD", READY_NOW, setup_score=80),
-        _row("GBP/USD", READY_NOW, setup_score=70),
-    ])
-    rows[0]["zone_origin_class"] = "technical"
-    rows[1]["zone_origin_class"] = "smc"
-    for r in rows:
-        r["entry_zone_source"] = r["zone_origin_class"]
-        r["analysis_result"] = {"scenarios": [{"entry_zone_source": r["zone_origin_class"]}]}
-    rows[0]["rank"] = 1
-    rows[1]["rank"] = 2
+    # Two genuine V4 READY_NOW candidates. UI presentation would put the smc
+    # row first, but _execute_auto_trades must follow the execution row order.
+    rows = [
+        _v4_row("EUR/USD", 80, "technical"),
+        _v4_row("GBP/USD", 70, "smc"),
+    ]
 
     request = ScannerRequest(
         symbols=["EUR/USD", "GBP/USD"],

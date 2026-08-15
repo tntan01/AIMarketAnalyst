@@ -1,120 +1,106 @@
-# Scanner V4 — Kiến trúc scoring và gate đã chốt
+# Scanner V4 — Kiến trúc cho phần mềm cá nhân
 
-> - **Trạng thái:** APPROVED DESIGN — NON-RUNTIME
-> - **Ngày chốt:** 11/08/2026
-> - **Runtime hiện tại:** `scanner-v3` / `scanner-features-v3`
-> - **Target:** `scanner-v4` / `scanner-features-v4`
-> - **Migration:** direct cutover, không dual scoring, không shadow so với v3
+> - **Bối cảnh:** ứng dụng cá nhân, chạy cục bộ.
+> - **Mục tiêu tài liệu:** mô tả chức năng, cấu hình, kiểm thử và cách chuyển runtime.
+> - **Runtime hiện tại:** `scanner-v3` / `scanner-features-v3`.
+> - **Target:** `scanner-v4` / `scanner-features-v4`.
+> - **Tiến độ:** Bước 00–12 `DONE` (code cutover xong, full suite 3727 xanh); Bước 13 `TODO`.
+> - **Migration:** cutover trực tiếp sang V4, không duy trì hai scorer trong runtime.
+> - **Cập nhật tài liệu:** 14/08/2026.
 
-Tài liệu này là nguồn chuẩn cho kiến trúc Scanner V4 và kế hoạch phân tích từng
-bước trước khi sửa code. Cho đến khi cutover hoàn tất, mô tả runtime thực tế vẫn
-nằm tại [`scanner-flow.md`](scanner-flow.md) và
-[`technical-scoring-architecture.md`](technical-scoring-architecture.md).
+Tài liệu này là nguồn chuẩn cho Scanner V4. Nó cố ý chỉ giữ những nội dung ảnh
+hưởng trực tiếp tới chương trình:
 
-Tài liệu này thay thế hoàn toàn proposal năm thành phần trước đây. Các bảng chứa
-Risk, phép chuẩn hóa từ trọng số v3 và kế hoạch shadow cũ không còn hiệu lực.
+- công thức score;
+- gate và quyết định;
+- cấu hình mặc định;
+- schema/version;
+- backtest, persistence và replay;
+- kiểm thử;
+- cutover và rollback.
 
-## 1. Quyết định đã khóa
+`DONE` nghĩa là code, test và tài liệu trong phạm vi của bước đã hoàn tất. Nó
+không có nghĩa V4 đã chạy live. Runtime V3 được thay bằng V4 ở Bước 12 (đã xong ở
+mức code cutover + full suite xanh); việc mở order workflow thật thuộc Bước 13.
 
-1. `TechnicalSignalScore` chỉ có bốn thành phần: **Trend, Momentum, Location,
-   SMC**.
-2. **Risk không đóng góp điểm.** News, spread, dữ liệu, connectivity và
-   volatility đi qua `MarketSafetyGate`.
-3. **Macro không đóng góp điểm.** Macro raw/confidence/status/correlation/AI
-   được giữ trong `MacroAssessment` và chỉ tác động qua policy/gate.
-4. Macro thuận không được cộng điểm, promote setup yếu hoặc làm tie-break số
-   trong ranking.
-5. Gate `BLOCK` không thể bị score cao bù lại. Gate `CAUTION` cap quyết định ở
-   `WAIT`/`WATCH`.
-6. `FinalScore` tiếp tục blend Technical/Evidence/Execution, nhưng ba input phải
-   độc lập; không fallback Evidence hoặc Execution về Technical.
-7. Migration là **direct cutover** sang v4. Không chạy v3/v4 song song, không
-   dùng sample disagreement với v3 làm tiêu chí đúng/sai.
-8. Config, snapshot hoặc backtest artifact mang scorer/feature v3 chỉ được đọc
-   để audit/replay; không được dùng cho quyết định live v4.
-9. Không giữ hai đường runtime sau cutover. Rollback dùng release artifact/Git,
-   không dùng router dual-score trong production.
+## 1. Mục tiêu và phạm vi
 
-Trong quyết định này, “Risk” là component legacy `risk_condition` đang trộn ATR,
-news và spread vào score. Quản trị rủi ro giao dịch như SL/TP, position sizing,
-account loss, portfolio exposure và execution guard vẫn là các domain bắt buộc,
-không bị loại bỏ.
+Scanner V4 tách ba câu hỏi độc lập:
 
-## 2. Lý do chốt và trade-off
+1. **TechnicalScore:** setup kỹ thuật mạnh tới đâu?
+2. **Gate:** dữ liệu và điều kiện thị trường có cho phép tiếp tục không?
+3. **Decision:** với score và toàn bộ gate, trạng thái tối đa là gì?
 
-| Mặt được | Mặt mất/chi phí |
-|---|---|
-| TechnicalScore trả lời đúng một câu hỏi: setup kỹ thuật mạnh tới đâu. | Đây là breaking change xuyên scorer, pipeline, decision, ranking, backtest, UI và persistence. |
-| Điều kiện nguy hiểm không thể được điểm kỹ thuật cao bù lại. | Threshold V3 không thể đổi cơ học; phải calibration lại bằng chính V4. |
-| News, spread và macro không còn bị tính lặp ở score, gate và ranking. | `UNKNOWN` fail-closed có thể làm giảm số candidate khi nguồn dữ liệu chưa ổn định. |
-| BUY/SELL gap phản ánh directional technical, không chứa Risk common-mode. | Ranking và tỷ lệ READY/WATCH/BLOCKED sẽ đổi, không dùng V3 làm chuẩn đúng/sai. |
-| UI giải thích được “setup tốt nhưng đang bị chặn”. | Macro thuận không còn là soft boost/tie-break; nếu cần ưu tiên phải thiết kế policy riêng, không lén đưa lại vào số. |
-| Live và backtest có thể kiểm cùng invariant score/gate. | Direct cutover đòi hỏi schema, consumer, test và rollback artifact sẵn sàng trong cùng release. |
+Các quyết định nền:
 
-Độ phức tạp được đánh giá **cao và cross-cutting**. Direct cutover loại bỏ chi
-phí xây/duy trì hai scorer và logic disagreement, nhưng không làm nhỏ phạm vi
-implementation. Impact map và kế hoạch 13 bước phía dưới là ranh giới công việc
-bắt buộc trước khi cutover.
+- `TechnicalSignalScore` chỉ gồm **Trend, Momentum, Location, SMC**.
+- Risk legacy không còn là scored component.
+- Macro không cộng/trừ score; Macro chỉ tác động qua gate/cap.
+- News, spread, connectivity, freshness và volatility chỉ nằm trong
+  `MarketSafetyGate`.
+- Gate không được sửa score. Score cao không thể vượt `BLOCK` hoặc dữ liệu thiếu.
+- Evidence và Execution độc lập với Technical.
+- Ranking ưu tiên trạng thái trước, score sau.
+- Artifact V3 chỉ đọc để audit, không replay hoặc gắn nhãn thành V4.
+- Rollback dùng nguyên release trước đó, không bật lại scorer V3 bên trong release V4.
 
-### 2.1 Bằng chứng V3 làm cơ sở tách Risk
+“Risk legacy” ở đây là `risk_condition` đang trộn ATR, news và spread vào điểm.
+SL/TP, position sizing, account guard, portfolio guard và execution guard vẫn là
+chức năng bắt buộc.
 
-Code hiện hành chưa bị sửa bởi quyết định tài liệu này:
-
-- `core/signal_engine.py::calc_risk_condition()` tạo raw 0–15 từ ATR tối đa 6,
-  không có news trong 3 giờ cộng 6 và spread đúng `normal` cộng 3;
-- `score_scenario()` scale raw Risk theo regime rồi `int()` contribution trước
-  khi cộng vào composite score;
-- `core/analysis_pipeline.py` truyền cùng một Risk raw cho BUY và SELL, nên Risk
-  là common-mode và không tự tạo directional gap;
-- news/spread đồng thời còn được xử lý tại trade permission/gate và ranking, tạo
-  nhiều owner cho cùng một policy;
-- một số fallback V3 mang tính optimistic: thiếu news có thể thành `False`, thiếu
-  spread có thể thành `normal`, thiếu ATR average có thể dùng chính ATR hiện tại.
-
-Đây là bằng chứng về boundary hiện hành, không phải policy gate V4. Bước 01 phải
-chốt lại file/line/caller/consumer; Bước 04 phải thiết kế fail-closed semantics
-cho từng safety input trước khi sửa code.
-
-## 3. Ranh giới hệ thống
+## 2. Luồng xử lý một pair
 
 ```text
-Một immutable pair snapshot
+Immutable pair snapshot
   ├─ Technical Context + SMC
   │    ├─ TechnicalSignalScore BUY
   │    └─ TechnicalSignalScore SELL
   ├─ MarketSafetyGate
-  │    ├─ Data/Connectivity
+  │    ├─ Connectivity
+  │    ├─ Candle freshness
   │    ├─ Spread
   │    ├─ News/Event
   │    └─ Volatility
-  ├─ MacroAssessment → MacroGate
-  ├─ EvidenceScore theo side
-  ├─ ExecutionQualityScore theo side
-  └─ Scenario/Account/Portfolio/Execution gates
-       → FinalDecision
+  ├─ Chọn side từ TechnicalScore + score gap
+  ├─ Scenario/Entry/SL/TP/R:R
+  ├─ EvidenceScore + ExecutionQualityScore + SetupScore cho BUY/SELL
+  ├─ MacroAssessment → MacroGate cho side được chọn
+  ├─ Account/Portfolio/Journal/Execution gates
+  └─ Decision → Candidate → Ranking
 ```
 
-Ba câu hỏi phải tách biệt:
+Thứ tự canonical:
 
-- **TechnicalScore:** setup kỹ thuật mạnh đến đâu?
-- **Gate:** setup có đủ điều kiện để tiếp tục không?
-- **Decision:** với score, scenario và toàn bộ gate, hành động tối đa là gì?
+1. Capture một snapshot immutable có timestamp và provenance.
+2. Validate version và dữ liệu technical bắt buộc.
+3. Tính TechnicalScore độc lập cho BUY và SELL.
+4. Chạy MarketSafetyGate.
+5. Tính BUY/SELL gap và chọn side chỉ từ TechnicalScore.
+6. Dựng scenario cho side được chọn. Nếu TechnicalScore hòa, chọn BUY để deterministic.
+7. Tính Evidence, Execution và SetupScore riêng cho cả BUY và SELL.
+8. Dựng MacroAssessment và chạy MacroGate một lần cho side được chọn.
+9. Chạy các gate còn lại.
+10. Tạo decision và candidate bằng một đường duy nhất.
+11. Ranking theo trạng thái rồi mới theo chất lượng setup.
+12. Nếu candidate đạt `READY_NOW`, revalidate dữ liệu thực thi trước khi gửi lệnh thật.
 
-## 4. TechnicalSignalScore
+Gate có thể chặn hành động nhưng không được làm mất score/scenario đã tính hợp lệ.
+UI phải hiển thị được “setup tốt nhưng đang bị chặn”.
 
-### 4.1 Thành phần
+## 3. TechnicalSignalScore
 
-| Component | Raw range hiện có | Vai trò |
+### 3.1 Bốn thành phần
+
+| Component | Raw range | Vai trò |
 |---|---:|---|
 | Trend | 0–25 | Hướng và cấu trúc xu hướng |
 | Momentum | 0–20 | Xác nhận động lượng |
-| Location | 0–25 | Chất lượng vị trí vào lệnh |
+| Location | 0–25 | Chất lượng vị trí |
 | SMC | 0–15 | Cấu trúc/vùng SMC canonical |
 
-Risk, Macro, correlation adjustment, AI verdict và CHOCH cap không được sửa
-`TechnicalSignalScore`.
+Risk, Macro, correlation, AI verdict và CHOCH không được sửa TechnicalScore.
 
-### 4.2 Trọng số theo regime
+### 3.2 Trọng số theo regime
 
 | Regime | Trend | Momentum | Location | SMC | Tổng |
 |---|---:|---:|---:|---:|---:|
@@ -123,101 +109,111 @@ Risk, Macro, correlation adjustment, AI verdict và CHOCH cap không được s�
 | `volatile` | 20 | 10 | 40 | 30 | 100 |
 | `unknown` | 25 | 25 | 25 | 25 | 100 |
 
-Đây là **policy thiết kế dễ giải thích**, không phải phép chuẩn hóa cơ học từ
-trọng số v3 và chưa phải bằng chứng về edge:
-
-- Trending ưu tiên hướng chính; ba lớp xác nhận còn lại bằng nhau.
-- Ranging ưu tiên biên/vị trí và cấu trúc SMC.
-- Volatile ưu tiên location và SMC; momentum thấp nhất vì dễ nhiễu.
-- Unknown không áp đặt ưu thế khi regime chưa xác định.
-
-### 4.3 Công thức và rounding
+### 3.3 Công thức
 
 ```text
-contribution_i = clamp(raw_i, 0, raw_max_i) / raw_max_i × regime_weight_i
-technical_signal_score = ROUND_HALF_UP(clamp(sum(contribution_i), 0, 100))
+contribution_i =
+    clamp(raw_i, 0, raw_max_i) / raw_max_i × regime_weight_i
+
+technical_signal_score =
+    ROUND_HALF_UP(clamp(sum(contribution_i), 0, 100))
 ```
 
-Yêu cầu:
+Quy tắc:
 
-- tính contribution ở precision đầy đủ;
-- không `int()` từng component;
-- chỉ làm tròn `ROUND_HALF_UP` một lần sau khi cộng;
-- lưu raw và scaled breakdown theo đúng side;
-- BUY/SELL gap chỉ được tính từ TechnicalSignalScore BUY/SELL.
+- dùng precision đầy đủ cho từng contribution;
+- không `int()` từng thành phần;
+- chỉ `ROUND_HALF_UP` một lần ở tổng;
+- lưu raw và scaled contribution theo đúng side;
+- BUY/SELL gap chỉ tính từ TechnicalScore BUY/SELL.
 
-## 5. FinalScore
+Module canonical: `core/technical_signal_scorer.py`.
+
+## 4. SetupScore và FinalScore
 
 ```text
 setup_score = technical_signal_score × 0.65
             + evidence_score × 0.20
             + execution_quality_score × 0.15
 
-final_score = setup_score  # compatibility alias
+final_score = setup_score
 ```
 
-Matrix fallback đã khóa:
+`final_score` chỉ là compatibility alias của `setup_score`.
 
-| Input | Khi thiếu/invalid | Hệ quả |
-|---|---|---|
-| Technical | Không có fallback số | `DATA_UNAVAILABLE`, không tạo lệnh |
-| Evidence | 50 neutral + warning/source | Giữ component 20% |
-| Execution quality | 50 neutral + warning/source | Giữ component 15% |
+| Input | Khi thiếu/invalid |
+|---|---|
+| Technical | `DATA_UNAVAILABLE`; không sinh candidate số |
+| Evidence | Dùng đúng 50 neutral, có warning và source |
+| Execution | Dùng đúng 50 neutral, có warning và source |
 
-Không copy Technical vào Evidence/Execution và không dynamic-renormalize trọng
-số khi thiếu input. Tính ba contribution ở precision đầy đủ, clamp 0–100 và làm
-tròn `ROUND_HALF_UP` đúng một lần.
+Không được:
 
-`FinalScore` không phải gate và không có quyền mở lệnh.
+- copy Technical sang Evidence hoặc Execution;
+- dynamic-renormalize trọng số;
+- thay đổi trọng số theo recent trades;
+- override trọng số từ caller;
+- làm tròn từng contribution.
 
-## 6. MarketSafetyGate
+Module canonical: `core/final_score_v4.py`.
 
-Mỗi sub-gate trả:
+## 5. Gate và hành vi fail-closed
+
+### 5.1 Trạng thái chung
+
+Ba loại gate dùng cùng bốn trạng thái nhưng có payload khác nhau:
+
+| Loại | Field chính |
+|---|---|
+| Safety check | `status`, `reason_codes`, `observed_value`, `threshold`, `policy_version`, `checked_at`, `source`, `provenance` |
+| Macro gate | `assessed_side`, `status`, `decision_cap`, `reason_codes`, `policy_version`, `checked_at`, `provenance` |
+| Composition gate | `name`, `status`, `reason_codes`, `observed`, `threshold`, `checked_at`, `source`, `provenance` |
+
+Thứ tự ưu tiên duy nhất:
 
 ```text
-status: PASS | CAUTION | BLOCK | UNKNOWN
-reason_codes: [...]
-observed_value
-threshold/policy_version
-checked_at
-source/provenance
+BLOCK > UNKNOWN > CAUTION > PASS
 ```
 
-Aggregation:
+- `BLOCK`: không thể được score/rank vượt qua.
+- `UNKNOWN` critical: dữ liệu không đủ tin cậy, candidate là `BLOCKED`.
+- `CAUTION`: candidate tối đa là `WATCH_ZONE` trong composition hiện tại.
+- `PASS`: chỉ có khi các field chứng minh bắt buộc của đúng loại gate hợp lệ.
 
-```text
-BLOCK > CAUTION > PASS
-UNKNOWN ở dữ liệu safety bắt buộc → không auto-entry
-```
+Không có đường mặc định biến missing/error/stale thành `PASS`.
 
-Baseline policy:
+### 5.2 MarketSafetyGate
 
-| Gate | Điều kiện | Kết quả |
-|---|---|---|
-| Connectivity | MT5/broker không sẵn sàng | `BLOCK` |
-| Data | Candle/critical data thiếu hoặc stale | `BLOCK`/`UNKNOWN` |
-| Spread | Normal | `PASS` |
-| Spread | Abnormal | `BLOCK` |
-| Spread | Unknown | `UNKNOWN`, chặn auto-entry |
-| News | High-impact trong 0–30 phút | `BLOCK` |
-| News | High-impact trong 30 phút–3 giờ | `CAUTION` |
-| News | Không có event gần và nguồn hợp lệ | `PASS` |
-| News | Không lấy được trạng thái | `UNKNOWN`, chặn auto-entry |
-| Volatility | Dữ liệu hợp lệ, không extreme | `PASS` |
-| Volatility | Extreme theo policy đã calibration | `CAUTION` |
-| Volatility | ATR/metric thiếu hoặc invalid | `UNKNOWN` |
+`MarketSafetyGate` là nguồn canonical duy nhất cho năm kiểm tra:
 
-ATR vẫn phục vụ regime, zone distance, SL/TP và execution sizing. Nó không tạo
-điểm thưởng. Metric/band volatility phải được phân tích ở Bước 04; không được
-đưa tỷ lệ H4-vs-D1 hiện hành thành gate production mà chưa xác nhận semantics.
+| Check | PASS | CAUTION | BLOCK | UNKNOWN |
+|---|---|---|---|---|
+| Connectivity | Terminal và broker sẵn sàng | — | Mất kết nối/không đăng nhập | Không đọc được trạng thái |
+| `data` (candle freshness) | Candle còn trong SLA | — | Candle quá cũ | Thiếu timestamp hoặc SLA |
+| Spread | Có ngưỡng symbol và spread hợp lệ | — | Spread vượt ngưỡng | Thiếu spread/ngưỡng symbol |
+| News | Nguồn hợp lệ, không có event gần | Event high-impact `(30, 180]` phút | Event high-impact `[0, 30]` phút | Không lấy/verify được nguồn |
+| Volatility | Ratio không vượt upper threshold | Vượt upper threshold | — | Thiếu metric hoặc upper threshold |
 
-Khi MarketSafetyGate được đưa vào runtime, phải bỏ `risk_score < 9`, bỏ Risk
-component và bỏ penalty news/spread lặp trong ranking. Điều kiện bình thường là
-`PASS`, không phải điểm cộng.
+Cấu hình mặc định hiện tại:
 
-## 7. MacroAssessment và MacroGate
+- News: block 30 phút, caution 180 phút.
+- Volatility semantics: ATR(14), H4/D1, reference window 14 ngày.
+- Connectivity probe max age: `None`; source vẫn phải có timestamp hợp lệ nhưng chưa bị giới hạn tuổi.
+- Spread threshold map: rỗng.
+- Candle freshness SLA: `None`.
+- Volatility upper ratio: chưa cấu hình.
+- Manual order không bypass `UNKNOWN`.
 
-MacroAssessment giữ dữ liệu, không giữ contribution score:
+Vì các giá trị chưa cấu hình trả `UNKNOWN`, cấu hình mặc định phù hợp cho
+scan/hiển thị/paper. Nó không đảm bảo sinh `READY_NOW` hoặc gửi lệnh. Muốn bật
+order workflow ở Bước 12 phải cấu hình đủ dữ liệu safety bắt buộc; missing
+provider vẫn luôn fail-closed.
+
+Module canonical: `core/market_safety_gate.py`.
+
+### 5.3 MacroGate
+
+`MacroAssessment` giữ:
 
 ```text
 raw_buy / raw_sell
@@ -228,205 +224,516 @@ event/macro provenance
 AI verdict/veto provenance
 ```
 
-Invariant:
+Quy tắc:
 
-- `aligned`: không cộng score, không promote, không tie-break số;
-- `neutral`: không sửa score;
-- `conflict`: chỉ cap/block theo policy có version;
-- `unknown`: không được giả thành neutral; policy quyết định cap hoặc chặn
-  auto-entry;
-- AI adjustment số bị loại; chỉ giữ veto/cap có reason code;
-- CHOCH không cap score; giữ dưới dạng structure/safety gate.
+- aligned không cộng điểm hoặc promote setup;
+- neutral không sửa score;
+- conflict chỉ cap/block;
+- unknown không được giả thành neutral;
+- AI chỉ veto/cap, không boost hoặc numeric adjustment;
+- raw/confidence thiếu hoặc lỗi nguồn AI đã nhận diện không được thành `PASS`.
 
-Threshold confidence/deadband và mapping conflict → `WATCH` hay `BLOCK` sẽ được
-khóa tại Bước 05. Trước bước đó không tài liệu nào được tuyên bố threshold cụ
-thể là runtime contract.
+Adapter runtime ở Bước 12 phải chuẩn hóa lỗi từ các provider Macro khác thành dữ liệu
+thiếu/`UNKNOWN` trước khi gọi gate; không truyền lỗi provider như một assessment hợp lệ.
 
-## 8. Luồng một pair
+Cấu hình mặc định hiện tại để các ngưỡng sau là `None`:
 
-1. Thu thập một snapshot có timestamp/provenance chung.
-2. Validate dữ liệu technical bắt buộc.
-3. Dựng Technical Context, SMC và market regime.
-4. Dựng `MarketSafetyContext` và chạy các safety sub-gate.
-5. Tính TechnicalSignalScore độc lập cho BUY và SELL.
-6. Chọn best side và score gap chỉ từ TechnicalSignalScore.
-7. Dựng scenario/entry/SL/TP/R:R cho side đủ floor.
-8. Tính EvidenceScore và ExecutionQualityScore đúng side.
-9. Tính Setup/FinalScore; không đưa gate hoặc Macro vào số.
-10. Chạy zone, M15, R:R, account, portfolio, journal và MacroGate.
-11. Decision Engine áp score thresholds và cap mạnh nhất từ gate.
-12. Ranking theo eligibility trước, score sau.
-13. Candidate `READY` phải revalidate snapshot thực thi trước khi đặt lệnh.
+- deadband;
+- confidence threshold;
+- conflict cap;
+- unknown cap;
+- AI conviction threshold.
 
-Gate `BLOCK` không cần ngăn hệ thống dựng/hiển thị scenario nếu dữ liệu kỹ thuật
-vẫn đủ; UI phải thể hiện “setup tốt nhưng hiện bị chặn” thay vì giấu score.
+Với cấu hình này MacroGate trả `UNKNOWN` khi chưa đủ policy để kết luận. Đây là
+hành vi mặc định có chủ ý, không phải lỗi runtime.
 
-## 9. Decision matrix
+Module canonical: `core/macro_gate.py`.
 
-| Gate tổng hợp | Technical/Setup | Entry | Kết quả tối đa |
+### 5.4 Gate còn lại
+
+Scenario, account, portfolio, journal và execution là domain riêng. Chúng không
+được tính lại Safety/Macro hoặc sửa score. `READY_NOW` luôn phải qua execution
+revalidation bằng dữ liệu mới.
+
+## 6. Decision, Candidate và Ranking
+
+### 6.1 Default threshold policy
+
+`make_default_threshold_policy()` trả:
+
+| Field | Giá trị |
+|---|---:|
+| `technical_floor` | 40 |
+| `setup_floor` | 35 |
+| `min_score_gap` | 5 |
+| `min_risk_reward` | 2.0 |
+
+Đây là cấu hình mặc định versioned, không sao chép threshold V3. Calibration có
+thể điều chỉnh sau nhưng không chặn chương trình.
+
+Module canonical: `core/scanner_v4_threshold_policy.py`.
+
+### 6.2 Decision matrix
+
+Router kiểm version/schema trước khi dựng candidate. Payload thiếu/sai/mixed version trả
+`route_status=version_mismatch` và `candidate=None`; đây là từ chối input, không phải một
+candidate `DATA_UNAVAILABLE`.
+
+Với payload V4 hợp lệ, decision matrix là:
+
+| Điều kiện | Score/Scenario | Entry | Trạng thái tối đa |
 |---|---|---|---|
-| `BLOCK`/critical `UNKNOWN` | Bất kỳ | Bất kỳ | `BLOCKED`/`DATA_UNAVAILABLE` |
-| `CAUTION` | Bất kỳ | Bất kỳ | `WAITING_CONFIRMATION` hoặc `WATCH_ZONE` |
-| `PASS` | Dưới floor | Bất kỳ | Không candidate hoặc `WATCH_ZONE` |
-| `PASS` | Đạt floor | Chưa xác nhận | `WAITING_CONFIRMATION` |
-| `PASS` | Đạt floor | Đã xác nhận | Có thể `READY_NOW` |
+| Technical/snapshot critical data invalid | Không đủ | Bất kỳ | `DATA_UNAVAILABLE` |
+| `BLOCK` | Bất kỳ | Bất kỳ | `BLOCKED` |
+| Critical `UNKNOWN` | Bất kỳ | Bất kỳ | `BLOCKED` |
+| `CAUTION` hoặc non-critical `UNKNOWN` | Bất kỳ | Bất kỳ | `WATCH_ZONE` |
+| `PASS` | Dưới floor/gap/R:R | Bất kỳ | `WATCH_ZONE` |
+| `PASS` | Đạt policy | Chưa xác nhận | `WAITING_CONFIRMATION` |
+| `PASS` | Đạt policy | Đã xác nhận và execution fresh | `READY_NOW` |
 
-`READY_NOW` vẫn phải qua execution revalidation, account và portfolio guard.
+Candidate chỉ được ghi bởi `core/scanner_v4_candidate.py::build_candidate()` (và helper
+idempotent `build_candidate_with()`). `scanner_v4_strategy_router.py` chỉ validate/
+orchestrate; `scanner_v4_execution_readiness.py` chỉ tạo input readiness.
 
-## 10. Ranking
+Order payload chỉ là execution intent: luôn yêu cầu revalidation và không tự gửi
+lệnh. Router cũng không trực tiếp execute. Ở runtime V4, controller/order service
+chỉ được dispatch intent sau khi execution revalidation bằng dữ liệu mới trả PASS.
 
-Ranking v4 thực hiện hai tầng:
+### 6.3 Ranking
 
-1. eligibility/status: `READY_NOW` > `WAITING_CONFIRMATION` > `WATCH_ZONE` >
-   `BLOCKED`/`DATA_UNAVAILABLE`;
-2. trong cùng nhóm: SetupScore, effective R:R, proximity, evidence và execution
-   readiness theo contract ranking v4.
-
-Không trừ news/spread/macro lần nữa. Macro aligned không dùng làm tie-break.
-
-## 11. Output canonical
+Default ranking policy dùng tầng 1 — trạng thái:
 
 ```text
-scoring_version: scanner-v4
-feature_version: scanner-features-v4
-
-side_scores:
-  buy/sell:
-    technical_signal_score
-    technical_breakdown:
-      trend
-      momentum
-      location
-      smc
-    evidence_score
-    evidence_source
-    execution_quality_score
-    execution_quality_source
-    setup_score
-    final_score  # compatibility alias của setup_score
-
-market_safety:
-  status
-  checks
-  reason_codes
-
-macro_assessment:
-  raw_buy/raw_sell
-  confidence
-  status
-  provenance
-
-macro_gate:
-  status: PASS | CAUTION | BLOCK | UNKNOWN
-  decision_cap
-  reason_codes
-  policy_version
-
-decision:
-  selected_side
-  score_gap
-  candidate_status
-  decision_cap
-  gate/reason/block_codes
+READY_NOW
+> WAITING_CONFIRMATION
+> WATCH_ZONE
+> BLOCKED
+> DATA_UNAVAILABLE
 ```
 
-Không phát hành `risk_condition` hoặc `macro_alignment` như scored component ở
-payload v4. Snapshot v3 chỉ đọc dưới chế độ historical/replay.
+Tầng 2 — trong cùng trạng thái:
 
-## 12. Direct cutover
+```text
+setup_score
+> risk_reward_ratio
+> proximity
+> evidence_score
+> execution_quality_score
+```
 
-Không có `legacy/new score`, dual write, shadow report hoặc tiêu chí disagreement
-cho migration v4. Trình tự release:
+Tie cuối dùng symbol tăng dần để deterministic. Missing value nằm cuối nhóm.
+Không trừ news/spread/macro lần nữa và không dùng Macro làm tie-break.
 
-1. hoàn thành contract, code, consumer và test trên một branch/release;
-2. bump scorer/feature/config/snapshot version;
-3. làm config v3 fail-closed cho live và giữ read-only replay nếu cần;
-4. chạy test invariant, scenario matrix và backtest v4 độc lập;
-5. deploy v4 làm đường duy nhất;
-6. xóa executable v3 scoring/routing path trong cùng migration;
-7. rollback bằng release artifact nếu có lỗi kỹ thuật nghiêm trọng.
+Module canonical: `core/scanner_v4_ranking.py`. Class policy hiện vẫn cho caller truyền
+thứ tự khác; Bước 12 phải khóa đúng default trên ở runtime và không nhận ranking order
+tùy biến từ config/caller.
 
-Generic rollout/shadow code đang tồn tại ở scanner-v3 không phải bằng chứng cho
-độ đúng của v4 và không phải điều kiện cutover. Việc loại bỏ control/metric V1/V2
-cũ nằm trong Bước 12; không được dùng nó để tạo dual-scoring v4.
+## 7. Snapshot, composition và canonical output
 
-## 13. Verification không dựa vào legacy
+### 7.1 Composition
 
-Các invariant bắt buộc:
+`compose_scanner_v4(snapshot, ...)` là điểm vào duy nhất cho V4 target.
 
-- thay Macro/Risk không làm TechnicalSignalScore đổi;
-- TechnicalScore chỉ có đúng bốn contribution và tổng nằm 0–100;
-- BUY/SELL gap không chứa common-mode Risk;
-- `BLOCK` không thể bị score/final/rank vượt qua;
-- missing safety data không được mặc định pass;
-- news/spread chỉ có một owner policy, không bị trừ lặp;
-- Evidence/Execution thiếu dùng 50 neutral, không copy Technical;
-- FinalScore không mở khóa gate;
-- backtest và live dùng cùng scorer/feature/gate version;
-- execution revalidation luôn dùng dữ liệu mới.
+- Live và backtest dùng cùng composition.
+- Adapter chỉ khác `capture_source`.
+- Snapshot ID không phụ thuộc capture source.
+- Snapshot quá 120 giây tuổi hoặc lệch quá 30 giây về tương lai trả fail-closed.
+- Safety/Macro không làm đổi Technical/Setup score.
+- Macro được đánh giá đúng selected side.
 
-Validation outcome của v4 dùng backtest/OOS/walk-forward hoặc forward evidence
-của chính v4 khi có; không cần so kết quả với scorer v3 chưa được kiểm chứng.
+Module canonical: `core/scanner_v4_composition.py`.
 
-## 14. Kế hoạch phân tích và triển khai từng bước
+### 7.2 Hai lớp output
+
+`compose_scanner_v4()` trả `ScannerV4CompositionResult`, là wrapper đầy đủ cho một lần
+chạy:
+
+```text
+composition_version, snapshot_id, symbol, captured_at, capture_source
+technical + technical_errors                    # BUY/SELL
+safety
+macro_assessment + macro_gate                   # selected side
+scenario                                        # selected side
+final_scores                                    # BUY/SELL
+composition_gates
+decision
+canonical
+```
+
+Field `canonical` là `CanonicalPairSnapshot`, nguồn dữ liệu chuẩn cho row/router/
+candidate:
+
+```text
+scoring_version, feature_version, output_schema_version
+safety_policy_version, macro_policy_version, ranking_version, snapshot_version
+snapshot_id, symbol, captured_at
+side_scores.buy/sell:
+  technical_signal_score
+  technical_breakdown: trend, momentum, location, smc
+  evidence_score + evidence_source
+  execution_quality_score + execution_quality_source
+  setup_score + final_score
+market_safety
+macro_assessment + macro_gate
+decision
+```
+
+Row đọc `composition.canonical`. Router/candidate nhận wrapper đã validate: canonical là
+nguồn chuẩn cho identity, score và decision; wrapper bổ sung scenario/composition gates.
+Không được nhầm wrapper key `safety` với canonical key `market_safety`.
+
+V4 không phát `risk_condition`, `macro_alignment`, `scenario_scores.total`,
+`best_score` hoặc các scored field legacy.
+
+### 7.3 Version identity
+
+| Contract | Version |
+|---|---|
+| Scoring | `scanner-v4` |
+| Feature | `scanner-features-v4` |
+| Output schema | `scanner-output-v4` |
+| Snapshot | `scanner-pair-snapshot-v4` |
+| Safety policy | `scanner-safety-policy-v4` |
+| Macro policy | `scanner-macro-policy-v4` |
+| Ranking | `scanner-ranking-v4` |
+| Technical weights | `technical-signal-weights-v4` |
+| FinalScore | `scanner-final-score-v4` |
+| Threshold policy | `scanner-threshold-policy-v4` |
+| Composition | `scanner-composition-v4` |
+| Row | `scanner-v4-row-v1` |
+| Presentation | `scanner-v4-presentation-v1` |
+| Snapshot envelope | `scanner-v4-snapshot-envelope-v1` |
+| Replay | `scanner-v4-replay-v1` |
+| Journal | `scanner-v4-journal-v1` |
+| Observability | `scanner-observability-v4` |
+| Session review | `scanner-session-review-v4` |
+| Backtest contract | `scanner-backtest-contract-v4` |
+| Backtest config schema | `10` |
+
+Canonical model và full composition reader đã kiểm exact identity. Một số adapter row/
+compact snapshot hiện mới kiểm version của envelope và chỉ kiểm nested identity khác rỗng.
+Bước 12 phải khóa exact toàn bộ version/schema trước khi các reader này nhận runtime input.
+
+## 8. Row, UI, persistence, replay và journal
+
+Các consumer V4 chỉ đọc canonical output:
+
+- Row: `core/scanner_v4_row.py`.
+- Presentation: `ui/scanner_v4_presentation.py`.
+- Snapshot envelope: `core/scanner_v4_snapshot.py`.
+- Replay: `core/scanner_v4_replay.py`.
+- Journal: `services/scanner_v4_journal_models.py`,
+  `services/scanner_v4_journal_converters.py`.
+- Observability: `core/scanner_v4_observability.py`,
+  `core/scanner_v4_session_review.py`.
+
+Quy tắc:
+
+- UI hiển thị đúng bốn component technical.
+- Safety/Macro hiển thị như gate, không như điểm.
+- `UNKNOWN` không render thành `PASS`.
+- Blocked setup vẫn giữ score/scenario để giải thích.
+- Full snapshot V4 có thể replay nếu đủ canonical data.
+- Compact snapshot chỉ dùng hiển thị/audit.
+- Artifact V3 luôn audit-only và non-replayable trong V4.
+- Journal partition theo scorer/policy; không trộn semantics V3/V4.
+- Serialization deterministic. Canonical/full reader là strict; Bước 12 phải hoàn tất
+  exact-version/unknown-field validation ở mọi adapter external và compact reader.
+
+## 9. Backtest, config và calibration
+
+### 9.1 Backtest parity
+
+Live và backtest dùng cùng `compose_scanner_v4`. Với cùng immutable input, các
+field sau phải giống nhau:
+
+- snapshot ID;
+- TechnicalScore và SetupScore;
+- selected side;
+- gate status/reason;
+- candidate status;
+- version identity.
+
+Chỉ `capture_source` được khác.
+
+Module: `core/scanner_v4_backtest_contract.py`.
+
+### 9.2 Config và artifact
+
+- Contract config V4 dùng schema `10`, exact version identity và fingerprint.
+- Config thiếu/sai/mang V3 fail-closed.
+- Filter đọc selected-side `setup_score`, không đọc `final_score` legacy.
+- Ở runtime V4 sau cutover, default threshold policy hoặc policy calibrated đều
+  hợp lệ nếu version/fingerprint khớp và validation pass. Bước 12 phải bỏ yêu
+  cầu calibration artifact bắt buộc khỏi config reader khi default policy được dùng,
+  đồng thời bắt buộc đủ identity/fingerprint kể cả khi caller không truyền fingerprint tham chiếu.
+- Backtest artifact V3 chỉ giữ để audit.
+
+Module: `core/scanner_v4_config_invalidation.py`,
+`core/scanner_v4_candidate_ledger.py`.
+
+### 9.3 Calibration tùy chọn
+
+`core/scanner_v4_calibration.py` và `core/scanner_v4_pit_dataset.py` hỗ trợ
+calibration sau này:
+
+- validate dữ liệu point-in-time;
+- tách temporal train/OOS một lần theo `pit_boundary`;
+- tạo summary/report deterministic;
+- tạo report đề xuất provisional: technical/setup có thể lấy mốc quan sát, còn gap `5`
+  và R:R `2.0` vẫn là default; volatility/macro chưa được suy ra từ dữ liệu.
+
+Walk-forward và sensitivity grid chưa được triển khai. Đây là cải tiến calibration tùy
+chọn về sau, không phải khả năng hiện có hoặc điều kiện cutover.
+
+Không có dataset hoặc sample không đủ phải trả `INSUFFICIENT_SAMPLE` và threshold
+`None`; không được tạo số giả. Kết quả đó không chặn trạng thái `DONE` của
+Bước 09/11 vì chương trình đã có default threshold policy.
+
+Collector `scripts/scanner_v4_pit_collector.py` là tiện ích tùy chọn, không được
+runtime import và không ảnh hưởng cutover.
+
+## 10. Kiểm thử bắt buộc
+
+Các invariant của target code Bước 02–11 phải luôn đúng:
+
+- TechnicalScore chỉ có bốn component và nằm 0–100.
+- Thay Risk/Macro/Safety không làm TechnicalScore đổi.
+- BUY/SELL gap chỉ phản ánh TechnicalScore.
+- Evidence/Execution thiếu dùng 50, không copy Technical.
+- FinalScore không mở khóa gate.
+- `BLOCK` và critical `UNKNOWN` không bị score/rank vượt qua.
+- Missing safety không thành `PASS`.
+- News/spread/Macro không bị tính lặp.
+- Side, scenario, gate và candidate nhất quán.
+- Live/backtest dùng cùng version và composition.
+- Canonical/router từ chối V3/mixed/missing version theo contract hiện có.
+- Snapshot/replay/journal deterministic và version-safe.
+
+Các invariant cutover bắt buộc ở Bước 12, không tính vào bằng chứng Bước 11:
+
+- mọi runtime/external/compact reader kiểm exact version/schema;
+- runtime khóa exact default ranking policy, caller không thể đổi eligibility order;
+- execution revalidation lấy dữ liệu mới ngay trước khi dispatch lệnh thật;
+- mọi V3/mixed/missing identity bị từ chối trên toàn bộ consumer path.
+
+Test layers:
+
+1. Unit: scorer, FinalScore, từng gate, serializer.
+2. Property/invariant: range, rounding, immutability, side consistency.
+3. Scenario matrix: score/gate/entry/fallback/status.
+4. Integration: composition → row → router → candidate → ranking →
+   snapshot/replay → presentation.
+5. Regression: toàn bộ `tests/`.
+
+Parity bắt buộc được kiểm trên frozen deterministic fixture/canonical snapshot.
+PIT corpus thị trường thật chỉ phục vụ calibration tùy chọn.
+
+Bằng chứng gần nhất được ghi trong working tree:
+
+- Focused Bước 11: `244 passed`.
+- Full suite: `3635 passed, 8 skipped, 17 xfailed`, exit code 0.
+- Validation artifact: `reports/scanner-v4/validation_b11.json`.
+
+## 11. Trạng thái triển khai
+
+Chỉ dùng hai trạng thái:
+
+- `DONE`: phạm vi code/test/docs của bước đã hoàn tất.
+- `TODO`: chưa thực hiện.
 
 | Bước | Nội dung | Trạng thái |
 |---:|---|---|
-| 00 | Rà soát/hợp nhất tài liệu và khóa architecture | `COMPLETED` |
-| 01 | Inventory code path, data contract và owner hiện hành | `PENDING` |
-| 02 | Domain model, version và output schema v4 | `PENDING` |
-| 03 | Technical scorer bốn thành phần | `PENDING` |
-| 04 | MarketSafetyGate và volatility semantics | `PENDING` |
-| 05 | MacroAssessment/MacroGate policy | `PENDING` |
-| 06 | FinalScore fallback và rounding contract | `PENDING` |
-| 07 | Analysis pipeline/direct composition | `PENDING` |
-| 08 | Decision, Strategy Router, Candidate và Ranking | `PENDING` |
-| 09 | Backtest, threshold, config và version invalidation | `PENDING` |
-| 10 | UI, API, snapshot, journal và observability | `PENDING` |
-| 11 | Test invariant, scenario matrix và v4 validation | `PENDING` |
-| 12 | Atomic cutover, xóa v3/dual comparison path | `PENDING` |
-| 13 | Post-cutover audit và cập nhật runtime docs | `PENDING` |
+| 00 | Hợp nhất tài liệu và khóa kiến trúc | `DONE` |
+| 01 | Inventory code path và data contract V3 | `DONE` |
+| 02 | Domain model, version và output schema V4 | `DONE` |
+| 03 | Technical scorer bốn thành phần | `DONE` |
+| 04 | MarketSafetyGate | `DONE` |
+| 05 | MacroAssessment/MacroGate | `DONE` |
+| 06 | FinalScore contract | `DONE` |
+| 07 | V4 composition | `DONE` |
+| 08 | Decision, router, candidate và ranking | `DONE` |
+| 09 | Backtest contract, config/version và calibration tooling | `DONE` |
+| 10 | Row, UI, snapshot, journal và observability | `DONE` |
+| 11 | Invariant, scenario matrix và validation | `DONE` |
+| 12 | Atomic runtime cutover và xóa executable V3 | `DONE` |
+| 13 | Post-cutover audit và cập nhật runtime docs | `TODO` |
 
-### Quy tắc cập nhật từng bước
+Các module Bước 02–12 hiện là V4 target và chia sẻ đường live với controller/UI sau
+Bước 12 cutover. Không dùng trạng thái của từng module để ngụ ý nó đã mở order thật.
 
-Trước khi sửa code của một bước, bổ sung ngay trong tài liệu này:
+## 12. Bước 12 — Atomic runtime cutover
 
-1. bằng chứng code hiện hành (`file:line`, caller/consumer);
-2. contract đầu vào/đầu ra đã chốt;
-3. danh sách file dự kiến sửa/xóa;
-4. incompatibility và dữ liệu cần migrate;
-5. test/invariant/acceptance criteria;
-6. quyết định còn mở và owner;
-7. trạng thái `PENDING → ANALYZED → IMPLEMENTED → VERIFIED`.
+### 12.1 Điều kiện kỹ thuật trước cutover
 
-Không chuyển bước sang `IMPLEMENTED` chỉ vì tài liệu đã viết xong. Không chuyển
-sang `VERIFIED` nếu acceptance criteria chưa có bằng chứng.
+- Tạo một release duy nhất đã wire V4, map default policy vào composition/router/
+  backtest, cập nhật config reader và xóa executable V3 scoring/routing path.
+- Khóa default ranking policy; không cho config/caller thay status order hoặc tie-break.
+- Harden mọi row/snapshot/config reader để bắt exact identity/fingerprint và từ chối
+  unknown/mixed schema trước khi dữ liệu vào decision path.
+- Chuẩn hóa lỗi provider Macro thành missing/`UNKNOWN` trước MacroGate.
+- Cấu hình tuổi tối đa của connectivity probe hoặc để adapter đánh dấu source stale;
+  không dùng timestamp cũ để mở order.
+- Full suite xanh trên đúng release sẽ deploy.
+- Config/schema/version/fingerprint V4 hợp lệ.
+- Backup/export config, snapshot và journal cần thiết.
+- V3 config bị từ chối trong V4.
+- Row/UI/persistence/journal/observability đọc được V4 output.
+- Non-order smoke path hoạt động.
+- Execution revalidation không thể bị bypass.
+- `ScannerV4OrderPayload` vẫn là intent và router vẫn không execute; controller/
+  order service là nơi duy nhất dispatch sau fresh revalidation.
+- Có nguyên release hiện tại để rollback.
 
-## 15. Impact map dự kiến
+### 12.2 Trình tự
 
-| Khu vực | Tác động chính |
+1. Dừng scan/order mới và chờ tác vụ đang chạy kết thúc.
+2. Export state cần giữ.
+3. Deploy đúng một lần release V4 đã chuẩn bị ở Mục 12.1, gồm code, schema và config.
+4. Chạy migration additive cho persistence.
+5. Khởi động scanner.
+6. Chạy một scan non-order.
+7. Xác nhận version, score, gate, decision, snapshot, journal và metrics.
+8. Chỉ bật order workflow khi safety, macro, account, portfolio và journal policy
+   bắt buộc đã được cấu hình.
+   Nếu vẫn dùng default `None → UNKNOWN`, giữ scan/paper mode.
+
+Không có thời điểm V3 và V4 cùng phục vụ live traffic.
+
+Bước 12 chuyển sang `DONE` ngay sau khi deploy atomic và smoke test đạt. Thời gian
+theo dõi sau đó thuộc riêng Bước 13.
+
+### 12.3 Những đường V3 phải xóa
+
+- Composite scorer V3 có Risk/Macro component.
+- `risk_score < 9`.
+- Numeric Macro/correlation/AI score mutation.
+- Fallback `total`, `best_score`, `scenario_scores.total`.
+- Dynamic/adaptive FinalScore weights.
+- Evidence/Execution fallback copy từ Technical.
+- Safety/news/spread logic bị tính lặp.
+- Legacy ranking/enrichment.
+- Generic rollout controls chỉ phục vụ đường V3 đã xóa.
+
+### 12.4 Smoke test
+
+- Payload đúng V4 schema và đủ version.
+- Chỉ bốn technical component.
+- Safety `UNKNOWN/BLOCK` không `READY_NOW`.
+- Ranking status-first.
+- V3 config/artifact không vào V4 decision.
+- Snapshot/journal/metrics ghi đúng version.
+- Order path luôn revalidate dữ liệu mới.
+- Không có exception/error spike ở scanner, UI hoặc persistence.
+
+### 12.5 Rollback
+
+Khi có lỗi schema, version, safety, order revalidation hoặc persistence:
+
+1. dừng order mới;
+2. deploy nguyên release trước;
+3. restore config/state tương thích đã export;
+4. smoke safety và order path;
+5. giữ artifact V4 để điều tra, không rewrite thành V3.
+
+## 13. Bước 13 — Post-cutover audit
+
+Sau cutover cần theo dõi:
+
+- distribution Technical/Setup theo side/regime;
+- tỷ lệ PASS/CAUTION/BLOCK/UNKNOWN;
+- neutral fallback Evidence/Execution;
+- candidate status;
+- blocked-high-score;
+- version/snapshot mismatch;
+- provider/pipeline error;
+- execution rejection;
+- mọi order attempt.
+
+Lấy mẫu xuyên suốt scan → row → persistence → journal → UI để xác nhận snapshot
+ID, side, score, gate và version không đổi.
+
+Khi runtime ổn định:
+
+- cập nhật `docs/scanner/scanner-flow.md`;
+- cập nhật `docs/scanner/technical-scoring-architecture.md`;
+- ghi V3 là historical-only;
+- đánh dấu Bước 13 `DONE`.
+
+### 13.1 Cấu hình RuntimeOrderPolicy — GIÁ TRỊ TẠM THỜI (TRIAL, chưa phải final)
+
+Khe cấu hình order duy nhất cho live runtime ([core/scanner_v4_order_policy.py](../core/scanner_v4_order_policy.py))
+đã được wire vào release (`run_v4_pair(..., order_policy=...)`). **Nguồn duy nhất của các
+giá trị thử là file [config/scanner_v4_order_policy.json](../../config/scanner_v4_order_policy.json)**
+— bảng dưới chỉ phản ánh file đó; đổi số thì sửa file, không sửa bảng này. Các giá trị
+**tạm thời được owner chấp nhận để chạy thử** vào 2026-08-14 — chúng **KHÔNG phải là
+số hiệu chuẩn cuối cùng** và **phải được rà lại trong đợt audit Bước 13** trước khi
+coi là chính thức.
+
+**Số bắt buộc để mở** (`certified()`/`order_enabled` = `True`): threshold đủ 4 floor (đã
+chốt 40/35/5/2:1) **và** safety đóng đủ 4 (connectivity age, candle SLA, spread map
+non-rỗng, volatility calibrated) **và** macro đóng đủ **3 trong 5** (`deadband_points`,
+`confidence_threshold`, `conflict_cap` — `unknown_cap` và `ai_conviction_threshold` là
+fail-safe có giá trị nhưng **không gating order**) **và** đủ 4 portfolio/journal. Thiếu bất
+kỳ số bắt buộc nào trong `RuntimeOrderPolicy.from_dict` → `order_enabled` vẫn `False` →
+order workflow vẫn BLOCKED (fail-closed).
+
+**Chưa nối vào live (đúng theo kỷ luật giữ ORDER BLOCKED):** file config mới được
+persist + test load; **chưa có loader runtime nào đọc nó** và controller vẫn gọi
+`run_v4_pair_from_live(...)` **không truyền `order_policy=`** → release dùng
+`DEFAULT_RUNTIME_ORDER_POLICY` (safety/macro mở) → candidate luôn BLOCKED. Muốn áp dụng
+các số thử lên live, cần một bước nối riêng: đọc `config/scanner_v4_order_policy.json`,
+`RuntimeOrderPolicy.from_dict`, rồi truyền vào `run_v4_pair_from_live(order_policy=…)`.
+Bước nối này thuộc Bước 13 và chưa làm.
+
+| Lớp | Khóa | Giá trị tạm thời | Ghi chú thử |
+|---|---|---|---|
+| threshold | `technical_floor` / `setup_floor` / `min_score_gap` / `min_risk_reward` | 40 / 35 / 5 / `"2/1"` | đã chốt owner-approved từ Bước 07, giữ nguyên |
+| safety | `connectivity_max_age_minutes` | 5 | heartbeat MT5 tính bằng giây |
+| safety | `max_candle_age_minutes` | 3 | nguồn lệch quá 3′ = dữ liệu cũ |
+| safety | `spread_threshold_by_symbol` | `{"XAUUSD": 40, "EURUSD": 25}` | điểm; thêm symbol khác theo points điển hình |
+| safety | `volatility_upper_ratio` | 2.0 | ATR14 ≥2× trung bình 14 ngày → block |
+| macro | `deadband_points` | 3 | buy/sell raw cách ≤3 pts = không rõ cạnh |
+| macro | `confidence_threshold` | 0.6 | dữ liệu macro tin cậy ≥0.6 |
+| macro | `conflict_cap` | `"WATCH_ZONE"` | đổi thành `"BLOCK"` nếu muốn nghiêm nhất |
+| macro | `unknown_cap` | `"DATA_UNAVAILABLE"` | unknown → fail-closed, không trade |
+| macro | `ai_conviction_threshold` | 0.7 | veto AI chỉ có hiệu lực khi conviction ≥0.7 |
+| portfolio | `portfolio_position_limit` | 1 | đổi 2 nếu muốn hai lệnh |
+| portfolio | `portfolio_exposure_limit` | 0.3 | ≤30% vốn over-exposure |
+| journal | `journal_max_consecutive_losses` | 3 | dừng mở lệnh mới sau 3 lệnh thua liên tiếp |
+| journal | `journal_drawdown_caution_ratio` | 0.1 | sụt 10% → CAUTION/WATCH |
+
+Trạng thái đúng đắn: các số trên là điểm khởi đầu an toàn cho một tài khoản cá nhân,
+**không phải là hiệu chuẩn** dựa trên V3 hoặc data thật. Quyết định áp dụng dứt điểm,
+tăng độ mở (bớt conservative) hay siết chặt hơn là của owner sau khi theo dõi Bước 13.
+Muốn đổi số thử, sửa `config/scanner_v4_order_policy.json`; test
+`tests/test_scanner_v4_order_policy.py::TestTrialConfig` giữ cho file luôn load được
+và (khi đủ số) `order_enabled is True`.
+
+> `order_enabled=True` chỉ mở các cổng composition; lệnh thật vẫn phải đi qua chuỗi
+> guard của controller (`execute_order_candidate` → `revalidate_execution` →
+> `place_market_order`) theo §12.1. Và như ghi trên, các số thử hiện **chưa được nối**
+> vào live — bước nối đó cũng thuộc Bước 13, chưa làm.
+
+## 14. File map
+
+| Khu vực | File chính |
 |---|---|
-| `core/signal_engine.py` | Scorer bốn component; bỏ Risk/Macro/CHOCH score mutation |
-| `core/analysis_pipeline.py` | Tách score, safety, macro và fallback |
-| `core/risk_engine.py` | Bỏ `risk_score < 9`; giữ trade-plan risk riêng |
-| `core/trade_gate_engine.py` | Canonical safety/macro/structure gates |
-| `core/final_score_engine.py` | Một fallback matrix và round-once |
-| Decision/Strategy/Candidate | Đọc v4 score + gate contract |
-| Ranking | Eligibility first; bỏ penalty trùng |
-| Backtest/config | V4 parity, threshold mới, v3 fail-closed |
-| UI/API/snapshot | Breakdown 4 component + gate cards |
-| Tests/fixtures | Xóa fixture 6 component; khóa invariant v4 |
+| Domain/schema | `core/scanner_v4_models.py` |
+| Technical score | `core/technical_signal_scorer.py` |
+| Market safety | `core/market_safety_gate.py` |
+| Macro | `core/macro_gate.py` |
+| FinalScore | `core/final_score_v4.py` |
+| Composition | `core/scanner_v4_composition.py` |
+| Threshold | `core/scanner_v4_threshold_policy.py` |
+| Decision/candidate | `core/scanner_v4_candidate.py`, `core/scanner_v4_strategy_router.py` |
+| Order policy (Bước 12/13) | `core/scanner_v4_order_policy.py` + `config/scanner_v4_order_policy.json` (giá trị thử) |
+| Ranking | `core/scanner_v4_ranking.py` |
+| Backtest/config | `core/scanner_v4_backtest_contract.py`, `core/scanner_v4_config_invalidation.py` |
+| Calibration optional | `core/scanner_v4_calibration.py`, `core/scanner_v4_pit_dataset.py` |
+| Row/presentation | `core/scanner_v4_row.py`, `ui/scanner_v4_presentation.py` |
+| Snapshot/replay | `core/scanner_v4_snapshot.py`, `core/scanner_v4_replay.py` |
+| Journal | `services/scanner_v4_journal_models.py`, `services/scanner_v4_journal_converters.py` |
+| Observability | `core/scanner_v4_observability.py`, `core/scanner_v4_session_review.py` |
 
-## 16. Điều chưa được phép tự suy diễn
-
-Các mục sau phải được phân tích trong đúng bước, không ngăn việc khóa kiến trúc:
-
-- threshold Technical/Setup mới;
-- volatility metric và band production;
-- macro deadband/confidence/cap cụ thể;
-- threshold score gap v4;
-- exact ranking weights trong cùng eligibility group;
-- thời hạn đọc compatibility snapshot v3;
-- policy cho manual order khi safety `UNKNOWN`.
-
-Mọi quyết định trên phải được ghi vào tài liệu này trước khi implementation.
+Đây là toàn bộ contract cần thiết để tiếp tục Bước 12.

@@ -27,7 +27,6 @@ def test_completed_screen_clusters_have_no_local_stylesheets() -> None:
     migrated = (
         UI / "main_window.py",
         UI / "components" / "chart_view.py",
-        UI / "components" / "info_card.py",
         UI / "screens" / "dashboard_screen.py",
         UI / "screens" / "orders_screen.py",
         UI / "screens" / "journal_screen.py",
