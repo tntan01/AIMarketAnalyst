@@ -19,8 +19,6 @@ from core.scanner import (
     build_scanner_output,
 )
 from core.scanner_observability import create_scan_context
-from core.scanner_rollout import build_rollout_policy
-from config.settings import ScannerRolloutSettings
 from ui.screens.scanner_screen import ScannerScreen
 
 
@@ -52,7 +50,6 @@ def _settings():
         notifications=SimpleNamespace(
             telegram_bot_token="", telegram_chat_ids=[]
         ),
-        scanner_rollout=ScannerRolloutSettings(),
     )
 
 
@@ -112,13 +109,7 @@ class _Journal:
         return []
 
 
-class _RolloutMetrics:
-    def readiness(self, settings):
-        return {"ready": True}
-
-    def canary_readiness(self, settings):
-        return {"ready": True}
-
+class _ScanHealth:
     def record_scan(self, **kwargs):
         return {"recorded": True}
 
@@ -130,7 +121,7 @@ def _make_controller():
         news_service=_News(),
         journal_service=_Journal(),
         telegram_service=MagicMock(),
-        rollout_metrics_service=_RolloutMetrics(),
+        scan_health_service=_ScanHealth(),
         retention_service=MagicMock(),
     )
     ctrl.observability = MagicMock()
@@ -170,11 +161,9 @@ def test_split_core_callback_fires_before_aftercare_and_merged_returned(monkeypa
         *,
         scan_context,
         settings,
-        rollout_policy,
-        pre_scan_readiness,
-        pre_scan_canary_readiness,
         mt5_balance,
         portfolio_state,
+        scan_portfolio=None,
     ):
         events.append("core")
         return {"scan_id": scan_context.scan_id, "rows": ["row"]}, {"rows": ["row"]}
@@ -445,7 +434,7 @@ def test_flag_off_auto_trade_error_fails_scan(monkeypatch):
         scanner_module, "_fetch_one_symbol_mt5", lambda *a, **k: None
     )
 
-    def boom(rows, request, rollout_policy):
+    def boom(rows, request):
         raise RuntimeError("auto trade down")
 
     monkeypatch.setattr(ctrl, "_execute_auto_trades", boom)
@@ -474,7 +463,7 @@ def test_flag_on_auto_trade_error_is_recorded(monkeypatch):
     )
     delivered: list[dict] = []
 
-    def boom(rows, request, rollout_policy):
+    def boom(rows, request):
         raise RuntimeError("auto trade down")
 
     monkeypatch.setattr(ctrl, "_execute_auto_trades", boom)
@@ -616,13 +605,9 @@ def test_aftercare_returns_delta_without_mutating_core(monkeypatch):
     core_output = build_scanner_output(rows, request, 0)
     core_output["scan_id"] = scan_context.scan_id
     core_output["scan_context"] = scan_context.to_dict()
-    policy = build_rollout_policy(settings.scanner_rollout, server="Broker-Demo")
     ctx = {
         "scan_context": scan_context,
         "settings": settings,
-        "rollout_policy": policy,
-        "pre_scan_readiness": {"ready": True},
-        "pre_scan_canary_readiness": {"ready": True},
         "correlation_context": {},
         "freshness": {},
         "closed_trades": [],
@@ -709,7 +694,7 @@ def test_matching_aftercare_delta_merges_on_gui_thread():
         "scan_id": "scan-1",
         "rows": ["row"],
         "timestamp": "2026-01-01T00:00:00+07:00",
-        "rollout_policy": {"stage": "SHADOW"},
+        "scan_health": {"scan_health_version": "scan-health-v1"},
         "ai_called": 0,
     }
     owner = _screen_owner("scan-1", core)
@@ -726,7 +711,9 @@ def test_matching_aftercare_delta_merges_on_gui_thread():
     assert owner.scan_result["market_brief"] == "brief"
     assert owner.scan_result["telegram_alerts"] == {"sent": 1}
     assert owner.scan_result["rows"] == ["row"]  # core rows preserved
-    assert owner.scan_result["rollout_policy"] == {"stage": "SHADOW"}
+    assert owner.scan_result["scan_health"] == {
+        "scan_health_version": "scan-health-v1"
+    }
     assert ("status", expected) in _screen_owner._calls
     assert ("brief", expected) in _screen_owner._calls
     assert owner.progress_bar.value == 100
@@ -737,7 +724,6 @@ def test_core_ready_shows_pending_aftercare_status():
     status_labels = {
         "AI đã gọi": MagicMock(),
         "Telegram": MagicMock(),
-        "Rollout": MagicMock(),
         "Lần quét gần nhất": MagicMock(),
     }
     owner = type(
@@ -761,6 +747,5 @@ def test_core_ready_shows_pending_aftercare_status():
     assert owner._active_scan_id == "scan-1"
     status_labels["AI đã gọi"].setText.assert_called_once_with("Đang tạo bản tin...")
     status_labels["Telegram"].setText.assert_called_once_with("Đang gửi...")
-    status_labels["Rollout"].setText.assert_called_once_with("Đang ghi nhận...")
     assert owner.progress_bar.value == 96
     owner.scan_button.setText.assert_called_once_with("Đang gửi/lưu kết quả...")

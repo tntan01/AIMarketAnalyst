@@ -6,38 +6,36 @@ from config.settings import default_settings
 from services.settings_service import SettingsService
 
 
-def test_order_management_defaults_are_shadow_and_fail_safe() -> None:
+def test_order_management_defaults_are_live_and_fail_safe() -> None:
+    # Fully live since 2026-08-16: the OM feature flag is removed and the
+    # stage ladder / kill switch / canary fields no longer exist. Execution
+    # is gated only by the broker account's own trading permission.
     settings = default_settings()
 
-    assert settings.features.order_management_v2 is False
-    assert settings.order_management.stage == "SHADOW"
-    assert settings.order_management.require_demo_account is True
-    assert settings.order_management.production_approved is False
-    assert settings.order_management.manage_scope == "AMA"
-    assert settings.order_management.canary_broker_symbol == ""
-    assert settings.order_management.canary_position_id == 0
+    for removed_field in (
+        "stage",
+        "kill_switch",
+        "require_demo_account",
+        "production_approved",
+        "canary_broker_symbol",
+        "canary_position_id",
+        "manage_scope",
+    ):
+        assert not hasattr(settings.order_management, removed_field)
 
 
 def test_order_management_settings_round_trip(tmp_path) -> None:
     path = tmp_path / "settings.json"
     service = SettingsService(path)
     settings = default_settings()
-    settings.features.order_management_v2 = True
-    settings.order_management.stage = "DEMO"
     settings.order_management.be_trigger_r = 1.25
     settings.order_management.trail_wide_atr_multiplier = 3.0
-    settings.order_management.canary_broker_symbol = "EURUSDm"
-    settings.order_management.canary_position_id = 12345
 
     service.save(settings)
     loaded = service.load()
 
-    assert loaded.features.order_management_v2 is True
-    assert loaded.order_management.stage == "DEMO"
     assert loaded.order_management.be_trigger_r == 1.25
     assert loaded.order_management.trail_wide_atr_multiplier == 3.0
-    assert loaded.order_management.canary_broker_symbol == "EURUSDm"
-    assert loaded.order_management.canary_position_id == 12345
 
 
 def test_invalid_order_management_settings_fail_closed(tmp_path) -> None:
@@ -46,9 +44,10 @@ def test_invalid_order_management_settings_fail_closed(tmp_path) -> None:
         json.dumps(
             {
                 "ai": {},
-                "features": {"order_management_v2": True},
                 "order_management": {
-                    "stage": "UNKNOWN",
+                    # Leftover rollout-era keys must be ignored, not honored.
+                    "stage": "SHADOW",
+                    "kill_switch": True,
                     "manage_scope": "EVERYTHING",
                     "poll_interval_seconds": 0,
                     "max_retry_attempts": 0,
@@ -60,7 +59,8 @@ def test_invalid_order_management_settings_fail_closed(tmp_path) -> None:
 
     loaded = SettingsService(path).load()
 
-    assert loaded.order_management.stage == "SHADOW"
-    assert loaded.order_management.manage_scope == "AMA"
+    assert not hasattr(loaded.order_management, "stage")
+    assert not hasattr(loaded.order_management, "kill_switch")
+    assert not hasattr(loaded.order_management, "manage_scope")
     assert loaded.order_management.poll_interval_seconds == 0.5
     assert loaded.order_management.max_retry_attempts == 1

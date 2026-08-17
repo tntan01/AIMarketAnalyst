@@ -168,7 +168,7 @@ def test_positive_steepening_frozen_responses_match_pre_refactor_scores(monkeypa
 
     assert snapshot.yield_spread_10y_5y == 0.51
     assert snapshot.yield_steepening is True
-    for key in ("tier1", "tier2", "tier3", "raw_total", "alignment", "reasons", "macro_v2"):
+    for key in ("tier1", "tier2", "tier3", "raw_total", "alignment", "reasons"):
         assert result[key] == baseline[key]
     expected_reason = (
         "[T1] EUR=--(Trung tính) so với USD=--(Trung tính) | "

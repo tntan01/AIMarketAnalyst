@@ -1,4 +1,4 @@
-"""Phase-7 migration, reconciliation, shadow and release-gate tests."""
+"""Phase-7 migration, reconciliation and release-gate tests."""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from core.backtest_golden_replay import run_golden_replay
 from core.backtest_migration import LEGACY_RESEARCH, migrate_snapshot_payload
 from core.backtest_release import (
     build_release_report,
-    compare_engine_shadow,
     reconcile_forward_demo,
     validate_release_report,
 )
@@ -183,31 +182,14 @@ def test_release_thresholds_cannot_be_weakened_by_caller():
     assert "FORWARD_SAMPLE_TOO_SMALL" in report["block_codes"]
 
 
-def test_engine_shadow_blocks_material_disagreement():
-    legacy = _trades()
-    identical = compare_engine_shadow(legacy, deepcopy(legacy))
-    changed = deepcopy(legacy)
-    for row in changed[:3]:
-        row["result"] = "loss"
-        row["result_r"] = -1.0
-    different = compare_engine_shadow(legacy, changed)
-
-    assert identical["ready"] is True
-    assert identical["disagreement_rate"] == 0.0
-    assert different["ready"] is False
-    assert "ENGINE_SHADOW_DISAGREEMENT_TOO_HIGH" in different["block_codes"]
-
-
 def test_release_report_requires_all_evidence_and_detects_tampering():
     trades = _trades()
     snapshot = _release_snapshot(trades)
     golden = run_golden_replay(FIXTURE)
-    shadow = compare_engine_shadow(trades, deepcopy(trades))
     report = build_release_report(
         snapshot,
         demo_trades=_demo(trades),
         golden_report=golden,
-        shadow_report=shadow,
         reviewed_by="risk-reviewer",
         approved=True,
     )
@@ -285,7 +267,6 @@ def test_release_report_cli_is_deterministic_on_windows(tmp_path):
     trades = _trades()
     current_path = tmp_path / "current.json"
     forward_path = tmp_path / "forward.json"
-    legacy_path = tmp_path / "legacy.json"
     demo_path = tmp_path / "demo.json"
     output_path = tmp_path / "reviewed.json"
     current_path.write_text(
@@ -294,13 +275,6 @@ def test_release_report_cli_is_deterministic_on_windows(tmp_path):
     forward_path.write_text(
         json.dumps(_release_snapshot(trades)), encoding="utf-8"
     )
-    legacy_path.write_text(json.dumps({
-        "backtest_contract": {
-            "contract_version": "old-contract",
-            "engine_version": "legacy-engine",
-        },
-        "trades": trades,
-    }), encoding="utf-8")
     demo_path.write_text(json.dumps(_demo(trades)), encoding="utf-8")
 
     completed = subprocess.run(
@@ -309,7 +283,6 @@ def test_release_report_cli_is_deterministic_on_windows(tmp_path):
             "scripts/backtest_release_report.py",
             "--snapshot", str(current_path),
             "--forward-snapshot", str(forward_path),
-            "--legacy-snapshot", str(legacy_path),
             "--demo-trades", str(demo_path),
             "--reviewer", "phase7-test-reviewer",
             "--approve",

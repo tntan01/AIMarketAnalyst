@@ -40,8 +40,8 @@ _PD_THRESHOLD = 0.05
 _LEG_STRONG = 3
 _LEG_NORMAL = 2
 _CHOCH_CONFIRMED_LEGS = 3
-# Phase 16B shadow policy. Named constants keep every adjustment auditable;
-# they must be calibrated on production snapshots before any consumer uses it.
+# Effective-zone scoring policy (live in execution planning via risk_engine).
+# Named constants keep every adjustment auditable.
 _EFFECTIVE_ZONE_SCORE_BASE = 50
 _EFFECTIVE_ZONE_FRESHNESS_BONUSES = ((3, 10), (8, 6), (16, 3))
 _EFFECTIVE_ZONE_STALE_PENALTY = 12
@@ -977,12 +977,12 @@ def calculate_effective_zone_score(
     side: str,
     atr_value: float | int | None,
 ) -> dict[str, Any]:
-    """Return a conservative, shadow-only zone score and its breakdown.
+    """Return a conservative zone score and its breakdown.
 
     Unlike ``zone_quality_score``, repeated tests are treated as zone
     consumption, stale/mitigated state is explicit, and excessive source-zone
-    width is penalized. Consumers must continue to use ``zone_score`` until
-    shadow results justify a production migration.
+    width is penalized. Live consumers: execution planning in ``risk_engine``
+    (sub-zone selection and stop-loss cap).
     """
     normalized_side = str(side or "").strip().lower()
 

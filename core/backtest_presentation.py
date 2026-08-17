@@ -64,8 +64,6 @@ _REASON_LABELS = {
     "FORWARD_REJECTION_RATE_TOO_HIGH": "Tỷ lệ lệnh bị từ chối trong chạy thử còn cao.",
     "FORWARD_SLIPPAGE_TOO_HIGH": "Trượt giá chạy thử vượt giới hạn.",
     "FORWARD_PERFORMANCE_DEGRADATION_TOO_HIGH": "Hiệu suất chạy thử suy giảm quá nhiều.",
-    "ENGINE_SHADOW_SAMPLE_TOO_SMALL": "Chưa đủ mẫu để so sánh hai engine.",
-    "ENGINE_SHADOW_DISAGREEMENT_TOO_HIGH": "Hai engine còn cho kết quả khác nhau quá nhiều.",
     "GOLDEN_REPLAY_NOT_PASSED": "Bộ kiểm thử chuẩn chưa đạt.",
 }
 

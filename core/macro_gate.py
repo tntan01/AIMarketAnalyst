@@ -3,7 +3,7 @@
 Step 05 of the Scanner V4 migration builds the *decision* contract for macro:
 it owns (1) the versioned ``MacroPolicy``, (2) the deterministic raw deadband
 classification, (3) the single canonical construction of ``MacroAssessment``
-(data only — raw BUY/SELL, confidence, status, correlation/event/AI provenance)
+(data only — raw BUY/SELL, confidence, status, correlation/event provenance)
 and (4) the ``MacroGate`` that turns an assessment into a fail-closed
 ``MacroGateResult`` (status PASS|CAUTION|BLOCK|UNKNOWN, assessed side,
 decision cap, reason codes, policy version).
@@ -23,16 +23,8 @@ Fail-closed rules (never infer optimistic defaults):
       - confidence_threshold None   -> MACRO_CONFIDENCE_THRESHOLD_UNSET
       - conflict_cap None           -> MACRO_CONFLICT_CAP_UNSET
       - unknown_cap None            -> UNKNOWN decision stays uncapped
-      - ai_conviction_threshold None + veto present -> MACRO_AI_VETO_UNVERIFIED
   * missing raw/confidence/side data is ``UNKNOWN`` (MACRO_DATA_UNAVAILABLE /
     MACRO_SIDE_MISSING), never converted to neutral or PASS.
-  * provider/AI error (verdict source fallback/fatal) is REPRESENTED with
-    MACRO_AI_VERDICT_UNAVAILABLE and prevents a PASS gate — the absence of a
-    veto cannot be certified, so the error is never silently skipped to pass.
-    Intentional skips (disabled / below threshold / no cache) are recorded as
-    MACRO_AI_VERDICT_SKIPPED without blocking the deterministic side.
-  * The AI verdict is asymmetric (veto/cap only; never improves a setup) and is
-    interpreted only here — a single owner for AI veto/cap.
   * Aggregate precedence: BLOCK > UNKNOWN > CAUTION > PASS.
   * Macro never touches TechnicalSignalScore; a BLOCK may coexist with a
     technical score of 100, but auto-entry must not proceed.
@@ -51,10 +43,6 @@ import math
 from typing import Any
 
 from core.reason_codes import (
-    MACRO_AI_VERDICT_SKIPPED,
-    MACRO_AI_VERDICT_UNAVAILABLE,
-    MACRO_AI_VETO,
-    MACRO_AI_VETO_UNVERIFIED,
     MACRO_ALIGNED,
     MACRO_CONFIDENCE_THRESHOLD_UNSET,
     MACRO_CONFLICT,
@@ -87,11 +75,8 @@ from core.scanner_v4_models import (
 )
 
 __all__ = [
-    "AI_ERROR_SOURCES",
-    "AI_VERDICT_SOURCES",
     "CONFLICT_CAP_BLOCK_SENTINEL",
     "DEFAULT_MACRO_POLICY",
-    "MACRO_AI_POLICY_VERSION",
     "MACRO_CAP_POLICY_VERSION",
     "MACRO_CONFIDENCE_POLICY_VERSION",
     "MACRO_DEADBAND_POLICY_VERSION",
@@ -106,13 +91,12 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Locked policy versions (Step 05; see docs/scanner/scanner-v4-architecture.md
 # Mục 7.1). The *semantics* are locked here; numeric values stay OPEN until the
-# Bước 09 calibration (V3 effective thresholds / V2 shadow candidates are
-# evidence references, never copied defaults).
+# Bước 09 calibration (V3 effective thresholds are evidence references, never
+# copied defaults).
 # ---------------------------------------------------------------------------
 MACRO_DEADBAND_POLICY_VERSION = "scanner-macro-deadband-raw-v1"
 MACRO_CONFIDENCE_POLICY_VERSION = "scanner-macro-confidence-v1"
 MACRO_CAP_POLICY_VERSION = "scanner-macro-cap-v1"
-MACRO_AI_POLICY_VERSION = "scanner-macro-ai-veto-v1"
 
 # decision_cap is restricted to candidate-statuses that can only lower eligibility.
 VALID_MACRO_DECISION_CAPS = frozenset({
@@ -123,25 +107,6 @@ VALID_MACRO_DECISION_CAPS = frozenset({
 })
 # Sentinel conflict policy value: conflict -> BLOCK (instead of CAUTION + cap).
 CONFLICT_CAP_BLOCK_SENTINEL = "BLOCK"
-
-# AI verdict provenance sources (mirrors services/macro_ai_verdict.py lifecycle).
-AI_VERDICT_SOURCES = frozenset({
-    "ai",
-    "fallback",
-    "skip_disabled",
-    "skip_below_threshold",
-    "skip_backtest_no_cache",
-    "skip_fatal_error",
-})
-# Genuine provider/AI failure: no veto can be certified -> gate must not PASS.
-AI_ERROR_SOURCES = frozenset({"fallback", "skip_fatal_error"})
-
-_PRECEDENCE = {
-    BLOCK: 3,
-    UNKNOWN: 2,
-    CAUTION: 1,
-    PASS: 0,
-}
 
 
 class MacroGateError(ValueError):
@@ -235,7 +200,6 @@ def build_macro_assessment(
     correlation_context: Mapping[str, Any] | None = None,
     events: Sequence[Mapping[str, Any]] | None = None,
     macro_sources: Mapping[str, Any] | None = None,
-    ai_verdict: Mapping[str, Any] | None = None,
 ) -> MacroAssessment:
     """Build a canonical ``MacroAssessment`` (data only; the decision stays in the gate).
 
@@ -244,8 +208,8 @@ def build_macro_assessment(
     incomplete. No consumer may inject an arbitrary status.
 
     ``provenance`` is the single trace carrier: macro sources, correlation
-    context, event context and the raw AI verdict. It never contains a scored
-    field or a contract identity field (the model enforces both).
+    context and event context. It never contains a scored field or a contract
+    identity field (the model enforces both).
     """
     if not isinstance(symbol, str) or not symbol.strip():
         raise MacroGateError("symbol: expected a non-empty string")
@@ -284,11 +248,6 @@ def build_macro_assessment(
         "correlation": dict(correlation_context or {}),
         "events": [dict(event) for event in (events or [])],
     }
-    if ai_verdict is not None:
-        # The key is absent when no AI signal was provided, so the gate can
-        # distinguish "AI not invoked" (dimension contributes nothing) from a
-        # skipped or failed verdict.
-        provenance["ai_verdict"] = dict(ai_verdict)
 
     return MacroAssessment(
         raw_buy=raw_buy,
@@ -317,8 +276,6 @@ class MacroPolicy:
       outright (mapping OPEN). None -> conflict gates UNKNOWN (MACRO_CONFLICT_CAP_UNSET).
     - unknown_cap: decision cap carried on any deterministic UNKNOWN result
       (macro unknown / data missing). None -> stays uncapped UNKNOWN.
-    - ai_conviction_threshold: minimum AI conviction to assert a veto (OPEN).
-      None -> a present veto cannot be certified -> UNKNOWN (MACRO_AI_VETO_UNVERIFIED).
 
     Caps are restricted to ``VALID_MACRO_DECISION_CAPS``. The gate is
     override-free: no runtime flags or bypasses exist.
@@ -329,12 +286,10 @@ class MacroPolicy:
     confidence_threshold: float | None = None
     conflict_cap: str | None = None
     unknown_cap: str | None = None
-    ai_conviction_threshold: float | None = None
     # Locked semantics versions (values themselves stay OPEN to Bước 09).
     deadband_semantics_version: str = MACRO_DEADBAND_POLICY_VERSION
     confidence_semantics_version: str = MACRO_CONFIDENCE_POLICY_VERSION
     cap_semantics_version: str = MACRO_CAP_POLICY_VERSION
-    ai_policy_version: str = MACRO_AI_POLICY_VERSION
 
     def __post_init__(self) -> None:
         if self.policy_version != SCANNER_V4_MACRO_POLICY_VERSION:
@@ -349,7 +304,6 @@ class MacroPolicy:
         ):
             raise MacroGateError("deadband_points: expected None or a positive integer")
         _require_confidence(self.confidence_threshold, "confidence_threshold")
-        _require_confidence(self.ai_conviction_threshold, "ai_conviction_threshold")
         if self.deadband_semantics_version != MACRO_DEADBAND_POLICY_VERSION:
             raise MacroGateError(
                 f"deadband_semantics_version must be {MACRO_DEADBAND_POLICY_VERSION!r}"
@@ -362,8 +316,6 @@ class MacroPolicy:
             raise MacroGateError(
                 f"cap_semantics_version must be {MACRO_CAP_POLICY_VERSION!r}"
             )
-        if self.ai_policy_version != MACRO_AI_POLICY_VERSION:
-            raise MacroGateError(f"ai_policy_version must be {MACRO_AI_POLICY_VERSION!r}")
         if self.conflict_cap is not None and self.conflict_cap != CONFLICT_CAP_BLOCK_SENTINEL:
             _require_decision_cap(self.conflict_cap, "conflict_cap")
         if self.unknown_cap is not None:
@@ -382,8 +334,7 @@ class MacroGate:
     """Canonical owner of the macro decision (target-only, not wired to runtime).
 
     Only this module constructs ``MacroAssessment``/``MacroGateResult`` in the
-    V4 target, and only here is the AI verdict interpreted into a veto/cap —
-    the single owner of the AI veto/cap.
+    V4 target.
     """
 
     def evaluate(
@@ -412,10 +363,9 @@ class MacroGate:
             )
 
         deterministic = self._deterministic_dimension(assessment, policy, assessed_side)
-        ai = self._ai_dimension(assessment, policy)
-        status, cap = self._merge_dimensions(deterministic, ai)
+        status, cap, deterministic_reasons = deterministic
         reasons: list[str] = []
-        for code in (*deterministic[2], *ai[2]):
+        for code in deterministic_reasons:
             if code not in reasons:
                 reasons.append(code)
 
@@ -427,9 +377,7 @@ class MacroGate:
                 "confidence_threshold": policy.confidence_threshold,
                 "conflict_cap": policy.conflict_cap,
                 "unknown_cap": policy.unknown_cap,
-                "ai_policy_version": policy.ai_policy_version,
             },
-            "ai_decision": self._ai_decision_record(assessment),
         }
 
         return MacroGateResult(
@@ -525,73 +473,3 @@ class MacroGate:
         if policy.conflict_cap == CONFLICT_CAP_BLOCK_SENTINEL:
             return BLOCK, BLOCKED, [MACRO_CONFLICT]
         return CAUTION, policy.conflict_cap, [MACRO_CONFLICT]
-
-    def _ai_dimension(
-        self,
-        assessment: MacroAssessment,
-        policy: MacroPolicy,
-    ) -> tuple[str, str | None, list[str]]:
-        """AI verdict -> (status, cap, reasons). Asymmetric: veto/cap only.
-
-        A present veto with an uncalibrated conviction threshold gates UNKNOWN
-        (MACRO_AI_VETO_UNVERIFIED); a certified veto gates BLOCK + BLOCKED cap.
-        Provider/AI error sources gate UNKNOWN (MACRO_AI_VERDICT_UNAVAILABLE) and
-        never allow the gate to PASS; intentional skips are recorded with
-        MACRO_AI_VERDICT_SKIPPED without blocking the deterministic side.
-        """
-        verdict = assessment.provenance.get("ai_verdict")
-        if verdict is None:
-            # No AI signal provided for this assessment: nothing to interpret.
-            return PASS, None, []
-        if not isinstance(verdict, Mapping):
-            raise MacroGateError("provenance.ai_verdict: expected an object")
-        source = str(verdict.get("source") or "")
-        if source not in AI_VERDICT_SOURCES:
-            raise MacroGateError(
-                f"provenance.ai_verdict.source: unexpected {source!r}; "
-                f"expected one of {sorted(AI_VERDICT_SOURCES)}"
-            )
-        if source in AI_ERROR_SOURCES:
-            return UNKNOWN, None, [MACRO_AI_VERDICT_UNAVAILABLE]
-        if source != "ai":
-            return PASS, None, [MACRO_AI_VERDICT_SKIPPED]
-
-        conviction = verdict.get("conviction")
-        if isinstance(conviction, bool) or not isinstance(conviction, (int, float)):
-            raise MacroGateError("provenance.ai_verdict.conviction: expected a number")
-        if not 0 <= float(conviction) <= 1:
-            raise MacroGateError("provenance.ai_verdict.conviction: must be within 0..1")
-        if not isinstance(verdict.get("veto"), bool):
-            raise MacroGateError("provenance.ai_verdict.veto: expected a boolean")
-        if not verdict["veto"]:
-            return PASS, None, []
-        if policy.ai_conviction_threshold is None:
-            return UNKNOWN, None, [MACRO_AI_VETO_UNVERIFIED]
-        if float(conviction) >= float(policy.ai_conviction_threshold):
-            return BLOCK, BLOCKED, [MACRO_AI_VETO]
-        return PASS, None, [MACRO_AI_VERDICT_SKIPPED]
-
-    @staticmethod
-    def _merge_dimensions(
-        deterministic: tuple[str, str | None, list[str]],
-        ai: tuple[str, str | None, list[str]],
-    ) -> tuple[str, str | None]:
-        d_status, d_cap, _ = deterministic
-        a_status, a_cap, _ = ai
-        if _PRECEDENCE[a_status] > _PRECEDENCE[d_status]:
-            return a_status, a_cap
-        return d_status, d_cap
-
-    @staticmethod
-    def _ai_decision_record(assessment: MacroAssessment) -> dict[str, Any]:
-        verdict = assessment.provenance.get("ai_verdict")
-        if not isinstance(verdict, Mapping):
-            return {"present": bool(verdict)}
-        conflicts = verdict.get("conflicts")
-        return {
-            "present": True,
-            "source": str(verdict.get("source")),
-            "veto": bool(verdict.get("veto", False)),
-            "conviction": verdict.get("conviction"),
-            "conflicts": list(conflicts) if isinstance(conflicts, (list, tuple)) else [],
-        }

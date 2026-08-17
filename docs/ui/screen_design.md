@@ -570,7 +570,7 @@ lệnh từ các field legacy.
 - Nút **Tự động vào lệnh MT5** chỉ được enable trong chế độ quét định kỳ, mặc
   định unchecked và được làm nổi khi người dùng bật. Trong quét một lần, nút
   phải disable và reset về unchecked. Tooltip phải cảnh báo việc bật nút có
-  thể gửi lệnh thật nhưng vẫn chịu rollout và safety gates.
+  thể gửi lệnh thật nhưng vẫn chịu execution safety gates.
 - Sau mỗi lần quét, chỉ hiển thị dòng trạng thái ngắn: số mã đã quét và thời
   gian quét gần nhất.
 - Progress và thống kê theo sáu trạng thái candidate.
@@ -594,7 +594,7 @@ lệnh từ các field legacy.
 - Khu vực kết quả auto trade, Telegram và lỗi có reason code.
 - Nút **Kế hoạch lệnh** phải mô tả đúng kết quả của chính lần quét đã lưu,
   không suy ngược từ trạng thái hiện tại của nút auto-entry. Dialog phải tách
-  rõ số lệnh đã mở, đã kiểm tra, bỏ qua và bị rollout chặn; không dùng câu
+  rõ số lệnh đã mở, đã kiểm tra, bỏ qua và bị guard chặn; không dùng câu
   “đã vào MT5” khi `opened=0`. Mã chặn phổ biến phải có giải thích tiếng Việt.
 
 ### Cột bảng hiện hành
@@ -792,13 +792,13 @@ R:R ưu tiên field top-level của scanner row và fallback sang scenario khớ
   - Card "🎯 Số liệu giao dịch" — hướng phân tích canonical, vùng vào lệnh,
     SL, TP, R:R thực sau spread/chi phí và chế độ thị trường.
   - Card "📊 Điểm phân tích" — trạng thái candidate, setup score/ngưỡng,
-    điểm ưu tiên, độ tin cậy bằng chứng, mức sẵn sàng và rollout stage.
+    điểm ưu tiên, độ tin cậy bằng chứng và mức sẵn sàng.
   - Card "🔍 Điều kiện vào lệnh" — 7 điều kiện lấy từ đúng hướng đã chọn:
     chiến lược, setup score, entry, vùng giá, M15, R:R thực và quyền tại lúc
     quét. Trạng thái có ba mức ✅ đạt / ❌ không đạt / ➖ chưa có dữ liệu.
 - Cột phải (80%): Hero verdict canonical + Chart (OHLCV, indicator, SMC
   zones) full height. Hero không dùng `best_score` để gọi “MUA/BÁN mạnh”; nó
-  hiển thị `candidate_status`, hướng phân tích, setup/ngưỡng và rollout.
+  hiển thị `candidate_status`, hướng phân tích và setup/ngưỡng.
 
 **Tab Chẩn đoán** — nhánh chiến lược → phân rã điểm BUY/SELL → Gate → checklist
 pipeline → các bước pipeline → setup score của hướng đã chọn. Quyết định
@@ -1256,30 +1256,15 @@ Phải regenerate baseline trước khi dùng bộ ảnh đó làm release evide
 
 ---
 
-## 8.6. Tab Rollout Scanner
+## 8.6. Tab Rollout Scanner (đã gỡ bỏ)
 
-Tab Rollout là control an toàn cho Scanner V2, gồm:
-
-- stage: `DISABLED`, `SHADOW`, `DEMO_LIMITED`, `DEMO_FULL`, `CANARY`,
-  `PRODUCTION`;
-- kill switch;
-- bật/tắt so sánh **Scanner V1/V2** (shadow comparison của Candidate Engine,
-  không liên quan đến SMC scorer hay migration Scanner V4);
-- allowlist symbol cho `DEMO_LIMITED`;
-- canary risk percent;
-- yêu cầu demo account và production approval;
-- các ngưỡng shadow/demo/canary, disagreement, revalidation failure và
-  performance degradation;
-- trạng thái metrics, canary readiness và release readiness.
-
-Mã nguồn/settings mới mặc định là `SHADOW`. Runtime hiện tại đã lưu
-`PRODUCTION`, nhưng release gate vẫn chưa đạt. UI phải hiển thị cảnh báo rõ
-trước khi đổi stage và không được diễn giải `production_approved` như việc bỏ
-qua release gate.
-
-Tab này là rollout operational của V3. Không bổ sung toggle dual-score V3/V4,
-không hiển thị disagreement V3/V4 và không dùng V3 shadow làm migration gate;
-V4 chỉ xuất hiện sau direct cutover của cả scorer/feature version.
+Tab Rollout của Scanner V2/V3 — stage (`DISABLED`, `SHADOW`, `DEMO_LIMITED`,
+`DEMO_FULL`, `CANARY`, `PRODUCTION`), kill switch, shadow comparison V1/V2,
+allowlist, canary risk, require-demo/production approval và readiness
+metrics — đã bị gỡ bỏ hoàn toàn khỏi UI và codebase ngày 15/08/2026 theo
+quyết định của owner (phần mềm cá nhân, chạy thật trực tiếp). Thay thế cho
+kiểm soát thực thi hiện là: RuntimeOrderPolicy (Scanner) và tab **Quản lý
+lệnh** trong Settings (Order Management V2: bật/tắt + phạm vi AMA/ALL).
 
 # 3. Cấu trúc menu đề xuất
 

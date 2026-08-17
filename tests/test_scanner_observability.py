@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import logging
+import sqlite3
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +18,7 @@ from core.backtest_config_validation import (
     BACKTEST_VALIDATION_VERSION,
     validation_fingerprint,
 )
+from core.scanner import ScannerRequest, build_scanner_output
 from core.scanner_candidate_engine import (
     build_candidate_order_payload,
     evaluate_scanner_candidate,
@@ -32,6 +34,10 @@ from core.scanner_observability import (
     stable_hash,
 )
 from core.scanner_ranking_engine import rank_scanner_rows
+from core.scoring_provenance import build_scoring_provenance
+from core.system_backtest_engine import BacktestRequest, BacktestResult
+from services.journal_converters import journal_entry_from_analysis
+from services.journal_service import JournalService
 from services.observability_service import StructuredObservabilityService
 from services.storage_service import JsonStorage
 from services.scanner_persistence_service import ScannerPersistenceService
@@ -604,3 +610,86 @@ def test_candidate_events_cover_strategy_and_gate_rejections():
     ]
     assert all(event["scan_id"] == "scan-1" for event in recorder.events)
     assert all(event["symbol"] == "EUR/USD" for event in recorder.events)
+
+
+# Scoring-provenance contracts (relocated from test_smc_phase8_rollout.py when
+# the Phase-8 rollout file was deleted; provenance is rollout-independent).
+
+def test_scoring_provenance_is_mode_independent_and_canonical():
+    provenance = build_scoring_provenance()
+
+    assert provenance["scanner_scorer_version"] == "scanner-v3"
+    assert provenance["scanner_feature_version"] == "scanner-features-v3"
+    assert provenance["smc_scorer_version"] == "smc-v2"
+    assert "smc_scoring_mode" not in provenance
+    assert "smc_decision_source" not in provenance
+    assert "smc-v1" not in provenance.values()
+
+
+def test_scanner_and_backtest_outputs_expose_same_v2_identity():
+    request = ScannerRequest(
+        symbols=["EUR/USD"],
+        account_balance=10_000,
+        risk_percent=1.0,
+        timezone_name="UTC",
+    )
+    scanner_output = build_scanner_output([], request, 0)
+    backtest = BacktestResult(
+        request=BacktestRequest(
+            symbol="EUR/USD",
+            broker_symbol="EURUSD",
+            start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2025, 2, 1, tzinfo=timezone.utc),
+            initial_balance=10_000,
+            risk_percent=1.0,
+        ),
+        summary={},
+        trades=[],
+        equity_curve=[],
+        breakdowns={},
+        skipped_setups=[],
+        diagnostics={},
+    ).to_dict()
+
+    assert scanner_output["scoring_provenance"][
+        "smc_scorer_version"
+    ] == "smc-v2"
+    assert backtest["scoring_contract"]["smc_scorer_version"] == "smc-v2"
+    assert "smc_scoring_mode" not in backtest["scoring_contract"]
+    assert backtest["backtest_contract"]["purpose"] == "RESEARCH"
+    assert backtest["backtest_contract"]["execution_parity"] is False
+    assert backtest["backtest_contract"]["validation_eligible"] is False
+
+
+def test_journal_persists_scoring_provenance_columns(tmp_path):
+    db_path = tmp_path / "journal.db"
+    service = JournalService(db_path=db_path)
+    provenance = build_scoring_provenance()
+    entry = journal_entry_from_analysis(
+        {
+            "symbol": "EUR/USD",
+            "scoring_provenance": provenance,
+        },
+        mode="scanner_detail",
+    )
+    entry_id = service.create(entry)
+    loaded = service.get_entry(entry_id)
+
+    assert loaded is not None
+    assert loaded.scanner_scorer_version == "scanner-v3"
+    assert loaded.scanner_feature_version == "scanner-features-v3"
+    assert loaded.smc_scorer_version == "smc-v2"
+    assert not hasattr(loaded, "smc_scoring_mode")
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(journal_entries)"
+            ).fetchall()
+        }
+    assert {
+        "scanner_scorer_version",
+        "scanner_feature_version",
+        "smc_scorer_version",
+        "smc_scoring_mode",
+    }.issubset(columns)

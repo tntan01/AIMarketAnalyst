@@ -41,14 +41,15 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 
 ## Tài liệu hiện hành quan trọng
 
-- `scanner/scanner-flow.md`: contract luồng Scanner V3 hiện hành.
+- `scanner/scanner-v4-architecture.md`: runtime contract hiện hành của Scanner V4
+  (live từ 15/08/2026): TechnicalScore chỉ gồm Trend/Momentum/Location/SMC, Risk
+  và Macro là gate, order policy owner-accepted.
+- `scanner/scanner-flow.md`: luồng Scanner V3 legacy (historical); §11 ghi guard
+  chain thực thi live.
 - `scanner/technical-scoring-architecture.md`: contract chấm điểm và ranking.
-- `scanner/scanner-v4-architecture.md`: quyết định target TechnicalScore chỉ gồm
-  Trend/Momentum/Location/SMC, Risk và Macro chuyển thành gate, direct cutover
-  không shadow; **chưa phải runtime contract cho tới khi code v4 hoàn tất**.
 - `backtest/system_backtest_design.md`: thiết kế Backtest hiện hành.
 - `backtest/backtest-release-runbook.md`: quy trình golden, shadow, forward-demo và release.
-- `architecture/runtime-status.md`: trạng thái rollout/settings thực tế trên máy hiện tại.
+- `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế trên máy hiện tại.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
 

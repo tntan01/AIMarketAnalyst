@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-07-31T04:13:55.555237+00:00",
+  "captured_at": "2026-08-17T03:36:29.612632+00:00",
   "scope": "ui/**/*.py plus ui/styles/**/*.qss and theme overlays",
   "policy": {
     "comparison": "current counts must be less than or equal to baseline",
@@ -9,9 +9,9 @@
   },
   "totals": {
     "set_stylesheet_calls": 1,
-    "html_style_attributes": 452,
-    "hex_color_literals": 532,
-    "object_name_calls": 338
+    "html_style_attributes": 502,
+    "hex_color_literals": 592,
+    "object_name_calls": 336
   },
   "python_files": {
     "ui/__init__.py": {
@@ -38,85 +38,13 @@
       "line_count": 1,
       "sha256": "1b385f4471cf38b744b5bc85d13c2aae862ed409524afc5b12f74a0274f77d24"
     },
-    "ui/components/app_button.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 7,
-      "sha256": "abb1efe6e130c1d810d68855f050afad693b060a4e1eea8cbe76b62f4093d007"
-    },
-    "ui/components/card.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 7,
-      "sha256": "43894e1652cd6a6fa0d149a0fc8d9dc2f9512a189916871c1ca9d6c1f690e98e"
-    },
     "ui/components/chart_view.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 3,
-      "line_count": 190,
-      "sha256": "af6e64b8db230c50690dc98ba6023125b04a342676b6edf746a1e92fbc46ac23"
-    },
-    "ui/components/empty_state.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 8,
-      "sha256": "b68ecbeabc3a2e61645a59219fb773536685991702cc5560d072bc1acf305283"
-    },
-    "ui/components/icon_button.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 7,
-      "sha256": "dc08f7198621f85a2940fbb81741b4972e6cb28db28047a62791446e0d38ba60"
-    },
-    "ui/components/info_card.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 4,
-      "line_count": 79,
-      "sha256": "cf4c26886f7d06a56f5032aab6bd9971d27790765351ab3b466acfe231d1dd2f"
-    },
-    "ui/components/loading_state.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 8,
-      "sha256": "ab837f760adb543ba537ec52195ac9ea53368f05f9434e64d39162dd5168b20c"
-    },
-    "ui/components/section_header.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 7,
-      "sha256": "2e7fc3af0845c512f2355af335864bc221cff41ab52bce97ce6f25f86c1e2a55"
-    },
-    "ui/components/stat_card.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 7,
-      "sha256": "2157f099506b0fc116e83ffb43a072c23e1d3be33045bdff568aea01d66c1617"
-    },
-    "ui/components/toolbar.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 7,
-      "sha256": "91a6a0e6bd2399181fd29ca6faea5c7ea1fa7f10614142be4bddb07c75f2cc53"
+      "line_count": 209,
+      "sha256": "4261f37fb23c4f616c6471d800a2a3787b742b3d9ea7032d19473a33d0c7cdb3"
     },
     "ui/layout_system.py": {
       "set_stylesheet_calls": 0,
@@ -131,8 +59,8 @@
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 10,
-      "line_count": 249,
-      "sha256": "b8118ce9616f63dbeb2cf2ee112c5d5a97c970d56a3d673a0dcb35fb184c35be"
+      "line_count": 250,
+      "sha256": "94211e96710968760e273d9535937170410847202ed138b6de7d2143398948ed"
     },
     "ui/matplotlib_theme.py": {
       "set_stylesheet_calls": 0,
@@ -164,15 +92,23 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 71,
-      "sha256": "45ca0436b7b2de184c8b5c435cc3f44ffe541a613d31ea6c379cd6f4788eea5f"
+      "sha256": "07aec52274f6ae78f28dd33765568a2a89e921736ab062fcc0c8334bb90f19ea"
     },
     "ui/scanner_rr_formatters.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 0,
-      "line_count": 197,
-      "sha256": "9d87d0e9790ced8aaef2bea11438bec185d1528ab95cbbea33875144ea40bd38"
+      "line_count": 232,
+      "sha256": "f0008ac870292fef1efd4beb47ceac8226a8994a9ef871e783fef141df7d99c2"
+    },
+    "ui/scanner_v4_presentation.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 373,
+      "sha256": "3f4a2a5f91ee68552c87a614e82109e8960248375f2b84ddf1d878f050926a3f"
     },
     "ui/screens/__init__.py": {
       "set_stylesheet_calls": 0,
@@ -188,15 +124,15 @@
       "hex_color_literals": 153,
       "object_name_calls": 40,
       "line_count": 3066,
-      "sha256": "e8900d658e246d03942e8666ca59563acec41f30ac469a68728391ac45a59763"
+      "sha256": "f4c373d8f5d29cad57f12d30e015d238821efa3c26ec326c4269eb94dd96d10a"
     },
     "ui/screens/dashboard_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 19,
       "hex_color_literals": 1,
       "object_name_calls": 43,
-      "line_count": 1679,
-      "sha256": "b22e5f48e8fdf1ed467a85af2efa93624643fd3a748fb9f0ecc229d8abcfe468"
+      "line_count": 1712,
+      "sha256": "392290904e1d44bb52cadb0b482ff4690464cbfd4a5fff764b227c8b3db65228"
     },
     "ui/screens/journal_detail_screen.py": {
       "set_stylesheet_calls": 0,
@@ -212,39 +148,39 @@
       "hex_color_literals": 2,
       "object_name_calls": 57,
       "line_count": 2135,
-      "sha256": "87c95b90a915bc99f157f4b79b22dbf655edf75d9354014cf85fd260976a873f"
+      "sha256": "c7a17614c8afad0d12d93fc62a6860f06b43a615f14d9f2c6d1f4655f3e2949f"
     },
     "ui/screens/orders_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 13,
-      "line_count": 1551,
-      "sha256": "67a30dd86e65a7e373389e14843582ec9882ed3d8c1c14f65960f02a5321ad9e"
+      "line_count": 2053,
+      "sha256": "b8aa720a46021633dbabe7fd36f24c8bdf8d74ae02713b1642fa810302837779"
     },
     "ui/screens/scanner_detail_screen.py": {
       "set_stylesheet_calls": 0,
-      "html_style_attributes": 193,
-      "hex_color_literals": 240,
-      "object_name_calls": 70,
-      "line_count": 3493,
-      "sha256": "ab6ba283922d140391809a120f0957d9ea2c2a748bd57b9ec14010e99a386be3"
+      "html_style_attributes": 243,
+      "hex_color_literals": 300,
+      "object_name_calls": 71,
+      "line_count": 4091,
+      "sha256": "5b582825828f74bebdd3e8f1d5191c58a061af0498760e508bdf65a7dc878a5d"
     },
     "ui/screens/scanner_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 5,
       "hex_color_literals": 14,
       "object_name_calls": 35,
-      "line_count": 3448,
-      "sha256": "e3ecfd4dcee8cbbbb45f0095cde767dcd9decbc4716d391d8dbd6e9403b6c4e6"
+      "line_count": 3413,
+      "sha256": "4fa140747a41d3b575463b2b736a2b1d23c8bb1ec91b2aae2b8e1de976cf5c6d"
     },
     "ui/screens/settings_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
-      "object_name_calls": 25,
-      "line_count": 1792,
-      "sha256": "15cc3bc53663a72b5ff740bec4d53f90cc91f866450fde9bbf96ffdb51844683"
+      "object_name_calls": 26,
+      "line_count": 1820,
+      "sha256": "d541e2f36807aa50129f118bee8e6c14c54598b45fe5d4c828737fd4ac395bce"
     },
     "ui/screens/shared.py": {
       "set_stylesheet_calls": 0,
@@ -253,14 +189,6 @@
       "object_name_calls": 14,
       "line_count": 149,
       "sha256": "c2bc2e4cf48c4c5b53b2c16b8d7a9fe7456fbd5be4cf1944ef3287829143a52f"
-    },
-    "ui/terminology.py": {
-      "set_stylesheet_calls": 0,
-      "html_style_attributes": 0,
-      "hex_color_literals": 0,
-      "object_name_calls": 0,
-      "line_count": 23,
-      "sha256": "4ebff78db0070839ec3392a25ac8dc491de00d22083dd67d43890e2931cba627"
     },
     "ui/theme/__init__.py": {
       "set_stylesheet_calls": 0,
@@ -276,7 +204,7 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 97,
-      "sha256": "d97f4f92028832d3c7bb46bcaba9c5e58648ab7c07baad1ba986cc7c91754d9d"
+      "sha256": "8bf5103b26dc0affa123f30d357f39aa65837061036ff047d73c4ef54c37d581"
     },
     "ui/theme_manager.py": {
       "set_stylesheet_calls": 1,
@@ -297,31 +225,31 @@
   },
   "qss_files": {
     "ui/styles/base.qss": {
-      "line_count": 989,
-      "rule_blocks": 153,
+      "line_count": 998,
+      "rule_blocks": 154,
       "selector_references": 237,
       "unique_selectors": 237,
       "duplicate_selectors": 0,
       "hex_color_literals": 0,
-      "sha256": "be1f9f19b975b5d596afc2afeb544fe416422bb22bc57f7dfd53535dee7ebc0f"
+      "sha256": "c7e1e43a8ed5fe7db5120de46cbf8934aff5460f3a63f0bc14ea3314c1641dba"
     },
     "ui/styles/dark.qss": {
-      "line_count": 2325,
-      "rule_blocks": 429,
+      "line_count": 2335,
+      "rule_blocks": 430,
       "selector_references": 715,
       "unique_selectors": 696,
       "duplicate_selectors": 19,
-      "hex_color_literals": 660,
-      "sha256": "120dc2cc75e38eb060e7dbdbc9ef4bfa97e4b061f69f27f21b361e4cc20e40f1"
+      "hex_color_literals": 657,
+      "sha256": "8119eaf5322a85da5d4c65fea8ac6a6d373d166edf2cecea5dce43be38059eed"
     },
     "ui/styles/light.qss": {
-      "line_count": 2308,
-      "rule_blocks": 428,
+      "line_count": 2318,
+      "rule_blocks": 429,
       "selector_references": 716,
       "unique_selectors": 696,
       "duplicate_selectors": 20,
-      "hex_color_literals": 660,
-      "sha256": "5405d477e8da2197231d123414b77afac5bf3d46b7cbd52ffbc6c36693adbc1f"
+      "hex_color_literals": 657,
+      "sha256": "e3b5a38712218d408132ffb8fde27cdb29c5f3181c5028a28b20b1348e79ad13"
     }
   }
 }

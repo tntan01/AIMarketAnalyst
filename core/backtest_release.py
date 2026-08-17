@@ -1,4 +1,4 @@
-"""Forward-demo reconciliation, engine shadow comparison and release gate."""
+"""Forward-demo reconciliation and release gate."""
 
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from core.backtest_golden_replay import (
 from core.backtest_provenance import canonical_fingerprint
 
 
-BACKTEST_RELEASE_REPORT_VERSION = "backtest-phase7-release-report-v1"
-BACKTEST_SHADOW_REPORT_VERSION = "backtest-phase7-engine-shadow-v1"
+# Bumped from v1 when the engine-shadow evidence component was removed
+# (owner-approved shadow cleanup); saved v1 reports are therefore invalid.
+BACKTEST_RELEASE_REPORT_VERSION = "backtest-phase7-release-report-v2"
 BACKTEST_FORWARD_RECONCILIATION_VERSION = "backtest-phase7-forward-demo-v1"
 
 DEFAULT_RELEASE_THRESHOLDS: dict[str, float | int] = {
@@ -24,8 +25,6 @@ DEFAULT_RELEASE_THRESHOLDS: dict[str, float | int] = {
     "max_rejection_rate": 0.20,
     "max_average_adverse_slippage_bps": 5.0,
     "max_performance_degradation_pct": 25.0,
-    "min_shadow_samples": 20,
-    "max_shadow_disagreement_rate": 0.10,
 }
 
 
@@ -135,64 +134,12 @@ def reconcile_forward_demo(
     }
 
 
-def compare_engine_shadow(
-    legacy_trades: list[dict[str, Any]],
-    current_trades: list[dict[str, Any]],
-    *,
-    thresholds: dict[str, float | int] | None = None,
-) -> dict[str, Any]:
-    cfg = _thresholds(thresholds)
-    legacy = {_trade_identity(row): row for row in legacy_trades if isinstance(row, dict)}
-    current = {_trade_identity(row): row for row in current_trades if isinstance(row, dict)}
-    identities = set(legacy) | set(current)
-    disagreements = 0
-    details: list[dict[str, Any]] = []
-    for identity in sorted(identities):
-        old = legacy.get(identity)
-        new = current.get(identity)
-        codes: list[str] = []
-        if old is None:
-            codes.append("CURRENT_ONLY_TRADE")
-        elif new is None:
-            codes.append("LEGACY_ONLY_TRADE")
-        elif str(old.get("result") or "") != str(new.get("result") or ""):
-            codes.append("OUTCOME_DISAGREEMENT")
-        if codes:
-            disagreements += 1
-        details.append({"identity": identity, "disagreement_codes": codes})
-    samples = len(identities)
-    rate = disagreements / samples if samples else 1.0
-    legacy_expectancy = _expectancy(list(legacy.values()))
-    current_expectancy = _expectancy(list(current.values()))
-    degradation = _degradation(legacy_expectancy, current_expectancy)
-    blocks: list[str] = []
-    if samples < int(cfg["min_shadow_samples"]):
-        blocks.append("ENGINE_SHADOW_SAMPLE_TOO_SMALL")
-    if rate > float(cfg["max_shadow_disagreement_rate"]):
-        blocks.append("ENGINE_SHADOW_DISAGREEMENT_TOO_HIGH")
-    if degradation > float(cfg["max_performance_degradation_pct"]):
-        blocks.append("ENGINE_SHADOW_PERFORMANCE_DEGRADATION_TOO_HIGH")
-    return {
-        "version": BACKTEST_SHADOW_REPORT_VERSION,
-        "ready": not blocks,
-        "block_codes": blocks,
-        "samples": samples,
-        "disagreements": disagreements,
-        "disagreement_rate": round(rate, 6),
-        "legacy_expectancy_r": round(legacy_expectancy, 6),
-        "current_expectancy_r": round(current_expectancy, 6),
-        "performance_degradation_pct": round(degradation, 6),
-        "comparisons": details,
-    }
-
-
 def build_release_report(
     snapshot: dict[str, Any],
     *,
     demo_trades: list[dict[str, Any]],
     forward_trades: list[dict[str, Any]] | None = None,
     golden_report: dict[str, Any],
-    shadow_report: dict[str, Any],
     reviewed_by: str,
     approved: bool,
     reviewed_at: datetime | None = None,
@@ -218,8 +165,6 @@ def build_release_report(
         blocks.append("GOLDEN_REPLAY_NOT_PASSED")
     if reconciliation.get("ready") is not True:
         blocks.extend(reconciliation.get("block_codes", []))
-    if shadow_report.get("ready") is not True:
-        blocks.extend(shadow_report.get("block_codes", ["ENGINE_SHADOW_NOT_READY"]))
     if not str(reviewed_by or "").strip():
         blocks.append("RELEASE_REVIEWER_REQUIRED")
     if approved is not True:
@@ -239,7 +184,6 @@ def build_release_report(
         "demo_evidence_fingerprint": canonical_fingerprint(demo_trades),
         "golden_replay": dict(golden_report),
         "forward_demo": reconciliation,
-        "engine_shadow": dict(shadow_report),
         "block_codes": list(dict.fromkeys(blocks)),
     }
     report["report_fingerprint"] = release_report_fingerprint(report)
@@ -302,14 +246,6 @@ def validate_release_report(
         or not _forward_metrics_within_policy(forward.get("metrics"))
     ):
         reasons.append("BACKTEST_RELEASE_FORWARD_DEMO_REQUIRED")
-    shadow = report.get("engine_shadow")
-    if (
-        not isinstance(shadow, dict)
-        or shadow.get("version") != BACKTEST_SHADOW_REPORT_VERSION
-        or shadow.get("ready") is not True
-        or not _shadow_metrics_within_policy(shadow)
-    ):
-        reasons.append("BACKTEST_RELEASE_ENGINE_SHADOW_REQUIRED")
     return list(dict.fromkeys(reasons))
 
 
@@ -352,19 +288,6 @@ def _find_demo_match(expected, demo, used, *, tolerance):
     return None
 
 
-def _trade_identity(row: dict[str, Any]) -> str:
-    moment = _trade_time(row)
-    market_identity = "|".join((
-        _normalize_symbol(row.get("symbol")),
-        str(row.get("side") or "").lower(),
-        moment.isoformat() if moment else "",
-    ))
-    if moment is not None:
-        return market_identity
-    candidate = str(row.get("candidate_id") or "")
-    return candidate or market_identity
-
-
 def _trade_time(row: dict[str, Any]) -> datetime | None:
     for key in ("entry_time", "opened_at", "time"):
         value = row.get(key)
@@ -376,12 +299,6 @@ def _trade_time(row: dict[str, Any]) -> datetime | None:
         except ValueError:
             continue
     return None
-
-
-def _expectancy(rows: list[dict[str, Any]]) -> float:
-    values = [_number(row.get("result_r")) for row in rows]
-    clean = [value for value in values if value is not None]
-    return mean(clean) if clean else 0.0
 
 
 def _degradation(reference: float, observed: float) -> float:
@@ -419,14 +336,6 @@ def _thresholds(values: dict[str, float | int] | None) -> dict[str, float | int]
                     float(result["max_performance_degradation_pct"]),
                     float(candidate["max_performance_degradation_pct"]),
                 ),
-                "min_shadow_samples": max(
-                    int(result["min_shadow_samples"]),
-                    int(candidate["min_shadow_samples"]),
-                ),
-                "max_shadow_disagreement_rate": min(
-                    float(result["max_shadow_disagreement_rate"]),
-                    float(candidate["max_shadow_disagreement_rate"]),
-                ),
             })
         except (TypeError, ValueError, OverflowError):
             pass
@@ -449,21 +358,6 @@ def _forward_metrics_within_policy(value: object) -> bool:
         <= float(
             DEFAULT_RELEASE_THRESHOLDS["max_average_adverse_slippage_bps"]
         )
-        and _metric(value, "performance_degradation_pct", float("inf"))
-        <= float(
-            DEFAULT_RELEASE_THRESHOLDS["max_performance_degradation_pct"]
-        )
-    )
-
-
-def _shadow_metrics_within_policy(value: object) -> bool:
-    if not isinstance(value, dict):
-        return False
-    return (
-        int(_metric(value, "samples", 0.0))
-        >= int(DEFAULT_RELEASE_THRESHOLDS["min_shadow_samples"])
-        and _metric(value, "disagreement_rate", 1.0)
-        <= float(DEFAULT_RELEASE_THRESHOLDS["max_shadow_disagreement_rate"])
         and _metric(value, "performance_degradation_pct", float("inf"))
         <= float(
             DEFAULT_RELEASE_THRESHOLDS["max_performance_degradation_pct"]

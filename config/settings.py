@@ -144,13 +144,9 @@ class AdvancedSettings:
     scanner_ai_detail_limit: int = 3
     high_impact_news_block_before_minutes: int = 30
     high_impact_news_block_after_minutes: int = 30
-    sqlite_database_path: str = "./data/journal.db"
-    settings_storage: str = "settings.json"
     block_high_impact_news: bool = True
     brave_api_key: str = ""
     fred_api_key: str = ""
-    event_impact_derate_enabled: bool = False
-    macro_ai_verdict_enabled: bool = False
     vix_pair_aware_enabled: bool = False
 
 
@@ -163,56 +159,35 @@ class NotificationSettings:
 
 @dataclass(slots=True)
 class FeatureFlagSettings:
-    """Architecture rollout switches.
+    """Runtime feature switches.
 
     Phase-0 safety invariants are always enabled.  These flags only select
-    future implementations and must never restore unsafe auto-trade behavior.
+    optional optimisations/emissions and must never restore unsafe auto-trade
+    behavior.  The old ``scanner_architecture_v2``/``auto_trade_v2`` rollout
+    flags were removed on 2026-08-16: Scanner V4 and auto-trade are the
+    unconditional live path, and ``scanner_fast_tier2`` never branched
+    anywhere (only tier1 is wired).
     """
 
-    scanner_architecture_v2: bool = False
-    auto_trade_v2: bool = False
     # Fast reject remains opt-in until its offline A/B gates pass.
     scanner_fast_tier1: bool = False
-    scanner_fast_tier2: bool = False
     scanner_mt5_history_cache: bool = False
     # Phase 3: emit core result to the UI before Telegram/persistence run.
     scanner_core_result_early: bool = False
-    # Disabling V2 must never restore the legacy in-widget trailing engine.
-    # Its own rollout policy remains SHADOW by default.
-    order_management_v2: bool = False
-
-
-@dataclass(slots=True)
-class ScannerRolloutSettings:
-    """Fail-closed rollout policy for Scanner V2 order execution."""
-
-    stage: str = "SHADOW"
-    kill_switch: bool = False
-    allowed_symbols: list[str] = field(default_factory=list)
-    canary_risk_percent: float = 0.1
-    require_demo_account: bool = True
-    production_approved: bool = False
-    min_demo_orders: int = 20
-    min_canary_orders: int = 5
-    max_revalidation_failure_rate: float = 0.05
-    max_performance_degradation_pct: float = 15.0
 
 
 @dataclass(slots=True)
 class OrderManagementSettings:
-    """Fail-safe rollout and runtime policy for Order Management V2.
+    """Runtime policy for Order Management (fully live since 2026-08-15).
 
-    ``SHADOW`` computes desired protection changes without mutating broker
-    state. A demo/live stage must be selected explicitly before execution.
+    The rollout stage ladder and kill switch were removed by owner decision;
+    the OM feature flag was removed 2026-08-16 so the subsystem is always on.
+    Protection changes are applied directly to broker positions; execution is
+    gated only by the broker account's own ``account.trade_allowed``.
+    ``manage_scope`` was removed 2026-08-16 — there is only one scope (ALL):
+    "Đóng tất cả" always targets every open position.
     """
 
-    stage: str = "SHADOW"
-    kill_switch: bool = False
-    require_demo_account: bool = True
-    production_approved: bool = False
-    manage_scope: str = "AMA"
-    canary_broker_symbol: str = ""
-    canary_position_id: int = 0
     poll_interval_seconds: float = 1.5
     refresh_interval_seconds: float = 5.0
     be_trigger_r: float = 1.0
@@ -233,9 +208,6 @@ class AppSettings:
     advanced: AdvancedSettings = field(default_factory=AdvancedSettings)
     notifications: NotificationSettings = field(default_factory=NotificationSettings)
     features: FeatureFlagSettings = field(default_factory=FeatureFlagSettings)
-    scanner_rollout: ScannerRolloutSettings = field(
-        default_factory=ScannerRolloutSettings
-    )
     order_management: OrderManagementSettings = field(
         default_factory=OrderManagementSettings
     )

@@ -17,7 +17,6 @@ from core.scanner_models import (
     SCANNER_SCORER_VERSION,
     STRATEGY_ROUTER_VERSION,
 )
-from core.scanner_rollout import SCANNER_ROLLOUT_VERSION
 from core.scoring_provenance import build_scoring_provenance
 from core.smc_models import SMC_DOMAIN_VERSION
 from core.smc_versions import SMC_SCORER_VERSION
@@ -49,7 +48,6 @@ class ScannerScanContext:
     ranking_version: str
     execution_revalidation_version: str
     portfolio_engine_version: str
-    rollout_version: str
     smc_scorer_version: str
     smc_domain_version: str
     settings_hash: str
@@ -88,7 +86,6 @@ def create_scan_context(
         ranking_version=SCANNER_RANKING_VERSION,
         execution_revalidation_version=EXECUTION_REVALIDATION_VERSION,
         portfolio_engine_version=PORTFOLIO_ENGINE_VERSION,
-        rollout_version=SCANNER_ROLLOUT_VERSION,
         smc_scorer_version=SMC_SCORER_VERSION,
         smc_domain_version=SMC_DOMAIN_VERSION,
         settings_hash=stable_hash(settings),
@@ -230,10 +227,8 @@ def attach_row_observability(
             context.execution_revalidation_version
         ),
         "portfolio_engine_version": context.portfolio_engine_version,
-        "rollout_version": context.rollout_version,
         "smc_scorer_version": context.smc_scorer_version,
         "smc_domain_version": context.smc_domain_version,
-        "rollout_stage": enriched.get("rollout_stage"),
         "backtest_config_id": str(config.get("config_id", "") or ""),
         "input_timestamps": dict(
             enriched.get("input_timestamps", {})
@@ -300,8 +295,6 @@ def attach_row_observability(
             "backtest_config_id": observability["backtest_config_id"],
             "scorer_version": context.scorer_version,
             "ranking_version": context.ranking_version,
-            "rollout_version": context.rollout_version,
-            "rollout_stage": enriched.get("rollout_stage"),
             "smc_scorer_version": context.smc_scorer_version,
             "smc_domain_version": context.smc_domain_version,
         })

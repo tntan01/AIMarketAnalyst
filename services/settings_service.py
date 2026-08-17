@@ -14,7 +14,6 @@ from config.settings import (
     FeatureFlagSettings,
     NotificationSettings,
     OrderManagementSettings,
-    ScannerRolloutSettings,
     SymbolScanSettings,
     TradingSettings,
     default_settings,
@@ -38,9 +37,6 @@ class SettingsService:
             advanced=self._load_advanced_settings(data.get("advanced", {})),
             notifications=self._load_notification_settings(data.get("notifications", {})),
             features=self._load_feature_flags(data.get("features", {})),
-            scanner_rollout=self._load_scanner_rollout(
-                data.get("scanner_rollout", {})
-            ),
             order_management=self._load_order_management(
                 data.get("order_management", {})
             ),
@@ -508,13 +504,9 @@ class SettingsService:
             scanner_ai_detail_limit=int(data.get("scanner_ai_detail_limit", 3)),
             high_impact_news_block_before_minutes=int(data.get("high_impact_news_block_before_minutes", 30)),
             high_impact_news_block_after_minutes=int(data.get("high_impact_news_block_after_minutes", 30)),
-            sqlite_database_path=data.get("sqlite_database_path", "./data/journal.db"),
-            settings_storage=data.get("settings_storage", "settings.json"),
             block_high_impact_news=bool(data.get("block_high_impact_news", True)),
             brave_api_key=data.get("brave_api_key", ""),
             fred_api_key=data.get("fred_api_key", ""),
-            event_impact_derate_enabled=bool(data.get("event_impact_derate_enabled", False)),
-            macro_ai_verdict_enabled=bool(data.get("macro_ai_verdict_enabled", False)),
             vix_pair_aware_enabled=bool(data.get("vix_pair_aware_enabled", False)),
         )
 
@@ -541,19 +533,16 @@ class SettingsService:
         data = data if isinstance(data, dict) else {}
         # Key mode cũ trong settings JSON được bỏ qua; không còn
         # config path nào kích hoạt scorer khác ngoài SMC canonical.
+        # ``scanner_architecture_v2``/``auto_trade_v2``/``scanner_fast_tier2``
+        # đã xóa khỏi model (16/08/2026); ``order_management_v2`` đã xóa cùng
+        # ngày khi OM không còn feature flag — key còn sót trên disk bị bỏ qua.
         return FeatureFlagSettings(
-            scanner_architecture_v2=bool(data.get("scanner_architecture_v2", False)),
-            auto_trade_v2=bool(data.get("auto_trade_v2", False)),
             scanner_fast_tier1=bool(data.get("scanner_fast_tier1", False)),
-            scanner_fast_tier2=bool(data.get("scanner_fast_tier2", False)),
             scanner_mt5_history_cache=bool(
                 data.get("scanner_mt5_history_cache", False)
             ),
             scanner_core_result_early=bool(
                 data.get("scanner_core_result_early", False)
-            ),
-            order_management_v2=bool(
-                data.get("order_management_v2", False)
             ),
         )
 
@@ -562,25 +551,10 @@ class SettingsService:
         data: dict | None,
     ) -> OrderManagementSettings:
         data = data if isinstance(data, dict) else {}
-        stage = str(data.get("stage", "SHADOW") or "SHADOW").upper()
-        if stage not in {"DISABLED", "SHADOW", "DEMO", "CANARY", "PRODUCTION"}:
-            stage = "SHADOW"
-        scope = str(data.get("manage_scope", "AMA") or "AMA").upper()
-        if scope not in {"AMA", "ALL"}:
-            scope = "AMA"
+        # The rollout stage ladder and kill switch were removed (2026-08-15,
+        # fully live): leftover on-disk keys for them are ignored here. The
+        # ``manage_scope`` selector was removed 2026-08-16 (only ALL scope).
         return OrderManagementSettings(
-            stage=stage,
-            kill_switch=bool(data.get("kill_switch", False)),
-            require_demo_account=bool(data.get("require_demo_account", True)),
-            production_approved=bool(data.get("production_approved", False)),
-            manage_scope=scope,
-            canary_broker_symbol=str(
-                data.get("canary_broker_symbol", "") or ""
-            ).strip(),
-            canary_position_id=max(
-                _safe_int(data.get("canary_position_id", 0)),
-                0,
-            ),
             poll_interval_seconds=min(
                 max(_safe_float(data.get("poll_interval_seconds", 1.5)), 0.5),
                 60.0,
@@ -626,77 +600,6 @@ class SettingsService:
             max_retry_attempts=min(
                 max(_safe_int(data.get("max_retry_attempts", 5)), 1),
                 100,
-            ),
-        )
-
-    def _load_scanner_rollout(
-        self,
-        data: dict | None,
-    ) -> ScannerRolloutSettings:
-        data = data if isinstance(data, dict) else {}
-        stage = str(data.get("stage", "SHADOW") or "SHADOW").upper()
-        allowed_stages = {
-            "DISABLED",
-            "SHADOW",
-            "DEMO_LIMITED",
-            "DEMO_FULL",
-            "CANARY",
-            "PRODUCTION",
-        }
-        if stage not in allowed_stages:
-            stage = "SHADOW"
-        raw_symbols = data.get("allowed_symbols", [])
-        symbols = (
-            [
-                str(symbol).strip().upper()
-                for symbol in raw_symbols
-                if str(symbol).strip()
-            ]
-            if isinstance(raw_symbols, list)
-            else []
-        )
-        return ScannerRolloutSettings(
-            stage=stage,
-            kill_switch=bool(data.get("kill_switch", False)),
-            allowed_symbols=list(dict.fromkeys(symbols)),
-            canary_risk_percent=min(
-                max(_safe_float(data.get("canary_risk_percent", 0.1)), 0.01),
-                1.0,
-            ),
-            require_demo_account=bool(
-                data.get("require_demo_account", True)
-            ),
-            production_approved=bool(
-                data.get("production_approved", False)
-            ),
-            min_demo_orders=max(
-                _safe_int(data.get("min_demo_orders", 20)),
-                1,
-            ),
-            min_canary_orders=max(
-                _safe_int(data.get("min_canary_orders", 5)),
-                1,
-            ),
-            max_revalidation_failure_rate=min(
-                max(
-                    _safe_float(
-                        data.get("max_revalidation_failure_rate", 0.05)
-                    ),
-                    0.0,
-                ),
-                1.0,
-            ),
-            max_performance_degradation_pct=min(
-                max(
-                    _safe_float(
-                        data.get(
-                            "max_performance_degradation_pct",
-                            15.0,
-                        )
-                    ),
-                    0.0,
-                ),
-                100.0,
             ),
         )
 

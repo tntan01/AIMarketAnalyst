@@ -24,7 +24,7 @@ from services.settings_service import SettingsService
 _LEGACY_AUTO_TRADE_CONTRACT = pytest.mark.xfail(
     reason=(
         "_execute_auto_trades legacy không còn là execution boundary; "
-        "Scanner V2 bắt buộc rollout policy và shared revalidation"
+        "dispatch đi qua execute_order_candidate với shared revalidation"
     ),
     strict=True,
 )
@@ -645,19 +645,6 @@ class TestAutoTradeDiagnosticPayload:
         assert d["price_source"] == "technical_fallback"
         assert d["live_price"] is None
 
-    def test_diagnostics_key_in_return_dict(self):
-        fake_mt5 = FakeMT5(live_price=1.0970)
-        ctrl = _make_controller(fake_mt5)
-        req = _request()
-        # No candidates → empty diagnostics
-        ctrl._is_auto_trade_candidate = MagicMock(return_value=False)
-
-        result = ctrl._execute_auto_trades([], req)
-
-        assert "diagnostics" in result
-        assert isinstance(result["diagnostics"], list)
-        assert result["diagnostics"] == []
-
     def test_skip_missing_sl_tp_decision(self):
         fake_mt5 = FakeMT5(live_price=1.0970)
         ctrl = _make_controller(fake_mt5)
@@ -686,6 +673,22 @@ class TestAutoTradeDiagnosticPayload:
 
         d = result["diagnostics"][0]
         assert d["decision"] == "skip_existing_position"
+
+
+def test_auto_trades_return_dict_always_carries_diagnostics_key():
+    # The diagnostics list is part of the live contract (not legacy): the
+    # rollout stage ladder was removed (2026-08-15) and the key remains.
+    fake_mt5 = FakeMT5(live_price=1.0970)
+    ctrl = _make_controller(fake_mt5)
+    req = _request()
+    # No candidates → empty diagnostics
+    ctrl._is_auto_trade_candidate = MagicMock(return_value=False)
+
+    result = ctrl._execute_auto_trades([], req)
+
+    assert "diagnostics" in result
+    assert isinstance(result["diagnostics"], list)
+    assert result["diagnostics"] == []
 
 
 class TestManualOrderDiagnostic:

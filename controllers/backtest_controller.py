@@ -232,11 +232,6 @@ class BacktestController:
             purpose=run_policy.purpose,
             execution_mode=run_policy.execution_mode,
             code_revision=_runtime_code_revision(),
-            # Bước 6 (Major 5): flag AI Macro Verdict — backtest chỉ đọc cache,
-            # không gọi AI (read-cache-only trong assessor).
-            macro_ai_verdict_enabled=bool(
-                getattr(settings.advanced, "macro_ai_verdict_enabled", False)
-            ),
         )
 
     def run_backtest(

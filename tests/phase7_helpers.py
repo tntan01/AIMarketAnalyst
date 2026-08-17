@@ -10,7 +10,6 @@ from core.backtest_golden_replay import (
 from core.backtest_release import (
     BACKTEST_FORWARD_RECONCILIATION_VERSION,
     BACKTEST_RELEASE_REPORT_VERSION,
-    BACKTEST_SHADOW_REPORT_VERSION,
     release_report_fingerprint,
 )
 
@@ -49,14 +48,6 @@ def ready_release_report(
                 "average_adverse_slippage_bps": 0.0,
                 "performance_degradation_pct": 0.0,
             },
-        },
-        "engine_shadow": {
-            "version": BACKTEST_SHADOW_REPORT_VERSION,
-            "ready": True,
-            "block_codes": [],
-            "samples": 20,
-            "disagreement_rate": 0.0,
-            "performance_degradation_pct": 0.0,
         },
         "block_codes": [],
     }

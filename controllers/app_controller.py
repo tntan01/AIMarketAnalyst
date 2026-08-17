@@ -102,8 +102,7 @@ class AppController:
         if self._order_management_service is None:
             self._order_management_service = OrderManagementService(
                 self.mt5,
-                feature_enabled=self.settings.features.order_management_v2,
-                rollout_settings=self.settings.order_management,
+                om_settings=self.settings.order_management,
             )
         return self._order_management_service
 

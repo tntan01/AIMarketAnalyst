@@ -1,8 +1,9 @@
 """Static forbidden-symbol gates for the SMC single-runtime migration.
 
 Bước 29: no production/runtime module may reintroduce a legacy/shadow SMC
-scorer, mode selector or version literal, while the generic Scanner rollout
-shadow safety layer must remain intact.
+scorer, mode selector or version literal. The Phase-8 rollout shadow symbols
+are equally forbidden: the rollout stage ladder was removed on 2026-08-15
+(fully live) and must never be reintroduced.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ _FORBIDDEN_PATTERN = re.compile(
     r"|smc-v1"
 )
 
-_PROTECTED_SYMBOLS = (
+_REMOVED_ROLLOUT_SYMBOLS = (
     "ROLLOUT_SHADOW",
     "SHADOW_MODE_ORDER_SUPPRESSED",
 )
@@ -66,23 +67,21 @@ def test_forbidden_smc_legacy_shadow_symbols_are_absent() -> None:
     )
 
 
-def test_generic_scanner_rollout_shadow_symbols_survive() -> None:
-    runtime_text = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in _runtime_files()
+def test_generic_scanner_rollout_shadow_symbols_are_removed() -> None:
+    # The Phase-8 rollout stage ladder was removed on 2026-08-15 (fully live):
+    # its shadow order-suppression symbols must not reappear in runtime code.
+    offenders: list[str] = []
+    for path in _runtime_files():
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            for symbol in _REMOVED_ROLLOUT_SYMBOLS:
+                if symbol in line:
+                    offenders.append(
+                        f"{path.relative_to(_REPO)}:{line_number}:{symbol}"
+                    )
+    assert not offenders, (
+        "removed rollout shadow symbols must not reappear in runtime code: "
+        + ", ".join(offenders)
     )
-    for symbol in _PROTECTED_SYMBOLS:
-        assert symbol in runtime_text, (
-            f"generic Scanner rollout symbol {symbol!r} must be preserved"
-        )
-
-    protected_in_tests = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (_REPO / "tests").rglob("*.py")
-        if path.is_file()
-    )
-    for symbol in _PROTECTED_SYMBOLS:
-        assert symbol in protected_in_tests, (
-            f"generic Scanner rollout symbol {symbol!r} must stay covered "
-            "by tests"
-        )

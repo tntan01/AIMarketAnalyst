@@ -8,6 +8,8 @@
     "min_score_gap": 5,
     "min_risk_reward": "2"
   },
+  "order_policy_version": "scanner-order-policy-v1",
+  "order_policy_enabled": true,
   "route_status": "routed",
   "row_identity": {
     "composition_version": "scanner-composition-v4",
@@ -15,7 +17,7 @@
     "feature_version": "scanner-features-v4",
     "row_version": "scanner-v4-row-v1"
   },
-  "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:574b7878a848",
+  "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:549f1c81d4a5",
   "candidate_status": "BLOCKED",
   "intent_only": null,
   "insufficient_history": "TechnicalRawDerivationError",

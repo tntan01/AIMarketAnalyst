@@ -505,7 +505,7 @@ def test_news_first_then_correlation_same_generation_and_scoring(monkeypatch: py
         "EUR/USD", ["EUR", "USD"], [], [], [], [],
         ai_service=None, global_snapshot=snapshot,
     )
-    for key in ("tier1", "tier2", "tier3", "raw_total", "alignment", "reasons", "macro_v2"):
+    for key in ("tier1", "tier2", "tier3", "raw_total", "alignment", "reasons"):
         assert result_news[key] == result_corr[key]
 
 

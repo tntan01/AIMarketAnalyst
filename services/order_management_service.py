@@ -73,7 +73,6 @@ _RETRYABLE_TRADE_RETCODES = {
 @dataclass(frozen=True, slots=True)
 class OrderManagementHealth:
     snapshot_status: SnapshotStatus
-    stage: str
     execution_allowed: bool
     account: AccountIdentity | None
     observed_at_utc: datetime | None
@@ -122,8 +121,7 @@ class OrderManagementService(QObject):
         mt5_service: MT5Service,
         state_store: OrderManagementStateStore | None = None,
         *,
-        feature_enabled: bool = False,
-        rollout_settings: OrderManagementSettings | None = None,
+        om_settings: OrderManagementSettings | None = None,
         observability_service: StructuredObservabilityService | None = None,
         clock: Callable[[], float] | None = None,
         executor: Executor | None = None,
@@ -133,8 +131,7 @@ class OrderManagementService(QObject):
         self.mt5 = mt5_service
         self.state_store = state_store or OrderManagementStateStore()
         self.observability = observability_service or structured_observability
-        self._feature_enabled = bool(feature_enabled)
-        self._rollout = rollout_settings or OrderManagementSettings()
+        self._settings = om_settings or OrderManagementSettings()
         self._clock = clock or monotonic
         self._executor = executor or ThreadPoolExecutor(
             max_workers=1,
@@ -152,7 +149,6 @@ class OrderManagementService(QObject):
         self._shutdown = False
         self._health = OrderManagementHealth(
             snapshot_status=SnapshotStatus.UNAVAILABLE,
-            stage=self._rollout.stage,
             execution_allowed=False,
             account=None,
             observed_at_utc=None,
@@ -192,14 +188,12 @@ class OrderManagementService(QObject):
     def update_policy(
         self,
         *,
-        feature_enabled: bool,
-        rollout_settings: OrderManagementSettings,
+        management_settings: OrderManagementSettings,
     ) -> None:
-        """Apply saved rollout settings without requiring an app restart."""
+        """Apply saved runtime settings without requiring an app restart."""
 
         with self._lock:
-            self._feature_enabled = bool(feature_enabled)
-            self._rollout = rollout_settings
+            self._settings = management_settings
         self._timer.setInterval(self._poll_interval_ms())
         self._publish_health()
 
@@ -450,7 +444,7 @@ class OrderManagementService(QObject):
         **kwargs: object,
     ) -> Future[Any] | None:
         with self._lock:
-            if self._shutdown or self._rollout.kill_switch:
+            if self._shutdown:
                 return None
             runtime = (
                 self._states.get(int(args[0]))
@@ -475,14 +469,14 @@ class OrderManagementService(QObject):
             )
         def execute_if_still_allowed() -> Any:
             with self._lock:
-                blocked = self._shutdown or self._rollout.kill_switch
+                blocked = self._shutdown
             if blocked:
                 return {
                     "success": False,
                     "status": OperationStatus.REJECTED.value,
                     "message": (
                         "The broker mutation was cancelled before execution "
-                        "because the order-management kill switch is active."
+                        "because the order-management service shut down."
                     ),
                     "precondition_failed": True,
                 }
@@ -752,28 +746,18 @@ class OrderManagementService(QObject):
         if decision.action is None:
             return
 
-        allowed, gate_reason = self._execution_gate(account, runtime)
+        allowed, _gate_reason = self._execution_gate(account, runtime)
         if not allowed:
-            # SHADOW/disabled decisions are intents, not sent requests. Clear
-            # pending so the next fresh tick recomputes from broker truth.
-            shadow_state = replace(decision.state, pending_action=None)
+            # A gated decision (trading not allowed) is an intent, not a sent
+            # request. Clear pending so the next fresh tick recomputes from
+            # broker truth.
+            gated_state = replace(decision.state, pending_action=None)
             if not self._update_runtime_state(
                 runtime,
-                shadow_state,
+                gated_state,
                 expected_state=decision.state,
             ):
                 return
-            if self._feature_enabled and self._rollout.stage.upper() == "SHADOW":
-                self._emit_event(
-                    "SL_MODIFY_SHADOW",
-                    runtime,
-                    payload={
-                        "reason": decision.action.reason.value,
-                        "target_sl": decision.action.target_sl,
-                        "tp": decision.action.preserve_tp,
-                        "gate": gate_reason,
-                    },
-                )
             return
 
         if decision.action.reason is ActionReason.BREAKEVEN:
@@ -1024,14 +1008,14 @@ class OrderManagementService(QObject):
                 freeze_level_points=max(metadata.trade_freeze_level or 0, 0),
             ),
             atr=runtime.atr,
-            be_trigger_r=self._rollout.be_trigger_r,
-            be_offset=self._rollout.be_plus_pips * pip_size,
-            tight_trigger_r=self._rollout.trail_tight_trigger_r,
-            wide_atr_multiplier=self._rollout.trail_wide_atr_multiplier,
-            tight_atr_multiplier=self._rollout.trail_tight_atr_multiplier,
-            max_retries=self._rollout.max_retry_attempts,
-            retry_base_delay_seconds=self._rollout.retry_initial_seconds,
-            retry_max_delay_seconds=self._rollout.retry_max_seconds,
+            be_trigger_r=self._settings.be_trigger_r,
+            be_offset=self._settings.be_plus_pips * pip_size,
+            tight_trigger_r=self._settings.trail_tight_trigger_r,
+            wide_atr_multiplier=self._settings.trail_wide_atr_multiplier,
+            tight_atr_multiplier=self._settings.trail_tight_atr_multiplier,
+            max_retries=self._settings.max_retry_attempts,
+            retry_base_delay_seconds=self._settings.retry_initial_seconds,
+            retry_max_delay_seconds=self._settings.retry_max_seconds,
         )
 
     def _execution_gate(
@@ -1039,45 +1023,12 @@ class OrderManagementService(QObject):
         account: AccountIdentity,
         runtime: _RuntimePosition | None = None,
     ) -> tuple[bool, str]:
-        rollout = self._rollout
-        stage = str(rollout.stage or "SHADOW").upper()
-        if not self._feature_enabled:
-            return False, "feature_disabled"
-        if rollout.kill_switch:
-            return False, "kill_switch"
-        if stage in {"DISABLED", "SHADOW"}:
-            return False, stage.lower()
+        # Fully live since 2026-08-15 (owner decision): the rollout stage
+        # ladder, kill switch and OM feature flag were removed. The only
+        # remaining gate is the broker account's trading permission.
         if account.trade_allowed is not True:
             return False, "trading_not_allowed"
-        if stage == "DEMO":
-            return (account.is_demo, "demo_account" if account.is_demo else "not_demo")
-        if stage == "CANARY":
-            if rollout.require_demo_account and not account.is_demo:
-                return False, "canary_requires_demo"
-            if account.is_live and (
-                not rollout.production_approved or rollout.require_demo_account
-            ):
-                return False, "live_canary_not_approved"
-            if runtime is None:
-                return False, "canary_target_required"
-            symbol_ok = bool(rollout.canary_broker_symbol) and (
-                runtime.broker_symbol == rollout.canary_broker_symbol
-            )
-            ticket_ok = rollout.canary_position_id > 0 and (
-                runtime.state.position_id == rollout.canary_position_id
-            )
-            return (
-                symbol_ok and ticket_ok,
-                "canary_target" if symbol_ok and ticket_ok else "canary_target_mismatch",
-            )
-        if stage == "PRODUCTION":
-            allowed = (
-                rollout.production_approved
-                and not rollout.require_demo_account
-                and account.is_live
-            )
-            return allowed, "production_approved" if allowed else "production_blocked"
-        return False, "unknown_stage"
+        return True, ""
 
     def _set_health(
         self,
@@ -1094,7 +1045,6 @@ class OrderManagementService(QObject):
         with self._lock:
             self._health = OrderManagementHealth(
                 snapshot_status=status,
-                stage=self._rollout.stage,
                 execution_allowed=allowed,
                 account=account,
                 observed_at_utc=observed_at,
@@ -1258,7 +1208,7 @@ class OrderManagementService(QObject):
         self.event_emitted.emit(event)
 
     def _poll_interval_ms(self) -> int:
-        return max(500, int(float(self._rollout.poll_interval_seconds) * 1000))
+        return max(500, int(float(self._settings.poll_interval_seconds) * 1000))
 
     @staticmethod
     def _view(runtime: _RuntimePosition) -> ManagedPositionView:

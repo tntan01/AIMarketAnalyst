@@ -18,18 +18,21 @@ def test_feature_flags_load_backward_compatibly(tmp_path):
     service.storage.save({
         "ai": {},
         "features": {
+            # Removed 2026-08-16 (no reader anywhere): leftover on-disk keys
+            # must be ignored, not crash the loader.
             "scanner_architecture_v2": True,
             "auto_trade_v2": True,
+            "scanner_fast_tier2": True,
             "backtest_config_v2": True,
             "backtest_engine_v2": True,
         },
     })
     settings = service.load()
-    assert settings.features.scanner_architecture_v2 is True
-    assert settings.features.auto_trade_v2 is True
     assert settings.features.scanner_fast_tier1 is False
-    assert settings.features.scanner_fast_tier2 is False
     assert settings.features.scanner_mt5_history_cache is False
+    assert not hasattr(settings.features, "scanner_architecture_v2")
+    assert not hasattr(settings.features, "auto_trade_v2")
+    assert not hasattr(settings.features, "scanner_fast_tier2")
     assert not hasattr(settings.features, "backtest_config_v2")
     assert not hasattr(settings.features, "backtest_engine_v2")
 
@@ -38,18 +41,12 @@ def test_feature_flags_round_trip(tmp_path):
     # Avoid touching the OS credential store; no provider has an API key.
     service = SettingsService(tmp_path / "settings.json")
     settings = default_settings()
-    settings.features.scanner_architecture_v2 = True
-    settings.features.auto_trade_v2 = True
     settings.features.scanner_fast_tier1 = True
-    settings.features.scanner_fast_tier2 = True
     settings.features.scanner_mt5_history_cache = True
     service.save(settings)
 
     loaded = service.load()
-    assert loaded.features.scanner_architecture_v2 is True
-    assert loaded.features.auto_trade_v2 is True
     assert loaded.features.scanner_fast_tier1 is True
-    assert loaded.features.scanner_fast_tier2 is True
     assert loaded.features.scanner_mt5_history_cache is True
     stored = service.storage.load()
     assert "backtest_config_v2" not in stored["features"]
@@ -63,9 +60,7 @@ def test_scanner_output_exposes_contract_and_flags():
         risk_percent=1.0,
         timezone_name="Asia/Ho_Chi_Minh",
         feature_flags={
-            "auto_trade_v2": False,
             "scanner_fast_tier1": False,
-            "scanner_fast_tier2": False,
             "scanner_mt5_history_cache": False,
         },
     )
@@ -74,9 +69,7 @@ def test_scanner_output_exposes_contract_and_flags():
     assert output["strategy_router_version"] == "phase2-router-v1"
     assert output["portfolio_engine_version"] == "phase4-portfolio-v1"
     assert output["feature_flags"] == {
-        "auto_trade_v2": False,
         "scanner_fast_tier1": False,
-        "scanner_fast_tier2": False,
         "scanner_mt5_history_cache": False,
     }
 
@@ -90,11 +83,11 @@ def test_fast_flags_are_preserved_in_scan_context_and_request_fingerprint():
     }
     disabled = ScannerRequest(
         **base_kwargs,
-        feature_flags={"scanner_fast_tier1": False, "scanner_fast_tier2": False},
+        feature_flags={"scanner_fast_tier1": False},
     )
     enabled = ScannerRequest(
         **base_kwargs,
-        feature_flags={"scanner_fast_tier1": True, "scanner_fast_tier2": True},
+        feature_flags={"scanner_fast_tier1": True},
     )
 
     disabled_context = create_scan_context(default_settings(), disabled)
@@ -102,6 +95,5 @@ def test_fast_flags_are_preserved_in_scan_context_and_request_fingerprint():
 
     assert enabled_context.feature_flags == {
         "scanner_fast_tier1": True,
-        "scanner_fast_tier2": True,
     }
     assert enabled_context.request_hash != disabled_context.request_hash

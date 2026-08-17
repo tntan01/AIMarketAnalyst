@@ -85,10 +85,40 @@ def get_week_range(
     return start, end
 
 
+def _numeric(value: object) -> float | None:
+    """Coerce to float, returning ``None`` for missing/unparseable input."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_loss_trade(trade: dict[str, object]) -> bool:
+    """Whether a closed trade is a loss.
+
+    Uses the money P/L (``result_amount``) as the authoritative signal when it
+    is present — MT5-synced trades can have their %-price/``result_r`` wiped to
+    ``None``/``0.0`` while ``result_amount`` still carries the real (negative)
+    P/L.  Falls back to ``result_pct`` then ``result_r`` so callers that only
+    populate those (backtest rows) keep their existing behaviour.
+    """
+    amount = _numeric(trade.get("result_amount"))
+    if amount is not None:
+        return amount < 0.0
+    pct = _numeric(trade.get("result_pct"))
+    if pct is not None and pct != 0.0:
+        return pct < 0.0
+    rr = _numeric(trade.get("result_r"))
+    return rr is not None and rr < 0.0
+
+
 def calculate_loss_stats(
     closed_trades: list[dict[str, object]] | None = None,
     now: datetime | None = None,
     timezone_name: str = "Asia/Ho_Chi_Minh",
+    account_balance: float | None = None,
 ) -> dict[str, Any]:
     trades = closed_trades or []
 
@@ -97,10 +127,12 @@ def calculate_loss_stats(
 
     daily_result_pct = 0.0
     weekly_result_pct = 0.0
+    daily_result_amount = 0.0
+    weekly_result_amount = 0.0
     daily_trade_count = 0
     weekly_trade_count = 0
-
-    loss_sequence: list[bool] = []
+    has_amount = False
+    balance = _numeric(account_balance)
 
     for trade in trades:
         if not isinstance(trade, dict):
@@ -110,17 +142,8 @@ def calculate_loss_stats(
         if closed_at is None:
             continue
 
-        try:
-            result_pct = float(trade.get("result_pct") or 0.0)
-        except (TypeError, ValueError):
-            result_pct = 0.0
-
-        try:
-            result_r = float(trade.get("result_r") or 0.0)
-        except (TypeError, ValueError):
-            result_r = 0.0
-
-        is_loss = result_pct < 0.0 if result_pct != 0.0 else result_r < 0.0
+        result_pct = _numeric(trade.get("result_pct")) or 0.0
+        amount = _numeric(trade.get("result_amount"))
 
         if day_start <= closed_at < day_end:
             daily_result_pct += result_pct
@@ -130,12 +153,20 @@ def calculate_loss_stats(
             weekly_result_pct += result_pct
             weekly_trade_count += 1
 
-        loss_sequence.append(is_loss)
+        if amount is not None:
+            has_amount = True
+            if day_start <= closed_at < day_end:
+                daily_result_amount += amount
+            if week_start <= closed_at < week_end:
+                weekly_result_amount += amount
 
-    # Count consecutive losses within the current day only.
-    # Trades outside today's range are ignored so the guard resets daily.
+    # Count consecutive losses as the trailing run among the newest-first
+    # closed trades (matching how ``_v4_consecutive_losses`` in the scanner
+    # controller walks them).  The first non-loss — or a trade outside today —
+    # ends the run; trades must NOT be reversed because the list is already
+    # newest-first.
     consecutive_losses = 0
-    for trade in reversed(trades):
+    for trade in trades:
         if not isinstance(trade, dict):
             continue
         closed_at = _ensure_datetime(trade.get("closed_at"))
@@ -143,26 +174,31 @@ def calculate_loss_stats(
             continue
         if not (day_start <= closed_at < day_end):
             break
-        try:
-            result_pct = float(trade.get("result_pct") or 0.0)
-        except (TypeError, ValueError):
-            result_pct = 0.0
-        try:
-            result_r = float(trade.get("result_r") or 0.0)
-        except (TypeError, ValueError):
-            result_r = 0.0
-        is_loss = result_pct < 0.0 if result_pct != 0.0 else result_r < 0.0
-        if is_loss:
+        if _is_loss_trade(trade):
             consecutive_losses += 1
         else:
             break
 
+    # ``max_daily_loss_pct``/``max_weekly_loss_pct`` are % of account.  When a
+    # balance and at least one money P/L are available, express the daily/weekly
+    # result as account-% (``sum(result_amount) / balance * 100``) instead of
+    # summing per-trade %-price moves.  Otherwise keep the legacy fallback so
+    # callers that only provide ``result_pct``/``result_r`` behave the same.
+    if has_amount and balance and balance > 0:
+        daily_pct_out = daily_result_amount / balance * 100
+        weekly_pct_out = weekly_result_amount / balance * 100
+    else:
+        daily_pct_out = daily_result_pct
+        weekly_pct_out = weekly_result_pct
+
     return {
-        "daily_result_pct": round(daily_result_pct, 4),
-        "weekly_result_pct": round(weekly_result_pct, 4),
+        "daily_result_pct": round(daily_pct_out, 4),
+        "weekly_result_pct": round(weekly_pct_out, 4),
         "consecutive_losses": consecutive_losses,
         "daily_trade_count": daily_trade_count,
         "weekly_trade_count": weekly_trade_count,
+        "daily_result_amount": round(daily_result_amount, 4),
+        "weekly_result_amount": round(weekly_result_amount, 4),
     }
 
 
@@ -192,6 +228,7 @@ def check_account_guard(
     settings: dict[str, object] | None = None,
     action: str = "open_new_trade",
     now: datetime | None = None,
+    account_balance: float | None = None,
 ) -> dict[str, Any]:
     cfg = dict(_DEFAULT_SETTINGS)
     if settings:
@@ -203,7 +240,12 @@ def check_account_guard(
     max_open_risk = float(cfg.get("max_open_risk_pct", 3.0))
     timezone_name = str(cfg.get("trader_timezone", "Asia/Ho_Chi_Minh"))
 
-    stats = calculate_loss_stats(closed_trades, now=now, timezone_name=timezone_name)
+    stats = calculate_loss_stats(
+        closed_trades,
+        now=now,
+        timezone_name=timezone_name,
+        account_balance=account_balance,
+    )
     open_risk = calculate_open_risk_pct(open_trades)
     stats["open_risk_pct"] = open_risk
 

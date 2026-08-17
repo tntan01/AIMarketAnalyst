@@ -33,47 +33,25 @@ def _screen(path: Path) -> SettingsScreen:
     return screen
 
 
-def test_order_management_panel_defaults_to_visible_fail_safe_state(
+def test_order_management_panel_defaults_to_live_state(
     tmp_path: Path,
 ) -> None:
+    # Fully live since 2026-08-16: the OM feature flag and the manage-scope
+    # selector are both removed — the panel shows only the policy inputs and
+    # the live status label.
     screen = _screen(tmp_path / "settings.json")
 
-    assert screen.order_management_enabled_input.isChecked() is False
-    assert screen.order_management_stage_input.currentText() == "SHADOW"
-    assert screen.order_management_canary_symbol_row.isHidden() is True
-    assert screen.order_management_canary_position_row.isHidden() is True
-    assert "Automation V2 đang tắt" in screen.order_management_status_label.text()
-    assert "manual" in screen.order_management_status_label.text()
-
-
-def test_canary_target_controls_only_enable_for_canary_and_warn_if_missing(
-    tmp_path: Path,
-) -> None:
-    screen = _screen(tmp_path / "settings.json")
-    screen.order_management_enabled_input.setChecked(True)
-    screen.order_management_stage_input.setCurrentText("CANARY")
-    screen._update_order_management_safety_state()
-
-    assert screen.order_management_canary_symbol_row.isHidden() is False
-    assert screen.order_management_canary_position_row.isHidden() is False
-    assert screen.order_management_canary_symbol_input.isEnabled() is True
-    assert screen.order_management_canary_position_input.isEnabled() is True
-    assert "fail-closed" in screen.order_management_status_label.text()
-
-    screen.order_management_canary_symbol_input.setText("EURUSD.a")
-    screen.order_management_canary_position_input.setText("987654321")
-    screen._update_order_management_safety_state()
-
-    assert "đúng symbol và position ID" in (
-        screen.order_management_status_label.text()
-    )
-
-    screen.order_management_stage_input.setCurrentText("DEMO")
-    screen._update_order_management_safety_state()
-    assert screen.order_management_canary_symbol_row.isHidden() is True
-    assert screen.order_management_canary_position_row.isHidden() is True
-    assert screen.order_management_canary_symbol_input.isEnabled() is False
-    assert screen.order_management_canary_position_input.isEnabled() is False
+    # hasattr() on an un-initialized QWidget raises RuntimeError; check the
+    # instance dict directly instead.
+    for removed_control in (
+        "order_management_stage_input",
+        "order_management_kill_switch_input",
+        "order_management_canary_symbol_input",
+        "order_management_enabled_input",
+        "order_management_scope_input",
+    ):
+        assert removed_control not in screen.__dict__
+    assert "Đang chạy thật" in screen.order_management_status_label.text()
 
 
 def test_order_management_panel_round_trip_preserves_other_settings(
@@ -81,18 +59,10 @@ def test_order_management_panel_round_trip_preserves_other_settings(
 ) -> None:
     path = tmp_path / "settings.json"
     screen = _screen(path)
-    screen.app_settings.features.scanner_architecture_v2 = True
+    screen.app_settings.features.scanner_fast_tier1 = True
     screen.app_settings.default_symbol = "XAU/USD"
     screen.app_settings.trading.max_daily_loss_pct = 3.25
 
-    screen.order_management_enabled_input.setChecked(True)
-    screen.order_management_stage_input.setCurrentText("CANARY")
-    screen.order_management_kill_switch_input.setChecked(False)
-    screen.order_management_require_demo_input.setChecked(True)
-    screen.order_management_production_approved_input.setChecked(False)
-    screen.order_management_scope_input.setCurrentText("ALL")
-    screen.order_management_canary_symbol_input.setText("EURUSD.a")
-    screen.order_management_canary_position_input.setText("987654321")
     screen.order_management_poll_interval_input.setValue(2.5)
     screen.order_management_refresh_interval_input.setValue(9.0)
     screen.order_management_be_trigger_input.setValue(1.4)
@@ -107,17 +77,9 @@ def test_order_management_panel_round_trip_preserves_other_settings(
     screen._save_order_management_settings()
     loaded = SettingsService(path).load()
 
-    assert loaded.features.order_management_v2 is True
-    assert loaded.features.scanner_architecture_v2 is True
+    assert loaded.features.scanner_fast_tier1 is True
     assert loaded.default_symbol == "XAU/USD"
     assert loaded.trading.max_daily_loss_pct == 3.25
-    assert loaded.order_management.stage == "CANARY"
-    assert loaded.order_management.kill_switch is False
-    assert loaded.order_management.require_demo_account is True
-    assert loaded.order_management.production_approved is False
-    assert loaded.order_management.manage_scope == "ALL"
-    assert loaded.order_management.canary_broker_symbol == "EURUSD.a"
-    assert loaded.order_management.canary_position_id == 987654321
     assert loaded.order_management.poll_interval_seconds == 2.5
     assert loaded.order_management.refresh_interval_seconds == 9.0
     assert loaded.order_management.be_trigger_r == 1.4
@@ -129,20 +91,3 @@ def test_order_management_panel_round_trip_preserves_other_settings(
     assert loaded.order_management.retry_max_seconds == 45.0
     assert loaded.order_management.max_retry_attempts == 8
     assert screen.order_management_status_label.text().startswith("Đã lưu.")
-
-
-def test_invalid_canary_position_is_saved_as_blocking_target(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "settings.json"
-    screen = _screen(path)
-    screen.order_management_enabled_input.setChecked(True)
-    screen.order_management_stage_input.setCurrentText("CANARY")
-    screen.order_management_canary_symbol_input.setText("EURUSD")
-    screen.order_management_canary_position_input.setText("not-a-ticket")
-
-    screen._save_order_management_settings()
-    loaded = SettingsService(path).load()
-
-    assert loaded.order_management.canary_position_id == 0
-    assert "fail-closed" in screen.order_management_status_label.text()

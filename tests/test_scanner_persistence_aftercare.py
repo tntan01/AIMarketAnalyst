@@ -32,8 +32,6 @@ from core.scanner_observability import (
     replay_candidate_decision,
 )
 from core.scanner_ranking_engine import rank_scanner_rows
-from core.scanner_rollout import build_rollout_policy
-from config.settings import ScannerRolloutSettings
 from services.runtime_retention_service import RuntimeRetentionService
 from services.scanner_job_state import ScannerJobState
 from services.scanner_persistence_service import atomic_json_save
@@ -181,7 +179,6 @@ def _settings():
         notifications=SimpleNamespace(
             telegram_bot_token="", telegram_chat_ids=[]
         ),
-        scanner_rollout=ScannerRolloutSettings(),
     )
 
 
@@ -193,13 +190,7 @@ class _SettingsService:
         return self._settings
 
 
-class _RolloutMetrics:
-    def readiness(self, settings):
-        return {"ready": True}
-
-    def canary_readiness(self, settings):
-        return {"ready": True}
-
+class _ScanHealth:
     def record_scan(self, **kwargs):
         return {"recorded": True}
 
@@ -211,7 +202,7 @@ def _make_controller(tmp_path, *, job_state=None):
         news_service=MagicMock(),
         journal_service=MagicMock(),
         telegram_service=MagicMock(),
-        rollout_metrics_service=_RolloutMetrics(),
+        scan_health_service=_ScanHealth(),
         retention_service=RuntimeRetentionService(tmp_path),
         job_state=job_state or ScannerJobState(runtime_root=tmp_path),
     )
@@ -622,13 +613,9 @@ def test_aftercare_delta_exposes_persistence_contract(monkeypatch, tmp_path):
     core_output = build_scanner_output(rows, request, 0)
     core_output["scan_id"] = scan_context.scan_id
     core_output["scan_context"] = scan_context.to_dict()
-    policy = build_rollout_policy(settings.scanner_rollout, server="Broker-Demo")
     ctx = {
         "scan_context": scan_context,
         "settings": settings,
-        "rollout_policy": policy,
-        "pre_scan_readiness": {"ready": True},
-        "pre_scan_canary_readiness": {"ready": True},
         "correlation_context": {},
         "freshness": {},
         "closed_trades": [],
@@ -689,13 +676,9 @@ def test_app_close_during_market_brief_keeps_compact_snapshot_and_marks_interrup
     core_output = build_scanner_output(rows, request, 0)
     core_output["scan_id"] = scan_context.scan_id
     core_output["scan_context"] = scan_context.to_dict()
-    policy = build_rollout_policy(settings.scanner_rollout, server="Broker-Demo")
     ctx = {
         "scan_context": scan_context,
         "settings": settings,
-        "rollout_policy": policy,
-        "pre_scan_readiness": {"ready": True},
-        "pre_scan_canary_readiness": {"ready": True},
         "correlation_context": {},
         "freshness": {},
         "closed_trades": [],
@@ -780,13 +763,9 @@ def test_app_close_during_telegram_keeps_snapshot_and_late_completion_interrupte
     core_output = build_scanner_output(rows, request, 0)
     core_output["scan_id"] = scan_context.scan_id
     core_output["scan_context"] = scan_context.to_dict()
-    policy = build_rollout_policy(settings.scanner_rollout, server="Broker-Demo")
     ctx = {
         "scan_context": scan_context,
         "settings": settings,
-        "rollout_policy": policy,
-        "pre_scan_readiness": {"ready": True},
-        "pre_scan_canary_readiness": {"ready": True},
         "correlation_context": {},
         "freshness": {},
         "closed_trades": [],

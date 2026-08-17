@@ -47,16 +47,14 @@ Scanner phân tích danh sách symbol qua pipeline đầy đủ và tạo:
 - candidate status và reason codes;
 - effective R:R, evidence/execution readiness;
 - canonical ranking;
-- observability, snapshot và shadow comparison Candidate Engine V1/V2 của V3;
+- observability và snapshot;
 - Telegram và auto-trade result khi áp dụng.
 
 Scanner hỗ trợ quét một lần và quét định kỳ. Nút **Tự động vào lệnh MT5** chỉ
 khả dụng trong chế độ quét định kỳ và mặc định không chọn. Khi người dùng chủ
 động bật, request có `auto_trade_enabled=true`; khi chuyển sang quét một lần,
 nút bị disable và reset. Auto trade và nút đặt lệnh thủ công cho candidate đều
-đi qua cùng rollout và execution gates.
-
-Việc lưu `stage=PRODUCTION` không bỏ qua release readiness hoặc safety gate.
+đi qua cùng execution guard chain (không có override riêng).
 
 ### 3.2 Backtest
 
@@ -110,7 +108,8 @@ Journal lưu kế hoạch, thực thi, outcome, R, chất lượng execution và
 ### 3.4 Settings
 
 Settings quản lý AI provider, MT5/data, trading risk, symbol settings, display,
-advanced, notification, feature flags và Scanner rollout. Hai flag Backtest cũ
+advanced, notification và feature flags. (Tab Scanner rollout của V3 đã bị gỡ
+bỏ ngày 15/08/2026.) Hai flag Backtest cũ
 `backtest_config_v2`/`backtest_engine_v2` đã bị loại khỏi runtime; Settings cũ
 vẫn đọc được nhưng không ghi lại hai key này khi lưu.
 
@@ -145,7 +144,7 @@ Router trả đúng một branch:
 | `DEFAULT_RULES` | Không có config backtest. | Có, nếu default strategy và mọi gate khác đạt. |
 | `BACKTEST_INVALID` | Có config nhưng draft/expired/malformed/sai version/thiếu evidence. | Không. |
 
-Backtest không được nâng status hoặc bỏ qua entry, trade, portfolio, news hay rollout gate.
+Backtest không được nâng status hoặc bỏ qua entry, trade, portfolio, news hay execution gate.
 
 ### 4.3 Candidate status
 
@@ -178,7 +177,7 @@ Ranking diễn ra sau filter và ưu tiên status trước điểm cơ hội. Đ
 
 VIX pair-aware chỉ modulate phần VIX trong `correlation_adjustment` của macro
 score theo đúng symbol và side. Nó không sửa hoặc bypass contract của
-Decision/Strategy/Trade Gate, portfolio guard, rollout hay execution
+Decision/Strategy/Trade Gate, portfolio guard hay execution
 revalidation; score thay đổi vẫn có thể ảnh hưởng kết quả threshold, decision
 và ranking downstream theo luồng bình thường.
 
@@ -258,7 +257,7 @@ Ngay trước execution, hệ thống phải:
 - lấy trạng thái blackout tin tức;
 - tính lại lot theo balance, risk, contract/tick value, quote conversion và broker volume rules;
 - kiểm tra account guard và portfolio risk;
-- kiểm tra rollout policy.
+- xác nhận order policy `certified()` (RuntimeOrderPolicy).
 
 Nếu dữ liệu bắt buộc thiếu hoặc service lỗi, order bị chặn.
 
@@ -275,50 +274,39 @@ Risk settings gồm:
 
 Không tự nâng lot lên broker minimum nếu làm vượt risk được phép.
 
-## 8. Rollout
+## 8. Thực thi live (từ 15/08/2026)
 
-Stage:
+Theo quyết định của owner (phần mềm cá nhân), ứng dụng chạy thật trực tiếp.
+Cơ chế rollout V3 — stage ladder
+`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`,
+`kill_switch`, release/canary readiness — đã bị gỡ bỏ hoàn toàn khỏi codebase
+ngày 15/08/2026.
 
-| Stage | Contract |
-|---|---|
-| `DISABLED` | Chặn mọi order Scanner. |
-| `SHADOW` | Ghi V1/V2 comparison và metrics; chặn mọi order Scanner. Mặc định của mã nguồn/settings mới. |
-| `DEMO_LIMITED` | Demo account và symbol allowlist. |
-| `DEMO_FULL` | Demo account. |
-| `CANARY` | Canary readiness và risk cap. |
-| `PRODUCTION` | Approval và release readiness. |
+Các lớp bảo vệ còn lại (tất cả fail-closed):
 
-`kill_switch` luôn chặn. Settings mới và settings migrate đều mặc định `SHADOW`.
-Stage `SHADOW` ở đây là cơ chế vận hành V3 để so Candidate Engine V1/V2 và thu
-release evidence. Nó không phải migration shadow hoặc dual scoring V3/V4;
-cutover V4 không dùng disagreement với V3 làm tiêu chí đúng/sai.
+- **Scanner:** RuntimeOrderPolicy owner-accepted
+  (`config/scanner_v4_order_policy.json`) phải `certified()`; config thiếu/hỏng
+  → `ORDER_POLICY_FAULT` + mọi candidate BLOCKED. MarketSafetyGate/MacroGate.
+  Auto-entry chỉ khi người dùng chủ động bật. Execution guard chain trong
+  `execute_order_candidate()` (snapshot mới, lot recalc, news, account/portfolio,
+  `revalidate_execution`).
+- **Order Management V2:** mặc định bật; gate = feature flag +
+  `account.trade_allowed`. Không còn stage/kill switch/canary/demo gate.
 
-Runtime hiện tại đã chọn `PRODUCTION`, bật V2 và
-`production_approved=true`, nhưng release readiness vẫn `false`. Đây không
-phải trạng thái production-ready và không bỏ qua các yêu cầu dưới đây. Xem
+Không còn kill switch phần mềm; dừng khẩn cấp = tắt feature flag, đóng lệnh ở
+terminal broker hoặc ngắt kết nối MT5. Xem
 [trạng thái runtime](../architecture/runtime-status.md).
-
-Release readiness mặc định yêu cầu:
-
-- ít nhất 100 shadow samples;
-- ít nhất 20 demo orders;
-- ít nhất 5 canary orders;
-- unsafe disagreement rate ≤ 10%;
-- revalidation failure rate ≤ 5%;
-- performance degradation ≤ 15%;
-- không side mismatch, premature order hoặc portfolio violation;
-- có OOS/demo evidence và rollback đã kiểm thử.
 
 ## 9. Observability và dữ liệu runtime
 
-Mỗi scan/row/order có ID, hash, version, timestamp, branch, side, score, gate, portfolio và rollout decision.
+Mỗi scan/row/order có ID, hash, version, timestamp, branch, side, score, gate và portfolio decision.
 
 App-data lưu:
 
 - `scanner_snapshots/scanner_{scan_id}.json`;
 - `scanner_analysis/{scan_id}/{symbol}.json`;
 - `logs/scanner-events.jsonl`;
-- `rollout/scanner-rollout-metrics.json`;
+- `scan_health/scan-health.json`;
 - journal SQLite và settings theo `config.paths`.
 - `vix_pair_sensitivity.json` do runner calibration ghi; runtime ưu tiên file
   này trước bundled fallback và recheck TTL 90 ngày.
@@ -332,7 +320,7 @@ attribution đầy đủ.
 
 ## 10. Telegram
 
-Detailed alert chỉ áp dụng cho candidate canonical `READY_NOW` có trade plan hợp lệ. Alert không có quyền gửi lệnh và không thay rollout/execution gate.
+Detailed alert chỉ áp dụng cho candidate canonical `READY_NOW` có trade plan hợp lệ. Alert không có quyền gửi lệnh và không thay execution gate.
 
 Nội dung nên gồm symbol, side, Entry, SL, TP, lot gợi ý, R:R, setup score, lý do và nguồn. Summary sau scan cho biết số symbol và nhóm trạng thái chính.
 
@@ -352,11 +340,11 @@ Yêu cầu:
 - tác vụ MT5/AI/scan chạy ngoài UI thread;
 - Scanner dùng model/view;
 - bảng Scanner dùng 14 cột theo `ScannerTableModel.COLUMNS`;
-- hiển thị rõ candidate status, strategy branch/config status và rollout stage;
+- hiển thị rõ candidate status và strategy branch/config status;
 - Scanner Detail phải đọc canonical selected-side cho status, score,
   entry/SL/TP, vị trí giá, effective/nominal R:R, Gate và macro raw; thiếu dữ
   liệu hiển thị unknown thay vì mặc định pass;
-- action có khả năng đặt lệnh phải nổi bật và luôn chịu rollout guard;
+- action có khả năng đặt lệnh phải nổi bật và luôn chịu execution guard chain;
 - text tiếng Việt dễ hiểu, thuật ngữ trading có thể giữ tiếng Anh kèm giải thích.
 
 ## 12. Packaging
@@ -379,17 +367,19 @@ Nhóm test trọng yếu:
 - controller shared execution;
 - ranking;
 - observability/replay;
-- rollout/migration/readiness;
+- order policy loader/fail-closed;
 - MT5, Telegram, journal và backtest integration.
 - VIX pair map eligibility/path/hot-reload, common-date calibration, side-aware
   scoring, runner failure handling và default-OFF wiring.
 
-Code/tooling của kế hoạch Scanner 0–8 đã hoàn tất. Trạng thái production vẫn phụ thuộc validation thực tế: shadow, demo, canary, OOS/demo evidence, rollback và soak test.
+Code/tooling của kế hoạch Scanner đã hoàn tất và chạy live từ 15/08/2026 (chủ
+động bỏ qua giai đoạn shadow/demo/canary theo quyết định của owner); an toàn
+còn lại là các guard kỹ thuật fail-closed.
 
 ## 14. Nguyên tắc an toàn bất biến
 
 - Không đặt lệnh nếu người dùng không yêu cầu.
-- Không đặt lệnh khi rollout policy chặn.
+- Không đặt lệnh khi order policy hoặc execution gate chặn.
 - Không đặt lệnh từ row ngoài canonical `READY_NOW`.
 - Không dùng config backtest invalid.
 - Không ghép score và scenario khác side.

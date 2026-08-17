@@ -213,6 +213,42 @@ def test_producer_disconnected_is_never_valid():
     assert c.connectivity.availability != "valid"
 
 
+def test_tick_time_flows_into_freshness_source():
+    tick = NOW - timedelta(seconds=5)
+    c = _ctx(last_tick_time_utc=tick)
+    assert c.data.last_tick_time_utc == tick
+
+
+def test_missing_tick_defaults_to_none():
+    c = _ctx()
+    assert c.data.last_tick_time_utc is None
+
+
+def test_fresh_tick_rescues_stale_candle_open():
+    # An M15 candle OPEN time (10 min old) exceeds the 5-min SLA, but a fresh
+    # broker tick proves the feed is alive: the gate must PASS on the tick
+    # reference instead of blocking on candle age.
+    status, codes = _status(
+        last_candle_time_utc=NOW - timedelta(minutes=10),
+        data_checked_at=NOW,
+        last_tick_time_utc=NOW - timedelta(seconds=5),
+    )
+    assert status == "PASS"
+    assert codes == ()
+
+
+def test_stale_tick_blocks_like_a_dead_feed():
+    # Weekend / dead feed: the last tick is old, so the tick reference itself
+    # is stale and must BLOCK even though a candle exists.
+    status, codes = _status(
+        last_candle_time_utc=NOW - timedelta(minutes=10),
+        data_checked_at=NOW,
+        last_tick_time_utc=NOW - timedelta(minutes=99),
+    )
+    assert status == "BLOCK"
+    assert "SAFETY_DATA_STALE" in codes
+
+
 # ---------------------------------------------------------------------------
 # derive_live_analysis — production candle→analysis path
 # ---------------------------------------------------------------------------
@@ -241,3 +277,61 @@ def test_derive_live_analysis_deterministic(candles):
 
 def test_producer_version_is_locked():
     assert PRODUCER_VERSION == "scanner-v4-live-producer-v1"
+
+# ---------------------------------------------------------------------------
+# compute_live_volatility_ratio (locked atr14 semantics, fail-closed)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeLiveVolatilityRatio:
+    def test_ratio_matches_technical_snapshot_readings(self, candles):
+        d1, h4, _ = candles
+        from core.scanner_v4_live_producers import compute_live_volatility_ratio
+        from core.technical_context import atr_volatility_readings
+
+        readings = atr_volatility_readings(d1, h4)
+        expected = readings["atr_h4"] / readings["atr_avg_14d"]
+        ratio = compute_live_volatility_ratio(d1, h4)
+        assert ratio is not None
+        assert math.isfinite(ratio)
+        assert ratio > 0
+        assert ratio == pytest.approx(expected)
+
+    def test_ratio_consistent_with_technical_snapshot_fields(self, candles):
+        d1, h4, h1 = candles
+        from core.scanner_v4_live_producers import compute_live_volatility_ratio
+        from core.technical_context import build_technical_snapshot
+
+        snap = build_technical_snapshot(d1, h4, h1)
+        expected = snap["atr_h4"] / snap["atr_avg_14d"]
+        assert compute_live_volatility_ratio(d1, h4) == pytest.approx(expected)
+
+    @pytest.mark.parametrize("n", [0, 1, 14])
+    def test_insufficient_history_returns_none(self, n):
+        from core.scanner_v4_live_producers import compute_live_volatility_ratio
+
+        short = _mk(n, 0.08, 0.0) if n else []
+        enough = _mk(60, 0.04, 1.0)
+        assert compute_live_volatility_ratio(short, enough) is None
+        assert compute_live_volatility_ratio(enough, short) is None
+
+    def test_empty_or_none_inputs_return_none(self):
+        from core.scanner_v4_live_producers import compute_live_volatility_ratio
+
+        assert compute_live_volatility_ratio(None, None) is None
+        assert compute_live_volatility_ratio([], []) is None
+
+    def test_flat_candles_zero_atr_returns_none(self):
+        from core.scanner_v4_live_producers import compute_live_volatility_ratio
+
+        flat = [
+            Candle(
+                time=NOW - timedelta(hours=i),
+                open=BASE,
+                high=BASE,
+                low=BASE,
+                close=BASE,
+            )
+            for i in range(60)
+        ]
+        assert compute_live_volatility_ratio(flat, flat) is None

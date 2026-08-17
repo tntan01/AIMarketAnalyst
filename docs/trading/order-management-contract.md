@@ -1,17 +1,21 @@
 # Runtime contract quản lý lệnh V2
 
-- Cập nhật contract: 09/08/2026; hợp nhất tài liệu lịch sử: 11/08/2026
-- Trạng thái contract: **đã triển khai trong code; chờ release validation**
+- Cập nhật contract: 09/08/2026; hợp nhất tài liệu lịch sử: 11/08/2026;
+  chuyển sang chạy thật: 15/08/2026
+- Trạng thái contract: **đang chạy live** (theo quyết định của owner, phần mềm
+  cá nhân — không qua rollout)
 - Lịch sử thiết kế: nội dung của kế hoạch triển khai và báo cáo rà soát đầu vào đã
   được hợp nhất vào contract này. Hai tài liệu nguồn đã được gỡ khỏi cây tài liệu
   hiện hành và vẫn có thể truy xuất qua Git history.
 
 Tài liệu này định nghĩa contract fail-closed cho việc đọc trạng thái broker, quản
-lý Break-even/Trailing Stop và xác minh thao tác SL/TP/close. Đây chưa phải xác
-nhận hệ thống đã an toàn để chạy tài khoản live. Các primitive broker, state
-machine, persistence, service runtime và đường nối AppController–Scanner–UI đã
-có implementation cùng automated test. Forward demo/reconnect và release gate
-vận hành vẫn chưa hoàn tất.
+lý Break-even/Trailing Stop và xác minh thao tác SL/TP/close. Các primitive
+broker, state machine, persistence, service runtime và đường nối
+AppController–Scanner–UI đã có implementation cùng automated test. Từ
+15/08/2026 hệ thống chạy thật trên tài khoản của owner: SL/BE/trailing sửa lệnh
+trực tiếp trên broker; an toàn còn lại là feature flag, `account.trade_allowed`,
+các invariant fail-closed trong contract này và các guard kỹ thuật — không còn
+stage ladder, kill switch hay release gate.
 
 ## 1. Nguyên tắc bắt buộc
 
@@ -25,7 +29,9 @@ vận hành vẫn chưa hoàn tất.
 6. Snapshot unavailable, kết quả mutation unknown và account mismatch đều phải
    fail-closed: giữ state, ngừng mutation mới và phát trạng thái có thể quan sát.
 7. Tắt V2 không được khôi phục engine automation legacy; fallback là thao tác
-   manual có xác nhận. Kill switch chuyển toàn bộ mutation sang read-only.
+   manual có xác nhận. Service shutdown chuyển toàn bộ mutation sang read-only
+   (đây là phanh phần mềm duy nhất còn lại sau khi kill switch được gỡ bỏ ngày
+   15/08/2026).
 
 Các từ **phải**, **không được** và **chỉ khi** trong tài liệu này là yêu cầu
 runtime, không phải mô tả tùy chọn.
@@ -83,10 +89,11 @@ khỏi cache thao tác và không được dùng để cleanup hoặc tạo muta
 
 - Fingerprint logic được tạo từ bộ ba broker/server/login; trade mode không thay
   thế account identity.
-- Không suy đoán demo/live từ tên server. Gate demo chỉ đạt khi MT5 trả trade
-  mode `DEMO`.
-- Khi `require_demo_account=true`, `REAL`, `CONTEST` và `UNKNOWN` đều không được
-  gửi mutation automation. Manual vẫn cần xác nhận riêng và chịu kill switch.
+- Không suy đoán demo/live từ tên server. Trade mode thuộc account identity
+  nhưng không còn là gate thực thi.
+- (Đã gỡ từ 15/08/2026: gate `require_demo_account`.) Account `REAL` lẫn `DEMO`
+  đều nhận mutation automation như nhau khi feature flag bật và
+  `trade_allowed=true`. Manual vẫn cần xác nhận riêng.
 - Automation fail-closed khi quyền giao dịch account/terminal không được xác
   nhận là `true`.
 - Account mismatch không được attach state cũ vào ticket trùng số, không được
@@ -289,35 +296,37 @@ tại. Service persist khi đăng ký, đổi state và sau poll; shutdown persi
 trước khi AppController disconnect MT5. Snapshot unavailable chỉ đánh dấu stale
 và giữ state.
 
-## 8. Rollout gates
+## 8. Gate thực thi (live từ 15/08/2026)
 
-Source default là `order_management_v2=false`, stage `SHADOW`, kill switch
-`false`, `require_demo_account=true`, `production_approved=false` và phạm vi
-`AMA`.
+OM luôn bật: feature flag `order_management_v2` đã bị gỡ khỏi model (16/08/2026),
+nhất quán với việc gỡ các flag Scanner V4 trước đó. Cùng ngày `manage_scope` cũng
+bị gỡ — chỉ còn một phạm vi duy nhất (ALL): **Đóng tất cả** luôn nhắm mọi vị thế
+đang mở, không còn lọc theo magic/comment AMA. Các
+field `stage`, `kill_switch`, `require_demo_account`, `production_approved`,
+`canary_broker_symbol`, `canary_position_id`, `manage_scope` đã bị xóa khỏi
+`OrderManagementSettings`; key thừa trên disk từ bản cũ được loader bỏ qua
+(không còn hiệu lực).
 
 Các gate dưới đây điều khiển **automation BE/Trailing**. Thao tác manual rõ ràng
-từ Orders UI vẫn khả dụng sau dialog xác nhận, trừ khi kill switch đang bật.
+từ Orders UI vẫn khả dụng sau dialog xác nhận.
 
 Thứ tự gate bắt buộc:
 
-1. Feature flag off hoặc stage `DISABLED`: không chạy automation và không
-   fallback sang legacy engine; manual vẫn cần xác nhận riêng.
-2. Kill switch on: chặn cả automation lẫn mọi manual broker mutation.
-3. `SHADOW`: tính desired action và event nhưng không gọi `order_send`.
-4. `DEMO`: chỉ mutation khi account/trade permission và demo gate đều đạt.
-5. `CANARY`: ngoài các gate trên, chỉ broker symbol/position ID được cấu hình.
-6. `PRODUCTION`: yêu cầu người dùng opt-in, `production_approved=true`, account
-   policy đạt và toàn bộ release evidence được duyệt.
-7. Scanner chỉ auto-register position đã reconcile với AMA correlation.
-   `manage_scope` giới hạn target của **Đóng tất cả**; explicit per-position
-   manual action là opt-in riêng. **Flatten** luôn là toàn account và dùng cảnh
-   báo mạnh, không phải fallback âm thầm từ scope `AMA`.
+1. `account.trade_allowed` phải là `true`; `false` hoặc không xác định được
+   (`None`) đều fail-closed, không gửi mutation.
+2. Scanner chỉ auto-register position đã reconcile với AMA correlation.
+   **Đóng tất cả** nhắm mọi vị thế (phạm vi duy nhất ALL); explicit
+   per-position manual action là opt-in riêng. **Flatten** luôn là toàn account
+   và dùng cảnh báo mạnh, không phải fallback âm thầm nào.
 
-Service đã enforce feature/stage/account/CANARY/PRODUCTION gate cho automation
-và kill switch cho generic manual mutations. Automated test bao phủ SHADOW,
-DEMO/live mismatch, exact CANARY target, PRODUCTION approval, runtime policy
-update và manual kill switch. Không được suy ra release readiness chỉ từ việc
-stage có thể được chọn/lưu.
+Service enforce `trade_allowed` cho automation, và chặn mọi mutation (kể cả
+manual) sau khi service shutdown. Automated test bao phủ trade-not-allowed
+fail-closed (vẫn tính intent nhưng không gửi broker), live execution, REAL
+account chạy trực tiếp, trade-not-allowed/unknown fail-closed, runtime policy
+update không cần restart và shutdown block.
+
+Lưu ý vận hành: không còn kill switch phần mềm. Dừng khẩn cấp = đóng lệnh ở
+terminal broker hoặc ngắt kết nối MT5.
 
 ## 9. Observability tối thiểu
 
@@ -330,9 +339,10 @@ Không được hiển thị “đang bảo vệ” chỉ vì có config trong p
 active cần heartbeat broker fresh và state không paused/stale/error. Service đã
 phát health/state/snapshot signal và structured event cho registration,
 snapshot unavailable, reconciliation, automatic SL, close, manual SL/TP và
-pending mutation; UI hiển thị HEALTHY/STALE/ERROR, account/stage và kết quả thao
-tác async. Việc đối soát log với broker thật qua reconnect vẫn chưa có evidence
-vận hành.
+pending mutation; UI hiển thị LIVE/BLOCKED/STALE dựa trên
+`execution_allowed` và freshness của snapshot. Event mutation thật
+(`SL_MODIFY_REQUESTED`, `BE_TRIGGERED`...) thay thế hoàn toàn
+`SL_MODIFY_SHADOW` của chế độ cũ.
 
 ## 10. Mức độ triển khai và release blocker
 
@@ -342,15 +352,16 @@ vận hành.
 | Postcondition SL/TP và close/partial | Có mã và unit test fake MT5 |
 | State machine thuần và invariant BE/Trailing | Có mã và unit test |
 | Persistence v2 account-scoped/atomic/backup/quarantine | Có mã và unit test |
-| Settings/feature flag/rollout controls | Có mã và test settings/UI |
+| Settings/feature flag | Có mã và test settings/UI |
 | OrderManagementService, single executor và lifecycle application | Có mã và automated test |
 | AppController–Scanner–Orders UI cache/signal boundary | Đã tích hợp; có targeted automated evidence |
 | Runtime health/observability baseline | Đã tích hợp; cần forward-demo evidence |
 | Pending cancel/modify, partial/manual và frozen bulk/flatten | Có mã và automated contract test |
 | Targeted và full automated suite | Đã đạt: targeted 191 passed in 3.15s trên 17 file; full suite 2740 passed, 8 skipped, 17 xfailed, 5 warnings in 178.62s (179.5s wall) |
-| Forward test broker demo qua nhiều phiên và reconnect | Chưa có evidence; release blocker |
+| Forward test broker demo qua nhiều phiên và reconnect | Không còn là gate bắt buộc: owner quyết định chạy thật trực tiếp từ 15/08/2026 |
 
-Targeted automated test chỉ chứng minh contract với fake/in-memory dependency và
-boundary trong process. Targeted và full suite hiện đều xanh, nhưng trước
-canary/live vẫn phải có forward demo qua nhiều phiên/reconnect MT5. Cho tới lúc
-đó tính năng không được mô tả là live-safe hoặc general availability.
+Targeted automated test chứng minh contract với fake/in-memory dependency và
+boundary trong process. Theo quyết định của owner (phần mềm cá nhân), tính năng
+đã chuyển sang chạy thật ngày 15/08/2026 mà không qua giai đoạn forward-demo hay
+canary; các invariant fail-closed trong contract này và `account.trade_allowed`
+là lớp bảo vệ còn lại.

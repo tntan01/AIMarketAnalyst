@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import asdict, replace
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from math import isfinite
 from pathlib import Path
@@ -26,6 +26,7 @@ from core.scanner_ai_auditor import (
 from core.scanner_v4_composition import AccountState, JournalState, PortfolioState
 from core.scanner_v4_live_producers import (
     build_live_market_safety_context,
+    compute_live_volatility_ratio,
     derive_live_analysis,
 )
 from core.scanner_v4_models import (
@@ -36,6 +37,12 @@ from core.scanner_v4_models import (
     DATA_UNAVAILABLE,
 )
 from core.scanner_v4_release import run_v4_pair_from_live
+from core.scanner_v4_order_policy import (
+    DEFAULT_RUNTIME_ORDER_POLICY,
+    OrderPolicyLoadError,
+    RuntimeOrderPolicy,
+    load_runtime_order_policy,
+)
 from core.scanner_v4_ui_adapter import (
     ANALYSIS_OK,
     AdapterContractError,
@@ -45,6 +52,7 @@ from core.scanner_v4_ui_adapter import (
     scanner_summary,
 )
 from core.backtest_config import serialize_backtest_config
+from core.chart_payload import build_chart_payload
 from core.execution_revalidation_engine import revalidate_execution
 from core.portfolio_risk_engine import evaluate_portfolio_risk
 from core.scanner_session_review import build_market_brief_prompt
@@ -61,15 +69,11 @@ from core.scanner_performance import (
     safe_performance_call as _record_performance,
     safe_performance_phase,
 )
-from core.scanner_rollout import (
-    SCANNER_ROLLOUT_VERSION,
-    ScannerRolloutPolicy,
-    build_rollout_policy,
-    build_shadow_report,
-)
+from core.scan_health import build_scan_health_report
 from core.risk_engine import AnalysisInput, contract_size_override_for_symbol, position_sizing, recalc_execution_lot, calculate_current_effective_rr
 from services.ai_service import AIProviderConfig, AIService
 from services.data_provider import ProviderNotReadyError
+from services.journal_converters import _parse_utc
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5HistoryCacheIdentity, MT5Service
@@ -78,9 +82,9 @@ from services.observability_service import (
     StructuredObservabilityService,
     structured_observability,
 )
-from services.scanner_rollout_service import (
-    ScannerRolloutMetricsService,
-    scanner_rollout_metrics,
+from services.scan_health_service import (
+    ScanHealthService,
+    scan_health_service as default_scan_health_service,
 )
 from services.runtime_retention_service import RuntimeRetentionService
 from services.scanner_job_state import ScannerJobState
@@ -257,30 +261,142 @@ def _v4_order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _v4_consecutive_losses(closed_trades: object) -> int | None:
-    """Trailing consecutive losing trades from real closed_trades (fail-closed).
+    """Trailing consecutive losing trades from real closed_trades.
 
     ``closed_trades`` is newest-first; counts contiguous losses via the REAL
-    ``result_r`` / ``result_pct`` fields. Returns None when the data cannot be
-    read honestly (never invents a count).
+    ``result_r`` / ``result_pct`` fields.  Unreadable rows are handled exactly
+    like the live V3 account guard (``core/account_guard.py``): a missing or
+    non-numeric result counts as breakeven (not a loss, so it BREAKS the
+    streak), and non-dict rows are skipped.  The journal contains MT5-history
+    rows without an R value; failing closed on them would cap every scan
+    forever, which the V3 guard never did.  Returns ``None`` only when the
+    list itself is unreadable.
     """
     if not isinstance(closed_trades, list):
         return None
     count = 0
     for trade in closed_trades:
         if not isinstance(trade, dict):
-            return None
+            continue
         result = trade.get("result_r", trade.get("result_pct"))
-        if result is None:
-            return None
         try:
-            value = float(result)
+            value = float(result or 0.0)
         except (TypeError, ValueError):
-            return None
+            value = 0.0
         if value < 0:
             count += 1
         else:
             break
     return count
+
+
+# Owner decision (2026-08-15): the journal-gate drawdown window is the most
+# recent 90 days.  This constant exists only because the owner explicitly chose
+# this window — it is not derived from any other codebase value.
+JOURNAL_DRAWDOWN_WINDOW_DAYS = 90
+
+
+def compute_recent_drawdown_ratio(
+    closed_trades: object,
+    *,
+    now_utc: datetime,
+    risk_percent: float,
+    window_days: int = JOURNAL_DRAWDOWN_WINDOW_DAYS,
+) -> float | None:
+    """Equity-curve drawdown over the trailing ``window_days`` (fail-closed).
+
+    The curve follows the codebase's REAL ``result_r`` convention (same field
+    ``journal_converters.build_performance_summary`` builds its curve from —
+    ``result_pct`` is a PRICE-move percent and must not feed an account curve).
+    Like that summary, rows without a readable ``result_r`` (MT5-history rows
+    lacking entry/SL) never enter the R curve.  Each in-window closed trade
+    compounds, in chronological order,
+
+        ``equity *= 1 + risk_percent/100 * result_r``
+
+    and the returned ratio is ``max((peak - equity) / peak)`` clamped to [0, 1].
+    No readable closed trade inside the window -> ``0.0`` (truthful: no
+    measurable trading happened, so no measurable drawdown happened).
+    Structurally unreadable input (not a list, a non-dict row, an unparseable
+    ``closed_at``) -> ``None`` so the gate fails closed instead of guessing.
+    """
+    if not isinstance(closed_trades, list):
+        return None
+    cutoff = now_utc - timedelta(days=window_days)
+    in_window: list[tuple[datetime, float]] = []
+    for trade in closed_trades:
+        if not isinstance(trade, dict):
+            return None
+        closed_at = _parse_utc(trade.get("closed_at"))
+        if closed_at is None:
+            return None
+        if closed_at < cutoff:
+            continue
+        result = trade.get("result_r")
+        try:
+            result_value = float(result) if result is not None else None
+        except (TypeError, ValueError):
+            result_value = None
+        if result_value is None or not isfinite(result_value):
+            # No readable R -> the row cannot enter the R curve (same
+            # convention as build_performance_summary).
+            continue
+        in_window.append((closed_at, result_value))
+    if not in_window:
+        return 0.0
+    in_window.sort(key=lambda item: item[0])
+    equity = 1.0
+    peak = 1.0
+    drawdown = 0.0
+    risk_fraction = float(risk_percent) / 100.0
+    for _, result_value in in_window:
+        equity *= 1.0 + risk_fraction * result_value
+        if equity <= 0:
+            # The account cannot lose more than everything: total drawdown.
+            return 1.0
+        if equity > peak:
+            peak = equity
+        current = (peak - equity) / peak
+        if current > drawdown:
+            drawdown = current
+    return min(max(drawdown, 0.0), 1.0)
+
+
+def _v4_exposure_ratio(margin: object, balance: object) -> float | None:
+    """Portfolio exposure = used margin ÷ balance (owner-locked semantics).
+
+    Both numbers come from the same MT5 ``account_info()`` snapshot, hence the
+    same account currency.  Fail-closed: any missing/non-numeric value or a
+    non-positive balance returns ``None`` (never an invented ratio).
+    """
+    if margin is None or balance is None:
+        return None
+    try:
+        margin_value = float(margin)
+        balance_value = float(balance)
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(margin_value) or not isfinite(balance_value):
+        return None
+    if balance_value <= 0 or margin_value < 0:
+        return None
+    return margin_value / balance_value
+
+
+def _v4_open_positions(scan_portfolio: object) -> int | None:
+    """Open-position count from the REAL portfolio snapshot (fail-closed).
+
+    Replaces the old probe of ``open_positions_count`` — a method that never
+    existed anywhere and therefore always produced ``None``.
+    """
+    if scan_portfolio is None or not bool(
+        getattr(scan_portfolio, "available", False)
+    ):
+        return None
+    positions = getattr(scan_portfolio, "positions", None)
+    if positions is None:
+        return None
+    return len(positions)
 
 
 class ScannerController:
@@ -294,7 +410,7 @@ class ScannerController:
         orders_screen = None,
         order_management_service = None,
         observability_service: StructuredObservabilityService | None = None,
-        rollout_metrics_service: ScannerRolloutMetricsService | None = None,
+        scan_health_service: ScanHealthService | None = None,
         retention_service: RuntimeRetentionService | None = None,
         job_state: ScannerJobState | None = None,
     ) -> None:
@@ -308,9 +424,7 @@ class ScannerController:
         # Production auto-tracking never invokes QWidget methods from workers.
         self.orders_screen = orders_screen
         self.observability = observability_service or structured_observability
-        self.rollout_metrics = (
-            rollout_metrics_service or scanner_rollout_metrics
-        )
+        self.scan_health = scan_health_service or default_scan_health_service
         self.retention = retention_service or RuntimeRetentionService()
         self._job_state = job_state or ScannerJobState(
             runtime_root=app_data_dir()
@@ -318,7 +432,9 @@ class ScannerController:
         self._execution_lock = RLock()
         self._active_scan_id: str | None = None
         self._active_scan_lock = RLock()
-        self._active_rollout_policy: ScannerRolloutPolicy | None = None
+        self._active_order_policy: RuntimeOrderPolicy = (
+            DEFAULT_RUNTIME_ORDER_POLICY
+        )
 
     def _scan_lock(self) -> RLock:
         """Return the one per-instance scan lock (mục 12.3, Phase 5).
@@ -460,40 +576,23 @@ class ScannerController:
                 MT5HistoryCacheIdentity.from_connection_status(status)
             )
             self._active_mt5_history_cache_identity = mt5_history_cache_identity
-            rollout_settings = getattr(settings, "scanner_rollout", None)
+            # Owner order policy (Bước 13 "bước nối"): fail-closed load. A broken
+            # config never crashes the scan — it falls back to the default policy
+            # whose order_enabled is False, keeping every order blocked.
             try:
-                pre_scan_readiness = self.rollout_metrics.readiness(
-                    rollout_settings
+                self._active_order_policy = load_runtime_order_policy()
+            except OrderPolicyLoadError as exc:
+                self._active_order_policy = DEFAULT_RUNTIME_ORDER_POLICY
+                self._emit_observability(
+                    "ORDER_POLICY_FAULT",
+                    scan_id=scan_context.scan_id,
+                    severity="ERROR",
+                    payload={
+                        "path": exc.path,
+                        "detail": exc.detail,
+                        "order_enabled": False,
+                    },
                 )
-                pre_scan_canary_readiness = (
-                    self.rollout_metrics.canary_readiness(
-                        rollout_settings
-                    )
-                )
-                release_ready = pre_scan_readiness.get("ready") is True
-                canary_ready = (
-                    pre_scan_canary_readiness.get("ready") is True
-                )
-            except Exception:
-                pre_scan_readiness = {
-                    "ready": False,
-                    "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
-                }
-                pre_scan_canary_readiness = dict(pre_scan_readiness)
-                release_ready = False
-                canary_ready = False
-            rollout_policy = build_rollout_policy(
-                rollout_settings,
-                server=status.server,
-                canary_ready=canary_ready,
-                release_ready=release_ready,
-            )
-            self._active_rollout_policy = rollout_policy
-            self._emit_observability(
-                "ROLLOUT_POLICY_EVALUATED",
-                scan_id=scan_context.scan_id,
-                payload=rollout_policy.to_dict(),
-            )
             _record_performance(performance, "start_phase", "account_portfolio")
             try:
                 mt5_balance = self.mt5.account_balance()
@@ -505,6 +604,7 @@ class ScannerController:
                         payload={"stage": "account_balance"},
                     )
                     raise RuntimeError("Không lấy được số dư từ tài khoản.")
+                scan_portfolio = None
                 try:
                     scan_portfolio = self.mt5.portfolio_snapshot()
                     portfolio_state = scan_portfolio.to_dict()
@@ -522,11 +622,9 @@ class ScannerController:
                 progress,
                 scan_context=scan_context,
                 settings=settings,
-                rollout_policy=rollout_policy,
-                pre_scan_readiness=pre_scan_readiness,
-                pre_scan_canary_readiness=pre_scan_canary_readiness,
                 mt5_balance=mt5_balance,
                 portfolio_state=portfolio_state,
+                scan_portfolio=scan_portfolio,
             )
             split = bool(
                 request.feature_flags.get("scanner_core_result_early", False)
@@ -579,11 +677,9 @@ class ScannerController:
         *,
         scan_context,
         settings,
-        rollout_policy,
-        pre_scan_readiness,
-        pre_scan_canary_readiness,
         mt5_balance,
         portfolio_state,
+        scan_portfolio=None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         performance = getattr(self, "_active_performance_tracker", None)
         mt5_history_cache_identity = getattr(
@@ -684,21 +780,29 @@ class ScannerController:
         # ---- C2b: build the V4 account/portfolio/journal state ONCE (main thread)
         # and thread it through the fetch packet (never fabricate; fail-closed).
         v4_consecutive_losses = _v4_consecutive_losses(closed_trades)
+        # Account numbers straight from MT5 account_info: free margin feeds the
+        # account gate; used margin ÷ balance feeds the portfolio exposure gate
+        # (owner-locked semantics).  Missing values stay None -> gate UNKNOWN.
         try:
-            mt5_open_positions = getattr(self.mt5, "open_positions_count", None)
-            v4_open_positions = (
-                int(mt5_open_positions())
-                if callable(mt5_open_positions)
-                else None
-            )
+            v4_account_status = self.mt5.mt5_connection_status()
         except Exception:
-            v4_open_positions = None
-        v4_account = AccountState(free_margin=mt5_balance, required_margin=None)
+            v4_account_status = None
+        v4_free_margin = getattr(v4_account_status, "free_margin", None)
+        v4_exposure_ratio = _v4_exposure_ratio(
+            getattr(v4_account_status, "margin", None), mt5_balance
+        )
+        v4_open_positions = _v4_open_positions(scan_portfolio)
+        v4_account = AccountState(free_margin=v4_free_margin, required_margin=None)
         v4_portfolio = PortfolioState(
-            open_positions=v4_open_positions, exposure_ratio=None
+            open_positions=v4_open_positions, exposure_ratio=v4_exposure_ratio
         )
         v4_journal = JournalState(
-            consecutive_losses=v4_consecutive_losses, recent_drawdown_ratio=None
+            consecutive_losses=v4_consecutive_losses,
+            recent_drawdown_ratio=compute_recent_drawdown_ratio(
+                closed_trades,
+                now_utc=datetime.now(timezone.utc),
+                risk_percent=float(request.risk_percent),
+            ),
         )
 
         # ---- Phase 1: fetch MT5 data sequentially (MT5 works best single-threaded) ----
@@ -761,11 +865,11 @@ class ScannerController:
             "analysis_input_kwargs": analysis_input_kwargs,
             "closed_trades": closed_trades,
             "account_guard_settings": account_guard_settings,
+            "order_policy": getattr(
+                self, "_active_order_policy", DEFAULT_RUNTIME_ORDER_POLICY
+            ),
             "scanner_fast_tier1": bool(
                 request.feature_flags.get("scanner_fast_tier1", False)
-            ),
-            "scanner_fast_tier2": bool(
-                request.feature_flags.get("scanner_fast_tier2", False)
             ),
             "ai_service": ai_svc,
         }
@@ -885,7 +989,6 @@ class ScannerController:
             row["scan_id"] = scan_context.scan_id
             row["row_id"] = row_identity(scan_context.scan_id, symbol)
             row["settings_hash"] = scan_context.settings_hash
-            row["rollout_stage"] = rollout_policy.stage
 
         progress(74, "Đang áp dụng Strategy Router và execution filters...")
         _record_performance(performance, "start_phase", "candidate_filter")
@@ -902,7 +1005,7 @@ class ScannerController:
         ]
         for row in rows:
             self._emit_candidate_events(row, scan_context.scan_id)
-        shadow_report = build_shadow_report(rows)
+        scan_health = build_scan_health_report(rows)
         _record_performance(performance, "end_phase", "observability")
         progress(78, "Đã xếp hạng lại candidate sau filters...")
 
@@ -913,13 +1016,7 @@ class ScannerController:
         output["scan_id"] = scan_context.scan_id
         output["scan_context"] = scan_context.to_dict()
         output["portfolio_state"] = portfolio_state
-        output["rollout_version"] = SCANNER_ROLLOUT_VERSION
-        output["rollout_policy"] = rollout_policy.to_dict()
-        output["pre_scan_release_readiness"] = pre_scan_readiness
-        output["pre_scan_canary_readiness"] = (
-            pre_scan_canary_readiness
-        )
-        output["shadow_report"] = shadow_report
+        output["scan_health"] = scan_health
         _record_performance(performance, "mark_core_ready")
         performance_snapshot = _record_performance(performance, "snapshot")
         if isinstance(performance_snapshot, dict):
@@ -930,9 +1027,6 @@ class ScannerController:
         ctx: dict[str, Any] = {
             "scan_context": scan_context,
             "settings": settings,
-            "rollout_policy": rollout_policy,
-            "pre_scan_readiness": pre_scan_readiness,
-            "pre_scan_canary_readiness": pre_scan_canary_readiness,
             "correlation_context": correlation_context,
             "freshness": freshness,
             "closed_trades": closed_trades,
@@ -1001,7 +1095,6 @@ class ScannerController:
                     delta["auto_trade_results"] = self._execute_auto_trades(
                         rows,
                         request,
-                        rollout_policy=ctx["rollout_policy"],
                     )
                 except Exception as exc:
                     if fatal_errors:
@@ -1013,10 +1106,8 @@ class ScannerController:
                         "attempted": 0,
                         "opened": 0,
                         "skipped": 0,
-                        "rollout_blocked": 0,
                         "errors": [str(exc)],
                         "orders": [],
-                        "rollout_policy": ctx["rollout_policy"].to_dict(),
                     }
                     self._emit_observability(
                         "AUTO_TRADE_FAILURE",
@@ -1030,40 +1121,21 @@ class ScannerController:
                     "attempted": 0,
                     "opened": 0,
                     "skipped": 0,
-                    "rollout_blocked": 0,
                     "errors": [],
                     "orders": [],
-                    "rollout_policy": ctx["rollout_policy"].to_dict(),
                 }
 
             try:
-                delta["rollout_metrics"] = self.rollout_metrics.record_scan(
+                delta["scan_health_metrics"] = self.scan_health.record_scan(
                     scan_id=scan_context.scan_id,
-                    shadow_report=core_output.get("shadow_report", {}),
+                    scan_health=core_output.get("scan_health", {}),
                     auto_trade_results=delta["auto_trade_results"],
-                    rollout_policy=ctx["rollout_policy"].to_dict(),
                     closed_trades=ctx["closed_trades"],
                 )
-                delta["release_readiness"] = self.rollout_metrics.readiness(
-                    getattr(settings, "scanner_rollout", None)
-                )
-                delta["canary_readiness"] = (
-                    self.rollout_metrics.canary_readiness(
-                        getattr(settings, "scanner_rollout", None)
-                    )
-                )
             except Exception as exc:
-                delta["rollout_metrics_error"] = str(exc)
-                delta["release_readiness"] = {
-                    "rollout_version": SCANNER_ROLLOUT_VERSION,
-                    "ready": False,
-                    "block_codes": ["ROLLOUT_METRICS_UNAVAILABLE"],
-                }
-                delta["canary_readiness"] = dict(
-                    delta["release_readiness"]
-                )
+                delta["scan_health_error"] = str(exc)
                 self._emit_observability(
-                    "ROLLOUT_METRICS_FAILURE",
+                    "SCAN_HEALTH_FAILURE",
                     scan_id=scan_context.scan_id,
                     severity="ERROR",
                     payload={"reason": str(exc)},
@@ -1301,14 +1373,13 @@ class ScannerController:
         *,
         risk_percent: float | None = None,
         comment: str = "AMA",
-        manual_release_gate_override: bool = False,
     ) -> dict[str, Any]:
         """Revalidate and execute one scan proposal through the shared gate.
 
-        ``manual_release_gate_override`` is reserved for the explicit manual
-        action in the Scanner dialog. It bypasses *only*
-        ``RELEASE_GATE_NOT_READY`` in ``PRODUCTION``; every other rollout,
-        account, market-data, news and portfolio guard remains mandatory.
+        No rollout gating remains (removed 2026-08-15, fully live): the guard
+        chain is execution snapshot → lot recalc → news blackout →
+        portfolio/account guards → ``revalidate_execution`` →
+        ``place_market_order``.
         """
 
         order = dict(proposal) if isinstance(proposal, dict) else {}
@@ -1330,109 +1401,9 @@ class ScannerController:
                 "backtest_config_id": order.get("backtest_config_id"),
                 "scorer_version": order.get("scorer_version"),
                 "ranking_version": order.get("ranking_version"),
-                "rollout_stage": order.get("rollout_stage"),
-                "rollout_version": order.get("rollout_version"),
             },
         )
         settings = self.settings_service.load()
-        rollout_policy: ScannerRolloutPolicy | None = None
-        rollout_decision = None
-        rollout_settings = getattr(settings, "scanner_rollout", None)
-        if rollout_settings is not None:
-            try:
-                rollout_status = self.mt5.connection_status()
-                rollout_server = getattr(rollout_status, "server", "")
-            except Exception:
-                rollout_server = ""
-            try:
-                execution_canary_ready = (
-                    self.rollout_metrics.canary_readiness(
-                        rollout_settings
-                    ).get("ready") is True
-                )
-                execution_release_ready = (
-                    self.rollout_metrics.readiness(
-                        rollout_settings
-                    ).get("ready") is True
-                )
-            except Exception:
-                execution_canary_ready = False
-                execution_release_ready = False
-            rollout_policy = build_rollout_policy(
-                rollout_settings,
-                server=rollout_server,
-                canary_ready=execution_canary_ready,
-                release_ready=execution_release_ready,
-            )
-            rollout_decision = rollout_policy.order_decision(
-                symbol,
-                requested=True,
-            )
-            rollout_reasons = tuple(rollout_decision.reason_codes)
-            release_gate_only = (
-                manual_release_gate_override
-                and rollout_policy.stage == "PRODUCTION"
-                and rollout_reasons == ("RELEASE_GATE_NOT_READY",)
-            )
-            if not rollout_decision.allowed and not release_gate_only:
-                blocked = {
-                    "success": False,
-                    "symbol": symbol,
-                    "broker_symbol": broker_symbol,
-                    "side": side,
-                    "scan_id": scan_id,
-                    "row_id": row_id,
-                    "rollout": rollout_decision.to_dict(),
-                    "message": (
-                        "Rollout guard blocked order: "
-                        + ", ".join(rollout_decision.reason_codes)
-                    ),
-                }
-                self._emit_observability(
-                    "ROLLOUT_ORDER_BLOCKED",
-                    scan_id=scan_id,
-                    symbol=symbol,
-                    severity="WARNING",
-                    payload=blocked,
-                )
-                self._emit_observability(
-                    "ORDER_RESPONSE",
-                    scan_id=scan_id,
-                    symbol=symbol,
-                    severity="WARNING",
-                    payload={
-                        "row_id": row_id,
-                        "success": False,
-                        "message": blocked["message"],
-                        "rollout": rollout_decision.to_dict(),
-                    },
-                )
-                return blocked
-            if release_gate_only:
-                self._emit_observability(
-                    "MANUAL_RELEASE_GATE_OVERRIDE",
-                    scan_id=scan_id,
-                    symbol=symbol,
-                    severity="WARNING",
-                    payload={
-                        "row_id": row_id,
-                        "rollout": rollout_decision.to_dict(),
-                        "message": (
-                            "User explicitly bypassed RELEASE_GATE_NOT_READY "
-                            "for a manual order."
-                        ),
-                    },
-                )
-            if rollout_decision.risk_cap_percent is not None:
-                requested_risk = (
-                    float(risk_percent)
-                    if risk_percent is not None
-                    else float(settings.trading.default_risk_percent)
-                )
-                risk_percent = min(
-                    requested_risk,
-                    rollout_decision.risk_cap_percent,
-                )
 
         try:
             snapshot = self.mt5.execution_snapshot(broker_symbol)
@@ -1595,11 +1566,6 @@ class ScannerController:
             "backtest_config_id": order.get("backtest_config_id"),
             "scorer_version": order.get("scorer_version"),
             "ranking_version": order.get("ranking_version"),
-            "rollout": (
-                rollout_decision.to_dict()
-                if rollout_decision is not None
-                else None
-            ),
         }
         if not validation.allowed:
             detailed_blocks = list(validation.block_codes)
@@ -1849,15 +1815,13 @@ class ScannerController:
         self,
         rows: list[dict[str, Any]],
         request: ScannerRequest,
-        *,
-        rollout_policy: ScannerRolloutPolicy,
     ) -> dict[str, Any]:
         """Execute every eligible row through Phase-3 realtime revalidation."""
 
         results: list[dict[str, Any]] = []
         errors: list[str] = []
         diagnostics: list[dict[str, Any]] = []
-        attempted = opened = skipped = rollout_blocked = 0
+        attempted = opened = skipped = 0
         for row in rows:
             symbol = str(row.get("symbol") or "--")
             config = self._auto_trade_config(request, symbol)
@@ -1870,34 +1834,6 @@ class ScannerController:
                 continue
 
             attempted += 1
-            rollout_decision = rollout_policy.order_decision(
-                symbol,
-                requested=request.auto_trade_enabled,
-            )
-            if not rollout_decision.allowed:
-                rollout_blocked += 1
-                skipped += 1
-                blocked = {
-                    "success": False,
-                    "symbol": symbol,
-                    "scan_id": row.get("scan_id"),
-                    "row_id": row.get("row_id"),
-                    "rollout": rollout_decision.to_dict(),
-                    "message": (
-                        "Rollout guard blocked order: "
-                        + ", ".join(rollout_decision.reason_codes)
-                    ),
-                }
-                results.append(blocked)
-                errors.append(f"{symbol}: {blocked['message']}")
-                self._emit_observability(
-                    "ROLLOUT_ORDER_BLOCKED",
-                    scan_id=str(row.get("scan_id", "") or ""),
-                    symbol=symbol,
-                    severity="WARNING",
-                    payload=blocked,
-                )
-                continue
             # C2b: build the executable proposal from the REAL V4 order payload
             # (intent only; execute_order_candidate always revalidates before any
             # real dispatch). Never fabricated — None when no payload exists.
@@ -1908,20 +1844,12 @@ class ScannerController:
                 continue
             proposal.update({
                 "execution_origin": "AUTO_TRADE",
-                "rollout_version": SCANNER_ROLLOUT_VERSION,
-                "rollout_stage": rollout_policy.stage,
             })
-            effective_risk = request.risk_percent
-            if rollout_decision.risk_cap_percent is not None:
-                effective_risk = min(
-                    effective_risk,
-                    rollout_decision.risk_cap_percent,
-                )
 
             try:
                 result = self.execute_order_candidate(
                     proposal,
-                    risk_percent=effective_risk,
+                    risk_percent=request.risk_percent,
                     comment=f"AMA {symbol}",
                 )
             except Exception as exc:
@@ -2002,17 +1930,10 @@ class ScannerController:
             "attempted": attempted,
             "opened": opened,
             "skipped": skipped,
-            "rollout_blocked": rollout_blocked,
             "errors": errors,
             "orders": results,
             "diagnostics": diagnostics,
             "risk_percent": request.risk_percent,
-            "effective_risk_cap_percent": (
-                rollout_policy.canary_risk_percent
-                if rollout_policy.stage == "CANARY"
-                else None
-            ),
-            "rollout_policy": rollout_policy.to_dict(),
         }
 
     def _is_auto_trade_candidate(self, row: dict[str, Any], at_cfg: dict[str, object] | None) -> bool:
@@ -2769,7 +2690,7 @@ class ScannerController:
         payload = {
             key: value
             for key, value in result.items()
-            if key not in {"rows", "scan_context", "portfolio_state", "shadow_report"}
+            if key not in {"rows", "scan_context", "portfolio_state", "scan_health"}
         }
         references = manifest or {}
         payload["persistence_schema_version"] = 1
@@ -2788,28 +2709,6 @@ class ScannerController:
         if references:
             payload["analysis_manifest"] = dict(references)
         return payload
-
-
-def _build_macro_verdict_context(macro_context: dict[str, Any]) -> dict[str, Any]:
-    """Critical 2: gói tín hiệu macro đầy đủ cho AI Macro Verdict.
-
-    Map từ ``macro_context`` mà NewsService trả về (``macro_tier_detail`` chứa
-    tier1_interest_rate/tier2_calendar/tier3_sentiment + macro_v2 +
-    stance_journal) sang shape mà ``build_verdict_prompt`` chờ. Pipeline tự
-    bổ sung alignment/data_quality/correlation/DXY từ chính nó.
-    """
-    if not isinstance(macro_context, dict):
-        return {}
-    tier_detail = macro_context.get("macro_tier_detail", {})
-    if not isinstance(tier_detail, dict):
-        tier_detail = {}
-    return {
-        "tier1": tier_detail.get("tier1_interest_rate", {}),
-        "tier2": tier_detail.get("tier2_calendar", {}),
-        "tier3": tier_detail.get("tier3_sentiment", {}),
-        "macro_v2": macro_context.get("macro_v2", {}),
-        "stance": macro_context.get("stance_journal", {}),
-    }
 
 
 def _scan_one_symbol(
@@ -2957,13 +2856,37 @@ def _fetch_one_symbol_mt5(
         connectivity_checked_at=connectivity_checked_at,
         last_candle_time_utc=_newest_last_candle_time_utc(all_candles),
         data_checked_at=data_checked_at,
+        last_tick_time_utc=(
+            data_quality.get("tick_time") if isinstance(data_quality, dict) else None
+        ),
         spread_points=spread_points,
         spread_checked_at=spread_checked_at,
         news_source_verified=bool(news_verified),
         news_checked_at=captured_at,
-        volatility_ratio=None,
+        volatility_ratio=compute_live_volatility_ratio(
+            all_candles.get("D1"), all_candles.get("H4")
+        ),
         volatility_checked_at=captured_at,
     )
+
+    # ---- Account gate, per symbol: required margin = what the broker itself
+    # computes for the MINIMUM lot of THIS broker symbol (both directions, max
+    # kept).  At scan time no entry/SL exists yet, so risk-sizing is impossible;
+    # the minimum orderable size is the only honest probe.  Unavailable -> None
+    # -> the gate fails closed with GATE_ACCOUNT_DATA_MISSING.
+    v4_account_symbol = v4_account
+    if v4_account is not None:
+        required_margin = None
+        try:
+            min_lot_margin = getattr(mt5, "min_lot_order_margin", None)
+            if callable(min_lot_margin):
+                required_margin = min_lot_margin(broker_symbol)
+        except Exception:
+            required_margin = None
+        v4_account_symbol = AccountState(
+            free_margin=v4_account.free_margin,
+            required_margin=required_margin,
+        )
 
     return {
         "symbol": symbol,
@@ -2977,7 +2900,7 @@ def _fetch_one_symbol_mt5(
         "mt5_history_cache": history_cache_result,
         "v4_safety": v4_safety,
         "v4_captured_at": captured_at,
-        "account": v4_account,
+        "account": v4_account_symbol,
         "portfolio": v4_portfolio,
         "journal": v4_journal,
     }
@@ -3021,8 +2944,8 @@ def _analyze_one_symbol(
     account_guard_settings: dict[str, Any],
     thresholds: dict[str, int | float] | None = None,
     scanner_fast_tier1: bool = False,
-    scanner_fast_tier2: bool = False,
     ai_service: object | None = None,
+    order_policy: RuntimeOrderPolicy | None = None,
 ) -> dict[str, Any]:
     """Run the V4 analysis path for one symbol (CPU-only, thread-safe, C2b).
 
@@ -3049,6 +2972,8 @@ def _analyze_one_symbol(
         safety = pkt.get("v4_safety")
         if safety is None:
             # No live safety context -> fail closed (all sources MISSING).
+            # Volatility is still derivable from the prefetched candles alone
+            # (no MT5 needed); everything else stays MISSING/UNKNOWN.
             safety = build_live_market_safety_context(
                 symbol,
                 now,
@@ -3061,7 +2986,7 @@ def _analyze_one_symbol(
                 spread_checked_at=None,
                 news_source_verified=False,
                 news_checked_at=None,
-                volatility_ratio=None,
+                volatility_ratio=compute_live_volatility_ratio(d1, h4),
                 volatility_checked_at=None,
             )
         # Real macro derivation (mirrors the V3 analysis_engine consumption).
@@ -3102,12 +3027,27 @@ def _analyze_one_symbol(
             account=pkt.get("account"),
             portfolio=pkt.get("portfolio"),
             journal=pkt.get("journal"),
+            order_policy=order_policy,
         )
         row = pair_to_ui_row(
             pair,
             broker_symbol=broker_symbol,
             technical=analysis.get("technical"),
         )
+        # The detail chart must render for EVERY candidate (blocked included).
+        # ``pair_to_ui_row``'s ``analysis_result`` carries no candles, so inject
+        # the REAL prefetched candles here — otherwise the chart is empty and
+        # the background candle-refresh aborts regardless of candidate_status.
+        # The blocked/ready annotation lives in the hero + score panels.
+        _analysis_ui = row.get("analysis_result")
+        if isinstance(_analysis_ui, dict):
+            chart_candles = {
+                tf: series
+                for tf, series in (pkt.get("candles") or {}).items()
+                if isinstance(series, list) and series
+            }
+            if chart_candles:
+                _analysis_ui["chart_payload"] = build_chart_payload(chart_candles)
     except AdapterContractError:
         raise
     except Exception as exc:

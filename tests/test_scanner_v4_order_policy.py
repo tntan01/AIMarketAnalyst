@@ -49,7 +49,6 @@ def _full_dict() -> dict:
             "confidence_threshold": 0.7,
             "conflict_cap": "WATCH_ZONE",
             "unknown_cap": "DATA_UNAVAILABLE",
-            "ai_conviction_threshold": 0.8,
         },
         "portfolio_position_limit": 5,
         "portfolio_exposure_limit": 0.3,
@@ -195,12 +194,12 @@ class TestSerialization:
 
 
 class TestTrialConfig:
-    """The repo's provisional order-policy config (config/scanner_v4_order_policy.json).
+    """The repo's order-policy config (config/scanner_v4_order_policy.json).
 
-    Owner-accepted TRIAL values for 2026-08-14 (docs/scanner/scanner-v4-architecture.md
-    §13.1).  The config must stay loadable and keep the order workflow unlocked ONLY
-    so the release path can gate on it — every value is provisional and must be
-    re-audited in Bước 13 before it is treated as calibration.
+    Owner-accepted LIVE values (promoted 2026-08-15 from the 2026-08-14 trial;
+    rollout removed — docs/scanner/scanner-v4-architecture.md §13.1).  The config
+    must stay loadable and certified so the live path can gate on it; removing a
+    mandatory layer must drop it back to blocked (fail-closed).
     """
 
     _CONFIG = Path(__file__).resolve().parents[1] / "config" / "scanner_v4_order_policy.json"

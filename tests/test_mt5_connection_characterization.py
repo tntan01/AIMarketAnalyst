@@ -295,7 +295,10 @@ def test_scanner_emits_connection_failure_with_status_fields(
     }
 
 
-def test_scanner_ready_mt5_builds_rollout_policy_from_ready_status() -> None:
+def test_scanner_ready_mt5_continues_scan_without_rollout_policy() -> None:
+    # The Phase-8 rollout stage ladder was removed (2026-08-15, fully live):
+    # a ready MT5 connection goes straight from connection readiness to the
+    # account/portfolio stage — no rollout policy is built, stored or emitted.
     class ScanContinued(RuntimeError):
         pass
 
@@ -303,21 +306,16 @@ def test_scanner_ready_mt5_builds_rollout_policy_from_ready_status() -> None:
     controller.settings_service = SimpleNamespace(
         load=lambda: SimpleNamespace(
             trading=SimpleNamespace(max_risk_percent=2.0),
-            scanner_rollout=SimpleNamespace(stage="SHADOW"),
         )
     )
     provider = _StatusProvider(connected=True, logged_in=True)
     provider.account_balance = MagicMock(
-        side_effect=ScanContinued("scan continued after rollout policy")
+        side_effect=ScanContinued(
+            "scan continued after connection readiness"
+        )
     )
     controller.mt5 = provider
     controller.observability = MagicMock()
-    controller.rollout_metrics = MagicMock()
-    controller.rollout_metrics.readiness.return_value = {"ready": True}
-    controller.rollout_metrics.canary_readiness.return_value = {
-        "ready": True
-    }
-    controller._active_rollout_policy = None
     request = ScannerRequest(
         symbols=[],
         account_balance=10_000.0,
@@ -338,13 +336,11 @@ def test_scanner_ready_mt5_builds_rollout_policy_from_ready_status() -> None:
             controller.run_market_scan(request=request)
 
     assert provider.calls == 1
-    assert controller._active_rollout_policy is not None
-    assert controller._active_rollout_policy.server == "Fixture-Demo"
+    assert not hasattr(controller, "_active_rollout_policy")
     provider.account_balance.assert_called_once_with()
-    policy_calls = [
+    rollout_calls = [
         call
         for call in controller.observability.emit.call_args_list
-        if call.args[0] == "ROLLOUT_POLICY_EVALUATED"
+        if "ROLLOUT" in str(call.args[0])
     ]
-    assert len(policy_calls) == 1
-    assert policy_calls[0].kwargs["payload"]["server"] == "Fixture-Demo"
+    assert rollout_calls == []

@@ -222,7 +222,7 @@ version mới, áp score threshold và gate policy như hai điều kiện độ
 được dùng lại `min_final_score` V3 nếu chưa re-validate bằng V4.
 
 Đây là logic lấy mẫu nghiên cứu/backtest, không phải quyền đặt lệnh live.
-Auto-trade live vẫn phải qua Candidate Engine, Strategy Router, rollout guard,
+Auto-trade live vẫn phải qua Candidate Engine, Strategy Router, order policy,
 portfolio gate và execution revalidation.
 
 Khi áp dụng kết quả Backtest cho Scanner:

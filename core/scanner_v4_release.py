@@ -152,11 +152,18 @@ def run_v4_pair_from_live(
         build_side_snapshot,
         derive_live_analysis,
     )
+    from core.scanner_v4_scenario_producers import produce_scenario_plans
 
     analysis = derive_live_analysis(
         d1, h4, h1, symbol=symbol,
         captured_at=captured_at if captured_at is not None else now,
         news_in_3h=news_in_3h,
+    )
+    # Live scenario plans (entry/SL/TP per side) from REAL technical + canonical
+    # SMC structure; a side without a real protective zone + opposite target has
+    # no plan and its scenario gate fails closed (never invented).
+    scenario_plans = produce_scenario_plans(
+        analysis["technical"], analysis["canonical_smc"]
     )
     snapshot = build_live_snapshot(
         symbol=symbol,
@@ -168,12 +175,14 @@ def run_v4_pair_from_live(
             trend=analysis["raws"].per_side["buy"].trend,
             momentum=analysis["raws"].per_side["buy"].momentum,
             location=analysis["raws"].per_side["buy"].location,
+            scenario_plan=scenario_plans["buy"],
         ),
         sell=build_side_snapshot(
             "sell",
             trend=analysis["raws"].per_side["sell"].trend,
             momentum=analysis["raws"].per_side["sell"].momentum,
             location=analysis["raws"].per_side["sell"].location,
+            scenario_plan=scenario_plans["sell"],
         ),
         safety_context=safety,
         macro_raw_buy=macro_raw_buy,

@@ -16,7 +16,6 @@ import pytest
 
 from controllers.scanner_controller import ScannerController
 from core.scanner import ScannerRequest
-from config.settings import ScannerRolloutSettings
 
 
 def _settings():
@@ -47,7 +46,6 @@ def _settings():
         notifications=SimpleNamespace(
             telegram_bot_token="", telegram_chat_ids=[]
         ),
-        scanner_rollout=ScannerRolloutSettings(),
     )
 
 
@@ -77,13 +75,7 @@ class _MT5:
         return SimpleNamespace(to_dict=lambda: {"available": True})
 
 
-class _RolloutMetrics:
-    def readiness(self, settings):
-        return {"ready": True}
-
-    def canary_readiness(self, settings):
-        return {"ready": True}
-
+class _ScanHealth:
     def record_scan(self, **kwargs):
         return {"recorded": True}
 
@@ -95,7 +87,7 @@ def _make_controller():
         news_service=MagicMock(),
         journal_service=MagicMock(),
         telegram_service=MagicMock(),
-        rollout_metrics_service=_RolloutMetrics(),
+        scan_health_service=_ScanHealth(),
         retention_service=MagicMock(),
     )
     ctrl.observability = MagicMock()

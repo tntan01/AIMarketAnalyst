@@ -8,7 +8,6 @@ the same output dict as the original function.
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,12 +41,8 @@ from core.journal_feedback_engine import build_journal_feedback
 from core.statistical_edge_engine import calculate_evidence_score
 from core.reason_codes import (
     DAILY_LOSS_LIMIT_REACHED,
-    MACRO_AI_ADJUSTMENT,
-    MACRO_AI_VERDICT_SKIPPED,
-    MACRO_AI_VETO,
     MACRO_DATA_PARTIAL,
     MACRO_DATA_UNAVAILABLE,
-    MACRO_HIGH_IMPACT_EVENT_AHEAD,
     MACRO_HIGH_IMPACT_EVENT_NEARBY,
     WEEKLY_LOSS_LIMIT_REACHED,
     append_code as _append_reason_code,
@@ -62,11 +57,6 @@ from core.smc_consumer_contract import (
 )
 from core.smc_prefilter import SMC_SCORING_ERROR, evaluate_post_context_prefilter
 from core.smc_scorer import score_smc
-from services.event_impact_assessor import (
-    EventImpactAssessment,
-    derate_factor,
-    select_dominant_assessment,
-)
 from core.smc_scoring_result import (
     SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
@@ -238,9 +228,6 @@ class AnalysisPipeline:
         is_backtest: bool = False,
         scan_interval_min: int = 15,
         scanner_fast_tier1: bool = False,
-        scanner_fast_tier2: bool = False,
-        ai_service: object | None = None,
-        macro_verdict_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         # ---- Step 0: stash inputs ------------------------------------------
         self._request = request
@@ -264,13 +251,11 @@ class AnalysisPipeline:
         self._execution_quality_score_in = execution_quality_score
         self._thresholds = thresholds
         self._is_backtest = is_backtest
-        # Bước 6 (Critical 1): AI service + gói tín hiệu macro đầy đủ từ scanner.
-        self._ai_service = ai_service
-        self._macro_verdict_context = macro_verdict_context
-        # Only the bulk scanner supplies these flags.  Backtests always retain
-        # the full pipeline even if an external caller supplies fast-path flags.
+        # Only the bulk scanner supplies this flag.  Backtests always retain
+        # the full pipeline even if an external caller supplies a fast-path
+        # flag.  (``scanner_fast_tier2`` was removed 16/08/2026 — it was set
+        # but never branched on anywhere.)
         self._scanner_fast_tier1 = bool(scanner_fast_tier1) and not is_backtest
-        self._scanner_fast_tier2 = bool(scanner_fast_tier2) and not is_backtest
         self._structural_reject: dict[str, Any] | None = None
         self._precomputed_smc: SmcScoringResult | None = None
         self._decision_engine_enabled = True
@@ -332,9 +317,6 @@ class AnalysisPipeline:
         # ---- Step 5: direction bias + best side ---------------------------
         self._step_determine_direction()
 
-        # ---- Step 5.5: AI Macro Verdict (Bước 6) --------------------------
-        self._step_ai_macro_verdict()
-
         # ---- Step 6: permission, journal, gates ---------------------------
         self._step_apply_gates()
 
@@ -370,19 +352,6 @@ class AnalysisPipeline:
             ("_macro_confidence_in", 1.0),
             ("_macro_data_reason_code", None),
             ("_macro_event_reason_code", None),
-            ("_macro_event_ahead_assessment", None),
-            ("_macro_event_ahead_reason_code", None),
-            ("_macro_event_ahead_derate_factor", None),
-            ("_macro_verdict_result", None),
-            ("_macro_ai_veto", False),
-            ("_macro_ai_adjustment", 0),
-            ("_macro_ai_conviction", 1.0),
-            ("_macro_ai_conflicts", []),
-            ("_macro_ai_reason_codes", []),
-            ("_macro_ai_deducted", 0),
-            ("_ai_service", None),
-            ("_macro_verdict_context", None),
-            ("_macro_ai_assessor", None),
             ("_buy_corr_adj", 0), ("_sell_corr_adj", 0),
             ("_scores", {"buy": {}, "sell": {}}),
             ("_buy_smc_flags", {}), ("_sell_smc_flags", {}),
@@ -682,66 +651,10 @@ class AnalysisPipeline:
                 self._macro_confidence_in *= 0.8  # sự kiện sắp tới → giảm nhẹ
                 self._macro_event_reason_code = MACRO_HIGH_IMPACT_EVENT_NEARBY
 
-        # Bước 5 (SHADOW — chưa derate): chọn assessment sự kiện high-impact
-        # 4-48h nghiêm trọng nhất cho cặp đang phân tích. Kết quả chỉ được đưa
-        # vào payload (result["macro"]["event_assessments"]) + journal — CHƯA
-        # nhân vào _macro_confidence_in (bật derate ở Prompt 4).
-        self._macro_event_ahead_assessment = self._select_event_ahead_payload()
-        self._macro_event_ahead_reason_code = None
-        self._macro_event_ahead_derate_factor: float | None = None
-
-        # Bước 5 (DERATE — Prompt 4): khi flag bật, nhân derate vào macro_confidence.
-        derate_enabled = bool(
-            self._data_quality.get("event_impact_derate_enabled", False)
-        )
-        if derate_enabled and self._macro_event_ahead_assessment is not None:
-            try:
-                assessment = EventImpactAssessment(
-                    **self._macro_event_ahead_assessment
-                )
-                # Tính lại hours_until từ time_utc của chính assessment trước khi
-                # derate: payload giữ hours_until tại thời điểm preload (có thể stale
-                # tới ~5 phút) và độ trễ đó gây derate KÉP quanh mốc 4h — event thật
-                # còn 3.96h nhưng payload ghi 4.03h khiến cả Bước 3 (×0.8) lẫn
-                # Bước 5 (×0.70) cùng nổ. Đúng mốc 4.0 thuộc Bước 3 (D1, không overlap).
-                hours = self._hours_until_high_impact(self._macro_event_ahead_assessment)
-                if hours is None:
-                    # time_utc không parse được — dùng hours_until của payload làm
-                    # fallback. Giá trị này stale tối đa ~5 phút (một chu kỳ preload)
-                    # nên rủi ro sai chỉ ở mép các mốc giờ; đổi lại derate không bị
-                    # mất chỉ vì một lỗi parse. Không thể gây derate kép vì Bước 3
-                    # cũng cần time_utc parse được cho cùng event đó.
-                    hours = float(
-                        self._macro_event_ahead_assessment.get("hours_until", 0)
-                    )
-                factor = derate_factor(assessment, hours)
-                if factor < 1.0:
-                    self._macro_confidence_in *= factor
-                    self._macro_event_ahead_reason_code = (
-                        MACRO_HIGH_IMPACT_EVENT_AHEAD
-                    )
-                    self._macro_event_ahead_derate_factor = factor
-                    # Đồng bộ hours đã tính lại vào payload để cảnh báo UI khớp
-                    # với quyết định derate.
-                    self._macro_event_ahead_assessment = {
-                        **self._macro_event_ahead_assessment,
-                        "hours_until": hours,
-                    }
-            except Exception as exc:
-                # Fail-closed: bỏ derate nếu có lỗi — nhưng ghi dấu vết thay vì
-                # nuốt lặng lẽ, để còn truy vết khi điểm vĩ mô không giảm như kỳ vọng.
-                self._log_step(
-                    "event_impact_derate",
-                    "warning",
-                    f"Bước 5 derate lỗi — bỏ derate (fail-closed): {exc}",
-                )
-
         # Floor an toàn chung cho macro_confidence sau tất cả các bước derate
-        # (thiếu dữ liệu, Bước 3, Bước 5). Floor áp VÔ ĐIỀU KIỆN — kể cả khi
-        # flag Bước 5 TẮT — đây là chủ đích đã chốt của Prompt 4 (ngoại lệ duy
-        # nhất so với lời hứa "flag tắt → kết quả không đổi": input confidence
-        # đã xuống dưới 0.15 từ trước vẫn được nâng lên 0.15). Xem
-        # test_step5_floor_kich_hoat_that trong bộ test review fixes.
+        # (thiếu dữ liệu, Bước 3). Floor áp VÔ ĐIỀU KIỆN — input confidence đã
+        # xuống dưới 0.15 từ trước vẫn được nâng lên 0.15 (chủ đích đã chốt;
+        # xem test_macro_confidence_floor trong bộ integration tests).
         self._macro_confidence_in = max(self._macro_confidence_in, 0.15)
 
         corr_summary = (
@@ -788,46 +701,6 @@ class AnalysisPipeline:
             base, quote = symbol.split("/", 1)
             return currency in (base, quote)
         return currency in symbol
-
-    def _pair_currencies(self, symbol: str) -> tuple[str, str]:
-        """Tách base/quote từ symbol (EUR/USD hoặc XAUUSD)."""
-        sym = str(symbol).upper()
-        if "/" in sym:
-            base, quote = sym.split("/", 1)
-            return base, quote
-        if len(sym) >= 6:
-            return sym[:3], sym[3:6]
-        return sym, ""
-
-    def _select_event_ahead_payload(self) -> dict[str, Any] | None:
-        """Bước 5 (shadow): chọn assessment sự kiện 4-48h nghiêm trọng nhất cho cặp.
-
-        Đọc danh sách assessment từ data_quality (được NewsService gắn vào
-        "upcoming_event_assessments"), dùng select_dominant_assessment với
-        base/quote của symbol. Trả payload dict của assessment chọn (kèm
-        hours_until) hoặc None. Mọi lỗi → None (shadow an toàn).
-        """
-        try:
-            upcoming = self._data_quality.get("upcoming_event_assessments", [])
-            if not isinstance(upcoming, list) or not upcoming:
-                return None
-            assessments: list[EventImpactAssessment] = []
-            for item in upcoming:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    assessments.append(EventImpactAssessment(**item))
-                except Exception:
-                    continue
-            if not assessments:
-                return None
-            base, quote = self._pair_currencies(self._request.symbol)
-            selected = select_dominant_assessment(assessments, base, quote)
-            if selected is None:
-                return None
-            return {**asdict(selected), "hours_until": selected.hours_until}
-        except Exception:
-            return None
 
     # ------------------------------------------------------------------
     # Step 3 — score buy & sell scenarios + extract SMC flags
@@ -1072,217 +945,6 @@ class AnalysisPipeline:
         )
 
     # ------------------------------------------------------------------
-    # Step 5.5 — AI Macro Verdict (Bước 6)
-    # ------------------------------------------------------------------
-
-    def _step_ai_macro_verdict(self) -> None:
-        """Bước 6: gọi AI trọng tài macro cho top candidates.
-
-        Chỉ chạy khi:
-        - Feature flag ``macro_ai_verdict_enabled`` = True
-        - best_side đã xác định (buy/sell)
-        - macro_alignment >= 20 (top ~33%)
-
-        Áp dụng:
-        - adjustment < 0 → lưu vào _macro_ai_adjustment; Step 7 trừ trực tiếp
-          vào component macro của side đang chọn (Critical 3 fix — adjustment
-          trước đây là no-op vì áp sau bước chấm điểm).
-        - veto=true → lưu vào _macro_ai_veto để gate engine xử lý
-        - conviction < 0.7 → bỏ qua toàn bộ
-        """
-        self._macro_verdict_result = None
-        self._macro_ai_veto = False
-        self._macro_ai_adjustment = 0
-        self._macro_ai_conviction = 1.0
-        self._macro_ai_conflicts = []
-        self._macro_ai_reason_codes = []
-
-        # Guard 1: feature flag
-        verdict_enabled = bool(
-            self._data_quality.get("macro_ai_verdict_enabled", False)
-        )
-        if not verdict_enabled:
-            self._log_step("macro_verdict", "skip", "Feature flag OFF")
-            return
-
-        # Guard 2: best_side must be determined
-        if self._best_side not in ("buy", "sell"):
-            self._log_step("macro_verdict", "skip", "No best_side determined")
-            return
-
-        # Guard 3: macro score threshold
-        macro_score = self._macro_alignment.get(self._best_side, 15)
-        if macro_score < 20:
-            self._log_step(
-                "macro_verdict", "skip",
-                f"Macro score {macro_score} below threshold 20",
-            )
-            return
-
-        # Build macro context for the AI prompt
-        macro_ctx = self._build_macro_verdict_context()
-
-        # Call assessor (fail-closed)
-        try:
-            from services.macro_ai_verdict import MacroVerdictAssessor
-
-            # Test seam: tests inject _macro_ai_assessor (vd. dùng temp cache/
-            # journal path) — pattern giống svc._event_assessor ở NewsService.
-            assessor = getattr(self, "_macro_ai_assessor", None)
-            if assessor is None:
-                assessor = MacroVerdictAssessor()
-            verdict = assessor.assess(
-                pair=self._request.symbol,
-                macro_context=macro_ctx,
-                ai_service=self._ai_service,
-                date_str=(
-                    self._trade_date.strftime("%Y-%m-%d")
-                    if self._trade_date else None
-                ),
-                best_side=self._best_side,
-                verdict_enabled=True,
-                is_backtest=self._is_backtest,
-            )
-            self._macro_verdict_result = verdict
-        except Exception as exc:
-            self._log_step("macro_verdict", "warning",
-                           f"Assessor error, skipping: {exc}")
-            return
-
-        verdict = self._macro_verdict_result
-        if verdict is None:
-            return
-
-        # Skip non-AI sources (fallback/skip/backtest_no_cache)
-        if verdict.source != "ai":
-            self._log_step(
-                "macro_verdict", "skip",
-                f"Source={verdict.source}, no adjustment applied",
-            )
-            return
-
-        # Conviction gate
-        if verdict.conviction < 0.7:
-            self._log_step(
-                "macro_verdict", "skip",
-                f"Conviction {verdict.conviction:.2f} < 0.7, ignoring verdict",
-            )
-            self._macro_ai_reason_codes.append(MACRO_AI_VERDICT_SKIPPED)
-            return
-
-        # Store verdict fields for downstream steps
-        self._macro_ai_veto = verdict.veto
-        self._macro_ai_adjustment = verdict.adjustment
-        self._macro_ai_conviction = verdict.conviction
-        self._macro_ai_conflicts = list(verdict.conflicts)
-
-        # Critical 3: adjustment được áp dụng ở Step 7 dưới dạng trừ trực tiếp
-        # vào component macro (0-30) của best_side — KHÔNG nhân vào
-        # _macro_confidence_in (giữ confidence = chất lượng dữ liệu, tránh
-        # double-count với Bước 3/5 derate).
-        if verdict.adjustment < 0:
-            self._macro_ai_reason_codes.append(MACRO_AI_ADJUSTMENT)
-            self._log_step(
-                "macro_verdict", "warning",
-                f"Adjustment={verdict.adjustment} — Step 7 trừ "
-                f"{abs(verdict.adjustment)} điểm macro component",
-            )
-
-        if verdict.veto:
-            self._macro_ai_reason_codes.append(MACRO_AI_VETO)
-            self._log_step(
-                "macro_verdict", "warning",
-                f"VETO: {', '.join(verdict.conflicts)}",
-            )
-        else:
-            self._log_step(
-                "macro_verdict", "pass",
-                f"Bias={verdict.bias}, Conviction={verdict.conviction:.2f}, "
-                f"Conflicts={len(verdict.conflicts)}",
-            )
-
-    def _build_macro_verdict_context(self) -> dict[str, Any]:
-        """Package all macro signals for the AI verdict prompt.
-
-        Critical 2 fix: scanner truyền gói đầy đủ qua ``macro_verdict_context``
-        (tier1/tier2/tier3/macro_v2/stance từ ``macro_tier_detail``). Nếu không
-        có (backtest/test cũ), fallback về map từ ``_macro_alignment_in``.
-        Pipeline tự bổ sung: alignment, data_quality, correlation + chuyển
-        động DXY (V6 — phát hiện "Tier 1 hawkish nhưng DXY giảm").
-        """
-        pkg = self._macro_verdict_context if isinstance(self._macro_verdict_context, dict) else {}
-        legacy = self._macro_alignment_in if isinstance(self._macro_alignment_in, dict) else {}
-
-        tier1 = pkg.get("tier1") or legacy.get("tier1") or {}
-        tier2 = pkg.get("tier2") or legacy.get("tier2") or {}
-        tier3 = pkg.get("tier3") or legacy.get("tier3") or {}
-        macro_v2 = pkg.get("macro_v2") or legacy.get("macro_v2") or {}
-        stance = pkg.get("stance") or legacy.get("stance") or {}
-
-        return {
-            "tier1": tier1 if isinstance(tier1, dict) else {},
-            "tier2": tier2 if isinstance(tier2, dict) else {},
-            "tier3": tier3 if isinstance(tier3, dict) else {},
-            "alignment": dict(self._macro_alignment),
-            "macro_v2": macro_v2 if isinstance(macro_v2, dict) else {},
-            "data_quality": {
-                "macro_confidence": self._macro_confidence_in,
-                "macro_data_quality": self._data_quality.get("macro_data_quality"),
-            },
-            "upcoming_event_assessments": self._data_quality.get(
-                "upcoming_event_assessments", []
-            ),
-            "correlation": {
-                "has_dxy": bool(self._correlation_context.get("dxy_candles"))
-                if self._correlation_context else False,
-                "has_vix": bool(self._correlation_context.get("vix_candles"))
-                if self._correlation_context else False,
-                "has_us10y": bool(self._correlation_context.get("us10y_candles"))
-                if self._correlation_context else False,
-                "has_us2y": bool(self._correlation_context.get("us2y_candles"))
-                if self._correlation_context else False,
-                "buy_corr_adj": self._buy_corr_adj,
-                "sell_corr_adj": self._sell_corr_adj,
-                # V6: dữ liệu chuyển động DXY để AI phát hiện mâu thuẫn
-                # "Tier 1 hawkish nhưng DXY đang giảm".
-                "dxy": self._dxy_movement(),
-            },
-            "stance": stance if isinstance(stance, dict) else {},
-        }
-
-    def _dxy_movement(self) -> dict[str, Any]:
-        """Tóm tắt chuyển động DXY gần nhất để đưa vào prompt AI.
-
-        Trả về hướng (up/down/flat) + % thay đổi giữa 2 nến D1 gần nhất.
-        Không có dữ liệu → {"has_data": False}.
-        """
-        candles = (self._correlation_context or {}).get("dxy_candles") or []
-        closes: list[float] = []
-        for candle in candles:
-            close = getattr(candle, "close", None)
-            if close is not None:
-                try:
-                    closes.append(float(close))
-                except (TypeError, ValueError):
-                    continue
-        if len(closes) < 2:
-            return {"has_data": False}
-        prev, last = closes[-2], closes[-1]
-        pct = (last - prev) / prev * 100.0 if prev else 0.0
-        if last > prev:
-            direction = "up"
-        elif last < prev:
-            direction = "down"
-        else:
-            direction = "flat"
-        return {
-            "has_data": True,
-            "direction": direction,
-            "change_pct": round(pct, 3),
-            "last_close": round(last, 4),
-        }
-
-    # ------------------------------------------------------------------
     # Step 6 — permission, journal feedback, legacy decision, gates
     # ------------------------------------------------------------------
 
@@ -1478,10 +1140,6 @@ class AnalysisPipeline:
             "score_gap": self._direction_bias.get("score_gap"),
             "min_buy_sell_score_gap": self._direction_bias.get("min_gap", 10),
             "journal_feedback": self._journal_feedback,
-            # Bước 6: AI Macro Verdict fields for gate engine
-            "macro_ai_veto": getattr(self, "_macro_ai_veto", False),
-            "macro_ai_conviction": getattr(self, "_macro_ai_conviction", 1.0),
-            "macro_ai_conflicts": getattr(self, "_macro_ai_conflicts", []),
         }
 
         self._account_guard_result = check_account_guard(
@@ -1724,12 +1382,6 @@ class AnalysisPipeline:
             combined_reason_codes.append(self._macro_data_reason_code)
         if self._macro_event_reason_code:
             combined_reason_codes.append(self._macro_event_reason_code)
-        if self._macro_event_ahead_reason_code:
-            combined_reason_codes.append(self._macro_event_ahead_reason_code)
-        # Bước 6 (Major 4 fix): reason codes AI Macro Verdict — trước đây bị
-        # normalize_codes ghi đè, giờ gộp vào danh sách cuối.
-        for code in getattr(self, "_macro_ai_reason_codes", []):
-            combined_reason_codes.append(code)
 
         self._reason_codes = normalize_codes(combined_reason_codes)
         self._penalty_codes = normalize_codes(combined_penalty_codes)
@@ -1745,44 +1397,6 @@ class AnalysisPipeline:
     # Step 8 — final_score, evidence, execution quality, decision engine
     # ------------------------------------------------------------------
 
-    def _apply_macro_ai_adjustment(self) -> int:
-        """Critical 3: trừ adjustment AI Macro Verdict vào điểm macro component.
-
-        Trước đây adjustment nhân vào ``_macro_confidence_in`` ở Step 5.5 —
-        SAU khi Step 3 đã chấm điểm tiêu thụ confidence → no-op. Fix: trừ
-        trực tiếp ``adjustment`` (−5..0) vào component ``macro_alignment``
-        (0-30) của side đang chọn, rồi tính lại ``signal_score`` từ các
-        component đã có (giữ nguyên cap CHOCH nếu tồn tại).
-
-        Trả về số điểm đã trừ (0 nếu không áp dụng). Chỉ làm khó, không làm dễ.
-        """
-        adjustment = getattr(self, "_macro_ai_adjustment", 0)
-        if adjustment >= 0 or self._best_side not in ("buy", "sell"):
-            return 0
-        side_scores = self._scores.get(self._best_side)
-        if not isinstance(side_scores, dict):
-            return 0
-        macro_eff = side_scores.get("macro_alignment")
-        if not isinstance(macro_eff, (int, float)):
-            return 0
-        new_macro = max(0, int(macro_eff) + adjustment)
-        deducted = int(macro_eff) - new_macro
-        if deducted <= 0:
-            return 0
-        technical_scaled = safe_score(side_scores.get("technical_scaled"), 0)
-        risk_scaled = safe_score(side_scores.get("risk_condition"), 0)
-        new_total = technical_scaled + risk_scaled + new_macro
-        smc_cap = side_scores.get("smc_score_cap")
-        if isinstance(smc_cap, (int, float)):
-            new_total = min(int(new_total), int(smc_cap))
-        new_total = max(0, min(new_total, 100))
-        updated = dict(side_scores)
-        updated["macro_alignment"] = new_macro
-        updated["signal_score"] = new_total
-        updated["total"] = new_total
-        self._scores[self._best_side] = updated
-        return deducted
-
     def _step_compute_final_score(self) -> None:
         regime_key = (
             self._market_regime.get("primary")
@@ -1794,12 +1408,6 @@ class AnalysisPipeline:
             if isinstance(self._journal_feedback_by_side, dict)
             else {}
         )
-
-        # Critical 3 fix: trước khi tính final score, áp adjustment AI Macro
-        # Verdict như khoản trừ TRỰC TIẾP vào component macro (0-30) của side
-        # đang chọn rồi tính lại signal_score. Adjustment chỉ âm/0 → chỉ làm
-        # khó setup, không làm dễ (bất đối xứng).
-        self._macro_ai_deducted = self._apply_macro_ai_adjustment()
 
         # Compute setup quality independently for BUY and SELL.  The old
         # top-level final_score remains an alias of the selected direction.
@@ -2128,20 +1736,6 @@ class AnalysisPipeline:
                     self._trade_permission,
                 ),
                 "macro_confidence": self._macro_confidence_in,
-                "event_assessments": (
-                    [{
-                        **self._macro_event_ahead_assessment,
-                        "applied_derate": self._macro_event_ahead_derate_factor,
-                    }]
-                    if self._macro_event_ahead_assessment else []
-                ),
-                # Bước 6: AI Macro Verdict
-                "macro_ai_verdict": (
-                    self._macro_verdict_result.to_dict()
-                    if self._macro_verdict_result is not None
-                    else None
-                ),
-                "macro_ai_deducted": getattr(self, "_macro_ai_deducted", 0),
             },
             "economic_events": [],
             "scenarios": self._scenarios or fallback_scenarios,

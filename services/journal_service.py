@@ -299,7 +299,13 @@ class JournalService:
             merged.update(outcome)
             if "realized_effective_rr" not in updates:
                 merged["realized_effective_rr"] = outcome.get("result_r")
-        elif any(key in updates for key in ("actual_entry", "planned_entry", "actual_sl", "planned_sl", "actual_exit")):
+        elif (
+            any(key in updates for key in ("actual_entry", "planned_entry", "actual_sl", "planned_sl", "actual_exit"))
+            # MT5 sync payloads only carry actual_entry/actual_exit and never a
+            # stop-loss, so they would make outcome empty and wipe a previously
+            # computed result for no reason (the sync payload doesn't change SL).
+            and updates.get("synced_from") != "mt5_history"
+        ):
             merged["result_r"] = None
             merged["result_pct"] = None
             merged["realized_effective_rr"] = None
@@ -509,6 +515,14 @@ class JournalService:
             "setup_type", "execution_regime", "session", "m15_quality",
             "spread_at_entry", "expected_effective_rr", "realized_effective_rr",
             "manual_mistake_tags", "auto_mistake_tags", "execution_quality_score",
+            # Zone / scoring provenance — feeds the `symbol_direction_zone`
+            # statistical-edge cohort (entry_zone_score + entry_zone_scoring_version).
+            "entry_zone_score", "entry_zone_source", "sub_zone",
+            "selected_zone_id", "entry_zone_quality_score",
+            "entry_zone_relevance_score", "entry_zone_setup_score",
+            "entry_zone_scoring_version", "smc_scorer_version",
+            "scanner_scorer_version", "scanner_feature_version",
+            "smc_score_breakdown_json",
         )
         cols_str = ", ".join(select_cols)
         with self._connect() as conn:
@@ -538,6 +552,12 @@ class JournalService:
                 "setup_type", "execution_regime", "session", "m15_quality",
                 "spread_at_entry", "expected_effective_rr", "realized_effective_rr",
                 "execution_quality_score",
+                "entry_zone_score", "entry_zone_source", "sub_zone",
+                "selected_zone_id", "entry_zone_quality_score",
+                "entry_zone_relevance_score", "entry_zone_setup_score",
+                "entry_zone_scoring_version", "smc_scorer_version",
+                "scanner_scorer_version", "scanner_feature_version",
+                "smc_score_breakdown_json",
             ):
                 try:
                     trade[key] = row[key]

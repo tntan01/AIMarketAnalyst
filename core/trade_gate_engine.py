@@ -11,7 +11,6 @@ from core.reason_codes import (
     HIGH_IMPACT_NEWS_NEARBY,
     M15_LOOSE_CONFIRMATION,
     M15_NOT_CONFIRMED,
-    MACRO_AI_VETO,
     MT5_NOT_READY,
     SPREAD_ABNORMAL,
     WEEKLY_LOSS_LIMIT_REACHED,
@@ -267,37 +266,6 @@ def _gate_choch_safety(
     )
 
 
-def _gate_macro_ai_verdict(
-    context: dict[str, Any],
-    result: dict[str, Any],
-) -> None:
-    """Bước 6: AI Macro Verdict gate — phủ quyết bất đối xứng.
-
-    Chỉ được phép làm khó setup (READY → WATCH), không bao giờ làm dễ.
-    Bỏ qua nếu gate đã block (TRADE_BLOCKED) vì không còn gì để phủ quyết.
-    """
-    veto = context.get("macro_ai_veto", False)
-    conviction = context.get("macro_ai_conviction", 1.0)
-
-    if not veto:
-        return
-    if conviction < 0.7:
-        return
-
-    # Nếu đã bị block thì veto không có tác dụng thêm
-    if result.get("allowed") is False:
-        return
-
-    # Veto: giáng xuống WATCH_ONLY
-    append_code(result["warning_codes"], MACRO_AI_VETO)
-    result["decision_cap"] = _resolve_cap(result["decision_cap"], "WATCH_ONLY")
-    conflicts = context.get("macro_ai_conflicts", [])
-    conflict_str = "; ".join(conflicts) if conflicts else "mâu thuẫn vĩ mô"
-    result["reasons"].append(
-        f"AI Macro Verdict phủ quyết setup — phát hiện mâu thuẫn: {conflict_str}."
-    )
-
-
 def _gate_account_guard(context: dict[str, Any], result: dict[str, Any]) -> None:
     """Merge account guard result into trade gate.
 
@@ -372,7 +340,6 @@ _GATES = [
     _gate_zone_relevance,
     _gate_zone_price_relation,
     _gate_choch_safety,
-    _gate_macro_ai_verdict,
 ]
 
 

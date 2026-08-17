@@ -189,7 +189,6 @@ class _SettingsService:
                 telegram_bot_token="super-secret-token",
                 telegram_chat_ids=["secret-chat-id"],
             ),
-            scanner_rollout=None,
         )
 
     def load(self):
@@ -525,7 +524,6 @@ def test_macro_counter_call_sites_record_cache_network_and_ai_attempts(
             "tier2": {},
             "tier3": {"detail": {}},
             "raw_total": {"buy": 15, "sell": 15},
-            "macro_v2": {},
         },
     )
     monkeypatch.setattr(news, "_macro_data_quality", lambda *_args: 1.0)

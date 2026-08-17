@@ -25,29 +25,34 @@ def test_columns_help_matches_current_scanner_table_contract() -> None:
     help_labels = [item["column"] for item in dialog.COLUMN_HELP]
 
     assert help_labels == expected_labels
-    assert dialog.help_table.rowCount() == len(expected_labels) == 14
+    assert dialog.help_table.rowCount() == len(expected_labels) == 10
     assert dialog.help_table.columnCount() == 3
     assert dialog.help_table.objectName() == "EconTable"
     assert dialog.help_table.showGrid() is False
     assert dialog.help_table.cellWidget(0, 0) is None
 
-    # Intro must not hard-code "13" — count comes from COLUMNS
+    # Intro must not hard-code a column count — count comes from COLUMNS
     intro_texts = [
         child.text()
         for child in dialog.children()
         if hasattr(child, "text") and "giải thích" in str(child.text())
     ]
-    assert any("13" not in t for t in intro_texts), (
+    assert any("cột" in t for t in intro_texts), (
         "Intro text must not hard-code column count"
     )
 
-    # Vùng is between Loại vùng and Điểm thiết lập
-    loai_idx = help_labels.index("Loại vùng")
-    vung_idx = help_labels.index("Vùng")
-    diem_idx = help_labels.index("Điểm thiết lập")
-    assert loai_idx < vung_idx < diem_idx, (
-        f"Order: Loại vùng={loai_idx}, Vùng={vung_idx}, Điểm thiết lập={diem_idx}"
+    # Tín hiệu KT is between Bối cảnh and Setup
+    bh_idx = help_labels.index("Bối cảnh")
+    tin_idx = help_labels.index("Tín hiệu KT")
+    setup_idx = help_labels.index("Setup")
+    assert bh_idx < tin_idx < setup_idx, (
+        f"Order: Bối cảnh={bh_idx}, Tín hiệu KT={tin_idx}, Setup={setup_idx}"
     )
+    # Component-score grouping: Setup → Tin cậy → Sẵn sàng → R:R
+    tin_cay_idx = help_labels.index("Tin cậy")
+    san_sang_idx = help_labels.index("Sẵn sàng")
+    rr_idx = help_labels.index("R:R")
+    assert setup_idx < tin_cay_idx < san_sang_idx < rr_idx
     assert app is QApplication.instance()
 
     dialog.close()
@@ -121,16 +126,19 @@ def test_out_of_strategy_tooltip_explains_missing_rule_not_unsupported_pair() ->
     assert "Điểm thiết lập 59/80" in tooltip
 
 
-def test_rollout_block_codes_are_explained_in_vietnamese() -> None:
+def test_block_codes_are_explained_in_vietnamese() -> None:
+    # The rollout stage ladder was removed (2026-08-15, fully live): the
+    # remaining user-facing block explanations cover the auto-trade toggle
+    # and a generic fallback for any other safety code.
     messages = scanner_screen.ScannerScreen._user_facing_block_reasons(
         [
-            "RELEASE_GATE_NOT_READY",
-            "ROLLOUT_KILL_SWITCH_ACTIVE",
+            "USER_AUTO_TRADE_DISABLED",
+            "SOME_FUTURE_SAFETY_CODE",
         ]
     )
 
-    assert "Cổng phát hành chưa đạt" in messages[0]
-    assert "dừng khẩn cấp" in messages[1]
+    assert "chưa bật tự động vào lệnh" in messages[0]
+    assert "SOME_FUTURE_SAFETY_CODE" in messages[1]
 
 
 def test_help_button_opens_columns_dialog_without_selection(monkeypatch) -> None:
@@ -286,20 +294,28 @@ def test_stt_column_uses_presentation_rank_not_rank():
     assert "rank" not in column_keys, \
         "Execution 'rank' must not be a table column key"
     assert "presentation_rank" in column_keys
-    assert "zone_origin_class" in column_keys
-    assert "price_vs_zone" in column_keys
-    assert len(ScannerTableModel.COLUMNS) == 14
+    # Dead V3-only columns must be gone; technical signal must be present.
+    assert "technical_signal_score" in column_keys
+    for dead_key in (
+        "zone_origin_class",
+        "price_vs_zone",
+        "opportunity_rank",
+        "auto_trade_branch",
+        "strategy_config_status",
+    ):
+        assert dead_key not in column_keys, f"dead column {dead_key!r} must be removed"
+    assert len(ScannerTableModel.COLUMNS) == 10
 
 
-def test_zone_columns_order_loai_vung_then_vung_then_diem_thiet_lap():
-    """'Loại vùng' → 'Vùng' → 'Điểm thiết lập' in that exact order."""
+def test_zone_columns_order_bien_canh_then_tin_hieu_kt_then_setup():
+    """'Bối cảnh' → 'Tín hiệu KT' → 'Setup' in that exact order."""
     keys = [k for k, _ in ScannerTableModel.COLUMNS]
-    if "price_vs_zone" not in keys:
+    if "technical_signal_score" not in keys:
         return
-    loai_idx = keys.index("zone_origin_class")
-    vung_idx = keys.index("price_vs_zone")
+    bh_idx = keys.index("market_regime")
+    tin_idx = keys.index("technical_signal_score")
     diem_idx = keys.index("setup_score")
-    assert loai_idx < vung_idx < diem_idx, (
-        f"Column order: Loại vùng={loai_idx}, Vùng={vung_idx}, "
-        f"Điểm thiết lập={diem_idx}"
+    assert bh_idx < tin_idx < diem_idx, (
+        f"Column order: Bối cảnh={bh_idx}, Tín hiệu KT={tin_idx}, "
+        f"Setup={diem_idx}"
     )

@@ -1,9 +1,9 @@
 """Scanner V4 Step 05: target-only MacroAssessment + MacroGate contract.
 
 Covers the full assessment/gate matrix, provenance, side consistency,
-fail-closed OPEN-policy semantics, the AI veto/cap single owner, aggregate
-precedence, determinism, TechnicalScore invariance, and the ownership
-deduplication / runtime-isolation guards that keep this step target-only.
+fail-closed OPEN-policy semantics, aggregate precedence, determinism,
+TechnicalScore invariance, and the ownership deduplication /
+runtime-isolation guards that keep this step target-only.
 """
 
 from __future__ import annotations
@@ -26,10 +26,6 @@ from core.macro_gate import (
     classify_macro_status,
 )
 from core.reason_codes import (
-    MACRO_AI_VERDICT_SKIPPED,
-    MACRO_AI_VERDICT_UNAVAILABLE,
-    MACRO_AI_VETO,
-    MACRO_AI_VETO_UNVERIFIED,
     MACRO_ALIGNED,
     MACRO_CONFIDENCE_THRESHOLD_UNSET,
     MACRO_CONFLICT,
@@ -74,14 +70,13 @@ _NOW = datetime(2026, 8, 13, 9, 30, tzinfo=timezone.utc)
 _CORE_DIR = Path(__file__).resolve().parents[1] / "core"
 
 # Locked test policy: deadband 2 raw points, confidence >= 0.7, conflict ->
-# CAUTION + WAITING_CONFIRMATION, unknown -> WATCH_ZONE, AI conviction >= 0.7.
+# CAUTION + WAITING_CONFIRMATION, unknown -> WATCH_ZONE.
 LOCKED_POLICY = MacroPolicy(
     policy_version=SCANNER_V4_MACRO_POLICY_VERSION,
     deadband_points=2,
     confidence_threshold=0.7,
     conflict_cap=WAITING_CONFIRMATION,
     unknown_cap=WATCH_ZONE,
-    ai_conviction_threshold=0.7,
 )
 
 
@@ -187,7 +182,6 @@ class TestGateMatrix:
             confidence_threshold=0.7,
             conflict_cap=CONFLICT_CAP_BLOCK_SENTINEL,
             unknown_cap=WATCH_ZONE,
-            ai_conviction_threshold=0.7,
         )
         result = _evaluate(_assessment(raw_buy=10, raw_sell=20), policy=policy)
         assert result.status == BLOCK
@@ -266,22 +260,6 @@ class TestFailClosedOpenPolicy:
         assert result.status == UNKNOWN
         assert MACRO_CONFLICT_CAP_UNSET in result.reason_codes
 
-    def test_open_ai_threshold_with_veto_is_explicit(self):
-        policy = MacroPolicy(deadband_points=2, confidence_threshold=0.7)
-        result = _evaluate(
-            _assessment(
-                ai_verdict={
-                    "source": "ai",
-                    "veto": True,
-                    "conviction": 0.95,
-                    "conflicts": ["fed"],
-                }
-            ),
-            policy=policy,
-        )
-        assert result.status == UNKNOWN
-        assert MACRO_AI_VETO_UNVERIFIED in result.reason_codes
-
     def test_uncapped_unknown_is_explicit_under_open_unknown_cap(self):
         policy = MacroPolicy(deadband_points=2, confidence_threshold=0.7)
         result = _evaluate(
@@ -310,12 +288,10 @@ class TestPolicyValidation:
             {"deadband_points": True},
             {"confidence_threshold": 1.1},
             {"confidence_threshold": -0.1},
-            {"ai_conviction_threshold": 1.5},
             {"conflict_cap": "PROMOTE"},
             {"unknown_cap": "RANDOM"},
             {"deadband_semantics_version": "scanner-macro-deadband-raw-v9"},
             {"cap_semantics_version": "scanner-macro-cap-v9"},
-            {"ai_policy_version": "scanner-macro-ai-veto-v9"},
         ],
     )
     def test_rejects_invalid_policy(self, kwargs):
@@ -325,7 +301,6 @@ class TestPolicyValidation:
             confidence_threshold=0.7,
             conflict_cap=WAITING_CONFIRMATION,
             unknown_cap=WATCH_ZONE,
-            ai_conviction_threshold=0.7,
         )
         base.update(kwargs)
         with pytest.raises(MacroGateError):
@@ -365,75 +340,6 @@ class TestAssessmentValidation:
     def test_rejects_invalid_assessment_input(self, kwargs):
         with pytest.raises(MacroGateError):
             _assessment(**kwargs)
-
-
-# ---------------------------------------------------------------------------
-# AI dimension (asymmetric veto/cap; single owner lives in MacroGate)
-# ---------------------------------------------------------------------------
-
-
-class TestAiDimension:
-    def test_error_sources_never_allow_pass(self):
-        for source in ("fallback", "skip_fatal_error"):
-            verdict = {"source": source, "veto": False, "conviction": 0.0}
-            result = _evaluate(_assessment(ai_verdict=verdict))
-            assert result.status == UNKNOWN, source
-            assert result.status != PASS, source
-            assert MACRO_AI_VERDICT_UNAVAILABLE in result.reason_codes
-
-    def test_intentional_skips_are_recorded_not_blocking(self):
-        for source in ("skip_disabled", "skip_below_threshold", "skip_backtest_no_cache"):
-            verdict = {"source": source, "veto": False, "conviction": 0.0}
-            result = _evaluate(_assessment(ai_verdict=verdict))
-            assert result.status == PASS, source
-            assert MACRO_AI_VERDICT_SKIPPED in result.reason_codes
-
-    def test_no_ai_signal_is_neutral_to_the_deterministic_side(self):
-        result = _evaluate(_assessment())
-        assert result.status == PASS
-        assert MACRO_ALIGNED in result.reason_codes
-
-    def test_ai_veto_false_adds_nothing(self):
-        verdict = {"source": "ai", "veto": False, "conviction": 0.95, "conflicts": []}
-        result = _evaluate(_assessment(ai_verdict=verdict))
-        assert result.status == PASS
-        assert MACRO_AI_VETO not in result.reason_codes
-
-    def test_certified_veto_blocks(self):
-        verdict = {"source": "ai", "veto": True, "conviction": 0.95, "conflicts": ["fed"]}
-        result = _evaluate(_assessment(ai_verdict=verdict))
-        assert result.status == BLOCK
-        assert result.decision_cap == BLOCKED
-        assert MACRO_AI_VETO in result.reason_codes
-
-    def test_veto_below_conviction_threshold_is_not_certified(self):
-        verdict = {"source": "ai", "veto": True, "conviction": 0.5, "conflicts": []}
-        result = _evaluate(_assessment(ai_verdict=verdict))
-        assert result.status == PASS
-        assert MACRO_AI_VERDICT_SKIPPED in result.reason_codes
-
-    def test_veto_is_asymmetric_on_conflict_too(self):
-        # conflict alone is CAUTION; a certified veto escalates to BLOCK.
-        verdict = {"source": "ai", "veto": True, "conviction": 0.9, "conflicts": ["nfp"]}
-        result = _evaluate(_assessment(raw_buy=10, raw_sell=20, ai_verdict=verdict))
-        assert result.status == BLOCK
-        assert result.decision_cap == BLOCKED
-        assert result.reason_codes == (MACRO_CONFLICT, MACRO_AI_VETO)
-
-    @pytest.mark.parametrize(
-        "verdict",
-        [
-            {"source": "hocus", "veto": False, "conviction": 0.5},
-            {"source": "ai", "veto": False, "conviction": "high"},
-            {"source": "ai", "veto": False, "conviction": True},
-            {"source": "ai", "veto": "maybe", "conviction": 0.5},
-            {"source": "ai", "veto": False, "conviction": -0.2},
-            {"source": "ai", "veto": False, "conviction": 1.5},
-        ],
-    )
-    def test_malformed_verdict_is_error_not_pass(self, verdict):
-        with pytest.raises(MacroGateError):
-            _evaluate(_assessment(ai_verdict=verdict))
 
 
 # ---------------------------------------------------------------------------
@@ -502,8 +408,13 @@ class TestAggregateInvariants:
         assert result.status != PASS
 
     def test_block_always_carries_blocked_cap(self):
-        verdict = {"source": "ai", "veto": True, "conviction": 0.9}
-        result = _evaluate(_assessment(ai_verdict=verdict))
+        policy = MacroPolicy(
+            deadband_points=2,
+            confidence_threshold=0.7,
+            conflict_cap=CONFLICT_CAP_BLOCK_SENTINEL,
+            unknown_cap=WATCH_ZONE,
+        )
+        result = _evaluate(_assessment(raw_buy=10, raw_sell=20), policy=policy)
         assert result.status == BLOCK
         assert result.decision_cap == BLOCKED
 
@@ -514,7 +425,7 @@ class TestAggregateInvariants:
         assert result.decision_cap is None
         assert result.provenance
         assert all(
-            code in {MACRO_ALIGNED, MACRO_NEUTRAL, MACRO_AI_VERDICT_SKIPPED}
+            code in {MACRO_ALIGNED, MACRO_NEUTRAL}
             for code in result.reason_codes
         )
 
@@ -525,22 +436,16 @@ class TestAggregateInvariants:
             assert result.reason_codes
 
     def test_unknown_wins_over_caution(self):
-        verdict = {"source": "fallback", "veto": False, "conviction": 0.0}
-        result = _evaluate(_assessment(raw_buy=10, raw_sell=20, ai_verdict=verdict))
+        # Conflict raws alone would be CAUTION; low confidence escalates the
+        # aggregate to UNKNOWN (precedence UNKNOWN > CAUTION).
+        result = _evaluate(_assessment(raw_buy=10, raw_sell=20, confidence=0.4))
         assert result.status == UNKNOWN
-        assert result.decision_cap is None
-
-    def test_block_wins_over_caution(self):
-        verdict = {"source": "ai", "veto": True, "conviction": 0.9}
-        result = _evaluate(_assessment(raw_buy=10, raw_sell=20, ai_verdict=verdict))
-        assert result.status == BLOCK
-        assert result.provenance["policy"]["conflict_cap"] == WAITING_CONFIRMATION
+        assert result.decision_cap == WATCH_ZONE
 
     def test_reason_codes_deduplicated(self):
-        verdict = {"source": "ai", "veto": True, "conviction": 0.95, "conflicts": ["fed"]}
-        result = _evaluate(_assessment(ai_verdict=verdict))
+        result = _evaluate(_assessment(raw_buy=10, raw_sell=20))
         assert len(result.reason_codes) == len(set(result.reason_codes))
-        assert set(result.reason_codes) == {MACRO_ALIGNED, MACRO_AI_VETO}
+        assert set(result.reason_codes) == {MACRO_CONFLICT}
 
     def test_checked_at_and_side_fidelity(self):
         result = _evaluate(_assessment())
@@ -559,20 +464,18 @@ class TestProvenanceAndDeterminism:
             macro_sources={"calendar": "fed"},
             correlation_context={"vix": 18.5, "usd_index": 96.2},
             events=[{"id": "CPI", "severity": "HIGH"}],
-            ai_verdict={"source": "ai", "veto": True, "conviction": 0.95},
         )
         prov = assessment.provenance
         assert prov["symbol"] == "XOM"
         assert dict(prov["correlation"]) == {"vix": 18.5, "usd_index": 96.2}
         assert [dict(event) for event in prov["events"]] == [{"id": "CPI", "severity": "HIGH"}]
-        assert prov["ai_verdict"]["conviction"] == 0.95
         # No forbidden or identity fields at any nesting level.
         blob = json.dumps(assessment.to_dict())
         assert "macro_alignment" not in blob
         assert "scoring_version" not in blob
 
     def test_evaluate_is_deterministic(self):
-        assessment = _assessment(ai_verdict={"source": "ai", "veto": True, "conviction": 0.9})
+        assessment = _assessment(raw_buy=10, raw_sell=20)
         first = _evaluate(assessment).to_dict()
         second = _evaluate(assessment).to_dict()
         assert first == second
@@ -588,14 +491,13 @@ class TestProvenanceAndDeterminism:
         assert other["decision_cap"] == base["decision_cap"]
         assert other["reason_codes"] == base["reason_codes"]
 
-    def test_gate_provenance_records_policy_and_ai_decision(self):
-        verdict = {"source": "ai", "veto": True, "conviction": 0.9, "conflicts": ["fed"]}
-        result = _evaluate(_assessment(ai_verdict=verdict))
-        ai_decision = result.provenance["ai_decision"]
-        assert ai_decision["present"] is True
-        assert ai_decision["source"] == "ai"
-        assert ai_decision["veto"] is True
-        assert tuple(ai_decision["conflicts"]) == ("fed",)
+    def test_gate_provenance_records_policy(self):
+        result = _evaluate(_assessment(raw_buy=10, raw_sell=20))
+        policy = result.provenance["policy"]
+        assert policy["deadband_points"] == 2
+        assert policy["confidence_threshold"] == 0.7
+        assert policy["conflict_cap"] == WAITING_CONFIRMATION
+        assert policy["unknown_cap"] == WATCH_ZONE
 
     def test_reason_codes_registered(self):
         result = _evaluate(_assessment(raw_sell=None, deadband_points=None))
@@ -728,9 +630,17 @@ class TestTechnicalScoreInvariance:
     def test_macro_context_changes_leave_technical_score_unchanged(self):
         baseline = _technical_score()
 
-        # A BLOCK macro gate (conflict + AI veto) coexisting with the same data.
-        verdict = {"source": "ai", "veto": True, "conviction": 0.95, "conflicts": ["fed"]}
-        blocked = _evaluate(_assessment(raw_buy=10, raw_sell=20, ai_verdict=verdict))
+        # A BLOCK macro gate (conflict under a blocking conflict cap)
+        # coexisting with the same data.
+        policy = MacroPolicy(
+            deadband_points=2,
+            confidence_threshold=0.7,
+            conflict_cap=CONFLICT_CAP_BLOCK_SENTINEL,
+            unknown_cap=WATCH_ZONE,
+        )
+        blocked = _evaluate(
+            _assessment(raw_buy=10, raw_sell=20), policy=policy
+        )
         assert blocked.status == BLOCK
 
         # Technical inputs untouched -> identical score, regardless of the macro

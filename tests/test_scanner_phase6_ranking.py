@@ -234,12 +234,10 @@ def test_ui_exposes_each_canonical_ranking_dimension_separately():
     assert {
         "candidate_status",
         "setup_score",
-        "opportunity_rank",
+        "technical_signal_score",
         "evidence_confidence",
         "execution_readiness",
         "expected_effective_rr",
-        "auto_trade_branch",
-        "strategy_config_status",
     } <= columns
 
 
@@ -353,13 +351,6 @@ def test_auto_trade_receives_execution_order_not_presentation_order():
     controller.orders_screen = None
     controller._emit_observability = lambda *a, **kw: None  # type: ignore[method-assign]
 
-    # Mock rollout: allow all orders
-    rollout = MagicMock()
-    rollout_decision = MagicMock()
-    rollout_decision.allowed = True
-    rollout_decision.risk_cap_percent = None
-    rollout.order_decision.return_value = rollout_decision
-
     # Two genuine V4 READY_NOW candidates. UI presentation would put the smc
     # row first, but _execute_auto_trades must follow the execution row order.
     rows = [
@@ -381,7 +372,7 @@ def test_auto_trade_receives_execution_order_not_presentation_order():
         return {"success": True, "symbol": proposal.get("symbol", "")}
 
     with patch.object(controller, "execute_order_candidate", side_effect=spy) as spy_method:
-        controller._execute_auto_trades(rows, request, rollout_policy=rollout)
+        controller._execute_auto_trades(rows, request)
         assert spy_method.call_count == 2, \
             f"Expected 2 execute calls, got {spy_method.call_count}"
 

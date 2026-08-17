@@ -165,52 +165,41 @@ Nếu dùng installer, installer chỉ đặt file app vào `Program Files` ho�
 * Không ghi API key vào `settings.json` dạng plain text nếu có thể dùng keyring.
 * Không gửi journal hoặc log ra ngoài nếu người dùng chưa đồng ý.
 
-## Scanner V3 — Rollout Safety Checklist vận hành hiện hành
+## Scanner — Checklist vận hành live (từ 15/08/2026)
 
-Không chuyển thẳng từ cài đặt mới sang tài khoản thật.
+Từ 15/08/2026, theo quyết định của owner (phần mềm cá nhân), ứng dụng chạy
+thật trực tiếp: cơ chế rollout V3 (stage ladder `SHADOW → DEMO → CANARY →
+PRODUCTION`, kill switch, release/canary readiness) đã bị gỡ bỏ hoàn toàn khỏi
+codebase. Kiến trúc hiện hành là Scanner V4:
+[`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
 
-> Checklist `SHADOW`/demo/canary dưới đây thuộc cơ chế rollout an toàn của runtime
-> V3 hiện hành. Đây không phải yêu cầu migration sang Scanner V4. Thiết kế V4 đã
-> được phê duyệt nhưng chưa triển khai và quy định direct cutover, không chạy dual
-> scoring/shadow giữa V3 và V4. Xem
-> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+An toàn không còn dựa vào rollout stage mà dựa vào các lớp kỹ thuật fail-closed:
 
-> Runtime trên máy hiện tại đã lưu stage `PRODUCTION`, nhưng release readiness
-> vẫn `false`, nên rollout guard tiếp tục chặn lệnh. Trạng thái và block code
-> thực tế được ghi tại
-> [`runtime-status.md`](../architecture/runtime-status.md); checklist dưới đây vẫn
-> là điều kiện bắt buộc để production có hiệu lực.
+1. `config/scanner_v4_order_policy.json` phải `certified()` — thiếu/hỏng file,
+   scan phát `ORDER_POLICY_FAULT` và mọi candidate bị chặn
+   (`order_enabled=False`).
+2. MarketSafetyGate/MacroGate: dữ liệu thiếu hoặc thị trường không an toàn →
+   `BLOCKED`/`DATA_UNAVAILABLE`.
+3. Nút **Tự động vào lệnh MT5** phải được người dùng chủ động bật cho lần quét
+   đó.
+4. Mọi lệnh (auto lẫn manual) đi qua
+   `ScannerController.execute_order_candidate()`: execution snapshot mới, tính
+   lại lot, news, account/portfolio guard, `revalidate_execution` rồi mới
+   `place_market_order`. Không gọi `MT5Service.place_market_order()` trực tiếp.
+5. Order Management V2 (SL/BE/trailing) mặc định bật; gate còn lại là feature
+   flag + `account.trade_allowed`.
 
-1. Giữ rollout stage mặc định `SHADOW`; xác nhận mọi yêu cầu order đều bị chặn
-   với `SHADOW_MODE_ORDER_SUPPRESSED`.
-2. Thu tối thiểu 100 shadow samples và review disagreement/side mismatch.
-3. Chuyển `DEMO_LIMITED`, dùng demo server được nhận diện và symbol allowlist.
-4. Xác nhận MT5 connected/logged-in/trade-allowed, symbol mapping, Entry/SL/TP,
-   news, account guard và portfolio guard.
-5. Đạt ít nhất 20 demo orders, sau đó kiểm thử `DEMO_FULL`.
-6. Ghi OOS/demo degradation evidence và thực hiện rollback/kill-switch test.
-7. Chỉ chuyển `CANARY` khi canary readiness đạt; giữ risk trong
-   `canary_risk_percent` và đạt tối thiểu 5 canary orders.
-8. Chỉ chuyển `PRODUCTION` khi release readiness không còn block code và có
-   phê duyệt chịu trách nhiệm (`production_approved=true`).
-
-Ngưỡng mặc định: unsafe disagreement ≤ 10%, revalidation failure ≤ 5%, performance
-degradation ≤ 15%. `kill_switch=true` luôn chặn lệnh.
-
-Metrics nằm tại app-data `rollout/scanner-rollout-metrics.json`. Cập nhật bằng
-chứng OOS/demo/rollback qua
-`ScannerRolloutMetricsService.update_release_evidence()`.
-
-Mọi lệnh Scanner phải qua
-`ScannerController.execute_order_candidate()` để lấy execution snapshot mới,
-tính lại lot và revalidate giá, spread, tick age, zone, SL/TP, R:R, news,
-account và portfolio. Không kiểm thử production bằng cách gọi
-`MT5Service.place_market_order()` trực tiếp.
+Khuyến nghị cho lần chạy live đầu tiên: bắt đầu với **1 symbol và risk percent
+nhỏ**, theo dõi lệnh đầu end-to-end; kiểm tra Orders pane hiển thị `LIVE`
+(`execution_allowed=true`) và event mutation thật. Không còn kill switch phần
+mềm — dừng khẩn cấp = tắt feature flag, đóng lệnh ở terminal broker hoặc ngắt
+kết nối MT5. Trạng thái chi tiết:
+[`runtime-status.md`](../architecture/runtime-status.md).
 
 ## Auto Trade Safety Checklist trước Scanner V2 (lịch sử)
 
-> Mục dưới đây chỉ lưu tham chiếu cho phiên bản cũ. Checklist rollout V3 phía trên
-> là yêu cầu vận hành hiện hành.
+> Mục dưới đây chỉ lưu tham chiếu cho phiên bản cũ. Checklist live phía trên là
+> yêu cầu vận hành hiện hành.
 
 Before enabling auto-scan with MT5 auto-entry on a real account:
 

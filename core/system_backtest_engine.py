@@ -162,10 +162,6 @@ class BacktestRequest:
     max_currency_exposure_pct: float = 999.0
     max_correlated_risk_pct: float = 999.0
     max_concurrent_positions: int = 999
-    # Bước 6 (Major 5): flag AI Macro Verdict. Backtest chỉ đọc cache theo
-    # (pair, date, side) qua assessor read-cache-only (is_backtest=True); flag
-    # này điều khiển việc Guard 1 trong pipeline có mở cửa cho verdict không.
-    macro_ai_verdict_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -1922,10 +1918,6 @@ def _run_analysis_snapshot(
         "warning": None,
         "news_in_3h": False,
         "high_impact_event_within_30m": False,
-        # Bước 6 (Major 5): flag AI Macro Verdict để pipeline mở Guard 1. AI
-        # KHÔNG được gọi trong backtest — assessor chạy read-cache-only khi
-        # is_backtest=True (miss → skip trung tính, reproducible).
-        "macro_ai_verdict_enabled": bool(request.macro_ai_verdict_enabled),
     }
     macro_alignment = (
         request.macro_alignment_override if request.allow_macro and request.macro_alignment_override

@@ -59,13 +59,16 @@ class _ObservabilityStub:
         return event
 
 
-def _account(login: int = 1001) -> AccountIdentity:
+def _account(
+    login: int = 1001,
+    trade_allowed: bool | None = True,
+) -> AccountIdentity:
     return AccountIdentity(
         "Broker",
         "Broker-Demo",
         login,
         AccountTradeMode.DEMO,
-        trade_allowed=True,
+        trade_allowed=trade_allowed,
     )
 
 
@@ -144,11 +147,16 @@ class _FakeMT5:
 
 
 def _make_service(tmp_path) -> OrderManagementService:
+    # The OM feature flag is gone; these UI-sync tests stay free of broker
+    # mutations by gating on the broker's trading permission (trade disallowed)
+    # instead. They exercise phase projection/pause/resume, while the live
+    # execution gate itself is covered in test_order_management_service.py.
+    fake = _FakeMT5()
+    fake.account = _account(trade_allowed=False)
     return OrderManagementService(
-        _FakeMT5(),
+        fake,
         OrderManagementStateStore(tmp_path / "state.json"),
-        feature_enabled=True,
-        rollout_settings=OrderManagementSettings(stage="SHADOW"),
+        om_settings=OrderManagementSettings(),
         observability_service=_ObservabilityStub(),
         executor=_ImmediateExecutor(),
     )
@@ -427,7 +435,8 @@ def test_pause_resume_flow_and_new_registration_unbroken(tmp_path, monkeypatch) 
     assert service.cached_states()[1].phase == "waiting_be"
     assert screen2._trailing_configs[42]["phase"] == "waiting_be"
 
-    # No broker action was requested (SHADOW) — BE/trailing formula untouched.
+    # No broker action was requested (feature disabled) — BE/trailing formula
+    # untouched.
     assert service.mt5.modify_calls == []
 
 

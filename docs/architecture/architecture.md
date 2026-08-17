@@ -642,45 +642,42 @@ Các boundary bắt buộc:
   là shared execution boundary cho cả auto và manual Scanner order.
 - Execution lấy snapshot MT5 mới, tính lại lot, kiểm tra news, giá/zone/SL/TP/RR,
   account và portfolio trước khi gọi `place_market_order`.
-- `core/scanner_rollout.py` chặn order theo stage. Mặc định `SHADOW`; kill
-  switch luôn thắng.
-- Snapshot, full analysis, event JSONL và rollout metrics được lưu trong
+- RuntimeOrderPolicy (`config/scanner_v4_order_policy.json`, loader fail-closed,
+  event `ORDER_POLICY_FAULT`) quyết định `order_enabled` trước khi candidate có
+  thể thực thi.
+- Snapshot, full analysis, event JSONL và scan health được lưu trong
   app-data để replay/audit.
 
-Stage rollout:
+Rollout machinery cũ (stage ladder
+`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`, kill
+switch, release/canary readiness) đã bị gỡ bỏ hoàn toàn khỏi codebase ngày
+15/08/2026 theo quyết định của owner (phần mềm cá nhân, chạy thật trực tiếp).
+Không còn kill switch phần mềm; dừng khẩn cấp = tắt feature flag, đóng lệnh ở
+terminal broker hoặc ngắt kết nối MT5. Không một feature flag hoặc nút UI nào
+được bỏ qua các guard thực thi còn lại.
 
-`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`.
-
-`PRODUCTION` yêu cầu `production_approved=true`. Auto trade còn yêu cầu release
-readiness đạt. Nút **Vào lệnh** thủ công trong dialog Scanner có override có
-chủ đích cho riêng `RELEASE_GATE_NOT_READY`; không một feature flag hoặc nút UI
-nào được bỏ qua kill switch hay các guard thực thi khác.
-
-Runtime trên máy hiện tại đã lưu stage `PRODUCTION`,
-`production_approved=true`, cho phép tài khoản real và bật các feature flag
-V2. Release readiness vẫn `false`, nên auto trade bị chặn bằng
-`RELEASE_GATE_NOT_READY`; thao tác manual trong dialog có override giới hạn.
-Xem `docs/architecture/runtime-status.md`.
+Runtime hiện tại: order policy owner-accepted (live), feature flag V2 bật, tài
+khoản real được phép. Lệnh chỉ đi qua khi policy `certified()` và toàn bộ
+execution guard chain đạt. Xem `docs/architecture/runtime-status.md`.
 
 `ScannerScreen.AUTO_TRADE_UI_ENABLED=true` cho phép bật auto-entry ở chế độ
 quét định kỳ. Nút mặc định unchecked và bị reset khi chuyển sang quét một lần.
-Auto order và manual order đều đi qua shared execution boundary. Auto order
-không bỏ qua rollout guard; manual order chỉ có thể override riêng release gate
-ở `PRODUCTION` đã phê duyệt.
+Auto order và manual order đều đi qua shared execution boundary, cùng một
+guard chain, không có override riêng.
 
 Xem chi tiết tại `docs/scanner/scanner-flow.md` và
 `docs/scanner/technical-scoring-architecture.md`.
 
-Kiến trúc Scanner V4 đã chốt nhưng chưa chạy runtime:
+Kiến trúc Scanner V4 là runtime hiện hành, chạy live từ 15/08/2026:
 [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md). Mọi bước
 phân tích/triển khai tiếp theo phải được cập nhật vào tài liệu này trước khi sửa
-code; V4 dùng direct cutover và không yêu cầu so sánh shadow với V3.
+code.
 
 ## Implementation Addendum trước Scanner V2 (tham chiếu lịch sử)
 
 > Hai mục Telegram/Auto-entry ngay dưới đây mô tả contract cũ. Chúng đã được
-> thay thế bởi candidate status canonical, shared execution path và rollout
-> policy ở mục trên.
+> thay thế bởi candidate status canonical và shared execution path ở mục trên
+> (rollout policy cũ cũng đã bị gỡ bỏ ngày 15/08/2026).
 
 ### Telegram alert format
 

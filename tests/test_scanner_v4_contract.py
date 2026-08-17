@@ -142,7 +142,6 @@ def _snapshot() -> CanonicalPairSnapshot:
         provenance={
             "macro": {"source": "calendar-v4"},
             "event": {"source": "event-v4"},
-            "ai_verdict": {"source": "ai-v4", "veto": False},
         },
     )
     macro_gate = MacroGateResult(

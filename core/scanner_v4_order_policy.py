@@ -20,9 +20,11 @@ Governance (unchanged from the target modules):
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
 from core.macro_gate import DEFAULT_MACRO_POLICY, MacroPolicy
@@ -218,7 +220,6 @@ class RuntimeOrderPolicy:
                 "confidence_threshold": self.macro.confidence_threshold,
                 "conflict_cap": self.macro.conflict_cap,
                 "unknown_cap": self.macro.unknown_cap,
-                "ai_conviction_threshold": self.macro.ai_conviction_threshold,
             },
             "portfolio_position_limit": self.portfolio_position_limit,
             "portfolio_exposure_limit": self.portfolio_exposure_limit,
@@ -332,9 +333,6 @@ class RuntimeOrderPolicy:
                 unknown_cap=_optional_over(
                     raw_macro.get("unknown_cap"), macro.unknown_cap
                 ),
-                ai_conviction_threshold=_optional_over(
-                    raw_macro.get("ai_conviction_threshold"), macro.ai_conviction_threshold
-                ),
             )
 
         return cls(
@@ -362,14 +360,59 @@ class RuntimeOrderPolicy:
 DEFAULT_RUNTIME_ORDER_POLICY = RuntimeOrderPolicy()
 
 
+DEFAULT_ORDER_POLICY_FILENAME = "scanner_v4_order_policy.json"
+
+
+class OrderPolicyLoadError(OrderPolicyError):
+    """Typed fault: the owner's policy file could not be read/parsed as a policy."""
+
+
+def load_runtime_order_policy(
+    path: str | Path | None = None,
+) -> RuntimeOrderPolicy:
+    """Load the owner's RuntimeOrderPolicy from config (fail-closed).
+
+    Reads ``config/scanner_v4_order_policy.json`` by default. Any failure
+    (missing file, unreadable JSON, invalid policy identity/values) raises
+    ``OrderPolicyLoadError``; the caller falls back to
+    ``DEFAULT_RUNTIME_ORDER_POLICY`` whose ``order_enabled`` is False, so a
+    broken config can never open the live order workflow.
+    """
+    if path is None:
+        from config.paths import CONFIG_DIR
+
+        resolved = CONFIG_DIR / DEFAULT_ORDER_POLICY_FILENAME
+    else:
+        resolved = Path(path)
+    try:
+        raw = resolved.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OrderPolicyLoadError(
+            str(resolved), f"cannot read file: {exc}"
+        ) from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise OrderPolicyLoadError(
+            str(resolved), f"invalid JSON: {exc}"
+        ) from exc
+    try:
+        return RuntimeOrderPolicy.from_dict(data)
+    except OrderPolicyError as exc:
+        raise OrderPolicyLoadError(str(resolved), exc.detail) from exc
+
+
 def _optional_over(value: object, fallback: Any) -> Any:
     """Return ``fallback`` when the key is absent or explicit ``null``."""
     return fallback if value is None else value
 
 
 __all__ = [
+    "DEFAULT_ORDER_POLICY_FILENAME",
     "DEFAULT_RUNTIME_ORDER_POLICY",
     "ORDER_POLICY_VERSION",
     "OrderPolicyError",
+    "OrderPolicyLoadError",
     "RuntimeOrderPolicy",
+    "load_runtime_order_policy",
 ]

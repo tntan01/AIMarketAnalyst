@@ -188,7 +188,7 @@ Tệp liên quan:
 
 ### 11. Cấu hình đường dẫn SQLite không có tác dụng với Journal runtime
 
-Settings cho phép nhập `sqlite_database_path`, nhưng `AppController` luôn tạo `JournalService()` không truyền đường dẫn từ settings. `JournalService` mặc định luôn dùng `config.paths.journal_db_path()`, tức database dưới thư mục app-data.
+`AppController` luôn tạo `JournalService()` không truyền đường dẫn từ settings. `JournalService` mặc định luôn dùng `config.paths.journal_db_path()`, tức database dưới thư mục app-data. Ô nhập `sqlite_database_path` đã bị xóa khỏi Settings ngày 16/08/2026 vì không code nào đọc nó (key cũ còn sót trên disk bị loader bỏ qua).
 
 Người dùng có thể thay đổi và lưu đường dẫn trên UI nhưng Journal vẫn mở database mặc định.
 

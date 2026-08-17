@@ -365,13 +365,18 @@ class OrdersScreen(QWidget):
 
     def _on_order_management_health(self, health: object) -> None:
         status = getattr(health, "snapshot_status", SnapshotStatus.UNAVAILABLE)
-        stage = str(getattr(health, "stage", "SHADOW") or "SHADOW")
+        # Fully live since 2026-08-15: no stage ladder remains. The label now
+        # reflects whether protection changes may actually reach the broker
+        # (feature flag + account.trade_allowed).
+        execution_allowed = bool(getattr(health, "execution_allowed", False))
         account = getattr(health, "account", None)
         if getattr(self, "protection_label", None):
-            if status is SnapshotStatus.AVAILABLE:
-                self.protection_label.setText(stage)
-            else:
+            if status is not SnapshotStatus.AVAILABLE:
                 self.protection_label.setText("STALE")
+            elif execution_allowed:
+                self.protection_label.setText("LIVE")
+            else:
+                self.protection_label.setText("BLOCKED")
             account_text = ""
             if account is not None:
                 account_text = (
@@ -1997,26 +2002,15 @@ class OrdersScreen(QWidget):
             QMessageBox.information(self, "Đóng tất cả", "Không có vị thế nào đang mở.")
             return
 
-        # Freeze the exact target set before confirmation. A position opened
-        # while the modal dialog is visible must never join the bulk action.
-        order_settings = getattr(
-            getattr(self.app, "settings", None),
-            "order_management",
-            None,
-        )
-        scope = str(getattr(order_settings, "manage_scope", "AMA")).upper()
-        targets = tuple(
-            dict(position)
-            for position in self._positions
-            if scope == "ALL"
-            or int(position.get("magic", 0) or 0) == 260609
-            or str(position.get("comment", "") or "").upper().startswith("AMA")
-        )
+        # Only one scope since 2026-08-16 (ALL): the bulk close always targets
+        # every open position. Freeze the exact set before confirmation — a
+        # position opened while the modal dialog is visible never joins it.
+        targets = tuple(dict(position) for position in self._positions)
         if not targets:
             QMessageBox.information(
                 self,
                 "Đóng tất cả",
-                "Không có vị thế nào trong phạm vi AMA đang hiển thị.",
+                "Không có vị thế nào đang hiển thị.",
             )
             return
         total_pl = sum(float(p.get("profit", 0) or 0) + float(p.get("swap", 0) or 0) + float(p.get("commission", 0) or 0) for p in targets)

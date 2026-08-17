@@ -17,20 +17,20 @@ Release report phải đồng thời đạt:
 - fill rate tối thiểu 80%, rejection rate tối đa 20%;
 - adverse slippage trung bình tối đa 5 bps;
 - suy giảm hiệu suất tối đa 25%;
-- ít nhất 20 mẫu shadow, tỷ lệ khác biệt tối đa 10%;
 - một người review xác nhận `approved=true`.
+
+Từ 16/08/2026 thành phần so sánh engine shadow đã gỡ theo quyết định của owner;
+report version là `backtest-phase7-release-report-v2` và các report v1 đã lưu
+không còn hiệu lực.
 
 ## Dữ liệu đầu vào
 
-Chuẩn bị bốn file JSON:
+Chuẩn bị ba file JSON:
 
 1. Snapshot `VALIDATION` từ engine hiện tại, có `validation_replay` hoàn chỉnh.
 2. Snapshot forward của engine hiện tại, chạy frozen config trên đúng khoảng
    thời gian tài khoản demo hoạt động.
-3. Snapshot engine cũ chạy trên cùng khoảng forward để so shadow Candidate
-   Engine V1/V2 của V3. File này được giữ làm audit và tự gắn
-   `LEGACY_RESEARCH`; đây không phải snapshot score V4.
-4. Danh sách lệnh đóng trên tài khoản demo. Mỗi dòng phải có `candidate_id`;
+3. Danh sách lệnh đóng trên tài khoản demo. Mỗi dòng phải có `candidate_id`;
    nếu thiếu, hệ thống ghép theo symbol, side và thời gian trong sai số 240
    phút để chẩn đoán nhưng release vẫn bị chặn bởi
    `FORWARD_CORRELATION_MISSING`. Các field hữu ích là `actual_entry`,
@@ -50,8 +50,8 @@ dùng lệnh tay hoặc lịch sử không truy được về Scanner làm bằn
 
 ## Tạo báo cáo
 
-Các lệnh trong mục này, gồm `--legacy-snapshot`, thuộc release evidence V3 hiện
-hành. Không tái sử dụng chúng để chạy hoặc phê duyệt dual scoring V3/V4.
+Các lệnh trong mục này thuộc release evidence V3 hiện hành. Không tái sử dụng
+chúng để chạy hoặc phê duyệt dual scoring V3/V4.
 
 Chạy lần đầu không có `--approve` để xem các block code:
 
@@ -59,7 +59,6 @@ Chạy lần đầu không có `--approve` để xem các block code:
 python scripts/backtest_release_report.py `
   --snapshot data/backtests/current-validation.json `
   --forward-snapshot data/backtests/current-forward.json `
-  --legacy-snapshot data/backtests/legacy-shadow.json `
   --demo-trades data/backtests/forward-demo.json `
   --reviewer "ten-nguoi-review"
 ```
@@ -71,7 +70,6 @@ Sau khi kiểm tra số liệu và xác nhận các file đầu vào đúng, ch�
 python scripts/backtest_release_report.py `
   --snapshot data/backtests/current-validation.json `
   --forward-snapshot data/backtests/current-forward.json `
-  --legacy-snapshot data/backtests/legacy-shadow.json `
   --demo-trades data/backtests/forward-demo.json `
   --reviewer "ten-nguoi-review" `
   --approve `
@@ -90,7 +88,7 @@ phân tích; nút áp dụng bị ẩn. Settings sẽ tự hạ config cũ/thi�
 
 ## Khi chưa đủ dữ liệu
 
-Không hạ ngưỡng và không sửa `ready` thủ công. Tiếp tục thu thập demo/shadow V3,
+Không hạ ngưỡng và không sửa `ready` thủ công. Tiếp tục thu thập demo,
 tạo lại report, rồi review lại. Đây là trạng thái chờ bằng chứng, không phải lỗi
 Scanner hay MT5 và không phải migration shadow V4.
 
@@ -100,12 +98,11 @@ Trình tự để đóng hai điều kiện vận hành còn lại:
    thật.
 2. Từ Scanner, đặt và đóng ít nhất 20 lệnh đủ điều kiện. Comment MT5 phải giữ
    correlation `AMA-FWD:*`; lệnh tay ngoài Scanner không được tính.
-3. Chạy current engine và legacy engine trên cùng khoảng thời gian demo để tạo
-   `current-forward.json` và `legacy-shadow.json`; chạy một snapshot
-   `VALIDATION` hiện hành riêng.
+3. Chạy current engine trên đúng khoảng thời gian demo để tạo
+   `current-forward.json`; chạy một snapshot `VALIDATION` hiện hành riêng.
 4. Chạy exporter, sau đó tạo report không `--approve`. Xử lý mọi `block_codes`
-   cho đến khi các ngưỡng sample, fill, rejection, slippage, degradation và
-   shadow đều đạt.
+   cho đến khi các ngưỡng sample, fill, rejection, slippage và degradation
+   đều đạt.
 5. Người review kiểm tra evidence rồi chạy lại với `--approve`. Chỉ khi CLI trả
    mã `0` và report có `ready=true` mới áp dụng config vào Scanner.
 
@@ -126,8 +123,7 @@ Phát hành V4 phải là một lần chuyển version nguyên tử sang `scanne
 schema/config/snapshot compatibility, consumer tests và rollback rehearsal. Cấm:
 
 - chạy scorer V3 và V4 song song trong live runtime;
-- dùng `legacy-shadow.json`, `--legacy-snapshot` hoặc disagreement với V3 làm
-  tiêu chí đúng/sai cho V4;
+- dùng evidence legacy hoặc disagreement với V3 làm tiêu chí đúng/sai cho V4;
 - trộn config/snapshot/artifact V3 vào quyết định live V4;
 - giữ router dual-score làm đường rollback production.
 

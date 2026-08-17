@@ -58,7 +58,76 @@ _VN_CODE = {
     "conflict": "xung đột",
     "aligned": "thuận",
     "unclear": "chưa rõ",
+    # ---- Scanner V4 reason codes (Chẩn đoán tab) --------------------------
+    # An toàn thị trường (safety gate)
+    "SAFETY_DATA_FRESHNESS_UNKNOWN": "Độ tươi dữ liệu không xác định (thất bại an toàn)",
+    "SAFETY_DATA_STALE": "Dữ liệu giá đã hết hạn (stale)",
+    "SAFETY_MT5_NOT_READY": "MT5 chưa sẵn sàng (không kết nối / chưa đăng nhập)",
+    "SAFETY_MT5_STATE_UNKNOWN": "Trạng thái MT5 không xác định",
+    "SAFETY_NEWS_HIGH_IMPACT_BLOCK": "Tin tác động cao sắp ra — chặn",
+    "SAFETY_NEWS_HIGH_IMPACT_CAUTION": "Tin tác động cao sắp ra — cảnh báo",
+    "SAFETY_NEWS_SOURCE_UNAVAILABLE": "Nguồn tin tức không sẵn sàng",
+    "SAFETY_SPREAD_ABNORMAL": "Chênh lệch giá (spread) bất thường",
+    "SAFETY_SPREAD_THRESHOLD_UNSET": "Chưa cấu hình ngưỡng spread cho cặp này",
+    "SAFETY_SPREAD_UNKNOWN": "Spread không xác định",
+    "SAFETY_VOLATILITY_BAND_UNSET": "Chưa cấu hình dải biến động cho cặp này",
+    "SAFETY_VOLATILITY_EXTREME": "Biến động cực đoan",
+    "SAFETY_VOLATILITY_UNKNOWN": "Biến động không xác định",
+    # Vĩ mô (macro gate)
+    "MACRO_CONFIDENCE_THRESHOLD_UNSET": "Chưa cấu hình ngưỡng độ tin cậy vĩ mô",
+    "MACRO_CONFLICT_CAP_UNSET": "Chưa cấu hình mức giới hạn khi vĩ mô xung đột",
+    "MACRO_DATA_PARTIAL": "Dữ liệu vĩ mô không đầy đủ",
+    "MACRO_DATA_UNAVAILABLE": "Không có dữ liệu vĩ mô",
+    "MACRO_DEADBAND_UNSET": "Chưa cấu hình deadband vĩ mô",
+    "MACRO_HIGH_IMPACT_EVENT_NEARBY": "Sự kiện vĩ mô tác động cao sắp ra",
+    "MACRO_LOW_CONFIDENCE": "Độ tin cậy vĩ mô thấp",
+    "MACRO_NEUTRAL": "Vĩ mô trung lập",
+    "MACRO_SIDE_MISSING": "Thiếu điểm vĩ mô cho một hướng",
+    "MACRO_UNKNOWN_CAP_UNSET": "Chưa cấu hình mức giới hạn khi vĩ mô không xác định",
+    # Cổng kịch bản / tài khoản / danh mục / nhật ký (execution gates)
+    "GATES_ALL_PASS": "Tất cả cổng cho qua",
+    "GATE_ACCOUNT_DATA_MISSING": "Thiếu dữ liệu tài khoản (thất bại an toàn)",
+    "GATE_ACCOUNT_MARGIN_BLOCK": "Ký quỹ không đủ — chặn",
+    "GATE_JOURNAL_DATA_MISSING": "Thiếu dữ liệu nhật ký (thất bại an toàn)",
+    "GATE_JOURNAL_DRAWDOWN_CAUTION": "Mức sụt giảm vốn theo nhật ký — cảnh báo",
+    "GATE_JOURNAL_POLICY_OPEN": "Ràng buộc lệnh mở từ nhật ký còn tồn tại",
+    "GATE_JOURNAL_REVENGE_BLOCK": "Nghi giao dịch trả thù — chặn",
+    "GATE_PORTFOLIO_DATA_MISSING": "Thiếu dữ liệu danh mục (thất bại an toàn)",
+    "GATE_PORTFOLIO_LIMIT_BLOCK": "Vượt giới hạn danh mục — chặn",
+    "GATE_PORTFOLIO_POLICY_OPEN": "Ràng buộc lệnh mở từ danh mục còn tồn tại",
+    "GATE_SCENARIO_PLAN_MISSING": "Thiếu kế hoạch kịch bản (thất bại an toàn)",
+    "GATE_SCENARIO_POLICY_OPEN": "Ràng buộc kịch bản còn tồn tại",
+    "GATE_SCENARIO_RR_BLOCK": "R:R kịch bản chưa đạt ngưỡng — chặn",
+    # Chất lượng thực thi
+    "EXECUTION_QUALITY_OK": "Chất lượng thực thi tốt",
+    "EXECUTION_CHASED_PRICE": "Vào lệnh đuổi giá",
+    "EXECUTION_DATA_INCOMPLETE": "Dữ liệu thực thi không đầy đủ",
+    "EXECUTION_MANUAL_PENALTY": "Thao tác chỉnh lệnh thủ công bị phạt",
+    "EXECUTION_MOVED_SL_FURTHER": "Dời stop-loss sang mức xa hơn",
+    "EXECUTION_OVERSIZED": "Đặt lệnh vượt cỡ chuẩn",
+    "EXECUTION_REVENGE_CONFIRMED": "Xác nhận hành vi trả thù",
+    "EXECUTION_ZONE_RR_EMPTY": "Kịch bản thiếu R:R theo vùng",
 }
+
+# Substring → tone used by the V4 Chẩn đoán gate table to color a reason code
+# without inventing numbers: block/fail-closed, caution, or neutral.
+_V4_TONE_BLOCK = (
+    "_BLOCK", "_UNSET", "_UNKNOWN", "_ABNORMAL", "_EXTREME",
+    "_STALE", "_MISSING", "_NOT_READY", "SAFETY_DATA_STALE",
+)
+_V4_TONE_CAUTION = (
+    "_CAUTION", "_LOW_CONFIDENCE", "_PARTIAL", "_CONFLICT",
+    "_NEARBY", "_POLICY_OPEN",
+)
+
+
+def _v4_code_tone(code: str) -> str:
+    """Return ``"block"`` / ``"warning"`` / ``"pass"`` for a V4 reason code."""
+    if any(t in code for t in _V4_TONE_BLOCK):
+        return "block"
+    if any(t in code for t in _V4_TONE_CAUTION):
+        return "warning"
+    return "pass"
 
 _VN_MACRO = {
     "neutral": "trung lập",
@@ -562,27 +631,6 @@ class ScannerDetailScreen(QWidget):
             str(self.row.get("macro_bias") or "unclear").lower(),
         )
 
-    def _rollout_stage(self) -> str:
-        stage = str(self.row.get("rollout_stage") or "").strip().upper()
-        if stage:
-            return stage
-        scanner_result = self._as_dict(getattr(self, "scanner_result", {}))
-        policy = self._as_dict(scanner_result.get("rollout_policy"))
-        return str(policy.get("stage") or "UNKNOWN").strip().upper()
-
-    def _rollout_display(self) -> str:
-        stage = self._rollout_stage()
-        return {
-            "DISABLED": "TẮT · không gửi lệnh thật",
-            "SHADOW": "SHADOW · chỉ quan sát, không gửi lệnh thật",
-            "DEMO_LIMITED": "DEMO GIỚI HẠN",
-            "DEMO_FULL": "DEMO ĐẦY ĐỦ",
-            "CANARY": "CANARY · chạy thật giới hạn",
-            "PRODUCTION": "PRODUCTION · chạy thật",
-            "UNKNOWN": "CHƯA XÁC ĐỊNH",
-            "INVALID": "CẤU HÌNH KHÔNG HỢP LỆ",
-        }.get(stage, stage)
-
     def _candidate_reason_messages(self) -> list[str]:
         decision = self._candidate_decision()
         reasons = decision.get("reason_codes")
@@ -709,8 +757,8 @@ class ScannerDetailScreen(QWidget):
         rr_pill_layout.addWidget(rr_lbl)
         summary_layout.addWidget(rr_pill)
 
-        # Scan-time permission is canonical. It still does not bypass rollout
-        # or final execution revalidation.
+        # Scan-time permission is canonical. It still does not bypass the
+        # final execution revalidation.
         trade_allowed = self._scan_trade_allowed()
         perm_text = (
             "Cho phép tại lúc quét"
@@ -736,14 +784,6 @@ class ScannerDetailScreen(QWidget):
         perm_pill_layout.addWidget(perm_lbl)
         summary_layout.addWidget(perm_pill)
 
-        rollout_pill = QFrame()
-        rollout_pill.setObjectName("SummaryPillRollout")
-        rollout_layout = QHBoxLayout(rollout_pill)
-        rollout_layout.setContentsMargins(8, 4, 8, 4)
-        rollout_lbl = QLabel(self._rollout_display())
-        rollout_lbl.setObjectName("ScannerSummaryRollout")
-        rollout_layout.addWidget(rollout_lbl)
-        summary_layout.addWidget(rollout_pill)
         summary_layout.addStretch(1)
         root.addLayout(summary_layout)
 
@@ -1226,39 +1266,6 @@ class ScannerDetailScreen(QWidget):
                 )
 
         detail = f"{bias}<br><br>{'<br>'.join(parts)}" if parts else bias
-
-        # Bước 5: cảnh báo sự kiện high-impact 4-48h có applied_derate
-        try:
-            ar = self._as_dict(self.row.get("analysis_result"))
-            macro = self._as_dict(ar.get("macro"))
-            event_assessments = macro.get("event_assessments")
-            if isinstance(event_assessments, list):
-                for ea in event_assessments:
-                    if not isinstance(ea, dict):
-                        continue
-                    if ea.get("applied_derate") is not None:
-                        event_name = str(ea.get("event_name") or "Sự kiện")
-                        currency = str(ea.get("currency") or "?")
-                        hours_until = float(ea.get("hours_until") or 0)
-                        magnitude = str(ea.get("magnitude") or "?")
-                        priced_in_raw = str(ea.get("priced_in") or "unknown")
-                        priced_in_map = {
-                            "priced_in": "đã price-in",
-                            "partial": "price-in một phần",
-                            "not_priced_in": "chưa price-in",
-                            "unknown": "không rõ price-in",
-                        }
-                        priced_in_vn = priced_in_map.get(priced_in_raw, priced_in_raw)
-                        warn_line = (
-                            f"<br><span style='{_HTML_SMALL}color:#f59e0b;'>"
-                            f"⚠ {event_name} ({currency}) trong {hours_until:.1f}h "
-                            f"— mức {magnitude}, {priced_in_vn}"
-                            f"</span>"
-                        )
-                        detail += warn_line
-                        break  # chỉ 1 dòng cảnh báo
-        except Exception:
-            pass  # fail-safe: bỏ qua nếu dữ liệu không đúng kiểu
 
         return f"{dot} {self._score_text(macro_num)}/30", detail, accent
 
@@ -1787,10 +1794,9 @@ class ScannerDetailScreen(QWidget):
             if min_score != "--"
             else f"Setup {setup}"
         )
-        rollout_text = self._rollout_display()
         status_text = (
             f"{status_label.upper()} · Hướng phân tích: {side_text} · "
-            f"{score_text} · {rollout_text}"
+            f"{score_text}"
         )
 
         set_dynamic_property(
@@ -2018,11 +2024,6 @@ class ScannerDetailScreen(QWidget):
             ("Ưu tiên cơ hội", f"{opportunity}/100", "accent"),
             ("Bằng chứng", f"{evidence}/100", "text"),
             ("Mức sẵn sàng", f"{execution}/100", "text"),
-            (
-                "Chế độ chạy",
-                self._rollout_display(),
-                "info",
-            ),
         ]
 
         for label_text, value_text, tone in rows:
@@ -2611,12 +2612,23 @@ class ScannerDetailScreen(QWidget):
         body_text_color = "#334155" if light else "#e2e8f0"
         parts: list[str] = []
         parts.append(f"<div style='{_HTML_BODY}color:{body_text_color};line-height:1.5;'>")
-        parts.append(self._diag_branch_html(light=light))
-        parts.append(self._diag_score_breakdown_html(analysis, light=light))
-        parts.append(self._diag_gate_html(analysis, light=light))
-        parts.append(self._diag_checklist_html(analysis, light=light))
-        parts.append(self._diag_pipeline_steps_html(analysis, light=light))
-        parts.append(self._diag_final_score_html(analysis, light=light))
+        is_v4 = str(self.row.get("pipeline_route") or "").strip() == "scanner-v4"
+        if is_v4:
+            # Scanner V4 rows carry a DIFFERENT contract than the legacy V3
+            # ``analysis_result``: the six V3 ``_diag_*`` builders below read
+            # ``scenario_scores``/``pipeline_diagnostics``/``trade_gate`` which
+            # V4 does not emit.  Render V4-native diagnostics instead.
+            parts.append(self._diag_v4_route_html(light=light))
+            parts.append(self._diag_v4_scores_html(light=light))
+            parts.append(self._diag_v4_gates_html(light=light))
+            parts.append(self._diag_v4_plan_html(light=light))
+        else:
+            parts.append(self._diag_branch_html(light=light))
+            parts.append(self._diag_score_breakdown_html(analysis, light=light))
+            parts.append(self._diag_gate_html(analysis, light=light))
+            parts.append(self._diag_checklist_html(analysis, light=light))
+            parts.append(self._diag_pipeline_steps_html(analysis, light=light))
+            parts.append(self._diag_final_score_html(analysis, light=light))
         parts.append("</div>")
         set_rich_html(
             self.diag_text,
@@ -2928,7 +2940,7 @@ class ScannerDetailScreen(QWidget):
                 f"⚙️ DEFAULT_RULES — Không có cấu hình Backtest</div>"
                 f"<div style='{_HTML_BODY}color:{sc};line-height:1.5;'>"
                 f"Không có cấu hình Backtest đang hoạt động. Strategy Router dùng "
-                f"ngưỡng live; kết quả vẫn phải qua entry, gate, rollout và "
+                f"ngưỡng live; kết quả vẫn phải qua entry, gate và "
                 f"tái kiểm tra ngay trước khi đặt lệnh.</div>"
                 f"</td>"
                 f"</tr>"
@@ -3693,7 +3705,7 @@ class ScannerDetailScreen(QWidget):
             "<b>Bằng chứng nhật ký</b> (hiệu suất lịch sử của setup tương tự), "
             "<b>Chất lượng thực thi</b> (tỷ lệ vào lệnh thành công trước đây). "
             "Đây là điểm <b>setup_score</b> dùng để so với ngưỡng chiến lược. "
-            "Điểm cao không tự đồng nghĩa được vào lệnh; entry, gate, rollout "
+            "Điểm cao không tự đồng nghĩa được vào lệnh; entry, gate "
             "và tái kiểm tra trước khi đặt lệnh vẫn có quyền chặn."
             "</p>",
             f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>",
@@ -3751,6 +3763,310 @@ class ScannerDetailScreen(QWidget):
             "</table>"
         )
         rows.append("</div>")
+        return "\n".join(rows)
+
+    # ------------------------------------------------------------------
+    # -- V4 Chẩn đoán (Scanner V4 native diagnostics) --------------------
+    # Scanner V4 rows carry their scores/statuses/codes directly on the UI row
+    # (set by ``core/scanner_v4_ui_adapter.py::pair_to_ui_row``), NOT inside the
+    # legacy V3 ``analysis_result``.  ``_refresh_diagnostics`` dispatches here
+    # for ``pipeline_route == "scanner-v4"``.  Every value below comes from a
+    # REAL V4 field; nothing is fabricated.
+    # ------------------------------------------------------------------
+
+    def _diag_v4_route_html(self, light: bool = False) -> str:
+        """V4 header: route, candidate status, selected side, market regime."""
+        candidate_status = self._canonical_status()
+        label, state = _CANDIDATE_STATUS.get(candidate_status, (candidate_status, "neutral"))
+        state_accent = {
+            "ready": "#22c55e", "wait": "#fbbf24", "watch": "#3b82f6",
+            "neutral": "#94a3b8", "blocked": "#ef4444", "data": "#94a3b8",
+        }.get(state, "#94a3b8")
+        side = self._selected_side()
+        side_text = {"buy": "MUA", "sell": "BÁN"}.get(side, "chưa xác định")
+        regime = str(self.row.get("market_regime", "") or "").strip() or "chưa xác định"
+        regime_map = {
+            "range": "Đi ngang (Range)",
+            "trending_up": "Xu hướng tăng",
+            "trending_down": "Xu hướng giảm",
+            "volatile": "Biến động mạnh",
+        }
+        regime_text = regime_map.get(regime, regime)
+        sc = "#736B60" if light else "#94a3b8"
+        accent = "#D94625" if light else "#fb923c"
+        bg = "#fff7ed" if light else "#2a1510"
+        return (
+            f"<table style='width:100%;border-collapse:collapse;background:{bg};"
+            f"border-left:4px solid {accent};margin:8px 0 12px;'>"
+            f"<tr><td style='padding:12px 16px;'>"
+            f"<div style='{_HTML_SUBTITLE}color:{accent};margin-bottom:6px;'>"
+            f"🧭 Scanner V4 — Hướng {side_text} · Chế độ thị trường: {regime_text}</div>"
+            f"<div style='{_HTML_BODY}color:{sc};line-height:1.5;'>"
+            f"Trạng thái ứng viên: <b style='color:{state_accent};'>{label}</b>. "
+            f"Đây là kết quả theo pipeline V4 (không dùng dữ liệu V3 kế thừa)."
+            f"</div></td></tr></table>"
+        )
+
+    def _diag_v4_scores_html(self, light: bool = False) -> str:
+        """Per-side component scores + the selected side's four scores."""
+        side_scores = self.row.get("side_scores") or []
+        if not isinstance(side_scores, list) or not side_scores:
+            return ""
+        selected = self._selected_side()
+        by_side = {
+            str(s.get("side", "")): s
+            for s in side_scores
+            if isinstance(s, dict) and s.get("side")
+        }
+
+        title_color = "#D94625" if light else "#ea580c"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+
+        def _val(side_dict: dict, key: str, dash: str = "—") -> str:
+            v = side_dict.get(key)
+            if v is None:
+                return dash
+            try:
+                return str(int(v))
+            except (TypeError, ValueError):
+                return str(v)
+
+        def _fmt(v: object) -> str:
+            if v is None:
+                return "—"
+            try:
+                return f"{float(v):.2f}"
+            except (TypeError, ValueError):
+                return str(v)
+
+        def _diff_text() -> str:
+            gap = self.row.get("score_gap")
+            if gap is None:
+                return "chưa có"
+            try:
+                return f"{float(gap):.1f}"
+            except (TypeError, ValueError):
+                return str(gap)
+
+        rows = [
+            f"<div style='{_HTML_BODY}'>",
+            f"<h2 style='color:{title_color};margin:0 0 4px;{_HTML_SUBTITLE}'>Phân rã điểm số (Scanner V4)</h2>",
+            f"<p style='color:{desc_color};{_HTML_SMALL}margin:0 0 12px;'>"
+            "Điểm theo từng hướng MUA và BÁN; hướng được chọn được đánh dấu. "
+            "<b>Tín hiệu kỹ thuật</b> (technical signal) · <b>Setup</b> (điểm thiết lập) · "
+            "<b>Bằng chứng</b> (evidence từ lịch sử) · <b>Chất lượng thực thi</b> (execution). "
+            "Thang 0–100."
+            "</p>",
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>",
+            "<tr>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};{_HTML_BODY}font-weight:bold;'>Thành phần</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:110px;{_HTML_BODY}font-weight:bold;'>MUA</th>",
+            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:110px;{_HTML_BODY}font-weight:bold;'>BÁN</th>",
+            "</tr>",
+        ]
+        components = [
+            ("Tín hiệu kỹ thuật", "technical_signal_score"),
+            ("Điểm thiết lập (Setup)", "setup_score"),
+            ("Bằng chứng (Evidence)", "evidence_score"),
+            ("Chất lượng thực thi", "execution_quality_score"),
+        ]
+        sides = ("buy", "sell")
+        for label, key in components:
+            tds = []
+            for side in sides:
+                s = by_side.get(side, {})
+                marker = " · ✅ đang chọn" if side == selected else ""
+                tds.append(
+                    f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid "
+                    f"{row_border_color};color:{text_color};{_HTML_NUMBER}' "
+                    f"title='{side.upper()}'>"
+                    f"{_val(s, key)}{marker}</td>"
+                )
+            rows.append(
+                f"<tr>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};{_HTML_BODY}'>{label}</td>"
+                + "".join(tds)
+                + "</tr>"
+            )
+        rows.append("</table>")
+
+        sel = by_side.get(selected, {})
+        rows.append(
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};width:160px;{_HTML_BODY}'>Chênh lệch điểm MUA–BÁN</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_diff_text()}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>R:R kỳ vọng sau chi phí</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_fmt(self.row.get('expected_effective_rr'))}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>Nguồn bằng chứng</td>"
+            f"<td style='padding:4px 12px;color:{desc_color};{_HTML_BODY}'>{sel.get('evidence_source') or '—'}</td></tr>"
+            f"</table>"
+        )
+        rows.append("</div>")
+        return "\n".join(rows)
+
+    def _diag_v4_gates_html(self, light: bool = False) -> str:
+        """V4 gates: aggregated safety/macro statuses + per-group block codes."""
+        safety_status = str(self.row.get("safety_status") or "").strip().upper()
+        macro_status = str(self.row.get("macro_status") or "").strip().upper()
+        safety_codes = self.row.get("safety_reason_codes") or []
+        macro_codes = self.row.get("macro_reason_codes") or []
+        all_codes = self.row.get("gate_codes") or []
+        if not isinstance(safety_codes, list):
+            safety_codes = []
+        if not isinstance(macro_codes, list):
+            macro_codes = []
+        if not isinstance(all_codes, list):
+            all_codes = []
+
+        group_codes = {
+            "scenario": [c for c in all_codes if str(c).startswith("GATE_SCENARIO_")],
+            "account": [c for c in all_codes if str(c).startswith("GATE_ACCOUNT_")],
+            "portfolio": [c for c in all_codes if str(c).startswith("GATE_PORTFOLIO_")],
+            "journal": [c for c in all_codes if str(c).startswith("GATE_JOURNAL_")],
+        }
+
+        # (key, label, aggregate_status(key in row), codes(list), explanatory)
+        groups = [
+            ("safety", "An toàn thị trường", safety_status, safety_codes,
+             "Kết nối MT5, độ tươi dữ liệu, spread, tin tức, biến động."),
+            ("macro", "Vĩ mô", macro_status, macro_codes,
+             "Độ thuận chiều của các tin vĩ mô so với hướng chọn."),
+            ("scenario", "Kịch bản (R:R)", "", group_codes["scenario"],
+             "Kế hoạch entry/SL/TP có đạt R:R tối thiểu không."),
+            ("account", "Tài khoản", "", group_codes["account"],
+             "Dữ liệu tài khoản và đủ ký quỹ."),
+            ("portfolio", "Danh mục", "", group_codes["portfolio"],
+             "Giới hạn số lệnh mở / mức phơi nhiễm vốn."),
+            ("journal", "Nhật ký", "", group_codes["journal"],
+             "Chuỗi thua, sụt giảm vốn, nghi trả thù theo nhật ký 90 ngày."),
+        ]
+
+        title_color = "#D94625" if light else "#f97316"
+        desc_color = "#736B60" if light else "#64748b"
+        border_color = "#D6D2C8" if light else "#334155"
+        row_border_color = "#EAE6DF" if light else "#1e293b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+
+        def _status_vn(status: str):
+            mapping = {
+                "PASS": ("🟢", "Qua", "#22c55e"),
+                "BLOCK": ("🔴", "Chặn", "#ef4444"),
+                "CAUTION": ("🟡", "Cảnh báo", "#fbbf24"),
+                "CAP": ("🟡", "Giới hạn", "#fbbf24"),
+                "UNKNOWN": ("⚪", "Chưa đủ dữ liệu", "#94a3b8"),
+            }
+            if status in mapping:
+                return mapping[status]
+            if not status:
+                return ("", "—", "#94a3b8")
+            return ("⚪", status, "#94a3b8")
+
+        def _aggregate(codes: list) -> str:
+            tones = {_v4_code_tone(str(c)) for c in codes}
+            if "block" in tones:
+                return "BLOCK"
+            if "warning" in tones:
+                return "CAUTION"
+            if tones:
+                return "PASS"
+            return "UNKNOWN"
+
+        rows = [
+            f"<div style='{_HTML_BODY}'>",
+            f"<h2 style='color:{title_color};margin:20px 0 4px;{_HTML_SUBTITLE}'>Cổng chặn</h2>",
+            f"<p style='color:{desc_color};{_HTML_SMALL}margin:0 0 12px;'>"
+            "Mỗi lớp kiểm tra khi vào lệnh. <b style='color:#ef4444;'>Chặn</b> cấm vào lệnh; "
+            "<b style='color:#94a3b8;'>Chưa đủ dữ liệu</b> cũng thất bại an toàn "
+            "(fail-closed) — thiếu cấu hình/spread/dữ liệu ⇒ không vào lệnh."
+            "</p>",
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>",
+            "<tr>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:150px;{_HTML_BODY}font-weight:bold;'>Cổng</th>",
+            f"<th colspan='2' style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};width:110px;{_HTML_BODY}font-weight:bold;'>Kết quả</th>",
+            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};{_HTML_BODY}font-weight:bold;'>Chi tiết</th>",
+            "</tr>",
+        ]
+        for key, label, agg_status, codes, explain in groups:
+            status = agg_status if agg_status else _aggregate(codes)
+            icon_disp, text_disp, color_disp = _status_vn(status)
+            tone_class = (
+                "block" if status == "BLOCK"
+                else "warning" if status in ("CAUTION", "CAP")
+                else "pass" if status == "PASS"
+                else "unknown"
+            )
+            code_text = ", ".join(_translate_codes(codes)) if codes else (
+                "không có mã chặn — không áp dụng / đã qua"
+            )
+            code_color = "#ef4444" if tone_class == "block" else desc_color
+            rows.append(
+                f"<tr title='{explain}'>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};{_HTML_BODY}'>{label}</td>"
+                f"<td style='width:24px;text-align:right;padding:4px 0;border-bottom:1px solid {row_border_color};{_HTML_BODY}'>{icon_disp}</td>"
+                f"<td style='width:86px;text-align:left;padding:4px 0 4px;padding-left:6px;border-bottom:1px solid {row_border_color};color:{color_disp};{_HTML_BODY}font-weight:bold;'>{text_disp}</td>"
+                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{code_color};{_HTML_BODY}'>{code_text}</td>"
+                "</tr>"
+            )
+        rows.append("</table>")
+
+        all_codes_vn = [" ".join(_translate_codes(all_codes))] if all_codes else []
+        if all_codes_vn:
+            rows.append(
+                f"<div style='{_HTML_BODY}color:{muted_color};padding:4px 12px;margin-bottom:12px;'>"
+                f"<b>Mã chặn tổng hợp:</b> {', '.join(all_codes_vn)}</div>"
+            )
+        rows.append("</div>")
+        return "\n".join(rows)
+
+    def _diag_v4_plan_html(self, light: bool = False) -> str:
+        """V4 selected-side plan + decision cap + final status."""
+        title_color = "#047857" if light else "#22c55e"
+        desc_color = "#736B60" if light else "#64748b"
+        text_color = "#111827" if light else "#e2e8f0"
+        muted_color = "#57534E" if light else "#94a3b8"
+        bg_color = "#f1f5f9" if light else "#1e293b"
+
+        def _fmt(v: object, nd=4) -> str:
+            if v is None:
+                return "—"
+            try:
+                return f"{float(v):.{nd}f}"
+            except (TypeError, ValueError):
+                return str(v)
+
+        candidate_status = self._canonical_status()
+        label, state = _CANDIDATE_STATUS.get(candidate_status, (candidate_status, "neutral"))
+        cap = self.row.get("decision_cap")
+        cap_text = cap if isinstance(cap, str) and cap else "không (tối đa theo trạng thái)"
+
+        rows = [
+            f"<div style='{_HTML_BODY}'>",
+            f"<h2 style='color:{title_color};margin:20px 0 4px;{_HTML_SUBTITLE}'>Kế hoạch &amp; quyết định</h2>",
+            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}background:{bg_color};border-radius:6px;'>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};width:170px;{_HTML_BODY}'>Trạng thái</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_BODY}'>{label}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>Giới hạn quyết định (cap)</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_BODY}'>{cap_text}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>Điểm vào lệnh (entry)</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_fmt(self.row.get('entry_price'))}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>Dừng lỗ (stop-loss)</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_fmt(self.row.get('stop_loss'))}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>Chốt lời (take-profit)</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_fmt(self.row.get('take_profit'))}</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>R:R kỳ vọng</td>"
+            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_fmt(self.row.get('expected_effective_rr'))}</td></tr>"
+            f"</table>",
+            f"<div style='{_HTML_BODY}color:{desc_color};padding:2px 2px 0;'>"
+            "Biểu đồ và các thông số luôn hiển thị cho mọi ứng viên (kể cả bị chặn); "
+            "chỉ nhãn trạng thái khác nhau."
+            "</div>",
+            "</div>",
+        ]
         return "\n".join(rows)
 
     # ------------------------------------------------------------------

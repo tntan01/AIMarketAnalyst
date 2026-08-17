@@ -29,7 +29,7 @@ SUMMARY_ROW_FIELDS = (
     "setup_score", "market_regime", "short_reason", "selected_side",
     "selected_zone_id", "selected_zone_type", "risk_reward",
     "expected_effective_rr", "entry_status", "scan_id", "row_id",
-    "settings_hash", "rollout_stage", "analysis_error",
+    "settings_hash", "analysis_error",
     "analysis_status", "pipeline_route", "fast_path_version",
     "fast_reject_reason",
     "entry_zone_source",
@@ -134,7 +134,7 @@ class ScannerPersistenceService:
         trade = result.get("auto_trade_results")
         if isinstance(trade, dict) and (int(trade.get("opened", 0) or 0) > 0 or trade.get("errors")):
             return True
-        if result.get("rollout_metrics_error") or result.get("snapshot_error"):
+        if result.get("scan_health_error") or result.get("snapshot_error"):
             return True
         for row in result.get("rows", []):
             if not isinstance(row, dict):

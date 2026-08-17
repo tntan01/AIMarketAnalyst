@@ -64,10 +64,6 @@ MACRO_CONFLICT = "MACRO_CONFLICT"
 MACRO_DATA_PARTIAL = "MACRO_DATA_PARTIAL"
 MACRO_DATA_UNAVAILABLE = "MACRO_DATA_UNAVAILABLE"
 MACRO_HIGH_IMPACT_EVENT_NEARBY = "MACRO_HIGH_IMPACT_EVENT_NEARBY"
-MACRO_HIGH_IMPACT_EVENT_AHEAD = "MACRO_HIGH_IMPACT_EVENT_AHEAD"
-MACRO_AI_VETO = "MACRO_AI_VETO"
-MACRO_AI_ADJUSTMENT = "MACRO_AI_ADJUSTMENT"
-MACRO_AI_VERDICT_SKIPPED = "MACRO_AI_VERDICT_SKIPPED"
 # MacroGate V4 (Step 05; target-only, not live-wired yet).  Missing/error/OPEN
 # policy values fail closed to UNKNOWN instead of being coerced to PASS/neutral.
 MACRO_NEUTRAL = "MACRO_NEUTRAL"
@@ -76,8 +72,6 @@ MACRO_CONFIDENCE_THRESHOLD_UNSET = "MACRO_CONFIDENCE_THRESHOLD_UNSET"
 MACRO_LOW_CONFIDENCE = "MACRO_LOW_CONFIDENCE"
 MACRO_CONFLICT_CAP_UNSET = "MACRO_CONFLICT_CAP_UNSET"
 MACRO_UNKNOWN_CAP_UNSET = "MACRO_UNKNOWN_CAP_UNSET"
-MACRO_AI_VETO_UNVERIFIED = "MACRO_AI_VETO_UNVERIFIED"
-MACRO_AI_VERDICT_UNAVAILABLE = "MACRO_AI_VERDICT_UNAVAILABLE"
 MACRO_SIDE_MISSING = "MACRO_SIDE_MISSING"
 
 # ---------------------------------------------------------------------------
@@ -303,10 +297,6 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     MACRO_DATA_PARTIAL: "Thiếu một phần dữ liệu vĩ mô, giảm nhẹ mức tin cậy.",
     MACRO_DATA_UNAVAILABLE: "Thiếu toàn bộ dữ liệu vĩ mô, giảm mạnh mức tin cậy.",
     MACRO_HIGH_IMPACT_EVENT_NEARBY: "Sắp có sự kiện vĩ mô tác động mạnh liên quan đến đồng tiền của cặp, giảm mức tin cậy.",
-    MACRO_HIGH_IMPACT_EVENT_AHEAD: "Có sự kiện vĩ mô tác động mạnh trong 4-48 giờ tới, giảm mức tin cậy vĩ mô.",
-    MACRO_AI_VETO: "AI Macro Verdict phủ quyết setup — phát hiện mâu thuẫn giữa các tầng vĩ mô.",
-    MACRO_AI_ADJUSTMENT: "AI Macro Verdict điều chỉnh giảm điểm do mâu thuẫn tín hiệu vĩ mô.",
-    MACRO_AI_VERDICT_SKIPPED: "AI Macro Verdict bỏ qua — conviction thấp hoặc lỗi AI.",
     # MacroGate V4 (Step 05; target-only)
     MACRO_NEUTRAL: "Bối cảnh vĩ mô trung lập, không nghiêng về bên nào.",
     MACRO_DEADBAND_UNSET: "Chưa calibrate deadband BUY/SELL — không chứng nhận được hướng vĩ mô (fail-closed UNKNOWN).",
@@ -314,8 +304,6 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     MACRO_LOW_CONFIDENCE: "Confidence vĩ mô dưới ngưỡng đã khóa — không tin tưởng định hướng vĩ mô (fail-closed UNKNOWN).",
     MACRO_CONFLICT_CAP_UNSET: "Chưa chốt conflict cap — xung đột vĩ mô chưa có chính sách xử lý (fail-closed UNKNOWN).",
     MACRO_UNKNOWN_CAP_UNSET: "Chưa chốt unknown cap — trạng thái chưa rõ chưa có chính sách xử lý (fail-closed UNKNOWN).",
-    MACRO_AI_VETO_UNVERIFIED: "AI veto tồn tại nhưng chưa khóa ngưỡng conviction — không thể chứng nhận phủ quyết (fail-closed UNKNOWN).",
-    MACRO_AI_VERDICT_UNAVAILABLE: "Lỗi provider/AI khi lấy AI Macro Verdict — không thể xác nhận không có veto; không đổi thành PASS.",
     MACRO_SIDE_MISSING: "Thiếu assessed side — không thể đánh giá hướng vĩ mô (fail-closed UNKNOWN).",
     # Score gap
     BUY_SELL_SCORE_GAP_LOW: "Điểm Buy và Sell quá sát nhau, thị trường chưa rõ hướng.",

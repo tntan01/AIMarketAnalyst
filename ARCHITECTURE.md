@@ -96,7 +96,7 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `services/mt5_service.py` — MT5
 - `services/market_data_service.py` + `data_provider.py` + `candle_history_cache.py`
 - `services/yahoo_chart_fetcher.py` — Yahoo fallback
-- `services/forex_factory_client.py` + `event_impact_assessor.py` + `macro_*` — tin tức/vĩ mô
+- `services/forex_factory_client.py` + `macro_*` — tin tức/vĩ mô
 
 ## Ghi chú
 - **DI container:** mọi service/controller là singleton lazy trong `AppController` — thêm dependency mới thì đăng ký ở đó.

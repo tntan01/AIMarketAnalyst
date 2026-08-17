@@ -14,21 +14,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.backtest_golden_replay import run_golden_replay
 from core.backtest_migration import LEGACY_RESEARCH, migrate_snapshot_payload
-from core.backtest_release import build_release_report, compare_engine_shadow
+from core.backtest_release import build_release_report
 from services.storage_service import JsonStorage
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Reconcile a current backtest snapshot with demo and legacy "
-            "engine evidence, then build the Phase-7 release report."
+            "Reconcile a current backtest snapshot with forward-demo "
+            "evidence, then build the Phase-7 release report."
         )
     )
     parser.add_argument("--snapshot", required=True, type=Path)
     parser.add_argument("--forward-snapshot", required=True, type=Path)
     parser.add_argument("--demo-trades", required=True, type=Path)
-    parser.add_argument("--legacy-snapshot", required=True, type=Path)
     parser.add_argument("--reviewer", required=True)
     parser.add_argument(
         "--approve", action="store_true",
@@ -44,10 +43,6 @@ def main() -> int:
     if migrated_current.get("lifecycle", {}).get("status") == LEGACY_RESEARCH:
         parser.error("--snapshot must come from the current backtest engine.")
 
-    legacy = migrate_snapshot_payload(
-        _load_object(args.legacy_snapshot),
-        source_path=str(args.legacy_snapshot),
-    )
     demo_payload = JsonStorage(args.demo_trades).load(default=[])
     demo_trades = _trade_rows(demo_payload)
     forward_snapshot = migrate_snapshot_payload(
@@ -62,16 +57,11 @@ def main() -> int:
     golden = run_golden_replay(
         PROJECT_ROOT / "tests" / "fixtures" / "backtest_phase7_golden.json"
     )
-    shadow = compare_engine_shadow(
-        _trade_rows(legacy),
-        forward_trades,
-    )
     report = build_release_report(
         migrated_current,
         demo_trades=demo_trades,
         forward_trades=forward_trades,
         golden_report=golden,
-        shadow_report=shadow,
         reviewed_by=args.reviewer,
         approved=args.approve,
     )

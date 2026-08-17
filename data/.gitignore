@@ -1,7 +1,6 @@
 operational_baseline.json
 shadow_records.jsonl
 phase16_entry_zone_baseline.json
-event_assessment_journal.jsonl
-event_assessment_labels.jsonl
 macro_verdict_journal.jsonl
 macro_verdict_cache/
+event_assessment_journal.jsonl

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
@@ -44,6 +45,22 @@ from services.order_management_models import (
 )
 
 
+def is_demo_server(server: object) -> bool:
+    """Detect demo/trial/practice/contest broker servers by name.
+
+    Relocated from the removed Phase-8 rollout module: the forward-demo export
+    script still refuses to run against servers that do not look like demo
+    accounts.
+    """
+    normalized = str(server or "").strip().lower()
+    return bool(
+        re.search(
+            r"(^|[^a-z])(?:demo|trial|practice|contest)\d*($|[^a-z])",
+            normalized,
+        )
+    )
+
+
 def _serialized_mt5_operation(method):
     """Serialize calls into the MetaTrader5 SDK for one service instance."""
 
@@ -67,6 +84,8 @@ class MT5ConnectionStatus:
     server: str = ""
     login: int | None = None
     balance: float | None = None
+    margin: float | None = None
+    free_margin: float | None = None
     currency: str = ""
     error_code: int | None = None
     message: str = ""
@@ -272,6 +291,8 @@ class MT5Service(DataProvider):
             server=getattr(account, "server", "") if account else "",
             login=getattr(account, "login", None) if account else None,
             balance=float(getattr(account, "balance", 0.0)) if account and getattr(account, "balance", None) is not None else None,
+            margin=float(getattr(account, "margin", 0.0)) if account and getattr(account, "margin", None) is not None else None,
+            free_margin=float(getattr(account, "margin_free", 0.0)) if account and getattr(account, "margin_free", None) is not None else None,
             currency=getattr(account, "currency", "") if account else "",
             error_code=error_code,
             message="Đã kết nối MT5." if terminal_connected else "MT5 chưa connected trong terminal.",
@@ -571,6 +592,61 @@ class MT5Service(DataProvider):
         if not status.terminal_connected or not status.logged_in:
             return None
         return status.balance
+
+    @_serialized_mt5_operation
+    def min_lot_order_margin(self, broker_symbol: str) -> float | None:
+        """Margin the broker requires to open the MINIMUM lot of a symbol.
+
+        Live producer for the V4 account gate (``AccountState.required_margin``).
+        At scan time no candidate entry/SL exists yet, so risk-based lot sizing
+        is impossible; the smallest orderable size is the only honest probe —
+        if free margin cannot cover the minimum lot, no order on this symbol is
+        executable at all.  The value is 100% broker-computed
+        (``order_calc_margin`` for both BUY at ask and SELL at bid; the
+        conservative max is kept).  Any failure returns ``None`` (fail-closed:
+        the gate then reports UNKNOWN — never an invented estimate).
+        """
+        try:
+            import MetaTrader5 as mt5
+        except ImportError:
+            return None
+        try:
+            self.connect()
+            status = self.mt5_connection_status()
+            if not status.terminal_connected or not status.logged_in:
+                return None
+            info = mt5.symbol_info(broker_symbol)
+            if info is None:
+                return None
+            volume_min = float(getattr(info, "volume_min", 0.0) or 0.0)
+            if volume_min <= 0 or not isfinite(volume_min):
+                return None
+            tick = mt5.symbol_info_tick(broker_symbol)
+            if tick is None:
+                return None
+            ask = float(getattr(tick, "ask", 0.0) or 0.0)
+            bid = float(getattr(tick, "bid", 0.0) or 0.0)
+            margins: list[float] = []
+            if ask > 0:
+                buy_margin = mt5.order_calc_margin(
+                    mt5.ORDER_TYPE_BUY, broker_symbol, volume_min, ask
+                )
+                if buy_margin is not None and isfinite(float(buy_margin)):
+                    margins.append(float(buy_margin))
+            if bid > 0:
+                sell_margin = mt5.order_calc_margin(
+                    mt5.ORDER_TYPE_SELL, broker_symbol, volume_min, bid
+                )
+                if sell_margin is not None and isfinite(float(sell_margin)):
+                    margins.append(float(sell_margin))
+            if not margins:
+                return None
+            value = max(margins)
+            if value < 0:
+                return None
+            return value
+        except Exception:
+            return None
 
     def aliases_for(self, app_symbol: str) -> list[str]:
         profile = self.symbol_profiles.get(app_symbol)
@@ -1152,6 +1228,7 @@ class MT5Service(DataProvider):
         volume_min = None
         volume_max = None
         volume_step = None
+        tick_time = None
         warning = None
         try:
             import MetaTrader5 as mt5
@@ -1167,6 +1244,17 @@ class MT5Service(DataProvider):
                 if spread_points is not None and point_val is not None:
                     spread_price = spread_points * point_val
                 spread_status = "normal" if spread_points is not None and spread_points <= 50 else "abnormal"
+            # Last-tick timestamp: the direct liveness probe of the broker feed
+            # (candle open times lag wall-clock by up to a full timeframe period,
+            # so they cannot resolve a 3-minute freshness SLA).  Fail-closed:
+            # any error keeps None and the caller falls back to candle time.
+            try:
+                tick = mt5.symbol_info_tick(broker_symbol)
+                tick_ts = _tick_timestamp(tick) if tick is not None else None
+                if tick_ts is not None:
+                    tick_time = datetime.fromtimestamp(tick_ts, tz=timezone.utc)
+            except Exception:
+                tick_time = None
         except Exception as exc:  # pragma: no cover - defensive around MT5 native API.
             warning = str(exc)
 
@@ -1184,6 +1272,7 @@ class MT5Service(DataProvider):
             "volume_min": volume_min,
             "volume_max": volume_max,
             "volume_step": volume_step,
+            "tick_time": tick_time,
             "warning": warning,
         }
 
@@ -3492,6 +3581,15 @@ class MT5Service(DataProvider):
                 if entry_comment.startswith("AMA-FWD:")
                 else ""
             )
+            # Scale-ins / partial closes: weight average entry/exit prices by
+            # volume so `actual_entry`/`actual_exit`/R computations reflect the
+            # blended position instead of the first/last deal alone.
+            entry_price = _volume_weighted_average(entry_deals) or float(
+                getattr(entry_deal, "price", 0.0) or 0.0
+            )
+            exit_price = _volume_weighted_average(exit_deals) or float(
+                getattr(exit_deal, "price", 0.0) or 0.0
+            )
             trades.append({
                 "candidate_id": correlation_id,
                 "symbol": self.app_symbol_for_broker_symbol(symbol),
@@ -3499,8 +3597,8 @@ class MT5Service(DataProvider):
                 "side": side,
                 "opened_at": open_time.isoformat(timespec="seconds").replace("+00:00", "Z"),
                 "closed_at": close_time.isoformat(timespec="seconds").replace("+00:00", "Z"),
-                "actual_entry": float(getattr(entry_deal, "price", 0.0) or 0.0),
-                "actual_exit": float(getattr(exit_deal, "price", 0.0) or 0.0),
+                "actual_entry": entry_price,
+                "actual_exit": exit_price,
                 "actual_lot": round(volume, 4),
                 "result_amount": round(profit + commission + swap, 2),
                 "exit_reason": str(getattr(exit_deal, "reason", "") or ""),
@@ -3510,6 +3608,25 @@ class MT5Service(DataProvider):
                 "comment": entry_comment,
             })
         return trades
+
+
+def _volume_weighted_average(deals: list[object]) -> float | None:
+    """Volume-weighted average price across deals (scale-in / partial close).
+
+    Returns ``None`` when no deal contributes a positive volume and price so
+    the caller can fall back to a single deal's price.
+    """
+    total_volume = 0.0
+    total_notional = 0.0
+    for deal in deals:
+        volume = float(getattr(deal, "volume", 0.0) or 0.0)
+        price = float(getattr(deal, "price", 0.0) or 0.0)
+        if volume > 0 and price > 0:
+            total_volume += volume
+            total_notional += volume * price
+    if total_volume <= 0:
+        return None
+    return total_notional / total_volume
 
 
 def _optional_int(value: object) -> int | None:

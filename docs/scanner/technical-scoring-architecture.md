@@ -64,7 +64,7 @@ Decision Engine: setup live đang ở trạng thái nào?
 Strategy Router: setup có nằm trong strategy contract không?
 ```
 
-Chỉ khi strategy, entry, trade gate, portfolio và rollout đều cho phép mới có order candidate có thể thực thi.
+Chỉ khi strategy, entry, trade gate, portfolio và execution guard đều cho phép mới có order candidate có thể thực thi.
 
 ## 4. Side evaluation
 
@@ -142,7 +142,7 @@ Status chuẩn:
 - `BLOCKED`
 - `DATA_UNAVAILABLE`
 
-`READY_NOW` chỉ nói candidate đã sẵn sàng ở snapshot scan. Nó không bỏ qua rollout guard hoặc execution revalidation.
+`READY_NOW` chỉ nói candidate đã sẵn sàng ở snapshot scan. Nó không bỏ qua order policy hoặc execution revalidation.
 
 ## 7. Ranking
 
@@ -229,7 +229,7 @@ Mỗi quyết định cần truy được:
 - threshold và giá trị thực tế;
 - gate/reason/block codes;
 - snapshot thời gian scan và execution;
-- portfolio và rollout decision.
+- portfolio decision.
 
 Reason code là contract cho UI, log, replay và kiểm thử; không chỉ là thông báo trang trí.
 
@@ -255,7 +255,6 @@ Reason code là contract cho UI, log, replay và kiểm thử; không chỉ là 
 | Ranking | `core/scanner_ranking_engine.py` |
 | Revalidation | `core/execution_revalidation_engine.py` |
 | Portfolio risk | `core/portfolio_risk_engine.py` |
-| Rollout | `core/scanner_rollout.py` |
 | Observability | `core/scanner_observability.py` |
 | Orchestration/execution | `controllers/scanner_controller.py` |
 

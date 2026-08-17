@@ -514,10 +514,6 @@ QLabel#ScannerWarningText {
   color: #f59e0b;
 }
 
-QLabel#ScannerSummaryRollout {
-  color: #38bdf8;
-}
-
 QLabel#ScannerSummaryText[metricTone="buy"],
 QLabel#ScannerSummaryText[metricTone="success"],
 QLabel#ScannerMacroScore[metricTone="success"] {
@@ -2257,10 +2253,6 @@ QDialog#ScanAnalysisDetailDialog QLabel#ScannerWarningText {
   color: #f59e0b;
 }
 
-QDialog#ScanAnalysisDetailDialog QLabel#ScannerSummaryRollout {
-  color: #38bdf8;
-}
-
 QFrame#PriceCard, QFrame#ScannerGroupCard, QFrame#M15Card, QFrame#JournalSampleCard, QFrame#JournalExpectancyCard {
   background: #161b26;
   border: 1px solid #242b3d;
@@ -2273,7 +2265,7 @@ QFrame#MacroContextCard, QFrame#ChecklistCard {
   border-radius: 8px;
 }
 
-QFrame#SummaryPillBuy, QFrame#SummaryPillSell, QFrame#SummaryPillNeutral, QFrame#SummaryPillStatus, QFrame#SummaryPillScore, QFrame#SummaryPillRR, QFrame#SummaryPillPerm, QFrame#SummaryPillRollout {
+QFrame#SummaryPillBuy, QFrame#SummaryPillSell, QFrame#SummaryPillNeutral, QFrame#SummaryPillStatus, QFrame#SummaryPillScore, QFrame#SummaryPillRR, QFrame#SummaryPillPerm {
   background: #161b26;
   border: 1px solid #242b3d;
   border-radius: 6px;

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from config.constants import DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
-from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, ScannerRolloutSettings, SymbolScanSettings, TradingSettings
+from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
 from core.backtest_config import (
     backtest_activation_status,
     merge_symbol_scan_settings,
@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QFrame,
+    QGridLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
@@ -56,7 +57,7 @@ from ui.layout_system import (
     configure_form_label,
     configure_layout,
 )
-from ui.screens.shared import action_button, card, form_row, page_header
+from ui.screens.shared import action_button, card, page_header
 from workers.ai_test_worker import AITestWorker
 
 class SettingsScreen(QWidget):
@@ -84,10 +85,9 @@ class SettingsScreen(QWidget):
         tabs.addTab(self._ai_tab(), "🤖 AI")
         tabs.addTab(self._mt5_tab(), "🔌 Dữ liệu")
         tabs.addTab(self._trading_tab(), "💼 Giao dịch")
-        tabs.addTab(self._rollout_tab(), "🚦 Rollout")
+        tabs.addTab(self._order_management_tab(), "🛡️ Quản lý lệnh")
         tabs.addTab(self._display_tab(), "🎨 Hiển thị")
         tabs.addTab(self._advanced_tab(), "⚙️ Nâng cao")
-        tabs.insertTab(4, self._order_management_tab(), "🛡️ Quản lý lệnh")
         root.addWidget(tabs, 1)
 
     def _ai_tab(self) -> QFrame:
@@ -1352,267 +1352,18 @@ class SettingsScreen(QWidget):
         self.trading_status_label.style().unpolish(self.trading_status_label)
         self.trading_status_label.style().polish(self.trading_status_label)
 
-    def _rollout_tab(self) -> QFrame:
-        frame = card("Scanner rollout")
-        frame.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
-        rollout = self.app_settings.scanner_rollout
-
-        form_panel = QFrame()
-        form_panel.setObjectName("CompactFormPanel")
-        form_layout = QVBoxLayout(form_panel)
-        form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setSpacing(6)
-
-        stage = QComboBox()
-        stage.addItems([
-            "DISABLED",
-            "SHADOW",
-            "DEMO_LIMITED",
-            "DEMO_FULL",
-            "CANARY",
-            "PRODUCTION",
-        ])
-        stage.setCurrentText(rollout.stage)
-
-        kill_switch = QCheckBox("Dừng toàn bộ lệnh từ Scanner")
-        kill_switch.setChecked(rollout.kill_switch)
-        allowed_symbols = QLineEdit()
-        allowed_symbols.setPlaceholderText("EURUSD, GBPUSD")
-        allowed_symbols.setText(", ".join(rollout.allowed_symbols))
-
-        canary_risk = QDoubleSpinBox()
-        canary_risk.setRange(0.01, 1.0)
-        canary_risk.setDecimals(2)
-        canary_risk.setSingleStep(0.05)
-        canary_risk.setSuffix(" %")
-        canary_risk.setValue(rollout.canary_risk_percent)
-
-        require_demo = QCheckBox("Bắt buộc tài khoản demo")
-        require_demo.setChecked(rollout.require_demo_account)
-        production_approved = QCheckBox(
-            "Đã phê duyệt production sau khi đạt release gate"
-        )
-        production_approved.setChecked(rollout.production_approved)
-
-        min_demo = QSpinBox()
-        min_demo.setRange(1, 1_000_000)
-        min_demo.setValue(rollout.min_demo_orders)
-        min_canary = QSpinBox()
-        min_canary.setRange(1, 1_000_000)
-        min_canary.setValue(rollout.min_canary_orders)
-
-        max_revalidation = QDoubleSpinBox()
-        max_revalidation.setRange(0, 100)
-        max_revalidation.setDecimals(1)
-        max_revalidation.setSuffix(" %")
-        max_revalidation.setValue(
-            rollout.max_revalidation_failure_rate * 100
-        )
-        max_degradation = QDoubleSpinBox()
-        max_degradation.setRange(0, 100)
-        max_degradation.setDecimals(1)
-        max_degradation.setSuffix(" %")
-        max_degradation.setValue(
-            rollout.max_performance_degradation_pct
-        )
-
-        self.rollout_stage_input = stage
-        self.rollout_kill_switch_input = kill_switch
-        self.rollout_symbols_input = allowed_symbols
-        self.rollout_canary_risk_input = canary_risk
-        self.rollout_require_demo_input = require_demo
-        self.rollout_production_approved_input = production_approved
-        self.rollout_min_demo_input = min_demo
-        self.rollout_min_canary_input = min_canary
-        self.rollout_max_revalidation_input = max_revalidation
-        self.rollout_max_degradation_input = max_degradation
-
-        form_layout.addWidget(self._compact_form_row("Giai đoạn", stage))
-        form_layout.addWidget(kill_switch)
-        form_layout.addWidget(
-            self._compact_form_row("Mã DEMO_LIMITED", allowed_symbols)
-        )
-        form_layout.addWidget(
-            self._compact_form_row("Canary risk cap", canary_risk)
-        )
-        form_layout.addWidget(require_demo)
-        form_layout.addWidget(production_approved)
-        form_layout.addWidget(
-            self._compact_form_row("Lệnh demo tối thiểu", min_demo)
-        )
-        form_layout.addWidget(
-            self._compact_form_row("Lệnh canary tối thiểu", min_canary)
-        )
-        form_layout.addWidget(
-            self._compact_form_row(
-                "Lỗi revalidation tối đa",
-                max_revalidation,
-            )
-        )
-        form_layout.addWidget(
-            self._compact_form_row(
-                "Suy giảm hiệu suất tối đa",
-                max_degradation,
-            )
-        )
-
-        self.rollout_save_button = action_button(
-            "💾 Lưu rollout",
-            primary=True,
-            color="success",
-        )
-        self.rollout_save_button.clicked.connect(
-            self._save_rollout_settings
-        )
-        form_layout.addWidget(self.rollout_save_button)
-        self.rollout_status_label = QLabel(
-            "Mặc định SHADOW: tuyệt đối không gửi lệnh."
-        )
-        self.rollout_status_label.setObjectName("HelperText")
-        self.rollout_status_label.setWordWrap(True)
-        form_layout.addWidget(self.rollout_status_label)
-        form_layout.addStretch(1)
-        frame.layout().addWidget(form_panel, 0, Qt.AlignmentFlag.AlignTop)
-        frame.layout().addStretch(1)
-        return frame
-
-    def _save_rollout_settings(self) -> None:
-        symbols = [
-            item.strip().upper()
-            for item in self.rollout_symbols_input.text().replace(
-                "\n",
-                ",",
-            ).split(",")
-            if item.strip()
-        ]
-        self.app_settings.scanner_rollout = ScannerRolloutSettings(
-            stage=self.rollout_stage_input.currentText(),
-            kill_switch=self.rollout_kill_switch_input.isChecked(),
-            allowed_symbols=list(dict.fromkeys(symbols)),
-            canary_risk_percent=self.rollout_canary_risk_input.value(),
-            require_demo_account=self.rollout_require_demo_input.isChecked(),
-            production_approved=(
-                self.rollout_production_approved_input.isChecked()
-            ),
-            min_demo_orders=self.rollout_min_demo_input.value(),
-            min_canary_orders=self.rollout_min_canary_input.value(),
-            max_revalidation_failure_rate=(
-                self.rollout_max_revalidation_input.value() / 100
-            ),
-            max_performance_degradation_pct=(
-                self.rollout_max_degradation_input.value()
-            ),
-        )
-        self.settings_service.save(self.app_settings)
-        self.rollout_status_label.setText(
-            "Đã lưu rollout. Kill switch và SHADOW luôn chặn gửi lệnh."
-        )
-        self.rollout_status_label.setProperty("state", "ok")
-        self.rollout_status_label.style().unpolish(
-            self.rollout_status_label
-        )
-        self.rollout_status_label.style().polish(
-            self.rollout_status_label
-        )
-
     def _order_management_tab(self) -> QFrame:
-        frame = card("Quản lý lệnh V2")
+        # No card title: the tab label already identifies this panel.
+        frame = card()
         frame.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         settings = self.app_settings.order_management
-
-        content = QWidget()
-        content_layout = QHBoxLayout(content)
-        configure_layout(content_layout, spacing=LayoutTokens.SPACE_4)
-
-        safety_panel = QFrame()
-        safety_panel.setObjectName("CompactFormPanel")
-        safety_layout = QVBoxLayout(safety_panel)
-        configure_layout(safety_layout, spacing=LayoutTokens.SPACE_2)
-
-        safety_title = QLabel("Triển khai an toàn")
-        safety_title.setObjectName("PanelTitle")
-        safety_layout.addWidget(safety_title)
-
-        enabled = QCheckBox("Bật Order Management V2")
-        enabled.setChecked(self.app_settings.features.order_management_v2)
-
-        stage = QComboBox()
-        stage.addItems([
-            "DISABLED",
-            "SHADOW",
-            "DEMO",
-            "CANARY",
-            "PRODUCTION",
-        ])
-        stage.setCurrentText(settings.stage)
-
-        kill_switch = QCheckBox("Kill switch — chặn mọi thay đổi tại broker")
-        kill_switch.setChecked(settings.kill_switch)
-
-        require_demo = QCheckBox("Bắt buộc tài khoản demo")
-        require_demo.setChecked(settings.require_demo_account)
-
-        production_approved = QCheckBox(
-            "Đã phê duyệt production sau release gate"
-        )
-        production_approved.setChecked(settings.production_approved)
-
-        manage_scope = QComboBox()
-        manage_scope.addItems(["AMA", "ALL"])
-        manage_scope.setCurrentText(settings.manage_scope)
-        manage_scope.setToolTip(
-            "AMA chỉ quản lý lệnh do ứng dụng tạo; ALL bao gồm cả lệnh ngoài ứng dụng."
-        )
-
-        canary_symbol = QLineEdit()
-        canary_symbol.setPlaceholderText("Ví dụ: EURUSD.a")
-        canary_symbol.setText(settings.canary_broker_symbol)
-
-        canary_position = QLineEdit()
-        canary_position.setPlaceholderText("Position ticket")
-        canary_position.setText(
-            str(settings.canary_position_id)
-            if settings.canary_position_id > 0
-            else ""
-        )
-
-        self.order_management_enabled_input = enabled
-        self.order_management_stage_input = stage
-        self.order_management_kill_switch_input = kill_switch
-        self.order_management_require_demo_input = require_demo
-        self.order_management_production_approved_input = production_approved
-        self.order_management_scope_input = manage_scope
-        self.order_management_canary_symbol_input = canary_symbol
-        self.order_management_canary_position_input = canary_position
-
-        safety_layout.addWidget(enabled)
-        safety_layout.addWidget(self._compact_form_row("Giai đoạn", stage))
-        safety_layout.addWidget(kill_switch)
-        safety_layout.addWidget(require_demo)
-        safety_layout.addWidget(production_approved)
-        safety_layout.addWidget(
-            self._compact_form_row("Phạm vi quản lý", manage_scope)
-        )
-        canary_symbol_row = self._compact_form_row(
-            "Broker symbol CANARY",
-            canary_symbol,
-        )
-        canary_position_row = self._compact_form_row(
-            "Position ID CANARY",
-            canary_position,
-        )
-        self.order_management_canary_symbol_row = canary_symbol_row
-        self.order_management_canary_position_row = canary_position_row
-        safety_layout.addWidget(canary_symbol_row)
-        safety_layout.addWidget(canary_position_row)
-        safety_layout.addStretch(1)
 
         runtime_panel = QFrame()
         runtime_panel.setObjectName("CompactFormPanel")
         runtime_layout = QVBoxLayout(runtime_panel)
         configure_layout(runtime_layout, spacing=LayoutTokens.SPACE_2)
 
-        runtime_title = QLabel("Tham số runtime")
+        runtime_title = QLabel("Tham số")
         runtime_title.setObjectName("PanelTitle")
         runtime_layout.addWidget(runtime_title)
 
@@ -1706,13 +1457,21 @@ class SettingsScreen(QWidget):
             ("Retry tối đa", retry_max),
             ("Số lần retry", retry_attempts),
         )
-        for label, control in runtime_rows:
-            runtime_layout.addWidget(self._compact_form_row(label, control))
+        # Compact 2-column grid (5 physical rows) so all 10 params fit on
+        # one screen width without nesting panels.
+        runtime_grid = QGridLayout()
+        runtime_grid.setContentsMargins(0, 0, 0, 0)
+        runtime_grid.setHorizontalSpacing(LayoutTokens.SPACE_4)
+        runtime_grid.setVerticalSpacing(LayoutTokens.SPACE_2)
+        for index, (label, control) in enumerate(runtime_rows):
+            runtime_grid.addWidget(
+                self._compact_form_row(label, control),
+                index // 2,
+                index % 2,
+            )
+        runtime_layout.addLayout(runtime_grid)
         runtime_layout.addStretch(1)
-
-        content_layout.addWidget(safety_panel, 1)
-        content_layout.addWidget(runtime_panel, 1)
-        frame.layout().addWidget(content)
+        frame.layout().addWidget(runtime_panel)
 
         self.order_management_status_label = QLabel()
         self.order_management_status_label.setObjectName("HelperText")
@@ -1731,28 +1490,6 @@ class SettingsScreen(QWidget):
         frame.layout().addWidget(self.order_management_save_button)
         frame.layout().addStretch(1)
 
-        enabled.toggled.connect(self._update_order_management_safety_state)
-        stage.currentTextChanged.connect(
-            self._update_order_management_safety_state
-        )
-        kill_switch.toggled.connect(
-            self._update_order_management_safety_state
-        )
-        require_demo.toggled.connect(
-            self._update_order_management_safety_state
-        )
-        production_approved.toggled.connect(
-            self._update_order_management_safety_state
-        )
-        manage_scope.currentTextChanged.connect(
-            self._update_order_management_safety_state
-        )
-        canary_symbol.textChanged.connect(
-            self._update_order_management_safety_state
-        )
-        canary_position.textChanged.connect(
-            self._update_order_management_safety_state
-        )
         self._update_order_management_safety_state()
         return frame
 
@@ -1773,84 +1510,25 @@ class SettingsScreen(QWidget):
         control.setValue(value)
         return control
 
-    def _order_management_canary_position_id(self) -> int:
-        raw_value = self.order_management_canary_position_input.text().strip()
-        try:
-            return max(int(raw_value), 0)
-        except (TypeError, ValueError):
-            return 0
-
     def _update_order_management_safety_state(
         self,
         *_args,
         saved: bool = False,
     ) -> None:
-        stage = self.order_management_stage_input.currentText()
-        is_canary = stage == "CANARY"
-        self.order_management_canary_symbol_row.setVisible(is_canary)
-        self.order_management_canary_position_row.setVisible(is_canary)
-        self.order_management_canary_symbol_input.setEnabled(is_canary)
-        self.order_management_canary_position_input.setEnabled(is_canary)
-
-        enabled = self.order_management_enabled_input.isChecked()
-        kill_switch = self.order_management_kill_switch_input.isChecked()
-        require_demo = self.order_management_require_demo_input.isChecked()
-        approved = (
-            self.order_management_production_approved_input.isChecked()
+        # Fully live since 2026-08-15: no stage ladder, no kill switch and
+        # (since 16/08/2026) no OM feature flag. The only runtime gate is the
+        # broker account's own trading permission (account.trade_allowed).
+        # Since 16/08/2026 there is just one manage scope (ALL): "Đóng tất cả"
+        # quản lý mọi vị thế đang mở.
+        message = (
+            "Đang chạy thật: SL/BE/trailing luôn sửa lệnh trực tiếp trên "
+            "broker cho mọi vị thế đang mở trong phạm vi quản lý. Lệnh chỉ "
+            "chạy khi tài khoản MT5 cho phép giao dịch."
         )
-        scope = self.order_management_scope_input.currentText()
-        canary_target_complete = bool(
-            self.order_management_canary_symbol_input.text().strip()
-            and self._order_management_canary_position_id() > 0
-        )
-
-        state = "warning"
-        if not enabled:
-            message = (
-                "Automation V2 đang tắt; thao tác manual vẫn cần xác nhận riêng."
-            )
-        elif kill_switch:
-            message = "Kill switch đang bật; mọi thay đổi tại broker bị chặn."
-        elif stage == "DISABLED":
-            message = "DISABLED chặn automation; thao tác manual vẫn cần xác nhận riêng."
-        elif stage == "SHADOW":
-            state = "ok"
-            message = (
-                "SHADOW chỉ tính toán automation; thao tác manual vẫn cần xác nhận riêng."
-            )
-        elif stage == "CANARY" and not canary_target_complete:
-            message = (
-                "CANARY thiếu broker symbol hoặc position ID; thực thi phải "
-                "fail-closed."
-            )
-        elif stage == "PRODUCTION" and not approved:
-            message = (
-                "PRODUCTION chưa được phê duyệt; thực thi phải fail-closed."
-            )
-        elif stage == "PRODUCTION" and require_demo:
-            message = (
-                "PRODUCTION vẫn bắt buộc tài khoản demo; tài khoản live bị chặn."
-            )
-        elif scope == "ALL":
-            message = (
-                "Phạm vi ALL có thể quản lý cả lệnh ngoài ứng dụng; chỉ dùng "
-                "sau khi đã xác minh tài khoản và release gate."
-            )
-        elif stage == "DEMO" and require_demo:
-            state = "ok"
-            message = "DEMO chỉ cho phép thực thi trên tài khoản demo."
-        elif stage == "CANARY":
-            state = "ok"
-            message = "CANARY chỉ được phép tác động đúng symbol và position ID đã chọn."
-        else:
-            message = (
-                "Cấu hình cho phép thực thi; hãy xác minh tài khoản và release gate."
-            )
-
         if saved:
             message = f"Đã lưu. {message}"
         self.order_management_status_label.setText(message)
-        self.order_management_status_label.setProperty("state", state)
+        self.order_management_status_label.setProperty("state", "ok")
         self.order_management_status_label.style().unpolish(
             self.order_management_status_label
         )
@@ -1859,25 +1537,9 @@ class SettingsScreen(QWidget):
         )
 
     def _save_order_management_settings(self) -> None:
-        self.app_settings.features.order_management_v2 = (
-            self.order_management_enabled_input.isChecked()
-        )
         current = self.app_settings.order_management
         self.app_settings.order_management = replace(
             current,
-            stage=self.order_management_stage_input.currentText(),
-            kill_switch=self.order_management_kill_switch_input.isChecked(),
-            require_demo_account=(
-                self.order_management_require_demo_input.isChecked()
-            ),
-            production_approved=(
-                self.order_management_production_approved_input.isChecked()
-            ),
-            manage_scope=self.order_management_scope_input.currentText(),
-            canary_broker_symbol=(
-                self.order_management_canary_symbol_input.text().strip()
-            ),
-            canary_position_id=self._order_management_canary_position_id(),
             poll_interval_seconds=(
                 self.order_management_poll_interval_input.value()
             ),
@@ -1911,10 +1573,7 @@ class SettingsScreen(QWidget):
             manager = getattr(app, "_order_management_service", None)
             if manager is not None:
                 manager.update_policy(
-                    feature_enabled=(
-                        self.app_settings.features.order_management_v2
-                    ),
-                    rollout_settings=self.app_settings.order_management,
+                    management_settings=self.app_settings.order_management,
                 )
             app.settings = self.app_settings
         self._update_order_management_safety_state(saved=True)
@@ -2051,20 +1710,8 @@ class SettingsScreen(QWidget):
         block_after.setValue(advanced.high_impact_news_block_after_minutes)
         block_after.setSuffix(" phút")
 
-        db_path = QLineEdit()
-        db_path.setText(advanced.sqlite_database_path)
-        db_path.setPlaceholderText("./data/journal.db")
-
-        storage = QComboBox()
-        storage.addItems(["settings.json"])
-        storage.setCurrentText(advanced.settings_storage)
-
         block_news = QCheckBox("Chặn giao dịch quanh tin đỏ")
         block_news.setChecked(advanced.block_high_impact_news)
-        derate_events = QCheckBox("Giảm điểm vĩ mô khi có sự kiện lớn trước 4-48h (Bước 5)")
-        derate_events.setChecked(advanced.event_impact_derate_enabled)
-        macro_verdict = QCheckBox("AI trọng tài vĩ mô cho tín hiệu mạnh (Bước 6)")
-        macro_verdict.setChecked(advanced.macro_ai_verdict_enabled)
         vix_pair_aware = QCheckBox(
             "VIX theo độ nhạy từng cặp tiền (Bước 7 — chỉ bật sau backtest)"
         )
@@ -2097,11 +1744,7 @@ class SettingsScreen(QWidget):
         self.advanced_ai_limit_input = ai_limit
         self.advanced_block_before_input = block_before
         self.advanced_block_after_input = block_after
-        self.advanced_db_path_input = db_path
-        self.advanced_storage_input = storage
         self.advanced_block_news_input = block_news
-        self.advanced_derate_input = derate_events
-        self.advanced_macro_verdict_input = macro_verdict
         self.advanced_vix_pair_aware_input = vix_pair_aware
         self.notification_auto_interval_input = auto_interval
         self.telegram_token_input = telegram_token
@@ -2113,11 +1756,7 @@ class SettingsScreen(QWidget):
         form_layout.addWidget(self._compact_form_row("AI chi tiết scanner", ai_limit))
         form_layout.addWidget(self._compact_form_row("Chặn trước tin đỏ", block_before))
         form_layout.addWidget(self._compact_form_row("Chặn sau tin đỏ", block_after))
-        form_layout.addWidget(self._compact_form_row("SQLite database", db_path, field_width=320))
-        form_layout.addWidget(self._compact_form_row("Nơi lưu cài đặt", storage))
         form_layout.addWidget(block_news)
-        form_layout.addWidget(derate_events)
-        form_layout.addWidget(macro_verdict)
         form_layout.addWidget(vix_pair_aware)
         form_layout.addWidget(self._compact_form_row("Auto-scan mặc định", auto_interval))
         form_layout.addWidget(self._compact_form_row("Telegram bot token", telegram_token, field_width=320))
@@ -2155,15 +1794,11 @@ class SettingsScreen(QWidget):
             scanner_ai_detail_limit=self.advanced_ai_limit_input.value(),
             high_impact_news_block_before_minutes=self.advanced_block_before_input.value(),
             high_impact_news_block_after_minutes=self.advanced_block_after_input.value(),
-            sqlite_database_path=self.advanced_db_path_input.text().strip() or "./data/journal.db",
-            settings_storage=self.advanced_storage_input.currentText(),
             block_high_impact_news=self.advanced_block_news_input.isChecked(),
             # Các trường không có ô nhập trên form phải được carry-over,
             # nếu không mỗi lần lưu cài đặt là chúng bị reset về mặc định.
             brave_api_key=current.brave_api_key,
             fred_api_key=current.fred_api_key,
-            event_impact_derate_enabled=self.advanced_derate_input.isChecked(),
-            macro_ai_verdict_enabled=self.advanced_macro_verdict_input.isChecked(),
             vix_pair_aware_enabled=self.advanced_vix_pair_aware_input.isChecked(),
         )
         self.app_settings.notifications = NotificationSettings(
@@ -2183,17 +1818,3 @@ class SettingsScreen(QWidget):
 
     def _advanced_tab(self) -> QFrame:
         return self._advanced_tab_impl()
-        frame = card("Nâng cao")
-        bars = QSpinBox()
-        bars.setRange(100, 5000)
-        bars.setValue(500)
-        limit = QSpinBox()
-        limit.setRange(1, len(SUPPORTED_SYMBOLS))
-        limit.setValue(3)
-        news = QCheckBox("Chặn giao dịch quanh tin đỏ")
-        news.setChecked(True)
-        frame.layout().addWidget(form_row("Số nến mỗi khung", bars))
-        frame.layout().addWidget(form_row("Số mã gọi AI", limit))
-        frame.layout().addWidget(news)
-        frame.layout().addWidget(action_button("💾 Lưu nâng cao", primary=True, color="success"))
-        return frame

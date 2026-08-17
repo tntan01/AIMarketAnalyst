@@ -662,7 +662,6 @@ QLabel#ScannerCompactIcon {
 }
 
 QLabel#ScannerSummaryRR,
-QLabel#ScannerSummaryRollout,
 QLabel#ScannerWarningText {
   background: transparent;
   border: none;

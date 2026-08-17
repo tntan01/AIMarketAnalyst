@@ -212,6 +212,39 @@ def _is_high_impact(event: Mapping[str, Any]) -> bool:
     return str(event.get("impact", "")).strip().lower() in HIGH_IMPACT_VALUES
 
 
+def _spread_threshold_for(thresholds: Mapping[str, Any], symbol: str | None) -> Any | None:
+    """Look up the per-symbol spread threshold, tolerant of symbol spelling variants.
+
+    The policy map is keyed by owner-configured broker-style keys (e.g.
+    ``"EURUSD"``, ``"XAUUSD"``).  Live sources can carry different spellings of
+    the same instrument: the app display form (``"EUR/USD"``) or the
+    cent-account broker form (``"EURUSDc"``).  Candidate keys are tried in
+    order and the first hit wins:
+
+    1. the symbol verbatim;
+    2. alphanumeric-only + uppercase (``"EUR/USD"`` -> ``"EURUSD"``);
+    3. (2) with a single trailing ``"C"`` removed (cent-account suffix:
+       ``"EURUSDc"`` -> ``"EURUSDC"`` -> ``"EURUSD"``).
+
+    No candidate matches -> ``None`` -> the gate fails closed with
+    ``SAFETY_SPREAD_THRESHOLD_UNSET``.  Never invents a global default.
+    """
+    if not symbol:
+        return None
+    candidates = [symbol]
+    normalized = "".join(char for char in symbol if char.isalnum()).upper()
+    if normalized and normalized not in candidates:
+        candidates.append(normalized)
+    if normalized.endswith("C"):
+        stripped = normalized[:-1]
+        if stripped and stripped not in candidates:
+            candidates.append(stripped)
+    for key in candidates:
+        if key in thresholds:
+            return thresholds[key]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Safety sub-source context carriers (strict, timestamped, provenance-tagged)
 # ---------------------------------------------------------------------------
@@ -259,6 +292,11 @@ class ConnectivitySource(BaseSafetySource):
 class DataFreshnessSource(BaseSafetySource):
     last_candle_time_utc: datetime | None
     intended_timeframe: str = "M15"
+    # Optional feed-liveness reference: the last broker tick (tz-aware UTC).
+    # Candle open times lag wall-clock by up to a full timeframe period, so a
+    # present tick is the preferred age reference; the candle stays the VALID
+    # baseline and the fallback when no tick exists (fail-closed).
+    last_tick_time_utc: datetime | None = None
 
     def __post_init__(self) -> None:
         self._validate_base()
@@ -509,6 +547,7 @@ class MarketSafetyGate:
                 observed={
                     "max_candle_age_minutes": None,
                     "last_candle_age_seconds": None,
+                    "freshness_reference": None,
                 },
                 threshold={"max_candle_age_minutes": None},
                 source=source.source,
@@ -523,6 +562,7 @@ class MarketSafetyGate:
                 observed={
                     "max_candle_age_minutes": sla,
                     "last_candle_age_seconds": None,
+                    "freshness_reference": None,
                 },
                 threshold={"max_candle_age_minutes": sla},
                 source=source.source,
@@ -531,7 +571,17 @@ class MarketSafetyGate:
             )
         last = source.last_candle_time_utc
         assert last is not None  # guaranteed by _source_usable for valid data
-        age_seconds = (now - last).total_seconds()
+        # Age reference: the last broker tick when present (feed liveness), else
+        # the newest candle.  Candle open times lag wall-clock by up to a full
+        # timeframe period, so a candle-only reference cannot resolve a short SLA.
+        tick = source.last_tick_time_utc
+        if tick is not None and tick.tzinfo is not None:
+            reference = tick
+            freshness_reference = "tick"
+        else:
+            reference = last
+            freshness_reference = "candle"
+        age_seconds = (now - reference).total_seconds()
         if age_seconds > sla * 60.0:
             return self._check(
                 "data",
@@ -540,6 +590,7 @@ class MarketSafetyGate:
                 observed={
                     "max_candle_age_minutes": sla,
                     "last_candle_age_seconds": max(0.0, age_seconds),
+                    "freshness_reference": freshness_reference,
                 },
                 threshold={"max_candle_age_minutes": sla},
                 source=source.source,
@@ -553,6 +604,7 @@ class MarketSafetyGate:
             observed={
                 "max_candle_age_minutes": sla,
                 "last_candle_age_seconds": max(0.0, age_seconds),
+                "freshness_reference": freshness_reference,
             },
             threshold={"max_candle_age_minutes": sla},
             source=source.source,
@@ -565,7 +617,7 @@ class MarketSafetyGate:
     ) -> GateCheck:
         source = context.spread
         symbol = source.symbol or context.symbol
-        threshold = policy.spread_threshold_by_symbol.get(symbol)
+        threshold = _spread_threshold_for(policy.spread_threshold_by_symbol, symbol)
         # Per-symbol spread policy is OPEN: a symbol with no threshold fails closed.
         if threshold is None:
             return self._check(

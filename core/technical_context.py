@@ -10,6 +10,38 @@ from core.smc_context import swing_points
 STRENGTH_RANK = {"strong": 3, "moderate": 2, "weak": 1}
 
 
+def atr_volatility_readings(d1: list[Candle], h4: list[Candle]) -> dict[str, float | None]:
+    """ATR readings for the locked safety-volatility semantics (single source).
+
+    Locked semantics (``core/market_safety_gate.py`` ``VOLATILITY_*``):
+    metric ATR(14); intraday reference = latest H4 ATR; structural reference =
+    14-day average of daily ATR.  These are the exact quantities exposed by
+    ``build_technical_snapshot`` as ``atr_h4`` / ``atr_avg_14d``; both call
+    sites share this helper so the formulas cannot drift.
+
+    Insufficient candles -> ``None`` values (caller fails closed; no invented
+    fallback).
+    """
+    if len(d1) < 15 or len(h4) < 15:
+        return {"atr_h4": None, "atr_avg_14d": None}
+    d1_high = [item.high for item in d1]
+    d1_low = [item.low for item in d1]
+    d1_close = [item.close for item in d1]
+    h4_high = [item.high for item in h4]
+    h4_low = [item.low for item in h4]
+    h4_close = [item.close for item in h4]
+    h4_atr_values = [value for value in atr(h4_high, h4_low, h4_close, 14) if value is not None]
+    d1_atr_values = [value for value in atr(d1_high, d1_low, d1_close, 14) if value is not None]
+    return {
+        "atr_h4": h4_atr_values[-1] if h4_atr_values else None,
+        "atr_avg_14d": (
+            sum(d1_atr_values[-14:]) / min(len(d1_atr_values), 14)
+            if d1_atr_values
+            else None
+        ),
+    }
+
+
 def build_technical_snapshot(d1: list[Candle], h4: list[Candle], h1: list[Candle]) -> dict[str, Any]:
     if len(d1) < 60 or len(h4) < 60 or len(h1) < 30:
         raise ValueError("Không đủ dữ liệu D1/H4/H1 để dựng technical context.")
@@ -38,6 +70,7 @@ def build_technical_snapshot(d1: list[Candle], h4: list[Candle], h1: list[Candle
     structure_d1 = detect_structure(d1_swings)
 
     h4_atr_now = h4_atr_values[-1] if h4_atr_values else 0.0
+    volatility_readings = atr_volatility_readings(d1, h4)
     support_zones = build_zones("support", h4_swings["lows"], h4_atr_now)
     resistance_zones = build_zones("resistance", h4_swings["highs"], h4_atr_now)
 
@@ -68,8 +101,8 @@ def build_technical_snapshot(d1: list[Candle], h4: list[Candle], h1: list[Candle
             "direction": "increasing" if histogram_now > histogram_prev else "decreasing",
         },
         "atr_d1": d1_atr_values[-1] if d1_atr_values else None,
-        "atr_h4": h4_atr_now if h4_atr_values else None,
-        "atr_avg_14d": sum(d1_atr_values[-14:]) / min(len(d1_atr_values), 14) if d1_atr_values else None,
+        "atr_h4": volatility_readings["atr_h4"],
+        "atr_avg_14d": volatility_readings["atr_avg_14d"],
         "support_zones": support_zones,
         "resistance_zones": resistance_zones,
         "structure_d1": structure_d1,

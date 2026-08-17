@@ -271,3 +271,173 @@ def test_portfolio_snapshot_distinguishes_empty_from_unavailable(
 
     assert snapshot.available is False
     assert "PORTFOLIO_STATE_UNAVAILABLE" in snapshot.reason_codes
+
+
+class OrderMarginMT5(FakeMT5):
+    """FakeMT5 with the broker margin-calculation surface."""
+
+    ORDER_TYPE_BUY = 0
+    ORDER_TYPE_SELL = 1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calc_margin_results: dict[tuple[int, str], float | None] = {}
+        self.calc_margin_calls: list[tuple[int, str, float, float]] = []
+
+    def order_calc_margin(self, order_type, symbol, volume, price):
+        self.calc_margin_calls.append((order_type, symbol, volume, price))
+        return self.calc_margin_results.get((order_type, symbol))
+
+
+def _order_margin_service(monkeypatch, tmp_path, fake_mt5) -> MT5Service:
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    return MT5Service(profile_path)
+
+
+def test_min_lot_order_margin_returns_conservative_max(monkeypatch, tmp_path):
+    fake_mt5 = OrderMarginMT5()
+    fake_mt5.calc_margin_results[(OrderMarginMT5.ORDER_TYPE_BUY, "EURUSD")] = 10.0
+    fake_mt5.calc_margin_results[(OrderMarginMT5.ORDER_TYPE_SELL, "EURUSD")] = 12.5
+
+    margin = _order_margin_service(monkeypatch, tmp_path, fake_mt5).min_lot_order_margin("EURUSD")
+
+    assert margin == 12.5
+    # Both directions are probed, always with the broker's minimum lot.
+    assert len(fake_mt5.calc_margin_calls) == 2
+    volumes = {call[2] for call in fake_mt5.calc_margin_calls}
+    assert volumes == {0.01}
+    directions = {call[0] for call in fake_mt5.calc_margin_calls}
+    assert directions == {OrderMarginMT5.ORDER_TYPE_BUY, OrderMarginMT5.ORDER_TYPE_SELL}
+
+
+def test_min_lot_order_margin_survives_one_side_failing(monkeypatch, tmp_path):
+    fake_mt5 = OrderMarginMT5()
+    fake_mt5.calc_margin_results[(OrderMarginMT5.ORDER_TYPE_BUY, "EURUSD")] = 9.0
+    # SELL stays unmapped -> the fake returns None for it.
+
+    margin = _order_margin_service(monkeypatch, tmp_path, fake_mt5).min_lot_order_margin("EURUSD")
+
+    assert margin == 9.0
+
+
+def test_min_lot_order_margin_none_for_unknown_symbol(monkeypatch, tmp_path):
+    fake_mt5 = OrderMarginMT5()
+
+    margin = _order_margin_service(monkeypatch, tmp_path, fake_mt5).min_lot_order_margin("GBPJPY")
+
+    assert margin is None
+    assert fake_mt5.calc_margin_calls == []
+
+
+def test_min_lot_order_margin_none_when_broker_calc_fails(monkeypatch, tmp_path):
+    fake_mt5 = OrderMarginMT5()
+    # Both directions return None (broker refused to compute).
+
+    margin = _order_margin_service(monkeypatch, tmp_path, fake_mt5).min_lot_order_margin("EURUSD")
+
+    assert margin is None
+
+
+def test_min_lot_order_margin_none_when_terminal_disconnected(monkeypatch, tmp_path):
+    class DisconnectedOrderMarginMT5(OrderMarginMT5):
+        def terminal_info(self):
+            return None
+
+    fake_mt5 = DisconnectedOrderMarginMT5()
+    fake_mt5.calc_margin_results[(OrderMarginMT5.ORDER_TYPE_BUY, "EURUSD")] = 10.0
+
+    margin = _order_margin_service(monkeypatch, tmp_path, fake_mt5).min_lot_order_margin("EURUSD")
+
+    assert margin is None
+    assert fake_mt5.calc_margin_calls == []
+
+
+def test_min_lot_order_margin_none_when_mt5_package_missing(monkeypatch, tmp_path):
+    monkeypatch.setitem(sys.modules, "MetaTrader5", None)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    assert MT5Service(profile_path).min_lot_order_margin("EURUSD") is None
+
+
+def test_connection_status_reports_margin_and_free_margin(monkeypatch, tmp_path):
+    class MarginAccountMT5(FakeMT5):
+        def account_info(self):
+            return SimpleNamespace(
+                login=123456,
+                trade_allowed=True,
+                company="Broker",
+                server="Broker-Demo",
+                balance=1000.0,
+                margin=150.0,
+                margin_free=850.0,
+                currency="USD",
+            )
+
+    fake_mt5 = MarginAccountMT5()
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+
+    status = MT5Service(profile_path).mt5_connection_status()
+
+    assert status.balance == 1000.0
+    assert status.margin == 150.0
+    assert status.free_margin == 850.0
+
+
+def _quality_service(monkeypatch, tmp_path, fake_mt5) -> MT5Service:
+    monkeypatch.setitem(sys.modules, "MetaTrader5", fake_mt5)
+    profile_path = tmp_path / "symbol_profiles.json"
+    profile_path.write_text("{}", encoding="utf-8")
+    return MT5Service(profile_path)
+
+
+def test_symbol_data_quality_reports_tick_time(monkeypatch, tmp_path):
+    fixed = datetime(2026, 8, 16, 12, 0, 0, tzinfo=timezone.utc)
+
+    class FixedTickMT5(FakeMT5):
+        def symbol_info_tick(self, symbol):
+            if symbol != "EURUSD":
+                return None
+            return SimpleNamespace(
+                bid=1.1000,
+                ask=1.1002,
+                time=int(fixed.timestamp()),
+                time_msc=int(fixed.timestamp() * 1000),
+            )
+
+    quality = _quality_service(monkeypatch, tmp_path, FixedTickMT5()).symbol_data_quality(
+        "EUR/USD", "EURUSD"
+    )
+
+    # The tick timestamp is tz-aware UTC and mirrors the broker tick exactly.
+    assert quality["tick_time"] == fixed
+    assert quality["tick_time"].tzinfo is not None
+
+
+def test_symbol_data_quality_tick_time_none_when_no_tick(monkeypatch, tmp_path):
+    class NoTickMT5(FakeMT5):
+        def symbol_info_tick(self, symbol):
+            return None
+
+    quality = _quality_service(monkeypatch, tmp_path, NoTickMT5()).symbol_data_quality(
+        "EUR/USD", "EURUSD"
+    )
+
+    # Fail-closed: a missing tick never fabricates a freshness reference.
+    assert quality["tick_time"] is None
+
+
+def test_symbol_data_quality_tick_time_none_when_tick_has_no_timestamp(monkeypatch, tmp_path):
+    class TimelessTickMT5(FakeMT5):
+        def symbol_info_tick(self, symbol):
+            return SimpleNamespace(bid=1.1000, ask=1.1002, time=0, time_msc=0)
+
+    quality = _quality_service(monkeypatch, tmp_path, TimelessTickMT5()).symbol_data_quality(
+        "EUR/USD", "EURUSD"
+    )
+
+    assert quality["tick_time"] is None

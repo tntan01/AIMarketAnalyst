@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timezone
-from threading import Event, get_ident
+from threading import get_ident
 
 from config.settings import OrderManagementSettings
 import services.order_management_service as order_management_service_module
@@ -49,13 +49,14 @@ class ObservabilityStub:
 def _account(
     login: int = 1001,
     mode: AccountTradeMode = AccountTradeMode.DEMO,
+    trade_allowed: bool | None = True,
 ) -> AccountIdentity:
     return AccountIdentity(
         "Broker",
         "Broker-Demo",
         login,
         mode,
-        trade_allowed=True,
+        trade_allowed=trade_allowed,
     )
 
 
@@ -171,12 +172,17 @@ class FakeMT5:
         }
 
 
-def _service(tmp_path, fake: FakeMT5, rollout: OrderManagementSettings):
+def _service(
+    tmp_path,
+    fake: FakeMT5,
+    settings: OrderManagementSettings | None = None,
+):
+    # Fully live since 2026-08-16: the stage ladder, kill switch and OM
+    # feature flag are gone; the only execution gate is account.trade_allowed.
     return OrderManagementService(
         fake,
         OrderManagementStateStore(tmp_path / "state.json"),
-        feature_enabled=True,
-        rollout_settings=rollout,
+        om_settings=settings or OrderManagementSettings(),
         observability_service=ObservabilityStub(),
         executor=ImmediateExecutor(),
     )
@@ -197,7 +203,7 @@ def _register(service: OrderManagementService) -> None:
 def test_unavailable_snapshot_marks_stale_but_keeps_tracking(tmp_path) -> None:
     fake = FakeMT5()
     fake.positions_status = SnapshotStatus.UNAVAILABLE
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="SHADOW"))
+    service = _service(tmp_path, fake)
 
     _register(service)
 
@@ -210,26 +216,16 @@ def test_unavailable_snapshot_marks_stale_but_keeps_tracking(tmp_path) -> None:
 def test_confirmed_empty_snapshot_is_the_only_cleanup_path(tmp_path) -> None:
     fake = FakeMT5()
     fake.positions = ()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="SHADOW"))
+    service = _service(tmp_path, fake)
 
     _register(service)
 
     assert service.cached_states() == ()
 
 
-def test_shadow_mode_computes_intent_without_sending_broker_request(tmp_path) -> None:
+def test_live_mode_confirms_be_and_preserves_tp(tmp_path) -> None:
     fake = FakeMT5()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="SHADOW"))
-
-    _register(service)
-
-    assert fake.modify_calls == []
-    assert service.cached_states()[0].phase == "waiting_be"
-
-
-def test_demo_mode_confirms_be_and_preserves_tp(tmp_path) -> None:
-    fake = FakeMT5()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    service = _service(tmp_path, fake)
 
     _register(service)
 
@@ -243,11 +239,24 @@ def test_demo_mode_confirms_be_and_preserves_tp(tmp_path) -> None:
     assert service.cached_states()[0].phase == "be_active"
 
 
+def test_real_mode_account_executes_directly(tmp_path) -> None:
+    # No demo-only gate remains: a live (REAL) account with trading allowed
+    # receives the protection changes exactly like a demo account.
+    fake = FakeMT5()
+    fake.account = _account(mode=AccountTradeMode.REAL)
+    service = _service(tmp_path, fake)
+
+    _register(service)
+
+    assert len(fake.modify_calls) == 1
+    assert service.cached_health().execution_allowed is True
+
+
 def test_unknown_retryable_retcode_enters_bounded_backoff(tmp_path) -> None:
     fake = FakeMT5()
     fake.modify_status = OperationStatus.UNKNOWN
     fake.modify_retcode = 10004  # requote
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    service = _service(tmp_path, fake)
 
     _register(service)
 
@@ -261,7 +270,7 @@ def test_unavailable_snapshot_cannot_rebind_persistence_account(tmp_path) -> Non
     fake = FakeMT5()
     account_a = fake.account
     account_b = _account(login=2002)
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="SHADOW"))
+    service = _service(tmp_path, fake)
     _register(service)
     assert service.state_store.load(account=account_a).ok is True
 
@@ -288,7 +297,7 @@ def test_cross_account_position_and_pending_snapshots_fail_closed(tmp_path) -> N
         (),
         datetime.now(timezone.utc),
     )
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    service = _service(tmp_path, fake)
 
     _register(service)
 
@@ -309,7 +318,7 @@ def test_tick_from_different_account_cannot_drive_automatic_mutation(tmp_path) -
         BrokerTick(symbol, bid=1.1022, ask=1.1024, time=1, time_msc=1000),
         datetime.now(timezone.utc),
     )
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    service = _service(tmp_path, fake)
 
     _register(service)
 
@@ -321,7 +330,7 @@ def test_pause_wins_race_against_in_progress_automatic_evaluation(
     tmp_path, monkeypatch
 ) -> None:
     fake = FakeMT5()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    service = _service(tmp_path, fake)
     original_evaluate = order_management_service_module.evaluate
 
     def evaluate_then_pause(*args, **kwargs):
@@ -376,7 +385,7 @@ def test_restored_pending_action_is_forced_through_stale_reconciliation() -> Non
 
 def test_missing_atr_is_explicit_and_never_falls_back_to_fixed_pips(tmp_path) -> None:
     fake = FakeMT5()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    service = _service(tmp_path, fake)
     service.register_position(
         verified_ticket=41,
         broker_symbol="EURUSDm",
@@ -394,84 +403,40 @@ def test_missing_atr_is_explicit_and_never_falls_back_to_fixed_pips(tmp_path) ->
     assert len(fake.modify_calls) == 1  # BE only
 
 
-def test_demo_stage_fails_closed_on_live_account(tmp_path) -> None:
+def test_execution_blocked_when_trade_not_allowed(tmp_path) -> None:
     fake = FakeMT5()
-    fake.account = _account(mode=AccountTradeMode.REAL)
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    fake.account = _account(trade_allowed=False)
+    service = _service(tmp_path, fake)
 
     _register(service)
 
     assert fake.modify_calls == []
+    assert service.cached_states()[0].phase == "waiting_be"
     assert service.cached_health().execution_allowed is False
 
 
-def test_demo_stage_fails_closed_when_trading_permission_is_unknown(
+def test_execution_fails_closed_when_trading_permission_is_unknown(
     tmp_path,
 ) -> None:
     fake = FakeMT5()
-    fake.account = replace(fake.account, trade_allowed=None)
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="DEMO"))
+    fake.account = _account(trade_allowed=None)
+    service = _service(tmp_path, fake)
 
     _register(service)
 
     assert fake.modify_calls == []
     assert service.cached_health().execution_allowed is False
-
-
-def test_canary_requires_exact_symbol_and_ticket(tmp_path) -> None:
-    fake = FakeMT5()
-    rollout = OrderManagementSettings(
-        stage="CANARY",
-        canary_broker_symbol="EURUSDm",
-        canary_position_id=999,
-    )
-    service = _service(tmp_path, fake, rollout)
-
-    _register(service)
-
-    assert fake.modify_calls == []
-
-
-def test_production_requires_live_account_approval_and_demo_gate_off(tmp_path) -> None:
-    fake = FakeMT5()
-    fake.account = _account(mode=AccountTradeMode.REAL)
-    blocked = _service(
-        tmp_path,
-        fake,
-        OrderManagementSettings(
-            stage="PRODUCTION",
-            production_approved=True,
-            require_demo_account=True,
-        ),
-    )
-    _register(blocked)
-    assert fake.modify_calls == []
-
-    allowed_fake = FakeMT5()
-    allowed_fake.account = _account(login=1002, mode=AccountTradeMode.REAL)
-    allowed = _service(
-        tmp_path / "allowed",
-        allowed_fake,
-        OrderManagementSettings(
-            stage="PRODUCTION",
-            production_approved=True,
-            require_demo_account=False,
-        ),
-    )
-    _register(allowed)
-    assert len(allowed_fake.modify_calls) == 1
 
 
 def test_policy_update_applies_without_restart(tmp_path) -> None:
     fake = FakeMT5()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="SHADOW"))
+    fake.account = _account(trade_allowed=False)
+    service = _service(tmp_path, fake)
     _register(service)
     assert fake.modify_calls == []
 
-    service.update_policy(
-        feature_enabled=True,
-        rollout_settings=OrderManagementSettings(stage="DEMO"),
-    )
+    service.update_policy(management_settings=OrderManagementSettings())
+    fake.account = _account(trade_allowed=True)
     service.request_refresh()
 
     assert len(fake.modify_calls) == 1
@@ -479,7 +444,7 @@ def test_policy_update_applies_without_restart(tmp_path) -> None:
 
 def test_partial_close_does_not_unregister_managed_position(tmp_path) -> None:
     fake = FakeMT5()
-    service = _service(tmp_path, fake, OrderManagementSettings(stage="SHADOW"))
+    service = _service(tmp_path, fake)
     _register(service)
 
     future = service.close_position(41, volume=0.05)
@@ -489,83 +454,16 @@ def test_partial_close_does_not_unregister_managed_position(tmp_path) -> None:
     assert service.cached_states()[0].position_id == 41
 
 
-def test_kill_switch_blocks_manual_broker_mutations(tmp_path) -> None:
+def test_shutdown_blocks_manual_broker_mutations(tmp_path) -> None:
+    # The kill switch was removed (2026-08-15); the only remaining software
+    # stop is service shutdown, which must block queued broker mutations.
     fake = FakeMT5()
-    service = _service(
-        tmp_path,
-        fake,
-        OrderManagementSettings(stage="DEMO", kill_switch=True),
-    )
+    service = _service(tmp_path, fake)
+    service.shutdown()
 
     assert service.modify_position(41, sl=1.1, tp=1.106) is None
     assert service.close_position(41) is None
     assert fake.modify_calls == []
-
-
-def test_kill_switch_recheck_cancels_manual_mutation_waiting_in_queue(
-    tmp_path,
-) -> None:
-    fake = FakeMT5()
-    executor = ThreadPoolExecutor(max_workers=1)
-    blocker_started = Event()
-    release_blocker = Event()
-
-    def blocker() -> None:
-        blocker_started.set()
-        release_blocker.wait(timeout=2)
-
-    executor.submit(blocker)
-    assert blocker_started.wait(timeout=1)
-    service = OrderManagementService(
-        fake,
-        OrderManagementStateStore(tmp_path / "state.json"),
-        feature_enabled=False,
-        rollout_settings=OrderManagementSettings(stage="SHADOW"),
-        observability_service=ObservabilityStub(),
-        executor=executor,
-    )
-    service._poll_cycle()
-    future = service.modify_position(41, sl=1.1, tp=1.106)
-    assert future is not None
-
-    service.update_policy(
-        feature_enabled=False,
-        rollout_settings=OrderManagementSettings(
-            stage="SHADOW",
-            kill_switch=True,
-        ),
-    )
-    release_blocker.set()
-    result = future.result(timeout=2)
-
-    assert result["status"] == OperationStatus.REJECTED.value
-    assert result["precondition_failed"] is True
-    assert fake.modify_calls == []
-    executor.shutdown(wait=True)
-
-
-def test_kill_switch_recheck_cancels_automatic_intent_before_send(
-    tmp_path,
-) -> None:
-    fake = FakeMT5()
-    rollout = OrderManagementSettings(stage="DEMO")
-    service = _service(tmp_path, fake, rollout)
-    original_emit = service._emit_event
-
-    def enable_kill_switch_on_request(event_type, *args, **kwargs):
-        if event_type == "SL_MODIFY_REQUESTED":
-            service.update_policy(
-                feature_enabled=True,
-                rollout_settings=replace(rollout, kill_switch=True),
-            )
-        return original_emit(event_type, *args, **kwargs)
-
-    service._emit_event = enable_kill_switch_on_request
-
-    _register(service)
-
-    assert fake.modify_calls == []
-    assert service.cached_states()[0].pending_action is None
 
 
 def test_real_executor_runs_broker_operation_off_calling_thread(tmp_path) -> None:
@@ -574,8 +472,7 @@ def test_real_executor_runs_broker_operation_off_calling_thread(tmp_path) -> Non
     service = OrderManagementService(
         fake,
         OrderManagementStateStore(tmp_path / "state.json"),
-        feature_enabled=False,
-        rollout_settings=OrderManagementSettings(),
+        om_settings=OrderManagementSettings(),
         observability_service=ObservabilityStub(),
         executor=executor,
     )

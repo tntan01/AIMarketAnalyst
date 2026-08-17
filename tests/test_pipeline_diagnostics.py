@@ -98,8 +98,7 @@ def test_pipeline_generates_diagnostics():
         assert "status" in entry, f"Missing 'status' in {entry}"
         assert "summary" in entry, f"Missing 'summary' in {entry}"
         assert "details" in entry, f"Missing 'details' in {entry}"
-        # "skip" là trạng thái hợp lệ cho bước tùy chọn bị bỏ qua
-        # (vd: macro_verdict khi feature flag OFF — Bước 6).
+        # "skip" là trạng thái hợp lệ cho bước tùy chọn bị bỏ qua.
         assert entry["status"] in ("pass", "fail", "warning", "skip"), f"Invalid status: {entry['status']}"
 
     print("  PASS: test_pipeline_generates_diagnostics")

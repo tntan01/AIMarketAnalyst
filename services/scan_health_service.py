@@ -1,4 +1,10 @@
-"""Persistent Phase-8 rollout evidence and release-readiness reporting."""
+"""Persistent scan health counters (rollout-independent).
+
+Replaces the removed Phase-8 rollout metrics service (removed 2026-08-15,
+fully live). Only operational health counters survive here — no release/canary
+readiness semantics, no demo/canary order evidence. Stored at
+``app_data_dir()/scan_health/scan-health.json``.
+"""
 
 from __future__ import annotations
 
@@ -8,23 +14,17 @@ from threading import RLock
 from typing import Any
 
 from config.paths import app_data_dir
-from core.scanner_rollout import (
-    ROLLOUT_CANARY,
-    build_scorer_performance,
-    evaluate_canary_readiness,
-    evaluate_release_readiness,
-    run_rollback_drill,
-)
+from core.scan_health import build_scorer_performance
 from services.storage_service import JsonStorage
 
 
-ROLLOUT_METRICS_VERSION = "phase8-smc-rollout-metrics-v4"
+SCAN_HEALTH_METRICS_VERSION = "scan-health-metrics-v1"
 
 
-class ScannerRolloutMetricsService:
+class ScanHealthService:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or (
-            app_data_dir() / "rollout" / "scanner-rollout-metrics.json"
+            app_data_dir() / "scan_health" / "scan-health.json"
         )
         self.storage = JsonStorage(self.path)
         self._lock = RLock()
@@ -37,9 +37,8 @@ class ScannerRolloutMetricsService:
         self,
         *,
         scan_id: str,
-        shadow_report: dict[str, Any],
+        scan_health: dict[str, Any],
         auto_trade_results: dict[str, Any],
-        rollout_policy: dict[str, Any],
         closed_trades: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         with self._lock:
@@ -53,15 +52,15 @@ class ScannerRolloutMetricsService:
                 "analysis_latency_samples",
             ):
                 metrics[metric_name] += int(
-                    shadow_report.get(metric_name, 0) or 0
+                    scan_health.get(metric_name, 0) or 0
                 )
             metrics["analysis_latency_ms_total"] += float(
-                shadow_report.get("analysis_latency_ms_total", 0.0) or 0.0
+                scan_health.get("analysis_latency_ms_total", 0.0) or 0.0
             )
             metrics["analysis_latency_ms_max"] = max(
                 float(metrics["analysis_latency_ms_max"]),
                 float(
-                    shadow_report.get(
+                    scan_health.get(
                         "analysis_latency_ms_max",
                         0.0,
                     )
@@ -85,14 +84,6 @@ class ScannerRolloutMetricsService:
                 for order in revalidation_orders
                 if order["revalidation"].get("allowed") is not True
             )
-            if rollout_policy.get("account_is_demo") is True:
-                metrics["demo_orders"] += int(
-                    auto_trade_results.get("opened", 0) or 0
-                )
-            if rollout_policy.get("stage") == ROLLOUT_CANARY:
-                metrics["canary_orders"] += int(
-                    auto_trade_results.get("opened", 0) or 0
-                )
             metrics["premature_orders"] += sum(
                 1
                 for order in orders
@@ -111,17 +102,7 @@ class ScannerRolloutMetricsService:
                 and isinstance(order.get("portfolio_guard"), dict)
                 and order["portfolio_guard"].get("allowed") is not True
             )
-            if (
-                rollout_policy.get("kill_switch") is True
-                and int(
-                    auto_trade_results.get("rollout_blocked", 0) or 0
-                ) > 0
-            ):
-                metrics["rollback_tested"] = True
             metrics["last_scan_id"] = str(scan_id or "")
-            metrics["last_stage"] = str(
-                rollout_policy.get("stage", "") or ""
-            )
             if closed_trades is not None:
                 metrics["scorer_performance"] = build_scorer_performance(
                     closed_trades
@@ -146,69 +127,11 @@ class ScannerRolloutMetricsService:
             self.storage.save(metrics)
             return metrics
 
-    def update_release_evidence(
-        self,
-        *,
-        oos_degradation_pct: float | None = None,
-        demo_degradation_pct: float | None = None,
-        rollback_tested: bool | None = None,
-    ) -> dict[str, Any]:
-        with self._lock:
-            metrics = self._normalized(self.load())
-            if oos_degradation_pct is not None:
-                metrics["oos_degradation_pct"] = float(
-                    oos_degradation_pct
-                )
-                metrics["oos_evidence_recorded"] = True
-            if demo_degradation_pct is not None:
-                metrics["demo_degradation_pct"] = float(
-                    demo_degradation_pct
-                )
-                metrics["demo_evidence_recorded"] = True
-            if rollback_tested is not None:
-                metrics["rollback_tested"] = bool(rollback_tested)
-            metrics["updated_at"] = datetime.now(timezone.utc).isoformat(
-                timespec="seconds"
-            )
-            self.storage.save(metrics)
-            return metrics
-
-    def perform_rollback_drill(self) -> dict[str, Any]:
-        """Run a broker-free rollback drill and persist only a passing result."""
-
-        report = run_rollback_drill()
-        with self._lock:
-            metrics = self._normalized(self.load())
-            metrics["rollback_tested"] = report.get("passed") is True
-            metrics["rollback_drill"] = dict(report)
-            metrics["rollback_drill_at"] = datetime.now(
-                timezone.utc
-            ).isoformat(timespec="seconds")
-            metrics["updated_at"] = metrics["rollback_drill_at"]
-            self.storage.save(metrics)
-        return report
-
-    def readiness(self, rollout_settings: object) -> dict[str, Any]:
-        return evaluate_release_readiness(
-            self._normalized(self.load()),
-            rollout_settings,
-        ).to_dict()
-
-    def canary_readiness(
-        self,
-        rollout_settings: object,
-    ) -> dict[str, Any]:
-        return evaluate_canary_readiness(
-            self._normalized(self.load()),
-            rollout_settings,
-        ).to_dict()
-
     @staticmethod
     def _normalized(payload: dict[str, Any]) -> dict[str, Any]:
         defaults: dict[str, Any] = {
-            "metrics_version": ROLLOUT_METRICS_VERSION,
+            "metrics_version": SCAN_HEALTH_METRICS_VERSION,
             "scans": 0,
-            "side_mismatches": 0,
             "smc_no_zone_sides": 0,
             "smc_side_samples": 0,
             "smc_no_zone_rate": 0.0,
@@ -221,40 +144,22 @@ class ScannerRolloutMetricsService:
             "scorer_performance": {},
             "revalidation_attempts": 0,
             "revalidation_failures": 0,
-            "demo_orders": 0,
-            "canary_orders": 0,
             "premature_orders": 0,
             "portfolio_violations": 0,
-            "oos_degradation_pct": 0.0,
-            "demo_degradation_pct": 0.0,
-            "oos_evidence_recorded": False,
-            "demo_evidence_recorded": False,
-            "rollback_tested": False,
-            "rollback_drill": {},
-            "rollback_drill_at": "",
             "last_scan_id": "",
-            "last_stage": "",
             "updated_at": "",
         }
         if (
             payload
             and payload.get("metrics_version")
-            != ROLLOUT_METRICS_VERSION
+            != SCAN_HEALTH_METRICS_VERSION
         ):
+            # Foreign/legacy payload (e.g. the old rollout metrics file was
+            # pointed here): keep it for audit but start fresh counters.
             defaults["legacy_metrics"] = dict(payload)
-            legacy_drill = payload.get("rollback_drill")
-            if (
-                isinstance(legacy_drill, dict)
-                and legacy_drill.get("passed") is True
-            ):
-                defaults["rollback_tested"] = True
-                defaults["rollback_drill"] = dict(legacy_drill)
-                defaults["rollback_drill_at"] = str(
-                    payload.get("rollback_drill_at", "") or ""
-                )
             return defaults
         defaults.update(payload)
         return defaults
 
 
-scanner_rollout_metrics = ScannerRolloutMetricsService()
+scan_health_service = ScanHealthService()

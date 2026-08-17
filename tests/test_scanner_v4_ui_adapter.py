@@ -162,14 +162,13 @@ class TestIdentityAndMapping:
             scan_id="scan-1",
             row_id="row-1",
             settings_hash="h1",
-            rollout_stage="stage",
             latency_ms=12.5,
         )
         assert row["broker_symbol"] == "B-XAUUSD"
         assert row["scan_id"] == "scan-1"
         assert row["row_id"] == "row-1"
         assert row["settings_hash"] == "h1"
-        assert row["rollout_stage"] == "stage"
+        assert "rollout_stage" not in row
         assert row["analysis_latency_ms"] == 12.5
 
 

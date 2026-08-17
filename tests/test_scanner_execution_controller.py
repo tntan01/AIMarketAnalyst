@@ -13,7 +13,6 @@ from types import SimpleNamespace
 from controllers.scanner_controller import ScannerController
 from core.portfolio_models import PortfolioRiskItem, PortfolioSnapshot
 from core.scanner_models import ExecutionMarketSnapshot
-from config.settings import ScannerRolloutSettings
 
 
 def _settings():
@@ -185,43 +184,17 @@ def test_controller_revalidates_then_places_with_live_price_sizing():
     assert result["forward_correlation_id"]
 
 
-def test_manual_order_bypasses_only_missing_release_evidence():
-    class _ProductionSettingsService:
-        def __init__(self) -> None:
-            self.settings = _settings()
-            self.settings.scanner_rollout = ScannerRolloutSettings(
-                stage="PRODUCTION",
-                production_approved=True,
-            )
-
-        def load(self):
-            return self.settings
-
-    class _NotReadyMetrics:
-        def readiness(self, _settings):
-            return {"ready": False}
-
-        def canary_readiness(self, _settings):
-            return {"ready": False}
-
+def test_manual_order_no_longer_carries_any_rollout_gate():
+    # The Phase-8 rollout stage ladder was removed (2026-08-15, fully live):
+    # a manual order reaches the remaining guard chain directly — no rollout
+    # decision, no release gate, no override knob.
     mt5 = _MT5()
-    controller = ScannerController(
-        settings_service=_ProductionSettingsService(),
-        mt5=mt5,
-        news_service=_News(),
-        journal_service=_Journal(),
-    )
-    controller.rollout_metrics = _NotReadyMetrics()
+    controller = _controller(mt5, _News())
 
-    blocked = controller.execute_order_candidate(_proposal())
-    result = controller.execute_order_candidate(
-        _proposal(),
-        manual_release_gate_override=True,
-    )
+    result = controller.execute_order_candidate(_proposal())
 
-    assert blocked["success"] is False
-    assert blocked["rollout"]["reason_codes"] == ["RELEASE_GATE_NOT_READY"]
     assert result["success"] is True
+    assert "rollout" not in result
     assert len(mt5.place_calls) == 1
 
 

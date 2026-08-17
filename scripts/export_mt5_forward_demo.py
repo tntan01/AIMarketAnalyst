@@ -13,8 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.scanner_rollout import is_demo_server
-from services.mt5_service import MT5Service
+from services.mt5_service import MT5Service, is_demo_server
 from services.storage_service import JsonStorage
 
 

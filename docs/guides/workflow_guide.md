@@ -149,26 +149,20 @@ Trong **Settings**, cấu hình riêng cho từng symbol:
 
 Không nhập `min_score` backtest để thay cho `decision_ready`. Hai giá trị phục vụ hai quyết định khác nhau.
 
-Trong tab **Rollout**, cấu hình stage và safety gate:
+Trong tab **Quản lý lệnh**, cấu hình Order Management V2 (SL/BE/trailing):
 
-| Stage | Hành vi |
+| Cấu hình | Ý nghĩa |
 |---|---|
-| `DISABLED` | Không gửi lệnh. |
-| `SHADOW` | So sánh V1/V2, ghi metrics, không gửi lệnh. Đây là mặc định của mã nguồn/settings mới. |
-| `DEMO_LIMITED` | Chỉ demo account và symbol trong allowlist. |
-| `DEMO_FULL` | Chỉ demo account. |
-| `CANARY` | Yêu cầu canary readiness; áp trần risk. |
-| `PRODUCTION` | Yêu cầu phê duyệt và toàn bộ release gate đạt. |
+| Bật/tắt | OM luôn bật (feature flag `order_management_v2` đã gỡ 16/08/2026); SL/BE/trailing chỉ bị chặn khi broker tài khoản không cho phép giao dịch (`account.trade_allowed`). |
+| Phạm vi | Chỉ còn một phạm vi duy nhất `ALL`: **Đóng tất cả** luôn quản lý mọi vị thế đang mở (không còn lọc AMA/all; selector đã gỡ 16/08/2026). |
 
-`kill_switch=true` luôn chặn lệnh, bất kể stage.
-
-`SHADOW` trong bảng là rollout V3 để so Candidate Engine V1/V2 và thu metrics;
-đây không phải V4 migration shadow hay dual scoring. Bằng chứng disagreement V3
-không được dùng làm tiêu chí chấp nhận score V4.
-
-Runtime hiện tại trên máy này đã chọn `PRODUCTION`,
-`production_approved=true` và không bắt buộc demo account. Release readiness
-vẫn chưa đạt nên cấu hình này chưa được phép gửi lệnh thật. Xem
+Cơ chế rollout V3 (stage ladder `DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL →
+CANARY → PRODUCTION`, kill switch, release/canary readiness) đã bị gỡ bỏ hoàn
+toàn ngày 15/08/2026 theo quyết định của owner — ứng dụng chạy thật trực tiếp.
+Gate thực thi hiện tại của Order Management V2: feature flag +
+`account.trade_allowed` (fail-closed). Với Scanner, order policy
+(`config/scanner_v4_order_policy.json`, owner-accepted) phải `certified()`;
+config lỗi → mọi candidate bị chặn fail-closed. Xem
 [trạng thái runtime](../architecture/runtime-status.md).
 
 ## 4. Quét thị trường
@@ -218,9 +212,8 @@ Auto trade và thao tác đặt lệnh thủ công từ giao diện Scanner cùn
 `ScannerController.execute_order_candidate()`
 
 Ở quét một lần, người dùng vẫn có thể chủ động bấm đặt một candidate hợp lệ
-trong dialog lệnh. Khi runtime là `PRODUCTION` và đã có production approval,
-thao tác thủ công này bỏ qua riêng `RELEASE_GATE_NOT_READY`; auto trade vẫn
-chịu release readiness. Cả hai vẫn đi qua revalidation và các guard còn lại.
+trong dialog lệnh. Thao tác thủ công không có override nào — cả auto lẫn
+manual đều đi qua cùng revalidation và các guard còn lại.
 
 Ngay trước khi gửi lệnh, hệ thống lấy snapshot mới và kiểm tra lại:
 
@@ -230,47 +223,38 @@ Ngay trước khi gửi lệnh, hệ thống lấy snapshot mới và kiểm tra
 - blackout tin tức;
 - lot theo balance/risk và quy tắc volume của broker;
 - daily/weekly loss, chuỗi thua;
-- tổng open risk, risk theo symbol, currency/correlation exposure và số lệnh;
-- rollout stage, kill switch, demo/allowlist/readiness/risk cap. Với thao tác
-  thủ công ở `PRODUCTION`, chỉ riêng release readiness được override có chủ
-  đích; các rollout block khác vẫn giữ nguyên.
+- tổng open risk, risk theo symbol, currency/correlation exposure và số lệnh.
 
 Chỉ khi tất cả điều kiện đều đạt mới gọi `place_market_order`.
 
-## 7. Checklist rollout trước production
+## 7. An toàn khi chạy live
 
-Code và test nội bộ hoàn tất không đồng nghĩa production-ready. Cần tối thiểu:
+Từ 15/08/2026 ứng dụng chạy thật trực tiếp (quyết định của owner, phần mềm cá
+nhân) — không còn checklist shadow/demo/canary của rollout V3. Các lớp bảo vệ
+còn lại, tất cả fail-closed:
 
-- 100 shadow samples;
-- unsafe disagreement rate không vượt 10%, không có side mismatch hoặc
-  premature order;
-- 20 demo orders;
-- 5 canary orders;
-- revalidation failure rate không vượt 5%;
-- OOS và demo degradation không vượt 15%;
-- đã ghi nhận OOS evidence, demo evidence và kiểm thử rollback;
-- MT5 demo, UI và Telegram đã được soak test;
-- `production_approved=true` chỉ sau review có trách nhiệm.
+- RuntimeOrderPolicy `certified()` (threshold, safety, macro, portfolio/journal);
+  config lỗi → `ORDER_POLICY_FAULT` + mọi candidate BLOCKED;
+- MarketSafetyGate/MacroGate tại thời điểm scan;
+- auto-entry chỉ khi người dùng chủ động bật cho lần quét đó;
+- `execute_order_candidate()` với execution snapshot mới, lot recalc, news,
+  account/portfolio guard và `revalidate_execution`;
+- Order Management V2: feature flag + `account.trade_allowed`.
 
-Checklist này là release evidence của rollout V3 hiện hành. Nó không cho phép
-chạy dual scorer để migration V4; V4 phải có bộ test/calibration/version contract
-riêng rồi chuyển trực tiếp trong một release.
-
-Metrics được lưu tại app-data trong `rollout/scanner-rollout-metrics.json`. Bằng chứng release được cập nhật qua `ScannerRolloutMetricsService.update_release_evidence()`.
-
-Snapshot ngày 24/07/2026 lúc cập nhật tài liệu: shadow đã đạt `572/100`,
-rollback đã đạt và không có side mismatch/unsafe disagreement. Các điều kiện
-còn thiếu là `0/20` demo orders,
-`0/5` canary orders, OOS evidence và demo evidence. Không sửa metrics bằng tay
-để vượt checklist.
+Khuyến nghị vận hành: bắt đầu 1 symbol với risk percent nhỏ, theo dõi lệnh đầu
+end-to-end; kiểm tra Orders pane hiển thị `LIVE` và event mutation thật
+(`SL_MODIFY_REQUESTED`, `BE_TRIGGERED`). Không còn kill switch phần mềm — dừng
+khẩn cấp = tắt feature flag (áp dụng ngay), đóng lệnh ở terminal broker hoặc
+ngắt kết nối MT5.
 
 ## 8. Xử lý tình huống thường gặp
 
 - **Config hiện `DRAFT` hoặc `BACKTEST_INVALID`:** chạy lại validation theo schema hiện hành; không sửa status bằng tay.
-- **Row `READY_NOW` nhưng không có lệnh:** xem `reason_codes`, rollout stage và kết quả execution revalidation.
-- **Đang ở `SHADOW`:** hành vi không gửi lệnh là đúng, kể cả người dùng bấm đặt lệnh từ Scanner.
-- **Đã chọn `PRODUCTION` nhưng Scanner không tự vào lệnh:** kiểm tra chế độ
-  quét định kỳ và nút auto-entry đã được người dùng bật hay chưa. Auto trade
-  vẫn bị chặn khi `release_readiness.block_codes` chưa rỗng.
+- **Row `READY_NOW` nhưng không có lệnh:** xem `reason_codes`, trạng thái
+  order policy (`ORDER_POLICY_FAULT`?) và kết quả execution revalidation.
+- **Scanner không tự vào lệnh:** kiểm tra chế độ quét định kỳ, nút auto-entry
+  đã được người dùng bật hay chưa, và order policy có `certified()` không.
+- **Order Management không sửa SL trên broker:** kiểm tra feature flag trong
+  Settings và `account.trade_allowed` (Orders pane hiển thị `BLOCKED` khi một
+  trong hai không đạt).
 - **Demo không được nhận diện:** kiểm tra tên server MT5 có thể hiện demo/trial/practice/contest.
-- **Production bị chặn:** xem `release_readiness.block_codes` và bổ sung đúng bằng chứng còn thiếu.

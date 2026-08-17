@@ -135,7 +135,6 @@ def pair_to_ui_row(
     scan_id: str = "",
     row_id: str = "",
     settings_hash: str = "",
-    rollout_stage: str = "",
     latency_ms: float | None = None,
     technical: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -211,6 +210,7 @@ def pair_to_ui_row(
             "expected_effective_rr": _fraction_to_number(risk_reward_ratio),
         },
         "reason_codes": list(row.reason_codes),
+        "status": row.candidate_status,
         "candidate_status": row.candidate_status,
         "selected_side": selected_side,
     }
@@ -235,6 +235,10 @@ def pair_to_ui_row(
         "evidence_confidence": evidence_score,
         "execution_quality_score": execution_quality_score,
         "execution_readiness": execution_quality_score,  # fail closed to None
+        # Per-side component breakdown (real V4 source; JSON-safe).  The detail
+        # Chẩn đoán tab renders this instead of the V3 ``scenario_scores``, which
+        # V4 does not produce.
+        "side_scores": [s.to_dict() for s in row.side_scores],
         "expected_effective_rr": _fraction_to_number(risk_reward_ratio),
         "risk_reward_ratio": _fraction_to_number(risk_reward_ratio),
         "market_regime": regime,
@@ -259,7 +263,6 @@ def pair_to_ui_row(
         "scan_id": scan_id,
         "row_id": row_id,
         "settings_hash": settings_hash,
-        "rollout_stage": rollout_stage,
         "analysis_latency_ms": latency_ms,
     }
     for key in V3_ONLY_NEUTRAL_KEYS:
@@ -505,6 +508,7 @@ def blocked_ui_row(
         "macro_reason_codes": [],
         "safety_status": None,
         "safety_reason_codes": [],
+        "side_scores": [],
         "gate_codes": [],
         "reason_codes": [],
         "block_codes": [],
@@ -525,6 +529,7 @@ def blocked_ui_row(
                 "expected_effective_rr": None,
             },
             "reason_codes": [],
+            "status": DATA_UNAVAILABLE,
             "candidate_status": DATA_UNAVAILABLE,
             "selected_side": None,
         },
@@ -533,7 +538,6 @@ def blocked_ui_row(
         "scan_id": "",
         "row_id": "",
         "settings_hash": "",
-        "rollout_stage": "",
         "analysis_latency_ms": analysis_latency_ms,
         "short_reason": reason,
         "analysis_error": bool(analysis_error),

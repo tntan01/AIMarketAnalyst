@@ -157,6 +157,15 @@ def _single_result(context: MarketSafetyContext, policy: SafetyPolicy) -> Market
     return GATE.evaluate(context, policy, now=NOW)
 
 
+def _context_with_data(data: DataFreshnessSource) -> MarketSafetyContext:
+    context = _base_context()
+    return MarketSafetyContext(
+        context.symbol, context.captured_at,
+        context.connectivity, data,
+        context.spread, context.news, context.volatility,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Structure / contract
 # ---------------------------------------------------------------------------
@@ -301,6 +310,63 @@ class TestDataFreshnessSubGate:
         assert result.checks[1].status == UNKNOWN
         assert SAFETY_DATA_FRESHNESS_UNKNOWN in result.checks[1].reason_codes
 
+    def test_fresh_tick_wins_over_stale_candle_open(self):
+        # An M15 candle open time lags wall-clock by up to 15 minutes; a fresh
+        # broker tick is the feed-liveness reference and must PASS the SLA even
+        # when the candle-only age would exceed it.
+        data = DataFreshnessSource(
+            availability=AVAILABILITY_VALID, source="mt5_candles",
+            checked_at=NOW, provenance={**PROV, "tick": "1"},
+            last_candle_time_utc=NOW - timedelta(minutes=10),
+            intended_timeframe="M15",
+            last_tick_time_utc=NOW - timedelta(seconds=30),
+        )
+        check = _single_result(_context_with_data(data), _base_policy()).checks[1]
+        assert check.status == PASS
+        assert check.observed_value["freshness_reference"] == "tick"
+
+    def test_stale_tick_blocks_even_with_fresh_candle(self):
+        # Weekend/dead feed: the last tick is old -> the tick reference itself
+        # exceeds the SLA and must BLOCK (fail-closed), never rescued by the
+        # (also stale) candle.
+        data = DataFreshnessSource(
+            availability=AVAILABILITY_VALID, source="mt5_candles",
+            checked_at=NOW, provenance={**PROV, "tick": "1"},
+            last_candle_time_utc=NOW - timedelta(seconds=60),
+            intended_timeframe="M15",
+            last_tick_time_utc=NOW - timedelta(minutes=20),
+        )
+        check = _single_result(_context_with_data(data), _base_policy()).checks[1]
+        assert check.status == BLOCK
+        assert SAFETY_DATA_STALE in check.reason_codes
+        assert check.observed_value["freshness_reference"] == "tick"
+
+    def test_missing_tick_falls_back_to_candle(self):
+        data = DataFreshnessSource(
+            availability=AVAILABILITY_VALID, source="mt5_candles",
+            checked_at=NOW, provenance={**PROV, "candle": "1"},
+            last_candle_time_utc=NOW - timedelta(seconds=60),
+            intended_timeframe="M15",
+            last_tick_time_utc=None,
+        )
+        check = _single_result(_context_with_data(data), _base_policy()).checks[1]
+        assert check.status == PASS
+        assert check.observed_value["freshness_reference"] == "candle"
+
+    def test_naive_tick_is_never_used(self):
+        # A naive tick timestamp carries no verifiable timezone -> ignored,
+        # the candle reference applies (fail-closed, never assume a timezone).
+        data = DataFreshnessSource(
+            availability=AVAILABILITY_VALID, source="mt5_candles",
+            checked_at=NOW, provenance={**PROV, "tick": "1"},
+            last_candle_time_utc=NOW - timedelta(seconds=60),
+            intended_timeframe="M15",
+            last_tick_time_utc=datetime(2026, 8, 13, 11, 59, 30),
+        )
+        check = _single_result(_context_with_data(data), _base_policy()).checks[1]
+        assert check.status == PASS
+        assert check.observed_value["freshness_reference"] == "candle"
+
 
 # ---------------------------------------------------------------------------
 # Spread sub-gate (per-symbol threshold)
@@ -352,6 +418,63 @@ class TestSpreadSubGate:
         check = result.checks[2]
         assert check.status == UNKNOWN
         assert SAFETY_SPREAD_UNKNOWN in check.reason_codes
+
+
+class TestSpreadSymbolKeyNormalization:
+    """Config keys are broker-style ("EURUSD"); live symbols can be the app
+    display form ("EUR/USD") or the cent-account broker form ("EURUSDc").
+    Matching must be spelling-tolerant; thresholds themselves never change."""
+
+    def _context_with_spread_symbol(self, symbol: str, spread_points: float = 20.0):
+        base = _base_context()
+        return MarketSafetyContext(
+            base.symbol, base.captured_at,
+            base.connectivity, base.data,
+            SpreadSource(
+                availability=AVAILABILITY_VALID, source="mt5_tick",
+                checked_at=NOW, provenance=PROV,
+                spread_points=spread_points, symbol=symbol),
+            base.news, base.volatility,
+        )
+
+    def test_app_symbol_with_slash_matches_config_key(self):
+        policy = _config_policy(spread_threshold_by_symbol={"EURUSD": 25})
+        result = _single_result(self._context_with_spread_symbol("EUR/USD"), policy)
+        check = result.checks[2]
+        assert check.status == PASS
+        assert check.threshold == {"max_spread_points": 25}
+
+    def test_cent_broker_symbol_matches_base_pair_key(self):
+        policy = _config_policy(spread_threshold_by_symbol={"EURUSD": 25})
+        result = _single_result(self._context_with_spread_symbol("EURUSDc"), policy)
+        check = result.checks[2]
+        assert check.status == PASS
+        assert check.threshold == {"max_spread_points": 25}
+
+    def test_variant_key_still_enforces_threshold(self):
+        policy = _config_policy(spread_threshold_by_symbol={"EURUSD": 25})
+        result = _single_result(
+            self._context_with_spread_symbol("EUR/USD", spread_points=40.0), policy)
+        check = result.checks[2]
+        assert check.status == BLOCK
+        assert SAFETY_SPREAD_ABNORMAL in check.reason_codes
+
+    def test_exact_cent_key_wins_over_stripped_key(self):
+        # Owner may configure the cent symbol explicitly; it takes precedence.
+        policy = _config_policy(
+            spread_threshold_by_symbol={"EURUSDC": 60, "EURUSD": 25})
+        result = _single_result(
+            self._context_with_spread_symbol("EURUSDc", spread_points=40.0), policy)
+        check = result.checks[2]
+        assert check.status == PASS
+        assert check.threshold == {"max_spread_points": 60}
+
+    def test_unknown_symbol_still_fails_closed(self):
+        policy = _config_policy(spread_threshold_by_symbol={"EURUSD": 25})
+        result = _single_result(self._context_with_spread_symbol("GBP/JPY"), policy)
+        check = result.checks[2]
+        assert check.status == UNKNOWN
+        assert SAFETY_SPREAD_THRESHOLD_UNSET in check.reason_codes
 
 
 # ---------------------------------------------------------------------------

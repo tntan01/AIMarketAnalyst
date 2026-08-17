@@ -1,5 +1,5 @@
 {
-  "_trial": "2026-08-14 owner-accepted PROVISIONAL values (TRIAL). NOT final calibration — must be re-audited in Bước 13 before treating as official. doc: docs/scanner/scanner-v4-architecture.md §13.1.",
+  "_accepted_by_owner": "2026-08-15 — LIVE values (promoted from the 2026-08-14 owner-accepted trial; rollout removed, no further gating). Đổi số = sửa file này; runtime loader fail-closed (config hỏng → order blocked). doc: docs/scanner/scanner-v4-architecture.md §13.1.",
   "order_policy_version": "scanner-order-policy-v1",
   "threshold": {
     "policy_version": "scanner-threshold-policy-v4",
@@ -13,8 +13,34 @@
     "connectivity_max_age_minutes": 5,
     "max_candle_age_minutes": 3,
     "spread_threshold_by_symbol": {
-      "XAUUSD": 40,
-      "EURUSD": 25
+      "AUDCAD": 27,
+      "AUDCHF": 14,
+      "AUDJPY": 16,
+      "AUDNZD": 27,
+      "AUDUSD": 14,
+      "BTCUSD": 1500,
+      "CADJPY": 16,
+      "CHFJPY": 32,
+      "EURAUD": 26,
+      "EURCAD": 22,
+      "EURCHF": 24,
+      "EURGBP": 20,
+      "EURJPY": 24,
+      "EURNZD": 33,
+      "EURUSD": 12,
+      "GBPAUD": 32,
+      "GBPCAD": 27,
+      "GBPCHF": 22,
+      "GBPJPY": 33,
+      "GBPNZD": 36,
+      "GBPUSD": 15,
+      "NZDJPY": 21,
+      "NZDUSD": 21,
+      "USDCAD": 21,
+      "USDCHF": 20,
+      "USDJPY": 15,
+      "XAGUSD": 45,
+      "XAUUSD": 390
     },
     "volatility_upper_ratio": 2.0
   },

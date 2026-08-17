@@ -77,6 +77,95 @@ def test_closed_trades_from_deals_parsing():
     assert trade["mt5_position_id"] == 123
     assert trade["candidate_id"] == "abc123"
 
+def test_scale_in_and_partial_close_prices_are_volume_weighted():
+    service = MT5Service()
+    service.symbol_profiles = {
+        "EUR/USD": {"mt5_aliases": ["EURUSDm"]},
+    }
+
+    # Scale-in: 0.1 @ 1.0850 then 0.2 @ 1.0860.
+    # Partial close: 0.1 @ 1.0900 then 0.2 @ 1.0910.
+    deals = [
+        MockDeal(symbol="EURUSDm", type=0, position_id=7, entry=0, time=1770000000,
+                 volume=0.1, price=1.0850, profit=0.0, commission=0.0, swap=0.0,
+                 ticket=1, order=1, comment="AMA-FWD:x"),
+        MockDeal(symbol="EURUSDm", type=0, position_id=7, entry=0, time=1770000001,
+                 volume=0.2, price=1.0860, profit=0.0, commission=0.0, swap=0.0,
+                 ticket=2, order=2, comment=""),
+        MockDeal(symbol="EURUSDm", type=1, position_id=7, entry=1, time=1770003600,
+                 volume=0.1, price=1.0900, profit=10.0, commission=0.0, swap=0.0,
+                 ticket=3, order=3, comment=""),
+        MockDeal(symbol="EURUSDm", type=1, position_id=7, entry=1, time=1770003601,
+                 volume=0.2, price=1.0910, profit=20.0, commission=0.0, swap=0.0,
+                 ticket=4, order=4, comment=""),
+    ]
+
+    parsed = service._closed_trades_from_deals(MockMT5Module(), deals)
+    assert len(parsed) == 1
+    trade = parsed[0]
+    assert trade["actual_lot"] == 0.3
+    # entry=(1.0850*0.1+1.0860*0.2)/0.3 ; exit=(1.0900*0.1+1.0910*0.2)/0.3
+    import pytest
+    assert abs(trade["actual_entry"] - (1.0850 * 0.1 + 1.0860 * 0.2) / 0.3) < 1e-9
+    assert abs(trade["actual_exit"] - (1.0900 * 0.1 + 1.0910 * 0.2) / 0.3) < 1e-9
+    assert trade["result_amount"] == pytest.approx(30.0)
+
+
+def test_mt5_sync_does_not_wipe_existing_result_r_when_payload_has_no_sl(temp_db_path):
+    # A closed journal row already has a computed result_r (no SL was ever set).
+    # An MT5 sync payload carries actual_entry/actual_exit but no stop-loss, so
+    # outcome is empty here — this must NOT null out the existing result
+    # metrics (the bug wiped result_r/result_pct on every sync without SL).
+    service = JournalService(db_path=temp_db_path)
+    entry = JournalEntry(
+        id=None,
+        timestamp_utc="2026-01-24T18:00:00Z",
+        saved_at_utc="2026-01-24T18:00:01Z",
+        symbol="EUR/USD",
+        broker_symbol="EURUSDm",
+        mode="scanner_detail",
+        data_source="MT5",
+        market_regime="trending_up",
+        decision="ready",
+        direction_bias="buy",
+        trade_permission="allowed",
+        buy_score=85,
+        sell_score=20,
+        selected_scenario="buy",
+        entry_zone="",
+        stop_loss="",
+        take_profit="",
+        risk_reward="",
+        suggested_lot=0.1,
+        ai_commentary="",
+        analysis_json="{}",
+        trade_status="closed",
+        closed_at="2026-01-24T19:40:00Z",
+        result_r=1.0,
+        result_pct=0.5,
+        realized_effective_rr=1.0,
+        result="win",
+    )
+    entry_id = service.create(entry)
+
+    service.update_lifecycle(
+        entry_id,
+        {
+            "trade_status": "closed",
+            "closed_at": "2026-01-24T19:40:00Z",
+            "actual_entry": 1.0850,
+            "actual_exit": 1.0900,
+            "mt5_deal_id": 1002,
+            "synced_from": "mt5_history",
+        },
+    )
+
+    updated = service.get_entry(entry_id)
+    assert updated.result_r == 1.0
+    assert updated.result_pct == 0.5
+    assert updated.realized_effective_rr == 1.0
+
+
 def test_sync_mt5_closed_trades_crud(temp_db_path):
     service = JournalService(db_path=temp_db_path)
     

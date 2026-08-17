@@ -22,6 +22,7 @@ non-VALID availability to a fail-closed UNKNOWN.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -30,6 +31,7 @@ from core.market_safety_gate import (
     AVAILABILITY_MISSING,
     AVAILABILITY_STALE,
     AVAILABILITY_VALID,
+    VOLATILITY_METRIC_ATR14,
     ConnectivitySource,
     DataFreshnessSource,
     MarketSafetyContext,
@@ -39,7 +41,7 @@ from core.market_safety_gate import (
 )
 from core.scanner_v4_composition import ScenarioPlan, SideSnapshot
 from core.smc_scoring_result import SmcScoringResult
-from core.technical_context import detect_market_regime
+from core.technical_context import atr_volatility_readings, detect_market_regime
 from core.technical_signal_scorer import VALID_TECHNICAL_REGIMES
 
 PRODUCER_VERSION = "scanner-v4-live-producer-v1"
@@ -48,6 +50,33 @@ PROVENANCE = {"captured_by": "scanner-v4-live-producer", "source": "mt5"}
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def compute_live_volatility_ratio(
+    d1_candles: list[Any] | None, h4_candles: list[Any] | None
+) -> float | None:
+    """Live volatility ratio for the ``MarketSafetyGate`` (locked atr14 semantics).
+
+    ``ratio = ATR(14) mới nhất trên H4 ÷ trung bình 14 ngày của ATR(14) trên D1``
+    — the exact reference pair locked by ``market_safety_gate.VOLATILITY_*``
+    (metric ``atr14``, intraday H4, structural D1, 14-day window).  Computed
+    only from REAL candles via ``technical_context.atr_volatility_readings``;
+    insufficient history or non-positive/non-finite readings return ``None``
+    (fail-closed: the gate then reports UNKNOWN, never an invented ratio).
+    """
+    if not d1_candles or not h4_candles:
+        return None
+    readings = atr_volatility_readings(list(d1_candles), list(h4_candles))
+    atr_h4 = readings.get("atr_h4")
+    atr_avg_14d = readings.get("atr_avg_14d")
+    if atr_h4 is None or atr_avg_14d is None:
+        return None
+    if atr_h4 <= 0 or atr_avg_14d <= 0:
+        return None
+    ratio = float(atr_h4) / float(atr_avg_14d)
+    if not math.isfinite(ratio):
+        return None
+    return ratio
 
 
 def resolve_technical_regime(
@@ -139,6 +168,7 @@ def build_live_market_safety_context(
     last_candle_time_utc: datetime | None,
     data_intended_timeframe: str = "M15",
     data_checked_at: datetime | None = None,
+    last_tick_time_utc: datetime | None = None,
     spread_points: float | None,
     spread_checked_at: datetime | None = None,
     news_source_verified: bool,
@@ -146,7 +176,7 @@ def build_live_market_safety_context(
     news_events: tuple[Mapping[str, Any], ...] = (),
     volatility_ratio: float | None,
     volatility_checked_at: datetime | None = None,
-    volatility_metric: str = "atr14_h1",
+    volatility_metric: str = VOLATILITY_METRIC_ATR14,
     connectivity_max_age_minutes: int | None = None,
     max_candle_age_minutes: int | None = None,
 ) -> MarketSafetyContext:
@@ -155,7 +185,9 @@ def build_live_market_safety_context(
     Availability is stamped from the ACTUAL live state, so the ``MarketSafetyGate``
     fails closed (UNKNOWN) on any missing/stale/unreliable source.  Age limits are
     only enforced when explicitly passed (the default ``SafetyPolicy`` has
-    ``None`` limits — the producer never invents one).
+    ``None`` limits — the producer never invents one).  ``last_tick_time_utc`` is
+    the optional broker-tick reference the freshness gate prefers over the candle
+    open time; ``None`` (tick unavailable) falls back to the candle (fail-closed).
     """
     now = captured_at if captured_at.tzinfo is not None else _utcnow()
 
@@ -181,6 +213,7 @@ def build_live_market_safety_context(
         provenance=PROVENANCE,
         last_candle_time_utc=last_candle_time_utc,
         intended_timeframe=data_intended_timeframe,
+        last_tick_time_utc=last_tick_time_utc,
     )
     spread = SpreadSource(
         availability=_mark_availability(

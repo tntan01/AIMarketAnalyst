@@ -101,6 +101,7 @@ def evaluate_portfolio_risk(
         },
         action="open_new_trade",
         now=checked_at,
+        account_balance=balance,
     )
     account_allowed = account_guard.get("allowed") is True
     if not account_allowed:

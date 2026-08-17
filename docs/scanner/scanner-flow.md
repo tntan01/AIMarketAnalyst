@@ -1,12 +1,14 @@
-# Scanner V3 — Luồng runtime hiện hành
+# Scanner V3 — Luồng runtime legacy (historical)
 
 Runtime contract cập nhật: **09/08/2026**. Target V4: **11/08/2026**.
-Tài liệu này là runtime contract cho tính năng Quét thị trường.
+Cutover V4 xong: **14/08/2026**. Gỡ rollout/SHADOW, chạy thật: **15/08/2026**.
 
-> **Target đã chốt:** Scanner V4 tách Risk/Macro khỏi score, TechnicalScore chỉ
-> còn Trend/Momentum/Location/SMC và direct cutover không dual scoring/shadow.
-> Xem [`scanner-v4-architecture.md`](scanner-v4-architecture.md). Luồng bên dưới
-> vẫn mô tả code V3 cho tới khi từng bước V4 được implement.
+> **Hiện trạng:** Scanner V4 đang chạy live — tài liệu chuẩn là
+> [`scanner-v4-architecture.md`](scanner-v4-architecture.md). Toàn bộ rollout
+> machinery (stage ladder, kill switch, release/canary readiness) và chế độ
+> SHADOW đã bị gỡ khỏi codebase ngày 15/08/2026 theo quyết định của owner.
+> Nội dung bên dưới mô tả luồng V3 **trước cutover**, giữ lại để tra cứu lịch
+> sử; riêng §11 đã được viết lại theo guard chain thực thi live hiện tại.
 
 ## 1. Tổng quan
 
@@ -14,7 +16,7 @@ Tài liệu này là runtime contract cho tính năng Quét thị trường.
 ScannerScreen
   → ScannerRequest
   → ScannerController.run()
-      → tạo scan context và rollout policy
+      → tạo scan context và load RuntimeOrderPolicy (fail-closed)
       → lấy MT5/macro data
       → phân tích song song từng symbol
       → Candidate Engine
@@ -22,10 +24,10 @@ ScannerScreen
           → Strategy Router
           → Execution Readiness tại thời điểm scan
       → lọc và canonical ranking
-      → observability + Scanner shadow comparison (Candidate Engine V1/V2)
+      → observability
       → build output
-      → auto trade qua rollout guard và shared execution path
-      → metrics/readiness + Telegram + snapshot
+      → auto trade qua guard chain thực thi và shared execution path
+      → scan health + Telegram + snapshot
 ```
 
 Scanner không còn luồng “backtest ghi đè `stand_aside` thành `ready`”. Backtest chỉ là đầu vào của Strategy Router.
@@ -56,9 +58,9 @@ Scanner không còn luồng “backtest ghi đè `stand_aside` thành `ready`”
   `RESEARCH`, vì vậy chưa thể tạo config live. Config cũ hoặc thiếu engine/SMC
   identity bị từ chối và cần chạy validation lại bằng engine mới.
 - Đây là thay đổi nguồn quyết định phân tích, không phải mở quyền gửi lệnh.
-  Runtime hiện chọn stage `PRODUCTION`, nhưng release readiness, kill switch
-  và các execution gate vẫn có quyền chặn. Giá trị mặc định của mã nguồn vẫn
-  là `SHADOW`.
+  Lệnh thật vẫn chịu sự kiểm soát của RuntimeOrderPolicy (certified/fail-closed)
+  và toàn bộ execution guard chain. (Trước 15/08/2026 lớp này là rollout stage
+  ladder — đã gỡ bỏ.)
 
 ## 2. Tạo `ScannerRequest`
 
@@ -71,12 +73,12 @@ Request chứa:
 - decision thresholds theo symbol;
 - backtest config đã serialize theo symbol;
 - trạng thái yêu cầu auto trade;
-- các feature flag phục vụ rollout/provenance.
+- các feature flag phục vụ provenance.
 
 Ba feature flag Scanner có giá trị mặc định mã nguồn là `false`; runtime hiện
 đã lưu cả ba ở `true`. Các flag được ghi vào scan context nhưng không có quyền
-khôi phục đường auto-trade V1 hoặc bỏ qua safety invariant; rollout policy vẫn
-là gate cho execution.
+khôi phục đường auto-trade V1 hoặc bỏ qua safety invariant; RuntimeOrderPolicy
+và execution guard chain vẫn là gate cho execution.
 
 `analysis_thresholds_for_symbol()` luôn giữ `decision_ready/watch/wait` độc lập với config backtest. Giá trị mặc định là 65/60/55; pipeline `min_rr` mặc định 1.3.
 
@@ -85,8 +87,8 @@ Nếu settings cũ chứa cấu hình backtest, migration chỉ tạo config `DR
 Trạng thái runtime ngày 24/07/2026: toàn bộ 31 config `DRAFT` đã tắt cờ
 `backtest` nhưng giữ nguyên metadata để dùng lại sau. Vì vậy ScannerRequest hiện
 không mang backtest config và Strategy Router dùng `DEFAULT_RULES` cùng SMC.
-Backtest/OOS không phải điều kiện để hiển thị quyết định v2, nhưng vẫn là điều
-kiện trước production rollout.
+Backtest/OOS không phải điều kiện để hiển thị quyết định v2. (Trước cutover nó
+từng là điều kiện trước production rollout; lớp rollout đó đã gỡ bỏ.)
 
 Settings/Symbols cũng áp dụng fail-closed tại nguồn:
 
@@ -103,24 +105,24 @@ Vì vậy đường Settings bình thường không còn có thể tạo
 Nhánh `BACKTEST_INVALID` vẫn tồn tại để fail-closed với request/config bên
 ngoài hoặc dữ liệu lỗi đi vòng qua Settings.
 
-## 3. Khởi tạo scan và rollout
+## 3. Khởi tạo scan và order policy
 
-**Nguồn chính:** `controllers/scanner_controller.py`, `core/scanner_observability.py`, `core/scanner_rollout.py`.
+**Nguồn chính:** `controllers/scanner_controller.py`, `core/scanner_observability.py`, `core/scanner_v4_order_policy.py`.
 
 Controller:
 
 1. tạo `scan_id`, `settings_hash`, `request_hash` và timestamp;
-2. đọc rollout settings và MT5 server;
-3. tính canary/release readiness từ metrics bền vững;
-4. tạo `ScannerRolloutPolicy`;
-5. phát event bắt đầu scan.
+2. đọc MT5 server và load `RuntimeOrderPolicy` từ
+   `config/scanner_v4_order_policy.json` qua `load_runtime_order_policy()`;
+3. phát event bắt đầu scan.
 
-Rollout guard fail-closed. `SHADOW` là mặc định và chặn order trước cả
-execution snapshot. Runtime ngày 24/07/2026 đã chọn `PRODUCTION` và
-`production_approved=true`, nhưng `release_ready=false`; vì vậy policy hiện
-vẫn chặn auto trade bằng `RELEASE_GATE_NOT_READY`. Thao tác **Vào lệnh** thủ
-công từ dialog Scanner có override có chủ đích cho riêng block này khi đang ở
-`PRODUCTION`; các guard khác và execution revalidation vẫn áp dụng.
+Order policy load **fail-closed**: file thiếu/hỏng hoặc `OrderPolicyError` →
+raise `OrderPolicyLoadError`, controller giữ `DEFAULT_RUNTIME_ORDER_POLICY`
+(`order_enabled=False` → mọi candidate BLOCKED) và emit observability event
+`ORDER_POLICY_FAULT` (severity ERROR). Config hỏng không bao giờ làm crash scan.
+(Trước 15/08/2026 bước này đọc rollout settings và tính canary/release
+readiness — toàn bộ đã gỡ bỏ; lệnh không còn bị chặn bởi stage ladder hay
+kill switch, mà bởi policy certification và execution guard chain.)
 
 ## 4. Thu thập và phân tích dữ liệu
 
@@ -141,7 +143,7 @@ non-actionable mới giữ flat scoring. Trade thuận validated flow được g
 penalty theo factor; trade ngược flow không được discount.
 
 Thay đổi này chỉ sửa input macro component của đúng side, không bypass logic của
-Decision Engine, Strategy Router, entry/trade gate, rollout hoặc execution.
+Decision Engine, Strategy Router, entry/trade gate hoặc execution.
 Score thay đổi có thể làm kết quả threshold/decision/ranking downstream thay đổi
 theo contract bình thường. Kết quả calibration hiện tại không xác nhận
 JPY/AUD-NZD; runbook nằm tại
@@ -255,31 +257,18 @@ Xếp hạng chỉ chạy sau khi candidate đã được đánh giá. Thứ t�
 
 Sau sort, `rank` được gán theo thứ tự canonical.
 
-## 8. Shadow comparison và observability
+## 8. Observability
 
-**Nguồn chính:** `core/scanner_rollout.py`, `core/scanner_observability.py`, `services/observability_service.py`.
+**Nguồn chính:** `core/scanner_observability.py`, `services/observability_service.py`.
 
-Đây là lớp an toàn của **Scanner Candidate Engine** (so sánh V1/V2 của
-candidate), không phải SMC scorer shadow — SMC đã được đưa về một scorer
-canonical duy nhất và không còn so sánh v1/v2.
-
-Đây cũng **không phải** kế hoạch migration Scanner V4. Target V4 direct-cutover
-không chạy score V3/V4 song song và không dùng disagreement với V3 làm release
-evidence. Control/metric V1/V2 hiện hành sẽ được rà soát để loại bỏ ở Bước 12.
-
-Nếu bật shadow comparison, hệ thống tạo bản ghi V1/V2 của Candidate Engine
-cho từng symbol:
-
-- status, side và trade/wait decision;
-- score gate;
-- disagreement codes;
-- cờ `v2_order_suppressed`.
+(Shadow comparison V1/V2 của Candidate Engine thuộc code path V3 và đã bị xóa
+cùng đường V3 ở Bước 12; SMC cũng chỉ còn một scorer canonical duy nhất.)
 
 Mỗi scan/row/order có thể truy vết bằng:
 
 - `scan_id`, `row_id`;
 - settings/request hash;
-- scorer, feature, router, ranking, rollout và runtime version;
+- scorer, feature, router, ranking và runtime version;
 - timestamp/freshness;
 - branch, side, score, gates, portfolio và decision.
 
@@ -290,13 +279,14 @@ Mỗi scan/row/order có thể truy vết bằng:
 | Scan summary | `scanner_snapshots/scanner_{scan_id}.json` |
 | Full symbol analysis | `scanner_analysis/{scan_id}/{symbol}.json` |
 | Event log | `logs/scanner-events.jsonl` |
-| Rollout metrics | `rollout/scanner-rollout-metrics.json` |
+| Scan health | `scan_health/scan-health.json` |
 
 Replay helper dùng snapshot đã lưu để tái tạo và kiểm tra quyết định.
 
 ## 9. Build output và UI
 
-Output gồm mode, thời gian, version, rows, summary, market brief, shadow report, rollout policy, auto-trade result, metrics/readiness, Telegram result và snapshot path.
+Output gồm mode, thời gian, version, rows, summary, market brief, scan health,
+order policy, auto-trade result, Telegram result và snapshot path.
 
 Các cột hiện hành của `ScannerTableModel`:
 
@@ -324,7 +314,8 @@ tại thời điểm quét dựa trên giá close H1. Cột không tự cập nh
 không tác động auto-trade, và execution revalidation vẫn dùng bid/ask live
 để kiểm tra `PRICE_OUTSIDE_ENTRY_ZONE` trước khi gửi lệnh.
 
-UI hiển thị rollout stage, disagreement và gate status để tránh hiểu `READY_NOW` là đã được phép đặt lệnh production.
+UI hiển thị disagreement và gate status để tránh hiểu `READY_NOW` là đã được
+phép đặt lệnh — quyết định cuối cùng vẫn thuộc execution guard chain.
 Độ rộng tối thiểu của từng cột phải bao phủ toàn bộ tiêu đề theo font/DPI hiện
 tại; khi cửa sổ không đủ rộng, bảng dùng thanh cuộn ngang thay vì cắt tiêu đề.
 Dialog **Kế hoạch lệnh** đọc `auto_trade_results.enabled` của chính lần quét,
@@ -334,7 +325,7 @@ kiểm tra và lệnh thực sự đã mở (`opened`) để không diễn giả
 Màn hình **Chi tiết kết quả quét** dùng
 `scanner_candidate_decision` làm nguồn chuẩn:
 
-- hero hiển thị candidate status, selected side, setup score/ngưỡng và rollout;
+- hero hiển thị candidate status, selected side và setup score/ngưỡng;
 - Entry/SL/TP, vị trí giá, nominal/effective R:R và Gate đều thuộc cùng
   `selected_side`;
 - vị trí giá được đối chiếu lại với entry zone của selected-side, không dùng
@@ -350,19 +341,17 @@ Nút **Tự động vào lệnh MT5** chỉ khả dụng trong chế độ quét
 gian và mặc định unchecked. `ScannerScreen.AUTO_TRADE_UI_ENABLED=true`; khi
 người dùng chủ động bật, `_auto_trade_enabled()` trả `true` và request có
 `ScannerRequest.auto_trade_enabled=true`. Chuyển sang quét một lần sẽ disable
-và reset nút. Việc bật nút chỉ tạo yêu cầu auto trade, không bỏ qua candidate,
-rollout hoặc execution gates.
+và reset nút. Việc bật nút chỉ tạo yêu cầu auto trade, không bỏ qua candidate
+hoặc execution gates.
 
 Quét một lần có thể hiển thị nút đặt lệnh thủ công cho candidate hợp lệ. Nút
-này vẫn gọi shared execution path, không gọi MT5 trực tiếp. Ở `PRODUCTION` đã
-phê duyệt, nó chỉ override `RELEASE_GATE_NOT_READY`; không override kill
-switch, rollout stage, account/market/news hay portfolio guard.
+này vẫn gọi shared execution path, không gọi MT5 trực tiếp, và không có bất
+kỳ override nào — mọi guard và execution revalidation áp dụng như nhau.
 
 Mọi order từ Scanner, gồm auto và thao tác thủ công, đi qua:
 
 ```text
 ScannerController.execute_order_candidate(proposal)
-  → rollout guard
   → MT5 execution snapshot mới
   → tính lại lot theo giá/balance/risk/broker volume
   → news status
@@ -385,33 +374,38 @@ Revalidation kiểm tra fail-closed:
 
 Không module UI nào được gọi `place_market_order` trực tiếp.
 
-## 11. Rollout và release gate
+## 11. Guard chain thực thi (live từ 15/08/2026)
 
-Stage hợp lệ:
+Toàn bộ rollout machinery của V3 — stage ladder
+`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`,
+kill switch, release/canary readiness gates — đã bị gỡ bỏ theo quyết định của
+owner (phần mềm cá nhân, chạy thật trực tiếp, không cần rollout). Không còn
+chế độ SHADOW/paper cho Scanner.
 
-`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`
+Lệnh thật hiện được kiểm soát bởi các lớp kỹ thuật sau (tất cả fail-closed):
 
-- `DEMO_LIMITED`: demo server và allowlist.
-- `DEMO_FULL`: demo server.
-- `CANARY`: canary readiness; risk tối đa theo `canary_risk_percent`.
-- `PRODUCTION`: auto trade yêu cầu `production_approved=true` và release
-  readiness đạt; lệnh thủ công từ dialog có thể override riêng release
-  readiness theo yêu cầu trực tiếp.
-- `kill_switch`: luôn thắng mọi cấu hình khác.
+1. **RuntimeOrderPolicy** (`config/scanner_v4_order_policy.json`): phải
+   `certified()` — đủ threshold floors, safety, macro và portfolio/journal —
+   thì `order_enabled=True`. Config thiếu/hỏng → `ORDER_POLICY_FAULT` +
+   `DEFAULT_RUNTIME_ORDER_POLICY` (`order_enabled=False`) → mọi candidate BLOCKED.
+2. **MarketSafetyGate / MacroGate** tại thời điểm scan: dữ liệu thiếu hoặc thị
+   trường không an toàn → `BLOCKED`/`DATA_UNAVAILABLE`, không có candidate lệnh.
+3. **Auto-trade consent**: request chỉ mang `auto_trade_enabled=true` khi người
+   dùng chủ động bật cho lần quét đó.
+4. **`execute_order_candidate`** — chuỗi guard duy nhất cho cả auto lẫn thủ
+   công: MT5 execution snapshot mới → tính lại lot → news status →
+   portfolio + account guard → `revalidate_execution` → `place_market_order`.
+   Manual order không có override nào.
+5. **Revalidation fail-closed**: broker/session/symbol/trade mode, bid/ask và
+   tick freshness, spread, duplicate position/order, side/zone/SL/TP,
+   effective R:R với giá thực thi, news blackout, account/portfolio limits,
+   volume hợp lệ.
+6. **Khóa cấu trúc payload**: candidate payload luôn là intent
+   (`sends_real_order=False`); dispatch chỉ đi qua `execute_order_candidate`.
 
-Readiness kiểm tra số mẫu shadow/demo/canary, disagreement, side mismatch, premature order, portfolio violation, revalidation failure, performance degradation, OOS/demo evidence và rollback.
-
-Trạng thái runtime hiện tại:
-
-- stage `PRODUCTION`, kill switch tắt, real account được phép;
-- nút auto-entry khả dụng trong auto-scan nhưng mặc định unchecked; request chỉ
-  mang `auto_trade_enabled=true` khi người dùng chủ động bật;
-- release readiness `false` do thiếu 20 demo orders, 5 canary orders,
-  OOS evidence và demo evidence;
-- do đó rollout guard hiện vẫn chặn auto trade trước khi gọi MT5; lệnh thủ
-  công hợp lệ có override riêng cho `RELEASE_GATE_NOT_READY`.
-
-Chi tiết thay đổi theo thời điểm xem tại `docs/architecture/runtime-status.md`.
+Lưu ý vận hành: không còn kill switch phần mềm. Dừng khẩn cấp = đóng lệnh ở
+terminal broker hoặc ngắt kết nối MT5 (lựa chọn có chủ đích của owner).
+Chi tiết trạng thái runtime xem tại `docs/architecture/runtime-status.md`.
 
 ## 12. Version contract
 
@@ -425,12 +419,12 @@ Chi tiết thay đổi theo thời điểm xem tại `docs/architecture/runtime-
 | Portfolio | `phase4-portfolio-v1` |
 | Ranking | `phase6-ranking-v1` |
 | Observability | `phase7-observability-v1` |
-| Rollout | `phase8-rollout-v1` |
 | Runtime | `scanner-runtime-v2` |
 
 Config hoặc snapshot không tương thích version phải bị từ chối hoặc chỉ dùng cho mục đích hiển thị/replay có kiểm soát.
 
-Target V4 bắt buộc đổi thành `scanner-v4` và `scanner-features-v4` trong một
-direct cutover. Score/config/snapshot V3 phải fail-closed cho live hoặc chỉ phục
-vụ replay có kiểm soát; không có router dual-score V3/V4. Chi tiết và trạng thái
-từng bước nằm tại [`scanner-v4-architecture.md`](scanner-v4-architecture.md).
+Target V4 đã hoàn tất: runtime là `scanner-v4` / `scanner-features-v4` sau
+direct cutover (Bước 12). Score/config/snapshot V3 bị fail-closed cho live và
+chỉ phục vụ replay có kiểm soát; không có router dual-score V3/V4. Chi tiết và
+trạng thái từng bước nằm tại
+[`scanner-v4-architecture.md`](scanner-v4-architecture.md).

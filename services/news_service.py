@@ -7,7 +7,7 @@ import re
 import time
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -31,7 +31,6 @@ from services.calendar_helpers import (
     parse_event_time,
 )
 from services.forex_factory_client import ForexFactoryClient
-from services.event_impact_assessor import EventImpactAssessor, EventImpactAssessment
 from services.ai_service import AIService, AIProviderConfig
 from services.macro_market_cache import get_shared_cache
 from services.settings_service import SettingsService
@@ -125,11 +124,11 @@ class NewsService:
     _global_snapshot_ttl = timedelta(minutes=5)
     _global_snapshot_stale_if_error = timedelta(minutes=30)
     _stance_cache_ttl = timedelta(hours=24)
-    # Cache các flag Bước 5/6/7 đọc từ settings.json — tránh đọc lại đĩa mỗi
-    # symbol mỗi chu kỳ scan (tối ưu I/O). TTL ngắn đủ để bật/tắt flag trong
-    # UI phản tác dụng ở chu kỳ scan kế tiếp.
+    # Cache flag Bước 7 đọc từ settings.json — tránh đọc lại đĩa mỗi symbol mỗi
+    # chu kỳ scan (tối ưu I/O). TTL ngắn đủ để bật/tắt flag trong UI phản tác
+    # dụng ở chu kỳ scan kế tiếp.
     _advanced_flag_cache_ttl = timedelta(seconds=60)
-    _advanced_flag_cache: tuple[datetime, bool, bool, bool] | None = None
+    _advanced_flag_cache: tuple[datetime, bool] | None = None
 
     def __init__(self) -> None:
         self._ff_client = ForexFactoryClient()
@@ -140,12 +139,6 @@ class NewsService:
         self._global_snapshot: MacroGlobalSnapshot | None = None
         self._preload_cache_time: datetime | None = None
         self._preloading = False
-        # Bước 5 (shadow): đánh giá sự kiện high-impact 4-48h bằng AI.
-        self._event_assessor = EventImpactAssessor()
-        # Kết quả assessment của lần preload gần nhất — data_quality_flags đọc
-        # từ đây (KHÔNG đọc private cache của assessor).
-        self._last_event_assessments: list[EventImpactAssessment] | None = None
-        self._last_event_assessments_at: datetime | None = None
 
     # ------------------------------------------------------------------
     # Interest rate config
@@ -176,49 +169,26 @@ class NewsService:
         return base_rate - quote_rate
 
     @classmethod
-    def _read_all_advanced_flags(cls) -> tuple[bool, bool, bool]:
-        """Đọc và cache các flag Bước 5/6/7 từ settings.
+    def _read_vix_pair_aware_enabled(cls) -> bool:
+        """Đọc flag vix_pair_aware_enabled từ settings (fail-closed: False).
 
-        Fail-closed: mọi lỗi → (False, False, False). Kết quả cache tối đa
-        _advanced_flag_cache_ttl để không đọc lại settings.json mỗi symbol mỗi
-        chu kỳ scan. Test có thể reset cls._advanced_flag_cache = None.
+        Cache tối đa _advanced_flag_cache_ttl để không đọc lại settings.json
+        mỗi symbol mỗi chu kỳ scan. Test có thể reset
+        ``cls._advanced_flag_cache = None``.
         """
         now = datetime.now(UTC)
         cached = cls._advanced_flag_cache
         if cached is not None and (now - cached[0]) < cls._advanced_flag_cache_ttl:
-            return cached[1], cached[2], cached[3]
+            return cached[1]
         try:
             settings = SettingsService().load()
-            derate = bool(getattr(settings.advanced, "event_impact_derate_enabled", False))
-            verdict = bool(getattr(settings.advanced, "macro_ai_verdict_enabled", False))
             vix_pair_aware = bool(
                 getattr(settings.advanced, "vix_pair_aware_enabled", False)
             )
         except Exception:
-            derate, verdict, vix_pair_aware = False, False, False
-        cls._advanced_flag_cache = (now, derate, verdict, vix_pair_aware)
-        return derate, verdict, vix_pair_aware
-
-    @classmethod
-    def _read_advanced_flags(cls) -> tuple[bool, bool]:
-        """Giữ API cặp flag Bước 5/6 để tương thích các caller hiện tại."""
-        derate, verdict, _vix_pair_aware = cls._read_all_advanced_flags()
-        return derate, verdict
-
-    @staticmethod
-    def _read_derate_enabled() -> bool:
-        """Đọc flag event_impact_derate_enabled từ settings (fail-closed: False)."""
-        return NewsService._read_advanced_flags()[0]
-
-    @staticmethod
-    def _read_macro_verdict_enabled() -> bool:
-        """Đọc flag macro_ai_verdict_enabled từ settings (fail-closed: False)."""
-        return NewsService._read_advanced_flags()[1]
-
-    @staticmethod
-    def _read_vix_pair_aware_enabled() -> bool:
-        """Đọc flag vix_pair_aware_enabled từ settings (fail-closed: False)."""
-        return NewsService._read_all_advanced_flags()[2]
+            vix_pair_aware = False
+        cls._advanced_flag_cache = (now, vix_pair_aware)
+        return vix_pair_aware
 
     @staticmethod
     def _ai_fingerprint(ai_service: object | None) -> str:
@@ -423,7 +393,6 @@ class NewsService:
                 tier3_detail=tier_scores["tier3"]["detail"],
                 ai_available=ai_service is not None,
             ),  # Phase 15F.1: provenance from pre-fetched data
-            "macro_v2": tier_scores.get("macro_v2"),  # Phase 15D.2: shadow diagnostics
             "stance_journal": tier_scores.get("stance_journal"),
             "warning": calendar_warning
             or ("" if events else "Không có dữ liệu sự kiện kinh tế sắp tới khớp cặp tiền trong nguồn đã kiểm tra."),
@@ -459,210 +428,14 @@ class NewsService:
         event_time = _event_time(next_high) if next_high else None
         hours_until = ((event_time - now).total_seconds() / 3600) if event_time else None
         resume_after = (event_time + timedelta(minutes=buffer_minutes)).isoformat() if event_time else None
-        # Bước 5 (shadow): danh sách assessment sự kiện high-impact 4-48h khớp
-        # cặp đang phân tích. Đọc từ cache của assessor — KHÔNG gọi AI tại đây.
-        upcoming_event_assessments = self._upcoming_event_assessments_for_symbol(
-            symbol, ai_service
-        )
         return {
             "macro_context": context,
             "news_in_3h": bool(hours_until is not None and 0 <= hours_until <= 3),
             "high_impact_event_within_30m": bool(hours_until is not None and 0 <= hours_until <= 0.5),
             "next_high_impact_event": next_high,
             "resume_after": resume_after,
-            "upcoming_event_assessments": upcoming_event_assessments,
-            "event_impact_derate_enabled": self._read_derate_enabled(),
-            "macro_ai_verdict_enabled": self._read_macro_verdict_enabled(),
             "vix_pair_aware_enabled": self._read_vix_pair_aware_enabled(),
         }
-
-    # ------------------------------------------------------------------
-    # Bước 5 (shadow) — AI Event Impact Assessment
-    # ------------------------------------------------------------------
-
-    def _preload_event_impact_assessments(
-        self,
-        snapshot: object,
-        ai_service: object | None,
-        performance_tracker: object | None,
-        *,
-        now: datetime | None = None,
-    ) -> None:
-        """Bước 5 (shadow): đánh giá sự kiện high-impact 4-48h từ snapshot vĩ mô.
-
-        Đọc calendar events + headlines từ snapshot đang có, stance đọc từ
-        self._stance_cache (không gọi AI lại cho stance). hours_until được TÍNH
-        LẠI từ time_utc so với now — không tin field hours_until cũ trong
-        calendar cache (có thể stale tới 24h); event quá khứ hoặc không parse
-        được time_utc sẽ bị LOẠI. Truyền bản copy dict mới (không mutate
-        snapshot gốc). Kết quả lưu vào self._last_event_assessments để
-        data_quality_flags đọc lại (KHÔNG đọc private cache của assessor).
-        Assessment MỚI do AI tạo trong chu kỳ (event_key thuộc tập fresh_ai_keys
-        do assessor trả về — KHÔNG phải mọi assessment source="ai", vì cache hit
-        cũng giữ source="ai") được ghi journal. Mọi lỗi chỉ log/emit — KHÔNG
-        được làm hỏng preload (fail-closed, D6).
-        """
-        if now is None:
-            now = datetime.now(UTC)
-        try:
-            payload = (
-                snapshot.calendar_payload
-                if isinstance(snapshot, MacroGlobalSnapshot)
-                else getattr(snapshot, "calendar_payload", {})
-            )
-            events = payload.get("events", []) if isinstance(payload, dict) else []
-            if not isinstance(events, list):
-                events = []
-            fresh_events: list[dict[str, object]] = []
-            for event in events:
-                if not isinstance(event, dict):
-                    continue
-                event_time = parse_event_time(str(event.get("time_utc") or ""))
-                if event_time is None:
-                    continue
-                hours_until = (event_time - now).total_seconds() / 3600
-                if hours_until <= 0:
-                    continue
-                fresh = dict(event)
-                fresh["hours_until"] = hours_until
-                fresh_events.append(fresh)
-            headlines = (
-                snapshot.global_headlines
-                if isinstance(snapshot, MacroGlobalSnapshot)
-                else getattr(snapshot, "global_headlines", ())
-            )
-            headlines_by_currency = self._build_headlines_by_currency(headlines)
-            stance_lookup = self._make_stance_lookup(ai_service)
-            # Counter đếm số chu kỳ preload assessment (các lời gọi AI thật nằm
-            # sâu trong assessor nên không đếm được từ đây).
-            safe_performance_call(
-                performance_tracker,
-                "increment",
-                "ai_event_assessment_cycles",
-            )
-            assessments, fresh_ai_keys = self._event_assessor.assess_upcoming_events(
-                fresh_events,
-                ai_service,
-                stance_lookup,
-                headlines_by_currency,
-            )
-            self._last_event_assessments = list(assessments)
-            self._last_event_assessments_at = now
-            # Chỉ ghi journal assessment MỚI do AI tạo ra trong chu kỳ này
-            # (event_key thuộc tập vừa được gọi AI thật — kể cả nhánh refresh
-            # khi priced_in hết hạn 6h). Cache hit giữ source="ai" nhưng KHÔNG
-            # phải assessment mới → không ghi trùng mỗi chu kỳ preload.
-            for assessment in assessments:
-                if (
-                    assessment.source == "ai"
-                    and assessment.event_key in fresh_ai_keys
-                ):
-                    self._journal_event_assessment(assessment)
-        except Exception:
-            # Bước 5 chạy shadow — lỗi không được phá hỏng preload.
-            self._last_event_assessments = []
-            self._last_event_assessments_at = now
-
-    def _build_headlines_by_currency(
-        self, global_headlines: object
-    ) -> dict[str, list[str]]:
-        """Gom global headlines thành {currency: [title, ...]} theo đồng tiền liên quan."""
-        result: dict[str, list[str]] = {}
-        for currency in sorted(self.CURRENCY_KEYWORDS):
-            titles = [
-                str(item.get("title", ""))
-                for item in (global_headlines or ())
-                if isinstance(item, dict) and self._matches_currency(item, currency)
-            ]
-            if titles:
-                result[currency] = titles
-        return result
-
-    def _make_stance_lookup(self, ai_service: object | None):
-        """Closure đọc stance đã cache theo đồng tiền (không gọi AI lại cho stance)."""
-        fingerprint = self._ai_fingerprint(ai_service)
-
-        def lookup(currency: str) -> dict[str, object] | None:
-            try:
-                cache_key = json.dumps(
-                    {
-                        "currency": currency,
-                        "ai": fingerprint,
-                    },
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                cached = self._stance_cache.get(cache_key)
-                if cached and (datetime.now(UTC) - cached[1]) < self._stance_cache_ttl:
-                    return dict(cached[0])
-            except Exception:
-                pass
-            return None
-
-        return lookup
-
-    def _event_journal_path(self) -> Path:
-        """Đường dẫn journal Bước 5 — method riêng để test có thể trỏ sang tmp."""
-        return (
-            Path(__file__).resolve().parent.parent
-            / "data"
-            / "event_assessment_journal.jsonl"
-        )
-
-    def _journal_event_assessment(self, assessment: object) -> None:
-        """Append 1 dòng JSON vào data/event_assessment_journal.jsonl (Bước 5).
-
-        Lỗi ghi file không được ảnh hưởng luồng chính.
-        """
-        try:
-            journal_path = self._event_journal_path()
-            line = {
-                "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
-                "event_key": assessment.event_key,
-                "currency": assessment.currency,
-                "event_name": assessment.event_name,
-                "time_utc": assessment.time_utc,
-                "hours_until": assessment.hours_until,
-                "magnitude": assessment.magnitude,
-                "priced_in": assessment.priced_in,
-                "expected_direction": assessment.expected_direction,
-                "risk_window_hours": assessment.risk_window_hours,
-                "ai_confidence": assessment.ai_confidence,
-                "evidence": list(assessment.evidence),
-                "source": assessment.source,
-            }
-            with open(journal_path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-
-    def _upcoming_event_assessments_for_symbol(
-        self,
-        symbol: str,
-        ai_service: object | None,
-    ) -> list[dict[str, object]]:
-        """Bước 5 (shadow): assessment của lần preload gần nhất, lọc theo cặp.
-
-        Đọc từ self._last_event_assessments (kết quả preload đã lưu) — KHÔNG
-        đọc private cache của assessor, KHÔNG gọi AI tại đây. Dữ liệu cũ hơn
-        _preload_cache_ttl → trả rỗng (fail-closed).
-        """
-        try:
-            at = self._last_event_assessments_at
-            if at is None or (datetime.now(UTC) - at) > self._preload_cache_ttl:
-                return []
-            stored = self._last_event_assessments or []
-            wanted = {currency.upper() for currency in self._symbol_currencies(symbol)}
-            result: list[dict[str, object]] = [
-                asdict(assessment)
-                for assessment in stored
-                if getattr(assessment, "currency", "") in wanted
-            ]
-            result.sort(key=lambda d: float(d.get("hours_until") or 0))
-            return result
-        except Exception:
-            return []
 
     def execution_news_status(
         self,
@@ -1351,14 +1124,6 @@ class NewsService:
         finally:
             self._preloading = False
 
-        # Bước 5 (shadow — chưa derate): đánh giá sự kiện high-impact 4-48h từ
-        # snapshot. CHẠY SAU vòng lặp per-symbol ở trên — nơi _macro_tier3 gọi
-        # _ai_currency_stance đổ đầy _stance_cache. Nhờ vậy ngay chu kỳ preload
-        # đầu tiên trong ngày (cache stance còn trống), assessment đã có bối cảnh
-        # stance cho priced_in. Mọi lỗi ở đây chỉ log/emit, KHÔNG được làm hỏng
-        # preload (fail-closed, D6).
-        self._preload_event_impact_assessments(snapshot, ai_service, performance_tracker)
-
         self._last_fetch_time = snapshot.fetched_at_utc
         self._preload_cache_time = now
     # ------------------------------------------------------------------
@@ -1853,10 +1618,6 @@ class NewsService:
         raw_buy = tier1_buy + tier2_buy + tier3_buy
         raw_sell = tier1_sell + tier2_sell + tier3_sell
 
-        # Phase 15D: Macro V2 — pair-relative currency strength (shadow mode)
-        macro_v2 = self._compute_macro_v2(base, quote, base_stance, quote_stance,
-                                          tier1_detail, base_stance_detail, quote_stance_detail)
-
         return {
             "tier1": {"buy": tier1_buy, "sell": tier1_sell, "detail": tier1_detail},
             "tier2": {"buy": tier2_buy, "sell": tier2_sell, "detail": tier2_detail},
@@ -1867,7 +1628,6 @@ class NewsService:
                 "buy": self._build_macro_reason(base, quote, base_stance, quote_stance, "buy", tier1_detail, tier2_detail, tier3_detail),
                 "sell": self._build_macro_reason(base, quote, base_stance, quote_stance, "sell", tier1_detail, tier2_detail, tier3_detail),
             },
-            "macro_v2": macro_v2,
             # Journal stance/strength/confidence của từng đồng tiền để sau này
             # đối chiếu với kết quả lệnh thực tế trong journal giao dịch.
             "stance_journal": {
@@ -2112,142 +1872,6 @@ Trả lời JSON:"""
                 "yield_spread_10y_5y": None,
                 "yield_spread_2s10s": None,
             }
-
-    # --- Phase 15D.1: Macro V2 — pair-relative currency strength (hardened) ---
-
-    def _compute_macro_v2(
-        self, base: str, quote: str, base_stance: str, quote_stance: str,
-        tier1_detail: dict[str, object],
-        base_stance_detail: dict[str, object] | None = None,
-        quote_stance_detail: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        """Compute pair-relative macro scores from currency strength.
-
-        base_strength and quote_strength from rate, trend, and stance.
-        pair_edge = base_strength - quote_strength.
-        Exact symmetry: sell_v2 = 30 - buy_v2 (buy computed by round/clamp).
-        Missing/unavailable data = neutral score (2), tracked in availability.
-        """
-        rates = self._load_interest_rates()
-        base_info = rates.get(base, {})
-        quote_info = rates.get(quote, {})
-
-        # --- Component availability ---
-        # Phase 15G.4: rate=0.0 is valid data; use type-check + parse, not bool()
-        def _rate_available(info: dict) -> bool:
-            v = info.get("rate") if isinstance(info, dict) else None
-            if v is None:
-                return False
-            try:
-                float(str(v).replace("%", ""))
-                return True
-            except (ValueError, TypeError):
-                return False
-
-        def _trend_available(info: dict) -> bool:
-            v = info.get("trend") if isinstance(info, dict) else None
-            return isinstance(v, str) and v.strip() in ("hike", "hold", "cut")
-
-        base_rate_avail = _rate_available(base_info)
-        quote_rate_avail = _rate_available(quote_info)
-        base_trend_avail = _trend_available(base_info)
-        quote_trend_avail = _trend_available(quote_info)
-        base_stance_avail = isinstance(base_stance, str) and base_stance.strip()
-        quote_stance_avail = isinstance(quote_stance, str) and quote_stance.strip()
-
-        # --- Currency strength components (0-4 each) ---
-        # Missing data → neutral score 2 (not 0 dovish/weak)
-
-        def _rate_score(info: dict, available: bool) -> tuple[int, bool]:
-            if not available:
-                return 2, False
-            try:
-                f = float(str(info.get("rate", 0)).replace("%", ""))
-            except (ValueError, TypeError):
-                return 2, False
-            return round(4 * min(abs(f), 5.0) / 5.0), True
-
-        def _trend_score(info: dict, available: bool) -> tuple[int, bool]:
-            trend_map = {"hike": 4, "hold": 2, "cut": 0}
-            if not available:
-                return 2, False
-            return int(trend_map.get(str(info.get("trend", "hold")), 2)), True
-
-        def _stance_score(stance: str, strength: object, confidence: object, available: bool) -> tuple[int, bool]:
-            stance_map = {"hawkish": 4, "neutral": 2, "dovish": 0}
-            if not available:
-                return 2, False
-            norm = stance.strip().lower()
-            if norm not in stance_map:
-                return 2, False
-            # Confidence dưới 0.7 (hoặc không xác định) → coi như neutral (không tin tưởng)
-            try:
-                conf = float(confidence)
-            except (TypeError, ValueError):
-                conf = 0.0
-            if conf < 0.7:
-                return 2, True
-            # Confidence đạt → chấm theo hướng stance và strength, giữ nguyên dải 0-4
-            try:
-                s = max(0.0, min(10.0, float(strength)))
-            except (TypeError, ValueError):
-                s = 0.0
-            if norm == "hawkish":
-                return round(2 + 2 * s / 10.0), True  # hawkish mạnh nhất = 4
-            if norm == "dovish":
-                return round(2 - 2 * s / 10.0), True  # dovish mạnh nhất = 0
-            return 2, True  # neutral
-
-        base_rate, br_ok = _rate_score(base_info, base_rate_avail)
-        quote_rate, qr_ok = _rate_score(quote_info, quote_rate_avail)
-        base_trend, bt_ok = _trend_score(base_info, base_trend_avail)
-        quote_trend, qt_ok = _trend_score(quote_info, quote_trend_avail)
-        base_st, bs_ok = _stance_score(
-            base_stance,
-            (base_stance_detail or {}).get("strength"),
-            (base_stance_detail or {}).get("confidence"),
-            base_stance_avail,
-        )
-        quote_st, qs_ok = _stance_score(
-            quote_stance,
-            (quote_stance_detail or {}).get("strength"),
-            (quote_stance_detail or {}).get("confidence"),
-            quote_stance_avail,
-        )
-
-        # --- Currency strength (0-12) ---
-        base_strength = base_rate + base_trend + base_st
-        quote_strength = quote_rate + quote_trend + quote_st
-
-        # Pair edge: positive = base stronger → favors BUY  [-12, +12]
-        pair_edge = base_strength - quote_strength
-
-        # Exact symmetry: compute buy, derive sell = 30 - buy
-        scale = 30.0 / 24.0
-        buy_v2 = round(max(0.0, min(30.0, 15.0 + pair_edge * scale)))
-        sell_v2 = 30 - buy_v2
-
-        # Confidence: fraction of 6 components available
-        total_avail = sum([br_ok, qr_ok, bt_ok, qt_ok, bs_ok, qs_ok])
-        confidence = round(total_avail / 6.0, 2)
-
-        return {
-            "base_strength": base_strength,
-            "quote_strength": quote_strength,
-            "pair_edge": pair_edge,
-            "buy": buy_v2,
-            "sell": sell_v2,
-            "confidence": confidence,
-            "availability": {
-                "base_rate": br_ok, "quote_rate": qr_ok,
-                "base_trend": bt_ok, "quote_trend": qt_ok,
-                "base_stance": bs_ok, "quote_stance": qs_ok,
-            },
-            "components": {
-                "base": {"rate": base_rate, "trend": base_trend, "stance": base_st},
-                "quote": {"rate": quote_rate, "trend": quote_trend, "stance": quote_st},
-            },
-        }
 
     def _macro_tier1(
         self,

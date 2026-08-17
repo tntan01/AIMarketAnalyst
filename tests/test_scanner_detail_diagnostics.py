@@ -528,10 +528,11 @@ def test_canonical_decision_wins_over_legacy_direction_and_score():
     assert ">61<" in html
 
 
-def test_hero_explains_canonical_status_side_and_shadow_mode():
+def test_hero_explains_canonical_status_and_side():
+    # The rollout stage ladder was removed (2026-08-15, fully live): the hero
+    # bar explains status/side/setup only — there is no shadow-mode banner.
     screen = _make_screen()
     screen.row = _canonical_conflict_row()
-    screen.row["rollout_stage"] = "SHADOW"
     screen.scanner_result = {}
     screen.hero_bar = _FakeLabel()
     screen.settings_service = SimpleNamespace(
@@ -545,7 +546,7 @@ def test_hero_explains_canonical_status_side_and_shadow_mode():
     assert "CHƯA ĐẠT QUY TẮC GIAO DỊCH" in screen.hero_bar.text
     assert "Hướng phân tích: BÁN" in screen.hero_bar.text
     assert "Setup 61/80" in screen.hero_bar.text
-    assert "SHADOW · chỉ quan sát, không gửi lệnh thật" in screen.hero_bar.text
+    assert "SHADOW" not in screen.hero_bar.text
     assert screen.hero_bar.visible is True
 
 

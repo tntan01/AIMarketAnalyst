@@ -69,7 +69,6 @@ PIT_TARGET_THRESHOLDS_DECLARED = (
     "macro_confidence_threshold",
     "macro_conflict_cap",
     "macro_unknown_cap",
-    "ai_conviction_threshold",
     "ranking_weights_within_group",
 )
 

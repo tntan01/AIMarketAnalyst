@@ -4,9 +4,9 @@
 > - **Mục tiêu tài liệu:** mô tả chức năng, cấu hình, kiểm thử và cách chuyển runtime.
 > - **Runtime hiện tại:** `scanner-v3` / `scanner-features-v3`.
 > - **Target:** `scanner-v4` / `scanner-features-v4`.
-> - **Tiến độ:** Bước 00–12 `DONE` (code cutover xong, full suite 3727 xanh); Bước 13 `TODO`.
+> - **Tiến độ:** Bước 00–13 `DONE` (runtime live từ 2026-08-15; full suite 3717 xanh).
 > - **Migration:** cutover trực tiếp sang V4, không duy trì hai scorer trong runtime.
-> - **Cập nhật tài liệu:** 14/08/2026.
+> - **Cập nhật tài liệu:** 15/08/2026.
 
 Tài liệu này là nguồn chuẩn cho Scanner V4. Nó cố ý chỉ giữ những nội dung ảnh
 hưởng trực tiếp tới chương trình:
@@ -19,9 +19,9 @@ hưởng trực tiếp tới chương trình:
 - kiểm thử;
 - cutover và rollback.
 
-`DONE` nghĩa là code, test và tài liệu trong phạm vi của bước đã hoàn tất. Nó
-không có nghĩa V4 đã chạy live. Runtime V3 được thay bằng V4 ở Bước 12 (đã xong ở
-mức code cutover + full suite xanh); việc mở order workflow thật thuộc Bước 13.
+`DONE` nghĩa là code, test và tài liệu trong phạm vi của bước đã hoàn tất. Runtime V3
+được thay bằng V4 ở Bước 12; từ 2026-08-15 (Bước 13) order workflow chạy thật theo
+quyết định của owner — không còn chế độ SHADOW/paper, không còn rollout stage ladder.
 
 ## 1. Mục tiêu và phạm vi
 
@@ -189,25 +189,39 @@ Không có đường mặc định biến missing/error/stale thành `PASS`.
 | Check | PASS | CAUTION | BLOCK | UNKNOWN |
 |---|---|---|---|---|
 | Connectivity | Terminal và broker sẵn sàng | — | Mất kết nối/không đăng nhập | Không đọc được trạng thái |
-| `data` (candle freshness) | Candle còn trong SLA | — | Candle quá cũ | Thiếu timestamp hoặc SLA |
+| `data` (feed freshness) | Tham chiếu tuổi còn trong SLA | — | Tham chiếu tuổi quá cũ | Thiếu timestamp hoặc SLA |
 | Spread | Có ngưỡng symbol và spread hợp lệ | — | Spread vượt ngưỡng | Thiếu spread/ngưỡng symbol |
 | News | Nguồn hợp lệ, không có event gần | Event high-impact `(30, 180]` phút | Event high-impact `[0, 30]` phút | Không lấy/verify được nguồn |
 | Volatility | Ratio không vượt upper threshold | Vượt upper threshold | — | Thiếu metric hoặc upper threshold |
 
-Cấu hình mặc định hiện tại:
+Cấu hình live hiện tại (RuntimeOrderPolicy owner-accepted, §13.1 —
+`config/scanner_v4_order_policy.json`):
 
 - News: block 30 phút, caution 180 phút.
-- Volatility semantics: ATR(14), H4/D1, reference window 14 ngày.
-- Connectivity probe max age: `None`; source vẫn phải có timestamp hợp lệ nhưng chưa bị giới hạn tuổi.
-- Spread threshold map: rỗng.
-- Candle freshness SLA: `None`.
-- Volatility upper ratio: chưa cấu hình.
+- Volatility semantics: ATR(14), H4/D1, reference window 14 ngày; upper ratio `2.0`.
+  Ratio do producer live tính từ nến thật (`compute_live_volatility_ratio`, cùng
+  công thức `atr_volatility_readings` với `build_technical_snapshot` — một nguồn
+  duy nhất, không drift).
+- Connectivity probe max age: 5 phút (`connectivity_max_age_minutes`).
+- Spread threshold map: `{"XAUUSD": 40, "EURUSD": 25}` (điểm). Key tra được chuẩn
+  hóa (`_spread_threshold_for`): app symbol (`EUR/USD`) và broker symbol tài khoản
+  cent (`EURUSDc`) đều khớp key gốc (`EURUSD`); key cent riêng (`EURUSDC`) nếu có
+  sẽ thắng key gốc. Không khớp → `UNKNOWN` + `SAFETY_SPREAD_THRESHOLD_UNSET`
+  (fail-closed).
+- Candle freshness SLA: 3 phút (`max_candle_age_minutes`). **Tham chiếu tuổi
+  (2026-08-16, tick-priority):** ưu tiên tick broker (`last_tick_time_utc`, đọc từ
+  `mt5.symbol_info_tick` qua `symbol_data_quality`) — phép đo trực tiếp nhất của feed
+  sống; khi không có tick (hoặc tick naive) fallback về `last_candle_time_utc` (hành vi
+  cũ). Giá trị SLA giữ nguyên 3 phút — chỉ đổi tham chiếu đo. `observed` ghi
+  `freshness_reference = "tick"|"candle"` để debug. Lý do: `time` của nến M15 là thời
+  điểm MỞ nến (age 0–15 phút so với wall clock), nên tham chiếu nến thuần không thể
+  phân giải SLA 3 phút — gate sẽ fail-closed ~12/15 phút ngay cả khi feed sống. Cuối
+  tuần tick dừng từ Thứ Sáu → tick già → vẫn BLOCK `SAFETY_DATA_STALE` đúng.
 - Manual order không bypass `UNKNOWN`.
 
-Vì các giá trị chưa cấu hình trả `UNKNOWN`, cấu hình mặc định phù hợp cho
-scan/hiển thị/paper. Nó không đảm bảo sinh `READY_NOW` hoặc gửi lệnh. Muốn bật
-order workflow ở Bước 12 phải cấu hình đủ dữ liệu safety bắt buộc; missing
-provider vẫn luôn fail-closed.
+Giá trị thiếu/chưa đọc được vẫn luôn trả `UNKNOWN` (fail-closed). Từ 2026-08-16,
+năm producer live đã được nối đủ để candidate có thể đạt `READY_NOW` trên dữ liệu
+thật khi thị trường lành mạnh — xem §13.1 (block "Năm producer live").
 
 Module canonical: `core/market_safety_gate.py`.
 
@@ -557,10 +571,10 @@ Chỉ dùng hai trạng thái:
 | 10 | Row, UI, snapshot, journal và observability | `DONE` |
 | 11 | Invariant, scenario matrix và validation | `DONE` |
 | 12 | Atomic runtime cutover và xóa executable V3 | `DONE` |
-| 13 | Post-cutover audit và cập nhật runtime docs | `TODO` |
+| 13 | Post-cutover audit, nối RuntimeOrderPolicy live, gỡ rollout/SHADOW | `DONE` |
 
-Các module Bước 02–12 hiện là V4 target và chia sẻ đường live với controller/UI sau
-Bước 12 cutover. Không dùng trạng thái của từng module để ngụ ý nó đã mở order thật.
+Các module Bước 02–13 hiện là V4 target và chia sẻ đường live với controller/UI sau
+Bước 12 cutover; từ Bước 13 order workflow chạy thật (không còn SHADOW/paper mode).
 
 ## 12. Bước 12 — Atomic runtime cutover
 
@@ -596,7 +610,8 @@ Bước 12 cutover. Không dùng trạng thái của từng module để ngụ �
 7. Xác nhận version, score, gate, decision, snapshot, journal và metrics.
 8. Chỉ bật order workflow khi safety, macro, account, portfolio và journal policy
    bắt buộc đã được cấu hình.
-   Nếu vẫn dùng default `None → UNKNOWN`, giữ scan/paper mode.
+   Nếu policy chưa `certified()`, mọi candidate bị chặn fail-closed (`BLOCKED`);
+   scan vẫn chạy bình thường.
 
 Không có thời điểm V3 và V4 cùng phục vụ live traffic.
 
@@ -613,7 +628,9 @@ theo dõi sau đó thuộc riêng Bước 13.
 - Evidence/Execution fallback copy từ Technical.
 - Safety/news/spread logic bị tính lặp.
 - Legacy ranking/enrichment.
-- Generic rollout controls chỉ phục vụ đường V3 đã xóa.
+- Generic rollout controls chỉ phục vụ đường V3: stage ladder, kill switch và release/
+  canary readiness gates đã bị gỡ bỏ hoàn toàn khỏi runtime (2026-08-15) — runtime
+  chạy thật, không còn chế độ SHADOW.
 
 ### 12.4 Smoke test
 
@@ -660,33 +677,37 @@ Khi runtime ổn định:
 - ghi V3 là historical-only;
 - đánh dấu Bước 13 `DONE`.
 
-### 13.1 Cấu hình RuntimeOrderPolicy — GIÁ TRỊ TẠM THỜI (TRIAL, chưa phải final)
+Bước 13 đã hoàn tất ngày 2026-08-15 theo quyết định của owner: RuntimeOrderPolicy
+được nối live (§13.1), toàn bộ rollout machinery và chế độ SHADOW bị gỡ bỏ, order
+workflow chạy thật. Danh sách theo dõi ở trên vẫn là checklist vận hành cho các lần
+chạy live đầu tiên.
+
+### 13.1 Cấu hình RuntimeOrderPolicy — LIVE (owner-accepted 2026-08-15)
 
 Khe cấu hình order duy nhất cho live runtime ([core/scanner_v4_order_policy.py](../core/scanner_v4_order_policy.py))
 đã được wire vào release (`run_v4_pair(..., order_policy=...)`). **Nguồn duy nhất của các
-giá trị thử là file [config/scanner_v4_order_policy.json](../../config/scanner_v4_order_policy.json)**
+giá trị live là file [config/scanner_v4_order_policy.json](../../config/scanner_v4_order_policy.json)**
 — bảng dưới chỉ phản ánh file đó; đổi số thì sửa file, không sửa bảng này. Các giá trị
-**tạm thời được owner chấp nhận để chạy thử** vào 2026-08-14 — chúng **KHÔNG phải là
-số hiệu chuẩn cuối cùng** và **phải được rà lại trong đợt audit Bước 13** trước khi
-coi là chính thức.
+này được **owner chấp nhận chính thức để chạy thật** vào 2026-08-15 (xuất phát điểm là
+bộ số thử được owner duyệt ngày 2026-08-14).
+
+**Đã nối vào live (Bước 13):** `core/scanner_v4_order_policy.py` có loader
+`load_runtime_order_policy()`; controller đọc config trước mỗi scan và truyền
+`order_policy=` vào `run_v4_pair_from_live(...)`. Loader **fail-closed**: thiếu file,
+JSON hỏng hoặc `OrderPolicyError` → raise `OrderPolicyLoadError`, controller giữ
+`DEFAULT_RUNTIME_ORDER_POLICY` (`order_enabled=False` → mọi candidate BLOCKED) và emit
+event observability `ORDER_POLICY_FAULT` (severity ERROR). Config hỏng không bao giờ
+làm crash scan.
 
 **Số bắt buộc để mở** (`certified()`/`order_enabled` = `True`): threshold đủ 4 floor (đã
 chốt 40/35/5/2:1) **và** safety đóng đủ 4 (connectivity age, candle SLA, spread map
-non-rỗng, volatility calibrated) **và** macro đóng đủ **3 trong 5** (`deadband_points`,
-`confidence_threshold`, `conflict_cap` — `unknown_cap` và `ai_conviction_threshold` là
-fail-safe có giá trị nhưng **không gating order**) **và** đủ 4 portfolio/journal. Thiếu bất
+non-rỗng, volatility calibrated) **và** macro đóng đủ **3 trong 4** (`deadband_points`,
+`confidence_threshold`, `conflict_cap` — `unknown_cap` là fail-safe có giá trị nhưng
+**không gating order**) **và** đủ 4 portfolio/journal. Thiếu bất
 kỳ số bắt buộc nào trong `RuntimeOrderPolicy.from_dict` → `order_enabled` vẫn `False` →
 order workflow vẫn BLOCKED (fail-closed).
 
-**Chưa nối vào live (đúng theo kỷ luật giữ ORDER BLOCKED):** file config mới được
-persist + test load; **chưa có loader runtime nào đọc nó** và controller vẫn gọi
-`run_v4_pair_from_live(...)` **không truyền `order_policy=`** → release dùng
-`DEFAULT_RUNTIME_ORDER_POLICY` (safety/macro mở) → candidate luôn BLOCKED. Muốn áp dụng
-các số thử lên live, cần một bước nối riêng: đọc `config/scanner_v4_order_policy.json`,
-`RuntimeOrderPolicy.from_dict`, rồi truyền vào `run_v4_pair_from_live(order_policy=…)`.
-Bước nối này thuộc Bước 13 và chưa làm.
-
-| Lớp | Khóa | Giá trị tạm thời | Ghi chú thử |
+| Lớp | Khóa | Giá trị live | Ghi chú |
 |---|---|---|---|
 | threshold | `technical_floor` / `setup_floor` / `min_score_gap` / `min_risk_reward` | 40 / 35 / 5 / `"2/1"` | đã chốt owner-approved từ Bước 07, giữ nguyên |
 | safety | `connectivity_max_age_minutes` | 5 | heartbeat MT5 tính bằng giây |
@@ -697,23 +718,65 @@ Bước nối này thuộc Bước 13 và chưa làm.
 | macro | `confidence_threshold` | 0.6 | dữ liệu macro tin cậy ≥0.6 |
 | macro | `conflict_cap` | `"WATCH_ZONE"` | đổi thành `"BLOCK"` nếu muốn nghiêm nhất |
 | macro | `unknown_cap` | `"DATA_UNAVAILABLE"` | unknown → fail-closed, không trade |
-| macro | `ai_conviction_threshold` | 0.7 | veto AI chỉ có hiệu lực khi conviction ≥0.7 |
 | portfolio | `portfolio_position_limit` | 1 | đổi 2 nếu muốn hai lệnh |
 | portfolio | `portfolio_exposure_limit` | 0.3 | ≤30% vốn over-exposure |
 | journal | `journal_max_consecutive_losses` | 3 | dừng mở lệnh mới sau 3 lệnh thua liên tiếp |
 | journal | `journal_drawdown_caution_ratio` | 0.1 | sụt 10% → CAUTION/WATCH |
 
 Trạng thái đúng đắn: các số trên là điểm khởi đầu an toàn cho một tài khoản cá nhân,
-**không phải là hiệu chuẩn** dựa trên V3 hoặc data thật. Quyết định áp dụng dứt điểm,
-tăng độ mở (bớt conservative) hay siết chặt hơn là của owner sau khi theo dõi Bước 13.
-Muốn đổi số thử, sửa `config/scanner_v4_order_policy.json`; test
+**không phải là hiệu chuẩn** dựa trên V3 hoặc data thật. Tăng độ mở (bớt conservative)
+hay siết chặt hơn là quyết định của owner trong quá trình chạy live. Muốn đổi số,
+sửa `config/scanner_v4_order_policy.json`; test
 `tests/test_scanner_v4_order_policy.py::TestTrialConfig` giữ cho file luôn load được
 và (khi đủ số) `order_enabled is True`.
 
 > `order_enabled=True` chỉ mở các cổng composition; lệnh thật vẫn phải đi qua chuỗi
 > guard của controller (`execute_order_candidate` → `revalidate_execution` →
-> `place_market_order`) theo §12.1. Và như ghi trên, các số thử hiện **chưa được nối**
-> vào live — bước nối đó cũng thuộc Bước 13, chưa làm.
+> `place_market_order`) theo §12.1. Payload candidate vẫn khóa `sends_real_order=False`
+> (intent-only); dispatch chỉ đi qua `execute_order_candidate` sau revalidation.
+
+**Năm producer live (nối 2026-08-16, tài khoản cent `EURUSDc`):** trước ngày này
+các cổng an toàn thiếu "cảm biến" — 5 mã cấu trúc fire trên mọi lần quét live bất
+kể thị trường. Nay đã nối đủ, mọi giá trị đọc từ dữ liệu MT5/journal thật, thiếu →
+`None` → fail-closed:
+
+| Producer | Nguồn dữ liệu thật | Semantics |
+|---|---|---|
+| Spread threshold lookup | `policy.spread_threshold_by_symbol` | chuẩn hóa key: `EUR/USD`, `EURUSDc` → `EURUSD`; không khớp → `SAFETY_SPREAD_THRESHOLD_UNSET` |
+| Volatility ratio | nến D1/H4 thật | `ATR(14) H4 mới nhất ÷ trung bình 14 ngày ATR(14) D1` — đúng cặp reference gate khóa; thiếu nến → `None` |
+| `account.required_margin` | broker MT5 | margin lô tối thiểu do **broker tự tính** (`order_calc_margin` BUY@ask + SELL@bid, giữ max — bảo thủ); lúc scan chưa có entry/SL nên không risk-size được |
+| `account.free_margin` | `account_info().margin_free` | free margin thật (không dùng balance thay thế) |
+| `portfolio.open_positions` | `portfolio_snapshot()` | đếm vị thế thật từ snapshot (phương thức `open_positions_count` cũ không tồn tại — đã gỡ) |
+| `portfolio.exposure_ratio` | `account_info()` | **margin đang dùng ÷ balance** (owner chốt 2026-08-15), cùng đơn vị tiền tài khoản |
+| `journal.recent_drawdown_ratio` | journal 90 ngày (owner chốt cửa sổ) | curve theo convention `result_r` của `build_performance_summary`: `E *= (1 + risk%/100 × result_r)` chronological, `max((peak−E)/peak)` clamp [0,1]; hàng không có `result_r` không vào curve (đúng convention đó); input hỏng cấu trúc → `None` |
+| `journal.consecutive_losses` | journal mới nhất | convention account guard V3 (`core/account_guard.py`): hàng thiếu/không đọc được result = breakeven (cắt chuỗi), không phải dict = bỏ qua |
+
+**Scenario plan producer (nối 2026-08-16):** trước ngày này đường live không bao giờ dựng
+`ScenarioPlan` (`run_v4_pair_from_live` bỏ trống `scenario_plan`), nên scenario gate luôn
+UNKNOWN `GATE_SCENARIO_PLAN_MISSING` → cap `WATCH_ZONE` → READY_NOW bất khả thi dù mọi gate
+khác PASS. Nay `core/scanner_v4_scenario_producers.py` dựng mỗi side tối đa một plan từ cấu
+trúc thật, fail-closed:
+
+| Yếu tố | Nguồn dữ liệu thật | Semantics |
+|---|---|---|
+| Entry | cạnh vùng bảo vệ mà SL buffer bám (V3-aligned): BUY = `zone_low`, SELL = `zone_high` | ghim entry tại chính vùng bảo vệ (không phải giá thị trường) để risk = đúng buffer 1.0×ATR, nhất quán với nhánh "distant-zone" của chính V3 |
+| Vùng bảo vệ | zone canonical của side (`build_smc_consumer_from_canonical_result` + `selected_zone_for_side`); fallback zone technical gần giá nhất đúng phía | BUY cần `level ≤ price`, SELL cần `level ≥ price`; malformed → fail-closed về technical/không có |
+| SL | cạnh vùng bảo vệ ± `1.0 × ATR` (H4, fallback D1) | hệ số 1.0 của chính V3 (analysis_pipeline.py:1563), không bịa ngưỡng mới; risk = đúng buffer |
+| TP | mức zone phía đối diện vượt cạnh **xa** của vùng bảo vệ gần nhất | BUY: resistance > `zone_high`; SELL: support < `zone_low` (V3:1567-1572) |
+
+Không có nhánh plan tổng hợp thuần ATR: V3 tự đánh dấu nhánh đó display-only /
+`ready_to_trade: False` / `"non-smc-display-v1"` — side thiếu vùng bảo vệ hoặc thiếu target
+đối diện đơn giản là không có plan (gate UNKNOWN, cap WATCH — đúng semantics "chưa có zone
+rõ ràng thì chỉ theo dõi"). Ordering validate TRƯỚC khi construct → sai trả `None`, không
+crash-path mới. Hành vi gate: có plan + RR ≥ 2:1 → PASS; có plan + RR < 2:1 → BLOCK
+`GATE_SCENARIO_RR_BLOCK` (trung thực); không plan → UNKNOWN `GATE_SCENARIO_PLAN_MISSING`.
+
+Kiểm chứng 2026-08-16 (read-only EUR/USD, cuối tuần): cả 5 mã cấu trúc biến mất;
+`GATE_SCENARIO_PLAN_MISSING` biến mất khi có cấu trúc vùng (thay bằng PASS hoặc
+`GATE_SCENARIO_RR_BLOCK` trung thực, không crash); chỉ còn mã chính đáng
+(`SAFETY_DATA_STALE` do FX nghỉ — tick dừng từ Thứ Sáu, tick-priority §5.2;
+`MACRO_LOW_CONFIDENCE` do 0 headline cuối tuần — đúng fail-closed);
+`READY_NOW` chỉ kiểm chứng được trong phiên tuần.
 
 ## 14. File map
 
@@ -727,7 +790,7 @@ và (khi đủ số) `order_enabled is True`.
 | Composition | `core/scanner_v4_composition.py` |
 | Threshold | `core/scanner_v4_threshold_policy.py` |
 | Decision/candidate | `core/scanner_v4_candidate.py`, `core/scanner_v4_strategy_router.py` |
-| Order policy (Bước 12/13) | `core/scanner_v4_order_policy.py` + `config/scanner_v4_order_policy.json` (giá trị thử) |
+| Order policy (live từ Bước 13) | `core/scanner_v4_order_policy.py` + `config/scanner_v4_order_policy.json` (giá trị live, owner-accepted) |
 | Ranking | `core/scanner_v4_ranking.py` |
 | Backtest/config | `core/scanner_v4_backtest_contract.py`, `core/scanner_v4_config_invalidation.py` |
 | Calibration optional | `core/scanner_v4_calibration.py`, `core/scanner_v4_pit_dataset.py` |

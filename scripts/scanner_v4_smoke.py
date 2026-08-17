@@ -30,6 +30,7 @@ from core.scanner_v4_backtest_contract import (
     V3_AUDIT_ONLY_ARTIFACT_KIND,
     classify_backtest_artifact,
 )
+from core.scanner_v4_order_policy import load_runtime_order_policy
 from core.scanner_v4_release import (
     DEFAULT_THRESHOLD_POLICY,
     SCANNER_V4_RELEASE_VERSION,
@@ -110,7 +111,7 @@ def _assert_release_contract(report: dict[str, object]) -> None:
         assert row["scoring_version"] == "scanner-v4"
         assert row["feature_version"] == "scanner-features-v4"
     # Every ready candidate's order payload must be intent-only (never a real
-    # order).  Under this canonical shadow fixture no candidate materializes a
+    # order).  Under this canonical smoke fixture no candidate materializes a
     # real-order payload (all BLOCKED/DATA_UNAVAILABLE — nothing to dispatch);
     # whenever a payload IS produced it is structurally locked to
     # sends_real_order=False (the V4 cell always diffs False for real orders).
@@ -176,14 +177,21 @@ def _pathb_safety() -> dict:
 
 
 def _run_pathb() -> dict[str, object]:
-    """Path-B §12.4 smoke: candle → V4 row via the producers (non-order)."""
+    """Path-B §12.4 smoke: candle → V4 row via the producers (non-order).
+
+    Runs with the owner's LIVE ``RuntimeOrderPolicy`` loaded from
+    ``config/scanner_v4_order_policy.json`` — proves the Bước-13 wiring while
+    the order payload stays structurally intent-only.
+    """
     from core.scanner_v4_features import TechnicalRawDerivationError
 
+    live_policy = load_runtime_order_policy()
     d1, h4, h1 = _pathb_candles()
     pair = run_v4_pair_from_live(
         d1, h4, h1, "XAUUSD", _pathb_safety(),
         now=NOW, captured_at=NOW,
         macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
+        order_policy=live_policy,
     )
     # Surface the DERIVED raw values out of the composition so the evidence
     # proves the full-history path derived raws (NOT the insufficient_history
@@ -212,6 +220,8 @@ def _run_pathb() -> dict[str, object]:
         "smoke": "scanner-v4-pathb-non-order",
         "generated_at_utc": NOW.isoformat(),
         "threshold_policy": DEFAULT_THRESHOLD_POLICY.to_dict(),
+        "order_policy_version": live_policy.order_policy_version,
+        "order_policy_enabled": live_policy.order_enabled,
         "route_status": pair.route_status,
         "row_identity": {
             "composition_version": pair.composition.to_dict().get("composition_version"),
@@ -248,6 +258,12 @@ def main() -> None:
     assert pathb["insufficient_history"] == "TechnicalRawDerivationError"
     assert pathb["row_identity"]["scoring_version"] == "scanner-v4"
     assert pathb["row_identity"]["feature_version"] == "scanner-features-v4"
+    # The owner's live order policy must load certified (order_enabled True);
+    # the intent-only structural lock still keeps sends_real_order=False.
+    assert pathb["order_policy_enabled"] is True, (
+        "owner order policy must certify; a broken config must fail closed, "
+        "not silently disable"
+    )
     # The full-history path must have DERIVED raw scores (in-bounds ints), NOT
     # the insufficient_history branch — proves the smoke used enough candles.
     for side_rawns in pathb["raws_summary"].values():
