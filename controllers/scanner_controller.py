@@ -3029,10 +3029,28 @@ def _analyze_one_symbol(
             journal=pkt.get("journal"),
             order_policy=order_policy,
         )
+        # The thresholds the candidate was routed with come from the SAME
+        # ``order_policy`` this function received (module-level, no ``self``);
+        # fall back to the shared locked default when none is supplied.
+        _threshold = (
+            order_policy.threshold
+            if order_policy is not None
+            else DEFAULT_RUNTIME_ORDER_POLICY.threshold
+        )
         row = pair_to_ui_row(
             pair,
             broker_symbol=broker_symbol,
             technical=analysis.get("technical"),
+            min_score=(
+                float(_threshold.setup_floor)
+                if _threshold.setup_floor is not None
+                else None
+            ),
+            min_rr=(
+                float(_threshold.min_risk_reward)
+                if _threshold.min_risk_reward is not None
+                else None
+            ),
         )
         # The detail chart must render for EVERY candidate (blocked included).
         # ``pair_to_ui_row``'s ``analysis_result`` carries no candles, so inject

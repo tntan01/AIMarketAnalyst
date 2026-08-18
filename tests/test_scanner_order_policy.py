@@ -27,8 +27,14 @@ from core.scanner_order_policy import (
     ORDER_POLICY_VERSION,
     OrderPolicyError,
     RuntimeOrderPolicy,
+    load_runtime_order_policy,
+    update_threshold_policy_file,
 )
 from core.scanner_release import DEFAULT_THRESHOLD_POLICY, run_pair
+from core.scanner_threshold_policy import (
+    SCANNER_THRESHOLD_POLICY_VERSION,
+    ThresholdPolicy,
+)
 
 from tests.test_scanner_composition import NOW, _snapshot
 
@@ -114,6 +120,87 @@ class TestCertification:
         full = RuntimeOrderPolicy.from_dict(_full_dict())
         assert full.order_enabled is True
         assert full.certified() is True
+
+
+def _with_threshold_dict() -> dict:
+    data = _full_dict()
+    data["_accepted_by_owner"] = "owner note must survive"
+    data["threshold"] = {
+        "policy_version": SCANNER_THRESHOLD_POLICY_VERSION,
+        "technical_floor": 40,
+        "setup_floor": 35,
+        "min_score_gap": 5,
+        "min_risk_reward": "2/1",
+    }
+    return data
+
+
+class TestUpdateThresholdPolicyFile:
+    def test_writes_threshold_preserving_other_blocks(self, tmp_path):
+        src = tmp_path / "policy.json"
+        src.write_text(json.dumps(_with_threshold_dict()), encoding="utf-8")
+
+        update_threshold_policy_file(
+            technical_floor=45,
+            setup_floor=40,
+            min_score_gap=3,
+            min_risk_reward=2.5,
+            path=src,
+        )
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert data["threshold"]["technical_floor"] == 45
+        assert data["threshold"]["setup_floor"] == 40
+        assert data["threshold"]["min_score_gap"] == 3
+        assert data["threshold"]["min_risk_reward"] == "5/2"
+        # Every other block + the owner note survive byte intact.
+        assert data["_accepted_by_owner"] == "owner note must survive"
+        assert data["safety"]["spread_threshold_by_symbol"]["XAUUSD"] == 40
+        assert data["macro"]["confidence_threshold"] == 0.7
+        assert data["portfolio_position_limit"] == 5
+        # Reloads through the real loader with the new floors.
+        policy = load_runtime_order_policy(path=src)
+        assert policy.threshold.min_risk_reward == Fraction(5, 2)
+        assert policy.threshold.setup_floor == 40
+        assert policy.threshold.technical_floor == 45
+        assert policy.threshold.certified()
+
+    def test_partial_update_keeps_unsupplied_floors(self, tmp_path):
+        src = tmp_path / "policy.json"
+        src.write_text(json.dumps(_with_threshold_dict()), encoding="utf-8")
+
+        update_threshold_policy_file(min_risk_reward=3, path=src)
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert data["threshold"]["min_risk_reward"] == "3"
+        assert data["threshold"]["technical_floor"] == 40
+        assert data["threshold"]["setup_floor"] == 35
+        assert data["threshold"]["min_score_gap"] == 5
+
+    def test_invalid_rr_raises_and_leaves_file_unchanged(self, tmp_path):
+        src = tmp_path / "policy.json"
+        original = json.dumps(_with_threshold_dict(), indent=2)
+        src.write_text(original, encoding="utf-8")
+
+        with pytest.raises(OrderPolicyError):
+            update_threshold_policy_file(min_risk_reward=0, path=src)
+        assert src.read_text(encoding="utf-8") == original
+
+    def test_uncertified_policy_is_rejected(self, tmp_path):
+        src = tmp_path / "policy.json"
+        src.write_text(json.dumps(_with_threshold_dict()), encoding="utf-8")
+
+        with pytest.raises(OrderPolicyError):
+            update_threshold_policy_file(setup_floor=None, path=src)
+        # Nothing written by the rejected save.
+        data = json.loads(src.read_text(encoding="utf-8"))
+        assert data["threshold"]["setup_floor"] == 35
+
+    def test_rejects_garbage_threshold_block(self, tmp_path):
+        src = tmp_path / "policy.json"
+        src.write_text(json.dumps(_with_threshold_dict()), encoding="utf-8")
+
+        with pytest.raises(OrderPolicyError):
+            update_threshold_policy_file(technical_floor=999, path=src)
+        assert json.loads(src.read_text(encoding="utf-8"))["threshold"]["technical_floor"] == 40
 
     def test_partial_safety_keeps_order_disabled(self):
         data = _full_dict()

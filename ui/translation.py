@@ -75,7 +75,7 @@ PHRASE_TRANSLATIONS = [
     ("Buy/Sell score", "Điểm mua/bán"),
     ("Buy score", "Điểm mua"),
     ("Sell score", "Điểm bán"),
-    ("Trade permission", "Quyền giao dịch"),
+    ("Trade permission", "Cho phép đặt lệnh"),
     ("H4 structure", "Cấu trúc H4"),
     ("D1 structure", "Cấu trúc D1"),
     ("Market Regime", "Trạng thái thị trường"),

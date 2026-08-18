@@ -101,7 +101,7 @@ Quy ước label:
 | Stop Loss | Cắt lỗ |
 | Take Profit | Chốt lời |
 | Direction Bias | Thiên hướng |
-| Trade Permission | Quyền giao dịch |
+| Trade Permission | Cho phép đặt lệnh |
 
 Trong code UI nên có file từ điển thuật ngữ dùng chung, ví dụ `config/terminology.json` hoặc `ui/terminology.py`, để không dịch rải rác trong từng màn hình.
 
@@ -787,15 +787,16 @@ R:R ưu tiên field top-level của scanner row và fallback sang scenario khớ
 
 **Tab Tổng quan** — chia 2 cột (20%/80%):
 - Cột trái (20%, font 11px, padding 6/4, spacing 1px):
-  - Nút "📋 Xem đầy đủ" — mở dialog bối cảnh kỹ thuật, vĩ mô, nhật ký và
-    checklist của kết quả quét.
+  - Nút "📋 Xem đầy đủ" — mở dialog bối cảnh kỹ thuật, vĩ mô và checklist của
+    kết quả quét.
   - Card "🎯 Số liệu giao dịch" — hướng phân tích canonical, vùng vào lệnh,
     SL, TP, R:R thực sau spread/chi phí và chế độ thị trường.
   - Card "📊 Điểm phân tích" — trạng thái candidate, setup score/ngưỡng,
     điểm ưu tiên, độ tin cậy bằng chứng và mức sẵn sàng.
-  - Card "🔍 Điều kiện vào lệnh" — 7 điều kiện lấy từ đúng hướng đã chọn:
-    chiến lược, setup score, entry, vùng giá, M15, R:R thực và quyền tại lúc
-    quét. Trạng thái có ba mức ✅ đạt / ❌ không đạt / ➖ chưa có dữ liệu.
+  - Card "🔍 Điều kiện vào lệnh" — 6 điều kiện lấy từ đúng hướng đã chọn:
+    chiến lược, điểm thiết lập, vùng vào lệnh, R:R, xác nhận điểm vào lệnh và
+    quyền đặt lệnh tại lúc quét. Trạng thái có ba mức ✅ đạt / ❌ không đạt /
+    ➖ chưa có dữ liệu.
 - Cột phải (80%): Hero verdict canonical + Chart (OHLCV, indicator, SMC
   zones) full height. Hero không dùng `best_score` để gọi “MUA/BÁN mạnh”; nó
   hiển thị `candidate_status`, hướng phân tích và setup/ngưỡng.

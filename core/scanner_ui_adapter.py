@@ -181,6 +181,8 @@ def pair_to_ui_row(
     settings_hash: str = "",
     latency_ms: float | None = None,
     technical: dict[str, Any] | None = None,
+    min_score: float | None = None,
+    min_rr: float | None = None,
 ) -> dict[str, Any]:
     """Map an exact-identity ``ReleasePair`` into the UI/aftercare row dict.
 
@@ -188,6 +190,12 @@ def pair_to_ui_row(
     ``derive_live_analysis``) so the adapter can carry the REAL ``price`` /
     ``atr_h1`` the controller still reads for sizing/position registration.  It
     is optional; when absent (or missing a key) those values are ``None``.
+
+    ``min_score`` / ``min_rr`` are the agenda gates the candidate was routed
+    with (the owner's ``order_policy.threshold``).  They fall back to the locked
+    default policy when the caller does not supply them, so the row's
+    threshold columns (e.g. ``R:R x/2``) show the thresholds the candidate
+    actually faced — never a different hard-coded default.
     """
     pair = _require_pair(pair)
     row = _require_row(pair.row)
@@ -263,8 +271,20 @@ def pair_to_ui_row(
     # --- candidate decision shape for the UI's reason-code chain -------------
     # The detail "Điều kiện vào lệnh" checklist reads these keys: min_score /
     # min_rr / eligible / entry_confirmation / execution.trade_allowed.  They
-    # come from REAL source data (locked default threshold policy + candidate),
-    # so a live Scanner row resolves every condition instead of "unknown".
+    # are the agenda gates the candidate was actually routed with (the owner
+    # policy), falling back to the locked default policy when the caller does
+    # not supply them — so a live Scanner row resolves every condition instead
+    # of "unknown" and always faces the SAME thresholds the gate used.
+    _min_score = (
+        min_score
+        if min_score is not None
+        else float(DEFAULT_THRESHOLD_POLICY.setup_floor)
+    )
+    _min_rr = (
+        min_rr
+        if min_rr is not None
+        else float(DEFAULT_THRESHOLD_POLICY.min_risk_reward)
+    )
     if candidate is not None:
         _eligible = selected_side in ("buy", "sell")
         _trade_allowed = row.candidate_status == READY_NOW
@@ -274,8 +294,8 @@ def pair_to_ui_row(
                 "score_value": technical_score,
                 "setup_score": setup_score,
                 "expected_effective_rr": _fraction_to_number(risk_reward_ratio),
-                "min_score": float(DEFAULT_THRESHOLD_POLICY.setup_floor),
-                "min_rr": float(DEFAULT_THRESHOLD_POLICY.min_risk_reward),
+                "min_score": _min_score,
+                "min_rr": _min_rr,
                 "eligible": _eligible,
             },
             "reason_codes": list(row.reason_codes),

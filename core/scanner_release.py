@@ -87,8 +87,10 @@ def run_pair(
 ) -> ReleasePair:
     """Compose + route one snapshot through the single decision path.
 
-    ``compose_scanner`` is the only entry; candidate routing uses the locked
-    DEFAULT threshold policy.  ``order_policy`` binds the safety/macro/composition
+    ``compose_scanner`` is the only entry; candidate routing reads the SAME
+    threshold policy that composed the snapshot (``order_policy.threshold``, the
+    owner config — never a separate hard-coded default).  ``order_policy`` binds
+    the safety/macro/composition
     policies into the composition: its default (``DEFAULT_RUNTIME_ORDER_POLICY``)
     keeps every safety/macro/portfolio/journal value open, so candidates fail
     closed and no real order ever materializes until the owner fills the values
@@ -107,7 +109,7 @@ def run_pair(
     row = scanner_row_from_composition(composition)
     routed: RoutedCandidate = route_scanner(
         composition,
-        thresholds=DEFAULT_THRESHOLD_POLICY,
+        thresholds=policy.threshold,
         entry_confirmation=entry_confirmation,
         proximity=proximity,
     )

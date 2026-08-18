@@ -6,7 +6,7 @@
     "technical_floor": 40,
     "setup_floor": 35,
     "min_score_gap": 5,
-    "min_risk_reward": "2/1"
+    "min_risk_reward": "1"
   },
   "safety": {
     "policy_version": "scanner-safety-policy",

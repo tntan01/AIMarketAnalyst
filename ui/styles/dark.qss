@@ -2240,7 +2240,7 @@ QTableView#EconTable QScrollBar::sub-page:vertical {
    ScanAnalysisDetailDialog Custom Styles
    ========================================================================== */
 QDialog#ScanAnalysisDetailDialog {
-  background: #0b0f19;
+  background: #0f1216;
 }
 
 QDialog#ScanAnalysisDetailDialog QLabel {
@@ -2253,7 +2253,7 @@ QDialog#ScanAnalysisDetailDialog QLabel#ScannerWarningText {
   color: #f59e0b;
 }
 
-QFrame#PriceCard, QFrame#ScannerGroupCard, QFrame#M15Card, QFrame#JournalSampleCard, QFrame#JournalExpectancyCard {
+QFrame#PriceCard, QFrame#ScannerGroupCard, QFrame#ScannerSetupCard, QFrame#M15Card, QFrame#JournalSampleCard, QFrame#JournalExpectancyCard {
   background: #161b26;
   border: 1px solid #242b3d;
   border-radius: 8px;

@@ -68,6 +68,7 @@ QFrame#MacroContextCard,
 QFrame#ChecklistCard,
 QFrame#PriceCard,
 QFrame#ScannerGroupCard,
+QFrame#ScannerSetupCard,
 QFrame#M15Card,
 QFrame#JournalSampleCard,
 QFrame#JournalExpectancyCard {
@@ -323,6 +324,15 @@ QMessageBox QLabel {
 
 QMessageBox QPushButton {
   border-radius: 6px;
+}
+
+QToolTip {
+  color: palette(windowText);
+  background-color: palette(window);
+  border: 1px solid palette(mid);
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 QTabWidget::pane {
@@ -704,6 +714,14 @@ QProgressBar#ScannerTierProgress {
 
 QProgressBar#ScannerTierProgress::chunk {
   border-radius: 3px;
+}
+
+QLabel#ScannerDialogTitle {
+  background: transparent;
+  border: none;
+  @QSS_TITLE@
+  font-weight: 700;
+  color: palette(windowText);
 }
 
 QLabel#ScannerDialogSectionTitle {

@@ -2223,7 +2223,7 @@ QTableView#EconTable QScrollBar::sub-page:vertical {
    ScanAnalysisDetailDialog Custom Styles (Light Theme)
    ========================================================================== */
 QDialog#ScanAnalysisDetailDialog {
-  background: #f8fafc;
+  background: #F4F1EA;
 }
 
 QDialog#ScanAnalysisDetailDialog QLabel {
@@ -2236,7 +2236,7 @@ QDialog#ScanAnalysisDetailDialog QLabel#ScannerWarningText {
   color: #f59e0b;
 }
 
-QFrame#PriceCard, QFrame#ScannerGroupCard, QFrame#M15Card, QFrame#JournalSampleCard, QFrame#JournalExpectancyCard {
+QFrame#PriceCard, QFrame#ScannerGroupCard, QFrame#ScannerSetupCard, QFrame#M15Card, QFrame#JournalSampleCard, QFrame#JournalExpectancyCard {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;

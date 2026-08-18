@@ -12,8 +12,8 @@ from core.reason_codes import REASON_CODE_MESSAGES
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLayout, QProgressBar,
-    QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
-    QWidget,
+    QPushButton, QScrollArea, QSizePolicy, QTabWidget, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 from controllers.journal_controller import JournalController
 from services.storage_service import JsonStorage
@@ -617,10 +617,56 @@ class ScannerDetailScreen(QWidget):
             value = self.row.get("trade_allowed")
         return value if isinstance(value, bool) else None
 
+    def _permission_block_reason(self) -> str:
+        """Shortest human reason the scan-time permission was denied.
+
+        Permission at scan time is only granted when the candidate is
+        READY_NOW, so the candidate status names the most concise reason.  The
+        sibling checklist rows already spell out the individual failed
+        conditions (setup floor, entry confirmation, zone, R:R), so this stays
+        a one-line summary instead of repeating them.
+        """
+        status = self._canonical_status()
+        reason = {
+            "WAITING_CONFIRMATION": "hướng đang chờ xác nhận vào lệnh",
+            "WATCH_ZONE": "giá đang trong vùng theo dõi, chưa vào vùng vào lệnh",
+            "BLOCKED": "bộ lọc an toàn khoá hướng đang xét",
+        }.get(status)
+        if reason:
+            return reason
+        # Fail safe: fall back to the first reason code the decision named.
+        codes = self._candidate_execution().get("reason_codes")
+        if isinstance(codes, list):
+            for code in codes:
+                msg = REASON_CODE_MESSAGES.get(str(code)) or _SCANNER_REASON_MESSAGES.get(
+                    str(code)
+                )
+                if msg:
+                    return msg.rstrip(".").strip() or ""
+        return "chưa đủ điều kiện vào lệnh tại lúc quét"
+
     def _selected_macro_metrics(
         self,
     ) -> tuple[float | None, float | None, str]:
-        """Return raw /30 macro score, confidence and status for selected side."""
+        """Return raw /30 macro score, confidence and status for selected side.
+
+        Scanner V4 exposes the real macro payload on ``row["macro"]``
+        (``driver_context`` = the macro context with per-side alignment scores and
+        confidence).  The legacy ``analysis_result.scenario_scores`` is no longer
+        produced by V4, so we prefer the V4 location and fall back to the old
+        contract only for pre-V4 fixtures.
+        """
+        mac = self._as_dict(self.row.get("macro"))
+        ctx = self._as_dict(mac.get("driver_context"))
+        if ctx:
+            align = self._as_dict(ctx.get("macro_alignment_scores"))
+            side = self._selected_side()
+            score = self._number(align.get(side)) if side else None
+            conf = self._number(mac.get("macro_confidence"))
+            if conf is None:
+                conf = self._number(ctx.get("macro_data_quality"))
+            return score, conf, self._macro_bias_from_scores(align, side)
+
         if self._candidate_decision():
             analysis = self._as_dict(self.row.get("analysis_result"))
             scores = self._as_dict(analysis.get("scenario_scores"))
@@ -635,6 +681,31 @@ class ScannerDetailScreen(QWidget):
             self._number(self.row.get("macro_confidence")),
             str(self.row.get("macro_bias") or "unclear").lower(),
         )
+
+    @staticmethod
+    def _macro_bias_from_scores(align: dict, side: str) -> str:
+        """Macro alignment (aligned/conflict/unclear) from per-side /30 scores.
+
+        Mirrors the V4 alignment check: the selected side is ``aligned`` when it
+        outscores the opposite side by more than 5, ``conflict`` when it lags by
+        more than 5, else ``unclear`` (no data or near-neutral).
+        """
+        if not isinstance(align, dict) or side not in ("buy", "sell"):
+            return "unclear"
+        try:
+            buy = int(align.get("buy")) if align.get("buy") is not None else None
+            sell = int(align.get("sell")) if align.get("sell") is not None else None
+        except (TypeError, ValueError):
+            buy = sell = None
+        if buy is None or sell is None:
+            return "unclear"
+        if side == "buy":
+            if buy > sell + 5:
+                return "aligned"
+            return "conflict" if sell > buy + 5 else "unclear"
+        if sell > buy + 5:
+            return "aligned"
+        return "conflict" if buy > sell + 5 else "unclear"
 
     def _candidate_reason_messages(self) -> list[str]:
         decision = self._candidate_decision()
@@ -659,8 +730,6 @@ class ScannerDetailScreen(QWidget):
             QMessageBox.information(self, "Chưa có dữ liệu", "Chưa chọn mã nào từ bảng quét.")
             return
 
-        light = self._is_light_theme()
-
         symbol = str(self.row.get("symbol", "--"))
         dlg = QDialog(self)
         dlg.setWindowTitle(f"📋 Chi tiết kết quả quét — {symbol}")
@@ -678,9 +747,8 @@ class ScannerDetailScreen(QWidget):
         header_layout = QHBoxLayout()
         header_layout.setSpacing(12)
         
-        title_color = "#0f172a" if light else "#f8fafc"
-        title = QLabel(f"<b style='{_HTML_TITLE}color:{title_color};'>📋 CHI TIẾT KẾT QUẢ QUÉT — {symbol}</b>")
-        title.setTextFormat(Qt.TextFormat.RichText)
+        title = QLabel(f"📋 CHI TIẾT KẾT QUẢ QUÉT — {symbol}")
+        title.setObjectName("ScannerDialogTitle")
         header_layout.addWidget(title)
         header_layout.addStretch(1)
         root.addLayout(header_layout)
@@ -858,15 +926,15 @@ class ScannerDetailScreen(QWidget):
 
         pos_val, _, pos_color = self._dialog_card_position()
         grp_val, grp_detail, grp_color = self._dialog_card_group()
-        m15_val, _, m15_color = self._dialog_card_m15()
+        setup_val, _, setup_color = self._dialog_card_setup()
 
         card_pos = create_info_card("PriceCard", "VỊ TRÍ GIÁ", pos_val, pos_color, "Giá hiện tại đang ở đâu so với vùng vào lệnh đã xác định")
         card_grp = create_info_card("ScannerGroupCard", "TRẠNG THÁI QUÉT", grp_val, grp_color, grp_detail or "Phân loại mã theo mức độ sẵn sàng vào lệnh của bộ quét")
-        card_m15 = create_info_card("M15Card", "XÁC NHẬN M15", m15_val, m15_color, "Độ chặt chẽ của tín hiệu xác nhận ở khung thời gian 15 phút")
+        card_setup = create_info_card("ScannerSetupCard", "ĐIỂM THIẾT LẬP", setup_val, setup_color, "Điểm thiết lập của hướng đang xét so với sàn tối thiểu")
 
         tech_grid.addWidget(card_pos, 0, 0)
         tech_grid.addWidget(card_grp, 0, 1)
-        tech_grid.addWidget(card_m15, 0, 2)
+        tech_grid.addWidget(card_setup, 0, 2)
         left_col.addLayout(tech_grid)
 
         # -----------------------------------------------------------------------
@@ -1025,48 +1093,6 @@ class ScannerDetailScreen(QWidget):
 
         left_col.addWidget(macro_card)
         left_col.addStretch(1)
-
-        # -----------------------------------------------------------------------
-        # CỘT PHẢI - PHẦN 3: HIỆU SUẤT NHẬT KÝ
-        # -----------------------------------------------------------------------
-        journal_title = QLabel("📔 HIỆU SUẤT NHẬT KÝ")
-        journal_title.setObjectName("ScannerDialogSectionTitle")
-        right_col.addWidget(journal_title)
-
-        sample_val, _, sample_accent = self._dialog_card_journal_sample()
-        exp_val, _, exp_accent = self._dialog_card_journal_exp()
-        try:
-            sample_num = int(sample_val)
-        except (TypeError, ValueError):
-            sample_num = 0
-
-        journal_grid = QGridLayout()
-        journal_grid.setHorizontalSpacing(8)
-        journal_grid.setVerticalSpacing(8)
-
-        card_sample = create_info_card("JournalSampleCard", "MẪU NHẬT KÝ", f"{sample_val} mẫu", "#9ca3af", "Số lệnh đã ghi nhật ký khớp với thiết lập tương tự")
-        card_exp = create_info_card("JournalExpectancyCard", "KỲ VỌNG HỆ THỐNG", exp_val, exp_accent, "Kỳ vọng lợi nhuận trung bình theo R, tính từ lịch sử nhật ký")
-
-        journal_grid.addWidget(card_sample, 0, 0)
-        journal_grid.addWidget(card_exp, 0, 1)
-        right_col.addLayout(journal_grid)
-
-        # Warning Banner for small sample sizes
-        if sample_num < 20:
-            warn_frame = QFrame()
-            warn_frame.setObjectName("ScannerWarningBanner")
-            warn_l = QHBoxLayout(warn_frame)
-            warn_l.setContentsMargins(10, 6, 10, 6)
-            warn_l.setSpacing(6)
-            
-            warn_icon = QLabel("⚠️")
-            warn_icon.setObjectName("ScannerWarningIcon")
-            warn_txt = QLabel("Mẫu quá ít, kỳ vọng chưa đáng tin cậy")
-            warn_txt.setObjectName("ScannerWarningText")
-            warn_l.addWidget(warn_icon)
-            warn_l.addWidget(warn_txt)
-            warn_l.addStretch(1)
-            right_col.addWidget(warn_frame)
 
         # -----------------------------------------------------------------------
         # CỘT PHẢI - PHẦN 4: ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)
@@ -1441,12 +1467,19 @@ class ScannerDetailScreen(QWidget):
         val = zone_map.get(price_zone, "Chưa rõ" if price_zone in ("unknown", "--", "") else price_zone.title())
         return val, "", "#f59e0b"
 
-    def _dialog_card_m15(self) -> tuple[str, str, str]:
-        m15_raw = self._m15_text().lower()
-        m15_map = {"strict": "Chặt chẽ", "loose": "Lỏng lẻo", "chưa xác nhận": "Chưa xác nhận"}
-        val = m15_map.get(m15_raw, m15_raw.title())
-        accent = "#10b981" if m15_raw == "strict" else ("#f59e0b" if m15_raw == "loose" else "#e11d48")
-        return val, "", accent
+    def _dialog_card_setup(self) -> tuple[str, str, str]:
+        score = self._canonical_setup_score()
+        floor = self._required_min_score()
+        if score is None:
+            return "--", "", "#94a3b8"
+        if floor is None:
+            return f"{self._score_text(score)}", "", "#f59e0b"
+        ok = score >= floor
+        return (
+            f"{self._score_text(score)}/{self._score_text(floor)}",
+            "",
+            "#10b981" if ok else "#e11d48",
+        )
 
     def _dialog_card_group(self) -> tuple[str, str, str]:
         status = self._canonical_status()
@@ -1475,25 +1508,6 @@ class ScannerDetailScreen(QWidget):
         if allowed is False:
             return "Không được phép tại lúc quét", "", "#e11d48"
         return "Chưa có kết quả", "", "#94a3b8"
-
-    def _dialog_card_journal_sample(self) -> tuple[str, str, str]:
-        sample = self.row.get("journal_sample_size", 0)
-        try:
-            val = str(int(sample))
-        except (TypeError, ValueError):
-            val = "0"
-        return val, "", "#9ca3af"
-
-    def _dialog_card_journal_exp(self) -> tuple[str, str, str]:
-        exp_r = self.row.get("journal_expectancy_r")
-        try:
-            exp_num = float(exp_r)
-            text = f"{exp_num:.2f}R"
-            accent = "#10b981" if exp_num > 0 else ("#e11d48" if exp_num < 0 else "#94a3b8")
-        except (TypeError, ValueError):
-            text = "--"
-            accent = "#94a3b8"
-        return text, "", accent
 
 
 
@@ -1832,11 +1846,26 @@ class ScannerDetailScreen(QWidget):
         return fill + emp
 
     def _get_macro_detail(self) -> dict:
-        """Safely extract tier detail from analysis_result with defaults."""
+        """Safely extract tier detail from analysis_result with defaults.
+
+        Scanner V4 carries the real macro payload on ``row["macro"]`` — the
+        ``driver_context`` holds ``macro_tier_detail`` + ``macro_alignment_reasons``
+        in the same shape the UI already renders.  The legacy
+        ``analysis_result.macro`` is no longer produced by V4, so we prefer the V4
+        location and fall back to the old contract for pre-V4 fixtures.
+        """
         default = {"buy": None, "sell": None, "detail": {}}
-        ar = (self.row or {}).get("analysis_result", {}) or {}
-        td = ar.get("macro", {}).get("macro_tier_detail", {})
-        dc = ar.get("macro", {}).get("driver_context", {})
+        mac = self._as_dict(self.row.get("macro"))
+        ctx = self._as_dict(mac.get("driver_context"))
+        if ctx:
+            td = self._as_dict(ctx.get("macro_tier_detail"))
+            dc = ctx
+        else:
+            legacy_macro = self._as_dict(
+                (self.row or {}).get("analysis_result", {}).get("macro")
+            )
+            td = self._as_dict(legacy_macro.get("macro_tier_detail"))
+            dc = legacy_macro
 
         t1 = td.get("tier1_interest_rate", default) if isinstance(td, dict) else default
         t2 = td.get("tier2_calendar", default) if isinstance(td, dict) else default
@@ -2084,7 +2113,7 @@ class ScannerDetailScreen(QWidget):
 
         SHORT_NAMES = [
             "Chiến lược", "Điểm setup", "Entry",
-            "Vùng giá", "R:R thực", "Quyền giao dịch",
+            "Vùng giá", "R:R thực", "Cho phép đặt lệnh",
         ]
 
         fail_count = sum(
@@ -2273,18 +2302,6 @@ class ScannerDetailScreen(QWidget):
         ))
 
         trade_allowed = self._scan_trade_allowed()
-        execution_reasons = execution.get("reason_codes")
-        if not isinstance(execution_reasons, list):
-            execution_reasons = decision.get("reason_codes")
-        if not isinstance(execution_reasons, list):
-            execution_reasons = []
-        permission_detail = "; ".join(
-            REASON_CODE_MESSAGES.get(
-                str(code),
-                _SCANNER_REASON_MESSAGES.get(str(code), str(code)),
-            )
-            for code in execution_reasons[:2]
-        )
         permission_state = (
             "pass"
             if trade_allowed is True
@@ -2292,18 +2309,18 @@ class ScannerDetailScreen(QWidget):
             if trade_allowed is False
             else "unknown"
         )
-        items.append(_item(
-            permission_state,
-            "Quyền giao dịch: "
-            + (
-                "được phép"
-                if trade_allowed is True
-                else "không được phép"
-                if trade_allowed is False
-                else "chưa có kết quả"
+        permission_label = "Cho phép đặt lệnh: " + (
+            "được phép"
+            if trade_allowed is True
+            else "chưa có kết quả"
+            if trade_allowed is None
+            else ""
+        )
+        if trade_allowed is False:
+            permission_label += (
+                "không được phép — do " + self._permission_block_reason()
             )
-            + (f" — {permission_detail}" if permission_detail else ""),
-        ))
+        items.append(_item(permission_state, permission_label))
 
         return items
 

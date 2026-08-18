@@ -38,6 +38,7 @@ from core.scanner_threshold_policy import (
     SCANNER_THRESHOLD_POLICY_LEGACY_VERSION,
     SCANNER_THRESHOLD_POLICY_VERSION,
     ThresholdPolicy,
+    ThresholdPolicyError,
     make_default_threshold_policy,
 )
 
@@ -410,6 +411,116 @@ def _optional_over(value: object, fallback: Any) -> Any:
     return fallback if value is None else value
 
 
+# Sentinel distinguishing "caller did not pass this field" from ``None`` (clear).
+_OMIT = object()
+
+
+def _rr_from_input(value: object) -> Fraction | None:
+    """Coerce a UI/decimal/ratio R:R into a positive ``Fraction`` (None when omitted)."""
+    if value is _OMIT or value is None:
+        return None
+    if isinstance(value, bool):
+        raise OrderPolicyError("threshold.min_risk_reward", "expected an R:R ratio")
+    if isinstance(value, Fraction):
+        number = value
+    elif isinstance(value, (int, float)):
+        # A QDoubleSpinBox yields a JSON-unfriendly decimal; keep it exact-ish.
+        number = Fraction(str(value)).limit_denominator(100)
+    elif isinstance(value, str):
+        try:
+            number = Fraction(value)
+        except (ValueError, ZeroDivisionError):
+            raise OrderPolicyError(
+                "threshold.min_risk_reward", f"unparsable ratio {value!r}"
+            ) from None
+    else:
+        raise OrderPolicyError("threshold.min_risk_reward", "expected an R:R ratio")
+    if number <= 0:
+        raise OrderPolicyError("threshold.min_risk_reward", "must be positive")
+    return number
+
+
+def _rr_to_storage(value: object) -> str | None:
+    rr = _rr_from_input(value)
+    return None if rr is None else str(rr)  # "2" / "5/2", fine for the loader
+
+
+def update_threshold_policy_file(
+    *,
+    technical_floor: int | object = _OMIT,
+    setup_floor: int | object = _OMIT,
+    min_score_gap: int | object = _OMIT,
+    min_risk_reward: Fraction | int | float | str | object = _OMIT,
+    path: str | Path | None = None,
+) -> ThresholdPolicy:
+    """Overwrite ONLY the ``threshold`` block of the owner policy file in place.
+
+    Keeps every other block (safety / macro / portfolio / journal and the
+    ``_accepted_by_owner`` note) byte-for-byte intact.  Only the fields the
+    caller passes are merged over the existing ``threshold``; the rest carry
+    over.  The merged block is validated through the same ``ThresholdPolicy``
+    contract the runtime loader reads and must be ``certified()`` (all four
+    values present) before anything is written — a broken or open policy can
+    never be saved, so a saved file always reloads and never silently blocks
+    or opens orders.  Raises ``OrderPolicyError``/``OrderPolicyLoadError`` on
+    any failure and leaves the file untouched.
+    """
+    if path is None:
+        from config.paths import CONFIG_DIR
+
+        resolved = CONFIG_DIR / DEFAULT_ORDER_POLICY_FILENAME
+    else:
+        resolved = Path(path)
+    try:
+        raw_text = resolved.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise OrderPolicyLoadError(str(resolved), f"cannot read file: {exc}") from exc
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise OrderPolicyLoadError(str(resolved), f"invalid JSON: {exc}") from exc
+    if type(data) is not dict:
+        raise OrderPolicyLoadError(str(resolved), "policy file must be a JSON object")
+
+    merged = dict(data.get("threshold")) if isinstance(data.get("threshold"), dict) else {}
+    if technical_floor is not _OMIT:
+        merged["technical_floor"] = technical_floor
+    if setup_floor is not _OMIT:
+        merged["setup_floor"] = setup_floor
+    if min_score_gap is not _OMIT:
+        merged["min_score_gap"] = min_score_gap
+    if min_risk_reward is not _OMIT:
+        merged["min_risk_reward"] = _rr_to_storage(min_risk_reward)
+    merged["policy_version"] = SCANNER_THRESHOLD_POLICY_VERSION
+
+    # Validate through the same contract before touching the file (fail-closed).
+    try:
+        policy = ThresholdPolicy(
+            policy_version=merged.get("policy_version"),
+            technical_floor=merged.get("technical_floor"),
+            setup_floor=merged.get("setup_floor"),
+            min_score_gap=merged.get("min_score_gap"),
+            min_risk_reward=_rr_from_input(merged.get("min_risk_reward")),
+        )
+    except ThresholdPolicyError as exc:
+        raise OrderPolicyError(f"threshold.{exc.path}", exc.detail) from exc
+    if not policy.certified():
+        raise OrderPolicyError(
+            "threshold",
+            "tất cả 4 ngưỡng (technical/setup/gap/rr) phải được đặt để fail-closed an toàn",
+        )
+
+    data["threshold"] = policy.to_dict()
+    try:
+        resolved.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise OrderPolicyLoadError(str(resolved), f"cannot write file: {exc}") from exc
+    return policy
+
+
 __all__ = [
     "DEFAULT_ORDER_POLICY_FILENAME",
     "DEFAULT_RUNTIME_ORDER_POLICY",
@@ -418,4 +529,5 @@ __all__ = [
     "OrderPolicyLoadError",
     "RuntimeOrderPolicy",
     "load_runtime_order_policy",
+    "update_threshold_policy_file",
 ]

@@ -17,11 +17,16 @@ Proves the single row→UI mapping:
 from __future__ import annotations
 
 import dataclasses
+from fractions import Fraction
 
 import pytest
 
 from core.reason_codes import SCANNER_VERSION_MISMATCH
-from core.scanner_release import run_pair, run_pair_from_live
+from core.scanner_release import (
+    DEFAULT_THRESHOLD_POLICY,
+    run_pair,
+    run_pair_from_live,
+)
 from core.scanner_ui_adapter import (
     ADAPTER_VERSION,
     ANALYSIS_OK,
@@ -275,3 +280,58 @@ class TestLiveWiringAdapter:
         payload = row["candidate_order_payload"]
         if payload is not None:
             assert payload["sends_real_order"] is False
+
+
+def _custom_policy(*, technical_floor=50, setup_floor=45, min_score_gap=4,
+                   min_risk_reward=3):
+    from fractions import Fraction
+
+    from core.scanner_order_policy import DEFAULT_RUNTIME_ORDER_POLICY
+    from core.scanner_threshold_policy import (
+        SCANNER_THRESHOLD_POLICY_VERSION,
+        ThresholdPolicy,
+    )
+
+    return dataclasses.replace(
+        DEFAULT_RUNTIME_ORDER_POLICY,
+        threshold=ThresholdPolicy(
+            policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
+            technical_floor=technical_floor,
+            setup_floor=setup_floor,
+            min_score_gap=min_score_gap,
+            min_risk_reward=Fraction(min_risk_reward),
+        ),
+    )
+
+
+class TestThresholdColumns:
+    def test_default_thresholds_when_not_supplied(self):
+        decision = pair_to_ui_row(_pair())["scanner_candidate_decision"]
+        assert decision["strategy"]["min_score"] == float(
+            DEFAULT_THRESHOLD_POLICY.setup_floor
+        )
+        assert decision["strategy"]["min_rr"] == float(
+            DEFAULT_THRESHOLD_POLICY.min_risk_reward
+        )
+
+    def test_supplied_thresholds_override(self):
+        custom = _custom_policy(min_risk_reward=3)
+        pair = run_pair(SNAPSHOT, now=TESTKIT_NOW, order_policy=custom)
+        row = pair_to_ui_row(pair, min_score=45.0, min_rr=3.0)
+        decision = row["scanner_candidate_decision"]
+        assert decision["strategy"]["min_score"] == 45.0
+        assert decision["strategy"]["min_rr"] == 3.0
+
+    def test_router_and_display_share_owner_threshold(self):
+        """The row the owner sees shows the SAME threshold the gate used."""
+        custom = _custom_policy(min_risk_reward=Fraction(5, 2))
+        pair = run_pair(SNAPSHOT, now=TESTKIT_NOW, order_policy=custom)
+        row = pair_to_ui_row(
+            pair,
+            min_score=float(custom.threshold.setup_floor),
+            min_rr=float(custom.threshold.min_risk_reward),
+        )
+        decision = row["scanner_candidate_decision"]["strategy"]
+        assert decision["min_score"] == float(custom.threshold.setup_floor)
+        assert decision["min_rr"] == float(custom.threshold.min_risk_reward)
+        assert decision["min_rr"] > DEFAULT_THRESHOLD_POLICY.min_risk_reward

@@ -59,10 +59,61 @@ def test_floors_come_from_locked_default_threshold_policy() -> None:
 def test_blocked_row_reports_trade_not_allowed() -> None:
     items = _screen()._build_entry_checklist()
     permission = next(
-        item for item in items if item["label"].startswith("Quyền giao dịch")
+        item for item in items if item["label"].startswith("Cho phép đặt lệnh")
     )
     assert permission["state"] == "fail"
     assert "không được phép" in permission["label"]
+    # The label must name a real, human-readable reason — never a raw code
+    # like SAFETY_* / GATE_* or an empty tail.
+    assert "— do " in permission["label"]
+    reason = permission["label"].split("do ", 1)[1].strip()
+    assert reason
+    assert "SAFETY_" not in reason and "GATE_" not in reason
+    assert "_" not in reason  # concise status phrase, not a machine code
+
+
+def test_checklist_panel_builds_without_crash() -> None:
+    """Regression: opening the detail view must never crash building the grid.
+
+    The "?" QToolButton previously referenced ``QtCore.QSize`` without importing
+    ``QtCore`` — a runtime NameError that py_compile cannot catch (syntax only),
+    so the app crashed exactly when the checklist panel rendered.  Runs the real
+    panel build in a subprocess to exercise the live QToolButton path.
+    """
+    import os
+    import subprocess
+    import sys
+    import textwrap
+
+    code = textwrap.dedent(
+        """
+        import os
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
+        from ui.screens.scanner_detail_screen import ScannerDetailScreen
+        from tests.test_scanner_detail_chart_for_blocked import _analyzed
+
+        app = QApplication([])
+        screen = ScannerDetailScreen()
+        screen.row = _analyzed()
+        screen.checklist_panel = QWidget()
+        screen.checklist_panel.setLayout(QVBoxLayout(screen.checklist_panel))
+        screen._refresh_checklist_panel()  # must not raise
+        print("PANEL_OK")
+        """
+    )
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    assert proc.returncode == 0, (
+        f"checklist panel crashed:\nSTDOUT={proc.stdout}\nSTDERR={proc.stderr}"
+    )
+    assert "PANEL_OK" in proc.stdout
 
 
 def test_entry_confirmation_resolves_not_unknown() -> None:
@@ -94,3 +145,32 @@ def test_real_scanner_row_carries_price_vs_zone() -> None:
     assert zone in ("in_zone", "near_zone", "far"), (
         f"real Scanner row must classify price vs its plan zone, got {zone!r}"
     )
+
+
+def test_dialog_setup_card_resolves_from_lock_policy() -> None:
+    """The M15 card was replaced by "ĐIỂM THIẾT LẬP" (setup/floor).
+
+    ``_dialog_card_setup`` reads the canonical setup score and the locked default
+    threshold floor, so a real routed candidate yields a real "1/2" style value
+    (never "--") with a pass/fail accent — not the legacy M15 verdict.
+    """
+    screen = _screen()
+    val, detail, accent = screen._dialog_card_setup()
+    assert "/" in val, f"setup card must show setup/floor, got {val!r}"
+    assert accent in ("#10b981", "#e11d48", "#f59e0b", "#94a3b8")
+
+
+def test_legacy_m15_and_journal_dialog_references_removed() -> None:
+    """The removed gates (M15, journal) must no longer be referenced by the
+    "Xem đầy đủ" dialog — they were legacy V3 concepts.  Source-level guard so we
+    can't regress to the stale cards without a test noticing."""
+    import inspect
+
+    from ui.screens import scanner_detail_screen
+
+    src = inspect.getsource(scanner_detail_screen)
+    assert "_dialog_card_setup" in src  # replacement card present
+    assert "XÁC NHẬN M15" not in src
+    assert "HIỆU SUẤT NHẬT KÝ" not in src
+    assert "_dialog_card_journal_sample" not in src
+    assert "_dialog_card_journal_exp" not in src

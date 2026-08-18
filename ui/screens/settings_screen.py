@@ -17,6 +17,13 @@ from core.scanner_models import (
     CONFIG_VALIDATED,
     CONFIG_VERSION_MISMATCH,
 )
+from core.scanner_order_policy import (
+    DEFAULT_RUNTIME_ORDER_POLICY,
+    OrderPolicyError,
+    OrderPolicyLoadError,
+    load_runtime_order_policy,
+    update_threshold_policy_file,
+)
 from PyQt6.QtCore import QThread, Qt, QEvent, QObject
 from PyQt6.QtGui import QIntValidator
 from PyQt6.QtWidgets import (
@@ -1473,6 +1480,83 @@ class SettingsScreen(QWidget):
         runtime_layout.addStretch(1)
         frame.layout().addWidget(runtime_panel)
 
+        # --- Ngưỡng Scanner (threshold policy) --------------------------------
+        # The Scanner candidate gate + the "R:R x/2" / "Điểm thiết lập x/35"
+        # readouts in the detail view come from config/scanner_order_policy.json.
+        # Let the owner edit them here instead of hand-editing the file.
+        threshold_panel = QFrame()
+        threshold_panel.setObjectName("CompactFormPanel")
+        threshold_layout = QVBoxLayout(threshold_panel)
+        configure_layout(threshold_layout, spacing=LayoutTokens.SPACE_2)
+
+        threshold_title = QLabel("Ngưỡng Scanner (threshold)")
+        threshold_title.setObjectName("PanelTitle")
+        threshold_layout.addWidget(threshold_title)
+
+        try:
+            threshold_policy = load_runtime_order_policy()
+        except (OrderPolicyError, OrderPolicyLoadError):
+            threshold_policy = DEFAULT_RUNTIME_ORDER_POLICY
+        threshold = threshold_policy.threshold
+
+        min_rr_control = self._order_management_decimal_input(
+            float(threshold.min_risk_reward) if threshold.min_risk_reward is not None else 2.0,
+            minimum=0.1,
+            maximum=20.0,
+            step=0.5,
+            suffix="",
+        )
+        setup_floor_control = QSpinBox()
+        setup_floor_control.setRange(0, 100)
+        setup_floor_control.setValue(threshold.setup_floor or 0)
+        technical_floor_control = QSpinBox()
+        technical_floor_control.setRange(0, 100)
+        technical_floor_control.setValue(threshold.technical_floor or 0)
+        gap_control = QSpinBox()
+        gap_control.setRange(0, 100)
+        gap_control.setValue(threshold.min_score_gap or 0)
+
+        self.scanner_threshold_rr_input = min_rr_control
+        self.scanner_threshold_setup_input = setup_floor_control
+        self.scanner_threshold_technical_input = technical_floor_control
+        self.scanner_threshold_gap_input = gap_control
+
+        threshold_rows = (
+            ("R:R tối thiểu", min_rr_control),
+            ("Điểm thiết lập tối thiểu", setup_floor_control),
+            ("Điểm kỹ thuật tối thiểu", technical_floor_control),
+            ("Chênh lệch điểm tối thiểu", gap_control),
+        )
+        threshold_grid = QGridLayout()
+        threshold_grid.setContentsMargins(0, 0, 0, 0)
+        threshold_grid.setHorizontalSpacing(LayoutTokens.SPACE_4)
+        threshold_grid.setVerticalSpacing(LayoutTokens.SPACE_2)
+        for index, (label, control) in enumerate(threshold_rows):
+            threshold_grid.addWidget(
+                self._compact_form_row(label, control),
+                index // 2,
+                index % 2,
+            )
+        threshold_layout.addLayout(threshold_grid)
+        threshold_layout.addStretch(1)
+        frame.layout().addWidget(threshold_panel)
+
+        self.scanner_threshold_status_label = QLabel()
+        self.scanner_threshold_status_label.setObjectName("HelperText")
+        self.scanner_threshold_status_label.setWordWrap(True)
+        frame.layout().addWidget(self.scanner_threshold_status_label)
+
+        self.scanner_threshold_save_button = action_button(
+            "💾 Lưu ngưỡng Scanner",
+            primary=True,
+            color="success",
+        )
+        configure_button(self.scanner_threshold_save_button)
+        self.scanner_threshold_save_button.clicked.connect(
+            self._save_scanner_thresholds
+        )
+        frame.layout().addWidget(self.scanner_threshold_save_button)
+
         self.order_management_status_label = QLabel()
         self.order_management_status_label.setObjectName("HelperText")
         self.order_management_status_label.setWordWrap(True)
@@ -1577,6 +1661,31 @@ class SettingsScreen(QWidget):
                 )
             app.settings = self.app_settings
         self._update_order_management_safety_state(saved=True)
+
+    def _save_scanner_thresholds(self) -> None:
+        try:
+            update_threshold_policy_file(
+                technical_floor=self.scanner_threshold_technical_input.value(),
+                setup_floor=self.scanner_threshold_setup_input.value(),
+                min_score_gap=self.scanner_threshold_gap_input.value(),
+                min_risk_reward=self.scanner_threshold_rr_input.value(),
+            )
+        except (OrderPolicyError, OrderPolicyLoadError) as exc:
+            detail = getattr(exc, "detail", None) or str(exc)
+            self._set_scanner_threshold_status(
+                f"Chưa lưu — {detail}", "error"
+            )
+            return
+        self._set_scanner_threshold_status(
+            "Đã lưu ngưỡng Scanner. Áp dụng từ quét kế tiếp.", "ok"
+        )
+
+    def _set_scanner_threshold_status(self, text: str, state: str) -> None:
+        label = self.scanner_threshold_status_label
+        label.setText(text)
+        label.setProperty("state", state)
+        label.style().unpolish(label)
+        label.style().polish(label)
 
     def _display_tab(self) -> QFrame:
         frame = card("Hiển thị")

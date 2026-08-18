@@ -638,6 +638,54 @@ def test_missing_gate_and_macro_data_are_not_presented_as_pass_or_neutral_score(
     assert "Chưa rõ" in macro_detail
 
 
+def test_macro_resolves_from_real_scanner_v4_payload():
+    """Scanner V4 exposes macro on ``row["macro"]["driver_context"]``, not the
+    legacy ``analysis_result.scenario_scores``/``analysis_result.macro``.  A real
+    V4 payload must resolve real scores + tiers instead of "--"/"Chưa có dữ liệu".
+    """
+    screen = _make_screen()
+    screen.row = {
+        "selected_side": "buy",
+        "macro": {
+            "driver_context": {
+                "macro_alignment_scores": {"buy": 21, "sell": 15},
+                "macro_alignment_reasons": {"buy": "Fed lạc quan", "sell": "ECB trung lập"},
+                "macro_tier_detail": {
+                    "tier1_interest_rate": {
+                        "buy": 8, "sell": 6,
+                        "detail": {"base_rate": "4.5%", "quote_rate": "3.9%",
+                                   "base_stance": "hawkish", "quote_stance": "dovish",
+                                   "yield_spread_2s10s": 0.33, "yield_spread_steepening": True},
+                    },
+                    "tier2_calendar": {
+                        "buy": 5, "sell": 5,
+                        "detail": {"base_event_count": 3, "quote_event_count": 1},
+                    },
+                    "tier3_sentiment": {
+                        "buy": 6, "sell": 4,
+                        "detail": {"risk_sentiment": "risk_off", "vix_level": 22.5,
+                                   "hotspot_count": 2},
+                    },
+                },
+            },
+            "macro_confidence": 0.75,
+        },
+    }
+
+    num, conf, bias = screen._selected_macro_metrics()
+    assert num == 21  # selected side "buy" alignment /30 — real, not "--"
+    assert conf == 0.75
+    assert bias == "aligned"  # buy 21 > sell 15 + 5
+
+    md = screen._get_macro_detail()
+    assert md["t1"] == 8 and md["t2"] == 5 and md["t3"] == 6
+    assert "Thắt chặt" in md["t1_reason"]  # hawkish → Vietnamese, from real tier
+    assert "4.5%" in md["t1_reason"]
+    assert md["reasons"].get("buy") == "Fed lạc quan"
+    assert md["t1_detail"]["yield_spread_2s10s"] == 0.33
+    assert md["t3_detail"]["vix_level"] == 22.5
+
+
 # ---------------------------------------------------------------------------
 # Test 13: AI setup audit HTML
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ from core.scanner_release import (
 )
 from core.scanner_row import SCANNER_ROW_VERSION
 from core.scanner_threshold_policy import make_default_threshold_policy
+from core.scanner_order_policy import DEFAULT_RUNTIME_ORDER_POLICY
 
 from tests.test_scanner_composition import (
     NOW,
@@ -370,3 +371,56 @@ class TestLiveScenarioPlanWiring:
         payload = pair.candidate.order_payload if pair.candidate else None
         if payload is not None:
             assert payload.sends_real_order is False
+
+
+class TestRouterUsesOwnerThreshold:
+    """The candidate gate must read the owner policy — never a separate default."""
+
+    def test_route_receives_order_policy_threshold(self, monkeypatch):
+        from dataclasses import replace
+
+        from core.scanner_threshold_policy import (
+            SCANNER_THRESHOLD_POLICY_VERSION,
+            ThresholdPolicy,
+        )
+
+        custom = replace(
+            DEFAULT_RUNTIME_ORDER_POLICY,
+            threshold=ThresholdPolicy(
+                policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
+                technical_floor=50,
+                setup_floor=45,
+                min_score_gap=4,
+                min_risk_reward=Fraction(3, 1),
+            ),
+        )
+        captured: dict[str, object] = {}
+        import core.scanner_release as sr
+
+        real_route = sr.route_scanner
+
+        def _spy(composition, *, thresholds, **kwargs):
+            captured["thresholds"] = thresholds
+            return real_route(composition, thresholds=thresholds, **kwargs)
+
+        monkeypatch.setattr(sr, "route_scanner", _spy)
+        run_pair(_snapshot(), now=NOW, order_policy=custom)
+        assert captured.get("thresholds") is custom.threshold
+        # Not the locked default — proving the gate honors owner config.
+        assert captured["thresholds"] is not DEFAULT_THRESHOLD_POLICY
+
+    def test_default_policy_routes_with_locked_default_threshold(self, monkeypatch):
+        captured: dict[str, object] = {}
+        import core.scanner_release as sr
+
+        real_route = sr.route_scanner
+
+        def _spy(composition, *, thresholds, **kwargs):
+            captured["thresholds"] = thresholds
+            return real_route(composition, thresholds=thresholds, **kwargs)
+
+        monkeypatch.setattr(sr, "route_scanner", _spy)
+        run_pair(_snapshot(), now=NOW)
+        # With no owner policy the gate reads the shared locked default — the
+        # runtime contract is unchanged for an unconfigured bundle.
+        assert captured.get("thresholds") is DEFAULT_RUNTIME_ORDER_POLICY.threshold
