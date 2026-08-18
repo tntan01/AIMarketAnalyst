@@ -364,8 +364,8 @@ class ScannerRankingEvaluation:
         }
 
 
-# Target-only Scanner V4 contract exports.  Keeping these imports after all
-# executable V3 definitions prevents target identities from changing the current
+# Target-only Scanner contract exports.  Keeping these imports after all
+# executable legacy definitions prevents target identities from changing the current
 # runtime constants or serialization paths before direct cutover.
 from core.scanner_v4_models import (  # noqa: E402
     CanonicalPairSnapshot,
@@ -376,17 +376,17 @@ from core.scanner_v4_models import (  # noqa: E402
     MarketSafetyResult,
     PAYLOAD_INVALID,
     PAYLOAD_LEGACY_V3,
-    PAYLOAD_V4,
+    PAYLOAD,
     SCANNER_V4_FEATURE_VERSION,
-    SCANNER_V4_MACRO_POLICY_VERSION,
-    SCANNER_V4_OUTPUT_SCHEMA_VERSION,
+    SCANNER_MACRO_POLICY_VERSION,
+    SCANNER_OUTPUT_SCHEMA_VERSION,
     SCANNER_V4_RANKING_VERSION,
-    SCANNER_V4_SAFETY_POLICY_VERSION,
-    SCANNER_V4_SCORING_VERSION,
-    SCANNER_V4_SNAPSHOT_VERSION,
-    SCANNER_V4_VERSION_FIELDS,
+    SCANNER_SAFETY_POLICY_VERSION,
+    SCANNER_SCORING_VERSION,
+    SCANNER_SNAPSHOT_VERSION,
+    SCANNER_VERSION_FIELDS,
     ScannerPayloadClassification,
-    ScannerV4ContractError,
+    ScannerContractError,
     SideScore,
     TechnicalBreakdown,
     TechnicalComponent,

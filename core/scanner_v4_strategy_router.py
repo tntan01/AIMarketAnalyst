@@ -1,19 +1,19 @@
-"""Scanner V4 strategy router (Bước 08; target-only, not live-wired yet).
+"""Scanner strategy router (Bước 08; target-only, not live-wired yet).
 
-The router is the fail-closed gateway in front of the V4 decision path:
+The router is the fail-closed gateway in front of the decision path:
 
-* it reads ONLY the Step 07 canonical output — V4 side scores, gates and the
+* it reads ONLY the Step 07 canonical output — side scores, gates and the
   locked versions (``composition_version`` + the canonical snapshot's own
   version fields);
-* a V3 payload, a missing/mismatched version, or any forbidden legacy field
+* a legacy payload, a missing/mismatched version, or any forbidden legacy field
   (``total``, ``best_score``, top-level legacy score, ``scanner_action``, etc.)
   returns ``version_mismatch`` **before anything executes** — there is no
-  fallback that lets a V3 artifact enter the V4 path;
+  fallback that lets a legacy artifact enter the path;
 * a routed result never executes a real order at Bước 08 (``executed=False``).
 
-``route_scanner_v4`` accepts either the typed ``ScannerV4CompositionResult`` or
+``route_scanner`` accepts either the typed ``ScannerCompositionResult`` or
 its strict JSON dict.  Every dict is deep-validated via the exact-key readers
-and ``deserialize_canonical_pair_snapshot`` (which itself refuses V3 artifacts).
+and ``deserialize_canonical_pair_snapshot`` (which itself refuses legacy artifacts).
 """
 
 from __future__ import annotations
@@ -22,28 +22,29 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from core.reason_codes import (
-    SCANNER_V4_FORBIDDEN_SCORED_FIELD,
-    SCANNER_V4_LEGACY_V3_AUDIT_ONLY,
-    SCANNER_V4_SCHEMA_INVALID,
-    SCANNER_V4_VERSION_MISMATCH,
-    SCANNER_V4_VERSION_MISSING,
+    SCANNER_FORBIDDEN_SCORED_FIELD,
+    SCANNER_LEGACY_V3_AUDIT_ONLY,
+    SCANNER_SCHEMA_INVALID,
+    SCANNER_VERSION_MISMATCH,
+    SCANNER_VERSION_MISSING,
 )
-from core.scanner_v4_candidate import (
+from core.scanner_candidate import (
     ScannerV4CandidateDecision,
 )
-from core.scanner_v4_composition import (
+from core.scanner_composition import (
     COMPOSITION_POLICY_VERSION,
-    ScannerV4CompositionResult,
+    COMPOSITION_POLICY_LEGACY_VERSION,
+    ScannerCompositionResult,
 )
-from core.scanner_v4_execution_readiness import (
+from core.scanner_execution_readiness import (
     ExecutionReadiness,
     evaluate_execution_readiness,
 )
-from core.scanner_v4_threshold_policy import ThresholdPolicy
+from core.scanner_threshold_policy import ThresholdPolicy
 
-# Top-level legacy fields that must never co-exist with a V4 route.  The V4
+# Top-level legacy fields that must never co-exist with a route.  The
 # decision reads only canonical side_scores/gates/versions; these keys are
-# V3-era 「opportunity/total/best」 aggregations with their own owners.
+# legacy-era 「opportunity/total/best」 aggregations with their own owners.
 FORBIDDEN_LEGACY_KEYS = frozenset(
     {
         "total",
@@ -123,24 +124,24 @@ def _mismatch(code: str) -> RoutedCandidate:
     )
 
 
-def route_scanner_v4(
+def route_scanner(
     payload: object,
     *,
     thresholds: ThresholdPolicy,
     entry_confirmation: str,
     proximity: float | None = None,
 ) -> RoutedCandidate:
-    """Route a V4 composition artifact into the single V4 decision path.
+    """Route a composition artifact into the single decision path.
 
     Fail-closed: any shape/version/legacy doubt yields ``version_mismatch``
     before the decision layer runs.  Execution readiness is ALWAYS evaluated
     fresh from the canonical decision (Bước 12 §12.1) — there is no caller-
     supplied ``execution`` override, so revalidation cannot be bypassed here.
     """
-    if not isinstance(payload, (ScannerV4CompositionResult, Mapping)):
-        return _mismatch(SCANNER_V4_SCHEMA_INVALID)
+    if not isinstance(payload, (ScannerCompositionResult, Mapping)):
+        return _mismatch(SCANNER_SCHEMA_INVALID)
 
-    if isinstance(payload, ScannerV4CompositionResult):
+    if isinstance(payload, ScannerCompositionResult):
         composition = payload
     else:
         payload_mapping = _require_mapping(payload)
@@ -149,26 +150,26 @@ def route_scanner_v4(
             return RoutedCandidate(
                 route_status=ROUTE_VERSION_MISMATCH,
                 candidate=None,
-                reason_codes=(SCANNER_V4_FORBIDDEN_SCORED_FIELD, *legacy),
+                reason_codes=(SCANNER_FORBIDDEN_SCORED_FIELD, *legacy),
             )
         if frozenset(payload_mapping) != _COMPOSITION_ENVELOPE_KEYS:
-            return _mismatch(SCANNER_V4_VERSION_MISMATCH)
-        if payload_mapping.get("composition_version") != COMPOSITION_POLICY_VERSION:
-            return _mismatch(SCANNER_V4_VERSION_MISMATCH)
+            return _mismatch(SCANNER_VERSION_MISMATCH)
+        if payload_mapping.get("composition_version") not in (COMPOSITION_POLICY_VERSION, COMPOSITION_POLICY_LEGACY_VERSION):
+            return _mismatch(SCANNER_VERSION_MISMATCH)
         if type(payload_mapping.get("canonical")) is not dict:
-            return _mismatch(SCANNER_V4_VERSION_MISMATCH)
+            return _mismatch(SCANNER_VERSION_MISMATCH)
         try:
-            composition = ScannerV4CompositionResult.from_dict(payload)
+            composition = ScannerCompositionResult.from_dict(payload)
         except ValueError as exc:
-            code = getattr(exc, "code", None) or SCANNER_V4_VERSION_MISMATCH
+            code = getattr(exc, "code", None) or SCANNER_VERSION_MISMATCH
             if code in {
-                SCANNER_V4_VERSION_MISMATCH,
-                SCANNER_V4_VERSION_MISSING,
-                SCANNER_V4_LEGACY_V3_AUDIT_ONLY,
-                SCANNER_V4_FORBIDDEN_SCORED_FIELD,
+                SCANNER_VERSION_MISMATCH,
+                SCANNER_VERSION_MISSING,
+                SCANNER_LEGACY_V3_AUDIT_ONLY,
+                SCANNER_FORBIDDEN_SCORED_FIELD,
             }:
                 return _mismatch(code)
-            return _mismatch(SCANNER_V4_SCHEMA_INVALID)
+            return _mismatch(SCANNER_SCHEMA_INVALID)
 
     readiness = evaluate_execution_readiness(composition)
     candidate = build_candidate_with(
@@ -186,7 +187,7 @@ def route_scanner_v4(
 
 
 def _require_mapping(value: object) -> Mapping[str, Any]:
-    from core.scanner_v4_composition import CompositionInputError  # local import
+    from core.scanner_composition import CompositionInputError  # local import
 
     if type(value) is not dict:
         raise CompositionInputError("router.payload", "expected a mapping")
@@ -194,4 +195,4 @@ def _require_mapping(value: object) -> Mapping[str, Any]:
 
 
 # import at module bottom to avoid a circular import at module load
-from core.scanner_v4_candidate import build_candidate as build_candidate_with  # noqa: E402
+from core.scanner_candidate import build_candidate as build_candidate_with  # noqa: E402

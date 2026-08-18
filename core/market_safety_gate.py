@@ -1,7 +1,7 @@
-"""Pure, target-only Scanner V4 MarketSafetyGate and volatility semantics.
+"""Pure, target-only Scanner MarketSafetyGate and volatility semantics.
 
 This module is intentionally NOT wired into the executable scanner (Step 04 of
-the Scanner V4 migration is target construction).  It is the single canonical
+the Scanner migration is target construction).  It is the single canonical
 owner of five safety sub-gates: connectivity, data/candle freshness, spread,
 news/event window, and volatility.  It evaluates a strict ``MarketSafetyContext``
 against a versioned ``SafetyPolicy`` and returns a fail-closed
@@ -54,7 +54,8 @@ from core.scanner_v4_models import (
     CAUTION,
     PASS,
     UNKNOWN,
-    SCANNER_V4_SAFETY_POLICY_VERSION,
+    SCANNER_LEGACY_SAFETY_POLICY_VERSION,
+    SCANNER_SAFETY_POLICY_VERSION,
     GateCheck,
     MarketSafetyResult,
     SAFETY_CHECK_NAMES,
@@ -386,10 +387,10 @@ class SafetyPolicy:
     manual_order_bypass_fail_closed: bool = False
 
     def __post_init__(self) -> None:
-        if self.policy_version != SCANNER_V4_SAFETY_POLICY_VERSION:
+        if self.policy_version not in (SCANNER_SAFETY_POLICY_VERSION, SCANNER_LEGACY_SAFETY_POLICY_VERSION):
             raise MarketSafetyGateError(
                 f"SafetyPolicy.policy_version expected "
-                f"{SCANNER_V4_SAFETY_POLICY_VERSION!r}, got {self.policy_version!r}"
+                f"{SCANNER_SAFETY_POLICY_VERSION!r}, got {self.policy_version!r}"
             )
         _require_positive_int(self.news_block_window_minutes, "news_block_window_minutes")
         _require_positive_int(self.news_caution_window_minutes, "news_caution_window_minutes")
@@ -438,7 +439,7 @@ class SafetyPolicy:
 
 
 DEFAULT_MARKET_SAFETY_POLICY = SafetyPolicy(
-    policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+    policy_version=SCANNER_SAFETY_POLICY_VERSION,
 )
 
 
@@ -834,7 +835,7 @@ class MarketSafetyGate:
             reason_codes=reason_codes,
             observed_value=observed,
             threshold=threshold,
-            policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+            policy_version=SCANNER_SAFETY_POLICY_VERSION,
             checked_at=now,
             source=source,
             provenance=provenance,

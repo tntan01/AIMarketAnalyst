@@ -43,12 +43,12 @@ def build_scoring_provenance() -> dict[str, Any]:
 
 
 def normalize_scoring_provenance(value: object) -> dict[str, Any]:
-    """Accept only the exact executable V3 identity; otherwise fail closed.
+    """Accept only the exact executable legacy identity; otherwise fail closed.
 
-    This compatibility normalizer is intentionally *not* a V4 reader.  Missing,
-    blank, incorrectly typed, foreign, or target-V4 fields become a fully blank
-    identity so the V3 row adapter cannot relabel an untrusted payload. New V3
-    artifacts must use :func:`build_scoring_provenance`; Scanner V4 payloads use
+    This compatibility normalizer is intentionally *not* a Scanner reader.  Missing,
+    blank, incorrectly typed, foreign, or target fields become a fully blank
+    identity so the legacy row adapter cannot relabel an untrusted payload. New
+    artifacts must use :func:`build_scoring_provenance`; Scanner payloads use
     the strict validator in ``core.scanner_v4_models``.
     """
 

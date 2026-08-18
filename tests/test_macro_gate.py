@@ -1,4 +1,4 @@
-"""Scanner V4 Step 05: target-only MacroAssessment + MacroGate contract.
+"""Scanner Step 05: target-only MacroAssessment + MacroGate contract.
 
 Covers the full assessment/gate matrix, provenance, side consistency,
 fail-closed OPEN-policy semantics, aggregate precedence, determinism,
@@ -49,7 +49,7 @@ from core.scanner_v4_models import (
     MACRO_UNKNOWN,
     NEUTRAL,
     PASS,
-    SCANNER_V4_MACRO_POLICY_VERSION,
+    SCANNER_MACRO_POLICY_VERSION,
     SELL,
     UNKNOWN,
     WAITING_CONFIRMATION,
@@ -72,7 +72,7 @@ _CORE_DIR = Path(__file__).resolve().parents[1] / "core"
 # Locked test policy: deadband 2 raw points, confidence >= 0.7, conflict ->
 # CAUTION + WAITING_CONFIRMATION, unknown -> WATCH_ZONE.
 LOCKED_POLICY = MacroPolicy(
-    policy_version=SCANNER_V4_MACRO_POLICY_VERSION,
+    policy_version=SCANNER_MACRO_POLICY_VERSION,
     deadband_points=2,
     confidence_threshold=0.7,
     conflict_cap=WAITING_CONFIRMATION,
@@ -220,7 +220,7 @@ class TestGateMatrix:
     def test_assessed_side_and_policy_version_surface(self):
         result = _evaluate(_assessment())
         assert result.assessed_side == BUY
-        assert result.policy_version == SCANNER_V4_MACRO_POLICY_VERSION
+        assert result.policy_version == SCANNER_MACRO_POLICY_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ class TestPolicyValidation:
     )
     def test_rejects_invalid_policy(self, kwargs):
         base = dict(
-            policy_version=SCANNER_V4_MACRO_POLICY_VERSION,
+            policy_version=SCANNER_MACRO_POLICY_VERSION,
             deadband_points=2,
             confidence_threshold=0.7,
             conflict_cap=WAITING_CONFIRMATION,
@@ -665,7 +665,7 @@ class TestTechnicalScoreInvariance:
 
 
 # ---------------------------------------------------------------------------
-# Target-only ownership: single constructor for the V4 macro objects,
+# Target-only ownership: single constructor for the macro objects,
 # and no wiring into the executable runtime.
 # ---------------------------------------------------------------------------
 
@@ -706,7 +706,7 @@ class TestOwnershipDeduplication:
             "correlation_adjustment",
             "derate",
         ):
-            assert marker not in text, f"V3 numeric mutation marker {marker!r} leaks into target"
+            assert marker not in text, f"legacy numeric mutation marker {marker!r} leaks into target"
 
     def test_gate_never_imports_the_technical_scorer(self):
         import ast

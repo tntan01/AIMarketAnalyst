@@ -48,6 +48,27 @@ class TestScannerTableRRDisplay:
     def _make_model(self) -> ScannerTableModel:
         return ScannerTableModel()
 
+    def test_real_scanner_row_shows_rr_via_real_plan(self):
+        """A real routed Scanner row (BLOCKED, with a real plan) must display its
+        R:R — Regression: the adapter previously stamped zone_origin_class "none"
+        for every row, so `_has_real_plan` was False and the R:R column showed
+        "--" even though the adapter emitted the real value."""
+        from tests.test_scanner_detail_chart_for_blocked import _analyzed
+
+        row = _analyzed()
+        assert row["zone_origin_class"] in ("smc", "technical"), (
+            f"real scanner row must stamp a real zone origin, got "
+            f"{row['zone_origin_class']!r}"
+        )
+        rr = row.get("expected_effective_rr")
+        assert rr is not None, "real scanner row must carry an effective R:R"
+        model = self._make_model()
+        assert model._has_real_plan(row) is True
+        display = model._display_value("expected_effective_rr", rr, row)
+        assert display != "--", \
+            f"real scanner row must display its R:R, got {display!r}"
+        assert display == f"{rr:.1f}"
+
     def test_expected_effective_rr_displays_best_case_not_base(self):
         model = self._make_model()
         row = {

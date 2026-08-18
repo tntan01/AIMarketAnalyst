@@ -1,12 +1,12 @@
-"""Scanner V4 strategy router (Bước 08, target-only).
+"""Scanner strategy router (Bước 08, target-only).
 
-The router is the fail-closed door in front of the single V4 decision path:
+The router is the fail-closed door in front of the single decision path:
 
 * it accepts ONLY the Step 07 canonical output (typed or strict JSON dict);
-* any V3 payload — a legacy top-level scored field (``total``/``best_score``/
-  ``scanner_action``/…), a missing/mismatched version, or an un-V4 canonical
+* any legacy payload — a legacy top-level scored field (``total``/``best_score``/
+  ``scanner_action``/…), a missing/mismatched version, or a non-current canonical
   snapshot — returns ``version_mismatch`` **before anything executes**;
-* there is no fallback path: a V3 artifact can never be routed, and a routed
+* there is no fallback path: a legacy artifact can never be routed, and a routed
   result never carries a real order at Bước 08 (``executed=False``).
 
 The integration tests prove that the router's candidate is byte-identical to
@@ -21,18 +21,18 @@ from fractions import Fraction
 import pytest
 
 from core.reason_codes import (
-    SCANNER_V4_FORBIDDEN_SCORED_FIELD,
-    SCANNER_V4_LEGACY_V3_AUDIT_ONLY,
-    SCANNER_V4_SCHEMA_INVALID,
-    SCANNER_V4_VERSION_MISMATCH,
-    SCANNER_V4_VERSION_MISSING,
+    SCANNER_FORBIDDEN_SCORED_FIELD,
+    SCANNER_LEGACY_V3_AUDIT_ONLY,
+    SCANNER_SCHEMA_INVALID,
+    SCANNER_VERSION_MISMATCH,
+    SCANNER_VERSION_MISSING,
 )
-from core.scanner_v4_candidate import build_candidate
-from core.scanner_v4_composition import (
+from core.scanner_candidate import build_candidate
+from core.scanner_composition import (
     COMPOSITION_POLICY_VERSION,
-    ScannerV4CompositionResult,
+    ScannerCompositionResult,
 )
-from core.scanner_v4_execution_readiness import evaluate_execution_readiness
+from core.scanner_execution_readiness import evaluate_execution_readiness
 from core.scanner_v4_models import (
     BLOCKED,
     DATA_UNAVAILABLE,
@@ -46,14 +46,14 @@ from core.scanner_v4_strategy_router import (
     ROUTE_ROUTED,
     ROUTE_VERSION_MISMATCH,
     RoutedCandidate,
-    route_scanner_v4,
+    route_scanner,
 )
-from core.scanner_v4_threshold_policy import (
-    SCANNER_V4_THRESHOLD_POLICY_VERSION,
+from core.scanner_threshold_policy import (
+    SCANNER_THRESHOLD_POLICY_VERSION,
     ThresholdPolicy,
     make_default_threshold_policy,
 )
-from tests.test_scanner_v4_composition import (
+from tests.test_scanner_composition import (
     _compose,
     _run,
     _snapshot,
@@ -67,7 +67,7 @@ from tests.test_scanner_v4_composition import (
 
 
 def _route(payload, *, entry="confirmed", **kwargs):
-    return route_scanner_v4(
+    return route_scanner(
         payload,
         thresholds=make_default_threshold_policy(),
         entry_confirmation=entry,
@@ -92,7 +92,7 @@ class TestLegacyRejected:
         assert out.route_status == ROUTE_VERSION_MISMATCH
         assert out.candidate is None
         assert out.executed is False
-        assert SCANNER_V4_FORBIDDEN_SCORED_FIELD in out.reason_codes
+        assert SCANNER_FORBIDDEN_SCORED_FIELD in out.reason_codes
         assert "total" in out.reason_codes
 
     def test_legacy_best_score_opportunity_action_all_refused(self):
@@ -104,7 +104,7 @@ class TestLegacyRejected:
             payload[key] = 42
             out = _route(payload)
             assert out.route_status == ROUTE_VERSION_MISMATCH, key
-            assert SCANNER_V4_FORBIDDEN_SCORED_FIELD in out.reason_codes, key
+            assert SCANNER_FORBIDDEN_SCORED_FIELD in out.reason_codes, key
 
     def test_legacy_rejection_never_uses_the_scored_value(self):
         # Even a "higher" total cannot rescue a legacy payload.
@@ -134,7 +134,7 @@ class TestVersionFencing:
         del payload["composition_version"]
         out = _route(payload)
         assert out.route_status == ROUTE_VERSION_MISMATCH
-        assert SCANNER_V4_VERSION_MISMATCH in out.reason_codes
+        assert SCANNER_VERSION_MISMATCH in out.reason_codes
 
     def test_wrong_composition_version_returns_version_mismatch(self):
         payload = _full_pass_dict()
@@ -145,14 +145,14 @@ class TestVersionFencing:
     def test_non_dict_payload_invalid(self):
         out = _route(object())
         assert out.route_status == ROUTE_VERSION_MISMATCH
-        assert SCANNER_V4_SCHEMA_INVALID in out.reason_codes
+        assert SCANNER_SCHEMA_INVALID in out.reason_codes
 
     def test_wrong_envelope_keys_returns_version_mismatch(self):
         payload = _full_pass_dict()
         del payload["canonical"]
         out = _route(payload)
         assert out.route_status == ROUTE_VERSION_MISMATCH
-        assert SCANNER_V4_VERSION_MISMATCH in out.reason_codes
+        assert SCANNER_VERSION_MISMATCH in out.reason_codes
 
     def test_canonical_not_a_dict_returns_version_mismatch(self):
         payload = _full_pass_dict()
@@ -160,8 +160,8 @@ class TestVersionFencing:
         out = _route(payload)
         assert out.route_status == ROUTE_VERSION_MISMATCH
 
-    def test_v3_canonical_snapshot_inside_v4_envelope_refused(self):
-        # The envelope claims V4 but the canonical is a V3 snapshot: the deep
+    def test_v3_canonical_snapshot_inside_envelope_refused(self):
+        # The envelope claims current identity but the canonical is a legacy snapshot: the deep
         # reader refuses it (composition_version/snapshot_version mismatch).
         payload = _full_pass_dict()
         payload["canonical"] = {
@@ -180,7 +180,7 @@ class TestVersionFencing:
 
 
 # ---------------------------------------------------------------------------
-# ROUTE_ROUTED — the canonical V4 path
+# ROUTE_ROUTED — the canonical path
 # ---------------------------------------------------------------------------
 
 
@@ -204,14 +204,14 @@ class TestRouted:
     def test_router_never_reads_gate_action_reinterprets(self):
         # The router only consumes canonical scores/gates/versions; it never
         # re-interprets a "scanner_action".  For a full-pass input the action
-        # concept is simply absent: no such key exists in the V4 envelope.
+        # concept is simply absent: no such key exists in the envelope.
         payload = _full_pass_dict()
         assert "scanner_action" not in payload
 
     def test_reason_codes_surface_all_decision_codes(self):
         out = _route(_full_pass_dict(), entry="confirmed")
         assert out.candidate.reason_codes
-        assert out.candidate.threshold_policy_version == SCANNER_V4_THRESHOLD_POLICY_VERSION
+        assert out.candidate.threshold_policy_version == SCANNER_THRESHOLD_POLICY_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ class TestIntegration:
         for label, payload in {
             "full": _full_pass_dict(),
         }.items():
-            out = route_scanner_v4(
+            out = route_scanner(
                 payload,
                 thresholds=make_default_threshold_policy(),
                 entry_confirmation="unconfirmed",
@@ -279,13 +279,13 @@ class TestIntegration:
 
     def test_open_threshold_policy_stays_watch_via_router(self):
         open_policy = ThresholdPolicy(
-            policy_version=SCANNER_V4_THRESHOLD_POLICY_VERSION,
+            policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
             technical_floor=None,
             setup_floor=None,
             min_score_gap=None,
             min_risk_reward=None,
         )
-        out = route_scanner_v4(
+        out = route_scanner(
             _full_pass_dict(),
             thresholds=open_policy,
             entry_confirmation="confirmed",
@@ -313,7 +313,7 @@ class TestRoutedCandidateContract:
         refused = RoutedCandidate(
             route_status=ROUTE_VERSION_MISMATCH,
             candidate=None,
-            reason_codes=(SCANNER_V4_VERSION_MISMATCH,),
+            reason_codes=(SCANNER_VERSION_MISMATCH,),
         )
         assert refused.executed is False
         assert refused.candidate is None

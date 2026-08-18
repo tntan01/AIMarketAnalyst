@@ -1,6 +1,6 @@
-"""Pure, target-only Scanner V4 MacroGate and MacroAssessment semantics.
+"""Pure, target-only Scanner MacroGate and MacroAssessment semantics.
 
-Step 05 of the Scanner V4 migration builds the *decision* contract for macro:
+Step 05 of the Scanner migration builds the *decision* contract for macro:
 it owns (1) the versioned ``MacroPolicy``, (2) the deterministic raw deadband
 classification, (3) the single canonical construction of ``MacroAssessment``
 (data only — raw BUY/SELL, confidence, status, correlation/event provenance)
@@ -11,7 +11,7 @@ decision cap, reason codes, policy version).
 This module is intentionally NOT wired into the executable scanner. Macro
 influence is confined to gate/cap: nothing here creates a contribution, bonus,
 numeric adjustment, tie-break, promotion, or any mutation of
-``TechnicalSignalScore``/ranking. The V3 numeric paths that do mutate scores are
+``TechnicalSignalScore``/ranking. The legacy numeric paths that do mutate scores are
 ledgered in the architecture doc (Mục 7.2) for removal at Bước 07/12.
 
 Fail-closed rules (never infer optimistic defaults):
@@ -65,7 +65,8 @@ from core.scanner_v4_models import (
     MACRO_UNKNOWN,
     NEUTRAL,
     PASS,
-    SCANNER_V4_MACRO_POLICY_VERSION,
+    SCANNER_LEGACY_MACRO_POLICY_VERSION,
+    SCANNER_MACRO_POLICY_VERSION,
     UNKNOWN,
     MacroAssessment,
     MacroGateResult,
@@ -89,9 +90,9 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# Locked policy versions (Step 05; see docs/scanner/scanner-v4-architecture.md
+# Locked policy versions (Step 05; see docs/scanner/scanner-architecture.md
 # Mục 7.1). The *semantics* are locked here; numeric values stay OPEN until the
-# Bước 09 calibration (V3 effective thresholds are evidence references, never
+# Bước 09 calibration (effective thresholds are evidence references, never
 # copied defaults).
 # ---------------------------------------------------------------------------
 MACRO_DEADBAND_POLICY_VERSION = "scanner-macro-deadband-raw-v1"
@@ -281,7 +282,7 @@ class MacroPolicy:
     override-free: no runtime flags or bypasses exist.
     """
 
-    policy_version: str = SCANNER_V4_MACRO_POLICY_VERSION
+    policy_version: str = SCANNER_MACRO_POLICY_VERSION
     deadband_points: int | None = None
     confidence_threshold: float | None = None
     conflict_cap: str | None = None
@@ -292,9 +293,9 @@ class MacroPolicy:
     cap_semantics_version: str = MACRO_CAP_POLICY_VERSION
 
     def __post_init__(self) -> None:
-        if self.policy_version != SCANNER_V4_MACRO_POLICY_VERSION:
+        if self.policy_version not in (SCANNER_MACRO_POLICY_VERSION, SCANNER_LEGACY_MACRO_POLICY_VERSION):
             raise MacroGateError(
-                f"MacroPolicy.policy_version expected {SCANNER_V4_MACRO_POLICY_VERSION!r}, "
+                f"MacroPolicy.policy_version expected {SCANNER_MACRO_POLICY_VERSION!r}, "
                 f"got {self.policy_version!r}"
             )
         if self.deadband_points is not None and (
@@ -322,7 +323,7 @@ class MacroPolicy:
             _require_decision_cap(self.unknown_cap, "unknown_cap")
 
 
-DEFAULT_MACRO_POLICY = MacroPolicy(policy_version=SCANNER_V4_MACRO_POLICY_VERSION)
+DEFAULT_MACRO_POLICY = MacroPolicy(policy_version=SCANNER_MACRO_POLICY_VERSION)
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +335,7 @@ class MacroGate:
     """Canonical owner of the macro decision (target-only, not wired to runtime).
 
     Only this module constructs ``MacroAssessment``/``MacroGateResult`` in the
-    V4 target.
+    target.
     """
 
     def evaluate(

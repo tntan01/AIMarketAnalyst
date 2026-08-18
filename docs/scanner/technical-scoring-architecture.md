@@ -1,13 +1,13 @@
-# Kiến trúc chấm điểm Scanner V3 — runtime hiện hành
+# Kiến trúc chấm điểm Scanner — runtime hiện hành
 
-Trạng thái: **runtime hiện hành trước cutover V4**. Runtime contract cập nhật
+Trạng thái: **runtime hiện hành trước cutover**. Runtime contract cập nhật
 09/08/2026; target architecture cập nhật 11/08/2026.
 
-> **Target đã chốt:** Scanner V4 dùng TechnicalScore chỉ gồm Trend, Momentum,
+> **Target đã chốt:** Scanner dùng TechnicalScore chỉ gồm Trend, Momentum,
 > Location và SMC; Risk/Macro chuyển thành gate; direct cutover không dual
 > scoring/shadow. Xem
-> [`scanner-v4-architecture.md`](scanner-v4-architecture.md). Cho đến khi từng
-> bước được implement, các metric/version V3 bên dưới vẫn mô tả code đang chạy.
+> [`scanner-architecture.md`](scanner-architecture.md). Cho đến khi từng
+> bước được implement, các metric/version bên dưới vẫn mô tả code đang chạy.
 
 ## 1. Mục tiêu
 
@@ -258,7 +258,7 @@ Reason code là contract cho UI, log, replay và kiểm thử; không chỉ là 
 | Observability | `core/scanner_observability.py` |
 | Orchestration/execution | `controllers/scanner_controller.py` |
 
-## 13. Target Scanner V4 đã phê duyệt
+## 13. Target Scanner đã phê duyệt
 
 Target ngày 11/08/2026 đã khóa:
 
@@ -269,10 +269,10 @@ Target ngày 11/08/2026 đã khóa:
   verdict và provenance; Macro chỉ được cap/block/warn qua gate;
 - `setup_score = Technical × 0.65 + Evidence × 0.20 + Execution × 0.15`;
   Evidence/Execution thiếu dùng 50 neutral, không copy Technical;
-- direct cutover sang `scanner-v4/scanner-features-v4`, không chạy score V3/V4
-  song song; config V3 fail-closed cho live và chỉ giữ replay/audit.
+- direct cutover sang `scanner/scanner-features`, không chạy score
+  song song; config fail-closed cho live và chỉ giữ replay/audit.
 
 Trọng số bốn component, gate matrix, output schema và kế hoạch phân tích từng
 bước nằm duy nhất tại
-[`scanner-v4-architecture.md`](scanner-v4-architecture.md). Khi cutover hoàn tất,
-tài liệu này sẽ được rewrite thành runtime contract V4 ở Bước 13 của kế hoạch.
+[`scanner-architecture.md`](scanner-architecture.md). Khi cutover hoàn tất,
+tài liệu này sẽ được rewrite thành runtime contract ở Bước 13 của kế hoạch.

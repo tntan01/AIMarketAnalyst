@@ -299,7 +299,7 @@ và giữ state.
 ## 8. Gate thực thi (live từ 15/08/2026)
 
 OM luôn bật: feature flag `order_management_v2` đã bị gỡ khỏi model (16/08/2026),
-nhất quán với việc gỡ các flag Scanner V4 trước đó. Cùng ngày `manage_scope` cũng
+nhất quán với việc gỡ các flag Scanner trước đó. Cùng ngày `manage_scope` cũng
 bị gỡ — chỉ còn một phạm vi duy nhất (ALL): **Đóng tất cả** luôn nhắm mọi vị thế
 đang mở, không còn lọc theo magic/comment AMA. Các
 field `stage`, `kill_switch`, `require_demo_account`, `production_approved`,

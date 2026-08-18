@@ -18,13 +18,13 @@ from typing import Any
 from PyQt6.QtCore import QThread
 
 from config.paths import app_data_dir
-from core.scanner import ScannerRequest  # retained request model (V3 row helpers re-platformed; see C2b)
+from core.scanner import ScannerRequest  # retained request model (legacy row helpers re-platformed; see C2b)
 from core.scanner_ai_auditor import (
     build_ai_setup_audit_prompt,
     parse_ai_setup_audit,
 )
-from core.scanner_v4_composition import AccountState, JournalState, PortfolioState
-from core.scanner_v4_live_producers import (
+from core.scanner_composition import AccountState, JournalState, PortfolioState
+from core.scanner_live_producers import (
     build_live_market_safety_context,
     compute_live_volatility_ratio,
     derive_live_analysis,
@@ -36,14 +36,14 @@ from core.scanner_v4_models import (
     BLOCKED,
     DATA_UNAVAILABLE,
 )
-from core.scanner_v4_release import run_v4_pair_from_live
-from core.scanner_v4_order_policy import (
+from core.scanner_release import run_pair_from_live
+from core.scanner_order_policy import (
     DEFAULT_RUNTIME_ORDER_POLICY,
     OrderPolicyLoadError,
     RuntimeOrderPolicy,
     load_runtime_order_policy,
 )
-from core.scanner_v4_ui_adapter import (
+from core.scanner_ui_adapter import (
     ANALYSIS_OK,
     AdapterContractError,
     blocked_ui_row,
@@ -141,12 +141,12 @@ def _run_in_performance_phase(
 
 
 # ---------------------------------------------------------------------------
-# C2b — V4 re-platform local helpers (never fabricate; read real V4 sources)
+# C2b — re-platform local helpers (never fabricate; read real Scanner sources)
 # ---------------------------------------------------------------------------
 
-# V4 candidate_status -> the legacy scanner_group label run_market_scan maps for
+# candidate_status -> the legacy scanner_group label run_market_scan maps for
 # ``legacy_candidate_status``. Read from the real row candidate_status only.
-_V4_SCANNER_GROUP_BY_STATUS: dict[str, str] = {
+_SCANNER_GROUP_BY_STATUS: dict[str, str] = {
     READY_NOW: "ready_now",
     WAITING_CONFIRMATION: "waiting_confirmation",
     WATCH_ZONE: "watch_zone",
@@ -166,9 +166,9 @@ def _v4_candidate_status(row: dict[str, Any]) -> str:
 
 
 def _is_structural_reject_row(row: object) -> bool:
-    """V4 has no structural-reject; stable predicate for V3-era callers.
+    """There is no structural-reject; stable predicate for legacy callers.
 
-    Always False for real V4 rows (analysis_status is ``ok``), so the rows the
+    Always False for real Scanner rows (analysis_status is ``ok``), so the rows the
     adapter emits are never mislabelled as fast-path rejects.
     """
     return bool(
@@ -183,7 +183,7 @@ def _find_scenario_for_side(
     side: str,
     fallback_to_first: bool = False,
 ) -> object:
-    """Return the scenario whose side matches (V4 scenario dicts carry ``side``)."""
+    """Return the scenario whose side matches (scenario dicts carry ``side``)."""
     if not isinstance(scenarios, list):
         return None
     side = str(side or "").strip().lower()
@@ -197,11 +197,11 @@ def _find_scenario_for_side(
     return None
 
 
-def _v4_sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Stable V4 sort (no V3 deletion import): real candidate_status + score_gap.
+def _sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Stable sort (no legacy deletion import): real candidate_status + score_gap.
 
-    Ranking order mirrors the locked V4 status precedence; ties keep input
-    order (stable). All sort keys are REAL V4 values the adapter emits.
+    Ranking order mirrors the locked status precedence; ties keep input
+    order (stable). All sort keys are REAL current values the adapter emits.
     """
     _priority = {
         READY_NOW: 0,
@@ -223,10 +223,10 @@ def _v4_sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(rows, key=_key)
 
 
-def _v4_order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
-    """Build the executable-order proposal from the row's V4 order payload.
+def _order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
+    """Build the executable-order proposal from the row's order payload.
 
-    Uses ONLY real V4 fields (``candidate_order_payload`` + row identity).  The
+    Uses ONLY real Scanner fields (``candidate_order_payload`` + row identity).  The
     payload tracks entry/SL/TP from the candidate's selected-side plan; volume
     is re-computed at dispatch by ``execute_order_candidate``. Returns None when
     there is no real payload (never fabricates an order intent).
@@ -260,16 +260,16 @@ def _v4_order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
     return proposal
 
 
-def _v4_consecutive_losses(closed_trades: object) -> int | None:
+def _consecutive_losses(closed_trades: object) -> int | None:
     """Trailing consecutive losing trades from real closed_trades.
 
     ``closed_trades`` is newest-first; counts contiguous losses via the REAL
     ``result_r`` / ``result_pct`` fields.  Unreadable rows are handled exactly
-    like the live V3 account guard (``core/account_guard.py``): a missing or
+    like the live account guard (``core/account_guard.py``): a missing or
     non-numeric result counts as breakeven (not a loss, so it BREAKS the
     streak), and non-dict rows are skipped.  The journal contains MT5-history
     rows without an R value; failing closed on them would cap every scan
-    forever, which the V3 guard never did.  Returns ``None`` only when the
+    forever, which the legacy guard never did.  Returns ``None`` only when the
     list itself is unreadable.
     """
     if not isinstance(closed_trades, list):
@@ -362,7 +362,7 @@ def compute_recent_drawdown_ratio(
     return min(max(drawdown, 0.0), 1.0)
 
 
-def _v4_exposure_ratio(margin: object, balance: object) -> float | None:
+def _exposure_ratio(margin: object, balance: object) -> float | None:
     """Portfolio exposure = used margin ÷ balance (owner-locked semantics).
 
     Both numbers come from the same MT5 ``account_info()`` snapshot, hence the
@@ -383,7 +383,7 @@ def _v4_exposure_ratio(margin: object, balance: object) -> float | None:
     return margin_value / balance_value
 
 
-def _v4_open_positions(scan_portfolio: object) -> int | None:
+def _open_positions(scan_portfolio: object) -> int | None:
     """Open-position count from the REAL portfolio snapshot (fail-closed).
 
     Replaces the old probe of ``open_positions_count`` — a method that never
@@ -777,9 +777,9 @@ class ScannerController:
             "timezone_name": request.timezone_name,
         }
 
-        # ---- C2b: build the V4 account/portfolio/journal state ONCE (main thread)
+        # ---- C2b: build the account/portfolio/journal state ONCE (main thread)
         # and thread it through the fetch packet (never fabricate; fail-closed).
-        v4_consecutive_losses = _v4_consecutive_losses(closed_trades)
+        v4_consecutive_losses = _consecutive_losses(closed_trades)
         # Account numbers straight from MT5 account_info: free margin feeds the
         # account gate; used margin ÷ balance feeds the portfolio exposure gate
         # (owner-locked semantics).  Missing values stay None -> gate UNKNOWN.
@@ -788,10 +788,10 @@ class ScannerController:
         except Exception:
             v4_account_status = None
         v4_free_margin = getattr(v4_account_status, "free_margin", None)
-        v4_exposure_ratio = _v4_exposure_ratio(
+        v4_exposure_ratio = _exposure_ratio(
             getattr(v4_account_status, "margin", None), mt5_balance
         )
-        v4_open_positions = _v4_open_positions(scan_portfolio)
+        v4_open_positions = _open_positions(scan_portfolio)
         v4_account = AccountState(free_margin=v4_free_margin, required_margin=None)
         v4_portfolio = PortfolioState(
             open_positions=v4_open_positions, exposure_ratio=v4_exposure_ratio
@@ -1304,11 +1304,11 @@ class ScannerController:
         """Annotate auto-trade/execution keys WITHOUT changing scanner decisions (C2b).
 
         Scanning and execution are deliberately separate in Phase 0 (unchanged).  The
-        V4 rows from ``_analyze_one_symbol`` already carry the real V4 candidate fields
+        Rows from ``_analyze_one_symbol`` already carry the real candidate fields
         (``candidate_status``, ``selected_side``, ``auto_trade_candidate``,
         ``candidate_order_payload``, ``scanner_candidate_decision``) via
-        ``pair_to_ui_row``.  This pass only annotates the V3-only compatibility keys,
-        reading them from the REAL candidate_status / reason_codes — never from any V3
+        ``pair_to_ui_row``.  This pass only annotates the legacy compatibility keys,
+        reading them from the REAL candidate_status / reason_codes — never from any legacy
         deletion module, and failing closed to None/False where there is no equivalent.
         """
         for row in rows:
@@ -1316,28 +1316,28 @@ class ScannerController:
             is_auto_status = candidate_status in _AUTO_TRADE_STATUSES
             auto_trade_candidate = bool(row.get("auto_trade_candidate"))
 
-            # V4 status discipline: READY_NOW / WAITING_CONFIRMATION can ONLY be
-            # produced by a real routed V4 candidate (pair_to_ui_row sets
+            # Status discipline: READY_NOW / WAITING_CONFIRMATION can ONLY be
+            # produced by a real routed candidate (pair_to_ui_row sets
             # auto_trade_candidate=True for genuine ready candidates). A row that
             # CLAIMS an auto-trade status but carries no real candidate is stale
             # or fabricated — demote it to DATA_UNAVAILABLE so it can never enter
             # the dispatch loop with an unsupported status (never trusts a stale
-            # rank/status; never downgrades a genuine V4 ready row).
+            # rank/status; never downgrades a genuine ready row).
             if is_auto_status and not auto_trade_candidate:
                 candidate_status = DATA_UNAVAILABLE
                 is_auto_status = False
                 row["candidate_status"] = DATA_UNAVAILABLE
                 row["selected_side"] = None
                 row["auto_trade_candidate"] = False
-                # V3-only composite rank has no V4 equivalent — reset to the
+                # Legacy composite rank has no current equivalent — reset to the
                 # documented neutral so a stale rank is never preserved.
                 row["opportunity_rank"] = None
 
-            # V3-only keys with no V4 equivalent stay a documented neutral.
+            # Legacy keys with no current equivalent stay a documented neutral.
             row.setdefault("auto_trade_branch", None)
             row.setdefault("strategy_config_status", None)
             row.setdefault("direction_bias", None)
-            # backtest-config status no longer exists in V4.
+            # backtest-config status no longer exists.
             row["backtest_config_status"] = None
             # Candidate fields are authoritative already; keep them consistent but
             # never optimistic (a non-auto status can't become an order candidate).
@@ -1364,7 +1364,7 @@ class ScannerController:
             if not isinstance(row.get("candidate_order_payload"), dict):
                 row["candidate_order_payload"] = None
 
-        return _v4_sort_rows(rows)
+        return _sort_rows(rows)
 
     @_serialized_execution
     def execute_order_candidate(
@@ -1825,7 +1825,7 @@ class ScannerController:
         for row in rows:
             symbol = str(row.get("symbol") or "--")
             config = self._auto_trade_config(request, symbol)
-            # C2b: the auto-trade gate reads the row's REAL V4 flag (set by the
+            # C2b: the auto-trade gate reads the row's REAL flag (set by the
             # adapter/filters); candidate_status must also be an auto-trade status.
             if not (
                 bool(row.get("auto_trade_candidate"))
@@ -1834,10 +1834,10 @@ class ScannerController:
                 continue
 
             attempted += 1
-            # C2b: build the executable proposal from the REAL V4 order payload
+            # C2b: build the executable proposal from the REAL order payload
             # (intent only; execute_order_candidate always revalidates before any
             # real dispatch). Never fabricated — None when no payload exists.
-            proposal = _v4_order_proposal(row)
+            proposal = _order_proposal(row)
             if proposal is None:
                 skipped += 1
                 errors.append(f"{symbol}: order proposal không hợp lệ.")
@@ -1937,7 +1937,7 @@ class ScannerController:
         }
 
     def _is_auto_trade_candidate(self, row: dict[str, Any], at_cfg: dict[str, object] | None) -> bool:
-        """Compatibility wrapper reading the REAL V4 candidate fields (C2b)."""
+        """Compatibility wrapper reading the REAL candidate fields (C2b)."""
         return bool(
             self._auto_trade_safety_decision(row, at_cfg)["auto_trade_candidate"]
         )
@@ -1947,12 +1947,12 @@ class ScannerController:
         row: dict[str, Any],
         at_cfg: dict[str, object] | None,
     ) -> dict[str, Any]:
-        """C2b V4-compat decision: read the adapter's real candidate fields.
+        """C2b compat decision: read the adapter's real candidate fields.
 
-        Replaces the V3 ``evaluate_auto_trade_safety`` (deletion) call. Every
-        value traces to the row's real V4 ``candidate_status`` / ``reason_codes``
-        / ``auto_trade_candidate`` or fails closed. No V3 backtest-config branch /
-        strategy-config concept exists in V4, so those stay ``None``.
+        Replaces the legacy ``evaluate_auto_trade_safety`` (deletion) call. Every
+        value traces to the row's real ``candidate_status`` / ``reason_codes``
+        / ``auto_trade_candidate`` or fails closed. No backtest-config branch /
+        strategy-config concept exists, so those stay ``None``.
         """
         candidate_status = _v4_candidate_status(row)
         is_auto_status = candidate_status in _AUTO_TRADE_STATUSES
@@ -2727,16 +2727,16 @@ def _scan_one_symbol(
     thresholds: dict[str, int | float] | None = None,
     ai_service: object | None = None,
 ) -> dict[str, Any]:
-    """C2b V4 stub for the legacy single-symbol scan path.
+    """C2b stub for the legacy single-symbol scan path.
 
     ``_scan_one_symbol`` is DEAD — nothing references it (the live two-phase scan
-    uses ``_fetch_one_symbol_mt5`` → ``_analyze_one_symbol``).  Its old V3 body
+    uses ``_fetch_one_symbol_mt5`` → ``_analyze_one_symbol``).  Its old body
     imported the analysis_engine / scanner / scanner_row_from_analysis deletion
-    modules, so it is replaced with a fail-closed V4 blocked row.  Supported V4
+    modules, so it is replaced with a fail-closed blocked row.  Supported
     live analysis is the responsibility of ``_fetch_one_symbol_mt5`` /
     ``_analyze_one_symbol``; this stub never dispatches and never fabricates.
     """
-    return blocked_ui_row(symbol, "Legacy sequential scan path retired (V4 C2b).")
+    return blocked_ui_row(symbol, "Legacy sequential scan path retired.")
 
 
 # ---- Two-phase scan: Phase 1 fetches MT5 data on main thread,
@@ -2760,7 +2760,7 @@ def _fetch_one_symbol_mt5(
     """Fetch MT5 data for one symbol on the main thread.  Returns a data packet
     consumed by ``_analyze_one_symbol``, or ``None`` if the symbol can't be resolved.
 
-    C2b: also attaches the V4 ``MarketSafetyContext`` (built from the live MT5
+    C2b: also attaches the ``MarketSafetyContext`` (built from the live MT5
     data-quality state, fail-closed) and the account/portfolio/journal states so
     the CPU-thread ``_analyze_one_symbol`` reads them from the packet.
     """
@@ -2832,7 +2832,7 @@ def _fetch_one_symbol_mt5(
         ),
     )
 
-    # ---- C2b: build the V4 safety context from the live MT5 data-quality state.
+    # ---- C2b: build the safety context from the live MT5 data-quality state.
     # Every field is sourced from REAL MT5 data; anything unavailable stays None
     # (fail-closed -> MarketSafetyGate reports UNKNOWN/MISSING).
     captured_at = datetime.now(timezone.utc)
@@ -2874,7 +2874,7 @@ def _fetch_one_symbol_mt5(
     # kept).  At scan time no entry/SL exists yet, so risk-sizing is impossible;
     # the minimum orderable size is the only honest probe.  Unavailable -> None
     # -> the gate fails closed with GATE_ACCOUNT_DATA_MISSING.
-    v4_account_symbol = v4_account
+    account_symbol = v4_account
     if v4_account is not None:
         required_margin = None
         try:
@@ -2883,7 +2883,7 @@ def _fetch_one_symbol_mt5(
                 required_margin = min_lot_margin(broker_symbol)
         except Exception:
             required_margin = None
-        v4_account_symbol = AccountState(
+        account_symbol = AccountState(
             free_margin=v4_account.free_margin,
             required_margin=required_margin,
         )
@@ -2900,7 +2900,7 @@ def _fetch_one_symbol_mt5(
         "mt5_history_cache": history_cache_result,
         "v4_safety": v4_safety,
         "v4_captured_at": captured_at,
-        "account": v4_account_symbol,
+        "account": account_symbol,
         "portfolio": v4_portfolio,
         "journal": v4_journal,
     }
@@ -2947,12 +2947,12 @@ def _analyze_one_symbol(
     ai_service: object | None = None,
     order_policy: RuntimeOrderPolicy | None = None,
 ) -> dict[str, Any]:
-    """Run the V4 analysis path for one symbol (CPU-only, thread-safe, C2b).
+    """Run the single-symbol analysis path (CPU-only, thread-safe, C2b).
 
-    Re-platformed from the V3 ``analyze_symbol``+``scanner_row_from_analysis``
-    (deletion) path: composes the live V4 snapshot and maps the release pair via
-    ``pair_to_ui_row``. Every emitted value comes from the real V4 sources (or
-    fails closed to a ``blocked_ui_row``). V3-only kwargs are kept for signature
+    Re-platformed from the legacy ``analyze_symbol``+``scanner_row_from_analysis``
+    (deletion) path: composes the live snapshot and maps the release pair via
+    ``pair_to_ui_row``. Every emitted value comes from the real Scanner sources (or
+    fails closed to a ``blocked_ui_row``). Legacy-only kwargs are kept for signature
     compatibility with ``_run_market_scan_core``'s submit and are not used here.
     """
     started_at = perf_counter()
@@ -2989,7 +2989,7 @@ def _analyze_one_symbol(
                 volatility_ratio=compute_live_volatility_ratio(d1, h4),
                 volatility_checked_at=None,
             )
-        # Real macro derivation (mirrors the V3 analysis_engine consumption).
+        # Real macro derivation (mirrors the legacy analysis_engine consumption).
         macro_alignment = (
             macro_context.get("macro_alignment_scores")
             if isinstance(macro_context.get("macro_alignment_scores"), dict)
@@ -3003,7 +3003,7 @@ def _analyze_one_symbol(
             macro_context.get("macro_data_quality", 1.0)
         ) * freshness_multiplier
 
-        # Failure-safe derivation + the V4 one-symbol release pair.
+        # Failure-safe derivation + the one-symbol release pair.
         analysis = derive_live_analysis(
             d1,
             h4,
@@ -3012,7 +3012,7 @@ def _analyze_one_symbol(
             captured_at=now,
             news_in_3h=False,
         )
-        pair = run_v4_pair_from_live(
+        pair = run_pair_from_live(
             d1,
             h4,
             h1,
@@ -3066,7 +3066,7 @@ def _analyze_one_symbol(
 
     # Controller bookkeeping ``_run_market_scan_core`` expects.
     row["scanner_group"] = (
-        _V4_SCANNER_GROUP_BY_STATUS.get(_v4_candidate_status(row))
+        _SCANNER_GROUP_BY_STATUS.get(_v4_candidate_status(row))
         or "data_unavailable"
     )
     row["input_timestamps"] = dict(pkt.get("input_timestamps", {}))

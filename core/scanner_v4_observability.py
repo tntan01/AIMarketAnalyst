@@ -1,6 +1,6 @@
-"""Scanner V4 observability (Bước 10; target-only).
+"""Scanner observability (Bước 10; target-only).
 
-10E — telemetry for the V4 consumer layer that traces the *canonical* pipeline
+10E — telemetry for the consumer layer that traces the *canonical* pipeline
 without ever re-scoring:
 
 * **per-side technical raw/scaled components** + the evidence / execution
@@ -16,7 +16,7 @@ without ever re-scoring:
   and blocked-high-score counter (a candidate that is BLOCKED/DATA_UNAVAILABLE
   while its selected technical score is at/above the given floor).
 
-There is intentionally **no V3/V4 disagreement metric**: V3 and V4 telemetry
+There is intentionally **no legacy/current disagreement metric**: legacy and current telemetry
 are separate canvases until cutover.
 
 The module also carries a deterministic session-review tracer that consumes
@@ -34,9 +34,9 @@ from core.reason_codes import (
     FINAL_SCORE_EXECUTION_NEUTRAL_FALLBACK,
     TECHNICAL_DATA_UNAVAILABLE,
 )
-from core.scanner_v4_composition import (
+from core.scanner_composition import (
     COMPOSITION_POLICY_VERSION,
-    ScannerV4CompositionResult,
+    ScannerCompositionResult,
 )
 from core.scanner_v4_models import (
     BLOCK,
@@ -51,7 +51,8 @@ from core.scanner_v4_models import (
     VALID_GATE_STATUSES,
 )
 
-SCANNER_V4_OBSERVABILITY_VERSION = "scanner-observability-v4"
+SCANNER_V4_OBSERVABILITY_VERSION = "scanner-observability"
+SCANNER_OBSERVABILITY_LEGACY_VERSION = "scanner-observability-v4"
 
 # Order of gate cards used for the status counters (canonical + macro).
 _GATE_CARD_NAMES = (
@@ -105,7 +106,7 @@ class ObserverCounters:
 
 
 @dataclass(frozen=True, slots=True)
-class ScannerV4ObservabilityDocument:
+class ScannerObservabilityDocument:
     observability_version: str
     composition_version: str
     snapshot_id: str
@@ -140,19 +141,19 @@ class ScannerV4ObservabilityDocument:
         }
 
 
-def build_v4_observability_document(
-    composition: ScannerV4CompositionResult,
+def build_observability_document(
+    composition: ScannerCompositionResult,
     *,
-    samples: list[ScannerV4CompositionResult] | None = None,
+    samples: list[ScannerCompositionResult] | None = None,
     blocked_high_score_floor: int = 40,
-) -> ScannerV4ObservabilityDocument:
-    """Build the target-only V4 observability document for one composition.
+) -> ScannerObservabilityDocument:
+    """Build the target-only observability document for one composition.
 
     Inputs are the canonical composition (and optional extra composition samples
     for the status distribution); nothing is re-scored.
     """
-    if type(composition) is not ScannerV4CompositionResult:
-        raise TypeError("expected a ScannerV4CompositionResult")
+    if type(composition) is not ScannerCompositionResult:
+        raise TypeError("expected a ScannerCompositionResult")
     canonical = composition.canonical
 
     technical_traces: list[TechnicalTrace] = []
@@ -234,7 +235,7 @@ def build_v4_observability_document(
         blocked_high_score_floor=blocked_high_score_floor,
     )
 
-    return ScannerV4ObservabilityDocument(
+    return ScannerObservabilityDocument(
         observability_version=SCANNER_V4_OBSERVABILITY_VERSION,
         composition_version=COMPOSITION_POLICY_VERSION,
         snapshot_id=canonical.snapshot_id,
@@ -260,7 +261,7 @@ def build_v4_observability_document(
     )
 
 
-def _collect_unknown_reason_codes(composition: ScannerV4CompositionResult) -> list[str]:
+def _collect_unknown_reason_codes(composition: ScannerCompositionResult) -> list[str]:
     """Every reason code attached to an UNKNOWN gate (fail-closed evidence)."""
     reasons: list[str] = []
     seen: set[str] = set()
@@ -289,16 +290,16 @@ def _collect_unknown_reason_codes(composition: ScannerV4CompositionResult) -> li
 
 def _build_counters(
     *,
-    composition: ScannerV4CompositionResult,
-    samples: tuple[ScannerV4CompositionResult, ...],
+    composition: ScannerCompositionResult,
+    samples: tuple[ScannerCompositionResult, ...],
     blocked_high_score_floor: int,
 ) -> ObserverCounters:
     status_counters: dict[str, int] = {}
     gate_status: dict[str, int] = dict.fromkeys(VALID_GATE_STATUSES, 0)
 
-    all_compositions: list[ScannerV4CompositionResult] = [composition]
+    all_compositions: list[ScannerCompositionResult] = [composition]
     for item in samples:
-        if type(item) is ScannerV4CompositionResult:
+        if type(item) is ScannerCompositionResult:
             all_compositions.append(item)
 
     for comp in all_compositions:
@@ -376,7 +377,7 @@ def has_required_trace_keys(document: Mapping[str, Any]) -> bool:
 
 
 def has_no_v3_disagreement_metric(document: Mapping[str, Any]) -> bool:
-    """Contract: no V3/V4 disagreement metric is ever produced."""
+    """Contract: no legacy/current disagreement metric is ever produced."""
     for key in document:
         if "disagreement" in str(key).lower() or "v3_vs_v4" in str(key).lower():
             return False

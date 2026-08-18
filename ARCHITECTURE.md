@@ -5,15 +5,13 @@
 ## Tổng quan
 
 App desktop **AI Market Analyst** (PyQt6) phân tích trading MT5. Runtime Scanner
-V3 hiện vẫn compose technical, Risk và Macro vào score. Kiến trúc đích Scanner
-V4 đổi luồng thành: lấy dữ liệu thị trường → phân tích kỹ thuật (SMC) → chấm điểm
+sử dụng luồng: lấy dữ liệu thị trường → phân tích kỹ thuật (SMC) → chấm điểm
 setup; macro, market safety và AI policy chạy ở lớp assessment/gate → xếp hạng →
 hiển thị bảng scanner → (tùy chọn) tự vào lệnh MT5.
 
-> **Kiến trúc đích đã chốt:** Scanner V4 tách Macro và Risk khỏi điểm số,
-> direct cutover không shadow/dual scoring. Code hiện vẫn là Scanner V3 cho tới
-> khi kế hoạch từng bước tại
-> [`scanner-v4-architecture.md`](docs/scanner/scanner-v4-architecture.md) hoàn tất.
+> **Kiến trúc đã chốt:** Scanner tách Macro và Risk khỏi điểm số,
+> direct cutover không shadow/dual scoring. Kế hoạch từng bước tại
+> [`scanner-architecture.md`](docs/scanner/scanner-architecture.md).
 
 **Luồng dữ liệu chính:**
 ```
@@ -45,7 +43,7 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `core/analysis_engine.py` — engine phân tích tổng
 - `core/indicators.py` — tính chỉ báo kỹ thuật
 - `core/smc_*.py` — Smart Money Concepts: context, zones, confluence, scorer, validation
-- `core/signal_engine.py` — scorer composite V3 hiện hành; target V4 tách TechnicalScore khỏi safety/macro gate
+- `core/signal_engine.py` — scorer composite hiện hành; target tách TechnicalScore khỏi safety/macro gate
 - `core/risk_engine.py` — scenarios, trade permission, contract size, RR
 - `core/final_score_engine.py` — điểm tổng
 - `core/decision_engine.py` — quyết định cuối (entry/stand aside...)
@@ -60,8 +58,8 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `core/scanner_observability.py` / `scanner_performance.py` — theo dõi + hiệu năng
 - `controllers/scanner_controller.py` — điều phối scan (thread pool)
 - `workers/scanner_worker.py` — chạy scan nền
-- `docs/scanner/technical-scoring-architecture.md` — scoring contract runtime V3 hiện hành
-- `docs/scanner/scanner-v4-architecture.md` — **kiến trúc đích đã chốt**:
+- `docs/scanner/technical-scoring-architecture.md` — scoring contract runtime hiện hành
+- `docs/scanner/scanner-architecture.md` — **kiến trúc đích đã chốt**:
   TechnicalScore 4 thành phần, MarketSafetyGate, MacroGate và direct cutover
 
 ### Backtest

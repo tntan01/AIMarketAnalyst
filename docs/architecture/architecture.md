@@ -314,13 +314,13 @@ OOS theo trade identity trước khi tính `oos_is_expectancy_ratio` và
 
 Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nhất, macro theme theo đồng tiền và điểm nóng thế giới trong controller trước khi gọi `core.analysis_engine.analyze_symbol()`. Controller đưa `news_in_3h`, `high_impact_event_within_30m`, `next_high_impact_event` và `resume_after` vào `data_quality`; đồng thời đưa `macro_alignment_scores` vào `analysis_engine` để macro thật sự tham gia `scenario_scores`.
 
-> **Runtime V3 và kiến trúc V4 đã chốt (11/08/2026):** Đoạn trên mô tả code
-> hiện hành của Scanner V3. Kiến trúc mục tiêu Scanner V4 đã được phê duyệt:
+> **Runtime và kiến trúc đã chốt (11/08/2026):** Đoạn trên mô tả code
+> hiện hành của Scanner. Kiến trúc Scanner đã được phê duyệt:
 > `TechnicalSignalScore` chỉ gồm Trend, Momentum, Location và SMC; Macro và Risk
-> trở thành gate/assessment độc lập, không cộng hoặc trừ điểm. V4 sẽ cutover trực
-> tiếp, không chạy dual scoring/shadow với V3. Đây vẫn là thiết kế non-runtime cho
+> trở thành gate/assessment độc lập, không cộng hoặc trừ điểm. Scanner sẽ cutover
+> trực tiếp, không chạy dual scoring/shadow. Đây vẫn là thiết kế non-runtime cho
 > tới khi code và version được đổi. Xem
-> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+> [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
 `services/news_service.py` chịu trách nhiệm gom:
 
@@ -642,7 +642,7 @@ Các boundary bắt buộc:
   là shared execution boundary cho cả auto và manual Scanner order.
 - Execution lấy snapshot MT5 mới, tính lại lot, kiểm tra news, giá/zone/SL/TP/RR,
   account và portfolio trước khi gọi `place_market_order`.
-- RuntimeOrderPolicy (`config/scanner_v4_order_policy.json`, loader fail-closed,
+- RuntimeOrderPolicy (`config/scanner_order_policy.json`, loader fail-closed,
   event `ORDER_POLICY_FAULT`) quyết định `order_enabled` trước khi candidate có
   thể thực thi.
 - Snapshot, full analysis, event JSONL và scan health được lưu trong
@@ -668,8 +668,8 @@ guard chain, không có override riêng.
 Xem chi tiết tại `docs/scanner/scanner-flow.md` và
 `docs/scanner/technical-scoring-architecture.md`.
 
-Kiến trúc Scanner V4 là runtime hiện hành, chạy live từ 15/08/2026:
-[`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md). Mọi bước
+Kiến trúc Scanner là runtime hiện hành, chạy live từ 15/08/2026:
+[`scanner-architecture.md`](../scanner/scanner-architecture.md). Mọi bước
 phân tích/triển khai tiếp theo phải được cập nhật vào tài liệu này trước khi sửa
 code.
 

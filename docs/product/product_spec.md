@@ -3,10 +3,10 @@
 > Phiên bản tài liệu: 11/08/2026
 >
 > Trạng thái: đồng bộ với runtime `scanner-v3` / `scanner-features-v3`; đồng thời
-> ghi nhận Scanner V4 là **APPROVED DESIGN — NON-RUNTIME**
+> ghi nhận Scanner là **APPROVED DESIGN — NON-RUNTIME**
 >
-> Phạm vi: desktop PyQt6, MT5, phân tích, Candidate Engine V2/scorer V3,
-> Scanner V4 target, backtest, journal, Telegram và order execution có kiểm soát
+> Phạm vi: desktop PyQt6, MT5, phân tích, Candidate Engine V2/scorer,
+> Scanner target, backtest, journal, Telegram và order execution có kiểm soát
 
 ## 1. Mục tiêu
 
@@ -40,7 +40,7 @@ MT5 service phải resolve symbol chuẩn sang broker symbol thực, kể cả h
 Scanner phân tích danh sách symbol qua pipeline đầy đủ và tạo:
 
 - market regime và BUY/SELL evaluation;
-- signal/final/setup score theo runtime V3 hiện hành;
+- signal/final/setup score theo runtime hiện hành;
 - scenario Entry/SL/TP theo đúng side;
 - trade permission, gate và entry status;
 - Strategy Router decision;
@@ -108,7 +108,7 @@ Journal lưu kế hoạch, thực thi, outcome, R, chất lượng execution và
 ### 3.4 Settings
 
 Settings quản lý AI provider, MT5/data, trading risk, symbol settings, display,
-advanced, notification và feature flags. (Tab Scanner rollout của V3 đã bị gỡ
+advanced, notification và feature flags. (Tab Scanner rollout đã bị gỡ
 bỏ ngày 15/08/2026.) Hai flag Backtest cũ
 `backtest_config_v2`/`backtest_engine_v2` đã bị loại khỏi runtime; Settings cũ
 vẫn đọc được nhưng không ghi lại hai key này khi lưu.
@@ -161,8 +161,8 @@ Status chuẩn:
 
 ## 5. Chấm điểm và xếp hạng
 
-Các field dưới đây mô tả runtime V3 hiện hành; chúng không được dùng để suy
-diễn rằng target V4 đã được triển khai:
+Các field dưới đây mô tả runtime hiện hành; chúng không được dùng để suy
+diễn rằng target đã được triển khai:
 
 - `signal_score`: tín hiệu thô của từng side.
 - `final_score`: điểm setup đã điều chỉnh.
@@ -173,7 +173,7 @@ diễn rằng target V4 đã được triển khai:
 
 Ranking diễn ra sau filter và ưu tiên status trước điểm cơ hội. Điểm cao không thể đưa row bị block lên trước row ready hoặc mở khóa order.
 
-### 5.1 Runtime V3 — VIX pair-aware trong macro component
+### 5.1 Runtime — VIX pair-aware trong macro component
 
 VIX pair-aware chỉ modulate phần VIX trong `correlation_adjustment` của macro
 score theo đúng symbol và side. Nó không sửa hoặc bypass contract của
@@ -193,26 +193,26 @@ Calibration runner này không phải System Backtest. Historical replay hiện 
 flat VIX scoring; chỉ được bổ sung parity khi có map point-in-time/versioned để
 không dùng bằng chứng tương lai cho decision date quá khứ.
 
-### 5.2 Target Scanner V4 đã phê duyệt — chưa chạy runtime
+### 5.2 Target Scanner đã phê duyệt — chưa chạy runtime
 
-V4 chỉ chấm bốn thành phần kỹ thuật theo từng side: Trend, Momentum, Location và
+Scanner chỉ chấm bốn thành phần kỹ thuật theo từng side: Trend, Momentum, Location và
 SMC. Trọng số theo regime và quy tắc rounding chỉ được định nghĩa tại tài liệu
 canonical bên dưới. Final/Setup score blend Technical/Evidence/Execution theo tỷ
 trọng 65/20/15. Risk chuyển sang safety gate; Macro được giữ như assessment theo
 side và tác động qua policy/gate. Risk, Macro và output gate không được tái nhập
 vào Technical/Final/Setup score hoặc một thành phần ranking số.
 
-Migration V4 dùng **direct cutover** sang `scanner-v4` /
-`scanner-features-v4`: không dual scoring V3/V4, không shadow V4 so với V3 và
+Tích hợp Scanner dùng **direct cutover** sang `scanner` /
+`scanner-features`: không dual scoring, không shadow và
 không giữ hai scorer live sau cutover. Cho đến khi code, test, calibration và
-version contract V4 hoàn tất, runtime và backtest config vẫn là V3. Nguồn
+version contract hoàn tất, runtime và backtest config giữ nguyên hiện hành. Nguồn
 normative duy nhất cho target là
-[Scanner V4 architecture](../scanner/scanner-v4-architecture.md);
+[Scanner architecture](../scanner/scanner-architecture.md);
 runtime hiện hành xem [Scanner flow](../scanner/scanner-flow.md).
 
 ## 6. Backtest config contract
 
-Config được thực thi trong runtime V3 hiện tại cần:
+Config được thực thi trong runtime hiện tại cần:
 
 - schema `v8`;
 - validation `backtest-v8-statistical-validation-v1`;
@@ -277,7 +277,7 @@ Không tự nâng lot lên broker minimum nếu làm vượt risk được phép
 ## 8. Thực thi live (từ 15/08/2026)
 
 Theo quyết định của owner (phần mềm cá nhân), ứng dụng chạy thật trực tiếp.
-Cơ chế rollout V3 — stage ladder
+Cơ chế rollout — stage ladder
 `DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`,
 `kill_switch`, release/canary readiness — đã bị gỡ bỏ hoàn toàn khỏi codebase
 ngày 15/08/2026.
@@ -285,7 +285,7 @@ ngày 15/08/2026.
 Các lớp bảo vệ còn lại (tất cả fail-closed):
 
 - **Scanner:** RuntimeOrderPolicy owner-accepted
-  (`config/scanner_v4_order_policy.json`) phải `certified()`; config thiếu/hỏng
+  (`config/scanner_order_policy.json`) phải `certified()`; config thiếu/hỏng
   → `ORDER_POLICY_FAULT` + mọi candidate BLOCKED. MarketSafetyGate/MacroGate.
   Auto-entry chỉ khi người dùng chủ động bật. Execution guard chain trong
   `execute_order_candidate()` (snapshot mới, lot recalc, news, account/portfolio,

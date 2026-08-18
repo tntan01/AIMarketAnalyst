@@ -66,13 +66,14 @@ class ScannerTableModel (QAbstractTableModel ):
     ("evidence_confidence","Tin cậy"),
     ("execution_readiness","Sẵn sàng"),
     ("expected_effective_rr","R:R"),
+    ("price_vs_zone","Vị trí"),
     ]
 
     ACTION_TEXT ={"ready":'Sẵn sàng',"watch":'Theo dõi',"wait":'Chờ',"skip":'Bỏ qua'}
     BIAS_TEXT ={"buy":"Mua","sell":'Bán',"neutral":'Trung lập',"stand_aside":'Đứng ngoài'}
     PERMISSION_TEXT ={"allowed":'Được phép',"caution":'Cẩn trọng',"blocked":'Bị chặn'}
     MACRO_BIAS_TEXT ={"aligned":'Thuận',"neutral":'Trung tính',"divergent":'Ngược'}
-    ENTRY_ZONE_TEXT ={"in_zone":"Trong vùng","near_zone":"Ngoài vùng","far":"Ngoài vùng","unknown":"--"}
+    ENTRY_ZONE_TEXT ={"in_zone":"Trong vùng","near_zone":"Gần vùng","far":"Xa vùng","unknown":"--"}
     GROUP_TEXT ={"ready_now":"Sẵn sàng ngay","waiting_confirmation":"Chờ xác nhận","watch_zone":"Theo dõi","blocked":"Bị chặn"}
     STATUS_TEXT ={
         "READY_NOW":"Đạt điều kiện",
@@ -229,7 +230,6 @@ class ScannerTableModel (QAbstractTableModel ):
 
     def _display_value (self ,key :str ,value :object ,row :dict [str ,object ]|None =None )->str :
         if not self._has_real_plan(row) and key in {
-            "price_vs_zone",
             "m15_quality",
             "macro_bias",
             "expected_effective_rr",
@@ -548,15 +548,15 @@ class ScannerTableModel (QAbstractTableModel ):
                 return colors["warning"]
             return colors["danger"]
         if key =="price_vs_zone":
-            if not self._has_real_plan(row):
-                return colors["subtle"]
-            normalized = str(row.get(key, "")).strip().lower()
-            return {
-            "in_zone":colors["success"],
-            "near_zone":colors["muted"],
-            "far":colors["muted"],
-            "unknown":colors["subtle"],
-            }.get (normalized ,colors["muted"])
+            normalized = str(row.get(key) or "").strip().lower()
+            if normalized in ("in_zone", "near_zone", "far"):
+                # Real classification — color by value (not the legacy zone-origin gate).
+                return {
+                "in_zone":colors["success"],
+                "near_zone":colors["warning"],
+                "far":colors["muted"],
+                }.get (normalized ,colors["muted"])
+            return colors["subtle"]
         if key =="macro_bias":
             return {
             "aligned":colors["success"],
@@ -635,7 +635,8 @@ class ScannerTableModel (QAbstractTableModel ):
         return (
             "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\n"
             "Trong vùng = giá nằm trong hoặc đúng biên vùng.\n"
-            "Ngoài vùng = giá nằm ngoài hai biên.\n"
+            "Gần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\n"
+            "Xa vùng = giá còn ngoài khoảng cách kể trên.\n"
             "-- = chưa có vùng thật hoặc thiếu dữ liệu.\n"
             "Giá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh."
         )
@@ -2012,6 +2013,7 @@ class ScannerScreen (QWidget ):
             "evidence_confidence": {"weight": 0, "min_width": 100},
             "execution_readiness": {"weight": 0, "min_width": 90},
             "expected_effective_rr": {"weight": 0, "min_width": 105},
+            "price_vs_zone": {"weight": 0, "min_width": 95},
         }
 
         col_count = self.table_model.columnCount()
@@ -3023,7 +3025,7 @@ class ScannerColumnsHelpDialog(QDialog):
         {
             "key": "technical_signal_score",
             "column": "Tín hiệu KT",
-            "meaning": "Điểm tín hiệu kỹ thuật (0–100) của hướng đã chọn từ Scanner V4.",
+            "meaning": "Điểm tín hiệu kỹ thuật (0–100) của hướng đã chọn từ Scanner.",
             "cases": (
                 "Tổng hợp các thành phần kỹ thuật (xu hướng, vùng, động lượng...) "
                 "thành một điểm trên thang 0–100 theo đúng hướng Mua/Bán đang xét. "
@@ -3068,6 +3070,17 @@ class ScannerColumnsHelpDialog(QDialog):
                 "Từ 2.0 trở lên hiển thị xanh; từ 1.3 đến dưới 2.0 hiển thị vàng; "
                 "thấp hơn hiển thị đỏ. R:R được tính lại theo bid/ask mới trước "
                 "khi gửi lệnh."
+            ),
+        },
+        {
+            "key": "price_vs_zone",
+            "column": "Vị trí",
+            "meaning": "Vị trí giá hiện tại so với vùng vào lệnh (entry zone) đã chọn.",
+            "cases": (
+                "Trong vùng = giá nằm trong hoặc đúng biên vùng; Gần vùng = giá cách "
+                "biên trong bán kính nửa ATR (sắp vào vùng); Xa vùng = giá còn ngoài "
+                "khoảng đó; -- = chưa có vùng thật hoặc thiếu dữ liệu. Giá sẽ được "
+                "kiểm tra lại theo bid/ask live trước khi gửi lệnh."
             ),
         },
     ]

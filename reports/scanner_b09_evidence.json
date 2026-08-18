@@ -1,0 +1,109 @@
+{
+  "blockers": [
+    "connectivity: MISSING (no PIT data at boundary)",
+    "data_freshness: MISSING (no PIT data at boundary)",
+    "spread: MISSING (no PIT data at boundary)",
+    "news: MISSING (no PIT data at boundary)",
+    "volatility: MISSING (no PIT data at boundary)"
+  ],
+  "calibration_9D": {
+    "manifest": {
+      "dataset_id": "repo-no-historical-pit-data",
+      "manifest_version": "scanner-v4-calibration-manifest-v1",
+      "minimum_required_rows": 100,
+      "pit_boundary": "2026-08-13T00:00:00+00:00",
+      "thresholds": [
+        "technical_floor",
+        "setup_floor",
+        "min_score_gap",
+        "min_risk_reward",
+        "safety_volatility_upper_ratio",
+        "macro_deadband_points"
+      ]
+    },
+    "manifest_fingerprint": "ac3be3bc1846662cd476e25d7b57b587fa1e0f45b12f165c401f2c1eb1a2255b",
+    "reason_codes": [
+      "SCANNER_V4_CALIBRATION_INSUFFICIENT"
+    ],
+    "recommended_thresholds": {
+      "macro_deadband_points": null,
+      "min_risk_reward": null,
+      "min_score_gap": null,
+      "safety_volatility_upper_ratio": null,
+      "setup_floor": null,
+      "technical_floor": null
+    },
+    "report_version": "scanner-v4-calibration-report-v1",
+    "status": "INSUFFICIENT_SAMPLE",
+    "summary": {
+      "confidence_interval_95": null,
+      "expectancy_r": null,
+      "max_drawdown_r": null,
+      "n": 0,
+      "oos_n": 0,
+      "profit_factor": null,
+      "stability_by_symbol": {}
+    }
+  },
+  "calibration_fingerprint": "63c0f29b5d0ab2e5ed7965804282140ae288ef2b3c185a8eec14dac49c8092d5::ac3be3bc1846662cd476e25d7b57b587fa1e0f45b12f165c401f2c1eb1a2255b",
+  "generated_at_utc": "2026-08-14T09:39:53.250535+00:00",
+  "report_version": "scanner-b09-evidence-v1",
+  "reproducibility_note": "Report deterministic: fields từ module (status/fingerprints/thresholds) phụ thuộc (manifest, rows) — chạy lại cùng manifest+rows cho cùng bytes.",
+  "safety_audit_9B": {
+    "audit_version": "scanner-v4-safety-audit-v1",
+    "blockers": [
+      "connectivity: MISSING (no PIT data at boundary)",
+      "data_freshness: MISSING (no PIT data at boundary)",
+      "spread: MISSING (no PIT data at boundary)",
+      "news: MISSING (no PIT data at boundary)",
+      "volatility: MISSING (no PIT data at boundary)"
+    ],
+    "items": [
+      {
+        "category": "connectivity",
+        "reason_codes": [
+          "SCANNER_V4_SAFETY_AUDIT_MISSING"
+        ],
+        "sources": [],
+        "status": "MISSING"
+      },
+      {
+        "category": "data_freshness",
+        "reason_codes": [
+          "SCANNER_V4_SAFETY_AUDIT_MISSING"
+        ],
+        "sources": [],
+        "status": "MISSING"
+      },
+      {
+        "category": "spread",
+        "reason_codes": [
+          "SCANNER_V4_SAFETY_AUDIT_MISSING"
+        ],
+        "sources": [],
+        "status": "MISSING"
+      },
+      {
+        "category": "news",
+        "reason_codes": [
+          "SCANNER_V4_SAFETY_AUDIT_MISSING"
+        ],
+        "sources": [],
+        "status": "MISSING"
+      },
+      {
+        "category": "volatility",
+        "reason_codes": [
+          "SCANNER_V4_SAFETY_AUDIT_MISSING"
+        ],
+        "sources": [],
+        "status": "MISSING"
+      }
+    ],
+    "pit_boundary": "2026-08-13T00:00:00+00:00",
+    "sufficient_for_calibration": false
+  },
+  "status": "COMPLETED",
+  "step": "Bước 09 — Backtest parity, calibration, config và version invalidation",
+  "verdict": "fail-closed: mọi safety category MISSING; calibration insufficient_sample; recommended thresholds = None (giữ DEFAULT policy 40/35/5/2); calibration PIT/OOS là cải tiến tùy chọn, không chặn — Bước 09 COMPLETED, không có sign-off."
+}

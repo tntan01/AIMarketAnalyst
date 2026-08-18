@@ -282,9 +282,9 @@ def test_output_exposes_ranking_contract_and_summary_uses_canonical_status():
 
 
 def test_controller_recalculates_stale_ranking_after_candidate_filter():
-    # A row that CLAIMS READY_NOW but carries no real V4 candidate is stale or
-    # fabricated. The V4 filter demotes it to DATA_UNAVAILABLE and resets the
-    # V3-only rank/opportunity fields to their documented neutrals, so it can
+    # A row that CLAIMS READY_NOW but carries no real candidate is stale or
+    # fabricated. The filter demotes it to DATA_UNAVAILABLE and resets the
+    # legacy-only rank/opportunity fields to their documented neutrals, so it can
     # never enter the dispatch loop with an unsupported status.
     stale = {
         "symbol": "EUR/USD",
@@ -305,7 +305,7 @@ def test_controller_recalculates_stale_ranking_after_candidate_filter():
 
     assert rows[0]["candidate_status"] == "DATA_UNAVAILABLE"
     assert rows[0]["auto_trade_candidate"] is False
-    # V3-only rank/opportunity fields are reset to the documented neutral —
+    # legacy-only rank/opportunity fields are reset to the documented neutral —
     # the stale rank is never preserved.
     assert rows[0]["opportunity_rank"] is None
 
@@ -351,7 +351,7 @@ def test_auto_trade_receives_execution_order_not_presentation_order():
     controller.orders_screen = None
     controller._emit_observability = lambda *a, **kw: None  # type: ignore[method-assign]
 
-    # Two genuine V4 READY_NOW candidates. UI presentation would put the smc
+    # Two genuine READY_NOW candidates. UI presentation would put the smc
     # row first, but _execute_auto_trades must follow the execution row order.
     rows = [
         _v4_row("EUR/USD", 80, "technical"),

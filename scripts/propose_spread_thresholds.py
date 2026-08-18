@@ -5,7 +5,7 @@ Discipline (never fabricate): this script does NOT write any config. It connects
 to the live MT5 terminal, reads each supported symbol's REAL current spread in
 points (``MT5.symbol_info().spread``), and prints a proposed
 ``spread_threshold_by_symbol`` map. The owner reviews the proposed numbers and
-(only if they approve) pastes them into ``config/scanner_v4_order_policy.json``.
+(only if they approve) pastes them into ``config/scanner_order_policy.json``.
 
 Why a threshold = observed spread:
   ``safety.spread_threshold_by_symbol`` is the per-symbol *cap* the market-safety
@@ -36,7 +36,7 @@ def _load_existing_thresholds() -> dict[str, int]:
     """Return the owner's current ``spread_threshold_by_symbol`` (may be empty)."""
     from config.paths import CONFIG_DIR
 
-    path = CONFIG_DIR / "scanner_v4_order_policy.json"
+    path = CONFIG_DIR / "scanner_order_policy.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -117,7 +117,7 @@ def main() -> int:
     print("\nProposed spread_threshold_by_symbol (owner review — READ ONLY, not written):")
     print(json.dumps({"spread_threshold_by_symbol": proposed}, indent=2, sort_keys=True))
     print(
-        "\nTo apply, copy the block above into config/scanner_v4_order_policy.json "
+        "\nTo apply, copy the block above into config/scanner_order_policy.json "
         "safety.spread_threshold_by_symbol. This script never writes config."
     )
     return 0

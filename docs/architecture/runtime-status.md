@@ -6,11 +6,11 @@ Tài liệu này ghi trạng thái cấu hình đang lưu trên máy hiện tạ
 phải giá trị mặc định của mã nguồn và không thay thế contract trong
 [`scanner-flow.md`](../scanner/scanner-flow.md).
 
-> **Scanner V4 là runtime hiện hành, chạy live từ 15/08/2026:** cutover hoàn tất
+> **Scanner là runtime hiện hành, chạy live từ 15/08/2026:** cutover hoàn tất
 > ở Bước 12 (14/08/2026); Bước 13 nối RuntimeOrderPolicy live và gỡ bỏ toàn bộ
 > rollout machinery (stage ladder, kill switch, release/canary readiness) cùng chế
 > độ SHADOW theo quyết định của owner. Xem
-> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+> [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
 ## Order Management V2
 
@@ -30,7 +30,7 @@ flatten cũng đi qua boundary này.
 
 Mặc định mã nguồn là phạm vi quản lý `AMA` (live, fail-safe) và OM hoạt động
 vô điều kiện: feature flag `order_management_v2` đã bị gỡ khỏi model
-(16/08/2026) để hệ thống luôn bật, nhất quán với việc gỡ các flag Scanner V4
+(16/08/2026) để hệ thống luôn bật, nhất quán với việc gỡ các flag Scanner
 trước đó. Stage ladder, kill switch, `require_demo_account`,
 `production_approved` và canary đã bị xóa khỏi cả code lẫn settings; key thừa
 trên disk bị loader bỏ qua. Gate thực thi hiện tại chỉ còn duy nhất
@@ -88,12 +88,12 @@ regression. Full suite: **3605 passed, 8 skipped, 16 xfailed**; smoke xanh;
 Owner yêu cầu xử lý 3 nguyên nhân khiến mọi cặp `BLOCKED` trong scan live
 (thứ 7 22:25, scan 28 cặp). Quyết định + kết quả tại từng mục:
 
-1. **Scenario RR (`GATE_SCENARIO_RR_BLOCK` mọi cặp)** — owner chốt **"align to V3: anchor
-   at protective zone"**. Sửa `core/scanner_v4_scenario_producers.py`: entry ghim tại cạnh
+1. **Scenario RR (`GATE_SCENARIO_RR_BLOCK` mọi cặp)** — owner chốt **"align: anchor
+   at protective zone"**. Sửa `core/scanner_scenario_producers.py`: entry ghim tại cạnh
    vùng bảo vệ (BUY=`zone_low`, SELL=`zone_high`), risk = đúng buffer 1.0×ATR, TP vượt cạnh
    xa vùng. Trước đây entry market-anchor (close H1) + SL cột sâu ở cạnh vùng xa giá làm risk
    = (giá−vùng_đối_ứng)+ATR → RR 0.02–1.5 mọi cặp → cổng 2:1 không bao giờ đạt. Cập nhật test:
-   `test_scanner_v4_scenario_producers.py`, `test_scanner_v4_release.py`. Full suite
+   `test_scanner_scenario_producers.py`, `test_scanner_release.py`. Full suite
    **3605 passed / 8 skipped / 16 xfailed**; smoke xanh; `sends_real_order=False` giữ nguyên.
 2. **Spread threshold đủ 26 cặp** — owner chốt **"real-data probe script, không bịa"**.
    Viết `scripts/propose_spread_thresholds.py` (read-only): đọc spread points thật từ
@@ -113,17 +113,17 @@ Owner yêu cầu xử lý 3 nguyên nhân khiến mọi cặp `BLOCKED` trong sc
 
 | Thuộc tính | Giá trị hiện tại |
 |---|---|
-| Order policy | LIVE — `config/scanner_v4_order_policy.json`, owner-accepted 2026-08-15; loader fail-closed, lỗi config phát `ORDER_POLICY_FAULT` và giữ `order_enabled=False` |
+| Order policy | LIVE — `config/scanner_order_policy.json`, owner-accepted 2026-08-15; loader fail-closed, lỗi config phát `ORDER_POLICY_FAULT` và giữ `order_enabled=False` |
 | Live producers (safety/account/portfolio/journal) | Đã nối đủ 5 producer live (16/08/2026): spread key chuẩn hóa cent, volatility ratio ATR thật, required margin lô tối thiểu broker-tính + free margin thật, đếm vị thế + exposure `margin÷balance`, drawdown journal 90 ngày. Candidate có thể đạt `READY_NOW` trên dữ liệu thật; thiếu dữ liệu vẫn fail-closed. Chi tiết §13.1 architecture doc |
-| Scenario plan producer | 16/08/2026 nối (`core/scanner_v4_scenario_producers.py`). 17/08/2026 RE-ALIGN về V3 (owner quyết định "anchor at protective zone"): entry ghim tại cạnh vùng bảo vệ mà SL buffer bám (BUY=`zone_low`, SELL=`zone_high`), SL = cạnh vùng ± 1.0×ATR (hệ số V3 analysis_pipeline.py:1563, risk = đúng buffer), TP = zone đối diện vượt cạnh xa vùng bảo vệ (V3:1567-1572). Trước đó entry market-anchor (close H1) làm risk = (giá−vùng)+ATR → RR hệ thống ≪ 2:1 → `GATE_SCENARIO_RR_BLOCK` vĩnh viễn. KHÔNG nhánh ATR tổng hợp. Thiếu vùng/target → `None` → scenario gate fail-closed. Full suite 3605 passed / 8 skipped / 16 xfailed (17/08) |
+| Scenario plan producer | 16/08/2026 nối (`core/scanner_scenario_producers.py`). 17/08/2026 RE-ALIGN (owner quyết định "anchor at protective zone"): entry ghim tại cạnh vùng bảo vệ mà SL buffer bám (BUY=`zone_low`, SELL=`zone_high`), SL = cạnh vùng ± 1.0×ATR (hệ số analysis_pipeline.py:1563, risk = đúng buffer), TP = zone đối diện vượt cạnh xa vùng bảo vệ (analysis_pipeline.py:1567-1572). Trước đó entry market-anchor (close H1) làm risk = (giá−vùng)+ATR → RR hệ thống ≪ 2:1 → `GATE_SCENARIO_RR_BLOCK` vĩnh viễn. KHÔNG nhánh ATR tổng hợp. Thiếu vùng/target → `None` → scenario gate fail-closed. Full suite 3605 passed / 8 skipped / 16 xfailed (17/08) |
 | Data freshness (tick-priority) | 16/08/2026: tham chiếu tuổi feed ưu tiên tick broker (`symbol_data_quality` đọc `symbol_info_tick`), fallback `last_candle_time_utc` khi không có tick; SLA `max_candle_age_minutes=3` giữ nguyên giá trị, `observed.freshness_reference = "tick"\|"candle"`. Fix false-positive `SAFETY_DATA_STALE` ~12/15 phút do `time` nến M15 là thời điểm MỞ nến; cuối tuần tick già vẫn BLOCK đúng |
 | Tài khoản cent | Broker symbol `EURUSDc` khớp ngưỡng qua chuẩn hóa key (`_spread_threshold_for`); không cần đổi config |
 | Rollout stage ladder | Đã gỡ bỏ khỏi codebase (15/08/2026) |
-| Shadow subsystems còn lại | 16/08/2026: gỡ toàn bộ theo quyết định owner — Bước 5 event-impact derate, Bước 6 AI Macro Verdict, Macro V2 diagnostics, backtest engine shadow trong release gate, và `ai_verdict` dimension của V4 macro gate. Đường live V4 vốn không tiêu thụ shadow nào nên quyết định live không đổi. Release gate bỏ thành phần engine shadow nên report version bump lên `backtest-phase7-release-report-v2` (báo cáo v1 đã lưu không còn hiệu lực) |
+| Shadow subsystems còn lại | 16/08/2026: gỡ toàn bộ theo quyết định owner — Bước 5 event-impact derate, Bước 6 AI Macro Verdict, Macro V2 diagnostics, backtest engine shadow trong release gate, và `ai_verdict` dimension của macro gate. Đường live vốn không tiêu thụ shadow nào nên quyết định live không đổi. Release gate bỏ thành phần engine shadow nên report version bump lên `backtest-phase7-release-report-v2` (báo cáo v1 đã lưu không còn hiệu lực) |
 | Kill switch | Đã gỡ bỏ; dừng khẩn = đóng lệnh ở broker hoặc ngắt MT5 |
 | SMC scorer | `smc-v2` (canonical duy nhất, không có mode để chọn) |
-| Feature flags runtime | 16/08/2026: đã xóa `scanner_architecture_v2`, `auto_trade_v2` (không reader nào — Scanner V4/auto-trade là đường live vô điều kiện), `scanner_fast_tier2` (được gán nhưng không bao giờ branch) và `order_management_v2` (OM always-on, gate chỉ còn `account.trade_allowed`); flag còn hiệu lực: `scanner_fast_tier1`, `scanner_mt5_history_cache`, `scanner_core_result_early`. `vix_pair_aware_enabled=false` hiệu lực do settings cũ chưa có key; hai flag Backtest cũ không còn được runtime sử dụng. Key cũ còn sót trên disk bị loader bỏ qua và tự mất ở lần lưu kế tiếp |
-| Risk limits 2 lớp (giữ nguyên) | `trading.max_consecutive_losses`/`max_concurrent_orders` KHÔNG trùng dư: chúng nuôi guard chain lúc ĐẶT LỆNH (`_portfolio_limits` → `evaluate_portfolio_risk` tại scanner_controller) và cấu hình Backtest, trong khi V4 scan gate dùng `journal_max_consecutive_losses`/`portfolio_position_limit` của RuntimeOrderPolicy. Hai lớp ở hai thời điểm thực thi khác nhau; xóa lớp nào cũng chạm guard live hoặc backtest nên giữ cả hai |
+| Feature flags runtime | 16/08/2026: đã xóa `scanner_architecture_v2`, `auto_trade_v2` (không reader nào — Scanner/auto-trade là đường live vô điều kiện), `scanner_fast_tier2` (được gán nhưng không bao giờ branch) và `order_management_v2` (OM always-on, gate chỉ còn `account.trade_allowed`); flag còn hiệu lực: `scanner_fast_tier1`, `scanner_mt5_history_cache`, `scanner_core_result_early`. `vix_pair_aware_enabled=false` hiệu lực do settings cũ chưa có key; hai flag Backtest cũ không còn được runtime sử dụng. Key cũ còn sót trên disk bị loader bỏ qua và tự mất ở lần lưu kế tiếp |
+| Risk limits 2 lớp (giữ nguyên) | `trading.max_consecutive_losses`/`max_concurrent_orders` KHÔNG trùng dư: chúng nuôi guard chain lúc ĐẶT LỆNH (`_portfolio_limits` → `evaluate_portfolio_risk` tại scanner_controller) và cấu hình Backtest, trong khi scan gate dùng `journal_max_consecutive_losses`/`portfolio_position_limit` của RuntimeOrderPolicy. Hai lớp ở hai thời điểm thực thi khác nhau; xóa lớp nào cũng chạm guard live hoặc backtest nên giữ cả hai |
 
 `backtest_config_v2`/`backtest_engine_v2`, `scanner_architecture_v2`/
 `auto_trade_v2`/`scanner_fast_tier2`, `sqlite_database_path`/`settings_storage`
@@ -132,7 +132,7 @@ còn trong file Settings được tạo bởi bản cũ. Loader hiện bỏ qua 
 lần lưu Settings tiếp theo sẽ không ghi lại; Strategy Router không phụ thuộc
 vào chúng. Tương tự, `advanced.event_impact_derate_enabled`/
 `advanced.macro_ai_verdict_enabled` (đã gỡ 16/08/2026) và
-`macro.ai_conviction_threshold` trong `config/scanner_v4_order_policy.json`
+`macro.ai_conviction_threshold` trong `config/scanner_order_policy.json`
 không còn reader; key thừa trên disk bị loader bỏ qua.
 
 Settings hiện có bản ghi cấu hình riêng cho **31 symbol**. Danh sách

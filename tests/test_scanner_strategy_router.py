@@ -405,11 +405,11 @@ def test_invalid_config_falls_back_to_default_side_but_never_auto_trades():
 
 
 def test_controller_exposes_invalid_config_status_for_ui():
-    # V4 contract decision: there is no backtest-config BRANCH concept in V4
-    # (BRANCH_BACKTEST_INVALID etc. are core.scanner_models V3 constants, retired
-    # with the V3 strategy router). A symbol whose backtest config is invalid or
-    # absent surfaces as a DOCUMENTED V4 NEUTRAL auto_trade_branch (None) and
-    # auto_trade_candidate=False; V4 exposes the decision via candidate_status /
+    # Decision: there is no backtest-config BRANCH concept in the router
+    # (BRANCH_BACKTEST_INVALID etc. are core.scanner_models legacy constants, retired
+    # with the legacy strategy router). A symbol whose backtest config is invalid or
+    # absent surfaces as a DOCUMENTED NEUTRAL auto_trade_branch (None) and
+    # auto_trade_candidate=False; the decision is exposed via candidate_status /
     # reason_codes instead. The UI's auto_trade_branch column degrades to "--".
     controller = ScannerController.__new__(ScannerController)
     request = ScannerRequest(

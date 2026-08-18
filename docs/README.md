@@ -19,8 +19,8 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | Cài đặt và sử dụng | `guides/installation_guide.md`, `guides/USER_GUIDE.md` |
 | Vận hành Backtest -> Scanner -> Rollout | `guides/workflow_guide.md` |
 | Scanner runtime contract | `scanner/scanner-flow.md` |
-| Chấm điểm Scanner V3 hiện hành | `scanner/technical-scoring-architecture.md` |
-| Kiến trúc đích Scanner V4 | `scanner/scanner-v4-architecture.md` — approved design, chưa phải runtime |
+| Chấm điểm Scanner hiện hành | `scanner/technical-scoring-architecture.md` |
+| Kiến trúc đích Scanner | `scanner/scanner-architecture.md` — approved design, chưa phải runtime |
 | Backtest runtime/validation | `backtest/system_backtest_design.md` |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
@@ -33,7 +33,7 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | `product/` | Đặc tả sản phẩm và hành vi cấp cao. |
 | `architecture/` | Kiến trúc tổng thể, trạng thái runtime, baseline dữ liệu runtime. |
 | `guides/` | Hướng dẫn cài đặt, sử dụng và vận hành. |
-| `scanner/` | Runtime Scanner V3 và kiến trúc đích Scanner V4. |
+| `scanner/` | Runtime Scanner và kiến trúc đích Scanner. |
 | `backtest/` | Thiết kế Backtest hiện hành và runbook release. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
 | `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
@@ -41,10 +41,10 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 
 ## Tài liệu hiện hành quan trọng
 
-- `scanner/scanner-v4-architecture.md`: runtime contract hiện hành của Scanner V4
+- `scanner/scanner-architecture.md`: runtime contract hiện hành của Scanner
   (live từ 15/08/2026): TechnicalScore chỉ gồm Trend/Momentum/Location/SMC, Risk
   và Macro là gate, order policy owner-accepted.
-- `scanner/scanner-flow.md`: luồng Scanner V3 legacy (historical); §11 ghi guard
+- `scanner/scanner-flow.md`: luồng Scanner legacy (historical); §11 ghi guard
   chain thực thi live.
 - `scanner/technical-scoring-architecture.md`: contract chấm điểm và ranking.
 - `backtest/system_backtest_design.md`: thiết kế Backtest hiện hành.
@@ -71,10 +71,10 @@ Các file này không phải tài liệu đọc chính, nhưng đang được to
 - Thay đổi UI contract phải cập nhật `ui/style-guide.md` và các lock/report nếu cần.
 - Thay đổi macro scoring phải cập nhật `macro/macro_score_architecture.md`; nếu
   liên quan calibration/TTL/map runtime thì cập nhật mục Bước 7 trong cùng file.
-- Mỗi bước Scanner V4 phải được phân tích và cập nhật vào
-  `scanner/scanner-v4-architecture.md` trước khi sửa code.
-- Scanner V4 direct-cutover không dùng dual scoring/shadow v3-v4. Tài liệu
-  runtime V3 chỉ được đổi thành V4 khi code, test và version của bước tương ứng
+- Mỗi bước Scanner phải được phân tích và cập nhật vào
+  `scanner/scanner-architecture.md` trước khi sửa code.
+- Scanner direct-cutover không dùng dual scoring/shadow. Tài liệu
+  runtime chỉ được cập nhật khi code, test và version của bước tương ứng
   đã hoàn tất.
 
 ## Tài liệu đã hợp nhất hoặc loại bỏ

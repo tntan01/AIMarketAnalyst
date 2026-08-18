@@ -1,8 +1,8 @@
-"""Strict, immutable target contract for Scanner V4.
+"""Strict, immutable target contract for Scanner.
 
 This module deliberately has no runtime wiring.  The executable scanner remains
 on ``scanner-v3`` until the later direct-cutover steps activate this contract.
-Creator APIs may stamp the locked V4 identity; external/persisted readers never
+Creator APIs may stamp the locked identity; external/persisted readers never
 default, coerce, upgrade, or relabel a payload.
 """
 
@@ -19,32 +19,55 @@ from types import MappingProxyType
 from typing import Any, Literal, TypeAlias
 
 from core.reason_codes import (
-    SCANNER_V4_FORBIDDEN_SCORED_FIELD,
-    SCANNER_V4_LEGACY_V3_AUDIT_ONLY,
-    SCANNER_V4_SCHEMA_INVALID,
-    SCANNER_V4_VERSION_MISMATCH,
-    SCANNER_V4_VERSION_MISSING,
+    SCANNER_FORBIDDEN_SCORED_FIELD,
+    SCANNER_LEGACY_V3_AUDIT_ONLY,
+    SCANNER_SCHEMA_INVALID,
+    SCANNER_VERSION_MISMATCH,
+    SCANNER_VERSION_MISSING,
 )
 
 
-# These are target identities only.  Do not replace the executable V3 constants
-# in scanner_models.py until the atomic V4 activation work is ready.
-SCANNER_V4_SCORING_VERSION = "scanner-v4"
-SCANNER_V4_FEATURE_VERSION = "scanner-features-v4"
-SCANNER_V4_OUTPUT_SCHEMA_VERSION = "scanner-output-v4"
-SCANNER_V4_SAFETY_POLICY_VERSION = "scanner-safety-policy-v4"
-SCANNER_V4_MACRO_POLICY_VERSION = "scanner-macro-policy-v4"
-SCANNER_V4_RANKING_VERSION = "scanner-ranking-v4"
-SCANNER_V4_SNAPSHOT_VERSION = "scanner-pair-snapshot-v4"
+# These are target identities only.  Do not replace the executable legacy constants
+# in scanner_models.py until the atomic activation work is ready.
+SCANNER_SCORING_VERSION = "scanner"
+SCANNER_V4_FEATURE_VERSION = "scanner-features"
+SCANNER_OUTPUT_SCHEMA_VERSION = "scanner-output"
+SCANNER_SAFETY_POLICY_VERSION = "scanner-safety-policy"
+SCANNER_MACRO_POLICY_VERSION = "scanner-macro-policy"
+SCANNER_V4_RANKING_VERSION = "scanner-ranking"
+SCANNER_SNAPSHOT_VERSION = "scanner-pair-snapshot"
 
-SCANNER_V4_VERSION_FIELDS = MappingProxyType({
-    "scoring_version": SCANNER_V4_SCORING_VERSION,
+# Bare names dropped the "v4" moniker on 2026-08-17.  Data written before the
+# rename carries the legacy "…-v4" values; readers accept BOTH (see alias
+# migration).  Nothing is ever rewritten to the new value automatically.
+SCANNER_LEGACY_SCORING_VERSION = "scanner-v4"
+SCANNER_LEGACY_FEATURE_VERSION = "scanner-features-v4"
+SCANNER_LEGACY_OUTPUT_SCHEMA_VERSION = "scanner-output-v4"
+SCANNER_LEGACY_SAFETY_POLICY_VERSION = "scanner-safety-policy-v4"
+SCANNER_LEGACY_MACRO_POLICY_VERSION = "scanner-macro-policy-v4"
+SCANNER_LEGACY_RANKING_VERSION = "scanner-ranking-v4"
+SCANNER_LEGACY_SNAPSHOT_VERSION = "scanner-pair-snapshot-v4"
+
+# Accepted version values per persisted field key: {new} ∪ {legacy}.  Helpers
+# check membership (`value in ACCEPTED[field]`) instead of `value != VERSION`.
+SCANNER_ACCEPTED_VERSIONS = MappingProxyType({
+    "scoring_version": (SCANNER_SCORING_VERSION, SCANNER_LEGACY_SCORING_VERSION),
+    "feature_version": (SCANNER_V4_FEATURE_VERSION, SCANNER_LEGACY_FEATURE_VERSION),
+    "output_schema_version": (SCANNER_OUTPUT_SCHEMA_VERSION, SCANNER_LEGACY_OUTPUT_SCHEMA_VERSION),
+    "safety_policy_version": (SCANNER_SAFETY_POLICY_VERSION, SCANNER_LEGACY_SAFETY_POLICY_VERSION),
+    "macro_policy_version": (SCANNER_MACRO_POLICY_VERSION, SCANNER_LEGACY_MACRO_POLICY_VERSION),
+    "ranking_version": (SCANNER_V4_RANKING_VERSION, SCANNER_LEGACY_RANKING_VERSION),
+    "snapshot_version": (SCANNER_SNAPSHOT_VERSION, SCANNER_LEGACY_SNAPSHOT_VERSION),
+})
+
+SCANNER_VERSION_FIELDS = MappingProxyType({
+    "scoring_version": SCANNER_SCORING_VERSION,
     "feature_version": SCANNER_V4_FEATURE_VERSION,
-    "output_schema_version": SCANNER_V4_OUTPUT_SCHEMA_VERSION,
-    "safety_policy_version": SCANNER_V4_SAFETY_POLICY_VERSION,
-    "macro_policy_version": SCANNER_V4_MACRO_POLICY_VERSION,
+    "output_schema_version": SCANNER_OUTPUT_SCHEMA_VERSION,
+    "safety_policy_version": SCANNER_SAFETY_POLICY_VERSION,
+    "macro_policy_version": SCANNER_MACRO_POLICY_VERSION,
     "ranking_version": SCANNER_V4_RANKING_VERSION,
-    "snapshot_version": SCANNER_V4_SNAPSHOT_VERSION,
+    "snapshot_version": SCANNER_SNAPSHOT_VERSION,
 })
 
 BUY = "buy"
@@ -96,7 +119,7 @@ FORBIDDEN_SCORED_FIELDS = frozenset({
     "macro_alignment",
 })
 
-PAYLOAD_V4 = "v4"
+PAYLOAD = "scanner"
 PAYLOAD_LEGACY_V3 = "legacy_v3"
 PAYLOAD_INVALID = "invalid"
 
@@ -113,19 +136,19 @@ _ALLOWED_TECHNICAL_WEIGHT_PROFILES = frozenset({
     (20, 10, 40, 30),
     (25, 25, 25, 25),
 })
-_V4_CANONICAL_BLOCK_KEYS = frozenset({
+_CANONICAL_BLOCK_KEYS = frozenset({
     "market_safety",
     "macro_assessment",
     "macro_gate",
 })
-_V4_ONLY_VERSION_KEYS = frozenset({
+_ONLY_VERSION_KEYS = frozenset({
     "output_schema_version",
     "safety_policy_version",
     "macro_policy_version",
     "snapshot_version",
 })
 _SNAPSHOT_PROVENANCE_IDENTITY_FIELDS = frozenset({
-    *SCANNER_V4_VERSION_FIELDS,
+    *SCANNER_VERSION_FIELDS,
     "scorer_version",
     "scanner_scorer_version",
     "scanner_feature_version",
@@ -136,7 +159,7 @@ _SNAPSHOT_PROVENANCE_IDENTITY_FIELDS = frozenset({
 })
 
 
-class ScannerV4ContractError(ValueError):
+class ScannerContractError(ValueError):
     """Fail-closed validation error carrying a stable reason code and path."""
 
     def __init__(self, code: str, path: str, message: str) -> None:
@@ -149,8 +172,8 @@ class ScannerV4ContractError(ValueError):
 FrozenJson: TypeAlias = Any
 
 
-def _error(path: str, message: str, *, code: str = SCANNER_V4_SCHEMA_INVALID) -> None:
-    raise ScannerV4ContractError(code, path, message)
+def _error(path: str, message: str, *, code: str = SCANNER_SCHEMA_INVALID) -> None:
+    raise ScannerContractError(code, path, message)
 
 
 def _require_mapping(value: object, path: str) -> Mapping[str, Any]:
@@ -182,17 +205,17 @@ def _require_exact_keys(
     unknown = sorted(actual - expected)
     if missing:
         code = (
-            SCANNER_V4_VERSION_MISSING
-            if any(key in SCANNER_V4_VERSION_FIELDS for key in missing)
-            else SCANNER_V4_SCHEMA_INVALID
+            SCANNER_VERSION_MISSING
+            if any(key in SCANNER_VERSION_FIELDS for key in missing)
+            else SCANNER_SCHEMA_INVALID
         )
         _error(path, f"missing required fields: {missing}", code=code)
     if unknown:
         forbidden = sorted(set(unknown) & FORBIDDEN_SCORED_FIELDS)
         code = (
-            SCANNER_V4_FORBIDDEN_SCORED_FIELD
+            SCANNER_FORBIDDEN_SCORED_FIELD
             if forbidden
-            else SCANNER_V4_SCHEMA_INVALID
+            else SCANNER_SCHEMA_INVALID
         )
         _error(path, f"unknown fields: {unknown}", code=code)
     return payload
@@ -275,7 +298,7 @@ def _require_datetime(value: object, path: str) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             _error(path, "datetime must be timezone-aware")
         return value.astimezone(timezone.utc)
-    except ScannerV4ContractError:
+    except ScannerContractError:
         raise
     except (OverflowError, ValueError) as exc:
         _error(path, f"datetime cannot be normalized safely: {exc}")
@@ -353,7 +376,7 @@ def _freeze_json(
                     _error(
                         f"{path}.{key}",
                         f"scored field {key!r} is forbidden in V4",
-                        code=SCANNER_V4_FORBIDDEN_SCORED_FIELD,
+                        code=SCANNER_FORBIDDEN_SCORED_FIELD,
                     )
                 frozen[key] = _freeze_json(
                     item,
@@ -417,7 +440,7 @@ def _freeze_external_json(
                     _error(
                         f"{path}.{key}",
                         f"scored field {key!r} is forbidden in V4",
-                        code=SCANNER_V4_FORBIDDEN_SCORED_FIELD,
+                        code=SCANNER_FORBIDDEN_SCORED_FIELD,
                     )
                 frozen[key] = _freeze_external_json(
                     item,
@@ -970,11 +993,11 @@ class GateCheck:
                 "PASS requires non-empty evidence provenance",
             )
         policy = _require_text(self.policy_version, "gate_check.policy_version")
-        if policy != SCANNER_V4_SAFETY_POLICY_VERSION:
+        if policy not in (SCANNER_SAFETY_POLICY_VERSION, SCANNER_LEGACY_SAFETY_POLICY_VERSION):
             _error(
                 "gate_check.policy_version",
-                f"expected {SCANNER_V4_SAFETY_POLICY_VERSION!r}",
-                code=SCANNER_V4_VERSION_MISMATCH,
+                f"expected {SCANNER_SAFETY_POLICY_VERSION!r}",
+                code=SCANNER_VERSION_MISMATCH,
             )
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "status", status)
@@ -1096,17 +1119,17 @@ class MarketSafetyResult:
                 f"must contain exactly {list(SAFETY_CHECK_NAMES)}",
             )
         policy = _require_text(self.policy_version, "market_safety.policy_version")
-        if policy != SCANNER_V4_SAFETY_POLICY_VERSION:
+        if policy not in (SCANNER_SAFETY_POLICY_VERSION, SCANNER_LEGACY_SAFETY_POLICY_VERSION):
             _error(
                 "market_safety.policy_version",
-                f"expected {SCANNER_V4_SAFETY_POLICY_VERSION!r}",
-                code=SCANNER_V4_VERSION_MISMATCH,
+                f"expected {SCANNER_SAFETY_POLICY_VERSION!r}",
+                code=SCANNER_VERSION_MISMATCH,
             )
         if any(check.policy_version != policy for check in by_name.values()):
             _error(
                 "market_safety.checks",
                 "all check policy versions must match aggregate policy version",
-                code=SCANNER_V4_VERSION_MISMATCH,
+                code=SCANNER_VERSION_MISMATCH,
             )
         reasons = _freeze_reason_codes(
             self.reason_codes, "market_safety.reason_codes"
@@ -1334,11 +1357,11 @@ class MacroGateResult:
                 "PASS requires non-empty assessment provenance",
             )
         policy = _require_text(self.policy_version, "macro_gate.policy_version")
-        if policy != SCANNER_V4_MACRO_POLICY_VERSION:
+        if policy not in (SCANNER_MACRO_POLICY_VERSION, SCANNER_LEGACY_MACRO_POLICY_VERSION):
             _error(
                 "macro_gate.policy_version",
-                f"expected {SCANNER_V4_MACRO_POLICY_VERSION!r}",
-                code=SCANNER_V4_VERSION_MISMATCH,
+                f"expected {SCANNER_MACRO_POLICY_VERSION!r}",
+                code=SCANNER_VERSION_MISMATCH,
             )
         object.__setattr__(self, "assessed_side", side)
         object.__setattr__(self, "status", status)
@@ -1548,13 +1571,13 @@ class CanonicalPairSnapshot:
     provenance: Mapping[str, FrozenJson]
 
     def __post_init__(self) -> None:
-        for field, expected in SCANNER_V4_VERSION_FIELDS.items():
+        for field, expected in SCANNER_VERSION_FIELDS.items():
             actual = _require_text(getattr(self, field), f"snapshot.{field}")
             if actual != expected:
                 _error(
                     f"snapshot.{field}",
                     f"expected {expected!r}, got {actual!r}",
-                    code=SCANNER_V4_VERSION_MISMATCH,
+                    code=SCANNER_VERSION_MISMATCH,
                 )
             object.__setattr__(self, field, actual)
         object.__setattr__(
@@ -1591,13 +1614,13 @@ class CanonicalPairSnapshot:
             _error(
                 "snapshot.market_safety.policy_version",
                 "does not match top-level safety_policy_version",
-                code=SCANNER_V4_VERSION_MISMATCH,
+                code=SCANNER_VERSION_MISMATCH,
             )
         if self.macro_gate.policy_version != self.macro_policy_version:
             _error(
                 "snapshot.macro_gate.policy_version",
                 "does not match top-level macro_policy_version",
-                code=SCANNER_V4_VERSION_MISMATCH,
+                code=SCANNER_VERSION_MISMATCH,
             )
         buy_technical = by_side[BUY].technical_signal_score
         sell_technical = by_side[SELL].technical_signal_score
@@ -1695,10 +1718,10 @@ class CanonicalPairSnapshot:
         decision: DecisionResult,
         provenance: Mapping[str, Any],
     ) -> CanonicalPairSnapshot:
-        """Create a new V4 artifact and stamp the locked target identity."""
+        """Create a new artifact and stamp the locked target identity."""
 
         return cls(
-            **dict(SCANNER_V4_VERSION_FIELDS),
+            **dict(SCANNER_VERSION_FIELDS),
             snapshot_id=snapshot_id,
             symbol=symbol,
             captured_at=captured_at,
@@ -1720,7 +1743,7 @@ class CanonicalPairSnapshot:
         return {
             **{
                 field: getattr(self, field)
-                for field in SCANNER_V4_VERSION_FIELDS
+                for field in SCANNER_VERSION_FIELDS
             },
             "snapshot_id": self.snapshot_id,
             "symbol": self.symbol,
@@ -1759,9 +1782,9 @@ class CanonicalPairSnapshot:
 
     @classmethod
     def _from_dict_unclassified(cls, value: object) -> CanonicalPairSnapshot:
-        """Parse an exact V4 object after classification selected the V4 path."""
+        """Parse an exact target object after classification selected the target path."""
 
-        expected = set(SCANNER_V4_VERSION_FIELDS) | {
+        expected = set(SCANNER_VERSION_FIELDS) | {
             "snapshot_id",
             "symbol",
             "captured_at",
@@ -1773,19 +1796,19 @@ class CanonicalPairSnapshot:
             "provenance",
         }
         payload = _require_exact_keys(value, expected, "snapshot")
-        for field, expected_version in SCANNER_V4_VERSION_FIELDS.items():
+        for field, expected_version in SCANNER_VERSION_FIELDS.items():
             actual = payload[field]
             if actual is None or (type(actual) is str and not actual):
                 _error(
                     f"snapshot.{field}",
                     "required version must be a non-empty string",
-                    code=SCANNER_V4_VERSION_MISSING,
+                    code=SCANNER_VERSION_MISSING,
                 )
             if type(actual) is not str or actual != expected_version:
                 _error(
                     f"snapshot.{field}",
                     f"expected {expected_version!r}, got {actual!r}",
-                    code=SCANNER_V4_VERSION_MISMATCH,
+                    code=SCANNER_VERSION_MISMATCH,
                 )
         scores_payload = _require_exact_keys(
             payload["side_scores"], {BUY, SELL}, "snapshot.side_scores"
@@ -1803,7 +1826,7 @@ class CanonicalPairSnapshot:
                     f"must match containing key {side!r}",
                 )
         return cls(
-            **{field: payload[field] for field in SCANNER_V4_VERSION_FIELDS},
+            **{field: payload[field] for field in SCANNER_VERSION_FIELDS},
             snapshot_id=_require_text(payload["snapshot_id"], "snapshot.snapshot_id"),
             symbol=_require_text(payload["symbol"], "snapshot.symbol"),
             captured_at=_parse_datetime(payload["captured_at"], "snapshot.captured_at"),
@@ -1834,7 +1857,7 @@ class CanonicalPairSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ScannerPayloadClassification:
-    kind: Literal["v4", "legacy_v3", "invalid"]
+    kind: Literal["scanner", "legacy_v3", "invalid"]
     audit_only: bool
     replayable: bool
     reason_codes: tuple[str, ...]
@@ -1842,7 +1865,7 @@ class ScannerPayloadClassification:
 
     def __post_init__(self) -> None:
         if type(self.kind) is not str or self.kind not in {
-            PAYLOAD_V4,
+            PAYLOAD,
             PAYLOAD_LEGACY_V3,
             PAYLOAD_INVALID,
         }:
@@ -1858,10 +1881,10 @@ class ScannerPayloadClassification:
             _error("classification", "legacy V3 must be audit-only/non-replayable")
         if (
             self.kind == PAYLOAD_LEGACY_V3
-            and SCANNER_V4_LEGACY_V3_AUDIT_ONLY not in reasons
+            and SCANNER_LEGACY_V3_AUDIT_ONLY not in reasons
         ):
             _error("classification.reason_codes", "legacy V3 reason is required")
-        if self.kind == PAYLOAD_V4 and (
+        if self.kind == PAYLOAD and (
             self.audit_only or not self.replayable or reasons
         ):
             _error("classification", "valid V4 must be accepted/replayable without errors")
@@ -1948,7 +1971,7 @@ def _decode_strict_json(value: object) -> object:
             object_pairs_hook=strict_object,
             parse_constant=reject_constant,
         )
-    except ScannerV4ContractError:
+    except ScannerContractError:
         raise
     except (
         TypeError,
@@ -2052,16 +2075,16 @@ def _invalid_classification(
     )
 
 
-def _has_v4_envelope_intent(
+def _has_envelope_intent(
     value: dict[str, Any],
     candidates: Mapping[str, tuple[object, ...]],
 ) -> bool:
     keys = set(value)
-    if keys & (_V4_ONLY_VERSION_KEYS | _V4_CANONICAL_BLOCK_KEYS):
+    if keys & (_ONLY_VERSION_KEYS | _CANONICAL_BLOCK_KEYS):
         return True
     if "scoring_version" in value and value.get("scoring_version") != "scanner-v3":
         return True
-    target_identities = frozenset(SCANNER_V4_VERSION_FIELDS.values())
+    target_identities = frozenset(SCANNER_VERSION_FIELDS.values())
     return any(
         candidate in target_identities
         for values in candidates.values()
@@ -2070,7 +2093,7 @@ def _has_v4_envelope_intent(
     )
 
 
-def _has_mixed_v3_v4_identity(
+def _has_mixed_v3_identity(
     candidates: Mapping[str, tuple[object, ...]],
 ) -> bool:
     values = {
@@ -2080,7 +2103,7 @@ def _has_mixed_v3_v4_identity(
         if type(candidate) is str and candidate
     }
     has_v3 = bool(values & {"scanner-v3", "scanner-features-v3"})
-    has_v4 = bool(values & set(SCANNER_V4_VERSION_FIELDS.values()))
+    has_v4 = bool(values & set(SCANNER_VERSION_FIELDS.values()))
     return has_v3 and has_v4
 
 
@@ -2088,17 +2111,17 @@ def classify_scanner_payload(value: object) -> ScannerPayloadClassification:
     """Classify without ever upgrading or executing the supplied artifact."""
 
     if type(value) is not dict:
-        return _invalid_classification(SCANNER_V4_SCHEMA_INVALID, {})
+        return _invalid_classification(SCANNER_SCHEMA_INVALID, {})
 
     try:
         _validate_external_json_shape(value, "snapshot")
-    except ScannerV4ContractError as exc:
+    except ScannerContractError as exc:
         return _invalid_classification(exc.code, {})
 
     observed = _observed_versions(value)
     candidates = _version_identity_candidates(value)
-    if _has_mixed_v3_v4_identity(candidates):
-        return _invalid_classification(SCANNER_V4_VERSION_MISMATCH, observed)
+    if _has_mixed_v3_identity(candidates):
+        return _invalid_classification(SCANNER_VERSION_MISMATCH, observed)
 
     candidate_values = tuple(
         candidate
@@ -2110,12 +2133,12 @@ def classify_scanner_payload(value: object) -> ScannerPayloadClassification:
         set(candidate_values) & {"scanner-v3", "scanner-features-v3"}
     )
     structural_v3 = _contains_forbidden_scored_field(value)
-    has_v4_intent = _has_v4_envelope_intent(value, candidates)
+    has_intent = _has_envelope_intent(value, candidates)
 
-    if not has_v4_intent and (explicit_v3 or structural_v3):
-        reasons = [SCANNER_V4_LEGACY_V3_AUDIT_ONLY]
+    if not has_intent and (explicit_v3 or structural_v3):
+        reasons = [SCANNER_LEGACY_V3_AUDIT_ONLY]
         if structural_v3:
-            reasons.append(SCANNER_V4_FORBIDDEN_SCORED_FIELD)
+            reasons.append(SCANNER_FORBIDDEN_SCORED_FIELD)
         return ScannerPayloadClassification(
             kind=PAYLOAD_LEGACY_V3,
             audit_only=True,
@@ -2126,12 +2149,12 @@ def classify_scanner_payload(value: object) -> ScannerPayloadClassification:
 
     try:
         CanonicalPairSnapshot._from_dict_unclassified(value)
-    except ScannerV4ContractError as exc:
+    except ScannerContractError as exc:
         return _invalid_classification(exc.code, observed)
     except (TypeError, ValueError, OverflowError, RecursionError, UnicodeError):
-        return _invalid_classification(SCANNER_V4_SCHEMA_INVALID, observed)
+        return _invalid_classification(SCANNER_SCHEMA_INVALID, observed)
     return ScannerPayloadClassification(
-        kind=PAYLOAD_V4,
+        kind=PAYLOAD,
         audit_only=False,
         replayable=True,
         reason_codes=(),
@@ -2144,7 +2167,7 @@ def classify_scanner_payload_json(value: object) -> ScannerPayloadClassification
 
     try:
         payload = _decode_strict_json(value)
-    except ScannerV4ContractError as exc:
+    except ScannerContractError as exc:
         return _invalid_classification(exc.code, {})
     return classify_scanner_payload(payload)
 
@@ -2163,7 +2186,7 @@ def deserialize_canonical_pair_snapshot(value: object) -> CanonicalPairSnapshot:
         _error(
             "snapshot",
             "Scanner V3 artifact is audit-only and non-replayable",
-            code=SCANNER_V4_LEGACY_V3_AUDIT_ONLY,
+            code=SCANNER_LEGACY_V3_AUDIT_ONLY,
         )
     if classification.kind == PAYLOAD_INVALID:
         _error(
@@ -2200,20 +2223,20 @@ __all__ = [
     "PASS",
     "PAYLOAD_INVALID",
     "PAYLOAD_LEGACY_V3",
-    "PAYLOAD_V4",
+    "PAYLOAD",
     "READY_NOW",
     "SAFETY_CHECK_NAMES",
     "SCANNER_V4_FEATURE_VERSION",
-    "SCANNER_V4_MACRO_POLICY_VERSION",
-    "SCANNER_V4_OUTPUT_SCHEMA_VERSION",
+    "SCANNER_MACRO_POLICY_VERSION",
+    "SCANNER_OUTPUT_SCHEMA_VERSION",
     "SCANNER_V4_RANKING_VERSION",
-    "SCANNER_V4_SAFETY_POLICY_VERSION",
-    "SCANNER_V4_SCORING_VERSION",
-    "SCANNER_V4_SNAPSHOT_VERSION",
-    "SCANNER_V4_VERSION_FIELDS",
+    "SCANNER_SAFETY_POLICY_VERSION",
+    "SCANNER_SCORING_VERSION",
+    "SCANNER_SNAPSHOT_VERSION",
+    "SCANNER_VERSION_FIELDS",
     "SELL",
     "ScannerPayloadClassification",
-    "ScannerV4ContractError",
+    "ScannerContractError",
     "SideScore",
     "TechnicalBreakdown",
     "TechnicalComponent",

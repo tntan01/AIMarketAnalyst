@@ -161,7 +161,7 @@ def calculate_loss_stats(
                 weekly_result_amount += amount
 
     # Count consecutive losses as the trailing run among the newest-first
-    # closed trades (matching how ``_v4_consecutive_losses`` in the scanner
+    # closed trades (matching how ``_consecutive_losses`` in the scanner
     # controller walks them).  The first non-loss — or a trade outside today —
     # ends the run; trades must NOT be reversed because the list is already
     # newest-first.

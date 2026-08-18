@@ -1,0 +1,54 @@
+{
+  "composition_version": "scanner-composition-v4",
+  "digest_sha256": "dc5d8f595c4106a71af25843785b5f69988ed3466299f2df4f846c02d679c554",
+  "envelope_version": "scanner-v4-snapshot-envelope-v1",
+  "fixture": "scanner-v4-oracle-v1",
+  "generated_at_utc": "2026-08-14T04:08:08.212625+00:00",
+  "generated_by": "scripts/scanner_oracle_fixture.py",
+  "input": {
+    "buy": {
+      "evidence": 60,
+      "execution": 70,
+      "location": 18,
+      "momentum": 14,
+      "trend": 20
+    },
+    "regime": "trending_up",
+    "sell": {
+      "evidence": 60,
+      "execution": 70,
+      "location": 6,
+      "momentum": 5,
+      "trend": 8
+    },
+    "smc": {
+      "buy_subtotal": 12,
+      "sell_subtotal": 7
+    }
+  },
+  "module_output": {
+    "buy_setup": 72,
+    "buy_technical": 76,
+    "candidate_status": "WAITING_CONFIRMATION",
+    "score_gap": 44,
+    "selected_side": "buy",
+    "sell_setup": 43,
+    "sell_technical": 32,
+    "snapshot_id": "v4:XAUUSD:2026-08-13T12:00:00Z:07b98a3979f5",
+    "symbol": "XAUUSD"
+  },
+  "oracle_matches_module": true,
+  "oracle_reference": {
+    "buy_setup": 72,
+    "buy_technical": 76,
+    "gap": 44,
+    "sell_setup": 43,
+    "sell_technical": 32
+  },
+  "row_version": "scanner-v4-row-v1",
+  "schema": "scanner-v4-oracle-fixture",
+  "scoring_version": "scanner-v4",
+  "target_only": true,
+  "threshold_policy_notes": true,
+  "threshold_policy_version": "scanner-threshold-policy-v4"
+}

@@ -1,13 +1,13 @@
-# Scanner V3 — Luồng runtime legacy (historical)
+# Scanner — Luồng runtime legacy (historical)
 
-Runtime contract cập nhật: **09/08/2026**. Target V4: **11/08/2026**.
-Cutover V4 xong: **14/08/2026**. Gỡ rollout/SHADOW, chạy thật: **15/08/2026**.
+Runtime contract cập nhật: **09/08/2026**. Target: **11/08/2026**.
+Cutover xong: **14/08/2026**. Gỡ rollout/SHADOW, chạy thật: **15/08/2026**.
 
-> **Hiện trạng:** Scanner V4 đang chạy live — tài liệu chuẩn là
-> [`scanner-v4-architecture.md`](scanner-v4-architecture.md). Toàn bộ rollout
+> **Hiện trạng:** Scanner đang chạy live — tài liệu chuẩn là
+> [`scanner-architecture.md`](scanner-architecture.md). Toàn bộ rollout
 > machinery (stage ladder, kill switch, release/canary readiness) và chế độ
 > SHADOW đã bị gỡ khỏi codebase ngày 15/08/2026 theo quyết định của owner.
-> Nội dung bên dưới mô tả luồng V3 **trước cutover**, giữ lại để tra cứu lịch
+> Nội dung bên dưới mô tả luồng **trước cutover**, giữ lại để tra cứu lịch
 > sử; riêng §11 đã được viết lại theo guard chain thực thi live hiện tại.
 
 ## 1. Tổng quan
@@ -107,13 +107,13 @@ ngoài hoặc dữ liệu lỗi đi vòng qua Settings.
 
 ## 3. Khởi tạo scan và order policy
 
-**Nguồn chính:** `controllers/scanner_controller.py`, `core/scanner_observability.py`, `core/scanner_v4_order_policy.py`.
+**Nguồn chính:** `controllers/scanner_controller.py`, `core/scanner_observability.py`, `core/scanner_order_policy.py`.
 
 Controller:
 
 1. tạo `scan_id`, `settings_hash`, `request_hash` và timestamp;
 2. đọc MT5 server và load `RuntimeOrderPolicy` từ
-   `config/scanner_v4_order_policy.json` qua `load_runtime_order_policy()`;
+   `config/scanner_order_policy.json` qua `load_runtime_order_policy()`;
 3. phát event bắt đầu scan.
 
 Order policy load **fail-closed**: file thiếu/hỏng hoặc `OrderPolicyError` →
@@ -261,8 +261,8 @@ Sau sort, `rank` được gán theo thứ tự canonical.
 
 **Nguồn chính:** `core/scanner_observability.py`, `services/observability_service.py`.
 
-(Shadow comparison V1/V2 của Candidate Engine thuộc code path V3 và đã bị xóa
-cùng đường V3 ở Bước 12; SMC cũng chỉ còn một scorer canonical duy nhất.)
+(Shadow comparison V1/V2 của Candidate Engine thuộc code path và đã bị xóa
+cùng đường ở Bước 12; SMC cũng chỉ còn một scorer canonical duy nhất.)
 
 Mỗi scan/row/order có thể truy vết bằng:
 
@@ -376,7 +376,7 @@ Không module UI nào được gọi `place_market_order` trực tiếp.
 
 ## 11. Guard chain thực thi (live từ 15/08/2026)
 
-Toàn bộ rollout machinery của V3 — stage ladder
+Toàn bộ rollout machinery — stage ladder
 `DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`,
 kill switch, release/canary readiness gates — đã bị gỡ bỏ theo quyết định của
 owner (phần mềm cá nhân, chạy thật trực tiếp, không cần rollout). Không còn
@@ -384,7 +384,7 @@ chế độ SHADOW/paper cho Scanner.
 
 Lệnh thật hiện được kiểm soát bởi các lớp kỹ thuật sau (tất cả fail-closed):
 
-1. **RuntimeOrderPolicy** (`config/scanner_v4_order_policy.json`): phải
+1. **RuntimeOrderPolicy** (`config/scanner_order_policy.json`): phải
    `certified()` — đủ threshold floors, safety, macro và portfolio/journal —
    thì `order_enabled=True`. Config thiếu/hỏng → `ORDER_POLICY_FAULT` +
    `DEFAULT_RUNTIME_ORDER_POLICY` (`order_enabled=False`) → mọi candidate BLOCKED.
@@ -423,8 +423,8 @@ Chi tiết trạng thái runtime xem tại `docs/architecture/runtime-status.md`
 
 Config hoặc snapshot không tương thích version phải bị từ chối hoặc chỉ dùng cho mục đích hiển thị/replay có kiểm soát.
 
-Target V4 đã hoàn tất: runtime là `scanner-v4` / `scanner-features-v4` sau
-direct cutover (Bước 12). Score/config/snapshot V3 bị fail-closed cho live và
-chỉ phục vụ replay có kiểm soát; không có router dual-score V3/V4. Chi tiết và
+Target đã hoàn tất: runtime là `scanner` / `scanner-features` sau
+direct cutover (Bước 12). Score/config/snapshot bị fail-closed cho live và
+chỉ phục vụ replay có kiểm soát; không có router dual-score. Chi tiết và
 trạng thái từng bước nằm tại
-[`scanner-v4-architecture.md`](scanner-v4-architecture.md).
+[`scanner-architecture.md`](scanner-architecture.md).

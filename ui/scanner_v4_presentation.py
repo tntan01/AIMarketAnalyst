@@ -1,6 +1,6 @@
-"""Scanner V4 UI presentation contract (Bước 10; target-only).
+"""Scanner UI presentation contract (Bước 10; target-only).
 
-10B replaces the V3 six-component rendering in
+10B replaces the legacy six-component rendering in
 ``ui/screens/scanner_detail_screen.py:2940-3021`` (which views
 ``risk_condition`` and ``macro_alignment`` as scored components) with a strict
 presenter that consumes the canonical Step 07/08 output and renders:
@@ -21,7 +21,7 @@ Rules enforced (DoR-10 / 10B):
   produced; Safety/Macro are never rendered as additive points.
 
 The module is pure (dicts in, dicts out) so it stays UI-framework neutral and
-testable.  It is not wired into the V3 detail screen until cutover.
+testable.  It is not wired into the legacy detail screen until cutover.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.reason_codes import codes_to_messages
-from core.scanner_v4_composition import ScannerV4CompositionResult
+from core.scanner_composition import ScannerCompositionResult
 from core.scanner_v4_models import (
     BLOCK,
     BUY,
@@ -41,15 +41,16 @@ from core.scanner_v4_models import (
     TechnicalComponent,
 )
 
-SCANNER_V4_PRESENTATION_SCHEMA_VERSION = "scanner-v4-presentation-v1"
+SCANNER_PRESENTATION_SCHEMA_VERSION = "scanner-presentation"
+SCANNER_PRESENTATION_SCHEMA_LEGACY_VERSION = "scanner-v4-presentation-v1"
 
-# The only components the V4 UI may render as scored; anything else (in
-# particular the V3 six-component rows) is a presenter error.
+# The only components the UI may render as scored; anything else (in
+# particular the legacy six-component rows) is a presenter error.
 TECHNICAL_COMPONENT_NAMES = ("trend", "momentum", "location", "smc")
 
 # Gate-card order: safety sub-checks in canonical SAFETY_CHECK_NAMES order,
 # then macro, then composition gates (scenario/account/portfolio/journal).
-_ERROR_MSG = "V4 presenter only accepts a ScannerV4CompositionResult"
+_ERROR_MSG = "V4 presenter only accepts a ScannerCompositionResult"
 _ERROR_MSG_UNKNOWN_PASS = (
     "UNKNOWN/None evidence can never be rendered as PASS (fail-closed)"
 )
@@ -160,8 +161,8 @@ class GateCard:
 
 
 @dataclass(frozen=True, slots=True)
-class ScannerV4Presentation:
-    """Full V4 presentation result (4 component view + gate cards)."""
+class ScannerPresentation:
+    """Full presentation result (4 component view + gate cards)."""
 
     schema_version: str
     composition_version: str
@@ -195,11 +196,11 @@ class ScannerV4Presentation:
         }
 
 
-def build_scanner_v4_presentation(
-    composition: ScannerV4CompositionResult,
-) -> ScannerV4Presentation:
-    """Render the canonical composition as the V4 presentation (target-only)."""
-    if type(composition) is not ScannerV4CompositionResult:
+def build_scanner_presentation(
+    composition: ScannerCompositionResult,
+) -> ScannerPresentation:
+    """Render the canonical composition as the presentation (target-only)."""
+    if type(composition) is not ScannerCompositionResult:
         raise TypeError(_ERROR_MSG)
 
     canonical = composition.canonical
@@ -225,8 +226,8 @@ def build_scanner_v4_presentation(
     gate_cards = tuple(_build_gate_cards(composition))
     _assert_no_unknown_passed(gate_cards)
 
-    return ScannerV4Presentation(
-        schema_version=SCANNER_V4_PRESENTATION_SCHEMA_VERSION,
+    return ScannerPresentation(
+        schema_version=SCANNER_PRESENTATION_SCHEMA_VERSION,
         composition_version=composition.to_dict()["composition_version"],
         snapshot_id=composition.snapshot_id,
         symbol=composition.symbol,
@@ -256,7 +257,7 @@ def _breakdown_items(breakdown: Any) -> tuple[tuple[str, TechnicalComponent], ..
     return rows
 
 
-def _build_gate_cards(composition: ScannerV4CompositionResult) -> list[GateCard]:
+def _build_gate_cards(composition: ScannerCompositionResult) -> list[GateCard]:
     canonical = composition.canonical
     cards: list[GateCard] = []
 

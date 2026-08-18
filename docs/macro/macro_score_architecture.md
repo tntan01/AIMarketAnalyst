@@ -1,21 +1,21 @@
 # Macro Score Architecture & Phase 15 Changelog
 
 **Last updated**: 2026-08-16
-**Status**: Scanner V4 là runtime live; các mục bên dưới mô tả contract Macro V1
-của Scanner V3 (giữ cho audit/replay). Bước 7 VIX pair-aware có data-backed map
+**Status**: Scanner là runtime live; các mục bên dưới mô tả contract Macro V1
+của Scanner trước đây (giữ cho audit/replay). Bước 7 VIX pair-aware có data-backed map
 nhưng vẫn opt-in/default OFF và chưa xác nhận giả thuyết JPY/AUD/NZD. Ngày
 16/08/2026 gỡ toàn bộ shadow subsystem theo quyết định owner: Macro V2
 diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 
 > **Ranh giới version 11/08/2026 (cập nhật 16/08/2026):** Các mục 1–20 bên
-> dưới mô tả **contract Scanner V3** (hiện giữ read-only cho audit/replay), nơi
-> macro vẫn là contribution của composite score. Kiến trúc **Scanner V4 đã live
+> dưới mô tả **contract Scanner cũ** (hiện giữ read-only cho audit/replay), nơi
+> macro vẫn là contribution của composite score. Kiến trúc **Scanner đã live
 > từ 15/08/2026** nằm tại
-> [`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
-> Trong V4, `TechnicalSignalScore` chỉ gồm Trend/Momentum/Location/SMC;
+> [`../scanner/scanner-architecture.md`](../scanner/scanner-architecture.md).
+> Trong Scanner, `TechnicalSignalScore` chỉ gồm Trend/Momentum/Location/SMC;
 > `MacroAssessment`/`MacroGate` và `MarketSafetyGate` không cộng hoặc trừ điểm.
-> Cutover là atomic/direct: không dual scoring, không chạy V3/V4 song song và
-> không dùng shadow comparison với V3. Các shadow subsystem từng có trong file
+> Cutover là atomic/direct: không dual scoring, không chạy song song và
+> không dùng shadow comparison. Các shadow subsystem từng có trong file
 > này (Macro V2 diagnostics, Bước 5, Bước 6) đã gỡ khỏi code ngày 16/08/2026;
 > các mục tương ứng bên dưới chỉ còn là ghi chú tombstone.
 
@@ -42,7 +42,7 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 | **Bước 5** | 2026-08-07 | AI Event Impact Assessment — **đã gỡ 16/08/2026** | `event_impact_assessor.py` + derate không còn trong pipeline |
 | **Bước 5 review fixes** | 2026-08-07 | Fix theo báo cáo review — **đã gỡ 16/08/2026 cùng Bước 5** | Không còn hành vi |
 | **Bước 7 remediation** | 2026-08-09 | Pair-aware VIX trở thành opt-in, data-gated; sửa opposed-flow penalty, common-date alignment, runtime path/TTL/cache và thêm runner | Candidate ineligible bị bỏ qua; không còn eligible candidate → flat; backtest thật 31/31 pair, 3 raw-actionable |
-| **Gỡ shadow** | 2026-08-16 | Gỡ toàn bộ shadow subsystem theo quyết định owner: Macro V2 diagnostics, Bước 5 event-impact derate, Bước 6 AI Macro Verdict, backtest engine shadow trong release gate, và `ai_verdict` dimension của V4 macro gate | Đường live V4 vốn không tiêu thụ shadow nên quyết định live không đổi; release report version bump `backtest-phase7-release-report-v2`; suite **3598 passed, 8 skipped, 16 xfailed** |
+| **Gỡ shadow** | 2026-08-16 | Gỡ toàn bộ shadow subsystem theo quyết định owner: Macro V2 diagnostics, Bước 5 event-impact derate, Bước 6 AI Macro Verdict, backtest engine shadow trong release gate, và `ai_verdict` dimension của macro gate | Đường live vốn không tiêu thụ shadow nên quyết định live không đổi; release report version bump `backtest-phase7-release-report-v2`; suite **3598 passed, 8 skipped, 16 xfailed** |
 
 ---
 
@@ -138,7 +138,7 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 
 ---
 
-## 5. Pipeline đầy đủ — Scanner V3 runtime
+## 5. Pipeline đầy đủ — Scanner runtime
 
 ```
                             ┌──────────────────────┐
@@ -250,7 +250,7 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 
 ---
 
-## 6. Công thức tính điểm — Scanner V3 runtime
+## 6. Công thức tính điểm — Scanner runtime
 
 ### Tổng quan
 
@@ -303,7 +303,7 @@ Trước đây: `buy_cal = clamp(5 - base_quality, 1, 9)` — sự kiện cho ba
 
 ---
 
-## 7. Phase 15B: `score_scenario` macro confidence fix — Scanner V3
+## 7. Phase 15B: `score_scenario` macro confidence fix — Scanner
 
 **File**: `core/signal_engine.py:score_scenario()`
 
@@ -370,8 +370,8 @@ Trả lời câu hỏi: "Tâm lý thị trường hiện tại ủng hộ risk h
 - Các nhóm risk-on/safe-haven ở đây là heuristic từ headline sentiment, không
   phải kết luận của VIX pair backtest.
 - Từ Phase 15E, `vix_adj` không còn cộng vào Tier 3; VIX trong Tier 3 chỉ là
-  diagnostic. Trong Scanner V3, contribution VIX đi qua
-  `correlation_adjustment`. Target V4 chỉ giữ dữ liệu này trong
+  diagnostic. Trong Scanner trước đây, contribution VIX đi qua
+  `correlation_adjustment`. Target hiện tại chỉ giữ dữ liệu này trong
   `MacroAssessment`/`MacroGate`, không đưa vào `TechnicalSignalScore`.
 - Bước 7 chỉ modulate VIX penalty khi flag bật và pair có bằng chứng actionable
   trong eligible map. Snapshot 2026-08-09 không xác nhận bất kỳ JPY pair nào.
@@ -393,7 +393,7 @@ phát hành 5/5 trung lập cho tới khi có surprise-direction engine chuẩn.
 
 ---
 
-## 10. Điều kiện "Thuận lợi / Trung lập / Bất lợi" — Scanner V3
+## 10. Điều kiện "Thuận lợi / Trung lập / Bất lợi" — Scanner
 
 **File**: `core/scanner.py:438-456` — `_classify_macro_bias()`
 
@@ -506,7 +506,7 @@ AI không tham gia trực tiếp vào Tier 2 (calendar). AI stance ảnh hưởn
 Bước 5 (AI Event Impact Assessment + derate `macro_confidence`) và Bước 6 (AI
 Macro Verdict) đã được gỡ khỏi code theo quyết định của owner ngày 16/08/2026:
 module, script kiểm chứng, settings flag, UI checkbox, journal/cache wiring và
-tests tương ứng không còn trong codebase. Đường live Scanner V4 vốn không tiêu
+tests tương ứng không còn trong codebase. Đường live Scanner vốn không tiêu
 thụ hai bước này nên quyết định live không đổi. Sàn `macro_confidence` 0.15 vô
 điều kiện trong `_step_compute_correlation()` được giữ lại (không thuộc derate);
 event-window Bước 3 (`MACRO_HIGH_IMPACT_EVENT_NEARBY`, cửa sổ 0.5-4h, factor 0.8
@@ -523,7 +523,7 @@ Bước 7 thay penalty VIX cào bằng bằng một modulation theo symbol và s
 chỉ khi dữ liệu của chính hệ thống xác nhận quan hệ. Production scoring không
 hardcode JPY/AUD/NZD; seed diagnostic còn assumption tĩnh nhưng luôn ineligible.
 
-Đây là contract VIX của Scanner V3. Với target V4, cùng dữ liệu pair-aware là
+Đây là contract VIX của Scanner trước đây. Với target hiện tại, cùng dữ liệu pair-aware là
 input của `MacroAssessment`/`MacroGate`; nó không được sửa
 `TechnicalSignalScore`, `FinalScore` hoặc ranking bằng phép cộng/trừ điểm.
 
@@ -671,7 +671,7 @@ Full suite sau remediation: **2615 passed, 8 skipped, 17 xfailed, 4 warnings**.
    Tier 3” bị loại bởi Phase 15E/Bước 7; VIX chỉ đi qua
    `correlation_adjustment` để tránh double-count.
 
-## 21. Scanner V4 — runtime live từ 15/08/2026
+## 21. Scanner — runtime live từ 15/08/2026
 
 Quyết định ngày 11/08/2026 không bỏ tính năng macro, nhưng thay đổi boundary:
 
@@ -687,12 +687,12 @@ Quyết định ngày 11/08/2026 không bỏ tính năng macro, nhưng thay đ�
   `MacroGate` là deterministic và cap/block luôn kèm reason code;
 - `FinalScore` không được tái đưa Macro hoặc Risk vào score qua fallback.
 
-Migration đã hoàn tất bằng **direct atomic cutover** sang `scanner-v4` /
-`scanner-features-v4` ngày 15/08/2026: không phát hành legacy/new score song
-song, không shadow V3/V4 và không dùng disagreement với V3 làm tiêu chí
-validation. Artifact/config V3 chỉ được giữ read-only cho audit/replay.
+Migration đã hoàn tất bằng **direct atomic cutover** sang `scanner` /
+`scanner-features` ngày 15/08/2026: không phát hành legacy/new score song
+song, không shadow và không dùng disagreement làm tiêu chí
+validation. Artifact/config cũ chỉ được giữ read-only cho audit/replay.
 
-Nguồn chuẩn duy nhất cho contract V4 là
-[`../scanner/scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
-Mọi `macro_alignment`/`signal_score` ở các mục mô tả Scanner V3 phía trên là
-contract composite V3 (giữ cho audit/replay), không phải mô tả runtime V4.
+Nguồn chuẩn duy nhất cho contract là
+[`../scanner/scanner-architecture.md`](../scanner/scanner-architecture.md).
+Mọi `macro_alignment`/`signal_score` ở các mục mô tả Scanner trước đây phía trên là
+contract composite cũ (giữ cho audit/replay), không phải mô tả runtime hiện tại.

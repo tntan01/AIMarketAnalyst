@@ -75,7 +75,7 @@ def test_detail_rr_shows_na_when_entry_exists_but_no_tp_rr():
     assert screen._rr_main_text() == "N/A"
     value, detail, _ = screen._dialog_card_rr()
     assert value == "N/A"
-    assert "Chưa có TP1 hợp lệ" in detail
+    assert "Chưa có TP hợp lệ" in detail
 
 
 def test_detail_checklist_rr_uses_scenario_rr_for_pass_fail():

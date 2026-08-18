@@ -25,7 +25,7 @@ def test_columns_help_matches_current_scanner_table_contract() -> None:
     help_labels = [item["column"] for item in dialog.COLUMN_HELP]
 
     assert help_labels == expected_labels
-    assert dialog.help_table.rowCount() == len(expected_labels) == 10
+    assert dialog.help_table.rowCount() == len(expected_labels) == 11
     assert dialog.help_table.columnCount() == 3
     assert dialog.help_table.objectName() == "EconTable"
     assert dialog.help_table.showGrid() is False
@@ -294,17 +294,16 @@ def test_stt_column_uses_presentation_rank_not_rank():
     assert "rank" not in column_keys, \
         "Execution 'rank' must not be a table column key"
     assert "presentation_rank" in column_keys
-    # Dead V3-only columns must be gone; technical signal must be present.
+    # Dead legacy-only columns must be gone; technical signal must be present.
     assert "technical_signal_score" in column_keys
     for dead_key in (
         "zone_origin_class",
-        "price_vs_zone",
         "opportunity_rank",
         "auto_trade_branch",
         "strategy_config_status",
     ):
         assert dead_key not in column_keys, f"dead column {dead_key!r} must be removed"
-    assert len(ScannerTableModel.COLUMNS) == 10
+    assert len(ScannerTableModel.COLUMNS) == 11
 
 
 def test_zone_columns_order_bien_canh_then_tin_hieu_kt_then_setup():
@@ -318,4 +317,26 @@ def test_zone_columns_order_bien_canh_then_tin_hieu_kt_then_setup():
     assert bh_idx < tin_idx < diem_idx, (
         f"Column order: Bối cảnh={bh_idx}, Tín hiệu KT={tin_idx}, "
         f"Setup={diem_idx}"
+    )
+
+
+def test_price_vs_zone_column_displays_real_classification() -> None:
+    """New 'Vị trí' column shows the real price-vs-zone value on its own row
+    (not hidden behind the legacy zone-origin gate)."""
+    model = ScannerTableModel()
+    assert model._display_value("price_vs_zone", "in_zone", {"price_vs_zone": "in_zone"}) == "Trong vùng"
+    assert model._display_value("price_vs_zone", "near_zone", {"price_vs_zone": "near_zone"}) == "Gần vùng"
+    assert model._display_value("price_vs_zone", "far", {"price_vs_zone": "far"}) == "Xa vùng"
+    assert model._display_value("price_vs_zone", None, {}) == "--"
+    assert model._display_value("price_vs_zone", "", {}) == "--"
+
+    # The column is wired into the real table (11 columns), placed after R:R.
+    keys = [k for k, _ in ScannerTableModel.COLUMNS]
+    assert "price_vs_zone" in keys
+    assert keys.index("expected_effective_rr") < keys.index("price_vs_zone")
+
+
+def test_price_vs_zone_help_explanation_exists() -> None:
+    assert ScannerColumnsHelpDialog.explanation_for("price_vs_zone"), (
+        "the Vị trí help entry must be present"
     )

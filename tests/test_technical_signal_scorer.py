@@ -1,4 +1,4 @@
-"""Scanner V4 Step 03: pure four-component TechnicalSignalScore."""
+"""Scanner Step 03: pure four-component TechnicalSignalScore."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import pytest
 
 from core.reason_codes import TECHNICAL_DATA_UNAVAILABLE
 from core.scanner_models import SCANNER_FEATURE_VERSION, SCANNER_SCORER_VERSION
-from core.scanner_v4_models import SCANNER_V4_SCORING_VERSION
+from core.scanner_v4_models import SCANNER_SCORING_VERSION
 from core.smc_models import SMC_DOMAIN_VERSION
 from core.smc_scoring_result import (
     SMC_SCORING_CONTRACT_VERSION,
@@ -285,7 +285,7 @@ def test_result_carries_only_target_versions_and_structured_smc_evidence():
     result = _score(canonical_smc=canonical, smc=12)
     payload = result.to_dict()
 
-    assert result.scoring_version == SCANNER_V4_SCORING_VERSION == "scanner-v4"
+    assert result.scoring_version == SCANNER_SCORING_VERSION == "scanner"
     assert result.weight_policy_version == TECHNICAL_WEIGHT_POLICY_VERSION
     assert result.smc_raw_semantics_version == SMC_TECHNICAL_RAW_VERSION
     assert result.smc_source_scoring_version == SMC_SCORER_VERSION

@@ -168,14 +168,14 @@ Nếu dùng installer, installer chỉ đặt file app vào `Program Files` ho�
 ## Scanner — Checklist vận hành live (từ 15/08/2026)
 
 Từ 15/08/2026, theo quyết định của owner (phần mềm cá nhân), ứng dụng chạy
-thật trực tiếp: cơ chế rollout V3 (stage ladder `SHADOW → DEMO → CANARY →
+thật trực tiếp: cơ chế rollout (stage ladder `SHADOW → DEMO → CANARY →
 PRODUCTION`, kill switch, release/canary readiness) đã bị gỡ bỏ hoàn toàn khỏi
-codebase. Kiến trúc hiện hành là Scanner V4:
-[`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+codebase. Kiến trúc hiện hành là Scanner:
+[`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
 An toàn không còn dựa vào rollout stage mà dựa vào các lớp kỹ thuật fail-closed:
 
-1. `config/scanner_v4_order_policy.json` phải `certified()` — thiếu/hỏng file,
+1. `config/scanner_order_policy.json` phải `certified()` — thiếu/hỏng file,
    scan phát `ORDER_POLICY_FAULT` và mọi candidate bị chặn
    (`order_enabled=False`).
 2. MarketSafetyGate/MacroGate: dữ liệu thiếu hoặc thị trường không an toàn →

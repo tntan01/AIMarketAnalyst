@@ -64,7 +64,7 @@ MACRO_CONFLICT = "MACRO_CONFLICT"
 MACRO_DATA_PARTIAL = "MACRO_DATA_PARTIAL"
 MACRO_DATA_UNAVAILABLE = "MACRO_DATA_UNAVAILABLE"
 MACRO_HIGH_IMPACT_EVENT_NEARBY = "MACRO_HIGH_IMPACT_EVENT_NEARBY"
-# MacroGate V4 (Step 05; target-only, not live-wired yet).  Missing/error/OPEN
+# MacroGate (Step 05; target-only, not live-wired yet).  Missing/error/OPEN
 # policy values fail closed to UNKNOWN instead of being coerced to PASS/neutral.
 MACRO_NEUTRAL = "MACRO_NEUTRAL"
 MACRO_DEADBAND_UNSET = "MACRO_DEADBAND_UNSET"
@@ -123,8 +123,8 @@ FINAL_SCORE_EVIDENCE_POSITIVE = "FINAL_SCORE_EVIDENCE_POSITIVE"
 FINAL_SCORE_EVIDENCE_NEGATIVE = "FINAL_SCORE_EVIDENCE_NEGATIVE"
 FINAL_SCORE_EXECUTION_STRONG = "FINAL_SCORE_EXECUTION_STRONG"
 FINAL_SCORE_EXECUTION_WEAK = "FINAL_SCORE_EXECUTION_WEAK"
-# FinalScore V4 (Step 06; target-only, not live-wired yet).  Technical data
-# missing/invalid must raise a typed error instead of V3's optimistic fallbacks;
+# FinalScore (Step 06; target-only, not live-wired yet).  Technical data
+# missing/invalid must raise a typed error instead of legacy's optimistic fallbacks;
 # evidence/execution missing/invalid fall back to exactly 50 neutral with a
 # warning + source proving the fallback (never copied from technical).
 FINAL_SCORE_DATA_UNAVAILABLE = "FINAL_SCORE_DATA_UNAVAILABLE"
@@ -132,7 +132,7 @@ FINAL_SCORE_EVIDENCE_NEUTRAL_FALLBACK = "FINAL_SCORE_EVIDENCE_NEUTRAL_FALLBACK"
 FINAL_SCORE_EXECUTION_NEUTRAL_FALLBACK = "FINAL_SCORE_EXECUTION_NEUTRAL_FALLBACK"
 
 # ---------------------------------------------------------------------------
-# Composition V4 (Step 07; target-only, not live-wired yet).  Deterministic
+# Composition (Step 07; target-only, not live-wired yet).  Deterministic
 # pipeline: immutable snapshot -> safety + per-side technical -> gap/best side ->
 # scenario -> evidence/execution -> FinalScore -> gates -> decision.  Gates never
 # mutate scores; missing data/policy fails closed to UNKNOWN; stale/future
@@ -192,20 +192,20 @@ SCANNER_NEWS_PENALTY = "SCANNER_NEWS_PENALTY"
 SCANNER_SPREAD_PENALTY = "SCANNER_SPREAD_PENALTY"
 
 # ---------------------------------------------------------------------------
-# Scanner V4 contract/version validation (Step 02; target contract only)
+# Scanner contract/version validation (Step 02; target contract only)
 # ---------------------------------------------------------------------------
-SCANNER_V4_SCHEMA_INVALID = "SCANNER_V4_SCHEMA_INVALID"
-SCANNER_V4_VERSION_MISSING = "SCANNER_V4_VERSION_MISSING"
-SCANNER_V4_VERSION_MISMATCH = "SCANNER_V4_VERSION_MISMATCH"
-SCANNER_V4_FORBIDDEN_SCORED_FIELD = "SCANNER_V4_FORBIDDEN_SCORED_FIELD"
-SCANNER_V4_LEGACY_V3_AUDIT_ONLY = "SCANNER_V4_LEGACY_V3_AUDIT_ONLY"
-SCANNER_V4_BACKTEST_PARITY_VIOLATION = "SCANNER_V4_BACKTEST_PARITY_VIOLATION"
-SCANNER_V4_JOURNAL_PARTITION_MIXED = "SCANNER_V4_JOURNAL_PARTITION_MIXED"
-SCANNER_V4_SAFETY_AUDIT_MISSING = "SCANNER_V4_SAFETY_AUDIT_MISSING"
-SCANNER_V4_SAFETY_AUDIT_NON_PIT = "SCANNER_V4_SAFETY_AUDIT_NON_PIT"
-SCANNER_V4_SAFETY_AUDIT_UNKNOWN = "SCANNER_V4_SAFETY_AUDIT_UNKNOWN"
-SCANNER_V4_CALIBRATION_INSUFFICIENT = "SCANNER_V4_CALIBRATION_INSUFFICIENT"
-SCANNER_V4_CONFIG_NOT_ACTIVATABLE = "SCANNER_V4_CONFIG_NOT_ACTIVATABLE"
+SCANNER_SCHEMA_INVALID = "SCANNER_SCHEMA_INVALID"
+SCANNER_VERSION_MISSING = "SCANNER_VERSION_MISSING"
+SCANNER_VERSION_MISMATCH = "SCANNER_VERSION_MISMATCH"
+SCANNER_FORBIDDEN_SCORED_FIELD = "SCANNER_FORBIDDEN_SCORED_FIELD"
+SCANNER_LEGACY_V3_AUDIT_ONLY = "SCANNER_LEGACY_V3_AUDIT_ONLY"
+SCANNER_BACKTEST_PARITY_VIOLATION = "SCANNER_BACKTEST_PARITY_VIOLATION"
+SCANNER_JOURNAL_PARTITION_MIXED = "SCANNER_JOURNAL_PARTITION_MIXED"
+SCANNER_SAFETY_AUDIT_MISSING = "SCANNER_SAFETY_AUDIT_MISSING"
+SCANNER_SAFETY_AUDIT_NON_PIT = "SCANNER_SAFETY_AUDIT_NON_PIT"
+SCANNER_SAFETY_AUDIT_UNKNOWN = "SCANNER_SAFETY_AUDIT_UNKNOWN"
+SCANNER_CALIBRATION_INSUFFICIENT = "SCANNER_CALIBRATION_INSUFFICIENT"
+SCANNER_CONFIG_NOT_ACTIVATABLE = "SCANNER_CONFIG_NOT_ACTIVATABLE"
 TECHNICAL_DATA_UNAVAILABLE = "TECHNICAL_DATA_UNAVAILABLE"
 
 # ---------------------------------------------------------------------------
@@ -234,26 +234,26 @@ SAFETY_VOLATILITY_BAND_UNSET = "SAFETY_VOLATILITY_BAND_UNSET"
 SAFETY_VOLATILITY_UNKNOWN = "SAFETY_VOLATILITY_UNKNOWN"
 
 # ---------------------------------------------------------------------------
-# Candidate / decision V4 (Step 08; target-only, not live-wired yet).  The
+# Candidate / decision (Step 08; target-only, not live-wired yet).  The
 # decision layer consumes ONLY the Step 07 canonical output: Step 07 gate caps
 # (DATA_UNAVAILABLE / BLOCKED) can never be promoted, floors/gap/R:R come from
 # the ONE versioned threshold contract, READY_NOW additionally requires a
 # confirmed entry and a fresh execution signal, and the order payload is only
 # ever prepared (never sent) until cutover (Step 12).
 # ---------------------------------------------------------------------------
-V4_THRESHOLD_POLICY_OPEN = "V4_THRESHOLD_POLICY_OPEN"
-V4_THRESHOLD_SCORE_FLOOR_NOT_MET = "V4_THRESHOLD_SCORE_FLOOR_NOT_MET"
-V4_THRESHOLD_GAP_NOT_MET = "V4_THRESHOLD_GAP_NOT_MET"
-V4_THRESHOLD_RR_NOT_MET = "V4_THRESHOLD_RR_NOT_MET"
-V4_ENTRY_CONFIRMED = "V4_ENTRY_CONFIRMED"
-V4_ENTRY_UNCONFIRMED = "V4_ENTRY_UNCONFIRMED"
-V4_ENTRY_CONFIRMATION_MISSING = "V4_ENTRY_CONFIRMATION_MISSING"
-V4_EXECUTION_FRESH_OK = "V4_EXECUTION_FRESH_OK"
-V4_EXECUTION_NOT_READY = "V4_EXECUTION_NOT_READY"
-V4_EXECUTION_REVALIDATION_REQUIRED = "V4_EXECUTION_REVALIDATION_REQUIRED"
-V4_ORDER_PREPARED = "V4_ORDER_PREPARED"
-V4_ORDER_NOT_PREPARED = "V4_ORDER_NOT_PREPARED"
-V4_CANDIDATE_SIDE_INCONSISTENT = "V4_CANDIDATE_SIDE_INCONSISTENT"
+THRESHOLD_POLICY_OPEN = "THRESHOLD_POLICY_OPEN"
+THRESHOLD_SCORE_FLOOR_NOT_MET = "THRESHOLD_SCORE_FLOOR_NOT_MET"
+THRESHOLD_GAP_NOT_MET = "THRESHOLD_GAP_NOT_MET"
+THRESHOLD_RR_NOT_MET = "THRESHOLD_RR_NOT_MET"
+ENTRY_CONFIRMED = "ENTRY_CONFIRMED"
+ENTRY_UNCONFIRMED = "ENTRY_UNCONFIRMED"
+ENTRY_CONFIRMATION_MISSING = "ENTRY_CONFIRMATION_MISSING"
+EXECUTION_FRESH_OK = "EXECUTION_FRESH_OK"
+EXECUTION_NOT_READY = "EXECUTION_NOT_READY"
+EXECUTION_REVALIDATION_REQUIRED = "EXECUTION_REVALIDATION_REQUIRED"
+ORDER_PREPARED = "ORDER_PREPARED"
+ORDER_NOT_PREPARED = "ORDER_NOT_PREPARED"
+CANDIDATE_SIDE_INCONSISTENT = "CANDIDATE_SIDE_INCONSISTENT"
 
 # ---------------------------------------------------------------------------
 # Vietnamese messages
@@ -297,7 +297,7 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     MACRO_DATA_PARTIAL: "Thiếu một phần dữ liệu vĩ mô, giảm nhẹ mức tin cậy.",
     MACRO_DATA_UNAVAILABLE: "Thiếu toàn bộ dữ liệu vĩ mô, giảm mạnh mức tin cậy.",
     MACRO_HIGH_IMPACT_EVENT_NEARBY: "Sắp có sự kiện vĩ mô tác động mạnh liên quan đến đồng tiền của cặp, giảm mức tin cậy.",
-    # MacroGate V4 (Step 05; target-only)
+    # MacroGate (Step 05; target-only)
     MACRO_NEUTRAL: "Bối cảnh vĩ mô trung lập, không nghiêng về bên nào.",
     MACRO_DEADBAND_UNSET: "Chưa calibrate deadband BUY/SELL — không chứng nhận được hướng vĩ mô (fail-closed UNKNOWN).",
     MACRO_CONFIDENCE_THRESHOLD_UNSET: "Chưa khóa ngưỡng confidence vĩ mô — không chứng nhận được độ tin cậy (fail-closed UNKNOWN).",
@@ -340,11 +340,11 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     FINAL_SCORE_EVIDENCE_NEGATIVE: "Evidence score tiêu cực, làm giảm final score.",
     FINAL_SCORE_EXECUTION_STRONG: "Execution quality cao, hỗ trợ final score.",
     FINAL_SCORE_EXECUTION_WEAK: "Execution quality thấp, làm giảm final score.",
-    # FinalScore V4 (Step 06)
+    # FinalScore (Step 06)
     FINAL_SCORE_DATA_UNAVAILABLE: "Dữ liệu technical signal thiếu hoặc không hợp lệ, không thể tính final score.",
     FINAL_SCORE_EVIDENCE_NEUTRAL_FALLBACK: "Evidence thiếu/không hợp lệ, final score dùng 50 neutral thay thế an toàn.",
     FINAL_SCORE_EXECUTION_NEUTRAL_FALLBACK: "Execution quality thiếu/không hợp lệ, final score dùng 50 neutral thay thế an toàn.",
-    # Composition V4 (Step 07)
+    # Composition (Step 07)
     SNAPSHOT_STALE: "Snapshot quá cũ so với now, không còn đủ mới để đánh giá.",
     SNAPSHOT_FRESHNESS_UNKNOWN: "Timestamp snapshot ở tương lai, không chứng nhận độ mới được.",
     GATE_SCENARIO_PLAN_MISSING: "Thiếu kế hoạch vào lệnh (entry/SL/TP), không dựng được scenario.",
@@ -362,20 +362,20 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     COMPOSE_FLOOR_POLICY_OPEN: "Ngưỡng score (technical/setup floor) chưa được calibrate, không chứng nhận WAITING_CONFIRMATION.",
     COMPOSE_SCORE_FLOOR_NOT_MET: "Score của side được chọn dưới floor, không đạt điều kiện chờ vào lệnh.",
     GATES_ALL_PASS: "Mọi gate trong composition đều PASS, chưa có gì chặn.",
-    # Candidate / decision V4 (Step 08)
-    V4_THRESHOLD_POLICY_OPEN: "Threshold contract chưa có giá trị calibrate cho floor/gap/R:R, fail-closed không promote.",
-    V4_THRESHOLD_SCORE_FLOOR_NOT_MET: "Score của side được chọn dưới floor của threshold contract.",
-    V4_THRESHOLD_GAP_NOT_MET: "Chênh lệch score giữa hai side dưới min_score_gap của threshold contract.",
-    V4_THRESHOLD_RR_NOT_MET: "Tỷ lệ risk/reward của scenario dưới min_risk_reward của threshold contract.",
-    V4_ENTRY_CONFIRMED: "Entry đã được xác nhận, đủ điều kiện cân nhắc READY_NOW.",
-    V4_ENTRY_UNCONFIRMED: "Entry chưa được xác nhận, giới hạn ở WAITING_CONFIRMATION.",
-    V4_ENTRY_CONFIRMATION_MISSING: "Thiếu trạng thái xác nhận entry, fail-closed xem như chưa xác nhận.",
-    V4_EXECUTION_FRESH_OK: "Snapshot không stale/future, execution có thể dựa trên dữ liệu hiện hành.",
-    V4_EXECUTION_NOT_READY: "Execution chưa sẵn sàng, giới hạn ở WAITING_CONFIRMATION.",
-    V4_EXECUTION_REVALIDATION_REQUIRED: "READY_NOW vẫn phải revalidate execution trước khi đặt lệnh (cutover).",
-    V4_ORDER_PREPARED: "Order payload đã dựng sẵn theo identity đầy đủ, chưa gửi lệnh thật.",
-    V4_ORDER_NOT_PREPARED: "Trạng thái candidate chưa cho phép dựng order payload.",
-    V4_CANDIDATE_SIDE_INCONSISTENT: "Side của decision không khớp score/scenario/gate, fail-closed DATA_UNAVAILABLE.",
+    # Candidate / decision (Step 08)
+    THRESHOLD_POLICY_OPEN: "Threshold contract chưa có giá trị calibrate cho floor/gap/R:R, fail-closed không promote.",
+    THRESHOLD_SCORE_FLOOR_NOT_MET: "Score của side được chọn dưới floor của threshold contract.",
+    THRESHOLD_GAP_NOT_MET: "Chênh lệch score giữa hai side dưới min_score_gap của threshold contract.",
+    THRESHOLD_RR_NOT_MET: "Tỷ lệ risk/reward của scenario dưới min_risk_reward của threshold contract.",
+    ENTRY_CONFIRMED: "Entry đã được xác nhận, đủ điều kiện cân nhắc READY_NOW.",
+    ENTRY_UNCONFIRMED: "Entry chưa được xác nhận, giới hạn ở WAITING_CONFIRMATION.",
+    ENTRY_CONFIRMATION_MISSING: "Thiếu trạng thái xác nhận entry, fail-closed xem như chưa xác nhận.",
+    EXECUTION_FRESH_OK: "Snapshot không stale/future, execution có thể dựa trên dữ liệu hiện hành.",
+    EXECUTION_NOT_READY: "Execution chưa sẵn sàng, giới hạn ở WAITING_CONFIRMATION.",
+    EXECUTION_REVALIDATION_REQUIRED: "READY_NOW vẫn phải revalidate execution trước khi đặt lệnh (cutover).",
+    ORDER_PREPARED: "Order payload đã dựng sẵn theo identity đầy đủ, chưa gửi lệnh thật.",
+    ORDER_NOT_PREPARED: "Trạng thái candidate chưa cho phép dựng order payload.",
+    CANDIDATE_SIDE_INCONSISTENT: "Side của decision không khớp score/scenario/gate, fail-closed DATA_UNAVAILABLE.",
     # Decision engine
     DECISION_READY_TO_TRADE: "Đủ điều kiện để cân nhắc vào lệnh.",
     DECISION_WAITING_CONFIRMATION: "Chờ thêm xác nhận trước khi vào lệnh.",
@@ -405,19 +405,48 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     SCANNER_RR_WEAK: "R:R chưa đủ hấp dẫn cho cơ hội scanner.",
     SCANNER_NEWS_PENALTY: "Scanner trừ điểm do tin tức gần.",
     SCANNER_SPREAD_PENALTY: "Scanner trừ điểm do spread bất thường.",
-    # Scanner V4 contract/version validation
-    SCANNER_V4_SCHEMA_INVALID: "Payload Scanner V4 không đúng canonical schema.",
-    SCANNER_V4_VERSION_MISSING: "Payload thiếu version/schema bắt buộc của Scanner V4.",
-    SCANNER_V4_VERSION_MISMATCH: "Payload không khớp version/schema Scanner V4 đã khóa.",
-    SCANNER_V4_FORBIDDEN_SCORED_FIELD: "Payload V4 chứa Risk hoặc Macro dưới dạng scored component bị cấm.",
-    SCANNER_V4_LEGACY_V3_AUDIT_ONLY: "Artifact Scanner V3 chỉ được giữ để audit và không thể replay bằng runtime V4.",
-    SCANNER_V4_BACKTEST_PARITY_VIOLATION: "Backtest không dùng cùng composition/semantics với live (parity contract bị vi phạm).",
-    SCANNER_V4_JOURNAL_PARTITION_MIXED: "Không được trộn journal evidence V4 từ các partition scorer/policy khác nhau.",
-    SCANNER_V4_SAFETY_AUDIT_MISSING: "Thiếu dữ liệu historical point-in-time cho safety sub-gate; không tự giả định bình thường.",
-    SCANNER_V4_SAFETY_AUDIT_NON_PIT: "Nguồn data có nhưng không point-in-time; không đủ điều kiện cho calibration/auto-entry.",
-    SCANNER_V4_SAFETY_AUDIT_UNKNOWN: "Trạng thái dữ liệu safety không xác định — fail-closed UNKNOWN, không PASS.",
-    SCANNER_V4_CALIBRATION_INSUFFICIENT: "Sample calibration không đủ min evidence; giữ threshold fail-closed, không chốt production.",
-    SCANNER_V4_CONFIG_NOT_ACTIVATABLE: "Config chưa đủ điều kiện V4 activate (version/schema/fingerprint/evidence) — backtest=False.",
+    # Scanner contract/version validation
+    SCANNER_SCHEMA_INVALID: "Payload Scanner không đúng canonical schema.",
+    SCANNER_VERSION_MISSING: "Payload thiếu version/schema bắt buộc.",
+    SCANNER_VERSION_MISMATCH: "Payload không khớp version/schema đã khóa.",
+    SCANNER_FORBIDDEN_SCORED_FIELD: "Payload chứa Risk hoặc Macro dưới dạng scored component bị cấm.",
+    SCANNER_LEGACY_V3_AUDIT_ONLY: "Artifact Scanner V3 chỉ được giữ để audit và không thể replay bằng runtime.",
+    SCANNER_BACKTEST_PARITY_VIOLATION: "Backtest không dùng cùng composition/semantics với live (parity contract bị vi phạm).",
+    SCANNER_JOURNAL_PARTITION_MIXED: "Không được trộn journal evidence từ các partition scorer/policy khác nhau.",
+    SCANNER_SAFETY_AUDIT_MISSING: "Thiếu dữ liệu historical point-in-time cho safety sub-gate; không tự giả định bình thường.",
+    SCANNER_SAFETY_AUDIT_NON_PIT: "Nguồn data có nhưng không point-in-time; không đủ điều kiện cho calibration/auto-entry.",
+    SCANNER_SAFETY_AUDIT_UNKNOWN: "Trạng thái dữ liệu safety không xác định — fail-closed UNKNOWN, không PASS.",
+    SCANNER_CALIBRATION_INSUFFICIENT: "Sample calibration không đủ min evidence; giữ threshold fail-closed, không chốt production.",
+    SCANNER_CONFIG_NOT_ACTIVATABLE: "Config chưa đủ điều kiện activate (version/schema/fingerprint/evidence) — backtest=False.",
+    # Legacy v4-moniker alias keys (read-only migration 2026-08-17): artifacts
+    # written before the icon renaming carry the old "SCANNER_V4_*"/"V4_*" code
+    # values; keep their Vietnamese translation so old journals/reports still
+    # render.  These literal keys intentionally keep the v4 spelling.
+    "SCANNER_V4_SCHEMA_INVALID": "Payload Scanner không đúng canonical schema.",
+    "SCANNER_V4_VERSION_MISSING": "Payload thiếu version/schema bắt buộc.",
+    "SCANNER_V4_VERSION_MISMATCH": "Payload không khớp version/schema đã khóa.",
+    "SCANNER_V4_FORBIDDEN_SCORED_FIELD": "Payload chứa Risk hoặc Macro dưới dạng scored component bị cấm.",
+    "SCANNER_V4_LEGACY_V3_AUDIT_ONLY": "Artifact Scanner V3 chỉ được giữ để audit và không thể replay bằng runtime.",
+    "SCANNER_V4_BACKTEST_PARITY_VIOLATION": "Backtest không dùng cùng composition/semantics với live (parity contract bị vi phạm).",
+    "SCANNER_V4_JOURNAL_PARTITION_MIXED": "Không được trộn journal evidence từ các partition scorer/policy khác nhau.",
+    "SCANNER_V4_SAFETY_AUDIT_MISSING": "Thiếu dữ liệu historical point-in-time cho safety sub-gate; không tự giả định bình thường.",
+    "SCANNER_V4_SAFETY_AUDIT_NON_PIT": "Nguồn data có nhưng không point-in-time; không đủ điều kiện cho calibration/auto-entry.",
+    "SCANNER_V4_SAFETY_AUDIT_UNKNOWN": "Trạng thái dữ liệu safety không xác định — fail-closed UNKNOWN, không PASS.",
+    "SCANNER_V4_CALIBRATION_INSUFFICIENT": "Sample calibration không đủ min evidence; giữ threshold fail-closed, không chốt production.",
+    "SCANNER_V4_CONFIG_NOT_ACTIVATABLE": "Config chưa đủ điều kiện activate (version/schema/fingerprint/evidence) — backtest=False.",
+    "V4_THRESHOLD_POLICY_OPEN": "Threshold contract chưa có giá trị calibrate cho floor/gap/R:R, fail-closed không promote.",
+    "V4_THRESHOLD_SCORE_FLOOR_NOT_MET": "Score của side được chọn dưới floor của threshold contract.",
+    "V4_THRESHOLD_GAP_NOT_MET": "Chênh lệch score giữa hai side dưới min_score_gap của threshold contract.",
+    "V4_THRESHOLD_RR_NOT_MET": "Tỷ lệ risk/reward của scenario dưới min_risk_reward của threshold contract.",
+    "V4_ENTRY_CONFIRMED": "Entry đã được xác nhận, đủ điều kiện cân nhắc READY_NOW.",
+    "V4_ENTRY_UNCONFIRMED": "Entry chưa được xác nhận, giới hạn ở WAITING_CONFIRMATION.",
+    "V4_ENTRY_CONFIRMATION_MISSING": "Thiếu trạng thái xác nhận entry, fail-closed xem như chưa xác nhận.",
+    "V4_EXECUTION_FRESH_OK": "Snapshot không stale/future, execution có thể dựa trên dữ liệu hiện hành.",
+    "V4_EXECUTION_NOT_READY": "Execution chưa sẵn sàng, giới hạn ở WAITING_CONFIRMATION.",
+    "V4_EXECUTION_REVALIDATION_REQUIRED": "READY_NOW vẫn phải revalidate execution trước khi đặt lệnh (cutover).",
+    "V4_ORDER_PREPARED": "Order payload đã dựng sẵn theo identity đầy đủ, chưa gửi lệnh thật.",
+    "V4_ORDER_NOT_PREPARED": "Trạng thái candidate chưa cho phép dựng order payload.",
+    "V4_CANDIDATE_SIDE_INCONSISTENT": "Side của decision không khớp score/scenario/gate, fail-closed DATA_UNAVAILABLE.",
     # MarketSafetyGate (Step 04; target-only)
     SAFETY_MT5_NOT_READY: "Connectivity: MT5 chưa sẵn sàng hoặc broker chưa đăng nhập — không vào lệnh.",
     SAFETY_MT5_STATE_UNKNOWN: "Connectivity: không xác định được trạng thái terminal/broker — fail-closed UNKNOWN.",

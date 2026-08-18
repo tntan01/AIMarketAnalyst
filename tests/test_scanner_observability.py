@@ -278,7 +278,7 @@ def test_scan_context_contains_all_runtime_versions_and_hashes():
     assert len(payload["request_hash"]) == 64
 
 
-def test_missing_legacy_provenance_is_not_stamped_as_current_or_v4():
+def test_missing_legacy_provenance_is_not_stamped_as_current_or():
     from core.scoring_provenance import (
         build_scoring_provenance,
         normalize_scoring_provenance,
@@ -336,7 +336,7 @@ def test_v3_row_adapter_rejects_extra_conflicting_provenance_identity():
     assert row["feature_version"] == ""
 
 
-def test_v3_row_adapter_rejects_target_v4_provenance_injection():
+def test_v3_row_adapter_rejects_target_provenance_injection():
     from core.scanner import scanner_row_from_analysis
     from core.scoring_provenance import build_scoring_provenance
     from tests.test_scanner_domain_models import _row

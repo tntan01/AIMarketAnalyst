@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from controllers.scanner_controller import _analyze_one_symbol
 from core.chart_payload import build_full_chart_payload
-from core.scanner_v4_live_producers import build_live_market_safety_context
+from core.scanner_live_producers import build_live_market_safety_context
 
-from tests.test_scanner_v4_release import NOW, _zoned_candles
+from tests.test_scanner_release import NOW, _zoned_candles
 
 
 def _blocked_pkt() -> dict:
@@ -112,3 +112,43 @@ def test_status_annotation_is_separate_from_chart_data() -> None:
     assert (row.get("block_codes") or []), "blocked annotation present"
     assert row["analysis_result"]["chart_payload"]
     assert row["entry_price"] > 0
+
+
+def test_entry_is_drawn_as_real_protective_zone_rect() -> None:
+    """The chart draws the entry as the REAL protective-zone band, not a level.
+
+    Regression (option 2): ``_scenarios_of`` previously emitted only a scalar
+    ``entry`` while ``build_full_chart_payload`` reads ``entry_zone`` (a 2-element
+    list) — so the entry was silently dropped while SL/TP (read directly as
+    levels) rendered.  The band now flows producer → ScenarioPlan → scenario
+    dict → trade_plan → chart ``zones`` entry rect covering the zone.
+    """
+    row = _analyzed()
+    side = row["selected_side"]
+    assert side in ("buy", "sell")
+    ar = row["analysis_result"]
+    scenarios = ar.get("scenarios") or []
+    assert len(scenarios) == 1, "the selected-side scenario plan is present"
+    entry_zone = scenarios[0].get("entry_zone")
+    assert isinstance(entry_zone, list) and len(entry_zone) == 2, (
+        "scenario must expose the real entry_zone band for the chart"
+    )
+    lo, hi = entry_zone
+    assert 0 < lo < hi, "the protective-zone band must be a valid ascending range"
+    assert scenarios[0]["source"] in ("smc_canonical_zone", "technical_zone")
+
+    # The chart must turn that band into an actual entry_zone rectangle.
+    payload = build_full_chart_payload(row["symbol"], ar, active_timeframe="H1")
+    entry_rects = [
+        z for z in (payload.get("zones") or []) if z.get("type") == "entry_zone"
+    ]
+    assert entry_rects, "chart must render an entry_zone rectangle"
+    rect = entry_rects[0]
+    assert rect.get("from") == lo and rect.get("to") == hi, (
+        "entry rect must match the real protective-zone band exactly"
+    )
+    assert rect.get("execution_eligible") is True
+
+    # SL/TP still render as levels alongside the entry rect.
+    assert any(l.get("type") == "stop_loss" for l in (payload.get("levels") or []))
+    assert any(l.get("type") == "take_profit" for l in (payload.get("levels") or []))

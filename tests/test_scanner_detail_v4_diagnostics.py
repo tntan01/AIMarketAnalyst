@@ -1,14 +1,14 @@
-"""Detail-screen Chẩn đoán tab contract for Scanner V4 rows (17/08/2026).
+"""Detail-screen Chẩn đoán tab contract for Scanner rows (17/08/2026).
 
-Scanner V4 rows (``pipeline_route == "scanner-v4"``) carry their scores,
-statuses and reason codes directly on the UI row — NOT inside the legacy V3
+Scanner rows (``pipeline_route == "scanner"``) carry their scores,
+statuses and reason codes directly on the UI row — NOT inside the legacy
 ``analysis_result`` (which holds ``scenario_scores`` / ``pipeline_diagnostics``
-that V4 never emits).  Regression: the Chẩn đoán tab previously rendered only
-the V3 builders, so it came out empty for V4.  ``_refresh_diagnostics`` now
-dispatches to V4-native builders; here we assert they render the component
-scores and gate blocks from the real V4 row.
+that the rows never emit).  Regression: the Chẩn đoán tab previously rendered
+only the legacy builders, so it came out empty for these rows.
+``_refresh_diagnostics`` now dispatches to native builders; here we assert they
+render the component scores and gate blocks from the real row.
 
-These tests drive the builders on a real ``_analyze_one_symbol`` V4 row through
+These tests drive the builders on a real ``_analyze_one_symbol`` row through
 a minimal (non-QWebEngineView) screen stub, because constructing a full
 ``ScannerDetailScreen`` instantiates a chart view that segfaults headless.
 """
@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import ui.screens.scanner_detail_screen as mod
 from controllers.scanner_controller import _analyze_one_symbol
-from core.scanner_v4_live_producers import build_live_market_safety_context
+from core.scanner_live_producers import build_live_market_safety_context
 from ui.screens.scanner_detail_screen import ScannerDetailScreen
 
-from tests.test_scanner_v4_release import NOW, _zoned_candles
+from tests.test_scanner_release import NOW, _zoned_candles
 
 
-def _v4_blocked_row() -> dict:
-    """Produce a real V4 BLOCKED row via the live controller path."""
+def _blocked_row() -> dict:
+    """Produce a real BLOCKED row via the live controller path."""
     d1, h4, h1 = _zoned_candles()
     m15 = h1[-40:]
     safety = build_live_market_safety_context(
@@ -70,34 +70,34 @@ def _stub_screen(row: dict) -> ScannerDetailScreen:
     return screen
 
 
-def test_row_is_v4_with_side_scores() -> None:
-    row = _v4_blocked_row()
-    assert row["pipeline_route"] == "scanner-v4"
+def test_row_is_with_side_scores() -> None:
+    row = _blocked_row()
+    assert row["pipeline_route"] == "scanner"
     assert row["candidate_status"] == "BLOCKED"
     sides = row.get("side_scores") or []
-    assert len(sides) == 2, "V4 row must expose per-side component scores"
+    assert len(sides) == 2, "row must expose per-side component scores"
     for s in sides:
         assert s["side"] in ("buy", "sell")
         assert "technical_signal_score" in s and "setup_score" in s
 
 
-def test_v4_status_resolves_via_canonical() -> None:
-    row = _v4_blocked_row()
+def test_status_resolves_via_canonical() -> None:
+    row = _blocked_row()
     assert _stub_screen(row)._canonical_status() == "BLOCKED"
 
 
-def test_v4_route_html_annotates_status_and_side() -> None:
-    screen = _stub_screen(_v4_blocked_row())
-    html = screen._diag_v4_route_html(light=True)
-    assert "Scanner V4" in html
+def test_route_html_annotates_status_and_side() -> None:
+    screen = _stub_screen(_blocked_row())
+    html = screen._diag_route_html(light=True)
+    assert "Scanner — Hướng" in html
     assert "Bị cổng an toàn chặn" in html
     assert "Hướng MUA" in html or "Hướng BÁN" in html
 
 
-def test_v4_scores_html_lists_component_scores() -> None:
-    screen = _stub_screen(_v4_blocked_row())
-    html = screen._diag_v4_scores_html(light=True)
-    assert html, "V4 Chẩn đoán must render component scores (non-empty)"
+def test_scores_html_lists_component_scores() -> None:
+    screen = _stub_screen(_blocked_row())
+    html = screen._diag_scores_html(light=True)
+    assert html, "Chẩn đoán must render component scores (non-empty)"
     for label in (
         "Tín hiệu kỹ thuật",
         "Điểm thiết lập (Setup)",
@@ -108,10 +108,10 @@ def test_v4_scores_html_lists_component_scores() -> None:
     assert "MUA" in html and "BÁN" in html
 
 
-def test_v4_gates_html_lists_all_gate_groups() -> None:
-    screen = _stub_screen(_v4_blocked_row())
-    html = screen._diag_v4_gates_html(light=True)
-    assert html, "V4 Chẩn đoán must render gate blocks (non-empty)"
+def test_gates_html_lists_all_gate_groups() -> None:
+    screen = _stub_screen(_blocked_row())
+    html = screen._diag_gates_html(light=True)
+    assert html, "Chẩn đoán must render gate blocks (non-empty)"
     for label in (
         "An toàn thị trường",
         "Vĩ mô",
@@ -125,16 +125,16 @@ def test_v4_gates_html_lists_all_gate_groups() -> None:
     assert "ngưỡng spread" in html
 
 
-def test_v4_plan_html_shows_entry_sl_tp_and_status() -> None:
-    screen = _stub_screen(_v4_blocked_row())
-    html = screen._diag_v4_plan_html(light=True)
+def test_plan_html_shows_entry_sl_tp_and_status() -> None:
+    screen = _stub_screen(_blocked_row())
+    html = screen._diag_plan_html(light=True)
     assert html
     for label in ("Điểm vào lệnh (entry)", "Dừng lỗ (stop-loss)", "Chốt lời (take-profit)"):
         assert label in html, f"missing plan field {label!r}"
 
 
-def test_refresh_diagnostics_dispatches_to_v4_builders() -> None:
-    """For a V4 row, the Chẩn đoán render uses the V4 builders (non-empty)."""
+def test_refresh_diagnostics_dispatches_to_builders() -> None:
+    """For a row, the Chẩn đoán render uses the native builders (non-empty)."""
     captured: list[str] = []
 
     def _fake_set_rich_html(widget, html, **kwargs):
@@ -143,14 +143,14 @@ def test_refresh_diagnostics_dispatches_to_v4_builders() -> None:
     original = mod.set_rich_html
     mod.set_rich_html = _fake_set_rich_html
     try:
-        screen = _stub_screen(_v4_blocked_row())
+        screen = _stub_screen(_blocked_row())
         screen.diag_text = object()
         screen._refresh_diagnostics()
     finally:
         mod.set_rich_html = original
 
-    assert captured, "Chẩn đoán must emit HTML for a V4 row"
+    assert captured, "Chẩn đoán must emit HTML for a row"
     html = captured[0]
-    assert "Scanner V4" in html
-    assert "Phân rã điểm số (Scanner V4)" in html
+    assert "Scanner — Hướng" in html
+    assert "Phân rã điểm số" in html
     assert "Cổng chặn" in html

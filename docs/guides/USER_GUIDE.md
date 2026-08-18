@@ -226,10 +226,10 @@ Có một giới hạn cần lưu ý: bộ quét 10 tham số hiện xuất khó
 
 (Đang cập nhật)
 
-> Ứng dụng hiện vẫn chạy Scanner V3. Scanner V4 mới là thiết kế đã được phê duyệt,
-> chưa phải hành vi runtime; người dùng không nên kỳ vọng các field hoặc tỷ trọng V4
-> trước thời điểm cutover. Xem
-> [`scanner-v4-architecture.md`](../scanner/scanner-v4-architecture.md).
+> Ứng dụng hiện chạy Scanner. Đây là thiết kế đã được phê duyệt và là hành vi
+> runtime hiện hành; người dùng có thể kỳ vọng các field hoặc tỷ trọng theo thiết
+> kế. Xem
+> [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
 ## 5. Journal (Nhật ký)
 

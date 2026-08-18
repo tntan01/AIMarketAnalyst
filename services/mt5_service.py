@@ -597,7 +597,7 @@ class MT5Service(DataProvider):
     def min_lot_order_margin(self, broker_symbol: str) -> float | None:
         """Margin the broker requires to open the MINIMUM lot of a symbol.
 
-        Live producer for the V4 account gate (``AccountState.required_margin``).
+        Live producer for the account gate (``AccountState.required_margin``).
         At scan time no candidate entry/SL exists yet, so risk-based lot sizing
         is impossible; the smallest orderable size is the only honest probe —
         if free margin cannot cover the minimum lot, no order on this symbol is

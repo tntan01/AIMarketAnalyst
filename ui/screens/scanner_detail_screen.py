@@ -58,7 +58,7 @@ _VN_CODE = {
     "conflict": "xung đột",
     "aligned": "thuận",
     "unclear": "chưa rõ",
-    # ---- Scanner V4 reason codes (Chẩn đoán tab) --------------------------
+    # ---- Scanner reason codes (Chẩn đoán tab) --------------------------
     # An toàn thị trường (safety gate)
     "SAFETY_DATA_FRESHNESS_UNKNOWN": "Độ tươi dữ liệu không xác định (thất bại an toàn)",
     "SAFETY_DATA_STALE": "Dữ liệu giá đã hết hạn (stale)",
@@ -109,23 +109,23 @@ _VN_CODE = {
     "EXECUTION_ZONE_RR_EMPTY": "Kịch bản thiếu R:R theo vùng",
 }
 
-# Substring → tone used by the V4 Chẩn đoán gate table to color a reason code
+# Substring → tone used by the Scanner Chẩn đoán gate table to color a reason code
 # without inventing numbers: block/fail-closed, caution, or neutral.
-_V4_TONE_BLOCK = (
+_TONE_BLOCK = (
     "_BLOCK", "_UNSET", "_UNKNOWN", "_ABNORMAL", "_EXTREME",
     "_STALE", "_MISSING", "_NOT_READY", "SAFETY_DATA_STALE",
 )
-_V4_TONE_CAUTION = (
+_TONE_CAUTION = (
     "_CAUTION", "_LOW_CONFIDENCE", "_PARTIAL", "_CONFLICT",
     "_NEARBY", "_POLICY_OPEN",
 )
 
 
-def _v4_code_tone(code: str) -> str:
-    """Return ``"block"`` / ``"warning"`` / ``"pass"`` for a V4 reason code."""
-    if any(t in code for t in _V4_TONE_BLOCK):
+def _code_tone(code: str) -> str:
+    """Return ``"block"`` / ``"warning"`` / ``"pass"`` for a Scanner reason code."""
+    if any(t in code for t in _TONE_BLOCK):
         return "block"
-    if any(t in code for t in _V4_TONE_CAUTION):
+    if any(t in code for t in _TONE_CAUTION):
         return "warning"
     return "pass"
 
@@ -215,8 +215,13 @@ class ScannerDetailScreen(QWidget):
         root.addLayout(self.header_slot)
 
         # ---- Tab widget: Tổng quan | Chẩn đoán | AI kiểm định ---------------
+        # The scan-time notice sits beside the tab bar (corner widget), not in
+        # the header — requested UI change.
         self.tabs = QTabWidget()
         self.tabs.setObjectName("ContentTabs")
+        self.scan_time_label = QLabel("")
+        self.scan_time_label.setObjectName("PageSubtitle")
+        self.tabs.setCornerWidget(self.scan_time_label)
 
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
         overview_tab = card()
@@ -288,12 +293,6 @@ class ScannerDetailScreen(QWidget):
         self.hero_bar.setTextFormat(Qt.TextFormat.RichText)
         self.hero_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hero_row.addWidget(self.hero_bar, 1)
-        self.chart_refresh_btn = action_button("🔄 Làm mới")
-        self.chart_refresh_btn.setObjectName("ScannerChartRefreshButton")
-        self.chart_refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.chart_refresh_btn.setToolTip("Fetch lại nến mới nhất cho biểu đồ")
-        self.chart_refresh_btn.clicked.connect(self._manual_candle_refresh)
-        hero_row.addWidget(self.chart_refresh_btn)
         right_col.addLayout(hero_row)
 
         # -- Chart --
@@ -321,6 +320,8 @@ class ScannerDetailScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(overview_container)
         overview_tab.layout().addWidget(scroll)
 
@@ -542,7 +543,11 @@ class ScannerDetailScreen(QWidget):
         strategy = self._candidate_strategy()
         decision = self._candidate_decision()
         values = (
-            (strategy.get("score_value"), decision.get("setup_score"))
+            (
+                strategy.get("setup_score"),
+                strategy.get("score_value"),
+                decision.get("setup_score"),
+            )
             if decision
             else (
                 self.row.get("setup_score"),
@@ -1310,7 +1315,7 @@ class ScannerDetailScreen(QWidget):
             if rr == "N/A":
                 return (
                     "N/A",
-                    "Chưa có TP1 hợp lệ để tính R:R.",
+                    "Chưa có TP hợp lệ để tính R:R.",
                     "#94a3b8",
                 )
             detail = f"{nominal_label} {rr}{range_text}"
@@ -1506,10 +1511,6 @@ class ScannerDetailScreen(QWidget):
                 symbol,
             )
         )
-        self.scan_time_label = QLabel("")
-        self.scan_time_label.setObjectName("PageSubtitle")
-        self.scan_time_label.setWordWrap(True)
-        self.header_slot.addWidget(self.scan_time_label)
         self._refresh_scan_time_label()
 
         self._refresh_hero()
@@ -1614,14 +1615,6 @@ class ScannerDetailScreen(QWidget):
             return False
         return bool(status.connected and status.logged_in)
 
-    def _manual_candle_refresh(self) -> None:
-        if not self._provider_ready():
-            self._set_chart_notice(
-                "Data provider chưa sẵn sàng — đang hiển thị dữ liệu snapshot."
-            )
-            return
-        self._trigger_candle_refresh()
-
     def _auto_refresh_tick(self) -> None:
         if self._candle_fetch_active:
             self._refresh_hero_countdown()
@@ -1637,13 +1630,7 @@ class ScannerDetailScreen(QWidget):
     def _refresh_hero_countdown(self) -> None:
         if not hasattr(self, "hero_bar") or not getattr(self, "_hero_base_text", ""):
             return
-        if self.__dict__.get("_candle_fetch_active", False):
-            self.hero_bar.setText(self._hero_base_text + " (đang cập nhật nến mới nhất...)")
-        else:
-            self.hero_bar.setText(
-                self._hero_base_text
-                + f" (sẽ cập nhật nến mới nhất sau {max(1, self.__dict__.get('_countdown_seconds', 5))} giây)"
-            )
+        self.hero_bar.setText(self._hero_base_text)
 
     def _trigger_candle_refresh(self) -> None:
         if self._candle_fetch_active:
@@ -1941,7 +1928,10 @@ class ScannerDetailScreen(QWidget):
         entry_val, _, _ = self._dialog_card_entry()
         sl_val, _, _ = self._dialog_card_sl()
         tp_val, tp_detail, _ = self._dialog_card_tp()
-        tp2_val = tp_detail.removeprefix("TP2: ") if tp_detail else "--"
+        # New Scanner plan has a SINGLE take_profit (scalar) -> one "TP" row.
+        # Legacy list payloads (2+ targets) still show TP1/TP2.
+        has_tp2 = bool(tp_detail and tp_detail.startswith("TP2: "))
+        tp2_val = tp_detail.removeprefix("TP2: ") if has_tp2 else "--"
         rr_val, rr_detail, _ = self._dialog_card_rr()
         regime_val, _, _ = self._dialog_card_regime()
         side_text = {
@@ -1963,11 +1953,20 @@ class ScannerDetailScreen(QWidget):
             ("Hướng phân tích", side_text, self._selected_side() or "neutral"),
             ("Vùng vào lệnh", entry_val, entry_tone),
             ("Stop Loss", sl_val, "danger"),
-            ("TP1", tp_val, "success"),
-            ("TP2", tp2_val, "success"),
-            ("R:R thực", rr_val, "warning"),
-            ("Chế độ TT", regime_val, "text"),
         ]
+        # New Scanner plan has a SINGLE take_profit (scalar) -> one "TP" row.
+        # Legacy list payloads (2+ targets) still show TP1/TP2.
+        if has_tp2:
+            rows.append(("TP1", tp_val, "success"))
+            rows.append(("TP2", tp2_val, "success"))
+        else:
+            rows.append(("TP", tp_val, "success"))
+        rows.extend(
+            [
+                ("R:R thực", rr_val, "warning"),
+                ("Chế độ TT", regime_val, "text"),
+            ]
+        )
 
         for label_text, value_text, tone in rows:
             row_w = QWidget()
@@ -2085,23 +2084,23 @@ class ScannerDetailScreen(QWidget):
 
         SHORT_NAMES = [
             "Chiến lược", "Điểm setup", "Entry",
-            "Vùng giá", "M15", "R:R thực", "Quyền quét",
+            "Vùng giá", "R:R thực", "Quyền giao dịch",
         ]
 
         fail_count = sum(
-            1 for item in items[:7] if item.get("state") == "fail"
+            1 for item in items[:6] if item.get("state") == "fail"
         )
         unknown_count = sum(
-            1 for item in items[:7] if item.get("state") == "unknown"
+            1 for item in items[:6] if item.get("state") == "unknown"
         )
         if fail_count >= 1:
-            summary = QLabel(f"⚠️ {fail_count}/7 điều kiện chưa đạt")
+            summary = QLabel(f"⚠️ {fail_count}/6 điều kiện chưa đạt")
             summary.setObjectName("ScannerChecklistSummary")
             summary.setProperty("checkState", "fail")
             layout.addWidget(summary)
         elif unknown_count:
             summary = QLabel(
-                f"➖ {unknown_count}/7 điều kiện chưa có dữ liệu"
+                f"➖ {unknown_count}/6 điều kiện chưa có dữ liệu"
             )
             summary.setObjectName("ScannerChecklistSummary")
             summary.setProperty("checkState", "unknown")
@@ -2115,50 +2114,32 @@ class ScannerDetailScreen(QWidget):
         grid.setColumnMinimumWidth(1, 100)
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(1)
-        for i, item_data in enumerate(items[:7]):
+        for i, item_data in enumerate(items[:6]):
             state = str(item_data.get("state") or "unknown")
             passed = state == "pass"
             full_label = item_data["label"]
             short_name = SHORT_NAMES[i] if i < len(SHORT_NAMES) else full_label[:12]
             icon = "✅" if passed else "❌" if state == "fail" else "➖"
-            row_i, col_i = divmod(i, 2) if i < 6 else (3, 0)
-            # The final permission item spans the full width.
-            if i == 6:
-                item_w = QWidget()
-                item_w.setObjectName("TransparentWidget")
-                item_l = QHBoxLayout(item_w)
-                item_l.setContentsMargins(0, 0, 0, 0)
-                item_l.setSpacing(3)
-                icon_lbl = QLabel(icon)
-                icon_lbl.setObjectName("ScannerCompactIcon")
-                name_lbl = QLabel(short_name)
-                name_lbl.setObjectName("ScannerChecklistName")
-                name_lbl.setProperty("checkState", state)
-                item_l.addWidget(icon_lbl)
-                item_l.addWidget(name_lbl)
-                item_l.addStretch()
-                item_w.setToolTip(full_label)
-                grid.addWidget(item_w, row_i, col_i, 1, 2)
-            else:
-                item_w = QWidget()
-                item_w.setObjectName("TransparentWidget")
-                item_l = QHBoxLayout(item_w)
-                item_l.setContentsMargins(0, 0, 0, 0)
-                item_l.setSpacing(3)
-                icon_lbl = QLabel(icon)
-                icon_lbl.setObjectName("ScannerCompactIcon")
-                name_lbl = QLabel(short_name)
-                name_lbl.setObjectName("ScannerChecklistName")
-                name_lbl.setProperty("checkState", state)
-                item_l.addWidget(icon_lbl)
-                item_l.addWidget(name_lbl)
-                item_l.addStretch()
-                item_w.setToolTip(full_label)
-                grid.addWidget(item_w, row_i, col_i)
+            row_i, col_i = divmod(i, 2)
+            item_w = QWidget()
+            item_w.setObjectName("TransparentWidget")
+            item_l = QHBoxLayout(item_w)
+            item_l.setContentsMargins(0, 0, 0, 0)
+            item_l.setSpacing(3)
+            icon_lbl = QLabel(icon)
+            icon_lbl.setObjectName("ScannerCompactIcon")
+            name_lbl = QLabel(short_name)
+            name_lbl.setObjectName("ScannerChecklistName")
+            name_lbl.setProperty("checkState", state)
+            item_l.addWidget(icon_lbl)
+            item_l.addWidget(name_lbl)
+            item_l.addStretch()
+            item_w.setToolTip(full_label)
+            grid.addWidget(item_w, row_i, col_i)
         layout.addLayout(grid)
 
     def _build_entry_checklist(self) -> list[dict]:
-        """Build seven checks from the canonical selected-side decision."""
+        """Build six checks from the canonical selected-side decision."""
         if not self.row:
             return []
 
@@ -2224,16 +2205,19 @@ class ScannerDetailScreen(QWidget):
         ))
 
         entry = str(
-            side_eval.get("entry_status")
+            decision.get("entry_confirmation")
+            or decision.get("entry_status")
+            or side_eval.get("entry_status")
             or self.row.get("entry_status")
             or ""
         ).lower()
         entry_known = bool(entry)
-        entry_ok = entry in ("confirmed_entry", "ready", "ready_to_trade")
+        entry_ok = entry in ("confirmed_entry", "ready", "ready_to_trade", "confirmed")
         entry_map = {
+            "confirmed": "đã xác nhận",
             "confirmed_entry": "đã xác nhận",
             "watch_zone": "giá chưa vào vùng giá hoặc chưa có nến xác nhận",
-            "waiting_confirmation": "chờ xác nhận H1/M15",
+            "waiting_confirmation": "giá chưa vào vùng hoặc chưa có nến xác nhận",
             "no_setup": "chưa có thiết lập giao dịch (setup)",
         }
         items.append(_item(
@@ -2266,22 +2250,6 @@ class ScannerDetailScreen(QWidget):
             zone_state,
             f"Vùng vào lệnh: "
             f"{zone_map.get(price_zone, price_zone or 'chưa có dữ liệu')}",
-        ))
-
-        m15 = str(
-            side_eval.get("m15_quality")
-            or self.row.get("m15_quality")
-            or ""
-        ).lower()
-        m15_label = {
-            "strict": "xác nhận chặt",
-            "loose": "xác nhận lỏng",
-            "none": "chưa xác nhận",
-            "": "chưa có dữ liệu",
-        }
-        items.append(_item(
-            "pass" if m15 == "strict" else "fail" if m15 else "unknown",
-            f"M15: {m15_label.get(m15, m15)}",
         ))
 
         effective_rr = self._effective_rr()
@@ -2326,7 +2294,7 @@ class ScannerDetailScreen(QWidget):
         )
         items.append(_item(
             permission_state,
-            "Quyền tại thời điểm quét: "
+            "Quyền giao dịch: "
             + (
                 "được phép"
                 if trade_allowed is True
@@ -2612,16 +2580,16 @@ class ScannerDetailScreen(QWidget):
         body_text_color = "#334155" if light else "#e2e8f0"
         parts: list[str] = []
         parts.append(f"<div style='{_HTML_BODY}color:{body_text_color};line-height:1.5;'>")
-        is_v4 = str(self.row.get("pipeline_route") or "").strip() == "scanner-v4"
+        is_v4 = str(self.row.get("pipeline_route") or "").strip() == "scanner"
         if is_v4:
-            # Scanner V4 rows carry a DIFFERENT contract than the legacy V3
-            # ``analysis_result``: the six V3 ``_diag_*`` builders below read
+            # Scanner rows carry a DIFFERENT contract than the legacy
+            # ``analysis_result``: the six legacy ``_diag_*`` builders below read
             # ``scenario_scores``/``pipeline_diagnostics``/``trade_gate`` which
-            # V4 does not emit.  Render V4-native diagnostics instead.
-            parts.append(self._diag_v4_route_html(light=light))
-            parts.append(self._diag_v4_scores_html(light=light))
-            parts.append(self._diag_v4_gates_html(light=light))
-            parts.append(self._diag_v4_plan_html(light=light))
+            # Scanner does not emit.  Render Scanner-native diagnostics instead.
+            parts.append(self._diag_route_html(light=light))
+            parts.append(self._diag_scores_html(light=light))
+            parts.append(self._diag_gates_html(light=light))
+            parts.append(self._diag_plan_html(light=light))
         else:
             parts.append(self._diag_branch_html(light=light))
             parts.append(self._diag_score_breakdown_html(analysis, light=light))
@@ -3766,16 +3734,16 @@ class ScannerDetailScreen(QWidget):
         return "\n".join(rows)
 
     # ------------------------------------------------------------------
-    # -- V4 Chẩn đoán (Scanner V4 native diagnostics) --------------------
-    # Scanner V4 rows carry their scores/statuses/codes directly on the UI row
-    # (set by ``core/scanner_v4_ui_adapter.py::pair_to_ui_row``), NOT inside the
-    # legacy V3 ``analysis_result``.  ``_refresh_diagnostics`` dispatches here
-    # for ``pipeline_route == "scanner-v4"``.  Every value below comes from a
-    # REAL V4 field; nothing is fabricated.
+    # -- Scanner Chẩn đoán (Scanner native diagnostics) --------------------
+    # Scanner rows carry their scores/statuses/codes directly on the UI row
+    # (set by ``core/scanner_ui_adapter.py::pair_to_ui_row``), NOT inside the
+    # legacy ``analysis_result``.  ``_refresh_diagnostics`` dispatches here
+    # for ``pipeline_route == "scanner"``.  Every value below comes from a
+    # REAL Scanner field; nothing is fabricated.
     # ------------------------------------------------------------------
 
-    def _diag_v4_route_html(self, light: bool = False) -> str:
-        """V4 header: route, candidate status, selected side, market regime."""
+    def _diag_route_html(self, light: bool = False) -> str:
+        """Scanner header: route, candidate status, selected side, market regime."""
         candidate_status = self._canonical_status()
         label, state = _CANDIDATE_STATUS.get(candidate_status, (candidate_status, "neutral"))
         state_accent = {
@@ -3800,14 +3768,14 @@ class ScannerDetailScreen(QWidget):
             f"border-left:4px solid {accent};margin:8px 0 12px;'>"
             f"<tr><td style='padding:12px 16px;'>"
             f"<div style='{_HTML_SUBTITLE}color:{accent};margin-bottom:6px;'>"
-            f"🧭 Scanner V4 — Hướng {side_text} · Chế độ thị trường: {regime_text}</div>"
+            f"🧭 Scanner — Hướng {side_text} · Chế độ thị trường: {regime_text}</div>"
             f"<div style='{_HTML_BODY}color:{sc};line-height:1.5;'>"
             f"Trạng thái ứng viên: <b style='color:{state_accent};'>{label}</b>. "
-            f"Đây là kết quả theo pipeline V4 (không dùng dữ liệu V3 kế thừa)."
+            f"Đây là kết quả theo pipeline (không dùng dữ liệu V3 kế thừa)."
             f"</div></td></tr></table>"
         )
 
-    def _diag_v4_scores_html(self, light: bool = False) -> str:
+    def _diag_scores_html(self, light: bool = False) -> str:
         """Per-side component scores + the selected side's four scores."""
         side_scores = self.row.get("side_scores") or []
         if not isinstance(side_scores, list) or not side_scores:
@@ -3854,7 +3822,7 @@ class ScannerDetailScreen(QWidget):
 
         rows = [
             f"<div style='{_HTML_BODY}'>",
-            f"<h2 style='color:{title_color};margin:0 0 4px;{_HTML_SUBTITLE}'>Phân rã điểm số (Scanner V4)</h2>",
+            f"<h2 style='color:{title_color};margin:0 0 4px;{_HTML_SUBTITLE}'>Phân rã điểm số</h2>",
             f"<p style='color:{desc_color};{_HTML_SMALL}margin:0 0 12px;'>"
             "Điểm theo từng hướng MUA và BÁN; hướng được chọn được đánh dấu. "
             "<b>Tín hiệu kỹ thuật</b> (technical signal) · <b>Setup</b> (điểm thiết lập) · "
@@ -3908,8 +3876,8 @@ class ScannerDetailScreen(QWidget):
         rows.append("</div>")
         return "\n".join(rows)
 
-    def _diag_v4_gates_html(self, light: bool = False) -> str:
-        """V4 gates: aggregated safety/macro statuses + per-group block codes."""
+    def _diag_gates_html(self, light: bool = False) -> str:
+        """Scanner gates: aggregated safety/macro statuses + per-group block codes."""
         safety_status = str(self.row.get("safety_status") or "").strip().upper()
         macro_status = str(self.row.get("macro_status") or "").strip().upper()
         safety_codes = self.row.get("safety_reason_codes") or []
@@ -3967,7 +3935,7 @@ class ScannerDetailScreen(QWidget):
             return ("⚪", status, "#94a3b8")
 
         def _aggregate(codes: list) -> str:
-            tones = {_v4_code_tone(str(c)) for c in codes}
+            tones = {_code_tone(str(c)) for c in codes}
             if "block" in tones:
                 return "BLOCK"
             if "warning" in tones:
@@ -4023,8 +3991,8 @@ class ScannerDetailScreen(QWidget):
         rows.append("</div>")
         return "\n".join(rows)
 
-    def _diag_v4_plan_html(self, light: bool = False) -> str:
-        """V4 selected-side plan + decision cap + final status."""
+    def _diag_plan_html(self, light: bool = False) -> str:
+        """Scanner selected-side plan + decision cap + final status."""
         title_color = "#047857" if light else "#22c55e"
         desc_color = "#736B60" if light else "#64748b"
         text_color = "#111827" if light else "#e2e8f0"

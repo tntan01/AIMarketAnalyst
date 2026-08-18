@@ -1,9 +1,9 @@
-"""Scanner V4 session review brief (Bước 10; target-only).
+"""Scanner session review brief (Bước 10; target-only).
 
 10E — deterministic session-review tracer that consumes **canonical** candidate
-statuses only.  The brief is derived from ``ScannerV4ObservabilityDocument``
-documents (one per composition) and never re-scores, never reads V3 fields and
-never produces a V3/V4 disagreement metric (V3 and V4 remain separate canvases
+statuses only.  The brief is derived from ``ScannerObservabilityDocument``
+documents (one per composition) and never re-scores, never reads legacy fields and
+never produces a legacy/current disagreement metric (legacy and current remain separate canvases
 until cutover).
 
 The prompt is deterministic: no wall-clock timestamps, no counter randomness —
@@ -18,9 +18,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.scanner_v4_observability import (
+    SCANNER_OBSERVABILITY_LEGACY_VERSION,
     SCANNER_V4_OBSERVABILITY_VERSION,
-    ScannerV4ObservabilityDocument,
-    build_v4_observability_document,
+    ScannerObservabilityDocument,
+    build_observability_document,
 )
 from core.scanner_v4_models import (
     BLOCK,
@@ -30,30 +31,31 @@ from core.scanner_v4_models import (
     VALID_CANDIDATE_STATUSES,
 )
 
-SCANNER_V4_SESSION_REVIEW_VERSION = "scanner-session-review-v4"
+SCANNER_SESSION_REVIEW_VERSION = "scanner-session-review"
+SCANNER_SESSION_REVIEW_LEGACY_VERSION = "scanner-session-review-v4"
 
 
-def _require_observability_document(value: object) -> ScannerV4ObservabilityDocument:
-    if type(value) is not ScannerV4ObservabilityDocument:
+def _require_observability_document(value: object) -> ScannerObservabilityDocument:
+    if type(value) is not ScannerObservabilityDocument:
         raise TypeError(
-            "expected ScannerV4ObservabilityDocument; got "
+            "expected ScannerObservabilityDocument; got "
             f"{type(value).__name__}"
         )
-    if value.observability_version != SCANNER_V4_OBSERVABILITY_VERSION:
+    if value.observability_version not in (SCANNER_V4_OBSERVABILITY_VERSION, SCANNER_OBSERVABILITY_LEGACY_VERSION):
         raise ValueError(
             f"observability version mismatch: {value.observability_version!r}"
         )
     return value
 
 
-def _require_known_symbol(rows: list[ScannerV4ObservabilityDocument]) -> None:
+def _require_known_symbol(rows: list[ScannerObservabilityDocument]) -> None:
     symbols = {row.symbol for row in rows}
     if len(symbols) != 1:
         raise ValueError(f"session review refused mixed symbols: {sorted(symbols)}")
 
 
 def reveal_session(
-    rows: list[ScannerV4ObservabilityDocument],
+    rows: list[ScannerObservabilityDocument],
 ) -> str:
     """Deterministic AI-brief prompt over canonical observability documents.
 
@@ -142,12 +144,12 @@ class SessionReviewSummary:
 
 
 def session_summary(
-    docs: list[ScannerV4ObservabilityDocument],
+    docs: list[ScannerObservabilityDocument],
 ) -> SessionReviewSummary:
     """Compact structural digest of a session — test-friendly, deterministic.
 
     Aggregates only canonical statuses / version identities / reason codes;
-    reading it never re-scores and never reads V3 fields.  ``comparisons`` /
+    reading it never re-scores and never reads legacy fields.  ``comparisons`` /
     ``candidate`` can be passed from a live session without altering determinism.
     """
     rows = [_require_observability_document(doc) for doc in docs]
@@ -225,9 +227,9 @@ def brief_from_compositions(
     """Convenience entry-point: build the brief from raw compositions.
 
     Each composition is turned into an observability document through the
-    canonical path (``build_v4_observability_document``) — nothing is re-scored.
+    canonical path (``build_observability_document``) — nothing is re-scored.
     """
     if not compositions:
         raise ValueError("session review requires at least one composition")
-    docs = [build_v4_observability_document(comp) for comp in compositions]
+    docs = [build_observability_document(comp) for comp in compositions]
     return reveal_session(docs)

@@ -56,7 +56,7 @@ from core.scanner_v4_models import (
     CAUTION,
     BLOCK,
     UNKNOWN,
-    SCANNER_V4_SAFETY_POLICY_VERSION,
+    SCANNER_SAFETY_POLICY_VERSION,
     SAFETY_CHECK_NAMES,
 )
 
@@ -117,7 +117,7 @@ def _base_context() -> MarketSafetyContext:
 
 def _base_policy() -> SafetyPolicy:
     return SafetyPolicy(
-        policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+        policy_version=SCANNER_SAFETY_POLICY_VERSION,
         max_candle_age_minutes=5,
         spread_threshold_by_symbol={"XAUUSD": 50},
         connectivity_max_age_minutes=10,
@@ -129,7 +129,7 @@ def _base_policy() -> SafetyPolicy:
 def _config_policy(**overrides) -> SafetyPolicy:
     """Base policy willing to PASS all five sub-gates; override to exercise gates."""
     base = {
-        "policy_version": SCANNER_V4_SAFETY_POLICY_VERSION,
+        "policy_version": SCANNER_SAFETY_POLICY_VERSION,
         "max_candle_age_minutes": 5,
         "spread_threshold_by_symbol": {"XAUUSD": 50},
         "connectivity_max_age_minutes": 10,
@@ -150,7 +150,7 @@ def _assert_all_passes(result):
     for check in result.checks:
         assert check.observed_value is not None
         assert check.provenance
-        assert check.policy_version == SCANNER_V4_SAFETY_POLICY_VERSION
+        assert check.policy_version == SCANNER_SAFETY_POLICY_VERSION
 
 
 def _single_result(context: MarketSafetyContext, policy: SafetyPolicy) -> MarketSafetyResult:
@@ -180,7 +180,7 @@ class TestContract:
         result = GATE.evaluate(_base_context(), _base_policy(), now=NOW)
         for check in result.checks:
             assert check.status in {PASS, CAUTION, BLOCK, UNKNOWN}
-            assert check.policy_version == SCANNER_V4_SAFETY_POLICY_VERSION
+            assert check.policy_version == SCANNER_SAFETY_POLICY_VERSION
             assert check.checked_at == NOW
 
     def test_policy_version_must_match_constant(self):
@@ -672,18 +672,18 @@ class TestLockedPolicies:
     def test_policy_rejects_other_volatility_semantics(self):
         with pytest.raises(MarketSafetyGateError):
             SafetyPolicy(
-                policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+                policy_version=SCANNER_SAFETY_POLICY_VERSION,
                 volatility_metric="atr21",
             )
         with pytest.raises(MarketSafetyGateError):
             SafetyPolicy(
-                policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+                policy_version=SCANNER_SAFETY_POLICY_VERSION,
                 volatility_reference_window_days=30,
             )
 
     def test_spread_policy_shape_has_no_global_fallback(self):
         # The per-symbol policy version is locked; a symbol with no threshold is
-        # UNKNOWN (never a fabricated global default like the V3 50-point rule).
+        # UNKNOWN (never a fabricated global default like the legacy 50-point rule).
         assert SPREAD_POLICY_VERSION == "scanner-safety-spread-per-symbol-v1"
         assert not hasattr(DEFAULT_MARKET_SAFETY_POLICY, "spread_default_threshold_points")
         default_policy = DEFAULT_MARKET_SAFETY_POLICY
@@ -755,7 +755,7 @@ class TestOwnershipDeduplication:
             Path("core/reason_codes.py").as_posix(),
         }
         # No target module re-derives spread/news thresholds; the only policy
-        # holder in the V4 target is the SafetyPolicy passed to the gate.
+        # holder in the target is the SafetyPolicy passed to the gate.
         for path in _glob.glob("core/*.py"):
             if Path(path).as_posix() in allowed:
                 continue
@@ -767,7 +767,7 @@ class TestOwnershipDeduplication:
         """BLOCK at safety must coexist with a full technical score 100 payload.
 
         Safety GateCheck/MarketSafetyResult never touch TechnicalScore or the
-        scenario dict; the composite V4 payload keeps both intact so a "good
+        scenario dict; the composite payload keeps both intact so a "good
         setup but currently blocked" row is rendered, not hidden.
         """
         context = _base_context()
@@ -948,13 +948,13 @@ class TestStrictConstruction:
     def test_policy_rejects_calibrated_but_missing_band(self):
         with pytest.raises(MarketSafetyGateError):
             SafetyPolicy(
-                policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+                policy_version=SCANNER_SAFETY_POLICY_VERSION,
                 volatility_calibrated=True, volatility_upper_ratio=None)
 
     def test_policy_rejects_negative_threshold(self):
         with pytest.raises(MarketSafetyGateError):
             SafetyPolicy(
-                policy_version=SCANNER_V4_SAFETY_POLICY_VERSION,
+                policy_version=SCANNER_SAFETY_POLICY_VERSION,
                 spread_threshold_by_symbol={"XAUUSD": -5})
 
     def test_evaluate_rejects_non_context(self):

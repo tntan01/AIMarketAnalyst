@@ -556,16 +556,16 @@ def test_overview_checklist_uses_effective_rr_and_canonical_permission():
 
     items = screen._build_entry_checklist()
 
-    assert len(items) == 7
+    assert len(items) == 6
     assert items[0]["state"] == "fail"  # strategy eligible=False
     assert "61/80" in items[1]["label"]
     assert items[1]["state"] == "fail"
     assert items[3]["state"] == "pass"
     assert "giá đang trong vùng" in items[3]["label"]
+    assert items[4]["state"] == "fail"
+    assert "1.1/2" in items[4]["label"]
     assert items[5]["state"] == "fail"
-    assert "1.1/2" in items[5]["label"]
-    assert items[6]["state"] == "fail"
-    assert "không được phép" in items[6]["label"]
+    assert "không được phép" in items[5]["label"]
 
     _, rr_detail, _ = screen._dialog_card_rr()
     # The row only carries the best-case string (no base anchor), so the

@@ -1,7 +1,7 @@
 # Quy trình vận hành Backtest → Scanner → Rollout
 
-Trạng thái tài liệu: **hiện hành** cho runtime V3 ngày 25/07/2026; target
-Scanner V4 cập nhật ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**.
+Trạng thái tài liệu: **hiện hành** cho runtime ngày 25/07/2026; target
+Scanner cập nhật ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**.
 
 Khi phát hành cấu hình Backtest `VALIDATED`, thực hiện thêm quy trình golden,
 shadow, forward-demo và review tại
@@ -32,20 +32,20 @@ Ngưỡng Decision Engine mặc định cho từng symbol:
 
 Các ngưỡng này độc lập với `min_score` và `min_rr` của chiến lược đã backtest.
 
-### 1.1 Target Scanner V4 đã chốt — chưa áp dụng cho thao tác runtime
+### 1.1 Target Scanner đã chốt — chưa áp dụng cho thao tác runtime
 
-Target V4 chỉ đưa Trend, Momentum, Location và SMC vào
+Target chỉ đưa Trend, Momentum, Location và SMC vào
 `TechnicalSignalScore`; trọng số theo regime không được định nghĩa lại trong
 workflow này. Final/Setup score blend Technical/Evidence/Execution theo tỷ trọng
 65/20/15. Risk được đánh giá bằng safety gates; Macro được hiển thị như
 assessment theo side và tác động qua policy/gate. Risk, Macro và kết quả gate
 không được tái nhập vào Technical/Final/Setup score hoặc ranking số.
 
-Migration dùng direct cutover sang `scanner-v4` / `scanner-features-v4`, không
-chạy score V3/V4 song song và không shadow V4 so với V3. Vì V4 chưa runtime,
-toàn bộ thao tác ở các mục tiếp theo vẫn phải tuân theo version V3 hiện hành.
+Tích hợp Scanner dùng direct cutover sang `scanner` / `scanner-features`, không
+chạy score song song và không shadow. Vì Scanner chưa runtime,
+toàn bộ thao tác ở các mục tiếp theo vẫn phải tuân theo version hiện hành.
 Nguồn normative duy nhất cho target là
-[Scanner V4 architecture](../scanner/scanner-v4-architecture.md);
+[Scanner architecture](../scanner/scanner-architecture.md);
 luồng đang chạy xem [Scanner flow](../scanner/scanner-flow.md).
 
 ## 2. Chạy và xác thực backtest
@@ -113,7 +113,7 @@ Các trường manifest/hash đã nằm trong validation fingerprint; sửa th�
 Settings hoặc làm mất metadata sẽ khiến Router chuyển config sang
 `BACKTEST_INVALID`/`VERSION_MISMATCH`.
 
-Config được Router chấp nhận ở runtime V3 cần phù hợp với các version hiện hành:
+Config được Router chấp nhận ở runtime cần phù hợp với các version hiện hành:
 
 - backtest config schema `v8`;
 - engine contract `phase0-backtest-safety-v1`;
@@ -156,12 +156,12 @@ Trong tab **Quản lý lệnh**, cấu hình Order Management V2 (SL/BE/trailing
 | Bật/tắt | OM luôn bật (feature flag `order_management_v2` đã gỡ 16/08/2026); SL/BE/trailing chỉ bị chặn khi broker tài khoản không cho phép giao dịch (`account.trade_allowed`). |
 | Phạm vi | Chỉ còn một phạm vi duy nhất `ALL`: **Đóng tất cả** luôn quản lý mọi vị thế đang mở (không còn lọc AMA/all; selector đã gỡ 16/08/2026). |
 
-Cơ chế rollout V3 (stage ladder `DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL →
+Cơ chế rollout (stage ladder `DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL →
 CANARY → PRODUCTION`, kill switch, release/canary readiness) đã bị gỡ bỏ hoàn
 toàn ngày 15/08/2026 theo quyết định của owner — ứng dụng chạy thật trực tiếp.
 Gate thực thi hiện tại của Order Management V2: feature flag +
 `account.trade_allowed` (fail-closed). Với Scanner, order policy
-(`config/scanner_v4_order_policy.json`, owner-accepted) phải `certified()`;
+(`config/scanner_order_policy.json`, owner-accepted) phải `certified()`;
 config lỗi → mọi candidate bị chặn fail-closed. Xem
 [trạng thái runtime](../architecture/runtime-status.md).
 
@@ -230,7 +230,7 @@ Chỉ khi tất cả điều kiện đều đạt mới gọi `place_market_orde
 ## 7. An toàn khi chạy live
 
 Từ 15/08/2026 ứng dụng chạy thật trực tiếp (quyết định của owner, phần mềm cá
-nhân) — không còn checklist shadow/demo/canary của rollout V3. Các lớp bảo vệ
+nhân) — không còn checklist shadow/demo/canary của rollout. Các lớp bảo vệ
 còn lại, tất cả fail-closed:
 
 - RuntimeOrderPolicy `certified()` (threshold, safety, macro, portfolio/journal);

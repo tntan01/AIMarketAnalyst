@@ -1,6 +1,6 @@
-"""Scanner V4 observability + session review tests (Bước 10; target-only; 10E).
+"""Scanner observability + session review tests (Bước 10; target-only; 10E).
 
-Proves the V4 telemetry contract:
+Proves the telemetry contract:
 
 * the observability document traces per-side technical raw/scaled components,
   the neutral-fallback execution/evidence source, every safety sub-gate and the
@@ -11,7 +11,7 @@ Proves the V4 telemetry contract:
   (PASS/CAUTION/BLOCK/UNKNOWN), neutral-fallback count and blocked-high-score
   count;
 * the session review consumes ONLY canonical candidate statuses and produces a
-  deterministic brief; V3/V4 disagreement metrics are never produced.
+  deterministic brief; legacy/new disagreement metrics are never produced.
 """
 
 from __future__ import annotations
@@ -41,15 +41,15 @@ from core.scanner_v4_observability import (
     SCANNER_V4_OBSERVABILITY_VERSION,
     has_no_v3_disagreement_metric,
     has_required_trace_keys,
-    build_v4_observability_document,
+    build_observability_document,
 )
 from core.scanner_v4_session_review import (
-    SCANNER_V4_SESSION_REVIEW_VERSION,
+    SCANNER_SESSION_REVIEW_VERSION,
     reveal_session,
     session_summary,
 )
 
-from tests.test_scanner_v4_composition import (
+from tests.test_scanner_composition import (
     PROV,
     _compose,
     _run,
@@ -103,13 +103,13 @@ def _fallback_composition():
 
 class TestDocumentShape:
     def test_required_telemetry_surface(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         assert has_required_trace_keys(doc.to_dict())
         assert has_no_v3_disagreement_metric(doc.to_dict())
 
     def test_version_identity_full(self):
         comp = _run()
-        doc = build_v4_observability_document(comp)
+        doc = build_observability_document(comp)
         versions = doc.versions
         for key in (
             "scoring_version",
@@ -127,7 +127,7 @@ class TestDocumentShape:
         assert doc.capture_source == comp.capture_source
 
     def test_technical_traces_four_components_per_side(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         assert [t.side for t in doc.technical] == ["buy", "sell"]
         for trace in doc.technical:
             assert len(trace.components) == 4
@@ -137,7 +137,7 @@ class TestDocumentShape:
                 assert {"name", "raw", "raw_max", "weight", "contribution"} <= set(component)
 
     def test_gate_trace_covers_all_cards(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         names = [g["name"] for g in doc.gate_trace]
         assert names[:5] == [
             "market_safety.connectivity",
@@ -152,35 +152,35 @@ class TestDocumentShape:
             assert "reason_codes" in gate
 
     def test_macro_gate_carries_decision_cap(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         macro = next(g for g in doc.gate_trace if g["name"] == "macro")
         assert "decision_cap" in macro
 
 
 class TestCounters:
     def test_candidate_distribution_includes_all_valid_statuses(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         distribution = doc.counters.candidates_by_status
         # every valid status listed (zero-count kept), and the sample sums to 1
         assert sum(distribution.values()) == 1
         assert distribution[doc.candidate_status] == 1
 
     def test_gate_status_counters_sum_to_cards(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         total_cards = sum(doc.counters.gate_status.values())
         assert total_cards == len(doc.gate_trace)
         assert doc.counters.gate_status["PASS"] >= 1
 
     def test_samples_aggregate_distribution(self):
         comps = [_run(), _unknown_composition()]
-        doc = build_v4_observability_document(comps[0], samples=comps[1:])
+        doc = build_observability_document(comps[0], samples=comps[1:])
         assert sum(doc.counters.candidates_by_status.values()) == 2
         # the UNKNOWN-safety sample is a BLOCKED candidate (fail-closed)
         assert doc.counters.candidates_by_status[BLOCKED] >= 1
 
     def test_neutral_fallback_counter(self):
         comp = _fallback_composition()
-        doc = build_v4_observability_document(comp)
+        doc = build_observability_document(comp)
         assert doc.counters.neutral_fallback_count == 1
         buy_trace = next(t for t in doc.technical if t.side == BUY)
         assert buy_trace.fallback_evidence is True
@@ -189,13 +189,13 @@ class TestCounters:
     def test_blocked_high_score_counter(self):
         # UNKNOWN safety -> candidate BLOCKED, selected BUY setup above floor
         comp = _unknown_composition()
-        doc = build_v4_observability_document(comp, blocked_high_score_floor=40)
+        doc = build_observability_document(comp, blocked_high_score_floor=40)
         assert doc.candidate_status == BLOCKED
         assert doc.counters.blocked_high_score_count == 1
 
     def test_unknown_reasons_collected_from_fail_closed_gates(self):
         comp = _unknown_composition()
-        doc = build_v4_observability_document(comp)
+        doc = build_observability_document(comp)
         assert SAFETY_MT5_STATE_UNKNOWN in doc.unknown_reasons
         # the connectivity card itself is UNKNOWN, never PASS
         connectivity = next(
@@ -206,7 +206,7 @@ class TestCounters:
 
 class TestSessionReview:
     def test_summary_consumes_canonical_statuses(self):
-        docs = [build_v4_observability_document(_run())]
+        docs = [build_observability_document(_run())]
         summary = session_summary(docs)
         assert summary.symbol == "XAUUSD"
         assert summary.candidate_count == 1
@@ -215,14 +215,14 @@ class TestSessionReview:
         assert summary.evidence_fallbacks == 0
 
     def test_reveal_session_is_deterministic(self):
-        docs = [build_v4_observability_document(_run())]
+        docs = [build_observability_document(_run())]
         first = reveal_session(docs)
         second = reveal_session(docs)
         assert first == second
-        assert SCANNER_V4_SESSION_REVIEW_VERSION in first or "Session Review" in first
+        assert SCANNER_SESSION_REVIEW_VERSION in first or "Session Review" in first
 
     def test_mixed_symbols_refused(self):
-        from core.scanner_v4_composition import build_live_snapshot
+        from core.scanner_composition import build_live_snapshot
 
         base = _snapshot()  # XAUUSD helper snapshot
         other = build_live_snapshot(
@@ -241,14 +241,14 @@ class TestSessionReview:
             journal=base.journal,
         )
         docs = [
-            build_v4_observability_document(_compose(base)),
-            build_v4_observability_document(_compose(other)),
+            build_observability_document(_compose(base)),
+            build_observability_document(_compose(other)),
         ]
         with pytest.raises(ValueError):
             reveal_session(docs)
 
     def test_no_disagreement_metric_in_digest(self):
-        doc = build_v4_observability_document(_run())
+        doc = build_observability_document(_run())
         assert has_no_v3_disagreement_metric(doc.to_dict())
         summary = session_summary([doc])
         assert "disagreement" not in str(summary.to_dict()).lower()
@@ -258,7 +258,7 @@ class TestNoScoringInTelemetry:
     def test_observability_never_rewrites_scores(self):
         # traces mirror the canonical values, they do not recompute them
         comp = _run()
-        doc = build_v4_observability_document(comp)
+        doc = build_observability_document(comp)
         for trace in doc.technical:
             canonical = comp.canonical.side_score(trace.side)
             components = {c["name"]: c for c in trace.components}

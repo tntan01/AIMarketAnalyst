@@ -1,4 +1,4 @@
-"""Pure, target-only Scanner V4 TechnicalSignalScore.
+"""Pure, target-only Scanner TechnicalSignalScore.
 
 This module is intentionally not wired into the executable scanner.  It owns
 only the four locked technical components and projects the canonical SMC
@@ -15,7 +15,8 @@ from typing import Any, Mapping
 
 from core.reason_codes import TECHNICAL_DATA_UNAVAILABLE
 from core.scanner_v4_models import (
-    SCANNER_V4_SCORING_VERSION,
+    SCANNER_LEGACY_SCORING_VERSION,
+    SCANNER_SCORING_VERSION,
     TechnicalBreakdown,
     TechnicalComponent,
 )
@@ -28,7 +29,8 @@ from core.smc_scoring_result import (
 from core.smc_versions import SMC_SCORER_VERSION, SMC_TECHNICAL_RAW_VERSION
 
 
-TECHNICAL_WEIGHT_POLICY_VERSION = "technical-signal-weights-v4"
+TECHNICAL_WEIGHT_POLICY_VERSION = "technical-signal-weights"
+TECHNICAL_WEIGHT_POLICY_LEGACY_VERSION = "technical-signal-weights-v4"
 
 VALID_TECHNICAL_SIDES = frozenset({"buy", "sell"})
 VALID_TECHNICAL_REGIMES = frozenset({
@@ -301,7 +303,7 @@ class SmcTechnicalEvidence:
 
 @dataclass(frozen=True, slots=True)
 class SmcTechnicalRawProjection:
-    """Strict projection of one canonical SMC side onto the V4 0-15 raw."""
+    """Strict projection of one canonical SMC side onto the 0-15 raw."""
 
     side: str
     raw: int
@@ -337,7 +339,7 @@ class SmcTechnicalRawProjection:
 
 @dataclass(frozen=True, slots=True)
 class TechnicalSignalScoreResult:
-    """One side's immutable Scanner V4 technical score and provenance."""
+    """One side's immutable Scanner technical score and provenance."""
 
     side: str
     regime: str
@@ -352,13 +354,13 @@ class TechnicalSignalScoreResult:
     def __post_init__(self) -> None:
         side = _require_side(self.side)
         regime = _require_regime(self.regime, side=side)
-        if self.scoring_version != SCANNER_V4_SCORING_VERSION:
+        if self.scoring_version not in (SCANNER_SCORING_VERSION, SCANNER_LEGACY_SCORING_VERSION):
             _data_error(
                 "technical_result.scoring_version",
-                f"must equal {SCANNER_V4_SCORING_VERSION!r}",
+                f"must equal {SCANNER_SCORING_VERSION!r}",
                 side=side,
             )
-        if self.weight_policy_version != TECHNICAL_WEIGHT_POLICY_VERSION:
+        if self.weight_policy_version not in (TECHNICAL_WEIGHT_POLICY_VERSION, TECHNICAL_WEIGHT_POLICY_LEGACY_VERSION):
             _data_error(
                 "technical_result.weight_policy_version",
                 f"must equal {TECHNICAL_WEIGHT_POLICY_VERSION!r}",
@@ -628,7 +630,7 @@ def score_technical_signal(
     return TechnicalSignalScoreResult(
         side=normalized_side,
         regime=normalized_regime,
-        scoring_version=SCANNER_V4_SCORING_VERSION,
+        scoring_version=SCANNER_SCORING_VERSION,
         weight_policy_version=TECHNICAL_WEIGHT_POLICY_VERSION,
         smc_raw_semantics_version=SMC_TECHNICAL_RAW_VERSION,
         smc_source_scoring_version=canonical_smc.scoring_version,
