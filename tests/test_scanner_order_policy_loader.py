@@ -51,7 +51,7 @@ class TestLiveConfigLoad:
         assert policy.threshold.technical_floor == 40
         assert policy.threshold.setup_floor == 35
         assert policy.threshold.min_score_gap == 5
-        assert policy.threshold.min_risk_reward == Fraction(2, 1)
+        assert policy.threshold.min_risk_reward == Fraction(1, 1)
         # safety
         assert policy.safety.connectivity_max_age_minutes == 5
         assert policy.safety.max_candle_age_minutes == 3

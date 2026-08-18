@@ -3433,6 +3433,27 @@ class ScannerDetailScreen(QWidget):
                 return failed
             return unknown
 
+        # F3: journal verdict now lives on the row (real, display-only) with fallback
+        # to the legacy gate payload when present.
+        jf = self._as_dict(self.row.get("journal_feedback"))
+        if not jf:
+            jf = self._as_dict(gate.get("journal_feedback"))
+        journal_has = bool(jf)
+        journal_status = (
+            "block"
+            if bool(jf.get("block_codes"))
+            else "warning"
+            if bool(jf.get("warning_codes"))
+            else "pass"
+            if journal_has
+            else "unknown"
+        )
+        journal_detail = (
+            f"nhật ký {jf.get('sample_size', 0)} lệnh mẫu, kỳ vọng {jf.get('expectancy_r')}R"
+            if journal_has
+            else "chưa có dữ liệu kiểm tra"
+        )
+
         return [
             {"gate": "MT5", "status": mt5_status,
              "detail": _detail(
@@ -3466,16 +3487,7 @@ class ScannerDetailScreen(QWidget):
                  passed="đã kiểm tra, không có cảnh báo",
                  failed="bảo vệ tài khoản đang cảnh báo hoặc chặn",
              )},
-            {"gate": "Journal", "status": (
-                "block"
-                if self._as_dict(gate.get("journal_feedback")).get("block_codes")
-                else "warning"
-                if self._as_dict(gate.get("journal_feedback")).get("warning_codes")
-                else "pass"
-                if isinstance(gate.get("journal_feedback"), dict)
-                else "unknown"
-             ),
-             "detail": "đã kiểm tra phản hồi nhật ký" if isinstance(gate.get("journal_feedback"), dict) else "chưa có dữ liệu kiểm tra"},
+            {"gate": "Journal", "status": journal_status, "detail": journal_detail},
             {"gate": "M15", "status": m15_status,
              "detail": f"M15={primary.get('m15_quality', '?')}"},
             {"gate": "ExpectedRR", "status": rr_status,

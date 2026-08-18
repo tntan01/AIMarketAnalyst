@@ -143,6 +143,18 @@ class ScannerTableModel (QAbstractTableModel ):
                 feedback = row.get("journal_feedback") if isinstance(row.get("journal_feedback"), dict) else {}
                 reasons = feedback.get("reasons", []) if isinstance(feedback, dict) else []
                 return "\n".join(str(item) for item in reasons) if reasons else "Phản hồi từ nhật ký các lệnh đã đóng."
+            if key =="symbol" and isinstance(row.get("journal_feedback"), dict):
+                # F3: hover the Mã cell to read the journal verdict (display-only).
+                jf = row.get("journal_feedback")
+                reasons = jf.get("reasons", []) if isinstance(jf, dict) else []
+                if reasons:
+                    lines = ["📋 Nhận xét từ nhật ký:"]
+                    lines.extend(str(item) for item in reasons)
+                    sample = jf.get("sample_size")
+                    if isinstance(sample, int):
+                        lines.append(f"Số lệnh mẫu: {sample}")
+                    return "\n".join(lines)
+                return "Phản hồi từ nhật ký các lệnh đã đóng."
             return str (row .get ("permission_reason")or row .get ("short_reason")or "")
         # Cot ly do chinh: tat text elide de hien thi day du, khong cat "..."
         reason_col = next((idx for idx, (col_key, _label) in enumerate(self.COLUMNS) if col_key == "short_reason"), -1)
@@ -242,6 +254,17 @@ class ScannerTableModel (QAbstractTableModel ):
                 "fallback":"Fallback",
                 "none":"--",
             }.get(str(value or "").strip().lower(),"--")
+        if key =="symbol":
+            # F3: real journal feedback (sample count > 0) shows a 📋 marker so the
+            # user can hover the Mã cell for the journal verdict. Neutral/default
+            # rows (no feedback) render the bare symbol.
+            if (
+                row is not None
+                and isinstance(row.get("journal_feedback"), dict)
+                and bool(row.get("journal_sample_size", 0) or 0) > 0
+            ):
+                return f"📋 {str(value if value is not None else '--')}"
+            return str(value if value is not None else "--")
         if key =="candidate_status":
             return self.STATUS_TEXT.get(str(value or "").upper(), str(value or "--"))
         if key =="selected_side":

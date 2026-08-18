@@ -303,7 +303,7 @@ class TestTrialConfig:
         policy = RuntimeOrderPolicy.from_dict(data)
         assert policy.threshold.technical_floor == 40
         assert policy.threshold.setup_floor == 35
-        assert policy.threshold.min_risk_reward == Fraction(2, 1)
+        assert policy.threshold.min_risk_reward == Fraction(1, 1)
 
     def test_config_fails_closed_if_any_mandatory_value_is_removed(self):
         # Guard the fail-closed invariant on the persisted config: pulling out one

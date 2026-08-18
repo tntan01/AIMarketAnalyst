@@ -1465,7 +1465,13 @@ class MT5Service(DataProvider):
         if deals is None:
             error_code, error_message = mt5.last_error()
             raise RuntimeError(error_message or f"Không lấy được lịch sử deal MT5 ({error_code}).")
-        return self._closed_trades_from_deals(mt5, list(deals))
+        # Deals carry NO stop-loss, so `result_r` stays NULL for synced trades.
+        # The order history (history_orders_get) exposes `.sl` per order; map each
+        # position to its FINAL SL (last order by time) so `_closed_trades_from_deals`
+        # can emit `actual_sl` and the journal can compute R. Orders may be absent
+        # (e.g. broker with no order history) — fail closed to no SL.
+        position_sl_map = self._position_sl_map_from_order_history(mt5, start_utc, end_utc)
+        return self._closed_trades_from_deals(mt5, list(deals), position_sl_map=position_sl_map)
 
     @_serialized_mt5_operation
     def closed_trade_history_recent(self, days: int = 90) -> list[dict[str, object]]:
@@ -3536,7 +3542,39 @@ class MT5Service(DataProvider):
     def _symbol_profiles(self) -> dict[str, Any]:
         return self.symbol_profiles
 
-    def _closed_trades_from_deals(self, mt5_module, deals: list[object]) -> list[dict[str, object]]:
+    def _position_sl_map_from_order_history(
+        self, mt5_module, start_utc, end_utc
+    ) -> dict[int, object]:
+        """Build {MT5 position_id: final stop-loss} from order history.
+
+        Order records carry ``.sl`` while deals do not. For each position we keep
+        the SL of the most recent order (by time) so a SL that was later MODIFY'd
+        is captured as the actually-applied stop. ``None``/no orders fail closed to
+        an empty map (no SL for any position).
+        """
+        try:
+            orders = mt5_module.history_orders_get(start_utc, end_utc)
+        except Exception:
+            return {}
+        if orders is None:
+            return {}
+        position_sl_map: dict[int, tuple[float, int]] = {}
+        for order in orders:
+            position_id = int(getattr(order, "position_id", 0) or getattr(order, "ticket", 0) or 0)
+            if position_id <= 0:
+                continue
+            sl = getattr(order, "sl", None)
+            if sl is None or float(sl) == 0.0:
+                continue
+            order_time = int(getattr(order, "time_done", 0) or getattr(order, "time_setup", 0) or 0)
+            current = position_sl_map.get(position_id)
+            if current is None or order_time >= current[1]:
+                position_sl_map[position_id] = (float(sl), order_time)
+        return {position_id: value[0] for position_id, value in position_sl_map.items()}
+
+    def _closed_trades_from_deals(
+        self, mt5_module, deals: list[object], *, position_sl_map: dict[int, object] | None = None
+    ) -> list[dict[str, object]]:
         entry_in = getattr(mt5_module, "DEAL_ENTRY_IN", 0)
         entry_out = getattr(mt5_module, "DEAL_ENTRY_OUT", 1)
         entry_inout = getattr(mt5_module, "DEAL_ENTRY_INOUT", 2)
@@ -3601,6 +3639,9 @@ class MT5Service(DataProvider):
                 "actual_exit": exit_price,
                 "actual_lot": round(volume, 4),
                 "result_amount": round(profit + commission + swap, 2),
+                "actual_sl": _optional_positive_float(
+                    (position_sl_map or {}).get(position_id)
+                ),
                 "exit_reason": str(getattr(exit_deal, "reason", "") or ""),
                 "mt5_deal_id": int(getattr(exit_deal, "ticket", 0) or 0),
                 "mt5_order_id": int(getattr(exit_deal, "order", 0) or 0),

@@ -77,6 +77,45 @@ def test_closed_trades_from_deals_parsing():
     assert trade["mt5_position_id"] == 123
     assert trade["candidate_id"] == "abc123"
 
+def test_closed_trades_from_deals_includes_sl_from_position_map():
+    service = MT5Service()
+    service.symbol_profiles = {
+        "EUR/USD": {"mt5_aliases": ["EURUSDm", "EURUSDc"]},
+    }
+    deals = [
+        MockDeal(
+            symbol="EURUSDm", type=0, position_id=123, entry=0, time=1770000000,
+            volume=0.1, price=1.0850, profit=0.0, commission=-1.5, swap=-0.5,
+            ticket=1001, order=2001, comment="AMA-FWD:abc123",
+        ),
+        MockDeal(
+            symbol="EURUSDm", type=1, position_id=123, entry=1, time=1770003600,
+            volume=0.1, price=1.0900, profit=50.0, commission=-1.5, swap=-0.5,
+            ticket=1002, order=2002, comment="",
+        ),
+    ]
+    parsed = service._closed_trades_from_deals(
+        MockMT5Module(), deals, position_sl_map={123: 1.0800}
+    )
+    assert len(parsed) == 1
+    assert parsed[0]["actual_sl"] == 1.0800
+
+
+def test_closed_trades_from_deals_no_sl_map_emits_none():
+    service = MT5Service()
+    service.symbol_profiles = {"EUR/USD": {"mt5_aliases": ["EURUSDm"]}}
+    deals = [
+        MockDeal(symbol="EURUSDm", type=0, position_id=5, entry=0, time=1770000000,
+                 volume=0.1, price=1.0850, profit=0.0, commission=0.0, swap=0.0,
+                 ticket=1, order=1, comment=""),
+        MockDeal(symbol="EURUSDm", type=1, position_id=5, entry=1, time=1770003600,
+                 volume=0.1, price=1.0900, profit=50.0, commission=0.0, swap=0.0,
+                 ticket=2, order=2, comment=""),
+    ]
+    parsed = service._closed_trades_from_deals(MockMT5Module(), deals)
+    assert parsed[0]["actual_sl"] is None
+
+
 def test_scale_in_and_partial_close_prices_are_volume_weighted():
     service = MT5Service()
     service.symbol_profiles = {
@@ -256,3 +295,33 @@ def test_sync_mt5_closed_trades_crud(temp_db_path):
     assert created_entry.symbol == "GBP/USD"
     assert created_entry.trade_status == "closed"
     assert created_entry.result == "loss"
+
+
+def test_sync_mt5_closed_trade_computes_result_r_from_synced_sl(temp_db_path):
+    # F1: once an MT5 sync payload carries `actual_sl` (from order history), the
+    # journal must compute+persist `result_r` for a then-created entry.
+    service = JournalService(db_path=temp_db_path)
+    mt5_trade = {
+        "symbol": "EUR/USD",
+        "broker_symbol": "EURUSDm",
+        "side": "buy",
+        "opened_at": "2026-02-10T10:00:00Z",
+        "closed_at": "2026-02-10T11:00:00Z",
+        "actual_entry": 1.1000,
+        "actual_exit": 1.1050,
+        "actual_sl": 1.0900,
+        "actual_lot": 0.1,
+        "result_amount": 50.0,
+        "exit_reason": "TP hit",
+        "mt5_deal_id": 9001,
+        "mt5_order_id": 9002,
+        "mt5_position_id": 900,
+    }
+    sync_result = service.sync_mt5_closed_trades([mt5_trade])
+    assert sync_result["received"] == 1
+    assert sync_result["created"] == 1
+    created_id = sync_result["synced_entry_ids"][0]
+    entry = service.get_entry(created_id)
+    assert entry.actual_sl == 1.0900
+    # (1.1050 - 1.1000) / (1.1000 - 1.0900) = 0.0050 / 0.0100 = 0.5R
+    assert entry.result_r == 0.5

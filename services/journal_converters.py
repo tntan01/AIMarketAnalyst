@@ -373,6 +373,20 @@ def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
     now = utc_now()
     amount = optional_float(trade.get("result_amount"))
     result = _result_label(amount)
+    # F1: a synced trade may carry `actual_sl` (from MT5 order history). Compute R
+    # at creation so a brand-new synced row (create path, no update_lifecycle)
+    # still gets result_r/result_pct/realized_effective_rr — matching what the
+    # planned→sync update path computes. No SL → outcome empty → R stays None.
+    outcome = calculate_trade_outcome(
+        {
+            "selected_scenario": str(trade.get("side") or ""),
+            "actual_entry": trade.get("actual_entry"),
+            "actual_sl": trade.get("actual_sl"),
+            "planned_sl": trade.get("planned_sl"),
+            "actual_exit": trade.get("actual_exit"),
+        }
+    )
+    result = outcome.get("result") or result
     payload = {"source": "mt5_history", "trade": trade}
     return JournalEntry(
         id=None,
@@ -399,16 +413,16 @@ def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
         user_action="",
         result=result,
         note="",
-        result_r=None,
-        result_pct=None,
+        result_r=outcome.get("result_r"),
+        result_pct=outcome.get("result_pct"),
         closed_at=str(trade.get("closed_at") or ""),
         exit_reason=str(trade.get("exit_reason") or "mt5_history"),
         actual_lot=optional_float(trade.get("actual_lot")),
         planned_lot=None,
         planned_entry=None,
         actual_entry=optional_float(trade.get("actual_entry")),
-        planned_sl=None,
-        actual_sl=None,
+        planned_sl=optional_float(trade.get("planned_sl")),
+        actual_sl=optional_float(trade.get("actual_sl")),
         planned_tp=None,
         actual_tp=None,
         actual_exit=optional_float(trade.get("actual_exit")),
@@ -418,7 +432,7 @@ def journal_entry_from_mt5_trade(trade: dict[str, object]) -> JournalEntry:
         m15_quality=None,
         spread_at_entry=None,
         expected_effective_rr=None,
-        realized_effective_rr=None,
+        realized_effective_rr=outcome.get("realized_effective_rr"),
         manual_mistake_tags=None,
         auto_mistake_tags=None,
         execution_quality_score=None,
@@ -572,18 +586,34 @@ def calculate_trade_outcome(trade: dict[str, object]) -> dict[str, float | str]:
 
 
 def build_performance_summary(trades: list[dict[str, object]]) -> dict[str, object]:
+    """Aggregate journal outcomes into a performance summary.
+
+    Two outcome universes are aggregated SEPARATELY and never mixed:
+    * **R-sample** — trades with a real ``result_r`` (needs an SL). Produces the
+      ``*_r`` metrics (``expectancy_r``, ``total_r``, ``average_win_r``/``average_loss_r``,
+      ``r_win_rate``).
+    * **Amount-sample** — trades with a real ``result_amount``. This is the *money*
+      universe and drives the headline ``win_rate``/``win_count``/``loss_count``/
+      ``net_amount``/``profit_factor`` so they all share the SAME denominator as
+      ``net_amount``. When R and amount samples differ in size (e.g. MT5-synced trades
+      carry an amount but no SL), the headline win rate therefore reflects the money
+      population, never a silently-flipped R population.
+    """
     valid = [trade for trade in trades if optional_float(trade.get("result_r")) is not None]
     valid_for_curve = sorted(valid, key=lambda item: str(item.get("closed_at") or ""))
     results = [float(optional_float(trade.get("result_r")) or 0.0) for trade in valid_for_curve]
     amounts = [float(value) for value in (optional_float(trade.get("result_amount")) for trade in trades) if value is not None]
-    outcome_values = results if results else amounts
-    wins = [value for value in outcome_values if value > 0]
-    losses = [value for value in outcome_values if value < 0]
-    breakeven = [value for value in outcome_values if value == 0]
+
     r_wins = [value for value in results if value > 0]
     r_losses = [value for value in results if value < 0]
-    gross_profit = sum(wins)
-    gross_loss = abs(sum(losses))
+    r_breakeven = [value for value in results if value == 0]
+
+    amount_wins = [value for value in amounts if value > 0]
+    amount_losses = [value for value in amounts if value < 0]
+    amount_breakeven = [value for value in amounts if value == 0]
+
+    gross_profit = sum(amount_wins)
+    gross_loss = abs(sum(amount_losses))
     avg_quality_values = [
         float(score)
         for score in (optional_float(trade.get("execution_quality_score")) for trade in valid)
@@ -593,10 +623,20 @@ def build_performance_summary(trades: list[dict[str, object]]) -> dict[str, obje
         "closed_trades": len(trades),
         "r_trades": len(valid),
         "amount_trades": len(amounts),
-        "win_count": len(wins),
-        "loss_count": len(losses),
-        "breakeven_count": len(breakeven),
-        "win_rate": round(len(wins) / len(outcome_values) * 100, 2) if outcome_values else 0.0,
+        # Amount-sample (money) — same population as net_amount.
+        "win_count": len(amount_wins),
+        "loss_count": len(amount_losses),
+        "breakeven_count": len(amount_breakeven),
+        "win_rate": round(len(amount_wins) / len(amounts) * 100, 2) if amounts else 0.0,
+        "amount_win_count": len(amount_wins),
+        "amount_loss_count": len(amount_losses),
+        "amount_breakeven_count": len(amount_breakeven),
+        "amount_win_rate": round(len(amount_wins) / len(amounts) * 100, 2) if amounts else 0.0,
+        # R-sample (system) — trades with a computed R-multiple.
+        "r_win_count": len(r_wins),
+        "r_loss_count": len(r_losses),
+        "r_breakeven_count": len(r_breakeven),
+        "r_win_rate": round(len(r_wins) / len(results) * 100, 2) if results else 0.0,
         "expectancy_r": round(sum(results) / len(results), 3) if results else 0.0,
         "total_r": round(sum(results), 3) if results else 0.0,
         "average_win_r": round(sum(r_wins) / len(r_wins), 3) if r_wins else 0.0,
@@ -630,17 +670,18 @@ def group_performance(trades: list[dict[str, object]], key: str, *, limit: int =
     for label, items in groups.items():
         results = [float(item["result_r"]) for item in items if item["result_r"] is not None]
         amounts = [float(item["amount"]) for item in items if item["amount"] is not None]
-        outcome_values = results if results else amounts
-        wins = [value for value in outcome_values if value > 0]
-        losses = [value for value in outcome_values if value < 0]
+        amount_wins = [value for value in amounts if value > 0]
+        amount_losses = [value for value in amounts if value < 0]
         rows.append({
             "label": label,
             "trades": len(items),
-            "win_rate": round(len(wins) / len(outcome_values) * 100, 2) if outcome_values else 0.0,
+            # Amount-sample (money) — same population as net_amount below.
+            "win_rate": round(len(amount_wins) / len(amounts) * 100, 2) if amounts else 0.0,
+            # R-sample metrics (unchanged semantics).
             "expectancy_r": round(sum(results) / len(results), 3) if results else 0.0,
             "total_r": round(sum(results), 3),
             "net_amount": round(sum(amounts), 2) if amounts else 0.0,
-            "profit_factor": _profit_factor(wins, losses),
+            "profit_factor": _profit_factor(amount_wins, amount_losses),
         })
     rows.sort(key=lambda item: (int(item["trades"]), float(item["total_r"])), reverse=True)
     return rows[:limit]

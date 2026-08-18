@@ -54,6 +54,7 @@ from core.scanner_ui_adapter import (
 from core.backtest_config import serialize_backtest_config
 from core.chart_payload import build_chart_payload
 from core.execution_revalidation_engine import revalidate_execution
+from core.journal_feedback_engine import build_journal_feedback
 from core.portfolio_risk_engine import evaluate_portfolio_risk
 from core.scanner_session_review import build_market_brief_prompt
 from core.scanner_observability import (
@@ -2933,6 +2934,38 @@ def _newest_last_candle_time_utc(all_candles: object) -> object:
     return newest
 
 
+def _attach_journal_feedback_to_row(
+    row: dict[str, Any],
+    closed_trades: list[dict[str, Any]],
+    symbol: str,
+) -> dict[str, Any]:
+    """Attach real R-based journal feedback to a live Scanner row (display only).
+
+    The V4 adapter emits these keys as documented neutrals (journal is a state
+    gate). Here we override them with the real outline from ``build_journal_feedback``
+    for the row's selected side so the Scanner table tooltip + detail page can show
+    the journal's verdict. This is INFORMATIONAL ONLY — it never mutates
+    gate/decision/block codes (V4 target-only discipline). Rows with no selected
+    side (e.g. blocked) keep the neutral fail-closed values.
+    """
+    selected = row.get("selected_side")
+    if selected not in ("buy", "sell"):
+        return row
+    feedback = build_journal_feedback(
+        closed_trades,
+        symbol=symbol,
+        direction=selected,
+        regime=row.get("market_regime"),
+    )
+    if isinstance(feedback, dict):
+        current = row.get("journal_feedback")
+        row["journal_feedback"] = dict(current) if isinstance(current, dict) else {}
+        row["journal_feedback"].update(feedback)
+        row["journal_sample_size"] = feedback.get("sample_size", 0)
+        row["journal_expectancy_r"] = feedback.get("expectancy_r")
+    return row
+
+
 def _analyze_one_symbol(
     pkt: dict[str, Any],
     *,
@@ -3052,6 +3085,10 @@ def _analyze_one_symbol(
                 else None
             ),
         )
+        # F3: attach REAL journal R-based feedback for the selected side (display
+        # only). `closed_trades` is threaded in from the journal's account-guard
+        # snapshot; overrides the adapter's neutral journal keys.
+        row = _attach_journal_feedback_to_row(row, closed_trades, symbol)
         # The detail chart must render for EVERY candidate (blocked included).
         # ``pair_to_ui_row``'s ``analysis_result`` carries no candles, so inject
         # the REAL prefetched candles here — otherwise the chart is empty and

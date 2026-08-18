@@ -1549,6 +1549,7 @@ class JournalScreen(QWidget):
         expectancy = summary.get("expectancy_r")
         total_r = summary.get("total_r")
         win_rate = summary.get("win_rate")
+        r_win_rate = summary.get("r_win_rate")
         avg_win = summary.get("average_win_r")
         avg_loss = summary.get("average_loss_r")
         avg_quality = summary.get("average_execution_quality")
@@ -1628,11 +1629,15 @@ class JournalScreen(QWidget):
             "📋",
         )
 
-        # 7. Win rate
+        # 7. Win rate — headline theo lệnh có kết quả tiền (cùng dân số net_amount);
+        # nêu rõ tỷ lệ thắng theo lệnh có Result R nữa để không gây hiểu nhầm.
         wr_val = format_metric(win_rate, "%")
         if win_rate is not None and isinstance(win_rate, (int, float)):
             wr_state = "positive" if win_rate >= 50 else "warning" if win_rate >= 40 else "negative"
-            wr_sub = "Tỷ lệ lệnh chiến thắng"
+            if r_win_rate is not None and r_trades < closed_trades:
+                wr_sub = f"Thắng theo lệnh có Result R: {r_win_rate}% ({r_trades}/{closed_trades} lệnh)"
+            else:
+                wr_sub = "Tỷ lệ lệnh chiến thắng (tính trên lệnh có kết quả)"
             wr_badge = "⚠️" if win_rate < 40 else ""
         else:
             wr_val = "0%"

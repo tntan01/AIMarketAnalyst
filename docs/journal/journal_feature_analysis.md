@@ -53,21 +53,33 @@ Tệp liên quan:
 - `ui/screens/journal_detail_screen.py`, khu vực `_save_lifecycle()`
 - `services/journal_service.py`, các hàm `update_lifecycle()` và `list_closed_trades_for_account_guard()`
 
-### 2. Các KPI có thể sử dụng những tập mẫu khác nhau
+### 2. KPI tách rõ hai tập mẫu (đã sửa 2026-08-18)
 
-Trong `build_performance_summary()`, hệ thống thu thập riêng:
+`build_performance_summary()` thu thập riêng và **không trộn** hai tập mẫu:
 
-- Các lệnh có `result_r`
-- Các lệnh có `result_amount`
+- **Mẫu "tiền" (amount-sample)** — lệnh có `result_amount`. Đây là dân số chính:
+  `win_rate`, `win_count`/`loss_count`/`breakeven_count`, `net_amount`, `profit_factor`
+  **chia sẻ cùng một mẫu số** với `net_amount`, nên các KPI hiển thị cạnh nhau luôn
+  cùng dân số (không còn tình trạng win rate tính trên 2 lệnh có R mà Net P/L tính trên 82 lệnh).
+- **Mẫu "R" (r-sample)** — lệnh có `result_r` (cần SL): `expectancy_r`, `total_r`,
+  `average_win_r`/`average_loss_r`, `r_win_rate`, `r_win_count`/`r_loss_count`.
+  Khi số mẫu R khác số mẫu tiền (ví dụ lệnh MT5-sync có P/L nhưng không có SL —
+  broker không lưu order history hoặc chưa re-sync sau nâng cấp SL), hai tỷ lệ
+  thắng **được phép khác nhau** và được báo cáo tách bạch.
 
-Nếu tồn tại ít nhất một lệnh có Result R, win rate và profit factor sẽ được tính từ nhóm có Result R, bỏ qua các lệnh chỉ có P/L tiền. Trong khi đó, Net P/L và tổng số lệnh đóng vẫn có thể tính trên phạm vi rộng hơn.
+Từ 2026-08-18, lệnh MT5-sync có SL trong **order history** (`history_orders_get`)
+sẽ được gán `actual_sl` và tính `result_r` khi re-sync — giảm áp lực "đói R".
 
-Do đó các KPI hiển thị cạnh nhau có thể không cùng mẫu dữ liệu, làm người dùng khó diễn giải hoặc đưa ra kết luận sai về hiệu suất.
+UI minh bạch mẫu số: KPI "Tỷ lệ thắng" hiển thị headline theo dân số tiền và nêu rõ
+`r_win_rate` + `r_trades/closed_trades` khi mẫu R nhỏ hơn mẫu tiền; KPI "Đã đóng" và
+banner cảnh báo vẫn hiển thị số lệnh còn thiếu Result R.
 
 Tệp liên quan:
 
 - `services/journal_converters.py`, hàm `build_performance_summary()`
+- `services/journal_converters.py`, hàm `group_performance()`
 - `ui/screens/journal_screen.py`, hàm `_refresh_performance()`
+- Regression: `tests/test_journal_performance_universes.py`
 
 ### 3. Đường cong P/L lũy kế mặc định chỉ dùng 12 lệnh gần nhất
 
@@ -143,15 +155,14 @@ Tệp liên quan:
 - `services/mt5_service.py`, hàm `_closed_trades_from_deals()`
 - `services/journal_service.py`, hàm `_find_mt5_sync_entry()`
 
-### 8. Scale-in và partial close có thể tạo Result R không chính xác
+### 8. Scale-in và partial close — R đã dùng giá bình quân, SL cuối cần order history
 
-MT5 sync nhóm các deal theo position và cộng tổng profit, commission, swap. Tuy nhiên:
+MT5 sync nhóm các deal theo position và cộng tổng profit, commission, swap.
 
-- Giá vào thực tế lấy từ entry deal đầu tiên
-- Giá thoát thực tế lấy từ exit deal cuối cùng
-- Không tính giá bình quân theo volume
+- Giá vào/giá thoát thực tế là **bình quân theo volume** (`_volume_weighted_average`) — đúng với scale-in/đóng từng phần (không còn dùng deal đầu/cuối đơn lẻ).
+- **SL** cho `result_r` từ 2026-08-18 được lấy từ **order history** (`history_orders_get`): lấy SL **cuối** (theo time) của position (bắt cả SL bị MODIFY). Broker không lưu order history → không có SL → `result_r=None` (fail-closed).
 
-Với lệnh scale-in hoặc đóng từng phần, P/L tiền có thể đúng nhưng Result R và các phân tích dựa trên entry/exit có thể sai.
+Với lệnh scale-in hoặc đóng từng phần, P/L tiền có thể đúng và R dùng chung SL cuối; nếu SL cuối không khớp ý định ban đầu (dời SL), R có thể khác kỳ vọng — cần đối soát khi dùng feedback R-based.
 
 Tệp liên quan:
 

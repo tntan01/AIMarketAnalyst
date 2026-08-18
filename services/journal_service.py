@@ -301,9 +301,10 @@ class JournalService:
                 merged["realized_effective_rr"] = outcome.get("result_r")
         elif (
             any(key in updates for key in ("actual_entry", "planned_entry", "actual_sl", "planned_sl", "actual_exit"))
-            # MT5 sync payloads only carry actual_entry/actual_exit and never a
-            # stop-loss, so they would make outcome empty and wipe a previously
-            # computed result for no reason (the sync payload doesn't change SL).
+            # MT5 sync payloads now carry `actual_sl` (from order history) and so DO
+            # compute outcome. When a particular synced trade still has no SL, outcome
+            # is empty and the sync payload (synced_from == "mt5_history") must NOT
+            # wipe a previously computed result — the sync only refreshes prices, not SL intent.
             and updates.get("synced_from") != "mt5_history"
         ):
             merged["result_r"] = None
@@ -388,6 +389,7 @@ class JournalService:
             "closed_at": trade.get("closed_at") or "",
             "actual_entry": trade.get("actual_entry"),
             "actual_exit": trade.get("actual_exit"),
+            "actual_sl": trade.get("actual_sl"),
             "actual_lot": trade.get("actual_lot"),
             "result_amount": trade.get("result_amount"),
             "result": result,
