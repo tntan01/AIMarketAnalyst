@@ -93,7 +93,7 @@ def test_trade_plan_contains_complete_source_zone_diagnostics() -> None:
     )
 
 
-def test_source_metadata_does_not_change_trade_plan_behavior() -> None:
+def test_source_metadata_tiers_execution_width_by_effective_quality() -> None:
     enriched = _preferred_zone()
     legacy = {
         key: value
@@ -115,19 +115,23 @@ def test_source_metadata_does_not_change_trade_plan_behavior() -> None:
     enriched_plan = _valid_plan(enriched)
     legacy_plan = _valid_plan(legacy)
 
-    behavior_keys = (
-        "entry_zone",
-        "entry_price",
-        "stop_loss",
-        "take_profit",
-        "risk_reward",
-        "risk_reward_range",
-        "risk_reward_effective_range",
-        "entry_zone_source",
-    )
-    assert {key: enriched_plan[key] for key in behavior_keys} == {
-        key: legacy_plan[key] for key in behavior_keys
-    }
+    # SL, TP, and entry side are untouched by the source-zone metadata.
+    for key in ("stop_loss", "take_profit", "entry_zone_source"):
+        assert enriched_plan[key] == legacy_plan[key], key
+
+    # The metadata (stale + mitigated) lowers effective zone quality, which
+    # tiers the execution sub-zone width: weak → 0.25 ATR vs moderate → 0.18.
+    # The lower-quality (enriched) zone therefore gets a wider sub-zone.
+    assert enriched_plan["source_zone"]["effective_zone_score"] < legacy_plan[
+        "source_zone"
+    ]["effective_zone_score"]
+    assert enriched_plan["execution_zone_quality"] == "weak"
+    assert legacy_plan["execution_zone_quality"] == "moderate"
+    assert enriched_plan["execution_zone_width_atr_target"] == 0.25
+    assert legacy_plan["execution_zone_width_atr_target"] == 0.18
+    assert enriched_plan["structural_execution_zone"][0] < legacy_plan[
+        "structural_execution_zone"
+    ][0]
 
 
 def test_scanner_row_uses_source_zone_from_best_scenario() -> None:

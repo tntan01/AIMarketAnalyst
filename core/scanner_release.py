@@ -164,9 +164,17 @@ def run_pair_from_live(
     )
     # Live scenario plans (entry/SL/TP per side) from REAL technical + canonical
     # SMC structure; a side without a real protective zone + opposite target has
-    # no plan and its scenario gate fails closed (never invented).
+    # no plan and its scenario gate fails closed (never invented).  The minimum
+    # R:R comes from the owner-configurable order-policy threshold; when the
+    # policy is absent or the threshold is not set, the producer falls back to
+    # its own hard-coded floor (1.5).
+    _min_rr = (
+        order_policy.threshold.min_risk_reward
+        if order_policy is not None and order_policy.threshold.min_risk_reward is not None
+        else None
+    )
     scenario_plans = produce_scenario_plans(
-        analysis["technical"], analysis["canonical_smc"]
+        analysis["technical"], analysis["canonical_smc"], min_rr=_min_rr
     )
     snapshot = build_live_snapshot(
         symbol=symbol,

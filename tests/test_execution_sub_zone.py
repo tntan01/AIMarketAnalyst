@@ -14,10 +14,10 @@ from tests.test_source_zone_diagnostics import (
 )
 
 
-def test_approved_quality_widths_are_all_point_25_atr() -> None:
+def test_approved_quality_widths_tier_by_zone_quality() -> None:
     assert risk_engine._EXECUTION_ZONE_WIDTH_ATR_BY_QUALITY == {
-        "strong": 0.25,
-        "moderate": 0.25,
+        "strong": 0.12,
+        "moderate": 0.18,
         "weak": 0.25,
     }
 
@@ -77,8 +77,8 @@ def test_buy_sell_proximal_zones_are_symmetric_and_contained() -> None:
         price_digits=3,
     )
 
-    assert buy is not None and buy["entry_zone"] == [101.5, 102.0]
-    assert sell is not None and sell["entry_zone"] == [100.0, 100.5]
+    assert buy is not None and buy["entry_zone"] == [101.64, 102.0]
+    assert sell is not None and sell["entry_zone"] == [100.0, 100.36]
     assert 100.0 <= buy["entry_zone"][0] < buy["entry_zone"][1] <= 102.0
     assert 100.0 <= sell["entry_zone"][0] < sell["entry_zone"][1] <= 102.0
 

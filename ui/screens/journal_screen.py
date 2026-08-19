@@ -882,18 +882,15 @@ class JournalScreen(QWidget):
     # setter: gọi khi nút được chọn.  resetter: gọi khi nút bỏ chọn.
     _QUICK_FILTER_DEFS: list[tuple[str, str, str, object, object]] = [
         # Thời gian
-        ("Hôm nay",    "time", "date", None, None),  # setter/resetter tính động theo days
-        ("7 ngày",     "time", "date", None, None),
-        ("30 ngày",    "time", "date", None, None),
+        ("Hôm nay", "time", "date", None, None),  # setter/resetter tính động theo days
+        ("7 ngày",  "time", "date", None, None),
+        ("30 ngày", "time", "date", None, None),
         # Kết quả
         ("Lệnh thắng", "result", "result", "win", None),
         ("Lệnh thua",  "result", "result", "loss", None),
-        # AI
-        ("Điểm AI ≥ 85",       "ai", "min_score", 85, 0),
-        ("Độ tin cậy AI ≥ 90", "ai", "min_score", 90, 0),
-        # Chất lượng thực thi
-        ("Thực thi tốt", "quality", "min_quality", 70, 0),
-        ("Thực thi kém", "quality", "max_quality", 40, 0),
+        # Trạng thái lệnh
+        ("Đang mở",  "state", "trade_status", "opened", None),
+        ("Đã đóng", "state", "trade_status", "closed", None),
     ]
 
     def _quick_filter_bar(self) -> QWidget:
@@ -978,18 +975,29 @@ class JournalScreen(QWidget):
             else:
                 self.result_input.setCurrentIndex(0)
             self.result_input.blockSignals(False)
+            self._apply_filters()
+            return
+
+        if attr == "trade_status":
+            self.status_input.blockSignals(True)
+            idx = self.status_input.findData(value) if value else 0
+            self.status_input.setCurrentIndex(idx if idx >= 0 else 0)
+            self.status_input.blockSignals(False)
+            self._apply_filters()
             return
 
         if attr == "min_score":
             self.min_score_input.blockSignals(True)
             self.min_score_input.setValue(int(value) if value else 0)
             self.min_score_input.blockSignals(False)
+            self._apply_filters()
             return
 
         if attr == "min_quality":
             self.min_quality_input.blockSignals(True)
             self.min_quality_input.setValue(int(value) if value else 0)
             self.min_quality_input.blockSignals(False)
+            self._apply_filters()
             return
 
         if attr == "max_quality":
@@ -1167,7 +1175,11 @@ class JournalScreen(QWidget):
         self.empty_label = QLabel("")
         self.empty_label.setObjectName("HelperText")
         self.empty_label.setWordWrap(True)
+        self.empty_label.setVisible(False)
         frame.layout().addWidget(self.empty_label)
+        # Cho dòng cuối nở ra chiếm trọn phần viewport còn trống dưới bảng,
+        # giúp bảng lấp đầy khoảng trống thừa thay vì để lại dải trắng.
+        self.table.verticalHeader().setStretchLastSection(True)
 
         return frame
 
@@ -1490,6 +1502,9 @@ class JournalScreen(QWidget):
         entries = self.journal_controller.list_entries(filters)
         self.table_model.set_entries(entries)
         self.empty_label.setText("" if entries else "Chưa có bản ghi phù hợp bộ lọc.")
+        # Chỉ hiện thông báo rỗng khi không có bản ghi; có dữ liệu thì ẩn hẳn
+        # để bảng chiếm trọn khoảng trống bên dưới thay vì chừa dải trắng.
+        self.empty_label.setVisible(bool(not entries))
         self.open_button.setEnabled(False)
         QTimer.singleShot(0, self._recalculate_column_widths)
         self._update_filtered_stats_bar(entries)

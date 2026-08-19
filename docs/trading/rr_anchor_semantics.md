@@ -98,8 +98,22 @@ Phase 16 separates source and execution geometry:
    It is analysis/display data and cannot authorize execution.
 2. `structural_execution_zone` is a proximal sub-zone fully contained within
    the source boundaries. Its target width comes from
-   `execution_zone_width_atr_by_quality`; the approved value is currently
-   `0.25 × ATR` for all quality tiers.
+   `execution_zone_width_atr_by_quality`, tiered by effective zone quality:
+   `strong` 0.12 × ATR, `moderate` 0.18 × ATR, `weak` 0.25 × ATR. Higher-quality
+   zones get a tighter sub-zone so TP1 keeps a reasonable clearance to both
+   entry edges; lower-quality zones keep the wider legacy target.
+
+   **Deliberate inverse (accepted trade-off):** a zone penalized for quality
+   (stale, mitigated, over-tested, etc.) drops to a lower tier and therefore
+   gets a *wider* entry band (`weak` 0.25 is the legacy width). This is
+   intentional — `weak` deliberately keeps the legacy fill behavior instead of
+   being tightened along with `strong`/`moderate`. Do not "fix" this direction:
+   a worse zone keeping a wider band is by design, not a bug.
+
+   **Values are heuristic (not swept):** the 0.12 / 0.18 / 0.25 targets are
+   experience-based, not yet optimized by `param_sensitivity.py` / backtest
+   sweep. They are the accepted *step 2* of the plan; confirm fill-rate impact
+   on the backtest before treating them as calibrated.
 3. BUY preserves the source high edge and moves the low edge inward. SELL
    preserves the source low edge and moves the high edge inward.
 4. After SL and TP1 are selected, `_trim_execution_zone_for_effective_rr()`
@@ -244,8 +258,8 @@ Manual order dialog
 | `entry_zone_buffer_atr` | 0.05 (legacy parameter; superseded by Phase 16 sub-zone logic) |
 | `entry_zone_max_width_atr` | 0.50 (legacy parameter; superseded by Phase 16 sub-zone logic) |
 | `entry_zone_half_width_atr` | 0.25 |
-| `execution_zone_width_atr_by_quality.strong` | 0.25 |
-| `execution_zone_width_atr_by_quality.moderate` | 0.25 |
+| `execution_zone_width_atr_by_quality.strong` | 0.12 |
+| `execution_zone_width_atr_by_quality.moderate` | 0.18 |
 | `execution_zone_width_atr_by_quality.weak` | 0.25 |
 | `execution_zone_quality_thresholds.strong` | 70 |
 | `execution_zone_quality_thresholds.moderate` | 50 |

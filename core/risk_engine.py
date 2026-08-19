@@ -85,7 +85,7 @@ _ENTRY_ZONE_MAX_WIDTH_ATR = _rp.get("entry_zone_max_width_atr", 0.50)
 _ENTRY_ZONE_HALF_WIDTH_ATR = _rp.get("entry_zone_half_width_atr", 0.25)
 _EXECUTION_ZONE_WIDTH_ATR_BY_QUALITY = _rp.get(
     "execution_zone_width_atr_by_quality",
-    {"strong": 0.25, "moderate": 0.25, "weak": 0.25},
+    {"strong": 0.12, "moderate": 0.18, "weak": 0.25},
 )
 _EXECUTION_ZONE_QUALITY_THRESHOLDS = _rp.get(
     "execution_zone_quality_thresholds",

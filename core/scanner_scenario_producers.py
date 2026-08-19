@@ -35,10 +35,15 @@ returns ``None`` instead of raising.
 
 from __future__ import annotations
 
+from fractions import Fraction
 from math import isfinite
 from typing import Any
 
-from core.scanner_composition import CompositionInputError, ScenarioPlan
+from core.scanner_composition import (
+    CompositionInputError,
+    ScenarioPlan,
+    compute_scenario_rr,
+)
 from core.smc_consumer_contract import (
     build_smc_consumer_from_canonical_result,
     selected_zone_for_side,
@@ -57,10 +62,26 @@ _SOURCE_TECHNICAL = "technical_zone"
 # would otherwise leave open.
 _MAX_PROTECTIVE_ZONE_DISTANCE_ATR = 3.0
 
+# A protective zone whose WIDTH (high - low) exceeds this multiple of ATR
+# is too diffuse to anchor a tight entry.  A wide zone makes the entry band
+# visually large on the chart and pushes the nearest opposite-side TP too close
+# to the zone's far edge, producing a poor R:R even when the stop is tight.
+_MAX_ZONE_WIDTH_ATR = 1.0
+
+# Minimum geometric R:R for a produced scenario plan.  This is the fallback
+# when no ``min_rr`` is supplied by the caller (i.e. no order-policy threshold
+# is wired).  Scenarios below this threshold are rejected regardless of the
+# gate's min_risk_reward — the chart would otherwise show a wide zone with a
+# needle-thin TP distance.  The caller SHOULD pass the owner-configurable
+# ``min_risk_reward`` from the run-time order policy; this constant exists only
+# as a safety net for callers that haven't been updated yet.
+_MIN_SCENARIO_RR = Fraction(3, 2)  # 1.5
+
 
 def produce_scenario_plans(
     technical: dict[str, Any] | None,
     canonical_smc: object | None,
+    min_rr: Fraction | None = None,
 ) -> dict[str, ScenarioPlan | None]:
     """Produce the per-side scenario plan (or None) from live analysis inputs.
 
@@ -68,15 +89,22 @@ def produce_scenario_plans(
     ``canonical_smc`` is the canonical ``SmcScoringResult`` whose per-side
     selected zone is preferred as the protective zone.  Any unreadable input
     fails closed to ``None`` for that side.
+
+    ``min_rr`` is the minimum R:R from the run-time order policy threshold
+    (``ComposeOptions.min_risk_reward``).  When ``None`` (no policy or caller
+    hasn't wired it), the producer uses its own hard-coded floor
+    (``_MIN_SCENARIO_RR = 1.5``) so no plan with a needle-thin TP distance
+    reaches the chart.
     """
     return produce_scenario_plans_from_zones(
-        technical, _canonical_zones_by_side(canonical_smc)
+        technical, _canonical_zones_by_side(canonical_smc), min_rr=min_rr
     )
 
 
 def produce_scenario_plans_from_zones(
     technical: dict[str, Any] | None,
     zones_by_side: dict[str, dict[str, Any] | None] | None,
+    min_rr: Fraction | None = None,
 ) -> dict[str, ScenarioPlan | None]:
     """Seam over :func:`produce_scenario_plans` with the per-side protective
     (canonical selected) zone supplied directly — keeps the geometry unit
@@ -84,7 +112,7 @@ def produce_scenario_plans_from_zones(
     tech = technical if isinstance(technical, dict) else {}
     zones = zones_by_side if isinstance(zones_by_side, dict) else {}
     return {
-        side: _produce_for_side(side, tech, zones.get(side))
+        side: _produce_for_side(side, tech, zones.get(side), min_rr=min_rr)
         for side in _VALID_SIDES
     }
 
@@ -93,6 +121,7 @@ def _produce_for_side(
     side: str,
     technical: dict[str, Any],
     canonical_zone: dict[str, Any] | None,
+    min_rr: Fraction | None = None,
 ) -> ScenarioPlan | None:
     price = _finite_positive(technical.get("price"))
     atr = _finite_positive(technical.get("atr_h4")) or _finite_positive(
@@ -109,6 +138,13 @@ def _produce_for_side(
     if zone_low is None or zone_high is None:
         return None
     if zone_low > zone_high:
+        return None
+
+    # Zone width gate: a protective zone whose band is too wide (in ATR) is too
+    # diffuse to anchor a tight entry.  A wide zone makes the entry rectangle
+    # visually large on the chart and pushes the nearest opposite-side TP too
+    # close to the zone's far edge.
+    if (zone_high - zone_low) / atr > _MAX_ZONE_WIDTH_ATR:
         return None
 
     # Price-proximity gate: a protective zone whose NEAREST edge is more than
@@ -144,6 +180,28 @@ def _produce_for_side(
     if side == "buy" and not (stop_loss < entry < take_profit):
         return None
     if side == "sell" and not (take_profit < entry < stop_loss):
+        return None
+
+    # Minimum R:R gate: reject scenarios with poor geometric ratio before
+    # constructing the plan — the chart would otherwise render a wide zone
+    # with a needle-thin TP distance.  The threshold comes from the caller's
+    # ``min_rr`` parameter (owner-configurable, typically from the order-policy
+    # ``min_risk_reward``), with a hard-coded fallback of 1.5 so no plan with a
+    # needle-thin TP distance reaches the chart even when the caller hasn't
+    # wired the policy yet.
+    plan_rr = compute_scenario_rr(
+        ScenarioPlan(
+            direction=side,
+            entry=entry,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            source=zone_source,
+            entry_zone_low=zone_low,
+            entry_zone_high=zone_high,
+        ),
+        side,
+    )
+    if plan_rr is None or plan_rr < (min_rr if min_rr is not None else _MIN_SCENARIO_RR):
         return None
 
     try:

@@ -1588,17 +1588,61 @@ class ScannerDetailScreen(QWidget):
                 analysis_result,
                 active_timeframe="H1",
             )
-            
+
+            # Fallback: nếu chart_payload rỗng (không có nến từ scan), thử fetch
+            # nến trực tiếp từ MT5 để biểu đồ không bị trống.
+            if not payload.get("timeframes"):
+                fb = self._build_chart_payload_from_mt5(symbol, analysis_result)
+                if fb is not None:
+                    payload = fb
+
             # Inject current theme to payload
             light = self._is_light_theme()
             payload["theme"] = "light" if light else "dark"
             payload["palette"] = chart_palette(current_palette())
-            
+
             self.chart.set_payload(payload)
         except Exception:
             self.chart.show_error("Không thể tạo dữ liệu biểu đồ từ kết quả quét.")
             return
         self._start_candle_refresh_symbol(symbol, analysis_result)
+
+    def _build_chart_payload_from_mt5(
+        self, symbol: str, analysis_result: dict
+    ) -> dict | None:
+        """Fallback: fetch nến từ MT5 và build full chart payload.
+
+        Được gọi khi ``build_full_chart_payload`` trả về timeframes rỗng
+        (scan không có candle data). Chạy đồng bộ, nếu MT5 không sẵn sàng
+        thì trả None → chart giữ nguyên empty state.
+        """
+        if not self.app or not hasattr(self.app, "mt5"):
+            return None
+        try:
+            status = self.app.mt5.connection_status()
+            if not status.connected or not status.logged_in:
+                return None
+            available = self.app.mt5.available_symbols(market_watch_only=True)
+            broker = self.app.mt5.resolve_symbol(symbol, available)
+            if not broker:
+                return None
+            from core.chart_payload import build_chart_payload, build_full_chart_payload
+
+            candles: dict[str, list] = {}
+            for tf, bars in [("D1", 100), ("H4", 200), ("H1", 300), ("M15", 400)]:
+                tf_candles = self.app.mt5.load_ohlcv(
+                    broker, tf, bars, skip_select=True
+                )
+                if tf_candles:
+                    candles[tf] = tf_candles
+            if not candles:
+                return None
+            analysis_result["chart_payload"] = build_chart_payload(candles)
+            return build_full_chart_payload(
+                symbol, analysis_result, active_timeframe="H1"
+            )
+        except Exception:
+            return None
 
     def _set_chart_notice(self, text: str) -> None:
         if not hasattr(self, "chart_notice"):
