@@ -1669,7 +1669,7 @@ QUAN TRỌNG:
         active = settings.ai.active_provider()
         has_key = bool(active and (active.api_key or active.api_key_ref))
         if active and active.provider and active.model and has_key:
-            detail = f"{active.provider} / {active.model}"
+            detail = active.model
             self._set_status_card("AI", "Trí tuệ nhân tạo", detail, "ok")
         else:
             self._set_status_card("AI", "Trí tuệ nhân tạo", "Chọn nhà cung cấp, mô hình và nhập khóa API", "warning")
