@@ -921,11 +921,15 @@ class JournalScreen(QWidget):
             self._quick_groups.setdefault(group, []).append(label)
             layout.addWidget(btn)
 
-            # Gán setter/resetter cho nút thời gian (động theo days)
+            # Gán setter/resetter: nhóm date tính động theo days,
+            # nhóm còn lại dùng set_val/reset_val từ _QUICK_FILTER_DEFS.
             if attr == "date":
                 days = days_map[label]
                 btn.setProperty("qf_set_val", days)
                 btn.setProperty("qf_reset_val", 30)  # reset về "1 tháng trước"
+            else:
+                btn.setProperty("qf_set_val", set_val)
+                btn.setProperty("qf_reset_val", reset_val)
 
         layout.addStretch(1)
         self.quick_filter_layout = layout
@@ -1177,9 +1181,6 @@ class JournalScreen(QWidget):
         self.empty_label.setWordWrap(True)
         self.empty_label.setVisible(False)
         frame.layout().addWidget(self.empty_label)
-        # Cho dòng cuối nở ra chiếm trọn phần viewport còn trống dưới bảng,
-        # giúp bảng lấp đầy khoảng trống thừa thay vì để lại dải trắng.
-        self.table.verticalHeader().setStretchLastSection(True)
 
         return frame
 
@@ -1911,85 +1912,30 @@ class JournalScreen(QWidget):
             self.performance_chart.refresh_theme_styles()
 
     # ------------------------------------------------------------------
-    # Column width — Weight-based proportional distribution (khong Stretch)
+    # Column width — native resize modes (fixed ResizeToContents + Stretch)
     # ------------------------------------------------------------------
 
-    # (col_index, min_width, stretch_weight)
-    _COLUMN_WEIGHTS: list[tuple[int, int, int]] = [
-        (0, 140, 0),   # Thoi gian  ← dd/mm/yyyy hh:mm
-        (1,  90, 0),   # Ma         ← XXX/YYY
-        (2, 150, 3),   # Setup      ← uu tien noi dung ky thuat dai
-        (3, 130, 2),   # Regime     ← uu tien noi dung ky thuat dai
-        (4, 120, 1),   # Trang thai
-        (5, 130, 1),   # Thien huong
-        (6,  55, 0),   # R
-        (7, 120, 1),   # Loi nhuan
-        (8, 130, 1),   # CL Thuc thi
-        (9, 104, 0),   # Ghi chu    ← du tieu de, noi dung la icon popup
-        (10, 90, 0),   # Chi tiet
-    ]
-
     def _recalculate_column_widths(self) -> None:
-        """Phan bo do rong cot theo trong so, khong dung Stretch cua Qt.
+        """Native resize modes: bảng chiếm trọn chiều ngang không vá cột.
 
-        - Tat ca cot deu Interactive → user co the keo chinh neu muon.
-        - min_width = max(hardcoded_min, sectionSizeHint) → dam bao header
-          khong bi cat chu. sectionSizeHint tu Qt da bao gom QSS padding,
-          font weight, sort indicator.
-        - Phan du viewport duoc chia theo ty le weight cho cac cot weight > 0.
-        - Neu viewport qua nho → giu min_width, bang co thanh cuon ngang.
+        - ``setStretchLastSection(False)`` — không kéo cột cuối.
+        - Cột cố định dùng ``ResizeToContents`` (khớp nội dung/header).
+        - 2 cột dẻo (Setup, Ghi chú) dùng ``Stretch`` để chia đều width thừa.
+        Hàm chạy lặp lại (mỗi lần tải dữ liệu) nên chỉ cần gán lại mode — Qt tự
+        giãn theo nội dung mà không đổi chiều cao dòng.
         """
         header = self.table.horizontalHeader()
         header.setMinimumSectionSize(35)
         header.setStretchLastSection(False)
 
+        flexible = {2, 9}  # Setup, Ghi chú
         for col in range(len(JournalTableModel.COLUMNS)):
-            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
-
-        viewport_w = self.table.viewport().width()
-        if viewport_w < 50:
-            return  # viewport chua san sang
-
-        # Dung sectionSizeHint cua Qt — da bao gom QSS padding, font bold, sort icon
-        effective: list[tuple[int, int, int]] = []
-        for idx, hard_min, weight in self._COLUMN_WEIGHTS:
-            hint = header.sectionSizeHint(idx)
-            minimum = (
-                hard_min
-                if JournalTableModel.COLUMNS[idx][0] == "note"
-                else max(hard_min, hint)
+            header.setSectionResizeMode(
+                col,
+                QHeaderView.ResizeMode.Stretch
+                if col in flexible
+                else QHeaderView.ResizeMode.ResizeToContents,
             )
-            effective.append((idx, minimum, weight))
-
-        total_min = sum(mw for _, mw, _ in effective)
-        total_weight = sum(w for _, _, w in effective)
-
-        if viewport_w <= total_min or total_weight == 0:
-            # Man hinh qua nho → dung min_width, de thanh cuon ngang
-            for idx, min_w, _ in effective:
-                self.table.setColumnWidth(idx, min_w)
-            return
-
-        extra = viewport_w - total_min
-        widths: dict[int, int] = {}
-
-        for idx, min_w, weight in effective:
-            w = min_w
-            if weight > 0:
-                w += (extra * weight) // total_weight
-            widths[idx] = w
-
-        # Phan du con sot lai (do chia nguyen) → don vao cot co weight cao nhat cuoi cung
-        allocated = sum(widths.values())
-        diff = viewport_w - allocated
-        if diff > 0:
-            stretchable = [(idx, wgt) for idx, _, wgt in effective if wgt > 0]
-            if stretchable:
-                stretchable.sort(key=lambda x: x[1])
-                widths[stretchable[-1][0]] += diff
-
-        for idx, w in widths.items():
-            self.table.setColumnWidth(idx, w)
 
     def _open_selected(self) -> None:
         selected = self.table.selectionModel().selectedRows()

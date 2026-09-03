@@ -1500,21 +1500,35 @@ class SettingsScreen(QWidget):
         threshold = threshold_policy.threshold
 
         min_rr_control = self._order_management_decimal_input(
-            float(threshold.min_risk_reward) if threshold.min_risk_reward is not None else 2.0,
-            minimum=0.1,
+            float(threshold.min_risk_reward) if threshold.min_risk_reward is not None else 0.0,
+            minimum=0.0,
             maximum=20.0,
             step=0.5,
             suffix="",
         )
+        if threshold.min_risk_reward is None:
+            min_rr_control.setSpecialValueText("Chưa có")
         setup_floor_control = QSpinBox()
         setup_floor_control.setRange(0, 100)
-        setup_floor_control.setValue(threshold.setup_floor or 0)
+        setup_floor_control.setValue(
+            threshold.setup_floor if threshold.setup_floor is not None else 0
+        )
+        if threshold.setup_floor is None:
+            setup_floor_control.setSpecialValueText("Chưa có")
         technical_floor_control = QSpinBox()
         technical_floor_control.setRange(0, 100)
-        technical_floor_control.setValue(threshold.technical_floor or 0)
+        technical_floor_control.setValue(
+            threshold.technical_floor if threshold.technical_floor is not None else 0
+        )
+        if threshold.technical_floor is None:
+            technical_floor_control.setSpecialValueText("Chưa có")
         gap_control = QSpinBox()
         gap_control.setRange(0, 100)
-        gap_control.setValue(threshold.min_score_gap or 0)
+        gap_control.setValue(
+            threshold.min_score_gap if threshold.min_score_gap is not None else 0
+        )
+        if threshold.min_score_gap is None:
+            gap_control.setSpecialValueText("Chưa có")
 
         self.scanner_threshold_rr_input = min_rr_control
         self.scanner_threshold_setup_input = setup_floor_control
@@ -1555,6 +1569,15 @@ class SettingsScreen(QWidget):
         self.scanner_threshold_save_button.clicked.connect(
             self._save_scanner_thresholds
         )
+        if not threshold.certified():
+            for control in (
+                min_rr_control,
+                setup_floor_control,
+                technical_floor_control,
+                gap_control,
+            ):
+                control.setEnabled(False)
+            self.scanner_threshold_save_button.setEnabled(False)
         frame.layout().addWidget(self.scanner_threshold_save_button)
 
         self.order_management_status_label = QLabel()
@@ -1573,6 +1596,12 @@ class SettingsScreen(QWidget):
         )
         frame.layout().addWidget(self.order_management_save_button)
         frame.layout().addStretch(1)
+
+        if not threshold.certified():
+            self._set_scanner_threshold_status(
+                "Chưa có threshold policy hợp lệ; giá trị live không khả dụng.",
+                "error",
+            )
 
         self._update_order_management_safety_state()
         return frame

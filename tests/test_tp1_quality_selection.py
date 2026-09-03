@@ -153,6 +153,71 @@ class TestValidateTP1Candidate:
         )
         assert val["valid"] is True, f"Expected valid, got: {val['rejection_reason']}"
 
+    def test_clearance_zone_width_floor_rejects(self):
+        """Phase 13B.3: clearance must clear far edge by k × zone_width too."""
+        atr = 0.0020
+        far_edge = 1.0970
+        zone_width = 0.0020  # k=1.0 → floor = 0.0020
+        # clearance = 0.15 × atr = 0.0003 passes absolute min but not zone_width
+        cand = far_edge + _TP1_MIN_CLEARANCE_ATR * atr
+        val = _validate_tp1_candidate(
+            side="buy", candidate=cand, entry_for_selection=1.0965,
+            stop_loss=1.0930, far_edge=far_edge, atr_value=atr,
+            zone_width=zone_width,
+        )
+        assert val["valid"] is False
+        assert val["rejection_reason"] == "clearance_below_min"
+
+    def test_clearance_zone_width_floor_passes_when_clear(self):
+        """Candidate clearing far edge by ≥ zone_width passes the floor."""
+        atr = 0.0020
+        far_edge = 1.0970
+        zone_width = 0.0020
+        cand = far_edge + 0.0042  # clearance 0.0042 ≥ 0.0020; RR 1.34 ≥ 1.3
+        val = _validate_tp1_candidate(
+            side="buy", candidate=cand, entry_for_selection=1.0965,
+            stop_loss=1.0930, far_edge=far_edge, atr_value=atr,
+            zone_width=zone_width,
+        )
+        assert val["valid"] is True, f"Expected valid, got: {val['rejection_reason']}"
+
+    def test_clearance_zone_width_floor_tunable_via_sweep(self):
+        """Lowering k via risk_parameter relaxes the zone-width floor."""
+        from core.risk_parameter_context import (
+            RiskParameterOverrides,
+            risk_parameter_scope,
+        )
+
+        atr = 0.0020
+        far_edge = 1.0970
+        entry_for_selection = 1.0970
+        stop_loss = 1.0947  # risk = 0.0023
+        zone_width = 0.0040
+        cand = 1.1000  # clearance = 0.0030; reward = 0.0030 → RR = 1.30
+
+        val_default = _validate_tp1_candidate(
+            side="buy", candidate=cand, entry_for_selection=entry_for_selection,
+            stop_loss=stop_loss, far_edge=far_edge, atr_value=atr,
+            zone_width=zone_width,
+        )
+        # k=1.0 → floor = max(0.0003, 0.0040) = 0.0040 > 0.0030 → reject
+        assert val_default["rejection_reason"] == "clearance_below_min"
+
+        with risk_parameter_scope(
+            RiskParameterOverrides.from_mapping(
+                {"tp1_clearance_zone_width_mult": 0.5}
+            )
+        ):
+            val_tuned = _validate_tp1_candidate(
+                side="buy", candidate=cand, entry_for_selection=entry_for_selection,
+                stop_loss=stop_loss, far_edge=far_edge, atr_value=atr,
+                zone_width=zone_width,
+            )
+        # k=0.5 → floor = max(0.0003, 0.0020) = 0.0020 ≤ 0.0030 → passes
+        assert val_tuned["valid"] is True, (
+            f"Expected valid with k=0.5, got: {val_tuned['rejection_reason']}"
+        )
+
     def test_effective_rr_below_min_rejected_with_spread(self):
         """Large spread makes effective RR drop below 1.3."""
         atr = 0.0020

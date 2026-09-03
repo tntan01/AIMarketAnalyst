@@ -49,7 +49,7 @@ from core.scanner_v4_models import (
     WAITING_CONFIRMATION,
     WATCH_ZONE,
 )
-from core.scanner_release import DEFAULT_THRESHOLD_POLICY, ReleasePair
+from core.scanner_release import ReleasePair
 from core.scanner_row import (
     SCANNER_ROW_LEGACY_VERSION,
     SCANNER_ROW_VERSION,
@@ -192,10 +192,8 @@ def pair_to_ui_row(
     is optional; when absent (or missing a key) those values are ``None``.
 
     ``min_score`` / ``min_rr`` are the agenda gates the candidate was routed
-    with (the owner's ``order_policy.threshold``).  They fall back to the locked
-    default policy when the caller does not supply them, so the row's
-    threshold columns (e.g. ``R:R x/2``) show the thresholds the candidate
-    actually faced — never a different hard-coded default.
+    with (the owner's ``order_policy.threshold``).  When they are not supplied,
+    the row keeps them unavailable instead of fabricating a live threshold.
     """
     pair = _require_pair(pair)
     row = _require_row(pair.row)
@@ -272,19 +270,10 @@ def pair_to_ui_row(
     # The detail "Điều kiện vào lệnh" checklist reads these keys: min_score /
     # min_rr / eligible / entry_confirmation / execution.trade_allowed.  They
     # are the agenda gates the candidate was actually routed with (the owner
-    # policy), falling back to the locked default policy when the caller does
-    # not supply them — so a live Scanner row resolves every condition instead
-    # of "unknown" and always faces the SAME thresholds the gate used.
-    _min_score = (
-        min_score
-        if min_score is not None
-        else float(DEFAULT_THRESHOLD_POLICY.setup_floor)
-    )
-    _min_rr = (
-        min_rr
-        if min_rr is not None
-        else float(DEFAULT_THRESHOLD_POLICY.min_risk_reward)
-    )
+    # policy). If the caller does not supply them, keep them unavailable so the
+    # UI cannot fabricate a threshold or imply that an order is eligible.
+    _min_score = min_score
+    _min_rr = min_rr
     if candidate is not None:
         _eligible = selected_side in ("buy", "sell")
         _trade_allowed = row.candidate_status == READY_NOW

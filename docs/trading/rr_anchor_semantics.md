@@ -77,7 +77,12 @@ not treated as a block).
    farthest → Fibonacci 0.382 (outside range regime) → nearest swing.
 2. Candidate must be finite, on the correct side, and past the far edge of
    the entry zone.
-3. Directional clearance must be at least `0.15 × ATR`.
+3. Directional clearance must be at least `0.15 × ATR` **and** at least
+   `k × zone_width` (Phase 13B.3), where `zone_width` is the structural entry
+   band width and `k = tp1_clearance_zone_width_mult`.  The `max` of the two
+   floors is used, so TP1 stays far enough past the far edge relative to the
+   band — a wide band can no longer hide a needle-thin TP distance.  `k` is
+   heuristic (see the config table) and is tuned via `param_sensitivity.py`.
 4. Nominal RR from the midpoint must be at least `1.0`.
 5. Spread-adjusted RR from the midpoint must be at least `1.3`.
 
@@ -254,6 +259,7 @@ Manual order dialog
 |---|---:|
 | `tp1_min_clearance_atr` | 0.15 |
 | `tp1_min_effective_rr_base` | 1.3 |
+| `tp1_clearance_zone_width_mult` | 1.0 (heuristic — sweep with `param_sensitivity.py`) |
 | `tp_target_buffer_atr` | 0.03 |
 | `entry_zone_buffer_atr` | 0.05 (legacy parameter; superseded by Phase 16 sub-zone logic) |
 | `entry_zone_max_width_atr` | 0.50 (legacy parameter; superseded by Phase 16 sub-zone logic) |

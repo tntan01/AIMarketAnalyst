@@ -3063,8 +3063,9 @@ def _analyze_one_symbol(
             order_policy=order_policy,
         )
         # The thresholds the candidate was routed with come from the SAME
-        # ``order_policy`` this function received (module-level, no ``self``);
-        # fall back to the shared locked default when none is supplied.
+        # ``order_policy`` this function received (module-level, no ``self``).
+        # A direct caller that omits it keeps thresholds unavailable; the live
+        # controller always supplies its config-loaded active policy.
         _threshold = (
             order_policy.threshold
             if order_policy is not None

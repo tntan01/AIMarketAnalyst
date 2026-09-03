@@ -3537,7 +3537,7 @@ class ScannerDetailScreen(QWidget):
             {"gate": "ExpectedRR", "status": rr_status,
              "detail": f"R:R={primary.get('expected_effective_rr', '?')} sau spread (danh nghĩa {primary.get('risk_reward', '?')}, dải {ScannerDetailScreen._rr_range_compact(primary.get('risk_reward_range'))})"},
             {"gate": "ScoreGap", "status": gap_status,
-             "detail": f"chênh lệch={direction.get('score_gap', '?')} (tối thiểu {direction.get('min_gap', 10)})"},
+             "detail": f"chênh lệch={direction.get('score_gap', '?')} (tối thiểu {direction.get('min_gap', 'chưa có')})"},
             {"gate": "ZoneBroken", "status": zone_broken_status,
              "detail": _detail(
                  zone_broken_status,

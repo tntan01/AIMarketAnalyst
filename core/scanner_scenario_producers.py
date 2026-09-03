@@ -68,16 +68,6 @@ _MAX_PROTECTIVE_ZONE_DISTANCE_ATR = 3.0
 # to the zone's far edge, producing a poor R:R even when the stop is tight.
 _MAX_ZONE_WIDTH_ATR = 1.0
 
-# Minimum geometric R:R for a produced scenario plan.  This is the fallback
-# when no ``min_rr`` is supplied by the caller (i.e. no order-policy threshold
-# is wired).  Scenarios below this threshold are rejected regardless of the
-# gate's min_risk_reward — the chart would otherwise show a wide zone with a
-# needle-thin TP distance.  The caller SHOULD pass the owner-configurable
-# ``min_risk_reward`` from the run-time order policy; this constant exists only
-# as a safety net for callers that haven't been updated yet.
-_MIN_SCENARIO_RR = Fraction(3, 2)  # 1.5
-
-
 def produce_scenario_plans(
     technical: dict[str, Any] | None,
     canonical_smc: object | None,
@@ -91,10 +81,8 @@ def produce_scenario_plans(
     fails closed to ``None`` for that side.
 
     ``min_rr`` is the minimum R:R from the run-time order policy threshold
-    (``ComposeOptions.min_risk_reward``).  When ``None`` (no policy or caller
-    hasn't wired it), the producer uses its own hard-coded floor
-    (``_MIN_SCENARIO_RR = 1.5``) so no plan with a needle-thin TP distance
-    reaches the chart.
+    (``ComposeOptions.min_risk_reward``).  When ``None`` (no certified policy),
+    no plan is produced; the producer never invents an R:R floor.
     """
     return produce_scenario_plans_from_zones(
         technical, _canonical_zones_by_side(canonical_smc), min_rr=min_rr
@@ -185,10 +173,8 @@ def _produce_for_side(
     # Minimum R:R gate: reject scenarios with poor geometric ratio before
     # constructing the plan — the chart would otherwise render a wide zone
     # with a needle-thin TP distance.  The threshold comes from the caller's
-    # ``min_rr`` parameter (owner-configurable, typically from the order-policy
-    # ``min_risk_reward``), with a hard-coded fallback of 1.5 so no plan with a
-    # needle-thin TP distance reaches the chart even when the caller hasn't
-    # wired the policy yet.
+    # ``min_rr`` parameter from the owner-configurable order-policy
+    # ``min_risk_reward``.  No policy means no plan.
     plan_rr = compute_scenario_rr(
         ScenarioPlan(
             direction=side,
@@ -201,7 +187,7 @@ def _produce_for_side(
         ),
         side,
     )
-    if plan_rr is None or plan_rr < (min_rr if min_rr is not None else _MIN_SCENARIO_RR):
+    if min_rr is None or plan_rr is None or plan_rr < min_rr:
         return None
 
     try:

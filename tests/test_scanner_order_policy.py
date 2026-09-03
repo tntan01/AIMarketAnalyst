@@ -30,11 +30,14 @@ from core.scanner_order_policy import (
     load_runtime_order_policy,
     update_threshold_policy_file,
 )
-from core.scanner_release import DEFAULT_THRESHOLD_POLICY, run_pair
+from core.scanner_release import run_pair
 from core.scanner_threshold_policy import (
     SCANNER_THRESHOLD_POLICY_VERSION,
     ThresholdPolicy,
+    make_default_threshold_policy,
 )
+
+DEFAULT_THRESHOLD_POLICY = make_default_threshold_policy()
 
 from tests.test_scanner_composition import NOW, _snapshot
 
@@ -42,6 +45,13 @@ from tests.test_scanner_composition import NOW, _snapshot
 def _full_dict() -> dict:
     return {
         "order_policy_version": ORDER_POLICY_VERSION,
+        "threshold": {
+            "policy_version": SCANNER_THRESHOLD_POLICY_VERSION,
+            "technical_floor": 40,
+            "setup_floor": 35,
+            "min_score_gap": 5,
+            "min_risk_reward": "2/1",
+        },
         "safety": {
             "policy_version": "scanner-safety-policy-v4",
             "connectivity_max_age_minutes": 2,
@@ -70,11 +80,11 @@ class TestDefaultPolicy:
 
     def test_default_threshold_is_owner_approved_default(self):
         p = DEFAULT_RUNTIME_ORDER_POLICY
-        assert p.threshold.certified()
-        assert p.threshold.technical_floor == 40
-        assert p.threshold.setup_floor == 35
-        assert p.threshold.min_score_gap == 5
-        assert p.threshold.min_risk_reward == Fraction(2, 1)
+        assert not p.threshold.certified()
+        assert p.threshold.technical_floor is None
+        assert p.threshold.setup_floor is None
+        assert p.threshold.min_score_gap is None
+        assert p.threshold.min_risk_reward is None
 
     def test_default_safety_macro_portfolio_all_open(self):
         p = DEFAULT_RUNTIME_ORDER_POLICY
@@ -90,9 +100,9 @@ class TestDefaultPolicy:
 class TestComposeOptionsMapping:
     def test_carries_dflt_threshold_floors_into_composition(self):
         opts = DEFAULT_RUNTIME_ORDER_POLICY.to_compose_options()
-        assert opts.technical_floor == 40
-        assert opts.setup_floor == 35
-        assert opts.min_risk_reward == Fraction(2, 1)
+        assert opts.technical_floor is None
+        assert opts.setup_floor is None
+        assert opts.min_risk_reward is None
         # portfolio/journal stay open in the default bundle.
         assert opts.portfolio_position_limit is None
         assert opts.journal_max_consecutive_losses is None
@@ -219,9 +229,9 @@ class TestUpdateThresholdPolicyFile:
 class TestSerialization:
     def test_roundtrip_default(self):
         policy = DEFAULT_RUNTIME_ORDER_POLICY
-        rebuilt = RuntimeOrderPolicy.from_dict(policy.to_dict())
-        assert rebuilt.to_dict() == policy.to_dict()
-        assert rebuilt.order_enabled is False
+        with pytest.raises(OrderPolicyError):
+            RuntimeOrderPolicy.from_dict(policy.to_dict())
+        assert policy.order_enabled is False
 
     def test_roundtrip_full(self):
         full = RuntimeOrderPolicy.from_dict(_full_dict())
@@ -249,6 +259,13 @@ class TestSerialization:
         # Only safety given; macro/portfolio/journal must stay open (None).
         data = {
             "order_policy_version": ORDER_POLICY_VERSION,
+            "threshold": {
+                "policy_version": SCANNER_THRESHOLD_POLICY_VERSION,
+                "technical_floor": 40,
+                "setup_floor": 35,
+                "min_score_gap": 5,
+                "min_risk_reward": "2/1",
+            },
             "safety": {
                 "policy_version": "scanner-safety-policy-v4",
                 "connectivity_max_age_minutes": 2,
@@ -264,18 +281,21 @@ class TestSerialization:
         assert partial.order_enabled is False
 
     def test_threshold_rr_string_parsed(self):
-        # A threshold-only policy keeps its owner default floors and parses the
-        # R:R override; everything else stays open -> order remains disabled.
+        # A complete threshold policy parses the R:R ratio; other layers stay
+        # open -> order remains disabled.
         data = {
             "order_policy_version": ORDER_POLICY_VERSION,
             "threshold": {
-                "policy_version": "scanner-threshold-policy-v4",
+                "policy_version": SCANNER_THRESHOLD_POLICY_VERSION,
+                "technical_floor": 40,
+                "setup_floor": 35,
+                "min_score_gap": 5,
                 "min_risk_reward": "3/2",
             },
         }
         policy = RuntimeOrderPolicy.from_dict(data)
         assert policy.threshold.min_risk_reward == Fraction(3, 2)
-        # Unset floors keep the owner default; safety/macro unset -> disabled.
+        # Safety/macro unset -> disabled.
         assert policy.threshold.technical_floor == 40
         assert policy.order_enabled is False
 
@@ -303,7 +323,7 @@ class TestTrialConfig:
         policy = RuntimeOrderPolicy.from_dict(data)
         assert policy.threshold.technical_floor == 40
         assert policy.threshold.setup_floor == 35
-        assert policy.threshold.min_risk_reward == Fraction(1, 1)
+        assert policy.threshold.min_risk_reward == Fraction(2, 1)
 
     def test_config_fails_closed_if_any_mandatory_value_is_removed(self):
         # Guard the fail-closed invariant on the persisted config: pulling out one

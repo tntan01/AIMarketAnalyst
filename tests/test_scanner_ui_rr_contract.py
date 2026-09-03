@@ -96,33 +96,44 @@ class TestScannerTableRRDisplay:
         display = model._display_value("expected_effective_rr", None, row)
         assert display == "-"
 
-    def test_foreground_color_uses_best_case_thresholds(self):
-        """Color coding: >=2.0 green, >=1.3 orange, <1.3 red.  Uses best-case."""
+    def test_foreground_color_uses_row_owner_threshold(self):
+        """R:R color reads the row's owner-policy threshold, never a default."""
         model = self._make_model()
 
-        # Strong: best=2.5 → green
-        green = model._foreground({"expected_effective_rr": 2.5}, "expected_effective_rr")
+        # Strong: best=2.5 >= owner min_rr 2.0 → green
+        green = model._foreground(
+            {"expected_effective_rr": 2.5, "min_rr": 2.0},
+            "expected_effective_rr",
+        )
         assert green is not None
         assert green.name() == DARK_PALETTE.success
 
-        # Weak-but-ok: best=1.5 → orange
-        orange = model._foreground({"expected_effective_rr": 1.5}, "expected_effective_rr")
-        assert orange is not None
-        assert orange.name() == DARK_PALETTE.warning
-
-        # Too low: best=1.0 → red
-        red = model._foreground({"expected_effective_rr": 1.0}, "expected_effective_rr")
+        # Below the owner floor → red; no independent 1.3/1.5 band remains.
+        red = model._foreground(
+            {"expected_effective_rr": 1.5, "min_rr": 2.0},
+            "expected_effective_rr",
+        )
         assert red is not None
         assert red.name() == DARK_PALETTE.danger
 
         # Base low but best high → should still be green (uses best-case)
         green2 = model._foreground(
-            {"expected_effective_rr": 2.5, "expected_effective_rr_base": 1.1},
+            {
+                "expected_effective_rr": 2.5,
+                "expected_effective_rr_base": 1.1,
+                "min_rr": 2.0,
+            },
             "expected_effective_rr",
         )
         assert green2 is not None
         assert green2.name() == "#10b981", \
             "Color must use best-case (2.5), not base-case (1.1)"
+
+        unavailable = model._foreground(
+            {"expected_effective_rr": 2.5}, "expected_effective_rr"
+        )
+        assert unavailable is not None
+        assert unavailable.name() == DARK_PALETTE.text_muted
 
     def test_fallback_row_hides_rr_display(self):
         """Rows with no real plan (fallback) show '--' for RR-related columns."""

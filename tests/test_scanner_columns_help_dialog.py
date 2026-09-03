@@ -273,8 +273,22 @@ def test_selected_row_dialog_explains_actual_status_and_direction() -> None:
         for index in technical_indexes
     )
     assert app is QApplication.instance()
-
     dialog.close()
+
+
+def test_explanation_does_not_fabricate_missing_live_thresholds() -> None:
+    dialog = ScannerRowExplanationDialog.__new__(ScannerRowExplanationDialog)
+    dialog.row_data = {
+        "setup_score": 58,
+        "expected_effective_rr": 1.1,
+    }
+    dialog.table_model = ScannerTableModel()
+
+    setup_text = dialog._explain_value("setup_score", 58, "58")
+    rr_text = dialog._explain_value("expected_effective_rr", 1.1, "1.1")
+
+    assert "chưa có ngưỡng setup" in setup_text
+    assert "chưa có ngưỡng R:R" in rr_text
 
 
 # ---------------------------------------------------------------------------

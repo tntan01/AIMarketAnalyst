@@ -135,11 +135,11 @@ class ThresholdPolicy:
 
 
 def make_default_threshold_policy() -> ThresholdPolicy:
-    """Explicit versioned default policy used by Bước 08 tests and docs.
+    """Explicit versioned fixture policy used by tests/replay/docs only.
 
-    Values are the single-owner default (40/35/5/2-1) — honest, but NOT a PIT
-    calibration.  The optional calibration harness may revisit them later
-    without blocking completion of Bước 09/11.
+    Values mirror the owner-approved contract (40/35/5/2-1), but this helper
+    is deliberately outside the live runtime.  Live values come only from the
+    owner config loader.
     """
     return ThresholdPolicy(
         policy_version=SCANNER_THRESHOLD_POLICY_VERSION,

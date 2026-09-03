@@ -47,11 +47,11 @@ class TestLiveConfigLoad:
 
     def test_live_values_match_owner_accepted_config(self):
         policy = load_runtime_order_policy()
-        # threshold (owner-approved floors, unchanged since Bước 07)
+        # threshold (complete owner-supplied contract)
         assert policy.threshold.technical_floor == 40
         assert policy.threshold.setup_floor == 35
         assert policy.threshold.min_score_gap == 5
-        assert policy.threshold.min_risk_reward == Fraction(1, 1)
+        assert policy.threshold.min_risk_reward == Fraction(2, 1)
         # safety
         assert policy.safety.connectivity_max_age_minutes == 5
         assert policy.safety.max_candle_age_minutes == 3
@@ -137,6 +137,17 @@ class TestFailClosedLoad:
         )
         with pytest.raises(OrderPolicyLoadError):
             load_runtime_order_policy(bad_version)
+
+    @pytest.mark.parametrize(
+        "field", ("policy_version", "technical_floor", "setup_floor", "min_score_gap", "min_risk_reward")
+    )
+    def test_missing_threshold_field_raises_load_error(self, tmp_path, field):
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        del data["threshold"][field]
+        path = tmp_path / f"missing-{field}.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        with pytest.raises(OrderPolicyLoadError):
+            load_runtime_order_policy(path)
 
     def test_load_error_is_an_order_policy_error(self):
         assert issubclass(OrderPolicyLoadError, OrderPolicyError)

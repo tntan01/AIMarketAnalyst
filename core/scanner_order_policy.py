@@ -10,12 +10,12 @@ anything is left unset it fails closed to a blocked order.
 Governance (unchanged from the target modules):
 * ``None`` means "policy open / uncalibrated" and fails closed (order stays
   blocked; never an optimistic PASS).
-* The default ``RuntimeOrderPolicy`` binds the owner-approved
-  ``DEFAULT_THRESHOLD_POLICY`` (technical 40 / setup 35 / gap 5 / R:R 2/1) into
-  the composition floors, and keeps every safety/macro/portfolio/journal value
-  open -> ``certified()`` is False -> order workflow stays disabled.
-* ``from_dict`` is a strict-identity loader: it only overrides the keys the
-  owner supplies and keeps the rest unset; it rejects unknown/mixed versions.
+* The default ``RuntimeOrderPolicy`` is an all-open fail-closed fallback: it
+  carries no usable threshold values. Live threshold values must come from the
+  owner config file and be certified before they can enable orders.
+* ``from_dict`` is a strict-identity loader: the threshold block is mandatory
+  and complete; other owner-controlled layers may remain open until configured.
+  Unknown/mixed versions are rejected.
 """
 
 from __future__ import annotations
@@ -35,15 +35,24 @@ from core.market_safety_gate import (
 )
 from core.scanner_composition import ComposeOptions
 from core.scanner_threshold_policy import (
-    SCANNER_THRESHOLD_POLICY_LEGACY_VERSION,
     SCANNER_THRESHOLD_POLICY_VERSION,
     ThresholdPolicy,
     ThresholdPolicyError,
-    make_default_threshold_policy,
 )
 
 ORDER_POLICY_VERSION = "scanner-order-policy"
 ORDER_POLICY_LEGACY_VERSION = "scanner-order-policy-v1"
+
+
+def _make_open_threshold_policy() -> ThresholdPolicy:
+    """Build the disabled runtime fallback with no usable threshold values."""
+    return ThresholdPolicy(
+        policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
+        technical_floor=None,
+        setup_floor=None,
+        min_score_gap=None,
+        min_risk_reward=None,
+    )
 
 
 class OrderPolicyError(ValueError):
@@ -111,12 +120,12 @@ class RuntimeOrderPolicy:
     Every value defaults to open (``None``/empty) so the default policy can
     never silently enable a real order: ``certified()`` (and therefore
     ``order_enabled``) is False until THRESHOLD + SAFETY + MACRO + PORTFOLIO +
-    JOURNAL are all explicitly configured.  Only ``threshold`` carries the
-    owner-approved default floors (40/35/5/2:1) so composition and routing agree.
+    JOURNAL are all explicitly configured.  The fallback threshold is also
+    open; live values must come from the owner config file.
     """
 
     order_policy_version: str = ORDER_POLICY_VERSION
-    threshold: ThresholdPolicy = field(default_factory=make_default_threshold_policy)
+    threshold: ThresholdPolicy = field(default_factory=_make_open_threshold_policy)
     safety: SafetyPolicy = field(default_factory=lambda: SafetyPolicy(
         policy_version=SCANNER_SAFETY_POLICY_VERSION
     ))
@@ -233,11 +242,12 @@ class RuntimeOrderPolicy:
 
     @classmethod
     def from_dict(cls, value: object) -> "RuntimeOrderPolicy":
-        """Strict-but-lenient loader: only overrides the keys the owner supplies.
+        """Load a policy with a complete, owner-supplied threshold contract.
 
         Identity is exact (reject unknown version); every numeric value is
-        co-validated.  A key that is absent or explicit ``null`` stays open
-        (fail-closed) and the order workflow remains blocked until filled.
+        co-validated.  The safety/macro/portfolio/journal layers may remain open
+        (fail-closed), but threshold values must never be fabricated from a
+        code default when the config is missing or incomplete.
         """
         if type(value) is not dict:
             raise OrderPolicyError("order_policy", "expected an object")
@@ -248,38 +258,43 @@ class RuntimeOrderPolicy:
                 f"expected the locked {ORDER_POLICY_VERSION!r}, got {version!r}",
             )
 
-        # --- threshold (overrides only provided floors; else owner default) -
+        # --- threshold (mandatory, complete owner-supplied contract) ----------
         raw_threshold = value.get("threshold")
-        threshold = make_default_threshold_policy()
-        if raw_threshold is not None:
-            if type(raw_threshold) is not dict:
-                raise OrderPolicyError("threshold", "expected an object")
-            tv = _require_text(
-                raw_threshold.get("policy_version"), "threshold.policy_version"
+        if type(raw_threshold) is not dict:
+            raise OrderPolicyError("threshold", "expected a complete object")
+        threshold_keys = (
+            "policy_version",
+            "technical_floor",
+            "setup_floor",
+            "min_score_gap",
+            "min_risk_reward",
+        )
+        missing_threshold = [
+            key for key in threshold_keys
+            if key not in raw_threshold or raw_threshold[key] is None
+        ]
+        if missing_threshold:
+            raise OrderPolicyError(
+                "threshold",
+                "missing required field(s): " + ", ".join(missing_threshold),
             )
-            if tv not in (SCANNER_THRESHOLD_POLICY_VERSION, SCANNER_THRESHOLD_POLICY_LEGACY_VERSION):
-                raise OrderPolicyError(
-                    "threshold.policy_version", f"expected {SCANNER_THRESHOLD_POLICY_VERSION!r}"
-                )
-            min_rr_raw = raw_threshold.get("min_risk_reward")
-            min_rr = (
-                threshold.min_risk_reward
-                if min_rr_raw is None
-                else _require_optional_rr(min_rr_raw, "threshold.min_risk_reward")
+        tv = _require_text(
+            raw_threshold["policy_version"], "threshold.policy_version"
+        )
+        if tv != SCANNER_THRESHOLD_POLICY_VERSION:
+            raise OrderPolicyError(
+                "threshold.policy_version",
+                f"expected {SCANNER_THRESHOLD_POLICY_VERSION!r}, got {tv!r}",
             )
-            threshold = ThresholdPolicy(
-                policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
-                technical_floor=_optional_over(
-                    raw_threshold.get("technical_floor"), threshold.technical_floor
-                ),
-                setup_floor=_optional_over(
-                    raw_threshold.get("setup_floor"), threshold.setup_floor
-                ),
-                min_score_gap=_optional_over(
-                    raw_threshold.get("min_score_gap"), threshold.min_score_gap
-                ),
-                min_risk_reward=min_rr,
-            )
+        threshold = ThresholdPolicy(
+            policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
+            technical_floor=raw_threshold["technical_floor"],
+            setup_floor=raw_threshold["setup_floor"],
+            min_score_gap=raw_threshold["min_score_gap"],
+            min_risk_reward=_require_optional_rr(
+                raw_threshold["min_risk_reward"], "threshold.min_risk_reward"
+            ),
+        )
 
         # --- safety (all-open default; owner fills) -------------------------
         raw_safety = value.get("safety")
@@ -359,8 +374,8 @@ class RuntimeOrderPolicy:
         )
 
 
-# The default policy every runtime build shares: threshold floors owner-approved,
-# everything else open -> ORDER BLOCKED until the owner fills the values.
+# The default policy every runtime build shares: all layers open -> ORDER BLOCKED
+# until the owner config is loaded and every required value is certified.
 DEFAULT_RUNTIME_ORDER_POLICY = RuntimeOrderPolicy()
 
 

@@ -565,10 +565,15 @@ class ScannerTableModel (QAbstractTableModel ):
                 val =float (row .get (key ))
             except (TypeError ,ValueError ):
                 return colors["muted"]
-            if val >=2.0 :
+            strategy = row.get("scanner_candidate_decision")
+            strategy = strategy.get("strategy") if isinstance(strategy, dict) else {}
+            raw_min_rr = row.get("min_rr", strategy.get("min_rr"))
+            try:
+                min_rr = float(raw_min_rr)
+            except (TypeError, ValueError):
+                return colors["muted"]
+            if val >= min_rr:
                 return colors["success"]
-            if val >=1.3 :
-                return colors["warning"]
             return colors["danger"]
         if key =="price_vs_zone":
             normalized = str(row.get(key) or "").strip().lower()
@@ -2550,7 +2555,13 @@ class ScannerRowExplanationDialog(QDialog):
             )
         if key == "setup_score":
             score = self._number(value)
-            min_score = self._strategy_threshold("min_score", 65.0)
+            min_score = self._strategy_threshold("min_score")
+            if min_score is None:
+                score_text = f"{score:.0f}/100" if score is not None else "--"
+                return (
+                    f"Điểm chất lượng {score_text}; chưa có ngưỡng setup từ "
+                    "owner policy nên chưa thể đánh giá đạt/chưa đạt."
+                )
             relation = (
                 "đạt"
                 if score is not None and score >= min_score
@@ -2614,10 +2625,15 @@ class ScannerRowExplanationDialog(QDialog):
             )
         if key == "expected_effective_rr":
             rr = self._number(value)
-            min_rr = self._strategy_threshold("min_rr", 1.3)
             if rr is None:
                 return (
                     "Chưa tính được R:R dự kiến do thiếu Entry, SL hoặc TP hợp lệ."
+                )
+            min_rr = self._strategy_threshold("min_rr")
+            if min_rr is None:
+                return (
+                    f"R:R dự kiến {rr:.1f}; chưa có ngưỡng R:R từ owner policy "
+                    "nên chưa thể đánh giá đạt/chưa đạt."
                 )
             relation = "đạt" if rr >= min_rr else "chưa đạt"
             return (
@@ -2886,7 +2902,7 @@ class ScannerRowExplanationDialog(QDialog):
                     values.append(message)
         return "; ".join(values[:3])
 
-    def _strategy_threshold(self, key: str, default: float) -> float:
+    def _strategy_threshold(self, key: str) -> float | None:
         direct = self._number(self.row_data.get(key))
         if direct is not None:
             return direct
@@ -2904,7 +2920,7 @@ class ScannerRowExplanationDialog(QDialog):
             else {}
         )
         nested = self._number(strategy.get(key))
-        return nested if nested is not None else default
+        return nested
 
     @staticmethod
     def _number(value: object) -> float | None:
@@ -3090,9 +3106,9 @@ class ScannerColumnsHelpDialog(QDialog):
             "column": "R:R",
             "meaning": "Tỷ lệ lợi nhuận/rủi ro dự kiến của đúng hướng đã chọn.",
             "cases": (
-                "Từ 2.0 trở lên hiển thị xanh; từ 1.3 đến dưới 2.0 hiển thị vàng; "
-                "thấp hơn hiển thị đỏ. R:R được tính lại theo bid/ask mới trước "
-                "khi gửi lệnh."
+                "Đạt ngưỡng R:R từ owner policy hiển thị xanh; thấp hơn hiển thị "
+                "đỏ; thiếu ngưỡng hiển thị trung tính. R:R được tính lại theo "
+                "bid/ask mới trước khi gửi lệnh."
             ),
         },
         {

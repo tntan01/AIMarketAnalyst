@@ -39,15 +39,21 @@ def _technical(**over) -> dict:
 
 
 def _buy_plan(**over):
-    return produce_scenario_plans(_technical(**over), None)["buy"]
+    return produce_scenario_plans(
+        _technical(**over), None, min_rr=Fraction(3, 2)
+    )["buy"]
 
 
 def _sell_plan(**over):
-    return produce_scenario_plans(_technical(**over), None)["sell"]
+    return produce_scenario_plans(
+        _technical(**over), None, min_rr=Fraction(3, 2)
+    )["sell"]
 
 
 def _buy_plan_from_zones(zones_by_side, **over):
-    return produce_scenario_plans_from_zones(_technical(**over), zones_by_side)["buy"]
+    return produce_scenario_plans_from_zones(
+        _technical(**over), zones_by_side, min_rr=Fraction(3, 2)
+    )["buy"]
 
 
 class TestBuyPlanFromTechnicalZone:
@@ -172,14 +178,18 @@ class TestCanonicalZonePreference:
         assert plan.source == "technical_zone"
 
     def test_non_dict_zones_mapping_is_ignored(self):
-        plan = produce_scenario_plans_from_zones(_technical(), "not-a-mapping")["buy"]
+        plan = produce_scenario_plans_from_zones(
+            _technical(), "not-a-mapping", min_rr=Fraction(3, 2)
+        )["buy"]
         assert plan is not None
         assert plan.source == "technical_zone"
 
     def test_malformed_canonical_smc_fails_closed_to_technical(self):
         # A garbage canonical result must not raise; extraction fails closed to
         # {} and the technical zone path still produces a plan.
-        plan = produce_scenario_plans(_technical(), object())["buy"]
+        plan = produce_scenario_plans(
+            _technical(), object(), min_rr=Fraction(3, 2)
+        )["buy"]
         assert plan is not None
         assert plan.source == "technical_zone"
 

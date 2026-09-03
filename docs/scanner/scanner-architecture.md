@@ -287,6 +287,21 @@ thể điều chỉnh sau nhưng không chặn chương trình.
 
 Module canonical: `core/scanner_threshold_policy.py`.
 
+### 6.1.1 Contract scope — Step 1
+
+Bước 1 chốt phạm vi cấu hình threshold cho Scanner V4/live. Nguồn cấu hình
+owner-facing duy nhất là `config/scanner_order_policy.json`, với bốn khóa:
+`technical_floor`, `setup_floor`, `min_score_gap` và `min_risk_reward`.
+
+Contract mục tiêu là `40/35/5/2:1`; bước này chỉ ghi nhận phạm vi và contract,
+không thay đổi công thức điểm, runtime legacy hoặc hành vi lệnh. Nếu config thiếu,
+sai schema hoặc sai giá trị, runtime phải fail-closed và không được tự động coi
+giá trị hard-code trong code là policy live.
+
+Giá trị mục tiêu `2:1` sẽ được triển khai như một thay đổi cấu hình riêng sau khi
+hoàn tất wiring và kiểm thử; vì vậy không được dùng bảng contract này để suy ra
+giá trị live hiện hành trước khi loader đọc file config.
+
 ### 6.2 Decision matrix
 
 Router kiểm version/schema trước khi dựng candidate. Payload thiếu/sai/mixed version trả
@@ -699,8 +714,8 @@ JSON hỏng hoặc `OrderPolicyError` → raise `OrderPolicyLoadError`, controll
 event observability `ORDER_POLICY_FAULT` (severity ERROR). Config hỏng không bao giờ
 làm crash scan.
 
-**Số bắt buộc để mở** (`certified()`/`order_enabled` = `True`): threshold đủ 4 floor (đã
-chốt 40/35/5/2:1) **và** safety đóng đủ 4 (connectivity age, candle SLA, spread map
+**Số bắt buộc để mở** (`certified()`/`order_enabled` = `True`): threshold đủ 4 floor (contract
+mục tiêu 40/35/5/2:1; giá trị live phải lấy từ config) **và** safety đóng đủ 4 (connectivity age, candle SLA, spread map
 non-rỗng, volatility calibrated) **và** macro đóng đủ **3 trong 4** (`deadband_points`,
 `confidence_threshold`, `conflict_cap` — `unknown_cap` là fail-safe có giá trị nhưng
 **không gating order**) **và** đủ 4 portfolio/journal. Thiếu bất
@@ -709,7 +724,7 @@ order workflow vẫn BLOCKED (fail-closed).
 
 | Lớp | Khóa | Giá trị live | Ghi chú |
 |---|---|---|---|
-| threshold | `technical_floor` / `setup_floor` / `min_score_gap` / `min_risk_reward` | 40 / 35 / 5 / `"2/1"` | đã chốt owner-approved từ Bước 07, giữ nguyên |
+| threshold | `technical_floor` / `setup_floor` / `min_score_gap` / `min_risk_reward` | contract mục tiêu: 40 / 35 / 5 / `"2/1"`; live hiện đọc từ config | đổi số bằng config, không sửa bảng |
 | safety | `connectivity_max_age_minutes` | 5 | heartbeat MT5 tính bằng giây |
 | safety | `max_candle_age_minutes` | 3 | nguồn lệch quá 3′ = dữ liệu cũ |
 | safety | `spread_threshold_by_symbol` | `{"XAUUSD": 40, "EURUSD": 25}` | điểm; thêm symbol khác theo points điển hình |

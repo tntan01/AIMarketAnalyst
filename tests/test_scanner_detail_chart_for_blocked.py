@@ -15,6 +15,7 @@ from __future__ import annotations
 from controllers.scanner_controller import _analyze_one_symbol
 from core.chart_payload import build_full_chart_payload
 from core.scanner_live_producers import build_live_market_safety_context
+from core.scanner_order_policy import load_runtime_order_policy
 
 from tests.test_scanner_release import NOW, _zoned_candles
 
@@ -22,7 +23,7 @@ from tests.test_scanner_release import NOW, _zoned_candles
 def _blocked_pkt() -> dict:
     """A fully-fresh safety context whose ONLY safety failure is spread ABNORMAL.
 
-    spread_points (260) > XAU threshold (40) makes the safety gate BLOCK while
+    spread_points (500) > the configured XAU threshold (390) makes the safety gate BLOCK while
     connectivity / data freshness / volatility all PASS — so the row is a
     genuine BLOCKED candidate carrying real structure + plan.
     """
@@ -33,7 +34,7 @@ def _blocked_pkt() -> dict:
         terminal_connected=True, broker_logged_in=True,
         connectivity_checked_at=NOW, last_candle_time_utc=NOW,
         data_checked_at=NOW, last_tick_time_utc=NOW,
-        spread_points=260.0, spread_checked_at=NOW,
+        spread_points=500.0, spread_checked_at=NOW,
         news_source_verified=True, news_checked_at=NOW,
         volatility_ratio=1.0, volatility_checked_at=NOW,
     )
@@ -64,7 +65,7 @@ def _analyzed() -> dict:
         analysis_input_kwargs={},
         closed_trades=[],
         account_guard_settings={},
-        order_policy=None,
+        order_policy=load_runtime_order_policy(),
     )
 
 

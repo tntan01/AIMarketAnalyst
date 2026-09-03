@@ -22,11 +22,8 @@ from fractions import Fraction
 import pytest
 
 from core.reason_codes import SCANNER_VERSION_MISMATCH
-from core.scanner_release import (
-    DEFAULT_THRESHOLD_POLICY,
-    run_pair,
-    run_pair_from_live,
-)
+from core.scanner_release import run_pair, run_pair_from_live
+from core.scanner_threshold_policy import make_default_threshold_policy
 from core.scanner_ui_adapter import (
     ADAPTER_VERSION,
     ANALYSIS_OK,
@@ -39,6 +36,7 @@ from tests.scanner_testkit import NOW as TESTKIT_NOW
 from tests.scanner_testkit import build_snapshot
 
 SNAPSHOT = build_snapshot()
+DEFAULT_THRESHOLD_POLICY = make_default_threshold_policy()
 
 
 def _pair(entry_confirmation: str = "confirmed"):
@@ -307,12 +305,8 @@ def _custom_policy(*, technical_floor=50, setup_floor=45, min_score_gap=4,
 class TestThresholdColumns:
     def test_default_thresholds_when_not_supplied(self):
         decision = pair_to_ui_row(_pair())["scanner_candidate_decision"]
-        assert decision["strategy"]["min_score"] == float(
-            DEFAULT_THRESHOLD_POLICY.setup_floor
-        )
-        assert decision["strategy"]["min_rr"] == float(
-            DEFAULT_THRESHOLD_POLICY.min_risk_reward
-        )
+        assert decision["strategy"]["min_score"] is None
+        assert decision["strategy"]["min_rr"] is None
 
     def test_supplied_thresholds_override(self):
         custom = _custom_policy(min_risk_reward=3)

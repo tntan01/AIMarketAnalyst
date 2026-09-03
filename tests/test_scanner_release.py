@@ -23,7 +23,6 @@ from fractions import Fraction
 import pytest
 
 from core.scanner_release import (
-    DEFAULT_THRESHOLD_POLICY,
     ROUTE_ROUTED,
     SCANNER_RELEASE_VERSION,
     grouped_pairs,
@@ -34,6 +33,9 @@ from core.scanner_release import (
 from core.scanner_row import SCANNER_ROW_VERSION
 from core.scanner_threshold_policy import make_default_threshold_policy
 from core.scanner_order_policy import DEFAULT_RUNTIME_ORDER_POLICY
+from core.scanner_order_policy import load_runtime_order_policy
+
+DEFAULT_THRESHOLD_POLICY = make_default_threshold_policy()
 
 from tests.test_scanner_composition import (
     NOW,
@@ -99,6 +101,7 @@ def _live_pair():
         d1, h4, h1, "XAUUSD", _live_safety(),
         now=NOW, captured_at=NOW,
         macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
+        order_policy=load_runtime_order_policy(),
     )
 
 
@@ -149,10 +152,19 @@ def _zoned_pair():
         d1, h4, h1, "XAUUSD", _live_safety(),
         now=NOW, captured_at=NOW,
         macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
+        order_policy=load_runtime_order_policy(),
     )
 
 
 class TestSingleEntry:
+    def test_release_has_no_embedded_threshold_fixture(self):
+        import inspect
+        import core.scanner_release as release
+
+        source = inspect.getsource(release)
+        assert "make_default_threshold_policy" not in source
+        assert "DEFAULT_THRESHOLD_POLICY" not in source
+
     def test_run_pair_builds_full_release_pair(self):
         pair = _pair()
         assert pair.composition.to_dict()["composition_version"] == "scanner-composition"
@@ -229,9 +241,7 @@ class TestSetupFilter:
         assert ready_pairs_above_setup([pair], min_setup_score=35) == (
             [pair] if (pair.row.selected_setup_score or 0) >= 35 else []
         )
-        assert ready_pairs_above_setup([pair]) == ready_pairs_above_setup(
-            [pair], min_setup_score=35
-        )
+        assert ready_pairs_above_setup([pair]) == []
 
     def test_explicit_floor_is_used(self):
         pair = _pair()
@@ -376,6 +386,92 @@ class TestLiveScenarioPlanWiring:
 class TestRouterUsesOwnerThreshold:
     """The candidate gate must read the owner policy — never a separate default."""
 
+    def test_composition_and_router_share_the_same_threshold_policy(self, monkeypatch):
+        from dataclasses import replace
+
+        from core.scanner_threshold_policy import (
+            SCANNER_THRESHOLD_POLICY_VERSION,
+            ThresholdPolicy,
+        )
+
+        custom = replace(
+            load_runtime_order_policy(),
+            threshold=ThresholdPolicy(
+                policy_version=SCANNER_THRESHOLD_POLICY_VERSION,
+                technical_floor=51,
+                setup_floor=46,
+                min_score_gap=7,
+                min_risk_reward=Fraction(7, 2),
+            ),
+        )
+        captured: dict[str, object] = {}
+        import core.scanner_release as sr
+
+        real_compose = sr.compose_scanner
+        real_route = sr.route_scanner
+
+        def _spy_compose(snapshot, **kwargs):
+            captured["options"] = kwargs["options"]
+            return real_compose(snapshot, **kwargs)
+
+        def _spy_route(composition, *, thresholds, **kwargs):
+            captured["thresholds"] = thresholds
+            return real_route(composition, thresholds=thresholds, **kwargs)
+
+        monkeypatch.setattr(sr, "compose_scanner", _spy_compose)
+        monkeypatch.setattr(sr, "route_scanner", _spy_route)
+        run_pair(_snapshot(), now=NOW, order_policy=custom)
+
+        options = captured["options"]
+        assert options.technical_floor == custom.threshold.technical_floor
+        assert options.setup_floor == custom.threshold.setup_floor
+        assert options.min_risk_reward == custom.threshold.min_risk_reward
+        assert captured["thresholds"] is custom.threshold
+        assert captured["thresholds"].min_score_gap == custom.threshold.min_score_gap
+
+    def test_live_scenario_reads_the_same_policy_rr(self, monkeypatch):
+        from dataclasses import replace
+
+        from core.scanner_release import run_pair_from_live
+        from core.scanner_scenario_producers import produce_scenario_plans as real_produce
+        from core.scanner_threshold_policy import ThresholdPolicy
+        from core.scanner_order_policy import load_runtime_order_policy
+        import core.scanner_scenario_producers as producers
+
+        base = load_runtime_order_policy()
+        custom = replace(
+            base,
+            threshold=ThresholdPolicy(
+                policy_version=base.threshold.policy_version,
+                technical_floor=base.threshold.technical_floor,
+                setup_floor=base.threshold.setup_floor,
+                min_score_gap=base.threshold.min_score_gap,
+                min_risk_reward=Fraction(7, 2),
+            ),
+        )
+        captured: dict[str, object] = {}
+
+        def _spy_produce(technical, canonical_smc, *, min_rr=None):
+            captured["min_rr"] = min_rr
+            return real_produce(technical, canonical_smc, min_rr=min_rr)
+
+        monkeypatch.setattr(producers, "produce_scenario_plans", _spy_produce)
+        d1, h4, h1 = _live_candles()
+        run_pair_from_live(
+            d1,
+            h4,
+            h1,
+            "XAUUSD",
+            _live_safety(),
+            now=NOW,
+            captured_at=NOW,
+            macro_raw_buy=20,
+            macro_raw_sell=14,
+            macro_confidence=0.8,
+            order_policy=custom,
+        )
+        assert captured["min_rr"] == custom.threshold.min_risk_reward
+
     def test_route_receives_order_policy_threshold(self, monkeypatch):
         from dataclasses import replace
 
@@ -409,7 +505,7 @@ class TestRouterUsesOwnerThreshold:
         # Not the locked default — proving the gate honors owner config.
         assert captured["thresholds"] is not DEFAULT_THRESHOLD_POLICY
 
-    def test_default_policy_routes_with_locked_default_threshold(self, monkeypatch):
+    def test_missing_policy_routes_with_open_fail_closed_threshold(self, monkeypatch):
         captured: dict[str, object] = {}
         import core.scanner_release as sr
 
@@ -421,6 +517,6 @@ class TestRouterUsesOwnerThreshold:
 
         monkeypatch.setattr(sr, "route_scanner", _spy)
         run_pair(_snapshot(), now=NOW)
-        # With no owner policy the gate reads the shared locked default — the
-        # runtime contract is unchanged for an unconfigured bundle.
+        # A low-level caller that omits the policy gets the open runtime
+        # fallback; the live controller always supplies its loaded policy.
         assert captured.get("thresholds") is DEFAULT_RUNTIME_ORDER_POLICY.threshold

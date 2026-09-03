@@ -79,6 +79,10 @@ _FIB_TP1 = _rp.get("fib_tp1", 0.382)
 _FIB_TP2 = _rp.get("fib_tp2", 0.618)
 _TP1_MIN_CLEARANCE_ATR = _rp.get("tp1_min_clearance_atr", 0.15)
 _TP1_MIN_EFFECTIVE_RR_BASE = _rp.get("tp1_min_effective_rr_base", 1.3)
+# Phase 13B.3: TP1 must clear the far edge by at least ``k × zone_width``
+# (in addition to the absolute ``tp1_min_clearance_atr`` floor), so the TP is
+# far enough relative to the entry band.  Heuristic; calibrated via sweep.
+_TP1_CLEARANCE_ZONE_WIDTH_MULT = _rp.get("tp1_clearance_zone_width_mult", 1.0)
 _TP_TARGET_BUFFER_ATR = _rp.get("tp_target_buffer_atr", 0.03)
 _ENTRY_ZONE_BUFFER_ATR = _rp.get("entry_zone_buffer_atr", 0.05)
 _ENTRY_ZONE_MAX_WIDTH_ATR = _rp.get("entry_zone_max_width_atr", 0.50)
@@ -988,6 +992,7 @@ def build_trade_plan(
                 side=side, candidate=eq_tp,
                 entry_for_selection=entry_for_selection, stop_loss=stop_loss,
                 far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+                zone_width=(entry_high - entry_low),
             )
             if val["valid"]:
                 tp1 = eq_tp
@@ -1017,6 +1022,7 @@ def build_trade_plan(
                 side=side, candidate=cand,
                 entry_for_selection=entry_for_selection, stop_loss=stop_loss,
                 far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+                zone_width=(entry_high - entry_low),
             )
             if val["valid"]:
                 tp1 = cand
@@ -1042,6 +1048,7 @@ def build_trade_plan(
                 side=side, candidate=fib_tp,
                 entry_for_selection=entry_for_selection, stop_loss=stop_loss,
                 far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+                zone_width=(entry_high - entry_low),
             )
             if val["valid"]:
                 tp1 = fib_tp
@@ -1060,6 +1067,7 @@ def build_trade_plan(
                 side=side, candidate=sw_tp,
                 entry_for_selection=entry_for_selection, stop_loss=stop_loss,
                 far_edge=far_edge, atr_value=atr_value, spread_price=spread_price,
+                zone_width=(entry_high - entry_low),
             )
             if val["valid"]:
                 tp1 = sw_tp
@@ -1814,6 +1822,7 @@ def _validate_tp1_candidate(
     far_edge: float,
     atr_value: float,
     spread_price: float = 0.0,
+    zone_width: float = 0.0,
 ) -> dict[str, Any]:
     """Validate a TP1 candidate against Phase 13B quality floors.
 
@@ -1857,8 +1866,17 @@ def _validate_tp1_candidate(
 
     result["clearance"] = clearance
 
-    # Clearance floor
-    if atr_value > 0 and clearance < _TP1_MIN_CLEARANCE_ATR * atr_value - 1e-10:
+    # Clearance floor: TP must clear the far edge by at least the absolute
+    # minimum (``tp1_min_clearance_atr × ATR``) AND by ``k × zone_width``, so
+    # the TP stays far enough relative to the entry band (Phase 13B.3).  A
+    # missing/zero ``zone_width`` keeps the legacy absolute floor only.
+    k = risk_parameter(
+        "tp1_clearance_zone_width_mult", _TP1_CLEARANCE_ZONE_WIDTH_MULT
+    )
+    min_clearance = _TP1_MIN_CLEARANCE_ATR * atr_value
+    if zone_width > 0 and k > 0:
+        min_clearance = max(min_clearance, zone_width * k)
+    if atr_value > 0 and clearance < min_clearance - 1e-10:
         result["rejection_reason"] = "clearance_below_min"
         return result
 

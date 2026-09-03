@@ -2,12 +2,12 @@
 
 This is the SINGLE application wiring for the live runtime.  It exposes the
 composition API (``compose_scanner``) as the only scoring/decision/ranking
-entry point and binds the owner's locked defaults:
+entry point and consumes the certified owner policy supplied by the
+controller.  The explicit threshold policy in this module is for tests/replay
+only; the runtime fallback remains uncertified and fail-closed:
 
-* **threshold policy** — the single-owner DEFAULT policy
-  (``make_default_threshold_policy()`` → technical 40 / setup 35 / gap 5 /
-  R:R 2/1, ``scanner-threshold-policy-v4``).  This is a *default*, NOT a
-  fabricated or legacy-copied calibration; ``None`` policy still fails closed.
+* **threshold policy** — the certified owner policy loaded from
+  ``config/scanner_order_policy.json``.
 * **ranking policy** — the locked default (§6.3): the runtime cannot supply a
   custom status/within-group order.  ``rank_scanner_candidates`` enforces it.
 * **identity** — every row/snapshot/compact/ledger/journal reader and the config
@@ -43,16 +43,6 @@ from core.scanner_v4_strategy_router import (
     RoutedCandidate,
     route_scanner,
 )
-from core.scanner_threshold_policy import (
-    ThresholdPolicy,
-    make_default_threshold_policy,
-)
-
-# Single-owner default threshold policy (technical 40 / setup 35 / gap 5 / R:R
-# 2/1, scanner-threshold-policy-v4).  Locked once at import so the whole runtime
-# shares one policy object.
-DEFAULT_THRESHOLD_POLICY: ThresholdPolicy = make_default_threshold_policy()
-
 SCANNER_RELEASE_VERSION = "scanner-release"
 SCANNER_RELEASE_LEGACY_VERSION = "scanner-v4-release-v1"
 
@@ -166,8 +156,8 @@ def run_pair_from_live(
     # SMC structure; a side without a real protective zone + opposite target has
     # no plan and its scenario gate fails closed (never invented).  The minimum
     # R:R comes from the owner-configurable order-policy threshold; when the
-    # policy is absent or the threshold is not set, the producer falls back to
-    # its own hard-coded floor (1.5).
+    # policy is absent or the threshold is not set, no scenario plan is
+    # produced.
     _min_rr = (
         order_policy.threshold.min_risk_reward
         if order_policy is not None and order_policy.threshold.min_risk_reward is not None
@@ -239,10 +229,13 @@ def grouped_pairs(pairs: list[ReleasePair]) -> dict[str, tuple[ReleasePair, ...]
 def ready_pairs_above_setup(pairs: list[ReleasePair], min_setup_score: int | None = None) -> list[ReleasePair]:
     """Keep pairs whose selected-side setup meets the bar (fail-closed filter).
 
-    ``min_setup_score`` defaults to the locked DEFAULT setup floor (35).  The
-    filter reads ONLY the selected side's setup score — never legacy scored fields.
+    ``min_setup_score`` must be supplied by the active owner policy.  When it is
+    absent, the filter fails closed and keeps no pairs.  It reads ONLY the
+    selected side's setup score — never legacy scored fields.
     """
-    floor = int(min_setup_score) if min_setup_score is not None else int(DEFAULT_THRESHOLD_POLICY.setup_floor)
+    if min_setup_score is None:
+        return []
+    floor = int(min_setup_score)
     rows = [
         {
             "selected_side": pair.row.selected_side,
@@ -264,7 +257,6 @@ def _candidate_index(pairs: list[ReleasePair]) -> list[tuple[ReleasePair, Scanne
 
 
 __all__ = [
-    "DEFAULT_THRESHOLD_POLICY",
     "ROUTE_ROUTED",
     "SCANNER_RELEASE_VERSION",
     "ReleasePair",

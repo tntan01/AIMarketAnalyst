@@ -98,6 +98,11 @@ SECONDARY_SWEEP_CONFIGS = [
         attr_name="_MIN_STOP_DISTANCE_ATR_MULT",
         test_values=[0.10, 0.15, 0.20, 0.25, 0.30],
     ),
+    ParamSweepConfig(
+        json_key="tp1_clearance_zone_width_mult",
+        attr_name="_TP1_CLEARANCE_ZONE_WIDTH_MULT",
+        test_values=[0.5, 0.75, 1.0, 1.25],
+    ),
 ]
 
 

@@ -4,9 +4,9 @@ Regression: the "Điều kiện vào lệnh" card showed 6 of 7 conditions as "c
 kết quả" for live Scanner rows because ``pair_to_ui_row`` emitted a minimal
 ``scanner_candidate_decision`` that lacked ``min_score`` / ``min_rr`` /
 ``eligible`` / ``entry_confirmation`` / ``execution.trade_allowed``.  Now the
-adapter emits those from real source data (locked default threshold policy +
-candidate), so a candidate routed through the real controller resolves all 6
-conditions (M15 was a legacy-only gate and is removed here).
+adapter emits those from the config-loaded owner policy and the candidate, so a
+candidate routed through the real controller resolves all 6 conditions (M15
+was a legacy-only gate and is removed here).
 
 Here we drive a real BLOCKED candidate (only safety spread is abnormal) through
 ``_analyze_one_symbol`` -> ``pair_to_ui_row`` and assert the checklist reports a
@@ -48,7 +48,7 @@ def test_every_condition_resolves_from_real_data() -> None:
     )
 
 
-def test_floors_come_from_locked_default_threshold_policy() -> None:
+def test_floors_come_from_loaded_owner_threshold_policy() -> None:
     items = _screen()._build_entry_checklist()
     setup = next(item for item in items if item["label"].startswith("Điểm thiết lập"))
     assert "/35" in setup["label"]  # setup_floor
