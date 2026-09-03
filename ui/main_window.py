@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFrame,
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.app_controller import AppController
+from ui.icons import flat_icon
 from ui.navigation import NAV_ITEMS
 from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.dashboard_screen import DashboardScreen
@@ -56,7 +57,9 @@ class MainWindow(QMainWindow):
         self.sidebar = self._build_sidebar()
         self.sidebar.setParent(central)
         self.sidebar.raise_()
-        self.sidebar_toggle = QPushButton("☰", central)
+        self.sidebar_toggle = QPushButton(central)
+        self.sidebar_toggle.setIcon(flat_icon("menu", "text"))
+        self.sidebar_toggle.setIconSize(QSize(16, 16))
         self.sidebar_toggle.setObjectName("FloatingSidebarToggle")
         self.sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar_toggle.clicked.connect(lambda: self._set_sidebar_open(True))
@@ -168,7 +171,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(footer)
 
         # Nút khởi động lại
-        restart_btn = QPushButton("🔄 Khởi động lại")
+        restart_btn = QPushButton("Khởi động lại")
+        restart_btn.setIcon(flat_icon("refresh", "accent", disabled_role="accent"))
+        restart_btn.setIconSize(QSize(16, 16))
         self.restart_btn = restart_btn
         restart_btn.setObjectName("RestartButton")
         restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)

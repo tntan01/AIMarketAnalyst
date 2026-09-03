@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-17T03:36:30.068391+00:00",
+  "captured_at": "2026-09-03T14:43:49.928190+00:00",
   "scope": "ui/**/*.py plus ui/styles/**/*.qss and theme overlays",
   "policy": {
     "comparison": "current counts must be less than or equal to baseline",
@@ -9,9 +9,9 @@
   },
   "totals": {
     "set_stylesheet_calls": 1,
-    "html_style_attributes": 502,
-    "hex_color_literals": 592,
-    "object_name_calls": 336
+    "html_style_attributes": 501,
+    "hex_color_literals": 585,
+    "object_name_calls": 333
   },
   "python_files": {
     "ui/__init__.py": {
@@ -45,6 +45,14 @@
       "object_name_calls": 3,
       "line_count": 209,
       "sha256": "4261f37fb23c4f616c6471d800a2a3787b742b3d9ea7032d19473a33d0c7cdb3"
+    },
+    "ui/icons.py": {
+      "set_stylesheet_calls": 0,
+      "html_style_attributes": 0,
+      "hex_color_literals": 0,
+      "object_name_calls": 0,
+      "line_count": 288,
+      "sha256": "04977b4fe2272213cd083bd6fe8a8f453993ddb11a985e025924e0fdfcd2b9dd"
     },
     "ui/layout_system.py": {
       "set_stylesheet_calls": 0,
@@ -107,8 +115,8 @@
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 0,
-      "line_count": 373,
-      "sha256": "3f4a2a5f91ee68552c87a614e82109e8960248375f2b84ddf1d878f050926a3f"
+      "line_count": 374,
+      "sha256": "87c2944402c27187c44aa95a5b7584b97f6c28845044543bf556e231eaec61ee"
     },
     "ui/screens/__init__.py": {
       "set_stylesheet_calls": 0,
@@ -130,9 +138,9 @@
       "set_stylesheet_calls": 0,
       "html_style_attributes": 19,
       "hex_color_literals": 1,
-      "object_name_calls": 43,
-      "line_count": 1712,
-      "sha256": "392290904e1d44bb52cadb0b482ff4690464cbfd4a5fff764b227c8b3db65228"
+      "object_name_calls": 44,
+      "line_count": 1858,
+      "sha256": "a0a6226113747ab3370f61568fca4c5c2ccd959791571252ad43d12513dffe1d"
     },
     "ui/screens/journal_detail_screen.py": {
       "set_stylesheet_calls": 0,
@@ -147,8 +155,8 @@
       "html_style_attributes": 2,
       "hex_color_literals": 2,
       "object_name_calls": 57,
-      "line_count": 2135,
-      "sha256": "c7a17614c8afad0d12d93fc62a6860f06b43a615f14d9f2c6d1f4655f3e2949f"
+      "line_count": 2101,
+      "sha256": "82e6c41c1a5c2704474853bc0398c707f8adbbe51b7eab9e84c89b1135134146"
     },
     "ui/screens/orders_screen.py": {
       "set_stylesheet_calls": 0,
@@ -160,35 +168,35 @@
     },
     "ui/screens/scanner_detail_screen.py": {
       "set_stylesheet_calls": 0,
-      "html_style_attributes": 243,
-      "hex_color_literals": 300,
-      "object_name_calls": 71,
-      "line_count": 4091,
-      "sha256": "5b582825828f74bebdd3e8f1d5191c58a061af0498760e508bdf65a7dc878a5d"
+      "html_style_attributes": 242,
+      "hex_color_literals": 293,
+      "object_name_calls": 64,
+      "line_count": 4132,
+      "sha256": "b7f2388829eb3ed1649a4f2796969c7d1052a95f0cdc57d39d7c867359fab408"
     },
     "ui/screens/scanner_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 5,
       "hex_color_literals": 14,
       "object_name_calls": 35,
-      "line_count": 3413,
-      "sha256": "4fa140747a41d3b575463b2b736a2b1d23c8bb1ec91b2aae2b8e1de976cf5c6d"
+      "line_count": 3464,
+      "sha256": "5a9f6b240516a3b7c816ebc4ad346fdfaccf1f2901677e7eba474aeaac8ad58c"
     },
     "ui/screens/settings_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
-      "object_name_calls": 26,
-      "line_count": 1820,
-      "sha256": "d541e2f36807aa50129f118bee8e6c14c54598b45fe5d4c828737fd4ac395bce"
+      "object_name_calls": 29,
+      "line_count": 1958,
+      "sha256": "7ad36c42df99519c8ce358fbe439009ba3c67b603453cf5be43fd2406ea57c08"
     },
     "ui/screens/shared.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 14,
-      "line_count": 149,
-      "sha256": "c2bc2e4cf48c4c5b53b2c16b8d7a9fe7456fbd5be4cf1944ef3287829143a52f"
+      "line_count": 175,
+      "sha256": "3c3bb998ba5fef04a574435bee6b4a5e2d8f9fa0dc24028e988b9201e5e2e407"
     },
     "ui/theme/__init__.py": {
       "set_stylesheet_calls": 0,
@@ -220,36 +228,36 @@
       "hex_color_literals": 0,
       "object_name_calls": 0,
       "line_count": 146,
-      "sha256": "4e15809944118744d92ebb11e645c89b7dc232293ce66e5621d5c05797e027a9"
+      "sha256": "04af9598d37d7e1c0cfbf7f266e82eb4076696ac4abe71c74070fdd8b894cf7c"
     }
   },
   "qss_files": {
     "ui/styles/base.qss": {
-      "line_count": 998,
-      "rule_blocks": 154,
-      "selector_references": 237,
-      "unique_selectors": 237,
+      "line_count": 1041,
+      "rule_blocks": 161,
+      "selector_references": 245,
+      "unique_selectors": 245,
       "duplicate_selectors": 0,
       "hex_color_literals": 0,
-      "sha256": "c7e1e43a8ed5fe7db5120de46cbf8934aff5460f3a63f0bc14ea3314c1641dba"
+      "sha256": "7d89cf406d3b637b0a64373362e0a65f76602099734bd830cf8f5038f0fa3b07"
     },
     "ui/styles/dark.qss": {
-      "line_count": 2335,
-      "rule_blocks": 430,
-      "selector_references": 715,
-      "unique_selectors": 696,
+      "line_count": 2348,
+      "rule_blocks": 433,
+      "selector_references": 719,
+      "unique_selectors": 700,
       "duplicate_selectors": 19,
-      "hex_color_literals": 657,
-      "sha256": "8119eaf5322a85da5d4c65fea8ac6a6d373d166edf2cecea5dce43be38059eed"
+      "hex_color_literals": 660,
+      "sha256": "a5c066e25720c2d9366cae86dff62f0f42b3bb247c93e78885e4949f8e1fe747"
     },
     "ui/styles/light.qss": {
-      "line_count": 2318,
-      "rule_blocks": 429,
-      "selector_references": 716,
-      "unique_selectors": 696,
+      "line_count": 2331,
+      "rule_blocks": 432,
+      "selector_references": 720,
+      "unique_selectors": 700,
       "duplicate_selectors": 20,
-      "hex_color_literals": 657,
-      "sha256": "e3b5a38712218d408132ffb8fde27cdb29c5f3181c5028a28b20b1348e79ad13"
+      "hex_color_literals": 660,
+      "sha256": "e6810567ab07ae377a916e9c46ff8f744dda357321179ba1528d40d5de8379a9"
     }
   }
 }

@@ -89,12 +89,12 @@ class SettingsScreen(QWidget):
         root.addWidget(page_header("Cài đặt", "", "Đơn giản"))
         tabs = QTabWidget()
         tabs.setObjectName("ContentTabs")
-        tabs.addTab(self._ai_tab(), "🤖 AI")
-        tabs.addTab(self._mt5_tab(), "🔌 Dữ liệu")
-        tabs.addTab(self._trading_tab(), "💼 Giao dịch")
-        tabs.addTab(self._order_management_tab(), "🛡️ Quản lý lệnh")
-        tabs.addTab(self._display_tab(), "🎨 Hiển thị")
-        tabs.addTab(self._advanced_tab(), "⚙️ Nâng cao")
+        tabs.addTab(self._ai_tab(), "AI")
+        tabs.addTab(self._mt5_tab(), "Dữ liệu")
+        tabs.addTab(self._trading_tab(), "Giao dịch")
+        tabs.addTab(self._order_management_tab(), "Quản lý lệnh")
+        tabs.addTab(self._display_tab(), "Hiển thị")
+        tabs.addTab(self._advanced_tab(), "Nâng cao")
         root.addWidget(tabs, 1)
 
     def _ai_tab(self) -> QFrame:
@@ -173,7 +173,10 @@ class SettingsScreen(QWidget):
         self.ai_model_combo.lineEdit().setPlaceholderText("Chọn hoặc nhập model")
         self.ai_model_combo.currentTextChanged.connect(self._update_ai_button_state)
         model_row.addWidget(self.ai_model_combo)
-        self.ai_refresh_models_btn = action_button("↻ Đồng bộ model", primary=True, color="info")
+        self.ai_refresh_models_btn = action_button(
+            "Đồng bộ model", primary=True, color="info",
+            icon="refresh", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.ai_refresh_models_btn.setToolTip("Lấy model mới nhất từ API")
         self.ai_refresh_models_btn.clicked.connect(lambda: self._refresh_provider_models())
         self.ai_refresh_models_btn.setVisible(False)
@@ -183,8 +186,14 @@ class SettingsScreen(QWidget):
 
         # Buttons
         btn_container, btn_row = self._aligned_button_row()
-        self.ai_test_button = action_button("🧪 Kiểm tra", primary=True, color="info")
-        self.ai_save_button = action_button("💾 Lưu", primary=True, color="success")
+        self.ai_test_button = action_button(
+            "Kiểm tra", primary=True, color="info",
+            icon="flask", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
+        self.ai_save_button = action_button(
+            "Lưu", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         btn_row.addWidget(self.ai_test_button)
         btn_row.addWidget(self.ai_save_button)
         btn_row.addStretch(1)
@@ -473,7 +482,7 @@ class SettingsScreen(QWidget):
         self._set_ai_status(f"Kiểm tra thất bại: {message}", "error")
 
     def _ai_test_finished(self) -> None:
-        self.ai_test_button.setText("🧪 Kiểm tra")
+        self.ai_test_button.setText("Kiểm tra")
         self.ai_test_thread = None
         self.ai_test_worker = None
         self._update_ai_button_state()
@@ -553,14 +562,23 @@ class SettingsScreen(QWidget):
         self.mt5_detail_label = QLabel("")
         self.mt5_detail_label.setObjectName("HelperText")
         self.mt5_detail_label.setWordWrap(False)
-        self.mt5_retry_button = action_button("🔄 Thử kết nối lại", primary=True, color="info")
+        self.mt5_retry_button = action_button(
+            "Thử kết nối lại", primary=True, color="info",
+            icon="refresh", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.mt5_retry_button.clicked.connect(self.refresh_mt5_status)
 
-        self.creds_save_btn = action_button("💾 Lưu cấu hình", primary=True)
+        self.creds_save_btn = action_button(
+            "Lưu cấu hình", primary=True,
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.creds_save_btn.clicked.connect(self._save_credentials)
         self.creds_save_btn.setFixedWidth(110)
 
-        self.app_restart_btn = action_button("🔄 Khởi động lại", primary=True, color="danger")
+        self.app_restart_btn = action_button(
+            "Khởi động lại", primary=True, color="danger",
+            icon="refresh", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.app_restart_btn.clicked.connect(self._restart_app)
         self.app_restart_btn.setVisible(False)
         self.app_restart_btn.setFixedWidth(110)
@@ -754,17 +772,26 @@ class SettingsScreen(QWidget):
         mt5_button_row = QHBoxLayout()
         mt5_button_row.setContentsMargins(0, 0, 0, 0)
         mt5_button_row.setSpacing(10)
-        self.mt5_detect_button = action_button("🔍 Tự phát hiện mã broker", primary=True, color="info")
+        self.mt5_detect_button = action_button(
+            "Tự phát hiện mã broker", primary=True, color="info",
+            icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.mt5_detect_button.clicked.connect(self.refresh_mt5_status)
         mt5_button_row.addWidget(self.mt5_detect_button)
-        self.mt5_paste_config_button = action_button("📋 Dán cấu hình Backtest", color="warning")
+        self.mt5_paste_config_button = action_button(
+            "Dán cấu hình Backtest", color="warning",
+            icon="clipboard", icon_role="warning", icon_disabled_role="warning",
+        )
         self.mt5_paste_config_button.clicked.connect(self._paste_backtest_configs)
         self.mt5_paste_config_button.setToolTip(
             "Đọc cấu hình JSON từ clipboard (được copy từ nút 'Đề xuất cấu hình Scanner' "
             "trong màn hình Backtest), kiểm tra validation rồi mới cho phép kích hoạt."
         )
         mt5_button_row.addWidget(self.mt5_paste_config_button)
-        self.mt5_symbol_settings_button = action_button("💾 Lưu cấu hình mã quét", primary=True, color="success")
+        self.mt5_symbol_settings_button = action_button(
+            "Lưu cấu hình mã quét", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.mt5_symbol_settings_button.clicked.connect(self._save_mt5_symbol_settings)
         mt5_button_row.addWidget(self.mt5_symbol_settings_button)
         mt5_button_row.addStretch(1)
@@ -1100,7 +1127,7 @@ class SettingsScreen(QWidget):
                 f"{retained_count} chưa đủ điều kiện.\n"
                 "Chỉ cấu hình đã duyệt mới được bật. Bản nháp vẫn được "
                 "lưu để backtest sau.\n"
-                "Nhấn '💾 Lưu cấu hình mã quét' để lưu lại."
+                "Nhấn 'Lưu cấu hình mã quét' để lưu lại."
             )
         else:
             QMessageBox.information(
@@ -1304,7 +1331,10 @@ class SettingsScreen(QWidget):
         button_row.addSpacing(
             LayoutTokens.SETTINGS_LABEL_WIDTH + LayoutTokens.SPACE_2
         )
-        self.trading_save_button = action_button("💾 Lưu cài đặt giao dịch", primary=True, color="success")
+        self.trading_save_button = action_button(
+            "Lưu cài đặt giao dịch", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         configure_button(self.trading_save_button)
         self.trading_save_button.clicked.connect(self._save_trading_settings)
         button_row.addWidget(self.trading_save_button)
@@ -1561,9 +1591,12 @@ class SettingsScreen(QWidget):
         frame.layout().addWidget(self.scanner_threshold_status_label)
 
         self.scanner_threshold_save_button = action_button(
-            "💾 Lưu ngưỡng Scanner",
+            "Lưu ngưỡng Scanner",
             primary=True,
             color="success",
+            icon="save",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
         )
         configure_button(self.scanner_threshold_save_button)
         self.scanner_threshold_save_button.clicked.connect(
@@ -1586,9 +1619,12 @@ class SettingsScreen(QWidget):
         frame.layout().addWidget(self.order_management_status_label)
 
         self.order_management_save_button = action_button(
-            "💾 Lưu quản lý lệnh",
+            "Lưu quản lý lệnh",
             primary=True,
             color="success",
+            icon="save",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
         )
         configure_button(self.order_management_save_button)
         self.order_management_save_button.clicked.connect(
@@ -1762,7 +1798,10 @@ class SettingsScreen(QWidget):
         button_spacer = QWidget()
         button_spacer.setFixedWidth(132)
         button_row.addWidget(button_spacer)
-        self.display_save_button = action_button("💾 Lưu hiển thị", primary=True, color="success")
+        self.display_save_button = action_button(
+            "Lưu hiển thị", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.display_save_button.clicked.connect(self._save_display_settings)
         button_row.addWidget(self.display_save_button)
         button_row.addStretch(1)
@@ -1907,7 +1946,10 @@ class SettingsScreen(QWidget):
         button_spacer = QWidget()
         button_spacer.setFixedWidth(132)
         button_row.addWidget(button_spacer)
-        self.advanced_save_button = action_button("💾 Lưu nâng cao", primary=True, color="success")
+        self.advanced_save_button = action_button(
+            "Lưu nâng cao", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.advanced_save_button.clicked.connect(self._save_advanced_settings)
         button_row.addWidget(self.advanced_save_button)
         button_row.addStretch(1)

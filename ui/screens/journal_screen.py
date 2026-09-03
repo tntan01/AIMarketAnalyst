@@ -4,7 +4,7 @@ import ast
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
-from PyQt6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt, QTimer, QPoint
+from PyQt6.QtCore import QAbstractTableModel, QDate, QModelIndex, QRect, Qt, QTimer, QPoint
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
@@ -39,6 +39,7 @@ from controllers.journal_controller import JournalController
 from services.journal_models import JournalEntry, JournalFilter
 from services.journal_converters import build_performance_summary
 from ui.layout_system import configure_table
+from ui.icons import flat_icon, flat_pixmap_fixed
 from ui.rich_text import compile_rich_html
 from ui.matplotlib_theme import apply_axes_theme, apply_figure_theme
 from ui.screens.shared import action_button, card, labeled_value, page_header
@@ -116,18 +117,30 @@ class MissingRBanner(QFrame):
         layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(12)
 
-        icon_label = QLabel("⚠️")
-        icon_label.setObjectName("MissingRIcon")
-        layout.addWidget(icon_label)
+        self.icon_label = QLabel()
+        self.icon_label.setObjectName("MissingRIcon")
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._apply_icon()
+        layout.addWidget(self.icon_label)
 
         self.text_label = QLabel("")
         self.text_label.setObjectName("MissingRText")
         self.text_label.setWordWrap(True)
         layout.addWidget(self.text_label, 1)
 
-        self.cta_button = action_button("✏️ Điền Result R ngay", primary=True, color="warning")
+        self.cta_button = action_button(
+            "Điền Result R ngay", primary=True, color="warning",
+            icon="edit", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.cta_button.clicked.connect(on_cta_clicked)
         layout.addWidget(self.cta_button)
+
+    def _apply_icon(self) -> None:
+        """Pixmap glyph cảnh báo theo theme hiện hành (QSS không tint pixmap)."""
+        self.icon_label.setPixmap(flat_pixmap_fixed("alert-triangle", current_palette().warning, size=16))
+
+    def retint_icon(self) -> None:
+        self._apply_icon()
 
     def set_missing_info(self, missing_count: int, total_closed: int) -> None:
         if total_closed > 0 and missing_count > 0:
@@ -321,6 +334,8 @@ class PerformanceChartWidget(QWidget):
 
     def refresh_theme_styles(self) -> None:
         """Redraw cached chart data with the active semantic palette."""
+        if getattr(self, "missing_r_banner", None) is not None:
+            self.missing_r_banner.retint_icon()
 
         self.update_charts(
             self._last_by_symbol,
@@ -477,7 +492,7 @@ class JournalTableModel(QAbstractTableModel):
             return "--"
         if key == "note":
             # Hiển thị icon nếu có ghi chú, để trống nếu không
-            return "📝" if entry.note else ""
+            return "note" if entry.note else ""
         value = getattr(entry, key)
         return str(value if value not in (None, "") else "--")
 
@@ -600,9 +615,10 @@ class NotePopup(QFrame):
 
 
 class NoteIconDelegate(QStyledItemDelegate):
-    """Vẽ icon ghi chú 💬 với kích thước lớn, màu nổi bật và hover effect."""
+    """Vẽ icon ghi chú phẳng (message-square) với màu nổi bật và hover effect."""
 
-    _ICON_CHAR = "💬"  # speech bubble — trực quan hơn 📝
+    _ICON_NAME = "message-square"
+    _ICON_SIZE = 16
 
     def paint(self, painter, option, index):
         text = index.data(Qt.ItemDataRole.DisplayRole) or ""
@@ -620,18 +636,14 @@ class NoteIconDelegate(QStyledItemDelegate):
         painter.save()
         is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
         palette = current_palette()
-
-        # Font to hơn font dữ liệu thông thường
-        font = get_title_font()
-        font.setBold(False)
-        painter.setFont(font)
-
-        color = QColor(
-            palette.accent_hover if is_hover else palette.warning
+        color_hex = palette.accent_hover if is_hover else palette.warning
+        pixmap = flat_pixmap_fixed(self._ICON_NAME, color_hex, size=self._ICON_SIZE)
+        center = option.rect.center()
+        half = self._ICON_SIZE // 2
+        painter.drawPixmap(
+            QRect(center.x() - half, center.y() - half, self._ICON_SIZE, self._ICON_SIZE),
+            pixmap,
         )
-
-        painter.setPen(color)
-        painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, self._ICON_CHAR)
         painter.restore()
 
 
@@ -731,11 +743,15 @@ class JournalScreen(QWidget):
         self.search_input.setObjectName("FilterField")
         self.search_input.setClearButtonEnabled(True)
 
-        self.filter_toggle_btn = action_button("▶ Bộ lọc")
+        self.filter_toggle_btn = action_button(
+            "Bộ lọc", icon="play", icon_role="text", icon_disabled_role="text",
+        )
         self.filter_toggle_btn.setFixedWidth(90)
         self.filter_toggle_btn.clicked.connect(self._toggle_filter_panel)
 
-        clear_btn = action_button("🧹 Xóa lọc")
+        clear_btn = action_button(
+            "Xóa lọc", icon="x", icon_role="text", icon_disabled_role="text",
+        )
         clear_btn.clicked.connect(self._clear_filters)
 
         search_row.addWidget(self.search_input, 1)
@@ -872,7 +888,7 @@ class JournalScreen(QWidget):
             self.filter_toggle_btn.setText("▼ Thu gọn")
             self._refresh_filter_values()
         else:
-            self.filter_toggle_btn.setText("▶ Bộ lọc")
+            self.filter_toggle_btn.setText("Bộ lọc")
 
     # ------------------------------------------------------------------
     # Quick Filter
@@ -1135,11 +1151,17 @@ class JournalScreen(QWidget):
         # Khởi tạo stats widget và nhúng trực tiếp vào header
         self.stats_widget = self._filtered_stats_bar()
 
-        self.open_button = action_button("🔍 Chi tiết", primary=True, color="warning")
+        self.open_button = action_button(
+            "Chi tiết", primary=True, color="warning",
+            icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.open_button.setEnabled(False)
         self.open_button.clicked.connect(self._open_selected)
 
-        self.sync_mt5_tab1_button = action_button("⬇️ Đồng bộ MT5", primary=True, color="info")
+        self.sync_mt5_tab1_button = action_button(
+            "Đồng bộ MT5", primary=True, color="info",
+            icon="download", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.sync_mt5_tab1_button.setToolTip("Nhập các lệnh đã đóng từ lịch sử MT5 trong 90 ngày gần nhất.")
         self.sync_mt5_tab1_button.clicked.connect(self._sync_mt5_history)
         self._sync_buttons.append(self.sync_mt5_tab1_button)
@@ -1209,15 +1231,24 @@ class JournalScreen(QWidget):
 
         action_bar.addWidget(tab_title, 1)
 
-        explain_button = action_button("📖 Giải thích", primary=False)
+        explain_button = action_button(
+            "Giải thích", primary=False,
+            icon="book-open", icon_role="text", icon_disabled_role="text",
+        )
         explain_button.clicked.connect(self._show_explanation_dialog)
         action_bar.addWidget(explain_button)
 
-        refresh_button = action_button("🔄 Làm mới", primary=False)
+        refresh_button = action_button(
+            "Làm mới", primary=False,
+            icon="refresh", icon_role="text", icon_disabled_role="text",
+        )
         refresh_button.clicked.connect(self._refresh_performance)
         action_bar.addWidget(refresh_button)
 
-        self.sync_mt5_button = action_button("⬇️ Đồng bộ MT5", primary=True, color="info")
+        self.sync_mt5_button = action_button(
+            "Đồng bộ MT5", primary=True, color="info",
+            icon="download", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.sync_mt5_button.setToolTip("Nhập các lệnh đã đóng từ lịch sử MT5 trong 90 ngày gần nhất.")
         self.sync_mt5_button.clicked.connect(self._sync_mt5_history)
         self._sync_buttons.append(self.sync_mt5_button)
@@ -1243,7 +1274,7 @@ class JournalScreen(QWidget):
         kpi_container = QVBoxLayout()
         kpi_container.setSpacing(10)
 
-        group1_lbl = QLabel("🟢 TỔNG QUAN HIỆU SUẤT TÀI CHÍNH")
+        group1_lbl = QLabel("TỔNG QUAN HIỆU SUẤT TÀI CHÍNH")
         group1_lbl.setObjectName("JournalSectionLabel")
         kpi_container.addWidget(group1_lbl)
 
@@ -1270,7 +1301,7 @@ class JournalScreen(QWidget):
         row1_layout.addWidget(self.kpi_cards["total_r"])
         kpi_container.addLayout(row1_layout)
 
-        group2_lbl = QLabel("🔵 THỐNG KÊ LỆNH & KỶ LUẬT THỰC THI")
+        group2_lbl = QLabel("THỐNG KÊ LỆNH & KỶ LUẬT THỰC THI")
         group2_lbl.setObjectName("JournalSectionLabel")
         group2_lbl.setProperty("spaced", True)
         kpi_container.addWidget(group2_lbl)
@@ -1295,7 +1326,7 @@ class JournalScreen(QWidget):
         self.performance_chart = PerformanceChartWidget(self)
         sub_tab1_layout.addWidget(self.performance_chart, 1)
 
-        self.sub_tabs.addTab(sub_tab1, "📊 Tổng quan & Biểu đồ")
+        self.sub_tabs.addTab(sub_tab1, "Tổng quan & Biểu đồ")
 
         # ==================================================================
         # Sub-tab 2: 📋 Chi tiết Lệnh & Nhóm
@@ -1315,7 +1346,7 @@ class JournalScreen(QWidget):
         left_header = QHBoxLayout()
         left_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
         left_header.setSpacing(8)
-        left_title = QLabel("📑 Phân bổ nhóm:")
+        left_title = QLabel("Phân bổ nhóm:")
         left_title.setObjectName("JournalTableTitle")
 
         self.group_view_combo = QComboBox()
@@ -1354,7 +1385,7 @@ class JournalScreen(QWidget):
         right_header = QHBoxLayout()
         right_header.setAlignment(Qt.AlignmentFlag.AlignLeft)
         right_header.setSpacing(8)
-        right_title = QLabel("📋 Lịch sử lệnh đóng")
+        right_title = QLabel("Lịch sử lệnh đóng")
         right_title.setObjectName("JournalTableTitle")
         right_header.addWidget(right_title)
 
@@ -1370,7 +1401,10 @@ class JournalScreen(QWidget):
         self.recent_result_combo.currentTextChanged.connect(self._apply_recent_table_filters)
         right_header.addWidget(self.recent_result_combo)
 
-        self.clear_cross_filter_btn = action_button("✖ Bỏ lọc mã", primary=False)
+        self.clear_cross_filter_btn = action_button(
+            "Bỏ lọc mã", primary=False,
+            icon="x", icon_role="text", icon_disabled_role="text",
+        )
         self.clear_cross_filter_btn.setToolTip("Bỏ lọc mã hiện tại và xem tất cả lệnh đóng.")
         self.clear_cross_filter_btn.setVisible(False)
         self.clear_cross_filter_btn.clicked.connect(self._clear_cross_filter)
@@ -1847,7 +1881,9 @@ class JournalScreen(QWidget):
             msg_box.setWindowTitle("Đồng bộ MT5 thất bại")
             msg_box.setText(str(exc))
             msg_box.setIcon(QMessageBox.Icon.Warning)
-            msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+            msg_box.addButton(action_button(
+                "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+            ), QMessageBox.ButtonRole.AcceptRole)
             msg_box.exec()
             return
         finally:
@@ -1873,7 +1909,9 @@ class JournalScreen(QWidget):
             f"Lỗi: {len(result.get('errors', [])) if isinstance(result.get('errors'), list) else 0}"
         )
         msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+        msg_box.addButton(action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        ), QMessageBox.ButtonRole.AcceptRole)
         msg_box.exec()
 
     def _table_clicked(self, index: QModelIndex) -> None:
@@ -2036,7 +2074,9 @@ class MetricsExplanationDialog(QDialog):
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch(1)
-        close_btn = action_button("❌ Đóng")
+        close_btn = action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        )
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)

@@ -241,7 +241,10 @@ class BacktestScreen(QWidget):
         )
         self.symbol_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.symbol_button = action_button("🔍 Chọn", primary=True, color="info")
+        self.symbol_button = action_button(
+            "Chọn", primary=True, color="info",
+            icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self._configure_compact_button(self.symbol_button)
         self.symbol_button.clicked.connect(self._show_symbol_dialog)
 
@@ -300,7 +303,10 @@ class BacktestScreen(QWidget):
         )
         self.mode_summary_label.setFixedWidth(0)
 
-        self.run_button = action_button("▶️ Chạy", primary=True, color="success")
+        self.run_button = action_button(
+            "Chạy", primary=True, color="success",
+            icon="play", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self._configure_compact_button(self.run_button)
         self.run_button.clicked.connect(self._run_backtest)
 
@@ -309,7 +315,10 @@ class BacktestScreen(QWidget):
         self.cancel_backtest_btn.clicked.connect(self._cancel_backtest)
         self.cancel_backtest_btn.hide()
         
-        self.apply_config_btn = action_button("📋 Áp dụng cấu hình", primary=True, color="warning")
+        self.apply_config_btn = action_button(
+            "Áp dụng cấu hình", primary=True, color="warning",
+            icon="clipboard", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self._configure_compact_button(self.apply_config_btn)
         self.apply_config_btn.clicked.connect(self._apply_scanner_config)
         self.apply_config_btn.setToolTip("Phân tích kết quả backtest và áp dụng cấu hình đề xuất vào Scanner settings.")
@@ -480,7 +489,10 @@ class BacktestScreen(QWidget):
         corner_layout = QHBoxLayout(corner_widget)
         configure_layout(corner_layout, spacing=LayoutTokens.SPACE_2)
 
-        load_btn = action_button("📂 Mở kết quả", primary=True, color="success")
+        load_btn = action_button(
+            "Mở kết quả", primary=True, color="success",
+            icon="folder-open", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.load_result_button = load_btn
         self._configure_compact_button(load_btn)
         load_btn.setToolTip("Mở lại một file kết quả backtest đã lưu")
@@ -493,11 +505,11 @@ class BacktestScreen(QWidget):
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
         self.result_text.setObjectName("BacktestResultText")
-        self.tabs.addTab(self.result_text, "📊 Kết quả")
+        self.tabs.addTab(self.result_text, "Kết quả")
 
         # Tab 1: Đường cong vốn
         self._setup_equity_tab()
-        self.tabs.addTab(self._equity_tab, "📈 Đường cong vốn")
+        self.tabs.addTab(self._equity_tab, "Đường cong vốn")
 
         # Tab 2: Danh sách lệnh
         self.table = QTableWidget(0, len(self.TRADE_COLUMNS))
@@ -512,11 +524,11 @@ class BacktestScreen(QWidget):
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.table.viewport().installEventFilter(self)
         self._apply_trade_table_layout()
-        self.tabs.addTab(self.table, "📋 Lệnh")
+        self.tabs.addTab(self.table, "Lệnh")
 
         # Tab 3: Điều chỉnh tham số (Param Sensitivity)
         self._build_param_tuning_tab()
-        self.tabs.addTab(self._sweep_tab, "🧪 Nghiên cứu nâng cao")
+        self.tabs.addTab(self._sweep_tab, "Nghiên cứu nâng cao")
 
         layout.addWidget(self.tabs, 1)
         return frame
@@ -617,7 +629,8 @@ class BacktestScreen(QWidget):
         )
 
         self.analyze_btn = action_button(
-            "🤖 Phân tích AI", primary=True, color="info"
+            "Phân tích AI", primary=True, color="info",
+            icon="bot", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self._configure_compact_button(self.analyze_btn)
         self.analyze_btn.setToolTip(
@@ -757,7 +770,10 @@ class BacktestScreen(QWidget):
         form_row.addLayout(period_control_row, 1, 1)
 
         # Nút chạy
-        self.sweep_run_btn = action_button("▶️ Chạy quét", primary=True, color="success")
+        self.sweep_run_btn = action_button(
+            "Chạy quét", primary=True, color="success",
+            icon="play", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self._configure_compact_button(self.sweep_run_btn)
         self.sweep_run_btn.clicked.connect(self._run_param_sweep)
         actions_label = QLabel("Thao tác:")
@@ -776,7 +792,10 @@ class BacktestScreen(QWidget):
         sweep_actions.addWidget(self.sweep_cancel_btn)
 
         # Nút mở báo cáo HTML
-        self.sweep_report_btn = action_button("📂 Mở báo cáo", primary=True, color="info")
+        self.sweep_report_btn = action_button(
+            "Mở báo cáo", primary=True, color="info",
+            icon="folder-open", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self._configure_compact_button(self.sweep_report_btn)
         self.sweep_report_btn.clicked.connect(self._open_sweep_report)
         self.sweep_report_btn.hide()
@@ -919,7 +938,7 @@ class BacktestScreen(QWidget):
 
             # UI state
             self.sweep_run_btn.setEnabled(False)
-            self.sweep_run_btn.setText("⏳ Đang chạy...")
+            self.sweep_run_btn.setText("Đang chạy...")
             self.sweep_cancel_btn.setEnabled(True)
             self.sweep_cancel_btn.show()
             self.sweep_report_btn.hide()
@@ -945,7 +964,7 @@ class BacktestScreen(QWidget):
             self._sweep_thread.failed.connect(self._on_sweep_failed)
             self._sweep_thread.cancelled.connect(self._on_sweep_cancelled)
             self._sweep_thread.finished.connect(lambda: self.sweep_run_btn.setEnabled(True))
-            self._sweep_thread.finished.connect(lambda: self.sweep_run_btn.setText("▶️ Chạy quét"))
+            self._sweep_thread.finished.connect(lambda: self.sweep_run_btn.setText("Chạy quét"))
             self._sweep_thread.finished.connect(self.sweep_cancel_btn.hide)
             self._sweep_thread.finished.connect(self._sweep_thread.deleteLater)
 
@@ -955,7 +974,7 @@ class BacktestScreen(QWidget):
             import traceback
             self.sweep_status.setText(f"Lỗi khởi động: {exc}")
             self.sweep_run_btn.setEnabled(True)
-            self.sweep_run_btn.setText("▶️ Chạy quét")
+            self.sweep_run_btn.setText("Chạy quét")
             QMessageBox.critical(
                 self, "Lỗi quét tham số",
                 f"Không thể khởi động quét tham số:\n\n{exc}\n\n{traceback.format_exc()}",
@@ -1221,7 +1240,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
 
         self._analysis_light = self._is_light_theme()
 
-        self.analyze_btn.setText("⏳ Đang phân tích")
+        self.analyze_btn.setText("Đang phân tích")
         self.analyze_btn.setEnabled(False)
 
         prompt = self._build_analysis_prompt()
@@ -1241,7 +1260,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
     def _on_ai_analysis_done(self, response: str) -> None:
         if not response or not response.strip():
             QMessageBox.warning(self, "Phân tích", "AI không trả về nội dung phân tích. Vui lòng thử lại.")
-            self.analyze_btn.setText("🤖 Phân tích AI")
+            self.analyze_btn.setText("Phân tích AI")
             self.analyze_btn.setEnabled(True)
             self._ai_thread.quit()
             self._ai_thread.wait()
@@ -1298,7 +1317,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             layout.addLayout(btn_row)
             dlg.exec()
         finally:
-            self.analyze_btn.setText("🤖 Phân tích AI")
+            self.analyze_btn.setText("Phân tích AI")
             self.analyze_btn.setEnabled(True)
             self._ai_thread.quit()
             self._ai_thread.wait()
@@ -1307,7 +1326,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         if len(error_msg) > 500:
             error_msg = error_msg[:500] + "..."
         QMessageBox.warning(self, "Lỗi phân tích", error_msg)
-        self.analyze_btn.setText("🤖 Phân tích AI")
+        self.analyze_btn.setText("Phân tích AI")
         self.analyze_btn.setEnabled(True)
         self._ai_thread.quit()
         self._ai_thread.wait()
@@ -1481,7 +1500,11 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
             margins=(0, LayoutTokens.SPACE_2, 0, 0),
             spacing=LayoutTokens.SPACE_2,
         )
-        apply_btn = action_button(action.label, primary=True)
+        apply_btn = action_button(
+            action.label, primary=True,
+            icon="save" if action.kind == ACTION_SAVE_DRAFT else "clipboard",
+            icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         configure_button(apply_btn)
         config_status = str(cfg.get("status") or "") if isinstance(cfg, dict) else ""
         status_matches_action = (
@@ -2438,7 +2461,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         }
 
         self.run_button.setEnabled(False)
-        self.run_button.setText("⏳ Đang chạy...")
+        self.run_button.setText("Đang chạy...")
         self.cancel_backtest_btn.show()
         self.analyze_btn.setEnabled(False)
         self.apply_config_btn.hide()
@@ -2462,7 +2485,7 @@ Bấm <b>📂 Mở báo cáo</b> để xem bảng chi tiết từng giá trị �
         self.backtest_worker.failed.connect(self._on_failed)
         self.backtest_worker.cancelled.connect(self._on_backtest_cancelled)
         self.backtest_worker.finished.connect(lambda: self.run_button.setEnabled(True))
-        self.backtest_worker.finished.connect(lambda: self.run_button.setText("▶️ Chạy"))
+        self.backtest_worker.finished.connect(lambda: self.run_button.setText("Chạy"))
         self.backtest_worker.finished.connect(self.cancel_backtest_btn.hide)
         self.backtest_worker.finished.connect(lambda: self.analyze_btn.setEnabled(True))
         self.backtest_thread.start()
@@ -3041,8 +3064,14 @@ class SymbolSelectionDialog(QDialog):
             spacing=LayoutTokens.SPACE_2,
         )
         buttons_layout.addStretch(1)
-        cancel_btn = action_button("❌ Hủy", primary=False, color="danger")
-        ok_btn = action_button("✅ Chọn", primary=True, color="success")
+        cancel_btn = action_button(
+            "Hủy", primary=False, color="danger",
+            icon="x", icon_role="danger", icon_disabled_role="danger",
+        )
+        ok_btn = action_button(
+            "Chọn", primary=True, color="success",
+            icon="check", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         configure_button(cancel_btn)
         configure_button(ok_btn)
         buttons_layout.addWidget(cancel_btn)

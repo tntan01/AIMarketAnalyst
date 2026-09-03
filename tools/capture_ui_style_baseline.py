@@ -207,6 +207,7 @@ def _fake_app(theme: str) -> SimpleNamespace:
         backtest_controller=MagicMock(),
         journal_controller=MagicMock(),
         ai_catalog_service=catalog,
+        order_management_service=MagicMock(),
     )
 
 

@@ -227,6 +227,30 @@ Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
 - Nút Journal (nhật ký).
 - Nút Settings (cài đặt).
 
+### Ghi chú thiết kế — bộ icon phẳng (từ 03/09/2026)
+
+- Mọi nút trên dashboard dùng **icon phẳng SVG monochrome** từ `ui/icons.py`
+  (registry `ICONS`, viewBox 24×24, stroke 2, round caps — phong cách feather).
+  KHÔNG dùng emoji trong text nút; màu icon tint theo semantic palette qua
+  `flat_icon(name, role)` và tự đổi màu khi chuyển theme (lazy paint).
+- Nút nền màu (Primary info, DialogAiButton) truyền `icon_role="selection_text"`
+  để icon trắng trên nền; nút nền trong suốt dùng role mặc định "text" hoặc
+  role theo tone (ví dụ `Đóng` → "danger").
+- Thẻ trạng thái: glyph phẳng trong `QLabel#StatusIcon` 28×28, tint theo
+  state ok/warning/danger; nền tròn mờ giữ nguyên từ QSS overlay.
+- Nút icon-only trong bảng tin (`NewsIconButton`) dùng glyph `external-link`;
+  hover tint qua `LinkToneHoverFilter` (QSS `color:` không tint được QIcon).
+- Quy ước mới: **cấm dùng emoji làm icon nút**; cần glyph mới thì thêm vào
+  registry `ui/icons.py` (viewBox 24, stroke-based) thay vì hardcode asset.
+- Phase 2 (hoàn thành 03/09/2026): icon phẳng cho 7 màn còn lại
+  (scanner, orders, settings, backtest, journal, journal_detail, scanner_detail)
+  + RestartButton và sidebar toggle trong `ui/main_window.py`; kế hoạch chi tiết
+  tại `../plans/flat-icons-phase2-plan.md`.
+- Follow-up (chưa làm): emoji trong rich text (báo cáo backtest, scanner_detail,
+  market-brief, rich text dialog), nhãn trạng thái BE/trailing trong bảng orders,
+  KPI badge journal, tab icon nếu nới chiều cao tab.
+- Kế hoạch chi tiết: `../plans/dashboard-flat-icons-plan.md`.
+
 ---
 
 ## Màn hình 2: Single Analysis Input (Màn hình nhập phân tích một mã)

@@ -28,7 +28,8 @@ from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
-from ui.layout_system import configure_table
+from ui.icons import flat_icon, flat_icon_fixed, flat_pixmap
+from ui.layout_system import LayoutTokens, configure_table
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
 from ui.theme.fonts import QSS_BODY, QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
 from ui.theme_manager import (
@@ -118,31 +119,81 @@ class _ElidedLabel(QLabel):
             super().setText(elided)
 
 
-# Icon (emoji) cho mỗi thẻ trạng thái — đặt trong nền tròn mờ bên trái thẻ.
-STATUS_CARD_ICONS = {
-    "Kết nối": "🔌",
-    "Broker": "👤",
-    "AI": "🤖",
-    "Nguồn dữ liệu": "📊",
+# Icon phẳng (glyph trong ui/icons.py) cho mỗi thẻ trạng thái — pixmap tint
+# theo state, đặt trong nền tròn mờ bên trái thẻ (thay emoji cũ).
+STATUS_CARD_FLAT_ICONS = {
+    "Kết nối": "plug",
+    "Broker": "user",
+    "AI": "bot",
+    "Nguồn dữ liệu": "bar-chart",
+}
+
+# State của thẻ → semantic role tint glyph.
+_STATE_ICON_ROLES = {"ok": "success", "warning": "warning", "danger": "danger"}
+
+# Zone của tin → semantic role tint icon link (khớp nhóm màu linkTone QSS).
+_LINK_TONE_ROLES = {
+    "past": "subtle",
+    "nearest": "success",
+    "future": "warning",
+    "danger": "danger",
+    "warning": "warning",
 }
 
 
+class LinkToneHoverFilter(QObject):
+    """Hover tint cho nút icon-only NewsIconButton.
+
+    QSS `color:` không tint được QIcon và QPushButton không request QIcon
+    mode Active khi hover, nên filter tự swap sang bản lighter/darker của màu
+    role (resolve từ palette, không hardcode).
+    """
+
+    def __init__(self, button, icon_name, role, parent=None):
+        super().__init__(parent)
+        self.button = button
+        self.icon_name = icon_name
+        self.role = role
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.HoverEnter:
+            self.button.setIcon(self._hover_icon())
+        elif event.type() == QEvent.Type.HoverLeave:
+            self.button.setIcon(flat_icon(self.icon_name, self.role))
+        return super().eventFilter(obj, event)
+
+    def _hover_icon(self):
+        color = semantic_qcolor(self.role, palette=current_palette())
+        adjusted = color.darker(118) if is_light_theme() else color.lighter(118)
+        return flat_icon_fixed(self.icon_name, adjusted.name())
+
+
 class StatusCardEventFilter(QObject):
-    def __init__(self, screen, icon, value_label, parent=None):
+    def __init__(self, screen, icon, value_label, parent=None, icon_name=None):
         super().__init__(parent)
         self.screen = screen
         self.icon = icon
         self.value_label = value_label
+        self.icon_name = icon_name
 
     def eventFilter(self, obj, event):
         if event.type() in (QEvent.Type.DynamicPropertyChange, QEvent.Type.StyleChange):
             if event.type() == QEvent.Type.DynamicPropertyChange and event.propertyName() != b"state":
                 return super().eventFilter(obj, event)
-                
+
             state = obj.property("state") or "warning"
-            
+
             set_dynamic_property(self.icon, "state", state)
+            self._apply_flat_icon(state)
         return super().eventFilter(obj, event)
+
+    def _apply_flat_icon(self, state):
+        """Re-set pixmap glyph theo state mới (QSS chỉ tint được text, pixmap
+        phải re-render tay)."""
+        if not self.icon_name or self.icon is None:
+            return
+        role = _STATE_ICON_ROLES.get(state, "warning")
+        self.icon.setPixmap(flat_pixmap(self.icon_name, role, size=16))
 
 
 class DashboardScreen(QWidget):
@@ -164,11 +215,30 @@ class DashboardScreen(QWidget):
 
     def refresh_theme_styles(self) -> None:
         self._light = self._is_light_theme()
+        self._retint_status_icons()
         self._refresh_market_overview()
         self.refresh_news_section()
 
     def _is_light_theme(self) -> bool:
         return is_light_theme(self.settings_service)
+
+    def _retint_status_icons(self) -> None:
+        """Re-render pixmap glyph của 4 thẻ trạng thái theo theme hiện hành.
+
+        QPixmap nằm ngoài cơ chế lazy-tint của FlatIconEngine (QIcon) nên
+        phải re-set tay khi đổi theme; button dùng QIcon không cần bước này.
+        """
+        for title, (frame, _value_label, _detail_label) in self.status_cards.items():
+            icon_name = STATUS_CARD_FLAT_ICONS.get(title)
+            if not icon_name:
+                continue
+            for label in frame.findChildren(QLabel):
+                if label.objectName() == "StatusIcon":
+                    state = label.property("state") or frame.property("state") or "warning"
+                    label.setPixmap(
+                        flat_pixmap(icon_name, _STATE_ICON_ROLES.get(state, "warning"), size=16)
+                    )
+                    break
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -224,12 +294,17 @@ class DashboardScreen(QWidget):
         layout.setContentsMargins(14, 0, 14, 0)
         layout.setSpacing(10)
 
-        # Icon trong nền tròn mờ bên trái thẻ (thay cho chấm tròn cũ)
-        icon_label = QLabel(STATUS_CARD_ICONS.get(title, "•"))
+        # Icon phẳng (pixmap glyph) trong nền tròn mờ bên trái thẻ
+        icon_name = STATUS_CARD_FLAT_ICONS.get(title)
+        icon_label = QLabel()
         icon_label.setObjectName("StatusIcon")
         icon_label.setFixedSize(28, 28)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setProperty("state", state)
+        if icon_name:
+            icon_label.setPixmap(
+                flat_pixmap(icon_name, _STATE_ICON_ROLES.get(state, "warning"), size=16)
+            )
 
         # Vertical layout for text (value + detail)
         text_layout = QVBoxLayout()
@@ -251,7 +326,7 @@ class DashboardScreen(QWidget):
         layout.addLayout(text_layout, 1)
 
         # Propagate state changes to the icon so its tinted background follows
-        event_filter = StatusCardEventFilter(self, icon_label, value_label, frame)
+        event_filter = StatusCardEventFilter(self, icon_label, value_label, frame, icon_name=icon_name)
         frame.installEventFilter(event_filter)
 
         self.status_cards[title] = (frame, value_label, detail_label)
@@ -271,7 +346,14 @@ class DashboardScreen(QWidget):
         self.mt5_warning_detail.setWordWrap(True)
         text_box.addWidget(self.mt5_warning_title)
         text_box.addWidget(self.mt5_warning_detail)
-        retry = action_button("🔄 Thử lại", primary=True, color="info")
+        retry = action_button(
+            "Thử lại",
+            primary=True,
+            color="info",
+            icon="refresh",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
         retry.clicked.connect(self.refresh_mt5_status)
         layout.addLayout(text_box, 1)
         layout.addWidget(retry)
@@ -300,7 +382,14 @@ class DashboardScreen(QWidget):
         layout.addWidget(self.vix_label)
         layout.addWidget(self.us10y_label)
         layout.addWidget(self.us2y_label)
-        help_btn = action_button("❓ Giải thích chỉ số", primary=True, color="info")
+        help_btn = action_button(
+            "Giải thích chỉ số",
+            primary=True,
+            color="info",
+            icon="help-circle",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
         help_btn.setToolTip("Ý nghĩa các chỉ số")
         help_btn.clicked.connect(self._show_market_help)
         layout.addWidget(help_btn)
@@ -339,21 +428,35 @@ class DashboardScreen(QWidget):
         self.news_tab_bar.setExpanding(False)  # không stretch tab ra đầy chiều rộng
         self.news_tab_bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.news_tab_keys = ["last_week", "this_week", "next_week"]
-        self.news_tab_bar.addTab("📅 Tuần trước")
-        self.news_tab_bar.addTab("📅 Tuần này")
-        self.news_tab_bar.addTab("📅 Tuần sau")
+        self.news_tab_bar.addTab("Tuần trước")
+        self.news_tab_bar.addTab("Tuần này")
+        self.news_tab_bar.addTab("Tuần sau")
         self.news_tab_bar.setCurrentIndex(1) # Default to this week
         self.news_tab_bar.currentChanged.connect(self._on_news_tab_changed)
         tab_layout.addWidget(self.news_tab_bar)
 
-        self.news_scroll_btn = action_button("📍 Xem tin sắp tới", primary=True, color="info")
+        self.news_scroll_btn = action_button(
+            "Xem tin sắp tới",
+            primary=True,
+            color="info",
+            icon="map-pin",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
         self.news_scroll_btn.setToolTip("Chuyển sang tuần này và kéo tới tin sắp tới gần nhất")
         self.news_scroll_btn.clicked.connect(self._go_to_nearest)
         tab_layout.addWidget(self.news_scroll_btn)
 
         tab_layout.addStretch()
 
-        self.news_refresh_button = action_button("🔄 Làm mới", primary=True, color="info")
+        self.news_refresh_button = action_button(
+            "Làm mới",
+            primary=True,
+            color="info",
+            icon="refresh",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
         self.news_refresh_button.setToolTip("Tải lại chỉ số thị trường, tin tức & sự kiện (3 tuần)")
         self.news_refresh_button.clicked.connect(self.refresh_news_section)
         tab_layout.addWidget(self.news_refresh_button)
@@ -399,7 +502,7 @@ class DashboardScreen(QWidget):
         btn = getattr(self, "news_refresh_button", None)
         if btn is not None:
             btn.setEnabled(False)
-            btn.setText("⏳ Đang tải...")
+            btn.setText("Đang tải...")
             QApplication.processEvents()
 
         self._refresh_market_overview()
@@ -428,7 +531,7 @@ class DashboardScreen(QWidget):
             try:
                 if self.news_worker.isRunning():
                     if btn is not None:
-                        btn.setText("🔄 Làm mới")
+                        btn.setText("Làm mới")
                         btn.setEnabled(True)
                     return
             except RuntimeError:
@@ -443,7 +546,7 @@ class DashboardScreen(QWidget):
 
     def _reset_news_button(self, btn):
         if btn is not None:
-            btn.setText("🔄 Làm mới")
+            btn.setText("Làm mới")
             btn.setEnabled(True)
 
     def _on_news_data_ready(self, result: dict) -> None:
@@ -808,11 +911,20 @@ class DashboardScreen(QWidget):
                 url = str(row.get("url", ""))
                 title = str(row.get("title", ""))
                 if url or title:
-                    detail_btn = QPushButton("🔗")
+                    icon_role = _LINK_TONE_ROLES.get(zone, "subtle")
+                    detail_btn = QPushButton()
                     detail_btn.setObjectName("NewsIconButton")
                     detail_btn.setProperty("linkTone", zone)
                     detail_btn.setToolTip("Xem tóm tắt & chi tiết tin tức")
                     detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    detail_btn.setIcon(flat_icon("external-link", icon_role))
+                    detail_btn.setIconSize(
+                        QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE)
+                    )
+                    hover_filter = LinkToneHoverFilter(
+                        detail_btn, "external-link", icon_role, detail_btn
+                    )
+                    detail_btn.installEventFilter(hover_filter)
                     detail_btn.clicked.connect(lambda checked, r=row: self._show_headline_detail(r, tz))
                     table.setCellWidget(i, 7, detail_btn)
 
@@ -856,9 +968,9 @@ class DashboardScreen(QWidget):
     def _render_zone_header(self, table: QTableWidget, row_idx: int, zone: str) -> None:
         """Render a colored zone separator row with full background fill."""
         configs = {
-            "past": ("─── 📅 ĐÃ QUA ───", "muted"),
-            "nearest": ("─── ⚡ SẮP TỚI GẦN NHẤT ───", "success"),
-            "future": ("─── 📅 SẮP TỚI ───", "warning"),
+            "past": ("─── ĐÃ QUA ───", "muted"),
+            "nearest": ("─── SẮP TỚI GẦN NHẤT ───", "success"),
+            "future": ("─── SẮP TỚI ───", "warning"),
         }
         text, role = configs.get(zone, ("───", "muted"))
         palette = current_palette(self.settings_service)
@@ -907,7 +1019,7 @@ class DashboardScreen(QWidget):
             local_time_str = local_dt.strftime("%d/%m/%Y %H:%M")
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"📰 Chi tiết tin tức — {source}")
+        dlg.setWindowTitle(f"Chi tiết tin tức — {source}")
         dlg.setMinimumSize(700, 450)
         dlg.resize(750, 480)
         dlg.setObjectName("AnalysisDetailDialog")
@@ -917,7 +1029,7 @@ class DashboardScreen(QWidget):
         root.setSpacing(16)
 
         # Title
-        title_lbl = QLabel(f"📰 {title_text}")
+        title_lbl = QLabel(title_text)
         title_lbl.setObjectName("ActionTitle")
         title_lbl.setWordWrap(True)
         root.addWidget(title_lbl)
@@ -979,12 +1091,23 @@ class DashboardScreen(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        ai_btn = action_button("🤖 Tóm tắt AI", primary=True)
+        ai_btn = action_button(
+            "Tóm tắt AI",
+            primary=True,
+            icon="bot",
+            icon_role="selection_text",
+        )
         ai_btn.setObjectName("DialogAiButton")
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng", primary=False, color="danger")
+        close_btn = action_button(
+            "Đóng",
+            primary=False,
+            color="danger",
+            icon="x",
+            icon_role="danger",
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
 
@@ -993,7 +1116,7 @@ class DashboardScreen(QWidget):
         # Request AI handler
         def request_summary():
             ai_btn.setEnabled(False)
-            ai_btn.setText("⏳ Đang tóm tắt...")
+            ai_btn.setText("Đang tóm tắt...")
             QApplication.processEvents()
 
             try:
@@ -1008,7 +1131,7 @@ class DashboardScreen(QWidget):
                             tone="danger",
                         ),
                     )
-                    ai_btn.setText("🤖 Tóm tắt AI")
+                    ai_btn.setText("Tóm tắt AI")
                     ai_btn.setEnabled(True)
                     return
 
@@ -1035,7 +1158,7 @@ class DashboardScreen(QWidget):
             except Exception as e:
                 ai_response.setText(f"Lỗi phân tích: {e}")
             finally:
-                ai_btn.setText("🤖 Tóm tắt AI")
+                ai_btn.setText("Tóm tắt AI")
                 ai_btn.setEnabled(True)
 
         ai_btn.clicked.connect(request_summary)
@@ -1067,7 +1190,7 @@ class DashboardScreen(QWidget):
         time_str = local_time.strftime("%d/%m/%Y %H:%M")
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"📊 Chi tiết sự kiện — {currency}")
+        dlg.setWindowTitle(f"Chi tiết sự kiện — {currency}")
         dlg.setMinimumSize(700, 480)
         dlg.resize(750, 520)
         dlg.setObjectName("AnalysisDetailDialog")
@@ -1077,7 +1200,7 @@ class DashboardScreen(QWidget):
         root.setSpacing(16)
 
         # Title
-        title = QLabel(f"📊 {currency}: {event_name}")
+        title = QLabel(f"{currency}: {event_name}")
         title.setObjectName("ActionTitle")
         title.setWordWrap(True)
         root.addWidget(title)
@@ -1156,7 +1279,7 @@ class DashboardScreen(QWidget):
                 self._actual_lookup_worker = None
             self._actual_lookup_worker = ActualLookupWorker(currency, event_name, ev_time.strftime("%Y-%m-%d"), svc, forecast, previous)
             self._actual_lookup_worker.result_ready.connect(
-                lambda result, lbl=actual_val_label: lbl.setText(f"✅ {result}" if result else "❌ Không tìm thấy")
+                lambda result, lbl=actual_val_label: lbl.setText(f"Kết quả: {result}" if result else "Không tìm thấy")
             )
             self._actual_lookup_worker.finished.connect(self._actual_lookup_worker.deleteLater)
             self._actual_lookup_worker.start()
@@ -1173,12 +1296,23 @@ class DashboardScreen(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        ai_btn = action_button("🤖 Xem tác động", primary=True)
+        ai_btn = action_button(
+            "Xem tác động",
+            primary=True,
+            icon="bot",
+            icon_role="selection_text",
+        )
         ai_btn.setObjectName("DialogAiButton")
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng", primary=False, color="danger")
+        close_btn = action_button(
+            "Đóng",
+            primary=False,
+            color="danger",
+            icon="x",
+            icon_role="danger",
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
 
@@ -1191,7 +1325,7 @@ class DashboardScreen(QWidget):
 
     def _request_ai_impact(self, btn: QPushButton, ev: dict, text_widget: QTextEdit) -> None:
         btn.setEnabled(False)
-        btn.setText("⏳ Đang phân tích...")
+        btn.setText("Đang phân tích...")
         QApplication.processEvents()
 
         settings = self.settings_service.load()
@@ -1205,7 +1339,7 @@ class DashboardScreen(QWidget):
                     tone="danger",
                 ),
             )
-            btn.setText("🤖 Xem tác động")
+            btn.setText("Xem tác động")
             btn.setEnabled(True)
             return
 
@@ -1253,7 +1387,7 @@ class DashboardScreen(QWidget):
         ])
         prompt = "\n".join(prompt_lines)
 
-        text_widget.setPlainText("⏳ Đang chờ AI phản hồi...")
+        text_widget.setPlainText("Đang chờ AI phản hồi...")
 
         # Stop any running worker first
         _prev = getattr(self, '_impact_worker', None)
@@ -1294,7 +1428,7 @@ class DashboardScreen(QWidget):
                 else:
                     lines_out.append(stripped)
             text_widget.setPlainText("\n".join(lines_out))
-            btn.setText("🤖 Xem tác động")
+            btn.setText("Xem tác động")
             btn.setEnabled(True)
             self._impact_worker = None
 
@@ -1302,11 +1436,11 @@ class DashboardScreen(QWidget):
             set_rich_html(
                 text_widget,
                 empty_state_html(
-                    f"❌ Lỗi khi gọi AI: {err_msg}",
+                    f"Lỗi khi gọi AI: {err_msg}",
                     tone="danger",
                 ),
             )
-            btn.setText("🤖 Xem tác động")
+            btn.setText("Xem tác động")
             btn.setEnabled(True)
             self._impact_worker = None
 
@@ -1400,7 +1534,7 @@ class DashboardScreen(QWidget):
         title = QLabel(
             compile_rich_html(
                 f'<b style="{QSS_TITLE}color:{_title_color};">'
-                "📊 Hướng dẫn đọc chỉ số thị trường</b>"
+                "Hướng dẫn đọc chỉ số thị trường</b>"
             )
         )
         root_layout.addWidget(title)
@@ -1447,18 +1581,29 @@ class DashboardScreen(QWidget):
         ai_response.setObjectName("ReadonlyText")
         ai_response.setReadOnly(True)
         ai_response.setMinimumHeight(150)
-        ai_response.setPlaceholderText("Bấm \"🤖 Phân tích AI\" để AI đánh giá ảnh hưởng của các chỉ số hiện tại đến thị trường...")
+        ai_response.setPlaceholderText("Bấm \"Phân tích AI\" để AI đánh giá ảnh hưởng của các chỉ số hiện tại đến thị trường...")
         root_layout.addWidget(ai_response, 1)
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        ai_btn = action_button("🤖 Phân tích AI", primary=True)
+        ai_btn = action_button(
+            "Phân tích AI",
+            primary=True,
+            icon="bot",
+            icon_role="selection_text",
+        )
         ai_btn.setObjectName("DialogAiButton")
         btn_layout.addWidget(ai_btn)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng", primary=False, color="danger")
+        close_btn = action_button(
+            "Đóng",
+            primary=False,
+            color="danger",
+            icon="x",
+            icon_role="danger",
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         root_layout.addLayout(btn_layout)
@@ -1566,9 +1711,9 @@ QUAN TRỌNG:
 - KHÔNG gộp US2Y với US10Y — đây là 2 chỉ số KHÁC NHAU"""
 
             ai_btn.setEnabled(False)
-            ai_btn.setText("⏳ Đang phân tích...")
+            ai_btn.setText("Đang phân tích...")
             ai_response.clear()
-            ai_response.insertPlainText("⏳ Đang chờ AI phản hồi...\n\n")
+            ai_response.insertPlainText("Đang chờ AI phản hồi...\n\n")
 
             # Stop any running worker
             _prev = getattr(self, '_market_help_worker', None)
@@ -1614,7 +1759,7 @@ QUAN TRỌNG:
 
             def on_finished(text):
                 ai_response.setMarkdown(text)
-                ai_btn.setText("🤖 Phân tích AI")
+                ai_btn.setText("Phân tích AI")
                 ai_btn.setEnabled(True)
                 self._ai_last_snapshot = snapshot
                 self._ai_cached_response = text
@@ -1624,11 +1769,11 @@ QUAN TRỌNG:
                 set_rich_html(
                     ai_response,
                     empty_state_html(
-                        f"❌ Lỗi phân tích: {err_msg}",
+                        f"Lỗi phân tích: {err_msg}",
                         tone="danger",
                     ),
                 )
-                ai_btn.setText("🤖 Phân tích AI")
+                ai_btn.setText("Phân tích AI")
                 ai_btn.setEnabled(True)
                 self._market_help_worker = None
 

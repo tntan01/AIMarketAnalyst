@@ -26,6 +26,7 @@ from ui.scanner_rr_formatters import (
     format_source_zone_text,
 )
 from ui.components.chart_view import AnalysisChartView
+from ui.icons import flat_icon, flat_pixmap
 from ui.rich_text import empty_state_html, set_rich_html
 from ui.screens.shared import action_button, card, page_header
 from ui.theme import chart_palette, semantic_role_for_color
@@ -38,6 +39,17 @@ from ui.theme_manager import current_palette, is_light_theme, set_dynamic_proper
 _HTML_BODY = QSS_BODY.replace("'", "")
 _HTML_NUMBER = QSS_NUMBER.replace("'", "")
 _HTML_SMALL = QSS_SMALL.replace("'", "")
+
+
+def _checklist_pixmap(state: str, passed: bool):
+    """Pixmap glyph phẳng cho checklist theo state (thay emoji ✅/❌/➖)."""
+    if passed:
+        name, role = "check", "success"
+    elif state == "fail":
+        name, role = "x", "danger"
+    else:
+        name, role = "minus", "muted"
+    return flat_pixmap(name, role, size=14)
 _HTML_SUBTITLE = QSS_SUBTITLE.replace("'", "")
 _HTML_TITLE = QSS_TITLE.replace("'", "")
 
@@ -239,7 +251,10 @@ class ScannerDetailScreen(QWidget):
         left_col.setContentsMargins(0, 0, 0, 0)
 
         # -- Button + Trade Panel + Score Panel + Checklist Panel --
-        self.show_detail_btn = action_button("📋 Xem đầy đủ", primary=True, color="warning")
+        self.show_detail_btn = action_button(
+            "Xem đầy đủ", primary=True, color="warning",
+            icon="clipboard", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.show_detail_btn.setObjectName("ScannerDetailFullButton")
         self.show_detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.show_detail_btn.setToolTip(
@@ -325,7 +340,7 @@ class ScannerDetailScreen(QWidget):
         scroll.setWidget(overview_container)
         overview_tab.layout().addWidget(scroll)
 
-        self.tabs.addTab(overview_tab, "📊 Tổng quan")
+        self.tabs.addTab(overview_tab, "Tổng quan")
 
         # ---- Tab 2: Chẩn đoán (score + gate + checklist) ----------------
         diag_tab = card()
@@ -333,14 +348,17 @@ class ScannerDetailScreen(QWidget):
         self.diag_text.setObjectName("ScannerDetailText")
         self.diag_text.setReadOnly(True)
         diag_tab.layout().addWidget(self.diag_text, 1)
-        self.tabs.addTab(diag_tab, "🔬 Chẩn đoán")
+        self.tabs.addTab(diag_tab, "Chẩn đoán")
 
         # ---- Tab 3: Kiểm định AI ----------------------------------------
         audit_tab = card()
         audit_layout = audit_tab.layout()
         # Button row
         btn_row = QHBoxLayout()
-        self.audit_btn = action_button("🔍 Chạy kiểm định AI", primary=True, color="warning")
+        self.audit_btn = action_button(
+            "Chạy kiểm định AI", primary=True, color="warning",
+            icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.audit_btn.clicked.connect(self._run_ai_audit)
         self.audit_status = QLabel("")
         self.audit_status.setObjectName("ScannerAuditStatus")
@@ -353,14 +371,23 @@ class ScannerDetailScreen(QWidget):
         self.audit_text.setObjectName("ScannerDetailText")
         self.audit_text.setReadOnly(True)
         audit_layout.addWidget(self.audit_text, 1)
-        self.tabs.addTab(audit_tab, "🤖 Kiểm định AI")
+        self.tabs.addTab(audit_tab, "Kiểm định AI")
 
         root.addWidget(self.tabs, 1)
 
         actions = QHBoxLayout()
-        self.back_button = action_button("⬅️ Quay lại")
-        self.save_button = action_button("💾 Lưu nhật ký", primary=True, color="success")
-        self.export_button = action_button("📤 Xuất JSON")
+        self.back_button = action_button(
+            "Quay lại",
+            icon="arrow-left", icon_role="text", icon_disabled_role="text",
+        )
+        self.save_button = action_button(
+            "Lưu nhật ký", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
+        self.export_button = action_button(
+            "Xuất JSON",
+            icon="upload", icon_role="text", icon_disabled_role="text",
+        )
         if self.navigate:
             self.back_button.clicked.connect(lambda: self.navigate("scanner"))
         self.save_button.clicked.connect(self._save_to_journal)
@@ -732,7 +759,7 @@ class ScannerDetailScreen(QWidget):
 
         symbol = str(self.row.get("symbol", "--"))
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"📋 Chi tiết kết quả quét — {symbol}")
+        dlg.setWindowTitle(f"Chi tiết kết quả quét — {symbol}")
         dlg.setMinimumSize(880, 580)
         dlg.resize(1040, 680)
         dlg.setObjectName("ScanAnalysisDetailDialog")
@@ -747,7 +774,7 @@ class ScannerDetailScreen(QWidget):
         header_layout = QHBoxLayout()
         header_layout.setSpacing(12)
         
-        title = QLabel(f"📋 CHI TIẾT KẾT QUẢ QUÉT — {symbol}")
+        title = QLabel(f"CHI TIẾT KẾT QUẢ QUÉT — {symbol}")
         title.setObjectName("ScannerDialogTitle")
         header_layout.addWidget(title)
         header_layout.addStretch(1)
@@ -916,7 +943,7 @@ class ScannerDetailScreen(QWidget):
         # -----------------------------------------------------------------------
         # CỘT TRÁI - PHẦN 1: BỐI CẢNH KỸ THUẬT
         # -----------------------------------------------------------------------
-        tech_title = QLabel("🔍 BỐI CẢNH KỸ THUẬT")
+        tech_title = QLabel("BỐI CẢNH KỸ THUẬT")
         tech_title.setObjectName("ScannerDialogSectionTitle")
         left_col.addWidget(tech_title)
 
@@ -940,7 +967,7 @@ class ScannerDetailScreen(QWidget):
         # -----------------------------------------------------------------------
         # CỘT TRÁI - PHẦN 2: BỐI CẢNH VĨ MÔ
         # -----------------------------------------------------------------------
-        macro_title = QLabel("🌐 BỐI CẢNH VĨ MÔ")
+        macro_title = QLabel("BỐI CẢNH VĨ MÔ")
         macro_title.setObjectName("ScannerDialogSectionTitle")
         left_col.addWidget(macro_title)
 
@@ -1069,14 +1096,14 @@ class ScannerDetailScreen(QWidget):
             buy_r = reasons_dict.get("buy", "")
             sell_r = reasons_dict.get("sell", "")
             if buy_r:
-                buy_lbl = QLabel(f"🟢 <b style='color:#10b981;'>MUA:</b> {buy_r}")
+                buy_lbl = QLabel(f"<b style='color:#10b981;'>MUA:</b> {buy_r}")
                 buy_lbl.setObjectName("ScannerReasonText")
                 buy_lbl.setWordWrap(True)
                 buy_lbl.setTextFormat(Qt.TextFormat.RichText)
                 reasons_layout.addWidget(buy_lbl)
                 has_reasons = True
             if sell_r:
-                sell_lbl = QLabel(f"🔴 <b style='color:#f43f5e;'>BÁN:</b> {sell_r}")
+                sell_lbl = QLabel(f"<b style='color:#f43f5e;'>BÁN:</b> {sell_r}")
                 sell_lbl.setObjectName("ScannerReasonText")
                 sell_lbl.setWordWrap(True)
                 sell_lbl.setTextFormat(Qt.TextFormat.RichText)
@@ -1097,7 +1124,7 @@ class ScannerDetailScreen(QWidget):
         # -----------------------------------------------------------------------
         # CỘT PHẢI - PHẦN 4: ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)
         # -----------------------------------------------------------------------
-        checklist_title = QLabel("🔍 ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)")
+        checklist_title = QLabel("ĐIỀU KIỆN VÀO LỆNH (CHECKLIST)")
         checklist_title.setObjectName("ScannerDialogSectionTitle")
         right_col.addWidget(checklist_title)
 
@@ -1124,9 +1151,8 @@ class ScannerDetailScreen(QWidget):
             row_l.setSpacing(8)
             row_l.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-            icon_lbl = QLabel(
-                "✅" if passed else "❌" if state == "fail" else "➖"
-            )
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(_checklist_pixmap(state, passed))
             icon_lbl.setObjectName("ScannerChecklistIcon")
             icon_lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             row_l.addWidget(icon_lbl)
@@ -1148,7 +1174,9 @@ class ScannerDetailScreen(QWidget):
         # Close button
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
-        close_btn = action_button("✖ Đóng")
+        close_btn = action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(close_btn)
         root.addLayout(btn_row)
@@ -1990,7 +2018,7 @@ class ScannerDetailScreen(QWidget):
         layout = self.trade_panel.layout()
         self._clear_layout(layout)
 
-        title = QLabel("🎯 Số liệu giao dịch")
+        title = QLabel("Số liệu giao dịch")
         title.setObjectName("ScannerPanelTitle")
         layout.addWidget(title)
 
@@ -2065,7 +2093,7 @@ class ScannerDetailScreen(QWidget):
         layout = self.score_panel.layout()
         self._clear_layout(layout)
 
-        title = QLabel("📊 Điểm phân tích")
+        title = QLabel("Điểm phân tích")
         title.setObjectName("ScannerPanelTitle")
         layout.addWidget(title)
 
@@ -2142,7 +2170,7 @@ class ScannerDetailScreen(QWidget):
         layout = self.checklist_panel.layout()
         self._clear_layout(layout)
 
-        title = QLabel("🔍 Điều kiện vào lệnh")
+        title = QLabel("Điều kiện vào lệnh")
         title.setObjectName("ScannerPanelTitle")
         layout.addWidget(title)
 
@@ -2167,13 +2195,13 @@ class ScannerDetailScreen(QWidget):
             1 for item in items[:6] if item.get("state") == "unknown"
         )
         if fail_count >= 1:
-            summary = QLabel(f"⚠️ {fail_count}/6 điều kiện chưa đạt")
+            summary = QLabel(f"{fail_count}/6 điều kiện chưa đạt")
             summary.setObjectName("ScannerChecklistSummary")
             summary.setProperty("checkState", "fail")
             layout.addWidget(summary)
         elif unknown_count:
             summary = QLabel(
-                f"➖ {unknown_count}/6 điều kiện chưa có dữ liệu"
+                f"{unknown_count}/6 điều kiện chưa có dữ liệu"
             )
             summary.setObjectName("ScannerChecklistSummary")
             summary.setProperty("checkState", "unknown")
@@ -2192,14 +2220,14 @@ class ScannerDetailScreen(QWidget):
             passed = state == "pass"
             full_label = item_data["label"]
             short_name = SHORT_NAMES[i] if i < len(SHORT_NAMES) else full_label[:12]
-            icon = "✅" if passed else "❌" if state == "fail" else "➖"
             row_i, col_i = divmod(i, 2)
             item_w = QWidget()
             item_w.setObjectName("TransparentWidget")
             item_l = QHBoxLayout(item_w)
             item_l.setContentsMargins(0, 0, 0, 0)
             item_l.setSpacing(3)
-            icon_lbl = QLabel(icon)
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(_checklist_pixmap(state, passed))
             icon_lbl.setObjectName("ScannerCompactIcon")
             name_lbl = QLabel(short_name)
             name_lbl.setObjectName("ScannerChecklistName")

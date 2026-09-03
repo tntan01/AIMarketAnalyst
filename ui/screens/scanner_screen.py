@@ -39,6 +39,7 @@ QWidget ,
 from services .mt5_service import MT5Service
 from services .settings_service import SettingsService
 from ui.layout_system import configure_table
+from ui.icons import flat_icon
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header
 from ui.scanner_presentation import sort_scanner_rows_for_display
 from ui.scanner_rr_formatters import (
@@ -840,7 +841,10 @@ class ScannerScreen (QWidget ):
 
         symbol_row =QHBoxLayout ()
         symbol_row .setSpacing (10 )
-        self.symbol_select_button = action_button("🔍 Chọn mã quét", primary=True, color="info")
+        self.symbol_select_button = action_button(
+            "Chọn mã quét", primary=True, color="info",
+            icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self .symbol_select_button .clicked .connect (self ._show_symbol_dialog )
         self .symbol_summary_label =QLabel ("")
         self .symbol_summary_label .setObjectName ("HelperText")
@@ -868,7 +872,9 @@ class ScannerScreen (QWidget ):
         self .scan_interval_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
         for combo in (self .scan_mode_combo ,self .scan_interval_combo ):
             combo .setSizePolicy (QSizePolicy .Policy .Fixed ,QSizePolicy .Policy .Fixed )
-        self.auto_trade_check = QPushButton("🤖 Tự động vào lệnh MT5")
+        self.auto_trade_check = QPushButton("Tự động vào lệnh MT5")
+        self.auto_trade_check.setIcon(flat_icon("bot", "text"))
+        self.auto_trade_check.setIconSize(QSize(16, 16))
         self.auto_trade_check.setObjectName("AutoTradeToggle")
         self.auto_trade_check.setCheckable(True)
         self.auto_trade_check.setCursor(Qt.CursorShape.ArrowCursor)
@@ -882,13 +888,22 @@ class ScannerScreen (QWidget ):
         self .scan_mode_combo .currentIndexChanged .connect (self ._on_scan_mode_changed )
         self ._update_auto_trade_toggle_state ()
 
-        self.scan_button = action_button("🔍 Quét thị trường", primary=True, color="info")
+        self.scan_button = action_button(
+            "Quét thị trường", primary=True, color="info",
+            icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self .scan_button .clicked .connect (self ._run_scan )
-        self .stop_auto_scan_button =action_button ("⏹️ Dừng quét tự động",primary =True ,color ="danger")
+        self.stop_auto_scan_button = action_button(
+            "Dừng quét tự động", primary=True, color="danger",
+            icon="stop", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self .stop_auto_scan_button .setVisible (False )
         self .stop_auto_scan_button .clicked .connect (self ._stop_auto_scan )
 
-        self.show_orders_button = action_button("📋 Kế hoạch lệnh", primary=True, color="info")
+        self.show_orders_button = action_button(
+            "Kế hoạch lệnh", primary=True, color="info",
+            icon="clipboard", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.show_orders_button.setToolTip(
             "Xem ứng viên, kết quả kiểm tra và trạng thái gửi lệnh của lần quét gần nhất"
         )
@@ -1060,7 +1075,7 @@ class ScannerScreen (QWidget ):
             if auto_trade_enabled
             else "Kế hoạch lệnh có thể xem xét"
         )
-        dlg.setWindowTitle(f"📋 {title_text}")
+        dlg.setWindowTitle(title_text)
         dlg.setMinimumSize(940, 560)
         dlg.resize(980, 620)
         dlg.setObjectName("AnalysisDetailDialog")
@@ -1141,7 +1156,7 @@ class ScannerScreen (QWidget ):
                     ),
                 )
                 btn.setEnabled(True)
-                btn.setText("⚡ Thử lại")
+                btn.setText("Thử lại")
             return
 
         def create_order_button(row_order: dict) -> QWidget:
@@ -1150,7 +1165,10 @@ class ScannerScreen (QWidget ):
             btn_layout.setContentsMargins(4, 2, 4, 2)
             btn_layout.setSpacing(0)
             
-            btn = action_button("⚡ Vào lệnh", primary=True)
+            btn = action_button(
+                "Vào lệnh", primary=True,
+                icon="zap", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             btn.setProperty("manualOrder", True)
             
             broker_symbol = row_order.get("broker_symbol")
@@ -1186,7 +1204,7 @@ class ScannerScreen (QWidget ):
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_layout.setSpacing(4)
 
-        title_label = QLabel(f"📋 {title_text}")
+        title_label = QLabel(title_text)
         title_label.setObjectName("OrderDialogTitle")
         
         subtitle_text = (
@@ -1364,7 +1382,10 @@ class ScannerScreen (QWidget ):
         btn_layout.setSpacing(10)
         btn_layout.addStretch()
 
-        close_btn = action_button("❌ Đóng", primary=False, color="danger")
+        close_btn = action_button(
+            "Đóng", primary=False, color="danger",
+            icon="x", icon_role="danger", icon_disabled_role="danger",
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_layout.addWidget(close_btn)
         root.addLayout(btn_layout)
@@ -1480,18 +1501,30 @@ class ScannerScreen (QWidget ):
             header_label =QLabel ('Bảng kết quả quét')
             header_label .setObjectName ("PanelTitle")
             header_layout .addWidget (header_label )
-            self.help_button = action_button("❓ Giải thích", primary=True, color="info")
+            self.help_button = action_button(
+                "Giải thích", primary=True, color="info",
+                icon="help-circle", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self .help_button .setToolTip ('Xem giải thích các thông số trong bảng')
             self .help_button .clicked .connect (self ._show_columns_help )
             header_layout .addWidget (self .help_button )
             header_layout .addStretch (1 )
-            self .detail_button =action_button ('🔍 Xem chi tiết',primary =True )
+            self.detail_button = action_button(
+                "Xem chi tiết", primary=True,
+                icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self .detail_button .setEnabled (False )
             self .detail_button .clicked .connect (self ._open_selected_detail )
-            self .save_button =action_button ('📸 Lưu snapshot',primary =True ,color ="success")
+            self.save_button = action_button(
+                "Lưu snapshot", primary=True, color="success",
+                icon="camera", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self .save_button .setEnabled (False )
             self .save_button .clicked .connect (self ._save_snapshot )
-            self .brief_button = action_button ('📊 Bản tin thị trường', primary=True, color="warning")
+            self.brief_button = action_button(
+                "Bản tin thị trường", primary=True, color="warning",
+                icon="bar-chart", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self.brief_button.setToolTip("Xem bản tin thị trường do AI tổng hợp từ kết quả quét.")
             self .brief_button .clicked .connect (self ._show_market_brief )
             header_layout .addWidget (self .detail_button )
@@ -1853,7 +1886,7 @@ class ScannerScreen (QWidget ):
         QMessageBox .warning (self ,'Không thể quét thị trường',message )
 
     def _scan_thread_finished (self )->None :
-        self.scan_button.setText("🔍 Quét thị trường")
+        self.scan_button.setText("Quét thị trường")
         self ._active_scan_id =""
         self .scan_thread =None
         self .scan_worker =None
@@ -1921,7 +1954,7 @@ class ScannerScreen (QWidget ):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(2)
         
-        title = QLabel("📊 BẢN TIN THỊ TRƯỜNG")
+        title = QLabel("BẢN TIN THỊ TRƯỜNG")
         title.setObjectName("MarketBriefTitle")
         header_layout.addWidget(title)
 
@@ -1987,12 +2020,17 @@ class ScannerScreen (QWidget ):
 
         # Buttons Row
         btn_row = QHBoxLayout()
-        copy_btn = action_button("📋 Sao chép", color="info")
+        copy_btn = action_button(
+            "Sao chép", color="info",
+            icon="clipboard", icon_role="info", icon_disabled_role="info",
+        )
         copy_btn.clicked.connect(
             lambda: (QApplication.clipboard().setText(self._market_brief_text),
                      QMessageBox.information(dlg, "Đã sao chép", "Đã sao chép bản tin vào clipboard."))
         )
-        close_btn = action_button("❌ Đóng")
+        close_btn = action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        )
         close_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(copy_btn)
         btn_row.addStretch()
@@ -2135,7 +2173,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
 
         intro = QLabel(
             "Tất cả các mã trong hệ thống. "
-            "Mã có trong Market Watch là chọn được. Mã đã tick Backtest sẽ có đánh dấu ✅."
+            "Mã có trong Market Watch là chọn được. Mã đã tick Backtest sẽ được đánh dấu."
         )
         intro.setObjectName("HelperText")
         intro.setWordWrap(True)
@@ -2143,8 +2181,14 @@ class ScannerSymbolSelectionDialog (QDialog ):
 
         controls = QHBoxLayout()
         controls.setSpacing(8)
-        self.select_all_button = action_button("✅ Chọn tất cả khả dụng", primary=True, color="success")
-        self.clear_button = action_button("❌ Bỏ chọn", primary=True, color="danger")
+        self.select_all_button = action_button(
+            "Chọn tất cả khả dụng", primary=True, color="success",
+            icon="check", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
+        self.clear_button = action_button(
+            "Bỏ chọn", primary=True, color="danger",
+            icon="x", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         for button in (self.select_all_button, self.clear_button):
             controls.addWidget(button)
         controls.addStretch(1)
@@ -2172,7 +2216,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
             if not selectable:
                 checkbox.setToolTip("Mã này chưa có trong Market Watch của MT5.")
             elif is_backtested:
-                checkbox.setText(f"{symbol}  ✅")
+                checkbox.setText(symbol)
                 checkbox.setToolTip("Đã cấu hình Backtest — dùng filter từ backtest nếu có.")
             else:
                 checkbox.setToolTip("Chưa tick Backtest — chạy theo điều kiện Ready mặc định.")
@@ -2185,8 +2229,14 @@ class ScannerSymbolSelectionDialog (QDialog ):
         buttons_layout.setContentsMargins(0, 8, 0, 0)
         buttons_layout.setSpacing(8)
         buttons_layout.addStretch(1)
-        cancel_btn = action_button("❌ Hủy", primary=False, color="danger")
-        ok_btn = action_button("✅ Áp dụng", primary=True, color="success")
+        cancel_btn = action_button(
+            "Hủy", primary=False, color="danger",
+            icon="x", icon_role="danger", icon_disabled_role="danger",
+        )
+        ok_btn = action_button(
+            "Áp dụng", primary=True, color="success",
+            icon="check", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         buttons_layout.addWidget(cancel_btn)
         buttons_layout.addWidget(ok_btn)
         root.addLayout(buttons_layout)
@@ -2269,7 +2319,9 @@ class ScannerRowExplanationDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 8, 0, 0)
         buttons_layout.addStretch(1)
-        close_btn = action_button("❌ Đóng")
+        close_btn = action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        )
         close_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(close_btn)
         layout.addLayout(buttons_layout)
@@ -3209,7 +3261,9 @@ class ScannerColumnsHelpDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 8, 0, 0)
         buttons_layout.addStretch(1)
-        close_btn = action_button("❌ Đóng")
+        close_btn = action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        )
         close_btn.clicked.connect(self.accept)
         buttons_layout.addWidget(close_btn)
         layout.addLayout(buttons_layout)

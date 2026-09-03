@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-27T12:44:03.036199+00:00",
+  "generated_at": "2026-09-03T15:57:06.435863+00:00",
   "source_manifest": "docs/ui/baseline/current/screenshot-manifest.json",
   "theme": "dark",
   "policy": {
@@ -18,13 +18,13 @@
       "width": 800,
       "height": 600,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.003133,
-      "largest_component_ratio": 6.7e-05,
+      "neutral_bright_ratio": 0.002742,
+      "largest_component_ratio": 5.8e-05,
       "largest_component": {
         "x": 39,
-        "y": 80,
-        "width": 9,
-        "height": 9
+        "y": 77,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-backtest-ai-analysis",
@@ -33,15 +33,15 @@
     {
       "path": "docs/ui/baseline/current/dark/dialog-backtest-config.png",
       "width": 908,
-      "height": 329,
+      "height": 321,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.000561,
-      "largest_component_ratio": 4e-05,
+      "neutral_bright_ratio": 0.001833,
+      "largest_component_ratio": 0.000164,
       "largest_component": {
-        "x": 740,
-        "y": 295,
-        "width": 2,
-        "height": 6
+        "x": 738,
+        "y": 289,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-backtest-config",
@@ -50,15 +50,15 @@
     {
       "path": "docs/ui/baseline/current/dark/dialog-backtest-symbol-selection.png",
       "width": 420,
-      "height": 425,
+      "height": 400,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.033793,
-      "largest_component_ratio": 0.000179,
+      "neutral_bright_ratio": 0.028964,
+      "largest_component_ratio": 0.000167,
       "largest_component": {
         "x": 18,
-        "y": 18,
-        "width": 9,
-        "height": 9
+        "y": 17,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-backtest-symbol-selection",
@@ -69,13 +69,13 @@
       "width": 750,
       "height": 520,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.00801,
-      "largest_component_ratio": 0.000133,
+      "neutral_bright_ratio": 0.007303,
+      "largest_component_ratio": 0.000113,
       "largest_component": {
         "x": 26,
         "y": 26,
-        "width": 14,
-        "height": 14
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "dialog-dashboard-event",
@@ -86,13 +86,13 @@
       "width": 750,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.013089,
-      "largest_component_ratio": 0.000144,
+      "neutral_bright_ratio": 0.011367,
+      "largest_component_ratio": 0.000122,
       "largest_component": {
         "x": 26,
         "y": 26,
-        "width": 14,
-        "height": 14
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "dialog-dashboard-headline",
@@ -103,13 +103,13 @@
       "width": 960,
       "height": 680,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.005821,
-      "largest_component_ratio": 0.000147,
+      "neutral_bright_ratio": 0.003873,
+      "largest_component_ratio": 6.7e-05,
       "largest_component": {
         "x": 26,
         "y": 26,
-        "width": 14,
-        "height": 14
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "dialog-dashboard-market-help",
@@ -120,11 +120,11 @@
       "width": 920,
       "height": 620,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.066564,
+      "neutral_bright_ratio": 0.066985,
       "largest_component_ratio": 4.9e-05,
       "largest_component": {
         "x": 34,
-        "y": 90,
+        "y": 88,
         "width": 8,
         "height": 8
       },
@@ -134,16 +134,16 @@
     },
     {
       "path": "docs/ui/baseline/current/dark/dialog-orders-trailing-stop.png",
-      "width": 939,
-      "height": 610,
+      "width": 882,
+      "height": 563,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.025281,
-      "largest_component_ratio": 0.00014,
+      "neutral_bright_ratio": 0.01962,
+      "largest_component_ratio": 9.6e-05,
       "largest_component": {
         "x": 50,
-        "y": 114,
-        "width": 12,
-        "height": 12
+        "y": 96,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-orders-trailing-stop",
@@ -151,16 +151,16 @@
     },
     {
       "path": "docs/ui/baseline/current/dark/dialog-scanner-analysis-detail.png",
-      "width": 1298,
+      "width": 1186,
       "height": 680,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.013686,
-      "largest_component_ratio": 7.3e-05,
+      "neutral_bright_ratio": 0.010435,
+      "largest_component_ratio": 3.5e-05,
       "largest_component": {
-        "x": 28,
-        "y": 96,
-        "width": 10,
-        "height": 10
+        "x": 22,
+        "y": 18,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-scanner-analysis-detail",
@@ -171,11 +171,11 @@
       "width": 1040,
       "height": 680,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.056821,
+      "neutral_bright_ratio": 0.059423,
       "largest_component_ratio": 4e-05,
       "largest_component": {
         "x": 34,
-        "y": 104,
+        "y": 100,
         "width": 8,
         "height": 8
       },
@@ -188,11 +188,11 @@
       "width": 850,
       "height": 650,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003055,
+      "neutral_bright_ratio": 0.003084,
       "largest_component_ratio": 5.1e-05,
       "largest_component": {
         "x": 60,
-        "y": 116,
+        "y": 112,
         "width": 8,
         "height": 8
       },
@@ -205,13 +205,13 @@
       "width": 980,
       "height": 620,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.010145,
-      "largest_component_ratio": 7.2e-05,
+      "neutral_bright_ratio": 0.008545,
+      "largest_component_ratio": 7.9e-05,
       "largest_component": {
         "x": 42,
-        "y": 36,
-        "width": 12,
-        "height": 12
+        "y": 64,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-scanner-orders",
@@ -222,13 +222,13 @@
       "width": 880,
       "height": 600,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.040788,
-      "largest_component_ratio": 0.000121,
+      "neutral_bright_ratio": 0.039795,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 48,
-        "y": 90,
-        "width": 10,
-        "height": 10
+        "x": 406,
+        "y": 92,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "dialog-scanner-row-explanation",
@@ -239,11 +239,11 @@
       "width": 560,
       "height": 520,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.004931,
+      "neutral_bright_ratio": 0.004272,
       "largest_component_ratio": 9.6e-05,
       "largest_component": {
-        "x": 50,
-        "y": 279,
+        "x": 47,
+        "y": 277,
         "width": 8,
         "height": 8
       },
@@ -256,13 +256,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003333,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.002903,
+      "largest_component_ratio": 3.3e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 1518,
+        "y": 90,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "screen-backtest-tab-1-ng-cong-v-n",
@@ -273,13 +273,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003333,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.002903,
+      "largest_component_ratio": 3.3e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 1518,
+        "y": 90,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "screen-backtest-tab-2-l-nh",
@@ -290,13 +290,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.007136,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.005786,
+      "largest_component_ratio": 3.3e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 1518,
+        "y": 90,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "screen-backtest-tab-3-nghi-n-c-u-n-ng-cao",
@@ -307,13 +307,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003333,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.002903,
+      "largest_component_ratio": 3.3e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 1518,
+        "y": 90,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "screen-backtest",
@@ -324,13 +324,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.005681,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.006006,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 252,
-        "y": 26,
-        "width": 24,
-        "height": 24
+        "x": 244,
+        "y": 28,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-dashboard",
@@ -341,13 +341,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.006025,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.003681,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 266,
-        "y": 10,
-        "width": 24,
-        "height": 24
+        "x": 254,
+        "y": 12,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-journal-detail",
@@ -358,13 +358,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.0034,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.002781,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 266,
-        "y": 14,
-        "width": 24,
-        "height": 24
+        "x": 254,
+        "y": 16,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-journal-tab-1-th-ng-k-hi-u-su-t",
@@ -375,13 +375,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003206,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.001625,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 266,
-        "y": 14,
-        "width": 24,
-        "height": 24
+        "x": 254,
+        "y": 16,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-journal",
@@ -392,13 +392,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.002511,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.003317,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 244,
+        "x": 260,
         "y": 16,
-        "width": 24,
-        "height": 24
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-orders",
@@ -409,13 +409,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003031,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.001725,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 244,
-        "y": 18,
-        "width": 24,
-        "height": 24
+        "x": 260,
+        "y": 20,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-scanner-detail-tab-1-ch-n-o-n",
@@ -426,13 +426,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003047,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.001742,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 244,
-        "y": 18,
-        "width": 24,
-        "height": 24
+        "x": 260,
+        "y": 20,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-scanner-detail-tab-2-ki-m-nh-ai",
@@ -443,13 +443,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003608,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.001867,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 244,
-        "y": 18,
-        "width": 24,
-        "height": 24
+        "x": 260,
+        "y": 20,
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-scanner-detail",
@@ -460,13 +460,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003978,
-      "largest_component_ratio": 6.4e-05,
+      "neutral_bright_ratio": 0.002767,
+      "largest_component_ratio": 5.3e-05,
       "largest_component": {
-        "x": 244,
+        "x": 260,
         "y": 16,
-        "width": 24,
-        "height": 24
+        "width": 20,
+        "height": 20
       },
       "flagged": false,
       "name": "screen-scanner",
@@ -477,13 +477,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.010986,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.008122,
+      "largest_component_ratio": 3.1e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 18,
+        "y": 22,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "screen-settings-tab-1-d-li-u",
@@ -494,33 +494,33 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.003917,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.002633,
+      "largest_component_ratio": 3.1e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 18,
+        "y": 22,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "screen-settings-tab-2-giao-d-ch",
       "kind": "screen"
     },
     {
-      "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-rollout.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-qu-n-l-l-nh.png",
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.005008,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.002553,
+      "largest_component_ratio": 3.3e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 252,
+        "y": 426,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
-      "name": "screen-settings-tab-3-rollout",
+      "name": "screen-settings-tab-3-qu-n-l-l-nh",
       "kind": "screen"
     },
     {
@@ -528,13 +528,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.002822,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.001789,
+      "largest_component_ratio": 3.1e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 18,
+        "y": 22,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "screen-settings-tab-4-hi-n-th",
@@ -545,13 +545,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.004689,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.002975,
+      "largest_component_ratio": 3.1e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 18,
+        "y": 22,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "screen-settings-tab-5-n-ng-cao",
@@ -562,13 +562,13 @@
       "width": 1600,
       "height": 900,
       "sample_step": 2,
-      "neutral_bright_ratio": 0.0041,
-      "largest_component_ratio": 4.4e-05,
+      "neutral_bright_ratio": 0.003061,
+      "largest_component_ratio": 3.3e-05,
       "largest_component": {
-        "x": 44,
-        "y": 148,
-        "width": 10,
-        "height": 10
+        "x": 350,
+        "y": 334,
+        "width": 8,
+        "height": 8
       },
       "flagged": false,
       "name": "screen-settings",
@@ -579,13 +579,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-checked",
@@ -596,13 +596,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-default",
@@ -613,13 +613,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-disabled",
@@ -630,13 +630,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-focus",
@@ -647,13 +647,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-hover",
@@ -664,13 +664,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-pressed",
@@ -681,13 +681,13 @@
       "width": 640,
       "height": 480,
       "sample_step": 1,
-      "neutral_bright_ratio": 0.018854,
-      "largest_component_ratio": 0.000169,
+      "neutral_bright_ratio": 0.015794,
+      "largest_component_ratio": 0.000143,
       "largest_component": {
         "x": 13,
-        "y": 46,
-        "width": 14,
-        "height": 14
+        "y": 65,
+        "width": 12,
+        "height": 12
       },
       "flagged": false,
       "name": "state-validation",

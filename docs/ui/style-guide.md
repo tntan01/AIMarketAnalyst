@@ -40,6 +40,11 @@ thái tương tác theo theme.
   `chart_palette()`, không duy trì palette riêng.
 - Rich text phải đi qua `set_rich_html()`, `compile_rich_html()` hoặc template
   dùng chung; không đưa HTML có style tùy ý trực tiếp vào widget.
+- Icon trên nút/thẻ phải là glyph phẳng từ `ui/icons.py` (`flat_icon`,
+  `flat_pixmap`, `FlatIconEngine`) — monochrome, tint theo semantic role,
+  tự đổi màu khi đổi theme. Không dùng emoji làm icon nút; thêm glyph mới
+  vào registry `ICONS` (viewBox 24, stroke-based) thay vì hardcode asset.
+  Module `ui/icons.py` giữ 0 hex literal — màu resolve từ palette.
 
 ## 3. Bố cục
 

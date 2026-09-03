@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QObject, QEvent, QPoint
+from PyQt6.QtCore import Qt, QObject, QEvent, QPoint, QSize
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -12,6 +12,9 @@ from PyQt6.QtWidgets import (
     QToolTip,
     QApplication,
 )
+
+from ui.icons import flat_icon
+from ui.layout_system import LayoutTokens
 
 
 def page_header(title: str, subtitle: str = "", badge: str | None = None) -> QWidget:
@@ -83,12 +86,35 @@ def form_row(label: str, field: QWidget) -> QWidget:
     return widget
 
 
-def action_button(text: str, primary: bool = False, color: str | None = None) -> QPushButton:
+def action_button(
+    text: str,
+    primary: bool = False,
+    color: str | None = None,
+    icon: str | None = None,
+    icon_role: str | None = None,
+    icon_disabled_role: str | None = None,
+) -> QPushButton:
+    """Nút hành động chuẩn. `icon` là tên glyph trong `ui.icons.ICONS`;
+    `icon_role` là semantic role tint icon (mặc định "text" — nút nền màu
+    nên truyền "selection_text" để icon trắng trên nền). `icon_disabled_role`
+    mặc định "muted"; nút nền màu không đổi màu khi disabled (id selector
+    thắng `QPushButton:disabled`) thì truyền cùng role với `icon_role`."""
     button = QPushButton(text)
     button.setObjectName("PrimaryButton" if primary else "SecondaryButton")
     button.setCursor(Qt.CursorShape.PointingHandCursor)
     if color:
         button.setProperty("btnColor", color)
+    if icon:
+        button.setIcon(
+            flat_icon(
+                icon,
+                icon_role or "text",
+                disabled_role=icon_disabled_role or "muted",
+            )
+        )
+        button.setIconSize(
+            QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE)
+        )
     return button
 
 

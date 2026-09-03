@@ -125,22 +125,22 @@ class OrdersScreen(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.balance_card = labeled_value("💰 Số dư", "--")
+        self.balance_card = labeled_value("Số dư", "--")
         self.balance_label = self.balance_card.findChild(QLabel, "MiniStatValue")
 
-        self.position_count_card = labeled_value("📊 Đang mở", "0")
+        self.position_count_card = labeled_value("Đang mở", "0")
         self.position_count_label = self.position_count_card.findChild(QLabel, "MiniStatValue")
 
-        self.pending_count_card = labeled_value("⏳ Lệnh chờ", "0")
+        self.pending_count_card = labeled_value("Lệnh chờ", "0")
         self.pending_count_label = self.pending_count_card.findChild(QLabel, "MiniStatValue")
 
-        self.pl_card = labeled_value("💵 Lãi/lỗ", "--")
+        self.pl_card = labeled_value("Lãi/lỗ", "--")
         self.pl_label = self.pl_card.findChild(QLabel, "MiniStatValue")
 
-        self.trail_count_card = labeled_value("🎯 Trail", "0")
+        self.trail_count_card = labeled_value("Trail", "0")
         self.trail_count_label = self.trail_count_card.findChild(QLabel, "MiniStatValue")
 
-        self.protection_card = labeled_value("🛡️ Bảo vệ", "STALE")
+        self.protection_card = labeled_value("Bảo vệ", "STALE")
         self.protection_label = self.protection_card.findChild(QLabel, "MiniStatValue")
 
         for card_widget in (self.balance_card, self.position_count_card, self.pending_count_card, self.pl_card, self.trail_count_card, self.protection_card):
@@ -223,59 +223,79 @@ class OrdersScreen(QWidget):
         layout = QHBoxLayout()
         layout.setSpacing(8)
 
-        self.refresh_btn = action_button("🔄 Làm mới", primary=True, color="info")
+        self.refresh_btn = action_button(
+            "Làm mới", primary=True, color="info",
+            icon="refresh", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.refresh_btn.clicked.connect(self.refresh_orders)
         layout.addWidget(self.refresh_btn)
 
-        self.trail_btn = action_button("🎯 Trailing Stop", primary=True, color="warning")
+        self.trail_btn = action_button(
+            "Trailing Stop", primary=True, color="warning",
+            icon="crosshair", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.trail_btn.setToolTip("Bật/tắt trailing stop cho vị thế đã chọn")
         self.trail_btn.clicked.connect(self._show_trailing_dialog)
         layout.addWidget(self.trail_btn)
 
-        self.clear_trail_btn = action_button("🗑️ Xóa trailing", primary=True, color="danger")
+        self.clear_trail_btn = action_button(
+            "Xóa trailing", primary=True, color="danger",
+            icon="trash", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.clear_trail_btn.setToolTip("Xóa cấu hình trailing stop của vị thế đã chọn")
         self.clear_trail_btn.clicked.connect(self._clear_trailing)
         self.clear_trail_btn.setVisible(False)
         layout.addWidget(self.clear_trail_btn)
 
         self.modify_position_btn = action_button(
-            "✏️ Sửa SL/TP", primary=True, color="warning"
+            "Sửa SL/TP", primary=True, color="warning",
+            icon="edit", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.modify_position_btn.clicked.connect(self._modify_selected_position)
         layout.addWidget(self.modify_position_btn)
 
         self.partial_close_btn = action_button(
-            "◐ Đóng một phần", primary=True, color="warning"
+            "Đóng một phần", primary=True, color="warning",
+            icon="half", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.partial_close_btn.clicked.connect(self._partial_close_selected)
         layout.addWidget(self.partial_close_btn)
 
-        self.close_selected_btn = action_button("❌ Đóng lệnh đã chọn", primary=True, color="danger")
+        self.close_selected_btn = action_button(
+            "Đóng lệnh đã chọn", primary=True, color="danger",
+            icon="x", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.close_selected_btn.setToolTip("Đóng vị thế đang chọn trong bảng")
         self.close_selected_btn.clicked.connect(self._close_selected)
         layout.addWidget(self.close_selected_btn)
 
-        self.close_all_btn = action_button("❌ Đóng tất cả", primary=True, color="danger")
+        self.close_all_btn = action_button(
+            "Đóng tất cả", primary=True, color="danger",
+            icon="x", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.close_all_btn.setToolTip("Đóng toàn bộ vị thế đang mở (có xác nhận)")
         self.close_all_btn.clicked.connect(self._close_all)
         layout.addWidget(self.close_all_btn)
 
         self.modify_pending_btn = action_button(
-            "✏️ Sửa lệnh chờ", primary=True, color="warning"
+            "Sửa lệnh chờ", primary=True, color="warning",
+            icon="edit", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.modify_pending_btn.clicked.connect(self._modify_selected_pending)
         self.modify_pending_btn.setVisible(False)
         layout.addWidget(self.modify_pending_btn)
 
         self.cancel_pending_btn = action_button(
-            "🗑️ Hủy lệnh chờ", primary=True, color="danger"
+            "Hủy lệnh chờ", primary=True, color="danger",
+            icon="trash", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.cancel_pending_btn.clicked.connect(self._cancel_selected_pending)
         self.cancel_pending_btn.setVisible(False)
         layout.addWidget(self.cancel_pending_btn)
 
         self.flatten_btn = action_button(
-            "⚠️ Flatten tài khoản", primary=True, color="danger"
+            "Flatten tài khoản", primary=True, color="danger",
+            icon="alert-triangle", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.flatten_btn.setToolTip(
             "Đóng tất cả positions và hủy tất cả pending orders trong snapshot xác nhận"
@@ -852,7 +872,7 @@ class OrdersScreen(QWidget):
         light = is_light_theme(self.settings_service)
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"🎯 Trailing Stop — {symbol} ({'MUA' if is_buy else 'BÁN'} {volume:.2f})")
+        dlg.setWindowTitle(f"Trailing Stop — {symbol} ({'MUA' if is_buy else 'BÁN'} {volume:.2f})")
         dlg.setMinimumWidth(650)
         dlg.setObjectName("AnalysisDetailDialog")
         dlg.setProperty("trailingDialog", True)
@@ -862,7 +882,7 @@ class OrdersScreen(QWidget):
         root.setSpacing(14)
 
         # Title
-        title = QLabel(f"🎯 Cấu hình Trailing Stop")
+        title = QLabel("Cấu hình Trailing Stop")
         title.setObjectName("ActionTitle")
         root.addWidget(title)
 
@@ -1120,7 +1140,7 @@ class OrdersScreen(QWidget):
         preview_card.layout().setSpacing(5)
 
         # BE section
-        self._dlg_be_title = QLabel("🎯 Break Even")
+        self._dlg_be_title = QLabel("Break Even")
         self._dlg_be_title.setObjectName("CardDetail")
         self._dlg_be_title.setFont(get_subtitle_font())
         preview_card.layout().addWidget(self._dlg_be_title)
@@ -1147,7 +1167,7 @@ class OrdersScreen(QWidget):
         preview_card.layout().addWidget(sep)
 
         # Trail section
-        self._dlg_trail_title = QLabel("📐 Trailing Stop")
+        self._dlg_trail_title = QLabel("Trailing Stop")
         self._dlg_trail_title.setObjectName("CardDetail")
         self._dlg_trail_title.setFont(get_subtitle_font())
         preview_card.layout().addWidget(self._dlg_trail_title)
@@ -1215,19 +1235,19 @@ class OrdersScreen(QWidget):
 
             dist_pips = dist * pip_m
             if be_already_done and sl_matches_be:
-                self._dlg_be_status_label.setText("✅ Đã kích hoạt Break Even")
+                self._dlg_be_status_label.setText("Đã kích hoạt Break Even")
                 set_dynamic_property(self._dlg_be_status_label, "statusTone", "success")
                 self._dlg_be_distance_label.setText("")
             elif be_already_done and not sl_matches_be:
-                self._dlg_be_status_label.setText("⚠️ Break Even đã kích hoạt trước đó — SL hiện tại không còn ở vị trí BE")
+                self._dlg_be_status_label.setText("Break Even đã kích hoạt trước đó — SL hiện tại không còn ở vị trí BE")
                 set_dynamic_property(self._dlg_be_status_label, "statusTone", "warning")
                 self._dlg_be_distance_label.setText("")
             elif dist <= 0:
-                self._dlg_be_status_label.setText("🟢 Đã sẵn sàng kích hoạt Break Even")
+                self._dlg_be_status_label.setText("Đã sẵn sàng kích hoạt Break Even")
                 set_dynamic_property(self._dlg_be_status_label, "statusTone", "success")
                 self._dlg_be_distance_label.setText("")
             else:
-                self._dlg_be_status_label.setText("🟡 Chưa kích hoạt Break Even")
+                self._dlg_be_status_label.setText("Chưa kích hoạt Break Even")
                 set_dynamic_property(self._dlg_be_status_label, "statusTone", "warning")
                 self._dlg_be_distance_label.setText(f"Còn:  {dist_pips:.1f} pip")
                 set_dynamic_property(
@@ -1305,19 +1325,28 @@ class OrdersScreen(QWidget):
                 b.setText(old_text)
             self._dlg_btns.clear()
 
-        close_btn = action_button("❌ Đóng", primary=False, color="danger")
+        close_btn = action_button(
+            "Đóng", primary=False, color="danger",
+            icon="x", icon_role="danger", icon_disabled_role="danger",
+        )
         close_btn.clicked.connect(dlg.accept)
 
         if trail_enabled:
             # Trailing is active → show Update + Disable
-            self._dlg_update_btn = action_button("🔄 Cập nhật Trailing Stop", primary=True, color="success")
+            self._dlg_update_btn = action_button(
+                "Cập nhật Trailing Stop", primary=True, color="success",
+                icon="refresh", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self._dlg_update_btn.setEnabled(False)
             self._dlg_update_btn.setToolTip("Chưa có thay đổi để cập nhật.")
             self._dlg_update_btn.clicked.connect(
                 lambda: self._handle_update_trailing(pos_id, dlg, _current_snapshot, _initial_snapshot, _begin_op, _end_op, close_btn))
             btn_layout.addWidget(self._dlg_update_btn)
 
-            self._dlg_disable_btn = action_button("⏹️ Tắt Trailing Stop", primary=True, color="danger")
+            self._dlg_disable_btn = action_button(
+                "Tắt Trailing Stop", primary=True, color="danger",
+                icon="stop", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self._dlg_disable_btn.clicked.connect(
                 lambda: self._handle_disable_trailing(pos_id, dlg, _begin_op, _end_op, self._dlg_update_btn, close_btn))
             btn_layout.addWidget(self._dlg_disable_btn)
@@ -1338,7 +1367,10 @@ class OrdersScreen(QWidget):
             self._dlg_mode_fixed.toggled.connect(lambda: _refresh_dirty_state())
         else:
             # Trailing not active → show Enable
-            self._dlg_enable_btn = action_button("✅ Bật Trailing Stop", primary=True)
+            self._dlg_enable_btn = action_button(
+                "Bật Trailing Stop", primary=True,
+                icon="check", icon_role="selection_text", icon_disabled_role="selection_text",
+            )
             self._dlg_enable_btn.clicked.connect(
                 lambda: self._handle_enable_trailing(pos_id, symbol, side, dlg, _begin_op, _end_op, close_btn))
             btn_layout.addWidget(self._dlg_enable_btn)
@@ -1920,7 +1952,7 @@ class OrdersScreen(QWidget):
             return
         reply = QMessageBox.question(
             self,
-            "⚠️ Xác nhận FLATTEN tài khoản",
+            "Xác nhận FLATTEN tài khoản",
             "Hành động này tác động toàn bộ snapshot tài khoản, gồm cả lệnh "
             "manual/EA khác.\n\n"
             f"Đóng positions: {len(positions)}\n"

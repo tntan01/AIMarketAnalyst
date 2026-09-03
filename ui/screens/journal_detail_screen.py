@@ -128,9 +128,18 @@ class JournalDetailScreen(QWidget):
         actions = QHBoxLayout()
         actions.setSpacing(10)
 
-        self.back_button = action_button("⬅️ Quay lại Nhật ký")
-        self.export_button = action_button("📤 Xuất JSON", primary=False)
-        self.delete_button = action_button("🗑️ Xóa bản ghi", primary=True, color="danger")
+        self.back_button = action_button(
+            "Quay lại Nhật ký",
+            icon="arrow-left", icon_role="text", icon_disabled_role="text",
+        )
+        self.export_button = action_button(
+            "Xuất JSON", primary=False,
+            icon="upload", icon_role="text", icon_disabled_role="text",
+        )
+        self.delete_button = action_button(
+            "Xóa bản ghi", primary=True, color="danger",
+            icon="trash", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
 
         if self.navigate:
             self.back_button.clicked.connect(lambda: self.navigate("journal"))
@@ -235,7 +244,7 @@ class JournalDetailScreen(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        card1 = card("📊 Kết luận phân tích")
+        card1 = card("Kết luận phân tích")
         card1.layout().setContentsMargins(8, 6, 8, 6)
         card1.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         card1.layout().setSpacing(4)
@@ -243,7 +252,7 @@ class JournalDetailScreen(QWidget):
         if c1_title:
             c1_title.setProperty("journalDetailTitle", True)
 
-        card2 = card("🎯 Kế hoạch giao dịch")
+        card2 = card("Kế hoạch giao dịch")
         card2.layout().setContentsMargins(8, 6, 8, 6)
         card2.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         card2.layout().setSpacing(4)
@@ -251,7 +260,7 @@ class JournalDetailScreen(QWidget):
         if c2_title:
             c2_title.setProperty("journalDetailTitle", True)
 
-        card3 = card("🤖 Nhận định của AI")
+        card3 = card("Nhận định của AI")
         card3.layout().setContentsMargins(8, 6, 8, 6)
         card3.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         card3.layout().setSpacing(4)
@@ -296,7 +305,7 @@ class JournalDetailScreen(QWidget):
         return container
 
     def _note_and_mt5_card(self):
-        frame = card("📝 Ghi chú cá nhân")
+        frame = card("Ghi chú cá nhân")
         frame.layout().setContentsMargins(8, 6, 8, 6)
         frame.layout().setSpacing(4)
         c_title = frame.findChild(QLabel, "CardTitle")
@@ -308,14 +317,17 @@ class JournalDetailScreen(QWidget):
         self.note_input.setMinimumHeight(80)
         frame.layout().addWidget(self.note_input, 1)
 
-        self.save_note_button = action_button("💾 Lưu ghi chú", primary=True, color="success")
+        self.save_note_button = action_button(
+            "Lưu ghi chú", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.save_note_button.clicked.connect(self._save_note)
         frame.layout().addWidget(self.save_note_button)
 
         return frame
 
     def _lifecycle_card(self):
-        frame = card("📈 Vòng đời giao dịch")
+        frame = card("Vòng đời giao dịch")
         frame.layout().setContentsMargins(10, 8, 10, 8)
         frame.layout().setSpacing(6)
         c_title = frame.findChild(QLabel, "CardTitle")
@@ -527,7 +539,10 @@ class JournalDetailScreen(QWidget):
 
         frame.layout().addLayout(card_layout)
 
-        self.save_lifecycle_button = action_button("💾 Lưu kết quả lệnh", primary=True, color="success")
+        self.save_lifecycle_button = action_button(
+            "Lưu kết quả lệnh", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
         self.save_lifecycle_button.clicked.connect(self._save_lifecycle)
         frame.layout().addWidget(self.save_lifecycle_button)
 
@@ -885,7 +900,9 @@ class JournalDetailScreen(QWidget):
         msg_box.setWindowTitle("Đã lưu")
         msg_box.setText("Đã lưu vòng đời/kết quả giao dịch.")
         msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+        msg_box.addButton(action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        ), QMessageBox.ButtonRole.AcceptRole)
         msg_box.exec()
 
     def _save_note(self) -> None:
@@ -897,7 +914,9 @@ class JournalDetailScreen(QWidget):
         msg_box.setWindowTitle("Đã lưu")
         msg_box.setText("Đã lưu ghi chú cá nhân.")
         msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+        msg_box.addButton(action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        ), QMessageBox.ButtonRole.AcceptRole)
         msg_box.exec()
 
     def _export_json(self) -> None:
@@ -908,7 +927,9 @@ class JournalDetailScreen(QWidget):
         msg_box.setWindowTitle("Đã xuất JSON")
         msg_box.setText(f"Đã xuất dữ liệu vào:\n{path}")
         msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.addButton(action_button("❌ Đóng"), QMessageBox.ButtonRole.AcceptRole)
+        msg_box.addButton(action_button(
+            "Đóng", icon="x", icon_role="text", icon_disabled_role="text",
+        ), QMessageBox.ButtonRole.AcceptRole)
         msg_box.exec()
 
     def _delete_entry(self) -> None:

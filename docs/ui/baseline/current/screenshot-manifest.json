@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-02T15:32:07.778320+00:00",
+  "captured_at": "2026-09-03T15:57:04.984217+00:00",
   "canvas": {
     "width": 1600,
     "height": 900
@@ -18,7 +18,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-backtest-ai-analysis.png",
       "width": 800,
       "height": 600,
-      "sha256": "9e31010a083a0967e101fe3a6a14b3a9d4c4eaf29ac6aff0205af52daa5c765a"
+      "sha256": "2f0a20efe14a15d85a0cd41c84315bcf6634e384911e3da0e821eded876fc2de"
     },
     {
       "theme": "dark",
@@ -26,8 +26,8 @@
       "kind": "dialog",
       "path": "docs/ui/baseline/current/dark/dialog-backtest-config.png",
       "width": 908,
-      "height": 329,
-      "sha256": "7ea05fa93765c65266aa83f6c0dd47f3130a7c09597a95971ad70802d0a8b3e9"
+      "height": 321,
+      "sha256": "b75f5233a8f59d72cf14bef2dc238c354af3373d5e309da9728cc3c4793779df"
     },
     {
       "theme": "dark",
@@ -35,8 +35,8 @@
       "kind": "dialog",
       "path": "docs/ui/baseline/current/dark/dialog-backtest-symbol-selection.png",
       "width": 420,
-      "height": 425,
-      "sha256": "6463afce8fb6ca62beed8c124ea4b965348882ad2023ee4e2471a7a55962adf4"
+      "height": 400,
+      "sha256": "c1d32cf5e6689d3aa10ff53a3d0107a24b0cc33b72322f2a80364d7046d55dc8"
     },
     {
       "theme": "dark",
@@ -45,7 +45,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-dashboard-event.png",
       "width": 750,
       "height": 520,
-      "sha256": "928d3590526ea7576ae0b920799909005dde9f5cd5b34b6f00876b971df3ddcd"
+      "sha256": "ae4a0837d19ccd5a5a97a43a7e7adb0d31fe2c3d92e6fba6dc12c61ee8a27c66"
     },
     {
       "theme": "dark",
@@ -54,7 +54,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-dashboard-headline.png",
       "width": 750,
       "height": 480,
-      "sha256": "fa2fa4196cd7f1684b2f72ff24a6246d526b472c45092f468636a3dd7f7abe92"
+      "sha256": "8bdac9b0b45ad25dd4c41bfd614ccbc9686ebe41a617ab2d3383c57c0e09c985"
     },
     {
       "theme": "dark",
@@ -63,7 +63,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-dashboard-market-help.png",
       "width": 960,
       "height": 680,
-      "sha256": "5cb0bfeb86ad3525bd4a8eea467cfecc683b8809c7e99e1af7504a2f171ef387"
+      "sha256": "154f5c7502428dc0d3d3296d05d0992929d95f565fa5bc93f9e6af8f0d0a917d"
     },
     {
       "theme": "dark",
@@ -72,25 +72,25 @@
       "path": "docs/ui/baseline/current/dark/dialog-journal-metrics-help.png",
       "width": 920,
       "height": 620,
-      "sha256": "d56bdfb7db29ebda31b56da54dfe926fc390fc719bb4f4d981377b92df1dacb2"
+      "sha256": "d453aa810667e20115d1e962cc7af659f191123542a4c9060189a6afc22ac6fc"
     },
     {
       "theme": "dark",
       "name": "dialog-orders-trailing-stop",
       "kind": "dialog",
       "path": "docs/ui/baseline/current/dark/dialog-orders-trailing-stop.png",
-      "width": 939,
-      "height": 610,
-      "sha256": "b8c6478824f12ad860bc62d966ec4124a53051c11409eb17d988c770632e5d5e"
+      "width": 882,
+      "height": 563,
+      "sha256": "ffdf6ce4f4ca1052b1608d6e3053f629f87b03bfafd1d409d1e2eb727e8eb190"
     },
     {
       "theme": "dark",
       "name": "dialog-scanner-analysis-detail",
       "kind": "dialog",
       "path": "docs/ui/baseline/current/dark/dialog-scanner-analysis-detail.png",
-      "width": 1298,
+      "width": 1186,
       "height": 680,
-      "sha256": "ac019eb4269b871608587a53b66221258b3188121bf4432d0643115e87b11058"
+      "sha256": "bd6888e2ee25cff21aa98f727a77181afa6f1233f9083c8f9dd46b9b17f4bd00"
     },
     {
       "theme": "dark",
@@ -99,7 +99,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-scanner-columns-help.png",
       "width": 1040,
       "height": 680,
-      "sha256": "97d4974b6089848f92c610cc899ab838b5fd77a076d1c36794acddb37469b2a7"
+      "sha256": "4460155e79d29d6595c2abf30628b330ec1f62b65d4c2328fac65e3322110930"
     },
     {
       "theme": "dark",
@@ -108,7 +108,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-scanner-market-brief.png",
       "width": 850,
       "height": 650,
-      "sha256": "b9bd100d3509175d9228ac9b95a149c5d3fb5b7b05c0a178c86d01450bd91e8f"
+      "sha256": "43f42ae330a8e1911a43dcd9cc0c2e9ec8d406589f780bc5fc02407bad307290"
     },
     {
       "theme": "dark",
@@ -117,7 +117,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-scanner-orders.png",
       "width": 980,
       "height": 620,
-      "sha256": "7c6628827c1c72541bc620d8186f0779492cc31ea99fdb27073a7ddfdde99f34"
+      "sha256": "88cf6acff8d49469554038905d083bb12d131c58cf2724030c4556c03fba00e7"
     },
     {
       "theme": "dark",
@@ -126,7 +126,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-scanner-row-explanation.png",
       "width": 880,
       "height": 600,
-      "sha256": "eaf530e8fc6d78053cb56987ea89094bb5a80ba3cf5cdf0427eccac401903135"
+      "sha256": "f362e0838a940ac3e7748c72092dfe020ed1db43a50df484f710f4aa3332f345"
     },
     {
       "theme": "dark",
@@ -135,7 +135,7 @@
       "path": "docs/ui/baseline/current/dark/dialog-scanner-symbol-selection.png",
       "width": 560,
       "height": 520,
-      "sha256": "d86c6aadb25682af1ee16e727eaa981cee95bb52be6eadf2ea40af61da2ef84b"
+      "sha256": "4637d9f2320f2113fa142a88107aafe3ee57a8367dd2df2f6a35db3ce21a8940"
     },
     {
       "theme": "dark",
@@ -144,7 +144,7 @@
       "path": "docs/ui/baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
       "width": 1600,
       "height": 900,
-      "sha256": "3b4b1964786bd539abc1d1f6c7b251adc0d041f00e8515a9afae20028c470027"
+      "sha256": "cfb64b494a43a5ae49e820d2e2cc60e192a0eca7eaf5e877aac75bf4f7c8f1aa"
     },
     {
       "theme": "dark",
@@ -153,7 +153,7 @@
       "path": "docs/ui/baseline/current/dark/screen-backtest-tab-2-l-nh.png",
       "width": 1600,
       "height": 900,
-      "sha256": "37cce00c0f86abf21e4eb6ca831966e64d0d91ca54c752107207558ca7abb08e"
+      "sha256": "fa67a9133c7b3805dcb57ba43269ceeb82a7ac6d29e79c8dca943fd272faeebc"
     },
     {
       "theme": "dark",
@@ -162,7 +162,7 @@
       "path": "docs/ui/baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
       "width": 1600,
       "height": 900,
-      "sha256": "98b184cd669bf6200982f9159390fb43b266ac3d9955328a158081085cb4d047"
+      "sha256": "254a2bc1fc71680707f96a6ed0e0badc5ada733678c432accd4eb000ce8bcf0e"
     },
     {
       "theme": "dark",
@@ -171,7 +171,7 @@
       "path": "docs/ui/baseline/current/dark/screen-backtest.png",
       "width": 1600,
       "height": 900,
-      "sha256": "54c7d5ed9522c213b9c8352c38d90f50fb7714bef4b10e56ea9995b134ced226"
+      "sha256": "2ca05a0d66eabd9b5ad7cdcf0029c2134fec5f55ed7a6492143b89905edc9451"
     },
     {
       "theme": "dark",
@@ -180,7 +180,7 @@
       "path": "docs/ui/baseline/current/dark/screen-dashboard.png",
       "width": 1600,
       "height": 900,
-      "sha256": "2af1f871253e7715a1b7c2cc55fe897b8fead1e52c7ee5ac1c170ecbbd182d98"
+      "sha256": "5daebf4def6507e122e46ad02d83208aaf82a652f34e9e8f0c2b0aa0a362597c"
     },
     {
       "theme": "dark",
@@ -189,7 +189,7 @@
       "path": "docs/ui/baseline/current/dark/screen-journal-detail.png",
       "width": 1600,
       "height": 900,
-      "sha256": "a50b400418afe9f7efdf2dfe6cb5b47e886acdc773b508629ea4ce79fea12e73"
+      "sha256": "fe7e8ad76492d6d868a269f7bba538a5ca498f8ad8aaf406950f3b43a4708f11"
     },
     {
       "theme": "dark",
@@ -198,7 +198,7 @@
       "path": "docs/ui/baseline/current/dark/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
       "width": 1600,
       "height": 900,
-      "sha256": "1e3b980fecfba61ae848ce11ffe4563f4cc2ac1f43239729a28e7e50f629b841"
+      "sha256": "9c0128c2590c22e95ff93d7e3d6176459c4b1e21fac6325afdeb1238f38b5760"
     },
     {
       "theme": "dark",
@@ -207,7 +207,7 @@
       "path": "docs/ui/baseline/current/dark/screen-journal.png",
       "width": 1600,
       "height": 900,
-      "sha256": "84a8938d4b081635a96b357b73c2e939975848d4ad74c1411b7531f84f5f3ba2"
+      "sha256": "f2f6ed9228fbf782f3f70e3f6054db9b314f6cde0dba32369e5dce25b4065356"
     },
     {
       "theme": "dark",
@@ -216,7 +216,7 @@
       "path": "docs/ui/baseline/current/dark/screen-orders.png",
       "width": 1600,
       "height": 900,
-      "sha256": "bf79ef982d63e69b321836989aceb8c194dde1275a43047874b9b3cac8060541"
+      "sha256": "5814beb82a10eb62f0ac990fcecdb789c91a58c08e9e2ec76687223075b7ac73"
     },
     {
       "theme": "dark",
@@ -225,7 +225,7 @@
       "path": "docs/ui/baseline/current/dark/screen-scanner-detail-tab-1-ch-n-o-n.png",
       "width": 1600,
       "height": 900,
-      "sha256": "8801942df3b4e1208402a657bd64b5b36db5e4c6674534b9266a5d6c9f9464c4"
+      "sha256": "e234f64586f36e78a5f803363e371dd9f3d0227af5f855fc0e4e169a022d4fb7"
     },
     {
       "theme": "dark",
@@ -234,7 +234,7 @@
       "path": "docs/ui/baseline/current/dark/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
       "width": 1600,
       "height": 900,
-      "sha256": "dcb6162ce72e46c26f98b4200e232753d9dd028fa8e82305606f92e34bc0e2cc"
+      "sha256": "ebf821d58cdb1868ecf6073ea312060648d27e88f574b4b9320c118c37ef6f4f"
     },
     {
       "theme": "dark",
@@ -243,7 +243,7 @@
       "path": "docs/ui/baseline/current/dark/screen-scanner-detail.png",
       "width": 1600,
       "height": 900,
-      "sha256": "5fa8c2f4f7eb4a65e17e43376e2cceb2004a69473f4e41211891781a26e818a6"
+      "sha256": "5cffe00e577e63ad366a8428e8803bf6f6fc92e1bf11f098f8b59a5c96a70765"
     },
     {
       "theme": "dark",
@@ -252,7 +252,7 @@
       "path": "docs/ui/baseline/current/dark/screen-scanner.png",
       "width": 1600,
       "height": 900,
-      "sha256": "7f33eae12095cc3bc568861f2b2f3d9231d0b96898c9d22b33cc0ec341b42d04"
+      "sha256": "1db6b1c1bddbe1df85a5b397cfac4863b200fbbf2945f55e8d8b4e2e401cd0e9"
     },
     {
       "theme": "dark",
@@ -261,7 +261,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
-      "sha256": "fd14264491caad133ef746e0a8a3f136c2ccfc58c88f348fb219558fc4d50344"
+      "sha256": "f0e397b0ee6ee2da059c4ac91c30eb4f3f6b89d0d5f9a9303118ae01b3f0d001"
     },
     {
       "theme": "dark",
@@ -270,16 +270,16 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
-      "sha256": "ea8bb57d7ede27318c4eb4b4ddd2798854e036f2297a7165d38426bdec73b81c"
+      "sha256": "42e657f63be5bd33a8b3bc3073ec1dcbd76c0596a497f989647ec92e2ea871bb"
     },
     {
       "theme": "dark",
-      "name": "screen-settings-tab-3-rollout",
+      "name": "screen-settings-tab-3-qu-n-l-l-nh",
       "kind": "screen",
-      "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-rollout.png",
+      "path": "docs/ui/baseline/current/dark/screen-settings-tab-3-qu-n-l-l-nh.png",
       "width": 1600,
       "height": 900,
-      "sha256": "fd2fad51fa31f3d5496f1ab0eefcaa82c5b7aa20f276bbaa07e8f742962f6df0"
+      "sha256": "25dc747290a22b9d458d33df6114ec75df32f6534a0b0328b6be29830d743874"
     },
     {
       "theme": "dark",
@@ -288,7 +288,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
-      "sha256": "e6e4436e08fe6827d2f823a1d85a4cfce647660808c89e15b4387b4794dd1653"
+      "sha256": "90107b9f6b1c2a74981c753cb59473be37c46f6b31c037bab310c8340361eb07"
     },
     {
       "theme": "dark",
@@ -297,7 +297,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
-      "sha256": "08382e55bbd15c569116a835023962dff874974f576b9022bb41e77ac8b17b14"
+      "sha256": "50b14f8c98e98580666b39b0453defe8fb3a5743858b84e9fe82e13b4fc91829"
     },
     {
       "theme": "dark",
@@ -306,7 +306,7 @@
       "path": "docs/ui/baseline/current/dark/screen-settings.png",
       "width": 1600,
       "height": 900,
-      "sha256": "d0efa20a0a51ca237dc1a9e8003d6819430c1df77805320deb94080b980457a4"
+      "sha256": "e51938fffcf2c160bd4a35d65584a4a682c274b4c557c5765ff92937b1042ea8"
     },
     {
       "theme": "dark",
@@ -315,7 +315,7 @@
       "path": "docs/ui/baseline/current/dark/state-checked.png",
       "width": 640,
       "height": 480,
-      "sha256": "c2f3ee129603c6a57733efd15aef2fa63da34c2c7454712032100597e3395e6c"
+      "sha256": "713d42b4dc06878e885fbd7c702393a65eca15d74d550c02d879bfac48a0ffb9"
     },
     {
       "theme": "dark",
@@ -324,7 +324,7 @@
       "path": "docs/ui/baseline/current/dark/state-default.png",
       "width": 640,
       "height": 480,
-      "sha256": "c2f3ee129603c6a57733efd15aef2fa63da34c2c7454712032100597e3395e6c"
+      "sha256": "713d42b4dc06878e885fbd7c702393a65eca15d74d550c02d879bfac48a0ffb9"
     },
     {
       "theme": "dark",
@@ -333,7 +333,7 @@
       "path": "docs/ui/baseline/current/dark/state-disabled.png",
       "width": 640,
       "height": 480,
-      "sha256": "c2f3ee129603c6a57733efd15aef2fa63da34c2c7454712032100597e3395e6c"
+      "sha256": "713d42b4dc06878e885fbd7c702393a65eca15d74d550c02d879bfac48a0ffb9"
     },
     {
       "theme": "dark",
@@ -342,7 +342,7 @@
       "path": "docs/ui/baseline/current/dark/state-focus.png",
       "width": 640,
       "height": 480,
-      "sha256": "4ab61869758772e0682ab329af23633c36d61fd1edb8fdd4fba34d5017f4c5c7"
+      "sha256": "1e1537cc49f22b59d86e2b62d509477245efbd724db9f5471302c46b581773dc"
     },
     {
       "theme": "dark",
@@ -351,7 +351,7 @@
       "path": "docs/ui/baseline/current/dark/state-hover.png",
       "width": 640,
       "height": 480,
-      "sha256": "4ab61869758772e0682ab329af23633c36d61fd1edb8fdd4fba34d5017f4c5c7"
+      "sha256": "1e1537cc49f22b59d86e2b62d509477245efbd724db9f5471302c46b581773dc"
     },
     {
       "theme": "dark",
@@ -360,7 +360,7 @@
       "path": "docs/ui/baseline/current/dark/state-pressed.png",
       "width": 640,
       "height": 480,
-      "sha256": "46157f1daf0a9801ebe07f1e68053fdab913052fae5fbcc3e95dd6cf32d78914"
+      "sha256": "3a0363ed3322bbddb462434200020c2dd4b26645bbc6fda86796131a16e95527"
     },
     {
       "theme": "dark",
@@ -369,7 +369,7 @@
       "path": "docs/ui/baseline/current/dark/state-validation.png",
       "width": 640,
       "height": 480,
-      "sha256": "1ef1e780e5b21e3a592a8044f42f3a7c120e8eab8d1bb756ba2df8e384a2cc97"
+      "sha256": "ee38f4b3cda2184249ce9548d6976b7267e7686e15cfc7b1a3a44d2c9fa0ba2b"
     },
     {
       "theme": "light",
@@ -378,7 +378,7 @@
       "path": "docs/ui/baseline/current/light/dialog-backtest-ai-analysis.png",
       "width": 800,
       "height": 600,
-      "sha256": "c48e8256840c1c576005b9b6de372b9d3dd9ce748be5a0df0c437d207f7e344a"
+      "sha256": "ca3c9a8eaf9a6e3f76c25ab3f861fb53db7ffde86e5327fc65149b8d46f8c5f1"
     },
     {
       "theme": "light",
@@ -386,8 +386,8 @@
       "kind": "dialog",
       "path": "docs/ui/baseline/current/light/dialog-backtest-config.png",
       "width": 908,
-      "height": 329,
-      "sha256": "445d279f8d04cb68193557c98ff414042f3a7bfd88bc7fdf848702a17188d221"
+      "height": 321,
+      "sha256": "90d6e2e60ae14facc4f03234f6a377b3ffef6025205516b39aaa4c4c264505e2"
     },
     {
       "theme": "light",
@@ -395,8 +395,8 @@
       "kind": "dialog",
       "path": "docs/ui/baseline/current/light/dialog-backtest-symbol-selection.png",
       "width": 420,
-      "height": 425,
-      "sha256": "f59041a71333df18c953afc8b79651b366ff09416b73d87fe484b052240cf95e"
+      "height": 400,
+      "sha256": "f1a9fd19d8a271a0399ada3d2916cf28222fe8cdb6d2942b76ef8a90679711df"
     },
     {
       "theme": "light",
@@ -405,7 +405,7 @@
       "path": "docs/ui/baseline/current/light/dialog-dashboard-event.png",
       "width": 750,
       "height": 520,
-      "sha256": "f73f7488d4be831f89b2fdfc8fca781790d17ec1fafdcbfb7632dafddea6cc28"
+      "sha256": "bbe57bae2a9e423e84fcf2bbd82c5932fc5597d92b590b54c955da678292493e"
     },
     {
       "theme": "light",
@@ -414,7 +414,7 @@
       "path": "docs/ui/baseline/current/light/dialog-dashboard-headline.png",
       "width": 750,
       "height": 480,
-      "sha256": "c155a1e62b074fb1e858642e47e9bcdb5adaa85848c3aed818df5ba28cedaac0"
+      "sha256": "68ef48d812b9c67d584d18dd2dd906b8703dd3c3a2dfeae1a1289f71e69326d1"
     },
     {
       "theme": "light",
@@ -423,7 +423,7 @@
       "path": "docs/ui/baseline/current/light/dialog-dashboard-market-help.png",
       "width": 960,
       "height": 680,
-      "sha256": "d7d1340185d476d7935026642c04e925366fd37400543748188f03a79afdf5b4"
+      "sha256": "96af0e7ba2a2295fb00df6ed226c87551b89b3bed8d167e1229af24218270809"
     },
     {
       "theme": "light",
@@ -432,25 +432,25 @@
       "path": "docs/ui/baseline/current/light/dialog-journal-metrics-help.png",
       "width": 920,
       "height": 620,
-      "sha256": "2e1bb6cdb6cd6e447357866ea1c975dadbca80c2fd7f7eaf0aec262650e5b0f2"
+      "sha256": "9df03109497fc30bc841e90ffd9de66984e3d4a1869eed85bf9e017ba357aba3"
     },
     {
       "theme": "light",
       "name": "dialog-orders-trailing-stop",
       "kind": "dialog",
       "path": "docs/ui/baseline/current/light/dialog-orders-trailing-stop.png",
-      "width": 933,
-      "height": 610,
-      "sha256": "8f06b43c823d68488f190269c882861c3b33e98566fe7276f1e3bc4313f2aa0f"
+      "width": 882,
+      "height": 563,
+      "sha256": "fd424f26ce298551c482902bcd82439ea1ec3dae90d73eee9908c099fcdc3ee4"
     },
     {
       "theme": "light",
       "name": "dialog-scanner-analysis-detail",
       "kind": "dialog",
       "path": "docs/ui/baseline/current/light/dialog-scanner-analysis-detail.png",
-      "width": 1298,
+      "width": 1186,
       "height": 680,
-      "sha256": "7b384fde32fcb7b6fde6bfc663543300e35095d53e54258c849dc1e82e01b35a"
+      "sha256": "ef8483d9b89203c598a19979a91798a18e4e5c6cbfe4bc82e7348c941782d7f3"
     },
     {
       "theme": "light",
@@ -459,7 +459,7 @@
       "path": "docs/ui/baseline/current/light/dialog-scanner-columns-help.png",
       "width": 1040,
       "height": 680,
-      "sha256": "668846d38344c3bea548ffa70e8951b8b0a519915a2719fd0fbc67ab522f356c"
+      "sha256": "dac9290da111905aaf9404224644c9ee213a35ffc915f633df1465da9af0ad51"
     },
     {
       "theme": "light",
@@ -468,7 +468,7 @@
       "path": "docs/ui/baseline/current/light/dialog-scanner-market-brief.png",
       "width": 850,
       "height": 650,
-      "sha256": "da3bf4575f06b15c46b0c0e4e35ec4ab434e7735cc81261debf44aa4ffed5cba"
+      "sha256": "118cb7ee2173fba6ef2f4f6a4e78fc522e0726c8cb6804c34046c0a0aa82303a"
     },
     {
       "theme": "light",
@@ -477,7 +477,7 @@
       "path": "docs/ui/baseline/current/light/dialog-scanner-orders.png",
       "width": 980,
       "height": 620,
-      "sha256": "16ae7326a7a800b52f72a2e8126ac891f870760f0bea9930e00cfa88c5203686"
+      "sha256": "798a5582a045e3d347116bebbebf23f86c092628162dfc5f8d7172f2d810d6f5"
     },
     {
       "theme": "light",
@@ -486,7 +486,7 @@
       "path": "docs/ui/baseline/current/light/dialog-scanner-row-explanation.png",
       "width": 880,
       "height": 600,
-      "sha256": "1cb402bcc942d9d59aa5a822cd272716b879701253b49ac6e76d516378518e09"
+      "sha256": "eda8bcacc914c3317ba869d8e1f7fcee2b9162d5bb00fa352779205d1ee9351c"
     },
     {
       "theme": "light",
@@ -495,7 +495,7 @@
       "path": "docs/ui/baseline/current/light/dialog-scanner-symbol-selection.png",
       "width": 560,
       "height": 520,
-      "sha256": "5cebdc16b6b91c1284ebe46e974dd32d441814e23377218e2767c3a0363cb48c"
+      "sha256": "4e7a0aea8dda09f87e0f751ccca0f2aefc3fd91b3f2d587366cefa4347b0bcce"
     },
     {
       "theme": "light",
@@ -504,7 +504,7 @@
       "path": "docs/ui/baseline/current/light/screen-backtest-tab-1-ng-cong-v-n.png",
       "width": 1600,
       "height": 900,
-      "sha256": "21389853b4e6acfab5dce04b0ab37e5dcbb7537d2b9a9acbcd7212a2da1e69ed"
+      "sha256": "bcebc613360f026cdfc8b92e097dbb56e6ed331e4541f15eec2dd81dc37f230b"
     },
     {
       "theme": "light",
@@ -513,7 +513,7 @@
       "path": "docs/ui/baseline/current/light/screen-backtest-tab-2-l-nh.png",
       "width": 1600,
       "height": 900,
-      "sha256": "8ce162c601c4e982a3141c75036cbec8687f7f4cb4d256ddddbbee4543947b5c"
+      "sha256": "ba8e76c904ea583a7b08243a64b33b0af538de7e542f891459eda26ae4e7e8c6"
     },
     {
       "theme": "light",
@@ -522,7 +522,7 @@
       "path": "docs/ui/baseline/current/light/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
       "width": 1600,
       "height": 900,
-      "sha256": "c7022830817d9c42e7aa3a50f2753bcda1e384639b8a42bd3707a42eb0c4a7d0"
+      "sha256": "9088c0385ead068bb1ce6aec121dcbf250361be00e562c92121a2d6aca34246b"
     },
     {
       "theme": "light",
@@ -531,7 +531,7 @@
       "path": "docs/ui/baseline/current/light/screen-backtest.png",
       "width": 1600,
       "height": 900,
-      "sha256": "b0881eeaa1a6a1a64d6316c13a964affbfca1b54e8bd439956b20c0624d95ee0"
+      "sha256": "6bd3cc9e891996d28189b16d0c676c2f635878d4dba20f2dbff46559595d87fc"
     },
     {
       "theme": "light",
@@ -540,7 +540,7 @@
       "path": "docs/ui/baseline/current/light/screen-dashboard.png",
       "width": 1600,
       "height": 900,
-      "sha256": "4409e174c1f2710b8ceb249d0b7fef92a3610e46abf631d61933d4627c0360e2"
+      "sha256": "b4d9f1f3524641e0cb29571c84a20bd5eab81be1e96b26f07c341b38245c338e"
     },
     {
       "theme": "light",
@@ -549,7 +549,7 @@
       "path": "docs/ui/baseline/current/light/screen-journal-detail.png",
       "width": 1600,
       "height": 900,
-      "sha256": "11c64bfae8e33c01f96886c560e2c80247c81de7017f4bc299d0223b17a4c930"
+      "sha256": "8db379bf813782130c43e6b8ff9fd3fc4de9b80188f9e5964c16075cb3ad8706"
     },
     {
       "theme": "light",
@@ -558,7 +558,7 @@
       "path": "docs/ui/baseline/current/light/screen-journal-tab-1-th-ng-k-hi-u-su-t.png",
       "width": 1600,
       "height": 900,
-      "sha256": "906f19cd6115c4a3ced805786bcdcc3d03822787622ba36c74b53fe069716723"
+      "sha256": "533de77bee0da9030ec6bf8c5f39d87b1bf4e8edc949465f450d1d91c3bd1163"
     },
     {
       "theme": "light",
@@ -567,7 +567,7 @@
       "path": "docs/ui/baseline/current/light/screen-journal.png",
       "width": 1600,
       "height": 900,
-      "sha256": "24f7c2f7b5654b47d04f971972063f9e8ae5bb059b808375a8da92f298091dbb"
+      "sha256": "5b3d4b0c48db964b95d073fde6b9cd0a69f03d388ecbfa402de472e5d95ff22c"
     },
     {
       "theme": "light",
@@ -576,7 +576,7 @@
       "path": "docs/ui/baseline/current/light/screen-orders.png",
       "width": 1600,
       "height": 900,
-      "sha256": "6c9609e526398afd1281a583004c443005005cd982dbd16672daea2fbb2a24a3"
+      "sha256": "647587405f06dfdada91c580f7f1ca4674fc3709667dd9f8e1ff909fa0405b6c"
     },
     {
       "theme": "light",
@@ -585,7 +585,7 @@
       "path": "docs/ui/baseline/current/light/screen-scanner-detail-tab-1-ch-n-o-n.png",
       "width": 1600,
       "height": 900,
-      "sha256": "6f603371b93b1c0af00ed444193172cb4441543c8e8e7ea405fb48ab515d1139"
+      "sha256": "6422cc5e781bbe16cf70c805b24d2c4c37358d8613c21782cdd31df0b389a11e"
     },
     {
       "theme": "light",
@@ -594,7 +594,7 @@
       "path": "docs/ui/baseline/current/light/screen-scanner-detail-tab-2-ki-m-nh-ai.png",
       "width": 1600,
       "height": 900,
-      "sha256": "750d511c4f6b771186f43f160b8e1d5a788cd52cf8fd558d1ee27e5b84b193d3"
+      "sha256": "bac730db6b754c74f2ec89dad56c6161f71fe7d42c5d46d4169f63e68476a7c7"
     },
     {
       "theme": "light",
@@ -603,7 +603,7 @@
       "path": "docs/ui/baseline/current/light/screen-scanner-detail.png",
       "width": 1600,
       "height": 900,
-      "sha256": "bf43f1e5aa4ea6aa9f0135018eb7789543e73c53f07d86264b277e2541c5ed20"
+      "sha256": "7117ffbf9a1b3cd17299815987a2ad4882bf08d224351b2f26dc8bb7a48860d1"
     },
     {
       "theme": "light",
@@ -612,7 +612,7 @@
       "path": "docs/ui/baseline/current/light/screen-scanner.png",
       "width": 1600,
       "height": 900,
-      "sha256": "7fa98caf8c064f4962ee6eaa7b0df4cbe8ec3492968873375b68fa5dbe5adad6"
+      "sha256": "4abfc518b8df9905c96c2e6888bb10028396b23df871b392c55648da22fe197e"
     },
     {
       "theme": "light",
@@ -621,7 +621,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-1-d-li-u.png",
       "width": 1600,
       "height": 900,
-      "sha256": "368e31ba17743dec1babd1e789b5c5d8d726ed434cf08f982c4f90815f7adcda"
+      "sha256": "62d893c80218c7ea0a1ac8d5040ac79f79ba1d788776cddd8fd7adfac970f328"
     },
     {
       "theme": "light",
@@ -630,16 +630,16 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-2-giao-d-ch.png",
       "width": 1600,
       "height": 900,
-      "sha256": "bca2ec8e34104603a3cea18bc0affeb94f8c85bad221761f3daf89c93468089a"
+      "sha256": "82c98296c717aa0cb12ae1ec20701befbdfbf701a786f048e4b507615f3cabf6"
     },
     {
       "theme": "light",
-      "name": "screen-settings-tab-3-rollout",
+      "name": "screen-settings-tab-3-qu-n-l-l-nh",
       "kind": "screen",
-      "path": "docs/ui/baseline/current/light/screen-settings-tab-3-rollout.png",
+      "path": "docs/ui/baseline/current/light/screen-settings-tab-3-qu-n-l-l-nh.png",
       "width": 1600,
       "height": 900,
-      "sha256": "fee3bd3e3c6a98be70ffe695b912e141d33fd11259df6ffb5dae59540022afe5"
+      "sha256": "beb5c54477a6b3efe49f8fa1a5f32b5e0453f7b72bf97edc7f53ae5a93c1646b"
     },
     {
       "theme": "light",
@@ -648,7 +648,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-4-hi-n-th.png",
       "width": 1600,
       "height": 900,
-      "sha256": "4b62bb738bf91a7c56c94c3536b8d67394785fc1cf1daf76e6e9885d701a4d59"
+      "sha256": "2a528ef79d631f5b88db8825cf282e0bc98a40a5db0497502aaf6e2bb5273545"
     },
     {
       "theme": "light",
@@ -657,7 +657,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings-tab-5-n-ng-cao.png",
       "width": 1600,
       "height": 900,
-      "sha256": "5f6ec4239105a8ba2677bb6ea3b0cd423596ebd6b408e4e9431261458c0939d3"
+      "sha256": "461b5e483b55a5c7d21c91a8b2ca06f32c34ccdbaf23513459bb0eef2798b191"
     },
     {
       "theme": "light",
@@ -666,7 +666,7 @@
       "path": "docs/ui/baseline/current/light/screen-settings.png",
       "width": 1600,
       "height": 900,
-      "sha256": "a9b3fbdae6dac4405bf2b3d9e94d66b993cb5ebd3c2fae8e4e80c1364b4e0216"
+      "sha256": "c8f6715b4a943b841047ac4dabe9816936f667ff631d5530f4117e6dd037ac3b"
     },
     {
       "theme": "light",
@@ -675,7 +675,7 @@
       "path": "docs/ui/baseline/current/light/state-checked.png",
       "width": 640,
       "height": 480,
-      "sha256": "6cb3c41d6cdd14daf46c85ed6d36715b4110e48a719d19c64e8325f9b1e05b5e"
+      "sha256": "4f6d9597270e2010721783c3589c6d82fc9683a79a1b9fa3f4bad1148e4040cb"
     },
     {
       "theme": "light",
@@ -684,7 +684,7 @@
       "path": "docs/ui/baseline/current/light/state-default.png",
       "width": 640,
       "height": 480,
-      "sha256": "6cb3c41d6cdd14daf46c85ed6d36715b4110e48a719d19c64e8325f9b1e05b5e"
+      "sha256": "4f6d9597270e2010721783c3589c6d82fc9683a79a1b9fa3f4bad1148e4040cb"
     },
     {
       "theme": "light",
@@ -693,7 +693,7 @@
       "path": "docs/ui/baseline/current/light/state-disabled.png",
       "width": 640,
       "height": 480,
-      "sha256": "6cb3c41d6cdd14daf46c85ed6d36715b4110e48a719d19c64e8325f9b1e05b5e"
+      "sha256": "4f6d9597270e2010721783c3589c6d82fc9683a79a1b9fa3f4bad1148e4040cb"
     },
     {
       "theme": "light",
@@ -702,7 +702,7 @@
       "path": "docs/ui/baseline/current/light/state-focus.png",
       "width": 640,
       "height": 480,
-      "sha256": "e4b0370a45682ddfb38f36cf81116f401c00226ac1b66ff3bb683483966e0dc1"
+      "sha256": "ebbe51727087e5b7e06a2ea5e7dfdcdac379d68b36d0ed736ca7dbad29bd97cd"
     },
     {
       "theme": "light",
@@ -711,7 +711,7 @@
       "path": "docs/ui/baseline/current/light/state-hover.png",
       "width": 640,
       "height": 480,
-      "sha256": "e4b0370a45682ddfb38f36cf81116f401c00226ac1b66ff3bb683483966e0dc1"
+      "sha256": "ebbe51727087e5b7e06a2ea5e7dfdcdac379d68b36d0ed736ca7dbad29bd97cd"
     },
     {
       "theme": "light",
@@ -720,7 +720,7 @@
       "path": "docs/ui/baseline/current/light/state-pressed.png",
       "width": 640,
       "height": 480,
-      "sha256": "d240a7894b7cd2b0a3809d36ee49d769bcb801686f297555d3b9abc37cea8e3d"
+      "sha256": "e466aaa8271234e1cd2de71a57c1ad610b48bc6560bbd2f518af426b2a3e55ba"
     },
     {
       "theme": "light",
@@ -729,7 +729,7 @@
       "path": "docs/ui/baseline/current/light/state-validation.png",
       "width": 640,
       "height": 480,
-      "sha256": "37b6537ae52d3379fc28c61ca14d8d62293faac591a21dece4fc173913323e8b"
+      "sha256": "407f7f700f90db8b06affe1ede492ec85db6a710585bd2c909004bd1cc5dbac0"
     }
   ],
   "failures": []

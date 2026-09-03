@@ -446,7 +446,8 @@ QPushButton#NewsIconButton {
   border: none;
   @QSS_BUTTON@
   margin: 0;
-  padding: 2px 0;
+  padding: 2px 2px;
+  min-width: 20px;
 }
 
 QLabel#NewsTypeIcon {
@@ -463,17 +464,14 @@ QLabel#NewsTypeIcon[newsType="headline"] {
 
 QLabel#NewsTypeIcon[newsType="event"] {
   qproperty-text: "●";
-  color: #94a3b8;
 }
 
 QLabel#NewsTypeIcon[newsType="event"][newsImpact="high"] {
   qproperty-text: "●";
-  color: #ef4444;
 }
 
 QLabel#NewsTypeIcon[newsType="event"][newsImpact="medium"] {
   qproperty-text: "●";
-  color: #f59e0b;
 }
 
 QPushButton#DialogAiButton {

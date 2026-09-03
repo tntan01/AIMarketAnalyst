@@ -133,14 +133,14 @@ def result_action(
     if can_publish or status in {"VALIDATED", "RELEASE_READY"}:
         return BacktestResultAction(
             ACTION_APPLY_VALIDATED,
-            "📋 Áp dụng cấu hình",
+            "Áp dụng cấu hình",
             True,
             "VALIDATED_RESULT",
         )
     if status == "DRAFT":
         return BacktestResultAction(
             ACTION_SAVE_DRAFT,
-            "💾 Lưu đề xuất nháp",
+            "Lưu đề xuất nháp",
             True,
             "DRAFT_RESULT",
         )

@@ -11,11 +11,13 @@ LIGHT = (ROOT / "ui" / "styles" / "light.qss").read_text(encoding="utf-8")
 
 
 def test_restart_button_uses_shared_selector() -> None:
-    start = MAIN.index('QPushButton("🔄 Khởi động lại")')
+    start = MAIN.index('QPushButton("Khởi động lại")')
     end = MAIN.index("restart_btn.clicked.connect", start)
     block = MAIN[start:end]
     assert 'setObjectName("RestartButton")' in block
     assert "setStyleSheet" not in block
+    assert "flat_icon(" in block
+    assert "setIconSize" in block
 
 
 def test_restart_button_base_contract_is_transparent_and_compact() -> None:

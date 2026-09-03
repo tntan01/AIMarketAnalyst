@@ -247,6 +247,19 @@ QPushButton#NewsLinkButton[linkTone="warning"]:hover {
   color: #78350f;
 }
 
+/* NewsTypeIcon — màu glyph theo impact (chuyển từ base.qss: overlay sở hữu màu) */
+QLabel#NewsTypeIcon[newsType="event"] {
+  color: #6B7280;
+}
+
+QLabel#NewsTypeIcon[newsType="event"][newsImpact="high"] {
+  color: #DC2626;
+}
+
+QLabel#NewsTypeIcon[newsType="event"][newsImpact="medium"] {
+  color: #D97706;
+}
+
 QPushButton#DialogAiButton {
   background: #D94625;
   color: #ffffff;
