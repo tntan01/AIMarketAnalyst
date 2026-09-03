@@ -582,8 +582,6 @@ class DashboardScreen(QWidget):
             self._show_news_empty("Không có mục nào để hiển thị.")
             return
 
-        impact_dots = {"high": "🔴", "medium": "🟡", "low": "⚪"}
-
         # --- Split into zones based on tab context ---
         past_rows: list[dict] = []
         nearest_row: dict | None = None
@@ -706,17 +704,20 @@ class DashboardScreen(QWidget):
 
             # Column 1: Type icon
             if row_type == "headline":
-                type_icon = "📰"
+                type_kind = "headline"
                 type_tooltip = "Tin tức"
             else:
-                type_icon = impact_dots.get(impact, "⚪")
+                type_kind = "event"
                 type_tooltip = f"Sự kiện ({impact})"
 
-            type_item = QTableWidgetItem(type_icon)
-            type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            type_item.setToolTip(type_tooltip)
-            style_item(type_item)
-            table.setItem(i, 1, type_item)
+            type_icon_label = QLabel()
+            type_icon_label.setObjectName("NewsTypeIcon")
+            type_icon_label.setProperty("newsType", type_kind)
+            if type_kind == "event":
+                type_icon_label.setProperty("newsImpact", impact)
+            type_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            type_icon_label.setToolTip(type_tooltip)
+            table.setCellWidget(i, 1, type_icon_label)
 
             # Column 2: Content
             title = str(row.get("title", ""))

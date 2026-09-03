@@ -449,6 +449,33 @@ QPushButton#NewsIconButton {
   padding: 2px 0;
 }
 
+QLabel#NewsTypeIcon {
+  background: transparent;
+  border: none;
+  @QSS_BODY@
+  font-size: 12pt;
+  font-weight: 700;
+}
+
+QLabel#NewsTypeIcon[newsType="headline"] {
+  qproperty-text: "▤";
+}
+
+QLabel#NewsTypeIcon[newsType="event"] {
+  qproperty-text: "●";
+  color: #94a3b8;
+}
+
+QLabel#NewsTypeIcon[newsType="event"][newsImpact="high"] {
+  qproperty-text: "●";
+  color: #ef4444;
+}
+
+QLabel#NewsTypeIcon[newsType="event"][newsImpact="medium"] {
+  qproperty-text: "●";
+  color: #f59e0b;
+}
+
 QPushButton#DialogAiButton {
   border: 1px solid transparent;
   border-radius: 6px;
