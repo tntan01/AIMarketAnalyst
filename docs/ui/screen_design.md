@@ -52,8 +52,8 @@ Quyết định thiết kế bắt buộc:
 - Dùng `QMainWindow` làm khung chính.
 - Khi mở chương trình, cửa sổ chính phải tự động chiếm toàn bộ vùng làm việc của màn hình bằng `showMaximized()`. Yêu cầu này áp dụng cho mọi kích thước màn hình và mọi mức Windows scaling như 100%, 125%, 150%. Đây là chế độ maximized desktop window, không phải borderless game fullscreen, để người dùng vẫn dùng được taskbar, Alt+Tab và window controls bình thường.
 - Dùng sidebar hoặc top navigation để chuyển giữa 5 khu vực chính: Bảng điều khiển, Phân tích, Quét thị trường, Nhật ký, Cài đặt.
-- Sidebar là icon rail gắn cứng rộng 48px: mỗi mục điều hướng là một nút icon-only (glyph flat, không chữ) kèm tooltip tên mục khi hover; không có cơ chế thu/mở, không có tiêu đề/subtitle/footer. Icon đổi sang màu selection_text khi hover/checked.
-- Sidebar đáy rail có nút "Khởi động lại" icon-only (glyph `refresh`, màu accent #0d9488 ở giao diện tối / #D94625 ở giao diện sáng, nền trong suốt, không border, hover: icon sáng #2dd4bf ở giao diện tối / #E0533C ở giao diện sáng, tooltip "Khởi động lại"). Khi bấm: xác nhận Yes/No → shutdown MT5 → khởi chạy process mới → quit process hiện tại.
+- Sidebar là icon rail gắn cứng rộng 48px: mỗi mục điều hướng là một nút vuông bo góc 40×40 (content 38 + border 1, radius 10px) icon-only glyph phẳng 24px kèm tooltip tên mục khi hover; không có cơ chế thu/mở, không có tiêu đề/subtitle/footer. Icon đổi sang màu selection_text khi hover/checked.
+- Sidebar đáy rail có nút "Khởi động lại" icon-only cùng ô vuông 40×40 (glyph `refresh` 24px, màu accent #0d9488 ở giao diện tối / #D94625 ở giao diện sáng, nền trong suốt khi thường; hover/pressed: nền giống NavButton:hover — #1f2937 tối / #D94625 sáng — icon chuyển trắng selection_text, tooltip "Khởi động lại"). Khi bấm: xác nhận Yes/No → shutdown MT5 → khởi chạy process mới → quit process hiện tại.
 - Dùng `QStackedWidget` hoặc router tương đương để quản lý 8 màn hình chính.
 - Dùng `QSplitter`, `QGridLayout`, `QHBoxLayout`, `QVBoxLayout` và stretch factor để giao diện co giãn tốt trên màn hình 1366x768 trở lên.
 - Dùng `QTableView` + `QAbstractTableModel` cho bảng Scanner và Journal; không dựng bảng bằng nhiều label thủ công.
@@ -249,11 +249,12 @@ Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
   tại `../plans/flat-icons-phase2-plan.md`.
 - Phase 4 (04/09/2026): sidebar chuyển thành **icon rail gắn cứng 48px** —
   bỏ cơ chế thu/mở (sidebar_open, FloatingSidebarToggle, nút "×"), bỏ tiêu đề/
-  subtitle/footer; NavButton icon-only + tooltip tên mục (glyph theo
-  `ui/navigation.py: NAV_ICONS`); thêm glyph `gear` cho Cài đặt; icon đổi màu
-  hover/checked qua `_NavIconFilter` (pattern giống `LinkToneHoverFilter`);
-  RestartButton chuyển icon-only + tooltip; sidebar nằm trong layout ngang
-  (không còn overlay che nội dung).
+  subtitle/footer; NavButton ô vuông bo góc 40×40 icon-only 24px + tooltip tên
+  mục (glyph theo `ui/navigation.py: NAV_ICONS`); thêm glyph `gear` cho Cài đặt;
+  icon đổi màu hover/checked qua `_NavIconFilter` (pattern giống
+  `LinkToneHoverFilter`); RestartButton cùng ô vuông + tooltip; sidebar nằm
+  trong layout ngang (không còn overlay che nội dung). Density audit: nhóm hợp
+  đồng mới `ICON_RAIL_CONTROL_NAMES` (40px) cho nav_button/restart_button.
 - Phase 3 (hoàn thành 04/09/2026): mục "Phân rã điểm số" (tab Chẩn đoán —
   Chi tiết kết quả quét) đánh dấu hướng chọn bằng icon phẳng `check` nhúng rich
   text qua cơ chế mới `flat_data_uri()` trong `ui/icons.py` (data-URI PNG, tint
@@ -263,9 +264,19 @@ Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
   chấm tròn bằng icon phẳng data-URI (check/x/alert-triangle/minus theo role
   success/danger/warning/muted) — giữ nguyên logic `_status_vn`/`_aggregate`,
   label và màu text. Kế hoạch: `../plans/flat-icons-gates-plan.md`.
+- Phase 5 (hoàn thành 04/09/2026): 2 dialog dashboard "Chi tiết tin tức" và
+  "Chi tiết sự kiện" (mở từ danh sách Tin tức & sự kiện) thay emoji rich-text
+  bằng glyph phẳng qua helper `_rich_dialog_icon()` (`flat_data_uri`):
+  clock (Thời gian), book-open (Nguồn), external-link (Liên kết), dollar-sign
+  (Tiền tệ), bar-chart (Mức tác động), trending-up/down (Dự báo/Kỳ trước),
+  check/refresh (Kết quả), dot-high/mid/low theo danger/warning/muted (Cao/
+  Trung bình/Thấp), alert-triangle (AI chưa cấu hình — `empty_state_html` thêm
+  tham số `icon`); glyph mới `clock, dollar-sign, trending-up, trending-down`
+  vào registry `ui/icons.py`. Prompt AI (heading markdown "###") giữ nguyên —
+  không phải icon UI. Test khóa: `test_dashboard_flat_icons.py::test_event_and_headline_dialog_sources_are_emoji_free`.
 - Follow-up (chưa làm): legend emoji còn lại trong tab Chẩn đoán (checklist
   legacy, pipeline steps, route, branch), emoji rich text khác
-  (báo cáo backtest, market-brief, rich text dialog), nhãn trạng thái BE/trailing
+  (báo cáo backtest, market-brief), nhãn trạng thái BE/trailing
   trong bảng orders, KPI badge journal, tab icon nếu nới chiều cao tab.
 - Kế hoạch chi tiết: `../plans/dashboard-flat-icons-plan.md`.
 

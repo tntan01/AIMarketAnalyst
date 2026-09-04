@@ -28,16 +28,26 @@ from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
-from ui.icons import flat_icon, flat_icon_fixed, flat_pixmap
+from ui.icons import flat_data_uri, flat_icon, flat_icon_fixed, flat_pixmap
 from ui.layout_system import LayoutTokens, configure_table
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
-from ui.theme.fonts import QSS_BODY, QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
+from ui.theme.fonts import QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
 from ui.theme_manager import (
     current_palette,
     is_light_theme,
     semantic_qcolor,
     set_dynamic_property,
 )
+
+
+def _rich_dialog_icon(name: str, role: str = "text", *, size: int = 12) -> str:
+    """Glyph phẳng nhúng `<img>` vào rich text (dialog tin tức/sự kiện).
+
+    Màu resolve từ palette theo `role` tại thời điểm build — dialog được tạo
+    lại mỗi lần mở nên đổi theme không để lại tint cũ."""
+    uri = flat_data_uri(name, role, size=size)
+    return f"<img src='{uri}' width='{size}' height='{size}'/>"
+
 
 class MarketWorker(QThread):
     finished = pyqtSignal(dict)
@@ -1043,13 +1053,13 @@ class DashboardScreen(QWidget):
         info_layout.setVerticalSpacing(8)
 
         left_items = [
-            (f'<span style="{QSS_BODY}">⏰</span> Thời gian', local_time_str or "—"),
-            (f'<span style="{QSS_BODY}">📰</span> Nguồn', source),
+            (f'{_rich_dialog_icon("clock")} Thời gian', local_time_str or "—"),
+            (f'{_rich_dialog_icon("book-open")} Nguồn', source),
         ]
-        
+
         url_link = f"<a href='{url}' style='color:#ea580c;'>Link gốc</a>" if url else "—"
         right_items = [
-            (f'<span style="{QSS_BODY}">🔗</span> Liên kết', url_link),
+            (f'{_rich_dialog_icon("external-link")} Liên kết', url_link),
         ]
 
         for row_idx, (lbl_txt, val_txt) in enumerate(left_items):
@@ -1126,9 +1136,11 @@ class DashboardScreen(QWidget):
                     set_rich_html(
                         ai_response,
                         empty_state_html(
-                            "⚠️ Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung "
+                            "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung "
                             "cấp và nhập API key.",
                             tone="danger",
+                            icon="alert-triangle",
+                            icon_role="danger",
                         ),
                     )
                     ai_btn.setText("Tóm tắt AI")
@@ -1214,26 +1226,26 @@ class DashboardScreen(QWidget):
         info_layout.setVerticalSpacing(8)
 
         impact_map = {
-            "high": f'<span style="{QSS_BODY}">🔴</span> Cao',
-            "medium": f'<span style="{QSS_BODY}">🟡</span> Trung bình',
-            "low": f'<span style="{QSS_BODY}">⚪</span> Thấp'
+            "high": f'{_rich_dialog_icon("dot-high", "danger")} Cao',
+            "medium": f'{_rich_dialog_icon("dot-mid", "warning")} Trung bình',
+            "low": f'{_rich_dialog_icon("dot-low", "muted")} Thấp'
         }
         impact_text = impact_map.get(impact.lower(), impact)
 
         left_items = [
-            (f'<span style="{QSS_BODY}">⏰</span> Thời gian', time_str),
-            (f'<span style="{QSS_BODY}">💱</span> Tiền tệ', currency),
-            (f'<span style="{QSS_BODY}">📊</span> Mức tác động', impact_text),
+            (f'{_rich_dialog_icon("clock")} Thời gian', time_str),
+            (f'{_rich_dialog_icon("dollar-sign")} Tiền tệ', currency),
+            (f'{_rich_dialog_icon("bar-chart")} Mức tác động', impact_text),
         ]
         right_items = [
-            (f'<span style="{QSS_BODY}">📈</span> Dự báo', forecast),
-            (f'<span style="{QSS_BODY}">📉</span> Kỳ trước', previous),
+            (f'{_rich_dialog_icon("trending-up")} Dự báo', forecast),
+            (f'{_rich_dialog_icon("trending-down")} Kỳ trước', previous),
         ]
         actual_val_label = None
         if actual:
-            right_items.append((f'<span style="{QSS_BODY}">✅</span> Kết quả', actual))
+            right_items.append((f'{_rich_dialog_icon("check", "success")} Kết quả', actual))
         elif ev_time < now_utc:
-            right_items.append((f'<span style="{QSS_BODY}">🔄</span> Kết quả', "Đang tra cứu..."))
+            right_items.append((f'{_rich_dialog_icon("refresh")} Kết quả', "Đang tra cứu..."))
 
         for row_idx, (label_text, value_text) in enumerate(left_items):
             lbl = QLabel(compile_rich_html(label_text))
@@ -1334,9 +1346,11 @@ class DashboardScreen(QWidget):
             set_rich_html(
                 text_widget,
                 empty_state_html(
-                    "⚠️ Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và "
+                    "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và "
                     "nhập API key.",
                     tone="danger",
+                    icon="alert-triangle",
+                    icon_role="danger",
                 ),
             )
             btn.setText("Xem tác động")

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-03T14:43:49.928190+00:00",
+  "captured_at": "2026-09-04T08:41:14.433736+00:00",
   "scope": "ui/**/*.py plus ui/styles/**/*.qss and theme overlays",
   "policy": {
     "comparison": "current counts must be less than or equal to baseline",
@@ -9,9 +9,9 @@
   },
   "totals": {
     "set_stylesheet_calls": 1,
-    "html_style_attributes": 501,
+    "html_style_attributes": 488,
     "hex_color_literals": 585,
-    "object_name_calls": 333
+    "object_name_calls": 328
   },
   "python_files": {
     "ui/__init__.py": {
@@ -51,8 +51,8 @@
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 0,
-      "line_count": 288,
-      "sha256": "04977b4fe2272213cd083bd6fe8a8f453993ddb11a985e025924e0fdfcd2b9dd"
+      "line_count": 493,
+      "sha256": "0c89a564a5becb2a9215df85978f02bb595fe77bc2cd51b2ea4a54f07542ad5c"
     },
     "ui/layout_system.py": {
       "set_stylesheet_calls": 0,
@@ -66,9 +66,9 @@
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
-      "object_name_calls": 10,
-      "line_count": 250,
-      "sha256": "94211e96710968760e273d9535937170410847202ed138b6de7d2143398948ed"
+      "object_name_calls": 5,
+      "line_count": 244,
+      "sha256": "2a9a65dbf6e10dc1997e8efe4c2f145a0722739201e3e252b409d3b52804daa7"
     },
     "ui/matplotlib_theme.py": {
       "set_stylesheet_calls": 0,
@@ -83,16 +83,16 @@
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 0,
-      "line_count": 10,
-      "sha256": "fd55775a790c9a64444bc28e2fa2cfc8830d34321b140d3054d6fc217302415f"
+      "line_count": 20,
+      "sha256": "174a5d4d68d308b680032acae40b8cbaaec9f381d97e12d24a6d793635c1adf6"
     },
     "ui/rich_text.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 0,
-      "line_count": 273,
-      "sha256": "6474662f8e72b79fb2ded1aa85ff7ea7499fb00fd834b78a8b434130f220942c"
+      "line_count": 285,
+      "sha256": "ce0fa61476b6a745fc8dba2f8b5963d86e62eca1d323240b6e4cdc9f0fffd2ad"
     },
     "ui/scanner_presentation.py": {
       "set_stylesheet_calls": 0,
@@ -131,64 +131,64 @@
       "html_style_attributes": 182,
       "hex_color_literals": 153,
       "object_name_calls": 40,
-      "line_count": 3066,
-      "sha256": "f4c373d8f5d29cad57f12d30e015d238821efa3c26ec326c4269eb94dd96d10a"
+      "line_count": 3095,
+      "sha256": "6bcca82b2a9eb9f83200e73a93b80faded770fc52b3835aa6e11ff7e1398a29f"
     },
     "ui/screens/dashboard_screen.py": {
       "set_stylesheet_calls": 0,
-      "html_style_attributes": 19,
+      "html_style_attributes": 6,
       "hex_color_literals": 1,
       "object_name_calls": 44,
-      "line_count": 1858,
-      "sha256": "a0a6226113747ab3370f61568fca4c5c2ccd959791571252ad43d12513dffe1d"
+      "line_count": 1872,
+      "sha256": "c1fce435d76bdc982dbc740f636956918e0bc8881a21da6a4899efc15a33e250"
     },
     "ui/screens/journal_detail_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 51,
       "hex_color_literals": 35,
       "object_name_calls": 23,
-      "line_count": 940,
-      "sha256": "adcc484eea4fbc41ec35366a512272ce94896529b48fc714c0fc1fd3d768a50a"
+      "line_count": 961,
+      "sha256": "456edc812e6ce9dfb441b85b07f899cc564120e96b9f4b02d81b08873b37d2a6"
     },
     "ui/screens/journal_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 2,
       "hex_color_literals": 2,
       "object_name_calls": 57,
-      "line_count": 2101,
-      "sha256": "82e6c41c1a5c2704474853bc0398c707f8adbbe51b7eab9e84c89b1135134146"
+      "line_count": 2141,
+      "sha256": "6ce4ad2225f851af169da45436a9bdf9de302324caf004526ff1b6e393833823"
     },
     "ui/screens/orders_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 13,
-      "line_count": 2053,
-      "sha256": "b8aa720a46021633dbabe7fd36f24c8bdf8d74ae02713b1642fa810302837779"
+      "line_count": 2085,
+      "sha256": "a061a11e060c1609e31156c4bbb2108e099e1ab9ef68516ad1d86e51ea8182d9"
     },
     "ui/screens/scanner_detail_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 242,
       "hex_color_literals": 293,
       "object_name_calls": 64,
-      "line_count": 4132,
-      "sha256": "b7f2388829eb3ed1649a4f2796969c7d1052a95f0cdc57d39d7c867359fab408"
+      "line_count": 4188,
+      "sha256": "f8e7edbe6d4ae1bd5ec7ac5e03e7930e0f46bc49c3c6e4e5be604de0ca7a1615"
     },
     "ui/screens/scanner_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 5,
       "hex_color_literals": 14,
       "object_name_calls": 35,
-      "line_count": 3464,
-      "sha256": "5a9f6b240516a3b7c816ebc4ad346fdfaccf1f2901677e7eba474aeaac8ad58c"
+      "line_count": 3536,
+      "sha256": "1cd763776feb43733647b5eed2ef3a4fd27d64345da100217162a6b5ddb729c0"
     },
     "ui/screens/settings_screen.py": {
       "set_stylesheet_calls": 0,
       "html_style_attributes": 0,
       "hex_color_literals": 0,
       "object_name_calls": 29,
-      "line_count": 1958,
-      "sha256": "7ad36c42df99519c8ce358fbe439009ba3c67b603453cf5be43fd2406ea57c08"
+      "line_count": 2000,
+      "sha256": "bf4a4a725cdeecbde784e26998eb5ccffab52b30cc667dbb63ef198a0645348a"
     },
     "ui/screens/shared.py": {
       "set_stylesheet_calls": 0,
@@ -233,31 +233,31 @@
   },
   "qss_files": {
     "ui/styles/base.qss": {
-      "line_count": 1041,
-      "rule_blocks": 161,
-      "selector_references": 245,
-      "unique_selectors": 245,
+      "line_count": 1037,
+      "rule_blocks": 160,
+      "selector_references": 243,
+      "unique_selectors": 243,
       "duplicate_selectors": 0,
       "hex_color_literals": 0,
-      "sha256": "7d89cf406d3b637b0a64373362e0a65f76602099734bd830cf8f5038f0fa3b07"
+      "sha256": "e356535c2debe11b8d30b037c3aab4a7dba58e0770d0ab2d1ada83be37d44ae3"
     },
     "ui/styles/dark.qss": {
-      "line_count": 2348,
-      "rule_blocks": 433,
-      "selector_references": 719,
-      "unique_selectors": 700,
-      "duplicate_selectors": 19,
-      "hex_color_literals": 660,
-      "sha256": "a5c066e25720c2d9366cae86dff62f0f42b3bb247c93e78885e4949f8e1fe747"
+      "line_count": 2325,
+      "rule_blocks": 429,
+      "selector_references": 711,
+      "unique_selectors": 693,
+      "duplicate_selectors": 18,
+      "hex_color_literals": 655,
+      "sha256": "b69ea868386d3aaf17124e5426d391d90d680d78fecb41943ffec59d7987c351"
     },
     "ui/styles/light.qss": {
-      "line_count": 2331,
-      "rule_blocks": 432,
-      "selector_references": 720,
-      "unique_selectors": 700,
+      "line_count": 2312,
+      "rule_blocks": 429,
+      "selector_references": 713,
+      "unique_selectors": 693,
       "duplicate_selectors": 20,
-      "hex_color_literals": 660,
-      "sha256": "e6810567ab07ae377a916e9c46ff8f744dda357321179ba1528d40d5de8379a9"
+      "hex_color_literals": 656,
+      "sha256": "f0a21877051126df090dbab9b33ea024b79cdad680638ecbb92b3b35cb66b577"
     }
   }
 }

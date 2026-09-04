@@ -188,3 +188,48 @@ def test_news_icon_button_is_flat_icon_only():
     assert btn.text() == "", "NewsIconButton phải icon-only"
     assert not btn.icon().isNull()
     assert btn.property("linkTone") in ("past", "nearest", "future")
+
+
+# ---------------------------------------------------------------------------
+# Dialog "Chi tiết tin tức" / "Chi tiết sự kiện" — rich text dùng glyph phẳng
+# ---------------------------------------------------------------------------
+
+#_ranges emoji như tests/test_phase2_flat_icons.py — dialog không còn emoji.
+_DIALOG_EMOJI_RANGES = (
+    (0x1F000, 0x1FAFF),
+    (0x2600, 0x27BF),
+    (0x2300, 0x23FF),
+    (0x2B00, 0x2BFF),
+)
+
+
+def _dialog_emoji_hits(source: str) -> list[str]:
+    # Bỏ qua dòng prompt AI chứa "###" (heading markdown gửi cho LLM, không
+    # phải icon hiển thị trên dialog).
+    lines = [line for line in source.splitlines() if "###" not in line]
+    return sorted(
+        ch
+        for line in lines
+        for ch in line
+        if any(lo <= ord(ch) <= hi for lo, hi in _DIALOG_EMOJI_RANGES)
+    )
+
+
+def test_event_and_headline_dialog_sources_are_emoji_free():
+    import inspect
+
+    from ui.screens import dashboard_screen as mod
+
+    for method in (
+        mod.DashboardScreen._show_headline_detail,
+        mod.DashboardScreen._show_event_detail,
+        mod.DashboardScreen._request_ai_impact,
+    ):
+        source = inspect.getsource(method)
+        hits = _dialog_emoji_hits(source)
+        assert not hits, f"{method.__name__} còn emoji: {hits}"
+        # Rich icon phải đi qua helper glyph phẳng (data-URI <img>).
+        assert (
+            "_rich_dialog_icon(" in source
+            or 'icon="alert-triangle"' in source
+        ), f"{method.__name__} phải dùng flat rich icon"

@@ -12,6 +12,7 @@ from html import escape
 import re
 from typing import Protocol
 
+from ui.icons import flat_data_uri
 from ui.theme import (
     ThemePalette,
     color_for_role,
@@ -257,8 +258,15 @@ def empty_state_html(
     tone: str = "muted",
     theme: object | None = None,
     palette: ThemePalette | None = None,
+    icon: str | None = None,
+    icon_role: str = "text",
+    icon_size: int = 12,
 ) -> str:
-    """Build a common empty/error/waiting message without inline attributes."""
+    """Build a common empty/error/waiting message without inline attributes.
+
+    `icon` (tên glyph trong registry `ui/icons.py`) được nhúng dạng
+    `<img data-uri>` đầu dòng — message vẫn escape, chỉ markup icon là tin cậy.
+    """
 
     role = str(tone or "muted").strip().lower()
     class_name = {
@@ -266,8 +274,12 @@ def empty_state_html(
         "error": "rt-danger-block",
         "warning": "rt-warning-block",
     }.get(role, "rt-empty")
+    icon_markup = ""
+    if icon:
+        uri = flat_data_uri(icon, icon_role, size=icon_size)
+        icon_markup = f"<img src='{uri}' width='{icon_size}' height='{icon_size}'/> "
     return compile_rich_html(
-        f'<p class="{class_name}">{escape(str(message or ""))}</p>',
+        f'<p class="{class_name}">{icon_markup}{escape(str(message or ""))}</p>',
         theme=theme,
         palette=palette,
     )
