@@ -109,6 +109,36 @@ def test_scores_html_lists_component_scores() -> None:
     assert "MUA" in html and "BÁN" in html
 
 
+def test_scores_html_selected_marker_is_flat_icon() -> None:
+    """Marker hướng chọn phải là icon phẳng data-URI, không còn emoji ✅."""
+    screen = _stub_screen(_blocked_row())
+    html = screen._diag_scores_html(light=True)
+    assert "✅" not in html
+    assert "đang chọn" in html
+    assert "data:image/png;base64" in html
+
+
+def test_scores_html_marker_follows_theme() -> None:
+    """Data-URI icon build theo palette hiện hành — đổi theme phải đổi URI."""
+    import sys
+
+    from PyQt6.QtWidgets import QApplication
+
+    from ui.theme_manager import APP_THEME_PROPERTY, current_palette
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    start = "light" if current_palette().name == "light" else "dark"
+    target = "dark" if start == "light" else "light"
+    screen = _stub_screen(_blocked_row())
+    before = screen._diag_scores_html(light=True)
+    app.setProperty(APP_THEME_PROPERTY, target)
+    try:
+        after = screen._diag_scores_html(light=True)
+    finally:
+        app.setProperty(APP_THEME_PROPERTY, start)
+    assert before != after, "data-URI icon không đổi theo theme"
+
+
 def test_gates_html_lists_all_gate_groups() -> None:
     screen = _stub_screen(_blocked_row())
     html = screen._diag_gates_html(light=True)
@@ -124,6 +154,11 @@ def test_gates_html_lists_all_gate_groups() -> None:
         assert label in html, f"missing gate group {label!r}"
     # The configured spread gate must appear (translated, not raw).
     assert "Chênh lệch giá (spread) bất thường" in html
+    # Icon trạng thái phải là icon phẳng data-URI, không còn emoji chấm tròn.
+    for emoji in ("🟢", "🔴", "🟡", "⚪"):
+        assert emoji not in html, f"gate section còn emoji {emoji!r}"
+    assert "data:image/png;base64" in html
+    assert "Chặn" in html, "row BLOCKED phải giữ label trạng thái 'Chặn'"
 
 
 def test_plan_html_shows_entry_sl_tp_and_status() -> None:

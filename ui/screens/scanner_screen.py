@@ -129,6 +129,12 @@ class ScannerTableModel (QAbstractTableModel ):
             return self ._row_background (row )
         if role ==Qt .ItemDataRole .ForegroundRole :
             return self ._foreground (row ,key )
+        if role ==Qt .ItemDataRole .DecorationRole :
+            if key =="symbol" and self ._has_journal_feedback (row ):
+                return flat_icon("message-square", "text", size=14)
+            if key =="macro_score":
+                return flat_icon(self ._macro_dot_glyph (row ), "text", size=12)
+            return None
         if role ==Qt .ItemDataRole .ToolTipRole :
             if key =="candidate_status":
                 return self ._candidate_status_tooltip (row )
@@ -149,7 +155,7 @@ class ScannerTableModel (QAbstractTableModel ):
                 jf = row.get("journal_feedback")
                 reasons = jf.get("reasons", []) if isinstance(jf, dict) else []
                 if reasons:
-                    lines = ["📋 Nhận xét từ nhật ký:"]
+                    lines = ["Nhận xét từ nhật ký:"]
                     lines.extend(str(item) for item in reasons)
                     sample = jf.get("sample_size")
                     if isinstance(sample, int):
@@ -195,7 +201,25 @@ class ScannerTableModel (QAbstractTableModel ):
     def row_at (self ,row :int )->dict [str ,object ]|None :
         if 0 <=row <len (self .rows ):
             return self .rows [row ]
-        return None 
+        return None
+
+    @staticmethod
+    def _has_journal_feedback(row: dict[str, object] | None) -> bool:
+        """True khi row có journal feedback thật (sample > 0) — marker icon."""
+        return (
+            isinstance(row.get("journal_feedback"), dict)
+            and bool(row.get("journal_sample_size", 0) or 0) > 0
+        )
+
+    @staticmethod
+    def _macro_dot_glyph(row: dict[str, object] | None) -> str:
+        """Glyph chấm phẳng theo tier confidence vĩ mô (thay ●/○/◌ text)."""
+        conf = float(row.get("macro_confidence", 1.0)) if row else 1.0
+        if conf >= 0.8:
+            return "dot-high"
+        if conf >= 0.5:
+            return "dot-mid"
+        return "dot-low"
 
     def _has_real_plan(self, row: dict[str, object] | None) -> bool:
         """Check if the row has a real zone (SMC or technical), not fallback/none."""
@@ -256,15 +280,8 @@ class ScannerTableModel (QAbstractTableModel ):
                 "none":"--",
             }.get(str(value or "").strip().lower(),"--")
         if key =="symbol":
-            # F3: real journal feedback (sample count > 0) shows a 📋 marker so the
-            # user can hover the Mã cell for the journal verdict. Neutral/default
-            # rows (no feedback) render the bare symbol.
-            if (
-                row is not None
-                and isinstance(row.get("journal_feedback"), dict)
-                and bool(row.get("journal_sample_size", 0) or 0) > 0
-            ):
-                return f"📋 {str(value if value is not None else '--')}"
+            # F3: journal feedback marker renders as a flat icon via
+            # DecorationRole (below); display text stays the bare symbol.
             return str(value if value is not None else "--")
         if key =="candidate_status":
             return self.STATUS_TEXT.get(str(value or "").upper(), str(value or "--"))
@@ -278,10 +295,10 @@ class ScannerTableModel (QAbstractTableModel ):
         if key =="market_regime":
             return vi_term(value)
         if key =="macro_score":
-            score_val =int (value )if isinstance (value ,(int ,float ))else 15 
-            conf =float (row .get ("macro_confidence",1.0 ))if row else 1.0 
-            quality_dot ="●"if conf >=0.8 else ("○"if conf >=0.5 else "◌")
-            return f"{quality_dot } {score_val }"
+            score_val =int (value )if isinstance (value ,(int ,float ))else 15
+            # Confidence tier renders as a flat dot via DecorationRole;
+            # display text stays the bare score.
+            return str(score_val)
         if key =="macro_bias":
             return self .MACRO_BIAS_TEXT .get (str (value ),str (value or "--"))
         if key =="expected_effective_rr":
@@ -1534,6 +1551,7 @@ class ScannerScreen (QWidget ):
 
         self .table =QTableView ()
         configure_table(self.table)
+        self .table .setIconSize (QSize (14 ,14 ))
         self .table .setModel (self .table_model )
         self .table .setSelectionBehavior (QTableView .SelectionBehavior .SelectRows )
         self .table .setSelectionMode (QTableView .SelectionMode .SingleSelection )

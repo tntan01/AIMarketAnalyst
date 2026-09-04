@@ -26,7 +26,7 @@ from ui.scanner_rr_formatters import (
     format_source_zone_text,
 )
 from ui.components.chart_view import AnalysisChartView
-from ui.icons import flat_icon, flat_pixmap
+from ui.icons import flat_data_uri, flat_icon, flat_pixmap
 from ui.rich_text import empty_state_html, set_rich_html
 from ui.screens.shared import action_button, card, page_header
 from ui.theme import chart_palette, semantic_role_for_color
@@ -1844,6 +1844,10 @@ class ScannerDetailScreen(QWidget):
 
         if hasattr(self, "chart"):
             self.chart.refresh_theme(current_palette())
+        # Rich text tab Chẩn đoán (kèm data-URI icon phẳng) build theo theme
+        # tại thời điểm render — build lại để bắt kịp theme mới.
+        if getattr(self, "row", None):
+            self._refresh_diagnostics()
 
     def _refresh_hero(self) -> None:
         """Render the canonical Scanner verdict, never a raw directional bias."""
@@ -3944,11 +3948,16 @@ class ScannerDetailScreen(QWidget):
             ("Chất lượng thực thi", "execution_quality_score"),
         ]
         sides = ("buy", "sell")
+        check_uri = flat_data_uri("check", "success", size=12)
         for label, key in components:
             tds = []
             for side in sides:
                 s = by_side.get(side, {})
-                marker = " · ✅ đang chọn" if side == selected else ""
+                marker = (
+                    f" · <img src='{check_uri}' width='12' height='12'/> đang chọn"
+                    if side == selected
+                    else ""
+                )
                 tds.append(
                     f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid "
                     f"{row_border_color};color:{text_color};{_HTML_NUMBER}' "
@@ -4021,19 +4030,38 @@ class ScannerDetailScreen(QWidget):
         text_color = "#111827" if light else "#e2e8f0"
         muted_color = "#57534E" if light else "#94a3b8"
 
+        def _status_icon(status: str) -> str:
+            """Icon phẳng data-URI theo trạng thái cổng (thay emoji chấm tròn).
+
+            Cùng ngôn ngữ glyph với `_checklist_pixmap`: pass→check, block→x,
+            caution/cap→alert-triangle, unknown→minus; status rỗng → không icon.
+            """
+            glyph = {
+                "PASS": ("check", "success"),
+                "BLOCK": ("x", "danger"),
+                "CAUTION": ("alert-triangle", "warning"),
+                "CAP": ("alert-triangle", "warning"),
+            }.get(status, ("minus", "muted") if status else ("", ""))
+            name, role = glyph
+            if not name:
+                return ""
+            uri = flat_data_uri(name, role, size=12)
+            return f"<img src='{uri}' width='12' height='12'/>"
+
         def _status_vn(status: str):
             mapping = {
-                "PASS": ("🟢", "Qua", "#22c55e"),
-                "BLOCK": ("🔴", "Chặn", "#ef4444"),
-                "CAUTION": ("🟡", "Cảnh báo", "#fbbf24"),
-                "CAP": ("🟡", "Giới hạn", "#fbbf24"),
-                "UNKNOWN": ("⚪", "Chưa đủ dữ liệu", "#94a3b8"),
+                "PASS": ("Qua", "#22c55e"),
+                "BLOCK": ("Chặn", "#ef4444"),
+                "CAUTION": ("Cảnh báo", "#fbbf24"),
+                "CAP": ("Giới hạn", "#fbbf24"),
+                "UNKNOWN": ("Chưa đủ dữ liệu", "#94a3b8"),
             }
             if status in mapping:
-                return mapping[status]
+                text, color = mapping[status]
+                return (_status_icon(status), text, color)
             if not status:
                 return ("", "—", "#94a3b8")
-            return ("⚪", status, "#94a3b8")
+            return (_status_icon(status), status, "#94a3b8")
 
         def _aggregate(codes: list) -> str:
             tones = {_code_tone(str(c)) for c in codes}

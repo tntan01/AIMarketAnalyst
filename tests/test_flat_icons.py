@@ -7,6 +7,7 @@ re-tint khi đổi theme, cache bounded. Chạy headless với QT_QPA_PLATFORM=o
 
 from __future__ import annotations
 
+import base64
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -196,3 +197,44 @@ def test_module_contains_no_hex_literals():
 
     source = pathlib.Path("ui/icons.py").read_text(encoding="utf-8")
     assert not re.search(r"#[0-9a-fA-F]{3,6}", source), "ui/icons.py cấm hardcode hex"
+
+
+def test_flat_data_uri_is_valid_png():
+    from ui.icons import flat_data_uri
+
+    uri = flat_data_uri("check", "success", size=12)
+    assert uri.startswith("data:image/png;base64,")
+    payload = base64.b64decode(uri.split(",", 1)[1])
+    assert payload[:4] == b"\x89PNG", "payload phải là PNG hợp lệ"
+
+
+def test_flat_data_uri_color_follows_role():
+    from ui.icons import flat_data_uri
+
+    palette = current_palette()
+    success = flat_data_uri("check", "success", size=12)
+    danger = flat_data_uri("check", "danger", size=12)
+    assert success != danger
+    for uri, expected in ((success, palette.success), (danger, palette.danger)):
+        payload = base64.b64decode(uri.split(",", 1)[1])
+        image = QImage()
+        assert image.loadFromData(payload)
+        found = None
+        for x in range(image.width()):
+            for y in range(image.height()):
+                color = image.pixelColor(x, y)
+                if color.alpha() > 100:
+                    found = (color.red(), color.green(), color.blue())
+                    break
+            if found:
+                break
+        assert found is not None
+        assert _approx(found, expected), f"{found} không khớp role {expected}"
+
+
+def test_flat_data_uri_cache_hit():
+    from ui.icons import flat_data_uri
+
+    first = flat_data_uri("check", "success", size=12)
+    second = flat_data_uri("check", "success", size=12)
+    assert first is second

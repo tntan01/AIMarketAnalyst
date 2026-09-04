@@ -18,7 +18,7 @@ Quy ước:
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QByteArray, QRectF, QSize, Qt
+from PyQt6.QtCore import QByteArray, QBuffer, QIODevice, QRectF, QSize, Qt
 from PyQt6.QtGui import QColor, QIcon, QIconEngine, QImage, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QApplication
@@ -214,6 +214,17 @@ ICONS: dict[str, str] = {
         '<line x1="3" y1="12" x2="21" y2="12"/>'
         '<line x1="3" y1="18" x2="21" y2="18"/>'
     ),
+    # Chấm tin cậy: đầy (cao) / nửa (trung bình) / rỗng (thấp)
+    "dot-high": (
+        '<circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/>'
+    ),
+    "dot-mid": (
+        '<circle cx="12" cy="12" r="7"/>'
+        '<path d="M12 5a7 7 0 0 1 0 14z" fill="currentColor" stroke="none"/>'
+    ),
+    "dot-low": (
+        '<circle cx="12" cy="12" r="7"/>'
+    ),
 }
 
 _SVG_TEMPLATE = (
@@ -226,6 +237,8 @@ _SVG_TEMPLATE = (
 _renderer_cache: dict[tuple[str, str], QSvgRenderer] = {}
 # (name, hex, size, dpr) -> QPixmap
 _pixmap_cache: dict[tuple[str, str, int, float], QPixmap] = {}
+# (name, hex, size) -> data-URI PNG
+_data_uri_cache: dict[tuple[str, str, int], str] = {}
 
 
 def clear_icon_caches() -> None:
@@ -233,6 +246,7 @@ def clear_icon_caches() -> None:
     theo key khi đổi theme)."""
     _renderer_cache.clear()
     _pixmap_cache.clear()
+    _data_uri_cache.clear()
 
 
 def _svg_bytes(name: str, color_hex: str) -> bytes:
@@ -364,6 +378,34 @@ class FlatIconEngine(QIconEngine):
             self.active_role,
             self.fixed_color,
         )
+
+
+def flat_data_uri(
+    name: str,
+    role: str = "text",
+    *,
+    size: int = ICON_DEFAULT_SIZE,
+) -> str:
+    """Data-URI PNG của glyph để nhúng `<img>` trong rich text (QTextEdit).
+
+    Màu resolve từ palette theo `role` tại thời điểm gọi (cache khóa theo hex
+    nên đổi theme → key mới). Dùng khi rich text cần icon phẳng mà không thể
+    đặt QLabel pixmap (vd mục "Phân rã điểm số" tab Chẩn đoán)."""
+    color_hex = color_for_role(current_palette(), role)
+    key = (name, color_hex, size)
+    cached = _data_uri_cache.get(key)
+    if cached is not None:
+        return cached
+    pixmap = flat_pixmap(name, role, size=size)
+    buf = QBuffer()
+    buf.open(QIODevice.OpenModeFlag.WriteOnly)
+    try:
+        pixmap.save(buf, "PNG")
+    finally:
+        buf.close()
+    uri = "data:image/png;base64," + bytes(buf.data().toBase64()).decode("ascii")
+    _data_uri_cache[key] = uri
+    return uri
 
 
 def flat_pixmap(

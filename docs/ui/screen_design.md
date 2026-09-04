@@ -246,9 +246,19 @@ Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
   (scanner, orders, settings, backtest, journal, journal_detail, scanner_detail)
   + RestartButton và sidebar toggle trong `ui/main_window.py`; kế hoạch chi tiết
   tại `../plans/flat-icons-phase2-plan.md`.
-- Follow-up (chưa làm): emoji trong rich text (báo cáo backtest, scanner_detail,
-  market-brief, rich text dialog), nhãn trạng thái BE/trailing trong bảng orders,
-  KPI badge journal, tab icon nếu nới chiều cao tab.
+- Phase 3 (hoàn thành 04/09/2026): mục "Phân rã điểm số" (tab Chẩn đoán —
+  Chi tiết kết quả quét) đánh dấu hướng chọn bằng icon phẳng `check` nhúng rich
+  text qua cơ chế mới `flat_data_uri()` trong `ui/icons.py` (data-URI PNG, tint
+  theo palette tại thời điểm build; `refresh_theme_styles` build lại tab Chẩn đoán
+  khi đổi theme). Kế hoạch: `../plans/flat-icons-score-breakdown-plan.md`.
+- Phase 4 (hoàn thành 04/09/2026): mục "Cổng chặn" (tab Chẩn đoán) thay emoji
+  chấm tròn bằng icon phẳng data-URI (check/x/alert-triangle/minus theo role
+  success/danger/warning/muted) — giữ nguyên logic `_status_vn`/`_aggregate`,
+  label và màu text. Kế hoạch: `../plans/flat-icons-gates-plan.md`.
+- Follow-up (chưa làm): legend emoji còn lại trong tab Chẩn đoán (checklist
+  legacy, pipeline steps, route, branch), emoji rich text khác
+  (báo cáo backtest, market-brief, rich text dialog), nhãn trạng thái BE/trailing
+  trong bảng orders, KPI badge journal, tab icon nếu nới chiều cao tab.
 - Kế hoạch chi tiết: `../plans/dashboard-flat-icons-plan.md`.
 
 ---

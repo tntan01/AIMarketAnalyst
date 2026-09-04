@@ -354,3 +354,42 @@ def test_price_vs_zone_help_explanation_exists() -> None:
     assert ScannerColumnsHelpDialog.explanation_for("price_vs_zone"), (
         "the Vị trí help entry must be present"
     )
+
+
+def test_results_table_markers_are_flat_icons() -> None:
+    """Marker 📋 (journal feedback) và ●○◌ (confidence) trong Bảng Kết quả
+    quét phải là icon phẳng qua DecorationRole; text hiển thị sạch emoji."""
+    _application()
+    model = ScannerTableModel()
+    model.set_rows(
+        [
+            {
+                "symbol": "EUR/USD",
+                "journal_feedback": {"reasons": ["chuỗi thua 3 lệnh"]},
+                "journal_sample_size": 3,
+                "macro_score": 12,
+                "macro_confidence": 0.9,
+            },
+            {"symbol": "GBP/USD", "macro_score": 12, "macro_confidence": 0.6},
+            {"symbol": "USD/JPY", "macro_score": 12, "macro_confidence": 0.2},
+        ]
+    )
+    col = {key: i for i, (key, _label) in enumerate(model.COLUMNS)}
+
+    # Cột Mã: có feedback thật → icon phẳng; text không còn 📋
+    idx = model.index(0, col["symbol"])
+    icon = model.data(idx, Qt.ItemDataRole.DecorationRole)
+    assert icon is not None and not icon.isNull()
+    assert "📋" not in model.data(idx, Qt.ItemDataRole.DisplayRole)
+
+    # Không có feedback → không icon
+    idx_none = model.index(1, col["symbol"])
+    assert model.data(idx_none, Qt.ItemDataRole.DecorationRole) is None
+
+    # Cột Vĩ mô (model-level): text chỉ còn điểm số, không ●○◌; glyph theo tier
+    for row_i, glyph in ((0, "dot-high"), (1, "dot-mid"), (2, "dot-low")):
+        assert model._macro_dot_glyph(model.rows[row_i]) == glyph
+        text = model._display_value("macro_score", 12, model.rows[row_i])
+        assert text == "12"
+        for dot in ("●", "○", "◌"):
+            assert dot not in text
