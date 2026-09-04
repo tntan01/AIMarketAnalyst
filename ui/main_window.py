@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import QEvent, QObject, Qt, QSize
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QHBoxLayout,
-    QLabel,
     QMainWindow,
     QPushButton,
     QStackedWidget,
@@ -15,7 +14,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.app_controller import AppController
 from ui.icons import flat_icon
-from ui.navigation import NAV_ITEMS
+from ui.navigation import NAV_ICONS, NAV_ITEMS
 from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.journal_detail_screen import JournalDetailScreen
@@ -25,6 +24,42 @@ from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.orders_screen import OrdersScreen
 from ui.screens.settings_screen import SettingsScreen
 from ui.theme_manager import ThemeManager, resolve_theme
+
+
+class _NavIconFilter(QObject):
+    """Đổi màu icon nav theo trạng thái hover/checked.
+
+    QSS `color:` không tint được QIcon và QPushButton không request QIcon
+    mode Active khi hover (cùng lý do như LinkToneHoverFilter ở
+    dashboard_screen), nên filter tự swap QIcon theo role:
+    bình thường `normal_role`, hover hoặc checked `hover_role`
+    (thường là "selection_text" — trắng trên nền accent).
+    """
+
+    def __init__(self, button, icon_name, normal_role, hover_role, parent=None):
+        super().__init__(parent)
+        self.button = button
+        self.icon_name = icon_name
+        self.normal_role = normal_role
+        self.hover_role = hover_role
+        self._hovered = False
+        button.installEventFilter(self)
+        button.toggled.connect(self._apply)
+        self._apply()
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.HoverEnter:
+            self._hovered = True
+            self._apply()
+        elif event.type() == QEvent.Type.HoverLeave:
+            self._hovered = False
+            self._apply()
+        return super().eventFilter(obj, event)
+
+    def _apply(self, *args) -> None:
+        active = self._hovered or self.button.isChecked()
+        role = self.hover_role if active else self.normal_role
+        self.button.setIcon(flat_icon(self.icon_name, role))
 
 
 class MainWindow(QMainWindow):
@@ -39,13 +74,12 @@ class MainWindow(QMainWindow):
         self.nav_buttons: dict[str, QPushButton] = {}
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
-        self.sidebar_width = 242
-        self.sidebar_open = True
+        self.sidebar_width = 48
 
         central = QWidget()
         central.setObjectName("AppShell")
         self.central_shell = central
-        layout = QVBoxLayout(central)
+        layout = QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
@@ -53,22 +87,13 @@ class MainWindow(QMainWindow):
         self.stack.setObjectName("ContentStack")
         self.screens: dict[str, QWidget] = {}
 
-        layout.addWidget(self.stack, 1)
         self.sidebar = self._build_sidebar()
-        self.sidebar.setParent(central)
-        self.sidebar.raise_()
-        self.sidebar_toggle = QPushButton(central)
-        self.sidebar_toggle.setIcon(flat_icon("menu", "text"))
-        self.sidebar_toggle.setIconSize(QSize(16, 16))
-        self.sidebar_toggle.setObjectName("FloatingSidebarToggle")
-        self.sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar_toggle.clicked.connect(lambda: self._set_sidebar_open(True))
-        self.sidebar_toggle.hide()
+        layout.addWidget(self.sidebar)
+        layout.addWidget(self.stack, 1)
         self.setCentralWidget(central)
         self._build_screens()
         self.navigate("dashboard")
         self.statusBar().showMessage("Sẵn sàng")
-        self._position_sidebar()
 
     def navigate(self, route: str, payload: dict[str, object] | None = None) -> None:
         widget = self.screens.get(route)
@@ -133,73 +158,37 @@ class MainWindow(QMainWindow):
         sidebar.setFixedWidth(self.sidebar_width)
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(16, 18, 16, 18)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(4)
 
-        top = QWidget()
-        top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.setSpacing(8)
-        title = QLabel("AI Market Analyst")
-        title.setObjectName("SidebarTitle")
-        close_button = QPushButton("×")
-        close_button.setObjectName("SidebarToggleButton")
-        close_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_button.clicked.connect(lambda: self._set_sidebar_open(False))
-        top_layout.addWidget(title, 1)
-        top_layout.addWidget(close_button)
-        subtitle = QLabel("Nhà phân tích thị trường")
-        subtitle.setObjectName("SidebarSubtitle")
-        layout.addWidget(top)
-        layout.addWidget(subtitle)
-        layout.addSpacing(18)
-
+        # Icon rail gắn cứng: mỗi mục là một nút icon-only + tooltip tên mục.
         for key, label in NAV_ITEMS:
-            button = QPushButton(label)
+            button = QPushButton()
             button.setObjectName("NavButton")
+            button.setToolTip(label)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setCheckable(True)
-            button.clicked.connect(lambda _checked=False, name=key: [self.navigate(nav_route(name)), self._set_sidebar_open(False)])
+            button.setIconSize(QSize(18, 18))
+            button.clicked.connect(lambda _checked=False, name=key: self.navigate(nav_route(name)))
             self.nav_group.addButton(button)
             self.nav_buttons[key] = button
-            layout.addWidget(button)
+            _NavIconFilter(button, NAV_ICONS[key], "text", "selection_text")
+            layout.addWidget(button, 0, Qt.AlignmentFlag.AlignHCenter)
 
         layout.addStretch(1)
-        footer = QLabel("Dữ liệu: MT5\nDanh sách: 28 Forex + XAU/USD + XAG/USD + BTC/USD")
-        footer.setObjectName("SidebarFooter")
-        footer.setWordWrap(True)
-        layout.addWidget(footer)
 
-        # Nút khởi động lại
-        restart_btn = QPushButton("Khởi động lại")
-        restart_btn.setIcon(flat_icon("refresh", "accent", disabled_role="accent"))
+        # Nút khởi động lại (icon-only + tooltip)
+        restart_btn = QPushButton()
+        restart_btn.setToolTip("Khởi động lại")
         restart_btn.setIconSize(QSize(16, 16))
         self.restart_btn = restart_btn
         restart_btn.setObjectName("RestartButton")
         restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         restart_btn.clicked.connect(self._restart_app)
-        layout.addWidget(restart_btn)
+        _NavIconFilter(restart_btn, "refresh", "accent", "accent_hover")
+        layout.addWidget(restart_btn, 0, Qt.AlignmentFlag.AlignHCenter)
 
         return sidebar
-
-    def _set_sidebar_open(self, open_: bool) -> None:
-        self.sidebar_open = open_
-        self.sidebar.setVisible(open_)
-        self.sidebar_toggle.setVisible(not open_)
-        self._position_sidebar()
-
-    def _position_sidebar(self) -> None:
-        if not hasattr(self, "central_shell"):
-            return
-        height = self.central_shell.height()
-        self.sidebar.setGeometry(0, 0, self.sidebar_width, height)
-        self.sidebar.raise_()
-        self.sidebar_toggle.setGeometry(12, max(12, height - 56), 40, 36)
-        self.sidebar_toggle.raise_()
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._position_sidebar()
 
     def _restart_app(self) -> None:
         """Xác nhận và khởi động lại ứng dụng."""

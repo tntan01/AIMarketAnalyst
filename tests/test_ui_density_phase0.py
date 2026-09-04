@@ -57,8 +57,6 @@ def test_phase0_records_the_existing_height_conflicts() -> None:
     assert dark["filter_line_edit"]["actual"] == light["filter_line_edit"]["actual"]
     assert dark["primary_button"]["actual"] == light["primary_button"]["actual"]
     assert dark["help_button"]["actual"] != light["help_button"]["actual"]
-    assert dark["sidebar_toggle"]["actual"] == 33
-    assert light["sidebar_toggle"]["actual"] == 33
     assert len(
         {
             dark["content_tab"]["actual"],

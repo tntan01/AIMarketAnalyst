@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-07-31T04:13:54.913956+00:00",
+  "captured_at": "2026-09-04T04:20:38.952693+00:00",
   "target_contract": {
     "standard_actual_height_px": 24,
     "compact_actual_height_px": 20,
@@ -44,23 +44,13 @@
   "python_height_calls": [
     {
       "path": "ui/components/chart_view.py",
-      "line": 86,
+      "line": 98,
       "method": "setMinimumHeight",
       "receiver": "self._webview",
       "arguments": [
         "200"
       ],
       "category": "chart"
-    },
-    {
-      "path": "ui/components/info_card.py",
-      "line": 25,
-      "method": "setFixedHeight",
-      "receiver": "self",
-      "arguments": [
-        "34"
-      ],
-      "category": "structural"
     },
     {
       "path": "ui/layout_system.py",
@@ -85,7 +75,7 @@
     },
     {
       "path": "ui/main_window.py",
-      "line": 35,
+      "line": 71,
       "method": "setMinimumSize",
       "receiver": "self",
       "arguments": [
@@ -96,7 +86,7 @@
     },
     {
       "path": "ui/screens/backtest_screen.py",
-      "line": 546,
+      "line": 558,
       "method": "setMinimumHeight",
       "receiver": "self._equity_canvas",
       "arguments": [
@@ -106,7 +96,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 221,
+      "line": 291,
       "method": "setFixedHeight",
       "receiver": "frame",
       "arguments": [
@@ -116,7 +106,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 230,
+      "line": 301,
       "method": "setFixedSize",
       "receiver": "icon_label",
       "arguments": [
@@ -127,7 +117,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 880,
+      "line": 1023,
       "method": "setMinimumSize",
       "receiver": "dlg",
       "arguments": [
@@ -138,7 +128,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 943,
+      "line": 1086,
       "method": "setMinimumHeight",
       "receiver": "ai_response",
       "arguments": [
@@ -148,7 +138,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 1039,
+      "line": 1194,
       "method": "setMinimumSize",
       "receiver": "dlg",
       "arguments": [
@@ -159,7 +149,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 1136,
+      "line": 1291,
       "method": "setMinimumHeight",
       "receiver": "self._event_ai_response",
       "arguments": [
@@ -169,7 +159,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 1358,
+      "line": 1525,
       "method": "setMinimumSize",
       "receiver": "dlg",
       "arguments": [
@@ -180,7 +170,7 @@
     },
     {
       "path": "ui/screens/dashboard_screen.py",
-      "line": 1416,
+      "line": 1583,
       "method": "setMinimumHeight",
       "receiver": "ai_response",
       "arguments": [
@@ -190,7 +180,7 @@
     },
     {
       "path": "ui/screens/journal_detail_screen.py",
-      "line": 273,
+      "line": 282,
       "method": "setMinimumHeight",
       "receiver": "txt",
       "arguments": [
@@ -200,7 +190,7 @@
     },
     {
       "path": "ui/screens/journal_detail_screen.py",
-      "line": 274,
+      "line": 283,
       "method": "setMaximumHeight",
       "receiver": "txt",
       "arguments": [
@@ -210,7 +200,7 @@
     },
     {
       "path": "ui/screens/journal_detail_screen.py",
-      "line": 308,
+      "line": 317,
       "method": "setMinimumHeight",
       "receiver": "self.note_input",
       "arguments": [
@@ -220,7 +210,7 @@
     },
     {
       "path": "ui/screens/journal_screen.py",
-      "line": 63,
+      "line": 64,
       "method": "setMinimumHeight",
       "receiver": "self",
       "arguments": [
@@ -230,7 +220,7 @@
     },
     {
       "path": "ui/screens/journal_screen.py",
-      "line": 176,
+      "line": 189,
       "method": "setMinimumHeight",
       "receiver": "self.canvas",
       "arguments": [
@@ -240,7 +230,7 @@
     },
     {
       "path": "ui/screens/journal_screen.py",
-      "line": 2036,
+      "line": 2040,
       "method": "setMinimumSize",
       "receiver": "self",
       "arguments": [
@@ -251,7 +241,7 @@
     },
     {
       "path": "ui/screens/orders_screen.py",
-      "line": 135,
+      "line": 147,
       "method": "setMinimumHeight",
       "receiver": "card_widget",
       "arguments": [
@@ -261,7 +251,7 @@
     },
     {
       "path": "ui/screens/scanner_detail_screen.py",
-      "line": 580,
+      "line": 763,
       "method": "setMinimumSize",
       "receiver": "dlg",
       "arguments": [
@@ -272,7 +262,7 @@
     },
     {
       "path": "ui/screens/scanner_detail_screen.py",
-      "line": 874,
+      "line": 1048,
       "method": "setFixedHeight",
       "receiver": "bar",
       "arguments": [
@@ -282,7 +272,7 @@
     },
     {
       "path": "ui/screens/scanner_screen.py",
-      "line": 911,
+      "line": 975,
       "method": "setFixedHeight",
       "receiver": "self.progress_bar",
       "arguments": [
@@ -292,7 +282,7 @@
     },
     {
       "path": "ui/screens/scanner_screen.py",
-      "line": 1045,
+      "line": 1096,
       "method": "setMinimumSize",
       "receiver": "dlg",
       "arguments": [
@@ -303,7 +293,7 @@
     },
     {
       "path": "ui/screens/scanner_screen.py",
-      "line": 1887,
+      "line": 1965,
       "method": "setMinimumSize",
       "receiver": "dlg",
       "arguments": [
@@ -314,7 +304,7 @@
     },
     {
       "path": "ui/screens/scanner_screen.py",
-      "line": 2103,
+      "line": 2183,
       "method": "setMinimumSize",
       "receiver": "self",
       "arguments": [
@@ -325,7 +315,7 @@
     },
     {
       "path": "ui/screens/scanner_screen.py",
-      "line": 2212,
+      "line": 2304,
       "method": "setMinimumSize",
       "receiver": "self",
       "arguments": [
@@ -336,7 +326,7 @@
     },
     {
       "path": "ui/screens/scanner_screen.py",
-      "line": 3127,
+      "line": 3212,
       "method": "setMinimumSize",
       "receiver": "self",
       "arguments": [
@@ -347,7 +337,7 @@
     },
     {
       "path": "ui/screens/settings_screen.py",
-      "line": 106,
+      "line": 116,
       "method": "setMinimumHeight",
       "receiver": "self.ai_provider_list",
       "arguments": [
@@ -361,7 +351,7 @@
     "container": 14,
     "multiline": 6,
     "progress": 2,
-    "structural": 5
+    "structural": 4
   },
   "qss_height_rules": [
     {
@@ -398,23 +388,23 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 39,
-      "selector": "QPushButton#SidebarToggleButton, QPushButton#FloatingSidebarToggle",
+      "line": 32,
+      "selector": "QPushButton#NavButton",
       "declarations": [
         {
           "property": "min-height",
-          "value": "18px"
+          "value": "22px"
         },
         {
           "property": "max-height",
-          "value": "18px"
+          "value": "22px"
         }
       ],
       "category": "interactive"
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 92,
+      "line": 94,
       "selector": "QLabel#ScannerDecisionAction",
       "declarations": [
         {
@@ -426,7 +416,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 100,
+      "line": 102,
       "selector": "QFrame#InlineStat",
       "declarations": [
         {
@@ -442,7 +432,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 118,
+      "line": 120,
       "selector": "QLineEdit, QDoubleSpinBox, QSpinBox, QDateEdit, QDateTimeEdit, QTimeEdit",
       "declarations": [
         {
@@ -458,7 +448,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 131,
+      "line": 133,
       "selector": "QComboBox",
       "declarations": [
         {
@@ -474,7 +464,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 150,
+      "line": 152,
       "selector": "QComboBox::down-arrow, QDateEdit::down-arrow, QDateTimeEdit::down-arrow, QTimeEdit::down-arrow",
       "declarations": [
         {
@@ -486,7 +476,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 175,
+      "line": 177,
       "selector": "QDateEdit#FilterField::up-button, QDateEdit#FilterField::down-button",
       "declarations": [
         {
@@ -498,7 +488,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 200,
+      "line": 202,
       "selector": "QCheckBox",
       "declarations": [
         {
@@ -514,7 +504,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 208,
+      "line": 210,
       "selector": "QCheckBox::indicator",
       "declarations": [
         {
@@ -526,7 +516,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 219,
+      "line": 221,
       "selector": "QCheckBox#ScannerSymbolCheck::indicator",
       "declarations": [
         {
@@ -538,7 +528,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 225,
+      "line": 227,
       "selector": "QRadioButton",
       "declarations": [
         {
@@ -554,7 +544,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 232,
+      "line": 234,
       "selector": "QDialog#ScannerHelpDialog QRadioButton",
       "declarations": [
         {
@@ -570,7 +560,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 245,
+      "line": 247,
       "selector": "QDialog#ScannerHelpDialog QRadioButton::indicator",
       "declarations": [
         {
@@ -582,7 +572,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 334,
+      "line": 345,
       "selector": "QTabBar::tab",
       "declarations": [
         {
@@ -598,7 +588,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 687,
+      "line": 721,
       "selector": "QProgressBar#ScannerTierProgress",
       "declarations": [
         {
@@ -614,7 +604,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 835,
+      "line": 877,
       "selector": "QCheckBox#JournalLifecycleCheck::indicator",
       "declarations": [
         {
@@ -626,7 +616,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 845,
+      "line": 887,
       "selector": "QPushButton#TagChip",
       "declarations": [
         {
@@ -642,7 +632,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 883,
+      "line": 925,
       "selector": "QPushButton#HelpButton",
       "declarations": [
         {
@@ -658,7 +648,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 896,
+      "line": 938,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5MinScoreInput, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5ReadyInput, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WatchInput, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WaitInput",
       "declarations": [
         {
@@ -674,7 +664,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 907,
+      "line": 949,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QComboBox",
       "declarations": [
         {
@@ -690,7 +680,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 915,
+      "line": 957,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput",
       "declarations": [
         {
@@ -706,7 +696,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 943,
+      "line": 985,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::up-arrow, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::down-arrow",
       "declarations": [
         {
@@ -718,7 +708,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 949,
+      "line": 991,
       "selector": "#LifecycleScrollWidget QLineEdit, #LifecycleScrollWidget QDoubleSpinBox, #LifecycleScrollWidget QDateTimeEdit, #LifecycleScrollWidget QComboBox",
       "declarations": [
         {
@@ -734,7 +724,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 967,
+      "line": 1009,
       "selector": "QTabWidget#ContentTabs QTabBar QToolButton",
       "declarations": [
         {
@@ -750,7 +740,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 979,
+      "line": 1021,
       "selector": "QPushButton#ResultTabArrow",
       "declarations": [
         {
@@ -766,7 +756,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 936,
+      "line": 924,
       "selector": "QFrame#ScannerDecisionMetric",
       "declarations": [
         {
@@ -778,7 +768,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1003,
+      "line": 991,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -790,7 +780,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1013,
+      "line": 1001,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -802,7 +792,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1087,
+      "line": 1075,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -814,7 +804,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1097,
+      "line": 1085,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -826,7 +816,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1310,
+      "line": 1312,
       "selector": "QLabel#ConditionBadge",
       "declarations": [
         {
@@ -838,7 +828,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1435,
+      "line": 1437,
       "selector": "QProgressBar",
       "declarations": [
         {
@@ -854,7 +844,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2071,
+      "line": 2073,
       "selector": "QLabel#ResultTabPosition",
       "declarations": [
         {
@@ -866,7 +856,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2082,
+      "line": 2084,
       "selector": "QFrame#ChartPanel",
       "declarations": [
         {
@@ -878,7 +868,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2138,
+      "line": 2140,
       "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -890,7 +880,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2146,
+      "line": 2148,
       "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -902,7 +892,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2201,
+      "line": 2203,
       "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -914,7 +904,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2211,
+      "line": 2213,
       "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -926,7 +916,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 932,
+      "line": 924,
       "selector": "QFrame#ScannerDecisionMetric",
       "declarations": [
         {
@@ -938,7 +928,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 999,
+      "line": 991,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -950,7 +940,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1009,
+      "line": 1001,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -962,7 +952,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1083,
+      "line": 1075,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -974,7 +964,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1093,
+      "line": 1085,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -986,7 +976,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1306,
+      "line": 1312,
       "selector": "QLabel#ConditionBadge",
       "declarations": [
         {
@@ -998,7 +988,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1431,
+      "line": 1437,
       "selector": "QProgressBar",
       "declarations": [
         {
@@ -1014,7 +1004,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2055,
+      "line": 2061,
       "selector": "QLabel#ResultTabPosition",
       "declarations": [
         {
@@ -1026,7 +1016,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2066,
+      "line": 2072,
       "selector": "QFrame#ChartPanel",
       "declarations": [
         {
@@ -1038,7 +1028,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2122,
+      "line": 2128,
       "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -1050,7 +1040,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2130,
+      "line": 2136,
       "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -1062,7 +1052,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2184,
+      "line": 2190,
       "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -1074,7 +1064,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2194,
+      "line": 2200,
       "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -1220,13 +1210,6 @@
         "content_height": 11
       },
       "help_button": {
-        "actual": 20,
-        "size_hint": 20,
-        "minimum": 20,
-        "maximum": 20,
-        "content_height": 11
-      },
-      "sidebar_toggle": {
         "actual": 20,
         "size_hint": 20,
         "minimum": 20,
@@ -1544,13 +1527,6 @@
         "content_height": 11
       },
       "help_button": {
-        "actual": 20,
-        "size_hint": 20,
-        "minimum": 20,
-        "maximum": 20,
-        "content_height": 11
-      },
-      "sidebar_toggle": {
         "actual": 20,
         "size_hint": 20,
         "minimum": 20,

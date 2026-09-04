@@ -52,7 +52,8 @@ Quyết định thiết kế bắt buộc:
 - Dùng `QMainWindow` làm khung chính.
 - Khi mở chương trình, cửa sổ chính phải tự động chiếm toàn bộ vùng làm việc của màn hình bằng `showMaximized()`. Yêu cầu này áp dụng cho mọi kích thước màn hình và mọi mức Windows scaling như 100%, 125%, 150%. Đây là chế độ maximized desktop window, không phải borderless game fullscreen, để người dùng vẫn dùng được taskbar, Alt+Tab và window controls bình thường.
 - Dùng sidebar hoặc top navigation để chuyển giữa 5 khu vực chính: Bảng điều khiển, Phân tích, Quét thị trường, Nhật ký, Cài đặt.
-- Sidebar footer hiển thị dòng "Dữ liệu: MT5..." và nút "🔄 Khởi động lại" (font 11px, màu accent #0d9488 ở giao diện tối / #D94625 ở giao diện sáng, nền trong suốt, không border, hover: chữ sáng #2dd4bf ở giao diện tối / #E0533C ở giao diện sáng + underline, không đổi nền ở tất cả các trạng thái — phân biệt rõ với NavButton có background khi hover). Khi bấm: xác nhận Yes/No → shutdown MT5 → khởi chạy process mới → quit process hiện tại.
+- Sidebar là icon rail gắn cứng rộng 48px: mỗi mục điều hướng là một nút icon-only (glyph flat, không chữ) kèm tooltip tên mục khi hover; không có cơ chế thu/mở, không có tiêu đề/subtitle/footer. Icon đổi sang màu selection_text khi hover/checked.
+- Sidebar đáy rail có nút "Khởi động lại" icon-only (glyph `refresh`, màu accent #0d9488 ở giao diện tối / #D94625 ở giao diện sáng, nền trong suốt, không border, hover: icon sáng #2dd4bf ở giao diện tối / #E0533C ở giao diện sáng, tooltip "Khởi động lại"). Khi bấm: xác nhận Yes/No → shutdown MT5 → khởi chạy process mới → quit process hiện tại.
 - Dùng `QStackedWidget` hoặc router tương đương để quản lý 8 màn hình chính.
 - Dùng `QSplitter`, `QGridLayout`, `QHBoxLayout`, `QVBoxLayout` và stretch factor để giao diện co giãn tốt trên màn hình 1366x768 trở lên.
 - Dùng `QTableView` + `QAbstractTableModel` cho bảng Scanner và Journal; không dựng bảng bằng nhiều label thủ công.
@@ -246,6 +247,13 @@ Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
   (scanner, orders, settings, backtest, journal, journal_detail, scanner_detail)
   + RestartButton và sidebar toggle trong `ui/main_window.py`; kế hoạch chi tiết
   tại `../plans/flat-icons-phase2-plan.md`.
+- Phase 4 (04/09/2026): sidebar chuyển thành **icon rail gắn cứng 48px** —
+  bỏ cơ chế thu/mở (sidebar_open, FloatingSidebarToggle, nút "×"), bỏ tiêu đề/
+  subtitle/footer; NavButton icon-only + tooltip tên mục (glyph theo
+  `ui/navigation.py: NAV_ICONS`); thêm glyph `gear` cho Cài đặt; icon đổi màu
+  hover/checked qua `_NavIconFilter` (pattern giống `LinkToneHoverFilter`);
+  RestartButton chuyển icon-only + tooltip; sidebar nằm trong layout ngang
+  (không còn overlay che nội dung).
 - Phase 3 (hoàn thành 04/09/2026): mục "Phân rã điểm số" (tab Chẩn đoán —
   Chi tiết kết quả quét) đánh dấu hướng chọn bằng icon phẳng `check` nhúng rich
   text qua cơ chế mới `flat_data_uri()` trong `ui/icons.py` (data-URI PNG, tint

@@ -32,22 +32,13 @@ QPushButton {
 }
 
 QPushButton#NavButton {
-  text-align: left;
-  padding: 3px 12px;
-  border-radius: 6px;
-  font-weight: 700;
-}
-
-QPushButton#SidebarToggleButton,
-QPushButton#FloatingSidebarToggle {
-  border-radius: 6px;
-  @QSS_BUTTON@
-  font-weight: 900;
-  min-width: 18px;
-  max-width: 18px;
-  min-height: 18px;
-  max-height: 18px;
   padding: 0;
+  border-radius: 8px;
+  font-weight: 700;
+  min-width: 40px;
+  max-width: 40px;
+  min-height: 22px;
+  max-height: 22px;
 }
 
 QFrame#ActionCard,
@@ -493,7 +484,6 @@ QPushButton#RestartButton {
 QPushButton#RestartButton:hover,
 QPushButton#RestartButton:pressed {
   background: transparent;
-  text-decoration: underline;
 }
 
 QWidget#AnalysisChartSurface,

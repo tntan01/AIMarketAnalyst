@@ -63,7 +63,6 @@ STANDARD_CONTROL_NAMES = {
 
 COMPACT_CONTROL_NAMES = {
     "help_button",
-    "sidebar_toggle",
     "news_link_button",
     "news_icon_button",
     "tag_chip",
@@ -315,7 +314,6 @@ def measure_representative_controls() -> dict[str, dict[str, dict[str, int]]]:
             ("primary_button", "PrimaryButton"),
             ("secondary_button", "SecondaryButton"),
             ("help_button", "HelpButton"),
-            ("sidebar_toggle", "SidebarToggleButton"),
             ("nav_button", "NavButton"),
             ("news_link_button", "NewsLinkButton"),
             ("news_icon_button", "NewsIconButton"),

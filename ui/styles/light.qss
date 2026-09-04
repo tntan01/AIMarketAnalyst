@@ -768,14 +768,6 @@ QFrame#Sidebar {
   border-right: 1px solid #D6D2C8;
 }
 
-QLabel#SidebarTitle {
-  color: #111827;
-  @QSS_TITLE@
-  font-weight: 700;
-}
-
-QLabel#SidebarSubtitle,
-QLabel#SidebarFooter,
 QLabel#PageSubtitle,
 QLabel#CardDetail,
 QLabel#ActionDetail,
@@ -802,19 +794,6 @@ QPushButton#NavButton:checked {
   background: #D94625;
   border-color: #E0533C;
   color: #ffffff;
-}
-
-QPushButton#SidebarToggleButton,
-QPushButton#FloatingSidebarToggle {
-  background: #D94625;
-  border: 1px solid #F5978A;
-  color: #ffffff;
-}
-
-QPushButton#SidebarToggleButton:hover,
-QPushButton#FloatingSidebarToggle:hover {
-  background: #E0533C;
-  border-color: #111827;
 }
 
 

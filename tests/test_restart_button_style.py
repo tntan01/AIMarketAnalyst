@@ -11,13 +11,14 @@ LIGHT = (ROOT / "ui" / "styles" / "light.qss").read_text(encoding="utf-8")
 
 
 def test_restart_button_uses_shared_selector() -> None:
-    start = MAIN.index('QPushButton("Khởi động lại")')
+    start = MAIN.index('setToolTip("Khởi động lại")')
     end = MAIN.index("restart_btn.clicked.connect", start)
     block = MAIN[start:end]
     assert 'setObjectName("RestartButton")' in block
     assert "setStyleSheet" not in block
-    assert "flat_icon(" in block
+    assert "flat_icon(" not in block or "_NavIconFilter" in MAIN
     assert "setIconSize" in block
+    assert ".setText(" not in block
 
 
 def test_restart_button_base_contract_is_transparent_and_compact() -> None:
@@ -27,7 +28,15 @@ def test_restart_button_base_contract_is_transparent_and_compact() -> None:
     assert "@QSS_BUTTON@" in BASE
     assert "padding: 4px 8px;" in BASE
     assert "margin: 0;" in BASE
-    assert "text-decoration: underline;" in BASE
+    restart_block = BASE[
+        BASE.index("QPushButton#RestartButton {"):
+        BASE.index("QPushButton#RestartButton:hover,")
+    ]
+    hover_block = BASE[
+        BASE.index("QPushButton#RestartButton:hover,"):
+        BASE.index("QWidget#AnalysisChartSurface,")
+    ]
+    assert "underline" not in restart_block + hover_block
 
 
 def test_restart_button_has_dark_and_light_colors() -> None:
