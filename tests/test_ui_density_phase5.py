@@ -6,6 +6,7 @@ import pytest
 
 from tools.ui_density_audit import (
     COMPACT_CONTROL_NAMES,
+    ICON_RAIL_CONTROL_NAMES,
     STANDARD_CONTROL_NAMES,
     measure_representative_controls,
     validate_runtime_contract,
@@ -38,7 +39,7 @@ def test_runtime_density_contract_has_no_height_parity_or_clipping_errors() -> N
 
 def test_runtime_contract_covers_every_declared_representative_control() -> None:
     measurements = _measure_or_skip()
-    expected = STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES
+    expected = STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES | ICON_RAIL_CONTROL_NAMES
     assert expected <= set(measurements["dark"])
     assert expected <= set(measurements["light"])
 

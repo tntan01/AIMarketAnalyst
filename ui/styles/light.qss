@@ -726,6 +726,8 @@ QPushButton#RestartButton {
 
 QPushButton#RestartButton:hover,
 QPushButton#RestartButton:pressed {
+  background: #D94625;
+  border-color: #D94625;
   color: #E0533C;
 }
 

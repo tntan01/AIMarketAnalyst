@@ -7,6 +7,7 @@ import pytest
 from tools.ui_density_audit import (
     COMPACT_CONTROL_NAMES,
     DEFAULT_LOCK,
+    ICON_RAIL_CONTROL_NAMES,
     STANDARD_CONTROL_NAMES,
     audit_qss_heights,
     measure_representative_controls,
@@ -53,8 +54,10 @@ def test_standard_and_compact_controls_have_exact_dark_light_height() -> None:
             assert themed[name]["actual"] == 24, (theme, name, themed[name])
         for name in COMPACT_CONTROL_NAMES:
             assert themed[name]["actual"] == 20, (theme, name, themed[name])
+        for name in ICON_RAIL_CONTROL_NAMES:
+            assert themed[name]["actual"] == 40, (theme, name, themed[name])
 
-    for name in STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES:
+    for name in STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES | ICON_RAIL_CONTROL_NAMES:
         assert measurements["dark"][name]["actual"] == measurements["light"][name][
             "actual"
         ], name

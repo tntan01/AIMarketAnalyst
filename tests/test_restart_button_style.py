@@ -21,13 +21,8 @@ def test_restart_button_uses_shared_selector() -> None:
     assert ".setText(" not in block
 
 
-def test_restart_button_base_contract_is_transparent_and_compact() -> None:
+def test_restart_button_base_contract_is_transparent_and_square() -> None:
     assert "QPushButton#RestartButton {" in BASE
-    assert "background: transparent;" in BASE
-    assert "border: none;" in BASE
-    assert "@QSS_BUTTON@" in BASE
-    assert "padding: 4px 8px;" in BASE
-    assert "margin: 0;" in BASE
     restart_block = BASE[
         BASE.index("QPushButton#RestartButton {"):
         BASE.index("QPushButton#RestartButton:hover,")
@@ -36,7 +31,19 @@ def test_restart_button_base_contract_is_transparent_and_compact() -> None:
         BASE.index("QPushButton#RestartButton:hover,"):
         BASE.index("QWidget#AnalysisChartSurface,")
     ]
-    assert "underline" not in restart_block + hover_block
+    block = restart_block + hover_block
+    assert "background: transparent;" in block
+    assert "border: 1px solid transparent;" in block
+    assert "@QSS_BUTTON@" in block
+    assert "margin: 0;" in block
+    # Ô vuông 40×40 (content 38 + border 1px×2), bo góc 10 — đồng bộ NavButton
+    assert "min-width: 38px;" in block
+    assert "max-width: 38px;" in block
+    assert "min-height: 38px;" in block
+    assert "max-height: 38px;" in block
+    assert "border-radius: 10px;" in block
+    assert "padding: 4px 8px;" not in block
+    assert "underline" not in block
 
 
 def test_restart_button_has_dark_and_light_colors() -> None:

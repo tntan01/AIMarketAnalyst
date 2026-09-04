@@ -168,7 +168,7 @@ class MainWindow(QMainWindow):
             button.setToolTip(label)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setCheckable(True)
-            button.setIconSize(QSize(18, 18))
+            button.setIconSize(QSize(24, 24))
             button.clicked.connect(lambda _checked=False, name=key: self.navigate(nav_route(name)))
             self.nav_group.addButton(button)
             self.nav_buttons[key] = button
@@ -180,12 +180,12 @@ class MainWindow(QMainWindow):
         # Nút khởi động lại (icon-only + tooltip)
         restart_btn = QPushButton()
         restart_btn.setToolTip("Khởi động lại")
-        restart_btn.setIconSize(QSize(16, 16))
+        restart_btn.setIconSize(QSize(24, 24))
         self.restart_btn = restart_btn
         restart_btn.setObjectName("RestartButton")
         restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         restart_btn.clicked.connect(self._restart_app)
-        _NavIconFilter(restart_btn, "refresh", "accent", "accent_hover")
+        _NavIconFilter(restart_btn, "refresh", "text", "selection_text")
         layout.addWidget(restart_btn, 0, Qt.AlignmentFlag.AlignHCenter)
 
         return sidebar

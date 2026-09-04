@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-09-04T04:20:38.952693+00:00",
+  "captured_at": "2026-09-04T08:02:03.878696+00:00",
   "target_contract": {
     "standard_actual_height_px": 24,
     "compact_actual_height_px": 20,
@@ -393,11 +393,11 @@
       "declarations": [
         {
           "property": "min-height",
-          "value": "22px"
+          "value": "38px"
         },
         {
           "property": "max-height",
-          "value": "22px"
+          "value": "38px"
         }
       ],
       "category": "interactive"
@@ -588,7 +588,23 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 721,
+      "line": 474,
+      "selector": "QPushButton#RestartButton",
+      "declarations": [
+        {
+          "property": "min-height",
+          "value": "38px"
+        },
+        {
+          "property": "max-height",
+          "value": "38px"
+        }
+      ],
+      "category": "interactive"
+    },
+    {
+      "path": "ui/styles/base.qss",
+      "line": 727,
       "selector": "QProgressBar#ScannerTierProgress",
       "declarations": [
         {
@@ -604,7 +620,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 877,
+      "line": 883,
       "selector": "QCheckBox#JournalLifecycleCheck::indicator",
       "declarations": [
         {
@@ -616,7 +632,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 887,
+      "line": 893,
       "selector": "QPushButton#TagChip",
       "declarations": [
         {
@@ -632,7 +648,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 925,
+      "line": 931,
       "selector": "QPushButton#HelpButton",
       "declarations": [
         {
@@ -648,7 +664,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 938,
+      "line": 944,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5MinScoreInput, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5ReadyInput, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WatchInput, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QLineEdit#Mt5WaitInput",
       "declarations": [
         {
@@ -664,7 +680,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 949,
+      "line": 955,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QComboBox",
       "declarations": [
         {
@@ -680,7 +696,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 957,
+      "line": 963,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput",
       "declarations": [
         {
@@ -696,7 +712,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 985,
+      "line": 991,
       "selector": "QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::up-arrow, QTableWidget#EconTable[tableRole=\"mt5Symbols\"] QDoubleSpinBox#Mt5MinRrInput::down-arrow",
       "declarations": [
         {
@@ -708,7 +724,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 991,
+      "line": 997,
       "selector": "#LifecycleScrollWidget QLineEdit, #LifecycleScrollWidget QDoubleSpinBox, #LifecycleScrollWidget QDateTimeEdit, #LifecycleScrollWidget QComboBox",
       "declarations": [
         {
@@ -724,7 +740,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 1009,
+      "line": 1015,
       "selector": "QTabWidget#ContentTabs QTabBar QToolButton",
       "declarations": [
         {
@@ -740,7 +756,7 @@
     },
     {
       "path": "ui/styles/base.qss",
-      "line": 1021,
+      "line": 1027,
       "selector": "QPushButton#ResultTabArrow",
       "declarations": [
         {
@@ -756,7 +772,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 924,
+      "line": 926,
       "selector": "QFrame#ScannerDecisionMetric",
       "declarations": [
         {
@@ -768,7 +784,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 991,
+      "line": 993,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -780,7 +796,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1001,
+      "line": 1003,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -792,7 +808,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1075,
+      "line": 1077,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -804,7 +820,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1085,
+      "line": 1087,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -816,7 +832,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1312,
+      "line": 1314,
       "selector": "QLabel#ConditionBadge",
       "declarations": [
         {
@@ -828,7 +844,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 1437,
+      "line": 1439,
       "selector": "QProgressBar",
       "declarations": [
         {
@@ -844,7 +860,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2073,
+      "line": 2075,
       "selector": "QLabel#ResultTabPosition",
       "declarations": [
         {
@@ -856,7 +872,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2084,
+      "line": 2086,
       "selector": "QFrame#ChartPanel",
       "declarations": [
         {
@@ -868,7 +884,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2140,
+      "line": 2142,
       "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -880,7 +896,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2148,
+      "line": 2150,
       "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -892,7 +908,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2203,
+      "line": 2205,
       "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -904,7 +920,7 @@
     },
     {
       "path": "ui/styles/dark.qss",
-      "line": 2213,
+      "line": 2215,
       "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -916,7 +932,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 924,
+      "line": 926,
       "selector": "QFrame#ScannerDecisionMetric",
       "declarations": [
         {
@@ -928,7 +944,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 991,
+      "line": 993,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -940,7 +956,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1001,
+      "line": 1003,
       "selector": "QScrollArea#ScannerDecisionScroll QScrollBar::add-line:vertical, QScrollArea#ScannerDecisionScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -952,7 +968,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1075,
+      "line": 1077,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -964,7 +980,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1085,
+      "line": 1087,
       "selector": "QTextEdit#ConditionInfoBody QScrollBar::add-line:vertical, QTextEdit#ConditionInfoBody QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -976,7 +992,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1312,
+      "line": 1314,
       "selector": "QLabel#ConditionBadge",
       "declarations": [
         {
@@ -988,7 +1004,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 1437,
+      "line": 1439,
       "selector": "QProgressBar",
       "declarations": [
         {
@@ -1004,7 +1020,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2061,
+      "line": 2063,
       "selector": "QLabel#ResultTabPosition",
       "declarations": [
         {
@@ -1016,7 +1032,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2072,
+      "line": 2074,
       "selector": "QFrame#ChartPanel",
       "declarations": [
         {
@@ -1028,7 +1044,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2128,
+      "line": 2130,
       "selector": "QScrollArea#EconScroll QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -1040,7 +1056,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2136,
+      "line": 2138,
       "selector": "QScrollArea#EconScroll QScrollBar::add-line:vertical, QScrollArea#EconScroll QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -1052,7 +1068,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2190,
+      "line": 2192,
       "selector": "QTableWidget#EconTable QScrollBar::handle:vertical, QTableView#EconTable QScrollBar::handle:vertical",
       "declarations": [
         {
@@ -1064,7 +1080,7 @@
     },
     {
       "path": "ui/styles/light.qss",
-      "line": 2200,
+      "line": 2202,
       "selector": "QTableWidget#EconTable QScrollBar::add-line:vertical, QTableWidget#EconTable QScrollBar::sub-line:vertical, QTableView#EconTable QScrollBar::add-line:vertical, QTableView#EconTable QScrollBar::sub-line:vertical",
       "declarations": [
         {
@@ -1076,7 +1092,7 @@
     }
   ],
   "qss_category_counts": {
-    "interactive": 19,
+    "interactive": 20,
     "multiline_or_chart": 2,
     "structural": 12,
     "subcontrol": 20
@@ -1217,10 +1233,10 @@
         "content_height": 11
       },
       "nav_button": {
-        "actual": 24,
-        "size_hint": 24,
-        "minimum": 24,
-        "maximum": 24,
+        "actual": 40,
+        "size_hint": 40,
+        "minimum": 40,
+        "maximum": 40,
         "content_height": 11
       },
       "news_link_button": {
@@ -1245,10 +1261,10 @@
         "content_height": 11
       },
       "restart_button": {
-        "actual": 24,
-        "size_hint": 24,
-        "minimum": 24,
-        "maximum": 24,
+        "actual": 40,
+        "size_hint": 40,
+        "minimum": 40,
+        "maximum": 40,
         "content_height": 11
       },
       "scanner_detail_button": {
@@ -1534,10 +1550,10 @@
         "content_height": 11
       },
       "nav_button": {
-        "actual": 24,
-        "size_hint": 24,
-        "minimum": 24,
-        "maximum": 24,
+        "actual": 40,
+        "size_hint": 40,
+        "minimum": 40,
+        "maximum": 40,
         "content_height": 11
       },
       "news_link_button": {
@@ -1562,10 +1578,10 @@
         "content_height": 11
       },
       "restart_button": {
-        "actual": 24,
-        "size_hint": 24,
-        "minimum": 24,
-        "maximum": 24,
+        "actual": 40,
+        "size_hint": 40,
+        "minimum": 40,
+        "maximum": 40,
         "content_height": 11
       },
       "scanner_detail_button": {

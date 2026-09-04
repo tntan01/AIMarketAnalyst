@@ -49,9 +49,7 @@ STANDARD_CONTROL_NAMES = {
     "scanner_help_radio",
     "primary_button",
     "secondary_button",
-    "nav_button",
     "dialog_ai_button",
-    "restart_button",
     "scanner_detail_button",
     "inline_help_button",
     "market_help_button",
@@ -59,6 +57,13 @@ STANDARD_CONTROL_NAMES = {
     "pill_tab",
     "configured_button",
     "configured_control",
+}
+
+# Icon rail sidebar: nút vuông 40×40 (icon 24px), gắn cứng — hợp đồng chiều
+# cao riêng, tách khỏi STANDARD 24px.
+ICON_RAIL_CONTROL_NAMES = {
+    "nav_button",
+    "restart_button",
 }
 
 COMPACT_CONTROL_NAMES = {
@@ -472,6 +477,7 @@ def validate_runtime_contract(
     contracts = (
         (STANDARD_CONTROL_NAMES, 24, 4),
         (COMPACT_CONTROL_NAMES, 20, 2),
+        (ICON_RAIL_CONTROL_NAMES, 40, 4),
     )
     for theme in ("dark", "light"):
         themed = measured.get(theme, {})
@@ -496,7 +502,9 @@ def validate_runtime_contract(
 
     dark = measured.get("dark", {})
     light = measured.get("light", {})
-    for name in sorted(STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES):
+    for name in sorted(
+        STANDARD_CONTROL_NAMES | COMPACT_CONTROL_NAMES | ICON_RAIL_CONTROL_NAMES
+    ):
         if name not in dark or name not in light:
             continue
         for field in ("actual", "content_height"):
