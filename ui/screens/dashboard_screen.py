@@ -911,10 +911,20 @@ class DashboardScreen(QWidget):
                 elif impact == "medium" and zone == "future":
                     link_tone = "warning"
 
-                detail_btn = QPushButton("Xem")
-                detail_btn.setObjectName("NewsLinkButton")
+                icon_role = _LINK_TONE_ROLES.get(link_tone, "subtle")
+                detail_btn = QPushButton()
+                detail_btn.setObjectName("NewsIconButton")
                 detail_btn.setProperty("linkTone", link_tone)
+                detail_btn.setToolTip("Xem chi tiết sự kiện")
                 detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                detail_btn.setIcon(flat_icon("eye", icon_role))
+                detail_btn.setIconSize(
+                    QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE)
+                )
+                hover_filter = LinkToneHoverFilter(
+                    detail_btn, "eye", icon_role, detail_btn
+                )
+                detail_btn.installEventFilter(hover_filter)
                 detail_btn.clicked.connect(lambda checked, r=row: self._show_news_event_detail(r, tz))
                 table.setCellWidget(i, 7, detail_btn)
             else:
