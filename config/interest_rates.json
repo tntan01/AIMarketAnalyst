@@ -1,12 +1,12 @@
 {
   "_description": "Central bank interest rates for macro scoring. Update manually when rates change.",
-  "_last_updated": "2026-08-11 07:18 UTC",
+  "_last_updated": "2026-09-03 09:46 UTC",
   "currencies": {
     "USD": {
       "central_bank": "Federal Reserve",
-      "rate": 3.75,
-      "rate_label": "3.75%",
-      "trend": "hike",
+      "rate": 3.63,
+      "rate_label": "3.63%",
+      "trend": "hold",
       "next_decision": "",
       "drivers": [
         "DXY",
@@ -14,8 +14,8 @@
         "UST 10Y",
         "Fed expectations"
       ],
-      "_source": "ForexFactory",
-      "_updated": "2026-07-29"
+      "_source": "FRED",
+      "_updated": "2026-08-01"
     },
     "EUR": {
       "central_bank": "ECB",
@@ -29,7 +29,7 @@
         "US-Germany yield spread"
       ],
       "_source": "FRED",
-      "_updated": "2026-08-05"
+      "_updated": "2026-09-02"
     },
     "GBP": {
       "central_bank": "BOE",
@@ -75,9 +75,9 @@
     },
     "NZD": {
       "central_bank": "RBNZ",
-      "rate": 2.5,
-      "rate_label": "2.50%",
-      "trend": "cut",
+      "rate": 2.75,
+      "rate_label": "2.75%",
+      "trend": "hike",
       "next_decision": "",
       "drivers": [
         "RBNZ expectations",
@@ -85,7 +85,7 @@
         "Global Dairy Trade"
       ],
       "_source": "ForexFactory",
-      "_updated": "2026-07-08"
+      "_updated": "2026-09-02"
     },
     "CAD": {
       "central_bank": "BOC",
