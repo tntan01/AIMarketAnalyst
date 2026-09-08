@@ -1,13 +1,12 @@
-# Kiến trúc chấm điểm Scanner — runtime hiện hành
+# Kiến trúc chấm điểm Scanner — tham khảo legacy (pre-cutover)
 
-Trạng thái: **runtime hiện hành trước cutover**. Runtime contract cập nhật
-09/08/2026; target architecture cập nhật 11/08/2026.
-
-> **Target đã chốt:** Scanner dùng TechnicalScore chỉ gồm Trend, Momentum,
-> Location và SMC; Risk/Macro chuyển thành gate; direct cutover không dual
-> scoring/shadow. Xem
-> [`scanner-architecture.md`](scanner-architecture.md). Cho đến khi từng
-> bước được implement, các metric/version bên dưới vẫn mô tả code đang chạy.
+> **Trạng thái: LỊCH SỬ (pre-cutover).** Tài liệu này ghi lại luồng chấm điểm
+> **trước cutover** — `signal_score` (technical/SMC/risk/macro blend), ngưỡng
+> 65/60/55, backtest config, `OUT_OF_STRATEGY`, engine `scanner_strategy_engine`.
+> **Runtime contract HIỆN HÀNH nằm tại [`scanner-architecture.md`](scanner-architecture.md):**
+> Scanner đã cutover trực tiếp (Bước 12/13 DONE, live 2026-08-15) sang
+> `scanner`/`scanner-features`. Chỉ §13 ("Target đã chốt") mô tả đúng scoring
+> đang thực thi; §2–§12 là đường legacy không còn trên runtime.
 
 ## 1. Mục tiêu
 
@@ -274,5 +273,7 @@ Target ngày 11/08/2026 đã khóa:
 
 Trọng số bốn component, gate matrix, output schema và kế hoạch phân tích từng
 bước nằm duy nhất tại
-[`scanner-architecture.md`](scanner-architecture.md). Khi cutover hoàn tất,
-tài liệu này sẽ được rewrite thành runtime contract ở Bước 13 của kế hoạch.
+[`scanner-architecture.md`](scanner-architecture.md). Cutover đã hoàn tất
+(Bước 13, 2026-08-15) nhưng tài liệu này chưa được rewrite; nó được giữ làm
+tham khảo legacy, còn runtime contract hiện hành là
+[`scanner-architecture.md`](scanner-architecture.md).

@@ -2,7 +2,7 @@
 
 > Phiên bản tài liệu: 11/08/2026
 >
-> Trạng thái: đồng bộ với runtime `scanner-v3` / `scanner-features-v3`; đồng thời
+> Trạng thái: đồng bộ với runtime `scanner` / `scanner-features`; đồng thời
 > ghi nhận Scanner là **APPROVED DESIGN — NON-RUNTIME**
 >
 > Phạm vi: desktop PyQt6, MT5, phân tích, Candidate Engine V2/scorer,
@@ -59,7 +59,7 @@ nút bị disable và reset. Auto trade và nút đặt lệnh thủ công cho c
 ### 3.2 Backtest — ĐÃ LOẠI BỎ (2026-09-09)
 
 Tính năng Backtest (replay chiến lược trên dữ liệu lịch sử + validation
-config) đã bị gỡ khỏi sản phẩm (xem `../backtest-removal-audit.md`).
+config) đã bị gỡ khỏi sản phẩm.
 Scanner/auto-trade vận hành độc lập: quyền auto-trade per-symbol là lựa
 chọn tường minh trong Settings, cấu hình chiến lược (regime/side/min
 score/min RR) đọc từ dữ liệu đã lưu; DEFAULT_RULES cho mã không cấu hình.

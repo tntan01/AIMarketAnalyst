@@ -2,9 +2,11 @@
 
 > - **Bối cảnh:** ứng dụng cá nhân, chạy cục bộ.
 > - **Mục tiêu tài liệu:** mô tả chức năng, cấu hình, kiểm thử và cách chuyển runtime.
-> - **Runtime hiện tại:** `scanner-v3` / `scanner-features-v3`.
-> - **Target:** `scanner` / `scanner-features`.
-> - **Tiến độ:** Bước 00–13 `DONE` (runtime live từ 2026-08-15; full suite 3717 xanh).
+> - **Runtime hiện tại:** `scanner` / `scanner-features`.
+> - **Target = Runtime:** cutover trực tiếp đã hoàn tất (Bước 12/13 `DONE`);
+>   target đã trở thành runtime, không còn nhánh runtime `scanner-v3`/`scanner-features-v3`
+>   (chỉ còn là alias legacy đọc-được).
+> - **Tiến độ:** Bước 00–13 `DONE` (runtime live từ 2026-08-15; full suite 3371 collected, 6 fail FRED pre-existing).
 > - **Migration:** cutover trực tiếp, không duy trì hai scorer trong runtime.
 > - **Cập nhật tài liệu:** 15/08/2026.
 
@@ -203,7 +205,8 @@ Cấu hình live hiện tại (RuntimeOrderPolicy owner-accepted, §13.1 —
   công thức `atr_volatility_readings` với `build_technical_snapshot` — một nguồn
   duy nhất, không drift).
 - Connectivity probe max age: 5 phút (`connectivity_max_age_minutes`).
-- Spread threshold map: `{"XAUUSD": 40, "EURUSD": 25}` (điểm). Key tra được chuẩn
+- Spread threshold map: `{"XAUUSD": 390, "EURUSD": 12, ...28 cặp}` (điểm; nguồn
+  `config/scanner_order_policy.json`). Key tra được chuẩn
   hóa (`_spread_threshold_for`): app symbol (`EUR/USD`) và broker symbol tài khoản
   cent (`EURUSDc`) đều khớp key gốc (`EURUSD`); key cent riêng (`EURUSDC`) nếu có
   sẽ thắng key gốc. Không khớp → `UNKNOWN` + `SAFETY_SPREAD_THRESHOLD_UNSET`
@@ -434,8 +437,8 @@ Scanner không phát `risk_condition`, `macro_alignment`, `scenario_scores.total
 | Snapshot envelope | `scanner-snapshot-envelope` |
 | Replay | `scanner-replay` |
 | Journal | `scanner-journal` |
-| Observability | `scanner-observability-v4` |
-| Session review | `scanner-session-review-v4` |
+| Observability | `scanner-observability` |
+| Session review | `scanner-session-review` |
 | Backtest contract | `scanner-backtest-contract` |
 | Backtest config schema | `10` |
 
@@ -561,7 +564,7 @@ PIT corpus thị trường thật chỉ phục vụ calibration tùy chọn.
 Bằng chứng gần nhất được ghi trong working tree:
 
 - Focused Bước 11: `244 passed`.
-- Full suite: `3635 passed, 8 skipped, 17 xfailed`, exit code 0.
+- Full suite: `3371 collected` (6 fail FRED pre-existing).
 - Validation artifact: `reports/scanner/validation_b11.json`.
 
 ## 11. Trạng thái triển khai
@@ -727,7 +730,7 @@ order workflow vẫn BLOCKED (fail-closed).
 | threshold | `technical_floor` / `setup_floor` / `min_score_gap` / `min_risk_reward` | contract mục tiêu: 40 / 35 / 5 / `"2/1"`; live hiện đọc từ config | đổi số bằng config, không sửa bảng |
 | safety | `connectivity_max_age_minutes` | 5 | heartbeat MT5 tính bằng giây |
 | safety | `max_candle_age_minutes` | 3 | nguồn lệch quá 3′ = dữ liệu cũ |
-| safety | `spread_threshold_by_symbol` | `{"XAUUSD": 40, "EURUSD": 25}` | điểm; thêm symbol khác theo points điển hình |
+| safety | `spread_threshold_by_symbol` | `{"XAUUSD": 390, "EURUSD": 12, ...28 cặp}` | điểm; thêm symbol khác theo points điển hình |
 | safety | `volatility_upper_ratio` | 2.0 | ATR14 ≥2× trung bình 14 ngày → block |
 | macro | `deadband_points` | 3 | buy/sell raw cách ≤3 pts = không rõ cạnh |
 | macro | `confidence_threshold` | 0.6 | dữ liệu macro tin cậy ≥0.6 |

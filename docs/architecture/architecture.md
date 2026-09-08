@@ -208,7 +208,6 @@ Chứa logic nghiệp vụ độc lập với UI:
 * Tính vùng hỗ trợ/kháng cự.
 * Tính supply/demand.
 * Xác nhận trạng thái entry bằng `entry_engine.py`.
-* Replay/backtest trade plan bằng `backtest_engine.py`.
 * Quản lý risk/reward.
 * Chuẩn hóa dữ liệu thị trường.
 
@@ -220,95 +219,19 @@ Core không render chart và không sinh widget. Core chỉ trả dữ liệu s�
 
 `core/entry_engine.py` là lớp xác nhận điểm vào lệnh thuần Python. Module này nhận `technical`, `smc`, nến H1 và `entry_zone`, sau đó trả về `entry_status`, `trigger_type`, `confirmation_score`, `invalid_reason`, `price_in_entry_zone`, `h1_confirmation` và `ready_to_trade`. UI, controller và AI không được tự đặt trạng thái này.
 
-`core/backtest_engine.py` là lớp replay/backtest trade plan thuần Python. Module này mô phỏng các lần giá chạm `entry_zone` trên dữ liệu H1, sau đó đo `win_rate`, `expectancy_r`, `average_r`, `average_mfe_r`, `average_mae_r`, `max_drawdown_r`, hiệu quả theo symbol và theo session. Module này không gọi MT5, không gọi AI và không phụ thuộc PyQt6.
-
-`core/backtest_feedback.py` đánh giá độ tin cậy của pattern nến (trigger_type) bằng cách quét lịch sử H1 tìm pattern tương tự. Dùng ATR để forward-test mỗi tín hiệu (3 nến tiếp theo), trả về `win_rate` và `confidence_adjustment` (+0.10 nếu win_rate >= 65%, -0.10 nếu < 40%).
-
-`core/backtest_market_data.py` là lớp dữ liệu point-in-time của system
-backtest. Module định nghĩa duration/close time D1/H4/H1/M15, chuẩn hóa UTC,
-sort/deduplicate, lọc nến đã đóng theo `[start, end)`, kiểm tra coverage,
-gap/OHLC và tạo `DataManifest` v2 có dataset hash cùng session-policy
-fingerprint.
-
 `core/trading_session_calendar.py` phân loại slot thiếu thành thời gian đóng
 phiên, ngày lễ, broker maintenance hoặc gap thật. Policy theo Forex, kim loại
 và crypto dùng timezone New York để tự xử lý DST; chỉ gap thật trong quality
 scope mới làm validation không đủ điều kiện.
 
-`core/backtest_execution.py` sở hữu execution policy có version của backtest:
-confirmation-close fill, exit từ nến kế tiếp, gap fill tại open,
-same-bar ambiguity policy, duration expiry/holding và event sequence. Module
-không cho dùng high/low của nến fill để kết luận SL/TP.
-
-`core/backtest_execution_parity.py` sở hữu mô hình chi phí MT5 xác định:
-spread theo symbol/phiên, bid/ask, slippage entry/exit, commission, swap,
-point-in-time quote conversion và volume step/min/max. Module xuất cost
-manifest/fingerprint và tách gross/cost/net cho từng trade.
-
-`core/backtest_candidate_ledger.py` sở hữu Candidate Ledger và
-`FrozenStrategyConfig`. Ledger được tạo trước strategy filter, lưu
-`setup_score` đúng side, rejection reasons và trade mô phỏng. Optimizer chỉ
-nhận IS ledger và tạo config bất biến có ID xác định.
-
-`core/backtest_validation_replay.py` điều phối validation theo đúng thứ tự:
-chạy IS → tối ưu frozen config → khởi tạo lại trạng thái tài khoản → replay
-OOS từ đầu. Output lưu fingerprint riêng cho IS/OOS ledger và chỉ expose
-execution-parity OOS trades cho validator.
-
-`core/backtest_statistics.py` tách bootstrap with replacement cho uncertainty
-khỏi permutation without replacement cho sequence risk. Module trả CI,
-probability of positive edge, one-sided p-value và sample-size guard.
-
-`core/backtest_provenance.py` tạo manifest SHA-256 liên kết dataset, code
-revision, request/risk config, scoring contract, frozen config và execution
-contract; validator kiểm tra lại từng thành phần trước khi phát hành config.
-
-`core/backtest_migration.py` tạo runtime view fail-closed cho snapshot đã lưu:
-snapshot sai contract/engine được giữ để audit nhưng gắn `LEGACY_RESEARCH` và
-không thể phát hành config.
-
-`core/backtest_advanced.py` sở hữu policy cho workload nâng cao: mọi output là
-`RESEARCH_ONLY`, portfolio không thể áp config đơn mã và Monte Carlo chỉ chạy
-khi có tối thiểu 30 trade hoặc được yêu cầu rõ ràng.
-
-`core/backtest_history.py` là data loader dùng chung cho Backtest và parameter
-sweep, thống nhất warm-up, cache giới hạn và fallback chia đoạn M15.
-
-`core/backtest_golden_replay.py` là replay nhỏ, broker-free trên fixture cố
-định. `core/backtest_release.py` ghép ba bằng chứng phát hành: golden replay,
-shadow engine cũ/mới và đối soát forward demo. Release report được ràng buộc
-với dataset/provenance và nằm trong validation fingerprint.
-
-Snapshot validation dùng để khóa config/dataset/provenance; snapshot forward
-là một artifact riêng chạy frozen config trên cùng kỳ với tài khoản demo và
-shadow legacy. Lệnh Scanner mang comment `AMA-FWD:*`; exporter chỉ nhận lịch
-sử demo có correlation này để tránh ghép nhầm lệnh tay.
-
-`core/system_backtest_engine.py` là engine backtest cấp hệ thống — replay toàn
-bộ pipeline `analyze_symbol()` trên dữ liệu lịch sử. Mỗi quyết định chạy tại
-thời điểm đóng nến step; snapshot chỉ nhận nến đa khung đã đóng và macro
-context cũng được cắt point-in-time. Runtime hiện dùng một entry filter
-thống nhất, rồi giả lập khớp lệnh qua M15 hoặc H1. Kết quả trả về
-`BacktestResult` gồm summary, danh sách trade, equity curve, breakdowns,
-diagnostics funnel, scoring/backtest contract và `DataManifest`. Engine còn
-thu thập **pipeline diagnostics** từ mỗi snapshot qua
-`_aggregate_pipeline_diag()` — gom thống kê pass/fail/warning từng bước
-pipeline (validate, correlation, score, scenarios, direction, gate,
-final_score) và đếm số lần mỗi gate chặn/cảnh báo.
-
-`core/monte_carlo.py` tách bootstrap có hoàn lại để đo uncertainty của
-expectancy/profit factor/win rate khỏi permutation không hoàn lại để đo
-sequence drawdown/loss streak. Controller dùng 2.000 simulation và chỉ tự chạy
-khi có ít nhất 30 trade; mẫu nhỏ được ghi `SKIPPED`, trừ khi người dùng yêu cầu
-chạy rõ ràng trong khu vực nâng cao.
-
-`core/walk_forward_engine.py` kiểm tra tính ổn định qua thời gian bằng
-Walk-Forward Analysis. Mỗi cửa sổ tối ưu từ Candidate Ledger IS, khóa
-`FrozenStrategyConfig`, rồi replay OOS bằng trạng thái tài khoản sạch. Báo
-cáo lưu config của từng window, số candidate và lý do bị frozen strategy
-loại; window dùng tháng lịch và `[start,end)`, còn aggregate khử trùng lặp
-OOS theo trade identity trước khi tính `oos_is_expectancy_ratio` và
-`robustness_score`.
+> **Backtest đã gỡ (2026-09-09):** Toàn bộ engine Backtest phía trên
+> (`backtest_execution`, `backtest_execution_parity`, `backtest_candidate_ledger`,
+> `backtest_validation_replay`, `backtest_statistics`, `backtest_provenance`,
+> `backtest_migration`, `backtest_advanced`, `backtest_history`,
+> `backtest_golden_replay`, `backtest_release`, `system_backtest_engine`,
+> `monte_carlo`, `walk_forward_engine`) đã bị loại bỏ khỏi sản phẩm cùng tính
+> năng Backtest. Chỉ còn vestigial `scanner_backtest_contract` (hạ tầng Scanner)
+> và `vix_pair_*` (producer data VIX). Chi tiết: `product_spec.md` §3.2.
 
 `core/technical_context.py` chứa `detect_market_regime()` — hàm phát hiện chế độ thị trường dùng hệ thống chấm điểm 3 thành phần (EMA alignment 0-40, structure 0-30, price position 0-30, tổng 0-100). Khắc phục vấn đề 80% lệnh rơi vào "unknown" của code cũ bằng cách chấp nhận mixed structure khi EMA đã rõ hướng, và nới lỏng ngưỡng phát hiện range.
 
@@ -400,7 +323,6 @@ Chứa các tác vụ chạy nền để không làm đơ giao diện:
 * Phân tích AI.
 * Refresh chart.
 * Load news.
-* Backtest.
 * Phân tích nhiều symbol cùng lúc.
 
 Dùng `QThread`, `QRunnable` hoặc `QThreadPool` phù hợp.
@@ -454,23 +376,15 @@ Mỗi màn hình nằm trong một file riêng.
 
 Mỗi screen chỉ quản lý layout và interaction của màn hình đó.
 
-5 màn hình chính trong ứng dụng:
+Các màn hình chính trong ứng dụng:
 
 * `dashboard_screen.py`: Bảng điều khiển, trạng thái MT5, AI, Broker dạng card.
 * `scanner_screen.py`: Quét thị trường và bảng xếp hạng. Tự động chạy quét lần đầu khi mở tab (tất cả mã, M5); nút auto-trade khả dụng trong auto-scan, mặc định unchecked và chỉ đặt `auto_trade_enabled=true` khi người dùng chủ động bật.
-* `backtest_screen.py`: Backtest hệ thống trên dữ liệu lịch sử. Sử dụng
-  QTabWidget 4 tab: Kết quả, Đường cong vốn, Danh sách lệnh và Nghiên cứu nâng
-  cao. Form chính chọn Research/Validation, không còn checkbox IS/OOS hoặc
-  Walk-Forward trùng nghĩa. Validation tự chạy execution parity, frozen IS/OOS
-  và Walk-Forward theo `backtest-run-policy-v1`; research-fast chỉ có ở tab
-  nâng cao và luôn `RESEARCH_ONLY`. Thanh nhanh chỉ hiển thị 5 KPI; policy
-  `backtest-presentation-v1` đồng bộ symbol từ snapshot và khóa nút lưu/áp dụng
-  theo lifecycle. Portfolio mặc định tắt và chỉ nhận toàn bộ mã khi người dùng
-  bật chủ động; AI, Monte Carlo theo yêu cầu và sweep cũng chỉ nằm trong tab
-  nâng cao.
-* `journal_screen.py`: Nhật ký giao dịch.
-* `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao;
-  gồm kill-switch VIX pair-aware mặc định OFF với cảnh báo chỉ bật sau backtest.
+* `scanner_detail_screen.py`: Chi tiết một setup/analysis của symbol được quét — reason codes, cổng chặn, phân rã điểm số và vùng entry.
+* `journal_screen.py`: Nhật ký giao dịch; tổng quan, thống kê và bộ lọc.
+* `journal_detail_screen.py`: Chi tiết một giao dịch trong nhật ký.
+* `orders_screen.py`: Quản lý lệnh/vị thế đang mở và trạng thái Order Management (SL/BE/trailing).
+* `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao; gồm kill-switch VIX pair-aware mặc định OFF.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.
 
@@ -518,7 +432,6 @@ Các việc sau phải đưa vào worker:
 * Lấy dữ liệu MT5.
 * Tính toán dữ liệu lớn.
 * Load tin tức.
-* Backtest.
 * Phân tích nhiều symbol cùng lúc.
 
 UI phải luôn có trạng thái loading, progress, cancel hoặc retry phù hợp cho tác vụ dài.
@@ -601,7 +514,7 @@ Không code tất cả trong một lần.
 - `core.decision_engine.make_final_decision()` accepts per-symbol `thresholds`
   with `ready`, `watch`, `wait`, `min_score_gap` and `min_rr`. Scanner builds
   these qua `analysis_thresholds_for_symbol()` để giữ Decision Engine độc lập
-  với strategy config backtest.
+  với strategy config (auto-trade) của từng symbol.
 - `config.settings.SymbolScanSettings` stores per-symbol decision thresholds:
   `decision_ready` (default 65), `decision_watch` (default 60),
   `decision_wait` (default 55), cùng `min_expected_rr` (default 1.3).

@@ -1,16 +1,17 @@
 # Scanner — Derivation Spec for candle → technical raws (Path B)
 
-**Trạng thái: ĐÃ DUYỆT (2026-08-14) — §4 quyết định = (a).** Mọi công thức là **port
-có tài liệu** từ `core/signal_engine.py` (+ `core/technical_context.py`,
-`core/indicators.py`), KHÔNG bịa, KHÔNG đổi threshold. Bắt đầu Bước 2 sau khi owner
-nhìn lại bản cuối.
+**Trạng thái: ĐÃ TRIỂN KHAI (Path B IMPL, live từ 2026-08-15; moniker bỏ
+2026-08-18).** Mọi công thức là **port có tài liệu** từ `core/signal_engine.py`
+(+ `core/technical_context.py`, `core/indicators.py`), KHÔNG bịa, KHÔNG đổi
+threshold.
 
 ## 0. Mục tiêu và ranh giới
 
 Scoring (`core/technical_signal_scorer.py:score_technical_signal`) CONSUMES các
 raw đã tính sẵn: `trend`≤25, `momentum`≤20, `location`≤25, `smc`≤15 (+ `canonical_smc`).
-Tầng target HIỆN KHÔNG có candle→raw. Path B thêm module `core/scanner_features.py`
-(chưa tồn tại) để tạo 3 raw đầu từ d1/h4/h1, và xác định producer cho raw `smc`.
+Tầng target đã có candle→raw: module `core/scanner_features.py`
+(`derive_technical_raws`) tạo 3 raw đầu từ d1/h4/h1; raw `smc` được tạo từ
+`smc_scorer` giữ lại qua `project_smc_technical_raw`.
 
 **Bounded refactor (bắt buộc để là "port có tài liệu", không bịa):**
 - **Tái sử dụng** `core/technical_context.py:build_technical_snapshot` và

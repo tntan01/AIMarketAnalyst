@@ -16,7 +16,7 @@
 
 ## 1. Tổng quan số lượng màn hình
 
-Phần mềm nên gồm **8 màn hình chính**:
+Phần mềm nên gồm **9 màn hình chính** trong thiết kế (mục 2/3 Single Analysis là target; runtime hiện chạy 7 màn — 1 và 4–9):
 
 | STT | Màn hình | Mục đích |
 |---:|---|---|
@@ -30,7 +30,7 @@ Phần mềm nên gồm **8 màn hình chính**:
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
 
-Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **12 màn hình/tabs chức năng**:
+Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **13 màn hình/tabs chức năng**:
 
 1. Dashboard (Bảng điều khiển tổng quan)
 2. Single Analysis Input (Màn hình nhập phân tích một mã)
@@ -59,7 +59,7 @@ Quyết định thiết kế bắt buộc:
 - Dùng sidebar hoặc top navigation để chuyển giữa 5 khu vực chính: Bảng điều khiển, Phân tích, Quét thị trường, Nhật ký, Cài đặt.
 - Sidebar là icon rail gắn cứng rộng 48px: mỗi mục điều hướng là một nút vuông bo góc 40×40 (content 38 + border 1, radius 10px) icon-only glyph phẳng 24px kèm tooltip tên mục khi hover; không có cơ chế thu/mở, không có tiêu đề/subtitle/footer. Icon đổi sang màu selection_text khi hover/checked.
 - Sidebar đáy rail có nút "Khởi động lại" icon-only cùng ô vuông 40×40 (glyph `refresh` 24px, màu accent #0d9488 ở giao diện tối / #D94625 ở giao diện sáng, nền trong suốt khi thường; hover/pressed: nền giống NavButton:hover — #1f2937 tối / #D94625 sáng — icon chuyển trắng selection_text, tooltip "Khởi động lại"). Khi bấm: xác nhận Yes/No → shutdown MT5 → khởi chạy process mới → quit process hiện tại.
-- Dùng `QStackedWidget` hoặc router tương đương để quản lý 8 màn hình chính.
+- Dùng `QStackedWidget` hoặc router tương đương để quản lý 9 màn hình chính.
 - Dùng `QSplitter`, `QGridLayout`, `QHBoxLayout`, `QVBoxLayout` và stretch factor để giao diện co giãn tốt trên màn hình 1366x768 trở lên.
 - Dùng `QTableView` + `QAbstractTableModel` cho bảng Scanner và Journal; không dựng bảng bằng nhiều label thủ công.
 - Dùng `QTabWidget` cho Settings và các phần chi tiết dài trong màn hình kết quả.
@@ -1355,7 +1355,7 @@ AI Market Analyst (Nhà phân tích thị trường AI)
 
 # 4. Kết luận
 
-Phần mềm **AI Market Analyst (Nhà phân tích thị trường AI)** nên triển khai theo **8 màn hình chính** để đủ rõ ràng, dễ dùng và phù hợp với MVP (phiên bản khả dụng tối thiểu).
+Phần mềm **AI Market Analyst (Nhà phân tích thị trường AI)** nên triển khai theo **9 màn hình chính** để đủ rõ ràng, dễ dùng và phù hợp với MVP (phiên bản khả dụng tối thiểu).
 
 Cách tổ chức hợp lý nhất:
 
