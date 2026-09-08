@@ -1,5 +1,10 @@
 # Backtest Release Runbook
 
+> **⚠️ ĐÃ NGỪNG SỬ DỤNG (2026-09-09):** Engine Backtest và toàn bộ luồng
+> validation/release mô tả trong tài liệu này đã bị xóa khỏi codebase
+> (xem `docs/backtest-removal-audit.md` + `docs/backtest-removal-step5-report.md`).
+> Tài liệu được lưu làm tham khảo thiết kế lịch sử, KHÔNG mô tả hành vi hiện hành.
+
 > **Phạm vi vận hành:** quy trình Phase 7 bên dưới áp dụng cho runtime
 > `scanner-v3` / `scanner-features-v3`. Scanner là **APPROVED DESIGN —
 > NON-RUNTIME** và dùng direct cutover; xem mục cuối tài liệu.

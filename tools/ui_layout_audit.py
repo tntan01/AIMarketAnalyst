@@ -32,7 +32,6 @@ from PyQt6.QtWidgets import (
 )
 
 from tools.capture_ui_style_baseline import _fake_app, _patch_external_activity
-from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.journal_detail_screen import JournalDetailScreen
 from ui.screens.journal_screen import JournalScreen
@@ -63,7 +62,6 @@ SCREEN_FACTORIES = {
     "scanner": ScannerScreen,
     "orders": OrdersScreen,
     "scanner_detail": ScannerDetailScreen,
-    "backtest": BacktestScreen,
     "journal": JournalScreen,
     "journal_detail": JournalDetailScreen,
     "settings": SettingsScreen,

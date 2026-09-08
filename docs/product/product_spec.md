@@ -56,50 +56,13 @@ khả dụng trong chế độ quét định kỳ và mặc định không chọ
 nút bị disable và reset. Auto trade và nút đặt lệnh thủ công cho candidate đều
 đi qua cùng execution guard chain (không có override riêng).
 
-### 3.2 Backtest
+### 3.2 Backtest — ĐÃ LOẠI BỎ (2026-09-09)
 
-Backtest replay logic chiến lược trên dữ liệu lịch sử, hỗ trợ phân tích funnel/breakdown, equity/drawdown và validation ngoài mẫu.
-
-Kết quả chỉ được dùng làm strategy config thực thi khi đạt contract validation hiện hành. Kết quả cũ hoặc chưa validation có status `DRAFT`/invalid và không được auto trade.
-
-Replay dùng dữ liệu point-in-time: timestamp UTC, nến chỉ khả dụng sau khi
-đóng, khoảng thời gian theo `[start, end)`, dữ liệu được sort/deduplicate và
-đính kèm `DataManifest` v2 session-aware. Manifest ghi coverage, gap trong
-phiên, khoảng đóng hợp lệ, session-policy fingerprint, duplicate, timezone,
-OHLC quality và dataset hash. Lịch phiên xử lý riêng Forex, kim loại và crypto,
-tự theo DST New York và lịch nghỉ/bảo trì có version. Backtest `VALIDATION` phải fail-closed nếu dữ
-liệu không đủ chất lượng; `RESEARCH` có thể tiếp tục nhưng phải lưu/hiển thị
-cảnh báo. Manifest version, point-in-time flag, quality status và dataset
-hash là một phần của config fingerprint và được Strategy Router kiểm tra lại
-sau khi load Settings.
-
-Execution replay tuân theo policy có version: scenario exact-side, fill tại
-close xác nhận, chỉ xét exit từ nến execution kế tiếp, xử lý gap SL/TP tại
-open và ghi rõ chính sách mơ hồ khi một nến chạm cả SL/TP. Validation bắt
-buộc M15, `STOP_FIRST` và không chứa synthetic/research-only trade. Thời hạn
-setup/holding dùng phút thay vì số bar phụ thuộc timeframe.
-
-Orchestration Backtest dùng `backtest-run-policy-v1`. Form chính chỉ yêu cầu
-người dùng chọn `Nghiên cứu` hoặc `Kiểm chứng`: Research mặc định Mô phỏng MT5
-và luôn `RESEARCH_ONLY`; Validation tự ép execution parity, tự chạy frozen
-IS/OOS và Walk-Forward. Nghiên cứu nhanh chỉ có trong khu vực nâng cao, không
-thể kết hợp với evidence Validation và không đủ điều kiện phát hành.
-
-Presentation Backtest dùng `backtest-presentation-v1`. Thanh nhanh chỉ có số
-lệnh, kỳ vọng, hệ số lợi nhuận, drawdown tối đa và Net R; số liệu còn lại vẫn
-được giữ trong phần chi tiết/JSON. Nút cấu hình fail-closed theo lifecycle:
-Research/legacy/portfolio không có nút, DRAFT chỉ lưu nháp, và chỉ kết quả đã
-sẵn sàng phát hành mới được áp dụng. Snapshot phải là đơn mã và symbol phải
-khớp trước khi ghi Settings.
-
-Các công cụ chuyên sâu nằm trong tab **Nghiên cứu nâng cao**. Portfolio là lựa
-chọn chủ động, mặc định tắt và bị vô hiệu hóa trong Validation; chọn nhiều mã
-không tự động biến lần chạy chính thành portfolio. Portfolio, AI,
-research-fast, Monte Carlo và parameter sweep đều là `RESEARCH_ONLY`, không
-được áp thành cấu hình đơn mã. Monte Carlo tự chạy khi có ít nhất 30 lệnh hoặc
-khi người dùng yêu cầu. Sweep dùng chung request factory, cost model và data
-loader với Backtest chính, mặc định dùng mã/khoảng ngày đang chọn và lưu
-dataset/provenance fingerprint trong checkpoint/report.
+Tính năng Backtest (replay chiến lược trên dữ liệu lịch sử + validation
+config) đã bị gỡ khỏi sản phẩm (xem `../backtest-removal-audit.md`).
+Scanner/auto-trade vận hành độc lập: quyền auto-trade per-symbol là lựa
+chọn tường minh trong Settings, cấu hình chiến lược (regime/side/min
+score/min RR) đọc từ dữ liệu đã lưu; DEFAULT_RULES cho mã không cấu hình.
 
 ### 3.3 Journal và Order Management
 
@@ -210,38 +173,13 @@ normative duy nhất cho target là
 [Scanner architecture](../scanner/scanner-architecture.md);
 runtime hiện hành xem [Scanner flow](../scanner/scanner-flow.md).
 
-## 6. Backtest config contract
+## 6. Backtest config contract — ĐÃ LOẠI BỎ (2026-09-09)
 
-Config được thực thi trong runtime hiện tại cần:
-
-- schema `v8`;
-- validation `backtest-v8-statistical-validation-v1`;
-- release report `backtest-phase7-release-report-v1`, bắt buộc có
-  `ready=true`, `approved=true`, reviewer, fingerprint và đúng
-  dataset/provenance;
-- validation snapshot, current-forward snapshot và legacy-forward snapshot là
-  ba artifact riêng; hai snapshot forward phải cùng kỳ với giao dịch demo;
-- giao dịch demo đối soát phải xuất phát từ Scanner và truy được qua correlation
-  ID `AMA-FWD:*`; lịch sử tài khoản thật hoặc lệnh tay không phải release
-  evidence;
-- Candidate Ledger IS và frozen OOS replay là bằng chứng bắt buộc;
-- Walk-Forward calendar đã khử duplicate, bootstrap probability/statistical
-  power, recency và provenance đầy đủ là điều kiện phát hành;
-- engine contract `phase0-backtest-safety-v1`;
-- purpose `VALIDATION`, đúng validation engine version và
-  `execution_parity=true`;
-- execution/cost/quote-conversion version và cost-model fingerprint hợp lệ;
-- scorer `scanner-v3`;
-- feature `scanner-features-v3`;
-- score metric `setup_score`;
-- symbol, side, regime, min score và min R:R hợp lệ;
-- train/OOS ranges đúng;
-- cỡ mẫu, OOS metrics và confidence interval đạt;
-- walk-forward `ROBUST`;
-- validation fingerprint hợp lệ;
-- `validated_at` và `expires_at` hợp lệ.
-
-Sai một điều kiện bắt buộc phải fail-closed.
+Contract bằng chứng kiểm định (schema/validation/release report/walk-forward/
+fingerprint) đã bị xóa cùng engine Backtest. Router live dùng lean validator
+(`core/scanner_strategy_router.validate_auto_trade_config`): đúng mã, side/regime
+hợp lệ, ngưỡng dương — fail-closed về DEFAULT_RULES. Dữ liệu evidence cũ trong
+settings.json vẫn đọc được (migration suy dẫn quyền/ngưỡng) cho tới lần save kế tiếp.
 
 ## 7. Execution và quản trị rủi ro
 

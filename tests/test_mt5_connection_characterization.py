@@ -3,23 +3,25 @@
 These tests intentionally capture behavior before the connection-lifecycle
 refactor.  They protect user-facing guards and Scanner observability while
 the implementation is consolidated in later steps.
+
+Bước 5 loại bỏ Backtest (2026-09-09): 3 test dùng ``BacktestController``
+làm harness đã chuyển sang harness độc lập — nội dung kiểm tra an toàn giữ
+nguyên: (a) luồng đọc dữ liệu gate readiness ĐÚNG MỘT LẦN trước khi chạm
+lịch sử nến, (b) đọc dữ liệu/quét KHÔNG đòi quyền giao dịch (quyền trade
+chỉ kiểm tra ở cổng vào lệnh). Phương tiện live: ``ScannerController.
+run_market_scan`` (cùng contract ``ensure_ready(require_login=True)``).
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import controllers.scanner_controller as scanner_module
-from controllers.backtest_controller import BacktestController
 from controllers.scanner_controller import ScannerController
-from core.backtest_contract import BACKTEST_PURPOSE_RESEARCH
-from core.backtest_execution_parity import EXECUTION_MODE_PARITY
 from core.scanner import ScannerRequest
-from core.system_backtest_engine import BacktestRequest
 from services.data_provider import ProviderNotReadyError
 from services.mt5_service import MT5Service
 
@@ -168,82 +170,92 @@ class _StatusProvider:
         return status
 
 
-def _backtest_request() -> BacktestRequest:
-    return BacktestRequest(
-        symbol="EUR/USD",
-        broker_symbol="EURUSD",
-        start=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        end=datetime(2025, 2, 1, tzinfo=timezone.utc),
-        initial_balance=10_000.0,
+def _scan_request() -> ScannerRequest:
+    return ScannerRequest(
+        symbols=[],
+        account_balance=10_000.0,
         risk_percent=1.0,
-        purpose=BACKTEST_PURPOSE_RESEARCH,
-        execution_mode=EXECUTION_MODE_PARITY,
+        timezone_name="Asia/Ho_Chi_Minh",
     )
 
 
+def _scan_context(scan_id: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        scan_id=scan_id,
+        request_hash="request-hash",
+        settings_hash="settings-hash",
+        smc_scoring_mode="v2",
+        smc_scorer_version="smc-v2",
+        smc_domain_version="smc-domain-v2",
+    )
+
+
+def _scan_controller_with_provider(provider: _StatusProvider) -> ScannerController:
+    controller = object.__new__(ScannerController)
+    controller.settings_service = SimpleNamespace(
+        load=lambda: SimpleNamespace(
+            trading=SimpleNamespace(max_risk_percent=2.0),
+        )
+    )
+    controller.mt5 = provider
+    controller.observability = MagicMock()
+    return controller
+
+
 @pytest.mark.parametrize("connected, logged_in", [(False, True), (True, False)])
-def test_single_backtest_rejects_unready_mt5_before_history_load(
+def test_scan_rejects_unready_mt5_once_before_touching_market_data(
     connected: bool,
     logged_in: bool,
 ) -> None:
-    controller = object.__new__(BacktestController)
-    provider = _StatusProvider(connected=connected, logged_in=logged_in)
-    controller.mt5 = provider
-    controller._history_cache = {}
-    controller._load_history = MagicMock()
-
-    with pytest.raises(ProviderNotReadyError, match="MT5 fixture"):
-        controller.run_backtest(
-            request=_backtest_request(),
-            research_validation_enabled=False,
-            _progress_callback=lambda _percent, _message: None,
-        )
-
-    assert provider.calls == 1
-    controller._load_history.assert_not_called()
-
-
-def test_batch_backtest_rejects_unready_mt5_once_before_history_load() -> None:
-    controller = object.__new__(BacktestController)
-    provider = _StatusProvider(connected=False, logged_in=False)
-    controller.mt5 = provider
-    controller._history_cache = {}
-    controller._load_history = MagicMock()
-
-    with pytest.raises(ProviderNotReadyError, match="MT5 fixture"):
-        controller.run_backtest(
-            request=[_backtest_request()],
-            research_validation_enabled=False,
-            _progress_callback=lambda _percent, _message: None,
-        )
-
-    assert provider.calls == 1
-    controller._load_history.assert_not_called()
-
-
-def test_backtest_does_not_require_trade_permission_for_data_readiness() -> None:
-    class HistoryReached(RuntimeError):
+    # Nội dung an toàn (nguyên từ harness backtest cũ): readiness gate chạy
+    # đúng MỘT lần trước khi chạm dữ liệu thị trường — không gọi lặp, không
+    # đọc lịch sử khi provider chưa sẵn sàng.
+    class DataReached(RuntimeError):
         pass
 
-    controller = object.__new__(BacktestController)
+    provider = _StatusProvider(connected=connected, logged_in=logged_in)
+    provider.account_balance = MagicMock(
+        side_effect=DataReached("market data reached")
+    )
+    controller = _scan_controller_with_provider(provider)
+
+    with patch.object(
+        scanner_module, "create_scan_context",
+        return_value=_scan_context("scan-gate-once"),
+    ):
+        with pytest.raises(ProviderNotReadyError, match="MT5 fixture"):
+            controller.run_market_scan(request=_scan_request())
+
+    assert provider.calls == 1
+    provider.account_balance.assert_not_called()
+
+
+def test_scan_does_not_require_trade_permission_for_data_readiness() -> None:
+    # Nội dung an toàn (nguyên từ harness backtest cũ): đọc dữ liệu/quét
+    # không đòi trade_allowed — quyền giao dịch chỉ kiểm tra ở cổng vào
+    # lệnh (account guard / order policy), không phải ở readiness dữ liệu.
+    class ScanContinued(RuntimeError):
+        pass
+
     provider = _StatusProvider(
         connected=True,
         logged_in=True,
         trade_allowed=False,
     )
-    controller.mt5 = provider
-    controller._history_cache = {}
-    controller._load_history = MagicMock(side_effect=HistoryReached("history reached"))
+    provider.account_balance = MagicMock(
+        side_effect=ScanContinued("scan continued past readiness")
+    )
+    controller = _scan_controller_with_provider(provider)
 
-    with pytest.raises(HistoryReached, match="history reached"):
-        controller.run_backtest(
-            request=_backtest_request(),
-            research_validation_enabled=False,
-            _progress_callback=lambda _percent, _message: None,
-        )
+    with patch.object(
+        scanner_module, "create_scan_context",
+        return_value=_scan_context("scan-no-trade-perm"),
+    ):
+        with pytest.raises(ScanContinued, match="scan continued"):
+            controller.run_market_scan(request=_scan_request())
 
     assert provider.calls == 1
-    controller._load_history.assert_called_once()
+    provider.account_balance.assert_called_once_with()
 
 
 @pytest.mark.parametrize("connected, logged_in", [(False, True), (True, False)])

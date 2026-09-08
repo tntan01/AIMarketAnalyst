@@ -56,7 +56,9 @@ def test_responsive_matrix_covers_every_theme_dpi_route_and_viewport() -> None:
         for item in results
     }
     assert actual == expected
-    assert len(results) == 288
+    # 252 = 2 themes × 3 DPI × 7 routes × 6 viewports (route "backtest" đã
+    # gỡ khỏi ứng dụng — Bước 3 loại bỏ Backtest, 2026-09-08).
+    assert len(results) == 252
 
     for item in results:
         assert item["issues"] == []
@@ -78,7 +80,8 @@ def test_visual_manifest_has_a_real_image_for_every_theme_dpi_and_route() -> Non
         for item in captures
     }
     assert actual == expected
-    assert len(captures) == 48
+    # 42 = 2 themes × 3 DPI × 7 routes (route "backtest" đã gỡ — Bước 3).
+    assert len(captures) == 42
 
     for item in captures:
         path = ROOT / item["path"]

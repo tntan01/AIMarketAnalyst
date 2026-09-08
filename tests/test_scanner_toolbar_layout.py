@@ -6,6 +6,7 @@ from unittest.mock import patch
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QSizePolicy
 
+from config.settings import SymbolScanSettings
 from tools.capture_ui_style_baseline import _fake_app, _patch_external_activity
 from tools.ui_layout_audit import load_visual_qa_fonts
 from ui.screens.scanner_screen import ScannerScreen
@@ -17,7 +18,10 @@ def test_scanner_starts_in_manual_mode_without_scheduling_a_scan() -> None:
     fake_app = _fake_app("dark")
     settings = fake_app.settings_service.settings
     settings.notifications.auto_scan_interval_minutes = 60
-    settings.trading.symbol_settings = {"EUR/USD": object()}
+    # Bước 2 gỡ Backtest: danh sách quét theo cờ scan_enabled độc lập.
+    settings.trading.symbol_settings = {
+        "EUR/USD": SymbolScanSettings(scan_enabled=True),
+    }
 
     with patch("ui.screens.scanner_screen.QTimer.singleShot") as single_shot:
         screen = ScannerScreen(None, app=fake_app)

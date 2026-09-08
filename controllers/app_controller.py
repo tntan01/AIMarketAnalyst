@@ -9,7 +9,6 @@ factory method because their config changes at runtime.
 
 from __future__ import annotations
 
-from controllers.backtest_controller import BacktestController
 from controllers.journal_controller import JournalController
 from controllers.scanner_controller import ScannerController
 from controllers.settings_controller import SettingsController
@@ -49,7 +48,6 @@ class AppController:
 
         # Controllers (also lazy)
         self._scanner_controller: ScannerController | None = None
-        self._backtest_controller: BacktestController | None = None
         self._journal_controller: JournalController | None = None
         self._settings_controller: SettingsController | None = None
 
@@ -139,15 +137,6 @@ class AppController:
                 order_management_service=self.order_management_service,
             )
         return self._scanner_controller
-
-    @property
-    def backtest_controller(self) -> BacktestController:
-        if self._backtest_controller is None:
-            self._backtest_controller = BacktestController(
-                settings_service=self.settings_service,
-                mt5=self.mt5,
-            )
-        return self._backtest_controller
 
     @property
     def journal_controller(self) -> JournalController:

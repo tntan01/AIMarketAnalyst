@@ -131,36 +131,6 @@ QLabel#InfoCardDetail {
   color: #736B60;
 }
 
-QTextEdit#BacktestResultText {
-  background: #ffffff;
-  color: #1e293b;
-}
-
-QLabel#BacktestVerdict[verdictState="empty"] {
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-}
-
-QLabel#BacktestVerdict[verdictState="success"] {
-  background: #d1fae5;
-  border: 1px solid #a7f3d0;
-}
-
-QLabel#BacktestVerdict[verdictState="warning"] {
-  background: #fef3c7;
-  border: 1px solid #fde68a;
-}
-
-QLabel#BacktestVerdict[verdictState="unclear"] {
-  background: #ffedd5;
-  border: 1px solid #fed7aa;
-}
-
-QLabel#BacktestVerdict[verdictState="danger"] {
-  background: #ffe4e6;
-  border: 1px solid #fecdd3;
-}
-
 QLabel#MiniStatValueCompact[metricTone="info"] {
   color: #38bdf8;
 }
@@ -729,28 +699,6 @@ QPushButton#RestartButton:pressed {
   background: #D94625;
   border-color: #D94625;
   color: #E0533C;
-}
-
-QDialog#BacktestAnalysisDialog {
-  background: #FAF9F5;
-}
-
-QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #1e293b;
-}
-
-QDialog#BacktestConfigDialog {
-  background: #faf8f5;
-}
-
-QLabel#BacktestConfigRowTitle {
-  color: #1c1917;
-}
-
-QLabel#BacktestSummarySeparator {
-  color: #64748b;
 }
 
 QPushButton {

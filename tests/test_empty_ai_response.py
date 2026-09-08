@@ -43,8 +43,8 @@ class TestEmptyAiResponseGuard(unittest.TestCase):
 
     def test_format_ai_to_html_empty_returns_wrapper_only(self):
         """_format_ai_to_html với input rỗng → chỉ có wrapper div, không có nội dung."""
-        from ui.screens.backtest_screen import BacktestScreen
-        result = BacktestScreen._format_ai_to_html("", light=False)
+        from ui.rich_text import format_ai_markdown_to_html
+        result = format_ai_markdown_to_html("", light=False)
         # Method always wraps in a container div; empty input = empty wrapper
         self.assertIn("font-family", result)
         # No actual content: no headings, no paragraphs, no list items
@@ -54,8 +54,8 @@ class TestEmptyAiResponseGuard(unittest.TestCase):
 
     def test_format_ai_to_html_whitespace_returns_wrapper_only(self):
         """_format_ai_to_html với whitespace → chỉ có wrapper div."""
-        from ui.screens.backtest_screen import BacktestScreen
-        result = BacktestScreen._format_ai_to_html("   \n  \n  ", light=False)
+        from ui.rich_text import format_ai_markdown_to_html
+        result = format_ai_markdown_to_html("   \n  \n  ", light=False)
         self.assertIn("font-family", result)
         self.assertNotIn("font-weight:700", result)
         self.assertNotIn("<li", result)

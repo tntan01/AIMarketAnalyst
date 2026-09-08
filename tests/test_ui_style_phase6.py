@@ -61,7 +61,6 @@ def test_chart_palette_contains_shared_semantic_roles() -> None:
 
 def test_phase6_consumers_use_shared_renderer_and_palette() -> None:
     for relative in (
-        "ui/screens/backtest_screen.py",
         "ui/screens/dashboard_screen.py",
         "ui/screens/journal_detail_screen.py",
         "ui/screens/scanner_detail_screen.py",

@@ -5,35 +5,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
-from controllers.backtest_controller import BacktestController
 from services.mt5_service import MT5Service
-
-
-def test_backtest_request_preparation_runs_with_backtest_task() -> None:
-    controller = object.__new__(BacktestController)
-    request = MagicMock()
-    progress = MagicMock()
-    controller.build_requests = MagicMock(return_value=[request])
-    controller.run_backtest = MagicMock(return_value={"status": "ok"})
-
-    result = controller.prepare_and_run_backtest(
-        build_args={"symbols": ["EUR/USD"]},
-        research_validation_enabled=True,
-        monte_carlo_requested=False,
-        _progress_callback=progress,
-    )
-
-    assert result == {"status": "ok"}
-    controller.build_requests.assert_called_once_with(symbols=["EUR/USD"])
-    controller.run_backtest.assert_called_once_with(
-        request=request,
-        research_validation_enabled=True,
-        monte_carlo_requested=False,
-        _progress_callback=progress,
-    )
-    progress.assert_any_call(5, "Đang chuẩn bị dữ liệu backtest...")
 
 
 class _ConcurrentSymbolsMT5:

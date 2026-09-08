@@ -19,7 +19,6 @@ EXPECTED_ROUTES = {
     "scanner",
     "scanner_detail",
     "orders",
-    "backtest",
     "journal",
     "journal_detail",
     "settings",
@@ -74,7 +73,9 @@ def test_responsive_matrix_is_complete_and_clean() -> None:
     assert set(report["profiles"]) == EXPECTED_PROFILES
     assert set(report["dpi_profiles"]) == {"dpi-100", "dpi-125", "dpi-150"}
     assert report["themes"] == ["dark", "light"]
-    assert len(report["results"]) == 288
+    # 252 = 7 routes × 6 profiles × 2 themes × 3 DPI (route "backtest" đã gỡ
+    # khỏi ứng dụng — Bước 3 loại bỏ Backtest, 2026-09-08).
+    assert len(report["results"]) == 252
     assert all(not result["issues"] for result in report["results"])
 
 
@@ -88,10 +89,10 @@ def test_visual_baseline_covers_both_themes_and_interaction_states() -> None:
     )
     assert manifest["failures"] == []
     captures = manifest["captures"]
-    assert len(captures) == 80
+    assert len(captures) == 66  # Bước 6: bỏ 14 capture Backtest (7/theme)
     for theme in ("dark", "light"):
         themed = [item for item in captures if item["theme"] == theme]
-        assert len(themed) == 40
+        assert len(themed) == 33
         assert {
             item["name"] for item in themed if item["name"].startswith("state-")
         } == EXPECTED_STATES

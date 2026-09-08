@@ -3,9 +3,10 @@ from __future__ import annotations
 from config.constants import SUPPORTED_SYMBOLS
 from controllers .scanner_controller import ScannerController 
 from core .scanner import ScannerRequest
-from core.backtest_config import (
+from core.symbol_scan_config import (
     analysis_thresholds_for_symbol,
-    serialize_backtest_config,
+    build_symbol_auto_trade,
+    is_scan_enabled,
 )
 from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot
 from core.reason_codes import codes_to_messages
@@ -337,9 +338,9 @@ class ScannerTableModel (QAbstractTableModel ):
             return f"{float(value):.0f}%" if isinstance(value, (int, float)) else "--"
         if key =="auto_trade_branch":
             return {
-                "BACKTEST_VALIDATED":"Backtest",
+                "BACKTEST_VALIDATED":"Đã kiểm định",
                 "DEFAULT_RULES":"Mặc định",
-                "BACKTEST_INVALID":"BT lỗi",
+                "BACKTEST_INVALID":"Cấu hình lỗi",
             }.get(str(value or ""), str(value or "--"))
         if key =="strategy_config_status":
             return {
@@ -1641,9 +1642,11 @@ class ScannerScreen (QWidget ):
         self ._refresh_scan_button_state ()
 
     def _configured_scan_symbols (self ,settings )->list [str ]:
+        # Bước 2 gỡ Backtest: danh sách quét theo cờ scan_enabled độc lập
+        # (mã được quét ≠ mã được phép auto-trade).
         return [
             symbol for symbol in SUPPORTED_SYMBOLS
-            if settings .trading .symbol_settings .get (symbol)
+            if is_scan_enabled(settings .trading .symbol_settings .get (symbol))
         ]
 
     def _update_symbol_summary (self )->None :
@@ -1660,10 +1663,10 @@ class ScannerScreen (QWidget ):
             self .symbol_summary_label .setText (f"{len (selected )} mã: {', '.join (selected [:5])}, ...")
 
     def _show_symbol_dialog (self )->None :
-        backtest_verified =set (self .scan_symbols )
+        scan_configured =set (self .scan_symbols )
         dialog =ScannerSymbolSelectionDialog (
             sorted (SUPPORTED_SYMBOLS ),
-            backtest_verified,
+            scan_configured,
             self .market_watch_symbols,
             self .selected_scan_symbols,
             self,
@@ -1729,15 +1732,12 @@ class ScannerScreen (QWidget ):
             if symbol_thresholds is not None:
                 thresholds[symbol] = symbol_thresholds
             # else: khong config -> DEFAULT_DECISION_THRESHOLDS (65/60/55)
-        symbol_auto_trade: dict[str, dict] = {}
-        for symbol in symbols:
-            cfg = settings.trading.symbol_settings.get(symbol)
-            if cfg is None:
-                slash_symbol = f"{symbol[:3]}/{symbol[3:]}"
-                cfg = settings.trading.symbol_settings.get(slash_symbol)
-            backtest_config = serialize_backtest_config(cfg, symbol=symbol)
-            if backtest_config is not None:
-                symbol_auto_trade[symbol] = backtest_config
+        # Bước 2 gỡ Backtest: payload auto-trade per-symbol chỉ phát cho mã
+        # được cấp quyền (auto_trade_permitted) VÀ còn config đã duyệt —
+        # fail-closed, do core.symbol_scan_config đảm nhiệm.
+        symbol_auto_trade =build_symbol_auto_trade (
+            settings .trading .symbol_settings ,symbols
+        )
         feature_settings = getattr(settings, "features", None)
         feature_flags = {
             "scanner_fast_tier1": bool(
@@ -2171,7 +2171,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
     def __init__ (
         self,
         all_symbols: list[str],
-        backtest_verified_symbols: set[str],
+        scan_configured_symbols: set[str],
         market_watch_symbols: set[str],
         selected_symbols: list[str],
         parent: QWidget | None = None,
@@ -2183,7 +2183,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
         self.setMinimumSize(560, 520)
         self.checkboxes: dict[str, QCheckBox] = {}
         self.market_watch_symbols = set(market_watch_symbols)
-        self.backtest_verified_symbols = set(backtest_verified_symbols)
+        self.scan_configured_symbols = set(scan_configured_symbols)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 16)
@@ -2191,7 +2191,7 @@ class ScannerSymbolSelectionDialog (QDialog ):
 
         intro = QLabel(
             "Tất cả các mã trong hệ thống. "
-            "Mã có trong Market Watch là chọn được. Mã đã tick Backtest sẽ được đánh dấu."
+            "Mã có trong Market Watch là chọn được. Mã đã bật quét trong Cài đặt sẽ được đánh dấu."
         )
         intro.setObjectName("HelperText")
         intro.setWordWrap(True)
@@ -2227,17 +2227,17 @@ class ScannerSymbolSelectionDialog (QDialog ):
             checkbox = QCheckBox(symbol)
             checkbox.setObjectName("ScannerSymbolCheck")
             in_market_watch = symbol in self.market_watch_symbols
-            is_backtested = symbol in self.backtest_verified_symbols
+            is_scan_configured = symbol in self.scan_configured_symbols
             selectable = in_market_watch
             checkbox.setEnabled(selectable)
             checkbox.setChecked(selectable and symbol in selected_set)
             if not selectable:
                 checkbox.setToolTip("Mã này chưa có trong Market Watch của MT5.")
-            elif is_backtested:
+            elif is_scan_configured:
                 checkbox.setText(symbol)
-                checkbox.setToolTip("Đã cấu hình Backtest — dùng filter từ backtest nếu có.")
+                checkbox.setToolTip("Đã bật quét trong Cài đặt — quyền auto-trade (nếu có) cấu hình riêng tại đó.")
             else:
-                checkbox.setToolTip("Chưa tick Backtest — chạy theo điều kiện Ready mặc định.")
+                checkbox.setToolTip("Chưa bật quét trong Cài đặt — không nằm trong danh sách quét.")
             self.checkboxes[symbol] = checkbox
             grid.addWidget(checkbox, index // 3, index % 3)
         scroll.setWidget(content)
@@ -2720,7 +2720,7 @@ class ScannerRowExplanationDialog(QDialog):
                 )
             if branch == "DEFAULT_RULES":
                 return (
-                    "Mặc định: mã không có cấu hình Backtest hợp lệ nên dùng "
+                    "Mặc định: mã không có cấu hình chiến lược hợp lệ nên dùng "
                     "quy tắc chung của hệ thống và vẫn phải qua mọi điều kiện an toàn."
                 )
             if branch == "BACKTEST_INVALID":
@@ -2732,8 +2732,8 @@ class ScannerRowExplanationDialog(QDialog):
         if key == "strategy_config_status":
             status = str(value or "").upper()
             meanings = {
-                "VALIDATED": "cấu hình Backtest đã qua validation và còn hiệu lực",
-                "NOT_CONFIGURED": "không có cấu hình Backtest; dùng quy tắc mặc định",
+                "VALIDATED": "cấu hình chiến lược đã qua kiểm định và còn hiệu lực",
+                "NOT_CONFIGURED": "không có cấu hình riêng; dùng quy tắc mặc định",
                 "DRAFT": "cấu hình vẫn là bản nháp, chưa được dùng để giao dịch",
                 "EXPIRED": "cấu hình đã hết hạn và phải validation lại",
                 "INVALID": "cấu hình không đạt điều kiện an toàn",
@@ -3128,7 +3128,7 @@ class ScannerColumnsHelpDialog(QDialog):
             "meaning": "Bối cảnh thị trường hiện tại do hệ thống nhận diện.",
             "cases": (
                 "Xu hướng tăng, Xu hướng giảm, Đi ngang, Biến động mạnh hoặc "
-                "Chưa rõ. Quy tắc Backtest còn yêu cầu bối cảnh này khớp cấu hình."
+                "Chưa rõ. Quy tắc đã kiểm định còn yêu cầu bối cảnh này khớp cấu hình."
             ),
         },
         {

@@ -5,21 +5,18 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QApplication, QFileDialog, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QPushButton, QVBoxLayout, QWidget
 
-from ui.screens.backtest_screen import BacktestScreen
 from ui.theme_manager import ThemeManager
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DARK_QSS = ROOT / "ui" / "styles" / "dark.qss"
 LIGHT_QSS = ROOT / "ui" / "styles" / "light.qss"
-BACKTEST = ROOT / "ui" / "screens" / "backtest_screen.py"
 _APP = QApplication.instance() or QApplication([])
 
 
@@ -61,30 +58,6 @@ def test_dark_overlay_has_no_neutral_bright_background_literal() -> None:
             offenders.append(value)
 
     assert offenders == []
-
-
-def test_backtest_file_picker_uses_qt_dialog_for_theme_consistency() -> None:
-    source = BACKTEST.read_text(encoding="utf-8")
-
-    assert "options=QFileDialog.Option.DontUseNativeDialog" in source
-    assert QFileDialog.Option.DontUseNativeDialog.value != 0
-
-
-def test_backtest_file_picker_passes_non_native_option(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_open(*args, **kwargs):
-        captured["args"] = args
-        captured["kwargs"] = kwargs
-        return "", ""
-
-    monkeypatch.setattr(QFileDialog, "getOpenFileName", fake_open)
-
-    BacktestScreen._load_backtest_file(SimpleNamespace())
-
-    kwargs = captured["kwargs"]
-    assert isinstance(kwargs, dict)
-    assert kwargs["options"] == QFileDialog.Option.DontUseNativeDialog
 
 
 def test_help_button_renders_dark_after_theme_application() -> None:

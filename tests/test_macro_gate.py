@@ -689,7 +689,6 @@ class TestOwnershipDeduplication:
             "analysis_pipeline.py",
             "scanner.py",
             "scanner_controller.py",
-            "system_backtest_engine.py",
             "trade_gate_engine.py",
         ],
     )

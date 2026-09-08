@@ -44,7 +44,6 @@ SCREEN_FILES = [
     "ui/screens/scanner_screen.py",
     "ui/screens/orders_screen.py",
     "ui/screens/settings_screen.py",
-    "ui/screens/backtest_screen.py",
     "ui/screens/journal_screen.py",
     "ui/screens/journal_detail_screen.py",
     "ui/screens/scanner_detail_screen.py",

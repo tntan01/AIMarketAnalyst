@@ -64,7 +64,6 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 | `services/calendar_helpers.py` | Utility — shared helpers |
 | `config/interest_rates.json` | Config — lãi suất fallback |
 | `tests/test_news_service.py` | Test — `TestMacroTier1` kiểm tra tier 1 |
-| `scripts/backtest_macro_score.py` | Script — backtest điểm vĩ mô |
 | `core/correlation_check.py` | Bước 7 runtime — tính VIX base contribution, đọc eligible map và modulate theo pair/side khi flag bật |
 | `core/vix_pair_backtest.py` | Bước 7 engine — align common dates, Pearson/Fisher-z gate, schema/TTL/eligibility và atomic persistence |
 | `scripts/run_vix_pair_backtest.py` | Bước 7 runner — tải `^VIX` + 31 symbol, in summary và chỉ lưu map đủ điều kiện |
@@ -72,7 +71,7 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 | `reports/vix_pair_sensitivity_2026-08-09.json` | Bước 7 — evidence snapshot được giữ để review, không phải archive tự sinh của runner |
 | `config/settings.py`, `services/settings_service.py` | Bước 7 — flag mặc định OFF và persistence fail-closed |
 | `services/news_service.py`, `core/analysis_pipeline.py` | Bước 7 — truyền flag qua data quality cho cả BUY/SELL scoring |
-| `ui/screens/settings_screen.py` | Bước 7 — checkbox Advanced, cảnh báo chỉ bật sau backtest |
+| `ui/screens/settings_screen.py` | Bước 7 — checkbox Advanced, cần dữ liệu hiệu chuẩn cặp |
 | `packaging/pyinstaller.spec` | Bước 7 — bundle tracked validated map làm fallback |
 | `tests/test_vix_pair_sensitivity.py` | Bước 7 — scoring, map, loader và regression |
 | `tests/test_step7_review_fixes.py` | Bước 7 — review regressions: path, stale, reload, malformed, flag và alignment |
@@ -113,7 +112,7 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 | `compute_correlation_adjustment()` | `correlation_check.py:794` | Tổng hợp DXY/VIX/yields; nhận flag pair-aware và gọi `_vix_score()` |
 | `_vix_score()` | `correlation_check.py:522` | Bước 7 — base VIX score, eligible-map lookup và side-aware modulation |
 | `compute_vix_pair_sensitivity()` | `vix_pair_backtest.py:319` | Backtest ΔVIX% so với pair returns trên common close dates |
-| `sensitivity_map_ineligibility_reason()` | `vix_pair_backtest.py:716` | Giải thích vì sao map không được phép tác động runtime |
+| `sensitivity_map_ineligibility_reason()` | `vix_pair_sensitivity.py` (tách 2026-09-08; `vix_pair_backtest.py` tái export) | Giải thích vì sao map không được phép tác động runtime |
 
 ---
 

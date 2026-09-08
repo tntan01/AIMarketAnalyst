@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -16,7 +15,6 @@ from ui.matplotlib_theme import (
     apply_figure_theme,
     apply_legend_theme,
 )
-from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.journal_screen import (
     HAS_MATPLOTLIB,
     JournalScreen,
@@ -55,29 +53,6 @@ def test_shared_matplotlib_theme_covers_figure_axes_and_legend() -> None:
     assert _hex(axes.title.get_color()) == DARK_PALETTE.text
     assert _hex(legend.get_frame().get_facecolor()) == DARK_PALETTE.surface
     assert all(_hex(text.get_color()) == DARK_PALETTE.text for text in legend.get_texts())
-
-
-@pytest.mark.skipif(not HAS_MATPLOTLIB, reason="matplotlib is unavailable")
-def test_backtest_chart_is_themed_while_empty_and_after_hot_switch() -> None:
-    root = QWidget()
-    manager = ThemeManager()
-    manager.apply(root, theme="dark")
-    screen = BacktestScreen(app=MagicMock())
-    try:
-        assert _hex(screen._equity_figure.get_facecolor()) == DARK_PALETTE.background
-        assert len(screen._equity_figure.axes) == 1
-        assert "Chưa có kết quả backtest" in screen._equity_figure.axes[0].texts[0].get_text()
-
-        manager.apply(root, theme="light")
-        screen.refresh_theme_styles()
-
-        assert _hex(screen._equity_figure.get_facecolor()) == LIGHT_PALETTE.background
-        assert _hex(screen._equity_figure.axes[0].get_facecolor()) == LIGHT_PALETTE.background
-        assert _hex(screen._equity_figure.axes[0].texts[0].get_color()) == LIGHT_PALETTE.neutral
-    finally:
-        screen.close()
-        manager.apply(root, theme="dark")
-        root.close()
 
 
 @pytest.mark.skipif(not HAS_MATPLOTLIB, reason="matplotlib is unavailable")

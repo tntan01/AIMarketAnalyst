@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-03T15:57:06.435863+00:00",
+  "generated_at": "2026-09-08T20:48:21.465215+00:00",
   "source_manifest": "docs/ui/baseline/current/screenshot-manifest.json",
   "theme": "dark",
   "policy": {
@@ -9,61 +9,10 @@
     "largest_component_ratio_threshold": 0.005,
     "note": "Flagged means a connected neutral-bright surface occupies at least the configured share of the screenshot; manual classification is still required."
   },
-  "capture_count": 40,
+  "capture_count": 33,
   "flagged_count": 0,
   "flagged_names": [],
   "results": [
-    {
-      "path": "docs/ui/baseline/current/dark/dialog-backtest-ai-analysis.png",
-      "width": 800,
-      "height": 600,
-      "sample_step": 1,
-      "neutral_bright_ratio": 0.002742,
-      "largest_component_ratio": 5.8e-05,
-      "largest_component": {
-        "x": 39,
-        "y": 77,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "dialog-backtest-ai-analysis",
-      "kind": "dialog"
-    },
-    {
-      "path": "docs/ui/baseline/current/dark/dialog-backtest-config.png",
-      "width": 908,
-      "height": 321,
-      "sample_step": 2,
-      "neutral_bright_ratio": 0.001833,
-      "largest_component_ratio": 0.000164,
-      "largest_component": {
-        "x": 738,
-        "y": 289,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "dialog-backtest-config",
-      "kind": "dialog"
-    },
-    {
-      "path": "docs/ui/baseline/current/dark/dialog-backtest-symbol-selection.png",
-      "width": 420,
-      "height": 400,
-      "sample_step": 1,
-      "neutral_bright_ratio": 0.028964,
-      "largest_component_ratio": 0.000167,
-      "largest_component": {
-        "x": 18,
-        "y": 17,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "dialog-backtest-symbol-selection",
-      "kind": "dialog"
-    },
     {
       "path": "docs/ui/baseline/current/dark/dialog-dashboard-event.png",
       "width": 750,
@@ -250,74 +199,6 @@
       "flagged": false,
       "name": "dialog-scanner-symbol-selection",
       "kind": "dialog"
-    },
-    {
-      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-1-ng-cong-v-n.png",
-      "width": 1600,
-      "height": 900,
-      "sample_step": 2,
-      "neutral_bright_ratio": 0.002903,
-      "largest_component_ratio": 3.3e-05,
-      "largest_component": {
-        "x": 1518,
-        "y": 90,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "screen-backtest-tab-1-ng-cong-v-n",
-      "kind": "screen"
-    },
-    {
-      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-2-l-nh.png",
-      "width": 1600,
-      "height": 900,
-      "sample_step": 2,
-      "neutral_bright_ratio": 0.002903,
-      "largest_component_ratio": 3.3e-05,
-      "largest_component": {
-        "x": 1518,
-        "y": 90,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "screen-backtest-tab-2-l-nh",
-      "kind": "screen"
-    },
-    {
-      "path": "docs/ui/baseline/current/dark/screen-backtest-tab-3-nghi-n-c-u-n-ng-cao.png",
-      "width": 1600,
-      "height": 900,
-      "sample_step": 2,
-      "neutral_bright_ratio": 0.005786,
-      "largest_component_ratio": 3.3e-05,
-      "largest_component": {
-        "x": 1518,
-        "y": 90,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "screen-backtest-tab-3-nghi-n-c-u-n-ng-cao",
-      "kind": "screen"
-    },
-    {
-      "path": "docs/ui/baseline/current/dark/screen-backtest.png",
-      "width": 1600,
-      "height": 900,
-      "sample_step": 2,
-      "neutral_bright_ratio": 0.002903,
-      "largest_component_ratio": 3.3e-05,
-      "largest_component": {
-        "x": 1518,
-        "y": 90,
-        "width": 8,
-        "height": 8
-      },
-      "flagged": false,
-      "name": "screen-backtest",
-      "kind": "screen"
     },
     {
       "path": "docs/ui/baseline/current/dark/screen-dashboard.png",

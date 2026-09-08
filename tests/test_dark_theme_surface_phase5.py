@@ -111,6 +111,8 @@ def test_final_responsive_matrix_is_complete_and_clean() -> None:
     assert report["themes"] == ["dark", "light"]
     assert len(report["routes"]) == len(SUITE_ROUTES)
     assert set(report["dpi_profiles"]) == {"dpi-100", "dpi-125", "dpi-150"}
-    assert len(report["results"]) == 288
+    # 252 = 7 routes × 6 profiles × 2 themes × 3 DPI (route "backtest" đã gỡ
+    # khỏi ứng dụng — Bước 3 loại bỏ Backtest, 2026-09-08).
+    assert len(report["results"]) == 252
     assert report["issue_count"] == 0
     assert all(not item["issues"] for item in report["results"])

@@ -31,7 +31,6 @@ def test_completed_screen_clusters_have_no_local_stylesheets() -> None:
         UI / "screens" / "orders_screen.py",
         UI / "screens" / "journal_screen.py",
         UI / "screens" / "journal_detail_screen.py",
-        UI / "screens" / "backtest_screen.py",
     )
     assert {
         path.relative_to(ROOT).as_posix(): len(_stylesheet_calls(path))
@@ -51,7 +50,6 @@ def test_phase5_shared_component_selectors_exist_in_both_themes() -> None:
     required = (
         'QLabel#StatusIcon[state="warning"]',
         'QPushButton#DialogAiButton',
-        'QLabel#BacktestVerdict[verdictState="success"]',
         'QLabel#OrderDirectionPill[direction="buy"]',
         'QLabel#ScannerDetailHero[candidateState="ready"]',
         'QLabel#ScannerPanelValue[metricTone="success"]',

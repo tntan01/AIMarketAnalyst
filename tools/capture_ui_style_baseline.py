@@ -47,8 +47,6 @@ from PyQt6.QtWidgets import (
 
 from services.settings_service import SettingsService
 from ui.main_window import MainWindow
-from ui.screens import backtest_screen as backtest_module
-from ui.screens.backtest_screen import BacktestScreen, SymbolSelectionDialog
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.journal_screen import JournalScreen, MetricsExplanationDialog
 from ui.screens.orders_screen import OrdersScreen
@@ -68,13 +66,12 @@ SUITE_ROUTES = (
     "scanner",
     "orders",
     "scanner_detail",
-    "backtest",
     "journal",
     "journal_detail",
     "settings",
 )
 SUITE_SECTIONS = ("runtime", "explicit", "states")
-SUITE_EXPECTED_PER_THEME = 40
+SUITE_EXPECTED_PER_THEME = 33  # Bước 6: 7 capture Backtest/mỗi theme đã gỡ
 
 
 def _slug(value: str) -> str:
@@ -204,7 +201,6 @@ def _fake_app(theme: str) -> SimpleNamespace:
         settings_service=FakeSettingsService(theme),
         mt5=MagicMock(),
         scanner_controller=MagicMock(),
-        backtest_controller=MagicMock(),
         journal_controller=MagicMock(),
         ai_catalog_service=catalog,
         order_management_service=MagicMock(),
@@ -422,10 +418,6 @@ def _capture_explicit_dialogs(
 ) -> None:
     dialogs: list[tuple[str, QDialog]] = [
         (
-            "dialog-backtest-symbol-selection",
-            SymbolSelectionDialog(["EUR/USD"], window),
-        ),
-        (
             "dialog-scanner-symbol-selection",
             ScannerSymbolSelectionDialog(
                 ["EUR/USD", "GBP/USD", "XAU/USD"],
@@ -484,49 +476,9 @@ def _capture_runtime_dialogs(
             writer.record_failure(name, exc)
 
     with patch.object(QDialog, "exec", capture_exec):
-        # Capture the rich Backtest/Scanner Detail dialogs first. Repeated
+        # Capture the rich Scanner Detail dialogs first. Repeated
         # native grabs of many earlier dialogs can starve embedded rich-text
         # surfaces on the offscreen platform.
-        backtest: BacktestScreen = window.screens["backtest"]
-        backtest._ai_thread = MagicMock()
-        with patch.object(backtest, "_generate_stats_html", return_value=""):
-            run(
-                "dialog-backtest-ai-analysis",
-                lambda: backtest._on_ai_analysis_done(
-                    "Kết luận: hiệu suất ổn định trong mẫu baseline."
-                ),
-            )
-
-        action = SimpleNamespace(
-            visible=True,
-            label="💾 Lưu bản nháp",
-            kind=backtest_module.ACTION_SAVE_DRAFT,
-        )
-        config = {
-            "status": "DRAFT",
-            "regime": "aligned",
-            "side": "buy",
-            "min_score": 65,
-            "min_rr": 2.0,
-            "_evidence": "Đủ dữ liệu nghiên cứu baseline",
-            "out_of_sample_trades": 0,
-            "walk_forward_windows": 0,
-            "validation_reasons": [],
-        }
-        backtest.result = {"summary": {}}
-        import core.backtest_config_validation as validation_module
-
-        with patch.object(
-            backtest_module,
-            "result_action",
-            return_value=action,
-        ), patch.object(
-            validation_module,
-            "build_backtest_config",
-            return_value=config,
-        ):
-            run("dialog-backtest-config", backtest._apply_scanner_config)
-
         scanner_detail = window.screens["scanner_detail"]
         scanner_detail.row = {
             "symbol": "EUR/USD",

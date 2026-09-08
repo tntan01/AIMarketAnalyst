@@ -59,7 +59,6 @@ def test_phase3_shared_selectors_exist() -> None:
         "QPushButton#RestartButton",
         "QWidget#AnalysisChartSurface",
         "QFrame#InfoCard",
-        "QTextEdit#BacktestResultText",
         "QDialog#MarketBriefDialog",
         "QTextEdit#ScannerDetailText",
         "QFrame#HeroSummaryCard",

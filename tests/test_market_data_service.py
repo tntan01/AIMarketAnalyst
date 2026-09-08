@@ -5,7 +5,6 @@ from datetime import datetime
 import pandas as pd
 
 from core.market_models import Candle
-from core.system_backtest_engine import BacktestRequest, _request_to_dict
 from services.market_data_service import (
     fetch_macro_correlation_context,
     latest_change,
@@ -108,30 +107,3 @@ def test_serialize_correlation_context_converts_candles_to_dicts():
             }
         ]
     }
-
-
-def test_backtest_request_serializes_candle_correlation_context():
-    request = BacktestRequest(
-        symbol="EUR/USD",
-        broker_symbol="EURUSD",
-        start=datetime(2026, 6, 15),
-        end=datetime(2026, 6, 16),
-        initial_balance=10000.0,
-        risk_percent=1.0,
-        correlation_context={
-            "dxy_candles": [
-                Candle(
-                    time=datetime(2026, 6, 16),
-                    open=1.0,
-                    high=2.0,
-                    low=0.5,
-                    close=1.5,
-                )
-            ]
-        },
-    )
-
-    result = _request_to_dict(request)
-
-    assert result["correlation_context"]["dxy_candles"][0]["time"] == "2026-06-16T00:00:00"
-    assert result["correlation_context"]["dxy_candles"][0]["close"] == 1.5

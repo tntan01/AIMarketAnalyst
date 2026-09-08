@@ -1010,10 +1010,10 @@ def test_locked_constants_are_immutable_and_complete():
 
 def test_step03_module_is_not_wired_into_live_runtime():
     project_root = Path(__file__).resolve().parents[1]
+    # Bước 5 (2026-09-09): system_backtest_engine.py đã xóa cùng engine.
     runtime_consumers = (
         project_root / "core" / "analysis_pipeline.py",
         project_root / "core" / "scanner.py",
-        project_root / "core" / "system_backtest_engine.py",
         project_root / "controllers" / "scanner_controller.py",
     )
 

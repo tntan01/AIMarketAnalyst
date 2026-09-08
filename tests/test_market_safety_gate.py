@@ -970,10 +970,10 @@ class TestStrictConstruction:
 class TestModuleIsolation:
     def test_market_safety_gate_not_wired_into_live_runtime(self):
         root = Path(__file__).resolve().parent.parent
+        # Bước 5 (2026-09-09): system_backtest_engine.py đã xóa cùng engine.
         runtime_consumers = (
             root / "core/analysis_pipeline.py",
             root / "core/scanner.py",
-            root / "core/system_backtest_engine.py",
             root / "core/trade_gate_engine.py",
             root / "controllers/scanner_controller.py",
         )

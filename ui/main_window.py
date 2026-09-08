@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
 from controllers.app_controller import AppController
 from ui.icons import flat_icon
 from ui.navigation import NAV_ICONS, NAV_ITEMS
-from ui.screens.backtest_screen import BacktestScreen
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.journal_detail_screen import JournalDetailScreen
 from ui.screens.journal_screen import JournalScreen
@@ -23,7 +22,6 @@ from ui.screens.scanner_detail_screen import ScannerDetailScreen
 from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.orders_screen import OrdersScreen
 from ui.screens.settings_screen import SettingsScreen
-from ui.screens.supply_demand_screen import SupplyDemandScreen
 from ui.theme_manager import ThemeManager, resolve_theme
 
 
@@ -99,6 +97,11 @@ class MainWindow(QMainWindow):
     def navigate(self, route: str, payload: dict[str, object] | None = None) -> None:
         widget = self.screens.get(route)
         if widget is None:
+            # Tuyến không tồn tại (vd. route cũ "backtest" còn sót trong mã
+            # hoặc trạng thái điều hướng cũ): đưa ứng dụng về màn hình hợp lệ
+            # thay vì đứng yên ở stack hiện tại.
+            if route != "dashboard" and "dashboard" in self.screens:
+                self.navigate("dashboard")
             return
         if payload is not None and hasattr(widget, "set_analysis_result"):
             widget.set_analysis_result(payload)
@@ -136,10 +139,8 @@ class MainWindow(QMainWindow):
         screen_factories = {
             "dashboard": DashboardScreen,
             "scanner": ScannerScreen,
-            "supply_demand": SupplyDemandScreen,
             "orders": OrdersScreen,
             "scanner_detail": ScannerDetailScreen,
-            "backtest": BacktestScreen,
             "journal": JournalScreen,
             "journal_detail": JournalDetailScreen,
             "settings": SettingsScreen,
@@ -225,8 +226,6 @@ class MainWindow(QMainWindow):
     def _nav_key_for_route(self, route: str) -> str:
         if route.startswith("scanner"):
             return "scanner"
-        if route.startswith("backtest"):
-            return "backtest"
         if route.startswith("journal"):
             return "journal"
         return route
@@ -235,12 +234,10 @@ def nav_route(key: str) -> str:
     return {
         "dashboard": "dashboard",
         "scanner": "scanner",
-        "supply_demand": "supply_demand",
         "orders": "orders",
-        "backtest": "backtest",
         "journal": "journal",
         "settings": "settings",
-    }[key]
+    }.get(key, "dashboard")
 
 
 def button_label(key: str) -> str:

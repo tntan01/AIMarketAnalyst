@@ -55,10 +55,7 @@ def test_base_defines_shared_component_contracts() -> None:
         "QLabel#InfoCardLabel",
         "QLabel#InfoCardValue",
         "QLabel#InfoCardDetail",
-        "QTextEdit#BacktestResultText",
-        "QLabel#BacktestVerdict",
         "QLabel#MarketBadge",
-        "QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText",
     }
     assert required <= set(rules)
 
@@ -70,11 +67,7 @@ def test_theme_overlays_have_matching_component_contracts() -> None:
         "QLabel#InfoCardLabel",
         "QLabel#InfoCardValue",
         "QLabel#InfoCardDetail",
-        "QTextEdit#BacktestResultText",
         "QLabel#MarketBadge",
-        "QDialog#BacktestAnalysisDialog",
-        "QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText",
-        "QDialog#BacktestConfigDialog",
     }
     dark_rules = _rules(DARK)
     light_rules = _rules(LIGHT)

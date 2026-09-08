@@ -21,11 +21,7 @@
   "grouped_status_counts": {
     "BLOCKED": 3
   },
-  "ready_above_default_setup_floor": [
-    "buy",
-    "buy",
-    "buy"
-  ],
+  "ready_above_default_setup_floor": [],
   "ready_order_intents": [],
   "default_v3_artifact": {
     "kind": "v3_audit_only",
@@ -99,6 +95,7 @@
           "SAFETY_VOLATILITY_BAND_UNSET",
           "MACRO_DEADBAND_UNSET",
           "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_SCENARIO_POLICY_OPEN",
           "GATE_PORTFOLIO_POLICY_OPEN",
           "GATE_JOURNAL_POLICY_OPEN"
         ],
@@ -148,6 +145,7 @@
           "SAFETY_VOLATILITY_BAND_UNSET",
           "MACRO_DEADBAND_UNSET",
           "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_SCENARIO_POLICY_OPEN",
           "GATE_PORTFOLIO_POLICY_OPEN",
           "GATE_JOURNAL_POLICY_OPEN"
         ],
@@ -247,6 +245,7 @@
           "SAFETY_VOLATILITY_BAND_UNSET",
           "MACRO_DEADBAND_UNSET",
           "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_SCENARIO_POLICY_OPEN",
           "GATE_PORTFOLIO_POLICY_OPEN",
           "GATE_JOURNAL_POLICY_OPEN"
         ],
@@ -296,6 +295,7 @@
           "SAFETY_VOLATILITY_BAND_UNSET",
           "MACRO_DEADBAND_UNSET",
           "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_SCENARIO_POLICY_OPEN",
           "GATE_PORTFOLIO_POLICY_OPEN",
           "GATE_JOURNAL_POLICY_OPEN"
         ],
@@ -395,6 +395,7 @@
           "SAFETY_VOLATILITY_BAND_UNSET",
           "MACRO_DEADBAND_UNSET",
           "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_SCENARIO_POLICY_OPEN",
           "GATE_PORTFOLIO_POLICY_OPEN",
           "GATE_JOURNAL_POLICY_OPEN"
         ],
@@ -444,6 +445,7 @@
           "SAFETY_VOLATILITY_BAND_UNSET",
           "MACRO_DEADBAND_UNSET",
           "MACRO_UNKNOWN_CAP_UNSET",
+          "GATE_SCENARIO_POLICY_OPEN",
           "GATE_PORTFOLIO_POLICY_OPEN",
           "GATE_JOURNAL_POLICY_OPEN"
         ],

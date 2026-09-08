@@ -417,7 +417,7 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     SCANNER_SAFETY_AUDIT_NON_PIT: "Nguồn data có nhưng không point-in-time; không đủ điều kiện cho calibration/auto-entry.",
     SCANNER_SAFETY_AUDIT_UNKNOWN: "Trạng thái dữ liệu safety không xác định — fail-closed UNKNOWN, không PASS.",
     SCANNER_CALIBRATION_INSUFFICIENT: "Sample calibration không đủ min evidence; giữ threshold fail-closed, không chốt production.",
-    SCANNER_CONFIG_NOT_ACTIVATABLE: "Config chưa đủ điều kiện activate (version/schema/fingerprint/evidence) — backtest=False.",
+    SCANNER_CONFIG_NOT_ACTIVATABLE: "Config chưa đủ điều kiện activate (version/schema/fingerprint/evidence).",
     # Legacy v4-moniker alias keys (read-only migration 2026-08-17): artifacts
     # written before the icon renaming carry the old "SCANNER_V4_*"/"V4_*" code
     # values; keep their Vietnamese translation so old journals/reports still
@@ -433,7 +433,7 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     "SCANNER_V4_SAFETY_AUDIT_NON_PIT": "Nguồn data có nhưng không point-in-time; không đủ điều kiện cho calibration/auto-entry.",
     "SCANNER_V4_SAFETY_AUDIT_UNKNOWN": "Trạng thái dữ liệu safety không xác định — fail-closed UNKNOWN, không PASS.",
     "SCANNER_V4_CALIBRATION_INSUFFICIENT": "Sample calibration không đủ min evidence; giữ threshold fail-closed, không chốt production.",
-    "SCANNER_V4_CONFIG_NOT_ACTIVATABLE": "Config chưa đủ điều kiện activate (version/schema/fingerprint/evidence) — backtest=False.",
+    "SCANNER_V4_CONFIG_NOT_ACTIVATABLE": "Config chưa đủ điều kiện activate (version/schema/fingerprint/evidence).",
     "V4_THRESHOLD_POLICY_OPEN": "Threshold contract chưa có giá trị calibrate cho floor/gap/R:R, fail-closed không promote.",
     "V4_THRESHOLD_SCORE_FLOOR_NOT_MET": "Score của side được chọn dưới floor của threshold contract.",
     "V4_THRESHOLD_GAP_NOT_MET": "Chênh lệch score giữa hai side dưới min_score_gap của threshold contract.",

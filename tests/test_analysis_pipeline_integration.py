@@ -271,7 +271,7 @@ def _assert_full_contract(result: dict[str, Any]) -> None:
         "journal_feedback", "journal_feedback_by_side", "account_guard",
         "technical", "smc", "smc_trade_flags", "scenario_scores",
         "side_scores", "macro", "economic_events",
-        "scenarios", "entry_checklist", "backtest", "pattern_backtest",
+        "scenarios", "entry_checklist",
         "why_not_opposite", "confidence_reason", "risk_management",
         "ai_provider", "chart_payload", "final_score", "final_score_detail",
         "evidence", "execution_quality", "decision_engine",
@@ -431,7 +431,7 @@ def test_analyze_symbol_all_keys_present():
         "journal_feedback", "journal_feedback_by_side", "account_guard",
         "technical", "smc", "smc_trade_flags", "scenario_scores",
         "side_scores", "macro", "economic_events",
-        "scenarios", "entry_checklist", "backtest", "pattern_backtest",
+        "scenarios", "entry_checklist",
         "why_not_opposite", "confidence_reason", "risk_management",
         "ai_provider", "chart_payload", "final_score", "final_score_detail",
         "evidence", "execution_quality", "decision_engine",
@@ -440,8 +440,9 @@ def test_analyze_symbol_all_keys_present():
         assert key in result, f"Key '{key}' missing from analyze_symbol output"
 
 
-def test_fast_flags_activate_tier1_and_backtest_forces_full_path():
-    """Tier 1 can reject the scanner route, while backtests remain full."""
+def test_fast_flags_activate_tier1():
+    """Tier 1 can reject the scanner route (Bước 6: phần is_backtest đã gỡ
+    cùng engine — không còn caller mô phỏng nào của AnalysisPipeline)."""
     candles = _build_candles_by_timeframe(regime="trending_up")
     request = _default_input()
 
@@ -476,16 +477,6 @@ def test_fast_flags_activate_tier1_and_backtest_forces_full_path():
     detail_result = detail_pipeline.execute(request, candles)
     assert detail_pipeline._scanner_fast_tier1 is False
     assert detail_result["pipeline_route"] == "full"
-
-    backtest_pipeline = AnalysisPipeline()
-    backtest_result = backtest_pipeline.execute(
-        request,
-        candles,
-        is_backtest=True,
-        scanner_fast_tier1=True,
-    )
-    assert backtest_pipeline._scanner_fast_tier1 is False
-    assert backtest_result["pipeline_route"] == "full"
 
 
 def test_structural_reject_builder_preserves_full_contract_and_blocks_fallbacks():

@@ -390,19 +390,6 @@ QLabel#InfoCardDetail {
   @QSS_SMALL@
 }
 
-QTextEdit#BacktestResultText {
-  border: none;
-  border-radius: 6px;
-  padding: 8px;
-  @QSS_BODY@
-  @QSS_BODY@
-}
-
-QLabel#BacktestVerdict {
-  border-radius: 6px;
-  padding: 4px 10px;
-}
-
 QFrame#MiniStatCompact {
   background: transparent;
   border: none;
@@ -534,32 +521,6 @@ QLabel#CardDetail[statusTone="warning"],
 QLabel#CardDetail[statusTone="danger"],
 QLabel#CardDetail[statusTone="neutral"] {
   font-weight: 700;
-}
-
-QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText {
-  border-radius: 8px;
-  padding: 14px 16px;
-  @QSS_BODY@
-}
-
-QDialog#BacktestAnalysisDialog QTextEdit#BacktestAnalysisText QScrollBar:vertical {
-  background: transparent;
-  width: 8px;
-}
-
-QLabel#BacktestConfigRowTitle {
-  @QSS_BODY@
-  font-weight: bold;
-  padding-left: 8px;
-}
-
-QLabel#BacktestConfigRowValue {
-  background: transparent;
-  padding-right: 8px;
-}
-
-QLabel#BacktestSummarySeparator {
-  font-weight: bold;
 }
 
 QDialog#MarketBriefDialog {

@@ -12,11 +12,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from core.account_guard import check_account_guard
-from core.backtest_engine import replay_plan, empty_replay
-from core.backtest_feedback import compute_pattern_confidence
 from core.chart_payload import build_chart_payload
 from core.market_models import Candle
-from core.signal_engine import clamp
 from core.risk_engine import (
     AnalysisInput,
     build_scenarios,
@@ -225,7 +222,6 @@ class AnalysisPipeline:
         trade_date: datetime | None = None,
         execution_quality_score: int | float | str | None = None,
         thresholds: dict[str, int | float] | None = None,
-        is_backtest: bool = False,
         scan_interval_min: int = 15,
         scanner_fast_tier1: bool = False,
     ) -> dict[str, Any]:
@@ -250,12 +246,10 @@ class AnalysisPipeline:
         self._scan_interval_min = scan_interval_min
         self._execution_quality_score_in = execution_quality_score
         self._thresholds = thresholds
-        self._is_backtest = is_backtest
-        # Only the bulk scanner supplies this flag.  Backtests always retain
-        # the full pipeline even if an external caller supplies a fast-path
-        # flag.  (``scanner_fast_tier2`` was removed 16/08/2026 — it was set
-        # but never branched on anywhere.)
-        self._scanner_fast_tier1 = bool(scanner_fast_tier1) and not is_backtest
+        # Only the bulk scanner supplies this flag.  (``scanner_fast_tier2``
+        # was removed 16/08/2026; ``is_backtest`` was removed 2026-09-09 —
+        # Bước 6 loại bỏ Backtest: không còn caller mô phỏng nào.)
+        self._scanner_fast_tier1 = bool(scanner_fast_tier1)
         self._structural_reject: dict[str, Any] | None = None
         self._precomputed_smc: SmcScoringResult | None = None
         self._decision_engine_enabled = True
@@ -369,7 +363,6 @@ class AnalysisPipeline:
             ("_gate_result", {"allowed": False, "decision_cap": "TRADE_BLOCKED", "block_codes": [], "warning_codes": [], "reasons": ["Pipeline validation failed"]}),
             ("_account_guard_result", {"blocked": False, "block_codes": [], "warning_codes": []}),
             ("_main_view", "Validation failed"),
-            ("_pattern_feedback", {}),
             ("_reason_codes", []), ("_penalty_codes", []), ("_warning_codes", []), ("_block_codes", []),
             ("_reason_messages", []),
             ("_evidence_result", {}), ("_eq_score", 0), ("_eq_source", "fallback"),
@@ -500,7 +493,6 @@ class AnalysisPipeline:
             "buy": {"evaluation_status": evaluation_status},
             "sell": {"evaluation_status": evaluation_status},
         }
-        self._pattern_feedback = {"evaluation_status": evaluation_status}
         self._reason_codes = [reason_code]
         self._penalty_codes = []
         self._warning_codes = []
@@ -851,7 +843,6 @@ class AnalysisPipeline:
             strict_preferred_zones=True,
             # The canonical scorer's selected zone is the only decision source.
             require_preferred_zones=True,
-            is_backtest=self._is_backtest,
         )
         self._has_ready_plan = any(
             item.get("ready_to_trade") for item in self._scenarios
@@ -1330,20 +1321,11 @@ class AnalysisPipeline:
             self._decision_action, self._trade_permission["status"],
         )
 
-        # Pattern feedback (H1 backtest confidence)
-        self._pattern_feedback: dict[str, Any] = {}
-        if self._primary_scenario and self._h1:
-            p_trigger = str(self._primary_scenario.get("trigger_type", ""))
-            p_side = str(self._primary_scenario.get("type", ""))
-            if p_trigger and p_trigger != "none" and p_side in ("buy", "sell"):
-                self._pattern_feedback = compute_pattern_confidence(
-                    p_trigger, p_side, self._h1,
-                )
-                adj = float(self._pattern_feedback.get("confidence_adjustment", 0.0))
-                if adj != 0.0:
-                    self._macro_confidence_in = clamp(
-                        self._macro_confidence_in + adj, 0.3, 1.0,
-                    )
+        # Bước 4b loại bỏ Backtest (2026-09-08): ĐÃ Gỡ forward-test pattern
+        # H1 và phần điều chỉnh confidence mô phỏng khỏi luồng Analyze live
+        # — thay đổi hành vi có chủ đích theo yêu cầu, không có công thức bù.
+        # ``_macro_confidence_in`` giờ chỉ còn từ dữ liệu macro/data-quality
+        # như các bước trước đó.
 
         # --- Aggregate reason codes from all layers -------------------------
         best_side_scores = self._scores.get(self._best_side, {})
@@ -1754,15 +1736,9 @@ class AnalysisPipeline:
                     self._scores.get(best_side, {}),
                 )
             ),
-            "backtest": (
-                {"evaluation_status": "not_evaluated_due_to_fast_reject"}
-                if structural_reject is not None
-                else _conditional_backtest(
-                    self._request.symbol, primary_scenario, self._h1,
-                    self._best_score,
-                )
-            ),
-            "pattern_backtest": self._pattern_feedback,
+                        # Bước 4b: ĐÃ GỠ hai key kết quả mô phỏng (replay kế hoạch H1 +
+            # forward-test pattern) khỏi output Analyze live — xem báo cáo
+            # bước 4b (tác động trước/sau).
             "why_not_opposite": _why_not_opposite(best_side, self._scores),
             "confidence_reason": _confidence_reason(
                 self._technical,
@@ -2037,18 +2013,10 @@ def _parse_rr(value: object) -> float:
 # ---------------------------------------------------------------------------
 # Legacy compatibility helper
 # ---------------------------------------------------------------------------
-
-
-def _conditional_backtest(
-    symbol: str,
-    scenario: dict[str, Any],
-    h1_candles: list[Candle],
-    best_score: int,
-) -> dict[str, Any]:
-    """Run replay_plan only for symbols with meaningful scores (>=50)."""
-    if best_score < 50 or not scenario or not h1_candles:
-        return empty_replay("score below threshold or missing data")
-    return replay_plan(symbol, scenario, h1_candles)
+# Bước 4b loại bỏ Backtest (2026-09-08): ĐÃ GỠ helper replay H1 cùng các
+# import mô phỏng — nội dung mô phỏng không còn trong luồng live. Hai module
+# replay/pattern tách ở Bước 4 không còn người dùng production (chờ xóa ở
+# Bước 5).
 
 
 def build_analysis_context(contexts: list[Any]) -> dict[str, Any]:

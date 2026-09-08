@@ -26,9 +26,9 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 |---------|---------|
 | `main.py` | Entry point: khởi tạo runtime, QApplication, AppController, MainWindow |
 | `controllers/` | **DI container + điều phối.** `AppController` giữ singleton mọi service/controller. Mỗi màn hình nhận cùng 1 instance |
-| `core/` | **Logic nghiệp vụ thuần** (không phụ thuộc UI). Phân tích, SMC, scoring, risk, backtest, scanner engine |
+| `core/` | **Logic nghiệp vụ thuần** (không phụ thuộc UI). Phân tích, SMC, scoring, risk, scanner engine |
 | `services/` | **Truy cập bên ngoài + hạ tầng**: MT5, AI providers, news, journal (SQLite), telegram, storage, logging |
-| `workers/` | **Thread nền** (QThread/QObject) chạy tác vụ nặng: scan, analyze, backtest, param sweep |
+| `workers/` | **Thread nền** (QThread/QObject) chạy tác vụ nặng: scan, analyze |
 | `ui/` | **Giao diện PyQt6**: screens, components, theme, chart bridge |
 | `config/` | Cấu hình: constants, paths, settings, risk params, AI providers, symbol profiles |
 | `data/` | SQL migrations + seed data (journal DB) |
@@ -61,11 +61,6 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `docs/scanner/technical-scoring-architecture.md` — scoring contract runtime hiện hành
 - `docs/scanner/scanner-architecture.md` — **kiến trúc đích đã chốt**:
   TechnicalScore 4 thành phần, MarketSafetyGate, MacroGate và direct cutover
-
-### Backtest
-- `core/backtest_engine.py` — engine chính
-- `core/backtest_*.py` — config, execution, statistics, portfolio, walk-forward, monte-carlo, golden replay, validation
-- `controllers/backtest_controller.py` + `workers/backtest_worker.py`
 
 ### Vào lệnh MT5 (auto-entry)
 - `core/entry_engine.py` — logic vào lệnh

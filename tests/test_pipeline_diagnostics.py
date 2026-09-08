@@ -23,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.analysis_pipeline import AnalysisPipeline
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
-from core.system_backtest_engine import _aggregate_pipeline_diag
 
 
 # ---------------------------------------------------------------------------
@@ -232,87 +231,12 @@ def test_gate_per_gate_breakdown():
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Backtest engine aggregates pipeline diagnostics
-# ---------------------------------------------------------------------------
-
-def test_aggregate_pipeline_diag():
-    """Test the _aggregate_pipeline_diag helper function."""
-    pipeline_stats: dict = {}
-    gate_fail_counts: dict = {}
-
-    # Simulate 3 snapshots: 2 pass, 1 gate fail
-    diag1 = [
-        {"step": "validate", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "correlation", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "score", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "scenarios", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "direction", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "gate", "status": "pass", "summary": "ok", "details": {
-            "gate_checks": [
-                {"gate": "MT5", "status": "pass", "detail": "ok"},
-                {"gate": "Spread", "status": "pass", "detail": "ok"},
-                {"gate": "M15", "status": "warning", "detail": "M15 loose"},
-            ]
-        }},
-        {"step": "final_score", "status": "pass", "summary": "ok", "details": {}},
-    ]
-    diag2 = [
-        {"step": "validate", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "correlation", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "score", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "scenarios", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "direction", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "gate", "status": "fail", "summary": "blocked", "details": {
-            "gate_checks": [
-                {"gate": "MT5", "status": "pass", "detail": "ok"},
-                {"gate": "Spread", "status": "block", "detail": "abnormal"},
-                {"gate": "M15", "status": "warning", "detail": "M15 loose"},
-                {"gate": "ExpectedRR", "status": "warning", "detail": "RR<1.3"},
-            ]
-        }},
-        {"step": "final_score", "status": "warning", "summary": "low", "details": {}},
-    ]
-    diag3 = [
-        {"step": "validate", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "correlation", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "score", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "scenarios", "status": "warning", "summary": "no ready", "details": {}},
-        {"step": "direction", "status": "pass", "summary": "ok", "details": {}},
-        {"step": "gate", "status": "pass", "summary": "ok", "details": {
-            "gate_checks": [
-                {"gate": "MT5", "status": "pass", "detail": "ok"},
-                {"gate": "ScoreGap", "status": "warning", "detail": "gap<10"},
-            ]
-        }},
-        {"step": "final_score", "status": "pass", "summary": "ok", "details": {}},
-    ]
-
-    for diag in [diag1, diag2, diag3]:
-        _aggregate_pipeline_diag({"pipeline_diagnostics": diag}, pipeline_stats, gate_fail_counts)
-
-    # Verify stats
-    assert pipeline_stats["validate"] == {"pass": 3, "fail": 0, "warning": 0}
-    assert pipeline_stats["gate"] == {"pass": 2, "fail": 1, "warning": 0}
-    assert pipeline_stats["scenarios"] == {"pass": 2, "fail": 0, "warning": 1}
-    assert pipeline_stats["final_score"] == {"pass": 2, "fail": 0, "warning": 1}
-
-    # Verify gate fail counts
-    assert gate_fail_counts["Spread"] == 1  # blocked once
-    assert gate_fail_counts["M15"] == 2      # warning twice
-    assert gate_fail_counts["ExpectedRR"] == 1
-    assert gate_fail_counts["ScoreGap"] == 1
-    assert "MT5" not in gate_fail_counts    # never failed
-
-    print("  PASS: test_aggregate_pipeline_diag")
-
-
-# ---------------------------------------------------------------------------
 # Test 6: _format_ai_to_html strips markdown
 # ---------------------------------------------------------------------------
 
 def test_format_ai_to_html():
     """Test that AI response formatting strips ** markers and produces valid HTML."""
-    from ui.screens.backtest_screen import BacktestScreen
+    from ui.rich_text import format_ai_markdown_to_html
 
     raw = (
         "**1. Hệ thống có edge**\n"
@@ -324,7 +248,7 @@ def test_format_ai_to_html():
         "*Ghi chú: cần thêm dữ liệu*\n"
     )
 
-    html = BacktestScreen._format_ai_to_html(raw)
+    html = format_ai_markdown_to_html(raw)
 
     # Should NOT contain raw ** markers
     assert "**" not in html, f"HTML still contains ** markers: {html[:200]}"
@@ -496,7 +420,6 @@ def run_all_tests():
         ("Diagnostics in assembled result", test_diagnostics_in_result),
         ("Validation failure captured", test_validation_failure_captured),
         ("Gate per-gate breakdown", test_gate_per_gate_breakdown),
-        ("Aggregate pipeline diagnostics", test_aggregate_pipeline_diag),
         ("Format AI to HTML", test_format_ai_to_html),
         ("Build prompt with diagnostics", lambda: test_build_analysis_prompt_with_diagnostics(Path(tempfile.gettempdir()))),
         ("Diagnostics JSON roundtrip", test_diagnostics_json_roundtrip),

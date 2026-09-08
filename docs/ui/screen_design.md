@@ -3,6 +3,11 @@
 > Tài liệu này được xây dựng từ bản phân tích phần mềm **AI Market Analyst (Nhà phân tích thị trường AI)**.
 > Quy ước hiển thị: giao diện ưu tiên tiếng Việt ngắn gọn. Thuật ngữ tiếng Anh chỉ giữ khi cần thiết và phải có giải thích tiếng Việt ở lần hiển thị đầu tiên, tooltip hoặc mô tả phụ. Ví dụ ưu tiên **Bảng điều khiển**, nếu cần có thể ghi **Bảng điều khiển (Dashboard)**.
 >
+> **Lưu ý Bước 6 loại bỏ Backtest (2026-09-09):** màn Backtest, nút "Dán cấu
+> hình Backtest", các cột bằng chứng "…BT" trong Settings và phần Replay/
+> Backtest trong kết quả phân tích ĐÃ GỠ khỏi runtime. Các đoạn thiết kế liên
+> quan Backtest bên dưới chỉ còn giá trị tham khảo lịch sử.
+>
 > Scanner V2/Candidate Engine và scorer vẫn là runtime hiện hành. Thiết kế
 > Scanner ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**; các yêu cầu
 > trong tài liệu này chỉ là target sau direct cutover.
@@ -62,7 +67,7 @@ Quyết định thiết kế bắt buộc:
 - Không để màn hình kết quả phân tích trở thành một trang dài phải cuộn nhiều. Phần thấy ngay phải có: kết luận, thiên hướng, quyền giao dịch, điểm mua/bán, entry, SL, TP, R:R, lot và trạng thái dữ liệu.
 - Entry phải hiển thị kèm `entry_status` và `confirmation_score`. Nếu trạng thái là `watch_zone` hoặc `waiting_confirmation`, UI phải thể hiện rõ đây là vùng theo dõi/chờ xác nhận, không phải lệnh đã sẵn sàng.
 - Kết quả phân tích phải có checklist entry dễ đọc gồm: Xu hướng, Vùng POI, Xác nhận H1, Tin tức, Spread, R:R, Lot. Mỗi dòng hiển thị trạng thái `Đạt` hoặc `Chờ`, giá trị liên quan và ghi chú ngắn.
-- Kết quả phân tích phải có phần Replay/Backtest tóm tắt: số lệnh replay, win rate, expectancy R, average R, MFE/MAE trung bình, max drawdown và hiệu quả theo phiên. Phần này không thay thế quyết định vào lệnh realtime, chỉ dùng để kiểm chứng setup có lịch sử hợp lý hay không.
+- ~~Kết quả phân tích phải có phần Replay/Backtest tóm tắt~~ — **ĐÃ GỠ (2026-09-09)**: kết quả phân tích không còn nội dung mô phỏng.
 - Kết quả phân tích phải có phần Vĩ mô hiển thị assessment BUY/SELL, confidence,
   status, macro theme theo từng đồng tiền, Tin mới nhất, điểm nóng thế giới và
   lịch kinh tế. Trong target, phần này không được trình bày như component hay
@@ -244,7 +249,7 @@ Cấu hình AI, dữ liệu MT5, giao dịch và hiển thị.
 - Quy ước mới: **cấm dùng emoji làm icon nút**; cần glyph mới thì thêm vào
   registry `ui/icons.py` (viewBox 24, stroke-based) thay vì hardcode asset.
 - Phase 2 (hoàn thành 03/09/2026): icon phẳng cho 7 màn còn lại
-  (scanner, orders, settings, backtest, journal, journal_detail, scanner_detail)
+  (scanner, orders, settings, journal, journal_detail, scanner_detail) — màn backtest đã gỡ 2026-09-09
   + RestartButton và sidebar toggle trong `ui/main_window.py`; kế hoạch chi tiết
   tại `../plans/flat-icons-phase2-plan.md`.
 - Phase 4 (04/09/2026): sidebar chuyển thành **icon rail gắn cứng 48px** —
@@ -1153,18 +1158,17 @@ BẢNG CẤU HÌNH MÃ QUÉT
 Bảng hỗ trợ đầy đủ 28 cặp Forex + XAU/USD + XAG/USD + BTC/USD.
 
 Nút chức năng:
-[🔍 Tự phát hiện mã broker] [📋 Dán cấu hình Backtest] [💾 Lưu cấu hình mã quét]
+[🔍 Tự phát hiện mã broker] [💾 Lưu cấu hình mã quét]  (nút Dán cấu hình Backtest đã gỡ 2026-09-09)
 ```
 
 Quy tắc phần Symbols:
 
 - `Ready/Watch/Wait` là ngưỡng live của Decision Engine và được phép chỉnh.
-- `Min Score BT/Regime BT/Hướng BT/RR tối thiểu BT` là bằng chứng do Backtest
-  tạo, chỉ đọc tại Settings; muốn đổi phải chạy lại Backtest.
-- Chỉ config `VALIDATED`, đúng contract SMC và còn hạn mới cho phép tick
-  **Dùng BT đã duyệt**.
-- `DRAFT/INVALID/EXPIRED` vẫn được hiển thị và lưu để kiểm tra lại sau nhưng
-  luôn inactive. Scanner của mã đó dùng SMC + `DEFAULT_RULES`.
+- **ĐÃ GỠ (2026-09-09):** 4 cột bằng chứng `Min Score BT/Regime BT/Hướng BT/RR
+  tối thiểu BT` và checkbox "Dùng BT đã duyệt". Bảng hiện hành: `Quét` (quyền
+  quét độc lập) + `Auto-trade` (quyền giao dịch tường minh, không điều kiện
+  kiểm định) + Ready/Watch/Wait. Mã không có cấu hình chiến lược dùng được
+  thì Scanner dùng SMC + `DEFAULT_RULES`, không auto-trade (fail-closed).
 - Dán JSON phải chạy canonical validator trước khi cho phép kích hoạt; thao tác
   dán hoặc tick không được tự nâng một bản nháp thành `VALIDATED`.
 
@@ -1285,7 +1289,7 @@ Settings Storage (nơi lưu cài đặt):
 [ ] Chặn giao dịch quanh tin đỏ
 [ ] Đánh giá sự kiện lớn trước 4-48h cho MacroGate (Bước 5; target)
 [ ] AI veto/cap vĩ mô cho tín hiệu mạnh (Bước 6; target)
-[ ] VIX theo độ nhạy từng cặp tiền (Bước 7 — chỉ bật sau backtest)
+[ ] VIX theo độ nhạy từng cặp tiền (Bước 7 — cần dữ liệu hiệu chuẩn cặp)
 
 Auto-scan mặc định: [ 5 phút ▼ ]
 Telegram bot token: [ ... ]
@@ -1400,7 +1404,7 @@ Với MVP (phiên bản khả dụng tối thiểu), nên coi Settings (Cài đ�
   - **"Hiển thị lệnh" dialog** (`_build_order_rows` skip `entry_zone_source == "fallback"`)
   - **Auto-trade** (`_best_scenario` skip fallback → `_is_auto_trade_candidate` trả về False)
   - **Telegram alerts** (`_get_alert_order_candidates` skip fallback)
-- Logic này áp dụng cho cả Nhánh 1 (backtest=true) và Nhánh 2 (backtest=false).
+- Logic này áp dụng cho cả Nhánh 1 (có cấu hình chiến lược riêng) và Nhánh 2 (DEFAULT_RULES).
 
 </details>
 

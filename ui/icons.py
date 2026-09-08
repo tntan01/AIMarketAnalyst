@@ -169,7 +169,7 @@ ICONS: dict[str, str] = {
     "folder-open": (
         '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'
     ),
-    # Tam giác chạy (chạy backtest / chạy quét / bộ lọc)
+    # Tam giác chạy (chạy quét / kiểm tra / bộ lọc)
     "play": (
         '<polygon points="5 3 19 12 5 21 5 3"/>'
     ),

@@ -57,7 +57,7 @@ def main():
 
         try:
             pipe = AnalysisPipeline()
-            result = pipe.execute(req, candles, m15_candles=candles.get("M15"), is_backtest=False)
+            result = pipe.execute(req, candles, m15_candles=candles.get("M15"))
         except Exception as e:
             no_data.append(symbol)
             continue

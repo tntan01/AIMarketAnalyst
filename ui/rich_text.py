@@ -283,3 +283,115 @@ def empty_state_html(
         theme=theme,
         palette=palette,
     )
+
+
+def format_ai_markdown_to_html(raw: str, light: bool = False) -> str:
+    """Render văn bản AI (markdown-lite) thành HTML inline theo theme.
+
+    Helper tổng quát, trước đây là ``BacktestScreen._format_ai_to_html`` —
+    dời về rich_text khi gỡ màn Backtest (Bước 3, 2026-09-08) vì được dùng
+    chung cho phản hồi AI, không gắn với Backtest.
+    """
+
+    lines = raw.splitlines()
+    html_lines: list[str] = []
+    _esc = escape
+
+    if light:
+        h_color = "#0f172a"
+        t_color = "#334155"
+        m_color = "#64748b"
+        acc_color = "#c2410c"
+        b_color = "#f1f5f9"
+        b_border = "#e2e8f0"
+    else:
+        h_color = "#f8fafc"
+        t_color = "#cbd5e1"
+        m_color = "#94a3b8"
+        acc_color = "#f59e0b"
+        b_color = "#1e293b"
+        b_border = "#334155"
+
+    def _highlight_numbers(text: str) -> str:
+        """Wrap numbers and key metrics in styled spans."""
+        import re as _re
+        # Highlight R values: +0.15R, -1.0R, 2.54R
+        text = _re.sub(r'([+-]?\d+\.?\d*R)', r'<b style="color:' + acc_color + r';">\1</b>', text)
+        # Highlight percentages: 45.5%
+        text = _re.sub(r'(\d+\.?\d*%)', r'<b style="color:' + acc_color + r';">\1</b>', text)
+        # Highlight profit factor numbers: PF 1.5, PF=2.54
+        text = _re.sub(r'(PF\s*=?\s*)(\d+\.?\d*)',
+                      r'\1<b style="color:' + acc_color + r';">\2</b>', text)
+        return text
+
+    in_list = False
+    list_type = None
+
+    def _end_list():
+        nonlocal in_list, list_type
+        if in_list:
+            html_lines.append("</ul>" if list_type == "ul" else "</ol>")
+            in_list = False
+            list_type = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped:
+            _end_list()
+            continue
+
+        # Detect heading: ends with colon, or is UPPERCASE, or starts with number+dot+space pattern like "1."
+        is_heading = False
+        if stripped.endswith(":") and len(stripped) < 55 and len(stripped[:-1].split()) <= 7:
+            is_heading = True
+        elif stripped.isupper() and len(stripped) > 5:
+            is_heading = True
+
+        if is_heading:
+            _end_list()
+            clean = _esc(stripped.replace("*", "").replace("#", "").replace("_", "").replace("`", ""))
+            html_lines.append(
+                f'<div style="{QSS_SUBTITLE}font-weight:700;color:{h_color};'
+                f'margin:16px 0 4px 0;padding-bottom:4px;'
+                f'border-bottom:1px solid {b_border};">{clean}</div>'
+            )
+            continue
+
+        # Numbered items: "1. text" or "1) text"
+        m = re.match(r"^(\d+)[.)]\s+(.*)", stripped)
+        if m:
+            if not in_list or list_type != "ol":
+                _end_list()
+                html_lines.append(f'<ol style="margin:4px 0;padding-left:20px;color:{t_color};{QSS_BODY}line-height:1.55;">')
+                in_list = True
+                list_type = "ol"
+            content = _highlight_numbers(_esc(m.group(2).replace("*", "").replace("#", "").replace("_", "").replace("`", "")))
+            html_lines.append(f"<li style='margin:2px 0;'>{content}</li>")
+            continue
+
+        # Bullet items: "- text", "* text", "• text"
+        m = re.match(r"^[-*•]\s+(.*)", stripped)
+        if m:
+            if not in_list or list_type != "ul":
+                _end_list()
+                html_lines.append(f'<ul style="margin:4px 0;padding-left:20px;color:{t_color};{QSS_BODY}line-height:1.55;">')
+                in_list = True
+                list_type = "ul"
+            content = _highlight_numbers(_esc(m.group(1).replace("*", "").replace("#", "").replace("_", "").replace("`", "")))
+            html_lines.append(f"<li style='margin:2px 0;'>{content}</li>")
+            continue
+
+        # Regular text
+        _end_list()
+        clean = _highlight_numbers(_esc(stripped.replace("*", "").replace("#", "").replace("_", "").replace("`", "")))
+        html_lines.append(
+            f'<p style="margin:4px 0;color:{t_color};{QSS_BODY}line-height:1.55;">{clean}</p>'
+        )
+
+    _end_list()
+    body = "\n".join(html_lines)
+    return (
+        f'<div style="{QSS_BODY}">'
+        f"{body}</div>"
+    )

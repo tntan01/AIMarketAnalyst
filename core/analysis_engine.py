@@ -34,13 +34,12 @@ def analyze_symbol(
     trade_date: datetime | None = None,
     execution_quality_score: int | float | str | None = None,
     thresholds: dict[str, int | float] | None = None,
-    is_backtest: bool = False,
     scanner_fast_tier1: bool = False,
 ) -> dict[str, Any]:
     """Orchestrate the full market analysis pipeline.
 
-    This is the main entry point used by the scanner controller, backtest
-    engine, and integration tests.  It delegates to
+    This is the main entry point used by the scanner controller and
+    integration tests.  It delegates to
     :class:`~core.analysis_pipeline.AnalysisPipeline` while keeping the
     exact same signature and output contract.
 
@@ -64,6 +63,5 @@ def analyze_symbol(
         trade_date=trade_date,
         execution_quality_score=execution_quality_score,
         thresholds=thresholds,
-        is_backtest=is_backtest,
         scanner_fast_tier1=scanner_fast_tier1,
     )

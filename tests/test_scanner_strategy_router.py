@@ -1,43 +1,34 @@
-"""Phase-2 Strategy Router branch, validation and lifecycle tests."""
+"""Strategy Router lean — branch/routing tests cho luồng live (Bước 5).
+
+Bước 5 loại bỏ Backtest (2026-09-09): các test evidence-lifecycle
+(validate_backtest_config, apply/merge/serialize evidence, round-trip
+validation metadata) đã xóa cùng engine — chúng chỉ kiểm tra tính năng
+Backtest đã loại bỏ. File này giữ các test bảo vệ Scanner/auto-trade live:
+DEFAULT_RULES, nhánh cấu hình riêng (lean), fail-closed, ngưỡng Decision
+Engine và legacy-settings load.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
 from config.settings import SymbolScanSettings
-from core.backtest_contract import validation_engine_contract
 from controllers.scanner_controller import ScannerController
-from core.backtest_config import (
-    analysis_thresholds_for_symbol,
-    apply_validated_backtest_config,
-    preserve_or_invalidate_manual_config,
-    serialize_backtest_config,
-)
-from core.backtest_config_validation import (
-    BACKTEST_CONFIG_SCHEMA_VERSION,
-    BACKTEST_VALIDATION_VERSION,
-    validation_fingerprint,
-)
-from core.scanner_candidate_engine import evaluate_scanner_candidate
 from core.scanner import ScannerRequest
+from core.scanner_candidate_engine import evaluate_scanner_candidate
 from core.scanner_models import (
     BRANCH_BACKTEST_INVALID,
     BRANCH_BACKTEST_VALIDATED,
     BRANCH_DEFAULT_RULES,
-    CONFIG_EXPIRED,
     CONFIG_VALIDATED,
-    CONFIG_VERSION_MISMATCH,
     OUT_OF_STRATEGY,
     READY_NOW,
-    SCANNER_SCORER_VERSION,
     STRATEGY_ROUTER_VERSION,
 )
-from core.scanner_strategy_router import (
-    route_strategy,
-    validate_backtest_config,
+from core.scanner_strategy_router import route_strategy
+from core.symbol_scan_config import (
+    analysis_thresholds_for_symbol,
+    serialize_symbol_auto_trade_config,
 )
 from services.settings_service import SettingsService
-from tests.phase7_helpers import ready_release_report
 
 
 def _scenario(side: str) -> dict:
@@ -101,125 +92,26 @@ def _row(**overrides) -> dict:
     return row
 
 
-def _validated_config(**overrides) -> dict:
-    engine_contract = validation_engine_contract()
+def _compact_config(**overrides) -> dict:
+    """Cấu hình chiến lược per-symbol dạng gọn (hình dạng payload live)."""
+
     config = {
-        "schema_version": BACKTEST_CONFIG_SCHEMA_VERSION,
-        "validation_version": BACKTEST_VALIDATION_VERSION,
-        "engine_contract_version": engine_contract["contract_version"],
-        "engine_version": engine_contract["engine_version"],
-        "purpose": engine_contract["purpose"],
-        "execution_parity": engine_contract["execution_parity"],
-        "data_manifest_version": engine_contract[
-            "data_manifest_version"
-        ],
-        "point_in_time_data": engine_contract["point_in_time_data"],
-        "dataset_hash": "a" * 64,
-        "data_quality_status": "OK",
-        "execution_policy_version": engine_contract[
-            "execution_policy_version"
-        ],
-        "entry_fill_model": engine_contract["entry_fill_model"],
-        "exit_evaluation_model": engine_contract[
-            "exit_evaluation_model"
-        ],
-        "same_bar_ambiguity_policy": engine_contract[
-            "same_bar_ambiguity_policy"
-        ],
-        "execution_timeframe": engine_contract["execution_timeframe"],
-        "synthetic_trades_allowed": engine_contract[
-            "synthetic_trades_allowed"
-        ],
-        "execution_mode": engine_contract["execution_mode"],
-        "execution_model_version": engine_contract[
-            "execution_model_version"
-        ],
-        "cost_model_version": engine_contract["cost_model_version"],
-        "quote_conversion_model_version": engine_contract[
-            "quote_conversion_model_version"
-        ],
-        "cost_model_fingerprint": engine_contract[
-            "cost_model_fingerprint"
-        ],
-        "quote_conversion_fingerprint": engine_contract[
-            "quote_conversion_fingerprint"
-        ],
-        "candidate_ledger_version": engine_contract["candidate_ledger_version"],
-        "candidate_replay_version": engine_contract["candidate_replay_version"],
-        "frozen_strategy_version": engine_contract["frozen_strategy_version"],
-        "frozen_strategy_applied": engine_contract["frozen_strategy_applied"],
-        "oos_replay": engine_contract["oos_replay"],
-        "provenance_version": "backtest-provenance-v1",
-        "code_revision": "b" * 40,
-        "request_fingerprint": "c" * 64,
-        "execution_fingerprint": "d" * 64,
-        "provenance_fingerprint": "e" * 64,
-        "config_id": "EURUSD-range-buy-v3",
-        "status": "VALIDATED",
         "symbol": "EUR/USD",
-        "allowed_regimes": ["range"],
+        "config_id": "EURUSD-range-buy-v3",
         "regime": "range",
+        "allowed_regimes": ["range"],
         "side": "buy",
-        "score_metric": "setup_score",
         "min_score": 65,
         "min_rr": 1.5,
-        "scorer_version": SCANNER_SCORER_VERSION,
-        "feature_version": "scanner-features-v3",
-        "smc_scorer_version": "smc-v2",
-        "smc_scoring_mode": "v2",
-        "trained_from": "2025-01-01T00:00:00+00:00",
-        "trained_to": "2025-06-30T00:00:00+00:00",
-        "validated_from": "2025-07-01T00:00:00+00:00",
-        "validated_to": "2025-12-31T00:00:00+00:00",
-        "in_sample_trades": 120,
-        "out_of_sample_trades": 46,
-        "oos_expectancy_r": 0.24,
-        "oos_profit_factor": 1.42,
-        "oos_max_drawdown_r": 5.8,
-        "expectancy_ci_low": 0.05,
-        "expectancy_ci_high": 0.43,
-        "statistics_version": "backtest-statistics-v1",
-        "probability_positive_edge_pct": 97.5,
-        "one_sided_p_value": 0.025,
-        "minimum_required_trades": 8,
-        "statistical_power_passed": True,
-        "walk_forward_windows": 3,
-        "walk_forward_verdict": "ROBUST",
-        "validated_at": "2026-07-24T00:00:00+00:00",
-        "expires_at": "2027-07-24T00:00:00+00:00",
-        "release_report": ready_release_report(),
+        "score_metric": "setup_score",
     }
     config.update(overrides)
-    config["validation_fingerprint"] = validation_fingerprint(config)
     return config
 
 
-def test_previous_engine_config_is_invalid_after_phase0_lock():
-    config = _validated_config()
-    config["schema_version"] = 4
-    config["validation_version"] = "phase8-smc-v2-oos-v1"
-    config.pop("engine_contract_version")
-    config.pop("engine_version")
-    config.pop("purpose")
-    config.pop("execution_parity")
-    config["validation_fingerprint"] = validation_fingerprint(config)
-
-    decision = evaluate_scanner_candidate(_row(), config)
-
-    assert decision.branch == BRANCH_BACKTEST_INVALID
-    assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
-    assert "BACKTEST_SCHEMA_VERSION_MISMATCH" in decision.reason_codes
-    assert "BACKTEST_ENGINE_VERSION_MISMATCH" in decision.reason_codes
-
-
-def test_missing_execution_policy_fails_closed_as_version_mismatch():
-    config = _validated_config()
-    config["execution_policy_version"] = ""
-
-    status, reasons = validate_backtest_config(config, _row())
-
-    assert status == CONFIG_VERSION_MISMATCH
-    assert "BACKTEST_EXECUTION_POLICY_VERSION_MISMATCH" in reasons
+# ---------------------------------------------------------------------------
+# DEFAULT_RULES
+# ---------------------------------------------------------------------------
 
 
 def test_default_rules_pass_only_with_clear_gap_score_and_rr():
@@ -261,86 +153,36 @@ def test_default_rules_reject_rr_below_default_minimum():
     assert "EXPECTED_RR_BELOW_DEFAULT_MIN" in decision.reason_codes
 
 
-def test_validated_config_routes_to_backtest_validated():
-    decision = evaluate_scanner_candidate(_row(), _validated_config())
+# ---------------------------------------------------------------------------
+# Nhánh cấu hình riêng (lean — giá trị enum lịch sử BACKTEST_VALIDATED)
+# ---------------------------------------------------------------------------
+
+
+def test_compact_config_routes_to_configured_branch():
+    decision = evaluate_scanner_candidate(_row(), _compact_config())
     assert decision.branch == BRANCH_BACKTEST_VALIDATED
     assert decision.strategy.config_status == CONFIG_VALIDATED
     assert decision.status == READY_NOW
     assert decision.to_dict()["strategy_router_version"] == STRATEGY_ROUTER_VERSION
 
 
-def test_legacy_config_without_validation_metadata_routes_invalid():
-    legacy = {
-        "regime": "range",
-        "side": "buy",
-        "score_metric": "setup_score",
-        "min_score": 65,
-        "min_rr": 1.5,
-    }
-    decision = evaluate_scanner_candidate(_row(), legacy)
-    assert decision.branch == BRANCH_BACKTEST_INVALID
-    assert decision.auto_trade_candidate is False
-    assert decision.selected_side == "buy"
-    assert "BACKTEST_CONFIG_INVALID" in decision.reason_codes
-    assert "BACKTEST_STATUS_NOT_VALIDATED" in decision.reason_codes
-    assert "BACKTEST_SCORER_VERSION_MISMATCH" in decision.reason_codes
-
-
-def test_previous_scanner_v2_config_is_invalid_after_smc_v2_activation():
+def test_plain_strategy_config_without_evidence_routes_live():
+    # Bước 4b: cấu hình chiến lược tối giản (không bằng chứng kiểm định)
+    # được route — quyền do người dùng cấp qua auto_trade_permitted.
     decision = evaluate_scanner_candidate(
         _row(),
-        _validated_config(
-            scorer_version="scanner-v2",
-            feature_version="scanner-features-v2",
-        ),
-    )
-    assert decision.branch == BRANCH_BACKTEST_INVALID
-    assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
-    assert "BACKTEST_SCORER_VERSION_MISMATCH" in decision.reason_codes
-
-
-def test_config_without_smc_v2_scorer_version_fails_closed():
-    config = _validated_config()
-    config["smc_scorer_version"] = ""
-    config["validation_fingerprint"] = validation_fingerprint(config)
-
-    decision = evaluate_scanner_candidate(_row(), config)
-
-    assert decision.branch == BRANCH_BACKTEST_INVALID
-    assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
-    assert "BACKTEST_SMC_SCORER_VERSION_MISMATCH" in (
-        decision.reason_codes
-    )
-
-
-def test_legacy_runtime_cannot_use_thresholds_calibrated_for_v2():
-    row = _row(
-        smc_scorer_version="smc-v1",
-        smc_scoring_mode="legacy",
-        scoring_provenance={
-            "smc_scorer_version": "smc-v1",
-            "smc_scoring_mode": "legacy",
+        {
+            "symbol": "EUR/USD",
+            "regime": "range",
+            "side": "buy",
+            "score_metric": "setup_score",
+            "min_score": 65,
+            "min_rr": 1.5,
         },
     )
-
-    decision = evaluate_scanner_candidate(row, _validated_config())
-
-    assert decision.branch == BRANCH_BACKTEST_INVALID
-    assert decision.strategy.config_status == CONFIG_VERSION_MISMATCH
-    assert "BACKTEST_RUNTIME_SMC_VERSION_MISMATCH" in (
-        decision.reason_codes
-    )
-
-
-def test_expired_config_is_invalid():
-    now = datetime(2026, 7, 24, tzinfo=timezone.utc)
-    status, reasons = validate_backtest_config(
-        _validated_config(expires_at=(now - timedelta(days=1)).isoformat()),
-        _row(),
-        now=now,
-    )
-    assert status == CONFIG_EXPIRED
-    assert "BACKTEST_CONFIG_EXPIRED" in reasons
+    assert decision.branch == BRANCH_BACKTEST_VALIDATED
+    assert decision.strategy_eligible is True
+    assert decision.selected_side == "buy"
 
 
 def test_side_best_locks_the_current_best_side():
@@ -358,7 +200,7 @@ def test_side_best_locks_the_current_best_side():
     )
     decision = evaluate_scanner_candidate(
         row,
-        _validated_config(side="best"),
+        _compact_config(side="best"),
     )
     assert decision.branch == BRANCH_BACKTEST_VALIDATED
     assert decision.selected_side == "sell"
@@ -370,7 +212,7 @@ def test_side_best_locks_the_current_best_side():
 def test_fixed_buy_never_uses_sell_scenario():
     row = _row()
     row["analysis_result"]["scenarios"] = [_scenario("sell")]
-    decision = evaluate_scanner_candidate(row, _validated_config(side="buy"))
+    decision = evaluate_scanner_candidate(row, _compact_config(side="buy"))
     assert decision.branch == BRANCH_BACKTEST_VALIDATED
     assert decision.auto_trade_candidate is False
     assert decision.scenario is None
@@ -378,7 +220,7 @@ def test_fixed_buy_never_uses_sell_scenario():
 
 
 def test_allowed_regimes_are_supported():
-    config = _validated_config(regime="", allowed_regimes=["range", "trend_up"])
+    config = _compact_config(regime="", allowed_regimes=["range", "trend_up"])
     decision = evaluate_scanner_candidate(_row(), config)
     assert decision.branch == BRANCH_BACKTEST_VALIDATED
     assert decision.strategy_eligible is True
@@ -387,30 +229,54 @@ def test_allowed_regimes_are_supported():
 def test_config_symbol_mismatch_is_invalid_not_default_branch():
     decision = evaluate_scanner_candidate(
         _row(),
-        _validated_config(symbol="GBP/USD"),
+        _compact_config(symbol="GBP/USD"),
     )
     assert decision.branch == BRANCH_BACKTEST_INVALID
     assert "BACKTEST_SYMBOL_MISMATCH" in decision.reason_codes
 
 
-def test_invalid_config_falls_back_to_default_side_but_never_auto_trades():
+def test_side_mismatch_config_never_auto_trades():
+    # Lifecycle status không còn được đọc; fail-closed đến từ kiểm tra live —
+    # side cấu hình lệch best_side ⇒ không eligible.
     strategy, selected = route_strategy(
         _row(),
-        _validated_config(status="DRAFT", side="sell"),
+        {"symbol": "EUR/USD", "regime": "range", "side": "sell",
+         "min_score": 65, "min_rr": 1.5},
     )
-    assert strategy.branch == BRANCH_BACKTEST_INVALID
-    assert strategy.selected_side == "buy"
+    assert strategy.branch == BRANCH_BACKTEST_VALIDATED
     assert strategy.eligible is False
-    assert selected is not None and selected.side == "buy"
+    assert "CONFIG_SIDE_MISMATCH" in strategy.reason_codes
+    assert selected is not None and selected.side == "sell"
+
+
+def test_compact_payload_from_settings_routes_validated():
+    # Payload gọn do symbol_scan_config serialize là hình dạng chuẩn live.
+    cfg = SymbolScanSettings(
+        scan_enabled=True,
+        auto_trade_permitted=True,
+        auto_trade_regime="range",
+        auto_trade_side="buy",
+        min_score=68,
+        min_expected_rr=1.6,
+    )
+    payload = serialize_symbol_auto_trade_config(cfg, symbol="EUR/USD")
+    assert payload is not None
+    decision = evaluate_scanner_candidate(_row(), payload)
+    assert decision.branch == BRANCH_BACKTEST_VALIDATED
+    assert decision.strategy_eligible is True
+    assert decision.selected_side == "buy"
+
+
+def test_malformed_payload_fails_closed_invalid_branch():
+    strategy, _selected = route_strategy(_row(), "not-a-dict")
+    assert strategy.branch == BRANCH_BACKTEST_INVALID
+    assert strategy.eligible is False
+    assert "BACKTEST_CONFIG_MALFORMED" in strategy.reason_codes
 
 
 def test_controller_exposes_invalid_config_status_for_ui():
-    # Decision: there is no backtest-config BRANCH concept in the router
-    # (BRANCH_BACKTEST_INVALID etc. are core.scanner_models legacy constants, retired
-    # with the legacy strategy router). A symbol whose backtest config is invalid or
-    # absent surfaces as a DOCUMENTED NEUTRAL auto_trade_branch (None) and
-    # auto_trade_candidate=False; the decision is exposed via candidate_status /
-    # reason_codes instead. The UI's auto_trade_branch column degrades to "--".
+    # Neutral auto_trade_branch (None) khi config không hợp lệ/không có —
+    # quyết định phơi qua candidate_status / reason_codes, cột UI degrade "--".
     controller = ScannerController.__new__(ScannerController)
     request = ScannerRequest(
         symbols=["EUR/USD"],
@@ -418,7 +284,7 @@ def test_controller_exposes_invalid_config_status_for_ui():
         risk_percent=1.0,
         timezone_name="Asia/Ho_Chi_Minh",
         symbol_auto_trade={
-            "EUR/USD": {"backtest": True, "status": "DRAFT"},
+            "EUR/USD": {"side": "buy"},  # thiếu regime → INVALID lean
         },
     )
     rows = controller._apply_scanner_filters([_row()], request)
@@ -427,48 +293,16 @@ def test_controller_exposes_invalid_config_status_for_ui():
     assert rows[0]["auto_trade_candidate"] is False
 
 
-def test_unvalidated_recommendation_is_saved_as_draft():
-    settings = SymbolScanSettings()
-    apply_validated_backtest_config(
-        settings,
-        symbol="EUR/USD",
-        recommendation={
-            "regime": "range",
-            "side": "buy",
-            "min_score": 68,
-            "min_rr": 1.5,
-        },
-        now=datetime(2026, 7, 24, tzinfo=timezone.utc),
-    )
-    assert settings.backtest is False
-    assert settings.backtest_status == "DRAFT"
-    assert settings.backtest_scorer_version == SCANNER_SCORER_VERSION
-    assert settings.backtest_config_id.startswith("EURUSD-range-buy")
-    assert settings.backtest_validated_at == ""
+# ---------------------------------------------------------------------------
+# Ngưỡng Decision Engine + legacy settings load
+# ---------------------------------------------------------------------------
 
 
-def test_serialized_payload_contains_router_validation_metadata():
+def test_decision_thresholds_come_from_explicit_analysis_min_rr():
+    # Bước 4b: min_rr Decision Engine đọc từ analysis_min_rr tường minh —
+    # cờ legacy `backtest` và min_expected_rr (RR chiến lược auto-trade)
+    # không ảnh hưởng ngưỡng phân tích.
     settings = SymbolScanSettings(
-        backtest=True,
-        backtest_config_id="cfg-1",
-        backtest_status=CONFIG_VALIDATED,
-        backtest_scorer_version=SCANNER_SCORER_VERSION,
-        min_score=68,
-        auto_trade_regime="range",
-        auto_trade_side="best",
-        min_expected_rr=1.5,
-    )
-    payload = serialize_backtest_config(settings, symbol="EUR/USD")
-    assert payload is not None
-    assert payload["status"] == CONFIG_VALIDATED
-    assert payload["scorer_version"] == SCANNER_SCORER_VERSION
-    assert payload["side"] == "best"
-    assert payload["symbol"] == "EUR/USD"
-
-
-def test_backtest_config_does_not_rewrite_decision_engine_thresholds():
-    settings = SymbolScanSettings(
-        backtest=True,
         min_score=80,
         decision_ready=65,
         decision_watch=60,
@@ -483,102 +317,11 @@ def test_backtest_config_does_not_rewrite_decision_engine_thresholds():
         "min_score_gap": 10,
         "min_rr": 1.3,
     }
+    settings.analysis_min_rr = 1.9
+    assert analysis_thresholds_for_symbol(settings)["min_rr"] == 1.9
 
 
-def test_manual_edit_invalidates_previously_validated_config():
-    existing = SymbolScanSettings(
-        backtest=True,
-        backtest_config_id="cfg-1",
-        backtest_status=CONFIG_VALIDATED,
-        backtest_scorer_version=SCANNER_SCORER_VERSION,
-        backtest_validated_at="2026-07-24T00:00:00+00:00",
-        min_score=68,
-        auto_trade_regime="range",
-        auto_trade_side="buy",
-        min_expected_rr=1.5,
-    )
-    proposed = SymbolScanSettings(
-        backtest=True,
-        min_score=70,
-        auto_trade_regime="range",
-        auto_trade_side="buy",
-        min_expected_rr=1.5,
-    )
-    result = preserve_or_invalidate_manual_config(existing, proposed)
-    assert result.backtest is False
-    assert result.backtest_status == "DRAFT"
-    assert result.backtest_config_id == ""
-    assert result.backtest_validated_at == ""
-
-
-def test_unchanged_manual_save_preserves_validation():
-    existing = SymbolScanSettings(
-        backtest=True,
-        backtest_config_id="cfg-1",
-        backtest_status=CONFIG_VALIDATED,
-        backtest_scorer_version=SCANNER_SCORER_VERSION,
-        backtest_validated_at="2026-07-24T00:00:00+00:00",
-        min_score=68,
-        auto_trade_regime="range",
-        auto_trade_side="buy",
-        min_expected_rr=1.5,
-    )
-    proposed = SymbolScanSettings(
-        backtest=True,
-        min_score=68,
-        auto_trade_regime="range",
-        auto_trade_side="buy",
-        min_expected_rr=1.5,
-    )
-    result = preserve_or_invalidate_manual_config(existing, proposed)
-    assert result.backtest_status == CONFIG_VALIDATED
-    assert result.backtest_config_id == "cfg-1"
-
-
-def test_settings_service_round_trips_validation_metadata(tmp_path):
-    service = SettingsService(tmp_path / "settings.json")
-    settings = service.load()
-    symbol_settings = SymbolScanSettings()
-    apply_validated_backtest_config(
-        symbol_settings,
-        symbol="EUR/USD",
-        recommendation=_validated_config(),
-    )
-    settings.trading.symbol_settings["EUR/USD"] = symbol_settings
-    service.save(settings)
-
-    loaded = service.load().trading.symbol_settings["EUR/USD"]
-    assert loaded.backtest_config_id == "EURUSD-range-buy-v3"
-    assert loaded.backtest_status == CONFIG_VALIDATED
-    assert loaded.backtest_scorer_version == SCANNER_SCORER_VERSION
-    assert loaded.backtest_purpose == "VALIDATION"
-    assert loaded.backtest_execution_parity is True
-    assert loaded.backtest_data_manifest_version == (
-        validation_engine_contract()["data_manifest_version"]
-    )
-    assert loaded.backtest_point_in_time_data is True
-    assert loaded.backtest_dataset_hash == "a" * 64
-    assert loaded.backtest_data_quality_status == "OK"
-    engine_contract = validation_engine_contract()
-    assert loaded.backtest_execution_policy_version == (
-        engine_contract["execution_policy_version"]
-    )
-    assert loaded.backtest_entry_fill_model == "confirmation_close"
-    assert (
-        loaded.backtest_exit_evaluation_model
-        == "next_execution_candle"
-    )
-    assert loaded.backtest_same_bar_ambiguity_policy == "STOP_FIRST"
-    assert loaded.backtest_execution_timeframe == "M15"
-    assert loaded.backtest_synthetic_trades_allowed is False
-    assert (
-        loaded.backtest_engine_version
-        == "system-backtest-v2-execution-parity"
-    )
-    assert loaded.backtest_expires_at.startswith("2027-07-24")
-
-
-def test_legacy_settings_load_as_unvalidated_and_fail_closed(tmp_path):
+def test_legacy_settings_load_raw_and_permissions_fail_closed(tmp_path):
     service = SettingsService(tmp_path / "settings.json")
     service.storage.save({
         "ai": {},
@@ -596,7 +339,15 @@ def test_legacy_settings_load_as_unvalidated_and_fail_closed(tmp_path):
         },
     })
     loaded = service.load().trading.symbol_settings["EUR/USD"]
-    assert loaded.backtest is False
-    assert loaded.backtest_status == "DRAFT"
-    assert loaded.backtest_scorer_version == ""
-    assert service.load().trading.enabled_symbols == []
+    # Bước 4b/6: không tái kiểm định khi load; khóa evidence legacy trên
+    # file được đọc nguyên trạng bởi migration (model không còn field).
+    stored = service.storage.load()["trading"]["symbol_settings"]["EUR/USD"]
+    assert stored["backtest"] is True
+    # Quyền auto-trade suy dẫn từ trạng thái hiệu lực cũ: không có
+    # status VALIDATED + expiry ⇒ mặc định TẮT (không mở rộng quyền).
+    assert loaded.auto_trade_permitted is False
+    assert loaded.scan_enabled is True
+    assert service.load().trading.enabled_symbols == ["EUR/USD"]
+    # Ngưỡng Decision Engine bảo toàn theo công thức hiệu lực cũ
+    # (không active ⇒ min_expected_rr).
+    assert loaded.analysis_min_rr == 1.5

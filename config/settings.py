@@ -31,68 +31,19 @@ class AISettings:
 
 @dataclass(slots=True)
 class SymbolScanSettings:
-    backtest: bool = False
-    backtest_config_id: str = ""
-    backtest_status: str = ""
-    backtest_schema_version: int = 0
-    backtest_validation_version: str = ""
-    backtest_engine_contract_version: str = ""
-    backtest_engine_version: str = ""
-    backtest_purpose: str = ""
-    backtest_execution_parity: bool = False
-    backtest_data_manifest_version: str = ""
-    backtest_point_in_time_data: bool = False
-    backtest_dataset_hash: str = ""
-    backtest_data_quality_status: str = ""
-    backtest_execution_policy_version: str = ""
-    backtest_entry_fill_model: str = ""
-    backtest_exit_evaluation_model: str = ""
-    backtest_same_bar_ambiguity_policy: str = ""
-    backtest_execution_timeframe: str = ""
-    backtest_synthetic_trades_allowed: bool = False
-    backtest_execution_mode: str = ""
-    backtest_execution_model_version: str = ""
-    backtest_cost_model_version: str = ""
-    backtest_quote_conversion_model_version: str = ""
-    backtest_cost_model_fingerprint: str = ""
-    backtest_quote_conversion_fingerprint: str = ""
-    backtest_candidate_ledger_version: str = ""
-    backtest_candidate_replay_version: str = ""
-    backtest_frozen_strategy_version: str = ""
-    backtest_frozen_strategy_applied: bool = False
-    backtest_oos_replay: bool = False
-    backtest_provenance_version: str = ""
-    backtest_code_revision: str = ""
-    backtest_request_fingerprint: str = ""
-    backtest_execution_fingerprint: str = ""
-    backtest_provenance_fingerprint: str = ""
-    backtest_scorer_version: str = ""
-    backtest_feature_version: str = ""
-    backtest_smc_scorer_version: str = ""
-    backtest_score_metric: str = ""
-    backtest_trained_from: str = ""
-    backtest_trained_to: str = ""
-    backtest_validated_from: str = ""
-    backtest_validated_to: str = ""
-    backtest_in_sample_trades: int = 0
-    backtest_out_of_sample_trades: int = 0
-    backtest_oos_expectancy_r: float = 0.0
-    backtest_oos_profit_factor: float = 0.0
-    backtest_oos_max_drawdown_r: float = 0.0
-    backtest_expectancy_ci_low: float | None = None
-    backtest_expectancy_ci_high: float | None = None
-    backtest_statistics_version: str = ""
-    backtest_probability_positive_edge_pct: float | None = None
-    backtest_one_sided_p_value: float | None = None
-    backtest_minimum_required_trades: int = 0
-    backtest_statistical_power_passed: bool = False
-    backtest_walk_forward_windows: int = 0
-    backtest_walk_forward_verdict: str = ""
-    backtest_validation_fingerprint: str = ""
-    backtest_validation_reasons: list[str] = field(default_factory=list)
-    backtest_validated_at: str = ""
-    backtest_expires_at: str = ""
-    backtest_release_report: dict[str, object] = field(default_factory=dict)
+    # Cấu hình Scanner per-symbol (Backtest removal — Bước 2/4b/6):
+    # - scan_enabled: mã được đưa vào danh sách quét của Scanner.
+    # - auto_trade_permitted: mã được phép auto-trade — quyền do người dùng
+    #   cấp tường minh, mặc định False (fail-closed); không phụ thuộc kiểm định.
+    # - analysis_min_rr: ngưỡng R:R tối thiểu của Decision Engine cho mã.
+    # Các khóa ``backtest_*`` legacy (bằng chứng kiểm định) đã GỠ khỏi model
+    # (Bước 6, 2026-09-09): file settings.json cũ vẫn ĐỌC được — loader bỏ
+    # qua khóa lạ, và migration trong ``core.symbol_scan_config`` suy dẫn
+    # quyền/ngưỡng từ raw JSON trước khi lưu cấu trúc mới. Kết quả Backtest
+    # đã lưu (snapshot app_data/backtests) và Nhật ký không bị đụng.
+    scan_enabled: bool = False
+    auto_trade_permitted: bool = False
+    analysis_min_rr: float = 1.3
     min_score: int = 0
     auto_trade_regime: str = ""       # "range", "trend_up", etc. Empty = no filter
     auto_trade_side: str = ""         # "buy", "sell", "best". Empty = use best_side
@@ -112,10 +63,6 @@ class TradingSettings:
     minimum_lot: float = 0.01
     maximum_lot: float = 100.0
     contract_size_override: float = 100000
-    backtest_slippage_price: float = 0.0
-    backtest_commission_per_lot_round_turn: float = 0.0
-    backtest_swap_long_per_lot_day: float = 0.0
-    backtest_swap_short_per_lot_day: float = 0.0
     max_daily_loss_pct: float = 2.0
     max_weekly_loss_pct: float = 5.0
     max_consecutive_losses: int = 3

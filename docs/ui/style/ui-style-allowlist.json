@@ -55,12 +55,6 @@
       "reason": "Màu lời/lỗ, Break Even và mọi màu cell bảng đều lấy từ semantic palette; rich-text dialog dùng renderer chung."
     },
     {
-      "path": "ui/screens/backtest_screen.py",
-      "category": "rich_text_chart_and_runtime_state",
-      "disposition": "centralized",
-      "reason": "HTML báo cáo được compile bằng rich-text renderer; màu cell và Matplotlib dùng semantic palette/chart palette; ô thống kê và banner dùng QSS/property."
-    },
-    {
       "path": "ui/screens/journal_screen.py",
       "category": "data_driven_metrics_and_heatmap",
       "disposition": "centralized",

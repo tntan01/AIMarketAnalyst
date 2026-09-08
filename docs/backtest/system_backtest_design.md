@@ -1,5 +1,10 @@
 # Thiết Kế Chức Năng System Backtest
 
+> **⚠️ ĐÃ NGỪNG SỬ DỤNG (2026-09-09):** Engine Backtest và toàn bộ luồng
+> validation/release mô tả trong tài liệu này đã bị xóa khỏi codebase
+> (xem `docs/backtest-removal-audit.md` + `docs/backtest-removal-step5-report.md`).
+> Tài liệu được lưu làm tham khảo thiết kế lịch sử, KHÔNG mô tả hành vi hiện hành.
+
 > Quy tắc bắt buộc: file này phải luôn được lưu bằng **UTF-8**. Không dùng ANSI, Windows-1258, Windows-1252 hoặc bất kỳ encoding cục bộ nào. Khi chỉnh bằng VS Code, kiểm tra góc dưới bên phải phải là `UTF-8`. Khi đọc bằng PowerShell, dùng `Get-Content -Encoding utf8`.
 
 > Cập nhật 25/07/2026: các phần mô tả nhiều entry mode phía dưới là lịch sử

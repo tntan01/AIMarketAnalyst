@@ -73,7 +73,7 @@ def _load_vix_sensitivity() -> dict[str, dict[str, Any]]:
     global _VIX_SENSITIVITY_DOCUMENT, _VIX_SENSITIVITY_FINGERPRINT
     global _VIX_SENSITIVITY_SOURCE
 
-    from core.vix_pair_backtest import (
+    from core.vix_pair_sensitivity import (
         is_sensitivity_map_eligible,
         sensitivity_map_ineligibility_reason,
     )

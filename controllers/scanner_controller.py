@@ -51,7 +51,6 @@ from core.scanner_ui_adapter import (
     pair_to_ui_row,
     scanner_summary,
 )
-from core.backtest_config import serialize_backtest_config
 from core.chart_payload import build_chart_payload
 from core.execution_revalidation_engine import revalidate_execution
 from core.journal_feedback_engine import build_journal_feedback
@@ -1280,8 +1279,10 @@ class ScannerController:
     def _auto_trade_config(request: ScannerRequest, symbol: str) -> dict[str, object] | None:
         """Return per-symbol auto-trade config, or None if not configured.
 
-        Only symbols with backtest=true appear in symbol_auto_trade
-        (built by scanner_screen).  Every entry is a valid Nhanh-1 config.
+        Only symbols permitted auto-trade (``auto_trade_permitted`` +
+        validated config, gated by core.symbol_scan_config when
+        scanner_screen builds ``symbol_auto_trade``) appear here.
+        Every entry is a valid Nhanh-1 config.
         """
         if not request.symbol_auto_trade:
             return None
@@ -2282,20 +2283,6 @@ class ScannerController:
         except (TypeError, ValueError):
             return None
         return (low, high) if 0 < low < high else None
-
-    @staticmethod
-    def _settings_auto_trade_config(settings: object, symbol: str) -> dict[str, object] | None:
-        """Convert persisted per-symbol settings to the canonical live config."""
-        if settings is None:
-            return None
-        trading = getattr(settings, "trading", None)
-        symbol_settings = getattr(trading, "symbol_settings", None)
-        if not isinstance(symbol_settings, dict):
-            return None
-        sym_cfg = symbol_settings.get(symbol)
-        if sym_cfg is None and "/" not in symbol and len(symbol) == 6:
-            sym_cfg = symbol_settings.get(symbol[:3] + "/" + symbol[3:])
-        return serialize_backtest_config(sym_cfg, symbol=symbol)
 
     def _send_telegram_alerts(
         self,

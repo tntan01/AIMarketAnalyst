@@ -32,7 +32,6 @@ from core.scanner_backtest_contract import (
 )
 from core.scanner_order_policy import load_runtime_order_policy
 from core.scanner_release import (
-    DEFAULT_THRESHOLD_POLICY,
     SCANNER_RELEASE_VERSION,
     grouped_pairs,
     rank_pairs,
@@ -40,7 +39,11 @@ from core.scanner_release import (
     run_pair,
     run_pair_from_live,
 )
-from tests.scanner_testkit import build_snapshot
+# Fix Bước 6 (2026-09-09): DEFAULT_THRESHOLD_POLICY đã rời scanner_release từ
+# commit 3aa53b3 (ngưỡng cấu hình từ Settings) — smoke script chưa cập nhật,
+# gây ImportError pre-existing. Nguồn hiện hành: scanner_threshold_policy
+# (testkit tái export cùng giá trị).
+from tests.scanner_testkit import DEFAULT_THRESHOLD_POLICY, build_snapshot
 
 NOW = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
 SAMPLE_SYMBOLS = ("XAUUSD", "EURUSD", "US30")

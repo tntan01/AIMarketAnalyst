@@ -17,11 +17,11 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | Hiểu sản phẩm | `product/product_spec.md` |
 | Hiểu kiến trúc tổng thể | `architecture/architecture.md` |
 | Cài đặt và sử dụng | `guides/installation_guide.md`, `guides/USER_GUIDE.md` |
-| Vận hành Backtest -> Scanner -> Rollout | `guides/workflow_guide.md` |
+| ~~Vận hành Backtest -> Scanner -> Rollout~~ (đã ngừng sử dụng) | `guides/workflow_guide.md` — tham khảo lịch sử |
 | Scanner runtime contract | `scanner/scanner-flow.md` |
 | Chấm điểm Scanner hiện hành | `scanner/technical-scoring-architecture.md` |
 | Kiến trúc đích Scanner | `scanner/scanner-architecture.md` — approved design, chưa phải runtime |
-| Backtest runtime/validation | `backtest/system_backtest_design.md` |
+| Backtest runtime/validation (ĐÃ NGỪNG SỬ DỤNG) | `backtest/system_backtest_design.md` — tham khảo lịch sử |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
@@ -34,7 +34,7 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | `architecture/` | Kiến trúc tổng thể, trạng thái runtime, baseline dữ liệu runtime. |
 | `guides/` | Hướng dẫn cài đặt, sử dụng và vận hành. |
 | `scanner/` | Runtime Scanner và kiến trúc đích Scanner. |
-| `backtest/` | Thiết kế Backtest hiện hành và runbook release. |
+| `backtest/` | Thiết kế Backtest và runbook release — **đã ngừng sử dụng** (tính năng bị loại bỏ 2026-09-09), giữ làm tham khảo. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
 | `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
 | `ui/` | Thiết kế màn hình, style guide, audit/report/lock/baseline UI. |
@@ -47,8 +47,9 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 - `scanner/scanner-flow.md`: luồng Scanner legacy (historical); §11 ghi guard
   chain thực thi live.
 - `scanner/technical-scoring-architecture.md`: contract chấm điểm và ranking.
-- `backtest/system_backtest_design.md`: thiết kế Backtest hiện hành.
-- `backtest/backtest-release-runbook.md`: quy trình golden, shadow, forward-demo và release.
+- `backtest/system_backtest_design.md` + `backtest/backtest-release-runbook.md`:
+  **đã ngừng sử dụng** — tính năng Backtest bị loại bỏ (xem
+  `backtest-removal-audit.md` và các báo cáo step2→6); giữ làm tham khảo lịch sử.
 - `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế trên máy hiện tại.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
@@ -66,8 +67,9 @@ Các file này không phải tài liệu đọc chính, nhưng đang được to
 
 - Thay đổi hành vi Scanner phải cập nhật tối thiểu `scanner/scanner-flow.md`,
   tài liệu kỹ thuật liên quan và test.
-- Thay đổi Backtest validation/release phải cập nhật `backtest/system_backtest_design.md`
-  hoặc runbook tương ứng.
+- Tính năng Backtest đã bị loại bỏ (2026-09-09): thay đổi phân quyền quét/auto-trade
+  cập nhật `backtest-removal-audit.md` + `guides/USER_GUIDE.md`; không cập nhật
+  tài liệu `backtest/` (chỉ tham khảo lịch sử).
 - Thay đổi UI contract phải cập nhật `ui/style-guide.md` và các lock/report nếu cần.
 - Thay đổi macro scoring phải cập nhật `macro/macro_score_architecture.md`; nếu
   liên quan calibration/TTL/map runtime thì cập nhật mục Bước 7 trong cùng file.

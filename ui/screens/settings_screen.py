@@ -4,18 +4,9 @@ from dataclasses import replace
 
 from config.constants import DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
 from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
-from core.backtest_config import (
-    backtest_activation_status,
-    merge_symbol_scan_settings,
-    reconcile_enabled_symbol,
-)
-from core.scanner_models import (
-    CONFIG_DRAFT,
-    CONFIG_EXPIRED,
-    CONFIG_INVALID,
-    CONFIG_NOT_CONFIGURED,
-    CONFIG_VALIDATED,
-    CONFIG_VERSION_MISMATCH,
+from core.symbol_scan_config import (
+    apply_settings_row,
+    reconcile_scan_enabled_symbols,
 )
 from core.scanner_order_policy import (
     DEFAULT_RUNTIME_ORDER_POLICY,
@@ -76,7 +67,6 @@ class SettingsScreen(QWidget):
         self.ai_catalog_service = app.ai_catalog_service if app else AIProviderCatalogService()
         self.mt5: MT5Service = app.mt5 if app else MT5Service()
         self.app_settings = self.settings_service.load()
-        self._pending_backtest_configs: dict[str, dict] = {}
         self.ai_test_thread = None
         self.ai_test_worker = None
         self.setObjectName("FormScreen")
@@ -596,146 +586,67 @@ class SettingsScreen(QWidget):
         frame2.layout().addLayout(header_row)
 
         self.mt5_display_symbols = sorted(SUPPORTED_SYMBOLS)
-        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 13)
+        # Bước 3 gỡ Backtest (2026-09-08): bỏ các cột bằng chứng kiểm định
+        # (Min Score/Regime/Hướng/RR do Backtest sinh) và nút dán cấu hình;
+        # bảng còn 10 cột. Dữ liệu bằng chứng trong settings.json được giữ
+        # nguyên — Strategy Router vẫn dùng, chỉ không còn hiển thị/nhập tại đây.
+        self.mt5_symbols_table = QTableWidget(len(self.mt5_display_symbols), 10)
         configure_table(self.mt5_symbols_table)
         self.mt5_symbols_table.setProperty("tableRole", "mt5Symbols")
         self.mt5_symbols_table.setHorizontalHeaderLabels([
             "STT", "Mã hiển thị", "Mã MT5", "Trạng thái",
-            "Kiểm tra", "Dùng BT đã duyệt", "Min Score BT", "Regime BT",
-            "Hướng BT", "RR tối thiểu BT", "Ready", "Watch", "Wait",
+            "Kiểm tra", "Quét", "Ready", "Watch", "Wait",
+            "Auto-trade",
         ])
         self.mt5_symbols_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.mt5_symbols_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        for col_idx in range(13):
+        for col_idx in range(10):
             if col_idx == 2:
                 self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Stretch)
             else:
                 self.mt5_symbols_table.horizontalHeader().setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Interactive)
-        
+
         self.mt5_symbols_table.setColumnWidth(0, 40)
         self.mt5_symbols_table.setColumnWidth(1, 85)
         self.mt5_symbols_table.setColumnWidth(3, 100)
         self.mt5_symbols_table.setColumnWidth(4, 170)
-        self.mt5_symbols_table.setColumnWidth(5, 125)
-        self.mt5_symbols_table.setColumnWidth(6, 85)
-        self.mt5_symbols_table.setColumnWidth(7, 130)
-        self.mt5_symbols_table.setColumnWidth(8, 150)
-        self.mt5_symbols_table.setColumnWidth(9, 95)
-        self.mt5_symbols_table.setColumnWidth(10, 90)
-        self.mt5_symbols_table.setColumnWidth(11, 90)
-        self.mt5_symbols_table.setColumnWidth(12, 90)
+        self.mt5_symbols_table.setColumnWidth(5, 90)
+        self.mt5_symbols_table.setColumnWidth(6, 90)
+        self.mt5_symbols_table.setColumnWidth(7, 90)
+        self.mt5_symbols_table.setColumnWidth(8, 90)
+        self.mt5_symbols_table.setColumnWidth(9, 135)
         self.mt5_symbols_table.horizontalHeader().setMinimumSectionSize(48)
         for row, symbol in enumerate(self.mt5_display_symbols):
-            for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", "", "", "", "", "", "", ""]):
+            for col, value in enumerate([str(row + 1), symbol, "--", "Chưa kiểm tra", "--", "", "", "", "", ""]):
                 item = QTableWidgetItem(value)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.mt5_symbols_table.setItem(row, col, item)
             symbol_config = self.app_settings.trading.symbol_settings.get(symbol, SymbolScanSettings())
-            backtest_box = QCheckBox()
-            lifecycle_status, lifecycle_reasons = backtest_activation_status(
-                symbol_config,
-                symbol=symbol,
+            # Cột 5 = quyền QUÉT (độc lập); cột 9 = quyền AUTO-TRADE —
+            # Bước 4b: quyền là lựa chọn tường minh của người dùng, KHÔNG
+            # còn gate theo lifecycle kiểm định Backtest. Fail-closed nằm ở
+            # tầng thực thi: không có cấu hình chiến lược hợp lệ thì Router
+            # dùng DEFAULT_RULES và không auto-trade; mọi cổng an toàn vào
+            # lệnh giữ nguyên.
+            scan_box = QCheckBox()
+            scan_box.setText("Quét")
+            scan_box.setChecked(bool(symbol_config.scan_enabled))
+            scan_box.setToolTip(
+                "Mã được đưa vào danh sách quét của Scanner. "
+                "Bật/tắt ở đây KHÔNG cấp quyền auto-trade."
             )
-            can_activate_backtest = lifecycle_status == CONFIG_VALIDATED
-            backtest_box.setText(
-                self._backtest_status_label(lifecycle_status)
-            )
-            backtest_box.setChecked(
-                bool(symbol_config.backtest and can_activate_backtest)
-            )
-            backtest_box.setEnabled(can_activate_backtest)
-            backtest_box.setToolTip(
-                self._backtest_status_tooltip(
-                    lifecycle_status,
-                    lifecycle_reasons,
-                )
-            )
-            backtest_box.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 5, self._centered_cell(backtest_box))
+            scan_box.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 5, self._centered_cell(scan_box))
 
-            # Backtest-derived fields are evidence, not manual settings.
-            _stored_min_score = symbol_config.min_score
-            if _stored_min_score > 0:
-                min_score_text = str(_stored_min_score)
-            else:
-                min_score_text = ""
-            min_score_input = QLineEdit(min_score_text)
-            min_score_input.setObjectName("Mt5MinScoreInput")
-            min_score_input.setValidator(QIntValidator(0, 100, min_score_input))
-            min_score_input.setMaxLength(3)
-            min_score_input.setFixedWidth(48)
-            min_score_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            min_score_input.setEnabled(False)
-            min_score_input.setToolTip(
-                "Ngưỡng do Backtest tạo và khóa theo bằng chứng validation. "
-                "Muốn thay đổi, hãy chạy lại Backtest."
-            )
-            min_score_input.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(min_score_input))
+            auto_trade_box = QCheckBox()
+            auto_trade_box.setText("Auto-trade")
+            auto_trade_box.setChecked(bool(symbol_config.auto_trade_permitted))
+            auto_trade_box.setEnabled(True)
+            auto_trade_box.setToolTip(self._auto_trade_permission_tooltip())
+            auto_trade_box.installEventFilter(self)
+            self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(auto_trade_box))
 
-            # Auto Regime dropdown (col 7)
-            REGIME_OPTIONS = [
-                ("", ""),
-                ("range", "Range"),
-                ("trend_up", "Trend up"),
-                ("trend_down", "Trend down"),
-                ("volatile", "Volatile"),
-            ]
-            regime_combo = QComboBox()
-            for _r_key, _r_label in REGIME_OPTIONS:
-                regime_combo.addItem(_r_label, _r_key)
-            # Set current from stored English key
-            _stored_regime = symbol_config.auto_trade_regime or ""
-            _regime_idx = next((i for i in range(regime_combo.count()) if regime_combo.itemData(i) == _stored_regime), 0)
-            regime_combo.setCurrentIndex(_regime_idx)
-            regime_combo.setEnabled(False)
-            regime_combo.setToolTip(
-                "Chế độ thị trường do Backtest đã duyệt xác định; "
-                "không chỉnh tay tại Settings."
-            )
-            regime_combo.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 7, self._padded_cell(regime_combo))
-
-            # Auto Side dropdown (col 8)
-            SIDE_OPTIONS = [
-                ("best", "tốt nhất"),
-                ("buy", "mua"),
-                ("sell", "bán"),
-            ]
-            side_combo = QComboBox()
-            side_combo.setFixedWidth(125)
-            for _s_key, _s_label in SIDE_OPTIONS:
-                side_combo.addItem(f"{_s_key} ({_s_label})", _s_key)
-            _stored_side = symbol_config.auto_trade_side or "best"
-            _side_idx = next((i for i in range(side_combo.count()) if side_combo.itemData(i) == _stored_side), 0)
-            side_combo.setCurrentIndex(_side_idx)
-            side_combo.setEnabled(False)
-            side_combo.setToolTip(
-                "Hướng giao dịch do Backtest đã duyệt xác định; "
-                "'best' nghĩa là dùng hướng hệ thống phân tích."
-            )
-            side_combo.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 8, self._padded_cell(side_combo))
-
-            # Min RR spinbox (col 11)
-            min_rr = QDoubleSpinBox()
-            min_rr.setRange(0.0, 10.0)
-            min_rr.setSingleStep(0.1)
-            min_rr.setDecimals(1)
-            min_rr.setValue(symbol_config.min_expected_rr)
-            min_rr.setEnabled(False)
-            min_rr.setObjectName("Mt5MinRrInput")
-            min_rr.setFixedWidth(60)
-            min_rr.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-            min_rr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            min_rr.setToolTip(
-                "Tỷ lệ lợi nhuận/rủi ro tối thiểu do Backtest đã duyệt "
-                "xác định; không chỉnh tay tại Settings."
-            )
-            min_rr.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 9, self._centered_cell(min_rr))
-
-            # Ready (col 10)
+            # Ready (col 6)
             ready_input = QLineEdit(str(symbol_config.decision_ready))
             ready_input.setValidator(QIntValidator(0, 100, ready_input))
             ready_input.setMaxLength(3)
@@ -744,9 +655,9 @@ class SettingsScreen(QWidget):
             ready_input.setObjectName("Mt5ReadyInput")
             ready_input.setToolTip("Điểm cuối ≥ mức này → SẴN SÀNG vào lệnh. Mặc định 65.")
             ready_input.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 10, self._centered_cell(ready_input))
+            self.mt5_symbols_table.setCellWidget(row, 6, self._centered_cell(ready_input))
 
-            # Watch (col 11)
+            # Watch (col 7)
             watch_input = QLineEdit(str(symbol_config.decision_watch))
             watch_input.setValidator(QIntValidator(0, 100, watch_input))
             watch_input.setMaxLength(3)
@@ -755,9 +666,9 @@ class SettingsScreen(QWidget):
             watch_input.setObjectName("Mt5WatchInput")
             watch_input.setToolTip("Điểm cuối ≥ mức này → THEO DÕI. Mặc định 60.")
             watch_input.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 11, self._centered_cell(watch_input))
+            self.mt5_symbols_table.setCellWidget(row, 7, self._centered_cell(watch_input))
 
-            # Wait (col 12)
+            # Wait (col 8)
             wait_input = QLineEdit(str(symbol_config.decision_wait))
             wait_input.setValidator(QIntValidator(0, 100, wait_input))
             wait_input.setMaxLength(3)
@@ -766,7 +677,7 @@ class SettingsScreen(QWidget):
             wait_input.setObjectName("Mt5WaitInput")
             wait_input.setToolTip("Điểm cuối ≥ mức này → CHỜ XÁC NHẬN. Mặc định 55.")
             wait_input.installEventFilter(self)
-            self.mt5_symbols_table.setCellWidget(row, 12, self._centered_cell(wait_input))
+            self.mt5_symbols_table.setCellWidget(row, 8, self._centered_cell(wait_input))
 
         frame2.layout().addWidget(self.mt5_symbols_table, 1)
         mt5_button_row = QHBoxLayout()
@@ -778,16 +689,6 @@ class SettingsScreen(QWidget):
         )
         self.mt5_detect_button.clicked.connect(self.refresh_mt5_status)
         mt5_button_row.addWidget(self.mt5_detect_button)
-        self.mt5_paste_config_button = action_button(
-            "Dán cấu hình Backtest", color="warning",
-            icon="clipboard", icon_role="warning", icon_disabled_role="warning",
-        )
-        self.mt5_paste_config_button.clicked.connect(self._paste_backtest_configs)
-        self.mt5_paste_config_button.setToolTip(
-            "Đọc cấu hình JSON từ clipboard (được copy từ nút 'Đề xuất cấu hình Scanner' "
-            "trong màn hình Backtest), kiểm tra validation rồi mới cho phép kích hoạt."
-        )
-        mt5_button_row.addWidget(self.mt5_paste_config_button)
         self.mt5_symbol_settings_button = action_button(
             "Lưu cấu hình mã quét", primary=True, color="success",
             icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
@@ -869,14 +770,6 @@ class SettingsScreen(QWidget):
         layout.addStretch(1)
         return cell
 
-    def _padded_cell(self, widget: QWidget, *, margin_h: int = 6, margin_v: int = 2) -> QWidget:
-        cell = QWidget()
-        layout = QHBoxLayout(cell)
-        layout.setContentsMargins(margin_h, margin_v, margin_h, margin_v)
-        layout.setSpacing(0)
-        layout.addWidget(widget)
-        return cell
-
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.KeyPress:
             if event.key() == Qt.Key.Key_Tab:
@@ -894,7 +787,7 @@ class SettingsScreen(QWidget):
         parent_widget = current_widget.parent()
 
         for r in range(self.mt5_symbols_table.rowCount()):
-            for c in [5, 6, 7, 8, 9, 10, 11, 12]:
+            for c in [5, 6, 7, 8, 9]:
                 cell_w = self.mt5_symbols_table.cellWidget(r, c)
                 if cell_w and (cell_w == parent_widget or cell_w == current_widget or cell_w.findChild(QWidget) == current_widget):
                     target_row = r
@@ -906,7 +799,7 @@ class SettingsScreen(QWidget):
         if target_row == -1:
             return False
 
-        cols = [5, 6, 7, 8, 9, 10, 11, 12]
+        cols = [5, 6, 7, 8, 9]
         col_idx = cols.index(target_col)
 
         if forward:
@@ -959,181 +852,16 @@ class SettingsScreen(QWidget):
         QApplication.quit()
 
     @staticmethod
-    def _backtest_status_label(status: str) -> str:
-        return {
-            CONFIG_VALIDATED: "Đã duyệt",
-            CONFIG_DRAFT: "Bản nháp",
-            CONFIG_EXPIRED: "Hết hạn",
-            CONFIG_INVALID: "Không hợp lệ",
-            CONFIG_VERSION_MISMATCH: "Sai phiên bản",
-            CONFIG_NOT_CONFIGURED: "Chưa có",
-        }.get(str(status or "").upper(), "Không hợp lệ")
+    def _auto_trade_permission_tooltip() -> str:
+        """Tooltip quyền auto-trade độc lập (Bước 4b gỡ kiểm định Backtest)."""
 
-    @classmethod
-    def _backtest_status_tooltip(
-        cls,
-        status: str,
-        reasons: tuple[str, ...] | list[str],
-    ) -> str:
-        if status == CONFIG_VALIDATED:
-            return (
-                "Cấu hình Backtest đã đủ bằng chứng và đúng phiên bản SMC-v2. "
-                "Tick để Strategy Router dùng cấu hình này."
-            )
-        reason_text = ", ".join(str(reason) for reason in reasons[:5])
-        suffix = f"\nChi tiết kỹ thuật: {reason_text}" if reason_text else ""
         return (
-            f"Trạng thái: {cls._backtest_status_label(status)}. "
-            "Scanner tiếp tục dùng SMC-v2 + luật mặc định; cấu hình này "
-            "không được phép tham gia quyết định thật."
-            f"{suffix}"
+            "Cấp quyền auto-trade cho mã này. Quyền độc lập với kiểm định "
+            "Backtest: chỉ tick khi cấu hình chiến lược (regime/side/min "
+            "score/min RR) của mã đã được bạn xác nhận. Mã không có cấu "
+            "hình chiến lược hợp lệ sẽ chạy quy tắc mặc định và KHÔNG được "
+            "auto-trade; lệnh tự động vẫn phải qua mọi cổng an toàn thực thi."
         )
-
-    def _show_backtest_preview(
-        self,
-        *,
-        row: int,
-        status: str,
-        reasons: tuple[str, ...],
-        config: dict,
-    ) -> None:
-        backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
-        checkbox = (
-            backtest_cell.findChild(QCheckBox)
-            if isinstance(backtest_cell, QWidget)
-            else None
-        )
-        if checkbox:
-            validated = status == CONFIG_VALIDATED
-            checkbox.setText(self._backtest_status_label(status))
-            checkbox.setEnabled(validated)
-            checkbox.setChecked(validated)
-            checkbox.setToolTip(
-                self._backtest_status_tooltip(status, reasons)
-            )
-
-        min_score_cell = self.mt5_symbols_table.cellWidget(row, 6)
-        min_score_input = (
-            min_score_cell.findChild(QLineEdit)
-            if isinstance(min_score_cell, QWidget)
-            else None
-        )
-        if min_score_input:
-            value = config.get("min_score", 0)
-            min_score_input.setText(str(value) if value else "")
-
-        for column, key in ((7, "regime"), (8, "side")):
-            cell = self.mt5_symbols_table.cellWidget(row, column)
-            combo = (
-                cell.findChild(QComboBox)
-                if isinstance(cell, QWidget)
-                else None
-            )
-            value = str(config.get(key, "") or "").strip().lower()
-            if combo and value:
-                index = next(
-                    (
-                        item
-                        for item in range(combo.count())
-                        if combo.itemData(item) == value
-                    ),
-                    -1,
-                )
-                if index >= 0:
-                    combo.setCurrentIndex(index)
-
-        rr_cell = self.mt5_symbols_table.cellWidget(row, 9)
-        rr_input = (
-            rr_cell.findChild(QDoubleSpinBox)
-            if isinstance(rr_cell, QWidget)
-            else None
-        )
-        if rr_input:
-            try:
-                rr_input.setValue(float(config.get("min_rr", 0) or 0))
-            except (TypeError, ValueError):
-                rr_input.setValue(0.0)
-
-    def _paste_backtest_configs(self) -> None:
-        """Preview clipboard configs; only validated evidence is activatable."""
-        import json
-
-        from PyQt6.QtWidgets import QApplication, QMessageBox
-
-        clipboard_text = QApplication.clipboard().text().strip()
-        if not clipboard_text:
-            QMessageBox.information(self, "Dán cấu hình", "Clipboard trống.")
-            return
-
-        try:
-            configs = json.loads(clipboard_text)
-        except json.JSONDecodeError as exc:
-            QMessageBox.warning(self, "Lỗi JSON", f"Không đọc được dữ liệu clipboard:\n{exc}")
-            return
-
-        if not isinstance(configs, dict):
-            QMessageBox.warning(self, "Sai định dạng", "Clipboard không chứa cấu hình hợp lệ (cần JSON object).")
-            return
-
-        if (
-            isinstance(configs.get("symbol"), str)
-            and "min_score" in configs
-        ):
-            configs = {str(configs["symbol"]): configs}
-
-        updated = 0
-        validated_count = 0
-        for row, symbol in enumerate(self.mt5_display_symbols):
-            cfg = configs.get(symbol)
-            if cfg is None or not isinstance(cfg, dict):
-                continue
-
-            existing = self.app_settings.trading.symbol_settings.get(symbol)
-            preview = merge_symbol_scan_settings(
-                existing,
-                symbol=symbol,
-                activate_backtest=True,
-                decision_ready=(
-                    existing.decision_ready if existing else 65
-                ),
-                decision_watch=(
-                    existing.decision_watch if existing else 60
-                ),
-                decision_wait=(
-                    existing.decision_wait if existing else 55
-                ),
-                recommendation=cfg,
-            )
-            status, reasons = backtest_activation_status(
-                preview,
-                symbol=symbol,
-            )
-            self._pending_backtest_configs[symbol] = dict(cfg)
-            self._show_backtest_preview(
-                row=row,
-                status=status,
-                reasons=reasons,
-                config=cfg,
-            )
-            updated += 1
-            if status == CONFIG_VALIDATED:
-                validated_count += 1
-
-        if updated:
-            retained_count = updated - validated_count
-            QMessageBox.information(
-                self, "Đã dán",
-                f"Đã đọc {updated} cấu hình: {validated_count} đã duyệt, "
-                f"{retained_count} chưa đủ điều kiện.\n"
-                "Chỉ cấu hình đã duyệt mới được bật. Bản nháp vẫn được "
-                "lưu để backtest sau.\n"
-                "Nhấn 'Lưu cấu hình mã quét' để lưu lại."
-            )
-        else:
-            QMessageBox.information(
-                self, "Không khớp",
-                "Không tìm thấy cặp nào trong bảng khớp với dữ liệu clipboard."
-            )
 
     def _save_mt5_symbol_settings(self) -> None:
         existing_symbol_settings = dict(
@@ -1146,12 +874,16 @@ class SettingsScreen(QWidget):
             self.app_settings.trading.enabled_symbols
         )
         for row, symbol in enumerate(self.mt5_display_symbols):
-            backtest_cell = self.mt5_symbols_table.cellWidget(row, 5)
-            ready_cell = self.mt5_symbols_table.cellWidget(row, 10)
-            watch_cell = self.mt5_symbols_table.cellWidget(row, 11)
-            wait_cell = self.mt5_symbols_table.cellWidget(row, 12)
+            scan_cell = self.mt5_symbols_table.cellWidget(row, 5)
+            ready_cell = self.mt5_symbols_table.cellWidget(row, 6)
+            watch_cell = self.mt5_symbols_table.cellWidget(row, 7)
+            wait_cell = self.mt5_symbols_table.cellWidget(row, 8)
+            auto_trade_cell = self.mt5_symbols_table.cellWidget(row, 9)
 
-            backtest_box = backtest_cell.findChild(QCheckBox) if backtest_cell else None
+            scan_box = scan_cell.findChild(QCheckBox) if scan_cell else None
+            auto_trade_box = (
+                auto_trade_cell.findChild(QCheckBox) if auto_trade_cell else None
+            )
             ready_input = ready_cell.findChild(QLineEdit) if ready_cell else None
             watch_input = watch_cell.findChild(QLineEdit) if watch_cell else None
             wait_input = wait_cell.findChild(QLineEdit) if wait_cell else None
@@ -1174,34 +906,39 @@ class SettingsScreen(QWidget):
                     return
                 decisions[field_name] = val
 
-            merged = merge_symbol_scan_settings(
+            auto_trade_checked = bool(
+                auto_trade_box and auto_trade_box.isChecked()
+            )
+            # Bước 4b: lưu lựa chọn tường minh của người dùng, KHÔNG tái kiểm
+            # định bằng chứng Backtest. Dữ liệu evidence cũ (nếu có) được giữ
+            # nguyên qua `replace(existing)` để đọc lịch sử; quyền giao dịch
+            # giờ độc lập với lifecycle kiểm định.
+            merged = apply_settings_row(
                 existing_symbol_settings.get(symbol),
-                symbol=symbol,
-                activate_backtest=bool(
-                    backtest_box and backtest_box.isChecked()
-                ),
                 decision_ready=decisions["Ready"],
                 decision_watch=decisions["Watch"],
                 decision_wait=decisions["Wait"],
-                recommendation=self._pending_backtest_configs.get(symbol),
+                scan_checked=bool(scan_box and scan_box.isChecked()),
+                auto_trade_checked=auto_trade_checked,
             )
             symbol_settings[symbol] = merged
-            enabled_symbols = reconcile_enabled_symbol(
+            enabled_symbols = reconcile_scan_enabled_symbols(
                 enabled_symbols,
                 symbol=symbol,
-                backtest_active=merged.backtest,
-                lifecycle_status=merged.backtest_status,
-                confirmed_disable=bool(
-                    backtest_box and not backtest_box.isChecked()
-                ),
+                scan_enabled=merged.scan_enabled,
             )
         self.app_settings.trading.symbol_settings = symbol_settings
         self.app_settings.trading.enabled_symbols = enabled_symbols
         self.settings_service.save(self.app_settings)
-        self._pending_backtest_configs.clear()
+        auto_trade_count = sum(
+            1
+            for cfg in symbol_settings.values()
+            if cfg.auto_trade_permitted
+        )
         self.mt5_status_label.setText(
             "Đã lưu cấu hình mã quét. "
-            f"{len(enabled_symbols)} cấu hình Backtest đã duyệt đang bật; "
+            f"{len(enabled_symbols)} mã đang bật quét, "
+            f"{auto_trade_count} mã được phép auto-trade; "
             "các mã còn lại dùng SMC-v2 + luật mặc định."
         )
         self.mt5_status_label.setProperty("state", "ok")
@@ -1275,32 +1012,6 @@ class SettingsScreen(QWidget):
         contract_size.setValue(trading.contract_size_override)
         contract_size.setSuffix(" units")
 
-        backtest_slippage = QDoubleSpinBox()
-        backtest_slippage.setRange(0, 1000)
-        backtest_slippage.setDecimals(6)
-        backtest_slippage.setSingleStep(0.00001)
-        backtest_slippage.setValue(trading.backtest_slippage_price)
-
-        backtest_commission = QDoubleSpinBox()
-        backtest_commission.setRange(0, 100_000)
-        backtest_commission.setDecimals(2)
-        backtest_commission.setValue(
-            trading.backtest_commission_per_lot_round_turn
-        )
-        backtest_commission.setSuffix(" / lot")
-
-        backtest_swap_long = QDoubleSpinBox()
-        backtest_swap_long.setRange(0, 100_000)
-        backtest_swap_long.setDecimals(2)
-        backtest_swap_long.setValue(trading.backtest_swap_long_per_lot_day)
-        backtest_swap_long.setSuffix(" / lot/ngày")
-
-        backtest_swap_short = QDoubleSpinBox()
-        backtest_swap_short.setRange(0, 100_000)
-        backtest_swap_short.setDecimals(2)
-        backtest_swap_short.setValue(trading.backtest_swap_short_per_lot_day)
-        backtest_swap_short.setSuffix(" / lot/ngày")
-
         self.trading_balance_input = balance
         self.trading_currency_input = currency
         self.trading_risk_input = risk
@@ -1309,10 +1020,6 @@ class SettingsScreen(QWidget):
         self.trading_minimum_lot_input = minimum_lot
         self.trading_maximum_lot_input = maximum_lot
         self.trading_contract_size_input = contract_size
-        self.trading_backtest_slippage_input = backtest_slippage
-        self.trading_backtest_commission_input = backtest_commission
-        self.trading_backtest_swap_long_input = backtest_swap_long
-        self.trading_backtest_swap_short_input = backtest_swap_short
 
         form_layout.addWidget(self._compact_form_row("Số dư MT5", balance))
         form_layout.addWidget(self._compact_form_row("Đồng tiền", currency))
@@ -1322,10 +1029,6 @@ class SettingsScreen(QWidget):
         form_layout.addWidget(self._compact_form_row("Lot tối thiểu", minimum_lot))
         form_layout.addWidget(self._compact_form_row("Lot tối đa", maximum_lot))
         form_layout.addWidget(self._compact_form_row("Quy mô hợp đồng", contract_size))
-        form_layout.addWidget(self._compact_form_row("Trượt giá Backtest", backtest_slippage))
-        form_layout.addWidget(self._compact_form_row("Phí khứ hồi Backtest", backtest_commission))
-        form_layout.addWidget(self._compact_form_row("Swap BUY Backtest", backtest_swap_long))
-        form_layout.addWidget(self._compact_form_row("Swap SELL Backtest", backtest_swap_short))
 
         button_container, button_row = self._aligned_button_row()
         button_row.addSpacing(
@@ -1360,18 +1063,6 @@ class SettingsScreen(QWidget):
             minimum_lot=self.trading_minimum_lot_input.value(),
             maximum_lot=self.trading_maximum_lot_input.value(),
             contract_size_override=self.trading_contract_size_input.value(),
-            backtest_slippage_price=(
-                self.trading_backtest_slippage_input.value()
-            ),
-            backtest_commission_per_lot_round_turn=(
-                self.trading_backtest_commission_input.value()
-            ),
-            backtest_swap_long_per_lot_day=(
-                self.trading_backtest_swap_long_input.value()
-            ),
-            backtest_swap_short_per_lot_day=(
-                self.trading_backtest_swap_short_input.value()
-            ),
             max_daily_loss_pct=self.app_settings.trading.max_daily_loss_pct,
             max_weekly_loss_pct=self.app_settings.trading.max_weekly_loss_pct,
             max_consecutive_losses=self.app_settings.trading.max_consecutive_losses,
@@ -1890,7 +1581,7 @@ class SettingsScreen(QWidget):
         block_news = QCheckBox("Chặn giao dịch quanh tin đỏ")
         block_news.setChecked(advanced.block_high_impact_news)
         vix_pair_aware = QCheckBox(
-            "VIX theo độ nhạy từng cặp tiền (Bước 7 — chỉ bật sau backtest)"
+            "VIX theo độ nhạy từng cặp tiền (Bước 7 — cần dữ liệu hiệu chuẩn cặp)"
         )
         vix_pair_aware.setChecked(advanced.vix_pair_aware_enabled)
         notifications = self.app_settings.notifications

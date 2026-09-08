@@ -13,8 +13,8 @@ class TestStripMarkdownInListItems(unittest.TestCase):
 
     @classmethod
     def _format(cls, raw: str, light: bool = False) -> str:
-        from ui.screens.backtest_screen import BacktestScreen
-        return BacktestScreen._format_ai_to_html(raw, light)
+        from ui.rich_text import format_ai_markdown_to_html
+        return format_ai_markdown_to_html(raw, light)
 
     # ── Bullet list items: strip * ────────────────────────────────
 

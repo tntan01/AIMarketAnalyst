@@ -160,7 +160,7 @@ _CANDIDATE_STATUS = {
 
 _SCANNER_REASON_MESSAGES = {
     "SETUP_SCORE_BELOW_DEFAULT_MIN": "Điểm thiết lập thấp hơn ngưỡng Ready đang cấu hình.",
-    "SETUP_SCORE_BELOW_MIN": "Điểm thiết lập thấp hơn ngưỡng của cấu hình Backtest.",
+    "SETUP_SCORE_BELOW_MIN": "Điểm thiết lập thấp hơn ngưỡng của cấu hình chiến lược đã kiểm định.",
     "SCANNER_NOT_READY": "Pipeline chưa đánh giá thiết lập là sẵn sàng.",
     "DECISION_NOT_READY": "Decision Engine chưa cho trạng thái sẵn sàng giao dịch.",
     "ENTRY_NOT_CONFIRMED": "Điểm vào lệnh chưa được xác nhận.",
@@ -172,7 +172,7 @@ _SCANNER_REASON_MESSAGES = {
     "EXPECTED_EFFECTIVE_RR_BELOW_MIN": "R:R sau chi phí thấp hơn mức tối thiểu.",
     "MISSING_SELECTED_SIDE_SCENARIO": "Không có kịch bản hợp lệ cho hướng được chọn.",
     "MISSING_SELECTED_SIDE": "Không xác định được hướng giao dịch.",
-    "BACKTEST_CONFIG_INVALID": "Cấu hình Backtest không hợp lệ.",
+    "BACKTEST_CONFIG_INVALID": "Cấu hình chiến lược đã kiểm định không hợp lệ.",
     "STRUCTURAL_SMC_REJECT": "Không có vùng SMC canonical phù hợp; không tạo thiết lập giao dịch.",
     "NO_ACTIONABLE_SMC_ZONE": "Cả BUY và SELL đều không có vùng SMC canonical đủ điều kiện.",
     "NO_RAW_SMC_CANDIDATE": "Không phát hiện raw SMC candidate ở các khung thời gian yêu cầu.",
@@ -2978,11 +2978,11 @@ class ScannerDetailScreen(QWidget):
                 f"<tr>"
                 f"<td style='padding:4px 16px;'>"
                 f"<div style='{_HTML_TITLE}color:{accent};margin-bottom:8px;'>"
-                f"✅ BACKTEST_VALIDATED — Cấu hình Backtest hợp lệ</div>"
+                f"✅ Cấu hình chiến lược đã kiểm định — hợp lệ</div>"
                 f"{config_table_html}"
                 f"<div style='{_HTML_SMALL}color:{ref_color};background:{ref_bg};border:1px solid {ref_border};"
                 f"padding:8px 12px;border-radius:6px;line-height:1.5;'>"
-                f"💡 Cấu hình backtest chỉ xác định setup có phù hợp chiến lược. "
+                f"💡 Cấu hình đã kiểm định chỉ xác định setup có phù hợp chiến lược. "
                 f"Lệnh tự động vẫn bắt buộc <b>READY_TO_TRADE + Allowed + entry đã xác nhận</b>; "
                 f"Watch/Wait/Stand Aside luôn bị chặn."
                 f"</div>"
@@ -2998,9 +2998,9 @@ class ScannerDetailScreen(QWidget):
                 f"<tr>"
                 f"<td style='padding:12px 16px;'>"
                 f"<div style='{_HTML_SUBTITLE}color:{accent};margin-bottom:4px;'>"
-                f"⚙️ DEFAULT_RULES — Không có cấu hình Backtest</div>"
+                f"⚙️ DEFAULT_RULES — Không có cấu hình riêng</div>"
                 f"<div style='{_HTML_BODY}color:{sc};line-height:1.5;'>"
-                f"Không có cấu hình Backtest đang hoạt động. Strategy Router dùng "
+                f"Không có cấu hình chiến lược đã kiểm định đang hoạt động. Strategy Router dùng "
                 f"ngưỡng live; kết quả vẫn phải qua entry, gate và "
                 f"tái kiểm tra ngay trước khi đặt lệnh.</div>"
                 f"</td>"

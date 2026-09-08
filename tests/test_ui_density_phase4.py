@@ -13,7 +13,6 @@ from ui.theme_manager import APP_THEME_PROPERTY, load_stylesheet
 SCREEN_CLUSTER_FILES = {
     "ui/screens/journal_screen.py",
     "ui/screens/journal_detail_screen.py",
-    "ui/screens/backtest_screen.py",
     "ui/screens/settings_screen.py",
     "ui/screens/scanner_screen.py",
     "ui/screens/scanner_detail_screen.py",

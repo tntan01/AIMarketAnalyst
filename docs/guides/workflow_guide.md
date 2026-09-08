@@ -1,5 +1,12 @@
 # Quy trình vận hành Backtest → Scanner → Rollout
 
+> **⚠️ ĐÃ NGỪNG SỬ DỤNG (2026-09-09):** Tính năng Backtest đã bị loại bỏ
+> khỏi ứng dụng (xem `docs/backtest-removal-audit.md`). Toàn bộ quy trình
+> trong tài liệu này không còn hiệu lực; giữ lại làm tham khảo lịch sử.
+> Scanner/auto-trade hiện vận hành độc lập với kiểm định Backtest — quyền
+> auto-trade per-symbol bật/tắt trong Settings > Dữ liệu.
+
+
 Trạng thái tài liệu: **hiện hành** cho runtime ngày 25/07/2026; target
 Scanner cập nhật ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**.
 
