@@ -23,6 +23,7 @@ from ui.screens.scanner_detail_screen import ScannerDetailScreen
 from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.orders_screen import OrdersScreen
 from ui.screens.settings_screen import SettingsScreen
+from ui.screens.supply_demand_screen import SupplyDemandScreen
 from ui.theme_manager import ThemeManager, resolve_theme
 
 
@@ -135,6 +136,7 @@ class MainWindow(QMainWindow):
         screen_factories = {
             "dashboard": DashboardScreen,
             "scanner": ScannerScreen,
+            "supply_demand": SupplyDemandScreen,
             "orders": OrdersScreen,
             "scanner_detail": ScannerDetailScreen,
             "backtest": BacktestScreen,
@@ -233,6 +235,7 @@ def nav_route(key: str) -> str:
     return {
         "dashboard": "dashboard",
         "scanner": "scanner",
+        "supply_demand": "supply_demand",
         "orders": "orders",
         "backtest": "backtest",
         "journal": "journal",
