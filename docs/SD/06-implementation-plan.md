@@ -136,8 +136,8 @@ thế kết quả kiểm tra thực tế hai cấu hình màn hình tại R6.
 
 | Bước | Công việc nhỏ | Thực hiện cụ thể | Điều kiện hoàn thành / kiểm tra |
 |---|---|---|---|
-| 001 | Đọc nguồn chuẩn | Đọc 01 → 02 → 03 → 04 → 05 và style guide; ghi các ràng buộc áp dụng cho phần sắp làm. | Biết nguồn công thức, contract, UI; không dùng câu trả lời hội thoại thay rules đã đồng bộ. |
-| 002 | Kiểm tra trạng thái repository | Ghi branch, thay đổi đang có và module SD đã tồn tại tại thời điểm nhận việc; không ghi đè công việc khác. | Có danh sách file sẽ dùng/sửa; bước đã được người khác làm được kiểm tra thay vì tạo lại. |
+| 001 | Đọc nguồn chuẩn — **Đã xong** 08/09/2026: đã đọc đủ 01→05, style guide, ARCHITECTURE.md, README SD; ràng buộc chính ghi trong ghi chú tiến độ. | Đọc 01 → 02 → 03 → 04 → 05 và style guide; ghi các ràng buộc áp dụng cho phần sắp làm. | Biết nguồn công thức, contract, UI; không dùng câu trả lời hội thoại thay rules đã đồng bộ. |
+| 002 | Kiểm tra trạng thái repository — **Đã xong** 08/09/2026: branch `main`, chỉ `06` đang sửa dở; SD đã có 2 commit trước (menu/route/screen + parameters/reason codes); phát hiện 4 lệch so với `02` trong code có sẵn, ghi tại ghi chú tiến độ để kiểm tra lại ở bước 009/017–019 thay vì tạo lại. | Ghi branch, thay đổi đang có và module SD đã tồn tại tại thời điểm nhận việc; không ghi đè công việc khác. | Có danh sách file sẽ dùng/sửa; bước đã được người khác làm được kiểm tra thay vì tạo lại. |
 | 003 | Kiểm tra môi trường Python/Qt | Dùng môi trường dự án, xác định Python, pytest, PyQt6/WebEngine và lệnh chạy ứng dụng hiện tại. | Import các dependency cần thiết được hoặc ghi cụ thể dependency thiếu; chưa đổi phiên bản thư viện không cần thiết. |
 | 004 | Kiểm tra điểm tích hợp hiện có | Đọc AppController, MT5Service, main window/navigation, chart và đường app_data_dir trong 03. | Xác định đúng instance MT5, khóa chung, DI và shutdown; chưa nối SD vào runtime. |
 | 005 | Lập danh sách điểm chưa đủ contract | Đối chiếu rules với thiết kế, nhất là broker boundary, replay mode/config, thứ tự sự kiện cùng thời gian. | Mỗi điểm có nguồn, câu hỏi cụ thể và phần phụ thuộc; không tự đặt expected nghiệp vụ để qua test. |
@@ -473,3 +473,53 @@ test FRED `test_get_latest_rates_bad_key_falls_back` kỳ vọng 3.75 nhưng nh�
 
 Phần menu làm trước chưa tới mốc review; mốc chính tiếp theo vẫn là R1 sau
 bước 023, khi contract/định danh và các bước liên quan đã hoàn thành.
+
+Ngày 08/09/2026 — **Bước 001 Đã xong**: coder đọc đủ 01 → 02 → 03 → 04 → 05,
+`docs/ui/style-guide.md`, `ARCHITECTURE.md` và README SD. Ràng buộc chính ghi
+nhận: 01/02 thuộc PO, không tự sửa; rules `sd-rules-v1` đang DRAFT nên chưa
+bật runtime (bước 169 chờ PO); mọi ngưỡng đọc qua tên tham số registry `02`
+mục 17, invalid báo lỗi không clamp; file mới tiền tố `supply_demand_` theo
+phân lớp hiện có, core thuần Python, MT5 chỉ đọc (không order, không
+`symbol_select`); canonical ID theo `02` mục 18.2 (mode không nằm trong setup
+ID, candle giây nguyên, quote giữ mili giây); Decimal qua `str`, precision 34,
+ROUND_HALF_EVEN; ưu tiên trạng thái INVALIDATED > EXPIRED > READY > WATCHING >
+DETECTED; UI không `setStyleSheet()` cục bộ, hai cấu hình bắt buộc
+1366×768/100% và 1920×1080/150%; fixture đặt tại `tests/fixtures/supply_demand/`
+với expected độc lập. Điểm mở duy nhất: convention biên nến broker thực tế
+(TL-PO-02) — sẽ đối chiếu ở bước 005/047, không tự suy diễn. Chưa tới mốc
+review; mốc tiếp theo là R1 sau bước 023. Rule bổ sung từ chủ ứng dụng
+(08/09/2026): sau mỗi bước phải cập nhật trạng thái vào tài liệu này; bước
+chưa xong phải ghi rõ nguyên nhân để xin ý kiến Tech Lead.
+
+Ngày 08/09/2026 — **Bước 002 Đã xong**: kiểm tra repository tại thời điểm
+nhận việc.
+
+- Branch `main`; thay đổi chưa commit duy nhất là chính file `06` này (cập
+  nhật trạng thái bước 001/002). Hai commit SD đã có từ trước:
+  `8c2d208` (docs SD + menu "Cung–cầu" trong `ui/navigation.py`, route trong
+  `ui/main_window.py`, placeholder `ui/screens/supply_demand_screen.py`) và
+  `fcaf089` (`core/supply_demand_parameters.py` 82 dòng,
+  `core/supply_demand_reason_codes.py` 69 dòng).
+- Module SD đã tồn tại: 3 file trên + 2 đăng ký route/nav. Chưa có:
+  `core/supply_demand_models.py`, `core/supply_demand_identity.py`,
+  `config/supply_demand_defaults.json`, toàn bộ services/controllers/workers/
+  ui components SD, `tests/test_supply_demand_*` (0 file) và
+  `tests/fixtures/supply_demand/`.
+- Đối chiếu code có sẵn với `02` (kiểm tra thay vì tạo lại, xử lý ở bước
+  009/017–019): (1) enum reason thiếu 3 mã nhóm Đa khung `D1_ZONE_ALIGNED`,
+  `D1_ZONE_UNALIGNED`, `D1_OPPOSING_ZONE_NEAR` (45/48 mã); (2) `sort_reason_codes`
+  xếp nhóm theo prefix sai cho `ENTRY_INSIDE_OPPOSING_ZONE` (nhận 3, đúng 5),
+  `INVALID_TRADE_GEOMETRY` (nhận 1, đúng 5), `ZONE_NOT_RECONSTRUCTED` (nhận 1,
+  đúng 6); (3) `validate_parameters` áp `<` nghiêm ngặt cho cả 13 ràng buộc
+  chéo trong khi `02` mục 17 định nghĩa 9 quan hệ là `<=` (ví dụ
+  `leg_min_bars <= leg_max_bars`), cấu hình bằng nhau hợp lệ sẽ bị từ chối
+  sai; (4) nhãn đơn vị lệch `02` ở 3 tham số (`sl_buffer_atr`,
+  `departure_swing_lookback_bars`, `data_stale_expected_bars`). Registry đủ
+  62/62 tham số, defaults khớp `02`, chưa có rules descriptor (bước 020).
+- Danh sách file Nhóm 2 sẽ dùng/sửa: sửa `core/supply_demand_parameters.py`,
+  `core/supply_demand_reason_codes.py` (khắc phục 4 lệch trên + defaults
+  JSON); tạo mới `core/supply_demand_models.py`, `core/supply_demand_identity.py`,
+  `config/supply_demand_defaults.json`, `tests/test_supply_demand_parameters.py`,
+  `tests/test_supply_demand_reason_codes.py`, `tests/test_supply_demand_identity.py`,
+  `tests/test_supply_demand_models.py`. Không ghi đè công việc khác.
+- Chưa tới mốc review; mốc tiếp theo là R1 sau bước 023.
