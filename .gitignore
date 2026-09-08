@@ -10,4 +10,5 @@ temp/
 build/
 dist/
 .pytest_cache/
-.claude/
+.claude/config/interest/_rates.json
+config/interest_rates.json
