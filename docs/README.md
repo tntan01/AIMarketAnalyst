@@ -19,7 +19,8 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | Cài đặt và sử dụng | `guides/installation_guide.md`, `guides/USER_GUIDE.md` |
 | Scanner runtime contract | `scanner/scanner-architecture.md` — live từ 15/08/2026 |
 | Luồng Scanner lịch sử | `scanner/scanner-flow.md` — tham khảo (pre-cutover) |
-| Chấm điểm Scanner | `scanner/technical-scoring-architecture.md` |
+| Chấm điểm Scanner | `scanner/scanner-architecture.md` §3; `scanner/technical-scoring-architecture.md` giữ nội dung legacy có nhãn |
+| Đề xuất nâng cấp Location và plan cho CODER | [Location scoring upgrade plan](plans/location-scoring-upgrade-plan.md) — bản gọn cho cá nhân, 32 bước; chưa triển khai |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
@@ -34,6 +35,7 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | `scanner/` | Runtime Scanner và kiến trúc đích Scanner. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
 | `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
+| `plans/` | Thiết kế và task chưa triển khai; trạng thái và điểm dừng review nằm trong từng plan. |
 | `ui/` | Thiết kế màn hình, style guide, audit/report/lock/baseline UI. |
 
 ## Tài liệu hiện hành quan trọng
@@ -42,11 +44,37 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
   (live từ 15/08/2026): TechnicalScore chỉ gồm Trend/Momentum/Location/SMC, Risk
   và Macro là gate, order policy owner-accepted.
 - `scanner/scanner-flow.md`: luồng Scanner legacy (historical); §11 ghi guard
-  chain thực thi live.
-- `scanner/technical-scoring-architecture.md`: contract chấm điểm và ranking.
+  chain thực thi live; §13 ghi luồng canonical và điểm tích hợp Location target.
+- `scanner/technical-scoring-architecture.md`: chấm điểm/ranking legacy;
+  §13 tóm tắt canonical và §14 dẫn thiết kế Location chưa triển khai.
 - `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế trên máy hiện tại.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
+
+## Location: thiết kế chuẩn bị triển khai — 09/09/2026
+
+**CHƯA TRIỂN KHAI.** Runtime vẫn gọi công thức Location cũ. Việc đồng bộ tài
+liệu không đánh dấu Task 1–32 đã hoàn thành hoặc cho phép bỏ qua review.
+
+- Đặc tả thuật toán, cấu hình khởi đầu và hướng dẫn từng task:
+  [Location upgrade plan](plans/location-scoring-upgrade-plan.md).
+- Ranh giới kiến trúc và tác động lên quyết định:
+  [Scanner architecture](scanner/scanner-architecture.md), mục “Location:
+  thiết kế nâng cấp chưa triển khai”.
+- Input/raw/rounding: [Features spec](scanner/scanner-features-spec.md), §0.1
+  “Location target — chưa triển khai”.
+- Luồng tích hợp: [Scanner flow](scanner/scanner-flow.md), phụ lục Location.
+- Hiển thị: [Screen design](ui/screen_design.md) và [Style guide](ui/style-guide.md),
+  phần target Location.
+- Ảnh hưởng đối với người dùng: [User guide](guides/USER_GUIDE.md), §3.1.
+
+CODER dùng code để xác minh **hiện trạng**, dùng plan và các mục target này để
+triển khai **thay đổi đã thống nhất**. Quy tắc port/parity cũ không cấm thay
+Location có version; Trend/Momentum/SMC và gate giữ nguyên phạm vi.
+
+Sau task **8, 14, 21, 28, 32**, CODER **phải dừng, hỏi và chờ xác nhận**
+Tech Lead/người dùng theo plan §11.2. Bản đầu không cần database, replay,
+backtest sâu, gate entry mới hoặc tối ưu threshold.
 
 ## Bằng chứng kiểm thử UI
 
@@ -71,6 +99,9 @@ Các file này không phải tài liệu đọc chính, nhưng đang được to
 - Scanner direct-cutover không dùng dual scoring/shadow. Tài liệu
   runtime chỉ được cập nhật khi code, test và version của bước tương ứng
   đã hoàn tất.
+- Với Location, chỉ đổi mục target thành runtime sau chuyển caller và kiểm
+  tra thực tế theo plan; nghiệm thu cuối phải có xác nhận R5. Không thay các
+  số test lịch sử bằng kết quả chưa chạy.
 
 ## Tài liệu đã hợp nhất hoặc loại bỏ
 

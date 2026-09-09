@@ -5,6 +5,11 @@
 (+ `core/technical_context.py`, `core/indicators.py`), KHÔNG bịa, KHÔNG đổi
 threshold.
 
+> **Bổ sung 09/09/2026 — Location CHƯA TRIỂN KHAI:** contract port bên dưới
+> mô tả baseline đang chạy. Thay đổi Location sắp tới được đặc tả trong
+> [plan 32 task](../plans/location-scoring-upgrade-plan.md) và §0.1 dưới đây.
+> Không đánh dấu parity Location cũ là yêu cầu bất biến cho model mới.
+
 ## 0. Mục tiêu và ranh giới
 
 Scoring (`core/technical_signal_scorer.py:score_technical_signal`) CONSUMES các
@@ -23,6 +28,34 @@ Tầng target đã có candle→raw: module `core/scanner_features.py`
 - **Không sửa contract đã khóa** (`scanner`, `scanner-features`, ...).
 - **Fail-closed**: thiếu candle / raws không hợp lệ → trả None/UNKNOWN + reason code,
   tuyệt đối không số bịa.
+
+### 0.1 Location target — chưa triển khai, 09/09/2026
+
+Phạm vi “port/không đổi threshold/contract” ở §0–§7 ghi lại đợt migration cũ.
+Nâng cấp Location là thay đổi có version theo
+[plan Location](../plans/location-scoring-upgrade-plan.md), không phải tiếp tục
+cam kết parity với công thức Location tại §3.3. Trend, Momentum, canonical SMC,
+raw maxima và trọng số regime vẫn giữ nguyên.
+
+- Tạo `core/location_engine.py` thuần tính toán; dựng vùng H4 riêng, không sửa
+  `support_zones`/`resistance_zones` dùng chung cho SMC và scenario.
+- Adapter xác nhận timestamp UTC, cutoff và nến đã đóng trước khi giới hạn
+  cửa sổ; giữ yêu cầu lịch sử tối thiểu hiện có. Giá tham chiếu vẫn là close H1.
+- Quy tắc confirmation, ATR tại thời điểm hình thành, lifecycle, chọn anchor/
+  obstacle, công thức và defaults lấy duy nhất từ §4–§6 của plan.
+- Producer làm tròn Location theo half-up thành integer 0–25. Scorer tiếp tục
+  quy đổi raw × regime weight / 25, rồi làm tròn tổng theo contract hiện có.
+- Input hợp lệ nhưng không có anchor hoặc có xung đột có thể ra **0** kèm lý do.
+  Input lỗi trả unavailable trong engine; adapter phát `TechnicalRawDerivationError`
+  theo đường lỗi hiện có. Không đưa null hoặc điểm thay thế vào `technical_raws`.
+- Raw và detail phải cùng lần tính. Detail/version/config đi qua trường schema
+  riêng được khai báo và kiểm tra, không chèn key vào dict `technical_raws` đang
+  khóa. F01–F04 chuẩn bị transport/version; H01 mới chuyển caller live.
+- Không tính lại snapshot lịch sử, không thêm DB, không thêm entry gate.
+
+Khi chuyển công thức, đổi nhãn §3.3 thành lịch sử và ghi rõ caller/version/test
+thực tế; không sửa công thức baseline trước khi code thay thế hoạt động. Các
+mốc dừng bắt buộc vẫn là task 8/14/21/28/32 trong plan.
 
 ## 1. Đầu vào sống (từ app / broker MT5)
 

@@ -8,9 +8,10 @@
 > Backtest trong kết quả phân tích ĐÃ GỠ khỏi runtime. Các đoạn thiết kế liên
 > quan Backtest bên dưới chỉ còn giá trị tham khảo lịch sử.
 >
-> Scanner V2/Candidate Engine và scorer vẫn là runtime hiện hành. Thiết kế
-> Scanner ngày 11/08/2026 là **APPROVED DESIGN — NON-RUNTIME**; các yêu cầu
-> trong tài liệu này chỉ là target sau direct cutover.
+> **Nguồn chuẩn Scanner:** [Scanner architecture](../scanner/scanner-architecture.md)
+> ghi nhận canonical đã cutover. Các đoạn V2/pre-cutover bên dưới là thiết kế
+> lịch sử khi mâu thuẫn với nguồn chuẩn. Riêng nâng cấp Location ngày 09/09/2026
+> tại mục “Location target” dưới đây **chưa triển khai**.
 
 ---
 
@@ -601,15 +602,14 @@ Mỗi kết quả phân tích phải luôn có:
 
 ---
 
-## Màn hình 4: Scanner V2 — runtime contract hiện hành (25/07/2026)
+## Màn hình 4: Scanner — baseline V2 và contract canonical
 
-> **Ranh giới version:** phần runtime bên dưới mô tả Candidate Engine V2 với
-> scorer `scanner-v3` / `scanner-features-v3`. Target sẽ chuyển trực tiếp sang
-> scorer/feature, không chạy song song và không dùng shadow làm score
-> so sánh. Nguồn chuẩn target:
+> **Ranh giới version:** phần V2 bên dưới ghi lại baseline với
+> scorer `scanner-v3` / `scanner-features-v3`. Canonical đã cutover trực tiếp,
+> không chạy song song và không dùng shadow làm score so sánh. Nguồn chuẩn:
 > [Scanner architecture](../scanner/scanner-architecture.md).
 
-Ở target, breakdown điểm chỉ có Trend/Momentum/Location/SMC; UI đọc metadata
+Ở canonical, breakdown điểm chỉ có Trend/Momentum/Location/SMC; UI đọc metadata
 weight/breakdown theo contract và không định nghĩa lại bảng regime. UI phải
 đặt `MarketSafetyGate`, `MacroAssessment` và `MacroGate` thành card/section riêng,
 không đặt trong bảng cộng điểm. Final/Setup score phải ghi rõ ba input
@@ -818,6 +818,33 @@ Nếu có nhiều mã đạt điều kiện, MVP (phiên bản khả dụng tố
 Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra khi người dùng bấm View Detail (xem chi tiết) ở bảng Scanner (bảng quét thị trường). Màn hình này hiển thị phân tích đầy đủ của mã đã chọn.
 
 R:R ưu tiên field top-level của scanner row và fallback sang scenario khớp `best_side`. Nếu đã có entry zone nhưng chưa có TP1 hợp lệ, màn hình hiển thị `N/A` cùng ghi chú chưa có TP1 hợp lệ nên chưa tính R:R; không hiển thị RR giả.
+
+### Location target — chưa triển khai, 09/09/2026
+
+Áp dụng cho breakdown Scanner Detail theo
+[plan Location §8 và task 26–28](../plans/location-scoring-upgrade-plan.md).
+Không mở màn hình riêng. Bắt đầu từ `ui/scanner_v4_presentation.py` và adapter
+canonical; xác minh caller trước khi sửa các nhánh legacy trong screen.
+
+| Nội dung | Quy tắc hiển thị dự kiến |
+|---|---|
+| Điểm | `Location: raw/25` và contribution vào Technical; đọc weight từ payload |
+| Giá tham chiếu | Ghi rõ close H1 và thời điểm; không ghi là entry hiện tại |
+| Vùng | Anchor/obstacle, biên và trạng thái từ detail cùng lần tính |
+| Khoảng cách | Khoảng cách tới anchor và khoảng trống tới obstacle, đơn vị ATR |
+| Lý do | Tiếng Việt ngắn gọn; chi tiết/config/version có thể đặt trong tooltip |
+| Raw 0 hợp lệ | Hiển thị 0 cùng lý do như xung đột hoặc không có vùng phù hợp |
+| Không tính được | Hiển thị “Không đủ dữ liệu”/lý do lỗi phù hợp, không vẽ thành 0 |
+| Snapshot cũ | Giữ điểm cũ; nếu thiếu detail ghi “Bản lưu cũ chưa có chi tiết Location” |
+
+Cột `price_vs_zone` (“Vị trí”) đang nói về khoảng cách tới vùng entry, không
+phải điểm Location. Không đổi nghĩa cột hoặc tái sử dụng dữ liệu của nó để
+hiển thị raw. Vùng Location cũng không được thay thế vùng entry/SL/TP trên chart;
+overlay Location chưa bắt buộc ở bản đầu.
+
+UI không dựng lại vùng, tính điểm hay suy đoán lý do khi payload thiếu. Giữ bố
+cục gọn và tuân thủ [style guide](style-guide.md), gồm dark/light, co giãn và
+word-wrap. Sau task 28 phải dừng hỏi tại R4 trước khi chuyển caller live.
 
 ### Hiển thị zone theo contract Phase 16
 

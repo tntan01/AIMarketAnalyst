@@ -24,9 +24,31 @@
 (Đang cập nhật)
 
 > Ứng dụng hiện chạy Scanner. Đây là thiết kế đã được phê duyệt và là hành vi
-> runtime hiện hành; người dùng có thể kỳ vọng các field hoặc tỷ trọng theo thiết
-> kế. Xem
+> runtime hiện hành. Riêng các mục ghi “target/chưa triển khai”, gồm Location
+> tại §3.1, chưa phải chức năng đang có. Xem
 > [`scanner-architecture.md`](../scanner/scanner-architecture.md).
+
+### 3.1 Location nâng cấp — sắp triển khai
+
+**Trạng thái 09/09/2026: mới có thiết kế, chưa có trên runtime.** Chi tiết tại
+[plan Location](../plans/location-scoring-upgrade-plan.md).
+
+Location dự kiến cho biết giá close H1 có gần vùng H4 hỗ trợ hướng giao dịch
+và còn khoảng trống tới vùng cản hay không. Trong chi tiết Scanner, người dùng
+sẽ xem điểm 0–25, phần đóng góp vào điểm kỹ thuật, vùng tham chiếu, khoảng cách
+theo ATR và lý do chấm điểm.
+
+- Điểm thấp/0 có thể do không có vùng phù hợp, giá xa vùng hoặc đang ở vùng
+  cản. “Không đủ dữ liệu” là trạng thái khác, không phải điểm 0.
+- Điểm cao chỉ phản ánh vị trí theo dữ liệu đang xét; vẫn cần xem Momentum,
+  Trend, SMC, macro/safety và plan entry/SL/TP. Close H1 có thể khác giá entry.
+- Điểm kỹ thuật, hướng ưu tiên và thứ hạng có thể đổi sau nâng cấp. Tính năng
+  không tự đóng lệnh đang mở hoặc sửa SL/TP, và không bảo đảm lợi nhuận.
+- Bản lưu cũ giữ nguyên điểm. Nếu chưa có detail Location, giao diện sẽ báo
+  rõ thay vì tính lại lịch sử bằng công thức mới.
+
+Không cần nhập vùng hoặc tin thủ công để sử dụng Location bản đầu; không cần
+đăng ký nguồn dữ liệu trả phí hay cài database mới riêng cho phần này.
 
 ## 4. Journal (Nhật ký)
 

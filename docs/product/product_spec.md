@@ -156,7 +156,7 @@ Calibration runner này không phải System Backtest. Historical replay hiện 
 flat VIX scoring; chỉ được bổ sung parity khi có map point-in-time/versioned để
 không dùng bằng chứng tương lai cho decision date quá khứ.
 
-### 5.2 Target Scanner đã phê duyệt — chưa chạy runtime
+### 5.2 Scanner canonical — đã cutover
 
 Scanner chỉ chấm bốn thành phần kỹ thuật theo từng side: Trend, Momentum, Location và
 SMC. Trọng số theo regime và quy tắc rounding chỉ được định nghĩa tại tài liệu
@@ -167,11 +167,29 @@ vào Technical/Final/Setup score hoặc một thành phần ranking số.
 
 Tích hợp Scanner dùng **direct cutover** sang `scanner` /
 `scanner-features`: không dual scoring, không shadow và
-không giữ hai scorer live sau cutover. Cho đến khi code, test, calibration và
-version contract hoàn tất, runtime và backtest config giữ nguyên hiện hành. Nguồn
-normative duy nhất cho target là
-[Scanner architecture](../scanner/scanner-architecture.md);
-runtime hiện hành xem [Scanner flow](../scanner/scanner-flow.md).
+không giữ hai scorer live sau cutover. Cutover đã hoàn tất theo
+[Scanner architecture](../scanner/scanner-architecture.md), nguồn chuẩn cho
+runtime; [Scanner flow](../scanner/scanner-flow.md) còn giữ phần lịch sử và có
+phụ lục luồng canonical. Việc nâng cấp Location dưới đây là thay đổi riêng,
+chưa được triển khai.
+
+### 5.3 Location target — chưa triển khai, 09/09/2026
+
+Mục tiêu là đánh giá vị trí giá so với vùng H4 đúng phía, còn hiệu lực và có
+khoảng trống theo hướng giao dịch; khắc phục điểm thưởng sai vùng, xung đột và
+bước nhảy lớn của công thức cũ. Đặc tả và 32 task nằm trong
+[plan Location](../plans/location-scoring-upgrade-plan.md).
+
+Sau khi triển khai, người dùng xem được điểm Location, vùng làm mốc, vùng cản,
+khoảng cách theo ATR và lý do điểm thấp/không tính được. Điểm dùng close H1,
+không thay cho đánh giá vị trí entry thực tế. Điểm kỹ thuật, SetupScore, side,
+thứ hạng và cơ hội đủ điều kiện đặt lệnh có thể khác dù threshold giữ nguyên.
+Không cam kết điểm luôn thấp hơn, ít lệnh hơn hay lợi nhuận tăng.
+
+Giữ bốn thành phần kỹ thuật, trọng số và guard hiện có. Tính năng này không
+tự đóng vị thế hay sửa SL/TP của lệnh đang mở. Không yêu cầu dịch vụ trả phí,
+database mới hoặc backtest dài hạn; kiểm tra logic và một số case biểu đồ theo
+plan. Nghiệm thu theo năm mốc dừng 8/14/21/28/32, không duyệt riêng từng task.
 
 ## 6. Backtest config contract — ĐÃ LOẠI BỎ (2026-09-09)
 

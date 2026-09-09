@@ -95,3 +95,22 @@ Nếu thay đổi hình thức có chủ đích, chụp lại dark/light bằng
 `tools/capture_ui_style_baseline.py`, kiểm tra trực quan rồi tạo lại manifest.
 Chỉ cập nhật `docs/ui/style/ui-style-lock.json` khi thay đổi kiến trúc đã được review;
 không cập nhật lock chỉ để làm test hết lỗi.
+
+## 6. Location target — chưa triển khai, 09/09/2026
+
+Nội dung và trạng thái lấy từ
+[screen design — Location target](screen_design.md) và
+[plan Location](../plans/location-scoring-upgrade-plan.md). Bản đầu thêm phần
+giải thích gọn trong breakdown hiện có, không thêm màn hình/dashboard riêng.
+
+- Giữ typography, spacing, theme và component chung ở §1–§3; không hardcode
+  màu hay chiều cao để chứa detail.
+- Có nhãn chữ phân biệt điểm 0 hợp lệ, xung đột, thiếu dữ liệu và bản lưu cũ;
+  màu chỉ hỗ trợ, không thay cho lý do bằng chữ.
+- Hiển thị raw/25 và contribution thành hai thông tin phân biệt; khoảng cách
+  phải có đơn vị ATR, giá phải có nhãn close H1/thời điểm.
+- Nội dung dài dùng wrap/tooltip phù hợp. Không yêu cầu chart overlay hay
+  bảng cấu hình nâng cao cho bản đầu.
+- Khi thực sự sửa UI, làm kiểm tra liên quan ở §5 và task 26–28 của plan;
+  mốc R4 sau task 28 là bắt buộc. Lần đồng bộ Markdown này không phải bằng
+  chứng UI đã được triển khai hoặc đã kiểm tra trực quan.

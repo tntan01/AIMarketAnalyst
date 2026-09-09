@@ -10,6 +10,10 @@ Cutover xong: **14/08/2026**. Gỡ rollout/SHADOW, chạy thật: **15/08/2026**
 > Nội dung bên dưới mô tả luồng **trước cutover**, giữ lại để tra cứu lịch
 > sử; riêng §11 đã được viết lại theo guard chain thực thi live hiện tại.
 
+> **Bổ sung 09/09/2026:** §13 phân biệt luồng canonical đang chạy với điểm
+> tích hợp Location **chưa triển khai**. Không khôi phục machinery legacy để
+> làm nâng cấp này.
+
 ## 1. Tổng quan
 
 ```text
@@ -428,3 +432,34 @@ direct cutover (Bước 12). Score/config/snapshot bị fail-closed cho live và
 chỉ phục vụ replay có kiểm soát; không có router dual-score. Chi tiết và
 trạng thái từng bước nằm tại
 [`scanner-architecture.md`](scanner-architecture.md).
+
+## 13. Luồng canonical và Location target — 09/09/2026
+
+Theo caller hiện tại, thứ tự cần giữ khi nâng cấp:
+
+1. `scanner_live_producers.derive_live_analysis`: tạo technical context và
+   canonical SMC, derive raw BUY/SELL, xác định regime.
+2. `scanner_release.run_pair_from_live`: tạo scenario cho hai side từ analysis,
+   ghép `SideSnapshot` và snapshot, rồi gọi composition.
+3. `scanner_composition`: tính Technical của hai side, chọn side theo Technical
+   (hòa chọn BUY), đánh giá plan của side được chọn, tính final và các gate.
+4. Adapter/UI và luồng execution đọc kết quả chính thức; các guard hiện có
+   tiếp tục quyết định có được đặt lệnh hay không.
+
+**Thay đổi dự kiến, chưa chạy:** ở bước 1, producer Location gọi engine thuần
+với nến H4 đã đóng và giá close H1. Vùng riêng chỉ phục vụ Location; không ghi
+đè vùng technical/SMC mà bước 2 đang dùng. Tại bước 2, raw và detail cùng lần
+tính phải đi xuyên schema/snapshot. F chuẩn bị adapter/schema/version và G
+chuẩn bị UI; H01 mới chuyển caller live theo
+[plan 32 task](../plans/location-scoring-upgrade-plan.md).
+
+Không đưa scenario entry hoặc selected side ngược vào raw scorer. Với cùng
+input và cùng side, logic tạo entry/SL/TP giữ nguyên; scenario hiển thị cuối
+có thể khác vì side được chọn thay đổi. Input Location lỗi đi qua typed error
+và unavailable hiện có, không fallback âm thầm sang công thức cũ. Snapshot
+lịch sử giữ raw/detail/version gốc; cache hiện có phải nhận biết version/config
+khi cần, không tạo cache hay DB mới.
+
+Đặc tả chi tiết lấy từ plan và
+[kiến trúc canonical §3.4–§3.5](scanner-architecture.md). Coder phải dừng hỏi
+sau task 8/14/21/28/32; không dùng việc test pass thay cho xác nhận.

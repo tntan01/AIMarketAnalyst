@@ -3,12 +3,15 @@
 > - **Bối cảnh:** ứng dụng cá nhân, chạy cục bộ.
 > - **Mục tiêu tài liệu:** mô tả chức năng, cấu hình, kiểm thử và cách chuyển runtime.
 > - **Runtime hiện tại:** `scanner` / `scanner-features`.
-> - **Target = Runtime:** cutover trực tiếp đã hoàn tất (Bước 12/13 `DONE`);
+> - **Target migration 2026-08 = Runtime:** cutover trực tiếp đã hoàn tất (Bước 12/13 `DONE`);
 >   target đã trở thành runtime, không còn nhánh runtime `scanner-v3`/`scanner-features-v3`
 >   (chỉ còn là alias legacy đọc-được).
 > - **Tiến độ:** Bước 00–13 `DONE` (runtime live từ 2026-08-15; full suite 3371 collected, 6 fail FRED pre-existing).
 > - **Migration:** cutover trực tiếp, không duy trì hai scorer trong runtime.
 > - **Cập nhật tài liệu:** 15/08/2026.
+> - **Bổ sung thiết kế Location: 09/09/2026 — CHƯA TRIỂN KHAI.** §3.4 và §3.5
+>   mô tả thay đổi sắp làm; trạng thái DONE của migration cũ không áp dụng cho
+>   [32 task Location](../plans/location-scoring-upgrade-plan.md).
 
 Tài liệu này là nguồn chuẩn cho Scanner. Nó cố ý chỉ giữ những nội dung ảnh
 hưởng trực tiếp tới chương trình:
@@ -130,6 +133,69 @@ Quy tắc:
 - BUY/SELL gap chỉ tính từ TechnicalScore BUY/SELL.
 
 Module canonical: `core/technical_signal_scorer.py`.
+
+### 3.4 Location: thiết kế nâng cấp chưa triển khai
+
+**Trạng thái: TARGET, chưa thay runtime.** Nguồn chi tiết duy nhất cho thuật
+toán/default config/test/task là
+[Location upgrade plan](../plans/location-scoring-upgrade-plan.md). Không sao
+chép các con số default sang nhiều file tài liệu hoặc tự chọn một công thức khác.
+
+Hiện trạng đã rà soát: Location theo H1 close, vùng swing H4 đơn giản, raw tối
+đa thực tế 20 dù raw_max=25; chưa kiểm tra lifecycle và vùng sai phía. Công
+thức và counterexample nằm ở plan §2–3.
+
+Ranh giới bản đầu:
+
+- Một module thuần `core/location_engine.py` được đề xuất; không service,
+  database, event bus, replay hoặc cache riêng.
+- LocationContext dùng nến H4 đã đóng, cutoff rõ và reference H1 đã đóng;
+  dựng một lần dùng chung BUY/SELL.
+- Vùng riêng của Location có confirmation, ATR tại confirmation và lifecycle
+  ACTIVE/SUSPECT/INVALIDATED/EXPIRED. Không mutate
+  `technical.support_zones/resistance_zones` mà SMC/scenario đang sử dụng.
+- Chỉ anchor đúng phía và ACTIVE được chấm. Obstacle hợp lệ chứa giá thì
+  conflict/raw=0 trước khi tính proximity. Không bonus từ vùng xa.
+- Raw mới 0–25 theo proximity × clearance, lượng tử hóa HALF_UP tại raw
+  producer theo plan §6. Sau đó scorer vẫn áp dụng §3.3, không làm tròn riêng
+  scaled contribution. Đây là hai tầng khác nhau, không đổi rounding tổng.
+- Không có anchor trong input hợp lệ -> raw=0. ATR/cấu hình/input lỗi ->
+  unavailable; adapter dùng typed error hiện có, không fabricate raw.
+- Raw/detail/model version/config đi cùng một nguồn qua canonical snapshot
+  và UI. Mở rộng schema chỉ ở các lớp thực sự cần; không thêm key giải thích
+  vào `technical_raws` vốn chỉ chứa ba raw.
+- Giữ raw_max và regime weights ở §3.1–3.2. Không đổi Trend/Momentum/SMC,
+  Evidence/Execution weights, Macro/Safety gates, R:R hay order thresholds.
+- Entry được tạo ở scenario producer sau raw; bản đầu không chấm entry thay
+  H1, không thêm Entry Location Check và không đổi selected_side bằng một
+  entry score riêng.
+
+Version hiện hành ở §7.3 là baseline. Task F03 xác định version/schema cần đổi;
+chỉ activate cùng caller mới ở H01, không tự coi model mới tương đương alias
+legacy. Dữ liệu journal/snapshot cũ giữ nguyên score/version.
+
+### 3.5 Ảnh hưởng dự kiến và điều kiện chuyển Location
+
+| Phần | Ảnh hưởng khi triển khai |
+|---|---|
+| TechnicalSignalScore | Có thể tăng/giảm vì Location, đặc biệt regime có weight 40 |
+| SetupScore/final_score | Thay đổi theo Technical, giữ nguyên công thức §4 |
+| BUY/SELL gap và selected_side | Có thể đổi; không ép giống baseline bằng đổi threshold |
+| Scenario | Công thức/plan từng side không đổi khi cùng input; plan được hiển thị có thể khác vì selected_side đổi |
+| Candidate/ranking/lệnh mới | Có thể đổi theo score và các gate sẵn có; không mở quyền vượt gate |
+| UI | Có lý do/anchor/obstacle và reference H1 rõ; Location không phải proximity tới entry |
+| Lệnh đang mở | Nâng Location không tự đóng lệnh/sửa stop; Order Management hiện có vẫn hoạt động theo policy của nó |
+| Hiệu năng | Có thêm dựng lifecycle trên cửa sổ H4 giới hạn; kiểm tra thời gian quét trước khi nghĩ đến cache |
+
+Không kết luận trước rằng số lệnh sẽ giảm hoặc lợi nhuận sẽ tăng.
+
+Thực hiện đúng 32 task; **dừng và hỏi sau 8/14/21/28/32**, chờ Tech Lead/người
+dùng xác nhận trước nhóm tiếp theo. Các điểm dừng là yêu cầu trực tiếp của
+người dùng trong plan §11.2, không phải một gate giao dịch mới trong runtime.
+Task H01 chuyển caller trong bản code chuẩn bị, không chạy hai scorer.
+Targeted regression và khoảng 5–10 case biểu đồ là phạm vi kiểm tra bản đầu;
+không yêu cầu backtest sâu hoặc tối ưu P&L. Chờ R5 trước nghiệm thu/phát hành
+theo phạm vi được cho phép.
 
 ## 4. SetupScore và FinalScore
 
