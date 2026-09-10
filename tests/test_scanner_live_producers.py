@@ -40,14 +40,21 @@ NOW = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
 BASE = 1000.0
 
 
-def _mk(n: int, step: float, phase: float) -> list[Candle]:
+def _mk(
+    n: int,
+    step: float,
+    phase: float,
+    *,
+    interval_hours: float | None = None,
+) -> list[Candle]:
     out = []
+    interval = step if interval_hours is None else interval_hours
     for i in range(n):
         o = BASE + math.sin((i + phase) / 3) * 0.5 + i * step
         c = BASE + math.sin((i + 1 + phase) / 3) * 0.5 + (i + 1) * step
         out.append(
             Candle(
-                time=NOW - timedelta(seconds=int((n - i) * step * 3600)),
+                time=NOW - timedelta(seconds=int((n - i) * interval * 3600)),
                 open=o,
                 high=max(o, c) + 0.1,
                 low=min(o, c) - 0.1,
@@ -59,7 +66,11 @@ def _mk(n: int, step: float, phase: float) -> list[Candle]:
 
 @pytest.fixture
 def candles():
-    return _mk(120, 0.08, 0.0), _mk(120, 0.04, 1.0), _mk(80, 0.02, 2.0)
+    return (
+        _mk(120, 0.08, 0.0, interval_hours=24.0),
+        _mk(120, 0.04, 1.0, interval_hours=4.0),
+        _mk(80, 0.02, 2.0, interval_hours=1.0),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +275,13 @@ def test_derive_live_analysis_produces_valid_inputs(candles):
     assert set(raws.per_side) == {"buy", "sell"}
     for side in ("buy", "sell"):
         assert 0 <= raws.per_side[side].smc <= 15
+        detail = raws.per_side[side].location_detail
+        assert detail is not None
+        assert detail.model_version == "location-geometry-v2"
+        assert detail.reference_closed_at is not None
+        assert raws.per_side[side].location_source == detail.model_version
+    assert "location_quality_score_v4@sig_engine" not in raws.derivation
+    assert "/location=location-geometry-v2" in raws.derivation
     assert len(raws.deterministic_fingerprint) == 64
 
 
@@ -273,6 +291,20 @@ def test_derive_live_analysis_deterministic(candles):
     b = derive_live_analysis(d1, h4, h1, symbol="XAUUSD", captured_at=NOW)
     assert a["raws"].deterministic_fingerprint == b["raws"].deterministic_fingerprint
     assert a["regime"] == b["regime"]
+
+
+def test_runtime_location_path_does_not_call_legacy_location_formula(candles, monkeypatch):
+    import core.scanner_features as features
+
+    def legacy_must_not_run(*_args, **_kwargs):
+        raise AssertionError("legacy Location formula called by runtime")
+
+    monkeypatch.setattr(features, "location_quality_score_v4", legacy_must_not_run)
+    d1, h4, h1 = candles
+    analysis = derive_live_analysis(d1, h4, h1, symbol="XAUUSD", captured_at=NOW)
+
+    assert analysis["raws"].per_side["buy"].location_detail is not None
+    assert analysis["raws"].per_side["sell"].location_detail is not None
 
 
 def test_producer_version_is_locked():

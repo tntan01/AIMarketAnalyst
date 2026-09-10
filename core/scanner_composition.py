@@ -58,6 +58,7 @@ from core.final_score import (
     FinalScoreResult,
     score_final_score,
 )
+from core.location_engine import LocationResult
 from core.macro_gate import (
     DEFAULT_MACRO_POLICY,
     MacroGate,
@@ -276,6 +277,7 @@ class SideSnapshot:
     execution_quality_score: int | None = None
     execution_quality_source: str = ""
     scenario_plan: ScenarioPlan | None = None
+    location_detail: LocationResult | None = None
 
     def __post_init__(self) -> None:
         raws = dict(self.technical_raws)
@@ -317,9 +319,19 @@ class SideSnapshot:
             raise CompositionInputError(
                 "side.scenario_plan", "expected a ScenarioPlan or null"
             )
+        if self.location_detail is not None:
+            if type(self.location_detail) is not LocationResult:
+                raise CompositionInputError(
+                    "side.location_detail", "expected a LocationResult or null"
+                )
+            if self.location_detail.raw != raws["location"]:
+                raise CompositionInputError(
+                    "side.location_detail.raw",
+                    "must match side.technical_raws.location",
+                )
 
     def to_canonical_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "trend_raw": self.technical_raws["trend"],
             "momentum_raw": self.technical_raws["momentum"],
             "location_raw": self.technical_raws["location"],
@@ -331,6 +343,9 @@ class SideSnapshot:
                 None if self.scenario_plan is None else self.scenario_plan.to_canonical_dict()
             ),
         }
+        if self.location_detail is not None:
+            payload["location_detail"] = self.location_detail.to_dict()
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +469,13 @@ class ScannerSnapshot:
             raise CompositionInputError("snapshot.buy", "expected a SideSnapshot")
         if type(self.sell) is not SideSnapshot:
             raise CompositionInputError("snapshot.sell", "expected a SideSnapshot")
+        for side, side_snapshot in ((BUY, self.buy), (SELL, self.sell)):
+            detail = side_snapshot.location_detail
+            if detail is not None and detail.side != side:
+                raise CompositionInputError(
+                    f"snapshot.{side}.location_detail.side",
+                    "must match the containing side",
+                )
         if type(self.safety) is not MarketSafetyContext:
             raise CompositionInputError(
                 "snapshot.safety", "expected a MarketSafetyContext"
@@ -1293,8 +1315,18 @@ def compose_scanner(
 
     # --- 10. canonical artifact ----------------------------------------------
     side_scores = (
-        _build_side_score(BUY, buy_technical, final_scores[BUY]),
-        _build_side_score(SELL, sell_technical, final_scores[SELL]),
+        _build_side_score(
+            BUY,
+            buy_technical,
+            final_scores[BUY],
+            location_detail=snapshot.buy.location_detail,
+        ),
+        _build_side_score(
+            SELL,
+            sell_technical,
+            final_scores[SELL],
+            location_detail=snapshot.sell.location_detail,
+        ),
     )
     canonical = CanonicalPairSnapshot.create(
         snapshot_id=snapshot_id_of(snapshot),
@@ -1398,6 +1430,8 @@ def _build_side_score(
     side: str,
     technical: TechnicalSignalScoreResult | None,
     final: FinalScoreResult | None,
+    *,
+    location_detail: LocationResult | None = None,
 ) -> SideScore:
     if technical is None or final is None:
         return SideScore(
@@ -1425,6 +1459,7 @@ def _build_side_score(
         setup_score=final.setup_score,
         final_score=final.final_score,
         reason_codes=final.fallback_warnings,
+        location_detail=location_detail,
     )
 
 

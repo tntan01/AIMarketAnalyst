@@ -139,14 +139,14 @@ def _pathb_candles() -> tuple[list, list, list]:
 
     base = 1000.0
 
-    def mk(n, step, phase):
+    def mk(n, step, phase, interval_hours):
         out = []
         for i in range(n):
             o = base + math.sin((i + phase) / 3) * 0.5 + i * step
             c = base + math.sin((i + 1 + phase) / 3) * 0.5 + (i + 1) * step
             out.append(
                 Candle(
-                    time=NOW - timedelta(seconds=int((n - i) * step * 3600)),
+                    time=NOW - timedelta(seconds=int((n - i) * interval_hours * 3600)),
                     open=o,
                     high=max(o, c) + 0.1,
                     low=min(o, c) - 0.1,
@@ -155,7 +155,11 @@ def _pathb_candles() -> tuple[list, list, list]:
             )
         return out
 
-    return mk(120, 0.08, 0.0), mk(120, 0.04, 1.0), mk(80, 0.02, 2.0)
+    return (
+        mk(120, 0.08, 0.0, 24.0),
+        mk(120, 0.04, 1.0, 4.0),
+        mk(80, 0.02, 2.0, 1.0),
+    )
 
 
 def _pathb_safety() -> dict:

@@ -29,6 +29,7 @@ from core.scanner_ui_adapter import (
     ANALYSIS_OK,
     AdapterContractError,
     V3_ONLY_NEUTRAL_KEYS,
+    blocked_ui_row,
     pair_to_ui_row,
 )
 
@@ -54,14 +55,16 @@ def _live_pair():
     now = TESTKIT_NOW
     base = 1000.0
 
-    def mk(n, step, phase):
+    def mk(n, interval_hours, step, phase):
         out = []
         for i in range(n):
             o = base + math.sin((i + phase) / 3) * 0.5 + i * step
             c = base + math.sin((i + 1 + phase) / 3) * 0.5 + (i + 1) * step
             out.append(
                 Candle(
-                    time=now - timedelta(seconds=int((n - i) * step * 3600)),
+                    # Keep each timeframe on its real cadence so all bars are
+                    # closed at the shared capture boundary.
+                    time=now - timedelta(hours=(n - i) * interval_hours),
                     open=o,
                     high=max(o, c) + 0.1,
                     low=min(o, c) - 0.1,
@@ -72,7 +75,9 @@ def _live_pair():
 
     from core.scanner_live_producers import build_live_market_safety_context
 
-    d1, h4, h1 = mk(120, 0.08, 0.0), mk(120, 0.04, 1.0), mk(80, 0.02, 2.0)
+    d1 = mk(120, 24.0, 0.08, 0.0)
+    h4 = mk(120, 4.0, 0.04, 1.0)
+    h1 = mk(80, 1.0, 0.02, 2.0)
     safety = build_live_market_safety_context(
         "XAUUSD",
         now,
@@ -329,3 +334,81 @@ class TestThresholdColumns:
         assert decision["min_score"] == float(custom.threshold.setup_floor)
         assert decision["min_rr"] == float(custom.threshold.min_risk_reward)
         assert decision["min_rr"] > DEFAULT_THRESHOLD_POLICY.min_risk_reward
+
+
+def test_blocked_row_preserves_location_reason_codes_without_order_intent():
+    row = blocked_ui_row(
+        "EURUSD",
+        "Location unavailable",
+        reason_codes=("LOCATION_INVALID_DATA", "LOCATION_INVALID_DATA"),
+        analysis_error="LOCATION_INVALID_DATA at context.current_atr_h4",
+    )
+
+    assert row["candidate_status"] == "DATA_UNAVAILABLE"
+    assert row["reason_codes"] == ["LOCATION_INVALID_DATA"]
+    assert row["block_codes"] == ["LOCATION_INVALID_DATA"]
+    assert row["analysis_result"]["reason_codes"] == ["LOCATION_INVALID_DATA"]
+    assert row["scanner_candidate_decision"]["reason_codes"] == [
+        "LOCATION_INVALID_DATA"
+    ]
+    assert row["candidate_order_payload"] is None
+    assert row["auto_trade_candidate"] is False
+
+
+def test_analysis_handler_carries_typed_location_reason_to_unavailable_row(monkeypatch):
+    from controllers import scanner_controller
+    from core.scanner_features import TechnicalRawDerivationError
+
+    def unavailable(*args, **kwargs):
+        raise TechnicalRawDerivationError(
+            "LOCATION_INVALID_DATA at context.current_atr_h4",
+            reason_code="LOCATION_INVALID_DATA",
+            field="context.current_atr_h4",
+        )
+
+    monkeypatch.setattr(scanner_controller, "derive_live_analysis", unavailable)
+    row = scanner_controller._analyze_one_symbol(
+        {
+            "symbol": "EURUSD",
+            "broker_symbol": "EURUSD",
+            "candles": {},
+            "macro_context": {},
+            "input_timestamps": {},
+            "v4_captured_at": TESTKIT_NOW,
+            "location_cutoff": TESTKIT_NOW,
+        },
+        correlation_context={},
+        freshness_multiplier=1.0,
+        contract_size_overrides={},
+        analysis_input_kwargs={},
+        closed_trades=[],
+        account_guard_settings={},
+    )
+
+    assert row["candidate_status"] == "DATA_UNAVAILABLE"
+    assert row["reason_codes"] == ["LOCATION_INVALID_DATA"]
+    assert row["block_codes"] == ["LOCATION_INVALID_DATA"]
+    assert row["candidate_order_payload"] is None
+
+
+def test_ui_row_enriches_compact_summary_from_canonical_location_detail():
+    from tests.test_location_canonical_detail import _composition_with_location_detail
+
+    pair = dataclasses.replace(
+        _pair(), composition=_composition_with_location_detail()
+    )
+    row = pair_to_ui_row(pair)
+
+    by_side = {item["side"]: item for item in row["side_scores"]}
+    for side in ("buy", "sell"):
+        item = by_side[side]
+        assert item["technical_breakdown"]["location"]["raw"] == item["location_raw"]
+        assert item["technical_breakdown"]["location"]["contribution"] is not None
+        assert item["location_detail"]["reference_closed_at"] is not None
+        assert item["location_detail"]["raw"] == item["location_raw"]
+
+
+def test_ui_row_keeps_historical_side_summary_without_fabricating_detail():
+    row = pair_to_ui_row(_pair())
+    assert all("technical_breakdown" in item for item in row["side_scores"])
+    assert all("location_detail" not in item for item in row["side_scores"])

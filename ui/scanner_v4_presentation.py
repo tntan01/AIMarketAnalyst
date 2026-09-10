@@ -118,9 +118,10 @@ class SideScoreView:
     execution_quality_score: int | None
     components: tuple[TechnicalComponentView, ...]
     reason_codes: tuple[str, ...]
+    location_detail: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "side": self.side,
             "technical_signal_score": self.technical_signal_score,
             "setup_score": self.setup_score,
@@ -130,6 +131,9 @@ class SideScoreView:
             "components": [c.to_dict() for c in self.components],
             "reason_codes": list(self.reason_codes),
         }
+        if self.location_detail is not None:
+            payload["location_detail"] = dict(self.location_detail)
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +224,11 @@ def build_scanner_presentation(
                     for name, component in _breakdown_items(score.technical_breakdown)
                 ),
                 reason_codes=score.reason_codes,
+                location_detail=(
+                    score.location_detail.to_dict()
+                    if score.location_detail is not None
+                    else None
+                ),
             )
         )
 

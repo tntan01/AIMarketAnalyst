@@ -8,9 +8,9 @@
 > `scanner`/`scanner-features`. Chỉ §13 ("Target đã chốt") mô tả đúng scoring
 > đang thực thi; §2–§12 là đường legacy không còn trên runtime.
 
-> **Location bổ sung 09/09/2026:** §14 dưới đây là thiết kế **chưa triển khai**.
-> Không dùng các yêu cầu backtest/strategy legacy ở §2–§12 làm điều kiện cho
-> việc nâng cấp Location.
+> **Location cập nhật 10/09/2026:** §14 dưới đây ghi contract đã triển khai sau
+> H01/H02. Không dùng các yêu cầu backtest/strategy legacy ở §2–§12 làm điều
+> kiện cho Location; R5 vẫn là checkpoint nghiệm thu tài liệu/runtime.
 
 ## 1. Mục tiêu
 
@@ -282,18 +282,23 @@ bước nằm duy nhất tại
 tham khảo legacy, còn runtime contract hiện hành là
 [`scanner-architecture.md`](scanner-architecture.md).
 
-## 14. Location target — chưa triển khai, 09/09/2026
+## 14. Location runtime — đã triển khai, 10/09/2026
 
 Nguồn đặc tả thuật toán và 32 task là
 [plan Location](../plans/location-scoring-upgrade-plan.md); ranh giới tích hợp
 là [Scanner architecture §3.4–§3.5](scanner-architecture.md).
 
-Thay producer Location bằng vùng H4 có confirmation/lifecycle, anchor đúng phía
-và khoảng trống tới obstacle. Raw vẫn 0–25; normalization và regime weights
-không đổi. Điểm kỹ thuật, SetupScore, side được chọn và xếp hạng có thể thay đổi
-do đầu vào Location thay đổi. Không chỉnh các threshold để cố giữ kết quả cũ.
+Runtime producer Location dùng vùng H4 riêng có confirmation/lifecycle, anchor
+đúng phía và khoảng trống tới obstacle. Reference là close H1 cuối đã đóng tại
+cutoff `captured_at`; context dùng chung cho BUY/SELL. Raw vẫn 0–25;
+normalization và regime weights không đổi. Điểm kỹ thuật, SetupScore, side được
+chọn và xếp hạng có thể thay đổi do đầu vào Location thay đổi. Không chỉnh các
+threshold để cố giữ kết quả cũ.
 
-Input lỗi phải đi theo unavailable hiện có; raw 0 hợp lệ không phải lỗi dữ liệu.
-Không thêm điểm Macro/Risk, entry gate, database hay yêu cầu backtest lợi nhuận.
-Chỉ cập nhật trạng thái live sau khi caller và kiểm thử thực sự hoàn tất;
-nghiệm thu phải qua R5. Các mốc dừng 8/14/21/28/32 lấy từ plan.
+Input lỗi phát `TechnicalRawDerivationError` và đi theo unavailable hiện có; raw
+0 hợp lệ cho no-anchor/conflict/limited-context không phải lỗi dữ liệu. Detail
+canonical giữ `location-geometry-v2`, `location-config-v1` và reference H1 để
+reader/UI giải thích cùng kết quả đã chấm. Không thêm điểm Macro/Risk, entry
+gate, database hay yêu cầu backtest lợi nhuận. H01 đã chuyển caller, H02 đã
+kiểm tra fixture/environment smoke không dispatch lệnh; nghiệm thu cuối vẫn qua
+R5. Các mốc dừng 8/14/21/28/32 lấy từ plan.

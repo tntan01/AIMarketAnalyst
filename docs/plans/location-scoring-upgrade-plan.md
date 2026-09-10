@@ -575,77 +575,85 @@ Task **1–32** là số thứ tự chính để giao việc và báo tiến đ�
 trong ngoặc để tra phụ thuộc và các ghi chú cũ; ID này không tạo task bổ sung.
 Mỗi task vẫn có hướng dẫn chi tiết tương ứng tại §11.1.
 
+**Cập nhật trạng thái:** CODER cập nhật trực tiếp cột **Trạng thái** của từng
+task trong các bảng dưới: **Chưa thực hiện** → **Đang thực hiện** → **Hoàn thành**.
+Chỉ ghi **Hoàn thành** khi đã đáp ứng điều kiện của task và ghi bằng chứng
+kiểm tra theo §11.2; nếu bị chặn, ghi **Bị chặn — [lý do]**.
+Riêng task **8, 14, 21, 28 và 32**, khi CODER làm xong thì ghi **Chờ review**;
+chỉ đổi thành **Hoàn thành** sau khi có xác nhận cho mốc R1–R5 tương ứng.
+Task 32 chỉ hoàn thành khi checklist §12 đạt và R5 được xác nhận.
+
 ### Giai đoạn A — Xác nhận lỗi và ranh giới
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 1 | A01 | Kiểm tra caller Location và consumer vùng dùng chung | — | Biết chính xác file cần sửa; bảo toàn thay đổi người dùng |
-| 2 | A02 | Chạy baseline tests liên quan | A01 | Ghi command và kết quả ngắn |
-| 3 | A03 | Thêm fixture sáu case OLD-01..06 | A02 | Tái hiện đúng công thức cũ |
-| 4 | A04 | Xác minh nến H4 đóng/cutoff và ghi target vào architecture | A01 | Quy ước thời gian rõ; docs chưa tuyên bố đã live |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 1 | A01 | Kiểm tra caller Location và consumer vùng dùng chung | — | Biết chính xác file cần sửa; bảo toàn thay đổi người dùng | Hoàn thành |
+| 2 | A02 | Chạy baseline tests liên quan | A01 | Ghi command và kết quả ngắn | Hoàn thành |
+| 3 | A03 | Thêm fixture sáu case OLD-01..06 | A02 | Tái hiện đúng công thức cũ | Hoàn thành |
+| 4 | A04 | Xác minh nến H4 đóng/cutoff và ghi target vào architecture | A01 | Quy ước thời gian rõ; docs chưa tuyên bố đã live | Hoàn thành |
 
 ### Giai đoạn B — Mô hình tối thiểu
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 5 | B01 | Tạo location_engine.py, cấu hình mặc định có version | A04 | Không service/database mới |
-| 6 | B02 | Validate cấu hình và input thiết yếu | B01 | T05 đạt; default khác với fallback che config lỗi |
-| 7 | B03 | Tạo LocationZone/Context/Result nhỏ | B02 | Field đủ cho tính điểm và giải thích |
-| 8 | B04 | Viết serialize detail và reason codes cần dùng | B03 | Null/0/status/version có ý nghĩa rõ; **DỪNG và hỏi tại R1, chờ xác nhận** |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 5 | B01 | Tạo location_engine.py, cấu hình mặc định có version | A04 | Không service/database mới | Hoàn thành |
+| 6 | B02 | Validate cấu hình và input thiết yếu | B01 | T05 đạt; default khác với fallback che config lỗi | Hoàn thành |
+| 7 | B03 | Tạo LocationZone/Context/Result nhỏ | B02 | Field đủ cho tính điểm và giải thích | Hoàn thành |
+| 8 | B04 | Viết serialize detail và reason codes cần dùng | B03 | Null/0/status/version có ý nghĩa rõ; **DỪNG và hỏi tại R1, chờ xác nhận** | Hoàn thành |
 
 ### Giai đoạn C — Dựng vùng đúng
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 9 | C01 | Lọc closed candles theo cutoff, giới hạn history | B03,A04 | Không dùng nến tương lai |
-| 10 | C02 | Tạo swing ID/confirmed_at | C01 | Không dùng index làm ID; swing có đủ xác nhận |
-| 11 | C03 | Dựng biên bằng ATR tại confirmation, tick nếu có | C02 | T14 đạt; max width được kiểm tra |
-| 12 | C04 | Viết breach streak BUY/SELL và expiry | C03 | T11,T12 đạt |
-| 13 | C05 | Dedup chính xác và sắp xếp ổn định | C04 | Không merge/revision framework; duplicate không tăng điểm |
-| 14 | C06 | Kiểm tra causal và context dùng chung hai phía | C05 | T13 đạt; context dựng một lần; **DỪNG và hỏi tại R2, chờ xác nhận** |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 9 | C01 | Lọc closed candles theo cutoff, giới hạn history | B03,A04 | Không dùng nến tương lai | Hoàn thành |
+| 10 | C02 | Tạo swing ID/confirmed_at | C01 | Không dùng index làm ID; swing có đủ xác nhận | Hoàn thành |
+| 11 | C03 | Dựng biên bằng ATR tại confirmation, tick nếu có | C02 | T14 đạt; max width được kiểm tra | Hoàn thành |
+| 12 | C04 | Viết breach streak BUY/SELL và expiry | C03 | T11,T12 đạt | Hoàn thành |
+| 13 | C05 | Dedup chính xác và sắp xếp ổn định | C04 | Không merge/revision framework; duplicate không tăng điểm | Hoàn thành |
+| 14 | C06 | Kiểm tra causal và context dùng chung hai phía | C05 | T13 đạt; context dựng một lần; **R2 đã được Tech Lead duyệt** | Hoàn thành |
 
 ### Giai đoạn D — Chấm Location
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 15 | D01 | Chọn anchor đúng phía/trạng thái | C06 | T01,T04 đạt |
-| 16 | D02 | Chọn obstacle và xử lý conflict trước | D01 | T02,T03 đạt |
-| 17 | D03 | Viết P,C,raw và rounding | D02 | T06–T10,T16 đạt |
-| 18 | D04 | Hoàn thiện reason/detail/unavailable | D03,B04 | Không tạo điểm giả; raw0 khác null |
-| 19 | D05 | Chạy invariants và regression của engine | D04 | T01–T16 liên quan đạt; không đọc SMC score/macro/R:R |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 15 | D01 | Chọn anchor đúng phía/trạng thái | C06 | T01,T04 đạt | Hoàn thành |
+| 16 | D02 | Chọn obstacle và xử lý conflict trước | D01 | T02,T03 đạt | Hoàn thành |
+| 17 | D03 | Viết P,C,raw và rounding | D02 | T06–T10,T16 đạt | Hoàn thành |
+| 18 | D04 | Hoàn thiện reason/detail/unavailable | D03,B04 | Không tạo điểm giả; raw0 khác null | Hoàn thành |
+| 19 | D05 | Chạy invariants và regression của engine | D04 | T01–T16 liên quan đạt; không đọc SMC score/macro/R:R | Hoàn thành |
 
 ### Giai đoạn E — Xem thử ngắn, không xây backtest
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 20 | E01 | Chọn 5–10 case biểu đồ/export sẵn có và xem kết quả mới | D05 | Kiểm tra các tình huống §10, không cần evaluator riêng |
-| 21 | E02 | Ghi ghi chú ngắn, sửa lỗi nếu có | E01 | Kết quả hợp lý về logic; không yêu cầu report lợi nhuận; **DỪNG và hỏi tại R3, chờ xác nhận** |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 20 | E01 | Chọn 5–10 case biểu đồ/export sẵn có và xem kết quả mới | D05 | Kiểm tra các tình huống §10, không cần evaluator riêng | Hoàn thành |
+| 21 | E02 | Ghi ghi chú ngắn, sửa lỗi nếu có | E01 | Kết quả hợp lý về logic; không yêu cầu report lợi nhuận; **DỪNG và hỏi tại R3, chờ xác nhận** | Hoàn thành |
 
 ### Giai đoạn F — Tích hợp canonical gọn
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 22 | F01 | Gắn raw và một LocationResult/detail nhỏ vào feature output | D04 | Một nguồn kết quả, raw hợp lệ vẫn int |
-| 23 | F02 | Truyền detail qua snapshot chính thức và reader | F01 | T18 đạt; không thêm key lạ vào technical_raws |
-| 24 | F03 | Ghi version/config, cập nhật existing hash/cache nếu cần | F02 | Nhận diện dữ liệu cũ/mới; không hệ thống fingerprint mới |
-| 25 | F04 | Nối typed unavailable vào luồng lỗi hiện có | F01 | T20 error path đạt; không null leak hoặc default điểm |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 22 | F01 | Gắn raw và một LocationResult/detail nhỏ vào feature output | D04 | Một nguồn kết quả, raw hợp lệ vẫn int | Hoàn thành |
+| 23 | F02 | Truyền detail qua snapshot chính thức và reader | F01 | T18 đạt; không thêm key lạ vào technical_raws | Hoàn thành |
+| 24 | F03 | Ghi version/config, cập nhật existing hash/cache nếu cần | F02 | Nhận diện dữ liệu cũ/mới; không hệ thống fingerprint mới | Hoàn thành |
+| 25 | F04 | Nối typed unavailable vào luồng lỗi hiện có | F01 | T20 error path đạt; không null leak hoặc default điểm | Hoàn thành |
 
 ### Giai đoạn G — Giao diện và hồi quy
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 26 | G01 | UI đọc raw/contribution/detail, hiển thị reference H1 rõ | F02,F04 | T19 đạt; không tự tính score |
-| 27 | G02 | Kiểm tra SMC/Trend/Momentum/scenario không đổi ngoài scope | G01 | T17 và existing tests liên quan đạt |
-| 28 | G03 | Kiểm tra card trên giao diện hẹp/rộng, dark/light | G01 | Không overflow; không thêm overlay/màn hình mới; **DỪNG và hỏi tại R4, chờ xác nhận** |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 26 | G01 | UI đọc raw/contribution/detail, hiển thị reference H1 rõ | F02,F04 | T19 đạt; không tự tính score | Hoàn thành |
+| 27 | G02 | Kiểm tra SMC/Trend/Momentum/scenario không đổi ngoài scope | G01 | T17 và existing tests liên quan đạt | Hoàn thành |
+| 28 | G03 | Kiểm tra card trên giao diện hẹp/rộng, dark/light | G01 | Không overflow; không thêm overlay/màn hình mới; **DỪNG và hỏi tại R4, chờ xác nhận** | Hoàn thành |
 
 ### Giai đoạn H — Chuyển công thức và hoàn tất
 
-| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi |
-|---:|---|---|---|---|
-| 29 | H01 | Nối duy nhất engine mới vào runtime, bỏ call cũ | E02,F03,F04,G02 | Không dual/shadow scoring; version đúng công thức |
-| 30 | H02 | Chạy targeted integration tests và smoke check | H01,G03 | T01–T20 thuộc phạm vi đạt; kiểm tra không gửi lệnh thật |
-| 31 | H03 | Cập nhật docs và checkpoint code/config để có thể quay lại | H02 | Không rewrite journal; không đổi threshold ngoài yêu cầu |
-| 32 | H04 | Bàn giao kết quả, giới hạn và các mục để sau | H03 | Checklist §12 đạt; không đợi backtest lợi nhuận; **DỪNG và hỏi tại R5, chờ xác nhận** |
+| Task | ID | Việc làm | Phụ thuộc | Hoàn tất khi | Trạng thái |
+|---:|---|---|---|---|---|
+| 29 | H01 | Nối duy nhất engine mới vào runtime, bỏ call cũ | E02,F03,F04,G02 | Không dual/shadow scoring; version đúng công thức | Hoàn thành |
+| 30 | H02 | Chạy targeted integration tests và smoke check | H01,G03 | T01–T20 thuộc phạm vi đạt; kiểm tra không gửi lệnh thật | Hoàn thành |
+| 31 | H03 | Cập nhật docs và checkpoint code/config để có thể quay lại | H02 | Không rewrite journal; không đổi threshold ngoài yêu cầu | Hoàn thành |
+| 32 | H04 | Bàn giao kết quả, giới hạn và các mục để sau | H03 | Checklist §12 đạt; không đợi backtest lợi nhuận; **DỪNG và hỏi tại R5, chờ xác nhận** | Hoàn thành |
 
 E xem được output engine độc lập trước integration. Sau H01 chạy smoke trên
 đường live mới để bảo đảm wiring thực sự đúng; không coi unit test thay thế
@@ -982,7 +990,7 @@ gần hơn nhưng sai phía không che vùng hợp lệ phía sau.
 **Đầu ra/kiểm tra:** T02/T03/T10. Input lỗi vẫn ưu tiên UNAVAILABLE trước conflict;
 geometry hợp lệ có conflict thì raw=0 kể cả không có anchor.
 
-#### Task 17 (D03) — Tính P, C và điểm nguyên
+#### Task 17 (D03) — Tính P, C và điểm nguyên — Hoàn thành; R3 đã duyệt
 
 **File:** core/location_engine.py; test normalization hiện có.
 
@@ -1000,7 +1008,7 @@ geometry hợp lệ có conflict thì raw=0 kể cả không có anchor.
 Với 0.5000 ATR raw=13, 0.5001 ATR raw=12 theo half-up chuẩn; lệch 1 chấp nhận
 được, không còn lệch 7 như baseline.
 
-#### Task 18 (D04) — Result, reason và unavailable
+#### Task 18 (D04) — Result, reason và unavailable — Hoàn thành; R3 đã duyệt
 
 **File:** core/location_engine.py.
 
@@ -1020,7 +1028,7 @@ Với 0.5000 ATR raw=13, 0.5001 ATR raw=12 theo half-up chuẩn; lệch 1 chấp
 **Đầu ra/kiểm tra:** cùng raw nhưng lý do khác vẫn giữ được detail đúng.
 UNAVAILABLE=null và NO_VALID_ANCHOR=0 không bị trộn.
 
-#### Task 19 (D05) — Chạy invariants và review phạm vi
+#### Task 19 (D05) — Chạy invariants và review phạm vi — Hoàn thành
 
 **File:** tests/test_location_engine.py, core/location_engine.py.
 
@@ -1037,7 +1045,7 @@ UNAVAILABLE=null và NO_VALID_ANCHOR=0 không bị trộn.
 **Đầu ra/kiểm tra:** engine đúng các invariant; không giữ test chỉ assert kết
 quả bằng chính hàm implementation thứ hai viết lại cùng công thức.
 
-#### Task 20 (E01) — Xem 5–10 case từ biểu đồ hoặc export sẵn có
+#### Task 20 (E01) — Xem 5–10 case từ biểu đồ hoặc export sẵn có — Hoàn thành; R3 đã duyệt
 
 **Dữ liệu:** nến/snapshot/export có sẵn trên máy; không cần nguồn trả phí.
 
@@ -1055,10 +1063,55 @@ quả bằng chính hàm implementation thứ hai viết lại cùng công thứ
 **Đầu ra/kiểm tra:** bảng case/result/note ngắn, ghi rõ giả lập hay dữ liệu thực.
 Không cần bộ mô phỏng giao dịch hoặc một script evaluator lâu dài.
 
-#### Task 21 (E02) — Ghi kết quả và sửa sai khác
+**Ghi nhận E01 (2026-09-09):** workspace không có raw H1/H4 candle export hoặc
+ảnh chart có timestamp; dùng `tests/fixtures/smc_canonical/golden_cases.json`
+như snapshot export có sẵn. Đây là fixture snapshot, không phải chart live và
+không được dùng để kết luận lợi nhuận. Snapshot không có `reference_closed_at`
+H1 và không có lifecycle timestamp của technical zones; adapter chỉ gán mốc
+cutoff cố định để dựng `LocationContext`, với zones ACTIVE để kiểm tra geometry.
 
-> **Điểm dừng R3:** sau khi hoàn thành task 21, dừng và hỏi Tech Lead/người dùng
-> theo §11.2; chưa được xác nhận thì không chuyển nhóm hoặc nghiệm thu cuối.
+| Case snapshot | Dữ liệu | BUY | SELL | Ghi chú |
+|---|---|---|---|---|
+| `buy_selected_zone` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 1.80 ATR, g 5.80 ATR | `EVALUATED`, raw 0, d 5.80 ATR, g 1.80 ATR | Anchor/obstacle đúng role; anchor quá xa |
+| `sell_selected_zone` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 5.80 ATR, g 1.80 ATR | `EVALUATED`, raw 0, d 1.80 ATR, g 5.80 ATR | Phản chiếu đúng phía; anchor quá xa |
+| `no_zone` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 1.80 ATR | `EVALUATED`, raw 0, d 5.80 ATR | SMC không có canonical zone không làm Location tự mất technical zones |
+| `fvg_h1_only` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 1.80 ATR | `EVALUATED`, raw 0, d 5.80 ATR | FVG H1 không được đưa vào Location obstacle |
+| `order_block` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 1.80 ATR | `EVALUATED`, raw 0, d 5.80 ATR | Order block không được đưa vào Location anchor |
+| `broken_stale` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 1.80 ATR | `EVALUATED`, raw 0, d 5.80 ATR | Snapshot không có lifecycle đủ để xác nhận broken/stale |
+| `choch_cap` | price 1.1000; ATR H4 0.0010 | `EVALUATED`, raw 0, d 1.80 ATR | `EVALUATED`, raw 0, d 5.80 ATR | CHoCH cap thuộc SMC, không thay đổi Location geometry |
+| `missing_data_valid` | price 1.1000; ATR H4 thiếu | `UNAVAILABLE`, raw null | `UNAVAILABLE`, raw null | Không fallback ATR/điểm; reason `LOCATION_INVALID_DATA` |
+
+Kết luận exploratory của snapshot cũ: engine chọn đúng role/forward obstacle và
+giữ đối xứng BUY/SELL, nhưng snapshot không đủ bằng chứng nghiệm thu E01. Bảng
+raw H1/H4 dưới đây là bằng chứng bổ sung dùng để đóng E01.
+
+**E01 bổ sung bằng dữ liệu raw (2026-09-09):** nguồn đọc-only là
+[Yahoo Finance Chart API](https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?range=60d&interval=60m), symbol `EURUSD=X`,
+`range=60d`, `interval=60m`; thu được 1.421 nến H1. Script review gom các nhóm
+4 nến H1 liên tiếp theo UTC thành 345 nến H4, chọn reference H1 đã đóng tại
+cutoff và gọi `build_location_context()`/`score_location_safe()` độc lập với
+config mặc định. Không lưu dữ liệu raw vào repo, không gọi scanner/runtime và
+không dùng kết quả để kết luận P&L.
+
+| Case raw EUR/USD (cutoff UTC) | Reference / ATR H4 | BUY | SELL | Tình huống §10 và ghi chú |
+|---|---|---|---|---|
+| `2026-07-06 07:00` | 1.142465 / 0.002119 | `EVALUATED`, raw 25, d 0.000, g 1.753 | `CONFLICT`, raw 0 | Gần support; đồng thời kiểm tra conflict SELL; có zone INVALIDATED nhưng không được chọn |
+| `2026-07-02 20:00` | 1.143380 / 0.002495 | `CONFLICT`, raw 0 | `EVALUATED`, raw 25, d 0.000, g 2.579 | Gần resistance; conflict BUY; zone invalidated bị loại khỏi lựa chọn |
+| `2026-07-02 17:00` | 1.144165 / 0.002525 | `CONFLICT`, raw 0 | `NO_VALID_ANCHOR`, raw 0 | Conflict và thiếu anchor đối diện; có các zone SUSPECT/INVALIDATED |
+| `2026-08-27 10:00` | 1.164551 / 0.001344 | `EVALUATED`, raw 25, d 0.000, g 2.462 | `CONFLICT`, raw 0 | Conflict SELL; có overlap support/resistance và lifecycle INVALIDATED/EXPIRED |
+| `2026-07-02 08:00` | 1.141162 / 0.002150 | `EVALUATED`, raw 0, d 1.960, g 0.870 | `EVALUATED`, raw 3, d 0.870, g 1.960 | Vùng bị phá: zone INVALIDATED không được dùng làm anchor; điểm còn lại khớp P×C |
+| `2026-07-09 00:00` | 1.142465 / 0.002041 | `EVALUATED`, raw 0, d 1.317, g 0.301 | `EVALUATED`, raw 17, d 0.301, g 1.317 | Chồng lấn support/resistance; chọn deterministic và không cộng điểm do overlap |
+| `2026-07-02 13:00` | 1.145344 / 0.002136 | `LIMITED_CONTEXT`, raw 0, d 3.931, C 0.5 | `NO_VALID_ANCHOR`, raw 0 | Xa vùng và thiếu obstacle BUY; giữ cả `LOCATION_ANCHOR_TOO_FAR` + `LOCATION_LIMITED_CONTEXT` |
+| `2026-08-20 10:00` | 1.171097 / 0.001842 | `LIMITED_CONTEXT`, raw 0, d 7.299, C 0.5 | `NO_VALID_ANCHOR`, raw 0 | Xa vùng; có zone EXPIRED/INVALIDATED và overlap, nhưng vùng hết hạn không được chọn |
+
+Các case raw đã bổ sung đủ gần hỗ trợ, gần resistance, conflict, vùng bị phá,
+chồng lấn, xa vùng và thiếu obstacle theo §10. Kết quả không cho thấy sai khác
+cần sửa thêm; không đổi threshold/weight/config theo symbol.
+
+#### Task 21 (E02) — Ghi kết quả và sửa sai khác — Hoàn thành; R3 đã duyệt
+
+> **Điểm dừng R3:** đã được Tech Lead xác nhận duyệt. Task 15–21 hoàn thành;
+> được phép tiếp tục nhóm F/G và sẽ dừng tại R4 sau task 28 theo §11.2.
 
 **File:** ghi chú trong tài liệu này hoặc một mục ngắn trong docs/plans.
 
@@ -1073,6 +1126,16 @@ Không cần bộ mô phỏng giao dịch hoặc một script evaluator lâu dà
 
 **Đầu ra/kiểm tra:** logic đạt sau sửa các lỗi quan sát được; không yêu cầu
 P&L/holdout report. Không dùng vài biểu đồ để khẳng định hiệu quả lợi nhuận.
+
+**Kết luận E02 (2026-09-09, cập nhật sau review R3):** hai findings code đã
+được sửa. D03 dùng Decimal nhất quán cho distance/factor/raw trước khi
+`ROUND_HALF_UP`, có regression FX BUY/SELL tại `price=1.1`, `anchor.high=1.0995`,
+`ATR=0.001`, raw 13. D04 giữ `LIMITED_CONTEXT` và đồng thời ghi
+`LOCATION_ANCHOR_TOO_FAR` khi có anchor xa nhưng không có obstacle; raw vẫn 0.
+
+Không đổi threshold, weight hoặc cấu hình theo symbol. E01 nay đã đủ mẫu raw
+theo §10; Tech Lead đã duyệt R3 cho Task 15–21. Task 22 được triển khai ở lớp
+feature/prepare; chưa nối caller production hoặc runtime trước H01.
 
 #### Task 22 (F01) — Gắn kết quả vào feature output
 
@@ -1092,6 +1155,18 @@ P&L/holdout report. Không dùng vài biểu đồ để khẳng định hiệu 
 
 **Đầu ra/kiểm tra:** raw của BUY/SELL khớp raw trong detail đúng phía; sửa
 detail của một phía không làm mutate phía còn lại.
+
+**Kết luận F01 (2026-09-09):** `SideFeatureRaws` có thêm
+`location_detail: LocationResult | None`; `to_dict()` serialize detail theo
+đúng side và không thay ba raw key của `SideSnapshot`. Adapter mới
+`prepare_location_results()` chọn reference H1, dựng đúng một
+`LocationContext`, rồi chấm BUY/SELL; `attach_location_results()` lấy raw từ
+chính result đã gắn detail. `derive_technical_raws_with_location()` là đường
+prepare opt-in, giữ nguyên caller production cũ cho tới H01 và không gắn
+`model_version` mới lên raw legacy. Regression feature kiểm tra một context,
+raw/detail cùng nguồn, reference H1 và không mutate chéo BUY/SELL:
+`python -m pytest tests/test_scanner_features.py -q --disable-warnings` —
+**27 passed**.
 
 #### Task 23 (F02) — Truyền detail qua canonical snapshot và reader
 
@@ -1115,6 +1190,17 @@ core/scanner_v4_models.py khi contract chính thức cần mở rộng.
 **Đầu ra/kiểm tra:** T18 round-trip tới đúng nơi UI sẽ đọc, không chỉ round-trip
 LocationResult đơn lẻ. Không tạo database hoặc cơ chế snapshot thứ hai.
 
+**Kết luận F02 (2026-09-09):** `SideSnapshot` nhận `location_detail` nhưng
+không đưa detail vào `technical_raws`; canonical `SideScore` giữ full
+`LocationResult` và validator bắt buộc side/raw khớp. Full composition/envelope
+round-trip giữ nguyên detail; compact envelope và `ScannerRow` giữ summary
+`location_raw/status/reason_codes` để UI đọc mà không nhúng toàn bộ detail.
+Reader cũ thiếu detail vẫn đọc với trạng thái không có chi tiết; payload mới sai
+side hoặc raw bị reject. Test `tests/test_location_canonical_detail.py` — **3
+passed**; regression canonical/reader/live — **307 passed**. Chưa đổi version,
+cache/hash policy hoặc nối engine mới vào runtime; các phần đó thuộc Task 24 và
+H01.
+
 #### Task 24 (F03) — Version, cấu hình và existing cache/hash
 
 **File bắt đầu:** constants/version validators ở core/scanner_features.py,
@@ -1136,6 +1222,37 @@ core/scanner_composition.py và các cache caller tìm được ở A01.
 **Đầu ra/kiểm tra:** đổi config nhưng raw tình cờ giữ nguyên vẫn nhận biết được
 config đã dùng. Cache cũ không được trả dưới identity mới.
 
+**Kết luận F03 (2026-09-09):** không bump global Scanner
+`feature_version` trước H01 và không đổi identity SMC/legacy. Đường Location
+mới được nhận diện bằng `LocationResult.model_version` (`location-geometry-v2`),
+`config_used` chứa toàn bộ config đã resolve, còn `TechnicalRaws.derivation`
+ghi model/config tương ứng. Fingerprint hiện có chỉ bổ sung full Location detail
+khi detail thực sự có mặt; feature legacy giữ nguyên hash shape. Canonical
+`snapshot_id` đã hash detail từ F02 nên đổi config sẽ đổi snapshot identity dù
+raw tình cờ không đổi. Không có feature-score/cache riêng cần migration; payload
+lịch sử không có detail vẫn đọc theo đường tương thích cũ. Việc activate đồng
+thời model/version/config mới vào runtime vẫn để H01.
+
+Regression config/hash: `tests/test_scanner_features.py` và
+`tests/test_location_canonical_detail.py` — **32 passed**; canonical/reader/
+Location regression — **554 passed**; `git diff --check` đạt.
+
+#### Kết luận F04 (2026-09-09)
+
+`prepare_location_results()` chuyển `LocationDataError` thành
+`TechnicalRawDerivationError` typed với `LOCATION_INVALID_DATA` hoặc
+`LOCATION_INVALID_CONFIG`, kèm `field` và `cause`. Handler hiện hữu trong
+`_analyze_one_symbol()` giữ `reason_code` khi tạo `blocked_ui_row`; row vẫn là
+`DATA_UNAVAILABLE`, không có order intent và reason được truyền tới các trường
+UI/diagnostic hiện có. `attach_location_results()` tiếp tục reject `raw=None`
+thay vì đưa `None` vào contract raw integer. Ngược lại, `NO_VALID_ANCHOR` với
+`raw=0` vẫn là kết quả hợp lệ và đi qua feature/composition path.
+
+Regression Task 25 bao phủ ATR lỗi, zero hợp lệ, typed reason/field/cause và
+handler unavailable row: `python -m pytest tests/test_scanner_features.py
+tests/test_scanner_ui_adapter.py -q --disable-warnings` — **54 passed**.
+Chưa mở runtime Location engine; việc đó vẫn thuộc H01.
+
 #### Task 25 (F04) — Nối unavailable vào luồng lỗi hiện có
 
 **File bắt đầu:** core/scanner_features.py, core/scanner_live_producers.py,
@@ -1154,6 +1271,30 @@ controllers/scanner_controller.py và core/scanner_row.py nếu là owner của 
 
 **Đầu ra/kiểm tra:** T20 với ATR lỗi đi đến row không được phép thực thi;
 zero hợp lệ vẫn đi qua composition để các gate hiện có xử lý bình thường.
+
+#### Kết luận G01 (2026-09-09)
+
+Render path hiện hữu của Scanner Detail tiếp tục được dùng. Adapter UI làm giàu
+side summary compact bằng `technical_breakdown` và `location_detail` lấy trực
+tiếp từ canonical composition; không gọi lại scorer/Location engine. Presenter
+giữ Location detail tùy chọn cho payload mới và chấp nhận payload lịch sử thiếu
+detail. Chẩn đoán UI hiển thị raw `/25`, contribution, reference price/time của
+H1, anchor/obstacle, khoảng cách/clearance theo ATR, status/reason và model/config.
+Raw `0` được hiển thị là `0`; raw `null` là “Không đủ dữ liệu”; thiếu detail ghi
+rõ bản lưu cũ và thiếu obstacle ghi “Chưa quan sát được trong dữ liệu đã xét”.
+`price_vs_zone` vẫn chỉ là vị trí so với entry zone.
+
+Regression G01: presentation + adapter — **43 passed**; render Location raw
+`0/13/null` và H1 reference — **3 passed**. `compileall` đạt; chưa nối runtime
+Location engine, vẫn thuộc H01.
+
+**Sửa finding R4 cho G01/F02 (2026-09-10):** reader compact/full envelope và
+`ScannerRow` nay validate status Location thuộc contract, raw của trạng thái
+được giới hạn `0..25`, `UNAVAILABLE` bắt buộc raw `null`,
+`CONFLICT`/`NO_VALID_ANCHOR` bắt buộc raw `0`, và full envelope đối chiếu summary
+với `canonical.location_detail`; summary mâu thuẫn bị reject. Formatter UI dùng
+độ chính xác giá theo symbol/`price_digits` hiện có, nên EUR/USD hiển thị 5 chữ
+số thay vì cố định 2 chữ số.
 
 #### Task 26 (G01) — UI đọc điểm và reference đúng
 
@@ -1193,6 +1334,20 @@ tests/test_scanner_scenario_producers.py và test SMC liên quan nếu có consu
 **Đầu ra/kiểm tra:** T17 đạt ở đúng cấp dữ liệu; các khác biệt downstream có
 thể giải thích bằng Location, không do vô tình sửa helper chung.
 
+#### Kết luận G02 (2026-09-09)
+
+Regression với cùng bộ nến xác nhận adapter Location không làm đổi Trend raw,
+Momentum raw, canonical SMC hoặc regime; `support_zones`/
+`resistance_zones` và input candles không bị mutate. Scenario plan vẫn giữ
+nguyên khi chỉ bổ sung Location detail vào snapshot với cùng raw. Không thêm
+assertion buộc `selected_side` hoặc candidate cuối phải giống baseline: các giá
+trị này được phép thay đổi khi Location raw thay đổi và đó là tác động downstream
+hợp lệ của task.
+
+Regression G02: feature/canonical/live/scenario/SMC — **118 passed**; bộ mở rộng
+Location + composition + release + technical — **438 passed**; không chỉnh
+threshold/weight và chưa nối runtime Location engine.
+
 #### Task 28 (G03) — Kiểm tra card trên giao diện
 
 > **Điểm dừng R4:** sau khi hoàn thành task 28, dừng và hỏi Tech Lead/người dùng
@@ -1211,6 +1366,23 @@ thể giải thích bằng Location, không do vô tình sửa helper chung.
 
 **Đầu ra/kiểm tra:** card không tràn/cắt nội dung quan trọng; điểm và reference
 dễ đọc. Cập nhật test/style baseline chỉ nếu contract repo đòi và có thay đổi thật.
+
+#### Kết luận G03 (2026-09-10) — **R4 đã được Tech Lead duyệt sau review lại**
+
+Giữ nguyên render path Chẩn đoán hiện có; không tạo màn hình, overlay chart hoặc
+bảng cấu hình mới. Card Location bổ sung style responsive `width:100%`,
+`table-layout:fixed`, `word-wrap:break-word` và `overflow-wrap:anywhere` để
+reason/mã dài, timestamp và số giá nhiều chữ số không làm tràn hoặc cắt nội
+dung quan trọng ở viewport hẹp/rộng. Fixture kiểm tra cả dark/light, 320/1280
+px, raw `0`, raw `null`, thiếu obstacle và historical detail thiếu; raw/reference/
+reason vẫn hiển thị đúng, không nhầm với `price_vs_zone`.
+
+Regression G03: `python -m pytest tests/test_scanner_detail_v4_diagnostics.py
+-k location_html -q --disable-warnings` — **10 passed**; render QTextEdit thật
+ở 320/1280 px và dark/light không có horizontal overflow; reader negative
+regression `tests/test_location_canonical_detail.py` — **46 passed**. `compileall`
+và `git diff --check` đạt. Đây là UI fixture check trước H01; chưa smoke runtime
+thật. Tech Lead đã review lại và duyệt R4 ngày 2026-09-10; được phép tiếp tục Task 29–32 và dừng tại R5. Bằng chứng review lại được ghi ở nhật ký bên dưới.
 
 #### Task 29 (H01) — Chuyển sang một công thức Location mới
 
@@ -1233,6 +1405,28 @@ core/scanner_release.py cùng version/serializer đã chuẩn bị.
 **Đầu ra/kiểm tra:** input live hợp lệ chỉ tạo Location bằng công thức mới;
 input lỗi đi vào unavailable, không chạy công thức cũ dự phòng.
 
+#### Kết luận H01 (2026-09-10) — Hoàn thành; Tech Lead đã DUYỆT R5 sau review lại
+
+`derive_live_analysis()` nay gọi `derive_technical_raws_with_location()`: dựng
+`LocationContext` một lần ở cutoff runtime, giữ reference H1 đã đóng, rồi chấm
+BUY/SELL từ cùng context và truyền nguyên `LocationResult` cùng raw qua
+`build_side_snapshot()`/composition/release. Controller truyền lại analysis đã
+tạo vào `run_pair_from_live()` nên không tính analysis hai lần.
+
+Producer runtime không còn gọi `location_quality_score_v4`; công thức cũ chỉ còn
+ở public legacy/parity fixture path. Derivation runtime ghi rõ
+`location=location-geometry-v2`, config resolved và `location_source`; input lỗi
+Location vẫn đi typed unavailable, không fallback raw cũ. Fixture live được
+điều chỉnh về cadence D1/H4/H1 thực tế, không nới cutoff hoặc minimum history.
+
+Regression H01: `python -m pytest tests/test_location_engine.py
+tests/test_scanner_features.py tests/test_scanner_live_producers.py
+tests/test_scanner_release.py tests/test_scanner_composition.py
+tests/test_scanner_integration.py tests/test_scanner_snapshot.py
+tests/test_scanner_row.py tests/test_location_canonical_detail.py -q
+--disable-warnings` — **363 passed**; `compileall` và `git diff --check` đạt.
+Chưa smoke full controller/broker; phần đó thuộc Task 30.
+
 #### Task 30 (H02) — Targeted integration tests và smoke
 
 **File/test:** các file thực sự sửa trong F/G/H, test domain mới và existing
@@ -1252,6 +1446,24 @@ tests tại §9.
 **Đầu ra/kiểm tra:** command/kết quả rõ; không tuyên bố smoke live nếu chỉ test
 fixture. Môi trường thiếu UI/broker thì ghi phần chưa kiểm tra, hoàn thành các
 kiểm tra độc lập và không giả kết quả.
+
+#### Kết luận H02 (2026-09-10) — Hoàn thành; Tech Lead đã DUYỆT R5 sau review lại
+
+Đã thêm `tests/test_scanner_h02_integration.py` với bốn kiểm tra: pipeline
+`derive_live_analysis` → `run_pair_from_live` → snapshot row → UI adapter không
+dispatch lệnh thật; ma trận `EVALUATED`, `CONFLICT`, `NO_VALID_ANCHOR`; lỗi
+Location chuyển thành `UNAVAILABLE` fail-closed không fallback scorer cũ; và
+context giữ cutoff/reference/history dùng chung. **4 passed**.
+
+Đã chạy lại regression H01 theo phạm vi Location/scanner/canonical — **363
+passed** — và `python scripts/scanner_smoke.py` thành công cho cả smoke chính và
+PATHB. Smoke ghi `sends_real_order=False`, không gửi broker order, tạo
+`reports/scanner/release_b12_smoke.json` và
+`reports/scanner/release_b12_pathb_smoke.json`; PATHB xác nhận thiếu history
+fail-closed bằng `TechnicalRawDerivationError`. `compileall` và
+`git diff --check` đạt. Chưa kiểm tra broker/UI production thật hoặc dữ liệu
+live; đây là fixture/environment smoke có kiểm soát. Tiếp tục Task 31, dừng ở
+checkpoint R5 sau Task 32.
 
 #### Task 31 (H03) — Cập nhật tài liệu và checkpoint
 
@@ -1273,6 +1485,28 @@ người dùng nếu hành vi hiển thị đổi.
 **Đầu ra/kiểm tra:** docs khớp caller thực tế; có cách nhận diện bản trước/sau,
 không cần tài liệu rollback nhiều trang.
 
+#### Kết luận H03 (2026-09-10) — Hoàn thành; Tech Lead đã DUYỆT R5 sau review lại
+
+Đã cập nhật các tài liệu chuẩn:
+`docs/scanner/scanner-architecture.md`, `scanner-features-spec.md`,
+`technical-scoring-architecture.md` và `scanner-flow.md`. Các tài liệu hiện ghi
+Location runtime đã cutover sau H01/H02: `derive_live_analysis()` gọi
+`derive_technical_raws_with_location()` với cutoff `captured_at`; reference là
+H1 cuối đã đóng; H4/context dùng chung cho BUY/SELL; raw/detail đi cùng qua
+canonical snapshot/row/UI; lỗi dữ liệu đi theo `TechnicalRawDerivationError`
+→ unavailable; `raw=0` vẫn là kết quả hợp lệ cho no-anchor/conflict/limited
+context. Công thức Location cũ được đánh dấu lịch sử.
+
+Checkpoint nhận diện bản sau: `location-geometry-v2`,
+`location-config-v1`, `location-detail-v1`, `location-context-v1` và derivation
+`location=location-geometry-v2; config=location-config-v1`. Bản trước được nhận
+diện bởi release/runtime version đã ghi trong các tài liệu legacy; quay lại dùng
+nguyên release trước theo workflow repo, không bật flag hoặc chạy song song
+scorer cũ, không rewrite journal/snapshot lịch sử và không đổi threshold.
+
+Đã kiểm tra tài liệu bằng các regression H02/H01 đã ghi ở trên; không phát sinh
+thay đổi code/runtime trong Task 31. Tiếp tục Task 32 và dừng tại checkpoint R5.
+
 #### Task 32 (H04) — Bàn giao bản sửa gọn
 
 > **Điểm dừng R5:** sau khi hoàn thành task 32, dừng và hỏi Tech Lead/người dùng
@@ -1291,6 +1525,180 @@ không cần tài liệu rollback nhiều trang.
 
 **Đầu ra/kiểm tra:** người dùng có thể đọc bàn giao và biết Location đã thay
 đổi thế nào, chưa làm gì và có thể kiểm tra ở đâu.
+
+#### Kết luận H04 (2026-09-10) — Hoàn thành; Tech Lead đã DUYỆT R5 sau review lại
+
+Đã đối chiếu checklist §12 và chuẩn bị bàn giao. Phạm vi đã sửa gồm một scorer
+Location hình học duy nhất trong runtime: vùng H4 có confirmation/ATR tại
+confirmation/lifecycle, anchor-obstacle đúng phía, P×C và ROUND_HALF_UP; reference
+là H1 cuối đã đóng theo cutoff; raw/detail/version đi cùng canonical snapshot và
+UI; dữ liệu lỗi đi theo unavailable; SMC/Trend/Momentum, entry gates và
+threshold không đổi.
+
+File chính cần review: `core/location_engine.py`,
+`core/scanner_features.py`, `core/scanner_live_producers.py`,
+`core/scanner_release.py`, `controllers/scanner_controller.py`, các reader/
+canonical/UI tương ứng, `tests/test_scanner_h02_integration.py` và bốn tài liệu
+Scanner được cập nhật ở H03. Version nhận diện bản mới:
+`location-geometry-v2`, `location-config-v1`, `location-detail-v1`,
+`location-context-v1`.
+
+Kiểm tra cuối: H02 integration **4 passed**; regression H01 **363 passed**;
+`python scripts/scanner_smoke.py` đạt smoke chính và PATHB với
+`sends_real_order=False`; `compileall` và `git diff --check` đạt. Không có
+broker order thật, không có backtest/P&L/holdout và không tuyên bố cải thiện lợi
+nhuận.
+
+Giới hạn còn lại: chưa kiểm tra broker/UI production thật; chưa có merge cụm,
+revision history, Entry Location Check, đa khung D1/H4 hay cache/evaluator
+riêng; lookback vẫn theo config giới hạn. Reference H1 đã được kiểm tra bằng
+fixture/cutoff nhưng chưa chứng nhận dữ liệu live production. Rollback dùng
+nguyên release trước theo workflow repo, không bật dual scorer và không rewrite
+snapshot/journal lịch sử.
+
+**Tech Lead đã DUYỆT R5 sau review lại ngày 2026-09-10.** Task 1–32 hoàn thành trong phạm vi kế hoạch. Bằng chứng mới nhất ở mục review lại R5 bên dưới thay thế trạng thái chờ trước đó; chưa phát hành hoặc cho bản mới gửi lệnh thật.
+
+#### Tech Lead review R5 (2026-09-10) — CHƯA DUYỆT
+
+Đã review caller/runtime, H02 integration, diff cuối và checklist §12. R1–R4
+đã duyệt theo bằng chứng tại các lần review trước; review diff cuối phát hiện
+các điểm cần sửa dưới đây trước nghiệm thu R5:
+
+1. **[P1] Cutoff runtime phải thuộc dữ liệu đã chụp.**
+   `controllers/scanner_controller.py:3027–3044` truyền `captured_at=now` mới
+   tại worker vào cả analysis/release, bỏ qua cutoff của packet. Probe độc lập
+   với packet chụp `2026-08-13T11:59:55Z`, worker xử lý `12:00:05Z`: reference
+   đúng phải đóng lúc `11:00:00Z` (1002.0581879642023), nhưng row nhận reference
+   `12:00:00Z` (1002.004073903944). Bar H1 còn hình thành tại lúc chụp bị coi
+   là đã đóng; H4 có cùng nguy cơ qua boundary. Chốt cutoff trước khi lấy
+   history, truyền cùng cutoff qua packet → analysis → snapshot; thời gian
+   đánh giá freshness có thể tách riêng. Không chỉ đổi sang timestamp được
+   tạo sau bước lấy dữ liệu/macro. Thêm regression controller có delay qua
+   boundary H1/H4, kiểm tra reference/history không thay đổi theo giờ worker.
+2. **[P2] Hai regression UI adapter chưa được sửa sau cutover.**
+   `tests/test_scanner_ui_adapter.py:58–76` dùng bước giá làm khoảng timestamp;
+   fixture chỉ có 21 H4 đã đóng. Hai test `TestLiveWiringAdapter` fail với
+   `LOCATION_INVALID_DATA: need at least 60 closed H4 candles`. Sửa cadence
+   D1/H4/H1 của fixture, giữ minimum history và assertions adapter/intent.
+3. **[P2] Card Location vi phạm style lock của repo.**
+   `_diag_location_html()` thêm màu HEX/style cục bộ làm
+   `html_style_attributes` tăng 242 → 269 và `hex_color_literals` 293 → 305.
+   Hai test phase0/phase7 style guard fail. Dùng semantic palette/template
+   renderer chung theo `docs/ui/style-guide.md`; không tăng lock để che lỗi.
+   Sau sửa chạy lại guard và render dark/light hẹp/rộng để giữ kết quả R4.
+4. **[P2] H03 chưa có checkpoint code/config có thể khôi phục.**
+   Các model/schema version và câu “nguyên release trước” ở kết luận H03
+   không xác định revision/artifact cùng config cần dùng. Ghi commit/tag hoặc
+   artifact cụ thể cho bản trước, config đi kèm và thao tác quay lại theo
+   workflow repo; ghi rõ bản mới còn ở working tree nếu chưa commit. Không
+   rewrite journal hoặc thêm dual scorer. Chưa đủ bằng chứng để tick mục này.
+5. **[P2] Tài liệu trạng thái còn mâu thuẫn.** Bốn tài liệu Scanner ghi đã nối
+   runtime, nhưng `docs/guides/USER_GUIDE.md:27–38` còn ghi chưa có chức năng;
+   docs index, kiến trúc tổng thể, product spec và screen/style guide còn nhãn
+   “chưa triển khai”. Đồng bộ phần thuộc Location theo §14.1, phân biệt đã nối
+   runtime với chưa nghiệm thu R5/chưa smoke broker/UI production thật.
+
+**Bằng chứng reviewer:** regression 17 file Location/scanner/canonical/UI/H02
+**579 passed, 2 failed**; full suite với QApplication offscreen và font
+Segoe UI/Consolas **3498 passed, 11 failed, 8 skipped, 16 xfailed**. Bốn failure
+liên quan nâng cấp là hai test adapter và hai style guard nêu trên. Bảy failure
+còn lại thuộc navigation Backtest (1) và FRED fallback (6), ngoài diff Location;
+không sửa các phần này trong review. JUnit full suite:
+`C:/Users/tntan/AppData/Local/Temp/codex-r5-pytest.xml`.
+
+Smoke chính/PATHB chạy lại đạt, output chuyển vào thư mục tạm
+`C:/Users/tntan/AppData/Local/Temp/codex-r5-smoke`; đây là fixture smoke,
+không gửi lệnh. Probe controller với ATR H4 bằng 0 xác nhận row
+`DATA_UNAVAILABLE`, reason/block `LOCATION_INVALID_DATA`, không order payload.
+Cutoff boundary probe ở finding 1 chưa đạt. Không coi smoke fixture là bằng
+chứng đã chạy broker/UI production. Giữ task 29–31 đang thực hiện, task 32
+chờ sửa/review lại; chưa nghiệm thu R5.
+
+#### CODER sửa findings R5 (2026-09-10) — hoàn tất phần sửa, CHỜ review lại
+
+1. **Cutoff:** `ScannerController` đóng băng `history_cutoff` trước request
+   history đầu tiên; `_fetch_one_symbol_mt5` truyền `location_cutoff`/
+   `v4_captured_at` qua packet, `_analyze_one_symbol` dùng cùng giá trị cho
+   `derive_live_analysis` và `run_pair_from_live`, còn `v4_observed_at` tách
+   riêng cho freshness. Regression
+   `test_controller_packet_cutoff_survives_worker_delay_across_h1_h4_boundary`
+   kiểm tra boundary H1/H4 và worker delay; **H02 5 passed**.
+2. **Cadence fixture:** `test_scanner_ui_adapter.py` dùng D1 24h, H4 4h, H1
+   1h; minimum history và assertions không bị giảm. Adapter regression **26
+   passed**.
+3. **UI/style:** card Location chuyển sang class/template trong
+   `ui/rich_text.py` với semantic palette chung; `_diag_location_html` không
+   thêm inline style/HEX cục bộ và không đổi lock. Style guards **8 passed**;
+   Location HTML/render regression **9 passed, 10 deselected**, gồm dark/light,
+   FX precision và QTextEdit ở 320/1280 px.
+4. **Rollback checkpoint:** artifact cụ thể là
+   `reports/scanner/location-r5-checkpoint.json`, baseline
+   `b6e75542c2ae31512abf47fbf5d1fa1210b3aebe` (`Upgrade location`), tag tham
+   chiếu `v3-runtime-pre-cutover`, kèm config/schema/model/threshold hiện tại,
+   hai smoke artifacts và hướng dẫn restore theo workflow repo. Bản mới vẫn ở
+   working tree chưa commit; không rewrite journal và không dual scorer.
+5. **Tài liệu:** README, architecture, product, user guide, screen design và
+   style guide đã đồng bộ “runtime đã nối, R5 chưa nghiệm thu”, giới hạn smoke
+   production và `sends_real_order=False`; các tài liệu Scanner canonical đã
+   nối từ H03 vẫn được giữ làm nguồn contract.
+
+**Kiểm tra cuối sau sửa:**
+
+- `tests/test_scanner_integration.py tests/test_scanner_snapshot.py
+  tests/test_scanner_row.py tests/test_location_canonical_detail.py` — **56
+  passed**; H02 — **5 passed**; adapter — **26 passed**; style guards — **8
+  passed**; compileall và `git diff --check` đạt.
+- `python scripts/scanner_smoke.py` — smoke chính và PATHB đạt, báo
+  `sends_real_order=False`; artifacts là
+  `reports/scanner/release_b12_smoke.json` và
+  `reports/scanner/release_b12_pathb_smoke.json`.
+- Full suite với `QT_QPA_PLATFORM=offscreen`: **3503 passed, 7 failed, 8
+  skipped, 16 xfailed**; JUnit tại
+  `C:/Users/tntan/AppData/Local/Temp/codex-r5-pytest-final.xml`. Bảy failure
+  được phân loại ngoài phạm vi R5: 1 navigation Backtest và 6 FRED fallback;
+  không có failure mới trong Location/cutoff/adapter/style.
+
+Các finding R5 đã được sửa trong phạm vi CODER, nhưng **không tự chuyển trạng
+thái sang R5 đã duyệt**. Dừng tại đây để Tech Lead review lại.
+
+#### Tech Lead review lại R5 (2026-09-10) — DUYỆT, 32/32 task hoàn thành
+
+Đã đóng cả 5 findings của lần review trước:
+
+- Cutoff được chốt trước request history, đi qua packet → analysis → snapshot;
+  thời gian freshness tách riêng. Probe cached/uncached qua boundary đều giữ
+  cutoff trước request. Probe cùng packet tại hai giờ worker sau boundary,
+  cả BUY/SELL giữ nguyên toàn bộ Location detail so với derive tại cutoff gốc.
+- Fixture UI adapter đã dùng cadence D1/H4/H1 đúng; hai regression adapter đạt.
+- Card dùng class/template và semantic palette chung; hai style guard đạt,
+  không đổi style lock. Render độc lập 20 fixture dark/light tại 320/1280 px
+  không tràn ngang; đã xem ảnh hẹp/rộng, giá FX/reference/anchor đọc được.
+- Checkpoint có baseline cụ thể `b6e75542c2ae31512abf47fbf5d1fa1210b3aebe`.
+  Đã xác minh revision tồn tại, policy hiện tại giống JSON tại baseline,
+  config Location ghi trong artifact khớp config resolved của code. Khi quay
+  lại dùng đúng baseline commit cùng config của commit đó; tag
+  `v3-runtime-pre-cutover` là tham chiếu migration cũ, trỏ revision khác,
+  không phải đích rollback Location. Bản mới vẫn là working tree chưa commit.
+- Tài liệu hiện hành đã đồng bộ runtime đã nối và giới hạn smoke. Reviewer
+  cập nhật trạng thái duyệt R5 trong plan và tài liệu liên quan sau kiểm tra.
+
+**Kết quả reviewer chạy lại:** regression 19 file liên quan gồm engine,
+canonical, live/controller, adapter/UI/H02 và style guards **590 passed**.
+Full suite: **3503 passed, 7 failed, 8 skipped, 16 xfailed**; 7 failure còn lại
+là navigation Backtest (1) và FRED fallback (6), giống nhóm ngoài phạm vi ở
+lần review trước. Không còn failure liên quan Location hoặc style guard.
+JUnit: `C:/Users/tntan/AppData/Local/Temp/codex-r5-review-again.xml`.
+
+Smoke chính/PATHB chạy lại đạt, không dispatch lệnh; output reviewer tại
+`C:/Users/tntan/AppData/Local/Temp/codex-r5-rereview-smoke`. Ảnh render tại
+`C:/Users/tntan/AppData/Local/Temp/codex-r5-rereview`. `git diff --check` đạt.
+Đây là fixture/environment smoke, chưa xác nhận broker/UI production thật.
+
+**Kết luận:** không còn finding chặn trong phạm vi R5 đã review; duyệt
+nghiệm thu nâng cấp Location theo kế hoạch, task 1–32 hoàn thành. Không mở
+thêm scope P&L/backtest, không đổi threshold và không rewrite journal. Duyệt
+R5 không đồng nghĩa full suite toàn repo xanh, không tự cấp quyền deploy,
+merge/push hoặc gửi lệnh thật.
 
 ### 11.2 Tech Lead review: năm điểm dừng bắt buộc
 
@@ -1334,7 +1742,7 @@ duyệt” nếu chưa có xác nhận rõ ràng cho chính mốc đó.
 Các ranh giới phải giữ:
 
 - Sau task 8: chờ R1, chưa thực hiện task 9.
-- Sau task 14: chờ R2, chưa thực hiện task 15.
+- Sau task 14: chờ xác nhận R2; chỉ thực hiện task 15 sau khi R2 được duyệt.
 - Sau task 21: chờ R3, chưa thực hiện task 22.
 - Sau task 28: chờ R4, chưa thực hiện task 29.
 - Sau task 32: chờ R5, chưa tuyên bố toàn bộ nâng cấp đã được nghiệm thu,
@@ -1382,17 +1790,17 @@ không cần một lượt duyệt riêng. Khi Tech Lead yêu cầu sửa, revie
 
 ## 12. Điều kiện hoàn thành
 
-- [ ] Các lỗi vùng sai phía, xung đột, bonus xa và bước nhảy điểm được sửa.
-- [ ] Vùng có confirmation/lifecycle cơ bản; không dùng dữ liệu tương lai.
-- [ ] Công thức đạt 0–25, giữ normalization/regime weights.
-- [ ] Dữ liệu lỗi không được biến thành điểm giả.
-- [ ] Không thay đổi SMC/Trend/Momentum hoặc entry gates ngoài phạm vi.
-- [ ] Raw/detail/version truyền nhất quán tới snapshot và UI.
-- [ ] Kiểm thử code liên quan đạt; đã xem một số case biểu đồ.
-- [ ] Chỉ một công thức Location chạy live, dữ liệu lịch sử không bị ghi đè.
-- [ ] Có checkpoint code/config và hướng dẫn quay lại ngắn nếu phát hiện lỗi.
-- [ ] Tài liệu ghi đúng đã triển khai/chưa triển khai và giới hạn còn lại.
-- [ ] R1–R5 đã có xác nhận rõ ràng; chưa qua R5 thì trạng thái là chờ nghiệm thu.
+- [x] Các lỗi vùng sai phía, xung đột, bonus xa và bước nhảy điểm được sửa.
+- [x] Vùng có confirmation/lifecycle cơ bản; không dùng dữ liệu tương lai. Cutoff H1/H4 được cố định trước history và có regression boundary sau sửa R5.
+- [x] Công thức đạt 0–25, giữ normalization/regime weights.
+- [x] Dữ liệu lỗi không được biến thành điểm giả.
+- [x] Không thay đổi SMC/Trend/Momentum hoặc entry gates ngoài phạm vi.
+- [x] Raw/detail/version truyền nhất quán tới snapshot và UI.
+- [x] Kiểm thử code liên quan đạt; regression cutoff/adapter/style/render và smoke intent-only đã có bằng chứng ở mục sửa findings R5.
+- [x] Chỉ một công thức Location chạy live, dữ liệu lịch sử không bị ghi đè.
+- [x] Có checkpoint code/config và hướng dẫn quay lại ngắn nếu phát hiện lỗi: `reports/scanner/location-r5-checkpoint.json`.
+- [x] Tài liệu ghi đúng runtime đã nối, R5 chưa nghiệm thu và giới hạn smoke production; xem mục sửa findings R5.
+- [x] R1–R5 đã có xác nhận rõ ràng; Tech Lead duyệt R5 ngày 2026-09-10 sau review lại. Nghiệm thu phạm vi nâng cấp Location; không cấp quyền deploy hoặc gửi lệnh thật.
 
 **Không phải điều kiện hoàn thành:** dataset dài hạn, chứng nhận lợi nhuận,
 backtest nhiều năm, holdout report, tối ưu trọng số, số lệnh tối thiểu, hệ thống
@@ -1463,6 +1871,54 @@ loạt thành “live” chỉ dựa vào việc đã sửa tài liệu hoặc t
 | 2026-09-09 | Đánh số Task 1–32, bổ sung Tech Lead review tại §11.2 | Giữ ID để tra cứu; đề xuất 5 mốc review nhóm, không duyệt từng task; chưa sửa runtime |
 | 2026-09-09 | Chuyển 5 mốc review thành điểm dừng bắt buộc theo yêu cầu người dùng | Dừng và hỏi sau task 8/14/21/28/32; chờ xác nhận mới tiếp tục; chưa sửa runtime |
 | 2026-09-09 | Đồng bộ docs trước implementation; bổ sung ảnh hưởng tại §1.1 và phân quyền nguồn chuẩn tại §14.1 | Kiến trúc, features, flow, product, UI và guide cùng ghi Location chưa triển khai; giữ 32 task và năm mốc dừng; chỉ sửa tài liệu |
+| 2026-09-09 | Hoàn thành Task 1 (A01) | Đã dùng `git status` và `rg` để xác định caller Location, consumer `support_zones`/`resistance_zones`, và đường UI canonical; giữ nguyên vùng dùng chung, chưa sửa runtime |
+| 2026-09-09 | Hoàn thành Task 2 (A02) | `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py -q --disable-warnings` — **132 passed in 1.04s**; không có baseline failure |
+| 2026-09-09 | Hoàn thành Task 3 (A03) | Thêm fixture legacy OLD-01..OLD-06 trong `tests/test_scanner_features.py`; kết quả lần lượt **10, 15, 5, 3, 10, 3**. Test file: **25 passed**; baseline liên quan sau khi thêm fixture: **138 passed** |
+| 2026-09-09 | Hoàn thành Task 4 (A04) | Xác minh MT5 `time` là open time, bar cuối có thể đang hình thành và cutoff chưa được lọc trong runtime; ghi contract H4/H1 closed-candle + cutoff vào `docs/scanner/scanner-architecture.md`. Kiểm tra liên quan: **46 passed** |
+| 2026-09-09 | Hoàn thành Task 5 (B01) | Tạo `core/location_engine.py` với `LocationConfig` immutable, default/config/model version, resolver cấu hình từng phần và public API chuẩn bị; thêm `tests/test_location_engine.py`. Test mới: **5 passed**; cùng baseline liên quan: **143 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Hoàn thành Task 6 (B02) | Thêm `LocationDataError` và validator thuần cho config, history H4, price, UTC timestamp/cutoff, OHLC, side và zone; invalid không bị fallback/coerce. Test domain: **19 passed**; cùng baseline liên quan: **157 passed** |
+| 2026-09-09 | Hoàn thành Task 7 (B03) | Thêm `LocationZone`, `LocationContext`, `LocationResult` immutable; khóa status/raw, unavailable và factor invariants; dùng tuple cho zones/reason codes. Test domain: **25 passed**; cùng baseline liên quan: **163 passed** |
+| 2026-09-09 | Hoàn tất Task 8 (B04) — **R1 đã được Tech Lead duyệt** | Thêm serialize/parse strict cho config, zone, context và result; datetime UTC `Z`, schema/model version, reason codes Location, raw `0` khác raw `null`, chặn NaN/Inf. Test domain: **31 passed**; cùng baseline liên quan: **169 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Sửa findings R1 của A04/B02/B03/B04 — **R1 đã được Tech Lead duyệt** | A04 thêm seam close boundary H1/H4 và reference H1 theo cutoff trong `core/location_engine.py` + fixture cadence; B02 khóa history tối thiểu 60 và version supported; B03/B04 khóa CONFLICT/NO_VALID_ANCHOR raw=0, UNAVAILABLE raw=null và parser cùng invariant. Command chính: `python -m pytest tests/test_location_engine.py tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py -q --disable-warnings` — **181 passed**; thêm `python -m pytest tests/test_scanner_observability.py -q --disable-warnings` — **21 passed**. Baseline review trước sửa: 169 passed; chưa sửa caller/runtime, chưa thực hiện Task 9 |
+| 2026-09-09 | Hoàn thành Task 9 (C01) | `core/location_engine.py` thêm `closed_h4_history_at_cutoff()`: kiểm tra thứ tự/duplicate trên toàn bộ stream, lọc theo `closed_at <= cutoff` trước rồi mới giới hạn `history_h4_bars`; validator dùng cùng helper và ghi nhận số nến qua kết quả đã chọn. Bổ sung test nến đang chạy/tương lai, thiếu minimum sau cutoff, giới hạn sau lọc và out-of-order. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **48 passed**; regression liên quan `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py tests/test_location_engine.py -q --disable-warnings` — **186 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Hoàn thành Task 10 (C02) | `core/location_engine.py` thêm immutable `LocationSwing` và `location_swing_points()`: extremum duy nhất theo lookback/config, `confirmed_at` là close của nến thứ hai bên phải, ID dùng role + timestamp swing, không dùng index; swing thiếu confirmation hoặc sau cutoff bị loại. Không sửa canonical `smc_context.swing_points`. Bổ sung test duplicate extremum, thiếu nến phải, cutoff confirmation và ID ổn định khi prefix cửa sổ thay đổi. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **52 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Hoàn thành Task 11 (C03) | `core/location_engine.py` thêm `build_location_zones()`: tính ATR(14) một lần trên history H4 hợp lệ, lấy ATR tại `confirmed_at`, bỏ swing thiếu ATR warmup, dựng biên cố định và lưu `formation_atr`; tick size được làm tròn ra ngoài, tick invalid bị typed error, vùng vượt `zone_max_width_atr` sau rounding bị loại. Bổ sung test ATR tại confirmation, tick rounding, max width, thiếu ATR và ATR tương lai không làm đổi biên cũ. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **57 passed**; regression gồm SMC `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py tests/test_location_engine.py tests/test_smc_context.py -q --disable-warnings` — **210 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Hoàn thành Task 12 (C04) | `core/location_engine.py` thêm `update_location_zone_lifecycle()`, bắt đầu kiểm tra từ close của nến confirmation; support/resistance dùng break line và `formation_atr` cố định, wick hoặc close đúng biên không breach, streak một close là `SUSPECT`, đủ streak là `INVALIDATED`, phục hồi reset về `ACTIVE`, invalidated terminal, và vùng chưa invalidated hết tuổi chuyển `EXPIRED`. `build_location_zones()` trả zone đã áp lifecycle. Bổ sung test support/resistance cho wick, boundary, 1/2 breach, recovery, confirmation close và age. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **65 passed**; regression `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py tests/test_location_engine.py tests/test_smc_context.py -q --disable-warnings` — **218 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Hoàn thành Task 13 (C05) | `core/location_engine.py` thêm `deduplicate_location_zones()`: exact duplicate cùng ID/dữ liệu chỉ giữ một, cùng ID nhưng dữ liệu mâu thuẫn báo `CONFLICTING_ZONE_ID`, vùng khác ID dù gần nhau không merge, kết quả sort theo role/confirmation/ID. Tích hợp trước lifecycle trong `build_location_zones()` và `update_location_zone_lifecycle()`. Bổ sung test đảo thứ tự, duplicate, conflict và nearby IDs. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **67 passed**; regression `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py tests/test_location_engine.py tests/test_smc_context.py -q --disable-warnings` — **220 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Hoàn thành Task 14 (C06) — **R2 đã được Tech Lead duyệt** | `build_location_context()` dựng một context immutable từ history đã lọc, ghi `h4_bars_considered`/ATR hiện tại và dùng chung zones cho hai phía; append nến tương lai với cùng cutoff không đổi context, ID/timestamp vẫn causal. Test side-neutral context thay cho gọi scorer vì `score_location()` chỉ được hoàn thiện ở nhóm D01–D03. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **70 passed**; regression `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py tests/test_location_engine.py tests/test_smc_context.py -q --disable-warnings` — **223 passed**; chưa nối caller/runtime |
+| 2026-09-09 | Sửa findings Tech Lead trước R2 — **R2 chưa duyệt tại thời điểm ghi nhận** | Task 11 dùng tolerance theo ULP để không loại vùng đúng ngưỡng max width do sai số float, nhưng vẫn loại vùng thực sự vượt; thêm test dưới/đúng/vượt ngưỡng. Task 9/14 truyền `LocationReference` hoặc `reference_closed_at` vào `build_location_context()`, kiểm tra không sau cutoff và giữ timestamp H1; thêm fixture append H1 tương lai. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **75 passed**; regression `python -m pytest tests/test_scanner_features.py tests/test_technical_signal_scorer.py tests/test_scanner_scenario_producers.py tests/test_location_engine.py tests/test_smc_context.py -q --disable-warnings` — **228 passed**; test đảo thứ tự gọi scorer vẫn để nhóm D vì scorer chưa triển khai |
+| 2026-09-09 | Sửa bổ sung max-width theo finding P2 — **R2 chưa duyệt tại thời điểm ghi nhận** | `_width_exceeds_max()` nay tính error budget từ low/high đã làm tròn, low/high trước rounding, tick size, width và phép nhân ATR; không loại sai vùng đúng ngưỡng ở giá 100/2000, nhưng vẫn loại overflow thực sự. Thêm regression tick `0.01` với `[100.27,100.28]`, `[2000.32,2000.33]`, vùng dưới/đúng/vượt và builder có tick. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **78 passed**; regression — **231 passed**; `git diff --check` đạt |
+| 2026-09-09 | **Tech Lead (Codex) xác nhận DUYỆT R2 — Task 9–14 hoàn thành** | Xác nhận trong cuộc trò chuyện sau lần review sửa max-width cuối: không còn điểm chặn R2; chạy lại regression **231 passed**, kiểm tra độc lập qua builder trên **240 trường hợp giá** đạt cả giữ vùng đúng ngưỡng và loại vùng thực sự vượt, `git diff --check` đạt. Cho phép tiếp tục task 15–21 và dừng tại R3 sau task 21; bổ sung test đảo thứ tự gọi BUY/SELL khi hoàn thiện scorer. Ghi nhận này chỉ duyệt phạm vi R2, chưa nghiệm thu task 15 trở đi hoặc nối runtime. |
+| 2026-09-09 | Hoàn thành Task 15 (D01) — **R2 đã được Tech Lead duyệt** | `core/location_engine.py` thêm `distance_to_interval()` và `select_location_anchor()`: BUY chỉ chọn support ACTIVE đúng phía, SELL chỉ chọn resistance ACTIVE đúng phía; loại SUSPECT/INVALIDATED/EXPIRED/chưa confirmation, giá đúng biên được tính trong vùng, tie-break distance/width/confirmation mới/ID deterministic, không có anchor trả `None`. Bổ sung test đối xứng BUY/SELL, wrong-side, lifecycle, boundary, tie-break đảo thứ tự và no-anchor. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **89 passed**; regression — **242 passed**; chưa nối vào scorer |
+| 2026-09-09 | Hoàn thành Task 16 (D02) — **R2 đã được Tech Lead duyệt** | `core/location_engine.py` thêm `LocationObstacleSelection` và `select_location_obstacle()`: BUY xét resistance, SELL xét support; ACTIVE/SUSPECT chứa giá được ưu tiên conflict, chọn explanation deterministic nhưng giữ `conflict=True`; nếu không conflict chọn obstacle phía trước gần nhất theo clearance tới mép, không dùng vùng phía sau hoặc trạng thái loại. Bổ sung test hai phía interval, forward edge, suspect, invalidated/expired/unconfirmed, no obstacle và conflict không có anchor. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **96 passed**; regression — **249 passed**; chưa nối vào scorer |
+| 2026-09-09 | Task 17 (D03) bản đầu — **bị finding tại R3** | `core/location_engine.py` có scorer P/C/raw và ROUND_HALF_UP, nhưng regression FX tại đúng 0.5 ATR còn bị ảnh hưởng bởi sai số float. Bằng chứng bản đầu: `tests/test_location_engine.py` **102 passed**, regression **255 passed**; đã sửa lại trong entry “Sửa findings Tech Lead R3”. |
+| 2026-09-09 | Task 18 (D04) bản đầu — **bị finding tại R3** | `score_location_safe()` đã phân biệt `UNAVAILABLE` với raw 0, nhưng scorer còn đổi `LIMITED_CONTEXT` thành `EVALUATED` khi anchor xa/không obstacle. Bằng chứng bản đầu: `tests/test_location_engine.py` **104 passed**, regression **257 passed**; đã sửa lại trong entry “Sửa findings Tech Lead R3”. |
+| 2026-09-09 | Hoàn thành Task 19 (D05) — **R2 đã được Tech Lead duyệt; chờ R3 sau Task 21** | Bổ sung invariant test cho monotonicity theo riêng khoảng cách anchor/clearance obstacle, reflection BUY/SELL, đảo thứ tự zones, causal khi append nến tương lai và import-scope không phụ thuộc news/order/AI/SMC/scenario/R:R. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **114 passed**; regression — **267 passed**; `git diff --check` đạt |
+| 2026-09-09 | Task 20 (E01) exploratory — **CHƯA ĐỦ NGHIỆM THU** | Chạy độc lập Location trên 8 case từ `tests/fixtures/smc_canonical/golden_cases.json`; đây là snapshot fixture, không phải chart live. 7 case có ATR đều raw 0 do anchor xa và 1 case thiếu ATR là unavailable; ghi nhận này bị thay thế bởi raw H1/H4 evidence bên dưới. |
+| 2026-09-09 | Hoàn thành Task 20 (E01) — **R3 vẫn CHƯA DUYỆT** | Bổ sung 8 raw EUR/USD cases từ Yahoo Chart API (1.421 H1 → 345 H4), bao phủ gần support/resistance, conflict, invalidated/expired, overlap, far anchor và no obstacle. Kết quả khớp status/raw/reason contract; không lưu raw vào repo, không nối runtime/send order. |
+| 2026-09-09 | Task 21 (E02) ghi nhận sau bổ sung E01 — **CHỜ REVIEW R3** | Hai findings code đã sửa, E01 đã có đủ mẫu raw theo §10; không đổi threshold/weight/config và chưa bắt đầu Task 22. |
+| 2026-09-09 | Sửa findings Tech Lead R3 — **R3 vẫn CHƯA DUYỆT** | D03 chuyển distance/clearance/P/C/raw_exact sang Decimal nhất quán trước ROUND_HALF_UP; thêm regression HALF_UP 0.5 ATR cho BUY/SELL. D04 giữ `LIMITED_CONTEXT` khi thiếu obstacle dù anchor xa và thêm cả hai reason codes. `python -m pytest tests/test_location_engine.py -q --disable-warnings` — **117 passed**; regression — **270 passed**; E01 hạ về chưa hoàn thành vì snapshot chưa đủ mẫu §10; chưa chuyển Task 22. |
+
+| 2026-09-09 | **Tech Lead (Codex) review R3 — CHƯA DUYỆT** | Chạy lại regression **267 passed**; kiểm tra độc lập đạt thứ tự gọi BUY/SELL, context không đổi, đảo zones, exact duplicate và result round-trip. Còn 3 điểm: D03 với price=1.1, anchor.high=1.0995, ATR=0.001, C=1 trả raw=12 thay vì HALF_UP 13 do sai số trước bước Decimal; D04 có anchor xa/không obstacle trả EVALUATED và mất lý do LIMITED_CONTEXT; E01 dùng fixture SMC thiếu H1/lifecycle, 7 case có ATR đều raw=0 nên chưa đủ kiểm tra mẫu §10, cần dữ liệu phù hợp hoặc xác nhận thay đổi phạm vi trước khi ghi hoàn thành. Kết luận review thay thế nhận định CODER đã hoàn tất nhóm; giữ R3 chờ sửa/review lại, chưa chuyển task 22. |
+| 2026-09-09 | **Tech Lead (Codex) review lại R3 — D03/D04 ĐẠT; R3 CHỜ E01** | Đóng hai findings code: Decimal được dùng từ distance/clearance/P/C tới HALF_UP; anchor xa và thiếu obstacle giữ LIMITED_CONTEXT cùng hai reason codes. Chạy lại regression **270 passed**; **8 case độc lập** đạt cho BUY/SELL tại 0.4999/0.5/0.5001 ATR, limited context và round-trip; `git diff --check` đạt. Không phát hiện điểm chặn mới trong phần sửa code. E01 vẫn chưa có mẫu phù hợp §10, do đó chưa nghiệm thu toàn bộ R3; task 20 chưa hoàn thành, task 21 chờ E01, chưa xác nhận chuyển task 22. |
+| 2026-09-09 | **Tech Lead (Codex) xác nhận DUYỆT R3 — Task 15–21 hoàn thành** | Đã lấy lại dữ liệu độc lập từ Yahoo Chart API ghi tại E01: 1.421 H1, gom 345 H4 theo nhóm đủ 4 nến liên tiếp tại boundary UTC. Tái chạy cả 8 cutoff trong bảng E01 bằng reference H1 đã đóng và config mặc định; reference/ATR/status/raw/distance/clearance khớp bảng, có conflict, invalidated/expired, overlap, far anchor và limited context. Chạy lại regression **270 passed**. Hai findings D03/D04 đã đóng ở lần review trước; nay E01 đạt, không còn điểm chặn R3. Cho phép tiếp tục task 22–28, dừng tại R4 sau task 28; chưa duyệt cutover runtime hoặc gửi lệnh thật. |
+| 2026-09-09 | Hoàn thành Task 22 (F01) — **R3 đã duyệt** | `core/scanner_features.py` thêm `location_detail` theo side và adapter `prepare_location_results()` dựng một context rồi score BUY/SELL; `attach_location_results()` lấy raw từ chính `LocationResult`, `to_dict()` serialize detail độc lập. Thêm `derive_technical_raws_with_location()` làm đường prepare opt-in; caller production cũ chưa đổi trước H01. Regression feature kiểm tra một context, reference H1, raw/detail khớp và không mutate chéo: **27 passed**; chưa nối detail qua canonical snapshot/reader (Task 23). |
+| 2026-09-09 | Hoàn thành Task 23 (F02) — **R3 đã duyệt** | Truyền `location_detail` qua `SideSnapshot` → canonical `SideScore` → full composition/envelope; compact envelope và `ScannerRow` giữ `location_raw/status/reason_codes`. Validator reject detail sai side/raw; reader chấp nhận payload lịch sử thiếu detail. Thêm `tests/test_location_canonical_detail.py`; regression canonical/reader/live — **307 passed**; chưa đổi version/cache/hash hoặc nối runtime. |
+| 2026-09-09 | Hoàn thành Task 24 (F03) — **R3 đã duyệt** | Giữ global Scanner feature identity hiện hành trước H01; Location mới nhận diện bằng `location-geometry-v2`, config resolved nằm trong detail, derivation ghi model/config. Fingerprint hiện có bổ sung detail khi dùng Location mới; canonical snapshot ID đã phân biệt config dù raw không đổi; không tạo cache/fingerprint riêng, payload cũ vẫn đọc. Regression config/hash **32 passed**; bộ canonical/reader/Location **554 passed**; `git diff --check` đạt. |
+| 2026-09-09 | Hoàn thành Task 25 (F04) — **R3 đã duyệt** | `TechnicalRawDerivationError` có `reason_code/field/cause`; adapter Location chuyển lỗi dữ liệu/cấu hình sang typed reason, controller giữ reason khi tạo `DATA_UNAVAILABLE` row. `raw=None` bị reject đúng contract, còn `NO_VALID_ANCHOR` `raw=0` vẫn đi qua composition. Regression Task 25 — **54 passed**; `git diff --check` đạt; chưa nối runtime trước H01. |
+| 2026-09-09 | Hoàn thành Task 26 (G01) — **R3 đã duyệt** | UI adapter làm giàu side summary bằng canonical `technical_breakdown` và `location_detail`; presentation giữ detail tùy chọn; Scanner Detail hiển thị Location raw/contribution, H1 reference, anchor/obstacle, khoảng cách ATR và reason, không nhầm với `price_vs_zone`. Raw `0`, raw `null` và payload lịch sử thiếu detail có regression riêng. Presentation + adapter **43 passed**; Location render **3 passed**; `compileall` đạt; chưa nối runtime trước H01. |
+| 2026-09-09 | Hoàn thành Task 27 (G02) — **R3 đã duyệt** | Regression xác nhận cùng nến giữ nguyên Trend/Momentum raw, canonical SMC, regime, vùng legacy và scenario plan khi chỉ thêm Location detail; input không mutate. Không khóa selected side/candidate vì chúng được phép đổi theo Location. Feature/canonical/live/scenario/SMC **118 passed**; regression mở rộng **438 passed**; chưa nối runtime trước H01. |
+| 2026-09-10 | Hoàn thành Task 28 (G03) — **R3 đã duyệt; dừng tại checkpoint R4** | Giữ render path Chẩn đoán, bổ sung CSS responsive cho Location card và fixture matrix dark/light, 320/1280 px, reason dài, số giá nhiều chữ số, raw `0`/`null`, thiếu obstacle và historical detail thiếu. Sau finding R4, render QTextEdit thật ở 320/1280 px đạt không overflow; `tests/test_scanner_detail_v4_diagnostics.py -k location_html` — **10 passed**; reader negative/canonical — **46 passed**; `compileall` và `git diff --check` đạt. Chưa smoke runtime thật; chờ Tech Lead/người dùng xác nhận R4 trước Task 29. |
+| 2026-09-10 | Sửa findings Tech Lead R4 (Task 23/26/28) — **R4 vẫn chờ review** | Reader compact/full/ScannerRow reject status/raw Location sai contract và full envelope reject summary lệch canonical detail; UI formatter giữ 5 chữ số EUR/USD; QTextEdit fixture thực tế dark/light tại 320/1280 px không overflow. Reader/canonical **46 passed**; Location render **10 passed**; presentation/adapter **43 passed**; `compileall` và `git diff --check` đạt. Chưa nối runtime hoặc chuyển Task 29. |
+| 2026-09-10 | **Tech Lead (Codex) review R4 — CHƯA DUYỆT** | Regression 15 file liên quan **557 passed** với QApplication offscreen. Còn 2 findings P2: F02 reader EnvelopeSideScore/SideScoreSummary nhận status/raw sai (UNAVAILABLE/25, CONFLICT/25, EVALUATED/99, status lạ); full envelope còn nhận summary khác canonical detail. G01 định dạng giá cố định 2 decimals, tái hiện reference 1.142465 thành 1.14 và anchor [1.14211,1.14267] thành [1.14,1.14]. Cần validate contract summary và đối chiếu full canonical; dùng formatter giá theo độ chính xác symbol/tick, thêm negative/FX regressions. G03 test viewport_width chưa điều khiển renderer (chỉ assert tham số); cần render qua QTextEdit/set_rich_html với font/theme thực ở 320/1280 sau sửa và ghi đúng bằng chứng. Reviewer đã render offscreen xác nhận lỗi giá. Các kết luận hoàn tất F02/G01/G03 trước đó chưa đủ nghiệm thu; giữ task 28 chờ sửa/review lại, chưa chuyển task 29. |
+| 2026-09-10 | **Tech Lead (Codex) review lại — DUYỆT R4, Task 22–28 hoàn thành** | Đã đóng hai findings P2 của lần review trước: reader compact/full/ScannerRow validate status/raw và các field bắt buộc, full envelope đối chiếu raw/status/reasons với canonical detail; UI dùng formatter giá theo symbol/price_digits, EUR/USD hiển thị reference 1.14247 và anchor [1.14211, 1.14267]. Regression 15 file **565 passed** với QApplication offscreen và font Segoe UI/Consolas. Probe độc lập **37 payload sai bị từ chối** đúng. Render độc lập **20 fixture** (FX, raw 0, unavailable, historical thiếu detail, giá lớn) qua QTextEdit/set_rich_html với palette dark/light tại 320/1280 px: không overflow ngang; đã xem ảnh render hẹp/rộng xác nhận reference/anchor đọc được. Không còn finding chặn R4 trong phạm vi đã review. Cập nhật Task 22–28 Hoàn thành; cho phép CODER tiếp tục Task 29–32, dừng tại R5. Đây là kiểm tra fixture trước H01; smoke runtime thật thuộc H02 và nghiệm thu cuối thuộc R5. |
+| 2026-09-10 | Hoàn thành Task 29 (H01) — **R4 đã duyệt** | Runtime `derive_live_analysis` chuyển sang Location engine mới; shared context/reference H1 dùng một lần cho BUY/SELL; controller truyền lại analysis để không dual-call. `location_quality_score_v4` bị loại khỏi runtime path; derivation ghi `location-geometry-v2`/config, input lỗi vẫn typed unavailable. Regression H01 — **363 passed**; cadence fixture D1/H4/H1 được sửa đúng timeframe; `compileall` và `git diff --check` đạt. Chưa smoke controller/broker; tiếp tục Task 30 H02. |
+| 2026-09-10 | Hoàn thành Task 30 (H02) | Thêm `tests/test_scanner_h02_integration.py`: live-to-snapshot/UI không dispatch, `EVALUATED/CONFLICT/NO_VALID_ANCHOR`, unavailable fail-closed và cutoff/reference. H02 **4 passed**; regression H01 **363 passed**; `python scripts/scanner_smoke.py` đạt smoke chính + PATHB, `sends_real_order=False`; `compileall` và `git diff --check` đạt. Chỉ là fixture/environment smoke, chưa kiểm tra broker/UI production thật; tiếp tục Task 31 và dừng R5 sau Task 32. |
+| 2026-09-10 | Hoàn thành Task 31 (H03) | Cập nhật `scanner-architecture.md`, `scanner-features-spec.md`, `technical-scoring-architecture.md` và `scanner-flow.md` theo caller H01/H02; đánh dấu Location legacy, ghi reference H1/cutoff, unavailable, version/model/config và đường rollback nguyên release trước. Không đổi threshold, không rewrite journal, không đổi code/runtime; tiếp tục Task 32 và dừng tại R5. |
+| 2026-09-10 | Hoàn tất Task 32 (H04) — **CHỜ REVIEW R5** | Đối chiếu checklist §12: 10 mục kỹ thuật/tài liệu đã có bằng chứng; mục xác nhận R5 còn chờ Tech Lead/người dùng. Bàn giao scorer duy nhất, file chính, version/config, regression **4 + 363 passed**, smoke chính/PATHB intent-only, giới hạn broker/UI production và đường rollback nguyên release trước. Chưa đánh dấu nghiệm thu cuối, chưa phát hành, chưa gửi lệnh thật. |
+| 2026-09-10 | **Tech Lead (Codex) review R5 — CHƯA DUYỆT** | Năm findings: cutoff worker làm bar còn hình thành tại lúc chụp trở thành closed; 2 regression UI adapter do cadence fixture; 2 style guard fail do card Location thêm local style/HEX; thiếu checkpoint code/config cụ thể; docs/guide còn trạng thái chưa triển khai mâu thuẫn. Regression 17 file **579 passed, 2 failed**; full suite **3498 passed, 11 failed, 8 skipped, 16 xfailed** (4 failure liên quan, 7 navigation/FRED ngoài diff). Smoke chính/PATHB fixture đạt; probe unavailable qua controller đạt; boundary cutoff probe fail. Chi tiết và yêu cầu sửa tại mục Tech Lead review R5 sau H04. Task 29–31 trả về đang thực hiện, Task 32 chờ sửa/review lại; checklist §12 chưa đủ nghiệm thu. |
+| 2026-09-10 | **CODER sửa findings R5 — CHỜ Tech Lead review lại** | Đóng băng cutoff trước history và truyền packet → analysis → snapshot; regression H02 **5 passed** tại boundary H1/H4. Fixture cadence D1/H4/H1 đúng **24h/4h/1h**; adapter **26 passed**. Card Location dùng semantic template/palette chung; style guards **8 passed**, render Location dark/light 320/1280 **9 passed**. Checkpoint cụ thể tại `reports/scanner/location-r5-checkpoint.json` với baseline `b6e75542c2ae31512abf47fbf5d1fa1210b3aebe` và config kèm theo. Docs đã đồng bộ runtime/R5/production-smoke limits. Full suite **3503 passed, 7 failed, 8 skipped, 16 xfailed**; 1 navigation Backtest + 6 FRED ngoài phạm vi, không có failure mới thuộc Location. Smoke intent-only chính/PATHB đạt, `sends_real_order=False`; chưa tự duyệt R5. |
+| 2026-09-10 | **Tech Lead (Codex) review lại — DUYỆT R5, 32/32 task hoàn thành** | Đóng 5 findings: cutoff cố định trước history (probe cached/uncached và 2 worker delays × 2 sides đạt), cadence fixture đúng, semantic UI/style guards đạt, checkpoint baseline/config xác minh được, docs đồng bộ. Regression 19 file **590 passed**; full suite **3503 passed, 7 failed, 8 skipped, 16 xfailed**, 7 failure navigation/FRED ngoài phạm vi như trước. Smoke chính/PATHB đạt không dispatch; 20 render fixture dark/light 320/1280 không overflow. Cập nhật task 29–32 Hoàn thành và checklist R1–R5; nghiệm thu phạm vi Location, chưa smoke broker/UI production thật, không cấp quyền deploy hoặc gửi lệnh. |
 
 CODER chỉ cần ghi ngắn: bước đã làm, file, test/kết quả và việc còn lại.
 Không cần một báo cáo riêng cho mỗi work item.

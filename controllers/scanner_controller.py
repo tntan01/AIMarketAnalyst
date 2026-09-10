@@ -806,6 +806,10 @@ class ScannerController:
         )
 
         # ---- Phase 1: fetch MT5 data sequentially (MT5 works best single-threaded) ----
+        # Freeze the point-in-time boundary before the first history request.
+        # Worker/evaluation time may be later, but it must never decide which
+        # H1/H4 candles were closed for this packet.
+        history_cutoff = datetime.now(timezone.utc)
         _record_performance(performance, "start_phase", "mt5_fetch")
         packets: list[dict[str, Any] | None] = []
         for i, symbol in enumerate(request.symbols):
@@ -828,6 +832,7 @@ class ScannerController:
                         )
                     ),
                     history_cache_identity=mt5_history_cache_identity,
+                    capture_cutoff=history_cutoff,
                     v4_account=v4_account,
                     v4_portfolio=v4_portfolio,
                     v4_journal=v4_journal,
@@ -2741,6 +2746,7 @@ def _fetch_one_symbol_mt5(
     performance_tracker: object | None = None,
     history_cache_enabled: bool = False,
     history_cache_identity: MT5HistoryCacheIdentity | None = None,
+    capture_cutoff: datetime | None = None,
     v4_account: object | None = None,
     v4_portfolio: object | None = None,
     v4_journal: object | None = None,
@@ -2752,6 +2758,11 @@ def _fetch_one_symbol_mt5(
     data-quality state, fail-closed) and the account/portfolio/journal states so
     the CPU-thread ``_analyze_one_symbol`` reads them from the packet.
     """
+    # Freeze the cutoff before resolving/loading history. Production callers
+    # pass the scan-level packet boundary; direct callers freeze it at entry.
+    history_cutoff = capture_cutoff or datetime.now(timezone.utc)
+    if history_cutoff.tzinfo is None or history_cutoff.utcoffset() is None:
+        raise ValueError("capture_cutoff must be timezone-aware")
     mt5_started = perf_counter()
     broker_symbol = mt5.resolve_symbol(symbol, available_symbols)
     if not broker_symbol:
@@ -2823,10 +2834,10 @@ def _fetch_one_symbol_mt5(
     # ---- C2b: build the safety context from the live MT5 data-quality state.
     # Every field is sourced from REAL MT5 data; anything unavailable stays None
     # (fail-closed -> MarketSafetyGate reports UNKNOWN/MISSING).
-    captured_at = datetime.now(timezone.utc)
-    connectivity_checked_at = captured_at
-    data_checked_at = captured_at
-    spread_checked_at = captured_at
+    observed_at = datetime.now(timezone.utc)
+    connectivity_checked_at = observed_at
+    data_checked_at = observed_at
+    spread_checked_at = observed_at
     spread_points = data_quality.get("spread_points") if isinstance(data_quality, dict) else None
     terminal_connected = data_quality.get("terminal_connected") if isinstance(data_quality, dict) else None
     broker_logged_in = data_quality.get("broker_logged_in") if isinstance(data_quality, dict) else None
@@ -2838,7 +2849,7 @@ def _fetch_one_symbol_mt5(
     )
     v4_safety = build_live_market_safety_context(
         symbol,
-        captured_at,
+        observed_at,
         terminal_connected=terminal_connected,
         broker_logged_in=broker_logged_in,
         connectivity_checked_at=connectivity_checked_at,
@@ -2850,11 +2861,11 @@ def _fetch_one_symbol_mt5(
         spread_points=spread_points,
         spread_checked_at=spread_checked_at,
         news_source_verified=bool(news_verified),
-        news_checked_at=captured_at,
+        news_checked_at=observed_at,
         volatility_ratio=compute_live_volatility_ratio(
             all_candles.get("D1"), all_candles.get("H4")
         ),
-        volatility_checked_at=captured_at,
+        volatility_checked_at=observed_at,
     )
 
     # ---- Account gate, per symbol: required margin = what the broker itself
@@ -2887,7 +2898,11 @@ def _fetch_one_symbol_mt5(
         "input_timestamps": input_timestamps_from_candles(all_candles),
         "mt5_history_cache": history_cache_result,
         "v4_safety": v4_safety,
-        "v4_captured_at": captured_at,
+        # Point-in-time boundary for Location/analysis/snapshot. Keep this
+        # separate from source observation time used by freshness gates.
+        "v4_captured_at": history_cutoff,
+        "location_cutoff": history_cutoff,
+        "v4_observed_at": observed_at,
         "account": account_symbol,
         "portfolio": v4_portfolio,
         "journal": v4_journal,
@@ -2985,6 +3000,11 @@ def _analyze_one_symbol(
     )
     now = datetime.now(timezone.utc)
     try:
+        analysis_cutoff = pkt.get("location_cutoff", pkt.get("v4_captured_at"))
+        if not isinstance(analysis_cutoff, datetime):
+            raise ValueError("packet.location_cutoff is required")
+        if analysis_cutoff.tzinfo is None or analysis_cutoff.utcoffset() is None:
+            raise ValueError("packet.location_cutoff must be timezone-aware")
         candles = pkt["candles"] if isinstance(pkt.get("candles"), dict) else {}
         d1 = candles.get("D1") or []
         h4 = candles.get("H4") or []
@@ -3029,7 +3049,7 @@ def _analyze_one_symbol(
             h4,
             h1,
             symbol=symbol,
-            captured_at=now,
+            captured_at=analysis_cutoff,
             news_in_3h=False,
         )
         pair = run_pair_from_live(
@@ -3039,8 +3059,9 @@ def _analyze_one_symbol(
             symbol,
             safety,
             now=now,
-            captured_at=now,
+            captured_at=analysis_cutoff,
             news_in_3h=False,
+            analysis=analysis,
             macro_raw_buy=macro_raw_buy,
             macro_raw_sell=macro_raw_sell,
             macro_confidence=macro_confidence,
@@ -3094,6 +3115,12 @@ def _analyze_one_symbol(
     except AdapterContractError:
         raise
     except Exception as exc:
+        exception_reason = getattr(exc, "reason_code", None)
+        reason_codes = (
+            (exception_reason,)
+            if type(exception_reason) is str and exception_reason
+            else ()
+        )
         blocked = blocked_ui_row(
             symbol,
             f"Không quét được dữ liệu: {exc}",
@@ -3103,6 +3130,7 @@ def _analyze_one_symbol(
             ),
             input_timestamps=dict(pkt.get("input_timestamps", {})),
             analysis_error=str(exc),
+            reason_codes=reason_codes,
         )
         blocked["_analysis_error"] = str(exc)
         return blocked

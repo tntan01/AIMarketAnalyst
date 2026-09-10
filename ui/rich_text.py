@@ -136,6 +136,55 @@ def rich_text_css(
             "margin:0 0 14px;",
         ),
         (
+            ".rt-location-root",
+            f"{QSS_BODY}word-wrap:break-word;overflow-wrap:anywhere;",
+        ),
+        (
+            ".rt-location-table",
+            "width:100%;table-layout:fixed;border-collapse:collapse;"
+            "margin-bottom:8px;word-wrap:break-word;overflow-wrap:anywhere;",
+        ),
+        (
+            ".rt-location-title",
+            f"{QSS_SUBTITLE}color:{palette.accent};margin:14px 0 4px;",
+        ),
+        (
+            ".rt-location-description",
+            f"{QSS_SMALL}color:{palette.text_muted};",
+        ),
+        (
+            ".rt-location-header",
+            f"color:{palette.text_subtle};border-bottom:2px solid {palette.border};"
+            "padding:5px 8px;",
+        ),
+        (
+            ".rt-location-cell",
+            f"color:{palette.text};border-bottom:1px solid {palette.border};"
+            "padding:5px 8px;vertical-align:top;",
+        ),
+        (
+            ".rt-location-label",
+            f"color:{palette.text_subtle};width:170px;",
+        ),
+        (
+            ".rt-location-value",
+            f"color:{palette.text};padding:4px 8px;",
+        ),
+        (
+            ".rt-location-number",
+            f"{QSS_NUMBER}color:{palette.text};",
+        ),
+        (
+            ".rt-location-small",
+            f"{QSS_SMALL}",
+        ),
+        (
+            ".rt-location-footnote",
+            f"{QSS_SMALL}color:{palette.text_subtle};margin:0;",
+        ),
+        (".rt-location-align-left", "text-align:left;"),
+        (".rt-location-align-center", "text-align:center;"),
+        (
             "th",
             f"color:{palette.text_muted};border-bottom:2px solid {palette.border};"
             "padding:7px 9px;text-align:left;font-weight:700;",

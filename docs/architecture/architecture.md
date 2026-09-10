@@ -13,16 +13,16 @@ Mục tiêu kiến trúc:
 * Dễ thêm màn hình, thêm loại phân tích, thêm AI provider và thêm loại tài sản sau này.
 * Dễ đóng gói thành bản cài đặt Windows và chuyển sang máy khác.
 
-## Location target — chưa triển khai, 09/09/2026
+## Location runtime — đã nối, R5 đã duyệt, 10/09/2026
 
 Phạm vi này theo [plan Location 32 task](../plans/location-scoring-upgrade-plan.md)
 và [kiến trúc Scanner canonical](../scanner/scanner-architecture.md), ưu tiên
 ứng dụng cá nhân gọn. Các mô tả Scanner V2/legacy bên dưới không thay thế
 contract canonical hoặc tạo thêm yêu cầu backtest cho Location.
 
-- Thêm một module thuần `core/location_engine.py` dự kiến chứa model/config,
-  dựng vùng H4, lifecycle, chọn vùng và tính raw/detail. Không phụ thuộc Qt,
-  broker, mạng hoặc database.
+- Module thuần `core/location_engine.py` chứa model/config, dựng vùng H4,
+  lifecycle, chọn vùng và tính raw/detail. Không phụ thuộc Qt, broker, mạng
+  hoặc database.
 - Adapter trong luồng Scanner chịu trách nhiệm chuẩn hóa dữ liệu, cutoff và
   truyền kết quả qua schema/snapshot hiện có. UI chỉ đọc kết quả, không tính lại.
 - Vùng Location tách khỏi vùng technical/SMC dùng chung; không thay đổi logic
@@ -32,9 +32,12 @@ contract canonical hoặc tạo thêm yêu cầu backtest cho Location.
 - Giới hạn cửa sổ nến theo plan, đo thời gian trên vài lần scan. Chỉ tối ưu
   thêm nếu có số đo cho thấy chậm; không thêm hạ tầng dự phòng theo giả định.
 
-Đây là thiết kế trước implementation. Giữ 32 task và năm điểm dừng bắt buộc
-8/14/21/28/32. Không đánh dấu live hay cập nhật hồ sơ runtime của máy người dùng
-chỉ vì tài liệu đã được đồng bộ.
+Runtime đã được nối sau H01/H02; cutoff được đóng băng trước khi lấy history và
+đi xuyên packet → analysis → snapshot. UI đọc detail versioned bằng template/
+semantic palette chung. Năm điểm dừng 8/14/21/28/32 vẫn có hiệu lực; R5
+đã được Tech Lead duyệt ngày 10/09/2026. Chưa có nghiệm thu production smoke, broker không gửi lệnh
+trong smoke hiện tại. Checkpoint rollback/config cụ thể nằm tại
+`reports/scanner/location-r5-checkpoint.json`.
 
 ## Phạm vi symbol được hỗ trợ
 

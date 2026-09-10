@@ -24,16 +24,16 @@
 (Đang cập nhật)
 
 > Ứng dụng hiện chạy Scanner. Đây là thiết kế đã được phê duyệt và là hành vi
-> runtime hiện hành. Riêng các mục ghi “target/chưa triển khai”, gồm Location
-> tại §3.1, chưa phải chức năng đang có. Xem
+> runtime hiện hành. Location đã được nối sau H01/H02 và R5 đã được Tech Lead duyệt ngày 10/09/2026;
+> xem
 > [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
-### 3.1 Location nâng cấp — sắp triển khai
+### 3.1 Location nâng cấp — đã nối runtime, R5 đã duyệt
 
-**Trạng thái 09/09/2026: mới có thiết kế, chưa có trên runtime.** Chi tiết tại
-[plan Location](../plans/location-scoring-upgrade-plan.md).
+**Trạng thái 10/09/2026: runtime đã nối, Tech Lead đã duyệt R5 sau review lại.**
+Chi tiết tại [plan Location](../plans/location-scoring-upgrade-plan.md).
 
-Location dự kiến cho biết giá close H1 có gần vùng H4 hỗ trợ hướng giao dịch
+Location cho biết giá close H1 có gần vùng H4 hỗ trợ hướng giao dịch
 và còn khoảng trống tới vùng cản hay không. Trong chi tiết Scanner, người dùng
 sẽ xem điểm 0–25, phần đóng góp vào điểm kỹ thuật, vùng tham chiếu, khoảng cách
 theo ATR và lý do chấm điểm.
@@ -46,6 +46,8 @@ theo ATR và lý do chấm điểm.
   không tự đóng lệnh đang mở hoặc sửa SL/TP, và không bảo đảm lợi nhuận.
 - Bản lưu cũ giữ nguyên điểm. Nếu chưa có detail Location, giao diện sẽ báo
   rõ thay vì tính lại lịch sử bằng công thức mới.
+- Bản runtime hiện chưa được nghiệm thu bằng smoke production; smoke hiện có
+  chỉ intent-only, không gửi lệnh thật và không thay thế review R5.
 
 Không cần nhập vùng hoặc tin thủ công để sử dụng Location bản đầu; không cần
 đăng ký nguồn dữ liệu trả phí hay cài database mới riêng cho phần này.

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "checkpoint_id": "location-r5-coder-2026-09-10",
+  "created_at_utc": "2026-09-10T00:00:00Z",
+  "base_commit": "b6e75542c2ae31512abf47fbf5d1fa1210b3aebe",
+  "base_commit_message": "Upgrade location",
+  "working_tree_status": "uncommitted_changes_are_preserved",
+  "runtime_config": {
+    "config_version": "location-config-v1",
+    "model_version": "location-geometry-v2",
+    "detail_schema": "location-detail-v1",
+    "context_schema": "location-context-v1",
+    "rounding_mode": "ROUND_HALF_UP",
+    "raw_max": 25,
+    "swing_lookback": 2,
+    "history_h4_bars": 240,
+    "zone_half_width_atr": 0.15,
+    "zone_max_width_atr": 1.0,
+    "invalidation_close_count": 2,
+    "invalidation_buffer_atr": 0.1,
+    "zone_max_age_h4_bars": 120,
+    "proximity_zero_at_atr": 1.0,
+    "clearance_full_at_atr": 1.0,
+    "unknown_clearance_factor": 0.5
+  },
+  "scanner_threshold_policy": {
+    "technical_floor": 40,
+    "setup_floor": 35,
+    "score_gap": 5,
+    "min_risk_reward": 2.0,
+    "min_risk_reward_after_cost": 1.0
+  },
+  "rollback": {
+    "baseline": "b6e75542c2ae31512abf47fbf5d1fa1210b3aebe",
+    "existing_tag": "v3-runtime-pre-cutover",
+    "restore_note": "Use the repository-approved review workflow to restore the baseline commit; do not reset the working tree automatically.",
+    "preserve_artifact": "reports/scanner/location-r5-checkpoint.json"
+  },
+  "smoke_artifacts": [
+    "reports/scanner/release_b12_smoke.json",
+    "reports/scanner/release_b12_pathb_smoke.json"
+  ]
+}

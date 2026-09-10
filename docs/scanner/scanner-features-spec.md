@@ -5,10 +5,10 @@
 (+ `core/technical_context.py`, `core/indicators.py`), KHÔNG bịa, KHÔNG đổi
 threshold.
 
-> **Bổ sung 09/09/2026 — Location CHƯA TRIỂN KHAI:** contract port bên dưới
-> mô tả baseline đang chạy. Thay đổi Location sắp tới được đặc tả trong
-> [plan 32 task](../plans/location-scoring-upgrade-plan.md) và §0.1 dưới đây.
-> Không đánh dấu parity Location cũ là yêu cầu bất biến cho model mới.
+> **Cập nhật 10/09/2026 — Location ĐÃ TRIỂN KHAI sau H01/H02:** phần parity
+> Location cũ bên dưới là lịch sử/baseline. Contract runtime mới được mô tả ở
+> §0.1 và [plan 32 task](../plans/location-scoring-upgrade-plan.md). Không
+> relabel raw lịch sử theo model mới.
 
 ## 0. Mục tiêu và ranh giới
 
@@ -29,10 +29,11 @@ Tầng target đã có candle→raw: module `core/scanner_features.py`
 - **Fail-closed**: thiếu candle / raws không hợp lệ → trả None/UNKNOWN + reason code,
   tuyệt đối không số bịa.
 
-### 0.1 Location target — chưa triển khai, 09/09/2026
+### 0.1 Location runtime — đã triển khai, 10/09/2026
 
-Phạm vi “port/không đổi threshold/contract” ở §0–§7 ghi lại đợt migration cũ.
-Nâng cấp Location là thay đổi có version theo
+Phạm vi “port/không đổi threshold/contract” ở §0–§7 ghi lại đợt migration cũ
+cho Trend/Momentum/SMC và các contract chung. Location runtime mới là thay đổi
+có version theo
 [plan Location](../plans/location-scoring-upgrade-plan.md), không phải tiếp tục
 cam kết parity với công thức Location tại §3.3. Trend, Momentum, canonical SMC,
 raw maxima và trọng số regime vẫn giữ nguyên.
@@ -40,7 +41,8 @@ raw maxima và trọng số regime vẫn giữ nguyên.
 - Tạo `core/location_engine.py` thuần tính toán; dựng vùng H4 riêng, không sửa
   `support_zones`/`resistance_zones` dùng chung cho SMC và scenario.
 - Adapter xác nhận timestamp UTC, cutoff và nến đã đóng trước khi giới hạn
-  cửa sổ; giữ yêu cầu lịch sử tối thiểu hiện có. Giá tham chiếu vẫn là close H1.
+  cửa sổ; giữ yêu cầu lịch sử tối thiểu hiện có. Giá tham chiếu là close H1
+  cuối đã đóng và `reference_closed_at` không sau cutoff.
 - Quy tắc confirmation, ATR tại thời điểm hình thành, lifecycle, chọn anchor/
   obstacle, công thức và defaults lấy duy nhất từ §4–§6 của plan.
 - Producer làm tròn Location theo half-up thành integer 0–25. Scorer tiếp tục
@@ -50,12 +52,20 @@ raw maxima và trọng số regime vẫn giữ nguyên.
   theo đường lỗi hiện có. Không đưa null hoặc điểm thay thế vào `technical_raws`.
 - Raw và detail phải cùng lần tính. Detail/version/config đi qua trường schema
   riêng được khai báo và kiểm tra, không chèn key vào dict `technical_raws` đang
-  khóa. F01–F04 chuẩn bị transport/version; H01 mới chuyển caller live.
-- Không tính lại snapshot lịch sử, không thêm DB, không thêm entry gate.
+  khóa. F01–F04 đã chuẩn bị transport/version; H01 chuyển caller live và H02
+  kiểm tra đường tới snapshot/UI.
+- Không tính lại snapshot lịch sử, không thêm DB, không thêm entry gate. Runtime
+  dùng một context Location cho BUY/SELL và không gọi công thức legacy.
 
-Khi chuyển công thức, đổi nhãn §3.3 thành lịch sử và ghi rõ caller/version/test
-thực tế; không sửa công thức baseline trước khi code thay thế hoạt động. Các
-mốc dừng bắt buộc vẫn là task 8/14/21/28/32 trong plan.
+§3.3 được xem là công thức Location lịch sử. Runtime producer là
+`prepare_location_results()`/`derive_technical_raws_with_location()` trong
+`core/scanner_features.py`, được gọi từ `derive_live_analysis()` với cutoff
+`captured_at`. Model/config hiện hành là `location-geometry-v2`/
+`location-config-v1`; detail có schema `location-detail-v1` và context có
+schema `location-context-v1`. Input lỗi phát `TechnicalRawDerivationError`
+(`LOCATION_INVALID_DATA` hoặc `LOCATION_INVALID_CONFIG`) và đi theo
+unavailable; raw `0` vẫn là kết quả hợp lệ cho no-anchor/conflict. Các mốc dừng
+bắt buộc vẫn là task 8/14/21/28/32 trong plan.
 
 ## 1. Đầu vào sống (từ app / broker MT5)
 
@@ -184,7 +194,8 @@ xóa so với plan gốc — `smc_scorer.py`/`smc_context.py` được rút kh�
 
 ## 5. Hợp đồng module mới `core/scanner_features.py`
 
-- Version raw: **`scanner-features`**.
+- Version raw: **`scanner-features`**; Location source trong detail là
+  **`location-geometry-v2`** với config **`location-config-v1`**.
 - API: `derive_technical_raws(d1, h4, h1, canonical_smc=None) -> TechnicalRawsV4`, với
   `TechnicalRawsV4` mang: `features_version`, `symbol`, `captured_at`, `per_side`:
   `{buy: {trend, momentum, location, smc}, sell: {...}}` (trong đó `smc` =
@@ -194,6 +205,10 @@ xóa so với plan gốc — `smc_scorer.py`/`smc_context.py` được rút kh�
 - Deterministic: cùng candles → cùng raws (byte-reproducible).
 - Fail-closed: thiếu candle → `TechnicalRawDerivationError`; kết quả clamp/None kèm
   reason nếu dữ liệu lệch.
+- Runtime Location: `derive_technical_raws_with_location(d1, h4, h1,
+  cutoff=...)` dựng một context, chọn reference H1 đã đóng và gắn cùng
+  `LocationResult` vào raw BUY/SELL; `run_pair_from_live()` có thể nhận analysis
+  đã derive để tránh tính lại.
 - KHÔNG import `signal_engine`/`analysis_engine`/`analysis_pipeline`… Được import
   `technical_context`, `indicators`, `reason_codes`, và `smc_scorer`/`smc_context`
   (retained canonical-SMC producer, quyết định §4-a) + `smc_scoring_result`.
@@ -213,4 +228,6 @@ xóa so với plan gốc — `smc_scorer.py`/`smc_context.py` được rút kh�
 
 ---
 
-*Chờ duyệt toàn bộ spec (§3 + quyết định §4) rồi mới code module Bước 2.*
+Spec này giữ các phần parity/migration lịch sử để giải thích nguồn Trend/Momentum
+và contract chung. Location đã được code và nối runtime theo §0.1; H03 chỉ cập
+nhật tài liệu/checkpoint, không mở thêm scorer hoặc threshold.

@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from core.location_engine import LOCATION_RESULT_STATUSES
 from core.reason_codes import (
     SCANNER_FORBIDDEN_SCORED_FIELD,
     SCANNER_LEGACY_V3_AUDIT_ONLY,
@@ -65,6 +66,7 @@ SCANNER_SNAPSHOT_ENVELOPE_LEGACY_VERSION = "scanner-v4-snapshot-envelope-v1"
 MODE_COMPACT = "compact"
 MODE_FULL = "full"
 VALID_ENVELOPE_MODES = frozenset({MODE_COMPACT, MODE_FULL})
+LOCATION_RAW_MAX = 25
 
 # Complete key set of a compact envelope (DoR-10 / 10C).
 COMPACT_KEYS = frozenset(
@@ -142,9 +144,12 @@ class EnvelopeSideScore:
     evidence_source: str
     execution_quality_score: int | None
     execution_quality_source: str
+    location_raw: int | None = None
+    location_status: str | None = None
+    location_reason_codes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "side": self.side,
             "technical_signal_score": self.technical_signal_score,
             "setup_score": self.setup_score,
@@ -153,6 +158,15 @@ class EnvelopeSideScore:
             "execution_quality_score": self.execution_quality_score,
             "execution_quality_source": self.execution_quality_source,
         }
+        if self.location_status is not None:
+            payload.update(
+                {
+                    "location_raw": self.location_raw,
+                    "location_status": self.location_status,
+                    "location_reason_codes": list(self.location_reason_codes),
+                }
+            )
+        return payload
 
     @classmethod
     def from_dict(cls, value: object, *, path: str = "envelope_side_score") -> EnvelopeSideScore:
@@ -160,7 +174,7 @@ class EnvelopeSideScore:
             raise SnapshotEnvelopeError(
                 SCANNER_SCHEMA_INVALID, path, "expected an object"
             )
-        expected = {
+        required = {
             "side",
             "technical_signal_score",
             "setup_score",
@@ -169,17 +183,78 @@ class EnvelopeSideScore:
             "execution_quality_score",
             "execution_quality_source",
         }
-        if set(value) != expected:
+        optional = {"location_raw", "location_status", "location_reason_codes"}
+        unknown = sorted(set(value) - required - optional)
+        missing = sorted(required - set(value))
+        if unknown or missing:
             raise SnapshotEnvelopeError(
                 SCANNER_SCHEMA_INVALID,
                 path,
-                f"unexpected side-score keys: {sorted(set(value) - expected)}",
+                f"unknown={unknown} missing={missing}",
             )
         side = _require_text(value["side"], f"{path}.side")
         if side not in VALID_SIDES:
             raise SnapshotEnvelopeError(
                 SCANNER_SCHEMA_INVALID, f"{path}.side", "invalid side"
             )
+        location_status = (
+            None
+            if "location_status" not in value or value["location_status"] is None
+            else _require_text(value["location_status"], f"{path}.location_status")
+        )
+        location_raw = (
+            None
+            if "location_raw" not in value
+            else _optional_int(value["location_raw"], f"{path}.location_raw")
+        )
+        location_reason_codes = (
+            ()
+            if "location_reason_codes" not in value
+            else _parse_codes(
+                value["location_reason_codes"], f"{path}.location_reason_codes"
+            )
+        )
+        location_summary_present = bool(
+            set(value).intersection(optional)
+        )
+        if location_status is None and location_summary_present:
+            raise SnapshotEnvelopeError(
+                SCANNER_SCHEMA_INVALID,
+                path,
+                "location status is required when location summary is present",
+            )
+        if location_status is not None:
+            if location_status not in LOCATION_RESULT_STATUSES:
+                raise SnapshotEnvelopeError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.location_status",
+                    f"unsupported Location status {location_status!r}",
+                )
+            if not {"location_raw", "location_reason_codes"} <= set(value):
+                raise SnapshotEnvelopeError(
+                    SCANNER_SCHEMA_INVALID,
+                    path,
+                    "Location summary requires raw and reason_codes",
+                )
+            if location_status == "UNAVAILABLE":
+                if location_raw is not None:
+                    raise SnapshotEnvelopeError(
+                        SCANNER_SCHEMA_INVALID,
+                        f"{path}.location_raw",
+                        "UNAVAILABLE requires raw=null",
+                    )
+            elif type(location_raw) is not int or not 0 <= location_raw <= LOCATION_RAW_MAX:
+                raise SnapshotEnvelopeError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.location_raw",
+                    "evaluated Location status requires raw in 0..25",
+                )
+            elif location_status in {"CONFLICT", "NO_VALID_ANCHOR"} and location_raw != 0:
+                raise SnapshotEnvelopeError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.location_raw",
+                    f"{location_status} requires raw=0",
+                )
         return cls(
             side=side,
             technical_signal_score=_optional_int(
@@ -200,6 +275,9 @@ class EnvelopeSideScore:
                 f"{path}.execution_quality_source",
                 allow_empty=True,
             ),
+            location_raw=location_raw,
+            location_status=location_status,
+            location_reason_codes=location_reason_codes,
         )
 
 
@@ -311,6 +389,21 @@ def build_snapshot_envelope(
             evidence_source=score.evidence_source,
             execution_quality_score=score.execution_quality_score,
             execution_quality_source=score.execution_quality_source,
+            location_raw=(
+                score.location_detail.raw
+                if score.location_detail is not None
+                else None
+            ),
+            location_status=(
+                score.location_detail.status
+                if score.location_detail is not None
+                else None
+            ),
+            location_reason_codes=(
+                score.location_detail.reason_codes
+                if score.location_detail is not None
+                else ()
+            ),
         )
 
     return ScannerSnapshotEnvelope(
@@ -413,6 +506,7 @@ def snapshot_envelope_from_dict(
             f"missing={sorted(expected_keys - set(value))}",
         )
     composition_payload = value.get("composition")
+    composition_result = None
     if mode == MODE_FULL:
         if not isinstance(composition_payload, dict):
             raise SnapshotEnvelopeError(
@@ -422,7 +516,7 @@ def snapshot_envelope_from_dict(
             )
         # Re-validate strictly through the canonical composition reader.
         try:
-            ScannerCompositionResult.from_dict(composition_payload)
+            composition_result = ScannerCompositionResult.from_dict(composition_payload)
         except SnapshotEnvelopeError:
             raise
         except ValueError as exc:
@@ -440,6 +534,30 @@ def snapshot_envelope_from_dict(
             )
     else:
         composition_payload = None
+
+    side_scores = tuple(
+        EnvelopeSideScore.from_dict(item, path=f"{path}.side_scores[{index}]")
+        for index, item in enumerate(_require_list(value["side_scores"], f"{path}.side_scores"))
+    )
+    if mode == MODE_FULL and composition_result is not None:
+        for summary in side_scores:
+            detail = composition_result.canonical.side_score(summary.side).location_detail
+            expected = (
+                (None, None, ())
+                if detail is None
+                else (detail.raw, detail.status, detail.reason_codes)
+            )
+            actual = (
+                summary.location_raw,
+                summary.location_status,
+                summary.location_reason_codes,
+            )
+            if actual != expected:
+                raise SnapshotEnvelopeError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.side_scores[{summary.side}]",
+                    "Location summary differs from canonical location_detail",
+                )
 
     return ScannerSnapshotEnvelope(
         envelope_schema_version=schema_version,
@@ -489,10 +607,7 @@ def snapshot_envelope_from_dict(
             if value["decision_cap"] is None
             else _require_text(value["decision_cap"], f"{path}.decision_cap")
         ),
-        side_scores=tuple(
-            EnvelopeSideScore.from_dict(item, path=f"{path}.side_scores[{index}]")
-            for index, item in enumerate(_require_list(value["side_scores"], f"{path}.side_scores"))
-        ),
+        side_scores=side_scores,
         safety_status=_require_text(value["safety_status"], f"{path}.safety_status"),
         safety_reason_codes=_parse_codes(
             value["safety_reason_codes"], f"{path}.safety_reason_codes"

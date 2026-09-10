@@ -18,6 +18,7 @@ from fractions import Fraction
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias
 
+from core.location_engine import LocationResult
 from core.reason_codes import (
     SCANNER_FORBIDDEN_SCORED_FIELD,
     SCANNER_LEGACY_V3_AUDIT_ONLY,
@@ -764,6 +765,7 @@ class SideScore:
     setup_score: int | None
     final_score: int | None
     reason_codes: tuple[str, ...] = ()
+    location_detail: LocationResult | None = None
 
     def __post_init__(self) -> None:
         side = _require_choice(self.side, VALID_SIDES, "side_score.side")
@@ -855,6 +857,23 @@ class SideScore:
                         f"side_score.technical_breakdown.{name}",
                         "must keep raw and contribution null when technical score is null",
                     )
+        if self.location_detail is not None:
+            if type(self.location_detail) is not LocationResult:
+                _error(
+                    "side_score.location_detail",
+                    "expected a LocationResult or null",
+                )
+            if self.location_detail.side != side:
+                _error(
+                    "side_score.location_detail.side",
+                    "must match side_score.side",
+                )
+            location_raw = self.technical_breakdown.location.raw
+            if self.location_detail.raw is None or self.location_detail.raw != location_raw:
+                _error(
+                    "side_score.location_detail.raw",
+                    "must match the integer location raw",
+                )
         reasons = _freeze_reason_codes(self.reason_codes, "side_score.reason_codes")
         object.__setattr__(self, "side", side)
         object.__setattr__(self, "technical_signal_score", technical)
@@ -878,7 +897,7 @@ class SideScore:
         object.__setattr__(self, "reason_codes", reasons)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "side": self.side,
             "technical_signal_score": self.technical_signal_score,
             "technical_breakdown": self.technical_breakdown.to_dict(),
@@ -890,25 +909,38 @@ class SideScore:
             "final_score": self.final_score,
             "reason_codes": list(self.reason_codes),
         }
+        if self.location_detail is not None:
+            payload["location_detail"] = self.location_detail.to_dict()
+        return payload
 
     @classmethod
     def from_dict(cls, value: object, *, path: str = "side_score") -> SideScore:
-        payload = _require_exact_keys(
-            value,
-            {
-                "side",
-                "technical_signal_score",
-                "technical_breakdown",
-                "evidence_score",
-                "evidence_source",
-                "execution_quality_score",
-                "execution_quality_source",
-                "setup_score",
-                "final_score",
-                "reason_codes",
-            },
-            path,
-        )
+        required = {
+            "side",
+            "technical_signal_score",
+            "technical_breakdown",
+            "evidence_score",
+            "evidence_source",
+            "execution_quality_score",
+            "execution_quality_source",
+            "setup_score",
+            "final_score",
+            "reason_codes",
+        }
+        payload = _require_external_object(value, path)
+        missing = sorted(required - set(payload))
+        unknown = sorted(set(payload) - required - {"location_detail"})
+        if missing:
+            _error(path, f"missing required fields: {missing}")
+        if unknown:
+            _error(path, f"unknown fields: {unknown}")
+        detail_payload = payload.get("location_detail")
+        location_detail = None
+        if detail_payload is not None:
+            try:
+                location_detail = LocationResult.from_dict(detail_payload)
+            except (TypeError, ValueError) as exc:
+                _error(f"{path}.location_detail", f"invalid Location detail: {exc}")
         return cls(
             side=_require_choice(payload["side"], VALID_SIDES, f"{path}.side"),
             technical_signal_score=_optional_int(
@@ -955,6 +987,7 @@ class SideScore:
             reason_codes=_parse_reason_codes(
                 payload["reason_codes"], f"{path}.reason_codes"
             ),
+            location_detail=location_detail,
         )
 
 

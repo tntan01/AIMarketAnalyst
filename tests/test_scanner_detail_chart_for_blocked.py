@@ -12,12 +12,14 @@ parameters (entry / stop_loss / take_profit) survive a safety BLOCK.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from controllers.scanner_controller import _analyze_one_symbol
 from core.chart_payload import build_full_chart_payload
 from core.scanner_live_producers import build_live_market_safety_context
 from core.scanner_order_policy import load_runtime_order_policy
 
-from tests.test_scanner_release import NOW, _zoned_candles
+from tests.test_scanner_release import _zoned_candles
 
 
 def _blocked_pkt() -> dict:
@@ -29,14 +31,15 @@ def _blocked_pkt() -> dict:
     """
     d1, h4, h1 = _zoned_candles()
     m15 = h1[-40:]
+    live_now = datetime.now(timezone.utc)
     safety = build_live_market_safety_context(
-        "XAU/USD", NOW,
+        "XAU/USD", live_now,
         terminal_connected=True, broker_logged_in=True,
-        connectivity_checked_at=NOW, last_candle_time_utc=NOW,
-        data_checked_at=NOW, last_tick_time_utc=NOW,
-        spread_points=500.0, spread_checked_at=NOW,
-        news_source_verified=True, news_checked_at=NOW,
-        volatility_ratio=1.0, volatility_checked_at=NOW,
+        connectivity_checked_at=live_now, last_candle_time_utc=live_now,
+        data_checked_at=live_now, last_tick_time_utc=live_now,
+        spread_points=500.0, spread_checked_at=live_now,
+        news_source_verified=True, news_checked_at=live_now,
+        volatility_ratio=1.0, volatility_checked_at=live_now,
     )
     return {
         "symbol": "XAU/USD",
@@ -48,7 +51,8 @@ def _blocked_pkt() -> dict:
         "quote_to_usd": None,
         "input_timestamps": {},
         "v4_safety": safety,
-        "v4_captured_at": NOW,
+        "v4_captured_at": live_now,
+        "location_cutoff": live_now,
         "account": None,
         "portfolio": None,
         "journal": None,

@@ -28,9 +28,21 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, Sequence
+
+from core.location_engine import (
+    DEFAULT_LOCATION_CONFIG,
+    LOCATION_MODEL_VERSION,
+    LocationConfig,
+    LocationDataError,
+    LocationResult,
+    build_location_context,
+    reference_from_closed_h1,
+    score_location,
+)
+from core.reason_codes import LOCATION_INVALID_CONFIG, LOCATION_INVALID_DATA
 
 from core.smc_scoring_result import SmcScoringResult
 from core.technical_context import (
@@ -67,6 +79,19 @@ SOURCE_TECHNICAL = "technical"
 
 class TechnicalRawDerivationError(ValueError):
     """Fail-closed: candles or inputs are insufficient — never fabricate."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason_code: str = REASON_INSUFFICIENT_DATA,
+        field: str | None = None,
+        cause: BaseException | None = None,
+    ) -> None:
+        self.reason_code = reason_code
+        self.field = field
+        self.cause = cause
+        super().__init__(message)
 
 
 def _clamp(value: float, min_value: float, max_value: float) -> int:
@@ -239,6 +264,7 @@ class SideFeatureRaws:
     momentum_source: str = SOURCE_TECHNICAL
     location_source: str = SOURCE_TECHNICAL
     reason_codes: tuple[str, ...] = ()
+    location_detail: LocationResult | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -252,6 +278,11 @@ class SideFeatureRaws:
             "momentum_source": self.momentum_source,
             "location_source": self.location_source,
             "reason_codes": list(self.reason_codes),
+            "location_detail": (
+                self.location_detail.to_dict()
+                if self.location_detail is not None
+                else None
+            ),
         }
 
 
@@ -271,6 +302,28 @@ def derive_technical_raws(
     verbatim legacy ports.  ``smc`` is ``None`` unless ``canonical_smc`` (a retained
     ``smc-v2`` ``SmcScoringResult``) is supplied — never fabricated.
     """
+    return _derive_technical_raws(
+        d1,
+        h4,
+        h1,
+        symbol=symbol,
+        captured_at=captured_at,
+        canonical_smc=canonical_smc,
+        location_score_fn=location_quality_score_v4,
+    )
+
+
+def _derive_technical_raws(
+    d1: list[Any],
+    h4: list[Any],
+    h1: list[Any],
+    *,
+    symbol: str = "",
+    captured_at: datetime | None = None,
+    canonical_smc: SmcScoringResult | None = None,
+    location_score_fn: Callable[[str, Mapping[str, Any]], int],
+) -> "TechnicalRaws":
+    """Build the shared non-Location feature layer with an injected raw producer."""
     if len(d1) < MIN_D1 or len(h4) < MIN_H4 or len(h1) < MIN_H1:
         raise TechnicalRawDerivationError(
             f"{REASON_INSUFFICIENT_DATA}: need D1>={MIN_D1} H4>={MIN_H4} H1>={MIN_H1} "
@@ -291,7 +344,7 @@ def derive_technical_raws(
             side=side,
             trend=trend_alignment_score_v4(side, technical),
             momentum=momentum_alignment_score_v4(side, technical),
-            location=location_quality_score_v4(side, technical),
+            location=location_score_fn(side, technical),
             smc=smc,
             smc_source=smc_source,
         )
@@ -332,10 +385,13 @@ class TechnicalRaws:
 
     @property
     def deterministic_fingerprint(self) -> str:
-        """sha256 over the ordered raw triples — byte-reproducible per candle set.
+        """sha256 over ordered raws and active Location identity when present.
 
         ``captured_at``/``symbol`` are metadata and excluded so identical candles
         always yield an identical fingerprint regardless of when they were read.
+        Legacy feature output without Location detail keeps its historical hash
+        shape; prepared Location output includes the resolved detail/config so a
+        config change cannot reuse a matching raw-only fingerprint.
         """
         ordered: dict[str, Any] = {}
         for side in ("buy", "sell"):
@@ -346,6 +402,8 @@ class TechnicalRaws:
                 "location": s.location,
                 "smc": s.smc,
             }
+            if s.location_detail is not None:
+                ordered[side]["location_detail"] = s.location_detail.to_dict()
         payload = json.dumps(ordered, sort_keys=True, ensure_ascii=False).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
@@ -359,6 +417,143 @@ class TechnicalRaws:
             "derivation": self.derivation,
             "deterministic_fingerprint": self.deterministic_fingerprint,
         }
+
+
+def prepare_location_results(
+    closed_h4: Sequence[Any],
+    h1_candles: Sequence[Any],
+    *,
+    cutoff: datetime,
+    config: LocationConfig = DEFAULT_LOCATION_CONFIG,
+    tick_size: float | None = None,
+) -> dict[str, LocationResult]:
+    """Build one Location context and score both sides from that context.
+
+    This is the feature-layer preparation seam for the Location engine.  The
+    H1 reference and the H4 context are selected once at the caller's cutoff;
+    BUY and SELL are then pure views of the same immutable context.  This is
+    the runtime Location seam after the H01 cutover.
+    """
+    try:
+        reference = reference_from_closed_h1(h1_candles, cutoff)
+        context = build_location_context(
+            closed_h4,
+            reference,
+            cutoff,
+            config,
+            tick_size,
+        )
+        return {
+            side: score_location(side, context)
+            for side in ("buy", "sell")
+        }
+    except LocationDataError as error:
+        raise TechnicalRawDerivationError(
+            f"{LOCATION_INVALID_CONFIG if error.field.startswith('config') else LOCATION_INVALID_DATA} "
+            f"at {error.field}: {error.detail}",
+            reason_code=(
+                LOCATION_INVALID_CONFIG
+                if error.field.startswith("config")
+                else LOCATION_INVALID_DATA
+            ),
+            field=error.field,
+            cause=error,
+        ) from error
+
+
+def attach_location_results(
+    raws: TechnicalRaws,
+    location_results: Mapping[str, LocationResult],
+) -> TechnicalRaws:
+    """Attach already-scored Location results without recalculating them.
+
+    The integer consumed by the feature output is copied from the exact
+    ``LocationResult`` stored beside it.  A result with ``raw=None`` is
+    rejected here because the current ``TechnicalRaws`` contract carries an
+    integer raw; unavailable handling is owned by the later F04 adapter.
+    """
+    if set(location_results) != {"buy", "sell"}:
+        raise TechnicalRawDerivationError(
+            "location results must contain exactly buy and sell"
+        )
+
+    per_side: dict[str, SideFeatureRaws] = {}
+    for side in ("buy", "sell"):
+        result = location_results[side]
+        if not isinstance(result, LocationResult) or result.side != side:
+            raise TechnicalRawDerivationError(
+                f"{LOCATION_INVALID_DATA} at location_results.{side}: side mismatch",
+                reason_code=LOCATION_INVALID_DATA,
+                field=f"location_results.{side}",
+            )
+        if result.raw is None:
+            raise TechnicalRawDerivationError(
+                f"{LOCATION_INVALID_DATA} at location_results.{side}.raw: unavailable",
+                reason_code=LOCATION_INVALID_DATA,
+                field=f"location_results.{side}.raw",
+            )
+        per_side[side] = replace(
+            raws.per_side[side],
+            location=result.raw,
+            location_detail=result,
+            location_source=result.model_version,
+        )
+    return replace(raws, per_side=per_side)
+
+
+def derive_technical_raws_with_location(
+    d1: list[Any],
+    h4: list[Any],
+    h1: list[Any],
+    *,
+    cutoff: datetime,
+    symbol: str = "",
+    captured_at: datetime | None = None,
+    canonical_smc: SmcScoringResult | None = None,
+    location_config: LocationConfig = DEFAULT_LOCATION_CONFIG,
+    tick_size: float | None = None,
+) -> TechnicalRaws:
+    """Prepare runtime technical raws with one canonical Location result per side.
+
+    Trend/Momentum/SMC keep their existing producers.  Location is replaced by
+    the engine result exactly once per shared context; the legacy location
+    formula remains available only to explicit historical/parity fixtures.
+    """
+    results = prepare_location_results(
+        h4,
+        h1,
+        cutoff=cutoff,
+        config=location_config,
+        tick_size=tick_size,
+    )
+    def _location_raw(side: str, _technical: Mapping[str, Any]) -> int:
+        result = results[side]
+        if result.raw is None:
+            raise TechnicalRawDerivationError(
+                f"{LOCATION_INVALID_DATA} at location_results.{side}.raw: unavailable",
+                reason_code=LOCATION_INVALID_DATA,
+                field=f"location_results.{side}.raw",
+            )
+        return result.raw
+
+    raws = _derive_technical_raws(
+        d1,
+        h4,
+        h1,
+        symbol=symbol,
+        captured_at=captured_at,
+        canonical_smc=canonical_smc,
+        location_score_fn=_location_raw,
+    )
+    prepared = attach_location_results(raws, results)
+    return replace(
+        prepared,
+        derivation=(
+            "port:trend_alignment_score_v4/momentum_alignment_score_v4"
+            f"/location={LOCATION_MODEL_VERSION}; smc=@smc-v2; "
+            f"config={location_config.config_version}"
+        ),
+    )
 
 
 __all__ = [
@@ -376,4 +571,7 @@ __all__ = [
     "SideFeatureRaws",
     "TechnicalRaws",
     "derive_technical_raws",
+    "prepare_location_results",
+    "attach_location_results",
+    "derive_technical_raws_with_location",
 ]

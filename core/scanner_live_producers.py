@@ -6,9 +6,9 @@ resolver) directly from live app/MT5 state.  They sit on top of the retained
 low-level producers:
 
 * ``technical_context.build_technical_snapshot`` + ``indicators`` (retained);
-* ``scanner_features.derive_technical_raws`` (Bước 2 port of legacy raw
-  formulas) and the retained canonical-SMC producer ``score_smc`` (owner
-  decision §4-a);
+* ``scanner_features.derive_technical_raws_with_location`` (Trend/Momentum
+  feature producers plus the canonical Location engine) and the retained
+  canonical-SMC producer ``score_smc`` (owner decision §4-a);
 * ``technical_context.detect_market_regime`` with the legacy regime-key mapping
   ported to the Scanner vocabulary.
 
@@ -39,6 +39,7 @@ from core.market_safety_gate import (
     SpreadSource,
     VolatilitySource,
 )
+from core.location_engine import LocationResult
 from core.scanner_composition import ScenarioPlan, SideSnapshot
 from core.smc_scoring_result import SmcScoringResult
 from core.technical_context import atr_volatility_readings, detect_market_regime
@@ -116,6 +117,7 @@ def build_side_snapshot(
     execution_quality_score: int | None = None,
     execution_quality_source: str = "",
     scenario_plan: ScenarioPlan | None = None,
+    location_detail: LocationResult | None = None,
 ) -> SideSnapshot:
     """Build a ``SideSnapshot`` from the derived raw values.
 
@@ -125,6 +127,13 @@ def build_side_snapshot(
     """
     if side not in ("buy", "sell"):
         raise ValueError(f"side must be 'buy' or 'sell', got {side!r}")
+    if location_detail is not None:
+        if type(location_detail) is not LocationResult:
+            raise TypeError("location_detail must be a LocationResult or None")
+        if location_detail.side != side:
+            raise ValueError("location_detail.side must match side")
+        if location_detail.raw != int(location):
+            raise ValueError("location_detail.raw must match location")
     return SideSnapshot(
         technical_raws={
             "trend": int(trend),
@@ -136,6 +145,7 @@ def build_side_snapshot(
         execution_quality_score=execution_quality_score,
         execution_quality_source=execution_quality_source,
         scenario_plan=scenario_plan,
+        location_detail=location_detail,
     )
 
 
@@ -278,7 +288,7 @@ def derive_live_analysis(
         MIN_H4,
         MIN_H1,
         TechnicalRawDerivationError,
-        derive_technical_raws,
+        derive_technical_raws_with_location,
     )
     from core.smc_context import build_smc_context
     from core.smc_scorer import score_smc
@@ -297,8 +307,14 @@ def derive_live_analysis(
         build_smc_context(d1, h4, h1, scan_interval_min=15, symbol=symbol),
         technical,
     )
-    raws = derive_technical_raws(
-        d1, h4, h1, symbol=symbol, captured_at=cap, canonical_smc=canonical_smc
+    raws = derive_technical_raws_with_location(
+        d1,
+        h4,
+        h1,
+        cutoff=cap,
+        symbol=symbol,
+        captured_at=cap,
+        canonical_smc=canonical_smc,
     )
     regime = resolve_technical_regime(technical, news_in_3h)
     return {

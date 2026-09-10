@@ -172,6 +172,37 @@ def _zone_origin_class_from_source(source: object) -> str:
     return "none"
 
 
+def _ui_side_scores(composition: ScannerCompositionResult, row: ScannerRow) -> list[dict[str, Any]]:
+    """Expose canonical component breakdown plus optional Location detail.
+
+    ``ScannerRow`` intentionally keeps a compact side summary.  The detail
+    screen, however, is a full canonical consumer, so enrich that summary from
+    the already-computed ``CanonicalPairSnapshot`` here.  This is serialization
+    only: no scorer or Location engine is called and historical rows without a
+    detail remain detail-less.
+    """
+    canonical_by_side = {
+        score.side: score for score in composition.canonical.side_scores
+    }
+    result: list[dict[str, Any]] = []
+    for summary in row.side_scores:
+        payload = summary.to_dict()
+        score = canonical_by_side.get(summary.side)
+        if score is None:
+            result.append(payload)
+            continue
+        payload["technical_breakdown"] = score.technical_breakdown.to_dict()
+        if score.location_detail is not None:
+            payload["location_raw"] = score.location_detail.raw
+            payload["location_status"] = score.location_detail.status
+            payload["location_reason_codes"] = list(
+                score.location_detail.reason_codes
+            )
+            payload["location_detail"] = score.location_detail.to_dict()
+        result.append(payload)
+    return result
+
+
 def pair_to_ui_row(
     pair: object,
     *,
@@ -335,7 +366,7 @@ def pair_to_ui_row(
         # Per-side component breakdown (real Scanner source; JSON-safe).  The detail
         # Chẩn đoán tab renders this instead of the legacy ``scenario_scores``, which
         # is no longer produced.
-        "side_scores": [s.to_dict() for s in row.side_scores],
+        "side_scores": _ui_side_scores(pair.composition, row),
         "expected_effective_rr": _fraction_to_number(risk_reward_ratio),
         "risk_reward_ratio": _fraction_to_number(risk_reward_ratio),
         "market_regime": regime,
@@ -571,6 +602,7 @@ def blocked_ui_row(
     analysis_latency_ms: float | None = None,
     input_timestamps: dict[str, Any] | None = None,
     analysis_error: str = "",
+    reason_codes: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Fail-closed blocked row (C2b) for the analysis/error path.
 
@@ -578,6 +610,11 @@ def blocked_ui_row(
     downstream (filters, observability, persistence, alerts) see a well-formed
     row that is NOT an auto-trade candidate and carries no order intent.
     """
+    codes = []
+    for code in reason_codes:
+        if type(code) is str and code and code not in codes:
+            codes.append(code)
+
     row: dict[str, Any] = {
         "row_version": SCANNER_ROW_VERSION,
         "composition_version": COMPOSITION_POLICY_VERSION,
@@ -615,8 +652,8 @@ def blocked_ui_row(
         "safety_reason_codes": [],
         "side_scores": [],
         "gate_codes": [],
-        "reason_codes": [],
-        "block_codes": [],
+        "reason_codes": list(codes),
+        "block_codes": list(codes),
         "entry_price": None,
         "stop_loss": None,
         "take_profit": None,
@@ -624,6 +661,7 @@ def blocked_ui_row(
         "price_vs_zone": "unknown",
         "analysis_result": {
             "status": ANALYSIS_OK,
+            "reason_codes": list(codes),
             "technical": {"price": None, "atr_h1": None},
             "scenarios": [],
         },
@@ -634,7 +672,7 @@ def blocked_ui_row(
                 "setup_score": None,
                 "expected_effective_rr": None,
             },
-            "reason_codes": [],
+            "reason_codes": list(codes),
             "status": DATA_UNAVAILABLE,
             "candidate_status": DATA_UNAVAILABLE,
             "selected_side": None,

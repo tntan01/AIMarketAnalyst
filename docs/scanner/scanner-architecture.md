@@ -9,9 +9,9 @@
 > - **Tiến độ:** Bước 00–13 `DONE` (runtime live từ 2026-08-15; full suite 3371 collected, 6 fail FRED pre-existing).
 > - **Migration:** cutover trực tiếp, không duy trì hai scorer trong runtime.
 > - **Cập nhật tài liệu:** 15/08/2026.
-> - **Bổ sung thiết kế Location: 09/09/2026 — CHƯA TRIỂN KHAI.** §3.4 và §3.5
->   mô tả thay đổi sắp làm; trạng thái DONE của migration cũ không áp dụng cho
->   [32 task Location](../plans/location-scoring-upgrade-plan.md).
+> - **Location cutover: 10/09/2026 — đã triển khai sau H01/H02.** §3.4 và §3.5
+>   mô tả scorer hình học đang chạy; H02 chỉ là fixture/environment smoke,
+>   Tech Lead đã duyệt R5 sau review lại ngày 10/09/2026.
 
 Tài liệu này là nguồn chuẩn cho Scanner. Nó cố ý chỉ giữ những nội dung ảnh
 hưởng trực tiếp tới chương trình:
@@ -134,20 +134,48 @@ Quy tắc:
 
 Module canonical: `core/technical_signal_scorer.py`.
 
-### 3.4 Location: thiết kế nâng cấp chưa triển khai
+### 3.4 Location: scorer hình học đang chạy
 
-**Trạng thái: TARGET, chưa thay runtime.** Nguồn chi tiết duy nhất cho thuật
-toán/default config/test/task là
+**Trạng thái: ĐÃ TRIỂN KHAI sau H01/H02 (10/09/2026).** Nguồn chi tiết duy nhất
+cho thuật toán/default config/test/task là
 [Location upgrade plan](../plans/location-scoring-upgrade-plan.md). Không sao
 chép các con số default sang nhiều file tài liệu hoặc tự chọn một công thức khác.
 
-Hiện trạng đã rà soát: Location theo H1 close, vùng swing H4 đơn giản, raw tối
-đa thực tế 20 dù raw_max=25; chưa kiểm tra lifecycle và vùng sai phía. Công
-thức và counterexample nằm ở plan §2–3.
+Location hiện lấy reference từ H1 cuối đã đóng, dựng vùng swing riêng trên H4,
+áp lifecycle và chọn anchor/obstacle theo phía BUY/SELL. Raw là điểm hình học
+0–25; detail đi cùng raw và runtime không dùng lại công thức
+`location_quality_score_v4`. Công thức, default và counterexample nằm ở plan
+§2–3.
+
+**Xác minh thời gian/cutoff (A04, 2026-09-09):** `services/mt5_service.py`
+đang gọi `copy_rates_from_pos(..., 0, bars)` cho history theo vị trí và
+`copy_rates_range(...)` cho history theo khoảng. `item["time"]` được ánh xạ
+trực tiếp thành `Candle.time` dạng UTC; model hiện không có `close_time` hoặc
+`is_closed`, và adapter/controller chưa lọc riêng bar đang hình thành. Theo
+semantics của MT5, giá trị `time` này là **open time** của bar. Vì vậy danh
+sách live hiện tại có thể chứa bar cuối chưa đóng; `_newest_last_candle_time_utc`
+chỉ dùng mốc đó cho freshness, không chứng minh bar đã đóng.
+
+Contract đích cho Location là: adapter phải xác định rõ open-time semantics
+này, quy đổi thời điểm đóng theo timeframe, rồi lọc dữ liệu theo một `cutoff`
+đã biết trước khi giới hạn cửa sổ history. Chỉ H4 có thời điểm đóng không vượt
+`cutoff` mới được dùng để dựng vùng/lifecycle; reference H1 cũng là H1 cuối đã
+đóng trước hoặc đúng `cutoff`. Không lấy wall-clock hoặc tick hiện tại làm
+cutoff ngầm, không dùng bar đang hình thành, và không coi việc đủ số lượng bar
+là bằng chứng đã đóng. Đây là contract runtime hiện hành của Location; H02 mới
+kiểm tra bằng fixture/environment, chưa phải bằng chứng broker/UI production live.
+
+Seam A04 và các phần scorer đã được triển khai trong `core/location_engine.py`:
+`close_time_from_open_time()` dùng cadence UTC H1/H4 đã xác minh,
+`closed_candles_at_cutoff()` chỉ nhận bar có `closed_at <= cutoff`, và
+`reference_from_closed_h1()` trả close của H1 cuối cùng cùng `reference_closed_at`.
+Các hàm đều nhận cutoff tường minh, không đọc wall-clock; H01 đã nối seam này
+vào caller runtime. Fixture cadence chứng minh bar mở đúng cutoff bị loại, bar đóng
+đúng cutoff được nhận, và append bar tương lai không đổi assessment tại cutoff cũ.
 
 Ranh giới bản đầu:
 
-- Một module thuần `core/location_engine.py` được đề xuất; không service,
+- Một module thuần `core/location_engine.py`; không service,
   database, event bus, replay hoặc cache riêng.
 - LocationContext dùng nến H4 đã đóng, cutoff rõ và reference H1 đã đóng;
   dựng một lần dùng chung BUY/SELL.
@@ -162,7 +190,8 @@ Ranh giới bản đầu:
 - Không có anchor trong input hợp lệ -> raw=0. ATR/cấu hình/input lỗi ->
   unavailable; adapter dùng typed error hiện có, không fabricate raw.
 - Raw/detail/model version/config đi cùng một nguồn qua canonical snapshot
-  và UI. Mở rộng schema chỉ ở các lớp thực sự cần; không thêm key giải thích
+  và UI. Runtime `TechnicalRawsV4` đi qua
+  `derive_technical_raws_with_location()`; mở rộng schema chỉ ở các lớp thực sự cần; không thêm key giải thích
   vào `technical_raws` vốn chỉ chứa ba raw.
 - Giữ raw_max và regime weights ở §3.1–3.2. Không đổi Trend/Momentum/SMC,
   Evidence/Execution weights, Macro/Safety gates, R:R hay order thresholds.
@@ -170,9 +199,12 @@ Ranh giới bản đầu:
   H1, không thêm Entry Location Check và không đổi selected_side bằng một
   entry score riêng.
 
-Version hiện hành ở §7.3 là baseline. Task F03 xác định version/schema cần đổi;
-chỉ activate cùng caller mới ở H01, không tự coi model mới tương đương alias
-legacy. Dữ liệu journal/snapshot cũ giữ nguyên score/version.
+Version global ở §7.3 vẫn giữ nguyên; Location detail nhận diện riêng bằng
+`model_version=location-geometry-v2`, `config_version=location-config-v1`,
+`detail_schema=location-detail-v1` và `context_schema=location-context-v1`.
+H01 chỉ có một runtime scorer; không chạy dual/shadow và không relabel dữ liệu
+journal/snapshot cũ. Dữ liệu lịch sử thiếu detail tiếp tục đọc được theo
+compatibility contract.
 
 ### 3.5 Ảnh hưởng dự kiến và điều kiện chuyển Location
 
@@ -192,10 +224,10 @@ Không kết luận trước rằng số lệnh sẽ giảm hoặc lợi nhuận
 Thực hiện đúng 32 task; **dừng và hỏi sau 8/14/21/28/32**, chờ Tech Lead/người
 dùng xác nhận trước nhóm tiếp theo. Các điểm dừng là yêu cầu trực tiếp của
 người dùng trong plan §11.2, không phải một gate giao dịch mới trong runtime.
-Task H01 chuyển caller trong bản code chuẩn bị, không chạy hai scorer.
-Targeted regression và khoảng 5–10 case biểu đồ là phạm vi kiểm tra bản đầu;
-không yêu cầu backtest sâu hoặc tối ưu P&L. Chờ R5 trước nghiệm thu/phát hành
-theo phạm vi được cho phép.
+Task H01 đã chuyển caller, không chạy hai scorer. H02 đã kiểm tra targeted
+integration và smoke intent-only; khoảng 5–10 case biểu đồ là phạm vi kiểm tra bản đầu;
+không yêu cầu backtest sâu hoặc tối ưu P&L. Tech Lead đã duyệt R5 ngày 10/09/2026 trong phạm vi
+kế hoạch Location; chưa cấp quyền phát hành hoặc gửi lệnh thật.
 
 ## 4. SetupScore và FinalScore
 

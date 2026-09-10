@@ -21,6 +21,12 @@ ZONE_QUALITY_LOW = "ZONE_QUALITY_LOW"
 ZONE_RELEVANCE_LOW = "ZONE_RELEVANCE_LOW"
 ZONE_PRICE_RELATION_INVALID = "ZONE_PRICE_RELATION_INVALID"
 SWEEP_DISPLACEMENT_M15_ALIGNED = "SWEEP_DISPLACEMENT_M15_ALIGNED"
+LOCATION_INVALID_DATA = "LOCATION_INVALID_DATA"
+LOCATION_INVALID_CONFIG = "LOCATION_INVALID_CONFIG"
+LOCATION_NO_VALID_ANCHOR = "LOCATION_NO_VALID_ANCHOR"
+LOCATION_CONFLICT = "LOCATION_CONFLICT"
+LOCATION_ANCHOR_TOO_FAR = "LOCATION_ANCHOR_TOO_FAR"
+LOCATION_LIMITED_CONTEXT = "LOCATION_LIMITED_CONTEXT"
 
 # ---------------------------------------------------------------------------
 # M15
@@ -268,6 +274,12 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     ZONE_BROKEN: "Vùng hỗ trợ/kháng cự đã bị phá, không còn đáng tin cậy.",
     ZONE_RELEVANCE_LOW: "Vùng giá không còn đủ liên quan với bối cảnh hiện tại.",
     ZONE_PRICE_RELATION_INVALID: "Quan hệ giữa giá hiện tại và vùng entry không hợp lệ.",
+    LOCATION_INVALID_DATA: "Dữ liệu Location không hợp lệ hoặc chưa đủ để chấm điểm.",
+    LOCATION_INVALID_CONFIG: "Cấu hình Location không hợp lệ.",
+    LOCATION_NO_VALID_ANCHOR: "Không có anchor Location hợp lệ ở đúng phía.",
+    LOCATION_CONFLICT: "Giá đang nằm trong vùng cản đối diện, Location ở trạng thái xung đột.",
+    LOCATION_ANCHOR_TOO_FAR: "Anchor Location cách giá quá xa theo ngưỡng ATR.",
+    LOCATION_LIMITED_CONTEXT: "Chưa quan sát được obstacle trong dữ liệu đã xét.",
     SWEEP_DISPLACEMENT_M15_ALIGNED: "Quét thanh khoản + displacement + M15 strict cùng hướng, tăng chất lượng entry.",
     # M15
     M15_STRICT_CONFIRMED: "M15 xác nhận chặt, tín hiệu entry đạt yêu cầu.",

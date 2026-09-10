@@ -20,7 +20,7 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | Scanner runtime contract | `scanner/scanner-architecture.md` — live từ 15/08/2026 |
 | Luồng Scanner lịch sử | `scanner/scanner-flow.md` — tham khảo (pre-cutover) |
 | Chấm điểm Scanner | `scanner/scanner-architecture.md` §3; `scanner/technical-scoring-architecture.md` giữ nội dung legacy có nhãn |
-| Đề xuất nâng cấp Location và plan cho CODER | [Location scoring upgrade plan](plans/location-scoring-upgrade-plan.md) — bản gọn cho cá nhân, 32 bước; chưa triển khai |
+| Nâng cấp Location và plan cho CODER | [Location scoring upgrade plan](plans/location-scoring-upgrade-plan.md) — runtime đã nối sau H01/H02; R5 đã được Tech Lead duyệt ngày 10/09/2026 |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
@@ -35,7 +35,7 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | `scanner/` | Runtime Scanner và kiến trúc đích Scanner. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
 | `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
-| `plans/` | Thiết kế và task chưa triển khai; trạng thái và điểm dừng review nằm trong từng plan. |
+| `plans/` | Kế hoạch, task và bằng chứng review; trạng thái nằm trong từng plan. |
 | `ui/` | Thiết kế màn hình, style guide, audit/report/lock/baseline UI. |
 
 ## Tài liệu hiện hành quan trọng
@@ -44,33 +44,34 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
   (live từ 15/08/2026): TechnicalScore chỉ gồm Trend/Momentum/Location/SMC, Risk
   và Macro là gate, order policy owner-accepted.
 - `scanner/scanner-flow.md`: luồng Scanner legacy (historical); §11 ghi guard
-  chain thực thi live; §13 ghi luồng canonical và điểm tích hợp Location target.
+  chain thực thi live; §13 ghi luồng canonical và tích hợp Location runtime.
 - `scanner/technical-scoring-architecture.md`: chấm điểm/ranking legacy;
-  §13 tóm tắt canonical và §14 dẫn thiết kế Location chưa triển khai.
+  §13 tóm tắt canonical và §14 ghi contract Location runtime; R5 đã được Tech Lead duyệt ngày 10/09/2026.
 - `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế trên máy hiện tại.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
 
-## Location: thiết kế chuẩn bị triển khai — 09/09/2026
+## Location: runtime đã nối, R5 đã duyệt — 10/09/2026
 
-**CHƯA TRIỂN KHAI.** Runtime vẫn gọi công thức Location cũ. Việc đồng bộ tài
-liệu không đánh dấu Task 1–32 đã hoàn thành hoặc cho phép bỏ qua review.
+**ĐÃ NỐI RUNTIME, TECH LEAD ĐÃ DUYỆT R5.** Scanner truyền cutoff cố định từ
+packet qua analysis tới snapshot; Location dùng H1/H4 đã đóng, detail versioned
+và card UI dùng template/palette semantic. Tech Lead xác nhận R5 sau review code,
+regression và smoke fixture; chi tiết bằng chứng được ghi trong plan.
 
 - Đặc tả thuật toán, cấu hình khởi đầu và hướng dẫn từng task:
   [Location upgrade plan](plans/location-scoring-upgrade-plan.md).
 - Ranh giới kiến trúc và tác động lên quyết định:
-  [Scanner architecture](scanner/scanner-architecture.md), mục “Location:
-  thiết kế nâng cấp chưa triển khai”.
+  [Scanner architecture](scanner/scanner-architecture.md), mục Location runtime.
 - Input/raw/rounding: [Features spec](scanner/scanner-features-spec.md), §0.1
-  “Location target — chưa triển khai”.
+  “Location runtime”.
 - Luồng tích hợp: [Scanner flow](scanner/scanner-flow.md), phụ lục Location.
 - Hiển thị: [Screen design](ui/screen_design.md) và [Style guide](ui/style-guide.md),
-  phần target Location.
+  phần Location runtime.
 - Ảnh hưởng đối với người dùng: [User guide](guides/USER_GUIDE.md), §3.1.
 
-CODER dùng code để xác minh **hiện trạng**, dùng plan và các mục target này để
-triển khai **thay đổi đã thống nhất**. Quy tắc port/parity cũ không cấm thay
-Location có version; Trend/Momentum/SMC và gate giữ nguyên phạm vi.
+CODER dùng code để xác minh **hiện trạng**, dùng plan và các mục runtime này để
+đối chiếu thay đổi đã thống nhất. R5 chưa có smoke production và chưa cho phép
+gửi lệnh; các giới hạn này không thay đổi phạm vi Trend/Momentum/SMC hay gate.
 
 Sau task **8, 14, 21, 28, 32**, CODER **phải dừng, hỏi và chờ xác nhận**
 Tech Lead/người dùng theo plan §11.2. Bản đầu không cần database, replay,

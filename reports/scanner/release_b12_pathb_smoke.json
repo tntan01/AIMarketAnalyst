@@ -17,7 +17,7 @@
     "feature_version": "scanner-features",
     "row_version": "scanner-row"
   },
-  "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:2e187e3adb61",
+  "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:ef5b711e2d6d",
   "candidate_status": "BLOCKED",
   "intent_only": null,
   "insufficient_history": "TechnicalRawDerivationError",
@@ -25,12 +25,12 @@
     "buy": {
       "trend": 8,
       "momentum": 3,
-      "location": 3
+      "location": 0
     },
     "sell": {
       "trend": 10,
       "momentum": 8,
-      "location": 3
+      "location": 0
     }
   }
 }

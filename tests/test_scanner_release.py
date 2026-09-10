@@ -54,14 +54,14 @@ def _live_candles():
 
     base = 1000.0
 
-    def mk(n, step, phase):
+    def mk(n, step, phase, interval_hours):
         out = []
         for i in range(n):
             o = base + math.sin((i + phase) / 3) * 0.5 + i * step
             c = base + math.sin((i + 1 + phase) / 3) * 0.5 + (i + 1) * step
             out.append(
                 Candle(
-                    time=NOW - timedelta(seconds=int((n - i) * step * 3600)),
+                    time=NOW - timedelta(seconds=int((n - i) * interval_hours * 3600)),
                     open=o,
                     high=max(o, c) + 0.1,
                     low=min(o, c) - 0.1,
@@ -70,7 +70,11 @@ def _live_candles():
             )
         return out
 
-    return mk(120, 0.08, 0.0), mk(120, 0.04, 1.0), mk(80, 0.02, 2.0)
+    return (
+        mk(120, 0.08, 0.0, 24.0),
+        mk(120, 0.04, 1.0, 4.0),
+        mk(80, 0.02, 2.0, 1.0),
+    )
 
 
 def _live_safety():
@@ -317,6 +321,27 @@ class TestLiveWiringFromCandles:
         b = run_pair_from_live(d1, h4, h1, "XAUUSD", _live_safety(), now=NOW,
                                   captured_at=NOW, macro_raw_buy=20, macro_raw_sell=14)
         assert a.composition.snapshot_id == b.composition.snapshot_id
+
+    def test_live_pair_uses_one_shared_location_context_for_both_sides(self, monkeypatch):
+        import core.scanner_features as features
+
+        calls = 0
+        original = features.build_location_context
+
+        def counted_context(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(features, "build_location_context", counted_context)
+        pair = _live_pair()
+
+        assert calls == 1
+        for side in ("buy", "sell"):
+            detail = pair.composition.canonical.side_score(side).location_detail
+            assert detail is not None
+            assert detail.model_version == "location-geometry-v2"
+            assert detail.reference_closed_at is not None
 
     def test_live_pair_fails_closed_on_insufficient_history(self):
         from core.scanner_features import TechnicalRawDerivationError

@@ -10,8 +10,8 @@
 >
 > **Nguồn chuẩn Scanner:** [Scanner architecture](../scanner/scanner-architecture.md)
 > ghi nhận canonical đã cutover. Các đoạn V2/pre-cutover bên dưới là thiết kế
-> lịch sử khi mâu thuẫn với nguồn chuẩn. Riêng nâng cấp Location ngày 09/09/2026
-> tại mục “Location target” dưới đây **chưa triển khai**.
+> lịch sử khi mâu thuẫn với nguồn chuẩn. Location đã được nối runtime sau H01/H02;
+> mục dưới đây ghi UI hiện hành, R5 **đã được Tech Lead duyệt ngày 10/09/2026**.
 
 ---
 
@@ -819,9 +819,9 @@ Scanner Detail (Màn hình chi tiết mã từ quét thị trường) mở ra kh
 
 R:R ưu tiên field top-level của scanner row và fallback sang scenario khớp `best_side`. Nếu đã có entry zone nhưng chưa có TP1 hợp lệ, màn hình hiển thị `N/A` cùng ghi chú chưa có TP1 hợp lệ nên chưa tính R:R; không hiển thị RR giả.
 
-### Location target — chưa triển khai, 09/09/2026
+### Location runtime — đã nối, R5 đã duyệt, 10/09/2026
 
-Áp dụng cho breakdown Scanner Detail theo
+Áp dụng cho breakdown Scanner Detail hiện có theo
 [plan Location §8 và task 26–28](../plans/location-scoring-upgrade-plan.md).
 Không mở màn hình riêng. Bắt đầu từ `ui/scanner_v4_presentation.py` và adapter
 canonical; xác minh caller trước khi sửa các nhánh legacy trong screen.
@@ -842,9 +842,10 @@ phải điểm Location. Không đổi nghĩa cột hoặc tái sử dụng dữ
 hiển thị raw. Vùng Location cũng không được thay thế vùng entry/SL/TP trên chart;
 overlay Location chưa bắt buộc ở bản đầu.
 
-UI không dựng lại vùng, tính điểm hay suy đoán lý do khi payload thiếu. Giữ bố
+UI hiện render detail từ payload, không dựng lại vùng, tính điểm hay suy đoán lý do khi payload thiếu. Giữ bố
 cục gọn và tuân thủ [style guide](style-guide.md), gồm dark/light, co giãn và
-word-wrap. Sau task 28 phải dừng hỏi tại R4 trước khi chuyển caller live.
+word-wrap. Caller đã được nối sau task 28; Tech Lead đã duyệt R5 ngày 10/09/2026
+trong phạm vi kế hoạch Location. Không có smoke production gửi lệnh thật.
 
 ### Hiển thị zone theo contract Phase 16
 

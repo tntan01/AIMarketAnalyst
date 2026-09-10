@@ -19,6 +19,8 @@ and that the presenter is not wired into the legacy detail screen.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from core.market_safety_gate import (
@@ -47,7 +49,15 @@ from ui.scanner_v4_presentation import (
     render_unknown_never_pass,
 )
 
-from tests.test_scanner_composition import _compose, _run, _snapshot, _safety_context, PROV
+from tests.test_location_canonical_detail import _location_detail
+from tests.test_scanner_composition import (
+    _compose,
+    _run,
+    _side_snapshot,
+    _snapshot,
+    _safety_context,
+    PROV,
+)
 
 TECHNICAL_COMPONENT_NAMES = ("trend", "momentum", "location", "smc")
 
@@ -241,3 +251,25 @@ class TestPresentationSchema:
     def test_typed_input_required(self):
         with pytest.raises(TypeError):
             build_scanner_presentation({"not": "a composition"})
+
+    def test_location_component_and_detail_are_read_from_canonical_score(self):
+        buy = _side_snapshot(
+            "buy", trend=20, momentum=14, location=13, evidence=60, execution=70
+        )
+        buy = replace(buy, location_detail=_location_detail("buy", 13))
+        composition = _compose(_snapshot(buy_side=buy))
+
+        presentation = build_scanner_presentation(composition)
+        buy_view = next(view for view in presentation.side_scores if view.side == "buy")
+        location = next(component for component in buy_view.components if component.name == "location")
+
+        assert location.raw == 13
+        assert location.raw_max == 25
+        assert location.contribution is not None
+        assert buy_view.location_detail is not None
+        assert buy_view.location_detail["raw"] == 13
+        assert buy_view.location_detail["reference_closed_at"] is not None
+
+    def test_historical_presentation_without_location_detail_stays_detailless(self):
+        presentation = build_scanner_presentation(_run())
+        assert all(view.location_detail is None for view in presentation.side_scores)

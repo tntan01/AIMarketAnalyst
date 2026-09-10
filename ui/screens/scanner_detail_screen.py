@@ -20,6 +20,7 @@ from services.storage_service import JsonStorage
 
 from core.scanner_ranking_engine import _find_scenario_for_side
 from ui.scanner_rr_formatters import (
+    _price_digits,
     format_execution_zone_text,
     format_execution_zone_width,
     format_rr_trim_reason,
@@ -95,6 +96,13 @@ _VN_CODE = {
     "MACRO_LOW_CONFIDENCE": "Độ tin cậy vĩ mô thấp",
     "MACRO_NEUTRAL": "Vĩ mô trung lập",
     "MACRO_SIDE_MISSING": "Thiếu điểm vĩ mô cho một hướng",
+    # Location detail
+    "LOCATION_INVALID_DATA": "Dữ liệu Location chưa đủ hoặc không hợp lệ",
+    "LOCATION_INVALID_CONFIG": "Cấu hình Location không hợp lệ",
+    "LOCATION_NO_VALID_ANCHOR": "Không có vùng mốc Location hợp lệ",
+    "LOCATION_CONFLICT": "Giá đang ở vùng cản đối diện — xung đột",
+    "LOCATION_ANCHOR_TOO_FAR": "Vùng mốc Location ở quá xa",
+    "LOCATION_LIMITED_CONTEXT": "Bối cảnh Location còn hạn chế",
     "MACRO_UNKNOWN_CAP_UNSET": "Chưa cấu hình mức giới hạn khi vĩ mô không xác định",
     # Cổng kịch bản / tài khoản / danh mục / nhật ký (execution gates)
     "GATES_ALL_PASS": "Tất cả cổng cho qua",
@@ -2681,6 +2689,7 @@ class ScannerDetailScreen(QWidget):
             # Scanner does not emit.  Render Scanner-native diagnostics instead.
             parts.append(self._diag_route_html(light=light))
             parts.append(self._diag_scores_html(light=light))
+            parts.append(self._diag_location_html(light=light))
             parts.append(self._diag_gates_html(light=light))
             parts.append(self._diag_plan_html(light=light))
         else:
@@ -3984,6 +3993,126 @@ class ScannerDetailScreen(QWidget):
             f"</table>"
         )
         rows.append("</div>")
+        return "\n".join(rows)
+
+    def _diag_location_html(self, light: bool = False) -> str:
+        """Render canonical Location raw/contribution/detail without re-scoring."""
+        side_scores = self.row.get("side_scores") or []
+        if not isinstance(side_scores, list) or not side_scores:
+            return ""
+
+        by_side = {
+            str(item.get("side", "")).lower(): item
+            for item in side_scores
+            if isinstance(item, dict) and item.get("side")
+        }
+        if not by_side:
+            return ""
+
+        price_digits = _price_digits(self.row if isinstance(self.row, dict) else {})
+
+        def _fmt(value: object, digits: int = 2) -> str:
+            if value is None:
+                return "—"
+            try:
+                return f"{float(value):.{digits}f}"
+            except (TypeError, ValueError, OverflowError):
+                return escape(str(value))
+
+        def _zone(zone: object) -> str:
+            if not isinstance(zone, dict):
+                return "Chưa quan sát được trong dữ liệu đã xét"
+            low = _fmt(zone.get("low"), digits=price_digits)
+            high = _fmt(zone.get("high"), digits=price_digits)
+            status = str(zone.get("status") or "").strip()
+            status_text = f" · {escape(status)}" if status else ""
+            return f"[{low}, {high}]{status_text}"
+
+        def _codes(detail: dict) -> str:
+            codes = detail.get("reason_codes")
+            if not isinstance(codes, list) or not codes:
+                return "Không có"
+            return escape(", ".join(_translate_codes([str(code) for code in codes])))
+
+        theme_class = "rt-location-light" if light else "rt-location-dark"
+        rows = [
+            f'<div class="rt-location-root {theme_class}">',
+            '<h2 class="rt-location-title">Location</h2>',
+            '<p class="rt-location-description">'
+            "Raw và contribution được đọc từ technical breakdown canonical; "
+            "‘Vị trí’ bên dưới không phải price_vs_zone của vùng entry."
+            "</p>",
+            '<table class="rt-location-table rt-location-summary">',
+            "<tr>",
+            '<th class="rt-location-header rt-location-align-left">Hướng</th>',
+            '<th class="rt-location-header rt-location-align-center">Raw</th>',
+            '<th class="rt-location-header rt-location-align-center">Đóng góp kỹ thuật</th>',
+            '<th class="rt-location-header rt-location-align-left">Trạng thái / lý do</th>',
+            "</tr>",
+        ]
+        for side, label in (("buy", "MUA"), ("sell", "BÁN")):
+            item = by_side.get(side, {})
+            breakdown = item.get("technical_breakdown")
+            breakdown = breakdown if isinstance(breakdown, dict) else {}
+            component = breakdown.get("location")
+            component = component if isinstance(component, dict) else {}
+            detail = item.get("location_detail")
+            detail = detail if isinstance(detail, dict) else None
+            raw = component.get("raw", item.get("location_raw"))
+            raw_text = "Không đủ dữ liệu" if raw is None else f"{escape(str(raw))}/25"
+            contribution = component.get("contribution")
+            contribution_text = "Không đủ dữ liệu" if contribution is None else _fmt(contribution)
+            if detail is None:
+                status_text = "Bản lưu cũ chưa có chi tiết Location"
+            else:
+                status = escape(str(detail.get("status") or "Chưa xác định"))
+                status_text = f'{status}<br><span class="rt-location-small">{_codes(detail)}</span>'
+            rows.append(
+                "<tr>"
+                f'<td class="rt-location-cell rt-location-label">{label}</td>'
+                f'<td class="rt-location-cell rt-location-number rt-location-align-center">{raw_text}</td>'
+                f'<td class="rt-location-cell rt-location-number rt-location-align-center">{contribution_text}</td>'
+                f'<td class="rt-location-cell rt-location-description">{status_text}</td>'
+                "</tr>"
+            )
+        rows.append("</table>")
+
+        selected = self._selected_side()
+        detail = by_side.get(selected, {}).get("location_detail")
+        if not isinstance(detail, dict):
+            rows.append(
+                '<p class="rt-location-footnote">'
+                "Bản lưu cũ chưa có chi tiết Location; không suy đoán vùng hoặc lý do."
+                "</p></div>"
+            )
+            return "\n".join(rows)
+
+        reference_time = detail.get("reference_closed_at")
+        reference_text = (
+            f"{_fmt(detail.get('reference_price'), digits=price_digits)} · {escape(str(reference_time))}"
+            if reference_time is not None
+            else f"{_fmt(detail.get('reference_price'), digits=price_digits)} · thời điểm H1 chưa có"
+        )
+        anchor_text = _zone(detail.get("anchor"))
+        obstacle_text = _zone(detail.get("obstacle"))
+        obstacle_present = isinstance(detail.get("obstacle"), dict)
+        obstacle_label = obstacle_text if obstacle_present else "Chưa quan sát được trong dữ liệu đã xét"
+        rows.append(
+            '<table class="rt-location-table rt-location-detail">'
+            f'<tr><td class="rt-location-label">Giá tham chiếu H1</td>'
+            f'<td class="rt-location-value rt-location-number">{reference_text}</td></tr>'
+            f'<tr><td class="rt-location-label">Anchor</td>'
+            f'<td class="rt-location-value">{anchor_text}</td></tr>'
+            f'<tr><td class="rt-location-label">Khoảng cách anchor</td>'
+            f'<td class="rt-location-value rt-location-number">{_fmt(detail.get("distance_atr"))} ATR H4</td></tr>'
+            f'<tr><td class="rt-location-label">Obstacle phía trước</td>'
+            f'<td class="rt-location-value">{obstacle_label}</td></tr>'
+            f'<tr><td class="rt-location-label">Khoảng trống obstacle</td>'
+            f'<td class="rt-location-value rt-location-number">{_fmt(detail.get("clearance_atr"))} ATR H4</td></tr>'
+            f'<tr><td class="rt-location-label">Model/config</td>'
+            f'<td class="rt-location-value rt-location-description rt-location-small">{escape(str(detail.get("model_version") or "—"))} / {escape(str((detail.get("config_used") or {}).get("config_version") or "—"))}</td></tr>'
+            "</table></div>"
+        )
         return "\n".join(rows)
 
     def _diag_gates_html(self, light: bool = False) -> str:

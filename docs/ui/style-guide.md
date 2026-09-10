@@ -96,10 +96,10 @@ Nếu thay đổi hình thức có chủ đích, chụp lại dark/light bằng
 Chỉ cập nhật `docs/ui/style/ui-style-lock.json` khi thay đổi kiến trúc đã được review;
 không cập nhật lock chỉ để làm test hết lỗi.
 
-## 6. Location target — chưa triển khai, 09/09/2026
+## 6. Location runtime — đã nối, R5 đã duyệt, 10/09/2026
 
 Nội dung và trạng thái lấy từ
-[screen design — Location target](screen_design.md) và
+[screen design — Location runtime](screen_design.md) và
 [plan Location](../plans/location-scoring-upgrade-plan.md). Bản đầu thêm phần
 giải thích gọn trong breakdown hiện có, không thêm màn hình/dashboard riêng.
 
@@ -111,6 +111,6 @@ giải thích gọn trong breakdown hiện có, không thêm màn hình/dashboar
   phải có đơn vị ATR, giá phải có nhãn close H1/thời điểm.
 - Nội dung dài dùng wrap/tooltip phù hợp. Không yêu cầu chart overlay hay
   bảng cấu hình nâng cao cho bản đầu.
-- Khi thực sự sửa UI, làm kiểm tra liên quan ở §5 và task 26–28 của plan;
-  mốc R4 sau task 28 là bắt buộc. Lần đồng bộ Markdown này không phải bằng
-  chứng UI đã được triển khai hoặc đã kiểm tra trực quan.
+- Card Location dùng semantic palette và rich-text template chung; không thêm
+  màu hex/inline style và không nới lock để làm test pass. Regression dark/light
+  ở viewport 320/1280 đã được chạy; Tech Lead đã duyệt R5 sau review lại ngày 10/09/2026.

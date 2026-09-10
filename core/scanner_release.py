@@ -22,6 +22,7 @@ controller's ``execute_order_candidate`` → fresh ``revalidate_execution`` PASS
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from core.scanner_candidate import ScannerV4CandidateDecision
 from core.scanner_composition import (
@@ -130,15 +131,16 @@ def run_pair_from_live(
     portfolio=None,
     journal=None,
     order_policy: RuntimeOrderPolicy | None = None,
+    analysis: dict[str, Any] | None = None,
 ) -> ReleasePair:
     """Drive the release path from live candles + live safety/macro/account state.
 
-    Bước 3 convenience on top of the single entry: it builds the technical
-    analysis layer + canonical SMC + regime via ``derive_live_analysis``, the
-    per-side raws via ``build_side_snapshot``, assembles a ``ScannerSnapshot``
-    from the supplied live state, and runs it through ``run_pair``.  The
-    routed candidate remains INTENT ONLY (``sends_real_order=False``); nothing
-    here dispatches.
+    Bước 3 convenience on top of the single entry: it builds (or reuses the
+    caller-provided) technical analysis layer + canonical SMC + regime via
+    ``derive_live_analysis``, whose Location engine context is shared by both
+    sides; it then assembles a ``ScannerSnapshot`` and runs it through
+    ``run_pair``. The routed candidate remains INTENT ONLY
+    (``sends_real_order=False``); nothing here dispatches.
     """
     from core.scanner_composition import build_live_snapshot
     from core.scanner_live_producers import (
@@ -147,11 +149,12 @@ def run_pair_from_live(
     )
     from core.scanner_scenario_producers import produce_scenario_plans
 
-    analysis = derive_live_analysis(
-        d1, h4, h1, symbol=symbol,
-        captured_at=captured_at if captured_at is not None else now,
-        news_in_3h=news_in_3h,
-    )
+    if analysis is None:
+        analysis = derive_live_analysis(
+            d1, h4, h1, symbol=symbol,
+            captured_at=captured_at if captured_at is not None else now,
+            news_in_3h=news_in_3h,
+        )
     # Live scenario plans (entry/SL/TP per side) from REAL technical + canonical
     # SMC structure; a side without a real protective zone + opposite target has
     # no plan and its scenario gate fails closed (never invented).  The minimum
@@ -176,6 +179,7 @@ def run_pair_from_live(
             trend=analysis["raws"].per_side["buy"].trend,
             momentum=analysis["raws"].per_side["buy"].momentum,
             location=analysis["raws"].per_side["buy"].location,
+            location_detail=analysis["raws"].per_side["buy"].location_detail,
             scenario_plan=scenario_plans["buy"],
         ),
         sell=build_side_snapshot(
@@ -183,6 +187,7 @@ def run_pair_from_live(
             trend=analysis["raws"].per_side["sell"].trend,
             momentum=analysis["raws"].per_side["sell"].momentum,
             location=analysis["raws"].per_side["sell"].location,
+            location_detail=analysis["raws"].per_side["sell"].location_detail,
             scenario_plan=scenario_plans["sell"],
         ),
         safety_context=safety,

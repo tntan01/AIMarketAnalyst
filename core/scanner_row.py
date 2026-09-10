@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from core.location_engine import LOCATION_RESULT_STATUSES
 from core.reason_codes import (
     SCANNER_FORBIDDEN_SCORED_FIELD,
     SCANNER_SCHEMA_INVALID,
@@ -54,6 +55,7 @@ from core.scanner_v4_models import (
 # Row identity stamped by this consumer (not the snapshot schema; see DoR-10).
 SCANNER_ROW_VERSION = "scanner-row"
 SCANNER_ROW_LEGACY_VERSION = "scanner-v4-row-v1"
+LOCATION_RAW_MAX = 25
 
 # Version keys this row emits, in canonical order.  These are exactly the
 # identity fields a row reader must expose for audit (DoR-10 / 10A).
@@ -136,6 +138,9 @@ class SideScoreSummary:
     execution_quality_score: int | None
     execution_quality_source: str
     reason_codes: tuple[str, ...] = ()
+    location_raw: int | None = None
+    location_status: str | None = None
+    location_reason_codes: tuple[str, ...] = ()
 
     @classmethod
     def from_side_score(cls, score: SideScore) -> SideScoreSummary:
@@ -150,10 +155,25 @@ class SideScoreSummary:
             execution_quality_score=score.execution_quality_score,
             execution_quality_source=score.execution_quality_source,
             reason_codes=score.reason_codes,
+            location_raw=(
+                score.location_detail.raw
+                if score.location_detail is not None
+                else None
+            ),
+            location_status=(
+                score.location_detail.status
+                if score.location_detail is not None
+                else None
+            ),
+            location_reason_codes=(
+                score.location_detail.reason_codes
+                if score.location_detail is not None
+                else ()
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "side": self.side,
             "technical_signal_score": self.technical_signal_score,
             "setup_score": self.setup_score,
@@ -163,12 +183,21 @@ class SideScoreSummary:
             "execution_quality_source": self.execution_quality_source,
             "reason_codes": list(self.reason_codes),
         }
+        if self.location_status is not None:
+            payload.update(
+                {
+                    "location_raw": self.location_raw,
+                    "location_status": self.location_status,
+                    "location_reason_codes": list(self.location_reason_codes),
+                }
+            )
+        return payload
 
     @classmethod
     def from_dict(cls, value: object, *, path: str = "side_score_summary") -> SideScoreSummary:
         if type(value) is not dict:
             raise RowContractError(SCANNER_SCHEMA_INVALID, path, "expected an object")
-        expected = {
+        required = {
             "side",
             "technical_signal_score",
             "setup_score",
@@ -178,8 +207,9 @@ class SideScoreSummary:
             "execution_quality_source",
             "reason_codes",
         }
-        unknown = sorted(set(value) - expected)
-        missing = sorted(expected - set(value))
+        optional = {"location_raw", "location_status", "location_reason_codes"}
+        unknown = sorted(set(value) - required - optional)
+        missing = sorted(required - set(value))
         if unknown or missing:
             raise RowContractError(
                 SCANNER_SCHEMA_INVALID,
@@ -189,6 +219,64 @@ class SideScoreSummary:
         side = _require_text(value["side"], f"{path}.side")
         if side not in VALID_SIDES:
             raise RowContractError(SCANNER_SCHEMA_INVALID, f"{path}.side", "invalid side")
+        location_status = (
+            None
+            if "location_status" not in value or value["location_status"] is None
+            else _require_text(value["location_status"], f"{path}.location_status")
+        )
+        location_raw = (
+            None
+            if "location_raw" not in value
+            else _optional_int(value["location_raw"], f"{path}.location_raw")
+        )
+        location_reason_codes = (
+            ()
+            if "location_reason_codes" not in value
+            else _parse_codes(
+                value["location_reason_codes"], f"{path}.location_reason_codes"
+            )
+        )
+        location_summary_present = bool(
+            set(value).intersection(optional)
+        )
+        if location_status is None and location_summary_present:
+            raise RowContractError(
+                SCANNER_SCHEMA_INVALID,
+                path,
+                "location status is required when location summary is present",
+            )
+        if location_status is not None:
+            if location_status not in LOCATION_RESULT_STATUSES:
+                raise RowContractError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.location_status",
+                    f"unsupported Location status {location_status!r}",
+                )
+            if not {"location_raw", "location_reason_codes"} <= set(value):
+                raise RowContractError(
+                    SCANNER_SCHEMA_INVALID,
+                    path,
+                    "Location summary requires raw and reason_codes",
+                )
+            if location_status == "UNAVAILABLE":
+                if location_raw is not None:
+                    raise RowContractError(
+                        SCANNER_SCHEMA_INVALID,
+                        f"{path}.location_raw",
+                        "UNAVAILABLE requires raw=null",
+                    )
+            elif type(location_raw) is not int or not 0 <= location_raw <= LOCATION_RAW_MAX:
+                raise RowContractError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.location_raw",
+                    "evaluated Location status requires raw in 0..25",
+                )
+            elif location_status in {"CONFLICT", "NO_VALID_ANCHOR"} and location_raw != 0:
+                raise RowContractError(
+                    SCANNER_SCHEMA_INVALID,
+                    f"{path}.location_raw",
+                    f"{location_status} requires raw=0",
+                )
         return cls(
             side=side,
             technical_signal_score=_optional_int(
@@ -210,6 +298,9 @@ class SideScoreSummary:
                 allow_empty=True,
             ),
             reason_codes=_parse_codes(value["reason_codes"], f"{path}.reason_codes"),
+            location_raw=location_raw,
+            location_status=location_status,
+            location_reason_codes=location_reason_codes,
         )
 
 
