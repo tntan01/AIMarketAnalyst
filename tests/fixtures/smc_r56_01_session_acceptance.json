@@ -1,0 +1,100 @@
+{
+  "contract_id": "R56-01-session-origin-2026-09-11",
+  "timeframe": "H1",
+  "symbol": "EUR/USD",
+  "tick_size": 0.1,
+  "atr_before_event": 5.0,
+  "mirror_price": 200,
+  "times": {
+    "continuous": ["2026-09-09T12:00:00+00:00", "2026-09-09T13:00:00+00:00", "2026-09-09T14:00:00+00:00"],
+    "before_middle": ["2026-09-11T21:00:00+00:00", "2026-09-13T21:00:00+00:00", "2026-09-13T22:00:00+00:00"],
+    "before_third": ["2026-09-11T20:00:00+00:00", "2026-09-11T21:00:00+00:00", "2026-09-13T21:00:00+00:00"],
+    "unexpected": ["2026-09-09T12:00:00+00:00", "2026-09-09T14:00:00+00:00", "2026-09-09T15:00:00+00:00"]
+  },
+  "cases": [
+    {
+      "id": "reopen_inside", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[99.9,103,99.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "displacement", "origin_reason": "FVG_SESSION_DISPLACEMENT_CONFIRMED", "confirmed": true,
+      "why": "Middle low-to-close covers the full gap; open is inside the previous range."
+    },
+    {
+      "id": "reopen_at_edge_old_false_negative", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[100,103,99.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "displacement", "origin_reason": "FVG_SESSION_DISPLACEMENT_CONFIRMED", "confirmed": true,
+      "why": "Reopen equals first.high; no positive gap above 100 is caused by that open."
+    },
+    {
+      "id": "reopen_outside_then_reenter", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[100.1,103,99.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "displacement", "origin_reason": "FVG_SESSION_DISPLACEMENT_CONFIRMED", "confirmed": true,
+      "why": "Middle low re-enters the previous range and close passes the full gap."
+    },
+    {
+      "id": "round4_one_tick_reopen", "times": "before_middle",
+      "rows": [[101,102,99,100],[100.1,106,99.8,105.5],[105.4,107,103,106]],
+      "gap": [102,103], "origin_status": "displacement", "origin_reason": "FVG_SESSION_DISPLACEMENT_CONFIRMED", "confirmed": true,
+      "why": "Reopen and next in-session open both differ from previous close; displacement still covers the gap."
+    },
+    {
+      "id": "full_coverage_equal_endpoints", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[100,101,100,101],[101,103,101,102]],
+      "gap": [100,101], "origin_status": "displacement", "origin_reason": "FVG_SESSION_DISPLACEMENT_CONFIRMED", "confirmed": true,
+      "why": "Directional segment equals the gap exactly; containment is inclusive."
+    },
+    {
+      "id": "closure_before_third_but_middle_covers_gap", "times": "before_third",
+      "rows": [[101,102,99,100],[100,106,99.8,105.5],[105.4,107,103,106]],
+      "gap": [102,103], "origin_status": "displacement", "origin_reason": "FVG_SESSION_DISPLACEMENT_CONFIRMED", "confirmed": true,
+      "why": "Middle already provides full directional evidence; closure position alone cannot veto."
+    },
+    {
+      "id": "session_only_third_reopen", "times": "before_third",
+      "rows": [[100,102,99,100],[100,101,99,101],[105,106,104,105.5]],
+      "gap": [102,104], "origin_status": "session_only", "origin_reason": "FVG_SESSION_ONLY_GAP", "confirmed": false,
+      "why": "Middle quality passes but never reaches the gap; third opens entirely above it."
+    },
+    {
+      "id": "session_only_middle_reopen", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[103,106,103,105.5],[104,107,102,106]],
+      "gap": [100,102], "origin_status": "session_only", "origin_reason": "FVG_SESSION_ONLY_GAP", "confirmed": false,
+      "why": "The middle opens and stays above the entire gap; its strong body cannot explain that gap."
+    },
+    {
+      "id": "session_only_touch_is_not_coverage", "times": "before_third",
+      "rows": [[100,102,99,100],[100,102,99,102],[105,106,104,105.5]],
+      "gap": [102,104], "origin_status": "session_only", "origin_reason": "FVG_SESSION_ONLY_GAP", "confirmed": false,
+      "why": "Middle closes exactly at gap low; intersection has zero width."
+    },
+    {
+      "id": "partial_coverage_at_low", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[100.5,103,100.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "unknown", "origin_reason": "FVG_SESSION_ORIGIN_AMBIGUOUS", "confirmed": false,
+      "why": "Only [100.5,101] is supported; original gap must not be cropped or promoted."
+    },
+    {
+      "id": "partial_coverage_at_close", "times": "before_middle",
+      "rows": [[100,100,99,99.5],[100,102.5,100,102.2],[103,104,102.4,103.5]],
+      "gap": [100,102.4], "origin_status": "unknown", "origin_reason": "FVG_SESSION_ORIGIN_AMBIGUOUS", "confirmed": false,
+      "why": "Middle high reaches gap end but close does not; OHLC range alone is not directional evidence."
+    },
+    {
+      "id": "continuous_keeps_existing_policy", "times": "continuous",
+      "rows": [[100,100,99,99.5],[100.5,103,100.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "continuous", "origin_reason": "FVG_SESSION_CONTINUOUS", "confirmed": true,
+      "why": "New full-coverage requirement is for known closures only, not a new continuous-FVG gate."
+    },
+    {
+      "id": "unknown_calendar", "times": "before_middle", "symbol": "",
+      "rows": [[100,100,99,99.5],[100,103,99.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "unknown", "origin_reason": "SESSION_GAP_UNKNOWN", "confirmed": false,
+      "why": "Full price coverage cannot replace absent calendar evidence."
+    },
+    {
+      "id": "unexpected_missing_candle", "times": "unexpected",
+      "rows": [[100,100,99,99.5],[100,103,99.5,102.5],[102,104,101,103]],
+      "gap": [100,101], "origin_status": "invalid", "origin_reason": "FVG_CANDLE_GAP_UNEXPECTED", "confirmed": false,
+      "why": "A missing in-session candle must not be treated as a known closure."
+    }
+  ]
+}

@@ -1,0 +1,460 @@
+{
+  "fixture_id": "m15-stale-rejection-47-in-zone",
+  "description": "BUY zone: one rejection wick at the first touch, followed by 47 flat M15 candles that remain inside the zone.",
+  "side": "buy",
+  "zone": {
+    "low": 99,
+    "high": 100
+  },
+  "candle_interval_minutes": 15,
+  "candles": [
+    {
+      "time": "2026-01-02T00:00:00Z",
+      "open": 99.8,
+      "high": 100,
+      "low": 98.5,
+      "close": 99.9
+    },
+    {
+      "time": "2026-01-02T00:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T00:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T00:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T01:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T01:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T01:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T01:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T02:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T02:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T02:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T02:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T03:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T03:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T03:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T03:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T04:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T04:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T04:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T04:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T05:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T05:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T05:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T05:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T06:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T06:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T06:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T06:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T07:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T07:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T07:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T07:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T08:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T08:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T08:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T08:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T09:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T09:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T09:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T09:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T10:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T10:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T10:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T10:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T11:00:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T11:15:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T11:30:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    },
+    {
+      "time": "2026-01-02T11:45:00Z",
+      "open": 99.75,
+      "high": 99.85,
+      "low": 99.65,
+      "close": 99.75
+    }
+  ],
+  "counts": {
+    "total": 48,
+    "initial_rejection": 1,
+    "subsequent_in_zone": 47
+  },
+  "expected_current_behavior": {
+    "status": "confirmed",
+    "confirmed": true,
+    "penalty": 0,
+    "reason_codes": [
+      "M15_CONFIRMATION"
+    ],
+    "choch": false,
+    "reaction": true,
+    "note": "This records the current false confirmation caused by scanning the stale first rejection."
+  },
+  "expected_after_fix": {
+    "status": "not_confirmed",
+    "confirmed": false,
+    "penalty": 0,
+    "reason_codes": [
+      "M15_NO_CONFIRMATION"
+    ],
+    "choch": false,
+    "reaction": false,
+    "quality_unchanged": true,
+    "smc_quality_delta": 0,
+    "readiness": "WAITING_CONFIRMATION",
+    "entry_allowed": false,
+    "note": "The first rejection must not confirm after 47 subsequent candles remain in the zone; no fresh reaction or CHoCH exists. M15 expiry changes readiness only, never B/Q/L/C or quality."
+  },
+  "rejection_contract": {
+    "range": "high-low",
+    "body": "abs(close-open)",
+    "buy_wick": "min(open,close)-low",
+    "sell_wick": "high-max(open,close)",
+    "threshold": "directional_wick >= max(0.80*body, 0.25*range)",
+    "additional_conditions": [
+      "range > 0",
+      "close has the required directional candle color",
+      "rejection and follow-through belong to the current M15 entry visit and its 3-bar window"
+    ],
+    "boundaries": {
+      "buy_equal_threshold_with_close_up": "accepted",
+      "sell_equal_threshold_with_close_down": "accepted",
+      "under_threshold": "rejected",
+      "doji_or_zero_range": "rejected",
+      "stale_rejection_after_12_bars": "M15_NO_CONFIRMATION"
+    }
+  },
+  "rejection_boundary_cases": [
+    {
+      "side": "BUY",
+      "ohlc": {"open": 100.0, "close": 100.4, "high": 100.68, "low": 99.68},
+      "range": 1.0,
+      "body": 0.4,
+      "directional_wick": 0.32,
+      "threshold": 0.32,
+      "expected": "accepted_equal_threshold"
+    },
+    {
+      "side": "BUY",
+      "ohlc": {"open": 100.0, "close": 100.4, "high": 100.5, "low": 99.9},
+      "range": 0.6,
+      "body": 0.4,
+      "directional_wick": 0.1,
+      "threshold": 0.32,
+      "expected": "rejected_under_threshold"
+    },
+    {
+      "side": "SELL",
+      "ohlc": {"open": 100.0, "close": 99.6, "high": 100.375, "low": 98.875},
+      "range": 1.5,
+      "body": 0.4,
+      "directional_wick": 0.375,
+      "threshold": 0.375,
+      "expected": "accepted_equal_threshold"
+    },
+    {
+      "side": "SELL",
+      "ohlc": {"open": 100.0, "close": 99.6, "high": 100.1, "low": 99.0},
+      "range": 1.1,
+      "body": 0.4,
+      "directional_wick": 0.1,
+      "threshold": 0.32,
+      "expected": "rejected_under_threshold"
+    },
+    {
+      "side": "BUY",
+      "ohlc": {"open": 100.0, "close": 100.0, "high": 100.4, "low": 99.6},
+      "range": 0.8,
+      "body": 0.0,
+      "directional_wick": 0.4,
+      "threshold": 0.2,
+      "expected": "rejected_doji_no_close_color"
+    },
+    {
+      "side": "BUY",
+      "ohlc": {"open": 100.0, "close": 100.0, "high": 100.0, "low": 100.0},
+      "range": 0.0,
+      "body": 0.0,
+      "directional_wick": 0.0,
+      "threshold": 0.0,
+      "expected": "rejected_zero_range"
+    },
+    {
+      "side": "BUY",
+      "visit_delta": 13,
+      "expected": "M15_NO_CONFIRMATION_outside_trigger_window"
+    }
+  ],
+  "acceptance_note": "Fixture only. Do not add a regression assertion for expected_current_behavior; the current result is the bug being reproduced."
+}

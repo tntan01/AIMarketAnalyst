@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from math import isfinite
 from typing import Any
 
 from core.smc_models import (
@@ -12,6 +14,336 @@ from core.smc_models import (
 
 _BULLISH_STRUCTURE = "HH/HL"
 _BEARISH_STRUCTURE = "LH/LL"
+PARENT_CHILD_OVERLAP_MIN = 0.50
+D1_REACTION_LIFETIME_BARS = 20
+
+
+def build_parent_child_relation(
+    parent: dict[str, Any],
+    child: dict[str, Any],
+    *,
+    tick_size: float | None = None,
+    atr_parent: float | None = None,
+    expansion_tolerance: float | None = None,
+    overlap_min: float = PARENT_CHILD_OVERLAP_MIN,
+) -> dict[str, Any]:
+    """Evaluate one directional parent/child zone relation.
+
+    Containment is checked after the approved parent expansion
+    ``max(1*tick, 0.05*ATR_parent)``.  If containment fails, an overlap of at
+    least 50% of the narrower zone is accepted as the documented alternative.
+    Missing geometry or expansion metadata is returned as ``unknown`` rather
+    than being inferred from proximity.
+    """
+
+    parent_value = parent if isinstance(parent, dict) else {}
+    child_value = child if isinstance(child, dict) else {}
+    parent_side = _zone_direction(parent_value)
+    child_side = _zone_direction(child_value)
+    parent_bounds = _bounds(parent_value)
+    child_bounds = _bounds(child_value)
+    base = {
+        "parent_id": _identifier(parent_value, "parent_id"),
+        "child_id": _identifier(child_value, "child_id"),
+        "direction": child_side or parent_side or "unknown",
+        "valid": False,
+        "relation": "unknown",
+        "score": 0.0,
+        "overlap_ratio": None,
+        "expansion_tolerance": None,
+        "reason_codes": [],
+    }
+    if parent_side not in {"buy", "sell"} or child_side != parent_side:
+        base["reason_codes"] = ["PARENT_CHILD_DIRECTION_MISMATCH"]
+        return base
+    if parent_bounds is None or child_bounds is None:
+        base["reason_codes"] = ["PARENT_CHILD_GEOMETRY_UNAVAILABLE"]
+        return base
+
+    if expansion_tolerance is not None:
+        tolerance = _non_negative(expansion_tolerance)
+    elif tick_size is not None and atr_parent is not None:
+        tick = _positive(tick_size)
+        atr = _positive(atr_parent)
+        if tick is None or atr is None:
+            base["reason_codes"] = ["PARENT_CHILD_EXPANSION_UNAVAILABLE"]
+            return base
+        tolerance = max(tick, 0.05 * atr)
+    else:
+        base["reason_codes"] = ["PARENT_CHILD_EXPANSION_UNAVAILABLE"]
+        return base
+    if tolerance is None:
+        base["reason_codes"] = ["PARENT_CHILD_EXPANSION_INVALID"]
+        return base
+
+    parent_low, parent_high = parent_bounds
+    child_low, child_high = child_bounds
+    expanded_low = parent_low - tolerance
+    expanded_high = parent_high + tolerance
+    contained = expanded_low <= child_low and child_high <= expanded_high
+    overlap_low = max(parent_low, child_low)
+    overlap_high = min(parent_high, child_high)
+    overlap_width = max(0.0, overlap_high - overlap_low)
+    narrower_width = min(parent_high - parent_low, child_high - child_low)
+    overlap_ratio = (
+        overlap_width / narrower_width if narrower_width > 0 else None
+    )
+    base["expansion_tolerance"] = tolerance
+    base["overlap_ratio"] = overlap_ratio
+    if contained:
+        base.update({
+            "valid": True,
+            "relation": "contained",
+            "score": 1.0,
+            "reason_codes": ["PARENT_CHILD_CONTAINED"],
+        })
+    elif overlap_ratio is not None and overlap_ratio >= overlap_min:
+        base.update({
+            "valid": True,
+            "relation": "overlap",
+            "score": 0.75,
+            "reason_codes": ["PARENT_CHILD_OVERLAP"],
+        })
+    else:
+        base["reason_codes"] = ["PARENT_CHILD_RELATION_INVALID"]
+    return base
+
+
+def build_d1_reaction_evidence(
+    d1_zone: dict[str, Any],
+    lifecycle: Any,
+    *,
+    as_of: datetime | str | None = None,
+    lifetime_bars: int = D1_REACTION_LIFETIME_BARS,
+) -> dict[str, Any]:
+    """Read one valid D1 reaction from canonical lifecycle visits only.
+
+    Legacy proximity or boolean reaction flags are intentionally ignored.  A
+    reaction requires a visit in ``completed_reacted`` state with a canonical
+    ``reacted_at`` and must not be stale/expired at the supplied cutoff.
+    """
+
+    zone = d1_zone if isinstance(d1_zone, dict) else {}
+    zone_id = _identifier(zone, "zone_id")
+    result: dict[str, Any] = {
+        "valid": False,
+        "score": 0.0,
+        "zone_id": zone_id,
+        "source_visit_id": None,
+        "source_event_id": None,
+        "reacted_at": None,
+        "age_bars": None,
+        "reason_codes": [],
+    }
+    visits = _lifecycle_value(lifecycle, "visits", [])
+    if not isinstance(visits, (list, tuple)):
+        result["reason_codes"] = ["D1_REACTION_LIFECYCLE_UNAVAILABLE"]
+        return result
+    valid_visits: list[dict[str, Any]] = []
+    for raw_visit in visits:
+        visit = _as_mapping(raw_visit)
+        if not visit:
+            continue
+        state = str(
+            visit.get("visit_state", visit.get("state", visit.get("status", "")))
+            or ""
+        ).strip().lower()
+        reacted_at = _parse_time(visit.get("reacted_at"))
+        visit_zone_id = str(visit.get("zone_id", "") or "").strip()
+        if (
+            state != "completed_reacted"
+            or reacted_at is None
+            or (visit_zone_id and zone_id and visit_zone_id != zone_id)
+        ):
+            continue
+        valid_visits.append({"visit": visit, "reacted_at": reacted_at})
+    if not valid_visits:
+        result["reason_codes"] = ["D1_REACTION_NOT_COMPLETED_REACTED"]
+        return result
+
+    cutoff = _parse_time(as_of) if as_of is not None else None
+
+    def _sources() -> tuple[Any, Any]:
+        return (zone, lifecycle)
+
+    def _terminal_flag(key: str) -> bool:
+        """True when EITHER source reports this terminal flag.
+
+        B-R1: terminal evidence from the actual lifecycle must not be masked by a default or
+        explicitly non-terminal flag on the zone mapping (nor the other way round), so the
+        flags are combined with OR instead of letting one source win per field.
+        """
+
+        for source in _sources():
+            value = (
+                source.get(key)
+                if isinstance(source, dict)
+                else _lifecycle_value(source, key, None)
+            )
+            if bool(value):
+                return True
+        return False
+
+    def _terminal_status() -> bool:
+        for source in _sources():
+            value = (
+                source.get("lifecycle_status")
+                if isinstance(source, dict)
+                else _lifecycle_value(source, "lifecycle_status", None)
+            )
+            if str(value or "").strip().lower() in {"invalid", "expired", "stale"}:
+                return True
+        return False
+
+    def _earliest_terminal_at() -> Any:
+        """Earliest declared terminal timestamp across both sources."""
+
+        found = []
+        for source in _sources():
+            for key in ("invalidated_at", "expired_at"):
+                value = (
+                    source.get(key)
+                    if isinstance(source, dict)
+                    else _lifecycle_value(source, key, None)
+                )
+                parsed = _parse_time(value)
+                if parsed is not None:
+                    found.append(parsed)
+        return min(found) if found else None
+
+    def _largest_age() -> int | None:
+        """Largest declared age: a default `0` on one source must not mask a real age."""
+
+        ages = []
+        for source in _sources():
+            value = (
+                source.get("age_bars")
+                if isinstance(source, dict)
+                else _lifecycle_value(source, "age_bars", None)
+            )
+            parsed = _optional_int(value)
+            if parsed is not None:
+                ages.append(parsed)
+        return max(ages) if ages else None
+
+    lifecycle_expired = _terminal_flag("lifecycle_expired")
+    lifecycle_stale = _terminal_flag("lifecycle_stale")
+    lifecycle_broken = _terminal_flag("lifecycle_broken") or _terminal_flag("broken")
+    age_bars = _largest_age()
+    # Canonical terminal evidence forbids an active reaction (A-D04) and outranks any legacy
+    # `d1_reaction`/`proximity` flag. The terminal timestamp is inclusive at the cutoff, so a
+    # zone terminating exactly at the cutoff is terminal while an earlier cutoff stays a valid
+    # positive prefix — no past snapshot is rebuilt from a later terminal payload.
+    terminal_at = _earliest_terminal_at()
+    terminal_at_cutoff = (
+        terminal_at is not None and cutoff is not None and terminal_at <= cutoff
+    )
+    if (
+        lifecycle_broken
+        or _terminal_status()
+        or lifecycle_expired
+        or lifecycle_stale
+        or terminal_at_cutoff
+        or (age_bars is not None and age_bars > lifetime_bars)
+    ):
+        result["age_bars"] = age_bars
+        result["reason_codes"] = ["D1_REACTION_STALE"]
+        return result
+    latest = max(valid_visits, key=lambda item: item["reacted_at"])
+    if cutoff is not None and latest["reacted_at"] > cutoff:
+        result["reason_codes"] = ["D1_REACTION_AFTER_CUTOFF"]
+        return result
+    visit = latest["visit"]
+    result.update({
+        "valid": True,
+        "score": 1.0,
+        "source_visit_id": str(visit.get("visit_id", "") or "") or None,
+        "source_event_id": str(
+            visit.get("reaction_event_id", visit.get("event_id", "")) or ""
+        ) or None,
+        "reacted_at": latest["reacted_at"].isoformat(),
+        "age_bars": age_bars,
+        "reason_codes": ["D1_REACTION_COMPLETED_REACTED"],
+    })
+    return result
+
+
+def _zone_direction(value: dict[str, Any]) -> str:
+    return str(value.get("direction", value.get("side", "")) or "").strip().lower()
+
+
+def _bounds(value: dict[str, Any]) -> tuple[float, float] | None:
+    try:
+        low = float(value.get("low"))
+        high = float(value.get("high"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not isfinite(low) or not isfinite(high) or high <= low:
+        return None
+    return low, high
+
+
+def _identifier(value: dict[str, Any], key: str) -> str | None:
+    fallback = "zone_id" if key == "parent_id" else "zone_id"
+    result = str(value.get(key, value.get(fallback, "")) or "").strip()
+    return result or None
+
+
+def _positive(value: object) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if isfinite(parsed) and parsed > 0 else None
+
+
+def _non_negative(value: object) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if isfinite(parsed) and parsed >= 0 else None
+
+
+def _as_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    to_dict = getattr(value, "to_dict", None)
+    converted = to_dict() if callable(to_dict) else None
+    return converted if isinstance(converted, dict) else {}
+
+
+def _lifecycle_value(value: Any, key: str, default: Any) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _parse_time(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        text = value.strip()
+        try:
+            parsed = datetime.fromisoformat(
+                text[:-1] + "+00:00" if text.endswith("Z") else text
+            )
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def build_directional_confluence(

@@ -1,0 +1,90 @@
+{
+  "fixture_id": "smc-structure-task36-v1",
+  "timeframe": "H4",
+  "break_buffer": 1.0,
+  "base_swings": {
+    "highs": [
+      {"swing_id": "H0", "kind": "high", "level": 105.0, "pivot_time": "2026-01-01T00:00:00Z", "confirmed_at": "2026-01-02T00:00:00Z"},
+      {"swing_id": "H1", "kind": "high", "level": 110.0, "pivot_time": "2026-01-03T00:00:00Z", "confirmed_at": "2026-01-04T00:00:00Z"},
+      {"swing_id": "H2", "kind": "high", "level": 116.0, "pivot_time": "2026-01-09T00:00:00Z", "confirmed_at": "2026-01-10T00:00:00Z"}
+    ],
+    "lows": [
+      {"swing_id": "L0", "kind": "low", "level": 95.0, "pivot_time": "2026-01-02T00:00:00Z", "confirmed_at": "2026-01-03T00:00:00Z"},
+      {"swing_id": "L1", "kind": "low", "level": 100.0, "pivot_time": "2026-01-04T00:00:00Z", "confirmed_at": "2026-01-05T00:00:00Z"},
+      {"swing_id": "L2", "kind": "low", "level": 94.0, "pivot_time": "2026-01-09T00:00:00Z", "confirmed_at": "2026-01-10T00:00:00Z"}
+    ]
+  },
+  "cases": [
+    {
+      "id": "bootstrap-insufficient-before-low-confirmation",
+      "operation": "initialize",
+      "as_of": "2026-01-04T00:00:00Z",
+      "expected": {"state": "unknown", "direction": null, "confirmed_high_count": 2, "confirmed_low_count": 1}
+    },
+    {
+      "id": "bootstrap-buy",
+      "operation": "initialize",
+      "as_of": "2026-01-08T12:00:00Z",
+      "expected": {"state": "bullish", "structure": "HH/HL", "direction": "bullish", "tracked_continuation_id": "H1", "bootstrap_ready_at": "2026-01-05T00:00:00+00:00", "source_history_anchor_at": "2026-01-01T00:00:00+00:00"}
+    },
+    {
+      "id": "bootstrap-sell",
+      "operation": "initialize-sell",
+      "as_of": "2026-01-08T12:00:00Z",
+      "expected": {"state": "bearish", "structure": "LH/LL", "direction": "bearish", "tracked_continuation_id": "L1"}
+    },
+    {
+      "id": "buy-first-bos-source-is-L1-not-latest-L2",
+      "operation": "bos-buy",
+      "as_of": "2026-01-08T12:00:00Z",
+      "candle": {"time": "2026-01-08T08:00:00Z", "open": 100.0, "high": 112.0, "low": 99.0, "close": 111.01},
+      "expected": {"bos": true, "direction": "bullish", "broken_level_id": "H1", "source_swing_id": "L1", "protected_swing_id": "L1", "occurred_at": "2026-01-08T12:00:00+00:00"}
+    },
+    {
+      "id": "sell-first-bos-source-is-H1",
+      "operation": "bos-sell",
+      "as_of": "2026-01-08T12:00:00Z",
+      "candle": {"time": "2026-01-08T08:00:00Z", "open": 100.0, "high": 101.0, "low": 87.0, "close": 88.99},
+      "expected": {"bos": true, "direction": "bearish", "broken_level_id": "L1", "source_swing_id": "H1", "protected_swing_id": "H1", "occurred_at": "2026-01-08T12:00:00+00:00"}
+    },
+    {
+      "id": "buy-break-equal-boundary-is-wick-only",
+      "operation": "bos-buy",
+      "as_of": "2026-01-08T12:00:00Z",
+      "candle": {"time": "2026-01-08T08:00:00Z", "open": 100.0, "high": 113.0, "low": 99.0, "close": 111.0},
+      "expected": {"bos": false, "reason": "SMC_WICK_ONLY_BREAK", "protected_swing_id": null}
+    },
+    {
+      "id": "sell-break-equal-boundary-is-wick-only",
+      "operation": "bos-sell",
+      "as_of": "2026-01-08T12:00:00Z",
+      "candle": {"time": "2026-01-08T08:00:00Z", "open": 100.0, "high": 101.0, "low": 87.0, "close": 89.0},
+      "expected": {"bos": false, "reason": "SMC_WICK_ONLY_BREAK", "protected_swing_id": null}
+    },
+    {
+      "id": "buy-choch-reclaim-inclusive",
+      "operation": "choch-reclaim-buy",
+      "candidate_candle": {"time": "2026-01-10T08:00:00Z", "open": 100.0, "high": 101.0, "low": 98.0, "close": 98.9},
+      "reclaim_candle": {"time": "2026-01-11T08:00:00Z", "open": 100.0, "high": 102.0, "low": 99.0, "close": 101.0},
+      "expected": {"candidate_direction": "bearish", "candidate_protected_swing_id": "L1", "invalidated": true, "invalidated_at": "2026-01-11T12:00:00+00:00", "state_after": "bullish"}
+    },
+    {
+      "id": "sell-choch-confirmed-mirror",
+      "operation": "choch-confirm-sell",
+      "extra_swings": {
+        "highs": [{"swing_id": "H3", "kind": "high", "level": 103.0, "pivot_time": "2026-01-12T00:00:00Z", "confirmed_at": "2026-01-13T00:00:00Z"}],
+        "lows": [{"swing_id": "L3", "kind": "low", "level": 95.0, "pivot_time": "2026-01-11T00:00:00Z", "confirmed_at": "2026-01-12T00:00:00Z"}]
+      },
+      "candidate_candle": {"time": "2026-01-10T08:00:00Z", "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.1},
+      "confirmation_candle": {"time": "2026-01-13T08:00:00Z", "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.1},
+      "expected": {"candidate_direction": "bullish", "choch_confirmed": true, "reversal_bos_direction": "bullish", "reversal_broken_level_id": "H3", "reversal_source_swing_id": "L3", "state_after": "bullish", "protected_after": "L3", "confirmed_at": "2026-01-13T12:00:00+00:00"}
+    },
+    {
+      "id": "buy-choch-expiry-preserves-protected-history",
+      "operation": "choch-expiry-buy",
+      "candidate_candle": {"time": "2026-01-10T08:00:00Z", "open": 100.0, "high": 101.0, "low": 98.0, "close": 98.9},
+      "expiry_as_of": "2026-01-17T04:00:00Z",
+      "expected": {"expired": true, "candidate_status": "expired", "protected_swing_id": "L1", "confirmed_at": null, "invalidated_at": null}
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "version": "smc-data-boundaries-v1",
+  "cases": {
+    "cutoff": [
+      {
+        "id": "exact_close_is_eligible",
+        "timeframe": "M15",
+        "open_time": "2026-01-01T00:00:00Z",
+        "cutoff": "2026-01-01T00:15:00Z",
+        "expected_status": "included"
+      },
+      {
+        "id": "forming_close_is_excluded",
+        "timeframe": "M15",
+        "open_time": "2026-01-01T00:01:00Z",
+        "cutoff": "2026-01-01T00:15:00Z",
+        "expected_status": "excluded"
+      }
+    ],
+    "duplicate": [
+      {
+        "id": "strictly_increasing_is_valid",
+        "times": ["2026-01-01T00:00:00Z", "2026-01-01T00:15:00Z"],
+        "expected_status": "valid"
+      },
+      {
+        "id": "duplicate_open_time_is_rejected",
+        "times": ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+        "expected_status": "SMC_TIMESTAMP_ORDER_INVALID"
+      }
+    ],
+    "session_gap": [
+      {
+        "id": "forex_weekend_closure_is_known",
+        "symbol": "EURUSD",
+        "timeframe": "D1",
+        "start": "2026-01-05T00:00:00Z",
+        "expected_status": "complete"
+      },
+      {
+        "id": "in_session_gap_is_incomplete",
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "start": "2026-01-06T00:00:00Z",
+        "expected_status": "partial"
+      }
+    ],
+    "warmup": [
+      {
+        "id": "fourteen_candles_is_not_ready",
+        "count": 14,
+        "expected_status": "SMC_ATR_REFERENCE_UNAVAILABLE"
+      },
+      {
+        "id": "fifteen_candles_is_ready",
+        "count": 15,
+        "expected_status": "ready"
+      }
+    ],
+    "atr_reference": [
+      {
+        "id": "event_before_warmup_is_unavailable",
+        "event_index": 14,
+        "expected_status": "SMC_ATR_REFERENCE_UNAVAILABLE"
+      },
+      {
+        "id": "event_after_warmup_is_available",
+        "event_index": 15,
+        "expected_status": "available"
+      }
+    ]
+  }
+}

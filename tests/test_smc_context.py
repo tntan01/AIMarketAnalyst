@@ -64,7 +64,7 @@ class TestSwingPoints:
         assert result["lows"] == []
 
     def test_no_swing_when_duplicate_high(self):
-        """Two equal highs in window → not counted as swing (must be unique)."""
+        """An equal-high plateau has one deterministic representative."""
         candles = _make_candles([
             (1.1000, 1.1010, 1.0990, 1.1005),
             (1.1005, 1.1050, 1.1000, 1.1015),
@@ -73,8 +73,10 @@ class TestSwingPoints:
             (1.1025, 1.1040, 1.1020, 1.1035),
         ])
         result = swing_points(candles, lookback=2)
+        # The legacy helper remains strict; external/internal seams apply the
+        # plateau representative policy in their task-27 tests.
         levels = [h["level"] for h in result["highs"]]
-        assert 1.1050 not in levels  # duplicate, should not be counted
+        assert 1.1050 not in levels
 
 
 class TestDetectBosChoch:

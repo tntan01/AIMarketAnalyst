@@ -1,0 +1,40 @@
+{
+  "fixture_id": "smc-snapshot-cache-task38-v1",
+  "symbol": "EUR/USD",
+  "as_of": "2026-02-02T12:00:00Z",
+  "rule_identity": "smc-rules-v1",
+  "metadata": {
+    "broker_symbol": "EURUSD.a",
+    "tick_size": 0.0001,
+    "point": 0.0001,
+    "digits": 5,
+    "capture_source": "broker",
+    "timeframe_policy": ["D1", "H4", "H1", "M15"]
+  },
+  "candles": {
+    "H4": [
+      {"time": "2026-02-02T00:00:00Z", "open": 1.1000, "high": 1.1020, "low": 1.0990, "close": 1.1010, "volume": 12},
+      {"time": "2026-02-02T04:00:00Z", "open": 1.1010, "high": 1.1040, "low": 1.1000, "close": 1.1030, "volume": 15},
+      {"time": "2026-02-02T08:00:00Z", "open": 1.1030, "high": 1.1050, "low": 1.1010, "close": 1.1020, "volume": 18}
+    ]
+  },
+  "mutations": [
+    {"id": "broker-corrected-close", "kind": "candle_close", "index": 1, "value": 1.1031, "expected": "different"},
+    {"id": "cutoff-moved", "kind": "as_of", "value": "2026-02-02T16:00:00Z", "expected": "different"},
+    {"id": "metadata-tick-changed", "kind": "metadata", "key": "tick_size", "value": 0.00001, "expected": "different"},
+    {"id": "rule-identity-bumped", "kind": "rule_identity", "value": "smc-rules-v2", "expected": "different"},
+    {"id": "metadata-order-only", "kind": "metadata_reordered", "expected": "same"},
+    {"id": "metadata-type-changed-to-string", "kind": "metadata_numeric_spelling", "expected": "different"}
+  ],
+  "zone_identity": {
+    "timeframe": "H4",
+    "family": "order_block",
+    "direction": "buy",
+    "origin_time": "2026-02-01T20:00:00Z",
+    "low": 1.0980,
+    "high": 1.1000,
+    "original_history_index": 10,
+    "extended_history_index": 11,
+    "expected_same_zone_id": true
+  }
+}

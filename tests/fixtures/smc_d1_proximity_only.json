@@ -1,0 +1,50 @@
+{
+  "fixture_id": "d1-proximity-without-reaction",
+  "purpose": "D1 proximity is present, but there is no visit/reaction event after formation.",
+  "side": "buy",
+  "symbol": "XAUUSD",
+  "cutoff": "2026-01-10T00:00:00Z",
+  "atr_reference": 2,
+  "price_at_cutoff": 100,
+  "h4_structure_at_cutoff": "HH/HL",
+  "d1_zone": {
+    "zone_id": "d1-ob-buy-proximity-only",
+    "family": "order_block",
+    "direction": "buy",
+    "low": 98,
+    "high": 99.5,
+    "origin_time": "2026-01-01T00:00:00Z",
+    "broken": false,
+    "mitigated": false,
+    "visits": [],
+    "reaction_event": null
+  },
+  "timeline": [
+    {
+      "at": "2026-01-01T00:00:00Z",
+      "event": "formed",
+      "description": "D1 bullish order block formed and remains unbroken/unmitigated."
+    },
+    {
+      "at": "2026-01-10T00:00:00Z",
+      "event": "cutoff",
+      "price": 100,
+      "distance_to_zone": 0.5,
+      "distance_in_atr": 0.25,
+      "description": "Price is near the zone but has not entered it and no reaction candle/visit exists."
+    }
+  ],
+  "expected_current_behavior": {
+    "d1_bonus_points": 2,
+    "reason_codes": [
+      "D1_ZONE_REACTION_BONUS"
+    ],
+    "note": "Current _d1_zone_reaction_bonus treats proximity within 0.5 ATR as reaction without checking a lifecycle event."
+  },
+  "expected_after_fix": {
+    "d1_bonus_points": 0,
+    "reason_codes": [],
+    "status": "proximity_only",
+    "note": "Proximity remains metadata; only a valid post-formation visit/reaction with canonical lifecycle may contribute D1 reaction evidence."
+  }
+}

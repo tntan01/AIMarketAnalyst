@@ -41,6 +41,8 @@ def _lifecycle(
     *,
     side: str = "buy",
     departure_end_index: int = 1,
+    tick_size: float | None = None,
+    atr_current: float | None = None,
 ):
     return analyze_zone_lifecycle(
         candles=candles,
@@ -52,6 +54,8 @@ def _lifecycle(
         zone_id="smcz-test",
         timeframe="H1",
         tf_minutes=60,
+        tick_size=tick_size,
+        atr_current=atr_current,
     )
 
 
@@ -130,6 +134,9 @@ def test_buy_and_sell_mitigation_are_mirrored():
 
 
 def test_first_invalidation_is_terminal_for_the_lifecycle():
+    # F02/r1: explicit synthetic metadata at the call site (TL-approved). With tick 0.1 and
+    # ATR 2 the buffer is max(0.1, 0.05*2) = 0.1, so the index-3 close 98 still clears
+    # 100 - 0.1 = 99.9 and remains the first invalidation.
     result = _lifecycle(
         _candles([
             (112, 114, 111, 113),
@@ -137,7 +144,9 @@ def test_first_invalidation_is_terminal_for_the_lifecycle():
             (108, 111, 104, 106),
             (99, 99, 97, 98),     # first BUY invalidation
             (108, 111, 103, 106),  # must not resurrect the zone
-        ])
+        ]),
+        tick_size=0.1,
+        atr_current=2.0,
     )
 
     assert result.lifecycle_broken is True

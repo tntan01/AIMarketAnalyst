@@ -1,0 +1,48 @@
+{
+  "fixture_id": "smc-snapshot-cache-task39-v1",
+  "timeframe": "H1",
+  "symbol": "EURUSD",
+  "minimum_history_policy": "require_lifetime",
+  "cases": [
+    {
+      "id": "restart-same-input",
+      "expected": {
+        "identity_equal": true,
+        "result_equal": true,
+        "cold_cache_first_lookup": "miss",
+        "structure_events_nonempty": true,
+        "protected_level_nonnull": true
+      }
+    },
+    {
+      "id": "broker-correction",
+      "expected": {
+        "identity_equal": false,
+        "old_cache_reused": false,
+        "reason": "candle_content_changed"
+      }
+    },
+    {
+      "id": "rolling-history-extension",
+      "expected": {
+        "identity_equal": false,
+        "full_window_status": "complete",
+        "extended_window_status": "complete",
+        "reason": "input_history_changed"
+      }
+    },
+    {
+      "id": "missing-origin-history",
+      "expected": {
+        "identity_equal": false,
+        "status": "DATA_UNAVAILABLE",
+        "smc_quality_status": "insufficient",
+        "required_reasons": [
+          "SMC_INSUFFICIENT_HISTORY",
+          "SMC_COVERAGE_GAP"
+        ],
+        "cache_result_reused": false
+      }
+    }
+  ]
+}

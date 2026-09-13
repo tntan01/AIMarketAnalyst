@@ -1,0 +1,54 @@
+{
+  "fixture_id": "smc-structure-task37-v1",
+  "timeframe": "H4",
+  "symbol": "EURUSD",
+  "break_buffer": 1.0,
+  "cases": [
+    {
+      "id": "buy-batch-equals-prefix-replay",
+      "swings": {
+        "highs": [
+          {"swing_id": "H0", "kind": "high", "level": 105.0, "pivot_time": "2026-01-01T00:00:00Z", "confirmed_at": "2026-01-02T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "H1", "kind": "high", "level": 110.0, "pivot_time": "2026-01-03T00:00:00Z", "confirmed_at": "2026-01-04T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "H2", "kind": "high", "level": 116.0, "pivot_time": "2026-01-09T00:00:00Z", "confirmed_at": "2026-01-10T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "H3", "kind": "high", "level": 105.0, "pivot_time": "2026-01-11T00:00:00Z", "confirmed_at": "2026-01-12T00:00:00Z", "confirmed": true, "usable": true, "provisional": false}
+        ],
+        "lows": [
+          {"swing_id": "L0", "kind": "low", "level": 95.0, "pivot_time": "2026-01-02T00:00:00Z", "confirmed_at": "2026-01-03T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "L1", "kind": "low", "level": 100.0, "pivot_time": "2026-01-04T00:00:00Z", "confirmed_at": "2026-01-05T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "L2", "kind": "low", "level": 94.0, "pivot_time": "2026-01-09T00:00:00Z", "confirmed_at": "2026-01-10T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "L3", "kind": "low", "level": 97.0, "pivot_time": "2026-01-12T00:00:00Z", "confirmed_at": "2026-01-13T00:00:00Z", "confirmed": true, "usable": true, "provisional": false}
+        ]
+      },
+      "phases": [
+        {"id": "bootstrap", "as_of": "2026-01-08T12:00:00Z", "expected": {"event_id": null, "event_type": null, "confirmed_at": null, "state": "bullish", "protected_swing_id": null, "protected_swing_level": null}},
+        {"id": "bos", "as_of": "2026-01-08T12:00:00Z", "candle": {"time": "2026-01-08T08:00:00Z", "open": 100.0, "high": 112.0, "low": 99.0, "close": 111.01}, "expected": {"event_id": "smc-bos-be948829398d7f878597", "event_type": "BOS", "confirmed_at": "2026-01-08T12:00:00+00:00", "state": "bullish", "protected_swing_id": "L1", "protected_swing_level": 100.0}},
+        {"id": "candidate", "as_of": "2026-01-10T12:00:00Z", "candle": {"time": "2026-01-10T08:00:00Z", "open": 100.0, "high": 101.0, "low": 98.0, "close": 98.9}, "expected": {"event_id": "smc-choch-candidate-ba6ed2b5f590f70b853c", "event_type": "CHOCH_CANDIDATE", "confirmed_at": null, "state": "bullish", "protected_swing_id": "L1", "protected_swing_level": 100.0}},
+        {"id": "confirmed", "as_of": "2026-01-13T12:00:00Z", "candle": {"time": "2026-01-13T08:00:00Z", "open": 100.0, "high": 101.0, "low": 95.0, "close": 95.9}, "expected": {"event_id": "smc-choch-confirmed-0420513c000449012114", "event_type": "CHOCH_CONFIRMED", "confirmed_at": "2026-01-13T12:00:00+00:00", "state": "bearish", "protected_swing_id": "H3", "protected_swing_level": 105.0}}
+      ]
+    },
+    {
+      "id": "sell-batch-equals-prefix-replay",
+      "swings": {
+        "highs": [
+          {"swing_id": "H0", "kind": "high", "level": 110.0, "pivot_time": "2026-01-01T00:00:00Z", "confirmed_at": "2026-01-02T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "H1", "kind": "high", "level": 103.0, "pivot_time": "2026-01-04T00:00:00Z", "confirmed_at": "2026-01-05T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "H2", "kind": "high", "level": 108.0, "pivot_time": "2026-01-09T00:00:00Z", "confirmed_at": "2026-01-10T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "H3", "kind": "high", "level": 103.0, "pivot_time": "2026-01-12T00:00:00Z", "confirmed_at": "2026-01-13T00:00:00Z", "confirmed": true, "usable": true, "provisional": false}
+        ],
+        "lows": [
+          {"swing_id": "L0", "kind": "low", "level": 95.0, "pivot_time": "2026-01-02T00:00:00Z", "confirmed_at": "2026-01-03T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "L1", "kind": "low", "level": 90.0, "pivot_time": "2026-01-03T00:00:00Z", "confirmed_at": "2026-01-04T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "L2", "kind": "low", "level": 84.0, "pivot_time": "2026-01-09T00:00:00Z", "confirmed_at": "2026-01-10T00:00:00Z", "confirmed": true, "usable": true, "provisional": false},
+          {"swing_id": "L3", "kind": "low", "level": 95.0, "pivot_time": "2026-01-11T00:00:00Z", "confirmed_at": "2026-01-12T00:00:00Z", "confirmed": true, "usable": true, "provisional": false}
+        ]
+      },
+      "phases": [
+        {"id": "bootstrap", "as_of": "2026-01-08T12:00:00Z", "expected": {"event_id": null, "event_type": null, "confirmed_at": null, "state": "bearish", "protected_swing_id": null, "protected_swing_level": null}},
+        {"id": "bos", "as_of": "2026-01-08T12:00:00Z", "candle": {"time": "2026-01-08T08:00:00Z", "open": 100.0, "high": 101.0, "low": 87.0, "close": 88.99}, "expected": {"event_id": "smc-bos-524978cbba1763fb2f6c", "event_type": "BOS", "confirmed_at": "2026-01-08T12:00:00+00:00", "state": "bearish", "protected_swing_id": "H1", "protected_swing_level": 103.0}},
+        {"id": "candidate", "as_of": "2026-01-10T12:00:00Z", "candle": {"time": "2026-01-10T08:00:00Z", "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.1}, "expected": {"event_id": "smc-choch-candidate-8206fa8f775b2feb2c6e", "event_type": "CHOCH_CANDIDATE", "confirmed_at": null, "state": "bearish", "protected_swing_id": "H1", "protected_swing_level": 103.0}},
+        {"id": "confirmed", "as_of": "2026-01-13T12:00:00Z", "candle": {"time": "2026-01-13T08:00:00Z", "open": 100.0, "high": 105.0, "low": 99.0, "close": 104.1}, "expected": {"event_id": "smc-choch-confirmed-4acae4abeccef49a02d8", "event_type": "CHOCH_CONFIRMED", "confirmed_at": "2026-01-13T12:00:00+00:00", "state": "bullish", "protected_swing_id": "L3", "protected_swing_level": 95.0}}
+      ]
+    }
+  ]
+}

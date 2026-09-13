@@ -1,0 +1,168 @@
+{
+  "fixture_id": "protected-swing-differs-from-latest-swing",
+  "purpose": "A later last swing is not the protected swing that led to the latest bullish BOS.",
+  "side": "buy",
+  "symbol": "XAUUSD",
+  "timeframe": "H4",
+  "cutoff": "2026-01-10T00:00:00Z",
+  "timeline": [
+    {
+      "at": "2026-01-01T00:00:00Z",
+      "event": "confirmed_swing_high",
+      "swing_id": "H0",
+      "level": 100,
+      "pivot_time": "2026-01-01T00:00:00Z",
+      "confirmed_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "at": "2026-01-02T00:00:00Z",
+      "event": "confirmed_swing_low",
+      "swing_id": "L0",
+      "level": 90,
+      "pivot_time": "2026-01-02T00:00:00Z",
+      "confirmed_at": "2026-01-03T00:00:00Z"
+    },
+    {
+      "at": "2026-01-03T00:00:00Z",
+      "event": "confirmed_swing_high",
+      "swing_id": "H1",
+      "level": 110,
+      "pivot_time": "2026-01-03T00:00:00Z",
+      "confirmed_at": "2026-01-04T00:00:00Z"
+    },
+    {
+      "at": "2026-01-04T00:00:00Z",
+      "event": "confirmed_swing_low",
+      "swing_id": "L1",
+      "level": 100,
+      "pivot_time": "2026-01-04T00:00:00Z",
+      "confirmed_at": "2026-01-05T00:00:00Z"
+    },
+    {
+      "at": "2026-01-05T12:00:00Z",
+      "event": "bos_bullish",
+      "event_id": "BOS-1",
+      "broken_level": 110,
+      "close": 112,
+      "protected_swing_id": "L1",
+      "protected_level": 100
+    },
+    {
+      "at": "2026-01-07T00:00:00Z",
+      "event": "confirmed_swing_low",
+      "swing_id": "L2",
+      "level": 94,
+      "description": "Newer last swing; it did not lead to BOS-1 and is therefore not protected."
+    },
+    {
+      "at": "2026-01-08T00:00:00Z",
+      "event": "confirmed_swing_high",
+      "swing_id": "H2",
+      "level": 115
+    },
+    {
+      "at": "2026-01-10T00:00:00Z",
+      "event": "closed_candle",
+      "close": 95,
+      "description": "Close breaks protected low 100 but remains above latest low 94."
+    }
+  ],
+  "protected_swing": {
+    "swing_id": "L1",
+    "kind": "low",
+    "level": 100,
+    "source_event_id": "BOS-1",
+    "role": "protected_low"
+  },
+  "latest_swing": {
+    "swing_id": "L2",
+    "kind": "low",
+    "level": 94,
+    "role": "latest_low_not_protected"
+  },
+  "detector_input": {
+    "swings": {
+      "highs": [
+        {
+          "level": 100,
+          "index": 0,
+          "time": "2026-01-01T00:00:00Z",
+          "swing_id": "H0"
+        },
+        {
+          "level": 110,
+          "index": 2,
+          "time": "2026-01-03T00:00:00Z",
+          "swing_id": "H1"
+        },
+        {
+          "level": 115,
+          "index": 7,
+          "time": "2026-01-08T00:00:00Z",
+          "swing_id": "H2"
+        }
+      ],
+      "lows": [
+        {
+          "level": 90,
+          "index": 1,
+          "time": "2026-01-02T00:00:00Z",
+          "swing_id": "L0"
+        },
+        {
+          "level": 100,
+          "index": 3,
+          "time": "2026-01-04T00:00:00Z",
+          "swing_id": "L1"
+        },
+        {
+          "level": 94,
+          "index": 6,
+          "time": "2026-01-07T00:00:00Z",
+          "swing_id": "L2"
+        }
+      ]
+    },
+    "last_closed_candle": {
+      "time": "2026-01-10T00:00:00Z",
+      "open": 96,
+      "high": 96.5,
+      "low": 94.5,
+      "close": 95
+    }
+  },
+  "expected_current_behavior": {
+    "structure": "mixed",
+    "bos": false,
+    "choch": false,
+    "displacement": "neutral",
+    "choch_confirmed": false,
+    "note": "Current detect_bos_choch compares the two latest highs/lows and misses the break of protected L1 because latest L2 changes the inferred structure."
+  },
+  "expected_after_fix": {
+    "structure_before_break": "HH/HL",
+    "choch_candidate": true,
+    "confirmed": false,
+    "broken_protected_swing_id": "L1",
+    "broken_protected_level": 100,
+    "latest_swing_id_not_used_as_protected": "L2",
+    "latest_swing_level_not_broken": 94,
+    "source_history_anchor_at": "2026-01-01T00:00:00Z",
+    "bootstrap_ready_at": "2026-01-05T00:00:00Z",
+    "bootstrap_ready_rule": "max(confirmed_at(H1), confirmed_at(L1)) after two confirmed highs and two confirmed lows establish HH/HL",
+    "bootstrap_records": [
+      {"swing_id": "H0", "kind": "high", "pivot_time": "2026-01-01T00:00:00Z", "confirmed_at": "2026-01-02T00:00:00Z"},
+      {"swing_id": "L0", "kind": "low", "pivot_time": "2026-01-02T00:00:00Z", "confirmed_at": "2026-01-03T00:00:00Z"},
+      {"swing_id": "H1", "kind": "high", "pivot_time": "2026-01-03T00:00:00Z", "confirmed_at": "2026-01-04T00:00:00Z"},
+      {"swing_id": "L1", "kind": "low", "pivot_time": "2026-01-04T00:00:00Z", "confirmed_at": "2026-01-05T00:00:00Z"}
+    ],
+    "first_bos_source_interval": {
+      "pivot_time_after": "2026-01-01T00:00:00Z",
+      "break_candle_close_before": "2026-01-05T12:00:00Z",
+      "confirmed_at_at_or_before": "2026-01-05T00:00:00Z",
+      "eligible_source_ids": ["L0", "L1"],
+      "selected_source_id": "L1"
+    },
+    "note": "Break of protected low creates a CHoCH candidate; confirmation still requires follow-through and is not implied by this single close."
+  }
+}
