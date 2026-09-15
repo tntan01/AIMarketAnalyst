@@ -1229,6 +1229,8 @@ class MT5Service(DataProvider):
         volume_max = None
         volume_step = None
         tick_time = None
+        tick_size = None
+        tick_size_source = None
         warning = None
         try:
             import MetaTrader5 as mt5
@@ -1241,6 +1243,19 @@ class MT5Service(DataProvider):
                 volume_max = getattr(info, "volume_max", None)
                 volume_step = getattr(info, "volume_step", None)
                 point_val = getattr(info, "point", None)
+                # Canonical tick size (data spec §3): broker ``trade_tick_size``
+                # first, then a LABELLED fallback to the symbol ``point``.  Never
+                # derived from ``digits``.  Both absent ⇒ the snapshot keeps it
+                # unknown and the SMC layer reports SMC_TICK_SIZE_UNAVAILABLE.
+                raw_tick_size = _optional_positive_float(
+                    getattr(info, "trade_tick_size", None)
+                )
+                if raw_tick_size is not None:
+                    tick_size = raw_tick_size
+                    tick_size_source = "trade_tick_size"
+                elif _optional_positive_float(point_val) is not None:
+                    tick_size = _optional_positive_float(point_val)
+                    tick_size_source = "point_fallback"
                 if spread_points is not None and point_val is not None:
                     spread_price = spread_points * point_val
                 spread_status = "normal" if spread_points is not None and spread_points <= 50 else "abnormal"
@@ -1273,6 +1288,8 @@ class MT5Service(DataProvider):
             "volume_max": volume_max,
             "volume_step": volume_step,
             "tick_time": tick_time,
+            "tick_size": tick_size,
+            "tick_size_source": tick_size_source,
             "warning": warning,
         }
 

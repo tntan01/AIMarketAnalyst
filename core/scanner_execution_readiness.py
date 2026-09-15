@@ -30,6 +30,11 @@ from core.reason_codes import (
     ORDER_PREPARED,
 )
 from core.scanner_v4_models import BLOCKED, DATA_UNAVAILABLE, READY_NOW
+from core.smc_readiness import SMC_STATUS_READY_NOW
+
+# Task 109 reason codes owned here.
+SMC_NOT_READY = "SMC_NOT_READY"
+SMC_SELECTION_UNAVAILABLE = "SMC_SELECTION_UNAVAILABLE"
 
 if TYPE_CHECKING:  # import guard: no runtime import cycles
     from core.scanner_candidate import ScannerV4CandidateDecision
@@ -166,11 +171,22 @@ def evaluate_execution_readiness(
 
     Deterministic: depends only on the composition result (decisions already
     stamped the freshness codes), not on the evaluation wall clock.
+
+    Task 109: the SMC readiness verdict of the SELECTED side is applied on top
+    of the existing execution conditions.  SMC readiness can only ever LOWER
+    the verdict — a high SMC quality never overrides invalidation, a missing
+    confirmation or the market/account/risk/safety gates, and no SMC state can
+    grant execution on its own.
     """
     reason_codes = composition.decision.reason_codes
     fresh = not bool(FRESHNESS_FAILURE_CODES.intersection(reason_codes))
     base = composition.decision.candidate_status
     can_execute = fresh and base not in (DATA_UNAVAILABLE, BLOCKED)
+
+    smc_status, smc_codes = _selected_smc_readiness(composition)
+    smc_ready = smc_status == SMC_STATUS_READY_NOW
+    if not smc_ready:
+        can_execute = False
 
     codes: list[str] = []
     if fresh:
@@ -178,6 +194,7 @@ def evaluate_execution_readiness(
     if not can_execute:
         codes.append(EXECUTION_NOT_READY)
     codes.append(EXECUTION_REVALIDATION_REQUIRED)
+    codes.extend(smc_codes)
     # Keep the underlying freshness failure codes so the trace stays complete.
     codes.extend(sorted(c for c in FRESHNESS_FAILURE_CODES if c in reason_codes))
 
@@ -189,3 +206,42 @@ def evaluate_execution_readiness(
         prepared=None,
         reason_codes=tuple(dict.fromkeys(codes)),
     )
+
+
+def _selected_smc_readiness(
+    composition: ScannerCompositionResult,
+) -> tuple[str | None, tuple[str, ...]]:
+    """SMC readiness of the side the composition actually selected.
+
+    Task 108/109: the verdict is READ from the canonical summary the
+    composition copied out of the final selection — it is never re-derived from
+    the raw SMC context, and a composition whose selected side carries no
+    canonical summary is refused (fail closed) instead of being read as ready.
+    """
+
+    side = _selected_side(composition)
+    if side is None:
+        return None, ()
+    canonical = getattr(composition, "canonical", None)
+    summary = None
+    for side_score in getattr(canonical, "side_scores", ()) or ():
+        if getattr(side_score, "side", None) == side:
+            summary = side_score.smc_selection
+            break
+    if not isinstance(summary, Mapping):
+        return None, (SMC_SELECTION_UNAVAILABLE,)
+    status = summary.get("readiness_status")
+    if not isinstance(status, str) or not status:
+        return None, (SMC_SELECTION_UNAVAILABLE,)
+    if status == SMC_STATUS_READY_NOW:
+        return status, ()
+    return status, (SMC_NOT_READY, f"SMC_READINESS_{status}")
+
+
+def _selected_side(composition: ScannerCompositionResult) -> str | None:
+    side = getattr(composition.decision, "selected_side", None)
+    if side in ("buy", "sell"):
+        return side
+    scenario = getattr(composition, "scenario", None)
+    side = getattr(scenario, "side", None)
+    return side if side in ("buy", "sell") else None

@@ -15,7 +15,8 @@ a minimal (non-QWebEngineView) screen stub, because constructing a full
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import ui.screens.scanner_detail_screen as mod
@@ -26,12 +27,42 @@ from ui.screens.scanner_detail_screen import ScannerDetailScreen
 
 from tests.test_scanner_release import _zoned_candles
 
+# Task 101: the snapshot seam reads the symbol metadata from the packet, and
+# the cutoff must come from the DATA, never from the wall clock.  The fixture
+# quotes ~1000 with 0.2 wicks, so one broker tick is 0.01.
+_TICK_SIZE = 0.01
+
+
+def _place_at_observation(candles, shift):
+    """Shift a fixed-date fixture onto the observation instant.
+
+    The scanner compares the snapshot boundary against the real clock, so the
+    candle data has to sit where the observation happens.  The shift is applied
+    to the DATA; every timestamp below is then derived from the candles.
+    """
+
+    return [
+        replace(candle, time=candle.time + shift) for candle in candles
+    ]
+
 
 def _blocked_row() -> dict:
     """Produce a real BLOCKED row via the live controller path."""
+    from tests.test_scanner_release import NOW as _FIXTURE_ANCHOR
+
     d1, h4, h1 = _zoned_candles()
     m15 = h1[-40:]
-    live_now = datetime.now(timezone.utc)
+    # Place the fixture at the observation instant, then DERIVE the boundary
+    # from the data (never from a second clock read).
+    shift = datetime.now(timezone.utc).replace(microsecond=0) - _FIXTURE_ANCHOR
+    d1 = _place_at_observation(d1, shift)
+    h4 = _place_at_observation(h4, shift)
+    h1 = _place_at_observation(h1, shift)
+    m15 = _place_at_observation(m15, shift)
+    # The boundary is the close of the newest candle in the fixture: with the
+    # placement shift above it lands on the observation instant, and it is
+    # still read from the DATA rather than from a second clock call.
+    live_now = max(candle.time for candle in h1) + timedelta(hours=1)
     safety = build_live_market_safety_context(
         "XAU/USD", live_now,
         terminal_connected=True, broker_logged_in=True,
@@ -46,7 +77,10 @@ def _blocked_row() -> dict:
         "broker_symbol": "XAUUSDc",
         "candles": {"D1": d1, "H4": h4, "H1": h1, "M15": m15},
         "m15_candles": m15,
-        "data_quality": {},
+        "data_quality": {
+            "tick_size": _TICK_SIZE,
+            "tick_size_source": "trade_tick_size",
+        },
         "macro_context": {},
         "quote_to_usd": None,
         "input_timestamps": {},
@@ -67,6 +101,24 @@ def _blocked_row() -> dict:
         account_guard_settings={},
         order_policy=load_runtime_order_policy(),
     )
+
+
+@pytest.fixture(autouse=True)
+def _qt_application():
+    """The renderers embed Qt icons (``ui.icons.flat_data_uri``).
+
+    Building a QPixmap/QBuffer without a live QApplication is undefined
+    behaviour and kills the process headless, so the suite provides the same
+    offscreen application the real UI has.
+    """
+
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication([])
+    yield app
 
 
 def _stub_screen(row: dict) -> ScannerDetailScreen:

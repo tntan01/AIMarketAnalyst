@@ -46,7 +46,14 @@ def _blocked_pkt() -> dict:
         "broker_symbol": "XAUUSDc",
         "candles": {"D1": d1, "H4": h4, "H1": h1, "M15": m15},
         "m15_candles": m15,
-        "data_quality": {},
+        # Task 101: the snapshot seam takes the symbol metadata from the packet.
+        # The fixture quotes ~1000 with 0.2 wicks, so one broker tick is 0.01;
+        # without it every canonical candidate fails the quantizing gate closed
+        # and the row would carry no real plan.
+        "data_quality": {
+            "tick_size": 0.01,
+            "tick_size_source": "trade_tick_size",
+        },
         "macro_context": {},
         "quote_to_usd": None,
         "input_timestamps": {},

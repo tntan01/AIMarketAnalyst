@@ -1,192 +1,705 @@
 {
-  "oracle_version": "scanner-fast-path-full-oracle-v1",
+  "cases": {
+    "broken_invalid_v2": {
+      "candidate_selected_side": null,
+      "candidate_status": "OUT_OF_STRATEGY",
+      "raw_counts": {
+        "H1": {
+          "demand": 0,
+          "fvg": 1,
+          "order_block": 2,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "scenario_types": [
+        {
+          "entry_status": "watch_zone",
+          "type": "sell"
+        }
+      ],
+      "scoring_version": "smc-v2",
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": null
+      },
+      "zone_evidence": {
+        "H1": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 1,
+            "directions": [
+              "buy"
+            ],
+            "eligible": 1,
+            "lifecycles": [
+              "usable"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "order_block": {
+            "count": 2,
+            "directions": [
+              "buy",
+              "sell"
+            ],
+            "eligible": 0,
+            "lifecycles": [
+              "candidate"
+            ],
+            "with_bounds": 2,
+            "with_formation_atr": 2,
+            "with_measurement": 2
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        },
+        "H4": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        }
+      }
+    },
+    "buy_setup_v2": {
+      "candidate_selected_side": null,
+      "candidate_status": "OUT_OF_STRATEGY",
+      "raw_counts": {
+        "H1": {
+          "demand": 0,
+          "fvg": 1,
+          "order_block": 1,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "scenario_types": [
+        {
+          "entry_status": "watch_zone",
+          "type": "buy"
+        }
+      ],
+      "scoring_version": "smc-v2",
+      "selected_zone_ids": {
+        "buy": "smcz-5a598fcd68891697df89",
+        "sell": null
+      },
+      "zone_evidence": {
+        "H1": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 1,
+            "directions": [
+              "buy"
+            ],
+            "eligible": 1,
+            "lifecycles": [
+              "usable"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "order_block": {
+            "count": 1,
+            "directions": [
+              "buy"
+            ],
+            "eligible": 0,
+            "lifecycles": [
+              "candidate"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        },
+        "H4": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        }
+      }
+    },
+    "h1_only_fvg_v2": {
+      "candidate_selected_side": null,
+      "candidate_status": "OUT_OF_STRATEGY",
+      "raw_counts": {
+        "H1": {
+          "demand": 0,
+          "fvg": 1,
+          "order_block": 1,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "scenario_types": [
+        {
+          "entry_status": "watch_zone",
+          "type": "buy"
+        }
+      ],
+      "scoring_version": "smc-v2",
+      "selected_zone_ids": {
+        "buy": "smcz-5a598fcd68891697df89",
+        "sell": null
+      },
+      "zone_evidence": {
+        "H1": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 1,
+            "directions": [
+              "buy"
+            ],
+            "eligible": 1,
+            "lifecycles": [
+              "usable"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "order_block": {
+            "count": 1,
+            "directions": [
+              "buy"
+            ],
+            "eligible": 0,
+            "lifecycles": [
+              "candidate"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        },
+        "H4": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        }
+      }
+    },
+    "h1_order_block_v2": {
+      "candidate_selected_side": null,
+      "candidate_status": "OUT_OF_STRATEGY",
+      "raw_counts": {
+        "H1": {
+          "demand": 5,
+          "fvg": 5,
+          "order_block": 3,
+          "supply": 5
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "scenario_types": [
+        {
+          "entry_status": "watch_zone",
+          "type": "sell"
+        }
+      ],
+      "scoring_version": "smc-v2",
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": "smcz-b2072d85ca586d44e20e"
+      },
+      "zone_evidence": {
+        "H1": {
+          "demand": {
+            "count": 5,
+            "directions": [
+              "buy"
+            ],
+            "eligible": 0,
+            "lifecycles": [
+              "candidate"
+            ],
+            "with_bounds": 5,
+            "with_formation_atr": 4,
+            "with_measurement": 5
+          },
+          "fvg": {
+            "count": 5,
+            "directions": [
+              "buy",
+              "sell"
+            ],
+            "eligible": 5,
+            "lifecycles": [
+              "confirmed"
+            ],
+            "with_bounds": 5,
+            "with_formation_atr": 5,
+            "with_measurement": 5
+          },
+          "order_block": {
+            "count": 3,
+            "directions": [
+              "sell"
+            ],
+            "eligible": 1,
+            "lifecycles": [
+              "candidate",
+              "confirmed"
+            ],
+            "with_bounds": 3,
+            "with_formation_atr": 2,
+            "with_measurement": 3
+          },
+          "supply": {
+            "count": 5,
+            "directions": [
+              "sell"
+            ],
+            "eligible": 0,
+            "lifecycles": [
+              "candidate"
+            ],
+            "with_bounds": 5,
+            "with_formation_atr": 5,
+            "with_measurement": 5
+          }
+        },
+        "H4": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        }
+      }
+    },
+    "raw_empty_v2": {
+      "candidate_selected_side": null,
+      "candidate_status": "OUT_OF_STRATEGY",
+      "raw_counts": {
+        "H1": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "scenario_types": [
+        {
+          "entry_status": "watch_zone",
+          "type": "buy"
+        }
+      ],
+      "scoring_version": "smc-v2",
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": null
+      },
+      "zone_evidence": {
+        "H1": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        },
+        "H4": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        }
+      }
+    },
+    "sell_setup_v2": {
+      "candidate_selected_side": null,
+      "candidate_status": "OUT_OF_STRATEGY",
+      "raw_counts": {
+        "H1": {
+          "demand": 0,
+          "fvg": 1,
+          "order_block": 1,
+          "supply": 0
+        },
+        "H4": {
+          "demand": 0,
+          "fvg": 0,
+          "order_block": 0,
+          "supply": 0
+        }
+      },
+      "scenario_types": [
+        {
+          "entry_status": "watch_zone",
+          "type": "sell"
+        }
+      ],
+      "scoring_version": "smc-v2",
+      "selected_zone_ids": {
+        "buy": null,
+        "sell": "smcz-9f14e8f331880ea20e80"
+      },
+      "zone_evidence": {
+        "H1": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 1,
+            "directions": [
+              "sell"
+            ],
+            "eligible": 1,
+            "lifecycles": [
+              "usable"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "order_block": {
+            "count": 1,
+            "directions": [
+              "sell"
+            ],
+            "eligible": 0,
+            "lifecycles": [
+              "candidate"
+            ],
+            "with_bounds": 1,
+            "with_formation_atr": 1,
+            "with_measurement": 1
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        },
+        "H4": {
+          "demand": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "fvg": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "order_block": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          },
+          "supply": {
+            "count": 0,
+            "directions": [],
+            "eligible": 0,
+            "lifecycles": [],
+            "with_bounds": 0,
+            "with_formation_atr": 0,
+            "with_measurement": 0
+          }
+        }
+      }
+    }
+  },
   "normalization": {
+    "baseline_elapsed_ms": "diagnostic only; never asserted as a timing threshold",
     "ignored_volatile_fields": [
       "timestamp",
       "scan_id"
-    ],
-    "baseline_elapsed_ms": "diagnostic only; never asserted as a timing threshold"
+    ]
   },
-  "cases": {
-    "raw_empty_v2": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        }
-      },
-      "selected_zone_ids": {
-        "buy": null,
-        "sell": null
-      },
-      "scenario_types": [
-        {
-          "type": "buy",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.559
-    },
-    "h1_only_fvg_v2": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 1,
-          "supply": 0,
-          "order_block": 2,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": "smcz-0bdfd05c3fa65211252e",
-        "sell": null
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.583
-    },
-    "h1_order_block_v2": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 1,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": null,
-        "sell": "smcz-165e8c5c5d93f5b0f5d2"
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.014
-    },
-    "broken_invalid_v2": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 1,
-          "supply": 0,
-          "order_block": 3,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": null,
-        "sell": null
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.651
-    },
-    "buy_setup_v2": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 1,
-          "supply": 0,
-          "order_block": 2,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": "smcz-0bdfd05c3fa65211252e",
-        "sell": null
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.345
-    },
-    "sell_setup_v2": {
-      "raw_counts": {
-        "H4": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 0,
-          "fvg": 0
-        },
-        "H1": {
-          "demand": 0,
-          "supply": 0,
-          "order_block": 1,
-          "fvg": 1
-        }
-      },
-      "selected_zone_ids": {
-        "buy": null,
-        "sell": "smcz-165e8c5c5d93f5b0f5d2"
-      },
-      "scenario_types": [
-        {
-          "type": "sell",
-          "entry_status": "watch_zone"
-        }
-      ],
-      "candidate_status": "OUT_OF_STRATEGY",
-      "candidate_selected_side": null,
-      "scoring_version": "smc-v2",
-      "baseline_elapsed_ms": 4.068
-    }
-  }
+  "oracle_version": "scanner-fast-path-full-oracle-v3-canonical-ob"
 }

@@ -1,367 +1,384 @@
-"""Golden characterization of the canonical SMC runtime.
+"""Canonical Analyze golden (D103-03).
 
-Locks the full-pipeline decision path (mode ``v2``) *before* the v1/shadow
-removal.  The locked fields must never be sourced from legacy/shadow/comparison
-payloads, so the fixture stays valid as the canonical runtime replaces the old
-dual-runner.
+The old ``golden_cases.json`` injected a hand-built legacy ``case["smc"]`` into
+``AnalysisPipeline`` through a monkeypatched ``build_smc_context``.  Task103
+moved Analyze onto the canonical snapshot chain, so that input is no longer a
+valid runtime input and the legacy file is kept, unchanged, as a separate
+characterization artifact (see ``test_smc_canonical_golden_legacy.py``).
+
+Every case here is regenerated from CANDLES by
+``tests/scanner_fast_path_fixtures.py``, frozen at the cutoff of its own data
+with an explicit tick, and read through the real
+façade -> snapshot -> evaluator -> coordinator -> finalizer chain.  Nothing is
+injected and nothing is monkeypatched.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+import importlib
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from core.analysis_engine import analyze_symbol
-from core.market_models import Candle
-from core.risk_engine import AnalysisInput
-
 
 _FIXTURE_PATH = (
-    Path(__file__).parent / "fixtures" / "smc_canonical" / "golden_cases.json"
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "smc_canonical"
+    / "golden_cases_canonical.json"
 )
+_FIXTURES = importlib.import_module("tests.scanner_fast_path_fixtures")
+_BASELINE = importlib.import_module("tests.test_scanner_fast_path_baseline")
 
-# Keys that belong exclusively to the SMC scorer shadow router / comparison
-# payload.  The golden fixture must never source its locked fields from them.
-_FORBIDDEN_GOLDEN_KEYS = {
-    "legacy",
-    "active",
-    "shadow",
-    "shadow_status",
-    "comparison",
-    "policy",
-    "decision_source",
-    "decision_impact_allowed",
-    "selection_source",
-    "shadow_enabled",
-    "shadow_scoring_version",
-    "shadow_selected_zone",
-    "shadow_selected_zone_id",
-    "shadow_selected_zone_type",
-}
+_CASES = json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))["cases"]
+_BY_NAME = {case["name"]: case for case in _CASES}
 
 
 def _fixture() -> dict:
     return json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
-def _candles(
-    count: int,
-    *,
-    start: float,
-    step: float,
-    bar_minutes: int,
-) -> list[Candle]:
-    timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    price = start
-    result: list[Candle] = []
-    for index in range(count):
-        direction = 1 if index % 7 != 6 else -1
-        body = step * direction
-        open_price = price
-        close_price = price + body
-        result.append(Candle(
-            time=timestamp,
-            open=round(open_price, 5),
-            high=round(max(open_price, close_price) + abs(step) * 0.7, 5),
-            low=round(min(open_price, close_price) - abs(step) * 0.7, 5),
-            close=round(close_price, 5),
-            volume=float(1000 + index),
-        ))
-        price = close_price
-        timestamp += timedelta(minutes=bar_minutes)
-    return result
+def _analyze(case: dict):
+    """Run the REAL Analyze caller for one golden case.
 
-
-def _pipeline_input() -> tuple[AnalysisInput, dict[str, list[Candle]]]:
-    request = AnalysisInput(
-        symbol="EUR/USD",
-        broker_symbol="EURUSDm",
-        account_balance=10_000,
-        risk_percent=1.0,
-        account_currency="USD",
-        lot_step=0.01,
-        minimum_lot=0.01,
-        contract_size_override=100_000,
-        timezone_name="Asia/Ho_Chi_Minh",
-    )
-    candles = {
-        "D1": _candles(120, start=1.05, step=0.00020, bar_minutes=1440),
-        "H4": _candles(240, start=1.06, step=0.00010, bar_minutes=240),
-        "H1": _candles(300, start=1.07, step=0.00005, bar_minutes=60),
-    }
-    return request, candles
-
-
-def _full_correlation_context() -> dict[str, Any]:
-    """All 4 macro sources present but neutral -> macro_confidence giữ 1.0, corr_adj = 0.
-
-    The golden fixture was captured with full macro data available (confidence
-    1.0, no adjustment).  Supplying present-but-neutral sources (1 candle each,
-    VIX trong vùng trung lập) keeps the pipeline on that baseline.
+    The canonical chain is reached the way production reaches it — through
+    ``AnalysisPipeline.execute`` with the case's own candles, cutoff, tick and
+    M15 window.  Nothing is monkeypatched and no evaluator is invoked directly,
+    so a regression that stops Analyze forwarding any of those inputs (or that
+    rebuilds the evaluation) fails the golden.
     """
-    return {
-        "dxy_candles": _candles(1, start=100.0, step=0.0, bar_minutes=1440),
-        "vix_candles": _candles(1, start=18.0, step=0.0, bar_minutes=1440),
-        "us10y_candles": _candles(1, start=4.2, step=0.0, bar_minutes=1440),
-        "us2y_candles": _candles(1, start=4.0, step=0.0, bar_minutes=1440),
-    }
 
+    from core.analysis_pipeline import AnalysisPipeline
+    from core.risk_engine import AnalysisInput
 
-def _run_case(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
-    import core.analysis_pipeline as pipeline_module
-
-    request, candles = _pipeline_input()
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_smc_context",
-        lambda d1, h4, h1, *, scan_interval_min=15, symbol="": case["smc"],
+    candles = _FIXTURES.make_candles(
+        {"recipe": case["recipe"], "name": case["name"]}
     )
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_technical_snapshot",
-        lambda d1, h4, h1: case["technical"],
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "detect_market_regime",
-        lambda technical, news_in_3h=False: case["market_regime"],
-    )
-    return analyze_symbol(
-        request,
-        candles,
-        correlation_context=_full_correlation_context(),
-    )
-
-
-def _run_case_tier1(monkeypatch, case: dict[str, Any]) -> dict[str, Any]:
-    import core.analysis_pipeline as pipeline_module
-
-    request, candles = _pipeline_input()
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_smc_context",
-        lambda d1, h4, h1, *, scan_interval_min=15, symbol="": case["smc"],
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "build_technical_snapshot",
-        lambda d1, h4, h1: case["technical"],
-    )
-    monkeypatch.setattr(
-        pipeline_module,
-        "detect_market_regime",
-        lambda technical, news_in_3h=False: case["market_regime"],
-    )
-    return analyze_symbol(
-        request,
-        candles,
-        scanner_fast_tier1=True,
-        correlation_context=_full_correlation_context(),
-    )
-
-
-def _extract(result: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {
-        "best_side": result["direction_bias"]["best_side"],
-        "direction_bias": {
-            key: result["direction_bias"].get(key)
-            for key in (
-                "best_side",
-                "buy_score",
-                "sell_score",
-                "score_gap",
-                "is_clear_bias",
-            )
-        },
-    }
-    sides: dict[str, Any] = {}
-    for side in ("buy", "sell"):
-        score = result["scenario_scores"][side]
-        consumer = result["smc_consumer"]["sides"][side]
-        sides[side] = {
-            "smc_quality": score.get("smc_quality"),
-            "signal_score": score.get("signal_score"),
-            "smc_scoring_version": score.get("smc_scoring_version"),
-            "selected_zone_id": consumer.get("selected_zone_id"),
-            "selected_zone_type": consumer.get("selected_zone_type"),
-            "selected_zone_timeframe": consumer.get(
-                "selected_zone_timeframe"
-            ),
-            "score_breakdown": consumer.get("score_breakdown"),
-        }
-    out["sides"] = sides
-    out["trade_gate"] = {
-        key: result["trade_gate"].get(key)
-        for key in ("allowed", "decision_cap", "block_codes", "warning_codes")
-    }
-    out["decision_engine"] = {
-        key: result["decision_engine"].get(key)
-        for key in ("decision", "legacy_action")
-    }
-    primary = next(
-        (
-            scenario
-            for scenario in result["scenarios"]
-            if scenario.get("priority") == "primary"
+    cutoff = _BASELINE._cutoff(candles)
+    pipeline = AnalysisPipeline()
+    result = pipeline.execute(
+        AnalysisInput(
+            symbol=str(case["symbol"]),
+            broker_symbol="EURUSD",
+            account_balance=10_000.0,
+            risk_percent=1.0,
         ),
-        None,
+        candles,
+        m15_candles=candles["M15"],
+        snapshot_as_of=cutoff,
+        m15_as_of=cutoff,
+        tick_size=float(case["tick_size"]),
     )
-    out["scenario"] = (
-        {
-            "type": primary.get("type"),
-            "entry_status": primary.get("entry_status"),
-            "entry_zone": primary.get("entry_zone"),
-            "entry_zone_id": primary.get("entry_zone_id"),
-            "stop_loss": primary.get("stop_loss"),
-            "take_profit": primary.get("take_profit"),
-            "trigger_type": primary.get("trigger_type"),
-            "ready_to_trade": primary.get("ready_to_trade"),
-            "position_sizing": primary.get("position_sizing"),
+    return result, pipeline, cutoff
+
+
+def _observed(result: dict) -> dict:
+    """Golden values, read from the Analyze CONSUMER result only."""
+
+    consumer = result.get("smc_consumer") or {}
+    sides: dict[str, dict] = {}
+    for side in ("buy", "sell"):
+        payload = (consumer.get("sides") or {}).get(side) or {}
+        selection = payload.get("selection") or {}
+        readiness = payload.get("readiness") or {}
+        sides[side] = {
+            "state": selection.get("state"),
+            "quality_raw": selection.get("quality_raw"),
+            "selected_zone_id": payload.get("selected_zone_id"),
+            "selected_setup_id": selection.get("selected_setup_id"),
+            "family": selection.get("family"),
+            "lifecycle_status": selection.get("lifecycle_status"),
+            "plan_available": bool(payload.get("plan_available")),
+            "readiness_status": readiness.get("status"),
+            "smc_state": readiness.get("smc_state"),
         }
-        if primary is not None
-        else None
+    return {"sides": sides}
+
+
+@pytest.mark.parametrize("case", _CASES, ids=lambda item: item["name"])
+def test_golden_canonical_runtime_matches(case: dict) -> None:
+    result, _pipeline, _cutoff = _analyze(case)
+    assert _observed(result) == case["expected"]
+
+
+@pytest.mark.parametrize("case", _CASES, ids=lambda item: item["name"])
+def test_golden_canonical_is_deterministic(case: dict) -> None:
+    first = _observed(_analyze(case)[0])
+    second = _observed(_analyze(case)[0])
+    assert first == second
+
+
+def test_fixture_is_versioned_and_separate_from_the_legacy_artifact():
+    fixture = _fixture()
+    assert fixture["fixture_version"] == "smc-canonical-golden-v2"
+    assert fixture["runtime_mode"] == "canonical-snapshot"
+    # The legacy artifact is a different file and must stay untouched.
+    legacy = _FIXTURE_PATH.parent / "golden_cases.json"
+    legacy_doc = json.loads(legacy.read_text(encoding="utf-8"))
+    assert legacy_doc["fixture_version"] == "smc-canonical-golden-v1"
+    assert legacy_doc["runtime_mode"] == "v2-decision"
+    assert {c["name"] for c in legacy_doc["cases"]} != {
+        c["name"] for c in fixture["cases"]
+    }
+    # Every canonical case carries its own data provenance.
+    for case in fixture["cases"]:
+        assert case["recipe"] and case["symbol"] and case["tick_size"] > 0
+
+
+def test_no_zone_zero_and_data_unavailable_null_are_different_contracts():
+    """``0`` (evaluated, nothing found) and ``null`` (could not conclude)."""
+
+    zero = _observed(_analyze(_BY_NAME["no_zone"])[0])["sides"]
+    for side in ("buy", "sell"):
+        assert zero[side]["state"] == "no_zone"
+        assert zero[side]["quality_raw"] == 0
+
+    unavailable = _observed(_analyze(_BY_NAME["ob_confirmed_sell"])[0])["sides"]["buy"]
+    assert unavailable["state"] == "data_unavailable"
+    assert unavailable["quality_raw"] is None
+    assert unavailable["selected_zone_id"] is None
+    assert unavailable["plan_available"] is False
+    assert unavailable["readiness_status"] == "DATA_UNAVAILABLE"
+
+
+def test_selected_cases_expose_a_consistent_identity_and_provenance():
+    for name in ("ob_confirmed_sell", "fvg_confirmed_buy", "sell_setup"):
+        observed = _observed(_analyze(_BY_NAME[name])[0])["sides"]
+        for side, values in observed.items():
+            if values["selected_zone_id"] is None:
+                assert values["state"] in {
+                    "no_zone",
+                    "out_of_strategy",
+                    "data_unavailable",
+                }
+                assert values["family"] is None
+                assert values["lifecycle_status"] is None
+                continue
+            assert values["selected_setup_id"]
+            assert values["family"] in {"ob", "fvg", "supply_demand"}
+            assert values["lifecycle_status"] in {"confirmed", "usable"}
+            assert values["quality_raw"] is not None
+            assert values["readiness_status"] in {
+                "WATCH_ZONE",
+                "WAITING_CONFIRMATION",
+                "READY_NOW",
+            }
+
+
+def test_a_side_that_could_not_be_concluded_does_not_cancel_the_other():
+    """``ob_confirmed_sell`` pairs an unavailable buy side with a valid sell."""
+
+    sides = _observed(_analyze(_BY_NAME["ob_confirmed_sell"])[0])["sides"]
+    assert sides["buy"]["state"] == "data_unavailable"
+    assert sides["sell"]["state"] in {"evaluated", "watch_zone"}
+    assert sides["sell"]["selected_zone_id"]
+    assert sides["sell"]["family"] == "ob"
+
+
+# ---------------------------------------------------------------------------
+# Analyze runtime contracts that used to live in this file's legacy form.
+# They are re-expressed against the CANONICAL chain: the seam a batch caller
+# invokes exactly once per symbol is ``evaluate_smc_snapshot``.
+# ---------------------------------------------------------------------------
+
+
+def _pipeline_run(monkeypatch, *, tier1: bool = False):
+    """Run Analyze once over the canonical fixture, counting chain calls."""
+
+    from core import analysis_pipeline as pipeline_module
+    from core import smc_prefilter as prefilter_module
+    from core.analysis_pipeline import AnalysisPipeline
+    from core.risk_engine import AnalysisInput
+
+    # The chain is invoked from two namespaces: the Tier-1 prefilter runs it
+    # first and the full route then REUSES that evaluation, so counting only
+    # one namespace would not prove "once per symbol".
+    calls: list[str] = []
+    real = pipeline_module.evaluate_smc_snapshot
+
+    def spy(*args, **kwargs):
+        calls.append("evaluate")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline_module, "evaluate_smc_snapshot", spy)
+    monkeypatch.setattr(prefilter_module, "evaluate_smc_snapshot", spy)
+    case = _BY_NAME["fvg_confirmed_buy"]
+    candles = _FIXTURES.make_candles(
+        {"recipe": case["recipe"], "name": case["name"]}
     )
-    return out
-
-
-@pytest.mark.parametrize(
-    "case",
-    [case for case in _fixture()["cases"]],
-    ids=[case["name"] for case in _fixture()["cases"]],
-)
-def test_golden_canonical_runtime_matches(monkeypatch, case):
-    result = _run_case(monkeypatch, case)
-    actual = _extract(result)
-    assert actual == case["expected"]
-
-
-def test_golden_expected_never_locks_shadow_payload():
-    for case in _fixture()["cases"]:
-        _assert_no_forbidden_keys(case["expected"], path=case["name"])
+    cutoff = _BASELINE._cutoff(candles)
+    result = AnalysisPipeline().execute(
+        AnalysisInput(
+            symbol="EUR/USD",
+            broker_symbol="EURUSD",
+            account_balance=10_000.0,
+            risk_percent=1.0,
+        ),
+        candles,
+        m15_candles=candles["M15"],
+        snapshot_as_of=cutoff,
+        m15_as_of=cutoff,
+        tick_size=float(case["tick_size"]),
+        scanner_fast_tier1=tier1,
+    )
+    return result, calls
 
 
 def test_score_smc_is_called_exactly_once_per_symbol(monkeypatch):
-    import core.analysis_pipeline as pipeline_module
-    from core.smc_scorer import score_smc as _real_score_smc
-
-    calls: list[str] = []
-
-    def _spy(smc, technical, market_regime=None, m15_candles=None):
-        calls.append("score_smc")
-        return _real_score_smc(
-            smc, technical, market_regime, m15_candles=m15_candles
-        )
-
-    monkeypatch.setattr(pipeline_module, "score_smc", _spy)
-    case = _fixture()["cases"][0]
-
-    _run_case(monkeypatch, case)
-
+    _result, calls = _pipeline_run(monkeypatch)
     assert len(calls) == 1
 
 
 def test_tier1_survivor_total_score_smc_calls_is_one(monkeypatch):
-    import core.analysis_pipeline as pipeline_module
-    import core.smc_prefilter as prefilter_module
-    from core.smc_scorer import score_smc as _real_score_smc
+    """A Tier-1 survivor must reuse the prefilter's evaluation, not rebuild it."""
 
-    calls: list[str] = []
-
-    def _spy(smc, technical, market_regime=None, m15_candles=None):
-        calls.append("score_smc")
-        return _real_score_smc(
-            smc, technical, market_regime, m15_candles=m15_candles
-        )
-
-    monkeypatch.setattr(prefilter_module, "score_smc", _spy)
-    monkeypatch.setattr(pipeline_module, "score_smc", _spy)
-    case = _fixture()["cases"][0]
-
-    _run_case_tier1(monkeypatch, case)
-
-    # Tier-1 scored once; the full route must reuse that result.
+    _result, calls = _pipeline_run(monkeypatch, tier1=True)
     assert len(calls) == 1
 
 
 def test_tier1_scorer_error_fails_closed_without_retry(monkeypatch):
-    import core.analysis_pipeline as pipeline_module
-    import core.smc_prefilter as prefilter_module
-    from core.scanner import scanner_row_from_analysis
-    from core.scanner_candidate_engine import evaluate_scanner_candidate
+    from core import analysis_pipeline as pipeline_module
+    from core import smc_prefilter as prefilter_module
+    from core.analysis_pipeline import AnalysisPipeline
+    from core.risk_engine import AnalysisInput
 
-    prefilter_calls: list[str] = []
+    calls: list[str] = []
 
-    def _explode(smc, technical, market_regime=None, m15_candles=None):
-        prefilter_calls.append("score_smc")
-        raise RuntimeError("scorer blew up")
+    def explode(*_args, **_kwargs):
+        calls.append("evaluate")
+        raise RuntimeError("canonical chain unavailable")
 
-    def _must_not_run(smc, technical, market_regime=None, m15_candles=None):
-        raise AssertionError("full route must not re-score after Tier-1 error")
-
-    monkeypatch.setattr(prefilter_module, "score_smc", _explode)
-    monkeypatch.setattr(pipeline_module, "score_smc", _must_not_run)
-    case = _fixture()["cases"][0]
-
-    result = _run_case_tier1(monkeypatch, case)
-
+    # Both namespaces fail, so there is no second route to fall back to.
+    monkeypatch.setattr(pipeline_module, "evaluate_smc_snapshot", explode)
+    monkeypatch.setattr(prefilter_module, "evaluate_smc_snapshot", explode)
+    case = _BY_NAME["fvg_confirmed_buy"]
+    candles = _FIXTURES.make_candles(
+        {"recipe": case["recipe"], "name": case["name"]}
+    )
+    cutoff = _BASELINE._cutoff(candles)
+    result = AnalysisPipeline().execute(
+        AnalysisInput(
+            symbol="EUR/USD",
+            broker_symbol="EURUSD",
+            account_balance=10_000.0,
+            risk_percent=1.0,
+        ),
+        candles,
+        m15_candles=candles["M15"],
+        snapshot_as_of=cutoff,
+        m15_as_of=cutoff,
+        tick_size=float(case["tick_size"]),
+        scanner_fast_tier1=True,
+    )
     assert result["analysis_status"] == "structural_reject"
     assert "SMC_SCORING_ERROR" in result["block_codes"]
-    assert len(prefilter_calls) == 1
-    row = scanner_row_from_analysis(result)
-    candidate = evaluate_scanner_candidate(row)
-    assert candidate.auto_trade_candidate is False
+    # Fail-closed means exactly one attempt, never a retry or a legacy fallback.
+    assert calls == ["evaluate"]
 
 
 def test_full_route_scorer_error_fails_closed(monkeypatch):
-    import core.analysis_pipeline as pipeline_module
-    from core.scanner import scanner_row_from_analysis
-    from core.scanner_candidate_engine import evaluate_scanner_candidate
+    from core import analysis_pipeline as pipeline_module
+    from core.analysis_pipeline import AnalysisPipeline
+    from core.risk_engine import AnalysisInput
 
-    def _explode(smc, technical, market_regime=None, m15_candles=None):
-        raise RuntimeError("scorer blew up")
+    calls: list[str] = []
 
-    monkeypatch.setattr(pipeline_module, "score_smc", _explode)
-    case = _fixture()["cases"][0]
+    def explode(*_args, **_kwargs):
+        calls.append("evaluate")
+        raise RuntimeError("canonical chain unavailable")
 
-    result = _run_case(monkeypatch, case)
-
+    monkeypatch.setattr(pipeline_module, "evaluate_smc_snapshot", explode)
+    case = _BY_NAME["fvg_confirmed_buy"]
+    candles = _FIXTURES.make_candles(
+        {"recipe": case["recipe"], "name": case["name"]}
+    )
+    cutoff = _BASELINE._cutoff(candles)
+    result = AnalysisPipeline().execute(
+        AnalysisInput(
+            symbol="EUR/USD",
+            broker_symbol="EURUSD",
+            account_balance=10_000.0,
+            risk_percent=1.0,
+        ),
+        candles,
+        m15_candles=candles["M15"],
+        snapshot_as_of=cutoff,
+        m15_as_of=cutoff,
+        tick_size=float(case["tick_size"]),
+    )
     assert result["analysis_status"] == "structural_reject"
     assert "SMC_SCORING_ERROR" in result["block_codes"]
-    row = scanner_row_from_analysis(result)
-    candidate = evaluate_scanner_candidate(row)
-    assert candidate.auto_trade_candidate is False
+    assert calls == ["evaluate"]
 
 
-def test_fixture_has_required_cases_and_scoring_version():
-    fixture = _fixture()
-    names = {case["name"] for case in fixture["cases"]}
-    assert {
-        "buy_selected_zone",
-        "sell_selected_zone",
-        "no_zone",
-        "fvg_h1_only",
-        "order_block",
-        "broken_stale",
-        "choch_cap",
-        "missing_data_valid",
-    }.issubset(names)
-    for case in fixture["cases"]:
-        for side in ("buy", "sell"):
-            assert case["expected"]["sides"][side]["smc_scoring_version"] == "smc-v2"
+# ---------------------------------------------------------------------------
+# D103-04 — the golden must prove the ANALYZE CALLER did the work
+# ---------------------------------------------------------------------------
 
 
-def _assert_no_forbidden_keys(value: Any, *, path: str) -> None:
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key in _FORBIDDEN_GOLDEN_KEYS:
-                raise AssertionError(
-                    f"{path} locks forbidden SMC shadow key {key!r}"
-                )
-            _assert_no_forbidden_keys(item, path=f"{path}.{key}")
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            _assert_no_forbidden_keys(item, path=f"{path}[{index}]")
+@pytest.mark.parametrize("case", _CASES, ids=lambda item: item["name"])
+def test_each_case_forwards_cutoff_tick_and_m15_to_the_snapshot(case: dict) -> None:
+    """The case's own cutoff/tick/M15 must reach the Analyze snapshot."""
+
+    _result, pipeline, cutoff = _analyze(case)
+    snapshot = pipeline._smc_snapshot
+    assert snapshot is not None
+    assert snapshot.as_of == cutoff
+    assert snapshot.m15_as_of == cutoff
+    assert snapshot.tick_size == float(case["tick_size"])
+    assert snapshot.core_reason_codes == ()
+    # The window really travelled: the fixture always ships M15 candles.
+    assert snapshot.m15_candles
+    assert len(snapshot.m15_candles) == len(
+        _FIXTURES.make_candles(
+            {"recipe": case["recipe"], "name": case["name"]}
+        )["M15"]
+    )
+
+
+@pytest.mark.parametrize("case", _CASES, ids=lambda item: item["name"])
+def test_the_consumer_result_is_the_same_evaluation_analyze_ran(case: dict) -> None:
+    """One evaluation per snapshot: the consumer reads THAT result.
+
+    The comparison uses the pipeline's own internal evaluation purely to prove
+    reuse; every golden expectation above still comes from the consumer result.
+    """
+
+    result, pipeline, _cutoff = _analyze(case)
+    evaluation = pipeline._smc_evaluation
+    assert evaluation is not None
+    assert evaluation.snapshot is pipeline._smc_snapshot
+
+    consumer = result["smc_consumer"]
+    for side in ("buy", "sell"):
+        payload = consumer["sides"][side]
+        selection = evaluation.selection(side)
+        assert payload["selection"]["state"] == selection.state
+        assert payload["selected_zone_id"] == selection.selected_zone_id
+        assert (
+            payload["selection"]["selected_setup_id"] == selection.selected_setup_id
+        )
+        assert payload["readiness"]["status"] == selection.readiness.status
+        # Provenance survives the consumer hop.
+        assert payload["side"] == side
+        assert payload["scoring_version"] == evaluation.result.scoring_version
+        assert "plan" in payload and "plan_available" in payload
+
+
+def test_no_case_loses_its_selection_through_the_consumer_contract():
+    for case in _CASES:
+        result, _pipeline, _cutoff = _analyze(case)
+        observed = _observed(result)["sides"]
+        consumer = result["smc_consumer"]["sides"]
+        for side, values in observed.items():
+            assert consumer[side]["selection"]["state"] == values["state"]
+            if values["selected_zone_id"] is None:
+                assert consumer[side]["selection"]["selected_zone_id"] is None
+                continue
+            assert consumer[side]["selection"]["selected_setup_id"]
+            assert consumer[side]["selection"]["lifecycle_status"] in {
+                "confirmed",
+                "usable",
+            }
+            assert consumer[side]["selection"]["quality_raw"] is not None

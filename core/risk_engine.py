@@ -658,9 +658,11 @@ def build_scenarios(
     strict_preferred_zones: bool = False,
     require_preferred_zones: bool = False,
     is_backtest: bool = False,
+    smc_confirmations: dict[str, dict[str, Any] | None] | None = None,
 ) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
     preferred = preferred_zones or {}
+    confirmations = smc_confirmations or {}
     for side in ("buy", "sell"):
         if (
             require_preferred_zones
@@ -686,6 +688,7 @@ def build_scenarios(
             preferred_zone=preferred.get(side),
             strict_preferred_zone=strict_preferred_zones,
             is_backtest=is_backtest,
+            smc_confirmation=confirmations.get(side),
         )
         if not plan:
             continue
@@ -714,6 +717,7 @@ def build_trade_plan(
     preferred_zone: dict[str, Any] | None = None,
     strict_preferred_zone: bool = False,
     is_backtest: bool = False,
+    smc_confirmation: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     price = technical["price"]
     price_digits = _price_digits_for_request(request)
@@ -1246,6 +1250,11 @@ def build_trade_plan(
         entry_zone=entry_zone,
         m15_candles=m15_candles,
         is_backtest=is_backtest,
+        # Task 110: the canonical confirmation of the SAME selected setup, so
+        # the entry reads the evaluator's M15 verdict instead of deriving a
+        # second one.  ``None`` keeps the legacy derivation for callers that
+        # have no canonical snapshot.
+        smc_confirmation=smc_confirmation,
     )
     if use_preferred and preferred_zone.get("watch_only_fallback"):
         entry_state = dict(entry_state)

@@ -766,9 +766,22 @@ class SideScore:
     final_score: int | None
     reason_codes: tuple[str, ...] = ()
     location_detail: LocationResult | None = None
+    # Task 108: the canonical SMC summary of THIS side — the selected zone/
+    # setup, the canonical quality and the SMC readiness verdict.  It is plain
+    # data copied from the final selection so composition/execution-readiness
+    # read one source instead of re-deriving SMC from the raw context.
+    smc_selection: Mapping[str, FrozenJson] | None = None
 
     def __post_init__(self) -> None:
         side = _require_choice(self.side, VALID_SIDES, "side_score.side")
+        if self.smc_selection is not None:
+            if not isinstance(self.smc_selection, Mapping):
+                _error("side_score.smc_selection", "expected a mapping or null")
+            object.__setattr__(
+                self,
+                "smc_selection",
+                _freeze_external_object(self.smc_selection, "side_score.smc_selection"),
+            )
         if type(self.technical_breakdown) is not TechnicalBreakdown:
             _error("side_score.technical_breakdown", "expected TechnicalBreakdown")
         technical = _optional_int(
@@ -911,6 +924,8 @@ class SideScore:
         }
         if self.location_detail is not None:
             payload["location_detail"] = self.location_detail.to_dict()
+        if self.smc_selection is not None:
+            payload["smc_selection"] = _thaw_json(self.smc_selection)
         return payload
 
     @classmethod
@@ -929,7 +944,9 @@ class SideScore:
         }
         payload = _require_external_object(value, path)
         missing = sorted(required - set(payload))
-        unknown = sorted(set(payload) - required - {"location_detail"})
+        unknown = sorted(
+            set(payload) - required - {"location_detail", "smc_selection"}
+        )
         if missing:
             _error(path, f"missing required fields: {missing}")
         if unknown:
@@ -941,6 +958,9 @@ class SideScore:
                 location_detail = LocationResult.from_dict(detail_payload)
             except (TypeError, ValueError) as exc:
                 _error(f"{path}.location_detail", f"invalid Location detail: {exc}")
+        selection_payload = payload.get("smc_selection")
+        if selection_payload is not None and not isinstance(selection_payload, Mapping):
+            _error(f"{path}.smc_selection", "expected a mapping or null")
         return cls(
             side=_require_choice(payload["side"], VALID_SIDES, f"{path}.side"),
             technical_signal_score=_optional_int(
@@ -988,6 +1008,7 @@ class SideScore:
                 payload["reason_codes"], f"{path}.reason_codes"
             ),
             location_detail=location_detail,
+            smc_selection=selection_payload,
         )
 
 

@@ -10,6 +10,7 @@ trade false reject must be zero and full survivor parity must hold before
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,8 @@ from core.analysis_engine import analyze_symbol
 from core.scanner import scanner_row_from_analysis
 from core.scanner_candidate_engine import evaluate_scanner_candidate
 from core.scanner_models import OUT_OF_STRATEGY, READY_NOW
-from core.smc_context import build_smc_context
 from core.smc_prefilter import evaluate_post_context_prefilter
+from core.smc_snapshot import build_smc_snapshot
 from tests.scanner_fast_path_fixtures import make_candles, make_request
 
 
@@ -34,41 +35,76 @@ _ORACLES = json.loads((_FIXTURE_DIR / "full-oracles.json").read_text(encoding="u
 # ---------------------------------------------------------------------------
 
 
+# The corpus prices are quoted to 5 decimals (steps down to 0.000003), so one
+# broker tick is 0.00001.  Fixture metadata for the snapshot seam (task 101),
+# not a policy threshold.
+_TICK_SIZE = 0.00001
+
+
+def _cutoff(candles: dict[str, list[Candle]]) -> datetime:
+    """The fixture's own snapshot boundary: the last closed candle.
+
+    Data spec §1: the cutoff is frozen from the data, never from
+    ``datetime.now()``.
+    """
+
+    latest: datetime | None = None
+    for timeframe, interval in (
+        ("D1", timedelta(days=1)),
+        ("H4", timedelta(hours=4)),
+        ("H1", timedelta(hours=1)),
+        ("M15", timedelta(minutes=15)),
+    ):
+        for candle in candles.get(timeframe) or ():
+            close_at = candle.time + interval
+            if latest is None or close_at > latest:
+                latest = close_at
+    assert latest is not None
+    return latest
+
+
 def _run_full(case: dict[str, Any]) -> dict[str, Any]:
     candles = make_candles(case)
+    cutoff = _cutoff(candles)
     return analyze_symbol(
         make_request(case, _CORPUS["analysis_input"]),
         candles,
         m15_candles=candles["M15"],
+        m15_as_of=cutoff,
+        snapshot_as_of=cutoff,
+        tick_size=_TICK_SIZE,
         thresholds=_CORPUS["thresholds"],
     )
 
 
 def _run_fast_tier1(case: dict[str, Any]) -> dict[str, Any]:
     candles = make_candles(case)
+    cutoff = _cutoff(candles)
     return analyze_symbol(
         make_request(case, _CORPUS["analysis_input"]),
         candles,
         m15_candles=candles["M15"],
+        m15_as_of=cutoff,
+        snapshot_as_of=cutoff,
+        tick_size=_TICK_SIZE,
         thresholds=_CORPUS["thresholds"],
         scanner_fast_tier1=True,
     )
 
 
 def _derive_would_reject(case: dict[str, Any]) -> dict[str, Any]:
+    """The Tier-1 predicate for the SAME frozen snapshot the route uses."""
+
     candles = make_candles(case)
-    smc = build_smc_context(
-        candles["D1"], candles["H4"], candles["H1"],
+    cutoff = _cutoff(candles)
+    snapshot = build_smc_snapshot(
+        candles,
         symbol=str(case.get("symbol", "EUR/USD")),
+        as_of=cutoff,
+        m15_as_of=cutoff,
+        tick_size=_TICK_SIZE,
     )
-    full = _run_full(case)
-    technical = full.get("technical", {}) if isinstance(full.get("technical"), dict) else {}
-    market_regime = full.get("market_regime", {}) if isinstance(full.get("market_regime"), dict) else {}
-    return evaluate_post_context_prefilter(
-        smc=smc,
-        technical=technical,
-        market_regime=market_regime,
-    )
+    return evaluate_post_context_prefilter(snapshot=snapshot)
 
 
 # ---------------------------------------------------------------------------

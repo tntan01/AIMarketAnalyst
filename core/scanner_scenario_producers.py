@@ -33,11 +33,23 @@ same hard distance the SMC scorer enforces (``ZONE_BEYOND_HARD_DISTANCE``).
 returns ``None`` instead of raising.
 """
 
+
 from __future__ import annotations
 
+from core.smc_geometry import (
+    CANONICAL_PROVENANCE_FIELDS,
+    GEOMETRY_FORMATION_ATR_UNAVAILABLE,
+    HARD_DISTANCE_ATR,
+    MAX_ZONE_WIDTH_ATR,
+    distance_to_zone as _shared_distance_to_zone,
+    has_canonical_provenance,
+    pre_plan_geometry_gate,
+)
+
+from dataclasses import dataclass
 from fractions import Fraction
 from math import isfinite
-from typing import Any
+from typing import Any, Mapping
 
 from core.scanner_composition import (
     CompositionInputError,
@@ -48,6 +60,7 @@ from core.smc_consumer_contract import (
     build_smc_consumer_from_canonical_result,
     selected_zone_for_side,
 )
+from core.smc_models import CandidateEvaluation
 
 _VALID_SIDES = ("buy", "sell")
 
@@ -55,25 +68,170 @@ _VALID_SIDES = ("buy", "sell")
 _SOURCE_CANONICAL = "smc_canonical_zone"
 _SOURCE_TECHNICAL = "technical_zone"
 
+# Plan-attempt rejection codes owned by this seam (selection spec §5/§6).  They
+# are the reason a candidate produced no plan; they never change its quality.
+PLAN_POLICY_UNAVAILABLE = "PLAN_POLICY_UNAVAILABLE"
+PLAN_SNAPSHOT_UNAVAILABLE = "PLAN_SNAPSHOT_UNAVAILABLE"
+PLAN_ZONE_UNAVAILABLE = "PLAN_ZONE_UNAVAILABLE"
+PLAN_CANDIDATE_EVIDENCE_MISSING = "PLAN_CANDIDATE_EVIDENCE_MISSING"
+PLAN_TP_MISSING = "PLAN_TP_MISSING"
+PLAN_SHAPE_INVALID = "PLAN_SHAPE_INVALID"
+PLAN_MIN_RR = "PLAN_MIN_RR"
+
 # A protective zone whose NEAREST edge is more than this far (in ATR) from the
 # current price is a distant watch, never a tradable plan — the same hard
 # distance the SMC scorer enforces (ZONE_BEYOND_HARD_DISTANCE).  This closes
 # the "entry far from the market" gap that a pure zone-anchored construction
 # would otherwise leave open.
-_MAX_PROTECTIVE_ZONE_DISTANCE_ATR = 3.0
+_MAX_PROTECTIVE_ZONE_DISTANCE_ATR = HARD_DISTANCE_ATR
 
 # A protective zone whose WIDTH (high - low) exceeds this multiple of ATR
 # is too diffuse to anchor a tight entry.  A wide zone makes the entry band
 # visually large on the chart and pushes the nearest opposite-side TP too close
 # to the zone's far edge, producing a poor R:R even when the stop is tight.
-_MAX_ZONE_WIDTH_ATR = 1.0
+_MAX_ZONE_WIDTH_ATR = MAX_ZONE_WIDTH_ATR
+
+
+@dataclass(frozen=True, slots=True)
+class PlanAttempt:
+    """Result of planning ONE candidate (selection spec §5, task 92).
+
+    ``plan_available`` is the only thing the coordinator may branch on; when it
+    is false the attempt keeps the reasons so the trace can explain why the
+    candidate was skipped and the next one tried.  The seam is pure: it reads
+    the candidate, the frozen technical context and the caller's policy, never
+    a canonical result, and never calls the scorer.
+
+    ``candidate_id``/``zone_id``/``setup_id`` are the identity of the candidate
+    the plan was actually built for.  R100-01: the coordinator must compare them
+    with the candidate it is currently trying, so a plan that belongs to another
+    zone/setup can never be attached to the selected one.
+    """
+
+    candidate_id: str | None
+    zone_id: str | None
+    plan: ScenarioPlan | None = None
+    plan_available: bool = False
+    rejection_codes: tuple[str, ...] = ()
+    setup_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.plan_available != (self.plan is not None):
+            raise ValueError("PlanAttempt.plan_available must match the plan")
+        object.__setattr__(
+            self,
+            "rejection_codes",
+            tuple(dict.fromkeys(str(code) for code in self.rejection_codes if str(code))),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "candidate_id": self.candidate_id,
+            "zone_id": self.zone_id,
+            "setup_id": self.setup_id,
+            "plan_available": self.plan_available,
+            "plan": plan_to_dict(
+                self.plan, zone_id=self.zone_id, setup_id=self.setup_id
+            ),
+            "rejection_codes": list(self.rejection_codes),
+        }
+
+
+def plan_for_candidate(
+    candidate: CandidateEvaluation,
+    technical: Mapping[str, Any] | None,
+    min_rr: Fraction | None = None,
+    snapshot_metadata: Mapping[str, Any] | None = None,
+) -> PlanAttempt:
+    """Build the plan of ONE evaluated candidate without a canonical result.
+
+    ``candidate`` is the typed evaluation the scorer produced; its
+    ``plan_zone`` evidence is exactly what the shared geometry gate validated,
+    so the planner and the scorer never disagree about the same bounds.  A
+    candidate that carries no such evidence fails closed with
+    ``PLAN_CANDIDATE_EVIDENCE_MISSING`` — it is never re-derived from the
+    snapshot, which would let a rejected candidate sneak back in.
+
+    ``min_rr`` is the run-time order-policy floor; without it the planner
+    reports ``PLAN_POLICY_UNAVAILABLE`` instead of inventing a threshold.
+    ``snapshot_metadata`` is accepted as the frozen snapshot descriptor
+    (cutoff/symbol); the plan rule itself does not read it yet, so nothing here
+    can silently vary with it.
+    """
+
+    if not isinstance(candidate, CandidateEvaluation):
+        raise ValueError("plan_for_candidate requires a CandidateEvaluation")
+    if snapshot_metadata is not None and not isinstance(snapshot_metadata, Mapping):
+        raise ValueError("snapshot_metadata must be a mapping")
+
+    candidate_id = candidate.candidate_id
+    zone_id = candidate.zone_id or None
+    zone = candidate.plan_zone
+    if not isinstance(zone, dict):
+        return PlanAttempt(
+            candidate_id=candidate_id,
+            zone_id=zone_id,
+            rejection_codes=(PLAN_CANDIDATE_EVIDENCE_MISSING,),
+        )
+    attempt = _plan_attempt_for_zone(
+        candidate.side,
+        zone,
+        technical,
+        min_rr=min_rr,
+        canonical=True,
+    )
+    return PlanAttempt(
+        candidate_id=candidate_id,
+        zone_id=zone_id,
+        plan=attempt.plan,
+        plan_available=attempt.plan_available,
+        rejection_codes=attempt.rejection_codes,
+        setup_id=candidate.setup_id,
+    )
+
+
+def plan_to_dict(
+    plan: ScenarioPlan | None,
+    *,
+    zone_id: str | None = None,
+    setup_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Plain-data form of a plan so the result contract stays planner-free.
+
+    ``zone_id``/``setup_id`` stamp WHICH candidate the plan was built for
+    (R100-01), so the plan reference can be checked against the selected setup
+    instead of being trusted on its own.
+    """
+
+    if plan is None:
+        return None
+    payload: dict[str, Any] = {
+        "direction": plan.direction,
+        "entry": plan.entry,
+        "stop_loss": plan.stop_loss,
+        "take_profit": plan.take_profit,
+        "source": plan.source,
+        "entry_zone_low": plan.entry_zone_low,
+        "entry_zone_high": plan.entry_zone_high,
+    }
+    if zone_id is not None:
+        payload["zone_id"] = zone_id
+    if setup_id is not None:
+        payload["setup_id"] = setup_id
+    return payload
 
 def produce_scenario_plans(
     technical: dict[str, Any] | None,
     canonical_smc: object | None,
     min_rr: Fraction | None = None,
 ) -> dict[str, ScenarioPlan | None]:
-    """Produce the per-side scenario plan (or None) from live analysis inputs.
+    """HISTORICAL reader — no longer on the live route (task 107).
+
+    It is kept because stored/legacy payloads and the parity fixtures use the
+    pre-107 shape: build a plan from the canonical result's *selected zone*.
+    The live Scanner reads the plan of the FINAL SELECTION instead (see
+    :func:`plans_from_canonical_selection`), because only the coordinator knows
+    which candidate was actually accepted and with which geometry.
 
     ``technical`` is the ``build_technical_snapshot`` mapping (price/ATR/zones);
     ``canonical_smc`` is the canonical ``SmcScoringResult`` whose per-side
@@ -83,10 +241,62 @@ def produce_scenario_plans(
     ``min_rr`` is the minimum R:R from the run-time order policy threshold
     (``ComposeOptions.min_risk_reward``).  When ``None`` (no certified policy),
     no plan is produced; the producer never invents an R:R floor.
+
+    Removal condition (architecture review §9.4, lot 2E): once every caller has
+    moved to the final selection and task 116 is APPROVED.
     """
     return produce_scenario_plans_from_zones(
         technical, _canonical_zones_by_side(canonical_smc), min_rr=min_rr
     )
+
+
+def plans_from_canonical_selection(
+    canonical_smc: object | None,
+) -> dict[str, ScenarioPlan | None]:
+    """Read the accepted plan of each side's FINAL selection (task 107).
+
+    The scenario and the selected zone therefore come from one and the same
+    candidate: the producer never looks for another zone, never re-runs the
+    planner and never re-checks R:R — the coordinator already did that when it
+    accepted the candidate.  A side without an accepted plan (watch zone,
+    no-zone, core unavailable, blocked) yields ``None`` so the composition's
+    scenario gate fails closed as before.
+    """
+
+    from core.smc_scoring_result import SmcScoringResult, smc_selection_of
+
+    if type(canonical_smc) is not SmcScoringResult:
+        return {side: None for side in _VALID_SIDES}
+    plans: dict[str, ScenarioPlan | None] = {}
+    for side in _VALID_SIDES:
+        selection = smc_selection_of(canonical_smc.side(side))
+        plans[side] = scenario_plan_from_payload(
+            None if selection is None else selection.plan
+        )
+    return plans
+
+
+def scenario_plan_from_payload(plan: object) -> ScenarioPlan | None:
+    """Convert one canonical plan payload into a ``ScenarioPlan`` or ``None``.
+
+    Only the plan shape is converted; the candidate/zone/setup identity the
+    payload carries is validated by the final-selection invariant, not here.
+    """
+
+    if not isinstance(plan, Mapping):
+        return None
+    try:
+        return ScenarioPlan(
+            direction=plan.get("direction"),
+            entry=plan.get("entry"),
+            stop_loss=plan.get("stop_loss"),
+            take_profit=plan.get("take_profit"),
+            source=str(plan.get("source") or ""),
+            entry_zone_low=plan.get("entry_zone_low"),
+            entry_zone_high=plan.get("entry_zone_high"),
+        )
+    except (CompositionInputError, TypeError, ValueError):
+        return None
 
 
 def produce_scenario_plans_from_zones(
@@ -121,27 +331,99 @@ def _produce_for_side(
     zone, zone_source = _protective_zone(side, price, technical, canonical_zone)
     if zone is None:
         return None
+
+    # One owner for the plan rule: the legacy per-side producer and the
+    # candidate seam (task 92) both go through _plan_attempt_for_zone, so a
+    # candidate can never be planned under different geometry than the scorer
+    # validated it with.
+    return _plan_attempt_for_zone(
+        side,
+        zone,
+        technical,
+        min_rr=min_rr,
+        canonical=zone_source == _SOURCE_CANONICAL,
+    ).plan
+
+
+def _plan_attempt_for_zone(
+    side: str,
+    zone: dict[str, Any],
+    technical: dict[str, Any] | None,
+    *,
+    min_rr: Fraction | None,
+    canonical: bool,
+) -> PlanAttempt:
+    """The single plan rule: geometry gate, entry/SL/TP shape and R:R floor.
+
+    ``canonical`` says whether the zone carries canonical formation evidence
+    (candidate zone / selected canonical zone) or is the technical fallback
+    zone, which by construction has no source-timeframe ATR.
+    """
+
+    tech = technical if isinstance(technical, dict) else {}
+    candidate_id = _optional_text(zone.get("zone_id"))
+    zone_id = candidate_id
+
+    def _reject(*codes: str) -> PlanAttempt:
+        return PlanAttempt(
+            candidate_id=candidate_id,
+            zone_id=zone_id,
+            rejection_codes=tuple(codes),
+        )
+
+    price = _finite_positive(tech.get("price"))
+    atr = _finite_positive(tech.get("atr_h4")) or _finite_positive(tech.get("atr_d1"))
+    if price is None or atr is None:
+        # The shared execution snapshot is unusable: the coordinator must stop
+        # instead of trying the next candidate to paper over a bad snapshot.
+        return _reject(PLAN_SNAPSHOT_UNAVAILABLE)
+
     zone_low = _as_float(zone.get("low"))
     zone_high = _as_float(zone.get("high"))
-    if zone_low is None or zone_high is None:
-        return None
-    if zone_low > zone_high:
-        return None
+    if zone_low is None or zone_high is None or zone_low > zone_high:
+        return _reject(PLAN_ZONE_UNAVAILABLE)
 
-    # Zone width gate: a protective zone whose band is too wide (in ATR) is too
-    # diffuse to anchor a tight entry.  A wide zone makes the entry rectangle
-    # visually large on the chart and pushes the nearest opposite-side TP too
-    # close to the zone's far edge.
-    if (zone_high - zone_low) / atr > _MAX_ZONE_WIDTH_ATR:
-        return None
-
-    # Price-proximity gate: a protective zone whose NEAREST edge is more than
-    # ``_MAX_PROTECTIVE_ZONE_DISTANCE_ATR`` ATR from the current price is a
-    # distant watch, never a tradable plan — reusing the SMC scorer's hard
-    # distance (``ZONE_BEYOND_HARD_DISTANCE``).  Without this, a zone-anchored
-    # Entry far below/above the market could still PASS the geometric R:R gate.
-    if _distance_to_zone(price, zone_low, zone_high) / atr > _MAX_PROTECTIVE_ZONE_DISTANCE_ATR:
-        return None
+    # Shared SMC pre-plan geometry gate (task 89, R80-91-02): the planner and
+    # the scorer must reject the same candidate, so both evaluate the SAME
+    # protective bounds and the SAME ATR references.  Per parameter table P11
+    # the width/family geometry uses the zone's own FORMATION ATR (source
+    # timeframe) while the hard distance uses the frozen-snapshot EXECUTION ATR;
+    # the two are never interchanged.
+    gate_bounds = zone.get("original_bounds")
+    if not isinstance(gate_bounds, dict):
+        gate_bounds = zone
+    gate_low = _as_float(gate_bounds.get("low"))
+    gate_high = _as_float(gate_bounds.get("high"))
+    if gate_low is None or gate_high is None:
+        gate_low, gate_high = zone_low, zone_high
+    if canonical:
+        formation_atr, provenance = _canonical_formation_atr(zone)
+        if formation_atr is None and provenance:
+            # Canonical evidence is present but its ATR is missing/invalid: the
+            # geometry cannot be measured, so fail closed instead of borrowing
+            # the execution ATR.
+            return _reject(GEOMETRY_FORMATION_ATR_UNAVAILABLE)
+        if formation_atr is None:
+            # Legacy projection with no canonical evidence block: keep the
+            # existing reference (documented boundary, R80-91-02 note).
+            formation_atr = atr
+    else:
+        # The technical fallback zone carries no source-timeframe ATR by
+        # construction, so its existing reference (the frozen execution ATR)
+        # stays exactly as before.
+        formation_atr = atr
+    geometry = pre_plan_geometry_gate(
+        side=side,
+        require_tick=canonical and has_canonical_provenance(zone),
+        original_low=gate_low,
+        original_high=gate_high,
+        formation_atr=formation_atr,
+        execution_atr=atr,
+        price=price,
+        tick_size=_as_float(zone.get("tick_size")),
+    )
+    if not geometry.plan_eligible:
+        return _reject(*geometry.rejection_codes)
 
     # Legacy-aligned construction: anchor the entry AT the protective zone (the edge
     # the stop buffer is measured from) so the 1.0 * ATR buffer IS the risk, and
@@ -154,58 +436,54 @@ def _produce_for_side(
         entry = zone_low
         stop_loss = zone_low - atr
         take_profit = _nearest_opposite_level(
-            technical.get("resistance_zones"), above=zone_high
+            tech.get("resistance_zones"), above=zone_high
         )
     else:
         entry = zone_high
         stop_loss = zone_high + atr
         take_profit = _nearest_opposite_level(
-            technical.get("support_zones"), below=zone_low
+            tech.get("support_zones"), below=zone_low
         )
     if take_profit is None:
-        return None
+        return _reject(PLAN_TP_MISSING)
 
     if side == "buy" and not (stop_loss < entry < take_profit):
-        return None
+        return _reject(PLAN_SHAPE_INVALID)
     if side == "sell" and not (take_profit < entry < stop_loss):
-        return None
+        return _reject(PLAN_SHAPE_INVALID)
 
     # Minimum R:R gate: reject scenarios with poor geometric ratio before
     # constructing the plan — the chart would otherwise render a wide zone
     # with a needle-thin TP distance.  The threshold comes from the caller's
     # ``min_rr`` parameter from the owner-configurable order-policy
     # ``min_risk_reward``.  No policy means no plan.
-    plan_rr = compute_scenario_rr(
-        ScenarioPlan(
-            direction=side,
-            entry=entry,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            source=zone_source,
-            entry_zone_low=zone_low,
-            entry_zone_high=zone_high,
-        ),
-        side,
-    )
-    if min_rr is None or plan_rr is None or plan_rr < min_rr:
-        return None
-
     try:
-        return ScenarioPlan(
+        candidate_plan = ScenarioPlan(
             direction=side,
             entry=entry,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            source=zone_source,
-            # The REAL protective-zone band the entry is anchored to, so the UI can
-            # draw the entry as the true zone rectangle (not a synthetic level).
+            source=_SOURCE_CANONICAL if canonical else _SOURCE_TECHNICAL,
             entry_zone_low=zone_low,
             entry_zone_high=zone_high,
         )
     except CompositionInputError:
         # Defensive: ordering/positivity already checked; never raise into the
         # scan.  Fail closed instead.
-        return None
+        return _reject(PLAN_SHAPE_INVALID)
+
+    plan_rr = compute_scenario_rr(candidate_plan, side)
+    if min_rr is None:
+        return _reject(PLAN_POLICY_UNAVAILABLE)
+    if plan_rr is None or plan_rr < min_rr:
+        return _reject(PLAN_MIN_RR)
+
+    return PlanAttempt(
+        candidate_id=candidate_id,
+        zone_id=zone_id,
+        plan=candidate_plan,
+        plan_available=True,
+    )
 
 
 def _protective_zone(
@@ -257,6 +535,35 @@ def _zone_on_protective_side(
     return high >= price
 
 
+# Fields that mark a zone payload as carrying canonical formation evidence.
+_CANONICAL_PROVENANCE_FIELDS = CANONICAL_PROVENANCE_FIELDS
+
+
+def _canonical_formation_atr(zone: dict[str, Any]) -> tuple[float | None, bool]:
+    """Formation ATR of a canonical zone and whether provenance was present.
+
+    Same priority and validation as the scorer (``departure_measurement
+    .atr_before_event``, then ``formation_atr``).  The second value says whether
+    the payload carries a canonical formation-evidence block at all:
+
+    * ``True`` — the zone claims canonical provenance, so an unusable ATR is a
+      real defect: the caller fails the geometry gate closed and never
+      substitutes the execution ATR (P11).
+    * ``False`` — a legacy/selected-zone projection with no provenance block
+      (the live Scanner route serialises only bounds/quality today).  There is
+      no source-timeframe ATR to honour, so the existing reference is kept and
+      bringing canonical evidence into that projection stays with task 94+/101+.
+    """
+
+    provenance = any(field in zone for field in _CANONICAL_PROVENANCE_FIELDS)
+    measurement = zone.get("departure_measurement")
+    measurement = measurement if isinstance(measurement, dict) else {}
+    atr = _finite_positive(measurement.get("atr_before_event"))
+    if atr is not None:
+        return atr, provenance
+    return _finite_positive(zone.get("formation_atr")), provenance
+
+
 def _nearest_opposite_level(
     zones: object, *, above: float | None = None, below: float | None = None
 ) -> float | None:
@@ -304,12 +611,14 @@ def _as_float(value: object) -> float | None:
 
 
 def _distance_to_zone(price: float, low: float, high: float) -> float:
-    """Distance from price to the NEAREST zone edge (0 when inside the zone)."""
-    if price < low:
-        return low - price
-    if price > high:
-        return price - high
-    return 0.0
+    """Distance from price to the NEAREST zone edge (0 when inside the zone).
+
+    Delegates to the shared geometry seam (task 89) so the planner and the
+    scorer measure distance with one rule.
+    """
+
+    distance = _shared_distance_to_zone(price, low, high)
+    return 0.0 if distance is None else distance
 
 
 def _finite_positive(value: object) -> float | None:
@@ -319,4 +628,19 @@ def _finite_positive(value: object) -> float | None:
     return result
 
 
-__all__ = ["produce_scenario_plans", "produce_scenario_plans_from_zones"]
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+__all__ = [
+    "PlanAttempt",
+    "plan_for_candidate",
+    "plan_to_dict",
+    "plans_from_canonical_selection",
+    "produce_scenario_plans",
+    "produce_scenario_plans_from_zones",
+    "scenario_plan_from_payload",
+]

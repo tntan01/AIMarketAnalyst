@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from math import isfinite
-from typing import Any
+from typing import Any, Mapping
 
 from core.risk_engine import calculate_expected_effective_rr
 from core.scanner_models import (
@@ -28,6 +28,7 @@ def revalidate_execution(
     account_allowed: bool | None,
     portfolio_allowed: bool | None,
     required_min_rr: float | None = None,
+    smc_revalidation: Mapping[str, Any] | None = None,
     max_tick_age_seconds: float = DEFAULT_MAX_TICK_AGE_SECONDS,
     max_spread_points: float = DEFAULT_MAX_SPREAD_POINTS,
     now: datetime | None = None,
@@ -179,6 +180,12 @@ def revalidate_execution(
             else "PORTFOLIO_GUARD_BLOCKED"
         )
 
+    # Task 111: the approved SMC setup is re-checked against the CURRENT
+    # canonical verdict before dispatch.  An expired/invalidated zone, a
+    # changed setup or a missing M15 window blocks the order instead of letting
+    # a stale approval through; the check can only block, never grant.
+    blocks.extend(_smc_revalidation_blocks(smc_revalidation))
+
     block_codes = unique_codes(blocks)
     return ExecutionRevalidation(
         allowed=not block_codes,
@@ -195,6 +202,51 @@ def revalidate_execution(
         reason_codes=unique_codes((*reasons, *block_codes)),
         block_codes=block_codes,
     )
+
+
+SMC_REVALIDATION_UNAVAILABLE = "SMC_REVALIDATION_UNAVAILABLE"
+SMC_SETUP_CHANGED = "SMC_SETUP_CHANGED"
+SMC_ZONE_INVALID_OR_EXPIRED = "SMC_ZONE_INVALID_OR_EXPIRED"
+SMC_NOT_READY = "SMC_NOT_READY"
+SMC_M15_UNAVAILABLE = "SMC_M15_UNAVAILABLE"
+
+# Canonical selection states that can never be dispatched, whatever the quality.
+_SMC_TERMINAL_STATES = frozenset({"out_of_strategy", "data_unavailable", "blocked", "no_zone"})
+_SMC_READY_STATUS = "READY_NOW"
+
+
+def _smc_revalidation_blocks(value: Mapping[str, Any] | None) -> list[str]:
+    """Block codes for the approved-vs-current SMC setup comparison.
+
+    ``approved`` describes the setup the user approved (side/zone/setup/plan);
+    ``current`` is the canonical verdict of the NEW snapshot for that side.  A
+    caller that supplies nothing fails closed: execution revalidation is
+    mandatory, and an unchecked SMC setup is not an approved one.
+    """
+
+    if not isinstance(value, Mapping):
+        return [SMC_REVALIDATION_UNAVAILABLE]
+    approved = value.get("approved")
+    current = value.get("current")
+    if not isinstance(approved, Mapping) or not isinstance(current, Mapping):
+        return [SMC_REVALIDATION_UNAVAILABLE]
+
+    blocks: list[str] = []
+    if str(current.get("state") or "").strip().lower() in _SMC_TERMINAL_STATES:
+        blocks.append(SMC_ZONE_INVALID_OR_EXPIRED)
+    if str(current.get("readiness_status") or "").strip().upper() != _SMC_READY_STATUS:
+        blocks.append(SMC_NOT_READY)
+    # A confirmation is dispatchable only while it is the canonical
+    # ``confirmed`` state; missing, expired, invalidated or unknown all block
+    # (the M15 window owns entry confirmation, so it can never be skipped here).
+    m15_status = str(current.get("m15_status") or "").strip().lower()
+    if m15_status not in ("confirmed", "not_required"):
+        blocks.append(SMC_M15_UNAVAILABLE)
+    for field in ("selected_zone_id", "selected_setup_id"):
+        if approved.get(field) != current.get(field):
+            blocks.append(SMC_SETUP_CHANGED)
+            break
+    return blocks
 
 
 def _entry_zone(proposal: dict[str, Any]) -> tuple[float | None, float | None]:

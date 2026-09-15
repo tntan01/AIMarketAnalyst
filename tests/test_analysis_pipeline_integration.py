@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from dataclasses import replace
 
 from core.analysis_engine import analyze_symbol, build_analysis_context
 from core.analysis_pipeline import AnalysisPipeline
@@ -34,6 +35,7 @@ from core.smc_prefilter import (
     SMC_SCORING_ERROR,
 )
 from core.smc_scorer import score_smc
+from core.smc_snapshot import build_smc_snapshot, evaluate_smc_snapshot
 from core.smc_scoring_result import SmcScoringResult, SmcSideScoringResult
 
 
@@ -165,6 +167,25 @@ def _default_input(symbol: str = "EUR/USD") -> AnalysisInput:
         contract_size_override=100_000.0,
         timezone_name="Asia/Ho_Chi_Minh",
     )
+
+
+# Task 101: the batch callers must supply the snapshot's own cutoff and the
+# symbol metadata.  The fixture candles end at this instant (a real boundary
+# taken from the data, not from the wall clock) and the prices are 5-decimal
+# FX, so one broker tick is 0.00001.
+_FIXTURE_CUTOFF = datetime(2026, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+_FIXTURE_TICK_SIZE = 0.00001
+
+
+def _snapshot_kwargs(**extra: Any) -> dict[str, Any]:
+    """The frozen snapshot boundary + tick provenance of this fixture."""
+
+    return {
+        "snapshot_as_of": _FIXTURE_CUTOFF,
+        "m15_as_of": _FIXTURE_CUTOFF,
+        "tick_size": _FIXTURE_TICK_SIZE,
+        **extra,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +344,7 @@ def test_analyze_symbol_bullish_trend_full_contract():
     candles = _build_candles_by_timeframe(regime="trending_up", base_price=1.0800)
     request = _default_input("EUR/USD")
 
-    result = analyze_symbol(request, candles)
+    result = analyze_symbol(request, candles, **_snapshot_kwargs())
 
     # Full contract
     _assert_full_contract(result)
@@ -339,7 +360,7 @@ def test_analyze_symbol_sideways_range_full_contract():
     candles = _build_candles_by_timeframe(regime="range", base_price=1.0800)
     request = _default_input("EUR/USD")
 
-    result = analyze_symbol(request, candles)
+    result = analyze_symbol(request, candles, **_snapshot_kwargs())
 
     _assert_full_contract(result)
 
@@ -359,7 +380,7 @@ def test_analyze_symbol_gold_xau_full_contract():
         timezone_name="Asia/Ho_Chi_Minh",
     )
 
-    result = analyze_symbol(request, candles)
+    result = analyze_symbol(request, candles, **_snapshot_kwargs())
 
     _assert_full_contract(result)
     # XAU/USD contract size should be 100 (not default 100,000)
@@ -383,7 +404,9 @@ def test_analyze_symbol_with_closed_trades_evidence():
         },
     ] * 15  # 30 trades total — enough to be statistically meaningful
 
-    result = analyze_symbol(request, candles, closed_trades=closed_trades)
+    result = analyze_symbol(
+        request, candles, closed_trades=closed_trades, **_snapshot_kwargs()
+    )
 
     _assert_full_contract(result)
     # Evidence should be present
@@ -400,7 +423,7 @@ def test_analyze_symbol_insufficient_candles_raises():
     candles = {"D1": [], "H4": [], "H1": []}
 
     with pytest.raises(ValueError, match="Không đủ dữ liệu"):
-        analyze_symbol(request, candles)
+        analyze_symbol(request, candles, **_snapshot_kwargs())
 
 
 def test_build_analysis_context_remains_importable_from_analysis_engine():
@@ -419,7 +442,7 @@ def test_analyze_symbol_all_keys_present():
     candles = _build_candles_by_timeframe(regime="trending_up")
     request = _default_input()
 
-    result = analyze_symbol(request, candles)
+    result = analyze_symbol(request, candles, **_snapshot_kwargs())
 
     # This enumerates every key actually returned — if a future refactor
     # accidentally removes or renames one, this test catches it.
@@ -451,6 +474,7 @@ def test_fast_flags_activate_tier1():
         request,
         candles,
         scanner_fast_tier1=True,
+        **_snapshot_kwargs(),
     )
     assert scanner_pipeline._scanner_fast_tier1 is True
     assert scanner_result["analysis_status"] == "structural_reject"
@@ -474,7 +498,7 @@ def test_fast_flags_activate_tier1():
     assert build_candidate_order_payload(row, candidate) is None
 
     detail_pipeline = AnalysisPipeline()
-    detail_result = detail_pipeline.execute(request, candles)
+    detail_result = detail_pipeline.execute(request, candles, **_snapshot_kwargs())
     assert detail_pipeline._scanner_fast_tier1 is False
     assert detail_result["pipeline_route"] == "full"
 
@@ -483,7 +507,7 @@ def test_structural_reject_builder_preserves_full_contract_and_blocks_fallbacks(
     """Step 3 prepares an honest result without activating the fast route."""
     candles = _build_candles_by_timeframe(regime="trending_up")
     pipeline = AnalysisPipeline()
-    pipeline.execute(_default_input(), candles)
+    pipeline.execute(_default_input(), candles, **_snapshot_kwargs())
 
     pipeline._prepare_structural_reject(
         "post_context",
@@ -528,6 +552,7 @@ def test_structural_reject_builder_maps_pre_smc_to_prefilter_route():
     pipeline.execute(
         _default_input(),
         _build_candles_by_timeframe(regime="range"),
+        **_snapshot_kwargs(),
     )
 
     pipeline._prepare_structural_reject(
@@ -597,6 +622,7 @@ def test_tier1_reject_short_circuits_all_post_context_steps():
             _default_input(),
             _build_candles_by_timeframe(regime="range"),
             scanner_fast_tier1=True,
+            **_snapshot_kwargs(),
         )
 
     prefilter.assert_called_once()
@@ -613,21 +639,16 @@ def test_tier1_survivor_reuses_precomputed_smc_and_runs_full_pipeline():
     """Tier-1 must not score SMC twice for symbols that remain on full route."""
     pipeline = AnalysisPipeline()
 
-    def survivor_decision(
-        *,
-        smc: dict[str, Any],
-        technical: dict[str, Any],
-        market_regime: dict[str, Any],
-        **_: Any,
-    ) -> dict[str, Any]:
+    def survivor_decision(*, snapshot, min_rr=None, **_: Any) -> dict[str, Any]:
+        # Task 104: the Tier-1 predicate returns the canonical EVALUATION of
+        # the frozen snapshot, and the full route reuses it instead of scoring
+        # the same cutoff twice.
+        evaluation = evaluate_smc_snapshot(snapshot, min_rr=min_rr)
         return {
             "should_reject": False,
             "fail_open": False,
-            "precomputed_smc": score_smc(
-                smc,
-                technical,
-                market_regime,
-            ),
+            "precomputed_smc": evaluation.result,
+            "precomputed_evaluation": evaluation,
         }
 
     with (
@@ -636,8 +657,8 @@ def test_tier1_survivor_reuses_precomputed_smc_and_runs_full_pipeline():
             side_effect=survivor_decision,
         ),
         patch(
-            "core.analysis_pipeline.score_smc",
-            side_effect=AssertionError("v2 result must be reused"),
+            "core.analysis_pipeline.evaluate_smc_snapshot",
+            side_effect=AssertionError("the precomputed evaluation must be reused"),
         ),
         patch.object(
             pipeline,
@@ -649,6 +670,7 @@ def test_tier1_survivor_reuses_precomputed_smc_and_runs_full_pipeline():
             _default_input(),
             _build_candles_by_timeframe(regime="trending_up"),
             scanner_fast_tier1=True,
+            **_snapshot_kwargs(),
         )
 
     assert result["analysis_status"] == "completed"
@@ -665,10 +687,23 @@ def test_tier1_malformed_precomputed_smc_fails_closed():
         scoring_version="smc-v2",
         sides={"buy": SmcSideScoringResult(score=12, breakdown={"total": 12})},
     )
+
+    # A REAL evaluation whose result was tampered with: the pipeline must
+    # hold it to the final-selection invariant and fail closed.
+    fresh = evaluate_smc_snapshot(
+        build_smc_snapshot(
+            _build_candles_by_timeframe(regime="range"),
+            symbol="EUR/USD",
+            as_of=_FIXTURE_CUTOFF,
+            m15_as_of=_FIXTURE_CUTOFF,
+            tick_size=_FIXTURE_TICK_SIZE,
+        )
+    )
     decision = {
         "should_reject": False,
         "fail_open": False,
         "precomputed_smc": malformed,
+        "precomputed_evaluation": replace(fresh, result=malformed),
     }
     with patch(
         "core.analysis_pipeline.evaluate_post_context_prefilter",
@@ -678,6 +713,7 @@ def test_tier1_malformed_precomputed_smc_fails_closed():
             _default_input(),
             _build_candles_by_timeframe(regime="range"),
             scanner_fast_tier1=True,
+            **_snapshot_kwargs(),
         )
 
     assert result["analysis_status"] == "structural_reject"
@@ -687,11 +723,12 @@ def test_tier1_malformed_precomputed_smc_fails_closed():
 
 def test_disabled_tier_flags_keep_exact_baseline_except_timestamp():
     candles = _build_candles_by_timeframe(regime="trending_up")
-    baseline = analyze_symbol(_default_input(), candles)
+    baseline = analyze_symbol(_default_input(), candles, **_snapshot_kwargs())
     flags_off = analyze_symbol(
         _default_input(),
         candles,
         scanner_fast_tier1=False,
+        **_snapshot_kwargs(),
     )
 
     baseline.pop("timestamp")
@@ -704,7 +741,9 @@ def test_analyze_symbol_scenarios_have_required_fields():
     candles = _build_candles_by_timeframe(regime="trending_up")
     request = _default_input()
 
-    result = analyze_symbol(request, candles, m15_candles=candles.get("M15"))
+    result = analyze_symbol(
+        request, candles, m15_candles=candles.get("M15"), **_snapshot_kwargs()
+    )
 
     for sc in result["scenarios"]:
         if sc["type"] not in ("buy", "sell"):
@@ -786,7 +825,9 @@ def test_macro_data_reason_code_flows_into_result():
     candles = _build_candles_by_timeframe(regime="trending_up")
     request = _default_input("EUR/USD")
 
-    result = analyze_symbol(request, candles, correlation_context={})
+    result = analyze_symbol(
+        request, candles, correlation_context={}, **_snapshot_kwargs()
+    )
 
     assert MACRO_DATA_UNAVAILABLE in result["reason_codes"], (
         f"MACRO_DATA_UNAVAILABLE missing from reason_codes: {result['reason_codes']}"
@@ -888,7 +929,8 @@ def test_event_window_reason_code_flows_into_result():
 
     result = analyze_symbol(
         request,
-        candles,
+candles,
+        **_snapshot_kwargs(),
         correlation_context=_correlation_context(
             {"dxy_candles", "vix_candles", "us10y_candles", "us2y_candles"}
         ),

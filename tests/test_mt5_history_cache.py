@@ -11,6 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from core.analysis_engine import analyze_symbol
+
+# The fixtures quote FX prices with 5 decimals, so one broker tick is 0.00001.
+_TICK_SIZE = 0.00001
 from core.market_models import Candle
 from core.risk_engine import AnalysisInput
 from services.mt5_service import MT5HistoryCacheIdentity, MT5Service
@@ -67,6 +70,24 @@ class _HistoryMT5:
         finally:
             with self._active_lock:
                 self._active -= 1
+
+def _snapshot_kwargs(candles):
+    """The fixture's own frozen snapshot boundary (task 101)."""
+
+    from datetime import timedelta
+
+    latest = None
+    for timeframe, minutes in (("D1", 1440), ("H4", 240), ("H1", 60), ("M15", 15)):
+        for candle in candles.get(timeframe) or ():
+            close_at = candle.time + timedelta(minutes=minutes)
+            if latest is None or close_at > latest:
+                latest = close_at
+    assert latest is not None
+    return {
+        "snapshot_as_of": latest,
+        "m15_as_of": latest,
+        "tick_size": _TICK_SIZE,
+    }
 
 
 def _raw_series(timeframe: str, count: int = 620) -> list[dict[str, float | int]]:
@@ -279,7 +300,12 @@ def test_full_vs_cache_candle_and_analysis_input_parity(monkeypatch, tmp_path):
         previous_time = datetime.fromtimestamp(
             int(previous["time"]), tz=timezone.utc
         )
+        # A broker correction must stay a VALID candle: the canonical SMC
+        # layer validates OHLC (data spec §2), so the wicks move with the
+        # close instead of leaving high < close behind.
         previous["close"] = 700.0
+        previous["high"] = max(float(previous["high"]), 700.0)
+        previous["low"] = min(float(previous["low"]), 700.0)
         value = 701.0
         at = previous_time + interval
         fake.series[timeframe].append(
@@ -328,11 +354,13 @@ def test_full_vs_cache_candle_and_analysis_input_parity(monkeypatch, tmp_path):
         analysis_input,
         rolling["candles_by_timeframe"],
         m15_candles=rolling["candles_by_timeframe"]["M15"],
+        **_snapshot_kwargs(rolling["candles_by_timeframe"]),
     )
     fresh_analysis = analyze_symbol(
         analysis_input,
         fresh,
         m15_candles=fresh["M15"],
+        **_snapshot_kwargs(fresh),
     )
     # ``timestamp`` is wall-clock metadata; all decision/score fields must
     # remain byte-for-byte equivalent for the frozen candle response.

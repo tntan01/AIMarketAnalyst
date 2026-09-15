@@ -40,8 +40,10 @@ def _reference_h1(cutoff=LOCATION_NOW):
 
 def test_live_release_reaches_snapshot_row_and_ui_without_dispatch():
     d1, h4, h1 = _live_candles()
+    # Task 101/102: the live producer takes the snapshot's symbol metadata.
+    # The fixture quotes ~1000 with 0.2 wicks, so one broker tick is 0.01.
     analysis = derive_live_analysis(
-        d1, h4, h1, symbol="XAUUSD", captured_at=LIVE_NOW
+        d1, h4, h1, symbol="XAUUSD", captured_at=LIVE_NOW, tick_size=0.01
     )
     pair = run_pair_from_live(
         d1,
@@ -65,9 +67,16 @@ def test_live_release_reaches_snapshot_row_and_ui_without_dispatch():
     )
 
     assert {side.side for side in row.side_scores} == {"buy", "sell"}
-    assert all(side.location_status == "NO_VALID_ANCHOR" for side in row.side_scores)
+    # Task 105/106: this fixture's canonical SMC sides cannot be concluded, so
+    # the technical score fails closed and the Location engine is never folded
+    # into the side score — ``location_status``/``location_detail`` are ABSENT
+    # (None) rather than a fabricated "NO_VALID_ANCHOR" anchor verdict.
+    # The dedicated Location matrix/unit tests still cover the evaluated case.
+    assert all(side.location_status is None for side in row.side_scores)
+    assert all(side.location_raw is None for side in row.side_scores)
     assert all(
-        item.get("location_detail", {}).get("status") == "NO_VALID_ANCHOR"
+        item.get("location_status") is None
+        and item.get("location_detail") is None
         for item in ui_row["side_scores"]
     )
     if pair.candidate is not None and pair.candidate.order_payload is not None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -27,6 +28,28 @@ from core.technical_context import build_technical_snapshot
 # ---------------------------------------------------------------------------
 # Synthetic candle generators
 # ---------------------------------------------------------------------------
+
+# The fixtures quote FX prices with 5 decimals, so one broker tick is 0.00001.
+_TICK_SIZE = 0.00001
+
+
+def _snapshot_kwargs(candles):
+    """The fixture's own frozen snapshot boundary (task 101)."""
+
+    from datetime import timedelta
+
+    latest = None
+    for timeframe, minutes in (("D1", 1440), ("H4", 240), ("H1", 60), ("M15", 15)):
+        for candle in candles.get(timeframe) or ():
+            close_at = candle.time + timedelta(minutes=minutes)
+            if latest is None or close_at > latest:
+                latest = close_at
+    assert latest is not None
+    return {
+        "snapshot_as_of": latest,
+        "m15_as_of": latest,
+        "tick_size": _TICK_SIZE,
+    }
 
 
 def _trending_candles(
@@ -344,7 +367,12 @@ class TestSwingSLInBuildTradePlan:
             contract_size_override=100_000.0,
         )
 
-        result = analyze_symbol(request, {"D1": d1, "H4": h4, "H1": h1, "M15": m15})
+        result = analyze_symbol(
+            request,
+            {"D1": d1, "H4": h4, "H1": h1, "M15": m15},
+            m15_candles=m15,
+            **_snapshot_kwargs({"D1": d1, "H4": h4, "H1": h1, "M15": m15}),
+        )
         scenarios = result.get("scenarios", [])
 
         buy_scenarios = [s for s in scenarios if s.get("type") == "buy"]
@@ -358,23 +386,54 @@ class TestSwingSLInBuildTradePlan:
                 f"Buy SL {sl:.5f} must be below entry_low {entry_low:.5f}"
             )
 
+    def _build_descending_data(self, base_price: float = 1.0800):
+        """Mirror the long fixture so the SELL side carries the structure.
+
+        The long fixture is a monotone uptrend, so it can never produce a sell
+        scenario.  Mirroring around the base price yields valid OHLC (high/low
+        swap) and the exact bearish counterpart, which is what this contract
+        needs instead of an unconditional skip.
+        """
+
+        d1, h4, h1, m15 = self._build_data(base_price)
+
+        def _mirror(candles):
+            return [
+                replace(
+                    candle,
+                    open=round(2 * base_price - candle.open, 6),
+                    high=round(2 * base_price - candle.low, 6),
+                    low=round(2 * base_price - candle.high, 6),
+                    close=round(2 * base_price - candle.close, 6),
+                )
+                for candle in candles
+            ]
+
+        return _mirror(d1), _mirror(h4), _mirror(h1), _mirror(m15)
+
     def test_sell_plan_sl_above_entry_zone(self):
         """When a valid sell plan exists, SL must be above the entry zone."""
         from core.analysis_engine import analyze_symbol
 
-        d1, h4, h1, m15 = self._build_data()
+        d1, h4, h1, m15 = self._build_descending_data()
         request = AnalysisInput(
             symbol="EUR/USD", broker_symbol="EURUSDm",
             account_balance=10_000.0, risk_percent=2.0,
             contract_size_override=100_000.0,
         )
 
-        result = analyze_symbol(request, {"D1": d1, "H4": h4, "H1": h1, "M15": m15})
+        result = analyze_symbol(
+            request,
+            {"D1": d1, "H4": h4, "H1": h1, "M15": m15},
+            m15_candles=m15,
+            **_snapshot_kwargs({"D1": d1, "H4": h4, "H1": h1, "M15": m15}),
+        )
         scenarios = result.get("scenarios", [])
 
         sell_scenarios = [s for s in scenarios if s.get("type") == "sell"]
-        if not sell_scenarios:
-            pytest.skip("No sell scenario generated")
+        # The bearish fixture must actually produce the structure this contract
+        # is about; a silent skip would leave the SL rule unverified.
+        assert sell_scenarios, "the bearish fixture must generate a sell scenario"
 
         for sc in sell_scenarios:
             entry_high = float(sc["entry_zone"][1])

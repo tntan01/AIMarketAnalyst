@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from core.market_safety_gate import (
     AVAILABILITY_ERROR,
@@ -41,7 +41,6 @@ from core.market_safety_gate import (
 )
 from core.location_engine import LocationResult
 from core.scanner_composition import ScenarioPlan, SideSnapshot
-from core.smc_scoring_result import SmcScoringResult
 from core.technical_context import atr_volatility_readings, detect_market_regime
 from core.technical_signal_scorer import VALID_TECHNICAL_REGIMES
 
@@ -275,13 +274,32 @@ def derive_live_analysis(
     symbol: str,
     captured_at: datetime | None = None,
     news_in_3h: bool = False,
+    m15_candles: list[Any] | None = None,
+    m15_as_of: datetime | None = None,
+    tick_size: float | None = None,
+    tick_size_source: str | None = None,
+    core_reason_codes: tuple[str, ...] = (),
+    min_rr: float | None = None,
+    external_status: str | None = None,
+    external_reason_codes: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Derive the full technical analysis layer + canonical SMC + regime.
 
-    This is the production candle→analysis path: it builds the retained
-    technical context, derives the raws (Bước 2), produces the canonical SMC
-    via the retained ``score_smc`` producer, and resolves the regime — ready for
-    the caller to assemble a ``ScannerSnapshot`` in Bước 5.
+    This is the production candle→analysis path.  It freezes ONE snapshot
+    through the shared seam (task 101): the cutoff and the M15 window travel
+    together with the symbol metadata, every timeframe is filtered to its
+    closed candles before the context is built, and the canonical chain
+    (evaluator → candidate order → coordinator/planner → final result) runs
+    exactly once for that snapshot.  The returned ``canonical_smc`` is the
+    final result carrying one selected setup per side, so Scanner, Analyze and
+    replay read the same verdict for the same input.
+
+    M15 is a REAL input, not an optional extra: a caller that omits the window
+    gets a snapshot whose readiness stays ``WAITING_CONFIRMATION`` with
+    ``M15_DATA_UNAVAILABLE`` instead of a side that silently never saw it.
+
+    A missing/naive cutoff is never replaced by ``datetime.now()``: the seam
+    reports the canonical cutoff reason and the side is ``data_unavailable``.
     """
     from core.scanner_features import (
         MIN_D1,
@@ -290,10 +308,8 @@ def derive_live_analysis(
         TechnicalRawDerivationError,
         derive_technical_raws_with_location,
     )
-    from core.smc_context import build_smc_context
-    from core.smc_scorer import score_smc
+    from core.smc_snapshot import build_smc_snapshot, evaluate_smc_snapshot
 
-    cap = captured_at if captured_at is not None else _utcnow()
     # Fail-closed FIRST (single source of truth, identical to the raws gate),
     # so insufficient history never reaches build_technical_snapshot's plain
     # ValueError and always raises the typed derivation error.
@@ -302,28 +318,47 @@ def derive_live_analysis(
             f"features_insufficient_data: need D1>={MIN_D1} H4>={MIN_H4} H1>={MIN_H1} "
             f"(got D1={len(d1)} H4={len(h4)} H1={len(h1)})"
         )
-    technical = _build_technical(d1, h4, h1)
-    canonical_smc: SmcScoringResult = score_smc(
-        build_smc_context(d1, h4, h1, scan_interval_min=15, symbol=symbol),
-        technical,
-    )
-    raws = derive_technical_raws_with_location(
-        d1,
-        h4,
-        h1,
-        cutoff=cap,
+    snapshot = build_smc_snapshot(
+        {"D1": d1, "H4": h4, "H1": h1, "M15": m15_candles or ()},
         symbol=symbol,
-        captured_at=cap,
-        canonical_smc=canonical_smc,
+        as_of=captured_at,
+        m15_as_of=m15_as_of if m15_as_of is not None else captured_at,
+        tick_size=tick_size,
+        tick_size_source=tick_size_source,
+        core_reason_codes=core_reason_codes,
     )
-    regime = resolve_technical_regime(technical, news_in_3h)
+    evaluation = evaluate_smc_snapshot(
+        snapshot,
+        min_rr=min_rr,
+        external_status=({"buy": external_status, "sell": external_status}
+                         if external_status else None),
+        external_reason_codes=(
+            {"buy": external_reason_codes, "sell": external_reason_codes}
+            if external_reason_codes
+            else None
+        ),
+    )
+    technical = snapshot.technical if isinstance(snapshot.technical, Mapping) else {}
+    raws = derive_technical_raws_with_location(
+        snapshot.candles.get("D1", ()),
+        snapshot.candles.get("H4", ()),
+        snapshot.candles.get("H1", ()),
+        cutoff=snapshot.as_of,
+        symbol=symbol,
+        captured_at=snapshot.as_of,
+        canonical_smc=evaluation.result,
+        tick_size=snapshot.tick_size,
+    )
+    regime = resolve_technical_regime(dict(technical), news_in_3h)
     return {
         "symbol": symbol,
-        "captured_at": cap,
+        "captured_at": snapshot.as_of,
         "technical": technical,
         "raws": raws,
-        "canonical_smc": canonical_smc,
+        "canonical_smc": evaluation.result,
         "regime": regime,
+        "smc_snapshot": snapshot,
+        "smc_evaluation": evaluation,
     }
 
 

@@ -1,0 +1,178 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "sides": {
+          "buy": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": null,
+            "readiness_status": "DATA_UNAVAILABLE",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "DATA_UNAVAILABLE",
+            "state": "data_unavailable"
+          },
+          "sell": {
+            "family": "ob",
+            "lifecycle_status": "confirmed",
+            "plan_available": false,
+            "quality_raw": 10,
+            "readiness_status": "WATCH_ZONE",
+            "selected_setup_id": "smcs-a3ebb4216ce8a01b45f3",
+            "selected_zone_id": "smcz-b2072d85ca586d44e20e",
+            "smc_state": "ACTIVE_WAITING_VISIT",
+            "state": "watch_zone"
+          }
+        }
+      },
+      "name": "ob_confirmed_sell",
+      "recipe": "bearish_order_block",
+      "symbol": "EUR/USD",
+      "tick_size": 1e-05
+    },
+    {
+      "expected": {
+        "sides": {
+          "buy": {
+            "family": "fvg",
+            "lifecycle_status": "usable",
+            "plan_available": false,
+            "quality_raw": 6,
+            "readiness_status": "WATCH_ZONE",
+            "selected_setup_id": "smcs-92704e56ba61828a031f",
+            "selected_zone_id": "smcz-5a598fcd68891697df89",
+            "smc_state": "ACTIVE_WAITING_VISIT",
+            "state": "watch_zone"
+          },
+          "sell": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": 0,
+            "readiness_status": "OUT_OF_STRATEGY",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "ZONE_INVALIDATED",
+            "state": "out_of_strategy"
+          }
+        }
+      },
+      "name": "fvg_confirmed_buy",
+      "recipe": "bullish_fvg",
+      "symbol": "EUR/USD",
+      "tick_size": 1e-05
+    },
+    {
+      "expected": {
+        "sides": {
+          "buy": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": 0,
+            "readiness_status": "WATCH_ZONE",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "NO_ZONE",
+            "state": "no_zone"
+          },
+          "sell": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": 0,
+            "readiness_status": "WATCH_ZONE",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "NO_ZONE",
+            "state": "no_zone"
+          }
+        }
+      },
+      "name": "no_zone",
+      "recipe": "plain",
+      "symbol": "EUR/USD",
+      "tick_size": 1e-05
+    },
+    {
+      "expected": {
+        "sides": {
+          "buy": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": 0,
+            "readiness_status": "OUT_OF_STRATEGY",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "ZONE_INVALIDATED",
+            "state": "out_of_strategy"
+          },
+          "sell": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": 0,
+            "readiness_status": "OUT_OF_STRATEGY",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "ZONE_INVALIDATED",
+            "state": "out_of_strategy"
+          }
+        }
+      },
+      "name": "broken_invalid",
+      "recipe": "broken_bullish_fvg",
+      "symbol": "EUR/USD",
+      "tick_size": 1e-05
+    },
+    {
+      "expected": {
+        "sides": {
+          "buy": {
+            "family": null,
+            "lifecycle_status": null,
+            "plan_available": false,
+            "quality_raw": 0,
+            "readiness_status": "OUT_OF_STRATEGY",
+            "selected_setup_id": null,
+            "selected_zone_id": null,
+            "smc_state": "ZONE_INVALIDATED",
+            "state": "out_of_strategy"
+          },
+          "sell": {
+            "family": "fvg",
+            "lifecycle_status": "usable",
+            "plan_available": false,
+            "quality_raw": 6,
+            "readiness_status": "WATCH_ZONE",
+            "selected_setup_id": "smcs-d89adb404e6016c4c729",
+            "selected_zone_id": "smcz-9f14e8f331880ea20e80",
+            "smc_state": "ACTIVE_WAITING_VISIT",
+            "state": "watch_zone"
+          }
+        }
+      },
+      "name": "sell_setup",
+      "recipe": "sell_setup",
+      "symbol": "EUR/USD",
+      "tick_size": 1e-05
+    }
+  ],
+  "description": "Canonical Analyze golden (D103-03). Every case is regenerated from candles by tests/scanner_fast_path_fixtures.py, frozen at the cutoff of its own data with an explicit tick, and read through the real facade/snapshot/evaluator/coordinator. The legacy golden_cases.json is kept unchanged as a separate charaterization artifact.",
+  "fixture_version": "smc-canonical-golden-v2",
+  "locked_fields": [
+    "sides.<side>.state",
+    "sides.<side>.quality_raw",
+    "sides.<side>.selected_zone_id",
+    "sides.<side>.selected_setup_id",
+    "sides.<side>.family",
+    "sides.<side>.lifecycle_status",
+    "sides.<side>.plan_available",
+    "sides.<side>.readiness_status",
+    "sides.<side>.smc_state"
+  ],
+  "runtime_mode": "canonical-snapshot"
+}

@@ -113,11 +113,14 @@ from core.scanner_v4_models import (
     WATCH_ZONE,
     CanonicalPairSnapshot,
 )
-from core.smc_models import SMC_DOMAIN_VERSION
+from core.smc_models import SMC_DOMAIN_VERSION, round_half_up
 from core.smc_scoring_result import (
+    SELECTION_STATE_EVALUATED,
+    SELECTION_STATE_NO_ZONE,
     SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
     SmcSideScoringResult,
+    SmcSideSelection,
 )
 from core.smc_versions import SMC_SCORER_VERSION
 from core.technical_signal_scorer import (
@@ -148,6 +151,83 @@ def _smc_components(subtotal: int) -> tuple[int, int, int, int]:
     remaining -= ltf
     technical = min(2, remaining)
     return structure, zone, ltf, technical
+
+
+def _bqlc_for(total: float) -> tuple[float, float, float, float]:
+    """Exact (B, Q, L, C) in [0, 1] whose S is *total* (task 106 contract)."""
+
+    b = min(1.0, total / 4.0)
+    remaining = total - 4.0 * b
+    q = min(1.0, remaining / 7.0)
+    remaining -= 7.0 * q
+    l = min(1.0, remaining / 2.0)
+    remaining -= 2.0 * l
+    c = min(1.0, remaining / 2.0)
+    remaining -= 2.0 * c
+    assert abs(remaining) < 1e-9, total
+    return b, q, l, c
+
+
+def _selection_for(
+    side: str,
+    *,
+    zone_id: str | None,
+    setup_id: str | None,
+    zone_low: float,
+    zone_high: float,
+    quality_raw: int,
+) -> SmcSideSelection:
+    """Final canonical selection matching the fixture's legacy subtotal.
+
+    Task 101-107: the Scanner technical consumer reads the FINAL selection, so
+    the fixture must carry one.  ``quality_raw`` equals the subtotal the legacy
+    fixture used, which is what keeps the downstream score expectations valid.
+    """
+
+    b, q, l, c = _bqlc_for(float(quality_raw))
+    total = 4.0 * b + 7.0 * q + 2.0 * l + 2.0 * c
+    raw = round_half_up(total)
+    if zone_id is None or setup_id is None:
+        return SmcSideSelection(
+            side=side,
+            state=SELECTION_STATE_NO_ZONE,
+            quality_raw=0,
+            quality_score=0.0,
+        )
+    plan = {
+        "direction": side,
+        "entry": zone_low if side == "buy" else zone_high,
+        "stop_loss": zone_low - 1.0 if side == "buy" else zone_high + 1.0,
+        "take_profit": zone_high + 5.0 if side == "buy" else zone_low - 5.0,
+        "source": "smc_canonical_zone",
+        "entry_zone_low": zone_low,
+        "entry_zone_high": zone_high,
+        "zone_id": zone_id,
+        "setup_id": setup_id,
+    }
+    return SmcSideSelection(
+        side=side,
+        state=SELECTION_STATE_EVALUATED,
+        selected_candidate_id=f"cand-{zone_id}",
+        selected_zone_id=zone_id,
+        selected_setup_id=setup_id,
+        timeframe="H4",
+        quality_raw=raw,
+        quality_score=100.0 * total / 15.0,
+        b=b,
+        q=q,
+        l=l,
+        c=c,
+        total=total,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        plan=plan,
+        plan_available=True,
+        plan_zone_id=zone_id,
+        plan_setup_id=setup_id,
+        readiness={"status": "READY_NOW", "smc_state": "READY_FOR_REVALIDATION"},
+        selection_reason_codes=("QUALITY_RANK",),
+    )
 
 
 def _smc_side(
@@ -225,6 +305,14 @@ def _smc_side(
         selected_zone_quality_score=80 if has_selected_zone else None,
         selected_zone_relevance_score=70 if has_selected_zone else None,
         selected_zone_setup_score=setup_score if has_selected_zone else None,
+        selection=_selection_for(
+            side,
+            zone_id=zone_id,
+            setup_id=f"setup-{side}" if has_selected_zone else None,
+            zone_low=90.0 if side == "buy" else 105.0,
+            zone_high=95.0 if side == "buy" else 110.0,
+            quality_raw=source_score,
+        ),
     )
 
 

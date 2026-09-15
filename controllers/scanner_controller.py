@@ -256,6 +256,10 @@ def _order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
         "required_min_rr": payload.get("risk_reward_ratio"),
         "scorer_version": payload.get("scoring_version"),
         "ranking_version": payload.get("feature_version"),
+        # Task 111: the SMC setup the user approved, compared at dispatch with
+        # the CURRENT canonical verdict of a fresh snapshot.
+        "smc_zone_id": payload.get("smc_zone_id"),
+        "smc_setup_id": payload.get("smc_setup_id"),
     }
     return proposal
 
@@ -413,6 +417,7 @@ class ScannerController:
         scan_health_service: ScanHealthService | None = None,
         retention_service: RuntimeRetentionService | None = None,
         job_state: ScannerJobState | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.mt5: MT5Service = mt5 or MT5Service()
@@ -429,6 +434,12 @@ class ScannerController:
         self._job_state = job_state or ScannerJobState(
             runtime_root=app_data_dir()
         )
+        # Injectable UTC clock for the DISPATCH boundary only (task 111 /
+        # DREG-04b).  Production passes nothing and reads the real UTC clock;
+        # a test can pin one cutoff so the approved proposal and the fresh
+        # re-evaluation describe the same instant.  It never feeds quotes,
+        # ticks, news, portfolio, risk or any non-SMC decision.
+        self._clock = clock
         self._execution_lock = RLock()
         self._active_scan_id: str | None = None
         self._active_scan_lock = RLock()
@@ -1544,6 +1555,17 @@ class ScannerController:
             account_allowed = None
             portfolio_allowed = None
         required_min_rr = order.get("required_min_rr", order.get("min_rr"))
+        # The fresh SMC snapshot is taken at ONE pinned instant, captured at
+        # the start of the revalidation and passed straight through; nothing
+        # else on this path reads it.
+        smc_cutoff = self._utc_now()
+        smc_revalidation = self._smc_revalidation_for_order(
+            order,
+            broker_symbol=broker_symbol or symbol,
+            side=side,
+            settings=settings,
+            now=smc_cutoff,
+        )
         validation = revalidate_execution(
             order,
             snapshot,
@@ -1553,6 +1575,11 @@ class ScannerController:
             account_allowed=account_allowed,
             portfolio_allowed=portfolio_allowed,
             required_min_rr=required_min_rr,
+            # Task 111: the approved SMC setup re-checked against the current
+            # canonical verdict.  A proposal that carries no fresh comparison
+            # fails closed (``SMC_REVALIDATION_UNAVAILABLE``) — the SMC gate can
+            # only block here, never grant execution.
+            smc_revalidation=smc_revalidation,
         )
         validation_payload = validation.to_dict()
         common = {
@@ -1567,6 +1594,11 @@ class ScannerController:
             "news_status": news_status,
             "account_guard": account_guard,
             "portfolio_guard": portfolio_payload,
+            # The fresh canonical comparison this dispatch actually made
+            # (Task 111): the cutoff of the snapshot that was re-evaluated and
+            # the approved-vs-current setup identity.  Evidence only — the
+            # decision was already taken inside ``revalidate_execution``.
+            "smc_revalidation": smc_revalidation,
             "scan_id": scan_id,
             "row_id": row_id,
             "settings_hash": order.get("settings_hash"),
@@ -1600,6 +1632,7 @@ class ScannerController:
                     "revalidation": validation_payload,
                     "portfolio_guard": portfolio_payload,
                     "news_status": news_status,
+                    "smc_revalidation": smc_revalidation,
                 },
             )
             return blocked_result
@@ -2331,6 +2364,136 @@ class ScannerController:
         finally:
             _record_performance(performance_tracker, "end_phase", "telegram")
 
+    def _utc_now(self) -> datetime:
+        """One UTC instant for the dispatch boundary, fail-closed on junk.
+
+        Only ``None`` means "no clock injected" — the production default, which
+        reads the real UTC clock.  Anything else is an injected dependency, and
+        an injected dependency that is not callable is a WIRING bug: falling
+        back to the real clock would hide it behind a plausible-looking cutoff.
+        The same applies to a callable that returns a non-datetime, a naive
+        datetime or one with an unknown offset; all three are refused rather
+        than silently downgraded to "no cutoff", because the SMC revalidation
+        must always know WHICH instant it validated.  A clock in another
+        timezone is accepted and normalized to UTC.
+        """
+
+        # ``getattr`` keeps legacy instances and test doubles that predate the
+        # clock dependency working: a missing attribute is "not injected".
+        clock = getattr(self, "_clock", None)
+        if clock is None:
+            value = datetime.now(timezone.utc)
+        elif not callable(clock):
+            raise ValueError(
+                "scanner clock must be a callable returning a datetime, "
+                f"got {type(clock).__name__}"
+            )
+        else:
+            value = clock()
+        if not isinstance(value, datetime):
+            raise ValueError("scanner clock must return a datetime")
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("scanner clock must return a timezone-aware datetime")
+        return value.astimezone(timezone.utc)
+
+    def _smc_revalidation_for_order(
+        self,
+        order: dict[str, Any],
+        *,
+        broker_symbol: str,
+        side: str,
+        settings: Any,
+        now: Any = None,
+    ) -> dict[str, Any] | None:
+        """Fresh canonical comparison of the approved SMC setup (task 111).
+
+        The dispatch boundary fetches NEW candles and re-runs the SAME Scanner
+        producer on a NEW cutoff, so the comparison is made against the current
+        market state — never against the proposal's own scanner snapshot, which
+        would only echo the approval.  Any missing input (approved identity,
+        candles, cutoff, tick metadata, evaluator failure) returns ``None`` and
+        ``revalidate_execution`` then blocks with ``SMC_REVALIDATION_UNAVAILABLE``.
+        """
+
+        from datetime import datetime, timezone
+
+        from core.scanner_live_producers import derive_live_analysis
+
+        approved_zone = str(order.get("smc_zone_id") or "").strip() or None
+        approved_setup = str(order.get("smc_setup_id") or "").strip() or None
+        if approved_zone is None and approved_setup is None:
+            return None
+        if side not in ("buy", "sell") or not broker_symbol:
+            return None
+        try:
+            bars = {
+                "D1": settings.advanced.d1_bars,
+                "H4": settings.advanced.h4_bars,
+                "H1": settings.advanced.h1_bars,
+                "M15": 100,
+            }
+            candles = self.mt5.load_primary_timeframes(broker_symbol, bars) or {}
+            d1 = candles.get("D1") or []
+            h4 = candles.get("H4") or []
+            h1 = candles.get("H1") or []
+            m15 = candles.get("M15") or []
+            if not d1 or not h4 or not h1:
+                return None
+            data_quality = (
+                self.mt5.symbol_data_quality(str(order.get("symbol") or ""), broker_symbol)
+                or {}
+            )
+            # The dispatch boundary owns the ONE cutoff of this fresh
+            # snapshot; it is never created inside the evaluator/detector/M15
+            # logic, and it is the only cutoff the chain sees.
+            cutoff = now if now is not None else datetime.now(timezone.utc)
+            min_rr = order.get("required_min_rr", order.get("min_rr"))
+            analysis = derive_live_analysis(
+                d1,
+                h4,
+                h1,
+                symbol=str(order.get("symbol") or broker_symbol),
+                captured_at=cutoff,
+                m15_candles=m15,
+                m15_as_of=cutoff,
+                tick_size=data_quality.get("tick_size"),
+                tick_size_source=data_quality.get("tick_size_source"),
+                min_rr=(
+                    float(min_rr) if isinstance(min_rr, (int, float)) else None
+                ),
+            )
+        except Exception:
+            # A fresh snapshot that cannot be produced is not an approval.
+            return None
+        selection = analysis["smc_evaluation"].selection(side)
+        if selection is None:
+            return None
+        # ``SideSelection.readiness`` is the typed SmcReadiness verdict; read its
+        # attributes directly (a dict-shaped fallback keeps the mapping
+        # tolerant if a serialized payload ever reaches here).
+        readiness = selection.readiness
+        if isinstance(readiness, dict):
+            readiness_status = readiness.get("status")
+            m15_status = readiness.get("m15_status")
+        else:
+            readiness_status = getattr(readiness, "status", None)
+            m15_status = getattr(readiness, "m15_status", None)
+        return {
+            "source": "fresh_canonical_snapshot",
+            "cutoff": cutoff.isoformat(),
+            "approved": {
+                "selected_zone_id": approved_zone,
+                "selected_setup_id": approved_setup,
+            },
+            "current": {
+                "selected_zone_id": selection.selected_zone_id,
+                "selected_setup_id": selection.selected_setup_id,
+                "state": selection.state,
+                "readiness_status": readiness_status,
+                "m15_status": m15_status,
+            },
+        }
+
     def _emit_observability(
         self,
         event_type: str,
@@ -3044,6 +3207,21 @@ def _analyze_one_symbol(
         ) * freshness_multiplier
 
         # Failure-safe derivation + the one-symbol release pair.
+        # Task 101/102: the SAME frozen snapshot (cutoff + M15 window + symbol
+        # metadata) drives the canonical chain here, and the order policy's R:R
+        # floor is applied by the coordinator — not by a second plan pass in the
+        # release path.
+        data_quality_packet = (
+            pkt.get("data_quality")
+            if isinstance(pkt.get("data_quality"), dict)
+            else {}
+        )
+        _policy_min_rr = (
+            order_policy.threshold.min_risk_reward
+            if order_policy is not None
+            and order_policy.threshold.min_risk_reward is not None
+            else None
+        )
         analysis = derive_live_analysis(
             d1,
             h4,
@@ -3051,6 +3229,11 @@ def _analyze_one_symbol(
             symbol=symbol,
             captured_at=analysis_cutoff,
             news_in_3h=False,
+            m15_candles=pkt.get("m15_candles"),
+            m15_as_of=analysis_cutoff,
+            tick_size=data_quality_packet.get("tick_size"),
+            tick_size_source=data_quality_packet.get("tick_size_source"),
+            min_rr=_policy_min_rr,
         )
         pair = run_pair_from_live(
             d1,

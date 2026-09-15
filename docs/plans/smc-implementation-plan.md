@@ -1,12 +1,12 @@
 # Kế hoạch thực hiện nâng cấp SMC — checklist cho Coder
 
-Ngày kế hoạch: 2026-09-10. Cập nhật trạng thái: 2026-09-11. **Tạm dừng triển khai để hoàn thiện mục tiêu/phạm vi cho người dùng xem xét.** Gate 16/40/56 đã APPROVED; task 57–71 đã có implementation, gate 72 còn CHANGES_REQUESTED. Trạng thái từng task lấy từ [nhật ký tiến độ](smc-implementation-progress.md).
+Ngày kế hoạch: 2026-09-10. Cập nhật trạng thái: 2026-09-15. Gate 16/40/56/72/**100** đã APPROVED; task 57–72 hoàn tất; **task 73–79 và 80–91 REVIEW PASS**; **task101–111 REVIEW PASS**; **task112–115 IMPLEMENTED, WAITING_REVIEW task116**. Bốn quyết định D101-01/D101-02/D107-01/D111-01 đã hoàn tất trong [nhật ký tiến độ](smc-implementation-progress.md#quyết-định-tech-lead-sau-blocker--phạm-vi-tiếp-tục-bắt-buộc-2026-09-14); chi tiết lô 112–115 và hai việc còn chờ Tech Lead (Analyze scenario seam, source-age freshness) ở [nhật ký](smc-implementation-progress.md#lô-task112115--implemented-waiting_review-task116-2026-09-15). Chưa rollout production/auto-entry. Trạng thái từng task lấy từ nhật ký; phạm vi khối và điều kiện gỡ adapter ở [kế hoạch rà soát trước task73](../smc-pre-task73-architecture-review-plan.md#9-kết-quả-lô-1--snapshot-bản-đồ-và-đề-xuất-phạm-vi).
 
 Tài liệu này là checklist thực hiện của [bản thiết kế SMC](smc-scoring-upgrade-plan.md). Yêu cầu mới nhất: chia việc nhỏ, đánh số liên tục, dừng tại mốc Tech Lead review. Các quy định review ở đây thay thế hướng dẫn cũ cho phép làm xuyên suốt không dừng.
 
 ## Cách Coder thực hiện
 
-**Ưu tiên hiện tại:** hoàn thiện và xem xét mục tiêu tại [§1.1–1.2 của thiết kế](smc-scoring-upgrade-plan.md). Chưa tiếp tục F01.1–F01.4 hoặc task 73. Checklist 144 task bên dưới giữ làm phạm vi phương án đầy đủ; chỉ tiếp tục sau quyết định của người dùng. Nếu chọn thu gọn, cập nhật mapping task giữ/sửa/hoãn trước khi triển khai, giữ lịch sử số task và review.
+**Ưu tiên hiện tại:** Task100 **APPROVED**; lô integration Task101–111 đã **REVIEW PASS** và Task112–115 đã **IMPLEMENTED — WAITING_REVIEW Task116**. Không mở lại D101-01/D101-02/D107-01/D111-01 (đã hoàn tất). Phạm vi đã chốt giao theo lô 73–79 → 80–91 → 92–100, review chính thức tại task100 (không mở lại refactor trước task73). Checklist 144 task bên dưới giữ làm phạm vi phương án đầy đủ; số task, yêu cầu và mốc review không đổi.
 
 - Làm task **1 → 144**, không bắt đầu chặng sau khi review chặng trước còn chờ. Task sau kế thừa đầu ra task trước; tham chiếu task cụ thể là phụ thuộc bổ sung, không phải quyền bỏ qua các bước ở giữa.
 - Mỗi dòng là một đơn vị công việc: một model, một quy tắc, một consumer hoặc một nhóm kiểm thử cùng hành vi. Chỉ sửa đúng phạm vi cần để đạt đầu ra của dòng đó.

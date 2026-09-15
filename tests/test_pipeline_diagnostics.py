@@ -45,6 +45,30 @@ def _make_candles(count: int, timeframe_minutes: int = 60, base_price: float = 1
     return candles
 
 
+# Task 101: the batch callers must supply the snapshot's own cutoff and the
+# symbol metadata.  The fixture candles start at a fixed instant and the prices
+# are 5-decimal FX, so one broker tick is 0.00001.
+_FIXTURE_START = datetime(2025, 6, 1, 12, 0, tzinfo=timezone.utc)
+_FIXTURE_TICK_SIZE = 0.00001
+
+
+def _snapshot_kwargs(candles: dict) -> dict:
+    """The frozen snapshot boundary of THIS fixture candle set."""
+
+    latest = None
+    for timeframe, minutes in (("D1", 1440), ("H4", 240), ("H1", 60), ("M15", 15)):
+        for candle in candles.get(timeframe) or ():
+            close_at = candle.time + timedelta(minutes=minutes)
+            if latest is None or close_at > latest:
+                latest = close_at
+    assert latest is not None
+    return {
+        "snapshot_as_of": latest,
+        "m15_as_of": latest,
+        "tick_size": _FIXTURE_TICK_SIZE,
+    }
+
+
 def _make_request(symbol: str = "EUR/USD") -> AnalysisInput:
     return AnalysisInput(
         symbol=symbol,
@@ -76,6 +100,7 @@ def test_pipeline_generates_diagnostics():
     result = pipeline.execute(
         request,
         candles,
+        **_snapshot_kwargs(candles),
         data_quality={"spread_status": "normal", "terminal_connected": True, "broker_logged_in": True},
         macro_alignment={"buy": 15, "sell": 15},
     )
@@ -119,6 +144,7 @@ def test_diagnostics_in_result():
     pipeline = AnalysisPipeline()
     result = pipeline.execute(
         request, candles,
+        **_snapshot_kwargs(candles),
         data_quality={"spread_status": "normal", "terminal_connected": True, "broker_logged_in": True},
         macro_alignment={"buy": 12, "sell": 18},
     )
@@ -169,6 +195,7 @@ def test_validation_failure_captured():
     try:
         pipeline.execute(
             request, candles,
+            **_snapshot_kwargs(candles),
             data_quality={"spread_status": "normal"},
             macro_alignment={"buy": 15, "sell": 15},
         )
@@ -204,6 +231,7 @@ def test_gate_per_gate_breakdown():
     pipeline = AnalysisPipeline()
     result = pipeline.execute(
         request, candles,
+        **_snapshot_kwargs(candles),
         data_quality={
             "spread_status": "abnormal",  # Should trigger spread gate
             "terminal_connected": True,
@@ -384,6 +412,7 @@ def test_diagnostics_json_roundtrip():
     pipeline = AnalysisPipeline()
     result = pipeline.execute(
         request, candles,
+        **_snapshot_kwargs(candles),
         data_quality={"spread_status": "normal", "terminal_connected": True, "broker_logged_in": True},
         macro_alignment={"buy": 15, "sell": 15},
     )

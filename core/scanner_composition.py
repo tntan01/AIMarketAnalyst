@@ -1320,12 +1320,14 @@ def compose_scanner(
             buy_technical,
             final_scores[BUY],
             location_detail=snapshot.buy.location_detail,
+            smc_selection=_smc_selection_summary(snapshot.canonical_smc, BUY),
         ),
         _build_side_score(
             SELL,
             sell_technical,
             final_scores[SELL],
             location_detail=snapshot.sell.location_detail,
+            smc_selection=_smc_selection_summary(snapshot.canonical_smc, SELL),
         ),
     )
     canonical = CanonicalPairSnapshot.create(
@@ -1432,6 +1434,7 @@ def _build_side_score(
     final: FinalScoreResult | None,
     *,
     location_detail: LocationResult | None = None,
+    smc_selection: Mapping[str, Any] | None = None,
 ) -> SideScore:
     if technical is None or final is None:
         return SideScore(
@@ -1445,6 +1448,7 @@ def _build_side_score(
             setup_score=None,
             final_score=None,
             reason_codes=(TECHNICAL_DATA_UNAVAILABLE,),
+            smc_selection=smc_selection,
         )
     # Evidence/Execution are strict ints (validated) so the clamped values are
     # exact integers safe for the canonical SideScore contract.
@@ -1460,7 +1464,53 @@ def _build_side_score(
         final_score=final.final_score,
         reason_codes=final.fallback_warnings,
         location_detail=location_detail,
+        smc_selection=smc_selection,
     )
+
+
+def _smc_selection_summary(
+    canonical_smc: object,
+    side: str,
+) -> dict[str, Any] | None:
+    """Canonical SMC summary of one side, copied from the final selection.
+
+    Task 108: composition and execution readiness read the SAME canonical
+    verdict the scorer produced (selected zone/setup, quality and readiness),
+    instead of re-interpreting the raw SMC context.  ``None`` means the result
+    carries no selection for this side at all.
+    """
+
+    from core.smc_scoring_result import SmcScoringResult, smc_selection_of
+
+    if type(canonical_smc) is not SmcScoringResult:
+        return None
+    selection = smc_selection_of(canonical_smc.side(side))
+    if selection is None:
+        return None
+    readiness = selection.readiness if isinstance(selection.readiness, dict) else {}
+    return {
+        "state": selection.state,
+        "selected_zone_id": selection.selected_zone_id,
+        "selected_setup_id": selection.selected_setup_id,
+        "timeframe": selection.timeframe,
+        "family": selection.family,
+        "lifecycle_status": selection.lifecycle_status,
+        "confirmation_state": selection.confirmation_state,
+        "entry_visit_id": selection.entry_visit_id,
+        "confirmation_event_id": selection.confirmation_event_id,
+        "quality_raw": selection.quality_raw,
+        "quality_score": selection.quality_score,
+        "zone_low": selection.zone_low,
+        "zone_high": selection.zone_high,
+        "plan_available": selection.plan_available,
+        "plan_zone_id": selection.plan_zone_id,
+        "plan_setup_id": selection.plan_setup_id,
+        "readiness_status": readiness.get("status"),
+        "smc_state": readiness.get("smc_state"),
+        "m15_status": readiness.get("m15_status"),
+        "readiness_reason_codes": list(readiness.get("reason_codes") or ()),
+        "selection_reason_codes": list(selection.selection_reason_codes),
+    }
 
 
 def _unavailable_breakdown() -> TechnicalBreakdown:

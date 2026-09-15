@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 import hashlib
 from math import isfinite
 from typing import Any, Sequence
@@ -49,6 +49,464 @@ VALID_ZONE_VISIT_STATES = frozenset({
     "completed_reacted",
     "closed_by_invalidation",
 })
+
+# Task 73 — M15 entry confirmation states.  The detector never claims
+# confirmation without naming the zone, the M15 entry visit, the trigger event
+# and the moment it happened, so no bare boolean is ever the source of truth.
+M15_STATUS_INSUFFICIENT_DATA = "insufficient_data"
+M15_STATUS_ZONE_NOT_TESTED = "zone_not_tested"
+M15_STATUS_WAITING = "waiting"
+M15_STATUS_CONFIRMED = "confirmed"
+M15_STATUS_INVALIDATED = "invalidated"
+M15_STATUS_EXPIRED = "expired"
+VALID_M15_CONFIRMATION_STATUSES = frozenset({
+    M15_STATUS_INSUFFICIENT_DATA,
+    M15_STATUS_ZONE_NOT_TESTED,
+    M15_STATUS_WAITING,
+    M15_STATUS_CONFIRMED,
+    M15_STATUS_INVALIDATED,
+    M15_STATUS_EXPIRED,
+})
+
+# Trigger kinds: a confirmed micro structure break with departure out of the
+# zone, or a rejection at the zone with follow-through out of it.
+M15_TRIGGER_MICRO_BREAK = "micro_break"
+M15_TRIGGER_REJECTION = "rejection"
+VALID_M15_TRIGGER_KINDS = frozenset({
+    M15_TRIGGER_MICRO_BREAK,
+    M15_TRIGGER_REJECTION,
+})
+
+# `m15_status` vocabulary of the readiness contract (readiness spec §10) that
+# consumers project from the evaluator state; M15 owns readiness only.
+VALID_M15_READINESS_STATUSES = frozenset({
+    "not_required",
+    "missing",
+    "waiting",
+    "confirmed",
+    "expired",
+})
+M15_READINESS_BY_STATUS = {
+    M15_STATUS_INSUFFICIENT_DATA: "missing",
+    M15_STATUS_ZONE_NOT_TESTED: "waiting",
+    M15_STATUS_WAITING: "waiting",
+    M15_STATUS_CONFIRMED: "confirmed",
+    M15_STATUS_INVALIDATED: "waiting",
+    M15_STATUS_EXPIRED: "expired",
+}
+
+M15_ENTRY_VISIT_MARKER = ":m15-visit-"
+M15_CONFIRMATION_MARKER = ":confirm-"
+M15_TRIGGER_MARKER = ":trigger-"
+
+# ---------------------------------------------------------------------------
+# Tasks 80–91 — canonical B/Q/L/C quality and candidate evaluation
+# ---------------------------------------------------------------------------
+
+SMC_QUALITY_STATE_EVALUATED = "evaluated"
+SMC_QUALITY_STATE_NO_ZONE = "no_zone"
+SMC_QUALITY_STATE_DATA_UNAVAILABLE = "data_unavailable"
+VALID_SMC_QUALITY_STATES = frozenset({
+    SMC_QUALITY_STATE_EVALUATED,
+    SMC_QUALITY_STATE_NO_ZONE,
+    SMC_QUALITY_STATE_DATA_UNAVAILABLE,
+})
+
+# BQLC spec §1 — fixed formula weights.
+QUALITY_B_WEIGHT = 4.0
+QUALITY_Q_WEIGHT = 7.0
+QUALITY_L_WEIGHT = 2.0
+QUALITY_C_WEIGHT = 2.0
+QUALITY_S_MAX = 15.0
+QUALITY_SCORE_SCALE = 100.0
+
+# Selection spec §4.2 / §4.3 — candidate confirmation states and ranks.
+# ``watch`` is the confirmed-but-expired-trigger state `_apply_m15_confirmation_state`
+# produces for an ``expired`` M15 status; it owns confirmation rank 2 below, so it
+# must be a representable state (readiness spec §2 "trigger đã timeout" row).
+VALID_CANDIDATE_CONFIRMATION_STATES = frozenset({
+    "confirmed",
+    "waiting",
+    "watch",
+    "candidate",
+    "invalid",
+    "expired",
+    "conflict",
+})
+CONFIRMATION_RANK_CONFIRMED_CURRENT = 0
+CONFIRMATION_RANK_CONFIRMED_WAITING = 1
+CONFIRMATION_RANK_CONFIRMED_WATCH = 2
+CONFIRMATION_RANK_CANDIDATE = 3
+CONFIRMATION_RANK_BY_STATE = {
+    "confirmed": CONFIRMATION_RANK_CONFIRMED_CURRENT,
+    "waiting": CONFIRMATION_RANK_CONFIRMED_WAITING,
+    "watch": CONFIRMATION_RANK_CONFIRMED_WATCH,
+    "candidate": CONFIRMATION_RANK_CANDIDATE,
+}
+
+# Fields of a canonical zone payload the shared plan seam needs (task 92).  The
+# scorer captures exactly this subset on the candidate it evaluated, so the
+# planner measures the SAME bounds/ATR/provenance the geometry gate was applied
+# to instead of looking the zone up a second time (selection spec §1/§5).
+CANDIDATE_PLAN_ZONE_FIELDS = (
+    "zone_id",
+    "setup_id",
+    "family",
+    "direction",
+    "low",
+    "high",
+    "level",
+    "tick_size",
+    "original_bounds",
+    "formation_atr",
+    "departure_measurement",
+)
+
+
+def candidate_plan_zone(zone: object) -> dict[str, Any] | None:
+    """Plan-relevant evidence of one canonical zone payload (``None`` if absent).
+
+    A payload without identity or without usable bounds carries no plan
+    evidence: the seam then fails closed instead of inventing geometry.
+    """
+
+    if not isinstance(zone, dict):
+        return None
+    captured: dict[str, Any] = {}
+    for field in CANDIDATE_PLAN_ZONE_FIELDS:
+        if field not in zone:
+            continue
+        value = zone[field]
+        captured[field] = dict(value) if isinstance(value, dict) else value
+    if not captured.get("zone_id"):
+        return None
+    if captured.get("low") is None or captured.get("high") is None:
+        return None
+    return captured
+
+
+def round_half_up(value: object) -> int:
+    """Round one canonical decimal to the nearest integer, halves away from zero.
+
+    The rounding reads the decimal representation of ``S`` so binary-float
+    banker's rounding can never turn ``10.5`` into ``10``
+    (compatibility spec §2).
+    """
+
+    try:
+        decimal = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("SMC quality raw requires a finite numeric S") from None
+    if not decimal.is_finite():
+        raise ValueError("SMC quality raw requires a finite numeric S")
+    return int(decimal.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+@dataclass(frozen=True, slots=True)
+class SmcQualityBreakdown:
+    """Canonical SMC quality for one side of one setup (BQLC spec §1).
+
+    ``b``/``q``/``l``/``c`` and ``formation``/``geometry``/``integrity`` keep
+    full float resolution; only ``quality_raw`` is rounded, exactly once.
+    ``features`` records every sub-feature for audit/replay.  A payload whose
+    combined ``S`` falls outside ``[0, 15]`` is rejected instead of clamped.
+    """
+
+    state: str = SMC_QUALITY_STATE_EVALUATED
+    b: float | None = None
+    q: float | None = None
+    l: float | None = None
+    c: float | None = None
+    formation: float | None = None
+    geometry: float | None = None
+    integrity: float | None = None
+    features: tuple[tuple[str, float], ...] = ()
+    quality_raw: int | None = None
+    quality_score: float | None = None
+    reason_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        state = str(self.state or "").strip().lower()
+        if state not in VALID_SMC_QUALITY_STATES:
+            raise ValueError(f"Invalid SMC quality state: {self.state}")
+        components = {
+            "b": self.b,
+            "q": self.q,
+            "l": self.l,
+            "c": self.c,
+            "formation": self.formation,
+            "geometry": self.geometry,
+            "integrity": self.integrity,
+        }
+        for name, value in components.items():
+            if value is None:
+                continue
+            number = float(value)
+            if not isfinite(number) or not 0.0 <= number <= 1.0:
+                raise ValueError(f"SMC quality component {name} must be in [0, 1]")
+            object.__setattr__(self, name, number)
+        features: list[tuple[str, float]] = []
+        for item in self.features:
+            name, value = item
+            name_text = str(name).strip()
+            number = float(value)
+            if not name_text or not isfinite(number) or not 0.0 <= number <= 1.0:
+                raise ValueError("SMC quality features must be named [0, 1] values")
+            features.append((name_text, number))
+        object.__setattr__(self, "features", tuple(features))
+        object.__setattr__(self, "state", state)
+
+        reason_codes = _tuple_of_text(self.reason_codes)
+        object.__setattr__(self, "reason_codes", reason_codes)
+
+        if state == SMC_QUALITY_STATE_NO_ZONE:
+            if any(value is not None for value in components.values()):
+                raise ValueError(
+                    "Unevaluated SMC quality cannot carry B/Q/L/C components"
+                )
+            # NO_ZONE is an evaluated-empty result: raw 0, never null.
+            object.__setattr__(self, "quality_raw", 0)
+            object.__setattr__(self, "quality_score", 0.0)
+            return
+        if state == SMC_QUALITY_STATE_DATA_UNAVAILABLE:
+            if any(value is not None for value in components.values()):
+                raise ValueError(
+                    "Unevaluated SMC quality cannot carry B/Q/L/C components"
+                )
+            if self.quality_raw is not None or self.quality_score is not None:
+                raise ValueError(
+                    "DATA_UNAVAILABLE SMC quality cannot carry a raw/score value"
+                )
+            return
+
+        if any(components[name] is None for name in ("b", "q", "l", "c")):
+            raise ValueError("Evaluated SMC quality requires B/Q/L/C")
+        total = self.total
+        if total < 0.0 or total > QUALITY_S_MAX:
+            raise ValueError("SMC quality S must be inside [0, 15]")
+        if self.quality_raw is not None and int(self.quality_raw) != round_half_up(total):
+            raise ValueError("SMC quality_raw must be round_half_up(S) once")
+        expected_raw = round_half_up(total)
+        object.__setattr__(self, "quality_raw", expected_raw)
+        expected_score = QUALITY_SCORE_SCALE * total / QUALITY_S_MAX
+        if self.quality_score is not None:
+            score = float(self.quality_score)
+            if not isfinite(score) or abs(score - expected_score) > 1e-9:
+                raise ValueError("SMC quality_score must equal 100*S/15")
+        object.__setattr__(self, "quality_score", expected_score)
+
+    @property
+    def total(self) -> float:
+        """``S = 4B + 7Q + 2L + 2C`` with no further cap or penalty."""
+
+        return (
+            QUALITY_B_WEIGHT * float(self.b)
+            + QUALITY_Q_WEIGHT * float(self.q)
+            + QUALITY_L_WEIGHT * float(self.l)
+            + QUALITY_C_WEIGHT * float(self.c)
+        )
+
+    def feature(self, name: str) -> float | None:
+        """Sub-feature value by name (``None`` when it was not measurable)."""
+
+        for feature_name, value in self.features:
+            if feature_name == name:
+                return value
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["features"] = [list(item) for item in self.features]
+        payload["reason_codes"] = list(self.reason_codes)
+        payload["total"] = self.total if self.b is not None else None
+        return payload
+
+    @classmethod
+    def no_zone(cls, *reason_codes: object) -> "SmcQualityBreakdown":
+        """Evaluated-empty result: ``quality_raw=0``, never null."""
+
+        return cls(
+            state=SMC_QUALITY_STATE_NO_ZONE,
+            quality_raw=0,
+            quality_score=0.0,
+            reason_codes=_tuple_of_text(reason_codes),
+        )
+
+    @classmethod
+    def data_unavailable(cls, *reason_codes: object) -> "SmcQualityBreakdown":
+        """Core data unavailable: ``quality_raw=null``, never a fake zero."""
+
+        return cls(
+            state=SMC_QUALITY_STATE_DATA_UNAVAILABLE,
+            quality_raw=None,
+            quality_score=None,
+            reason_codes=_tuple_of_text(reason_codes),
+        )
+
+
+def candidate_order_key(candidate: "CandidateEvaluation") -> tuple[Any, ...]:
+    """Stable candidate ordering tuple (selection spec §4.2).
+
+    ``confirmation_rank`` first, then quality, then distance, then the H4
+    tie-break (only when everything above is really equal), then the stable
+    candidate id.  R:R, risk, plan availability and list order never take part.
+    """
+
+    return (
+        candidate.confirmation_rank,
+        -(candidate.quality_score if candidate.quality_score is not None else -1.0),
+        candidate.distance_atr if candidate.distance_atr is not None else float("inf"),
+        0 if candidate.timeframe == "H4" else 1,
+        candidate.candidate_id,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateEvaluation:
+    """One evaluated SMC candidate for one side (selection spec §3).
+
+    The evaluator owns quality, hard eligibility and rejection evidence for
+    every candidate in the valid history; it never chooses the final selected
+    candidate and never reads a plan or R:R value (selection spec §1).
+    """
+
+    candidate_id: str
+    zone_id: str
+    side: str
+    timeframe: str
+    family: str
+    confirmation_state: str
+    quality: SmcQualityBreakdown | None = None
+    setup_id: str | None = None
+    lifecycle_status: str = ""
+    visit_id: str | None = None
+    available_at: str | None = None
+    confirmation_event_id: str | None = None
+    m15_status: str | None = None
+    geometry: dict[str, Any] | None = None
+    distance_atr: float | None = None
+    mandatory_passed: bool = False
+    rejection_codes: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+    confirmation_rank: int = CONFIRMATION_RANK_CANDIDATE
+    plan_zone: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        candidate_id = str(self.candidate_id or "").strip()
+        if not candidate_id:
+            raise ValueError("SMC candidate_id is required")
+        if self.side not in VALID_ZONE_DIRECTIONS:
+            raise ValueError(f"Invalid SMC candidate side: {self.side}")
+        state = str(self.confirmation_state or "").strip().lower()
+        if state not in VALID_CANDIDATE_CONFIRMATION_STATES:
+            raise ValueError(
+                f"Invalid SMC candidate confirmation state: {self.confirmation_state}"
+            )
+        object.__setattr__(self, "candidate_id", candidate_id)
+        object.__setattr__(self, "confirmation_state", state)
+        object.__setattr__(self, "rejection_codes", _tuple_of_text(self.rejection_codes))
+        object.__setattr__(self, "reason_codes", _tuple_of_text(self.reason_codes))
+        rank = int(self.confirmation_rank)
+        if rank < 0:
+            raise ValueError("SMC candidate confirmation rank cannot be negative")
+        object.__setattr__(self, "confirmation_rank", rank)
+        if self.distance_atr is not None:
+            distance = float(self.distance_atr)
+            if not isfinite(distance) or distance < 0:
+                raise ValueError("SMC candidate distance must be non-negative")
+            object.__setattr__(self, "distance_atr", distance)
+        object.__setattr__(
+            self,
+            "available_at",
+            _validate_optional_utc_timestamp(
+                self.available_at,
+                field_name="available_at",
+            ).isoformat()
+            if self.available_at is not None
+            else None,
+        )
+
+    @property
+    def quality_raw(self) -> int | None:
+        return self.quality.quality_raw if self.quality is not None else None
+
+    @property
+    def quality_score(self) -> float | None:
+        return self.quality.quality_score if self.quality is not None else None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["quality"] = self.quality.to_dict() if self.quality is not None else None
+        payload["rejection_codes"] = list(self.rejection_codes)
+        payload["reason_codes"] = list(self.reason_codes)
+        payload["quality_raw"] = self.quality_raw
+        payload["quality_score"] = self.quality_score
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class SmcCandidateSet:
+    """Evaluated candidate set of one side at one cutoff (tasks 80–91).
+
+    ``quality`` is the side-level quality state: ``evaluated`` with the current
+    best candidate's B/Q/L/C, ``no_zone`` with raw 0, or ``data_unavailable``
+    with raw null.  ``candidates`` keeps every evaluated candidate so the
+    coordinator (task 93) can try the ordered list; the finalizer (task 94) is
+    the only place that writes a selected candidate.
+    """
+
+    side: str
+    state: str
+    quality: SmcQualityBreakdown
+    candidates: tuple[CandidateEvaluation, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.side not in VALID_ZONE_DIRECTIONS:
+            raise ValueError(f"Invalid SMC candidate set side: {self.side}")
+        if not isinstance(self.quality, SmcQualityBreakdown):
+            raise ValueError("SMC candidate set requires a quality breakdown")
+        object.__setattr__(self, "candidates", tuple(self.candidates))
+        object.__setattr__(self, "reason_codes", _tuple_of_text(self.reason_codes))
+
+    @property
+    def quality_raw(self) -> int | None:
+        return self.quality.quality_raw
+
+    @property
+    def quality_score(self) -> float | None:
+        return self.quality.quality_score
+
+    @property
+    def ordered(self) -> tuple[CandidateEvaluation, ...]:
+        """Eligible candidates in deterministic selection order (task 91).
+
+        Same semantics as :func:`core.smc_quality.order_candidates`: a candidate
+        that failed the mandatory gate is excluded here (R80-91-01) while the
+        full history, rejections included, stays in ``candidates``.
+        """
+
+        return tuple(
+            sorted(
+                (
+                    candidate
+                    for candidate in self.candidates
+                    if candidate.mandatory_passed
+                ),
+                key=candidate_order_key,
+            )
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "side": self.side,
+            "state": self.state,
+            "quality": self.quality.to_dict(),
+            "quality_raw": self.quality_raw,
+            "quality_score": self.quality_score,
+            "reason_codes": list(self.reason_codes),
+            "candidates": [candidate.to_dict() for candidate in self.candidates],
+        }
 
 
 def _zone_evidence_payload(zone: object) -> dict[str, Any] | None:
@@ -905,6 +1363,322 @@ class ZoneVisit:
                 ) or ""
             ),
             bars_spent_inside=_int(payload.get("bars_spent_inside", 0), 0),
+        )
+
+
+def _visit_ordinal(value: object, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be positive")
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{field_name} must be positive") from None
+    if number < 1:
+        raise ValueError(f"{field_name} must be positive")
+    return number
+
+
+def _required_zone_reference(value: object, field_name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"SMC M15 confirmation {field_name} is required")
+    return text
+
+
+def build_m15_entry_visit_id(zone_id: object, ordinal: object) -> str:
+    """Build the M15 entry-visit identity `<zone_id>:m15-visit-N`."""
+
+    zone = _required_zone_reference(zone_id, "zone_id")
+    number = _visit_ordinal(ordinal, "M15 entry visit ordinal")
+    return f"{zone}{M15_ENTRY_VISIT_MARKER}{number}"
+
+
+def build_m15_trigger_event_id(entry_visit_id: object, ordinal: object) -> str:
+    """Build the trigger-event identity inside one M15 entry visit."""
+
+    visit = _required_zone_reference(entry_visit_id, "entry_visit_id")
+    number = _visit_ordinal(ordinal, "M15 trigger ordinal")
+    return f"{visit}{M15_TRIGGER_MARKER}{number}"
+
+
+def build_m15_confirmation_id(entry_visit_id: object, ordinal: object) -> str:
+    """Build the confirmation identity `<zone_id>:m15-visit-N:confirm-M`.
+
+    The identity never contains the parent H4/H1 lifecycle visit, so it stays
+    stable when that nullable link is filled in after the parent candle closes.
+    """
+
+    visit = _required_zone_reference(entry_visit_id, "entry_visit_id")
+    number = _visit_ordinal(ordinal, "M15 confirmation ordinal")
+    return f"{visit}{M15_CONFIRMATION_MARKER}{number}"
+
+
+@dataclass(frozen=True, slots=True)
+class M15Confirmation:
+    """Typed M15 entry confirmation for one side of one zone (task 73).
+
+    The record is the only place a confirmation exists: ``confirmed`` is
+    derived from ``status``, and a ``confirmed`` record must name the zone, the
+    M15 entry visit, the trigger event and the moment the trigger was
+    confirmed.  A record that cannot name them never claims confirmation.
+    ``expires_at`` is the end of the trigger window, ``invalidated_at`` plus
+    ``invalidation_reason`` record an invalidated confirmation, and every state
+    carries at least one reason code.
+    """
+
+    zone_id: str = ""
+    side: str = ""
+    status: str = M15_STATUS_INSUFFICIENT_DATA
+    entry_visit_id: str | None = None
+    visit_ordinal: int | None = None
+    visit_anchor_at: str | None = None
+    bars_since_anchor: int | None = None
+    trigger_event_id: str | None = None
+    trigger_kind: str = ""
+    trigger_at: str | None = None
+    confirmation_id: str | None = None
+    confirmed_at: str | None = None
+    expires_at: str | None = None
+    invalidated_at: str | None = None
+    invalidation_reason: str | None = None
+    parent_lifecycle_visit_id: str | None = None
+    zone_low: float | None = None
+    zone_high: float | None = None
+    reason_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        status = str(self.status or "").strip().lower()
+        if status not in VALID_M15_CONFIRMATION_STATUSES:
+            raise ValueError(f"Invalid SMC M15 confirmation status: {self.status}")
+        side = str(self.side or "").strip().lower()
+        if side and side not in VALID_ZONE_DIRECTIONS:
+            raise ValueError(f"Invalid SMC M15 confirmation side: {self.side}")
+        zone_id = str(self.zone_id or "").strip()
+        if status == M15_STATUS_CONFIRMED and not zone_id:
+            raise ValueError("Confirmed SMC M15 record requires zone_id")
+
+        visit_ordinal = self.visit_ordinal
+        if visit_ordinal is not None:
+            visit_ordinal = _visit_ordinal(visit_ordinal, "M15 entry visit ordinal")
+        bars_since_anchor = self.bars_since_anchor
+        if bars_since_anchor is not None:
+            if isinstance(bars_since_anchor, bool) or not isinstance(
+                bars_since_anchor,
+                int,
+            ):
+                raise ValueError("SMC M15 bars_since_anchor must be an integer")
+            if bars_since_anchor < 0:
+                raise ValueError("SMC M15 bars_since_anchor must be non-negative")
+
+        trigger_kind = str(self.trigger_kind or "").strip().lower()
+        if trigger_kind and trigger_kind not in VALID_M15_TRIGGER_KINDS:
+            raise ValueError(f"Invalid SMC M15 trigger kind: {self.trigger_kind}")
+
+        visit_anchor_at = _validate_optional_utc_timestamp(
+            self.visit_anchor_at,
+            field_name="visit_anchor_at",
+        )
+        trigger_at = _validate_optional_utc_timestamp(
+            self.trigger_at,
+            field_name="trigger_at",
+        )
+        confirmed_at = _validate_optional_utc_timestamp(
+            self.confirmed_at,
+            field_name="confirmed_at",
+        )
+        expires_at = _validate_optional_utc_timestamp(
+            self.expires_at,
+            field_name="expires_at",
+        )
+        invalidated_at = _validate_optional_utc_timestamp(
+            self.invalidated_at,
+            field_name="invalidated_at",
+        )
+        entry_visit_id = _optional_text(self.entry_visit_id)
+        trigger_event_id = _optional_text(self.trigger_event_id)
+        confirmation_id = _optional_text(self.confirmation_id)
+        invalidation_reason = _optional_text(self.invalidation_reason)
+        reason_codes = _tuple_of_text(self.reason_codes)
+        if not reason_codes:
+            raise ValueError("SMC M15 confirmation requires a reason code")
+        if invalidation_reason is not None and invalidation_reason not in reason_codes:
+            raise ValueError(
+                "SMC M15 invalidation reason must be traced in reason_codes"
+            )
+
+        if entry_visit_id is None:
+            if visit_ordinal is not None or visit_anchor_at is not None:
+                raise ValueError("M15 entry visit details require an entry_visit_id")
+        elif visit_ordinal is None or visit_anchor_at is None:
+            raise ValueError("M15 entry visit requires ordinal and anchor time")
+        elif entry_visit_id != build_m15_entry_visit_id(zone_id, visit_ordinal):
+            raise ValueError("SMC M15 entry_visit_id does not match zone/ordinal")
+
+        if trigger_event_id is None:
+            if trigger_kind or trigger_at is not None:
+                raise ValueError("M15 trigger details require a trigger_event_id")
+        elif not trigger_kind or trigger_at is None:
+            raise ValueError("M15 trigger event requires kind and trigger time")
+        if trigger_event_id is not None and entry_visit_id is not None:
+            if trigger_event_id != build_m15_trigger_event_id(entry_visit_id, 1):
+                raise ValueError("SMC M15 trigger_event_id does not match visit")
+
+        if confirmed_at is None:
+            if confirmation_id is not None or trigger_event_id is not None:
+                raise ValueError("M15 confirmation id/trigger requires confirmed_at")
+        else:
+            if zone_id == "" or entry_visit_id is None:
+                raise ValueError("Confirmed SMC M15 record requires zone and visit")
+            if confirmation_id is None:
+                raise ValueError("Confirmed SMC M15 record requires confirmation_id")
+            if confirmation_id != build_m15_confirmation_id(entry_visit_id, 1):
+                raise ValueError("SMC M15 confirmation_id does not match visit")
+            if expires_at is None:
+                raise ValueError("Confirmed SMC M15 record requires expires_at")
+        if expires_at is not None and confirmed_at is not None:
+            if expires_at <= confirmed_at:
+                raise ValueError("SMC M15 expires_at must follow confirmed_at")
+        if invalidated_at is not None and confirmed_at is not None:
+            if invalidated_at < confirmed_at:
+                raise ValueError("SMC M15 invalidated_at cannot precede confirmed_at")
+
+        if status == M15_STATUS_CONFIRMED:
+            if confirmed_at is None or invalidated_at is not None:
+                raise ValueError(
+                    "Confirmed SMC M15 status requires confirmed_at only"
+                )
+        elif status == M15_STATUS_INVALIDATED:
+            if confirmed_at is None or invalidated_at is None:
+                raise ValueError(
+                    "Invalidated SMC M15 status requires confirmed_at and invalidated_at"
+                )
+            if invalidation_reason is None:
+                raise ValueError(
+                    "Invalidated SMC M15 status requires an invalidation reason"
+                )
+        elif status in {M15_STATUS_INSUFFICIENT_DATA, M15_STATUS_ZONE_NOT_TESTED}:
+            if any(
+                value is not None
+                for value in (
+                    entry_visit_id,
+                    trigger_event_id,
+                    confirmed_at,
+                    expires_at,
+                    invalidated_at,
+                    visit_anchor_at,
+                )
+            ):
+                raise ValueError(
+                    "Unevaluated SMC M15 status cannot carry visit/trigger details"
+                )
+            if bars_since_anchor is not None:
+                raise ValueError(
+                    "Unevaluated SMC M15 status cannot carry bars_since_anchor"
+                )
+
+        low = self.zone_low
+        high = self.zone_high
+        if (low is None) != (high is None):
+            raise ValueError("SMC M15 zone bounds require both low and high")
+        if low is not None and high is not None:
+            if not isfinite(float(low)) or not isfinite(float(high)) or high <= low:
+                raise ValueError("SMC M15 zone bounds must be finite and ordered")
+            low = float(low)
+            high = float(high)
+
+        object.__setattr__(self, "status", status)
+        object.__setattr__(self, "side", side)
+        object.__setattr__(self, "zone_id", zone_id)
+        object.__setattr__(self, "visit_ordinal", visit_ordinal)
+        object.__setattr__(self, "bars_since_anchor", bars_since_anchor)
+        object.__setattr__(self, "trigger_kind", trigger_kind)
+        object.__setattr__(self, "entry_visit_id", entry_visit_id)
+        object.__setattr__(self, "trigger_event_id", trigger_event_id)
+        object.__setattr__(self, "confirmation_id", confirmation_id)
+        object.__setattr__(self, "invalidation_reason", invalidation_reason)
+        object.__setattr__(self, "reason_codes", reason_codes)
+        object.__setattr__(
+            self,
+            "visit_anchor_at",
+            visit_anchor_at.isoformat() if visit_anchor_at else None,
+        )
+        object.__setattr__(
+            self,
+            "trigger_at",
+            trigger_at.isoformat() if trigger_at else None,
+        )
+        object.__setattr__(
+            self,
+            "confirmed_at",
+            confirmed_at.isoformat() if confirmed_at else None,
+        )
+        object.__setattr__(
+            self,
+            "expires_at",
+            expires_at.isoformat() if expires_at else None,
+        )
+        object.__setattr__(
+            self,
+            "invalidated_at",
+            invalidated_at.isoformat() if invalidated_at else None,
+        )
+        object.__setattr__(self, "zone_low", low)
+        object.__setattr__(self, "zone_high", high)
+
+    @property
+    def confirmed(self) -> bool:
+        """Derived from ``status``; never a stored, unsourced boolean."""
+
+        return self.status == M15_STATUS_CONFIRMED
+
+    @property
+    def trigger_anchor_at(self) -> str | None:
+        """The trigger anchor is the M15 entry-visit anchor (lifecycle §11)."""
+
+        return self.visit_anchor_at
+
+    @property
+    def m15_status(self) -> str:
+        """Readiness projection of the evaluator state (readiness spec §10)."""
+
+        return M15_READINESS_BY_STATUS[self.status]
+
+    @property
+    def entry_visit_open(self) -> bool:
+        """Whether the effective state belongs to a live, unexpired trigger."""
+
+        return self.status in {M15_STATUS_WAITING, M15_STATUS_CONFIRMED}
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: object) -> "M15Confirmation":
+        payload = value if isinstance(value, dict) else {}
+        return cls(
+            zone_id=str(payload.get("zone_id", "") or ""),
+            side=str(payload.get("side", "") or ""),
+            status=str(
+                payload.get("status", M15_STATUS_INSUFFICIENT_DATA) or ""
+            ),
+            entry_visit_id=_optional_text(payload.get("entry_visit_id")),
+            visit_ordinal=_optional_int(payload.get("visit_ordinal")),
+            visit_anchor_at=_optional_text(payload.get("visit_anchor_at")),
+            bars_since_anchor=_optional_int(payload.get("bars_since_anchor")),
+            trigger_event_id=_optional_text(payload.get("trigger_event_id")),
+            trigger_kind=str(payload.get("trigger_kind", "") or ""),
+            trigger_at=_optional_text(payload.get("trigger_at")),
+            confirmation_id=_optional_text(payload.get("confirmation_id")),
+            confirmed_at=_optional_text(payload.get("confirmed_at")),
+            expires_at=_optional_text(payload.get("expires_at")),
+            invalidated_at=_optional_text(payload.get("invalidated_at")),
+            invalidation_reason=_optional_text(payload.get("invalidation_reason")),
+            parent_lifecycle_visit_id=_optional_text(
+                payload.get("parent_lifecycle_visit_id")
+            ),
+            zone_low=_optional_float(payload.get("zone_low")),
+            zone_high=_optional_float(payload.get("zone_high")),
+            reason_codes=_tuple_of_text(payload.get("reason_codes")),
         )
 
 

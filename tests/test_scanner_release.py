@@ -33,9 +33,14 @@ from core.scanner_release import (
 from core.scanner_row import SCANNER_ROW_VERSION
 from core.scanner_threshold_policy import make_default_threshold_policy
 from core.scanner_order_policy import DEFAULT_RUNTIME_ORDER_POLICY
+from core.reason_codes import TECHNICAL_DATA_UNAVAILABLE
 from core.scanner_order_policy import load_runtime_order_policy
 
 DEFAULT_THRESHOLD_POLICY = make_default_threshold_policy()
+
+# Task 101: the live release path takes the snapshot's symbol metadata.  These
+# fixtures quote ~1000 with 0.2 wicks, so one broker tick is 0.01.
+_TICK_SIZE = 0.01
 
 from tests.test_scanner_composition import (
     NOW,
@@ -104,6 +109,7 @@ def _live_pair():
     return run_pair_from_live(
         d1, h4, h1, "XAUUSD", _live_safety(),
         now=NOW, captured_at=NOW,
+        tick_size=_TICK_SIZE,
         macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
         order_policy=load_runtime_order_policy(),
     )
@@ -155,6 +161,7 @@ def _zoned_pair():
     return run_pair_from_live(
         d1, h4, h1, "XAUUSD", _live_safety(),
         now=NOW, captured_at=NOW,
+        tick_size=_TICK_SIZE,
         macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
         order_policy=load_runtime_order_policy(),
     )
@@ -337,8 +344,16 @@ class TestLiveWiringFromCandles:
         pair = _live_pair()
 
         assert calls == 1
+        # Task 106/112: a side whose canonical SMC could not be concluded fails
+        # the technical score closed, so it carries no Location detail — the
+        # shared context is still built exactly once.
         for side in ("buy", "sell"):
-            detail = pair.composition.canonical.side_score(side).location_detail
+            side_score = pair.composition.canonical.side_score(side)
+            detail = side_score.location_detail
+            if side_score.technical_signal_score is None:
+                assert TECHNICAL_DATA_UNAVAILABLE in side_score.reason_codes
+                assert detail is None
+                continue
             assert detail is not None
             assert detail.model_version == "location-geometry-v2"
             assert detail.reference_closed_at is not None
@@ -474,13 +489,21 @@ class TestRouterUsesOwnerThreshold:
                 min_risk_reward=Fraction(7, 2),
             ),
         )
+        from core import scanner_live_producers as live_producers
+
+        real_derive = live_producers.derive_live_analysis
         captured: dict[str, object] = {}
 
-        def _spy_produce(technical, canonical_smc, *, min_rr=None):
-            captured["min_rr"] = min_rr
-            return real_produce(technical, canonical_smc, min_rr=min_rr)
+        # Task 102/107: the R:R floor now reaches the coordinator through
+        # ``derive_live_analysis``; the release path no longer runs a second
+        # plan pass over the canonical selected zone.
+        def _spy_derive(*args, **kwargs):
+            captured["min_rr"] = kwargs.get("min_rr")
+            return real_derive(*args, **kwargs)
 
-        monkeypatch.setattr(producers, "produce_scenario_plans", _spy_produce)
+        monkeypatch.setattr(
+            live_producers, "derive_live_analysis", _spy_derive
+        )
         d1, h4, h1 = _live_candles()
         run_pair_from_live(
             d1,

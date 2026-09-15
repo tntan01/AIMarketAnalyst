@@ -100,10 +100,25 @@ def _pipeline_input() -> tuple[AnalysisInput, dict[str, list[Candle]]]:
     return request, candles
 
 
+def _snapshot_kwargs(candles):
+    """The fixture's own frozen boundary (task 101)."""
+
+    from datetime import timedelta
+
+    latest = None
+    for timeframe, minutes in (("D1", 1440), ("H4", 240), ("H1", 60), ("M15", 15)):
+        for candle in candles.get(timeframe) or ():
+            close_at = candle.time + timedelta(minutes=minutes)
+            if latest is None or close_at > latest:
+                latest = close_at
+    assert latest is not None
+    return {"snapshot_as_of": latest, "m15_as_of": latest, "tick_size": 0.00001}
+
+
 def test_analysis_outputs_single_canonical_scorer():
     request, candles = _pipeline_input()
-    first = analyze_symbol(request, candles)
-    second = analyze_symbol(request, candles)
+    first = analyze_symbol(request, candles, **_snapshot_kwargs(candles))
+    second = analyze_symbol(request, candles, **_snapshot_kwargs(candles))
 
     # Deterministic single canonical scorer — no mode can route elsewhere.
     for key in (

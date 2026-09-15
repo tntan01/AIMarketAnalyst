@@ -24,6 +24,29 @@ def _zone(level: float, half: float = 0.1) -> dict:
     return {"level": level, "low": level - half, "high": level + half}
 
 
+def _canonical_zone(level: float, half: float = 0.1, *, formation_atr: float = 1.0) -> dict:
+    """Canonical zone payload with the formation-ATR provenance P11 requires.
+
+    The geometry gate reads the zone's own formation ATR (source timeframe) for
+    width/family geometry, so a canonical payload without it legitimately fails
+    closed; the execution ATR stays reserved for the hard distance.
+    """
+
+    zone = _zone(level, half)
+    zone["zone_id"] = f"smcz-{level}"
+    zone["direction"] = "buy"
+    # A payload that claims canonical provenance also has to carry the tick
+    # size the quantizing rules need (task 89/D101-02): without it the shared
+    # geometry gate fails the candidate closed instead of guessing.
+    zone["tick_size"] = 0.01
+    zone["departure_measurement"] = {
+        "direction": "buy",
+        "atr_before_event": formation_atr,
+        "status": "ok",
+    }
+    return zone
+
+
 def _technical(**over) -> dict:
     base = {
         "price": 100.0,
@@ -158,7 +181,7 @@ class TestFailClosed:
 
 class TestCanonicalZonePreference:
     def test_canonical_zone_preferred_when_protective(self):
-        canonical = _zone(97.0, half=0.2)
+        canonical = _canonical_zone(97.0, half=0.2)
         plan = _buy_plan_from_zones({"buy": canonical, "sell": None})
         assert plan is not None
         assert plan.source == "smc_canonical_zone"
@@ -166,7 +189,7 @@ class TestCanonicalZonePreference:
 
     def test_canonical_not_protective_falls_back_to_technical(self):
         # Canonical zone on the wrong side of price -> technical zone is used.
-        canonical = _zone(105.0, half=0.2)
+        canonical = _canonical_zone(105.0, half=0.2)
         plan = _buy_plan_from_zones({"buy": canonical, "sell": None})
         assert plan is not None
         assert plan.source == "technical_zone"
@@ -222,7 +245,7 @@ class TestProtectiveZoneBandOnPlan:
         assert plan.entry == plan.entry_zone_high
 
     def test_canonical_zone_band_flows_into_plan(self):
-        canonical = _zone(97.0, half=0.2)
+        canonical = _canonical_zone(97.0, half=0.2)
         plan = _buy_plan_from_zones({"buy": canonical, "sell": None})
         assert plan is not None
         assert plan.entry_zone_low == 97.0 - 0.2

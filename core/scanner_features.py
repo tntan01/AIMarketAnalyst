@@ -19,9 +19,11 @@ Governance (spec: ``docs/scanner/scanner-features-spec.md``):
   (the spec's parity contract).
 
 The ``smc`` raw (≤15) is not derived from candles here: per owner decision
-(§4-a) it comes from the RETURED canonical ``SmcScoringResult`` via
-``project_smc_technical_raw``.  If no ``canonical_smc`` is supplied, ``smc`` is
-``None`` (fail-closed), never fabricated.
+(§4-a) it is READ from the canonical final result via
+``project_smc_quality_raw`` (task 105), which publishes the canonical
+``quality_raw`` of the same selected setup together with its B/Q/L/C.  If no
+``canonical_smc`` is supplied, ``smc`` is ``None`` (fail-closed), never
+fabricated; a side whose core data was unavailable also stays ``None``.
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ from core.technical_context import (
     nearest_zone,
     price_in_zone,
 )
-from core.technical_signal_scorer import project_smc_technical_raw
+from core.technical_signal_scorer import project_smc_quality_raw
 
 # Version identity of this feature layer (locked; contract §7.3).
 FEATURES_VERSION = "scanner-features"
@@ -337,7 +339,11 @@ def _derive_technical_raws(
         smc: int | None = None
         smc_source: str | None = None
         if canonical_smc is not None:
-            projection = project_smc_technical_raw(canonical_smc, side)
+            # Task 105: the SMC raw is READ from the canonical final selection
+            # (``quality_raw`` 0–15).  No subtotal, cap, penalty or old formula
+            # is rebuilt here, and a side whose core data was unavailable keeps
+            # ``smc=None`` (null ≠ the evaluated zero).
+            projection = project_smc_quality_raw(canonical_smc, side)
             smc = projection.raw
             smc_source = SMC_SOURCE
         per_side[side] = SideFeatureRaws(

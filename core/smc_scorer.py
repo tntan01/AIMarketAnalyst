@@ -4,10 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from math import isfinite
-from typing import Any
+from typing import Any, Sequence
 
-from core.smc_m15_confirmation import evaluate_m15_confirmation
-from core.smc_models import SelectedSmcZone, SmcScoreBreakdown, SmcZone
+from core.smc_m15_confirmation import evaluate_m15_entry_confirmation
+# Tasks 80–91 canonical evaluator lives in its own module for readability; it is
+# re-exported here because the checklist assigns the scorer/selection surface.
+from core.smc_quality import (  # noqa: F401
+    POOL_LINK_DISTANCE_ATR,
+    POOL_LINK_WINDOW_BARS,
+    QUALITY_CORE_UNAVAILABLE,
+    QUALITY_NO_VALID_SETUP,
+    STRUCTURE_TRIGGER_LIFETIME_BARS,
+    evaluate_candidate,
+    evaluate_candidate_sets,
+    order_candidates,
+    zone_payloads,
+)
+from core.smc_readiness import evaluate_smc_readiness
+from core.smc_models import (
+    SMC_QUALITY_STATE_EVALUATED,
+    CandidateEvaluation,
+    SelectedSmcZone,
+    SmcScoreBreakdown,
+    SmcZone,
+)
 from core.smc_scoring_result import SmcScoringResult, SmcSideScoringResult
 from core.smc_versions import SMC_SCORER_VERSION
 from core.smc_zone_ai_review import review_zone_with_cache
@@ -75,6 +95,146 @@ class EvaluatedSmcZone:
         }
 
 
+# ---------------------------------------------------------------------------
+# R80-91-03 (option A) — canonical caller seam at the scorer boundary
+# ---------------------------------------------------------------------------
+
+CANONICAL_DIAGNOSTICS_VERSION = "smc-canonical-diagnostics-v1"
+CANONICAL_DIAGNOSTICS_ERROR = "CANONICAL_DIAGNOSTICS_ERROR"
+
+
+def evaluate_canonical_diagnostics(
+    smc: dict[str, Any],
+    technical: dict[str, Any] | None = None,
+    *,
+    as_of: Any | None = None,
+    core_reason_codes: Sequence[str] = (),
+    m15_candles: Any | None = None,
+    m15_as_of: Any | None = None,
+) -> dict[str, Any]:
+    """Run the canonical chain for one snapshot and return its diagnostics.
+
+    Runtime caller of lot 80-91: canonical evidence -> candidate evaluation ->
+    B/Q/L/C -> readiness/order.  It only coordinates the canonical helpers and
+    converts their typed output into a plain payload; it never selects a zone,
+    never builds a plan, never recomputes B/Q/L/C and never falls back to the
+    legacy formula.
+
+    Per side the payload carries the side quality state with B/Q/L/C, every
+    evaluated candidate (quality, gate result, rejections), the ordered
+    candidate ids from :func:`order_candidates` (mandatory-passed only) and the
+    SMC readiness verdict computed with ``plan_available=None`` - no planner
+    exists in this lot, so readiness never claims READY.
+    """
+
+    candidate_sets = evaluate_candidate_sets(
+        smc,
+        technical,
+        as_of=as_of,
+        core_reason_codes=core_reason_codes,
+        m15_candles=m15_candles,
+        m15_as_of=m15_as_of,
+    )
+    sides: dict[str, Any] = {}
+    for side, candidate_set in candidate_sets.items():
+        ordered = order_candidates(candidate_set.candidates)
+        readiness = evaluate_smc_readiness(candidate_set, plan_available=None)
+        quality = candidate_set.quality
+        sides[side] = {
+            "state": candidate_set.state,
+            "quality_raw": quality.quality_raw,
+            "quality_score": quality.quality_score,
+            "b": quality.b,
+            "q": quality.q,
+            "l": quality.l,
+            "c": quality.c,
+            "total": quality.total if quality.b is not None else None,
+            "reason_codes": list(candidate_set.reason_codes),
+            "ordered_candidate_ids": [
+                candidate.candidate_id for candidate in ordered
+            ],
+            "readiness": readiness.to_dict(),
+            "candidates": [
+                _candidate_diagnostics(candidate)
+                for candidate in candidate_set.candidates
+            ],
+        }
+    return {
+        "diagnostics_version": CANONICAL_DIAGNOSTICS_VERSION,
+        "state": SMC_QUALITY_STATE_EVALUATED,
+        "as_of": _canonical_text(as_of),
+        "sides": sides,
+    }
+
+
+def _candidate_diagnostics(candidate: CandidateEvaluation) -> dict[str, Any]:
+    quality = candidate.quality
+    return {
+        "candidate_id": candidate.candidate_id,
+        "zone_id": candidate.zone_id,
+        "setup_id": candidate.setup_id,
+        "timeframe": candidate.timeframe,
+        "family": candidate.family,
+        "confirmation_state": candidate.confirmation_state,
+        "confirmation_rank": candidate.confirmation_rank,
+        "mandatory_passed": candidate.mandatory_passed,
+        "quality_raw": candidate.quality_raw,
+        "quality_score": candidate.quality_score,
+        "b": quality.b if quality is not None else None,
+        "q": quality.q if quality is not None else None,
+        "l": quality.l if quality is not None else None,
+        "c": quality.c if quality is not None else None,
+        "distance_atr": candidate.distance_atr,
+        "m15_status": candidate.m15_status,
+        "rejection_codes": list(candidate.rejection_codes),
+        "reason_codes": list(candidate.reason_codes),
+    }
+
+
+def _canonical_diagnostics_for_snapshot(
+    smc: dict[str, Any],
+    technical: dict[str, Any],
+    *,
+    core_reason_codes: Sequence[str] = (),
+    m15_candles: Any | None = None,
+    m15_as_of: Any | None = None,
+) -> dict[str, Any]:
+    """Diagnostics for one snapshot; never allowed to break the legacy route.
+
+    A failure is recorded explicitly, with its error type, instead of being
+    swallowed or silently dropped, so a caller always sees that the canonical
+    chain produced no verdict for this snapshot.
+    """
+
+    try:
+        return evaluate_canonical_diagnostics(
+            smc,
+            technical,
+            # One cutoff per snapshot (data spec 1): the boundary carries it as
+            # the M15 cutoff today; task 101 adds the general snapshot cutoff.
+            as_of=m15_as_of,
+            core_reason_codes=core_reason_codes,
+            m15_candles=m15_candles,
+            m15_as_of=m15_as_of,
+        )
+    except Exception as error:  # noqa: BLE001 - diagnostics are non-authoritative
+        return {
+            "diagnostics_version": CANONICAL_DIAGNOSTICS_VERSION,
+            "state": "error",
+            "as_of": _canonical_text(m15_as_of),
+            "sides": {},
+            "reason_codes": [CANONICAL_DIAGNOSTICS_ERROR],
+            "error": f"{type(error).__name__}: {error}",
+        }
+
+
+def _canonical_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def score_smc(
     smc: dict[str, Any],
     technical: dict[str, Any],
@@ -83,6 +243,8 @@ def score_smc(
     ai_service: Any | None = None,
     zone_audit_cache: dict[str, Any] | None = None,
     m15_candles: Any | None = None,
+    m15_as_of: Any | None = None,
+    canonical_core_reason_codes: Sequence[str] = (),
 ) -> SmcScoringResult:
     """Score BUY and SELL independently without mutating the active context.
 
@@ -96,10 +258,18 @@ def score_smc(
     over the same data reuses cached verdicts instead of calling the AI
     again.
 
-    When ``m15_candles`` is provided, the selected zone is checked for M15
-    confirmation (small-timeframe CHoCH or clear price reaction): a tested
-    zone without confirmation subtracts points, while confirmation and the
-    warning cases only trace reason codes.  Without it the step is inert.
+    When ``m15_candles`` is provided, the selected zone's M15 entry visits are
+    evaluated for an entry confirmation (micro break with departure, or a
+    rejection with follow-through): every outcome only traces reason codes,
+    because M15 owns readiness and never changes quality (R16-03).  Without it
+    the step is inert.
+
+    ``m15_as_of`` is the snapshot cutoff of the M15 window: only candles closed
+    at that cutoff take part, and the availability boundary of the selected
+    zone travels from its canonical zone so no event before the zone existed
+    can confirm an entry.  A missing or naive cutoff fails closed with the
+    canonical cutoff reason instead of evaluating a window whose boundary is
+    unknown.
     """
 
     sides: dict[str, SmcSideScoringResult] = {}
@@ -112,6 +282,7 @@ def score_smc(
             ai_service=ai_service,
             zone_audit_cache=zone_audit_cache,
             m15_candles=m15_candles,
+            m15_as_of=m15_as_of,
         )
         sides[side] = SmcSideScoringResult(
             score=side_payload["smc_quality"],
@@ -129,7 +300,21 @@ def score_smc(
             selected_zone_relevance_score=side_payload["selected_zone_relevance_score"],
             selected_zone_setup_score=side_payload["selected_zone_setup_score"],
         )
-    return SmcScoringResult(scoring_version=SMC_SCORER_VERSION, sides=sides)
+    # R80-91-03 (option A): the canonical chain runs exactly once per snapshot
+    # and lands on the internal diagnostics channel; it never touches the legacy
+    # scores or selected zones computed above.
+    diagnostics = _canonical_diagnostics_for_snapshot(
+        smc if isinstance(smc, dict) else {},
+        technical if isinstance(technical, dict) else {},
+        core_reason_codes=canonical_core_reason_codes,
+        m15_candles=m15_candles,
+        m15_as_of=m15_as_of,
+    )
+    return SmcScoringResult(
+        scoring_version=SMC_SCORER_VERSION,
+        sides=sides,
+        canonical_diagnostics=diagnostics,
+    )
 
 
 def evaluate_smc_zones(
@@ -241,6 +426,7 @@ def _score_side(
     ai_service: Any | None = None,
     zone_audit_cache: dict[str, Any] | None = None,
     m15_candles: Any | None = None,
+    m15_as_of: Any | None = None,
 ) -> dict[str, Any]:
     price = _positive_float(technical.get("price"))
     atr_value = _positive_float(
@@ -324,14 +510,13 @@ def _score_side(
     penalty_points += ai_penalty
     penalties.extend(ai_reasons)
 
-    m15_penalty, m15_reasons = _m15_confirmation_penalty(
+    m15_reasons = _m15_confirmation_reasons(
         side,
         selected,
         m15_candles,
+        m15_as_of,
+        _selected_zone_availability(evaluations, selected),
     )
-    penalty_points += m15_penalty
-    if m15_penalty:
-        penalties.extend(m15_reasons)
 
     total = max(0, subtotal - penalty_points)
     if applied_cap is not None:
@@ -839,60 +1024,69 @@ def _ai_zone_review_data(
     }
 
 
-def _m15_confirmation_penalty(
+def _selected_zone_availability(
+    evaluations: tuple[EvaluatedSmcZone, ...],
+    selected: SelectedSmcZone | None,
+) -> str | None:
+    """Availability boundary of the selected zone's canonical source zone.
+
+    R73-01: the M15 entry confirmation must not see an event that happened
+    before the zone existed, so the boundary travels from the evaluated
+    canonical zone instead of being rebuilt from the selected bounds.  ``None``
+    means the canonical zone carries no availability (legacy/partial payload).
+    """
+
+    if selected is None:
+        return None
+    for evaluation in evaluations:
+        if evaluation.zone.zone_id == selected.zone_id:
+            return evaluation.zone.available_at
+    return None
+
+
+def _m15_confirmation_reasons(
     side: str,
     selected: SelectedSmcZone | None,
     m15_candles: Any | None,
-) -> tuple[int, list[str]]:
-    """M15 confirmation at the selected zone.
+    m15_as_of: Any | None,
+    available_at: str | None,
+) -> list[str]:
+    """M15 entry confirmation evidence at the selected zone.
 
-    When M15 candles are available and a zone was selected, the zone's M15
-    reaction is evaluated.  A tested zone without confirmation subtracts
-    points; confirmation, an untested zone and insufficient data only trace
-    reason codes (asymmetric: confirmation never adds points).  Without M15
-    data the step is inert, keeping callers that do not supply candles on
-    the previous behaviour.
+    The canonical M15 evaluator rebuilds the zone's M15 entry visits and returns
+    a typed confirmation bound to the zone, the entry visit and the trigger
+    event.  M15 owns readiness only: no outcome here adds or subtracts quality
+    points (R16-03, parameter table P10), so only the reason codes are traced.
+    Without M15 data, or without a selected zone, the step is inert.  The
+    canonical zone's ``available_at`` and the snapshot ``m15_as_of`` travel with
+    the call so the evaluator does not have to rebuild temporal provenance from
+    bounds.
     """
 
     if m15_candles is None:
-        return 0, []
+        return []
     if selected is None:
-        return 0, []
-    result = evaluate_m15_confirmation(
+        return []
+    confirmation = evaluate_m15_entry_confirmation(
         side,
         selected.low,
         selected.high,
         m15_candles,
+        zone_id=selected.zone_id,
+        available_at=available_at,
+        as_of=m15_as_of,
     )
-    penalty = int(result.get("penalty") or 0)
-    reasons = [
+    return [
         str(code)
-        for code in result.get("reason_codes", [])
+        for code in confirmation.reason_codes
         if str(code).strip()
     ]
-    return penalty, reasons
 
 
-def _zone_payloads(
-    timeframe_data: dict[str, Any],
-    side: str,
-):
-    keys = (
-        ("demand", "demand_zones"),
-        ("order_block", "order_blocks"),
-        ("fvg", "fvg"),
-    ) if side == "buy" else (
-        ("supply", "supply_zones"),
-        ("order_block", "order_blocks"),
-        ("fvg", "fvg"),
-    )
-    for family, key in keys:
-        values = timeframe_data.get(key, [])
-        if not isinstance(values, list):
-            continue
-        for value in values:
-            if isinstance(value, dict):
-                yield family, value
+def _zone_payloads(timeframe_data: dict[str, Any], side: str):
+    """Legacy-route wrapper over the shared family mapping (tasks 80–91 owner)."""
+
+    return zone_payloads(timeframe_data, side)
 
 
 def _zone_direction(zone: dict[str, Any], family: str) -> str:

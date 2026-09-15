@@ -129,11 +129,23 @@ def _require_mapping(value: object, path: str) -> Mapping[str, Any]:
 
 
 def _require_exact_keys(
-    value: object, expected: frozenset[str], path: str
+    value: object,
+    expected: frozenset[str],
+    path: str,
+    *,
+    required: frozenset[str] | None = None,
 ) -> Mapping[str, Any]:
+    """Strict key check: no unknown keys, and every *required* key present.
+
+    ``required`` defaults to ``expected`` (exact match).  A reader may widen
+    ``expected`` with keys added later so payloads written before them stay
+    readable, while still refusing anything it does not understand.
+    """
+
     payload = _require_mapping(value, path)
     actual = frozenset(payload)
-    if actual != expected:
+    needed = expected if required is None else required
+    if not needed <= actual or not actual <= expected:
         _error(
             path,
             f"expected exactly {sorted(expected)}, got {sorted(actual)}",
@@ -262,6 +274,11 @@ class ScannerOrderPayload:
     risk_reward_ratio: Fraction | None
     technical_signal_score: int
     setup_score: int
+    # Task 111: identity of the SMC setup the user is approving.  Execution
+    # revalidation compares it with the CURRENT canonical verdict, so a stale
+    # approval cannot be dispatched against a changed/invalidated zone.
+    smc_zone_id: str | None = None
+    smc_setup_id: str | None = None
     sends_real_order: bool = False
     revalidation_required: bool = True
 
@@ -371,6 +388,8 @@ class ScannerOrderPayload:
             ),
             "technical_signal_score": self.technical_signal_score,
             "setup_score": self.setup_score,
+            "smc_zone_id": self.smc_zone_id,
+            "smc_setup_id": self.smc_setup_id,
             "sends_real_order": self.sends_real_order,
             "revalidation_required": self.revalidation_required,
         }
@@ -401,8 +420,18 @@ class ScannerOrderPayload:
                 "revalidation_required",
             }
         )
-        payload = _require_exact_keys(value, expected, path)
+        # Task 111 added the approved SMC identity.  It is optional on READ so
+        # a payload written before it stays readable (historical rows are not
+        # reinterpreted as current results); the writer always emits both keys.
+        allowed = expected | {"smc_zone_id", "smc_setup_id"}
+        payload = _require_exact_keys(value, allowed, path, required=expected)
         return cls(
+            smc_zone_id=_optional_text(
+                payload.get("smc_zone_id"), f"{path}.smc_zone_id"
+            ),
+            smc_setup_id=_optional_text(
+                payload.get("smc_setup_id"), f"{path}.smc_setup_id"
+            ),
             symbol=_require_text(payload["symbol"], f"{path}.symbol"),
             side=_require_text(payload["side"], f"{path}.side"),
             captured_at=_require_datetime(payload["captured_at"], f"{path}.captured_at"),
@@ -1061,6 +1090,21 @@ def _unavailable(
     )
 
 
+def _selection_field(canonical: Any, side: str, field: str) -> str | None:
+    """One canonical SMC selection field of *side* (task 111 approval identity)."""
+
+    try:
+        side_score = canonical.side_score(side)
+    except Exception:  # pragma: no cover - defensive around a strict reader
+        return None
+    selection = getattr(side_score, "smc_selection", None)
+    if not isinstance(selection, Mapping):
+        return None
+    value = selection.get(field)
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
 def _order_payload_for(
     *,
     composition: ScannerCompositionResult,
@@ -1093,4 +1137,6 @@ def _order_payload_for(
         risk_reward_ratio=rr,
         technical_signal_score=technical,
         setup_score=setup,
+        smc_zone_id=_selection_field(canonical, side, "selected_zone_id"),
+        smc_setup_id=_selection_field(canonical, side, "selected_setup_id"),
     )

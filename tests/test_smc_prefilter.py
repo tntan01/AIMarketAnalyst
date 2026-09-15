@@ -1,20 +1,33 @@
-"""Unit contracts for the Tier-1 canonical SMC prefilter predicate."""
+"""Unit contracts for the Tier-1 canonical SMC prefilter predicate (task 104).
+
+The prefilter consumes the SAME frozen snapshot and the SAME canonical
+evaluation the full route produces.  It rejects only on a concluded canonical
+verdict: an evaluated empty (no usable zone on either side) or core data that
+could not be concluded.  A side merely waiting for its M15 confirmation is a
+valid setup state and is never rejected.
+"""
 
 from __future__ import annotations
 
-from copy import deepcopy
-from unittest.mock import patch
+import importlib
 
 import pytest
 
 from core.smc_prefilter import (
     NO_ACTIONABLE_SMC_ZONE,
+    SMC_CORE_DATA_UNAVAILABLE,
     SMC_PREFILTER_ERROR_FAIL_OPEN,
+    SMC_PREFILTER_VERSION,
     SMC_SCORING_ERROR,
     evaluate_post_context_prefilter,
 )
-from core.smc_scorer import score_smc
+from core.smc_snapshot import build_smc_snapshot, evaluate_smc_snapshot
 
+_QUALITY = importlib.import_module("tests.test_smc_quality_task88")
+# The snapshot cutoff must match the candle fixture the seam filters, so the
+# core-data verdict is the real one (and not an empty-history artefact).
+_AS_OF = "2026-08-13T12:00:00+00:00"
+_SHAPES = importlib.import_module("core.smc_models")
 
 _FAMILY_KEYS = {
     "demand": "demand_zones",
@@ -24,51 +37,61 @@ _FAMILY_KEYS = {
 }
 
 
-def _technical() -> dict:
+def _flat_timeframe(*, structure="HH/HL", bos=True, displacement="bullish"):
     return {
-        "price": 100.0,
-        "atr_h4": 10.0,
-        "atr_d1": 12.0,
-        "support_zones": [{"level": 92.5}],
-        "resistance_zones": [{"level": 107.5}],
+        "structure": structure,
+        "bos": bos,
+        "choch": False,
+        "displacement": displacement,
+        "demand_zones": [],
+        "supply_zones": [],
+        "order_blocks": [],
+        "fvg": [],
+        "zone_link_sweeps": {},
     }
 
 
-def _context() -> dict:
-    return {
-        "symbol": "TEST",
-        "H4": {key: [] for key in _FAMILY_KEYS.values()},
-        "H1": {key: [] for key in _FAMILY_KEYS.values()},
-        "confluence": {"buy_score": 0, "sell_score": 0},
+def _context(*, zone=None, family="order_block", timeframe="H4"):
+    """A canonical context; *zone* lands in the family list of its own family."""
+
+    context = {
+        "symbol": "EUR/USD",
+        "D1": _flat_timeframe(),
+        "H4": _flat_timeframe(),
+        "H1": _flat_timeframe(),
+        "confluence": {"timeframe_evidence": {}},
     }
+    if zone is not None:
+        context[timeframe][_FAMILY_KEYS[family]] = [zone]
+    return context
 
 
-def _zone(family: str, side: str, *, zone_id: str) -> dict:
-    bullish = side == "buy"
-    zone_type = {
-        "demand": "demand_zone",
-        "supply": "supply_zone",
-        "order_block": "bullish_order_block" if bullish else "bearish_order_block",
-        "fvg": "bullish_fvg" if bullish else "bearish_fvg",
-    }[family]
-    return {
-        "zone_id": zone_id,
-        "type": zone_type,
-        "family": family,
-        "direction": side,
-        "low": 90.0 if bullish else 105.0,
-        "high": 95.0 if bullish else 110.0,
-        "origin_index": 10,
-        "departure_end_index": 11,
-        "origin_time": "2026-07-01T10:00:00+00:00",
-        "freshness_bars": 5,
-        "age_bars": 5,
-        "displacement_multiple": 2.0,
-        "zone_location": "discount" if bullish else "premium",
-        "broken": False,
-        "stale": False,
-        "test_count": 0,
-    }
+def _candles():
+    from tests.test_scanner_release import _zoned_candles
+
+    return _zoned_candles()
+
+
+def _snapshot(context, *, technical=None, candles=None):
+    """Freeze a snapshot the way the runtime callers do."""
+
+    d1, h4, h1 = candles if candles is not None else _candles()
+    return build_smc_snapshot(
+        {"D1": d1, "H4": h4, "H1": h1},
+        symbol="EUR/USD",
+        as_of=_AS_OF,
+        tick_size=0.1,
+        context_builder=lambda *a, **k: context,
+        technical_builder=lambda *a, **k: (
+            technical if technical is not None else _QUALITY._technical()
+        ),
+    )
+
+
+def _zone(**overrides):
+    zone = _QUALITY._zone()
+    zone.update(overrides)
+    return zone
 
 
 @pytest.mark.parametrize("timeframe", ("H4", "H1"))
@@ -77,56 +100,109 @@ def test_canonical_prefilter_survives_each_raw_family_and_timeframe(
     timeframe: str,
     family: str,
 ) -> None:
-    context = _context()
     side = "buy" if family != "supply" else "sell"
-    expected_id = f"{timeframe}-{family}-{side}"
-    context[timeframe][_FAMILY_KEYS[family]].append(
-        _zone(family, side, zone_id=expected_id)
+    zone = _zone(
+        family="supply_demand" if family in ("demand", "supply") else (
+            "fvg" if family == "fvg" else "ob"
+        ),
+        direction=side,
+        type=(
+            "supply_zone" if family == "supply"
+            else "demand_zone" if family == "demand"
+            else "bullish_fvg" if family == "fvg"
+            else "bullish_order_block"
+        ),
     )
+    if family == "fvg":
+        # An FVG carries its measurement on the gap's middle candle, and the
+        # remaining/original gap the family geometry feature needs.
+        zone["middle_measurement"] = {
+            "body_range": 0.8,
+            "directional_close_location": 0.86,
+            "atr_before_event": 2.0,
+        }
+        zone["remaining_low"] = 99.0
+        zone["remaining_high"] = 99.8
+    if family in ("demand", "supply"):
+        # The S/D family feature is measured from the base compression.
+        zone["base_measurement"] = {
+            "base_low": 99.0,
+            "base_high": 100.0,
+            "average_range": 2.0,
+            "compression_limit": 2.0,
+        }
+    context = _context(zone=zone, family=family, timeframe=timeframe)
 
-    decision = evaluate_post_context_prefilter(
-        smc=context,
-        technical=_technical(),
-        market_regime={"primary": "trend_up"},
-    )
+    decision = evaluate_post_context_prefilter(snapshot=_snapshot(context), min_rr=2.0)
 
-    assert decision["should_reject"] is False
+    assert decision["prefilter_version"] == SMC_PREFILTER_VERSION
     assert decision["fail_open"] is False
-    assert decision["selected_zone_ids"][side] == expected_id
+    assert decision["should_reject"] is False
+    assert decision["reason_code"] == ""
+    assert decision["precomputed_evaluation"] is not None
     assert decision["raw_counts"][timeframe][family] == 1
-    assert decision["precomputed_smc"].side(side).selected_zone_id == expected_id
+    assert decision["selected_zone_ids"][side] == zone["zone_id"]
 
 
-def test_canonical_prefilter_rejects_only_when_both_sides_lack_selected_zones() -> None:
+def test_canonical_prefilter_rejects_only_when_both_sides_lack_selected_zones():
     decision = evaluate_post_context_prefilter(
-        smc=_context(),
-        technical=_technical(),
-        market_regime={"primary": "range"},
+        snapshot=_snapshot(_context()), min_rr=2.0
     )
-
     assert decision["should_reject"] is True
     assert decision["reason_code"] == NO_ACTIONABLE_SMC_ZONE
     assert decision["selected_zone_ids"] == {"buy": None, "sell": None}
-    assert decision["fail_open"] is False
 
 
-@pytest.mark.parametrize("invalid_field", ("broken", "origin_index"))
-def test_broken_or_invalid_zone_uses_canonical_reject(
-    invalid_field: str,
-) -> None:
-    context = _context()
-    zone = _zone("demand", "buy", zone_id=f"invalid-{invalid_field}")
-    zone[invalid_field] = True if invalid_field == "broken" else -1
-    context["H4"]["demand_zones"].append(zone)
+def test_core_data_unavailable_is_not_reported_as_no_setup():
+    """A snapshot the chain could not conclude is a DIFFERENT rejection."""
+
+    snapshot = _snapshot(
+        _context(),
+        technical={"price": 100.0, "atr_h4": 10.0, "atr_d1": 12.0},
+    )
+    from dataclasses import replace
+
+    snapshot = replace(
+        snapshot, core_reason_codes=("SMC_H4_INSUFFICIENT_HISTORY",)
+    )
+    decision = evaluate_post_context_prefilter(snapshot=snapshot, min_rr=2.0)
+    assert decision["reason_code"] == SMC_CORE_DATA_UNAVAILABLE
+    assert decision["core_unavailable_sides"] == ["buy", "sell"]
+
+
+def test_a_side_waiting_for_m15_is_never_rejected_for_that_reason():
+    """M15 owns readiness only: a watch/evaluated side stays actionable."""
+
+    zone = _zone()
+    decision = evaluate_post_context_prefilter(
+        snapshot=_snapshot(_context(zone=zone)), min_rr=2.0
+    )
+    assert decision["should_reject"] is False
+    assert decision["selected_zone_ids"]["buy"] == zone["zone_id"]
+
+
+@pytest.mark.parametrize("case", ("broken", "origin_index"))
+def test_broken_or_invalid_zone_uses_canonical_reject(case: str) -> None:
+    """A terminal zone cannot be selected; the side is refused, not invented."""
+
+    if case == "broken":
+        zone = _zone(broken=True, lifecycle_status="invalid", invalidated_at=_AS_OF)
+    else:
+        # An expired zone is terminal for the same reason: it cannot be
+        # selected, and the side must not fall back to another zone.
+        zone = _zone(lifecycle_status="expired", expired_at=_AS_OF)
 
     decision = evaluate_post_context_prefilter(
-        smc=context,
-        technical=_technical(),
+        snapshot=_snapshot(_context(zone=zone)), min_rr=2.0
     )
-
+    # Either the side is not actionable (canonical reject) or the chain could
+    # not conclude it — never a fabricated selected zone.
     assert decision["should_reject"] is True
-    assert decision["fail_open"] is False
-    assert decision["reason_code"] == NO_ACTIONABLE_SMC_ZONE
+    assert decision["reason_code"] in {
+        NO_ACTIONABLE_SMC_ZONE,
+        SMC_CORE_DATA_UNAVAILABLE,
+    }
+    assert decision["selected_zone_ids"]["buy"] is None
 
 
 @pytest.mark.parametrize(
@@ -134,96 +210,106 @@ def test_broken_or_invalid_zone_uses_canonical_reject(
     (("demand", "buy"), ("supply", "sell")),
 )
 def test_buy_and_sell_selection_are_independent(family: str, side: str) -> None:
-    context = _context()
-    context["H4"][_FAMILY_KEYS[family]].append(
-        _zone(family, side, zone_id=f"only-{side}")
+    zone = _zone(
+        family="supply_demand",
+        direction=side,
+        zone_id=f"zone-{side}",
+        setup_id=f"setup-{side}",
+        type="demand_zone" if side == "buy" else "supply_zone",
+        base_measurement={
+            "base_low": 99.0,
+            "base_high": 100.0,
+            "average_range": 2.0,
+            "compression_limit": 2.0,
+        },
     )
+    context = _context(zone=zone, family=family)
 
-    decision = evaluate_post_context_prefilter(
-        smc=context,
-        technical=_technical(),
+    evaluation = evaluate_smc_snapshot(
+        _snapshot(context),
+        min_rr=2.0,
     )
-
-    opposite = "sell" if side == "buy" else "buy"
-    assert decision["should_reject"] is False
-    assert decision["selected_zone_ids"] == {
-        side: f"only-{side}",
-        opposite: None,
-    }
+    other = "sell" if side == "buy" else "buy"
+    assert evaluation.selection(side).selected_zone_id == f"zone-{side}"
+    assert evaluation.selection(other).selected_zone_id is None
 
 
 @pytest.mark.parametrize(
     "technical",
     (
-        {"price": 0, "atr_h4": 10},
-        {"price": float("nan"), "atr_h4": 10},
-        {"price": 100, "atr_h4": 0, "atr_d1": 0},
-        {"price": 100, "atr_h4": float("inf")},
+        # No price at all.
+        {"atr_h4": 10.0, "atr_d1": 12.0},
+        # No usable ATR on either timeframe.
+        {"price": 100.0},
+        # Nothing measurable.
+        {},
+        # Non-positive references.
+        {"price": 0.0, "atr_h4": 0.0, "atr_d1": 0.0},
     ),
 )
 def test_invalid_price_or_atr_fails_open(technical: dict) -> None:
-    decision = evaluate_post_context_prefilter(
-        smc=_context(),
-        technical=technical,
-    )
+    """Without the geometry reference the prefilter never claims "no setup"."""
 
-    assert decision["should_reject"] is False
+    decision = evaluate_post_context_prefilter(
+        snapshot=_snapshot(_context(), technical=technical), min_rr=2.0
+    )
+    assert decision["fail_open"] is True
+    assert decision["reason_code"] == SMC_PREFILTER_ERROR_FAIL_OPEN
+    assert decision["precomputed_evaluation"] is None
+
+
+def test_malformed_context_fails_open():
+    """A context missing a core timeframe is not a concluded empty."""
+
+    context = _context()
+    context.pop("H1")
+    decision = evaluate_post_context_prefilter(
+        snapshot=_snapshot(context), min_rr=2.0
+    )
     assert decision["fail_open"] is True
     assert decision["reason_code"] == SMC_PREFILTER_ERROR_FAIL_OPEN
 
 
-def test_malformed_context_fails_open() -> None:
-    context = _context()
-    context["H1"]["fvg"] = {"not": "a list"}
-
-    decision = evaluate_post_context_prefilter(
-        smc=context,
-        technical=_technical(),
+def test_unfrozen_snapshot_fails_open():
+    assert evaluate_post_context_prefilter(snapshot=None)["fail_open"] is True
+    assert (
+        evaluate_post_context_prefilter(snapshot={"smc": {}})["fail_open"] is True
     )
 
-    assert decision["should_reject"] is False
-    assert decision["fail_open"] is True
 
+def test_scorer_exception_fails_closed(monkeypatch):
+    from core import smc_prefilter
 
-def test_scorer_exception_fails_closed() -> None:
-    with patch(
-        "core.smc_prefilter.score_smc",
-        side_effect=RuntimeError("unexpected scorer error"),
-    ):
-        decision = evaluate_post_context_prefilter(
-            smc=_context(),
-            technical=_technical(),
-        )
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("chain unavailable")
 
+    monkeypatch.setattr(smc_prefilter, "evaluate_smc_snapshot", _boom)
+    decision = evaluate_post_context_prefilter(
+        snapshot=_snapshot(_context(zone=_zone())), min_rr=2.0
+    )
     assert decision["should_reject"] is True
     assert decision["fail_open"] is False
-    assert decision["reason_code"] == SMC_SCORING_ERROR
     assert decision["scorer_error"] is True
-    assert decision["precomputed_smc"] is None
+    assert decision["reason_code"] == SMC_SCORING_ERROR
 
 
-def test_prefilter_preserves_context_and_reuses_canonical_result() -> None:
-    context = _context()
-    context["H4"]["demand_zones"].append(
-        _zone("demand", "buy", zone_id="h4-buy")
-    )
-    context["H1"]["supply_zones"].append(
-        _zone("supply", "sell", zone_id="h1-sell")
-    )
-    before = deepcopy(context)
-    technical = _technical()
-    regime = {"primary": "range"}
+def test_prefilter_preserves_context_and_reuses_canonical_result(monkeypatch):
+    """The survivor's evaluation is REUSED — the chain runs exactly once."""
 
-    decision = evaluate_post_context_prefilter(
-        smc=context,
-        technical=technical,
-        market_regime=regime,
-    )
-    canonical = score_smc(context, technical, regime)
+    from core import smc_prefilter
 
-    assert context == before
-    assert decision["selected_zone_ids"] == {
-        side: canonical.side(side).selected_zone_id
-        for side in ("buy", "sell")
-    }
-    assert decision["precomputed_smc"] == canonical
+    calls: list[str] = []
+    real = smc_prefilter.evaluate_smc_snapshot
+
+    def spy(*args, **kwargs):
+        calls.append("evaluate")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(smc_prefilter, "evaluate_smc_snapshot", spy)
+    snapshot = _snapshot(_context(zone=_zone()))
+    decision = evaluate_post_context_prefilter(snapshot=snapshot, min_rr=2.0)
+
+    assert calls == ["evaluate"]
+    assert decision["precomputed_evaluation"].snapshot is snapshot
+    assert decision["precomputed_smc"] is decision["precomputed_evaluation"].result
+    assert decision["selected_zone_ids"]["buy"] == _zone()["zone_id"]

@@ -127,6 +127,9 @@ def run_pair_from_live(
     macro_raw_buy: int | None = None,
     macro_raw_sell: int | None = None,
     macro_confidence: float | None = None,
+    tick_size: float | None = None,
+    tick_size_source: str | None = None,
+    m15_candles: list[object] | None = None,
     account=None,
     portfolio=None,
     journal=None,
@@ -147,28 +150,33 @@ def run_pair_from_live(
         build_side_snapshot,
         derive_live_analysis,
     )
-    from core.scanner_scenario_producers import produce_scenario_plans
+    from core.scanner_scenario_producers import plans_from_canonical_selection
 
-    if analysis is None:
-        analysis = derive_live_analysis(
-            d1, h4, h1, symbol=symbol,
-            captured_at=captured_at if captured_at is not None else now,
-            news_in_3h=news_in_3h,
-        )
-    # Live scenario plans (entry/SL/TP per side) from REAL technical + canonical
-    # SMC structure; a side without a real protective zone + opposite target has
-    # no plan and its scenario gate fails closed (never invented).  The minimum
-    # R:R comes from the owner-configurable order-policy threshold; when the
-    # policy is absent or the threshold is not set, no scenario plan is
-    # produced.
+    # The minimum R:R comes from the owner-configurable order-policy threshold;
+    # when the policy is absent or the threshold is not set, the coordinator
+    # accepts no plan and the scenario gate fails closed (never invented).
     _min_rr = (
         order_policy.threshold.min_risk_reward
         if order_policy is not None and order_policy.threshold.min_risk_reward is not None
         else None
     )
-    scenario_plans = produce_scenario_plans(
-        analysis["technical"], analysis["canonical_smc"], min_rr=_min_rr
-    )
+    if analysis is None:
+        analysis = derive_live_analysis(
+            d1, h4, h1, symbol=symbol,
+            captured_at=captured_at if captured_at is not None else now,
+            news_in_3h=news_in_3h,
+            m15_candles=m15_candles,
+            m15_as_of=captured_at if captured_at is not None else now,
+            tick_size=tick_size,
+            tick_size_source=tick_size_source,
+            min_rr=_min_rr,
+        )
+    # Live scenario plans (entry/SL/TP per side) read the accepted plan of the
+    # FINAL canonical selection (task 107): the scenario and the selected zone
+    # are the same candidate, and the producer never looks for another zone or
+    # replays the R:R floor.  A side without an accepted plan fails the
+    # scenario gate closed, exactly as before.
+    scenario_plans = plans_from_canonical_selection(analysis["canonical_smc"])
     snapshot = build_live_snapshot(
         symbol=symbol,
         captured_at=analysis["captured_at"],

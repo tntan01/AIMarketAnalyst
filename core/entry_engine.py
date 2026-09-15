@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from core.indicators import atr
 from core.market_models import Candle
+from core.smc_models import M15_STATUS_CONFIRMED as _M15_STATUS_CONFIRMED
 from core.reason_codes import (
     M15_DATA_UNAVAILABLE,
     M15_LOOSE_CONFIRMATION,
@@ -158,6 +159,7 @@ def evaluate_entry(
     entry_zone: list[float],
     m15_candles: list[Candle] | None = None,
     is_backtest: bool = False,
+    smc_confirmation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     price = float(technical.get("price", 0.0))
     atr_value = float(technical.get("atr_h4") or technical.get("atr_d1") or 0.0)
@@ -202,7 +204,32 @@ def evaluate_entry(
     m15_structure = None
     m15_displacement = None
     m15_score_multiplier = None
-    if m15_available:
+    m15_confirmed = None
+    canonical_m15 = _canonical_m15_layer(smc_confirmation)
+    if canonical_m15 is not None:
+        # Task 110: when the canonical confirmation of the selected setup is
+        # supplied, the entry reads IT — the engine no longer re-derives M15
+        # structure/displacement and cannot reach a different verdict than the
+        # evaluator.  A non-confirmed canonical state keeps the fail-closed
+        # ladder (never promoted to "loose"): only ``confirmed`` is a
+        # confirmation.
+        m15_available = canonical_m15["available"]
+        m15_quality = canonical_m15["quality"]
+        m15_score_multiplier = canonical_m15["multiplier"]
+        m15_confirmed = canonical_m15["confirmed"]
+        # The result builder reads the M15 layer through ``m15_structure``; the
+        # canonical path hands it the SAME verdict the evaluator produced
+        # (``passed`` = confirmed) so no second derivation exists.  It carries
+        # ``source="canonical"`` and no candle measurements, because none were
+        # recomputed here.
+        m15_structure = {
+            "passed": bool(m15_confirmed),
+            "source": "canonical",
+            "m15_status": canonical_m15["status"],
+        }
+        if m15_available:
+            confirmation_score = int(confirmation_score * m15_score_multiplier)
+    elif m15_available:
         m15_structure = _confirm_m15_structure(m15_candles, side)
         m15_displacement = _confirm_m15_displacement(m15_candles, side)
         struct_pass = m15_structure["passed"]
@@ -487,6 +514,40 @@ def _result(
         result["m15_quality"] = m15_quality
         result["m15_score_multiplier"] = m15_score_multiplier
     return result
+
+
+def _canonical_m15_layer(
+    smc_confirmation: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Read the canonical M15 verdict of the selected setup (task 110).
+
+    Returns ``None`` when the caller supplied no canonical confirmation, in
+    which case the engine keeps its own legacy derivation (historical callers).
+
+    Only the canonical ``confirmed`` state is a confirmation.  ``waiting``,
+    ``expired``, ``invalidated``, ``missing`` and ``not_required`` all keep the
+    fail-closed multiplier: an expired trigger, a broken zone or a missing M15
+    window can never be promoted to a looser-but-acceptable confirmation.
+    """
+
+    if not isinstance(smc_confirmation, Mapping) or not smc_confirmation:
+        return None
+    status = str(smc_confirmation.get("m15_status") or "").strip().lower()
+    confirmation_state = str(
+        smc_confirmation.get("confirmation_state") or ""
+    ).strip().lower()
+    confirmed = status == _M15_STATUS_CONFIRMED
+    available = status not in ("", "missing", "not_required")
+    return {
+        "status": status or "unknown",
+        "confirmation_state": confirmation_state,
+        "confirmed": confirmed,
+        "available": available,
+        "quality": "strict" if confirmed else "none",
+        "multiplier": 1.0 if confirmed else 0.7,
+        "visit_id": smc_confirmation.get("entry_visit_id"),
+        "event_id": smc_confirmation.get("confirmation_event_id"),
+    }
 
 
 def _distance_to_zone(price: float, low: float, high: float) -> float:

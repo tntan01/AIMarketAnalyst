@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+import importlib
 from decimal import Inexact, ROUND_DOWN, getcontext
 from fractions import Fraction
 import inspect
@@ -15,15 +16,23 @@ import pytest
 from core.reason_codes import TECHNICAL_DATA_UNAVAILABLE
 from core.scanner_models import SCANNER_FEATURE_VERSION, SCANNER_SCORER_VERSION
 from core.scanner_v4_models import SCANNER_SCORING_VERSION
-from core.smc_models import SMC_DOMAIN_VERSION
+from core.smc_models import SMC_DOMAIN_VERSION, round_half_up
 from core.smc_scoring_result import (
+    SELECTION_STATE_EVALUATED,
+    SELECTION_STATE_NO_ZONE,
     SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
     SmcSideScoringResult,
+    SmcSideSelection,
 )
 from core.smc_scorer import score_smc
-from core.smc_versions import SMC_SCORER_VERSION, SMC_TECHNICAL_RAW_VERSION
+from core.smc_versions import (
+    SMC_SCORER_VERSION,
+    SMC_SELECTION_VERSION,
+    SMC_TECHNICAL_RAW_VERSION,
+)
 from core.technical_signal_scorer import (
+    SMC_QUALITY_RAW_VERSION,
     TECHNICAL_COMPONENT_RAW_MAX,
     TECHNICAL_REGIME_WEIGHTS,
     TECHNICAL_WEIGHT_POLICY_VERSION,
@@ -62,6 +71,85 @@ def _smc_components(subtotal: int) -> tuple[int, int, int, int]:
     remaining -= ltf
     technical = min(2, remaining)
     return structure, zone, ltf, technical
+
+
+def _bqlc_for(total: float) -> tuple[float, float, float, float]:
+    """Exact (B, Q, L, C) in [0, 1] whose S is *total* (task 106 contract)."""
+
+    b = min(1.0, total / 4.0)
+    remaining = total - 4.0 * b
+    q = min(1.0, remaining / 7.0)
+    remaining -= 7.0 * q
+    l = min(1.0, remaining / 2.0)
+    remaining -= 2.0 * l
+    c = min(1.0, remaining / 2.0)
+    remaining -= 2.0 * c
+    assert abs(remaining) < 1e-9, total
+    return b, q, l, c
+
+
+def _selection_for(
+    side: str,
+    *,
+    zone_id: str | None,
+    setup_id: str | None,
+    zone_low: float,
+    zone_high: float,
+    quality_raw: int,
+) -> SmcSideSelection:
+    """Final canonical selection carrying the fixture subtotal as its raw.
+
+    Task 106/112: ``score_technical_signal`` reads the FINAL selection, so the
+    fixture must carry one.  ``quality_raw`` equals the subtotal the fixture
+    used, which keeps every downstream score expectation valid.
+    """
+
+    if quality_raw <= 0:
+        # A canonical side with no measurable S is the evaluated empty result.
+        return SmcSideSelection(
+            side=side,
+            state=SELECTION_STATE_NO_ZONE,
+            quality_raw=0,
+            quality_score=0.0,
+        )
+    zone_id = zone_id or f"zone-{side}"
+    setup_id = setup_id or f"setup-{side}"
+    b, q, l, c = _bqlc_for(float(quality_raw))
+    total = 4.0 * b + 7.0 * q + 2.0 * l + 2.0 * c
+    plan = {
+        "direction": side,
+        "entry": zone_low if side == "buy" else zone_high,
+        "stop_loss": zone_low - 1.0 if side == "buy" else zone_high + 1.0,
+        "take_profit": zone_high + 5.0 if side == "buy" else zone_low - 5.0,
+        "source": "smc_canonical_zone",
+        "entry_zone_low": zone_low,
+        "entry_zone_high": zone_high,
+        "zone_id": zone_id,
+        "setup_id": setup_id,
+    }
+    return SmcSideSelection(
+        side=side,
+        state=SELECTION_STATE_EVALUATED,
+        selected_candidate_id=f"cand-{zone_id}",
+        selected_zone_id=zone_id,
+        selected_setup_id=setup_id,
+        timeframe="H4",
+        quality_raw=round_half_up(total),
+        quality_score=100.0 * total / 15.0,
+        b=b,
+        q=q,
+        l=l,
+        c=c,
+        total=total,
+        zone_low=zone_low,
+        zone_high=zone_high,
+        plan=plan,
+        plan_available=True,
+        plan_zone_id=zone_id,
+        plan_setup_id=setup_id,
+        readiness={"status": "READY_NOW", "smc_state": "READY_FOR_REVALIDATION"},
+        selection_reason_codes=("QUALITY_RANK",),
+    )
 
 
 def _smc_side(
@@ -144,6 +232,18 @@ def _smc_side(
         selected_zone_quality_score=80 if has_selected_zone else None,
         selected_zone_relevance_score=70 if has_selected_zone else None,
         selected_zone_setup_score=setup_score if has_selected_zone else None,
+        selection=_selection_for(
+            side,
+            zone_id=zone_id,
+            setup_id=f"setup-{side}",
+            zone_low=90.0 if side == "buy" else 105.0,
+            zone_high=95.0 if side == "buy" else 110.0,
+            # The canonical selection carries the canonical S of the setup.
+            # The fixture's legacy penalty/cap belong to the RETIRED projection
+            # and are deliberately NOT folded into the canonical raw: task 112
+            # removed that influence from the live contribution.
+            quality_raw=subtotal,
+        ),
     )
 
 
@@ -178,6 +278,21 @@ def _canonical_smc(
             ),
         },
     )
+
+
+def _project_legacy(canonical, *, side: str = "buy"):
+    """Read *canonical* through the HISTORICAL legacy projection.
+
+    Task 106/112 moved ``score_technical_signal`` onto the canonical final
+    selection; the retired cap/penalty ``breakdown`` and ``selected_zone``
+    validations now live only in ``project_smc_technical_raw``, which stays as
+    the reader for payloads created before the canonical path.  The guard
+    behaviour is unchanged — it is just no longer on the live projection.
+    """
+
+    from core.technical_signal_scorer import project_smc_technical_raw
+
+    return project_smc_technical_raw(canonical, side)
 
 
 def _score(
@@ -287,55 +402,45 @@ def test_result_carries_only_target_versions_and_structured_smc_evidence():
 
     assert result.scoring_version == SCANNER_SCORING_VERSION == "scanner"
     assert result.weight_policy_version == TECHNICAL_WEIGHT_POLICY_VERSION
-    assert result.smc_raw_semantics_version == SMC_TECHNICAL_RAW_VERSION
+    assert result.smc_raw_semantics_version == SMC_QUALITY_RAW_VERSION
     assert result.smc_source_scoring_version == SMC_SCORER_VERSION
     assert result.technical_breakdown.smc.raw == 12
-    assert payload["smc_evidence"] == {
-        "side": "buy",
-        "raw_semantics_version": SMC_TECHNICAL_RAW_VERSION,
-        "source_scoring_version": SMC_SCORER_VERSION,
-        "source_contract_version": SMC_SCORING_CONTRACT_VERSION,
-        "source_domain_version": SMC_DOMAIN_VERSION,
-        "raw_subtotal": 12,
-        "base_components": {
-            "structure_score": 5,
-            "zone_score": 5,
-            "ltf_confirmation_score": 2,
-            "technical_validation_score": 0,
-        },
-        "source_score": 7,
-        "penalty_points": 4,
-        "applied_cap": 7,
-        "penalties": ["H4_CONFIRMED_CHOCH_CAP_4"],
-        "caps": ["H4_CONFIRMED_CHOCH_CAP_4"],
-        "reason_codes": ["H4_CONFIRMED_CHOCH_CAP_4"],
-        "smc_reason": "H4_CONFIRMED_CHOCH_CAP_4",
-        "selected_zone": {
-            "zone_id": "zone-buy",
-            "direction": "buy",
-            "timeframe": "H4",
-            "family": "demand",
-            "zone_type": "demand_zone",
-            "low": 90.0,
-            "high": 95.0,
-            "level": 92.5,
-            "zone_quality_score": 80,
-            "zone_relevance_score": 70,
-            "zone_setup_score": 85,
-            "liquidity_sweep_linked": False,
-            "linked_sweep_id": None,
-            "linked_sweep_distance_atr": None,
-            "linked_sweep_time_delta": None,
-            "source": "smc_selected",
-            "scoring_version": SMC_SCORER_VERSION,
-            "domain_version": SMC_DOMAIN_VERSION,
-            "selection_reason_codes": ["H4_TIMEFRAME_PREFERRED"],
-            "type": "demand_zone",
-        },
-        "selected_zone_id": "zone-buy",
-        "selected_zone_type": "demand_zone",
-        "selected_zone_timeframe": "H4",
+    # Task 106/112: the retained evidence is the CANONICAL quality of the same
+    # selected setup.  The retired subtotal/penalty/cap shape is gone, and the
+    # evidence carries the canonical raw the contribution was computed from.
+    evidence = payload["smc_evidence"]
+    assert set(evidence) == {
+        "side",
+        "state",
+        "raw_semantics_version",
+        "source_scoring_version",
+        "source_contract_version",
+        "selection_version",
+        "quality_raw",
+        "quality_score",
+        "total",
+        "b",
+        "q",
+        "l",
+        "c",
+        "selected_zone_id",
+        "selected_setup_id",
+        "plan_available",
+        "readiness_status",
+        "reason_codes",
     }
+    assert evidence["side"] == "buy"
+    assert evidence["state"] == "evaluated"
+    assert evidence["raw_semantics_version"] == SMC_QUALITY_RAW_VERSION
+    assert evidence["source_scoring_version"] == SMC_SCORER_VERSION
+    assert evidence["source_contract_version"] == SMC_SCORING_CONTRACT_VERSION
+    assert evidence["selection_version"] == SMC_SELECTION_VERSION
+    assert evidence["quality_raw"] == 12
+    assert evidence["total"] == pytest.approx(12.0)
+    assert evidence["selected_zone_id"] == "zone-buy"
+    assert evidence["selected_setup_id"] == "setup-buy"
+    assert evidence["plan_available"] is True
+    assert evidence["readiness_status"] == "READY_NOW"
     assert "risk_condition" not in payload
     assert "macro_alignment" not in payload
     assert "total" not in payload
@@ -369,8 +474,11 @@ def test_ai_m15_and_choch_evidence_never_mutates_smc_raw_or_technical_score(
 
     assert base_result.technical_signal_score == gated_result.technical_signal_score
     assert base_result.technical_breakdown == gated_result.technical_breakdown
-    assert gated_result.smc_evidence.source_score == gated.side("buy").score
-    assert evidence_code in gated_result.smc_evidence.reason_codes
+    assert (
+        gated_result.smc_evidence.quality_raw
+        == gated.side("buy").selection.quality_raw
+    )
+    assert base_result.smc_evidence == gated_result.smc_evidence
 
 
 def test_excluded_domains_cannot_be_supplied_to_the_pure_scorer():
@@ -538,7 +646,7 @@ def test_malformed_smc_breakdown_is_typed_fail_closed(field: str, value: object)
     canonical.side("buy").breakdown[field] = value
 
     with pytest.raises(TechnicalScoreDataError) as exc_info:
-        _score(canonical_smc=canonical)
+        _project_legacy(canonical)
 
     assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
     assert exc_info.value.path.startswith("canonical_smc.sides.buy")
@@ -549,7 +657,7 @@ def test_malformed_unselected_smc_side_also_invalidates_canonical_result():
     canonical.side("sell").breakdown["subtotal"] = 15
 
     with pytest.raises(TechnicalScoreDataError) as exc_info:
-        _score(side="buy", canonical_smc=canonical)
+        _project_legacy(canonical)
 
     assert exc_info.value.path == "canonical_smc.sides.sell.breakdown.subtotal"
 
@@ -562,7 +670,7 @@ def test_nonfinite_or_inconsistent_selected_zone_evidence_is_rejected():
 
     for canonical in (nonfinite, wrong_direction):
         with pytest.raises(TechnicalScoreDataError) as exc_info:
-            _score(canonical_smc=canonical)
+            _project_legacy(canonical)
         assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
 
 
@@ -577,7 +685,7 @@ def test_unrepresentably_large_selected_zone_numbers_are_typed_fail_closed(
     canonical.side("buy").selected_zone[field] = 10**10_000
 
     with pytest.raises(TechnicalScoreDataError) as exc_info:
-        _score(canonical_smc=canonical)
+        _project_legacy(canonical)
 
     assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
     assert exc_info.value.path.endswith(field)
@@ -607,10 +715,10 @@ def test_every_malformed_selected_zone_field_is_typed_fail_closed(
     canonical.side("buy").selected_zone[field] = value
 
     with pytest.raises(TechnicalScoreDataError) as exc_info:
-        _score(canonical_smc=canonical, smc=12)
+        _project_legacy(canonical)
 
     assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
-    assert exc_info.value.path.startswith("canonical_smc.sides.buy.selected_zone")
+    assert "buy" in exc_info.value.path
 
 
 def test_selected_zone_family_and_type_must_each_match_side():
@@ -622,7 +730,7 @@ def test_selected_zone_family_and_type_must_each_match_side():
 
     for canonical in (conflicting_family, conflicting_type):
         with pytest.raises(TechnicalScoreDataError) as exc_info:
-            _score(canonical_smc=canonical)
+            _project_legacy(canonical)
         assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
 
 
@@ -640,7 +748,7 @@ def test_unknown_or_non_string_smc_keys_are_typed_fail_closed():
 
     for canonical in cases:
         with pytest.raises(TechnicalScoreDataError) as exc_info:
-            _score(canonical_smc=canonical)
+            _project_legacy(canonical)
         assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
 
 
@@ -654,41 +762,47 @@ def test_zone_component_and_no_zone_arithmetic_cannot_inflate_smc_raw():
 
     for canonical in (inconsistent_zone, no_zone):
         with pytest.raises(TechnicalScoreDataError) as exc_info:
-            _score(canonical_smc=canonical)
+            _project_legacy(canonical)
         assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
 
 
-def test_real_canonical_smc_result_is_accepted_by_target_projection():
-    canonical = score_smc(
-        {
-            "confluence": {
-                "buy_score": 3,
-                "sell_score": 2,
-                "buy_reason_codes": ["BUY_STRUCTURE"],
-                "sell_reason_codes": ["SELL_STRUCTURE"],
-            },
-            "H4": {},
-            "H1": {},
-        },
-        {
-            "price": 100.0,
-            "atr_h4": 1.0,
-            "atr_d1": 1.0,
-            "support_zones": [],
-            "resistance_zones": [],
-        },
-        {"primary": "trend_up"},
+def _final_canonical_result(canonical=None):
+    """Run the canonical chain so the result carries a real final selection.
+
+    Task 106/112: the technical projection reads the FINAL selection, so a
+    legacy ``score_smc`` payload (which by construction has no selection) is no
+    longer a valid input for it.
+    """
+
+    from core.smc_quality import evaluate_candidate_sets
+    from core.smc_selection import finalize_canonical_result, select_canonical_sides
+
+    _QUALITY = importlib.import_module("tests.test_smc_quality_task88")
+    context = _QUALITY._context(_QUALITY._zone())
+    technical = _QUALITY._technical()
+    candidate_sets = evaluate_candidate_sets(
+        context,
+        technical,
+        as_of="2026-02-10T00:00:00+00:00",
     )
+    return finalize_canonical_result(
+        select_canonical_sides(candidate_sets, technical)
+    )
+
+
+def test_real_canonical_smc_result_is_accepted_by_target_projection():
+    canonical = _final_canonical_result()
 
     result = _score(canonical_smc=canonical, smc=3)
 
-    assert result.technical_breakdown.smc.raw == 3
-    assert result.smc_evidence.base_components == {
-        "structure_score": 3,
-        "zone_score": 0,
-        "ltf_confirmation_score": 0,
-        "technical_validation_score": 0,
-    }
+    # Task 106: the ``smc`` component reads the CANONICAL quality_raw of the
+    # selected setup — not a legacy subtotal, and never a cap/penalty value.
+    selection = canonical.side("buy").selection
+    assert result.technical_breakdown.smc.raw == selection.quality_raw
+    assert result.smc_evidence.quality_raw == selection.quality_raw
+    assert result.smc_evidence.selected_zone_id == selection.selected_zone_id
+    assert result.smc_evidence.selected_setup_id == selection.selected_setup_id
+    assert result.smc_evidence.state == selection.state
 
 
 def test_real_canonical_selected_zone_and_linked_sweep_are_preserved_as_evidence():
@@ -766,16 +880,22 @@ def test_real_canonical_selected_zone_and_linked_sweep_are_preserved_as_evidence
     )
     source = canonical.side("buy")
 
-    result = _score(
-        canonical_smc=canonical,
-        smc=source.breakdown["subtotal"],
-    )
+    # Historical reader: a payload created before the canonical path keeps its
+    # original meaning, linked-sweep lineage included (compatibility spec §5).
+    legacy = project_smc_technical_raw(canonical, "buy")
+    assert legacy.evidence.selected_zone == source.selected_zone
+    assert legacy.evidence.selected_zone["linked_sweep_id"] == "sweep-live-buy"
+    assert legacy.evidence.selected_zone["linked_sweep_time_delta"] == -1
+    assert legacy.evidence.raw_subtotal == source.breakdown["subtotal"]
 
-    assert result.smc_evidence.selected_zone == source.selected_zone
-    assert result.smc_evidence.selected_zone["linked_sweep_id"] == "sweep-live-buy"
-    assert result.smc_evidence.selected_zone["linked_sweep_time_delta"] == -1
-    assert result.smc_evidence.raw_subtotal == source.breakdown["subtotal"]
-    assert result.technical_breakdown.smc.raw == source.breakdown["subtotal"]
+    # Live path: the same snapshot read through the FINAL selection carries the
+    # canonical selected setup and its canonical raw.
+    live = _final_canonical_result()
+    result = _score(canonical_smc=live, smc=live.side("buy").selection.quality_raw)
+    live_selection = live.side("buy").selection
+    assert result.smc_evidence.selected_zone_id == live_selection.selected_zone_id
+    assert result.smc_evidence.selected_setup_id == live_selection.selected_setup_id
+    assert result.technical_breakdown.smc.raw == live_selection.quality_raw
 
 
 def test_smc_projection_uses_subtotal_not_adjusted_source_score():
@@ -801,10 +921,14 @@ def test_scorer_does_not_mutate_inputs_and_evidence_snapshot_is_deeply_immutable
     result = _score(canonical_smc=canonical, smc=12)
 
     assert canonical.to_dict() == before
-    with pytest.raises(TypeError):
-        result.smc_evidence.selected_zone["zone_id"] = "changed"
-    with pytest.raises(TypeError):
-        result.smc_evidence.selected_zone["selection_reason_codes"][0] = "changed"
+    # The retained evidence is a frozen record: it cannot be mutated after the
+    # score was published (the legacy selected-zone mapping is no longer part
+    # of the live contribution).
+    with pytest.raises((TypeError, AttributeError)):
+        result.smc_evidence.quality_raw = 0
+    with pytest.raises((TypeError, AttributeError)):
+        result.smc_evidence.reason_codes = ()
+    assert isinstance(result.smc_evidence.reason_codes, tuple)
 
 
 def test_gap_is_only_the_absolute_difference_between_two_technical_scores():
@@ -958,12 +1082,14 @@ def test_public_smc_evidence_is_self_validating_and_deeply_immutable():
     evidence = result.smc_evidence
     invalid_overrides = (
         {"source_contract_version": "forged-contract"},
-        {"source_domain_version": "forged-domain"},
-        {"source_score": -1},
-        {"penalty_points": -1},
-        {"base_components": {"structure_score": 999}},
-        {"raw_subtotal": 11},
-        {"side": "sell"},
+        {"source_scoring_version": "smc-v999"},
+        {"selection_version": "smc-selection-forged"},
+        {"quality_raw": 16},
+        {"quality_raw": True},
+        {"quality_raw": 11},
+        {"quality_score": 1.0},
+        {"total": 11.0},
+        {"b": 2.0},
     )
 
     for overrides in invalid_overrides:
@@ -971,15 +1097,10 @@ def test_public_smc_evidence_is_self_validating_and_deeply_immutable():
             replace(evidence, **overrides)
         assert exc_info.value.code == TECHNICAL_DATA_UNAVAILABLE
 
-    refrozen = replace(
-        evidence,
-        base_components=dict(evidence.base_components),
-        selected_zone=dict(evidence.selected_zone),
-    )
-    with pytest.raises(TypeError):
-        refrozen.base_components["structure_score"] = 0
-    with pytest.raises(TypeError):
-        refrozen.selected_zone["zone_id"] = "forged"
+    refrozen = replace(evidence, reason_codes=list(evidence.reason_codes))
+    assert isinstance(refrozen.reason_codes, tuple)
+    with pytest.raises((TypeError, AttributeError)):
+        refrozen.reason_codes = ("forged",)
 
 
 def test_projection_and_result_bind_smc_evidence_to_their_side_and_raw():

@@ -49,14 +49,73 @@ def make_candles(case: dict[str, Any]) -> dict[str, list[Candle]]:
     }
 
 
+# Task 101 (D102-03): the corpus is the canonical Scanner oracle now, so every
+# recipe must produce candles whose CANONICAL evidence clears the approved
+# geometry gates (P11: width <= 1.00 * formation ATR, distance <= 3.00 *
+# execution ATR).  The old recipes were tuned for the legacy detector and made
+# every canonical candidate 1.19-2.05 ATR wide, i.e. hard-rejected.
+#
+# The rules below are geometry, not policy:
+#   * S/D base  : base_range <= average_range * compression_limit.  A 3-candle
+#                 base spans ``2*step + 2*wick`` against a single-candle
+#                 ``step + 2*wick``, so a plain run only qualifies while
+#                 ``step <= 0.5 * wick``.  ``plain`` therefore runs with a step
+#                 ABOVE that ratio, which removes every compressed base.
+#   * OB base   : high - low <= formation ATR of the trend run.
+#   * FVG gap   : max(2*tick, 0.10*ATR) <= gap <= 1.00*ATR.
+_PLAIN_STEP = 0.00006
+_PLAIN_WICK_FACTOR = 1.8
+_PLAIN_WICK_FLOOR = 0.00003
+# Base/departure/continuation sizes of the impulse recipes (see the module
+# docstring of each recipe for the measured ratios).
+# Zigzag leg amplitude of the precondition run: large enough for the ATR
+# reference the geometry gates are measured against.
+_IMPULSE_AMPLITUDE = 0.0004
+_H1_BASE_HIGH = 0.000015
+_H1_BASE_LOW = -0.000035
+_H1_BASE_CLOSE = -0.000025
+_H1_DEPART_OPEN = -0.000020
+_H1_DEPART_HIGH = 0.00030
+_H1_DEPART_LOW = -0.000025
+_H1_DEPART_CLOSE = 0.00028
+_H1_CONT_OPEN = 0.00027
+_H1_CONT_HIGH = 0.00036
+_H1_CONT_LOW = 0.000065
+_H1_CONT_CLOSE = 0.00033
+_H1_BREAK_OPEN = 0.00032
+_H1_BREAK_HIGH = 0.00033
+_H1_BREAK_LOW = -0.00018
+_H1_BREAK_CLOSE = -0.00014
+
+
+def make_order_block_control_candles(case: dict[str, Any]) -> dict[str, Any]:
+    """The SAME corpus case with the post-departure BOS removed (D102-06).
+
+    Every candle is byte-identical to :func:`make_candles` except the
+    follow-through of the order-block impulse, which stops above the tracked
+    swing low.  That isolates the BOS as the cause of the confirmation.
+    """
+
+    candles = make_candles(case)
+    if str(case.get("recipe")) == "bearish_order_block":
+        candles["H1"] = _bearish_order_block_path(
+            float(case.get("base_price", 1.1000)), 60, with_bos=False
+        )
+    return candles
+
+
 def _for_recipe(recipe: str, base_price: float, minutes: int) -> list[Candle]:
     if recipe == "plain":
-        return _trend(100, base_price, 0.00001, minutes)
+        return _trend(100, base_price, _PLAIN_STEP, minutes)
     if recipe in {"bullish_fvg", "buy_setup"}:
         return _bullish_impulse(base_price, minutes, broken=False)
     if recipe == "broken_bullish_fvg":
         return _bullish_impulse(base_price, minutes, broken=True)
-    if recipe in {"bearish_order_block", "sell_setup"}:
+    if recipe == "bearish_order_block":
+        # Dedicated path (D102-06): the generic impulse cannot produce a BOS
+        # inside the Task44 window, so this scenario owns its candle design.
+        return _bearish_order_block_path(base_price, minutes)
+    if recipe == "sell_setup":
         return _bearish_impulse(base_price, minutes, broken=False)
     raise ValueError(f"Unknown scanner fast-path recipe: {recipe}")
 
@@ -67,7 +126,7 @@ def _trend(n: int, start: float, step: float, minutes: int) -> list[Candle]:
     candles: list[Candle] = []
     timestamp = _START
     price = start
-    wick = abs(step) * 1.8 + 0.00003
+    wick = abs(step) * _PLAIN_WICK_FACTOR + _PLAIN_WICK_FLOOR
     for index in range(n):
         open_price = price
         close_price = price + step
@@ -94,25 +153,36 @@ def _bullish_impulse(
 ) -> list[Candle]:
     """Create a latest bullish OB/FVG; optionally invalidate it afterwards."""
 
-    candles = _trend(95, base_price, 0.000003, minutes)
+    candles = _zigzag(95, base_price, amplitude=_IMPULSE_AMPLITUDE, minutes=minutes)
     timestamp = candles[-1].time + timedelta(minutes=minutes)
     anchor = candles[-1].close
     candles.extend([
-        Candle(timestamp, anchor, anchor + 0.00003, anchor - 0.00009, anchor - 0.00006, 1_500),
+        # Bearish base whose width (0.00005) sits under the run's formation ATR.
+        Candle(
+            timestamp,
+            anchor,
+            anchor + _H1_BASE_HIGH,
+            anchor + _H1_BASE_LOW,
+            anchor + _H1_BASE_CLOSE,
+            1_500,
+        ),
+        # Bullish departure: body/ATR ~4, body/range ~0.92, closes above the base.
         Candle(
             timestamp + timedelta(minutes=minutes),
-            anchor - 0.00006,
-            anchor + 0.00036,
-            anchor - 0.00008,
-            anchor + 0.00032,
+            anchor + _H1_DEPART_OPEN,
+            anchor + _H1_DEPART_HIGH,
+            anchor + _H1_DEPART_LOW,
+            anchor + _H1_DEPART_CLOSE,
             1_600,
         ),
+        # Continuation leaving a gap of 0.00005 over the base high: inside
+        # [max(2*tick, 0.10*ATR), 1.00*ATR].
         Candle(
             timestamp + timedelta(minutes=minutes * 2),
-            anchor + 0.00031,
-            anchor + 0.00042,
-            anchor + 0.00024,
-            anchor + 0.00038,
+            anchor + _H1_CONT_OPEN,
+            anchor + _H1_CONT_HIGH,
+            anchor + _H1_CONT_LOW,
+            anchor + _H1_CONT_CLOSE,
             1_700,
         ),
     ])
@@ -120,13 +190,206 @@ def _bullish_impulse(
         candles.append(
             Candle(
                 timestamp + timedelta(minutes=minutes * 3),
-                anchor + 0.00037,
-                anchor + 0.00038,
-                anchor - 0.00018,
-                anchor - 0.00014,
+                anchor + _H1_BREAK_OPEN,
+                anchor + _H1_BREAK_HIGH,
+                anchor + _H1_BREAK_LOW,
+                anchor + _H1_BREAK_CLOSE,
                 1_800,
             )
         )
+    return candles
+
+
+def _zigzag(
+    n: int,
+    start: float,
+    *,
+    amplitude: float,
+    minutes: int,
+    leg: int = 6,
+) -> list[Candle]:
+    """Alternating precondition run that actually produces confirmed swings.
+
+    A monotone ramp has no pivots, so the canonical structure replay can never
+    bootstrap, emit a BOS or confirm a zone.  The impulse recipes therefore
+    precondition with a zigzag whose legs are long enough for the external
+    pivot width (5 bars to the right) to confirm.
+    """
+
+    candles: list[Candle] = []
+    timestamp = _START
+    price = start
+    direction = 1.0
+    leg_index = 0
+    wick = amplitude * 0.15
+    for index in range(n):
+        step = direction * amplitude / leg
+        open_price = price
+        close_price = price + step
+        candles.append(
+            Candle(
+                time=timestamp,
+                open=round(open_price, 6),
+                high=round(max(open_price, close_price) + wick, 6),
+                low=round(min(open_price, close_price) - wick, 6),
+                close=round(close_price, 6),
+                volume=float(1_000 + index),
+            )
+        )
+        timestamp += timedelta(minutes=minutes)
+        price = close_price
+        leg_index += 1
+        if leg_index >= leg:
+            leg_index = 0
+            direction = -direction
+    return candles
+
+
+# ---------------------------------------------------------------------------
+# Dedicated bearish ORDER-BLOCK path (D102-06)
+# ---------------------------------------------------------------------------
+#
+# ``h1_order_block_v2`` needs a canonical order block that a causal BOS
+# CONFIRMS, so it owns a dedicated candle path (the generic zigzag recipes stay
+# untouched).  The causal order is what makes the BOS source resolvable:
+#
+#   history  -> variable-amplitude decline; its last BOS sets ``anchor_start_at``
+#   rally    -> prints a NEW swing high H strictly AFTER that anchor
+#   confirm  -> >= 5 further candles so H is confirmed, none of them emitting a
+#               new BOS (so the anchor does not move again)
+#   base     -> opposite-colour (bullish), narrow
+#   departure-> bearish, closes below the base low but still ABOVE the tracked
+#               swing low, so the departure itself does not consume the level
+#   bos      -> follow-through closes through the tracked low by more than
+#               ``max(2*tick, 0.10*ATR)``, at delta 1 from the departure
+_OB_LEG_AMPLITUDES = (0.00055, 0.00034, 0.00060, 0.00028, 0.00050, 0.00030, 0.00042)
+_OB_LEG_CANDLES = 5
+_OB_WICK = 0.00002
+_OB_RALLY_CANDLES = 5
+_OB_RALLY_STEP = 0.00007
+_OB_CONFIRM_CANDLES = 6
+_OB_CONFIRM_STEP = 0.00003
+_OB_BASE_HIGH = 0.000025
+_OB_BASE_LOW = -0.000025
+_OB_BASE_CLOSE = 0.000005
+_OB_DEPART_HIGH = 0.000005
+_OB_DEPART_LOW = -0.00017
+_OB_DEPART_CLOSE = -0.00015
+_OB_BREAK_HIGH = -0.00014
+# Negative control (D102-06): the SAME history, base and departure, but the
+# follow-through candle stops above the tracked swing low, so no BOS is emitted
+# and the block must stay an unconfirmed candidate.
+_OB_NOBREAK_HIGH = -0.00014
+_OB_NOBREAK_LOW = -0.00025
+_OB_NOBREAK_CLOSE = -0.00021
+_OB_NOBREAK_TAIL_HIGH = -0.00020
+_OB_NOBREAK_TAIL_LOW = -0.00024
+_OB_NOBREAK_TAIL_CLOSE = -0.00022
+_OB_BREAK_LOW = -0.00040
+_OB_BREAK_CLOSE = -0.00036
+_OB_TAIL_HIGH = -0.00036
+_OB_TAIL_LOW = -0.00048
+_OB_TAIL_CLOSE = -0.00044
+
+
+def _ob_run(
+    candles: list[Candle],
+    *,
+    count: int,
+    step: float,
+    minutes: int,
+) -> None:
+    """Append a linear run continuing from ``candles[-1]``."""
+
+    timestamp = candles[-1].time + timedelta(minutes=minutes)
+    price = candles[-1].close
+    for _ in range(count):
+        close_price = price + step
+        candles.append(
+            Candle(
+                time=timestamp,
+                open=round(price, 6),
+                high=round(max(price, close_price) + _OB_WICK, 6),
+                low=round(min(price, close_price) - _OB_WICK, 6),
+                close=round(close_price, 6),
+                volume=float(1_000 + len(candles)),
+            )
+        )
+        timestamp += timedelta(minutes=minutes)
+        price = close_price
+
+
+def _bearish_order_block_path(
+    base_price: float,
+    minutes: int,
+    *,
+    with_bos: bool = True,
+) -> list[Candle]:
+    """H1 path whose final impulse is a BOS-confirmed bearish order block.
+
+    ``with_bos=False`` keeps every candle identical except the follow-through,
+    which stops above the tracked swing low.  That is the causal control: the
+    only difference is the missing post-departure break.
+    """
+
+    candles: list[Candle] = []
+    timestamp = _START
+    price = base_price
+    direction = -1.0
+    for amplitude in _OB_LEG_AMPLITUDES:
+        step = direction * amplitude / _OB_LEG_CANDLES
+        wick = amplitude * 0.15
+        for _ in range(_OB_LEG_CANDLES):
+            open_price = price
+            close_price = price + step
+            candles.append(
+                Candle(
+                    time=timestamp,
+                    open=round(open_price, 6),
+                    high=round(max(open_price, close_price) + wick, 6),
+                    low=round(min(open_price, close_price) - wick, 6),
+                    close=round(close_price, 6),
+                    volume=float(1_000 + len(candles)),
+                )
+            )
+            timestamp += timedelta(minutes=minutes)
+            price = close_price
+        direction = -direction
+
+    _ob_run(candles, count=_OB_RALLY_CANDLES, step=_OB_RALLY_STEP, minutes=minutes)
+    _ob_run(
+        candles, count=_OB_CONFIRM_CANDLES, step=-_OB_CONFIRM_STEP, minutes=minutes
+    )
+
+    timestamp = candles[-1].time + timedelta(minutes=minutes)
+    anchor = candles[-1].close
+    candles.extend([
+        Candle(timestamp, anchor, anchor + _OB_BASE_HIGH, anchor + _OB_BASE_LOW, anchor + _OB_BASE_CLOSE, 1_600),
+        Candle(
+            timestamp + timedelta(minutes=minutes),
+            anchor,
+            anchor + _OB_DEPART_HIGH,
+            anchor + _OB_DEPART_LOW,
+            anchor + _OB_DEPART_CLOSE,
+            1_700,
+        ),
+        Candle(
+            timestamp + timedelta(minutes=minutes * 2),
+            anchor + _OB_DEPART_CLOSE,
+            anchor + (_OB_BREAK_HIGH if with_bos else _OB_NOBREAK_HIGH),
+            anchor + (_OB_BREAK_LOW if with_bos else _OB_NOBREAK_LOW),
+            anchor + (_OB_BREAK_CLOSE if with_bos else _OB_NOBREAK_CLOSE),
+            1_800,
+        ),
+        Candle(
+            timestamp + timedelta(minutes=minutes * 3),
+            anchor + (_OB_BREAK_CLOSE if with_bos else _OB_NOBREAK_CLOSE),
+            anchor + (_OB_TAIL_HIGH if with_bos else _OB_NOBREAK_TAIL_HIGH),
+            anchor + (_OB_TAIL_LOW if with_bos else _OB_NOBREAK_TAIL_LOW),
+            anchor + (_OB_TAIL_CLOSE if with_bos else _OB_NOBREAK_TAIL_CLOSE),
+            1_900,
+        ),
+    ])
     return candles
 
 
@@ -139,25 +402,33 @@ def _bearish_impulse(
     """Create a latest bearish OB/FVG; ``broken`` is kept for recipe symmetry."""
 
     del broken
-    candles = _trend(95, base_price, 0.000003, minutes)
+    candles = _zigzag(95, base_price, amplitude=_IMPULSE_AMPLITUDE, minutes=minutes)
     timestamp = candles[-1].time + timedelta(minutes=minutes)
     anchor = candles[-1].close
     candles.extend([
-        Candle(timestamp, anchor, anchor + 0.00009, anchor - 0.00003, anchor + 0.00006, 1_500),
+        # Mirror of the bullish base: width 0.00005, bullish, closes below the base.
+        Candle(
+            timestamp,
+            anchor,
+            anchor - _H1_BASE_LOW,
+            anchor - _H1_BASE_HIGH,
+            anchor - _H1_BASE_CLOSE,
+            1_500,
+        ),
         Candle(
             timestamp + timedelta(minutes=minutes),
-            anchor + 0.00006,
-            anchor + 0.00008,
-            anchor - 0.00036,
-            anchor - 0.00032,
+            anchor - _H1_DEPART_OPEN,
+            anchor - _H1_DEPART_LOW,
+            anchor - _H1_DEPART_HIGH,
+            anchor - _H1_DEPART_CLOSE,
             1_600,
         ),
         Candle(
             timestamp + timedelta(minutes=minutes * 2),
-            anchor - 0.00031,
-            anchor - 0.00024,
-            anchor - 0.00042,
-            anchor - 0.00038,
+            anchor - _H1_CONT_OPEN,
+            anchor - _H1_CONT_LOW,
+            anchor - _H1_CONT_HIGH,
+            anchor - _H1_CONT_CLOSE,
             1_700,
         ),
     ])

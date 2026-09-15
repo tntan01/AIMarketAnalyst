@@ -49,15 +49,28 @@ from core.reason_codes import (
 from core.smc_context import build_smc_context, extract_smc_trade_flags
 from core.smc_consumer_contract import (
     build_smc_consumer_from_canonical_result,
+    scenario_preferred_zone_for_side,
     selected_zone_for_side,
+    selection_for_side,
     side_consumer_metadata,
 )
-from core.smc_prefilter import SMC_SCORING_ERROR, evaluate_post_context_prefilter
-from core.smc_scorer import score_smc
+from core.smc_prefilter import (
+    SMC_CORE_DATA_UNAVAILABLE,
+    SMC_SCORING_ERROR,
+    evaluate_post_context_prefilter,
+)
 from core.smc_scoring_result import (
+    SELECTION_STATE_DATA_UNAVAILABLE,
     SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
+    smc_selection_of,
     validate_smc_result,
+    validate_smc_selection_result,
+)
+from core.smc_snapshot import (
+    SmcSnapshotEvaluation,
+    build_smc_snapshot,
+    evaluate_smc_snapshot,
 )
 from core.smc_versions import SMC_SCORER_VERSION
 from core.scoring_provenance import build_scoring_provenance
@@ -130,6 +143,49 @@ def _merge_active_smc_flags(
         "raw": selected,
     })
     return flags
+
+
+def _selection_state(result: Any, side: str) -> str:
+    """Final selection state of one side, or an empty string when absent."""
+
+    side_result = result.side(side) if isinstance(result, SmcScoringResult) else None
+    selection = smc_selection_of(side_result)
+    return selection.state if selection is not None else ""
+
+
+def _canonical_confirmation(
+    contract: dict[str, Any] | None,
+    side: str,
+) -> dict[str, Any] | None:
+    """Canonical M15/confirmation record of one side's final selection.
+
+    ``None`` when the side carries no selection at all (a historical payload):
+    the entry engine then keeps its own legacy derivation.  A side whose
+    selection exists is described by the canonical verdict, even when that
+    verdict is "not confirmed".
+    """
+
+    selection = selection_for_side(contract, side)
+    if not isinstance(selection, dict):
+        return None
+    readiness = selection.get("readiness")
+    return {
+        "side": side,
+        "state": selection.get("state"),
+        "lifecycle_status": selection.get("lifecycle_status"),
+        "confirmation_state": selection.get("confirmation_state"),
+        "confirmation_rank": selection.get("confirmation_rank"),
+        "entry_visit_id": selection.get("entry_visit_id"),
+        "confirmation_event_id": selection.get("confirmation_event_id"),
+        "m15_status": (
+            readiness.get("m15_status") if isinstance(readiness, dict) else None
+        ),
+        "readiness_status": (
+            readiness.get("status") if isinstance(readiness, dict) else None
+        ),
+        "selected_zone_id": selection.get("selected_zone_id"),
+        "selected_setup_id": selection.get("selected_setup_id"),
+    }
 
 
 def _build_canonical_smc_diagnostics(
@@ -214,6 +270,11 @@ class AnalysisPipeline:
         ai_commentary: str | None = None,
         ai_meta: dict[str, Any] | None = None,
         m15_candles: list[Candle] | None = None,
+        m15_as_of: datetime | str | None = None,
+        snapshot_as_of: datetime | str | None = None,
+        tick_size: float | None = None,
+        tick_size_source: str | None = None,
+        core_reason_codes: tuple[str, ...] = (),
         correlation_context: dict[str, Any] | None = None,
         quote_to_usd_rate: float | None = None,
         closed_trades: list[dict[str, Any]] | None = None,
@@ -237,6 +298,21 @@ class AnalysisPipeline:
         self._ai_commentary = ai_commentary
         self._ai_meta = ai_meta
         self._m15_candles = m15_candles
+        # R73-01: the snapshot cutoff of the M15 window.  It travels with the
+        # candles to every M15 evaluator call so a forming candle (close_at >
+        # as_of) can never take part; without it the M15 step fails closed.
+        self._m15_as_of = m15_as_of
+        # Task 101/103: the ONE cutoff of the shared snapshot.  It defaults to
+        # the M15 boundary so a caller that already threads that value keeps
+        # working, and it is never replaced by ``datetime.now()``.
+        self._snapshot_as_of = (
+            snapshot_as_of if snapshot_as_of is not None else m15_as_of
+        )
+        self._tick_size = tick_size
+        self._tick_size_source = tick_size_source
+        self._core_reason_codes = tuple(
+            str(code) for code in core_reason_codes if str(code)
+        )
         self._correlation_context = correlation_context
         self._quote_to_usd_rate = quote_to_usd_rate
         self._closed_trades = closed_trades or []
@@ -251,7 +327,12 @@ class AnalysisPipeline:
         # Bước 6 loại bỏ Backtest: không còn caller mô phỏng nào.)
         self._scanner_fast_tier1 = bool(scanner_fast_tier1)
         self._structural_reject: dict[str, Any] | None = None
-        self._precomputed_smc: SmcScoringResult | None = None
+        # Task 103: the frozen shared snapshot and the ONE canonical evaluation
+        # of this analysis; ``_precomputed_smc_evaluation`` is the Tier-1
+        # survivor's evaluation, reused instead of evaluating twice.
+        self._smc_snapshot: Any = None
+        self._smc_evaluation: Any = None
+        self._precomputed_smc_evaluation: Any = None
         self._decision_engine_enabled = True
 
         # ---- Pipeline diagnostics ------------------------------------------
@@ -276,17 +357,19 @@ class AnalysisPipeline:
         if self._scanner_fast_tier1:
             try:
                 fast_decision = evaluate_post_context_prefilter(
-                    smc=self._smc,
-                    technical=self._technical,
-                    market_regime=self._market_regime,
-                    m15_candles=self._m15_candles,
+                    snapshot=self._smc_snapshot,
+                    min_rr=self._min_risk_reward(),
                 )
             except Exception:
                 fast_decision = None
             if isinstance(fast_decision, dict):
-                precomputed_smc = fast_decision.get("precomputed_smc")
-                if isinstance(precomputed_smc, SmcScoringResult):
-                    self._precomputed_smc = precomputed_smc
+                # Task 104: the survivor's evaluation is REUSED by step 3, so a
+                # snapshot is never run through the canonical chain twice.
+                precomputed_evaluation = fast_decision.get(
+                    "precomputed_evaluation"
+                )
+                if isinstance(precomputed_evaluation, SmcSnapshotEvaluation):
+                    self._precomputed_smc_evaluation = precomputed_evaluation
                 if (
                     fast_decision.get("should_reject") is True
                     and fast_decision.get("fail_open") is False
@@ -538,14 +621,37 @@ class AnalysisPipeline:
         if len(self._d1) < 60 or len(self._h4) < 60 or len(self._h1) < 30:
             raise ValueError("Không đủ dữ liệu D1/H4/H1 để phân tích.")
 
-        self._technical = build_technical_snapshot(self._d1, self._h4, self._h1)
-        self._smc = build_smc_context(
-            self._d1,
-            self._h4,
-            self._h1,
-            scan_interval_min=self._scan_interval_min,
+        # Task 103: Analyze freezes the SAME shared snapshot the Scanner uses —
+        # one cutoff, the M15 window and the symbol metadata — and the SMC
+        # context/technical snapshot are derived from the cutoff-filtered
+        # candles only, so no forming candle can enter the canonical verdict.
+        self._smc_snapshot = build_smc_snapshot(
+            {
+                "D1": self._d1,
+                "H4": self._h4,
+                "H1": self._h1,
+                "M15": self._m15_candles or (),
+            },
             symbol=self._request.symbol,
+            as_of=self._snapshot_as_of,
+            m15_as_of=self._m15_as_of if self._m15_as_of is not None else self._snapshot_as_of,
+            tick_size=self._tick_size,
+            tick_size_source=self._tick_size_source,
+            scan_interval_min=self._scan_interval_min,
+            core_reason_codes=self._core_reason_codes,
         )
+        snapshot = self._smc_snapshot
+        if snapshot.as_of is None:
+            # Data spec §1: every snapshot has one timezone-aware UTC cutoff.
+            # Without it the closed-candle set cannot be established, so the
+            # route refuses the input instead of evaluating an unbounded window.
+            raise ValueError(
+                "SMC snapshot cutoff (snapshot_as_of or m15_as_of) is required "
+                "and must be timezone-aware: "
+                f"{list(snapshot.core_reason_codes)}"
+            )
+        self._technical = dict(snapshot.technical or {})
+        self._smc = dict(snapshot.smc or {})
         self._data_quality = _build_data_quality(
             self._request, self._candles, self._data_quality_raw, self._technical,
         )
@@ -698,19 +804,35 @@ class AnalysisPipeline:
     # Step 3 — score buy & sell scenarios + extract SMC flags
     # ------------------------------------------------------------------
 
-    def _step_score_scenarios(self) -> None:
-        # Score the canonical SMC sides exactly once.  Tier-1 survivors reuse
-        # the precomputed canonical result instead of scoring a second time.
+    def _min_risk_reward(self) -> float | None:
+        """The R:R floor the coordinator applies, from the app thresholds.
+
+        It is the SAME ``min_rr`` the scenario step uses, so the accepted plan
+        and the scenario gate cannot disagree about the floor.
+        """
+
+        if not self._thresholds:
+            return None
+        value = self._thresholds.get("min_rr")
         try:
-            if isinstance(self._precomputed_smc, SmcScoringResult):
-                smc_sides = self._precomputed_smc
-            else:
-                smc_sides = score_smc(
-                    self._smc,
-                    self._technical,
-                    self._market_regime,
-                    m15_candles=self._m15_candles,
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return number if number > 0 else None
+
+    def _step_score_scenarios(self) -> None:
+        # Task 103: the canonical chain (evaluator → candidate order →
+        # coordinator/planner → final result) runs exactly ONCE for the frozen
+        # snapshot.  A Tier-1 survivor reuses the evaluation the prefilter
+        # already produced instead of evaluating the same cutoff twice.
+        try:
+            evaluation = self._precomputed_smc_evaluation
+            if evaluation is None:
+                evaluation = evaluate_smc_snapshot(
+                    self._smc_snapshot,
+                    min_rr=self._min_risk_reward(),
                 )
+            smc_sides = evaluation.result
         except Exception:
             # Scorer failure is fail-closed: block the analysis with
             # SMC_SCORING_ERROR instead of retrying or falling back.
@@ -723,7 +845,7 @@ class AnalysisPipeline:
             })
             return
 
-        if not validate_smc_result(smc_sides):
+        if not validate_smc_selection_result(smc_sides):
             # A malformed or incomplete canonical result must fail closed with
             # SMC_SCORING_ERROR rather than synthesizing empty sides.
             self._prepare_structural_reject("post_context", {
@@ -735,6 +857,32 @@ class AnalysisPipeline:
             })
             return
 
+        # Task 112/113: core data that could not be concluded is NOT a zero.
+        # The whole snapshot is unusable, so the analysis is blocked with the
+        # canonical reason instead of composing a scenario from `null`.
+        # The SNAPSHOT-level core verdict is what makes the whole analysis
+        # un-concludable (data spec §5: a missing/short/broken D1/H4/H1 group).
+        # A per-side ``data_unavailable`` — one side whose own candidates could
+        # not be measured — is reported on that side's selection and does NOT
+        # cancel the other side's thesis.
+        if self._smc_snapshot.core_reason_codes:
+            self._prepare_structural_reject("post_context", {
+                "reason_code": SMC_CORE_DATA_UNAVAILABLE,
+                "should_reject": True,
+                "fail_open": False,
+                "core_unavailable_sides": [
+                    side
+                    for side in ("buy", "sell")
+                    if _selection_state(smc_sides, side)
+                    == SELECTION_STATE_DATA_UNAVAILABLE
+                ],
+                "snapshot_reason_codes": list(
+                    self._smc_snapshot.core_reason_codes
+                ),
+            })
+            return
+
+        self._smc_evaluation = evaluation
         self._smc_consumer_contract = build_smc_consumer_from_canonical_result(
             result=smc_sides,
         )
@@ -831,11 +979,16 @@ class AnalysisPipeline:
             spread_price=float(self._data_quality.get("spread_price") or 0),
             market_regime=self._market_regime,
             preferred_zones={
-                "buy": selected_zone_for_side(
+                # R114-01: the risk-plan preferred zone is READ from the final
+                # canonical selection of the same candidate (reader only — the
+                # adapter converts, it never re-derives a zone or a plan).  The
+                # risk/macro/safety/account/scenario gates stay the owner of the
+                # final decision.
+                "buy": scenario_preferred_zone_for_side(
                     self._smc_consumer_contract,
                     "buy",
                 ),
-                "sell": selected_zone_for_side(
+                "sell": scenario_preferred_zone_for_side(
                     self._smc_consumer_contract,
                     "sell",
                 ),
@@ -843,6 +996,15 @@ class AnalysisPipeline:
             strict_preferred_zones=True,
             # The canonical scorer's selected zone is the only decision source.
             require_preferred_zones=True,
+            # Task 110: the entry reads the canonical M15/confirmation verdict
+            # of the SAME selected setup instead of re-deriving it.
+            smc_confirmations={
+                side: _canonical_confirmation(
+                    self._smc_consumer_contract,
+                    side,
+                )
+                for side in ("buy", "sell")
+            },
         )
         self._has_ready_plan = any(
             item.get("ready_to_trade") for item in self._scenarios

@@ -49,6 +49,8 @@ from core.scanner_features import (
 from core.technical_context import build_technical_snapshot
 
 NOW = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
+# Cutoff of the canonical fixture in ``tests.test_smc_quality_task88``.
+_GOLDEN_AS_OF = "2026-02-10T00:00:00+00:00"
 BASE = 1000.0
 
 
@@ -484,13 +486,24 @@ def _real_canonical_smc(d1, h4, h1):
     ``derive_technical_raws`` proves the projection path without inventing a
     canonical result.
     """
-    from core.smc_context import build_smc_context
-    from core.smc_scorer import score_smc
-    from core.technical_context import build_technical_snapshot
+    import importlib
 
-    smc_ctx = build_smc_context(d1, h4, h1, symbol="XAUUSD")
-    technical = build_technical_snapshot(d1, h4, h1)
-    return score_smc(smc_ctx, technical)
+    # Task 105/106: the feature layer reads the FINAL canonical result, so the
+    # fixture runs the real canonical chain (evaluator -> coordinator ->
+    # finalizer) on the shared canonical context instead of the retired
+    # ``score_smc`` route, whose payload carries no selection.
+    from core.smc_quality import evaluate_candidate_sets
+    from core.smc_selection import finalize_canonical_result, select_canonical_sides
+
+    _QUALITY = importlib.import_module("tests.test_smc_quality_task88")
+    context = _QUALITY._context(_QUALITY._zone())
+    technical = _QUALITY._technical()
+    candidate_sets = evaluate_candidate_sets(
+        context, technical, as_of=_GOLDEN_AS_OF
+    )
+    return finalize_canonical_result(
+        select_canonical_sides(candidate_sets, technical)
+    )
 
 
 def test_smc_projected_with_canonical(candles):

@@ -55,12 +55,29 @@ def _snapshot(**overrides) -> ExecutionMarketSnapshot:
     return ExecutionMarketSnapshot(**values)
 
 
+# Task 111: revalidation also re-checks the approved SMC setup against a fresh
+# canonical verdict.  A matching, ready comparison is the only state that adds
+# no SMC block code; the SMC contract itself is covered by
+# ``tests/test_smc_execution_revalidation_task111.py``.
+_MATCHING_SMC_REVALIDATION = {
+    "approved": {"selected_zone_id": "smcz-approved", "selected_setup_id": "smcs-approved"},
+    "current": {
+        "selected_zone_id": "smcz-approved",
+        "selected_setup_id": "smcs-approved",
+        "state": "evaluated",
+        "readiness_status": "READY_NOW",
+        "m15_status": "confirmed",
+    },
+}
+
+
 def _validate(proposal=None, snapshot=None, **overrides):
     arguments = {
         "news_blackout": False,
         "account_allowed": True,
         "portfolio_allowed": True,
         "now": NOW,
+        "smc_revalidation": _MATCHING_SMC_REVALIDATION,
     }
     arguments.update(overrides)
     return revalidate_execution(

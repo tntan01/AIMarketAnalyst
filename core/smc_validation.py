@@ -4,6 +4,11 @@ Phase 7 proves scoring invariants and produces the calibration, out-of-sample
 and walk-forward evidence for the canonical SMC scorer.  The module is
 deliberately read-only: it executes ``score_smc()`` and never changes the
 production decision path.  Legacy/shadow scorer comparisons no longer exist.
+
+Task 99 adds the canonical snapshot replay on top of the same module: it runs a
+frozen snapshot through the shared evaluator + selection coordinator and DERIVES
+the status from that result instead of accepting a self-declared label.  The
+legacy ``score_smc`` replay below is kept exactly as reviewed.
 """
 
 from __future__ import annotations
@@ -11,15 +16,20 @@ from __future__ import annotations
 from collections import defaultdict
 from math import isfinite, sqrt
 from statistics import mean, stdev
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping, Sequence
 
 from core.scanner_observability import stable_hash
+from core.smc_scoring_result import SmcScoringResult, smc_selection_of
 from core.smc_scorer import score_smc
-from core.smc_scoring_result import SmcScoringResult
-from core.smc_versions import SMC_SCORER_VERSION
+from core.smc_versions import SMC_SCORER_VERSION, SMC_SELECTION_VERSION
 
 
 SMC_VALIDATION_CONTRACT_VERSION = "smc-phase7-validation-v2"
+SMC_SNAPSHOT_REPLAY_VERSION = "smc-snapshot-replay-v1"
+# A replay input that is not a snapshot at all (missing canonical context or
+# frozen technical snapshot) is refused as core-data-unavailable instead of
+# being reinterpreted as "evaluated, no setup" (compatibility spec §3).
+REPLAY_SNAPSHOT_MALFORMED = "REPLAY_SNAPSHOT_MALFORMED"
 DEFAULT_MIN_OOS_SAMPLES = 30
 DEFAULT_MIN_CALIBRATION_BUCKET_SAMPLES = 5
 DEFAULT_MIN_WALK_FORWARD_WINDOWS = 2
@@ -126,6 +136,205 @@ def replay_smc_cases(
         normalized["validation_reason_codes"] = reasons
         samples.append(normalized)
     return samples
+
+
+def _replay_payload(snapshot: Any) -> dict[str, Any] | None:
+    """The replay-visible view of a snapshot, typed or mapping shaped.
+
+    Task 114: the same replay entry accepts the ``SmcSnapshotInput`` the live
+    routes freeze.  Its fields are exposed as the mapping the replay metadata
+    readers already understand, so one canonical evaluation serves all three
+    routes.
+    """
+
+    from core.smc_snapshot import SmcSnapshotInput
+
+    if isinstance(snapshot, SmcSnapshotInput):
+        return {
+            "smc": snapshot.smc,
+            "technical": snapshot.technical,
+            "as_of": snapshot.as_of,
+            "m15_as_of": snapshot.m15_as_of,
+            "m15_candles": snapshot.m15_candles,
+            "core_reason_codes": list(snapshot.core_reason_codes),
+            "symbol": snapshot.symbol,
+        }
+    if isinstance(snapshot, Mapping):
+        return dict(snapshot)
+    return None
+
+
+def replay_canonical_snapshot(
+    snapshot: Any,
+    *,
+    min_rr: Any | None = None,
+    plan_for: Any | None = None,
+    external_status: Mapping[str, str] | None = None,
+    external_reason_codes: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]:
+    """Replay ONE frozen snapshot through the shared evaluator/planner seam.
+
+    The snapshot supplies exactly the inputs the live route supplies — the
+    canonical context, the frozen technical snapshot, the cutoff, the M15 window
+    and the caller's core-data verdict.  Nothing is dropped and nothing is
+    added, so a replay can never reach the evaluator with a *thinner* input set
+    than live and quietly produce a different verdict (selection spec §9).
+
+    Task 114: replay no longer rebuilds the chain.  It accepts the SAME
+    ``SmcSnapshotInput`` the live Scanner/Analyze routes freeze and hands it to
+    :func:`core.smc_snapshot.evaluate_smc_snapshot`, so there is exactly one
+    canonical evaluator -> coordinator -> finalizer path for all three routes
+    and they can only disagree if their snapshot input differs.  A legacy
+    mapping payload (the script shape) is converted to that same typed snapshot
+    instead of being evaluated on a second, parallel path.
+
+    The returned ``status`` is DERIVED from the resulting readiness verdict: a
+    ``status`` field in the snapshot is recorded as ``declared_status`` and has
+    no effect, so replay cannot pass by receiving its own answer back.
+    """
+
+    from core.smc_snapshot import SmcSnapshotInput, evaluate_smc_snapshot
+
+    payload = _replay_payload(snapshot)
+    if payload is None:
+        payload = {}
+
+    if isinstance(snapshot, SmcSnapshotInput):
+        snapshot_input = snapshot
+    else:
+        core_reason_codes = tuple(
+            str(code)
+            for code in (payload.get("core_reason_codes") or ())
+            if str(code)
+        )
+        if not core_reason_codes and (
+            not isinstance(payload.get("smc"), Mapping)
+            or not isinstance(payload.get("technical"), Mapping)
+        ):
+            # A payload that is not a snapshot at all (missing canonical context
+            # or frozen technical snapshot) is refused as core-data-unavailable
+            # instead of being reinterpreted as "evaluated, no setup".
+            core_reason_codes = (REPLAY_SNAPSHOT_MALFORMED,)
+        snapshot_input = SmcSnapshotInput(
+            as_of=payload.get("as_of"),
+            symbol=str(payload.get("symbol") or ""),
+            smc=_mapping(payload.get("smc")),
+            technical=_mapping(payload.get("technical")),
+            m15_candles=payload.get("m15_candles"),
+            m15_as_of=payload.get("m15_as_of", payload.get("as_of")),
+            core_reason_codes=core_reason_codes,
+        )
+
+    evaluation = evaluate_smc_snapshot(
+        snapshot_input,
+        min_rr=min_rr,
+        plan_for=plan_for,
+        snapshot_metadata=_replay_metadata(payload),
+        external_status=external_status,
+        external_reason_codes=external_reason_codes,
+    )
+    candidate_sets = evaluation.candidate_sets
+    result = evaluation.result
+    as_of = snapshot_input.as_of
+
+    sides: dict[str, Any] = {}
+    for side in _SIDES:
+        selection = smc_selection_of(result.side(side))
+        sides[side] = {
+            "state": selection.state if selection is not None else "unknown",
+            # The evaluator's own state, so parity with a live caller that has
+            # no planner is checkable field by field.
+            "quality_state": candidate_sets[side].state,
+            "quality_raw": selection.quality_raw if selection is not None else None,
+            "selected_zone_id": (
+                selection.selected_zone_id if selection is not None else None
+            ),
+            "selected_setup_id": (
+                selection.selected_setup_id if selection is not None else None
+            ),
+            "plan_available": (
+                selection.plan_available if selection is not None else False
+            ),
+            "plan_rejection_codes": (
+                list(selection.plan_rejection_codes) if selection is not None else []
+            ),
+            "readiness_status": (
+                (selection.readiness or {}).get("status")
+                if selection is not None
+                else None
+            ),
+            "smc_state": (
+                (selection.readiness or {}).get("smc_state")
+                if selection is not None
+                else None
+            ),
+            "reason_codes": (
+                list(selection.selection_reason_codes)
+                if selection is not None
+                else []
+            ),
+            # The evaluator's own reasons (core-data verdict included), so a
+            # malformed snapshot stays visible instead of reading as an
+            # evaluated empty side.
+            "quality_reason_codes": list(candidate_sets[side].reason_codes),
+        }
+
+    reported_side = _replay_side(payload, sides)
+    reported = sides.get(reported_side, {})
+    status = reported.get("readiness_status")
+    if reported_side not in _SIDES:
+        # Neither side carries the decision (no plan on either, equal raw):
+        # report the status only when both sides actually agree on it.
+        agreed = {
+            _mapping(sides.get(side)).get("readiness_status") for side in _SIDES
+        }
+        status = agreed.pop() if len(agreed) == 1 else None
+    return {
+        "replay_contract_version": SMC_SNAPSHOT_REPLAY_VERSION,
+        "selection_version": SMC_SELECTION_VERSION,
+        "sample_id": _optional_text(payload.get("sample_id")),
+        "symbol": _optional_text(payload.get("symbol")),
+        "as_of": _optional_text(as_of),
+        "side": reported_side,
+        # Derived, never copied from the snapshot.
+        "status": status,
+        "smc_state": reported.get("smc_state"),
+        "quality_raw": reported.get("quality_raw"),
+        "selected_zone_id": reported.get("selected_zone_id"),
+        "selected_setup_id": reported.get("selected_setup_id"),
+        "plan_available": reported.get("plan_available"),
+        "declared_status": _normalize_status(payload.get("status")),
+        "status_source": "derived",
+        "sides": sides,
+    }
+
+
+def replay_samples_match(
+    first: Mapping[str, Any] | None,
+    second: Mapping[str, Any] | None,
+) -> bool:
+    """Whether two snapshot replays agree on the decision-relevant fields.
+
+    Used to prove parity between the live caller and a replay of the same
+    snapshot/cutoff/metadata/M15 (selection spec §9): raw, selected ids,
+    lifecycle/lifecycle status, plan availability and every reason code.
+    """
+
+    left = first if isinstance(first, Mapping) else {}
+    right = second if isinstance(second, Mapping) else {}
+    for field in (
+        "selection_version",
+        "side",
+        "status",
+        "smc_state",
+        "quality_raw",
+        "selected_zone_id",
+        "selected_setup_id",
+        "plan_available",
+    ):
+        if left.get(field) != right.get(field):
+            return False
+    return _mapping(left.get("sides")) == _mapping(right.get("sides"))
 
 
 def replay_sample_from_analysis_document(
@@ -811,6 +1020,49 @@ def _is_ready(value: object) -> bool:
 
 def _mapping(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _replay_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Frozen snapshot descriptor handed to the planner seam.
+
+    Only identity/provenance travel here — no rule input is invented, and a
+    capture-source difference between live and replay must not change a plan
+    (compatibility spec §4.1).
+    """
+
+    metadata = payload.get("metadata")
+    frozen = dict(metadata) if isinstance(metadata, Mapping) else {}
+    for key in ("symbol", "as_of", "m15_as_of", "sample_id"):
+        if payload.get(key) is not None and key not in frozen:
+            frozen[key] = payload.get(key)
+    return frozen
+
+
+def _replay_side(
+    payload: Mapping[str, Any],
+    sides: Mapping[str, Any],
+) -> str:
+    """Which side the replay reports: the declared side, else derived.
+
+    The declared side is an input selector, never a verdict; the status of that
+    side still comes from the shared evaluator/coordinator.
+    """
+
+    declared = str(payload.get("side") or "").strip().lower()
+    if declared in _SIDES:
+        return declared
+    ready = [
+        side
+        for side in _SIDES
+        if _mapping(sides.get(side)).get("plan_available") is True
+    ]
+    if len(ready) == 1:
+        return ready[0]
+    scores = {
+        side: _optional_finite(_mapping(sides.get(side)).get("quality_raw")) or 0.0
+        for side in _SIDES
+    }
+    return _best_side_from_scores(scores)
 
 
 def _normalized_text(value: object, default: str) -> str:

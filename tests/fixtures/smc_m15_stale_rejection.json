@@ -362,11 +362,12 @@
     "note": "This records the current false confirmation caused by scanning the stale first rejection."
   },
   "expected_after_fix": {
-    "status": "not_confirmed",
+    "status": "expired",
     "confirmed": false,
     "penalty": 0,
     "reason_codes": [
-      "M15_NO_CONFIRMATION"
+      "M15_NO_CONFIRMATION",
+      "TRIGGER_EXPIRED"
     ],
     "choch": false,
     "reaction": false,
@@ -374,7 +375,10 @@
     "smc_quality_delta": 0,
     "readiness": "WAITING_CONFIRMATION",
     "entry_allowed": false,
-    "note": "The first rejection must not confirm after 47 subsequent candles remain in the zone; no fresh reaction or CHoCH exists. M15 expiry changes readiness only, never B/Q/L/C or quality."
+    "m15_status": "expired",
+    "entry_visit_id": "<zone_id>:m15-visit-1",
+    "bars_since_anchor": 47,
+    "note": "Historical expectation before the fix was status=not_confirmed with penalty=2; task 73-79 makes the first rejection unable to confirm at all (the confirmation close is only valid at delta 1..3 after the visit anchor, lifecycle spec §11 / R16-02) and the trigger expires when the candle at delta 13 closes (parameter table P10), so the record is expired. M15 changes readiness only, never B/Q/L/C or quality (R16-03)."
   },
   "rejection_contract": {
     "range": "high-low",
@@ -392,7 +396,7 @@
       "sell_equal_threshold_with_close_down": "accepted",
       "under_threshold": "rejected",
       "doji_or_zero_range": "rejected",
-      "stale_rejection_after_12_bars": "M15_NO_CONFIRMATION"
+      "stale_rejection_after_12_bars": "M15_NO_CONFIRMATION + TRIGGER_EXPIRED"
     }
   },
   "rejection_boundary_cases": [

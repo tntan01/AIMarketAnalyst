@@ -20,13 +20,30 @@ from core.scanner_v4_models import (
     TechnicalBreakdown,
     TechnicalComponent,
 )
-from core.smc_models import SMC_DOMAIN_VERSION
+from core.smc_models import (
+    QUALITY_B_WEIGHT,
+    QUALITY_C_WEIGHT,
+    QUALITY_L_WEIGHT,
+    QUALITY_Q_WEIGHT,
+    QUALITY_SCORE_SCALE,
+    QUALITY_S_MAX,
+    SMC_DOMAIN_VERSION,
+    round_half_up,
+)
 from core.smc_scoring_result import (
     SMC_SCORING_CONTRACT_VERSION,
+    SMC_SELECTION_CONTRACT_VERSION,
     SmcScoringResult,
     SmcSideScoringResult,
+    SmcSideSelection,
+    smc_selection_of,
+    validate_smc_side_selection,
 )
-from core.smc_versions import SMC_SCORER_VERSION, SMC_TECHNICAL_RAW_VERSION
+from core.smc_versions import (
+    SMC_SCORER_VERSION,
+    SMC_SELECTION_VERSION,
+    SMC_TECHNICAL_RAW_VERSION,
+)
 
 
 TECHNICAL_WEIGHT_POLICY_VERSION = "technical-signal-weights"
@@ -302,8 +319,163 @@ class SmcTechnicalEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class SmcCanonicalEvidence:
+    """Canonical SMC provenance of the ``smc`` component (task 106).
+
+    Task 112 retires the cap/penalty/AI-adjusted subtotal from the live
+    contribution: this record reports the canonical ``quality_raw`` and B/Q/L/C
+    of the SAME selected setup the final result certified, so the technical
+    reader can audit the contribution without any retired formula being
+    reapplied to it.  A side whose core data was unavailable carries
+    ``quality_raw=None``; that is precisely why the TechnicalScore fails closed
+    instead of scoring the missing data as zero (compatibility spec §2–§3).
+    """
+
+    side: str
+    state: str
+    raw_semantics_version: str
+    source_scoring_version: str
+    source_contract_version: str
+    selection_version: str
+    quality_raw: int | None
+    quality_score: float | None
+    total: float | None
+    b: float | None
+    q: float | None
+    l: float | None
+    c: float | None
+    selected_zone_id: str | None
+    selected_setup_id: str | None
+    plan_available: bool
+    readiness_status: str | None
+    reason_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "reason_codes", _require_text_tuple(self.reason_codes, "smc_evidence.reason_codes", side=self.side)
+        )
+        _normalize_smc_canonical_evidence(self)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "side": self.side,
+            "state": self.state,
+            "raw_semantics_version": self.raw_semantics_version,
+            "source_scoring_version": self.source_scoring_version,
+            "source_contract_version": self.source_contract_version,
+            "selection_version": self.selection_version,
+            "quality_raw": self.quality_raw,
+            "quality_score": self.quality_score,
+            "total": self.total,
+            "b": self.b,
+            "q": self.q,
+            "l": self.l,
+            "c": self.c,
+            "selected_zone_id": self.selected_zone_id,
+            "selected_setup_id": self.selected_setup_id,
+            "plan_available": self.plan_available,
+            "readiness_status": self.readiness_status,
+            "reason_codes": list(self.reason_codes),
+        }
+
+    @classmethod
+    def from_dict(
+        cls, value: object, *, path: str = "smc_evidence"
+    ) -> "SmcCanonicalEvidence":
+        expected = frozenset(
+            {
+                "side",
+                "state",
+                "raw_semantics_version",
+                "source_scoring_version",
+                "source_contract_version",
+                "selection_version",
+                "quality_raw",
+                "quality_score",
+                "total",
+                "b",
+                "q",
+                "l",
+                "c",
+                "selected_zone_id",
+                "selected_setup_id",
+                "plan_available",
+                "readiness_status",
+                "reason_codes",
+            }
+        )
+        if type(value) is not dict or frozenset(value) != expected:
+            raise ValueError(
+                f"SMC_EVIDENCE_CONTRACT_INVALID at {path}: expected exactly "
+                f"{sorted(expected)}"
+            )
+        side = _require_side(value["side"])
+        return cls(
+            side=side,
+            state=_required_text(value["state"], f"{path}.state", side=side),
+            raw_semantics_version=_required_text(
+                value["raw_semantics_version"],
+                f"{path}.raw_semantics_version",
+                side=side,
+            ),
+            source_scoring_version=_required_text(
+                value["source_scoring_version"],
+                f"{path}.source_scoring_version",
+                side=side,
+            ),
+            source_contract_version=_required_text(
+                value["source_contract_version"],
+                f"{path}.source_contract_version",
+                side=side,
+            ),
+            selection_version=_required_text(
+                value["selection_version"],
+                f"{path}.selection_version",
+                side=side,
+            ),
+            quality_raw=_optional_bounded_int(
+                value["quality_raw"],
+                f"{path}.quality_raw",
+                0,
+                TECHNICAL_COMPONENT_RAW_MAX["smc"],
+                side=side,
+            ),
+            quality_score=_optional_nonnegative_number(
+                value["quality_score"], f"{path}.quality_score", side=side
+            ),
+            total=_optional_nonnegative_number(
+                value["total"], f"{path}.total", side=side
+            ),
+            b=_optional_fraction(value["b"], f"{path}.b", side=side),
+            q=_optional_fraction(value["q"], f"{path}.q", side=side),
+            l=_optional_fraction(value["l"], f"{path}.l", side=side),
+            c=_optional_fraction(value["c"], f"{path}.c", side=side),
+            selected_zone_id=_optional_text(
+                value["selected_zone_id"], f"{path}.selected_zone_id", side=side
+            ),
+            selected_setup_id=_optional_text(
+                value["selected_setup_id"], f"{path}.selected_setup_id", side=side
+            ),
+            plan_available=bool(value["plan_available"]),
+            readiness_status=_optional_text(
+                value["readiness_status"], f"{path}.readiness_status", side=side
+            ),
+            reason_codes=_require_text_tuple(
+                value["reason_codes"], f"{path}.reason_codes", side=side
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class SmcTechnicalRawProjection:
-    """Strict projection of one canonical SMC side onto the 0-15 raw."""
+    """Strict projection of one canonical SMC side onto the 0-15 raw.
+
+    Historical reader (compatibility spec §5): it reproduces the retired
+    cap/penalty subtotal for payloads created before tasks 106/112, so an old
+    stored result stays readable with its original meaning.  It is no longer on
+    the live path — ``score_technical_signal`` reads
+    :func:`project_smc_quality_raw` instead.
+    """
 
     side: str
     raw: int
@@ -349,7 +521,7 @@ class TechnicalSignalScoreResult:
     smc_source_scoring_version: str
     technical_signal_score: int
     technical_breakdown: TechnicalBreakdown
-    smc_evidence: SmcTechnicalEvidence
+    smc_evidence: SmcCanonicalEvidence
 
     def __post_init__(self) -> None:
         side = _require_side(self.side)
@@ -366,10 +538,10 @@ class TechnicalSignalScoreResult:
                 f"must equal {TECHNICAL_WEIGHT_POLICY_VERSION!r}",
                 side=side,
             )
-        if self.smc_raw_semantics_version != SMC_TECHNICAL_RAW_VERSION:
+        if self.smc_raw_semantics_version != SMC_QUALITY_RAW_VERSION:
             _data_error(
                 "technical_result.smc_raw_semantics_version",
-                f"must equal {SMC_TECHNICAL_RAW_VERSION!r}",
+                f"must equal {SMC_QUALITY_RAW_VERSION!r}",
                 side=side,
             )
         if self.smc_source_scoring_version != SMC_SCORER_VERSION:
@@ -384,10 +556,10 @@ class TechnicalSignalScoreResult:
                 "expected a TechnicalBreakdown",
                 side=side,
             )
-        if type(self.smc_evidence) is not SmcTechnicalEvidence:
+        if type(self.smc_evidence) is not SmcCanonicalEvidence:
             _data_error(
                 "technical_result.smc_evidence",
-                "expected SmcTechnicalEvidence",
+                "expected SmcCanonicalEvidence",
                 side=side,
             )
         if (
@@ -431,10 +603,10 @@ class TechnicalSignalScoreResult:
                 "weights must match result regime",
                 side=side,
             )
-        if self.technical_breakdown.smc.raw != self.smc_evidence.raw_subtotal:
+        if self.technical_breakdown.smc.raw != self.smc_evidence.quality_raw:
             _data_error(
                 "technical_result.technical_breakdown.smc.raw",
-                "must match SMC evidence raw subtotal",
+                "must match the canonical SMC quality_raw of the evidence",
                 side=side,
             )
         if type(self.technical_signal_score) is not int:
@@ -533,7 +705,7 @@ class TechnicalSignalScoreResult:
                 value["technical_breakdown"],
                 path=f"{path}.technical_breakdown",
             ),
-            smc_evidence=SmcTechnicalEvidence.from_dict(
+            smc_evidence=SmcCanonicalEvidence.from_dict(
                 value["smc_evidence"], path=f"{path}.smc_evidence"
             ),
         )
@@ -576,10 +748,20 @@ def score_technical_signal(
             side=normalized_side,
         ),
     }
-    smc_projection = project_smc_technical_raw(
+    smc_projection = project_smc_quality_raw(
         canonical_smc,
         normalized_side,
     )
+    if smc_projection.raw is None:
+        # Task 112/113: a side whose core data was unavailable is NOT a zero.
+        # The TechnicalScore cannot be computed at all, so it fails closed with
+        # the typed data error instead of publishing a score for a snapshot the
+        # canonical chain refused to conclude.
+        _data_error(
+            f"canonical_smc.sides.{normalized_side}.selection.quality_raw",
+            "core data unavailable: the SMC contribution cannot be evaluated",
+            side=normalized_side,
+        )
     raw_values["smc"] = smc_projection.raw
 
     weights = TECHNICAL_REGIME_WEIGHTS[normalized_regime]
@@ -632,11 +814,231 @@ def score_technical_signal(
         regime=normalized_regime,
         scoring_version=SCANNER_SCORING_VERSION,
         weight_policy_version=TECHNICAL_WEIGHT_POLICY_VERSION,
-        smc_raw_semantics_version=SMC_TECHNICAL_RAW_VERSION,
+        smc_raw_semantics_version=SMC_QUALITY_RAW_VERSION,
         smc_source_scoring_version=canonical_smc.scoring_version,
         technical_signal_score=technical_score,
         technical_breakdown=breakdown,
-        smc_evidence=smc_projection.evidence,
+        smc_evidence=_canonical_evidence(smc_projection),
+    )
+
+
+def _canonical_evidence(projection: "SmcQualityRawProjection") -> SmcCanonicalEvidence:
+    """Convert the canonical quality projection into the retained evidence."""
+
+    return SmcCanonicalEvidence(
+        side=projection.side,
+        state=projection.state,
+        raw_semantics_version=projection.quality_raw_version,
+        source_scoring_version=SMC_SCORER_VERSION,
+        source_contract_version=SMC_SCORING_CONTRACT_VERSION,
+        selection_version=projection.selection_version,
+        quality_raw=projection.raw,
+        quality_score=(
+            None
+            if projection.total is None
+            else QUALITY_SCORE_SCALE * projection.total / QUALITY_S_MAX
+        ),
+        total=projection.total,
+        b=projection.b,
+        q=projection.q,
+        l=projection.l,
+        c=projection.c,
+        selected_zone_id=projection.selected_zone_id,
+        selected_setup_id=projection.selected_setup_id,
+        plan_available=projection.plan_available,
+        readiness_status=projection.readiness_status,
+        reason_codes=tuple(projection.reason_codes),
+    )
+
+
+SMC_QUALITY_RAW_VERSION = "smc-quality-raw-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class SmcQualityRawProjection:
+    """Canonical SMC evidence read straight from the final side selection.
+
+    Task 96: this projection READS ``quality_raw`` and B/Q/L/C; it never
+    recomputes a subtotal, never applies the retired penalty/cap pipeline and
+    never rescales.  ``raw`` keeps the canonical 0–15 range and stays ``None``
+    when the side is ``data_unavailable`` — a reader must be able to tell
+    ``0`` (evaluated, no setup) from ``None`` (could not conclude).
+    """
+
+    side: str
+    state: str
+    raw: int | None
+    total: float | None = None
+    b: float | None = None
+    q: float | None = None
+    l: float | None = None
+    c: float | None = None
+    selected_zone_id: str | None = None
+    selected_setup_id: str | None = None
+    plan_available: bool = False
+    readiness_status: str | None = None
+    reason_codes: tuple[str, ...] = ()
+    quality_raw_version: str = SMC_QUALITY_RAW_VERSION
+    selection_version: str = SMC_SELECTION_VERSION
+    selection_contract_version: str = SMC_SELECTION_CONTRACT_VERSION
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "side": self.side,
+            "state": self.state,
+            "raw": self.raw,
+            "total": self.total,
+            "b": self.b,
+            "q": self.q,
+            "l": self.l,
+            "c": self.c,
+            "selected_zone_id": self.selected_zone_id,
+            "selected_setup_id": self.selected_setup_id,
+            "plan_available": self.plan_available,
+            "readiness_status": self.readiness_status,
+            "reason_codes": list(self.reason_codes),
+            "quality_raw_version": self.quality_raw_version,
+            "selection_version": self.selection_version,
+            "selection_contract_version": self.selection_contract_version,
+        }
+
+
+def validate_smc_quality_raw_result(value: object) -> bool:
+    """Whether *value* is a structurally valid final selection result.
+
+    Only the fields this projection consumes are checked; the retired
+    subtotal/penalty/cap shape is deliberately not required and not rebuilt.
+    """
+
+    if type(value) is not SmcScoringResult:
+        return False
+    if not isinstance(value.sides, Mapping):
+        return False
+    if set(value.sides) != VALID_TECHNICAL_SIDES:
+        return False
+    for side in VALID_TECHNICAL_SIDES:
+        side_result = value.sides[side]
+        if type(side_result) is not SmcSideScoringResult:
+            return False
+        selection = smc_selection_of(side_result)
+        if not validate_smc_side_selection(selection):
+            return False
+        if selection.side != side:
+            return False
+        if selection.selection_version != SMC_SELECTION_VERSION:
+            return False
+        if selection.contract_version != SMC_SELECTION_CONTRACT_VERSION:
+            return False
+    return True
+
+
+def project_smc_quality_raw(
+    canonical_smc: SmcScoringResult,
+    side: str,
+) -> SmcQualityRawProjection:
+    """Read one side's canonical quality_raw and B/Q/L/C for *side*.
+
+    R100-01: the projection applies the WHOLE final-result invariant of
+    :func:`core.smc_scoring_result.validate_smc_side_selection` — selected
+    identity, a plan belonging to that same zone/setup and a B/Q/L/C breakdown
+    consistent with ``total``/``quality_raw``/``quality_score``.  A malformed or
+    foreign payload is refused instead of being turned into a plausible SMC raw
+    for a consumer.  Nothing is derived from the legacy breakdown and no old
+    cap/penalty is reapplied to make a value look valid.
+
+    This projection IS the live path of ``score_technical_signal`` (task 106):
+    the canonical ``quality_raw`` is the ``smc`` component of the
+    TechnicalScore, while the outer component weights and raw maxima stay
+    untouched.  A ``null`` raw (core data unavailable) makes the TechnicalScore
+    fail closed instead of scoring the missing data as zero.
+    """
+
+    normalized_side = _require_side(side)
+    if type(canonical_smc) is not SmcScoringResult:
+        _data_error(
+            "canonical_smc",
+            "expected an SmcScoringResult",
+            side=normalized_side,
+        )
+    # The result identity is part of the contract the projection reads: a
+    # different formula/contract must never be projected as the current one.
+    if canonical_smc.scoring_version != SMC_SCORER_VERSION:
+        _data_error(
+            "canonical_smc.scoring_version",
+            f"must equal {SMC_SCORER_VERSION!r}",
+            side=normalized_side,
+        )
+    if canonical_smc.contract_version != SMC_SCORING_CONTRACT_VERSION:
+        _data_error(
+            "canonical_smc.contract_version",
+            f"must equal {SMC_SCORING_CONTRACT_VERSION!r}",
+            side=normalized_side,
+        )
+    if not isinstance(canonical_smc.sides, Mapping):
+        _data_error(
+            "canonical_smc.sides",
+            "expected a side mapping",
+            side=normalized_side,
+        )
+    if set(canonical_smc.sides) != VALID_TECHNICAL_SIDES:
+        _data_error(
+            "canonical_smc.sides",
+            "must contain exactly buy and sell",
+            side=normalized_side,
+        )
+    side_result = canonical_smc.side(normalized_side)
+    if type(side_result) is not SmcSideScoringResult:
+        _data_error(
+            f"canonical_smc.sides.{normalized_side}",
+            "expected an SmcSideScoringResult",
+            side=normalized_side,
+        )
+    selection = smc_selection_of(side_result)
+    if selection is None:
+        _data_error(
+            f"canonical_smc.sides.{normalized_side}.selection",
+            "the final canonical selection is required",
+            side=normalized_side,
+        )
+    if selection.side != normalized_side:
+        _data_error(
+            f"canonical_smc.sides.{normalized_side}.selection.side",
+            f"must equal {normalized_side!r}",
+            side=normalized_side,
+        )
+    # R100-01: the final-selection invariant is the single owner of the
+    # scalar/arithmetic rules.  The projection does not restate a second
+    # (weaker) rule of its own — anything the validator refuses, the projection
+    # refuses too, including a boolean standing in for quality_raw.
+    if not validate_smc_side_selection(selection):
+        _data_error(
+            f"canonical_smc.sides.{normalized_side}.selection",
+            "must satisfy the final-selection invariant (selected identity, "
+            "plan of the same setup, B/Q/L/C consistent with total/raw/score, "
+            "canonical quality_raw)",
+            side=normalized_side,
+        )
+
+    readiness_status = None
+    if isinstance(selection.readiness, dict):
+        raw_status = selection.readiness.get("status")
+        readiness_status = str(raw_status) if raw_status is not None else None
+
+    return SmcQualityRawProjection(
+        side=normalized_side,
+        state=selection.state,
+        raw=selection.quality_raw,
+        total=selection.total,
+        b=selection.b,
+        q=selection.q,
+        l=selection.l,
+        c=selection.c,
+        selected_zone_id=selection.selected_zone_id,
+        selected_setup_id=selection.selected_setup_id,
+        plan_available=selection.plan_available,
+        readiness_status=readiness_status,
+        reason_codes=tuple(selection.selection_reason_codes)
+        + tuple(selection.plan_rejection_codes),
     )
 
 
@@ -1120,6 +1522,84 @@ def _validate_smc_side(
         selected_zone_timeframe=selected_zone_timeframe,
     )
     return SmcTechnicalRawProjection(side=side, raw=subtotal, evidence=evidence)
+
+
+def _normalize_smc_canonical_evidence(value: SmcCanonicalEvidence) -> None:
+    """Validate the canonical SMC provenance carried by a TechnicalScore.
+
+    The record restates the canonical contract, it never re-derives it: the
+    versions must be the ones this build publishes, B/Q/L/C must be all present
+    or all absent, and ``total``/``quality_score`` must be the single canonical
+    formula of the components.  No cap or penalty step exists here (task 112).
+    """
+
+    side = _require_side(value.side)
+    for observed, expected, field in (
+        (value.raw_semantics_version, SMC_QUALITY_RAW_VERSION, "raw_semantics_version"),
+        (value.source_scoring_version, SMC_SCORER_VERSION, "source_scoring_version"),
+        (
+            value.source_contract_version,
+            SMC_SCORING_CONTRACT_VERSION,
+            "source_contract_version",
+        ),
+        (value.selection_version, SMC_SELECTION_VERSION, "selection_version"),
+    ):
+        if type(observed) is not str or observed != expected:
+            _data_error(f"smc_evidence.{field}", f"must equal {expected!r}", side=side)
+
+    raw = value.quality_raw
+    if raw is not None:
+        raw = _require_raw(
+            raw, "smc_evidence.quality_raw", TECHNICAL_COMPONENT_RAW_MAX["smc"], side=side
+        )
+
+    features = (value.b, value.q, value.l, value.c)
+    present = [item is not None for item in features]
+    if any(present) and not all(present):
+        _data_error("smc_evidence.b", "B/Q/L/C must be all present or all absent", side=side)
+    if not all(present):
+        if value.total is not None:
+            _data_error("smc_evidence.total", "needs B/Q/L/C", side=side)
+        if value.quality_score not in (None, 0.0):
+            _data_error(
+                "smc_evidence.quality_score",
+                "without B/Q/L/C the score is null or 0",
+                side=side,
+            )
+        if raw not in (None, 0):
+            _data_error("smc_evidence.quality_raw", "without B/Q/L/C it is null or 0", side=side)
+        return
+
+    components = {
+        name: _require_fraction(item, f"smc_evidence.{name}", side=side)
+        for name, item in zip(("b", "q", "l", "c"), features)
+    }
+    expected_total = (
+        QUALITY_B_WEIGHT * components["b"]
+        + QUALITY_Q_WEIGHT * components["q"]
+        + QUALITY_L_WEIGHT * components["l"]
+        + QUALITY_C_WEIGHT * components["c"]
+    )
+    if value.total is None or abs(float(value.total) - expected_total) > 1e-9:
+        _data_error("smc_evidence.total", "must equal 4B + 7Q + 2L + 2C", side=side)
+    if raw is None or raw != round_half_up(expected_total):
+        _data_error("smc_evidence.quality_raw", "must be round_half_up(S)", side=side)
+    expected_score = QUALITY_SCORE_SCALE * expected_total / QUALITY_S_MAX
+    if value.quality_score is None or abs(float(value.quality_score) - expected_score) > 1e-9:
+        _data_error("smc_evidence.quality_score", "must equal 100*S/15", side=side)
+
+
+def _require_fraction(value: object, path: str, *, side: str) -> float:
+    number = _require_finite_number(value, path, side=side)
+    if not 0.0 <= number <= 1.0:
+        _data_error(path, "must be inside [0, 1]", side=side)
+    return number
+
+
+def _optional_fraction(value: object, path: str, *, side: str) -> float | None:
+    if value is None:
+        return None
+    return _require_fraction(value, path, side=side)
 
 
 def _normalize_smc_technical_evidence(value: SmcTechnicalEvidence) -> None:
@@ -1846,15 +2326,20 @@ def _data_error(path: str, detail: str, *, side: str | None = None) -> None:
 
 
 __all__ = [
+    "SMC_QUALITY_RAW_VERSION",
     "SMC_TECHNICAL_RAW_VERSION",
     "TECHNICAL_COMPONENT_RAW_MAX",
     "TECHNICAL_REGIME_WEIGHTS",
     "TECHNICAL_WEIGHT_POLICY_VERSION",
     "TechnicalScoreDataError",
+    "SmcCanonicalEvidence",
+    "SmcQualityRawProjection",
     "SmcTechnicalEvidence",
     "SmcTechnicalRawProjection",
     "TechnicalSignalScoreResult",
+    "project_smc_quality_raw",
     "project_smc_technical_raw",
     "score_technical_signal",
     "technical_signal_score_gap",
+    "validate_smc_quality_raw_result",
 ]

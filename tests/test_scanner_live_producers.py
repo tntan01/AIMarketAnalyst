@@ -25,6 +25,7 @@ import pytest
 from core.market_models import Candle
 from core.market_safety_gate import MarketSafetyGate, SafetyPolicy
 from core.scanner_composition import CompositionInputError, SideSnapshot
+from core.scanner_features import SMC_SOURCE
 from core.scanner_live_producers import (
     PRODUCER_VERSION,
     build_live_market_safety_context,
@@ -274,7 +275,13 @@ def test_derive_live_analysis_produces_valid_inputs(candles):
     assert raws.features_version == "scanner-features"
     assert set(raws.per_side) == {"buy", "sell"}
     for side in ("buy", "sell"):
-        assert 0 <= raws.per_side[side].smc <= 15
+        # Task 105: the SMC raw is the canonical ``quality_raw`` of the final
+        # selection, or ``None`` when the side could not be concluded — never a
+        # fabricated zero.
+        smc = raws.per_side[side].smc
+        assert smc is None or 0 <= smc <= 15
+        # The provenance marker names the canonical source either way.
+        assert raws.per_side[side].smc_source == SMC_SOURCE
         detail = raws.per_side[side].location_detail
         assert detail is not None
         assert detail.model_version == "location-geometry-v2"
