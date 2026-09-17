@@ -1,7 +1,8 @@
-# Hồ sơ nghiệm thu SMC — task 15
+# Hồ sơ nghiệm thu SMC — task 15 và hồ sơ bàn giao Task143
 
-> **Trạng thái:** READY FOR TECH LEAD REVIEW — không tự chuyển qua task 16.  
-> **Mục đích:** nối phát hiện → task sửa → test/evidence, chọn command tái chạy được và xác định nguồn snapshot. Hồ sơ này không tuyên bố hiệu quả giao dịch, win rate hay lợi nhuận.
+> **Trạng thái:** `IMPLEMENTED — WAITING_REVIEW Task144`. Task129–138 đã `REVIEW PASS` (2026-09-17). Lô Task139–143 đã thực hiện xong và **dừng tại đây**; **Task144 chưa bắt đầu** và **không** được tự ghi REVIEW PASS/APPROVED. Đây không phải phê duyệt thay build đang dùng, rollout production hay auto-entry.
+> **Mục đích:** nối phát hiện → task sửa → test/evidence, chọn command tái chạy được và xác định nguồn snapshot. §1–§7 là hồ sơ Task15 (giữ nguyên giá trị lịch sử); §8–§16 là **hồ sơ bàn giao Task143**.
+> **Hồ sơ này không tuyên bố hiệu quả giao dịch, win rate hay lợi nhuận.** Xem §15.
 
 ## 1. Phạm vi và nguyên tắc nghiệm thu
 
@@ -165,7 +166,7 @@ data-quality reasons, rule identity, input digest,
 SMC state/selected ID/readiness observed output
 ```
 
-Hiện tại repo chưa có corpus MT5 20–30 snapshot được xác nhận cho SMC. Đây là trạng thái `PENDING_DATA` của checklist nghiệm thu, không được đánh dấu đạt bằng fixture tổng hợp.
+Corpus thật cho SMC **đã có** (task 131, 2026-09-16): `reports/scanner/smc_real_snapshots/corpus.jsonl.gz` — 58 snapshot từ MT5 history, có cutoff/`as_of`, provenance terminal, tick size + nguồn, digest đầu vào canonical và verdict quan sát; ma trận phủ đủ nhóm tăng/giảm/range, vùng tốt/hỏng, thiếu/đủ M15 và data-quality. Ba row data-quality lấy theo broker symbol (`BWPUSDm`, `SOLUSDm`) vì đó là nơi broker này thật sự phát feed thiếu; chúng được ghi nhãn `symbol_group=broker_symbol_only`. Fixture tổng hợp **không** được dùng để thay dữ liệu thật ở bất kỳ mục nào dưới đây.
 
 ## 5. Checklist nghiệm thu
 
@@ -173,16 +174,158 @@ Hiện tại repo chưa có corpus MT5 20–30 snapshot được xác nhận cho
 |---|---|---|
 | Logic regression | Baseline 418 test + target groups ở §3.1 | Baseline đã chạy; target sau runtime pending |
 | Fixture semantics | Ba fixture task 4/5 + JSON validation/probes | Đã có fixture và tái hiện bug; assertion sau sửa pending |
-| Dữ liệu thật | 24 PIT snapshots theo §4, MT5 provenance/digest | `PENDING_DATA` — chưa có corpus thật trong repo |
-| Replay ngắn | `run_smc_validation.py`, prefix parity | Command đã chọn; chạy sau canonical runtime |
-| Analyze/Scanner parity | Cùng snapshot/cutoff, selected/quality/plan/status | Pending integration tasks 101–116 |
-| UI/chart | Scanner → Detail → Chart, missing/invalid/waiting/confirmed | Pending tasks 121–127 |
-| Restart/history/cache | Round-trip, cache miss/correction, legacy read | Pending tasks 117–120 |
-| Execution dry-run | Mock revalidation/dispatch, không order thật | Pending task 135 |
-| Performance | `smc_performance.py`, p50/p95 cold/warm | Target đã khóa; harness task 136 pending |
+| Dữ liệu thật | 24 PIT snapshots theo §4, MT5 provenance/digest | **ĐÃ CÓ (task 131):** 58 snapshot thật trong `reports/scanner/smc_real_snapshots/corpus.jsonl.gz`, đủ nhóm theo ma trận (`shortfalls = {}`); `scanner_pit_collector.py --schema` vẫn chạy được làm interface |
+| Replay ngắn | `run_smc_validation.py`, prefix parity | **ĐÃ CHẠY (task 133):** 4 snapshot × 2 đoạn nến đã đóng, cùng cutoff; parity đường chạy live↔replay, prefix == prefix+future tail, xác định, không mốc thời gian sự kiện nào sau cutoff (`replay_parity.json`) |
+| Analyze/Scanner parity | Cùng snapshot/cutoff, selected/quality/plan/status | **ĐÃ CHẠY:** parity 3 route ở task 114/116 và parity live↔replay trên dữ liệu thật ở task 133 |
+| UI/chart | Scanner → Detail → Chart, missing/invalid/waiting/confirmed | **ĐÃ CHẠY (task 127 + 132):** smoke 7 trạng thái × 2 theme; QA chart expected/observed trên 58 snapshot thật, kèm ảnh render |
+| Restart/history/cache | Round-trip, cache miss/correction, legacy read | **ĐÃ CHẠY (task 134):** 4 ca trên runtime root tạm, instance mới đọc lại khớp verdict; 6 biến thể hỏng đều fail-closed; cache hit/miss đúng; journal/open-order không đổi |
+| Execution dry-run | Mock revalidation/dispatch, không order thật | **ĐÃ CHẠY (task 135):** control pass ở tầng engine, 4 ca âm + quote cũ chặn đúng mã, `place_calls = 0`; `sends_real_order` khoá cứng; inventory call site `order_send` |
+| Performance | `smc_performance.py`, p50/p95 cold/warm | **ĐÃ CHẠY (task 136), ĐÃ SỬA (task 137–138):** lượt đo Task136 **không đạt** target Task8/Task15 (warm p50 6,9264 s / p95 7,2316 s; target 2 s / 5 s) và đã thành BLOCKING F129-136-01. Gói sửa Task137–138 sửa trọn root cause (tái dùng validation/pivot/ATR trong một cửa sổ đóng băng) và đo lại **đạt**: warm **p50 1,4344 s · p95 1,7951 s**, evaluator **1,0/snapshot**. Chi tiết ở §10 và nhật ký tiến độ |
 | Backtest lớn | Không yêu cầu | Intentionally out of scope |
 
 Task 15 hoàn tất việc chọn nguồn/command và ghi checklist; các mục pending là công việc thực thi ở task sau, không phải lý do để tự tuyên bố APPROVED.
+
+---
+
+# Hồ sơ bàn giao Task143 (2026-09-17)
+
+## 8. Snapshot, baseline và diff boundary
+
+| Hạng mục | Giá trị |
+|---|---|
+| Nhánh | `main`, `HEAD = c42770e` |
+| Worktree | 39 file đã sửa / 16 mục chưa được git theo dõi (chuỗi SMC 73–143 **chưa commit**) |
+| Baseline đối chiếu bắt buộc | `6 failed / 4555 passed / 7 skipped / 16 xfailed`; sáu failure **chỉ** là sáu node trong `tests/test_step3_fred.py` |
+| Quy tắc đối chiếu failure | Bất kỳ failure khác tên/file/nguyên nhân là **finding mới** — không được gắn nhãn "FRED nền" |
+| `git diff --check` | exit 0 (chỉ cảnh báo LF→CRLF) |
+| Môi trường | Windows 11, Python 3.11.9, pytest 9.0.3, PyQt6/Qt 6.11.0, PyInstaller 6.20.0 |
+| Build Sep 9 (`packaging/dist/`) | Bản **trước** toàn bộ chuỗi SMC — chỉ dùng để kiểm chéo, **không** phải bản đang nghiệm thu |
+| `AGENTS.md` | Không tồn tại trong repository |
+
+**Ranh giới diff của lô Task139–143:** chỉ 5 file, **không có file code sản phẩm nào**: `docs/guides/USER_GUIDE.md`, `docs/README.md`, `docs/plans/smc-acceptance-dossier.md`, `docs/plans/smc-implementation-progress.md`, `docs/plans/smc-implementation-plan.md`.
+
+## 9. Mapping caller canonical — Scanner / Analyze / replay / persistence / UI
+
+| Đường chạy | Điểm vào | Chuỗi canonical | Trạng thái |
+|---|---|---|---|
+| **Scanner (live)** | `core/scanner_live_producers.py:321` | `build_smc_snapshot` → `evaluate_smc_snapshot` (`:330`) → `canonical_smc` | production |
+| **Analyze** | `core/analysis_pipeline.py:602` | `build_smc_snapshot` → `evaluate_smc_snapshot` (`:805`, `_step_score_scenarios`); prefilter `core/smc_prefilter.py:86` | production |
+| **Replay** | `core/smc_validation.py:236` (`replay_canonical_snapshot`) | `evaluate_smc_snapshot` trên snapshot đóng băng | tool/script |
+| **Persistence (ghi)** | `core/analysis_pipeline.py:208`, `controllers/scanner_controller.py:3318` | `build_smc_persistence_block` | production |
+| **Persistence (đọc lại)** | `services/scanner_persistence_service.py:195,200,222` | `classify_persisted_smc`, `smc_block_of`, `read_smc_result_record` | production |
+| **Cache kết quả** | `services/scanner_persistence_service.py:202–224` | `write_smc_result_record` / `read_smc_result_record` | **chưa nối live** — docstring: *"Nothing on the live route calls it."*; `cache/smc_results/` **chưa tồn tại trên đĩa** |
+| **Adapter reader-only** | `core/smc_consumer_contract.py:202,414,462,481` | `read_canonical_selection`, `canonical_selection_of`, `selected_zone_for_side`, `scenario_preferred_zone_for_side` | **giữ nguyên, không tự gỡ** |
+| **UI / Chart** | `ui/scanner_presentation.py:234,245`; `core/chart_payload.py:60,66,68,494` | đọc `canonical_selection_of` → `present_smc_row` / `build_smc_overlay` | production, chỉ đọc |
+
+**Façade canonical (D101-01):** `core/smc_canonical_context.build_canonical_smc_context` là builder mặc định của `build_smc_snapshot` (`core/smc_snapshot.py:405–415`, chọn ở `:227–228`). Đường legacy `build_smc_context` / `_smc_for_timeframe` **không** có caller production; xem §12 để biết vì sao vẫn giữ.
+
+## 10. Kết quả Task129–138 (đã `REVIEW PASS` 2026-09-17)
+
+| Task | Nội dung | Kết quả đo được | Artifact |
+|---|---|---|---|
+| 129 | Golden fixtures | **Không sửa expected nào**; golden chạy xanh 76 passed; mọi diff golden đã có thuộc `c42770e` được ghi mapping kèm lý do | nhật ký |
+| 130 | Regression suite | Bộ test phạm vi Task15 | nhật ký |
+| 131 | Snapshot thực tế | **58 snapshot thật từ MT5** (55 symbol cấu hình + 3 row data-quality theo broker symbol `BWPUSDm`/`SOLUSDm`), cutoff + provenance + digest, ma trận đủ nhóm (`shortfalls = {}`) | `reports/scanner/smc_real_snapshots/corpus.jsonl.gz`, `report.json` |
+| 132 | QA chart thực tế | Expected/observed trên 58 snapshot thật, kèm ảnh render 3 ca; **`protected_swing` giữ `SMC_PROTECTED_SWING_UNAVAILABLE`** — không thay bằng SL hay level legacy | `chart_qa.json`, 3 PNG |
+| 133 | Replay ngắn | Cùng cutoff; `route_parity`, `prefix == wide`, xác định, `after_cutoff = 0`; **không mốc thời gian sự kiện nào sau cutoff** | `replay_parity.json` |
+| 134 | Smoke restart / history | 4/4 ca, `failures = 0`; instance mới đọc lại khớp verdict; 6 biến thể payload hỏng đều fail-closed; cache hit/miss đúng; **journal/open-order không đổi** | `restart_smoke.json` |
+| 135 | Execution smoke **không gửi lệnh** | Control pass ở tầng engine; 4 ca âm + quote cũ chặn đúng mã; **`place_calls = 0`**; `sends_real_order` khoá cứng | `execution_smoke.json` |
+| 136 | Performance cục bộ | Sau gói sửa Task137–138: warm **p50 1,4344 s · p95 1,7951 s** (target ≤ 2 s / ≤ 5 s — **đạt**); evaluator/context builder **1,0/snapshot** | `performance.json` |
+| 137 | Sửa lỗi nghiệm thu | Ba finding F129-136-01/02/03 xử lý theo root cause (xem §11) | `core/smc_structure_window.py`, `tests/test_smc_structure_reuse_task137.py` (13 node) |
+| 138 | Kiểm tra lại sau sửa | Targeted + equivalence + replay/persistence parity + `scanner_smoke` + benchmark + full suite | nhật ký |
+
+**Equivalence trước/sau tối ưu (Task137) — bằng chứng rời:** `scripts/smc_equivalence.py --limit 8`, hai nhánh `--no-reuse` và mặc định, cùng digest `sha256:8515f796084ef0f0053430179e82dce325a10e9ebba975de669eba4c49d339b6`.
+
+## 11. Các review đã qua và finding đã đóng
+
+| Review | Kết luận | Finding | Trạng thái |
+|---|---|---|---|
+| Gói sửa Task137–138 (F129-136-01/02/03) | `CHANGES_REQUESTED` → sửa → `REVIEW PASS` | **F129-136-01** performance vượt target → tái dùng validation/pivot/ATR trong **một** cửa sổ đóng băng | **CLOSED** — p50/p95 đạt target |
+| | | **F129-136-02** Path-B composition che raw technical đã derive → provenance `ScannerCompositionResult.technical_raws` | **CLOSED** — `scanner_smoke.py` exit 0, không nới assertion |
+| | | **F129-136-03** fixture UI Scanner phụ thuộc thời điểm → mốc cố định + seam `now=` (production truyền `None`) | **CLOSED** — 10/10 lượt xanh |
+| Tái review F137-138-01 | `CHANGES_REQUESTED` → sửa → **đóng** | **F137-138-01** `StructureWindowReuse.owns` chỉ so hai endpoint ⇒ cửa sổ bị thay nến ở giữa vẫn được trả lời bằng cache cũ | **CLOSED** — `owns()` nay xác thực **mọi** Candle bằng object identity (không dùng equality theo giá trị); +6 node tái lập, reproducer đỏ 4/13 khi khôi phục kiểm cũ |
+| **Task129–138** | **`REVIEW PASS` (2026-09-17)** | Không còn finding mở | **đủ điều kiện thực hiện Task139–143** |
+
+Một lỗi trong chính code mới đã bị chính phép kiểm equivalence bắt và sửa: nhánh fallback của `filter_swings_by_atr` lúc đầu trả danh sách swing **chưa lọc** khi dãy không thuộc sở hữu. Đây là lỗi của bản sửa, không phải của sản phẩm.
+
+## 12. Danh sách chính xác `DEFERRED` và `BLOCKED`
+
+**`DEFERRED` (không đụng trong lô này):**
+
+| Hạng mục | Lý do |
+|---|---|
+| `protected_swing` producer | Vẫn `SMC_PROTECTED_SWING_UNAVAILABLE` trên **cả 58** snapshot thật; muốn có lớp này trên chart phải mở việc publish `protected_swing_*` từ chain cấu trúc canonical ra carrier |
+| Source-age / P10 | Quyết định policy riêng, chưa chốt |
+| Cache production wiring | Cố ý chưa nối; `cache/smc_results/` chưa tồn tại trên đĩa |
+| Adapter `selection → preferred_zone` | Adapter reader-only đang được giữ; **không tự gỡ** |
+| Dispatch-clock injection | `revalidate_execution` đo tuổi tick bằng đồng hồ thật; khác với `now=` của đường đọc dòng Scanner (đã dùng cho fixture test) |
+| Dọn đường chạy Task140 | **Không xóa gì.** Mọi ứng viên đều còn đường chạy, hoặc là seam/adapter/historical reader phải giữ — xem bảng dưới |
+| Artifact commit/revert | `reports/scanner/smc_real_snapshots/` và `reports/scanner/smc_ui_smoke/` **chưa được git theo dõi**; ba artifact báo cáo smoke lại đổi nội dung khi chạy lệnh Task15 §3.4 |
+| Rollout / auto-entry | Ngoài phạm vi; `sends_real_order` vẫn `False` |
+
+**Kết luận Task140 — không xóa gì, kèm lý do từng ứng viên:**
+
+| Ứng viên | Vì sao **không** xóa |
+|---|---|
+| `build_smc_context` (`core/smc_context.py:834`) | Là **seam monkeypatch có chủ đích**: `scripts/tier2_feasibility_gate.py:227` đọc `pipeline_module.build_smc_context`, `:243` gán lại, `:257` khôi phục. Xóa sẽ làm script đó `AttributeError` |
+| `_smc_for_timeframe` (`core/smc_context.py:890`) | Chỉ tới được qua `build_smc_context`; thuộc đường legacy đã được Task72 nghiệm thu |
+| `score_smc` (`core/smc_scorer.py:238`) | Là engine của `core/smc_validation.py:79`; `scripts/run_smc_validation.py` là lệnh nghiệm thu Task15 §3.3 |
+| `project_smc_technical_raw` | Reader lịch sử cho ca linked-sweep |
+| `smc_snapshot_identity`, `smc_result_cache_path`, `selection_payload_for_side`, `legacy_zone_for_side` | Utility/exported, còn dùng ở script/test |
+| Import `build_smc_context` ở `core/analysis_pipeline.py:49` | Tưởng là import chết (không có lời gọi nào trong module) nhưng chính là **đích monkeypatch** ở trên ⇒ xóa là phá đường chạy |
+
+**`BLOCKED`:**
+
+| Hạng mục | Trạng thái | Phần đã làm được |
+|---|---|---|
+| Backup destination (Task141) | **`BLOCKED: backup destination not authorized`** | Checklist recovery hoàn thành; dry-run read-only trên temp storage đã chạy (`smc_restart_smoke.py --limit 4` → 4/4 ca) |
+| Quét thật từ UI (Task142) | **BLOCKED** | Không có MT5 terminal/broker phục vụ trong môi trường này; phần tương đương đã kiểm bằng fixture canonical thật qua ba lớp UI và bằng corpus 58 snapshot thật |
+| Nội dung Settings/Journal với dữ liệu thật (Task142) | **BLOCKED** | Route mở được, không raise; nội dung nạp từ nguồn ngoài nên chưa xác minh |
+
+## 13. Recovery checklist (Task141) — xem nhật ký tiến độ
+
+Inventory đầy đủ (7 nhóm: mã/build, config, persistence documents, journal/lệnh đang mở, corpus & artifact bằng chứng, cache tái tạo được, cache **không** phải nguồn sự thật) và quy trình 8 bước theo đúng thứ tự bắt buộc nằm ở [nhật ký tiến độ](smc-implementation-progress.md), mục *Task141*. Hai điểm phải nhớ khi khôi phục:
+
+* **Persistence documents không phải archive.** `scanner_analysis/<scan_id>/` bị retention xóa sau **24 h**, `scanner_snapshots/scanner_*.json` sau **7 ngày** (`services/runtime_retention_service.py:207–225`).
+* **`cache/smc_results/` không phải nguồn sự thật** và hiện chưa tồn tại; xóa/làm mới nhóm cache tái tạo là an toàn, nhưng **không** được đụng journal, lệnh đang mở, persistence documents hay artifact bằng chứng.
+
+## 14. Command build/run (Task142) và kết quả
+
+Xem bảng đầy đủ 10 mục ở [nhật ký tiến độ](smc-implementation-progress.md), mục *Task142*. Tóm tắt:
+
+| Kiểm | Command | Kết quả |
+|---|---|---|
+| Compile | `python -m compileall -q main.py config core controllers services ui workers tools` | exit 0 |
+| Import entry point + module SMC | 15 module | 15/15 OK |
+| Màn hình chính, cả hai theme | boot `MainWindow` offscreen, mở mọi route | 7/7 route, không raise |
+| Scanner → Detail → Chart | `QT_QPA_PLATFORM=windows python -X utf8 scripts/smc_ui_smoke.py` | exit 0 — 7 trạng thái × 2 theme |
+| Scanner smoke (Task15 §3.4) | `python -X utf8 scripts/scanner_smoke.py` | exit 0 (`SMOKE OK` + `PATHB SMOKE OK`) |
+| Restart / lịch sử / cache | `python -X utf8 scripts/smc_restart_smoke.py --limit 4` | exit 0 — 4/4 ca |
+| Replay parity | `python -X utf8 scripts/smc_replay_parity.py` | exit 0 — 116 ca, `no_future_leak = True` |
+| Build | `python -m PyInstaller ./pyinstaller.spec --clean --noconfirm` | exit 0 — `.exe` 22.650.649 B |
+| Boot artifact | chạy `.exe` với `QT_QPA_PLATFORM=offscreen` | sống 25 s, RSS ~217 MB, không traceback |
+| Corpus bằng chứng | `python -X utf8 scripts/smc_real_snapshots.py verify` | exit 0 — `rows: 58`, `problems: []` |
+| Full suite (chạy một mình) | `python -m pytest tests -q` | **6 failed / 4555 passed / 7 skipped / 16 xfailed** (324,98 s) — **trùng baseline tuyệt đối**; đúng 6 failure, toàn bộ ở `tests/test_step3_fred.py`, cùng tên với baseline; không failure nào khác |
+| Whitespace | `git diff --check` | exit 0 (chỉ warning LF→CRLF) |
+
+**Lô Task139–143 không sửa một dòng code sản phẩm nào** (chỉ 5 file `.md`). Full suite được chạy để chứng minh điều đó, không phải để chứng minh một thay đổi hành vi — nên số `passed`/`skipped`/`xfailed` không đổi là kết quả đúng.
+
+## 15. Đã xác minh kỹ thuật **so với** chưa chứng minh hiệu quả giao dịch
+
+**Đã xác minh kỹ thuật (có bằng chứng tái lập được):** tính đúng của chuỗi canonical (identity, reason, lifecycle, readiness) qua parity ba đường và parity live↔replay trên dữ liệu thật; không đọc tương lai (`no_future_leak`, `after_cutoff = 0`); fail-closed khi dữ liệu thiếu/hỏng/lịch sử; restart/history/cache giữ nguyên verdict; revalidation chặn đúng và **không gửi lệnh** (`place_calls = 0`); hiệu năng trong target; UI/chart/Detail đọc cùng một kết quả canonical; build và boot artifact.
+
+**Chưa chứng minh — và hồ sơ này không tuyên bố:** lợi nhuận, win rate, kỳ vọng dương, hay rằng điểm SMC cao thì lệnh dễ thắng hơn. **Không có backtest quy mô lớn, không tối ưu tham số, không order-flow thật, không giao dịch tiền thật.** Mọi con số trong hồ sơ này là số đo kỹ thuật. QA kỹ thuật **không** thay cho các điều kiện chứng nhận giao dịch mà chương trình đang yêu cầu.
+
+## 16. Điều kiện còn lại để Tech Lead đánh giá Task144
+
+1. Đối chiếu full suite lượt này với baseline `6F / 4555P / 7skip / 16xfail` — **từng failure**, không gắn nhãn "FRED nền" cho node khác.
+2. Quyết định **`protected_swing`** tiếp tục `SMC_PROTECTED_SWING_UNAVAILABLE` (đúng như đã nghiệm thu) hay mở việc publish producer canonical.
+3. Quyết định về **cache production wiring** (hiện deferred, chưa có bản ghi nào trên đĩa).
+4. Quyết định về **artifact commit**: `reports/scanner/smc_real_snapshots/` và `reports/scanner/smc_ui_smoke/` chưa được git theo dõi, cùng ba artifact báo cáo smoke đã đổi nội dung.
+5. Quyết định **`BLOCKED: backup destination not authorized`** của Task141.
+6. Quyết định về việc build loại `core.analysis_pipeline`/`core.analysis_engine` (tiền tồn tại) có cần xử lý trước khi bàn giao `.exe` hay không.
+7. Quyết định mở hay đóng các việc `DEFERRED`: dispatch-clock injection, adapter cleanup, source-age/P10.
+8. Nếu cho phép thay bản đang dùng: các điều kiện chứng nhận execution hiện có **vẫn giữ nguyên**; **không** tự bật auto-trade.
 
 ## 6. Tài liệu trình Tech Lead tại task 16
 

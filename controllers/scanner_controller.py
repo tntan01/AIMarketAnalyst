@@ -13,7 +13,7 @@ from math import isfinite
 from pathlib import Path
 from threading import RLock
 from time import perf_counter
-from typing import Any
+from typing import Any, Mapping
 
 from PyQt6.QtCore import QThread
 
@@ -29,6 +29,7 @@ from core.scanner_live_producers import (
     compute_live_volatility_ratio,
     derive_live_analysis,
 )
+from core.smc_scoring_result import SmcScoringResult
 from core.scanner_v4_models import (
     READY_NOW,
     WAITING_CONFIRMATION,
@@ -37,6 +38,13 @@ from core.scanner_v4_models import (
     DATA_UNAVAILABLE,
 )
 from core.scanner_release import run_pair_from_live
+from core.reason_codes import (
+    LIVE_ORDER_DISABLED,
+    ORDER_INTENT_ONLY,
+    ORDER_POLICY_UNAVAILABLE,
+    SENDS_REAL_ORDER_NOT_FALSE,
+    codes_to_messages,
+)
 from core.scanner_order_policy import (
     DEFAULT_RUNTIME_ORDER_POLICY,
     OrderPolicyLoadError,
@@ -91,6 +99,7 @@ from services.scanner_job_state import ScannerJobState
 from services.scanner_persistence_service import (
     PERSISTENCE_FULL,
     ScannerPersistenceService,
+    analysis_document_path,
     atomic_json_save,
     persist_performance_summary,
     summary_row,
@@ -260,6 +269,11 @@ def _order_proposal(row: dict[str, Any]) -> dict[str, Any] | None:
         # the CURRENT canonical verdict of a fresh snapshot.
         "smc_zone_id": payload.get("smc_zone_id"),
         "smc_setup_id": payload.get("smc_setup_id"),
+        # F-C-01: carry the candidate's own intent lock into the proposal.  The
+        # send boundary re-checks it and refuses a payload that omits it, so the
+        # Scanner's intent (always ``False`` — see ``ScannerOrderPayload``)
+        # travels with the dict instead of being assumed.
+        "sends_real_order": payload.get("sends_real_order"),
     }
     return proposal
 
@@ -888,6 +902,15 @@ class ScannerController:
                 request.feature_flags.get("scanner_fast_tier1", False)
             ),
             "ai_service": ai_svc,
+            # F-BCTX-01: NO ``context_cache_root`` here.  The live scan freezes a
+            # NEW ``history_cutoff = now(UTC)`` every scan and runs exactly ONE
+            # ``_analyze_one_symbol`` per symbol, so no two real callers ever
+            # share a (symbol, cutoff, candles) key: the seam could only miss and
+            # write a record nobody reads, into a directory retention does not
+            # cover.  The context-cache seam stays available (see
+            # ``core.smc_context_cache`` and ``_analyze_one_symbol``) for a caller
+            # that really repeats a frozen input; production wiring is DEFERRED
+            # until such a caller and a bounded retention decision exist.
         }
 
         with ThreadPoolExecutor(max_workers=min(6, os.cpu_count() or 4)) as ex:
@@ -1384,6 +1407,62 @@ class ScannerController:
 
         return _sort_rows(rows)
 
+    def _order_send_boundary_blocks(self, order: Mapping[str, Any]) -> list[str]:
+        """The fail-closed barriers at the send boundary (F-C-01, F-HC-01/02).
+
+        **This boundary is unconditionally closed in the no-rollout state.**  It
+        always returns at least one block code, so ``place_market_order`` is
+        unreachable from here whatever the config and whatever the payload says.
+        The codes say *why*, they never grant:
+
+        * :data:`ORDER_POLICY_UNAVAILABLE` — the owner policy could not be
+          reloaded and validated from ``config/scanner_order_policy.json`` at
+          this instant.  F-HC-01: the boundary reads the CURRENT config, not
+          ``_active_order_policy`` (which was loaded at scan time and may be
+          stale); a missing/broken/non-bool config closes the boundary and
+          there is deliberately **no** fallback to the earlier policy.
+        * :data:`LIVE_ORDER_DISABLED` — evidence only: the reloaded config does
+          not carry ``live_order_permitted: true``.  The switch is config for a
+          future cutover; it is **not** what closes this boundary, and turning
+          it on would not open it either.
+        * :data:`ORDER_INTENT_ONLY` / :data:`SENDS_REAL_ORDER_NOT_FALSE` — the
+          payload contract.  ``sends_real_order is False`` means *intent only*,
+          which is exactly why it is not sent: building an intent is not a
+          cutover.  ``True``, a missing field or a wrong type is a contract
+          violation.  Both are blocked; neither can become permission.
+
+        Lifting this requires a separate rollout change and its own approval —
+        including a payload contract that actually authorises dispatch.
+        """
+
+        blocks: list[str] = []
+
+        # 1. F-HC-01: reload + validate the owner policy from config NOW.
+        policy: RuntimeOrderPolicy | None = None
+        try:
+            policy = load_runtime_order_policy()
+        except Exception:
+            blocks.append(ORDER_POLICY_UNAVAILABLE)
+
+        # 2. Evidence from the CURRENT config.  Note this is recorded, not
+        #    enforced as a permission: a config that says "permitted" still does
+        #    not open the boundary (see step 3).
+        if (
+            policy is not None
+            and getattr(policy, "live_order_permitted", False) is not True
+        ):
+            blocks.append(LIVE_ORDER_DISABLED)
+
+        # 3. The payload contract.  Exactly one of these two codes always
+        #    applies, which is what keeps the boundary closed.
+        payload = order if isinstance(order, Mapping) else {}
+        if payload.get("sends_real_order") is not False:
+            blocks.append(SENDS_REAL_ORDER_NOT_FALSE)
+        else:
+            blocks.append(ORDER_INTENT_ONLY)
+
+        return blocks
+
     @_serialized_execution
     def execute_order_candidate(
         self,
@@ -1637,6 +1716,41 @@ class ScannerController:
             )
             return blocked_result
 
+        # --- F-C-01: send-boundary kill switch -----------------------------
+        # Last barrier before the ONE broker dispatch in this method.  It reads
+        # the CURRENT runtime policy here — not only when the config was loaded —
+        # so a policy swapped under a running scan cannot open the boundary, and
+        # it re-checks the payload's own intent lock instead of trusting the
+        # dict it was handed.  Both checks are fail-closed and neither can grant
+        # permission: they can only block.
+        send_blocks = self._order_send_boundary_blocks(order)
+        if send_blocks:
+            # ``common`` carries the SAME chain evidence the dispatch would have
+            # reported — revalidation verdict, lot/sizing, portfolio guard and
+            # the fresh SMC comparison — so a caller can still see how far the
+            # chain got before the boundary closed it.  No order response and no
+            # post-trade portfolio are reported, because nothing was sent.
+            blocked_send = {
+                "success": False,
+                "blocked": True,
+                "reason_codes": list(send_blocks),
+                "message": codes_to_messages(send_blocks),
+                **common,
+            }
+            self._emit_observability(
+                "ORDER_RESPONSE",
+                scan_id=scan_id,
+                symbol=symbol,
+                severity="WARNING",
+                payload={
+                    "row_id": row_id,
+                    "success": False,
+                    "message": "send boundary blocked",
+                    "block_codes": list(send_blocks),
+                    "smc_revalidation": smc_revalidation,
+                },
+            )
+            return blocked_send
         self._emit_observability(
             "ORDER_SEND_REQUEST",
             scan_id=scan_id,
@@ -2648,12 +2762,7 @@ class ScannerController:
                     if not isinstance(row, dict):
                         continue
                     symbol = str(row.get("symbol", "UNKNOWN") or "UNKNOWN")
-                    safe_symbol = "".join(
-                        character
-                        for character in symbol.upper()
-                        if character.isalnum()
-                    ) or "UNKNOWN"
-                    analysis_path = analysis_dir / f"{safe_symbol}.json.gz"
+                    analysis_path = analysis_document_path(root, scan_id, symbol)
                     try:
                         atomic_json_save(
                             analysis_path,
@@ -3144,6 +3253,8 @@ def _analyze_one_symbol(
     scanner_fast_tier1: bool = False,
     ai_service: object | None = None,
     order_policy: RuntimeOrderPolicy | None = None,
+    now: datetime | None = None,
+    context_cache_root: Path | None = None,
 ) -> dict[str, Any]:
     """Run the single-symbol analysis path (CPU-only, thread-safe, C2b).
 
@@ -3152,6 +3263,20 @@ def _analyze_one_symbol(
     ``pair_to_ui_row``. Every emitted value comes from the real Scanner sources (or
     fails closed to a ``blocked_ui_row``). Legacy-only kwargs are kept for signature
     compatibility with ``_run_market_scan_core``'s submit and are not used here.
+
+    ``now`` is the observation instant this row is composed against.  It is the
+    clock the composition freshness SLA compares the snapshot to, so a caller
+    that must produce a repayable row pins it together with the data it placed
+    at that instant; production passes nothing and keeps reading the UTC clock.
+
+    ``context_cache_root`` is the explicit injection point of the canonical
+    CONTEXT cache (``core.smc_context_cache``).  **No production caller passes it
+    today**: the live scan freezes a new cutoff every scan and analyses each
+    symbol once, so nothing would ever hit — the wiring was removed under
+    F-BCTX-01 and the production cache is DEFERRED until a caller really repeats
+    a frozen input and retention for the cache directory is settled.  Passing a
+    root here only routes this symbol's context build through the seam; the
+    evaluator still runs fresh.
     """
     started_at = perf_counter()
     symbol = pkt["symbol"]
@@ -3161,7 +3286,7 @@ def _analyze_one_symbol(
         if isinstance(pkt.get("macro_context"), dict)
         else {}
     )
-    now = datetime.now(timezone.utc)
+    now = now if now is not None else datetime.now(timezone.utc)
     try:
         analysis_cutoff = pkt.get("location_cutoff", pkt.get("v4_captured_at"))
         if not isinstance(analysis_cutoff, datetime):
@@ -3234,6 +3359,7 @@ def _analyze_one_symbol(
             tick_size=data_quality_packet.get("tick_size"),
             tick_size_source=data_quality_packet.get("tick_size_source"),
             min_rr=_policy_min_rr,
+            context_cache_root=context_cache_root,
         )
         pair = run_pair_from_live(
             d1,
@@ -3295,6 +3421,28 @@ def _analyze_one_symbol(
             }
             if chart_candles:
                 _analysis_ui["chart_payload"] = build_chart_payload(chart_candles)
+            # The canonical SMC block travels WITH the Scanner row (task 128
+            # follow-up), exactly as it does on the Analyze route: the document
+            # writer copies ``analysis_result`` verbatim, so without this the
+            # stored Scanner document has no identity/snapshot/consumer contract
+            # and cannot be read back ("SMC_PERSISTENCE_BLOCK_MISSING").
+            #
+            # The block is built from the SAME evaluation this row was routed
+            # with — no re-scoring, no re-selection, no fabricated identity or
+            # timestamp.  A symbol whose canonical evaluation is absent gets no
+            # block at all (fail closed) instead of an empty one.
+            canonical_smc = analysis.get("canonical_smc")
+            if isinstance(canonical_smc, SmcScoringResult):
+                from core.smc_consumer_contract import (
+                    build_smc_consumer_from_canonical_result,
+                )
+                from core.smc_persistence import build_smc_persistence_block
+
+                _analysis_ui["smc_scoring"] = build_smc_persistence_block(
+                    canonical_smc,
+                    build_smc_consumer_from_canonical_result(result=canonical_smc),
+                    snapshot=analysis.get("smc_snapshot"),
+                )
     except AdapterContractError:
         raise
     except Exception as exc:

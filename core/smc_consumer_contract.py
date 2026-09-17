@@ -2,19 +2,83 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any
+from typing import Any, Mapping
 
 from core.smc_scoring_result import (
     SELECTION_STATE_EVALUATED,
     SmcScoringResult,
+    SmcSideSelection,
     smc_selection_of,
     validate_smc_result,
     validate_smc_selection_result,
+    validate_smc_side_selection,
 )
 
 
 SMC_CONSUMER_CONTRACT_VERSION = "smc-consumer-v2"
+
+# How a reader may present one side's SMC selection (task 128, P0):
+# ``current`` is the only status that may be rendered as the result of the
+# logic running now.  ``historical`` may be shown as a stored record with its
+# own meaning; ``unavailable`` may not be shown at all.
+SMC_READ_CURRENT = "current"
+SMC_READ_HISTORICAL = "historical"
+SMC_READ_UNAVAILABLE = "unavailable"
+VALID_SMC_READ_STATUSES = frozenset(
+    {SMC_READ_CURRENT, SMC_READ_HISTORICAL, SMC_READ_UNAVAILABLE}
+)
+
+# Safe reason codes of the read boundary itself (technical traceability, never
+# a user-facing sentence).
+SMC_READ_NO_SIDE = "SMC_READ_NO_SIDE"
+SMC_READ_NO_SELECTION = "SMC_READ_NO_SELECTION"
+SMC_READ_SELECTION_INVALID = "SMC_READ_SELECTION_INVALID"
+# The payload carries the Scanner selection carrier but not the canonical block
+# that travels with it: it is a stored/older payload, not a live result.
+SMC_READ_CARRIER_WITHOUT_BLOCK = "SMC_READ_CARRIER_WITHOUT_BLOCK"
+# F-LA-01: the carrier's ``protected_swing`` disagrees with the record the
+# persistence block certified for the SAME side.  The selection stays readable
+# (only this one additive field is affected), but the field is NOT current: it
+# is withheld and this code says why, so no consumer can draw a level the
+# certification does not support.
+SMC_READ_PROTECTED_SWING_MISMATCH = "SMC_READ_PROTECTED_SWING_MISMATCH"
+
+
+@dataclass(frozen=True, slots=True)
+class SmcSelectionRead:
+    """The outcome of reading one side's SMC selection (task 128, P0).
+
+    ``selection`` is present ONLY for :data:`SMC_READ_CURRENT`.  A historical or
+    unavailable read carries the reason codes of the verdict instead, so a
+    caller can explain the absence without ever rendering the payload.
+    """
+
+    status: str
+    side: str = ""
+    selection: dict[str, Any] | None = field(default=None, repr=False)
+    reason_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.status not in VALID_SMC_READ_STATUSES:
+            raise ValueError(f"Invalid SMC read status: {self.status}")
+        if self.status != SMC_READ_CURRENT and self.selection is not None:
+            raise ValueError("only a current read may carry a selection")
+        object.__setattr__(
+            self, "reason_codes", tuple(str(code) for code in self.reason_codes)
+        )
+
+    @property
+    def is_current(self) -> bool:
+        return self.status == SMC_READ_CURRENT
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "side": self.side,
+            "reason_codes": list(self.reason_codes),
+        }
 
 # R114-01: the Analyze scenario builder consumes the risk-plan "preferred zone"
 # shape (see ``core.risk_engine.build_trade_plan``).  The canonical FINAL
@@ -139,6 +203,328 @@ def build_smc_consumer_from_canonical_result(
             ),
         }
     return contract
+
+
+def read_canonical_selection(
+    source: dict[str, Any] | None,
+    side: str,
+) -> "SmcSelectionRead":
+    """Read one side's canonical SMC selection, gated by the document verdict.
+
+    *source* is either an analysis result (``analysis_result``) or the row/
+    document that carries one.  Three outcomes, and only the first may be
+    rendered as the result of the CURRENT logic:
+
+    * :data:`SMC_READ_CURRENT` — a live in-memory result, or a stored payload the
+      persistence owner certified as canonical-compatible, whose selection also
+      satisfies the final invariant;
+    * :data:`SMC_READ_HISTORICAL` — a stored payload produced by another
+      identity: readable "as it was created", never as a current verdict;
+    * :data:`SMC_READ_UNAVAILABLE` — incompatible/corrupted bytes, no selection,
+      or a selection that breaks its own invariant: nothing may be shown.
+
+    The verdict is the persistence owner's (``classify_persisted_smc``); this
+    boundary only applies it, so tooltip, detail panel and chart cannot disagree
+    about whether a payload is current.  A payload that carries no persistence
+    block and no stored-document marker is a live in-memory result from this
+    process and is read as before — the one shape the writer never produces on
+    disk.
+
+    This is a READER: it never scores, re-selects a zone, rebuilds a
+    confirmation, revalidates, or falls back to ``selected_zone*``/legacy SMC.
+    """
+
+    normalized = side if side in ("buy", "sell") else ""
+    document, result = _split_source(source)
+    if not normalized or result is None:
+        return SmcSelectionRead(
+            status=SMC_READ_UNAVAILABLE,
+            side=normalized,
+            reason_codes=(SMC_READ_NO_SIDE,) if not normalized else (),
+        )
+
+    status, reason_codes = _document_read_status(document, result)
+    if status != SMC_READ_CURRENT:
+        return SmcSelectionRead(status=status, side=normalized, reason_codes=reason_codes)
+
+    selection, swing_mismatch = _selection_payload_of(result, normalized)
+    if selection is None:
+        return SmcSelectionRead(
+            status=SMC_READ_UNAVAILABLE,
+            side=normalized,
+            reason_codes=(SMC_READ_NO_SELECTION,),
+        )
+    if not _selection_is_self_consistent(selection, normalized):
+        return SmcSelectionRead(
+            status=SMC_READ_UNAVAILABLE,
+            side=normalized,
+            reason_codes=(SMC_READ_SELECTION_INVALID,),
+        )
+    if swing_mismatch:
+        # The selection itself is current; only the protected-swing FIELD is
+        # withheld (it is already absent from ``selection``), and the reason
+        # travels with the read so the tooltip, the detail panel and the chart
+        # all state the same thing instead of each guessing.
+        return SmcSelectionRead(
+            status=SMC_READ_CURRENT,
+            side=normalized,
+            selection=selection,
+            reason_codes=(SMC_READ_PROTECTED_SWING_MISMATCH,),
+        )
+    return SmcSelectionRead(
+        status=SMC_READ_CURRENT, side=normalized, selection=selection
+    )
+
+
+def _split_source(
+    source: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Split a row/document from its analysis result.
+
+    A row or document is a mapping with an ``analysis_result`` mapping inside;
+    anything else is treated as an analysis result itself.
+    """
+
+    if not isinstance(source, dict):
+        return None, None
+    inner = source.get("analysis_result")
+    if isinstance(inner, dict):
+        return source, inner
+    return None, source
+
+
+def _document_read_status(
+    document: dict[str, Any] | None,
+    result: dict[str, Any],
+) -> tuple[str, tuple[str, ...]]:
+    """The read status of a payload, from its own bytes.
+
+    A stored document is recognised by the SMC block the writer stamps or by the
+    observability envelope it is written in; both are absent from the in-memory
+    results the routes produce.  Anything recognised as stored goes through the
+    persistence classifier — including a document whose block is missing, which
+    is *not* the same as a live result and must not be trusted as one.
+    """
+
+    from core.smc_persistence import (
+        SMC_PAYLOAD_CANONICAL,
+        SMC_PAYLOAD_HISTORICAL,
+        classify_persisted_smc,
+    )
+
+    if _looks_like_smc_block(result):
+        # A bare SMC block (the shape a cache record embeds) is classified as
+        # itself, so a cached payload cannot slip in as a live result either.
+        verdict = classify_persisted_smc({"smc_scoring": result})
+    elif "smc_scoring" in result or _looks_like_document(document, result):
+        verdict = classify_persisted_smc(
+            document if document is not None else {"analysis_result": result}
+        )
+    elif _carries_carrier_without_block(result):
+        # The Scanner carrier travels WITH the canonical block (task 128
+        # follow-up): the route that publishes ``smc_selection`` also forwards
+        # the block into the same analysis result.  A payload carrying the
+        # carrier but no block was therefore written by something else — an
+        # older document, or a document whose block was stripped — and unwrapping
+        # it must not turn it into a live result.  No caller-supplied flag is
+        # involved: the payload's own shape decides.
+        return SMC_READ_UNAVAILABLE, (SMC_READ_CARRIER_WITHOUT_BLOCK,)
+    else:
+        return SMC_READ_CURRENT, ()
+
+    codes = tuple(str(code) for code in verdict.reason_codes)
+    if verdict.status == SMC_PAYLOAD_CANONICAL:
+        return SMC_READ_CURRENT, ()
+    if verdict.status == SMC_PAYLOAD_HISTORICAL:
+        return SMC_READ_HISTORICAL, codes
+    return SMC_READ_UNAVAILABLE, codes
+
+
+def _looks_like_smc_block(result: dict[str, Any]) -> bool:
+    """Whether the payload IS the SMC diagnostics block (cache-record shape)."""
+
+    return isinstance(result.get("sides"), Mapping) and "contract_version" in result
+
+
+def _carries_carrier_without_block(result: dict[str, Any]) -> bool:
+    """Whether the payload carries a per-side selection with no canonical block.
+
+    Only the Scanner route publishes ``smc_selection``, and it publishes the
+    canonical block beside it; a payload with one and not the other cannot come
+    from the running logic.
+    """
+
+    direct = result.get("smc_selection")
+    if not isinstance(direct, Mapping):
+        return False
+    return any(isinstance(value, Mapping) for value in direct.values())
+
+
+def _looks_like_document(
+    document: dict[str, Any] | None,
+    result: dict[str, Any],
+) -> bool:
+    """Whether the payload came off disk rather than from a live evaluation.
+
+    The analysis-document writer (``scanner_observability.build_analysis_document``)
+    always stamps ``observability_version`` next to the analysis result; no live
+    route produces that key, and a live row is a different shape entirely.
+    """
+
+    for payload in (document, result):
+        if isinstance(payload, dict) and "observability_version" in payload:
+            return True
+    return False
+
+
+def _certified_selection_payload(
+    result: dict[str, Any],
+    side: str,
+) -> dict[str, Any] | None:
+    """The selection the persistence BLOCK certifies for *side*, if present.
+
+    The block is the only part of a Scanner payload the persistence owner
+    classifies (``classify_persisted_smc``).  It is therefore the certification
+    for every field the two carriers disagree about; the carrier summary beside
+    it is a projection of the same finalizer and carries no authority of its own.
+    """
+
+    from core.smc_persistence import consumer_sides_of, smc_block_of
+
+    block = smc_block_of(result)
+    if not block:
+        return None
+    item = consumer_sides_of(block).get(side)
+    raw = item.get("selection") if isinstance(item, dict) else None
+    return dict(raw) if isinstance(raw, dict) else None
+
+
+def _bind_protected_swing(
+    selection: dict[str, Any],
+    certified: dict[str, Any],
+) -> tuple[dict[str, Any] | None, bool]:
+    """Bind ONE side's protected swing to the record the block certified.
+
+    Returns ``(published, mismatch)``.  The block is authoritative for this
+    field (F-LA-01), so:
+
+    * both sides carry the same record — publish it (the corpus case: the
+      carrier summary and the block are projections of one selection);
+    * the carrier omits the field — the certified record supplies it, because
+      binding means the certified value is the published one;
+    * the block certified NO record while the carrier carries one — that record
+      was injected and is withheld;
+    * both carry a record and they differ — neither is published, because the
+      bytes disagree about the very thing the field asserts.
+
+    Nothing is recomputed, re-measured or substituted: the only two values this
+    can publish are the certified record or ``None``.  A withheld record is not
+    an absent one — the caller raises the mismatch reason so the absence is
+    explained rather than silent.
+    """
+
+    carrier_value = selection.get("protected_swing")
+    certified_value = certified.get("protected_swing")
+    if carrier_value is None and certified_value is None:
+        return None, False
+    if carrier_value is None:
+        return certified_value, False
+    if certified_value is None:
+        return None, True
+    if carrier_value != certified_value:
+        return None, True
+    return carrier_value, False
+
+
+def _selection_payload_of(
+    result: dict[str, Any], side: str
+) -> tuple[dict[str, Any] | None, bool]:
+    """The raw selection mapping of *side*, and whether its swing was withheld.
+
+    Three carrier keys are accepted because the same payload travels under
+    different names: ``smc_selection`` (the per-side summary a Scanner row
+    publishes), ``smc_consumer`` (the Analyze route's result key) and
+    ``consumer_contract`` (the key inside the persisted SMC block).  They are the
+    same canonical selection written by the same finalizer.
+
+    F-LA-01: when a persistence block is present too, its selection is the
+    certification for the ``protected_swing`` field, so the value published here
+    is the one the block carries — never the carrier's copy of it.  Every other
+    field is untouched, and a payload with no block (a live in-memory result) is
+    read exactly as before.
+    """
+
+    selection: dict[str, Any] | None = None
+    direct = result.get("smc_selection")
+    if isinstance(direct, dict):
+        candidate = direct.get(side)
+        if isinstance(candidate, dict):
+            selection = dict(candidate)
+
+    if selection is None:
+        for key in ("smc_consumer", "consumer_contract"):
+            consumer = result.get(key)
+            sides = consumer.get("sides") if isinstance(consumer, dict) else None
+            item = sides.get(side) if isinstance(sides, dict) else None
+            raw = item.get("selection") if isinstance(item, dict) else None
+            if not isinstance(raw, dict):
+                continue
+            selection = dict(raw)
+            readiness = item.get("readiness")
+            if isinstance(readiness, dict):
+                for name, target in (
+                    ("status", "readiness_status"),
+                    ("smc_state", "smc_state"),
+                    ("m15_status", "m15_status"),
+                    ("reason_codes", "readiness_reason_codes"),
+                ):
+                    if selection.get(target) is None and readiness.get(name) is not None:
+                        selection[target] = readiness[name]
+            break
+    if selection is None:
+        return None, False
+
+    certified = _certified_selection_payload(result, side)
+    if certified is None:
+        return selection, False
+    published, mismatch = _bind_protected_swing(selection, certified)
+    selection["protected_swing"] = published
+    return selection, mismatch
+
+
+def canonical_selection_of(
+    result: dict[str, Any] | None,
+    side: str,
+) -> dict[str, Any] | None:
+    """The CURRENT canonical SMC selection of *side*, or ``None``.
+
+    Thin gate over :func:`read_canonical_selection`: a stored payload that is not
+    certified current (historical, incompatible, corrupted) yields ``None``, so
+    every caller that renders the result — the UI panels and the chart — stops
+    drawing it without having to know about persistence.  Callers that must tell
+    "historical" from "unavailable" use the read itself.
+    """
+
+    read = read_canonical_selection(result, side)
+    return read.selection if read.status == SMC_READ_CURRENT else None
+
+
+def _selection_is_self_consistent(selection: dict[str, Any], side: str) -> bool:
+    """Whether a selection payload satisfies the canonical final invariant.
+
+    Reuses the contract's own validator (the task 94/96 owner) instead of
+    restating its rules, and additionally requires the payload to name the side
+    it was read for, so a selection belonging to another side can never be
+    presented as this one's.
+    """
+
+    try:
+        parsed = SmcSideSelection.from_dict(selection)
+    except (TypeError, ValueError):
+        return False
+    if parsed.side != side:
+        return False
+    return validate_smc_side_selection(parsed)
 
 
 def _carries_selection(result: SmcScoringResult | None) -> bool:

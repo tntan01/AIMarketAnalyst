@@ -1,0 +1,1105 @@
+{
+  "task": "127",
+  "note": "Smoke cục bộ Scanner → Detail → Chart với fixture đủ trạng thái; chỉ dùng fixture của test suite, không cấu hình mới, không dữ liệu vận hành.",
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "min_ink_ratio": 0.005,
+  "states": [
+    {
+      "state": "waiting_scanner_row",
+      "note": "Dòng Scanner thật do controller dựng (chờ xác nhận).",
+      "expected_source": "canonical",
+      "presentation": {
+        "side": "buy",
+        "source": "canonical",
+        "available": true,
+        "score_text": "6/15",
+        "score_raw": 6,
+        "state_text": "Chờ xác nhận",
+        "zone_text": "H1 · FVG · 999.83091 – 1000.86545",
+        "reasons": [
+          "M15 chưa xác nhận tín hiệu vào lệnh.",
+          "Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.",
+          "Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+        ],
+        "selection_state": "evaluated",
+        "readiness_status": "WAITING_CONFIRMATION",
+        "confirmation_text": "Đang chờ xác nhận vào lệnh",
+        "read_reason_codes": []
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": "far",
+        "zone_origin_class": "smc",
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 999.83091 – 1000.86545\nTrạng thái: Chờ xác nhận\nXác nhận: Đang chờ xác nhận vào lệnh\n· M15 chưa xác nhận tín hiệu vào lệnh.\n· Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+      },
+      "detail": {
+        "light": {
+          "html_len": 6523,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_waiting_scanner_row_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9194,
+            "ink_ratio": 0.0291,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 6522,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_waiting_scanner_row_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9528,
+            "ink_ratio": 0.0281,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: MUA · Vùng đã chọn | BÁN · Vùng đang theo dõi",
+          "zones": [
+            {
+              "side": "buy",
+              "status": "selected",
+              "label": "Vùng đã chọn",
+              "from": 999.8309090909091,
+              "to": 1000.8654545454544
+            },
+            {
+              "side": "sell",
+              "status": "watch",
+              "label": "Vùng đang theo dõi",
+              "from": 1006.4790909090908,
+              "to": 1007.6963636363637
+            }
+          ],
+          "render": {
+            "name": "waiting_scanner_row",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_waiting_scanner_row_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_waiting_scanner_row_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.8579,
+              "ink_ratio": 0.0894,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: MUA · Vùng đã chọn | BÁN · Vùng đang theo dõi",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: MUA · Vùng đã chọn | BÁN · Vùng đang theo dõi",
+          "zones": [
+            {
+              "side": "buy",
+              "status": "selected",
+              "label": "Vùng đã chọn",
+              "from": 999.8309090909091,
+              "to": 1000.8654545454544
+            },
+            {
+              "side": "sell",
+              "status": "watch",
+              "label": "Vùng đang theo dõi",
+              "from": 1006.4790909090908,
+              "to": 1007.6963636363637
+            }
+          ],
+          "render": {
+            "name": "waiting_scanner_row",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_waiting_scanner_row_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_waiting_scanner_row_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.8579,
+              "ink_ratio": 0.0964,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: MUA · Vùng đã chọn | BÁN · Vùng đang theo dõi",
+            "loaded": true
+          }
+        }
+      }
+    },
+    {
+      "state": "confirmed",
+      "note": "Route Analyze thật, cửa sổ M15 giữ gần vùng.",
+      "expected_source": "canonical",
+      "presentation": {
+        "side": "buy",
+        "source": "canonical",
+        "available": true,
+        "score_text": "6/15",
+        "score_raw": 6,
+        "state_text": "Đủ điều kiện kiểm tra lần cuối",
+        "zone_text": "H1 · FVG · 1003.37000 – 1004.44455",
+        "reasons": [
+          "M15 đã xác nhận tín hiệu vào lệnh.",
+          "Đủ điều kiện để kiểm tra lần cuối trước khi vào lệnh.",
+          "Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+        ],
+        "selection_state": "evaluated",
+        "readiness_status": "READY_NOW",
+        "confirmation_text": "Đã có xác nhận vào lệnh",
+        "read_reason_codes": []
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": null,
+        "zone_origin_class": null,
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 1003.37000 – 1004.44455\nTrạng thái: Đủ điều kiện kiểm tra lần cuối\nXác nhận: Đã có xác nhận vào lệnh\n· M15 đã xác nhận tín hiệu vào lệnh.\n· Đủ điều kiện để kiểm tra lần cuối trước khi vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+      },
+      "detail": {
+        "light": {
+          "html_len": 6613,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_confirmed_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9163,
+            "ink_ratio": 0.0311,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 6612,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_confirmed_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9497,
+            "ink_ratio": 0.0301,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: MUA · Vùng đã chọn",
+          "zones": [
+            {
+              "side": "buy",
+              "status": "selected",
+              "label": "Vùng đã chọn",
+              "from": 1003.37,
+              "to": 1004.4445454545455
+            }
+          ],
+          "render": {
+            "name": "confirmed",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_confirmed_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_confirmed_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.8603,
+              "ink_ratio": 0.0874,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: MUA · Vùng đã chọn",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: MUA · Vùng đã chọn",
+          "zones": [
+            {
+              "side": "buy",
+              "status": "selected",
+              "label": "Vùng đã chọn",
+              "from": 1003.37,
+              "to": 1004.4445454545455
+            }
+          ],
+          "render": {
+            "name": "confirmed",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_confirmed_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_confirmed_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.8603,
+              "ink_ratio": 0.0947,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: MUA · Vùng đã chọn",
+            "loaded": true
+          }
+        }
+      }
+    },
+    {
+      "state": "invalidated",
+      "note": "Route Analyze thật, cửa sổ M15 chạy xa vùng.",
+      "expected_source": "canonical",
+      "presentation": {
+        "side": "buy",
+        "source": "canonical",
+        "available": true,
+        "score_text": "6/15",
+        "score_raw": 6,
+        "state_text": "Xác nhận đã bị vô hiệu",
+        "zone_text": "H1 · FVG · 1003.37000 – 1004.44455",
+        "reasons": [
+          "Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.",
+          "M15 chưa xác nhận tín hiệu vào lệnh.",
+          "Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+        ],
+        "selection_state": "evaluated",
+        "readiness_status": "WAITING_CONFIRMATION",
+        "confirmation_text": "Xác nhận đã bị vô hiệu",
+        "read_reason_codes": []
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": null,
+        "zone_origin_class": null,
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 1003.37000 – 1004.44455\nTrạng thái: Xác nhận đã bị vô hiệu\nXác nhận: Xác nhận đã bị vô hiệu\n· Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.\n· M15 chưa xác nhận tín hiệu vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+      },
+      "detail": {
+        "light": {
+          "html_len": 6704,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_invalidated_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9124,
+            "ink_ratio": 0.0324,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 6703,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_invalidated_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9458,
+            "ink_ratio": 0.0314,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: MUA · Vùng không còn hiệu lực | BÁN · Vùng đang theo dõi",
+          "zones": [
+            {
+              "side": "buy",
+              "status": "invalid",
+              "label": "Vùng không còn hiệu lực",
+              "from": 1003.37,
+              "to": 1004.4445454545455
+            },
+            {
+              "side": "sell",
+              "status": "watch",
+              "label": "Vùng đang theo dõi",
+              "from": 1006.4790909090908,
+              "to": 1007.6963636363637
+            }
+          ],
+          "render": {
+            "name": "invalidated",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_invalidated_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_invalidated_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.8438,
+              "ink_ratio": 0.0978,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: MUA · Vùng không còn hiệu lực | BÁN · Vùng đang theo dõi",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: MUA · Vùng không còn hiệu lực | BÁN · Vùng đang theo dõi",
+          "zones": [
+            {
+              "side": "buy",
+              "status": "invalid",
+              "label": "Vùng không còn hiệu lực",
+              "from": 1003.37,
+              "to": 1004.4445454545455
+            },
+            {
+              "side": "sell",
+              "status": "watch",
+              "label": "Vùng đang theo dõi",
+              "from": 1006.4790909090908,
+              "to": 1007.6963636363637
+            }
+          ],
+          "render": {
+            "name": "invalidated",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_invalidated_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_invalidated_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.8438,
+              "ink_ratio": 0.1061,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: MUA · Vùng không còn hiệu lực | BÁN · Vùng đang theo dõi",
+            "loaded": true
+          }
+        }
+      }
+    },
+    {
+      "state": "no_zone",
+      "note": "Ca consumer contract 'no_zone'.",
+      "expected_source": "canonical",
+      "presentation": {
+        "side": "sell",
+        "source": "canonical",
+        "available": true,
+        "score_text": "0/15 · chưa có setup hợp lệ",
+        "score_raw": 0,
+        "state_text": "Chưa có setup hợp lệ",
+        "zone_text": "",
+        "reasons": [
+          "Đã xét đủ dữ liệu nhưng không có setup hợp lệ."
+        ],
+        "selection_state": "no_zone",
+        "readiness_status": "WATCH_ZONE",
+        "confirmation_text": "",
+        "read_reason_codes": []
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": null,
+        "zone_origin_class": null,
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 0/15 · chưa có setup hợp lệ\nTrạng thái: Chưa có setup hợp lệ\n· Đã xét đủ dữ liệu nhưng không có setup hợp lệ."
+      },
+      "detail": {
+        "light": {
+          "html_len": 6133,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_no_zone_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9359,
+            "ink_ratio": 0.0198,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 6132,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_no_zone_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9693,
+            "ink_ratio": 0.0187,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": false,
+          "source": "missing",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": null,
+          "zones": [],
+          "render": {
+            "name": "no_zone",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_no_zone_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_no_zone_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.9393,
+              "ink_ratio": 0.0212,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": false,
+          "source": "missing",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": null,
+          "zones": [],
+          "render": {
+            "name": "no_zone",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_no_zone_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_no_zone_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.9393,
+              "ink_ratio": 0.0232,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "",
+            "loaded": true
+          }
+        }
+      }
+    },
+    {
+      "state": "data_unavailable",
+      "note": "Ca consumer contract 'ob_confirmed_sell'.",
+      "expected_source": "canonical",
+      "presentation": {
+        "side": "buy",
+        "source": "canonical",
+        "available": true,
+        "score_text": "Thiếu dữ liệu",
+        "score_raw": null,
+        "state_text": "Thiếu dữ liệu",
+        "zone_text": "",
+        "reasons": [
+          "Thiếu dữ liệu D1/H4/H1 nên chưa kết luận được."
+        ],
+        "selection_state": "data_unavailable",
+        "readiness_status": "DATA_UNAVAILABLE",
+        "confirmation_text": "",
+        "read_reason_codes": []
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": null,
+        "zone_origin_class": null,
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: Thiếu dữ liệu\nTrạng thái: Thiếu dữ liệu\n· Thiếu dữ liệu D1/H4/H1 nên chưa kết luận được."
+      },
+      "detail": {
+        "light": {
+          "html_len": 6112,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_data_unavailable_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9367,
+            "ink_ratio": 0.0197,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 6111,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_data_unavailable_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9701,
+            "ink_ratio": 0.0187,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: BÁN · Vùng đang theo dõi",
+          "zones": [
+            {
+              "side": "sell",
+              "status": "watch",
+              "label": "Vùng đang theo dõi",
+              "from": 1.0989950000000002,
+              "to": 1.099045
+            }
+          ],
+          "render": {
+            "name": "data_unavailable",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_data_unavailable_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_data_unavailable_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.8974,
+              "ink_ratio": 0.0489,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: BÁN · Vùng đang theo dõi",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": true,
+          "source": "canonical",
+          "read_status": "current",
+          "reason_codes": [],
+          "caption": "SMC: BÁN · Vùng đang theo dõi",
+          "zones": [
+            {
+              "side": "sell",
+              "status": "watch",
+              "label": "Vùng đang theo dõi",
+              "from": 1.0989950000000002,
+              "to": 1.099045
+            }
+          ],
+          "render": {
+            "name": "data_unavailable",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_data_unavailable_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_data_unavailable_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.8974,
+              "ink_ratio": 0.0518,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "SMC: BÁN · Vùng đang theo dõi",
+            "loaded": true
+          }
+        }
+      }
+    },
+    {
+      "state": "historical",
+      "note": "Payload lưu trước khi có kết quả canonical (chỉ có selected_zone cũ).",
+      "expected_source": "historical",
+      "presentation": {
+        "side": "buy",
+        "source": "historical",
+        "available": false,
+        "score_text": "Kết quả lưu theo định dạng cũ",
+        "score_raw": null,
+        "state_text": "Dòng này được lưu trước khi có kết quả SMC hiện hành; chỉ xem lại lịch sử, không dùng để vào lệnh.",
+        "zone_text": "",
+        "reasons": [],
+        "selection_state": "",
+        "readiness_status": "",
+        "confirmation_text": "",
+        "read_reason_codes": [
+          "SMC_READ_NO_SELECTION"
+        ]
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": null,
+        "zone_origin_class": null,
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: Kết quả lưu theo định dạng cũ\nTrạng thái: Dòng này được lưu trước khi có kết quả SMC hiện hành; chỉ xem lại lịch sử, không dùng để vào lệnh."
+      },
+      "detail": {
+        "light": {
+          "html_len": 3515,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_historical_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9491,
+            "ink_ratio": 0.014,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 3514,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_historical_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9825,
+            "ink_ratio": 0.0143,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": false,
+          "source": "missing",
+          "read_status": "unavailable",
+          "reason_codes": [
+            "SMC_READ_NO_SELECTION"
+          ],
+          "caption": null,
+          "zones": [],
+          "render": {
+            "name": "historical",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_historical_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_historical_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.889,
+              "ink_ratio": 0.0724,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": false,
+          "source": "missing",
+          "read_status": "unavailable",
+          "reason_codes": [
+            "SMC_READ_NO_SELECTION"
+          ],
+          "caption": null,
+          "zones": [],
+          "render": {
+            "name": "historical",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_historical_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_historical_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.889,
+              "ink_ratio": 0.0758,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "",
+            "loaded": true
+          }
+        }
+      }
+    },
+    {
+      "state": "missing",
+      "note": "Row không mang thông tin SMC nào.",
+      "expected_source": "missing",
+      "presentation": {
+        "side": "buy",
+        "source": "missing",
+        "available": false,
+        "score_text": "Chưa có dữ liệu SMC",
+        "score_raw": null,
+        "state_text": "Chưa có dữ liệu SMC",
+        "zone_text": "",
+        "reasons": [],
+        "selection_state": "",
+        "readiness_status": "",
+        "confirmation_text": "",
+        "read_reason_codes": [
+          "SMC_READ_NO_SELECTION"
+        ]
+      },
+      "scanner": {
+        "columns": [
+          "presentation_rank",
+          "symbol",
+          "candidate_status",
+          "selected_side",
+          "market_regime",
+          "technical_signal_score",
+          "setup_score",
+          "evidence_confidence",
+          "execution_readiness",
+          "expected_effective_rr",
+          "price_vs_zone"
+        ],
+        "price_vs_zone": null,
+        "zone_origin_class": null,
+        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: Chưa có dữ liệu SMC\nTrạng thái: Chưa có dữ liệu SMC"
+      },
+      "detail": {
+        "light": {
+          "html_len": 3424,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_missing_light.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "light",
+            "background_rgb": [
+              237,
+              235,
+              228
+            ],
+            "background_luminance": 0.9213,
+            "background_ratio": 0.9524,
+            "ink_ratio": 0.012,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        },
+        "dark": {
+          "html_len": 3423,
+          "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\detail_missing_dark.png",
+          "has_smc_text": true,
+          "has_score_text": true,
+          "capture": {
+            "theme": "dark",
+            "background_rgb": [
+              17,
+              24,
+              39
+            ],
+            "background_luminance": 0.0925,
+            "background_ratio": 0.9858,
+            "ink_ratio": 0.012,
+            "theme_ok": true,
+            "ink_ok": true
+          }
+        }
+      },
+      "chart": {
+        "light": {
+          "available": false,
+          "source": "missing",
+          "read_status": "unavailable",
+          "reason_codes": [
+            "SMC_READ_NO_SELECTION"
+          ],
+          "caption": null,
+          "zones": [],
+          "render": {
+            "name": "missing",
+            "theme": "light",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_missing_light.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_missing_light.png",
+            "capture": {
+              "theme": "light",
+              "background_rgb": [
+                244,
+                241,
+                234
+              ],
+              "background_luminance": 0.9456,
+              "background_ratio": 0.889,
+              "ink_ratio": 0.0724,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "",
+            "loaded": true
+          }
+        },
+        "dark": {
+          "available": false,
+          "source": "missing",
+          "read_status": "unavailable",
+          "reason_codes": [
+            "SMC_READ_NO_SELECTION"
+          ],
+          "caption": null,
+          "zones": [],
+          "render": {
+            "name": "missing",
+            "theme": "dark",
+            "pdf": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_missing_dark.pdf",
+            "png": "D:\\Projects\\AIMarketAnalyst\\reports\\scanner\\smc_ui_smoke\\chart_missing_dark.png",
+            "capture": {
+              "theme": "dark",
+              "background_rgb": [
+                15,
+                18,
+                22
+              ],
+              "background_luminance": 0.0692,
+              "background_ratio": 0.889,
+              "ink_ratio": 0.0758,
+              "theme_ok": true,
+              "ink_ok": true
+            },
+            "pdf_saved": true,
+            "caption": "",
+            "loaded": true
+          }
+        }
+      }
+    }
+  ],
+  "failures": []
+}

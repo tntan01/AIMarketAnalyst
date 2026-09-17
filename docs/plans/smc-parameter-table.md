@@ -114,11 +114,11 @@
 | Minimum data | `15` | M15 candle | `_M15_MIN_CANDLES=15` | Ít hơn → `M15_DATA_UNAVAILABLE`/not confirmed | Đủ ATR14 và candle kiểm tra. |
 | Trigger lookback after visit | `48` | M15 bar, tối đa 12 giờ | `_M15_LOOKBACK_CANDLES=48` | Chỉ trigger sau visit hiện tại; rejection cũ ngoài visit không được tái dùng | Sửa stale-rejection false confirmation (fixture task 4). |
 | Micro swing width | `3` | bar mỗi phía | `_M15_SWING_LOOKBACK=3` | Chưa đủ structure → không CHoCH | Giữ micro structure nhất quán với evaluator. |
-| Follow-through limit | `3` | M15 bar | `_M15_DISPLACEMENT_WINDOW=3` | Quá cửa sổ → trigger hết hạn | Không giữ confirmation quá lâu sau visit. |
+| Follow-through limit | `3` | M15 bar | `core/smc_m15_confirmation.py:_M15_FOLLOW_THROUGH_BARS=3` | Quá cửa sổ → trigger hết hạn | Không giữ confirmation quá lâu sau visit. |
 | Displacement threshold | `0.30*ATR14` | body/ATR | `_M15_DISPLACEMENT_ATR_RATIO=0.3` | Body dưới ngưỡng → no confirmation | Có lực phá vỡ tối thiểu. |
 | Rejection wick/body/range | BUY `lower_wick=min(open,close)-low`, close `> open`; SELL `upper_wick=high-max(open,close)`, close `< open`; directional wick `>= max(0.80*body, 0.25*range)` | tỷ lệ/giá | `core/smc_m15_confirmation.py` | `range<=0` reject; equal threshold đạt; sai màu hoặc ngoài visit follow-through window reject | Ghi đúng directional wick của runtime hiện tại; không đảo upper/lower theo side. |
 | Confirmation expiry | `12` | M15 bar sau `trigger_anchor_at` | Quy ước khởi đầu | Hết hạn → `M15_NO_CONFIRMATION`, `penalty=0`, quality/B/Q/L/C không đổi | Một visit không xác nhận vô thời hạn nhưng M15 không phạt raw score. |
-| Maximum run from entry | `0.50*ATR` | giá | Quy ước khởi đầu | Giá chạy quá xa entry trước trigger → entry không eligible/`WAITING_CONFIRMATION`; không downgrade quality | Tránh đuổi giá sau khi setup đã rời zone. |
+| Maximum run from entry | `0.50*ATR` | giá | `core/smc_m15_confirmation.py:_M15_MAX_RUN_ATR=0.5` | **Áp ở CẢ HAI nhánh** (chốt Tech Lead sau Lô C): (a) **trước trigger** — nhánh chưa xác nhận, tại nến đánh giá, `status=waiting` + `M15_ENTRY_TOO_FAR`; (b) **hậu confirmation/invalidation** — trong `_invalidation()`, tại `last_allowed`, `status=invalidated` + `M15_ENTRY_TOO_FAR`. Cả hai đều không downgrade quality: B/Q/L/C và quality giữ nguyên, chỉ readiness/invalidation đổi | Tránh đuổi giá sau khi setup đã rời zone, kể cả khi đã có xác nhận. |
 
 ## P11 — Geometry, execution và output
 

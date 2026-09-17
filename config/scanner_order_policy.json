@@ -55,5 +55,6 @@
   "portfolio_position_limit": 1,
   "portfolio_exposure_limit": 0.3,
   "journal_max_consecutive_losses": 3,
-  "journal_drawdown_caution_ratio": 0.1
+  "journal_drawdown_caution_ratio": 0.1,
+  "live_order_permitted": false
 }

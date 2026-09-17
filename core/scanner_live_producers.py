@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from core.market_safety_gate import (
@@ -159,10 +160,22 @@ def _mark_availability(
     ``present is False`` ⇒ MISSING (fail-closed, never VALID).  An explicit
     ``max_age_minutes`` (>0) marks a too-old probe STALE; ``None`` (the default
     policy's own value) means the producer does NOT invent an age limit.
+
+    F-C-02: a timestamp that is not a timezone-aware instant cannot be aged, so
+    it is treated as MISSING — a fail-closed verdict with a reason — instead of
+    raising ``TypeError`` and taking the whole row down with it.  An aware
+    timestamp carrying a non-UTC offset is a real instant and is aged normally.
     """
+
     if not present or checked_at is None:
         return AVAILABILITY_MISSING
+    if not isinstance(checked_at, datetime):
+        return AVAILABILITY_MISSING
+    if checked_at.tzinfo is None or checked_at.utcoffset() is None:
+        return AVAILABILITY_MISSING
     if max_age_minutes is not None and max_age_minutes > 0 and now is not None:
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            return AVAILABILITY_MISSING
         if (now - checked_at).total_seconds() > max_age_minutes * 60:
             return AVAILABILITY_STALE
     return AVAILABILITY_VALID
@@ -282,6 +295,7 @@ def derive_live_analysis(
     min_rr: float | None = None,
     external_status: str | None = None,
     external_reason_codes: Sequence[str] = (),
+    context_cache_root: Path | None = None,
 ) -> dict[str, Any]:
     """Derive the full technical analysis layer + canonical SMC + regime.
 
@@ -318,6 +332,24 @@ def derive_live_analysis(
             f"features_insufficient_data: need D1>={MIN_D1} H4>={MIN_H4} H1>={MIN_H1} "
             f"(got D1={len(d1)} H4={len(h4)} H1={len(h1)})"
         )
+    # Canonical CONTEXT cache (Lô B-Ctx / D-LB-01).  This is an EXPLICIT opt-in:
+    # with no root the seam is not consulted at all.  F-BCTX-01 removed the only
+    # production caller that passed one, because the live scan freezes a new
+    # cutoff every scan and analyses each symbol once — no two real callers ever
+    # share a key, so every miss would write a record nobody reads.  The seam
+    # stays here for a caller that really repeats a frozen input (see
+    # ``core.smc_context_cache``); production wiring is DEFERRED.
+    #
+    # Only the context is cached: ``evaluate_smc_snapshot`` below still runs
+    # fresh, exactly once, and still produces the typed evaluation.
+    context_builder = None
+    if context_cache_root is not None:
+        from core.smc_context_cache import caching_context_builder
+
+        context_builder = caching_context_builder(
+            root=Path(context_cache_root),
+            extra_metadata={"tick_size_source": tick_size_source},
+        )
     snapshot = build_smc_snapshot(
         {"D1": d1, "H4": h4, "H1": h1, "M15": m15_candles or ()},
         symbol=symbol,
@@ -326,6 +358,7 @@ def derive_live_analysis(
         tick_size=tick_size,
         tick_size_source=tick_size_source,
         core_reason_codes=core_reason_codes,
+        context_builder=context_builder,
     )
     evaluation = evaluate_smc_snapshot(
         snapshot,

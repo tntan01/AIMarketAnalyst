@@ -202,17 +202,19 @@ def _run_pathb() -> dict[str, object]:
     )
     # Surface the DERIVED raw values out of the composition so the evidence
     # proves the full-history path derived raws (NOT the insufficient_history
-    # fail-closed branch, which is shown separately below). The composition
-    # exposes per-side results via ``composition.technical[side]``; the input
-    # ``SideSnapshot.technical_raws`` map is normalized into the breakdown.
+    # fail-closed branch, which is shown separately below).  The raws are read
+    # from the composition's technical_raws provenance (task 137): they are the
+    # inputs this run was given, and they stay readable even when the scored
+    # breakdown is fail-closed — reading them from the scorer's breakdown would
+    # report "unavailable" for a side whose technical input WAS derived, which is
+    # a different state.
     raws = {}
     for side in ("buy", "sell"):
-        tech = pair.composition.technical[side]
-        bd = tech.technical_breakdown if tech is not None else None
+        side_raws = pair.composition.technical_raws.get(side) or {}
         raws[side] = {
-            "trend": bd.trend.raw if bd is not None else None,
-            "momentum": bd.momentum.raw if bd is not None else None,
-            "location": bd.location.raw if bd is not None else None,
+            "trend": side_raws.get("trend"),
+            "momentum": side_raws.get("momentum"),
+            "location": side_raws.get("location"),
         }
     # fail-closed on insufficient history
     try:

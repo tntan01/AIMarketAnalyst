@@ -10,11 +10,16 @@ from core.scanner_models import (
     SETUP_SCORE_METRIC,
 )
 from core.smc_models import SMC_DOMAIN_VERSION
-from core.smc_versions import SMC_SCORER_VERSION
+from core.smc_versions import SMC_SCORER_VERSION, SMC_SELECTION_VERSION
 
 
 SCORING_PROVENANCE_VERSION = "phase8-scoring-provenance-v1"
 
+# Task 118: the selection/plan policy of the canonical coordinator decides the
+# final candidate, so a scan's provenance is incomplete without it.  A stored
+# artifact whose provenance predates this field certifies the scorer and the
+# domain but says nothing about how the candidate was chosen, and is therefore
+# not self-valid under the current logic.
 _SCORING_PROVENANCE_FIELDS = (
     "provenance_version",
     "score_metric",
@@ -22,6 +27,7 @@ _SCORING_PROVENANCE_FIELDS = (
     "scanner_feature_version",
     "smc_scorer_version",
     "smc_domain_version",
+    "smc_selection_version",
 )
 
 
@@ -39,6 +45,7 @@ def build_scoring_provenance() -> dict[str, Any]:
         "scanner_feature_version": SCANNER_FEATURE_VERSION,
         "smc_scorer_version": SMC_SCORER_VERSION,
         "smc_domain_version": SMC_DOMAIN_VERSION,
+        "smc_selection_version": SMC_SELECTION_VERSION,
     }
 
 

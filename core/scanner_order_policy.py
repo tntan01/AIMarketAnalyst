@@ -134,6 +134,13 @@ class RuntimeOrderPolicy:
     portfolio_exposure_limit: float | None = None
     journal_max_consecutive_losses: int | None = None
     journal_drawdown_caution_ratio: float | None = None
+    # F-C-01: the SEND-BOUNDARY kill switch.  ``order_enabled``/``certified()``
+    # say the config is COMPLETE; this says the owner has PERMITTED live
+    # dispatch.  They are deliberately independent: a perfectly certified config
+    # still sends nothing while this is False, which is the shipped state.
+    # It defaults to False and is only ever True when the config says so
+    # explicitly — nothing else in the system can turn it on.
+    live_order_permitted: bool = False
 
     def __post_init__(self) -> None:
         if self.order_policy_version not in (ORDER_POLICY_VERSION, ORDER_POLICY_LEGACY_VERSION):
@@ -175,6 +182,13 @@ class RuntimeOrderPolicy:
                     "journal_drawdown_caution_ratio",
                     "expected a ratio in 0..1 or null",
                 )
+        # F-C-01: strictly a bool.  A truthy stand-in ("yes", 1, "true") is a
+        # malformed config, not a permission, so it is refused here and the
+        # caller falls back to the all-off default.
+        if type(self.live_order_permitted) is not bool:
+            raise OrderPolicyError(
+                "live_order_permitted", "expected true or false"
+            )
 
     # --- composition mapping ------------------------------------------------
 
@@ -238,6 +252,7 @@ class RuntimeOrderPolicy:
             "portfolio_exposure_limit": self.portfolio_exposure_limit,
             "journal_max_consecutive_losses": self.journal_max_consecutive_losses,
             "journal_drawdown_caution_ratio": self.journal_drawdown_caution_ratio,
+            "live_order_permitted": self.live_order_permitted,
         }
 
     @classmethod
@@ -371,6 +386,13 @@ class RuntimeOrderPolicy:
             journal_drawdown_caution_ratio=_optional_over(
                 value.get("journal_drawdown_caution_ratio"), None
             ),
+            # F-C-01: fail-closed read of the send-boundary switch.  Only a
+            # literal JSON ``true`` opens it; absent, null, or any other type
+            # leaves it closed (and a non-bool raises, which sends the caller to
+            # the all-off default policy).
+            live_order_permitted=_require_bool_flag(
+                value.get("live_order_permitted"), "live_order_permitted"
+            ),
         )
 
 
@@ -424,6 +446,22 @@ def load_runtime_order_policy(
 def _optional_over(value: object, fallback: Any) -> Any:
     """Return ``fallback`` when the key is absent or explicit ``null``."""
     return fallback if value is None else value
+
+
+def _require_bool_flag(value: object, path: str) -> bool:
+    """Read a fail-closed boolean switch (F-C-01).
+
+    Absent or explicit ``null`` means **off**, which is the shipped state.  Only
+    a real boolean is accepted; a truthy stand-in (``1``, ``"true"``, ``"yes"``)
+    is a malformed config and raises, so the caller falls back to the all-off
+    default rather than opening a live-dispatch switch by accident.
+    """
+
+    if value is None:
+        return False
+    if type(value) is not bool:
+        raise OrderPolicyError(path, "expected true or false")
+    return value
 
 
 # Sentinel distinguishing "caller did not pass this field" from ``None`` (clear).

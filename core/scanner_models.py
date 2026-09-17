@@ -237,7 +237,10 @@ class ExecutionRevalidation:
     news_allowed: bool
     account_allowed: bool
     portfolio_allowed: bool
-    checked_at: datetime
+    # F-C-02: the instant this check ran.  ``None`` means the check could not
+    # establish a determinate "now" (an unusable clock was supplied) — the
+    # verdict is blocked and NO timestamp is invented to fill the gap.
+    checked_at: datetime | None = None
     reason_codes: tuple[str, ...] = ()
     block_codes: tuple[str, ...] = ()
 
@@ -254,7 +257,9 @@ class ExecutionRevalidation:
             "news_allowed": self.news_allowed,
             "account_allowed": self.account_allowed,
             "portfolio_allowed": self.portfolio_allowed,
-            "checked_at": self.checked_at.isoformat(),
+            "checked_at": (
+                self.checked_at.isoformat() if self.checked_at is not None else None
+            ),
             "reason_codes": list(self.reason_codes),
             "block_codes": list(self.block_codes),
         }

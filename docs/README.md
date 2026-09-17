@@ -50,6 +50,10 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 - `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế trên máy hiện tại.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
+- `guides/USER_GUIDE.md` §3.2: cách người dùng đọc vùng SMC, điểm SMC, bốn thành
+  phần B/Q/L/C, các trạng thái và lý do chưa vào lệnh. Đây là bề mặt hướng dẫn
+  người dùng; chi tiết kỹ thuật (contract, cache, version nội bộ, công thức
+  B/Q/L/C) nằm ở hồ sơ nghiệm thu dành cho Tech Lead, không lặp lại ở đây.
 
 ## Location: runtime đã nối, R5 đã duyệt — 10/09/2026
 

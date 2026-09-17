@@ -108,6 +108,7 @@ def assess_smc_history(
     origin_time: datetime | None = None,
     require_lifetime: bool = False,
     minimum_candles: int | None = None,
+    window: object | None = None,
 ) -> SmcHistoryCoverage:
     """Assess history without synthesizing candles or freshness evidence.
 
@@ -116,6 +117,13 @@ def assess_smc_history(
     is not a coverage gap.  A gap inside an expected session is reported as
     ``SMC_COVERAGE_GAP``.  ``origin_time`` is optional for generic history
     checks; when it is absent, ``freshness_eligible`` is always false.
+
+    ``window`` is an optional ``core.smc_structure_window.StructureWindowReuse``
+    the caller already owns (task 137).  When it holds this exact candle window,
+    the parts that depend only on the window — the candle validation, the open
+    times and the coverage scan — are read from it instead of being recomputed
+    per caller.  Everything that depends on ``origin_time``, on the lifetime
+    requirement and on the assembly below is unchanged.
     """
 
     normalized = _normalize_timeframe(timeframe)
@@ -130,23 +138,41 @@ def assess_smc_history(
     else:
         minimum = SMC_MINIMUM_HISTORY[normalized]
 
-    issues = validate_smc_candles(candles, normalized)
-    reason_codes = list(dict.fromkeys(issue.code for issue in issues))
-    valid_timestamps = [_utc(candle.time) for candle in candles if _is_utc_aware(candle.time)]
-    first_open = valid_timestamps[0] if valid_timestamps else None
-    last_open = valid_timestamps[-1] if valid_timestamps else None
-    missing_slots: list[str] = []
-    closed_session_slots = 0
-    session_status = "known"
+    reusable = window is not None and window.is_window(candles)
+    if reusable:
+        assessed = window.history_window(normalized, symbol)
+        issues = assessed.issues
+        first_open = assessed.first_open
+        last_open = assessed.last_open
+        missing_slots: list[str] = []
+        closed_session_slots = 0
+        session_status = "known"
+        # The coverage scan describes the complete window; the original only
+        # reports it for a window the caller actually passed whole.
+        if len(candles) > 1:
+            missing_slots = list(assessed.missing_slots)
+            closed_session_slots = assessed.closed_session_slots
+            session_status = assessed.session_status
+        reason_codes = list(dict.fromkeys(issue.code for issue in issues))
+    else:
+        issues = validate_smc_candles(candles, normalized)
+        reason_codes = list(dict.fromkeys(issue.code for issue in issues))
+        valid_timestamps = [_utc(candle.time) for candle in candles if _is_utc_aware(candle.time)]
+        first_open = valid_timestamps[0] if valid_timestamps else None
+        last_open = valid_timestamps[-1] if valid_timestamps else None
+        missing_slots: list[str] = []
+        closed_session_slots = 0
+        session_status = "known"
 
     if not candles:
         reason_codes.extend(("SMC_TIMEFRAME_MISSING", f"SMC_{normalized}_MISSING"))
     elif not issues and len(candles) > 1:
-        missing_slots, closed_session_slots, session_status = _find_coverage_gaps(
-            candles,
-            normalized,
-            symbol,
-        )
+        if not reusable:
+            missing_slots, closed_session_slots, session_status = _find_coverage_gaps(
+                candles,
+                normalized,
+                symbol,
+            )
         if missing_slots:
             reason_codes.append("SMC_COVERAGE_GAP")
         if session_status == "unknown":

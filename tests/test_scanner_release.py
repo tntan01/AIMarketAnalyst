@@ -568,3 +568,63 @@ class TestRouterUsesOwnerThreshold:
         # A low-level caller that omits the policy gets the open runtime
         # fallback; the live controller always supplies its loaded policy.
         assert captured.get("thresholds") is DEFAULT_RUNTIME_ORDER_POLICY.threshold
+
+
+def test_the_derived_technical_raws_survive_a_fail_closed_composition():
+    """Task 137: a fail-closed technical score must not erase its own input.
+
+    Reproduces the Path-B condition exactly: sufficient D1/H4/H1 and no M15, so
+    the canonical SMC contribution is unavailable and the technical SCORE fails
+    closed.  The derived raws still exist — the producer computed them — and the
+    composition keeps them as provenance, because "the technical input was
+    derived" and "the technical score is unavailable" are two different states a
+    diagnostic reader has to be able to tell apart.  Keeping them changes
+    nothing else: the score, the final score, the plan and the order all stay
+    fail-closed and the candidate never becomes READY.
+    """
+
+    from core.scanner_release import run_pair_from_live
+
+    d1, h4, h1 = _live_candles()
+    pair = run_pair_from_live(
+        d1, h4, h1, "XAUUSD", _live_safety(),
+        now=NOW, captured_at=NOW,
+        macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
+        order_policy=load_runtime_order_policy(),
+    )
+    composition = pair.composition
+
+    # The derived input is readable for both sides...
+    for side in ("buy", "sell"):
+        raws = dict(composition.technical_raws[side])
+        assert {"trend", "momentum", "location"} <= set(raws)
+        for name in ("trend", "momentum", "location"):
+            assert isinstance(raws[name], int)
+            assert raws[name] >= 0
+
+    # ...and nothing about the fail-closed verdict moved.
+    assert composition.technical["buy"] is None
+    assert composition.technical["sell"] is None
+    assert composition.final_scores["buy"] is None
+    assert composition.final_scores["sell"] is None
+    assert composition.scenario.plan is None
+    assert composition.decision.candidate_status == "DATA_UNAVAILABLE"
+    assert pair.candidate is None or pair.candidate.order_payload is None
+
+
+def test_the_composition_raws_provenance_is_read_only_and_per_side():
+    """The provenance cannot be mutated into a fake input by a caller."""
+
+    from core.scanner_release import run_pair_from_live
+
+    d1, h4, h1 = _live_candles()
+    pair = run_pair_from_live(
+        d1, h4, h1, "XAUUSD", _live_safety(),
+        now=NOW, captured_at=NOW,
+        tick_size=_TICK_SIZE,
+        macro_raw_buy=20, macro_raw_sell=14, macro_confidence=0.8,
+        order_policy=load_runtime_order_policy(),
+    )
+    for side in ("buy", "sell"):
+        with pytest.raises(TypeError):
+            pair.composition.technical_raws[side]["trend"] = 99

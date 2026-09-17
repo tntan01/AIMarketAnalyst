@@ -1,0 +1,576 @@
+{
+  "cases": [
+    {
+      "as_of": "2026-02-19T12:00:00+00:00",
+      "cache": {
+        "cold_reader_on_other_root": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "hit": true,
+        "hit_reason_codes": [],
+        "hit_usable": true,
+        "miss_for_other_input": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "unrelated_identity": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        }
+      },
+      "closed_cases": [
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "usable_as_current": false,
+          "variant": "block_removed"
+        },
+        {
+          "classification": "historical",
+          "fail_closed": true,
+          "readable": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_IDENTITY_MISMATCH"
+          ],
+          "usable_as_current": false,
+          "variant": "identity_tampered"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_CONTRACT_UNSUPPORTED"
+          ],
+          "usable_as_current": false,
+          "variant": "contract_unknown"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_SELECTION_MALFORMED",
+            "SMC_PERSISTENCE_CONFIRMATION_IDENTITY_MISMATCH:SELL:zone_id"
+          ],
+          "usable_as_current": false,
+          "variant": "selection_invariant_broken"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "loaded_is_empty": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "BadGzipFile: Not a gzipped file (b'no')",
+          "usable_as_current": false,
+          "variant": "file_unreadable"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\tntan\\\\AppData\\\\Local\\\\Temp\\\\smc_restart_absent_6kxy5k7j\\\\scanner_analysis\\\\20260917T172158.791996Z-smcsmoke\\\\EURUSD.json.gz'",
+          "usable_as_current": false,
+          "variant": "never_written"
+        }
+      ],
+      "document_bytes": 80711,
+      "live_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 0,
+          "readiness_status": "OUT_OF_STRATEGY",
+          "setup_id": null,
+          "smc_state": "ZONE_INVALIDATED",
+          "state": "out_of_strategy",
+          "zone_id": null
+        },
+        "sell": {
+          "plan_available": false,
+          "quality_raw": 8,
+          "readiness_status": "WATCH_ZONE",
+          "setup_id": "smcs-1c6703ea60342920342c",
+          "smc_state": "COUNTERTREND_UNCONFIRMED",
+          "state": "watch_zone",
+          "zone_id": "smcz-547dc43e9ed1a12cc6ce"
+        }
+      },
+      "restart_classification": "canonical_compatible",
+      "restart_reason_codes": [],
+      "restart_usable_as_current": true,
+      "snapshot_identity": "smc-cache-key-v2:e39bb92e519cc7f01c07c9f6d0b783bdbd2d703221cc747fefbfb2231be9441c",
+      "status": "OK",
+      "stored_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 0,
+          "readiness_status": "OUT_OF_STRATEGY",
+          "scoring_projection_zone_id": null,
+          "setup_id": null,
+          "smc_state": "ZONE_INVALIDATED",
+          "state": "out_of_strategy",
+          "zone_id": null
+        },
+        "sell": {
+          "plan_available": false,
+          "quality_raw": 8,
+          "readiness_status": "WATCH_ZONE",
+          "scoring_projection_zone_id": "smcz-547dc43e9ed1a12cc6ce",
+          "setup_id": "smcs-1c6703ea60342920342c",
+          "smc_state": "COUNTERTREND_UNCONFIRMED",
+          "state": "watch_zone",
+          "zone_id": "smcz-547dc43e9ed1a12cc6ce"
+        }
+      },
+      "symbol": "EUR/USD",
+      "verdict_matches": true
+    },
+    {
+      "as_of": "2026-04-16T12:00:00+00:00",
+      "cache": {
+        "cold_reader_on_other_root": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "hit": true,
+        "hit_reason_codes": [],
+        "hit_usable": true,
+        "miss_for_other_input": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "unrelated_identity": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        }
+      },
+      "closed_cases": [
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "usable_as_current": false,
+          "variant": "block_removed"
+        },
+        {
+          "classification": "historical",
+          "fail_closed": true,
+          "readable": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_IDENTITY_MISMATCH"
+          ],
+          "usable_as_current": false,
+          "variant": "identity_tampered"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_CONTRACT_UNSUPPORTED"
+          ],
+          "usable_as_current": false,
+          "variant": "contract_unknown"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_SELECTION_MALFORMED",
+            "SMC_PERSISTENCE_CONFIRMATION_IDENTITY_MISMATCH:BUY:zone_id"
+          ],
+          "usable_as_current": false,
+          "variant": "selection_invariant_broken"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "loaded_is_empty": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "BadGzipFile: Not a gzipped file (b'no')",
+          "usable_as_current": false,
+          "variant": "file_unreadable"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\tntan\\\\AppData\\\\Local\\\\Temp\\\\smc_restart_absent_cw1q6lci\\\\scanner_analysis\\\\20260917T172158.791996Z-smcsmoke\\\\EURUSD.json.gz'",
+          "usable_as_current": false,
+          "variant": "never_written"
+        }
+      ],
+      "document_bytes": 81153,
+      "live_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 4,
+          "readiness_status": "WATCH_ZONE",
+          "setup_id": "smcs-2c85277d3f1b1b8758ad",
+          "smc_state": "COUNTERTREND_UNCONFIRMED",
+          "state": "watch_zone",
+          "zone_id": "smcz-1142175a35f44591b1b6"
+        },
+        "sell": {
+          "plan_available": false,
+          "quality_raw": 8,
+          "readiness_status": "WATCH_ZONE",
+          "setup_id": "smcs-643a4a836b7cd476fd8c",
+          "smc_state": "ACTIVE_WAITING_VISIT",
+          "state": "watch_zone",
+          "zone_id": "smcz-e9c99d76bab386a06753"
+        }
+      },
+      "restart_classification": "canonical_compatible",
+      "restart_reason_codes": [],
+      "restart_usable_as_current": true,
+      "snapshot_identity": "smc-cache-key-v2:919c0dda47261c3b7835779e3edfe652a90672d7892bec7eeaad9da8db625b6d",
+      "status": "OK",
+      "stored_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 4,
+          "readiness_status": "WATCH_ZONE",
+          "scoring_projection_zone_id": "smcz-1142175a35f44591b1b6",
+          "setup_id": "smcs-2c85277d3f1b1b8758ad",
+          "smc_state": "COUNTERTREND_UNCONFIRMED",
+          "state": "watch_zone",
+          "zone_id": "smcz-1142175a35f44591b1b6"
+        },
+        "sell": {
+          "plan_available": false,
+          "quality_raw": 8,
+          "readiness_status": "WATCH_ZONE",
+          "scoring_projection_zone_id": "smcz-e9c99d76bab386a06753",
+          "setup_id": "smcs-643a4a836b7cd476fd8c",
+          "smc_state": "ACTIVE_WAITING_VISIT",
+          "state": "watch_zone",
+          "zone_id": "smcz-e9c99d76bab386a06753"
+        }
+      },
+      "symbol": "EUR/USD",
+      "verdict_matches": true
+    },
+    {
+      "as_of": "2026-06-11T12:00:00+00:00",
+      "cache": {
+        "cold_reader_on_other_root": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "hit": true,
+        "hit_reason_codes": [],
+        "hit_usable": true,
+        "miss_for_other_input": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "unrelated_identity": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        }
+      },
+      "closed_cases": [
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "usable_as_current": false,
+          "variant": "block_removed"
+        },
+        {
+          "classification": "historical",
+          "fail_closed": true,
+          "readable": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_IDENTITY_MISMATCH"
+          ],
+          "usable_as_current": false,
+          "variant": "identity_tampered"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_CONTRACT_UNSUPPORTED"
+          ],
+          "usable_as_current": false,
+          "variant": "contract_unknown"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_SELECTION_MALFORMED",
+            "SMC_PERSISTENCE_CONFIRMATION_IDENTITY_MISMATCH:BUY:zone_id"
+          ],
+          "usable_as_current": false,
+          "variant": "selection_invariant_broken"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "loaded_is_empty": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "BadGzipFile: Not a gzipped file (b'no')",
+          "usable_as_current": false,
+          "variant": "file_unreadable"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\tntan\\\\AppData\\\\Local\\\\Temp\\\\smc_restart_absent_n6t56jqg\\\\scanner_analysis\\\\20260917T172158.791996Z-smcsmoke\\\\EURUSD.json.gz'",
+          "usable_as_current": false,
+          "variant": "never_written"
+        }
+      ],
+      "document_bytes": 81932,
+      "live_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 6,
+          "readiness_status": "WATCH_ZONE",
+          "setup_id": "smcs-d85d93f3a6c6a7993ea9",
+          "smc_state": "COUNTERTREND_UNCONFIRMED",
+          "state": "watch_zone",
+          "zone_id": "smcz-181145f9fb098612c428"
+        },
+        "sell": {
+          "plan_available": true,
+          "quality_raw": 7,
+          "readiness_status": "WAITING_CONFIRMATION",
+          "setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+          "smc_state": "VISIT_OPEN",
+          "state": "evaluated",
+          "zone_id": "smcz-1b659e18ab6326071731"
+        }
+      },
+      "restart_classification": "canonical_compatible",
+      "restart_reason_codes": [],
+      "restart_usable_as_current": true,
+      "snapshot_identity": "smc-cache-key-v2:5123a24f5d8c5967d92a86cee2e6f7b751d5d5687889c559d092e2ec8320520d",
+      "status": "OK",
+      "stored_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 6,
+          "readiness_status": "WATCH_ZONE",
+          "scoring_projection_zone_id": "smcz-181145f9fb098612c428",
+          "setup_id": "smcs-d85d93f3a6c6a7993ea9",
+          "smc_state": "COUNTERTREND_UNCONFIRMED",
+          "state": "watch_zone",
+          "zone_id": "smcz-181145f9fb098612c428"
+        },
+        "sell": {
+          "plan_available": true,
+          "quality_raw": 7,
+          "readiness_status": "WAITING_CONFIRMATION",
+          "scoring_projection_zone_id": "smcz-1b659e18ab6326071731",
+          "setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+          "smc_state": "VISIT_OPEN",
+          "state": "evaluated",
+          "zone_id": "smcz-1b659e18ab6326071731"
+        }
+      },
+      "symbol": "EUR/USD",
+      "verdict_matches": true
+    },
+    {
+      "as_of": "2026-07-23T12:00:00+00:00",
+      "cache": {
+        "cold_reader_on_other_root": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "hit": true,
+        "hit_reason_codes": [],
+        "hit_usable": true,
+        "miss_for_other_input": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        },
+        "unrelated_identity": {
+          "hit": false,
+          "reason_codes": [
+            "SMC_CACHE_MISS_ABSENT"
+          ]
+        }
+      },
+      "closed_cases": [
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "usable_as_current": false,
+          "variant": "block_removed"
+        },
+        {
+          "classification": "historical",
+          "fail_closed": true,
+          "readable": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_IDENTITY_MISMATCH"
+          ],
+          "usable_as_current": false,
+          "variant": "identity_tampered"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_CONTRACT_UNSUPPORTED"
+          ],
+          "usable_as_current": false,
+          "variant": "contract_unknown"
+        },
+        {
+          "classification": "incompatible",
+          "fail_closed": true,
+          "readable": false,
+          "reason_codes": [
+            "SMC_PERSISTENCE_SELECTION_MALFORMED",
+            "SMC_PERSISTENCE_CONFIRMATION_IDENTITY_MISMATCH:SELL:zone_id"
+          ],
+          "usable_as_current": false,
+          "variant": "selection_invariant_broken"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "loaded_is_empty": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "BadGzipFile: Not a gzipped file (b'no')",
+          "usable_as_current": false,
+          "variant": "file_unreadable"
+        },
+        {
+          "classification": "corrupted",
+          "fail_closed": true,
+          "reason_codes": [
+            "SMC_PERSISTENCE_BLOCK_MISSING"
+          ],
+          "refused_by": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\tntan\\\\AppData\\\\Local\\\\Temp\\\\smc_restart_absent_1z7dd26g\\\\scanner_analysis\\\\20260917T172158.791996Z-smcsmoke\\\\EURUSD.json.gz'",
+          "usable_as_current": false,
+          "variant": "never_written"
+        }
+      ],
+      "document_bytes": 81672,
+      "live_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 0,
+          "readiness_status": "OUT_OF_STRATEGY",
+          "setup_id": null,
+          "smc_state": "ZONE_INVALIDATED",
+          "state": "out_of_strategy",
+          "zone_id": null
+        },
+        "sell": {
+          "plan_available": false,
+          "quality_raw": 7,
+          "readiness_status": "WATCH_ZONE",
+          "setup_id": "smcs-a009b17a32d3c23ebe63",
+          "smc_state": "ACTIVE_WAITING_VISIT",
+          "state": "watch_zone",
+          "zone_id": "smcz-22c1561cfba91ac06221"
+        }
+      },
+      "restart_classification": "canonical_compatible",
+      "restart_reason_codes": [],
+      "restart_usable_as_current": true,
+      "snapshot_identity": "smc-cache-key-v2:28261e77ee917f1a0628d29b2e03ed5bdd8ad3b64bd3af52fa7f390af70fcece",
+      "status": "OK",
+      "stored_verdict": {
+        "buy": {
+          "plan_available": false,
+          "quality_raw": 0,
+          "readiness_status": "OUT_OF_STRATEGY",
+          "scoring_projection_zone_id": null,
+          "setup_id": null,
+          "smc_state": "ZONE_INVALIDATED",
+          "state": "out_of_strategy",
+          "zone_id": null
+        },
+        "sell": {
+          "plan_available": false,
+          "quality_raw": 7,
+          "readiness_status": "WATCH_ZONE",
+          "scoring_projection_zone_id": "smcz-22c1561cfba91ac06221",
+          "setup_id": "smcs-a009b17a32d3c23ebe63",
+          "smc_state": "ACTIVE_WAITING_VISIT",
+          "state": "watch_zone",
+          "zone_id": "smcz-22c1561cfba91ac06221"
+        }
+      },
+      "symbol": "EUR/USD",
+      "verdict_matches": true
+    }
+  ],
+  "cases_run": 4,
+  "elapsed_seconds": 9.0546,
+  "failures": [],
+  "generated_at": "2026-09-17T17:22:07.691242+00:00",
+  "operational_storage_digest": {
+    "event_assessment_journal.jsonl": "sha256:62e823139697ddf3ab9df53bb35a894a482280b55b184c3b4f061f1f31f5b920",
+    "macro_verdict_journal.jsonl": "sha256:16057efe987deb8a262dd4626fc399a98633fcbe5b6909c23b09fb433280481a",
+    "shadow_records.jsonl": "sha256:beae28ea92a19c796db0af828f1b855b81b7535dbb2aacae562d4e7ea7fc9800"
+  },
+  "operational_storage_untouched": true,
+  "report_version": "smc-restart-smoke-v1",
+  "rows_available": 58
+}

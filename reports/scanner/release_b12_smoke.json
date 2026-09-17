@@ -34,7 +34,7 @@
   "pairs": [
     {
       "composition_version": "scanner-composition",
-      "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:34e9a1e4fa14",
+      "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:0ba62ba8d961",
       "symbol": "XAUUSD",
       "route_status": "routed",
       "row": {
@@ -46,7 +46,7 @@
         "safety_policy_version": "scanner-safety-policy",
         "macro_policy_version": "scanner-macro-policy",
         "snapshot_version": "scanner-pair-snapshot",
-        "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:34e9a1e4fa14",
+        "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:0ba62ba8d961",
         "symbol": "XAUUSD",
         "captured_at": "2026-08-14T12:00:00+00:00",
         "capture_source": "live",
@@ -119,7 +119,7 @@
       "candidate": {
         "symbol": "XAUUSD",
         "captured_at": "2026-08-14T12:00:00+00:00",
-        "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:34e9a1e4fa14",
+        "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:0ba62ba8d961",
         "composition_version": "scanner-composition",
         "scoring_version": "scanner",
         "feature_version": "scanner-features",
@@ -166,7 +166,7 @@
           "GATE_PORTFOLIO_POLICY_OPEN"
         ],
         "execution": {
-          "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:34e9a1e4fa14",
+          "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:0ba62ba8d961",
           "captured_at": "2026-08-14T12:00:00+00:00",
           "fresh_snapshot": true,
           "can_execute": false,
@@ -184,7 +184,7 @@
     },
     {
       "composition_version": "scanner-composition",
-      "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:a8eb1e0ea37a",
+      "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:626c0b2a5735",
       "symbol": "EURUSD",
       "route_status": "routed",
       "row": {
@@ -196,7 +196,7 @@
         "safety_policy_version": "scanner-safety-policy",
         "macro_policy_version": "scanner-macro-policy",
         "snapshot_version": "scanner-pair-snapshot",
-        "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:a8eb1e0ea37a",
+        "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:626c0b2a5735",
         "symbol": "EURUSD",
         "captured_at": "2026-08-14T12:00:00+00:00",
         "capture_source": "live",
@@ -269,7 +269,7 @@
       "candidate": {
         "symbol": "EURUSD",
         "captured_at": "2026-08-14T12:00:00+00:00",
-        "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:a8eb1e0ea37a",
+        "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:626c0b2a5735",
         "composition_version": "scanner-composition",
         "scoring_version": "scanner",
         "feature_version": "scanner-features",
@@ -316,7 +316,7 @@
           "GATE_PORTFOLIO_POLICY_OPEN"
         ],
         "execution": {
-          "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:a8eb1e0ea37a",
+          "snapshot_id": "v4:EURUSD:2026-08-14T12:00:00Z:626c0b2a5735",
           "captured_at": "2026-08-14T12:00:00+00:00",
           "fresh_snapshot": true,
           "can_execute": false,
@@ -334,7 +334,7 @@
     },
     {
       "composition_version": "scanner-composition",
-      "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:2a4ab3cb097f",
+      "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:5058fce561a6",
       "symbol": "US30",
       "route_status": "routed",
       "row": {
@@ -346,7 +346,7 @@
         "safety_policy_version": "scanner-safety-policy",
         "macro_policy_version": "scanner-macro-policy",
         "snapshot_version": "scanner-pair-snapshot",
-        "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:2a4ab3cb097f",
+        "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:5058fce561a6",
         "symbol": "US30",
         "captured_at": "2026-08-14T12:00:00+00:00",
         "capture_source": "live",
@@ -419,7 +419,7 @@
       "candidate": {
         "symbol": "US30",
         "captured_at": "2026-08-14T12:00:00+00:00",
-        "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:2a4ab3cb097f",
+        "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:5058fce561a6",
         "composition_version": "scanner-composition",
         "scoring_version": "scanner",
         "feature_version": "scanner-features",
@@ -466,7 +466,7 @@
           "GATE_PORTFOLIO_POLICY_OPEN"
         ],
         "execution": {
-          "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:2a4ab3cb097f",
+          "snapshot_id": "v4:US30:2026-08-14T12:00:00Z:5058fce561a6",
           "captured_at": "2026-08-14T12:00:00+00:00",
           "fresh_snapshot": true,
           "can_execute": false,

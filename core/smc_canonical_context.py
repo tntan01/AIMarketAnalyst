@@ -30,6 +30,7 @@ from typing import Any, Mapping, Sequence
 
 from core.market_models import Candle, candle_close_at
 from core.smc_confluence import build_directional_confluence
+from core.smc_structure_window import StructureWindowReuse
 from core.smc_context import (
     _attach_zone_sweep_links,
     _filter_swings_by_atr,
@@ -141,6 +142,11 @@ def build_canonical_timeframe_context(
     normalized = str(timeframe or "").strip().upper()
     tf_minutes = _TIMEFRAME_MINUTES[normalized]
     closed = _closed_candles(candles, normalized, as_of)
+    # Task 137: one reuse for this window, shared by every step below that would
+    # otherwise revalidate the same candles or rescan them for pivots/ATR. It is
+    # created here, lives only for this call, and stores nothing across
+    # evaluations.
+    window = StructureWindowReuse(closed, normalized, symbol=symbol)
 
     structure = replay_smc_structure(
         closed,
@@ -148,6 +154,7 @@ def build_canonical_timeframe_context(
         timeframe=normalized,
         as_of=as_of,
         tick_size=tick_size,
+        window=window,
     )
     events = list(structure.get("events") or ())
     state = dict(structure.get("structure_state") or {})
@@ -172,7 +179,9 @@ def build_canonical_timeframe_context(
         timeframe=normalized,
         as_of=as_of,
     )
-    supply_demand = _confirm_supply_demand(closed, symbol=symbol, timeframe=normalized, as_of=as_of)
+    supply_demand = _confirm_supply_demand(
+        closed, symbol=symbol, timeframe=normalized, as_of=as_of, window=window
+    )
 
     zones = [*order_blocks, *fvg, *supply_demand]
     # Data spec §4: a zone must carry the causal formation ATR of its own
@@ -191,6 +200,7 @@ def build_canonical_timeframe_context(
             closed,
             timeframe=normalized,
             event_index=event_index,
+            window=window,
         )
         if _positive(causal_atr) is not None:
             zone["formation_atr"] = float(causal_atr)
@@ -201,6 +211,7 @@ def build_canonical_timeframe_context(
         symbol=symbol,
         as_of=as_of,
         require_lifetime=True,
+        window=window,
     )
     # D101-02: the canonical tick size of the snapshot is real metadata the
     # geometry/quantization rules need.  It is stamped onto every canonical
@@ -338,6 +349,7 @@ def _confirm_supply_demand(
     symbol: str,
     timeframe: str,
     as_of: datetime,
+    window: Any = None,
 ) -> list[dict[str, Any]]:
     """Confirm each S/D candidate with its OWN causal departure ATR."""
 
@@ -354,6 +366,7 @@ def _confirm_supply_demand(
                 list(candles),
                 timeframe=timeframe,
                 event_index=departure_index,
+                window=window,
             )
             if departure_index >= 0
             else None

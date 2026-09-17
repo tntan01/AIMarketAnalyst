@@ -32,6 +32,21 @@ from tests.test_scanner_release import _zoned_candles
 # quotes ~1000 with 0.2 wicks, so one broker tick is 0.01.
 _TICK_SIZE = 0.01
 
+# Task 137: this fixture is observed at a FIXED instant, and the row is composed
+# against that same instant.  ``_zoned_candles`` places its candles on the
+# timeframe grid (the anchor is a whole hour and every timeframe is a whole
+# number of hours) while ``datetime.now()`` carries a sub-hour remainder, so a
+# wall-clock placement moved every candle off its boundary.  The canonical
+# verdict is grid-sensitive: the same input returned ``evaluated``,
+# ``watch_zone`` and ``data_unavailable`` within seconds of each other and a side
+# could lose its zone id between two runs of one test.  Pinning the instant — and
+# the clock the composition compares it to — keeps the row a real
+# ``_analyze_one_symbol`` row AND repayable; it is the same fixed-observation
+# pattern ``tests/test_scanner_execution_controller.py`` already uses for the
+# dispatch path.  ``datetime.now()`` is deliberately not read here: a fixture
+# whose verdict depends on when it runs cannot be a regression test.
+_OBSERVED_AT = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+
 
 def _place_at_observation(candles, shift):
     """Shift a fixed-date fixture onto the observation instant.
@@ -47,14 +62,18 @@ def _place_at_observation(candles, shift):
 
 
 def _blocked_row() -> dict:
-    """Produce a real BLOCKED row via the live controller path."""
+    """Produce a real BLOCKED row via the live controller path.
+
+    The row is placed at — and composed against — the fixed ``_OBSERVED_AT``
+    instant, so the same call always produces the same row.
+    """
     from tests.test_scanner_release import NOW as _FIXTURE_ANCHOR
 
     d1, h4, h1 = _zoned_candles()
     m15 = h1[-40:]
     # Place the fixture at the observation instant, then DERIVE the boundary
     # from the data (never from a second clock read).
-    shift = datetime.now(timezone.utc).replace(microsecond=0) - _FIXTURE_ANCHOR
+    shift = _OBSERVED_AT - _FIXTURE_ANCHOR
     d1 = _place_at_observation(d1, shift)
     h4 = _place_at_observation(h4, shift)
     h1 = _place_at_observation(h1, shift)
@@ -100,6 +119,7 @@ def _blocked_row() -> dict:
         closed_trades=[],
         account_guard_settings={},
         order_policy=load_runtime_order_policy(),
+        now=_OBSERVED_AT,
     )
 
 

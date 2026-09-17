@@ -22,12 +22,75 @@ from core.smc_models import (
     SMC_SCORER_VERSION,
 )
 from core.smc_sweep_linking import SMC_SWEEP_LINK_VERSION
+from core.smc_versions import SMC_SELECTION_VERSION
 
 
-SMC_CACHE_IDENTITY_VERSION = "smc-cache-key-v1"
+# Task 118: the identity payload now also carries the *selection* policy of the
+# candidate coordinator/plan seam.  Before that, two runs that differed only in
+# how the final candidate was chosen hashed the same, so a cached result could be
+# reused as if it had been produced by the current selection rules.  The shape of
+# the identity record changed, so the label changes with it instead of keeping
+# ``v1`` and silently reusing old keys (compatibility spec §4.1: "Khi bất kỳ
+# policy/parameter/contract nào đổi, rule identity đổi ... Không đổi nhãn UI để
+# lách cache compatibility").
+SMC_CACHE_IDENTITY_VERSION = "smc-cache-key-v2"
 # Bump this internal rule identity when cache-relevant SMC semantics change.
 SMC_RULE_IDENTITY = "smc-rules-v1"
 _VALID_TIMEFRAMES = frozenset({"D1", "H4", "H1", "M15"})
+
+
+def smc_rule_versions() -> dict[str, str]:
+    """Every internal policy identity a cached SMC result depends on.
+
+    ``selection`` is the coordinator/plan policy of tasks 92–107: it decides
+    WHICH candidate the result reports, so a change there must invalidate a
+    cached result exactly like a scorer or zone-policy change does.
+    """
+
+    return {
+        "domain": SMC_DOMAIN_VERSION,
+        "snapshot_contract": SMC_SNAPSHOT_CONTRACT_VERSION,
+        "scorer": SMC_SCORER_VERSION,
+        "confluence": SMC_CONFLUENCE_VERSION,
+        "sweep_link": SMC_SWEEP_LINK_VERSION,
+        "selection": SMC_SELECTION_VERSION,
+    }
+
+
+def smc_rule_identity(
+    *,
+    rule_identity: str = SMC_RULE_IDENTITY,
+) -> dict[str, Any]:
+    """The internal rule-identity record of compatibility spec §4.1.
+
+    It is metadata a reader can compare against the running identity to decide
+    whether a stored result may be reused, so it carries every version constant
+    that participates in the decision — never a UI-facing generation label.
+    """
+
+    normalized = str(rule_identity or "").strip()
+    if not normalized:
+        raise ValueError("SMC rule identity is required")
+    return {
+        "cache_identity_version": SMC_CACHE_IDENTITY_VERSION,
+        "rule_identity": normalized,
+        "rule_versions": smc_rule_versions(),
+    }
+
+
+def smc_rule_identity_digest(
+    *,
+    rule_identity: str = SMC_RULE_IDENTITY,
+) -> str:
+    """Deterministic digest of the rule identity, for equality checks."""
+
+    canonical = json.dumps(
+        smc_rule_identity(rule_identity=rule_identity),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def smc_snapshot_identity_payload(
@@ -77,13 +140,7 @@ def smc_snapshot_identity_payload(
     return {
         "identity_version": SMC_CACHE_IDENTITY_VERSION,
         "rule_identity": normalized_rule,
-        "rule_versions": {
-            "domain": SMC_DOMAIN_VERSION,
-            "snapshot_contract": SMC_SNAPSHOT_CONTRACT_VERSION,
-            "scorer": SMC_SCORER_VERSION,
-            "confluence": SMC_CONFLUENCE_VERSION,
-            "sweep_link": SMC_SWEEP_LINK_VERSION,
-        },
+        "rule_versions": smc_rule_versions(),
         "symbol": normalized_symbol,
         "as_of": _canonical_timestamp(as_of, field_name="as_of"),
         "metadata": _canonical_value(dict(metadata or {}), field_name="metadata"),
@@ -201,6 +258,9 @@ def _canonical_value(value: object, *, field_name: str) -> Any:
 __all__ = [
     "SMC_CACHE_IDENTITY_VERSION",
     "SMC_RULE_IDENTITY",
+    "smc_rule_identity",
+    "smc_rule_identity_digest",
+    "smc_rule_versions",
     "smc_snapshot_identity",
     "smc_snapshot_identity_payload",
 ]

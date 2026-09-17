@@ -19,6 +19,14 @@ from statistics import mean, stdev
 from typing import Any, Iterable, Mapping, Sequence
 
 from core.scanner_observability import stable_hash
+from core.smc_persistence import (
+    SMC_PAYLOAD_CORRUPTED,
+    SMC_PAYLOAD_INCOMPATIBLE,
+    SMC_SOURCE_CANONICAL_SELECTION,
+    classify_persisted_smc,
+    consumer_sides_of,
+    stored_snapshot_of,
+)
 from core.smc_scoring_result import SmcScoringResult, smc_selection_of
 from core.smc_scorer import score_smc
 from core.smc_versions import SMC_SCORER_VERSION, SMC_SELECTION_VERSION
@@ -346,18 +354,32 @@ def replay_sample_from_analysis_document(
 ) -> dict[str, Any]:
     """Extract one replay sample from a saved scanner analysis document.
 
-    Only the canonical ``smc_scoring.sides`` payload is used.  Documents that
-    predate the canonical contract carry no ``sides`` and fail closed instead
-    of selecting a legacy/shadow branch.
+    Task 119: the document is classified BEFORE anything is read, and the
+    classification decides which recorded field is the source of truth.
+
+    * A **canonical-compatible** document (current contract *and* the current
+      rule identity) is read from the canonical FINAL selection — the candidate
+      the coordinator accepted — including the lifecycle/confirmation evidence
+      of that same setup.
+    * A **historical** document (another rule identity, no identity stamp at
+      all, or the older payload shape) is read from the fields it actually
+      recorded and is tagged historical.  It is never relabelled as a current
+      result and never receives canonical provenance.
+    * An **incompatible** or **corrupted** document is refused with its own
+      reason codes instead of being normalized into a valid sample.
+
+    A required replay input that is missing is reported as a reason code.  The
+    function never invents a zone, a lifecycle, a sweep link or a provenance to
+    make a payload look complete, and it never rewrites a stored payload.
     """
 
     payload = document if isinstance(document, dict) else {}
+    compat = classify_persisted_smc(payload)
+    block = compat.block
+    sides = _mapping(compat.sides)
+    consumer_sides = consumer_sides_of(block)
     row = _mapping(payload.get("row_summary"))
     analysis = _mapping(payload.get("analysis_result"))
-    diagnostics = _mapping(analysis.get("smc_scoring"))
-    sides = _mapping(diagnostics.get("sides"))
-    consumer = _mapping(diagnostics.get("consumer_contract"))
-    consumer_sides = _mapping(consumer.get("sides"))
     candidate = _mapping(payload.get("candidate_decision"))
     side = _normalize_side(
         candidate.get("selected_side")
@@ -366,8 +388,45 @@ def replay_sample_from_analysis_document(
     )
     side_result = _mapping(sides.get(side))
     consumer_side = _mapping(consumer_sides.get(side))
+    # Only a payload whose recorded source IS the canonical selection is read
+    # from it; everything else keeps the historical reader, so a newer field can
+    # never be filled in on a payload that never carried one.
+    selection = (
+        _mapping(consumer_side.get("selection"))
+        if compat.source == SMC_SOURCE_CANONICAL_SELECTION
+        else {}
+    )
     selected_zone = _mapping(consumer_side.get("selected_zone"))
     smc = _mapping(analysis.get("smc"))
+    stored_snapshot = stored_snapshot_of(block)
+
+    if selection:
+        zone_family = _normalized_text(selection.get("family"), "none")
+        # The legacy ``lifecycle_state`` vocabulary (fresh/first_mitigation/
+        # multi_visit/broken) is not the canonical one, and one is not derivable
+        # from the other.  Reporting it here would blend two meanings under one
+        # field, so the canonical evidence travels in its own fields below.
+        lifecycle_state = "unknown"
+        canonical_lifecycle_status = _optional_text(
+            selection.get("lifecycle_status")
+        )
+        canonical_confirmation_state = _optional_text(
+            selection.get("confirmation_state")
+        )
+        selected_zone_id = selection.get("selected_zone_id")
+        # The canonical selection records no sweep linkage; reporting ``False``
+        # would claim the setup was checked and found unlinked.
+        linked_sweep: bool | None = None
+    else:
+        zone_family = _normalized_text(selected_zone.get("family"), "none")
+        lifecycle_state = _zone_lifecycle(selected_zone)
+        canonical_lifecycle_status = None
+        canonical_confirmation_state = None
+        selected_zone_id = (
+            side_result.get("selected_zone_id")
+            or consumer_side.get("selected_zone_id")
+        )
+        linked_sweep = bool(selected_zone.get("liquidity_sweep_linked"))
 
     sample = {
         "sample_id": str(
@@ -391,17 +450,15 @@ def replay_sample_from_analysis_document(
         "asset_class": asset_class,
         "side": side,
         "market_regime": _regime_text(analysis.get("market_regime")),
-        "zone_family": _normalized_text(
-            selected_zone.get("family"), "none"
-        ),
+        "zone_family": zone_family,
         "zone_quality_score": side_result.get(
             "selected_zone_quality_score"
         ),
         "zone_relevance_score": side_result.get(
             "selected_zone_relevance_score"
         ),
-        "lifecycle_state": _zone_lifecycle(selected_zone),
-        "linked_sweep": bool(selected_zone.get("liquidity_sweep_linked")),
+        "lifecycle_state": lifecycle_state,
+        "linked_sweep": linked_sweep,
         "h4_confirmed_choch_against": bool(
             row.get("h4_confirmed_choch_against_direction")
             or _mapping(analysis.get("trade_gate")).get(
@@ -413,19 +470,44 @@ def replay_sample_from_analysis_document(
             current_side: _mapping(sides.get(current_side)).get("score")
             for current_side in _SIDES
         },
-        "selected_zone_id": (
-            side_result.get("selected_zone_id")
-            or consumer_side.get("selected_zone_id")
-        ),
+        "selected_zone_id": selected_zone_id,
         "status": _normalize_status(
             candidate.get("status") or row.get("candidate_status")
         ),
         "result_r": result_r,
         "scoring_version": side_result.get("scoring_version"),
+        # Task 117: the cutoff the decision was actually taken at, read back from
+        # the stored snapshot record.  ``observed_at`` stays the scan's wall
+        # clock (its documented meaning); this is the data cutoff, and it is
+        # ``None`` — never re-derived — when the payload did not record one.
+        "snapshot_as_of": _optional_text(stored_snapshot.get("as_of")),
+        "snapshot_m15_as_of": _optional_text(stored_snapshot.get("m15_as_of")),
+        # Canonical evidence, in the canonical vocabulary.  They stay ``None``
+        # for a historical payload: nothing is derived from the legacy zone to
+        # fill them in.
+        "canonical_lifecycle_status": canonical_lifecycle_status,
+        "canonical_confirmation_state": canonical_confirmation_state,
+        # Task117: the typed M15 confirmation exactly as it was stored — every
+        # visit/trigger/time/identity/reason field, copied and never rebuilt.
+        # ``None`` means the payload recorded none, not that one was computed.
+        "confirmation": (
+            dict(selection["confirmation"])
+            if isinstance(selection.get("confirmation"), dict)
+            else None
+        ),
+        # Read from the payload, never asserted: a historical document keeps
+        # reporting that it is historical.
+        "compatibility_status": compat.status,
+        "compatibility_reason_codes": list(compat.reason_codes),
+        "provenance": compat.source,
     }
     normalized, reasons = normalize_smc_replay_sample(sample)
+    if compat.status in {SMC_PAYLOAD_INCOMPATIBLE, SMC_PAYLOAD_CORRUPTED}:
+        # A payload we cannot interpret must not normalize into a valid sample
+        # just because some of its fields happened to parse.
+        reasons.extend(compat.reason_codes)
     normalized["valid"] = not reasons
-    normalized["validation_reason_codes"] = reasons
+    normalized["validation_reason_codes"] = _unique(reasons)
     return normalized
 
 
@@ -503,7 +585,11 @@ def normalize_smc_replay_sample(
         "lifecycle_state": _normalized_text(
             raw.get("lifecycle_state"), "unknown"
         ),
-        "linked_sweep": bool(raw.get("linked_sweep")),
+        # ``None`` means the payload never recorded sweep linkage — it is not
+        # the same as "recorded and unlinked".
+        "linked_sweep": (
+            None if raw.get("linked_sweep") is None else bool(raw.get("linked_sweep"))
+        ),
         "h4_confirmed_choch_against": bool(
             raw.get("h4_confirmed_choch_against")
         ),
@@ -514,6 +600,31 @@ def normalize_smc_replay_sample(
         "status": _normalize_status(raw.get("status")),
         "result_r": result_r,
         "scoring_version": scoring_version,
+        # The data cutoff this sample was decided at, distinct from the scan's
+        # wall clock; ``None`` when the payload never recorded one.
+        "snapshot_as_of": _optional_text(raw.get("snapshot_as_of")),
+        "snapshot_m15_as_of": _optional_text(raw.get("snapshot_m15_as_of")),
+        "canonical_lifecycle_status": _optional_text(
+            raw.get("canonical_lifecycle_status")
+        ),
+        "canonical_confirmation_state": _optional_text(
+            raw.get("canonical_confirmation_state")
+        ),
+        # Verbatim, never re-derived: the record is the evidence, so a reader
+        # that rebuilt it would be inventing a confirmation rather than reading
+        # the stored one.
+        "confirmation": (
+            dict(raw["confirmation"])
+            if isinstance(raw.get("confirmation"), dict)
+            else None
+        ),
+        "compatibility_status": _optional_text(raw.get("compatibility_status")),
+        "compatibility_reason_codes": [
+            str(code)
+            for code in (raw.get("compatibility_reason_codes") or ())
+            if str(code)
+        ],
+        "provenance": _optional_text(raw.get("provenance")),
     }
     return normalized, _unique(reasons)
 

@@ -4047,6 +4047,7 @@ def apply_zone_availability(
     symbol: str,
     as_of: datetime | str,
     require_lifetime: bool = True,
+    window: Any = None,
 ) -> list[dict[str, Any]]:
     """Apply availability and causal history gates without inventing data."""
 
@@ -4084,6 +4085,7 @@ def apply_zone_availability(
             symbol=symbol or None,
             origin_time=origin_time,
             require_lifetime=require_lifetime,
+            window=window,
         )
         item["history_coverage"] = coverage.to_dict()
         reasons.extend(coverage.reason_codes)
@@ -5082,6 +5084,7 @@ def atr_reference_before_event(
     event_time: datetime | str | None = None,
     period: int = _ATR_PERIOD,
     source_event_id: str | None = None,
+    window: Any = None,
 ) -> SmcAtrReference | None:
     """Return same-timeframe ATR from candles strictly before an event.
 
@@ -5089,6 +5092,12 @@ def atr_reference_before_event(
     are never read, so appending a later volatile snapshot cannot change this
     formation reference.  ``None`` means the causal prefix has not reached the
     published warm-up boundary or its ATR is not positive/finite.
+
+    ``window`` is an optional :class:`core.smc_structure_window.StructureWindowReuse`
+    the caller already validated and already holds an ATR series for (task 137).
+    When it owns *candles*, the prefix validation and the prefix ATR scan are read
+    from it instead of being redone; every warm-up and positivity check below is
+    unchanged, and the value is the same one the prefix computation produced.
     """
 
     normalized_timeframe = str(timeframe or "").strip().upper()
@@ -5109,21 +5118,30 @@ def atr_reference_before_event(
     minimum_prefix = max(_ATR_FILTER_MIN_CANDLES, period + 1)
     if len(prefix) < minimum_prefix:
         return None
-    # Validate only the causal prefix.  Future/event records cannot invalidate
-    # an already formed reference or influence its result.
-    valid_prefix = require_valid_smc_candles(prefix, normalized_timeframe)
-    values = atr(
-        [candle.high for candle in valid_prefix],
-        [candle.low for candle in valid_prefix],
-        [candle.close for candle in valid_prefix],
-        period,
-    )
-    value = values[-1] if values else None
+    reusable = window is not None and window.owns(candles)
+    if reusable:
+        # The window owner validated this exact candle sequence and holds its
+        # ATR series; validation does not reorder or repair, so the reference
+        # candle and the value are the ones the prefix path would produce.
+        value = window.atr_before_index(candles, resolved_index, period=period)
+        reference_candle = candles[resolved_index - 1]
+    else:
+        # Validate only the causal prefix.  Future/event records cannot invalidate
+        # an already formed reference or influence its result.
+        valid_prefix = require_valid_smc_candles(prefix, normalized_timeframe)
+        values = atr(
+            [candle.high for candle in valid_prefix],
+            [candle.low for candle in valid_prefix],
+            [candle.close for candle in valid_prefix],
+            period,
+        )
+        value = values[-1] if values else None
+        reference_candle = valid_prefix[-1]
     if value is None or not isfinite(float(value)) or float(value) <= 0:
         return None
 
     reference_time = candle_close_at(
-        valid_prefix[-1].time,
+        reference_candle.time,
         normalized_timeframe,
     )
     event_close = candle_close_at(candles[resolved_index].time, normalized_timeframe)
@@ -5148,6 +5166,7 @@ def atr_value_before_event(
     event_index: int | None = None,
     event_time: datetime | str | None = None,
     period: int = _ATR_PERIOD,
+    window: Any = None,
 ) -> float | None:
     """Convenience projection of :func:`atr_reference_before_event`."""
 
@@ -5157,6 +5176,7 @@ def atr_value_before_event(
         event_index=event_index,
         event_time=event_time,
         period=period,
+        window=window,
     )
     return reference.value if reference is not None else None
 

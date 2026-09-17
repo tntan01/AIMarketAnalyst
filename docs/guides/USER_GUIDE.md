@@ -52,6 +52,181 @@ theo ATR và lý do chấm điểm.
 Không cần nhập vùng hoặc tin thủ công để sử dụng Location bản đầu; không cần
 đăng ký nguồn dữ liệu trả phí hay cài database mới riêng cho phần này.
 
+### 3.2 Vùng SMC — đọc điểm, trạng thái và lý do chưa vào lệnh
+
+**Trạng thái 17/09/2026: đã nối vào Scanner, màn chi tiết và Chart; đang được
+kiểm chứng kỹ thuật, chưa nghiệm thu để thay bản đang dùng và chưa tự động vào
+lệnh.**
+
+#### Vùng SMC là gì
+
+SMC là lớp đọc **cấu trúc thị trường** trên các khung lớn (D1/H4/H1). Từ cấu
+trúc đó, ứng dụng tìm ra những **vùng giá** mà trước đây thị trường đã có phản
+ứng rõ — vùng đối ứng của một nhịp đẩy mạnh, khoảng trống giá, hoặc vùng
+cung/cầu. Ứng dụng chọn ra **một vùng cho hướng MUA và một vùng cho hướng BÁN**,
+rồi theo dõi xem giá có quay lại và phản ứng hay không.
+
+Vùng SMC không phải lệnh chờ đặt sẵn và không phải khuyến nghị. Nó là **hồ sơ
+đang được theo dõi**, kèm lý do rõ ràng cho từng bước.
+
+#### Điểm SMC và bốn thành phần B/Q/L/C có nghĩa là gì
+
+Trong màn chi tiết, mục **SMC** hiển thị **Điểm SMC** trên thang `0–15`, và bảng
+**Thành phần SMC** hiển thị bốn thành phần `B · Q · L · C`, mỗi thành phần trong
+khoảng `0–1`:
+
+| Thành phần | Nghĩa |
+|---|---|
+| **B** | Cấu trúc thị trường quanh vùng |
+| **Q** | Chất lượng của chính vùng đó |
+| **L** | Bằng chứng thanh khoản liên quan tới vùng |
+| **C** | Bối cảnh khung lớn đi kèm vùng |
+
+**Đây là thang chất lượng của hồ sơ vùng — mức độ đầy đủ và đáng tin của bằng
+chứng đang có. Không phải xác suất thắng, không phải tỷ lệ thành công, không
+phải phần trăm lợi nhuận và không phải dự báo giá.** Điểm cao nghĩa là hồ sơ
+vùng chỉn chu hơn về mặt dữ liệu, không có nghĩa là lệnh này sẽ thắng.
+
+Hai kết quả trông có vẻ giống nhau nhưng khác hẳn nhau — và ứng dụng ghi rõ
+bằng chữ, không để bạn tự đoán:
+
+- **`0/15 · chưa có setup hợp lệ`** — đã xét đủ dữ liệu và kết luận không có
+  vùng nào đạt. Đây là **một kết luận**.
+- **`Thiếu dữ liệu`** — chưa đủ dữ liệu để kết luận, nên **không** cho điểm.
+  Đây **không phải** điểm thấp.
+- **`Chưa có dữ liệu SMC`** — dòng này chưa từng có kết quả SMC nào.
+
+Trong bảng **Thành phần SMC**, ô nào không có số sẽ hiển thị `—` (đúng nghĩa
+"không có giá trị"), khác hẳn với số `0` (có giá trị và giá trị đó bằng 0).
+
+Bạn không cần — và không nên — chỉnh các ngưỡng phía sau những con số này. Không
+có màn hình chỉnh hàng loạt cho chúng.
+
+#### Các trạng thái bạn sẽ gặp
+
+Màn chi tiết có **ba ô trạng thái riêng biệt**, và chúng trả lời ba câu hỏi khác
+nhau. Đừng đọc ô này bằng nghĩa của ô kia:
+
+**Ô "Trạng thái" — vùng này có dùng được để vào lệnh không?**
+
+| Trạng thái hiển thị | Nghĩa | Bạn cần làm gì |
+|---|---|---|
+| **Đã chọn được vùng** | Đã chọn được một vùng để xét | Xem tiếp các ô còn lại |
+| **Theo dõi vùng** / **Theo dõi vùng, chưa có kế hoạch** | Vùng hợp lệ nhưng chưa đủ điều kiện; chưa dựng được kế hoạch | Quan sát; không có gì để đặt |
+| **Chờ xác nhận** | Giá đã vào vùng, đang chờ tín hiệu xác nhận trên khung nhỏ | Chờ; xem mục lý do để biết đang chờ gì |
+| **Đủ điều kiện kiểm tra lần cuối** | Trạng thái gần nhất với "sẵn sàng" — nhưng **chưa phải lệnh** | Vẫn phải qua bước kiểm tra lại ngay trước khi gửi |
+| **Thiếu dữ liệu** | Chưa kết luận được vì thiếu dữ liệu đầu vào | Xem lý do; đây **không phải** điểm thấp |
+| **Chưa đạt quy tắc** / **Bị chặn** | Vùng hoặc bối cảnh không thỏa điều kiện của ứng dụng | Đọc lý do cụ thể |
+| **Chưa có setup hợp lệ** | Đã xét đủ dữ liệu và không có vùng nào đạt | Đây là một kết luận, không phải lỗi |
+
+**Ô "Vòng đời vùng" — vùng đang ở bước nào của đời nó?**
+
+| Vòng đời hiển thị | Nghĩa |
+|---|---|
+| **Vùng mới hình thành, chưa dùng được** | Vùng vừa được nhận diện, chưa đủ điều kiện sử dụng |
+| **Vùng đã xác nhận** | Vùng đã qua bước xác nhận cấu trúc |
+| **Vùng dùng được** | Vùng đang dùng được |
+| **Vùng đang theo dõi** | Vùng đang được theo dõi |
+| **Vùng đã bị phá** | Giá đã đóng vượt biên vùng; vùng hết giá trị |
+| **Vùng đã hết hạn** | Vùng quá cũ theo thời hạn của khung thời gian |
+
+**Ô "Xác nhận vào lệnh" — tín hiệu vào lệnh đang ở đâu?**
+
+| Xác nhận hiển thị | Nghĩa |
+|---|---|
+| **Đã có xác nhận vào lệnh** | Đã có tín hiệu; vẫn còn bước kiểm tra lần cuối |
+| **Đang chờ xác nhận vào lệnh** | Đã vào vùng nhưng chưa có tín hiệu |
+| **Vùng chưa được kiểm tra lại** | Giá chưa quay lại vùng này |
+| **Xác nhận đã bị vô hiệu** | Tín hiệu cũ bị vô hiệu; phải chờ tín hiệu mới |
+| **Xác nhận đã hết hạn** | Tín hiệu cũ quá hạn; phải chờ tín hiệu mới |
+| **Thiếu dữ liệu để xác nhận** | Chưa đủ dữ liệu khung nhỏ để xác nhận |
+
+**Hai dòng không dùng được để vào lệnh:**
+
+| Hiển thị | Nghĩa | Bạn cần làm gì |
+|---|---|---|
+| **Kết quả SMC theo định dạng cũ** | Dòng được lưu từ trước và không đọc được bằng quy tắc hiện hành | Chỉ xem lại lịch sử — **không dùng để vào lệnh** |
+| **Không đọc được kết quả SMC đã lưu** | Phần dữ liệu đã lưu bị hỏng | Không dùng dòng này; chạy lại phân tích nếu cần |
+
+Kết quả **lịch sử**, **thiếu dữ liệu** và **không đọc được** đều **không phải
+tín hiệu live**. Ứng dụng không tính lại lịch sử bằng công thức mới và không
+suy diễn một tín hiệu từ dữ liệu còn thiếu.
+
+#### Vì sao chưa được vào lệnh — đọc phần lý do
+
+Màn chi tiết của mỗi dòng có mục **"Vì sao chọn vùng này"**. Đây là nơi trả lời
+câu hỏi "tại sao chưa vào lệnh", và nó gồm bốn nhóm thông tin. Các tên dưới đây
+là đúng nhãn bạn thấy trong bảng:
+
+1. **Vòng đời vùng** — vùng mới hình thành, đã xác nhận, đang dùng được, đang
+   theo dõi, đã bị phá hoặc đã hết hạn. Một vùng đi qua các bước này theo thời
+   gian; vùng bị phá hoặc hết hạn thì không quay lại trạng thái dùng được.
+   Đi kèm là **Vùng được chọn** (vùng nào đang được xét) và **Mã vùng / mã
+   setup** (mã kỹ thuật để tra cứu, không cần ghi nhớ).
+2. **Lần giá vào vùng** — mỗi lần giá quay lại vùng là một **lần vào vùng**
+   riêng, có mã riêng. Ứng dụng theo dõi hai lần vào vùng: **Lần giá vào vùng
+   (vòng đời)** ở khung lớn, và **Lần vào vùng trên M15 (xác nhận vào lệnh)** ở
+   khung nhỏ dùng để xác nhận. Hai lần này có thể khác nhau.
+3. **Xác nhận vào lệnh** — **Loại tín hiệu xác nhận** (phá cấu trúc nhỏ, hoặc
+   phản ứng tại vùng), **Thời điểm tín hiệu**, **Xác nhận lúc**, **Hiệu lực
+   đến** và **Vô hiệu lúc**. Xác nhận có hạn dùng; hết hạn thì phải chờ tín
+   hiệu mới.
+4. **Lý do** — câu chữ cụ thể, ví dụ:
+   - "Đang chờ giá quay lại vùng."
+   - "Đang chờ phản ứng của giá tại vùng."
+   - "M15 chưa xác nhận tín hiệu vào lệnh."
+   - "Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh."
+   - "Giá lấy lại vùng theo hướng ngược, xác nhận bị vô hiệu."
+   - "Vùng đã bị phá hoặc hết hạn."
+   - "Thiếu dữ liệu M15 nên chưa xác nhận được."
+   - "Đủ điều kiện để kiểm tra lần cuối trước khi vào lệnh."
+   - "Đã xét đủ dữ liệu nhưng không có setup hợp lệ."
+
+Nếu bạn thấy trạng thái là "Chờ xác nhận" nhưng không rõ đang chờ gì, phần lý do
+là chỗ trả lời — không cần suy đoán từ biểu đồ.
+
+#### Chart, tooltip và màn chi tiết đọc cùng một kết quả
+
+Scanner, tooltip cột **Vị trí**, màn chi tiết và lớp SMC trên Chart đều đọc
+**cùng một kết quả** của lần phân tích đó. Vì vậy:
+
+- Điểm, vùng, trạng thái và lý do ở ba nơi phải khớp nhau. Nếu chúng khác nhau,
+  hãy ghi lại và báo — đó là lỗi hiển thị, không phải hai quan điểm khác nhau.
+- Chart chỉ vẽ lại đúng những gì kết quả đó nói: vùng đang chọn, vùng chỉ để
+  theo dõi, vùng đã mất hiệu lực và các mốc thời gian của tín hiệu. Chart
+  **không** tự dò vùng mới hay tự tính điểm.
+- Dù trạng thái là gì, **vẫn luôn còn một bước kiểm tra lại ngay trước khi gửi
+  lệnh**. "Đủ điều kiện kiểm tra lần cuối" nghĩa đúng như tên gọi: đủ điều kiện
+  để *kiểm tra*, chưa phải để *gửi*.
+
+#### Đường "Đỉnh/đáy bảo vệ" trên Chart
+
+Khi cấu trúc thị trường của khung đang xem thật sự có một mức bảo vệ — mức mà
+một nhịp đảo chiều sẽ phải phá để cấu trúc đổi hướng — Chart vẽ **một đường
+nằm ngang nét đứt** ở mức đó, có nhãn:
+
+> **Đỉnh/đáy bảo vệ**
+
+Đường này là **mức của cấu trúc**, không phải lệnh và không phải điểm dừng lỗ.
+Nó khác SL của kế hoạch vào lệnh: SL do kế hoạch giao dịch đặt, còn đường này do
+cấu trúc thị trường đặt.
+
+- Đường **chỉ xuất hiện khi có đủ bằng chứng**. Khi khung đang xem không có mức
+  bảo vệ nào, ứng dụng **không vẽ gì cả** và nói rõ là chưa có — chứ không lấy
+  SL, lấy biên vùng hay lấy một mức cũ nào để thay vào.
+- Vì vậy **không thấy đường này là chuyện bình thường**, không phải lỗi.
+- Khi bạn đổi khung thời gian (D1/H4/H1), đường này có thể đổi hoặc biến mất —
+  mỗi khung có cấu trúc riêng.
+
+#### Những điều SMC không làm
+
+- Không tự gửi lệnh và không tự bật chế độ giao dịch tự động.
+- Không tự đóng lệnh đang mở và không tự sửa SL/TP.
+- Không bảo đảm lợi nhuận và không đưa ra xác suất thắng.
+- Không sửa hoặc tính lại kết quả đã lưu trong lịch sử.
+- Không cần bạn nhập vùng thủ công, đăng ký nguồn dữ liệu trả phí hay cài
+  database riêng.
+
 ## 4. Journal (Nhật ký)
 
 Journal lưu analysis payload và correlation adjustment tổng hợp. Với VIX theo

@@ -85,7 +85,10 @@ def test_snapshot_identity_changes_for_candle_cutoff_metadata_and_rule_inputs():
     fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     base = _base_input(fixture)
     base_key = smc_snapshot_identity(**base)
-    assert base_key.startswith("smc-cache-key-v1:")
+    # Task 118: the identity record now also carries the selection policy, so the
+    # label moved with the shape instead of keeping ``v1`` and silently reusing
+    # keys produced before the coordinator/plan seam existed.
+    assert base_key.startswith("smc-cache-key-v2:")
 
     for mutation in fixture["mutations"]:
         candidate = _mutated_input(fixture, mutation)
@@ -110,6 +113,7 @@ def test_identity_payload_retains_all_candle_content_and_metadata():
         "scorer",
         "confluence",
         "sweep_link",
+        "selection",
     }
 
 

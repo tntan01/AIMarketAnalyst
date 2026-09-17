@@ -54,6 +54,9 @@ from core.smc_consumer_contract import (
     selection_for_side,
     side_consumer_metadata,
 )
+from core.smc_persistence import (
+    build_smc_persistence_block,
+)
 from core.smc_prefilter import (
     SMC_CORE_DATA_UNAVAILABLE,
     SMC_SCORING_ERROR,
@@ -61,7 +64,6 @@ from core.smc_prefilter import (
 )
 from core.smc_scoring_result import (
     SELECTION_STATE_DATA_UNAVAILABLE,
-    SMC_SCORING_CONTRACT_VERSION,
     SmcScoringResult,
     smc_selection_of,
     validate_smc_result,
@@ -69,6 +71,7 @@ from core.smc_scoring_result import (
 )
 from core.smc_snapshot import (
     SmcSnapshotEvaluation,
+    SmcSnapshotInput,
     build_smc_snapshot,
     evaluate_smc_snapshot,
 )
@@ -191,51 +194,22 @@ def _canonical_confirmation(
 def _build_canonical_smc_diagnostics(
     smc_result: SmcScoringResult,
     consumer_contract: dict[str, Any],
+    *,
+    snapshot: SmcSnapshotInput | None = None,
 ) -> dict[str, Any]:
-    """Represent the single canonical SMC result for the assembled output."""
+    """Represent the single canonical SMC result for the assembled output.
 
-    sides: dict[str, Any] = {}
-    for side in ("buy", "sell"):
-        side_result = smc_result.side(side)
-        sides[side] = {
-            "score": side_result.score if side_result else None,
-            "smc_reason": side_result.smc_reason if side_result else None,
-            "selected_zone_id": (
-                side_result.selected_zone_id if side_result else None
-            ),
-            "selected_zone_type": (
-                side_result.selected_zone_type if side_result else None
-            ),
-            "selected_zone_timeframe": (
-                side_result.selected_zone_timeframe if side_result else None
-            ),
-            "selected_zone_score": (
-                side_result.selected_zone_score if side_result else None
-            ),
-            "selected_zone_quality_score": (
-                side_result.selected_zone_quality_score
-                if side_result
-                else None
-            ),
-            "selected_zone_relevance_score": (
-                side_result.selected_zone_relevance_score
-                if side_result
-                else None
-            ),
-            "selected_zone_setup_score": (
-                side_result.selected_zone_setup_score
-                if side_result
-                else None
-            ),
-            "scoring_version": smc_result.scoring_version,
-            "breakdown": side_result.breakdown if side_result else {},
-        }
-    return {
-        "contract_version": SMC_SCORING_CONTRACT_VERSION,
-        "scoring_version": smc_result.scoring_version or SMC_SCORER_VERSION,
-        "sides": sides,
-        "consumer_contract": consumer_contract,
-    }
+    The block shape is owned by ``core.smc_persistence.build_smc_persistence_block``
+    (task 128 follow-up) so the Analyze route and the Scanner route persist the
+    SAME canonical block: one owner of what a stored payload looks like, and the
+    two routes cannot drift into two shapes a reader has to guess between.
+    """
+
+    return build_smc_persistence_block(
+        smc_result,
+        consumer_contract,
+        snapshot=snapshot,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -889,6 +863,7 @@ class AnalysisPipeline:
         self._smc_scoring_diagnostics = _build_canonical_smc_diagnostics(
             smc_sides,
             self._smc_consumer_contract,
+            snapshot=self._smc_snapshot,
         )
 
         self._scores = {}

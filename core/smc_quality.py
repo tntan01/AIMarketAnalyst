@@ -45,10 +45,12 @@ from core.smc_models import (
     SMC_QUALITY_STATE_EVALUATED,
     SMC_QUALITY_STATE_NO_ZONE,
     CandidateEvaluation,
+    M15Confirmation,
     SmcCandidateSet,
     SmcQualityBreakdown,
     candidate_order_key,
     candidate_plan_zone,
+    protected_swing_record,
 )
 
 # Structure-event lifetime by timeframe (parameter table P2); the trigger
@@ -380,7 +382,7 @@ def evaluate_candidate(
             reason_codes=reasons,
         )
 
-    m15_status, m15_reason = _candidate_m15_status(
+    m15_status, m15_reason, m15_confirmation = _candidate_m15_status(
         side,
         low,
         high,
@@ -431,10 +433,23 @@ def evaluate_candidate(
                 confirmation_state,
                 CONFIRMATION_RANK_CANDIDATE,
             ),
+            # Task117: the typed record itself travels with the candidate, so the
+            # visit/trigger/time evidence it owns survives into the stored result
+            # instead of being reduced to ``m15_status`` and lost.
+            confirmation=m15_confirmation,
             # The exact canonical payload subset the shared plan seam must use
             # (task 92): the planner reads the same bounds/ATR/provenance this
             # evaluation gated on instead of resolving the zone a second time.
             plan_zone=candidate_plan_zone(zone),
+            # Lô A: the canonical protected swing of THIS candidate's own
+            # timeframe, lifted read-only out of the same canonical context this
+            # evaluation already read.  It is provenance carried alongside the
+            # verdict, never an input to it: it cannot change the mandatory gate,
+            # the quality, the order or the plan, and it is None when the
+            # timeframe's structure state does not really carry one.
+            protected_swing=protected_swing_record(
+                timeframe_data.get("structure_state")
+            ),
         ),
         mandatory_missing,
     )
@@ -917,13 +932,17 @@ def _candidate_m15_status(
     available_at: str | None,
     m15_candles: Any | None,
     m15_as_of: Any | None,
-) -> tuple[str, str | None]:
-    """M15 readiness of one candidate; never changes its quality (R16-03)."""
+) -> tuple[str, str | None, M15Confirmation | None]:
+    """M15 readiness of one candidate; never changes its quality (R16-03).
+
+    Task117: it returns the typed record as well, so the caller can persist the
+    visit/trigger/time evidence instead of only its readiness projection.
+    """
 
     if m15_candles is None:
-        return "missing", "M15_DATA_UNAVAILABLE"
+        return "missing", "M15_DATA_UNAVAILABLE", None
     if low is None or high is None or not zone_id:
-        return "missing", "M15_DATA_UNAVAILABLE"
+        return "missing", "M15_DATA_UNAVAILABLE", None
     confirmation = evaluate_m15_entry_confirmation(
         side,
         low,
@@ -933,7 +952,7 @@ def _candidate_m15_status(
         available_at=available_at,
         as_of=m15_as_of,
     )
-    return confirmation.m15_status, None
+    return confirmation.m15_status, None, confirmation
 
 
 def _apply_m15_confirmation_state(

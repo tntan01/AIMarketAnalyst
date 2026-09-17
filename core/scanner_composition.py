@@ -1367,6 +1367,12 @@ def compose_scanner(
             BUY: buy_error,
             SELL: sell_error,
         },
+        technical_raws=MappingProxyType(
+            {
+                BUY: MappingProxyType(dict(snapshot.buy.technical_raws)),
+                SELL: MappingProxyType(dict(snapshot.sell.technical_raws)),
+            }
+        ),
         safety=safety_result,
         macro_assessment=assessment,
         macro_gate=macro_result,
@@ -1478,9 +1484,21 @@ def _smc_selection_summary(
     verdict the scorer produced (selected zone/setup, quality and readiness),
     instead of re-interpreting the raw SMC context.  ``None`` means the result
     carries no selection for this side at all.
+
+    Task 121/122: the summary is also the read-only carrier the UI reads, so it
+    copies the whole vocabulary a reader needs — B/Q/L/C of the same selection
+    and the typed M15 confirmation record (visit anchor, trigger, expiry,
+    invalidation) — instead of only its status projection.  Every value is
+    copied verbatim from the selection; nothing here is re-derived, re-scored or
+    re-selected, and this function never falls back to another zone.
     """
 
-    from core.smc_scoring_result import SmcScoringResult, smc_selection_of
+    from core.smc_scoring_result import (
+        SmcScoringResult,
+        _json_confirmation,
+        _json_protected_swing,
+        smc_selection_of,
+    )
 
     if type(canonical_smc) is not SmcScoringResult:
         return None
@@ -1489,7 +1507,9 @@ def _smc_selection_summary(
         return None
     readiness = selection.readiness if isinstance(selection.readiness, dict) else {}
     return {
+        "side": side,
         "state": selection.state,
+        "selected_candidate_id": selection.selected_candidate_id,
         "selected_zone_id": selection.selected_zone_id,
         "selected_setup_id": selection.selected_setup_id,
         "timeframe": selection.timeframe,
@@ -1500,8 +1520,35 @@ def _smc_selection_summary(
         "confirmation_event_id": selection.confirmation_event_id,
         "quality_raw": selection.quality_raw,
         "quality_score": selection.quality_score,
+        # B/Q/L/C travel with the summary so a reader can show the breakdown of
+        # the SAME selected setup.  They are the canonical components, converted
+        # once by ``to_dict`` — never recomputed from the raw SMC context.
+        "b": float(selection.b) if selection.b is not None else None,
+        "q": float(selection.q) if selection.q is not None else None,
+        "l": float(selection.l) if selection.l is not None else None,
+        "c": float(selection.c) if selection.c is not None else None,
+        "total": float(selection.total) if selection.total is not None else None,
+        # The typed confirmation of the same candidate, copied verbatim (task
+        # 117) through the canonical JSON serializer, so the summary a UI/chart
+        # reads is byte-identical to the stored payload.  ``None`` means the side
+        # recorded no confirmation, which is NOT the same as an empty record.
+        "confirmation": _json_confirmation(selection.confirmation),
+        # Lô A: the protected swing of the SAME selected setup travels with the
+        # summary too, copied verbatim through the canonical JSON serializer.
+        # This summary IS the carrier the UI and the chart read, so a record the
+        # chart could not see here would stay unavailable no matter what the
+        # consumer contract published.  ``None`` means the canonical structure
+        # state published no swing for this side's timeframe — it is never
+        # filled from a stop-loss, a technical level or a legacy zone.
+        "protected_swing": _json_protected_swing(selection.protected_swing),
         "zone_low": selection.zone_low,
         "zone_high": selection.zone_high,
+        # The plan of the SAME candidate travels with the summary so the payload
+        # is a complete, self-consistent selection: ``plan_available`` is
+        # meaningful only together with the plan it refers to, and a reader that
+        # re-checks the final invariant (R100-01) then accepts it.  Values are
+        # copied, never rebuilt.
+        "plan": dict(selection.plan) if isinstance(selection.plan, dict) else None,
         "plan_available": selection.plan_available,
         "plan_zone_id": selection.plan_zone_id,
         "plan_setup_id": selection.plan_setup_id,
@@ -1672,6 +1719,14 @@ class ScannerCompositionResult:
     composition_gates: tuple[CompositionGate, ...]
     decision: DecisionResult
     canonical: CanonicalPairSnapshot
+    # Task 137: the DERIVED technical raws this run was given, kept as
+    # provenance.  A side whose score fails closed publishes ``technical=None``
+    # and otherwise leaves no way to tell "the technical input was never
+    # derivable" from "the input existed and the SMC contribution was
+    # unavailable" — two different states a diagnostic reader must be able to
+    # distinguish.  These are INPUTS: they never feed candidate_status, a final
+    # score, a plan or an order, and a side whose score is None keeps that None.
+    technical_raws: Mapping[str, Mapping[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -2,6 +2,8 @@
 
 > **Trạng thái:** DRAFT — chờ Tech Lead review tại task 16.  
 > **Mục đích:** chốt cách lưu/đọc kết quả SMC qua thay đổi công thức, phân biệt null với no-zone, giữ tính tái lập của cache/replay và không đưa nhãn phiên bản kỹ thuật lên UI.
+>
+> **Trạng thái triển khai (2026-09-16):** phần persistence/cache/đọc lịch sử của đặc tả này đã `REVIEW PASS` ở lô task 117–120: Scanner và Analyze nay lưu cùng canonical block, có evidence serialize/restart fail-closed trên cả hai route. Mục §7 (UI) cũng `REVIEW PASS` ở lô121–128 và Task128 đã `APPROVED`; rollout không thuộc phê duyệt này. Nội dung đặc tả **không đổi**; finding và acceptance ở [nhật ký tiến độ](smc-implementation-progress.md).
 
 ## 1. Ranh giới compatibility
 
@@ -209,4 +211,4 @@ S>15 do input lỗi -> validator fail-closed, không trả raw=15 để che lỗ
 - Đã định nghĩa candle cache identity, SMC result cache key, rule identity, digest input và invalidation.
 - Đã chốt đọc lịch sử theo ý nghĩa cũ, không diễn giải điểm cũ thành công thức mới, không đổi lệnh mở/historic artifact.
 - Đã chốt UI không có nhãn số thế hệ/engine và consumer không tự chọn lại/fallback legacy.
-- Không thay runtime trong task này. Việc đưa compatibility vào model/validator/cache/persistence/UI thuộc task 17–18, 38–39, 94–96 và 117–126 sau review tương ứng.
+- Không thay runtime trong task này. Việc đưa compatibility vào model/validator/cache/persistence/UI thuộc task 17–18, 38–39, 94–96 và 117–126 sau review tương ứng. **Đã làm: task 117–120 (persistence, cache rule identity, reader lịch sử) — 2026-09-16, xem khối trạng thái triển khai ở đầu tài liệu.**

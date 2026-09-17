@@ -6,6 +6,10 @@ from datetime import datetime, timezone
 from math import isfinite
 from typing import Any, Mapping
 
+from core.reason_codes import (
+    REVALIDATION_CLOCK_INVALID,
+    TICK_TIME_INVALID,
+)
 from core.risk_engine import calculate_expected_effective_rr
 from core.scanner_models import (
     ExecutionMarketSnapshot,
@@ -39,9 +43,19 @@ def revalidate_execution(
     The proposal's snapshot price is never read.
     """
 
-    checked_at = _as_utc(now or datetime.now(timezone.utc))
     blocks: list[str] = []
     reasons: list[str] = []
+
+    # F-C-02: the clock is read exactly once and must be a determinate instant.
+    # ``None`` means "use the production UTC clock"; anything else must carry a
+    # real offset.  A naive or non-datetime value yields no ``checked_at`` at
+    # all — the verdict is blocked and no audit timestamp is fabricated.
+    if now is None:
+        checked_at: datetime | None = datetime.now(timezone.utc)
+    else:
+        checked_at = _as_utc(now)
+        if checked_at is None:
+            blocks.append(REVALIDATION_CLOCK_INVALID)
 
     if not isinstance(proposal, dict):
         proposal = {}
@@ -101,9 +115,16 @@ def revalidate_execution(
         if snapshot.tick_time is None:
             blocks.append("TICK_TIME_UNAVAILABLE")
         else:
-            tick_age = (checked_at - _as_utc(snapshot.tick_time)).total_seconds()
-            if tick_age < -5 or tick_age > max(0.0, float(max_tick_age_seconds)):
-                blocks.append("TICK_STALE")
+            # F-C-02: an unusable tick instant is a typed block of its own — it
+            # is neither "unavailable" nor "stale", and it must never be coerced
+            # into a plausible UTC time or raise out of this boundary.
+            tick_at = _as_utc(snapshot.tick_time)
+            if tick_at is None:
+                blocks.append(TICK_TIME_INVALID)
+            elif checked_at is not None:
+                tick_age = (checked_at - tick_at).total_seconds()
+                if tick_age < -5 or tick_age > max(0.0, float(max_tick_age_seconds)):
+                    blocks.append("TICK_STALE")
 
         spread_points = _nonnegative_float(snapshot.spread_points)
         spread_price = _nonnegative_float(snapshot.spread_price)
@@ -321,7 +342,17 @@ def _side_allowed_by_trade_mode(side: str | None, mode: int | None) -> bool:
     return mode in ({1, 4} if side == "buy" else {2, 4})
 
 
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
+def _as_utc(value: datetime | None) -> datetime | None:
+    """The exact UTC instant of *value*, or ``None`` when it is not usable.
+
+    A naive datetime is NOT a UTC instant: it names no moment, so coercing it
+    would invent an offset the caller never supplied (F-C-02).  Anything that is
+    not a timezone-aware datetime therefore has no answer here, and the caller
+    fails closed instead of guessing.
+    """
+
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        return None
     return value.astimezone(timezone.utc)

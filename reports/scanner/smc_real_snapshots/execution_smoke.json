@@ -1,0 +1,275 @@
+{
+  "broker": "mock (no MT5 order path is reachable)",
+  "case": {
+    "approved_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+    "approved_zone_id": "smcz-1b659e18ab6326071731",
+    "as_of": "2026-06-11T12:00:00+00:00",
+    "dispatch_scenarios": [
+      {
+        "block_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "execution_snapshot_calls": 1,
+        "load_primary_timeframes_calls": 1,
+        "message": "Execution revalidation blocked: TICK_STALE, SMC_NOT_READY, SMC_M15_UNAVAILABLE",
+        "place_calls": 0,
+        "reason_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "scenario": "control_matching_setup",
+        "smc_revalidation": {
+          "approved": {
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731"
+          },
+          "current": {
+            "m15_status": "expired",
+            "readiness_status": "WAITING_CONFIRMATION",
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731",
+            "state": "evaluated"
+          },
+          "cutoff": "2026-06-11T12:00:00+00:00",
+          "source": "fresh_canonical_snapshot"
+        },
+        "success": false
+      },
+      {
+        "block_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE",
+          "SMC_SETUP_CHANGED"
+        ],
+        "execution_snapshot_calls": 1,
+        "load_primary_timeframes_calls": 1,
+        "message": "Execution revalidation blocked: TICK_STALE, SMC_NOT_READY, SMC_M15_UNAVAILABLE, SMC_SETUP_CHANGED",
+        "place_calls": 0,
+        "reason_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE",
+          "SMC_SETUP_CHANGED"
+        ],
+        "scenario": "zone_invalid_or_setup_changed",
+        "smc_revalidation": {
+          "approved": {
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731"
+          },
+          "current": {
+            "m15_status": "expired",
+            "readiness_status": "WAITING_CONFIRMATION",
+            "selected_setup_id": "smcs-41a76bb827fd81c41b5c",
+            "selected_zone_id": "smcz-09562b885f4ccd793d82",
+            "state": "evaluated"
+          },
+          "cutoff": "2026-06-12T12:00:00+00:00",
+          "source": "fresh_canonical_snapshot"
+        },
+        "success": false
+      },
+      {
+        "block_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "execution_snapshot_calls": 1,
+        "load_primary_timeframes_calls": 1,
+        "message": "Execution revalidation blocked: TICK_STALE, SMC_NOT_READY, SMC_M15_UNAVAILABLE",
+        "place_calls": 0,
+        "reason_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "scenario": "stale_quote",
+        "smc_revalidation": {
+          "approved": {
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731"
+          },
+          "current": {
+            "m15_status": "expired",
+            "readiness_status": "WAITING_CONFIRMATION",
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731",
+            "state": "evaluated"
+          },
+          "cutoff": "2026-06-11T12:00:00+00:00",
+          "source": "fresh_canonical_snapshot"
+        },
+        "success": false
+      },
+      {
+        "block_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "execution_snapshot_calls": 1,
+        "load_primary_timeframes_calls": 1,
+        "message": "Execution revalidation blocked: TICK_STALE, SMC_NOT_READY, SMC_M15_UNAVAILABLE",
+        "place_calls": 0,
+        "reason_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "scenario": "missing_m15",
+        "smc_revalidation": {
+          "approved": {
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731"
+          },
+          "current": {
+            "m15_status": "missing",
+            "readiness_status": "WATCH_ZONE",
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731",
+            "state": "evaluated"
+          },
+          "cutoff": "2026-06-11T12:00:00+00:00",
+          "source": "fresh_canonical_snapshot"
+        },
+        "success": false
+      },
+      {
+        "block_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE",
+          "SMC_SETUP_CHANGED"
+        ],
+        "execution_snapshot_calls": 1,
+        "load_primary_timeframes_calls": 1,
+        "message": "Execution revalidation blocked: TICK_STALE, SMC_NOT_READY, SMC_M15_UNAVAILABLE, SMC_SETUP_CHANGED",
+        "place_calls": 0,
+        "reason_codes": [
+          "TICK_STALE",
+          "SMC_NOT_READY",
+          "SMC_M15_UNAVAILABLE",
+          "SMC_SETUP_CHANGED"
+        ],
+        "scenario": "setup_changed",
+        "smc_revalidation": {
+          "approved": {
+            "selected_setup_id": "smcs-0000000000000000dead",
+            "selected_zone_id": "smcz-1b659e18ab6326071731"
+          },
+          "current": {
+            "m15_status": "expired",
+            "readiness_status": "WAITING_CONFIRMATION",
+            "selected_setup_id": "smcs-e89be3c9ffa1d1cb6be1",
+            "selected_zone_id": "smcz-1b659e18ab6326071731",
+            "state": "evaluated"
+          },
+          "cutoff": "2026-06-11T12:00:00+00:00",
+          "source": "fresh_canonical_snapshot"
+        },
+        "success": false
+      }
+    ],
+    "engine_scenarios": [
+      {
+        "allowed": true,
+        "block_codes": [],
+        "reason_codes": [],
+        "scenario": "matching_setup"
+      },
+      {
+        "allowed": false,
+        "block_codes": [
+          "TICK_STALE"
+        ],
+        "reason_codes": [
+          "TICK_STALE"
+        ],
+        "scenario": "stale_quote"
+      },
+      {
+        "allowed": false,
+        "block_codes": [
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "reason_codes": [
+          "SMC_M15_UNAVAILABLE"
+        ],
+        "scenario": "m15_missing"
+      },
+      {
+        "allowed": false,
+        "block_codes": [
+          "SMC_ZONE_INVALID_OR_EXPIRED",
+          "SMC_SETUP_CHANGED"
+        ],
+        "reason_codes": [
+          "SMC_ZONE_INVALID_OR_EXPIRED",
+          "SMC_SETUP_CHANGED"
+        ],
+        "scenario": "zone_invalid"
+      },
+      {
+        "allowed": false,
+        "block_codes": [
+          "SMC_SETUP_CHANGED"
+        ],
+        "reason_codes": [
+          "SMC_SETUP_CHANGED"
+        ],
+        "scenario": "setup_changed"
+      },
+      {
+        "allowed": false,
+        "block_codes": [
+          "SMC_NOT_READY"
+        ],
+        "reason_codes": [
+          "SMC_NOT_READY"
+        ],
+        "scenario": "not_ready"
+      }
+    ],
+    "side": "sell",
+    "symbol": "EUR/USD"
+  },
+  "corpus": "reports\\scanner\\smc_real_snapshots\\corpus.jsonl.gz",
+  "dispatch_call_sites": {
+    "market_dispatch_guarded_by_verdict": [
+      "True"
+    ],
+    "order_send": [
+      "services/mt5_service.py:1437",
+      "services/mt5_service.py:2048",
+      "services/mt5_service.py:2315",
+      "services/mt5_service.py:2472",
+      "services/mt5_service.py:2808"
+    ],
+    "place_market_order_call": [
+      "controllers/scanner_controller.py:1771",
+      "scripts/smc_execution_smoke.py:520",
+      "services/mt5_service.py:1197"
+    ],
+    "place_market_order_def": [
+      "scripts/smc_execution_smoke.py:193",
+      "services/data_provider.py:216",
+      "services/mt5_service.py:1380"
+    ]
+  },
+  "elapsed_seconds": 13.6104,
+  "failures": [],
+  "generated_at": "2026-09-17T17:21:57.339014+00:00",
+  "intent_lock": {
+    "default_value": false,
+    "error": "CandidateContractError: SCANNER_SCHEMA_INVALID at order_payload.sends_real_order: Step 08 never sends a real order; must be False until cutover",
+    "rejects_true": true
+  },
+  "report_version": "smc-execution-smoke-v1",
+  "rows_available": 58,
+  "rows_scanned_for_a_real_plan": 3
+}

@@ -17,8 +17,8 @@
     "feature_version": "scanner-features",
     "row_version": "scanner-row"
   },
-  "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:ef5b711e2d6d",
-  "candidate_status": "BLOCKED",
+  "snapshot_id": "v4:XAUUSD:2026-08-14T12:00:00Z:7b88c7f027e0",
+  "candidate_status": "DATA_UNAVAILABLE",
   "intent_only": null,
   "insufficient_history": "TechnicalRawDerivationError",
   "raws_summary": {

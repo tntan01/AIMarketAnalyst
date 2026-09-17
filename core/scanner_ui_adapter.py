@@ -49,6 +49,10 @@ from core.scanner_v4_models import (
     WAITING_CONFIRMATION,
     WATCH_ZONE,
 )
+# The canonical snapshot freezes its external payloads; the UI row is a plain
+# JSON document, so the copy handed to it is thawed here (same helper the
+# snapshot itself uses in ``SideScore.to_dict``).
+from core.scanner_v4_models import _thaw_json
 from core.scanner_release import ReleasePair
 from core.scanner_row import (
     SCANNER_ROW_LEGACY_VERSION,
@@ -172,6 +176,28 @@ def _zone_origin_class_from_source(source: object) -> str:
     return "none"
 
 
+def _canonical_smc_selections(
+    composition: ScannerCompositionResult,
+) -> dict[str, Any]:
+    """The canonical SMC selection of each side, as plain JSON (read-only).
+
+    Task 121/123: this is the ONE canonical source the UI text and the chart
+    read.  Both sides are always present as keys; a side whose canonical result
+    carries no verdict is ``None`` — that is not the same as an evaluated
+    ``no_zone`` selection and must not be rendered as one.
+    """
+
+    by_side = {
+        score.side: score for score in composition.canonical.side_scores
+    }
+    selections: dict[str, Any] = {}
+    for side in ("buy", "sell"):
+        score = by_side.get(side)
+        summary = getattr(score, "smc_selection", None)
+        selections[side] = _thaw_json(summary) if summary is not None else None
+    return selections
+
+
 def _ui_side_scores(composition: ScannerCompositionResult, row: ScannerRow) -> list[dict[str, Any]]:
     """Expose canonical component breakdown plus optional Location detail.
 
@@ -180,6 +206,9 @@ def _ui_side_scores(composition: ScannerCompositionResult, row: ScannerRow) -> l
     the already-computed ``CanonicalPairSnapshot`` here.  This is serialization
     only: no scorer or Location engine is called and historical rows without a
     detail remain detail-less.
+
+    The canonical SMC selection itself is carried once, in
+    ``analysis_result["smc_selection"]`` (see :func:`_canonical_smc_selections`).
     """
     canonical_by_side = {
         score.side: score for score in composition.canonical.side_scores
@@ -291,6 +320,14 @@ def pair_to_ui_row(
         "status": ANALYSIS_OK,
         "technical": {"price": price, "atr_h1": atr_h1},
         "scenarios": _scenarios_of(pair.composition, selected_side),
+        # Task 121/123: the canonical SMC selection of each side, carried for
+        # the UI and the chart.  It is a READ-ONLY copy of the verdict the
+        # canonical chain already produced (the same one the scanner row shows):
+        # the chart draws the selected/invalid band, the protected swing and the
+        # M15 trigger from it, and never re-detects a zone at display time.  A
+        # side with no canonical verdict stays ``None`` so the chart can tell
+        # "no zone was selected" from "this row predates the canonical path".
+        "smc_selection": _canonical_smc_selections(pair.composition),
     }
 
     # --- order payload (INTENT ONLY; never sends a real order) ---------------

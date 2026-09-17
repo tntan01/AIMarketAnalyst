@@ -17,6 +17,7 @@ from core.market_models import Candle
 from controllers.scanner_controller import ScannerController
 from core.portfolio_models import PortfolioRiskItem, PortfolioSnapshot
 from core.scanner_models import ExecutionMarketSnapshot
+from core.reason_codes import ORDER_INTENT_ONLY, SENDS_REAL_ORDER_NOT_FALSE
 
 
 def _settings():
@@ -101,6 +102,9 @@ def _proposal():
         "required_min_rr": _MIN_RR,
     }
     payload.update(_approved_identity())
+    # F-C-01: the Scanner proposal always declares itself intent-only; the send
+    # boundary rejects a dict that omits this field.
+    payload.setdefault("sends_real_order", False)
     return payload
 
 
@@ -423,6 +427,11 @@ def _controller(mt5, news, *, clock=None):
     proposal and the fresh SMC re-evaluation describe the SAME cutoff.  Every
     other dependency (loader, tick metadata, evaluator, coordinator, planner,
     M15 evaluator, revalidate_execution) stays the real one.
+
+    These tests drive the REAL chain up to the send boundary.  The boundary
+    itself is unconditionally closed in the no-rollout state (F-HC-01/02), so
+    every one of them ends at ``place_calls == []`` — there is deliberately no
+    fixture that opens it, because that path must not exist yet.
     """
 
     return ScannerController(
@@ -434,20 +443,32 @@ def _controller(mt5, news, *, clock=None):
     )
 
 
-def test_controller_revalidates_then_places_with_live_price_sizing():
+def test_controller_revalidates_then_stops_at_the_send_boundary():
+    """The REAL chain runs all the way to the send boundary — and stops there.
+
+    F-HC-01/02: in the no-rollout state the boundary is unconditionally closed,
+    so a fully-approved proposal reaches it and is blocked.  This asserts the
+    chain evidence the dispatcher produced (fresh quote, revalidation verdict,
+    SMC comparison, sizing) *and* that nothing was sent — there is deliberately
+    no fixture that places an order.
+    """
+
     mt5 = _MT5()
     result = _controller(mt5, _News()).execute_order_candidate(_proposal())
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["blocked"] is True
+    assert SENDS_REAL_ORDER_NOT_FALSE not in result["reason_codes"]
+    assert ORDER_INTENT_ONLY in result["reason_codes"]
+    assert mt5.place_calls == []
+
+    # The chain really got there: fresh quote, verdict, SMC comparison, sizing.
     assert result["revalidation"]["allowed"] is True
-    # The execution price is the stub's FRESH ask, never the proposal sentinel.
     assert result["revalidation"]["execution_price"] == _stub_ask()
-    assert len(mt5.place_calls) == 1
+    assert result["revalidation"]["volume"] is not None
     assert result["portfolio_guard"]["allowed"] is True
-    assert "post_trade_portfolio" in result
-    assert mt5.portfolio_snapshot_calls == 2
-    assert mt5.place_calls[0]["comment"].startswith("AMA-FWD:")
-    assert result["forward_correlation_id"]
+    assert result["smc_revalidation"]["source"] == "fresh_canonical_snapshot"
+    assert result["smc_revalidation"]["cutoff"] == _OBSERVED_AT.isoformat()
 
 
 def test_injected_clock_must_be_a_timezone_aware_datetime():
@@ -519,8 +540,10 @@ def test_injected_clock_must_be_a_timezone_aware_datetime():
     assert shifted._utc_now() == _OBSERVED_AT
     result = shifted.execute_order_candidate(_proposal())
 
+    # The chain reached the send boundary at the shifted instant, and stopped.
     assert result["smc_revalidation"]["cutoff"] == _OBSERVED_AT.isoformat()
-    assert len(mt5.place_calls) == 1
+    assert result["blocked"] is True
+    assert mt5.place_calls == []
 
     # 5. A legacy instance/test double that predates the dependency has no
     #    ``_clock`` attribute at all: that is "not injected", not an
@@ -536,15 +559,16 @@ def test_injected_clock_must_be_a_timezone_aware_datetime():
 def test_manual_order_no_longer_carries_any_rollout_gate():
     # The Phase-8 rollout stage ladder was removed (2026-08-15, fully live):
     # a manual order reaches the remaining guard chain directly — no rollout
-    # decision, no release gate, no override knob.
+    # decision, no release gate, no override knob — and stops at the send
+    # boundary, which is the one gate that is intentionally still closed.
     mt5 = _MT5()
     controller = _controller(mt5, _News())
 
     result = controller.execute_order_candidate(_proposal())
 
-    assert result["success"] is True
+    assert result["blocked"] is True
     assert "rollout" not in result
-    assert len(mt5.place_calls) == 1
+    assert mt5.place_calls == []
 
 
 def test_controller_does_not_place_when_realtime_news_is_unavailable():
@@ -559,7 +583,7 @@ def test_controller_does_not_place_when_realtime_news_is_unavailable():
     assert mt5.place_calls == []
 
 
-def test_second_order_uses_portfolio_state_after_first_order():
+def test_nothing_is_sent_so_open_risk_never_accumulates():
     mt5 = _MT5()
     controller = _controller(mt5, _News())
     settings = controller.settings_service.load()
@@ -574,15 +598,19 @@ def test_second_order_uses_portfolio_state_after_first_order():
     }
     second = controller.execute_order_candidate(second_proposal)
 
-    assert first["success"] is True
+    # Nothing is ever sent, so the portfolio guard sees no accumulated open
+    # risk for either request and would have allowed both.  The first is stopped
+    # at the send boundary; the second (a different symbol) is stopped even
+    # earlier by the fresh-snapshot comparison.
+    assert first["blocked"] is True
     assert second["success"] is False
-    assert second["portfolio_guard"]["current_open_risk_pct"] > 0
-    assert "PORTFOLIO_RISK_EXCEEDED" in second["portfolio_guard"]["block_codes"]
-    assert "PORTFOLIO_RISK_EXCEEDED" in second["message"]
-    assert len(mt5.place_calls) == 1
+    assert first["portfolio_guard"]["allowed"] is True
+    assert second["portfolio_guard"]["allowed"] is True
+    assert second["portfolio_guard"]["current_open_risk_pct"] == 0
+    assert mt5.place_calls == []
 
 
-def test_concurrent_order_requests_are_serialized_against_portfolio_state():
+def test_concurrent_requests_are_serialized_and_none_reach_the_broker():
     class SlowMT5(_MT5):
         def place_market_order(self, **kwargs):
             time.sleep(0.05)
@@ -603,24 +631,29 @@ def test_concurrent_order_requests_are_serialized_against_portfolio_state():
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(controller.execute_order_candidate, (eur, gbp)))
 
-    assert sum(bool(result["success"]) for result in results) == 1
-    assert len(mt5.place_calls) == 1
-    blocked = next(result for result in results if not result["success"])
-    assert "PORTFOLIO_RISK_EXCEEDED" in blocked["portfolio_guard"]["block_codes"]
+    # The execution lock still serialises both requests and neither reaches the
+    # broker: nothing is sent, so no open risk accumulates for the other one.
+    assert all(result["success"] is False for result in results)
+    assert all(
+        result["portfolio_guard"]["current_open_risk_pct"] == 0
+        for result in results
+    )
+    assert mt5.place_calls == []
 
 
-def test_success_path_proves_the_fresh_snapshot_that_was_compared():
-    """The dispatch evidence names the ONE cutoff and the identity it matched.
+def test_the_fresh_snapshot_compared_at_the_boundary_is_the_one_evidence_names():
+    """The boundary evidence names the ONE cutoff and the identity it matched.
 
-    Task 111 can only be trusted if the order that was sent is the order whose
+    Task 111 can only be trusted if the order about to be sent is the order whose
     approved setup the FRESH snapshot still confirms — so the result must show
-    that fresh comparison, not merely that the order went out.
+    that fresh comparison, not merely that the chain ran.  In the no-rollout
+    state this is asserted *at* the boundary, which then blocks the send.
     """
 
     mt5 = _MT5()
     result = _controller(mt5, _News()).execute_order_candidate(_proposal())
 
-    assert result["success"] is True
+    assert result["success"] is False
     fresh = result["smc_revalidation"]
     assert fresh["source"] == "fresh_canonical_snapshot"
     # The injected dispatch clock is the ONLY cutoff the fresh chain saw, so the
@@ -636,7 +669,10 @@ def test_success_path_proves_the_fresh_snapshot_that_was_compared():
     assert fresh["current"]["readiness_status"] == "READY_NOW"
     assert fresh["current"]["m15_status"] == "confirmed"
     assert result["revalidation"]["block_codes"] == []
-    assert len(mt5.place_calls) == 1
+    # Everything above says the dispatch was APPROVED; the boundary still refuses
+    # to send, because this build has no rollout.
+    assert result["blocked"] is True
+    assert mt5.place_calls == []
 
 
 def test_production_default_reads_the_utc_clock_exactly_once():
@@ -674,8 +710,8 @@ def test_production_default_reads_the_utc_clock_exactly_once():
     assert before - timedelta(seconds=1) <= cutoff <= after + timedelta(seconds=1)
     # The value that single read produced is the cutoff the snapshot used.
     assert result["smc_revalidation"]["cutoff"] == cutoff.isoformat()
-    assert result["success"] is True
-    assert len(mt5.place_calls) == 1
+    assert result["blocked"] is True
+    assert mt5.place_calls == []
 
 
 def test_m15_confirming_a_different_zone_blocks_the_approved_setup():

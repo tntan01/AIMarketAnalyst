@@ -1,0 +1,164 @@
+{
+  "dataset": "reports\\scanner\\smc_real_snapshots\\corpus.jsonl.gz",
+  "dataset_rows": 20,
+  "generated_at": "2026-09-16T23:48:57.957287+00:00",
+  "harness_seconds": 107.7054,
+  "measurement": {
+    "harness": "scripts/smc_performance.py",
+    "machine": "win32",
+    "python": "3.11.9",
+    "scan_cpu": "candle->analysis wall clock, broker fetch excluded",
+    "scan_end_to_end": "MT5 fetch + the same candle->analysis path"
+  },
+  "profile": {
+    "as_of": "2026-02-19T12:00:00+00:00",
+    "profiled_calls": "         13679103 function calls (13471675 primitive calls) in 5.971 seconds",
+    "symbol": "EUR/USD",
+    "top": [
+      "        1    0.000    0.000    5.795    5.795 D:\\Projects\\AIMarketAnalyst\\core\\smc_snapshot.py:168(build_smc_snapshot)",
+      "        1    0.001    0.001    5.745    5.745 D:\\Projects\\AIMarketAnalyst\\core\\smc_canonical_context.py:75(build_canonical_smc_context)",
+      "        3    0.002    0.001    5.744    1.915 D:\\Projects\\AIMarketAnalyst\\core\\smc_canonical_context.py:131(build_canonical_timeframe_context)",
+      "        3    0.041    0.014    3.527    1.176 D:\\Projects\\AIMarketAnalyst\\core\\smc_structure_replay.py:29(replay_smc_structure)",
+      "     2518    0.005    0.000    1.358    0.001 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:5162(atr_value_before_event)",
+      "     2518    0.029    0.000    1.353    0.001 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:5079(atr_reference_before_event)",
+      "     1337    0.049    0.000    1.324    0.001 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:2537(expire_structure_events)",
+      "     7471    0.046    0.000    1.120    0.000 {built-in method builtins.sorted}",
+      "        3    0.001    0.000    0.987    0.329 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:595(detect_fvg_candidates)",
+      "    10299    0.011    0.000    0.975    0.000 C:\\Users\\tntan\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\dataclasses.py:1265(asdict)",
+      "175717/10299    0.380    0.000    0.957    0.000 C:\\Users\\tntan\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\dataclasses.py:1289(_asdict_inner)",
+      "      255    0.091    0.000    0.946    0.004 D:\\Projects\\AIMarketAnalyst\\core\\market_models.py:87(validate_smc_candles)",
+      "      249    0.000    0.000    0.918    0.004 D:\\Projects\\AIMarketAnalyst\\core\\market_models.py:145(require_valid_smc_candles)",
+      "     8650    0.013    0.000    0.784    0.000 D:\\Projects\\AIMarketAnalyst\\core\\smc_models.py:1144(to_dict)",
+      "   227652    0.170    0.000    0.781    0.000 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:5216(_event_close)",
+      "     1337    0.015    0.000    0.744    0.001 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:2078(confirm_choch_candidate)",
+      "   288826    0.454    0.000    0.718    0.000 D:\\Projects\\AIMarketAnalyst\\core\\market_models.py:157(candle_close_at)",
+      "   103276    0.144    0.000    0.710    0.000 D:\\Projects\\AIMarketAnalyst\\core\\market_models.py:72(_valid_ohlc)",
+      "     1621    0.014    0.000    0.642    0.000 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:1845(invalidate_choch_candidate_on_reclaim)",
+      "   115905    0.100    0.000    0.576    0.000 {built-in method builtins.all}",
+      "     5795    0.067    0.000    0.573    0.000 D:\\Projects\\AIMarketAnalyst\\core\\smc_context.py:1988(<genexpr>)",
+      "    11359    0.071    0.000    0.535    0.000 D:\\Projects\\AIMarketAnalyst\\core\\smc_models.py:1151(from_dict)",
+      "       12    0.000    0.000    0.505    0.042 D:\\Projects\\AIMarketAnalyst\\core\\smc_canonical_context.py:430(_enrich)",
+      "",
+      ""
+    ]
+  },
+  "repeats": 2,
+  "report_version": "smc-performance-report-v1",
+  "rule_versions": {
+    "confluence": "smc-confluence-v1",
+    "domain": "smc-domain-v1",
+    "scorer": "smc-v2",
+    "selection": "smc-selection-v1",
+    "snapshot_contract": "smc-snapshot-v1",
+    "sweep_link": "smc-sweep-link-v1"
+  },
+  "scan_cpu": {
+    "cold_first_pass": {
+      "count": 20,
+      "max": 2.4158,
+      "mean": 1.7465,
+      "min": 1.2343,
+      "p50": 1.7184,
+      "p95": 2.138
+    },
+    "context_builder_calls": 60,
+    "context_builder_calls_per_snapshot": 1.0,
+    "evaluator_calls": 60,
+    "evaluator_calls_per_snapshot": 1.0,
+    "pass_total_p50_seconds": 29.585,
+    "pass_totals_seconds": [
+      34.9309,
+      29.2932,
+      29.585
+    ],
+    "warm_passes": {
+      "count": 40,
+      "max": 1.9623,
+      "mean": 1.472,
+      "min": 1.2199,
+      "p50": 1.4344,
+      "p95": 1.7951
+    }
+  },
+  "scan_end_to_end": {
+    "analysis_seconds": {
+      "count": 3,
+      "max": 1.6419,
+      "mean": 1.5372,
+      "min": 1.3488,
+      "p50": 1.621,
+      "p95": 1.6419
+    },
+    "available": true,
+    "cutoff": "2026-09-03T12:00:00+00:00",
+    "fetch_seconds": {
+      "count": 3,
+      "max": 0.1719,
+      "mean": 0.1431,
+      "min": 0.1214,
+      "p50": 0.1361,
+      "p95": 0.1719
+    },
+    "samples": [
+      {
+        "analysis_seconds": 1.621,
+        "broker_symbol": "EURUSDm",
+        "coverage": {
+          "D1": 500,
+          "H1": 500,
+          "H4": 500,
+          "M15": 100
+        },
+        "fetch_seconds": 0.1214,
+        "symbol": "EUR/USD",
+        "total_seconds": 1.7424
+      },
+      {
+        "analysis_seconds": 1.6419,
+        "broker_symbol": "GBPUSDm",
+        "coverage": {
+          "D1": 500,
+          "H1": 500,
+          "H4": 500,
+          "M15": 100
+        },
+        "fetch_seconds": 0.1719,
+        "symbol": "GBP/USD",
+        "total_seconds": 1.8138
+      },
+      {
+        "analysis_seconds": 1.3488,
+        "broker_symbol": "USDJPYm",
+        "coverage": {
+          "D1": 500,
+          "H1": 500,
+          "H4": 500,
+          "M15": 100
+        },
+        "fetch_seconds": 0.1361,
+        "symbol": "USD/JPY",
+        "total_seconds": 1.4849
+      }
+    ],
+    "total_seconds": {
+      "count": 3,
+      "max": 1.8138,
+      "mean": 1.6804,
+      "min": 1.4849,
+      "p50": 1.7424,
+      "p95": 1.8138
+    }
+  },
+  "targets": {
+    "evaluator_calls_per_snapshot": 1,
+    "p50_seconds": 2.0,
+    "p95_seconds": 5.0,
+    "source": "docs/plans/smc-parameter-table.md (task 8) + task 15 dossier §3.5"
+  },
+  "verdict": {
+    "evaluator_calls_within_target": true,
+    "note": "A miss is a miss: it is reported for Tech Lead decision, never turned into a pass by relaxing the target.",
+    "p50_within_target": true,
+    "p95_within_target": true
+  }
+}

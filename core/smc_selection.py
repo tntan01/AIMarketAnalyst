@@ -351,6 +351,14 @@ def finalize_side_selection(selection: SideSelection) -> SmcSideScoringResult:
         confirmation_event_id=(
             candidate.confirmation_event_id if candidate is not None else None
         ),
+        # Task117: the typed record travels unchanged, so the stored result keeps
+        # the visit anchor, trigger identity/time, expiry, invalidation and reason
+        # codes of the SAME candidate the plan belongs to.
+        confirmation=(
+            candidate.confirmation.to_dict()
+            if candidate is not None and candidate.confirmation is not None
+            else None
+        ),
         quality_raw=quality.quality_raw if quality is not None else None,
         quality_score=quality.quality_score if quality is not None else None,
         b=quality.b if quality is not None else None,
@@ -381,6 +389,14 @@ def finalize_side_selection(selection: SideSelection) -> SmcSideScoringResult:
         selection_reason_codes=selection.selection_reason_codes,
         candidate_trace=selection.trace,
         alternatives=selection.alternatives,
+        # Lô A: the protected swing of the SELECTED candidate travels with the
+        # selection it belongs to.  It is copied verbatim from the candidate the
+        # coordinator actually chose — never looked up again here, and never
+        # borrowed from another candidate or another timeframe — so the record
+        # the consumer publishes describes the same setup as the selected zone.
+        protected_swing=(
+            candidate.protected_swing if candidate is not None else None
+        ),
     )
     return SmcSideScoringResult(
         score=payload.quality_raw,

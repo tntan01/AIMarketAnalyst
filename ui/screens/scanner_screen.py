@@ -679,7 +679,7 @@ class ScannerTableModel (QAbstractTableModel ):
 
     @staticmethod
     def _price_vs_zone_tooltip(row: dict[str, object] | None = None) -> str:
-        return (
+        base = (
             "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\n"
             "Trong vùng = giá nằm trong hoặc đúng biên vùng.\n"
             "Gần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\n"
@@ -687,6 +687,28 @@ class ScannerTableModel (QAbstractTableModel ):
             "-- = chưa có vùng thật hoặc thiếu dữ liệu.\n"
             "Giá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh."
         )
+        return base + ScannerTableModel._smc_tooltip_suffix(row)
+
+    @staticmethod
+    def _smc_tooltip_suffix(row: dict[str, object] | None) -> str:
+        """The canonical SMC verdict of the row, as extra tooltip lines.
+
+        Task 121: the main screen stays compact, so the SMC score, the selected
+        zone, the state and up to three reasons are shown on hover instead of
+        adding another column.  Everything comes from the canonical selection;
+        a row without one says so instead of showing a legacy score.
+        """
+        if not isinstance(row, dict):
+            return ""
+        try:
+            from ui.scanner_presentation import present_smc_row
+
+            view = present_smc_row(row)
+        except Exception:
+            return ""
+        if not view.available and not view.state_text:
+            return ""
+        return "\n\n" + view.tooltip_text()
 
     @staticmethod
     def _entry_status_tooltip(value: object, row: dict[str, object] | None = None) -> str:

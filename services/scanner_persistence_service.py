@@ -11,7 +11,18 @@ from datetime import datetime, timedelta, timezone
 import gzip
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+
+from core.smc_persistence import (
+    SmcPersistenceCompat,
+    classify_persisted_smc,
+    smc_block_of,
+)
+from core.smc_result_cache import (
+    SmcCacheLookup,
+    read_smc_result_record,
+    write_smc_result_record,
+)
 
 
 PERSISTENCE_FULL = "full"
@@ -61,6 +72,48 @@ def atomic_json_save(path: Path, data: Any, *, indent: int | None = None) -> Non
 
 def summary_row(row: dict[str, Any]) -> dict[str, Any]:
     return {key: row[key] for key in SUMMARY_ROW_FIELDS if key in row}
+
+
+def safe_symbol_name(symbol: object) -> str:
+    """The on-disk symbol stem of one analysis document."""
+
+    return "".join(
+        character
+        for character in str(symbol or "UNKNOWN").upper()
+        if character.isalnum()
+    ) or "UNKNOWN"
+
+
+def analysis_document_path(root: Path, scan_id: str, symbol: object) -> Path:
+    """Where one row's analysis document lives.
+
+    Task 117: the writer and the reader share this single owner, so what the
+    persistence service reads back is exactly what the scan call site wrote —
+    the round trip cannot drift to a second path convention.
+    """
+
+    return Path(root) / "scanner_analysis" / str(scan_id) / (
+        f"{safe_symbol_name(symbol)}.json.gz"
+    )
+
+
+def load_json_document(path: Path) -> dict[str, Any]:
+    """Read a stored analysis document, gzip or plain, fail-closed.
+
+    Anything that is not a JSON object is refused instead of being coerced into
+    an empty document, so a corrupted artifact is reported as corrupted rather
+    than read as "no data".
+    """
+
+    target = Path(path)
+    if target.suffix == ".gz":
+        with gzip.open(target, "rt", encoding="utf-8") as handle:
+            document = json.load(handle)
+    else:
+        document = json.loads(target.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError("Stored analysis document must contain a JSON object.")
+    return document
 
 
 def persist_performance_summary(
@@ -118,6 +171,57 @@ class ScannerPersistenceService:
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps({"last_full_at": timestamp.isoformat()}), encoding="utf-8")
         temporary.replace(path)
+
+    def analysis_path(self, scan_id: str, symbol: object) -> Path:
+        return analysis_document_path(self.root, scan_id, symbol)
+
+    def load_analysis(self, scan_id: str, symbol: object) -> dict[str, Any]:
+        """Read back one stored analysis document written by this service.
+
+        Task 117: what the scan call site persisted must come back unchanged, so
+        a reader never has to guess a second path or shape.
+        """
+
+        return load_json_document(self.analysis_path(scan_id, symbol))
+
+    def classify_analysis(self, scan_id: str, symbol: object) -> SmcPersistenceCompat:
+        """Compatibility verdict of one stored document's SMC payload.
+
+        Task 118: the classification is read from the stored identity, not from
+        the running logic, so a document written by another rule identity — or
+        by no identity at all — can never be read back as a current result.
+        """
+
+        return classify_persisted_smc(self.load_analysis(scan_id, symbol))
+
+    def stored_smc_block(self, scan_id: str, symbol: object) -> dict[str, Any]:
+        """The raw stored SMC block, exactly as written (never re-derived)."""
+
+        return dict(smc_block_of(self.load_analysis(scan_id, symbol)))
+
+    def write_smc_cache_record(
+        self,
+        *,
+        snapshot_identity: str,
+        record: Mapping[str, Any],
+    ) -> Path:
+        """Store one canonical result under its snapshot identity (task 118).
+
+        A thin pass-through to the cache-record seam: this service owns the
+        runtime root, the seam owns what makes a record readable again.  Nothing
+        on the live route calls it.
+        """
+
+        return write_smc_result_record(
+            self.root, snapshot_identity=snapshot_identity, record=record
+        )
+
+    def read_smc_cache_record(self, *, snapshot_identity: str) -> SmcCacheLookup:
+        """Read a cached result back; a miss carries a reason and no record."""
+
+        return read_smc_result_record(
+            self.root, snapshot_identity=snapshot_identity
+        )
 
     def _sample_due(self, *, now: datetime | None = None) -> bool:
         path = self.root / "cache" / _SAMPLE_STATE

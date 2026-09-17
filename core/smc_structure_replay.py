@@ -13,18 +13,17 @@ from typing import Any, Sequence
 
 from core.market_models import Candle, candle_close_at, require_valid_smc_candles
 from core.smc_context import (
-    _filter_swings_by_atr,
     atr_value_before_event,
     confirm_choch_candidate,
     detect_choch_candidate,
     detect_structure_bos,
-    external_swing_points,
     expire_structure_events,
     initialize_structure_state,
     invalidate_choch_candidate_on_reclaim,
     normalize_swing_sequence,
     structure_break_buffer,
 )
+from core.smc_structure_window import StructureWindowReuse
 
 
 def replay_smc_structure(
@@ -36,6 +35,7 @@ def replay_smc_structure(
     break_buffer: float | None = None,
     tick_size: float | None = None,
     pivot_width: int = 5,
+    window: StructureWindowReuse | None = None,
 ) -> dict[str, Any]:
     """Replay structure over each closed candle without look-ahead.
 
@@ -63,6 +63,17 @@ def replay_smc_structure(
     # they are outside an explicit cutoff, but eligible records must satisfy
     # the task-19 OHLC/timestamp/duplicate contract before detection.
     ordered = list(require_valid_smc_candles(eligible_input, normalized_timeframe))
+    # Task 137: the replay walks every prefix of ONE closed window, so the
+    # window's validation, pivots and ATR series are computed once and read by
+    # prefix length instead of being rebuilt per candle. The reuse is local to
+    # this evaluation (the caller may pass the one it already built for the same
+    # window; otherwise it is created here) and every value it returns is the
+    # one the per-prefix call produced (see core/smc_structure_window).
+    reuse = (
+        window
+        if window is not None and window.is_window(ordered)
+        else StructureWindowReuse(ordered, normalized_timeframe, symbol=symbol)
+    )
     if pivot_width not in {2, 5}:
         raise ValueError("pivot_width must be canonical external width 5 or observation width 2")
     provisional_fallback = pivot_width == 2
@@ -82,16 +93,17 @@ def replay_smc_structure(
     for index, current in enumerate(ordered):
         current_close = candle_close_at(current.time, normalized_timeframe)
         prefix = ordered[: index + 1]
-        swings = external_swing_points(
+        swings = reuse.swings(
             prefix,
             symbol=symbol,
-            timeframe=normalized_timeframe,
             lookback=pivot_width,
             provisional=provisional_fallback,
+            scope="external",
+            equal_tolerance=0.0,
         )
         # This filter is causal because both its ATR and swing input are the
         # current prefix, never the complete input passed to the function.
-        swings = _filter_swings_by_atr(prefix, swings)
+        swings = reuse.filter_swings_by_atr(prefix, swings)
 
         if state is None:
             candidate_state = initialize_structure_state(swings, as_of=current_close)
@@ -106,6 +118,7 @@ def replay_smc_structure(
             prefix,
             timeframe=normalized_timeframe,
             event_index=len(prefix) - 1,
+            window=reuse,
         )
         derived_buffer = structure_break_buffer(
             atr_value=causal_atr,

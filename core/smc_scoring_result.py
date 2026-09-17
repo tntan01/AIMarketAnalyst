@@ -19,6 +19,7 @@ from core.smc_models import (
     QUALITY_Q_WEIGHT,
     QUALITY_SCORE_SCALE,
     QUALITY_S_MAX,
+    M15Confirmation,
     round_half_up,
 )
 from core.smc_versions import SMC_SCORER_VERSION as _CANONICAL_SCORER_VERSION
@@ -26,6 +27,23 @@ from core.smc_versions import SMC_SELECTION_VERSION
 
 
 SMC_SCORING_CONTRACT_VERSION = "smc-scoring-canonical-2026-08"
+
+
+class SmcConfirmationIdentityError(ValueError):
+    """A stored confirmation describes a different setup than its selection.
+
+    Raised for a record that is internally valid but belongs to another side or
+    zone: the pairing is forged, not merely malformed, so it gets its own type
+    and its own reason code instead of being reported as a generic invalid
+    selection.
+    """
+
+    def __init__(self, field_name: str) -> None:
+        self.field_name = str(field_name)
+        super().__init__(
+            "SMC selection confirmation does not belong to the selection: "
+            f"{self.field_name}"
+        )
 SMC_SELECTION_CONTRACT_VERSION = "smc-side-selection-2026-09"
 VALID_SIDES = frozenset({"buy", "sell"})
 
@@ -157,6 +175,14 @@ class SmcSideSelection:
     confirmation_rank: int | None = None
     entry_visit_id: str | None = None
     confirmation_event_id: str | None = None
+    # Task117: the typed M15 confirmation of the SAME candidate, stored verbatim.
+    # The flat fields above are the readiness projection; this is the record that
+    # owns the visit anchor, trigger identity/time, expiry, invalidation and
+    # reason codes, so a stored result can be read back as the confirmation it
+    # recorded instead of only as its status.  Read-only evidence: nothing
+    # downstream re-derives it, and it never substitutes for a fresh
+    # revalidation at dispatch time.
+    confirmation: dict[str, Any] | None = None
     quality_raw: int | None = None
     quality_score: float | None = None
     b: float | None = None
@@ -178,6 +204,14 @@ class SmcSideSelection:
     selection_reason_codes: tuple[str, ...] = ()
     candidate_trace: tuple[SmcCandidateTraceEntry, ...] = ()
     alternatives: tuple[SmcCandidateTraceEntry, ...] = ()
+    # Lô A: the canonical protected swing of the SELECTED candidate's timeframe,
+    # published so the consumer contract, persistence and the chart overlay read
+    # one record instead of each re-deriving it.  Additive and read-only: it
+    # takes no part in quality, selection, readiness, plan, risk or execution,
+    # and it is ``None`` whenever the canonical structure state did not really
+    # carry one — a missing record stays unavailable rather than being filled
+    # with a stop-loss, a technical level or a legacy zone.
+    protected_swing: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         side = str(self.side or "").strip().lower()
@@ -223,8 +257,21 @@ class SmcSideSelection:
             raise ValueError("data unavailable keeps quality_raw null")
         if self.state == SELECTION_STATE_NO_ZONE and self.quality_raw != 0:
             raise ValueError("no-zone is an evaluated zero, not null")
+        # Lô A: a side that certified no zone cannot publish a protected swing —
+        # the record belongs to the selected zone's own timeframe, so there is
+        # nothing for it to describe.  Refusing the pairing here keeps a forged
+        # payload from attaching a level to a side that selected nothing.
+        if (
+            self.state in {SELECTION_STATE_NO_ZONE, SELECTION_STATE_DATA_UNAVAILABLE}
+            and self.protected_swing is not None
+        ):
+            raise ValueError(
+                "no-zone/core-unavailable cannot publish a protected swing"
+            )
         _validate_plan_identity(self)
         _validate_quality_arithmetic(self)
+        _validate_stored_protected_swing(self)
+        _validate_stored_confirmation(self)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -242,6 +289,7 @@ class SmcSideSelection:
             "confirmation_rank": self.confirmation_rank,
             "entry_visit_id": self.entry_visit_id,
             "confirmation_event_id": self.confirmation_event_id,
+            "confirmation": _json_confirmation(self.confirmation),
             "quality_raw": self.quality_raw,
             "quality_score": self.quality_score,
             "b": self.b,
@@ -260,6 +308,7 @@ class SmcSideSelection:
             "selection_reason_codes": list(self.selection_reason_codes),
             "candidate_trace": [entry.to_dict() for entry in self.candidate_trace],
             "alternatives": [entry.to_dict() for entry in self.alternatives],
+            "protected_swing": _json_protected_swing(self.protected_swing),
         }
 
     @classmethod
@@ -290,6 +339,14 @@ class SmcSideSelection:
             confirmation_event_id=_optional_text(
                 payload.get("confirmation_event_id")
             ),
+            # ``None`` means "no confirmation recorded"; it must never be
+            # normalised into an empty mapping, which would claim a record that
+            # does not satisfy its own invariant.
+            confirmation=(
+                dict(payload["confirmation"])
+                if isinstance(payload.get("confirmation"), dict)
+                else None
+            ),
             quality_raw=_optional_int(payload.get("quality_raw")),
             quality_score=_optional_float(payload.get("quality_score")),
             b=_optional_float(payload.get("b")),
@@ -313,6 +370,14 @@ class SmcSideSelection:
             alternatives=tuple(
                 SmcCandidateTraceEntry.from_dict(entry)
                 for entry in _sequence(payload.get("alternatives"))
+            ),
+            # Lô A: absence stays absence.  A payload that carries no protected
+            # swing yields ``None`` — never an empty mapping, which would claim a
+            # record that does not satisfy its own invariant.
+            protected_swing=(
+                dict(payload["protected_swing"])
+                if isinstance(payload.get("protected_swing"), dict)
+                else None
             ),
         )
 
@@ -609,6 +674,123 @@ def _validate_quality_arithmetic(selection: SmcSideSelection) -> None:
     expected_score = QUALITY_SCORE_SCALE * expected_total / QUALITY_S_MAX
     if abs(score - expected_score) > 1e-9:
         raise ValueError("SMC selection quality_score must equal 100*S/15")
+
+
+def _json_confirmation(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The confirmation payload as JSON-native data.
+
+    Every value is copied, never recomputed.  The typed record keeps
+    ``reason_codes`` as a tuple in memory, which JSON cannot carry, so the one
+    sequence field is emitted as a list — otherwise ``to_dict`` and a stored
+    payload would disagree on the same record and a round trip would not be
+    stable.
+    """
+
+    if value is None:
+        return None
+    payload = dict(value)
+    codes = payload.get("reason_codes")
+    if codes is not None:
+        payload["reason_codes"] = [str(code) for code in codes]
+    return payload
+
+
+def _json_protected_swing(value: object) -> dict[str, Any] | None:
+    """The protected-swing payload as JSON-native data (Lô A).
+
+    Every value is copied, never recomputed.  ``None`` stays ``None`` so an
+    absent record is never normalised into an empty mapping that would claim a
+    protected swing the canonical state did not publish.
+    """
+
+    if not isinstance(value, dict):
+        return None
+    return dict(value)
+
+
+def _validate_stored_protected_swing(selection: SmcSideSelection) -> None:
+    """Re-check a stored protected-swing payload against the canonical shape.
+
+    The payload is kept verbatim — a reader must not rebuild it — but it has to
+    describe a record the canonical owner could really have published: a swing
+    id, a finite positive level and a known kind, with its provenance fields
+    either absent or text.  A payload missing any of them is refused instead of
+    being republished as a level no canonical evidence supports.
+    """
+
+    payload = selection.protected_swing
+    if payload is None:
+        return
+    if type(payload) is not dict:
+        raise ValueError("SMC selection protected swing must be a mapping")
+    swing_id = str(payload.get("protected_swing_id") or "").strip()
+    if not swing_id:
+        raise ValueError("SMC selection protected swing requires an id")
+    kind = str(payload.get("protected_swing_kind") or "").strip().lower()
+    if kind not in {"high", "low"}:
+        raise ValueError("SMC selection protected swing requires a known kind")
+    level = _real_number(payload.get("protected_swing_level"), "protected_swing_level")
+    if level <= 0:
+        raise ValueError("SMC selection protected swing level must be positive")
+    # The provenance is part of the record, not decoration: without the source
+    # event and the swing's own times there is no canonical evidence for the
+    # level, and a reader must not draw a line no evidence explains.
+    for key in (
+        "source_bos_id",
+        "protected_swing_pivot_time",
+        "protected_swing_confirmed_at",
+    ):
+        value = payload.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"SMC selection protected swing requires {key}")
+
+
+def _validate_stored_confirmation(selection: SmcSideSelection) -> None:
+    """Re-check a stored confirmation payload against the typed record it claims.
+
+    The payload is kept verbatim — a reader must not rebuild it — but it has to
+    describe a valid ``M15Confirmation`` **of this selection**.  A record that is
+    internally valid but belongs to another side or another zone is a forged
+    pairing, so it is refused here instead of being republished as usable
+    evidence for the setup the selection reports.
+    """
+
+    payload = selection.confirmation
+    if payload is None:
+        return
+    if type(payload) is not dict:
+        raise ValueError("SMC selection confirmation must be a mapping")
+    # The pairing is checked BEFORE the record's own invariant: an edited zone
+    # also breaks the ids the record builds from it, and the caller must still
+    # be told that the confirmation belongs to another setup rather than that
+    # some field is malformed.
+    _validate_confirmation_belongs_to_selection(selection, payload)
+    try:
+        M15Confirmation.from_dict(payload)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"SMC selection carries an invalid M15 confirmation: {exc}"
+        ) from None
+
+
+def _validate_confirmation_belongs_to_selection(
+    selection: SmcSideSelection,
+    payload: dict[str, Any],
+) -> None:
+    """A confirmation must describe the SAME side and zone as the selection.
+
+    Only the links the record actually owns are checked — side and zone, which
+    every ``M15Confirmation`` names.  No new equality is invented for the
+    trigger/event ids (``confirmation_event_id``, ``trigger_event_id``,
+    ``entry_visit_id``): those live in a different identity namespace than the
+    selection's fields, so equating them would reject every real payload.
+    """
+
+    side = str(selection.side or "").strip().lower()
+    if str(payload.get("side") or "").strip().lower() != side:
+        raise SmcConfirmationIdentityError("side")
+    if str(payload.get("zone_id") or "") != str(selection.selected_zone_id or ""):
+        raise SmcConfirmationIdentityError("zone_id")
 
 
 def _validate_plan_identity(selection: SmcSideSelection) -> None:

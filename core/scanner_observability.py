@@ -19,7 +19,7 @@ from core.scanner_models import (
 )
 from core.scoring_provenance import build_scoring_provenance
 from core.smc_models import SMC_DOMAIN_VERSION
-from core.smc_versions import SMC_SCORER_VERSION
+from core.smc_versions import SMC_SCORER_VERSION, SMC_SELECTION_VERSION
 
 
 SCANNER_OBSERVABILITY_VERSION = "phase7-observability-v1"
@@ -53,6 +53,10 @@ class ScannerScanContext:
     settings_hash: str
     request_hash: str
     feature_flags: dict[str, bool]
+    # Task 118: the SMC selection/plan policy of the canonical coordinator is
+    # part of this scan's identity.  Without it a stored artifact cannot be
+    # certified against the logic that chose its candidate.
+    smc_selection_version: str = SMC_SELECTION_VERSION
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +102,7 @@ def create_scan_context(
             if isinstance(feature_flags, dict)
             else {}
         ),
+        smc_selection_version=SMC_SELECTION_VERSION,
     )
 
 
@@ -229,6 +234,7 @@ def attach_row_observability(
         "portfolio_engine_version": context.portfolio_engine_version,
         "smc_scorer_version": context.smc_scorer_version,
         "smc_domain_version": context.smc_domain_version,
+        "smc_selection_version": context.smc_selection_version,
         "backtest_config_id": str(config.get("config_id", "") or ""),
         "input_timestamps": dict(
             enriched.get("input_timestamps", {})

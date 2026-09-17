@@ -1,6 +1,6 @@
 # SMC: đề xuất nâng cấp cho phần mềm cá nhân
 
-Ngày thiết kế: 2026-09-10. Cập nhật trạng thái: 2026-09-15. Gate 16/40/56/72/**100** đã APPROVED; task 57–72 hoàn tất; **task 73–79 và 80–91 REVIEW PASS**; **task 92–99 đã APPROVED tại gate task 100**; **task 101–111 REVIEW PASS**; **task 112–115 IMPLEMENTED — WAITING_REVIEW task 116**. Trạng thái hiện hành đọc tại [nhật ký tiến độ](smc-implementation-progress.md); mục tiêu/phạm vi đã được chốt và không còn ở giai đoạn tạm dừng xem xét. Chưa rollout production/auto-entry.
+Ngày thiết kế: 2026-09-10. Cập nhật trạng thái: 2026-09-16. Gate 16/40/56/72/**100/116/128** đã APPROVED; task 57–72 hoàn tất; **task 73–79 và 80–91 REVIEW PASS**; **task 92–99 đã APPROVED tại gate task 100**; **task 101–111 REVIEW PASS**; **task 112–115 IMPLEMENTED → task116 APPROVED (2026-09-15)**; **task 117–120 (persistence/cache/đọc lịch sử) REVIEW PASS**; **task121–128 REVIEW PASS → Task128 APPROVED (2026-09-16)**. Trạng thái hiện hành đọc tại [nhật ký tiến độ](smc-implementation-progress.md). Chưa rollout production/auto-entry.
 
 Theo [nhật ký tiến độ](smc-implementation-progress.md), gate 16/40/56/72 đã APPROVED và task 57–72 hoàn tất. Đã có thay đổi mã SMC; chưa hoàn tất tích hợp và nghiệm thu toàn bộ nâng cấp. Trạng thái này thay các ghi chú cũ “chưa sửa runtime”.
 
@@ -260,7 +260,7 @@ Tham khảo phương pháp: [Freqtrade lookahead analysis](https://www.freqtrade
 | 5. Tích hợp | Scanner, Analyze, prefilter, technical projection, planner, execution, persistence, UI | Cùng snapshot cùng kết quả; không fallback/bypass sai |
 | 6. Hoàn tất | Test, snapshot QA, smoke/performance, docs, chuyển đổi dữ liệu | Một công thức SMC mặc định, cách khôi phục rõ, checklist đạt |
 
-Khi người dùng quyết định tiếp tục phương án đầy đủ, Coder làm theo [checklist triển khai](smc-implementation-plan.md) và dừng tại các task **16, 40, 56, 72, 100, 116, 128 và 144** để Tech Lead review. Chỉ được làm phần tiếp theo sau khi mốc tương ứng được APPROVED; test xanh không thay cho review. Các task khác thực hiện theo thứ tự, không cần xin xác nhận riêng từng task. Quy định này thay thế hướng dẫn trước cho phép làm xuyên suốt không dừng. Tiến độ hiện hành đọc tại [nhật ký](smc-implementation-progress.md); phạm vi đã chốt và đang triển khai theo lô (lô 73–79 và 80–91 REVIEW PASS; lô 92–99 đã xong, chờ review tại task 100).
+Khi người dùng quyết định tiếp tục phương án đầy đủ, Coder làm theo [checklist triển khai](smc-implementation-plan.md) và dừng tại các task **16, 40, 56, 72, 100, 116, 128 và 144** để Tech Lead review. Chỉ được làm phần tiếp theo sau khi mốc tương ứng được APPROVED; test xanh không thay cho review. Task128 đã **APPROVED (2026-09-16)**, nên có thể lập/giao Task129–144 theo lô riêng; không phải quyền tự động rollout/auto-entry. Các task khác thực hiện theo thứ tự, không cần xin xác nhận riêng từng task. Quy định này thay thế hướng dẫn trước cho phép làm xuyên suốt không dừng. Tiến độ hiện hành đọc tại [nhật ký](smc-implementation-progress.md); phạm vi đã chốt và đang triển khai theo lô.
 
 Module ưu tiên sửa: `smc_context.py`, `smc_models.py`, `smc_lifecycle.py`, `smc_sweep_linking.py`, `smc_m15_confirmation.py`, `smc_confluence.py`, `smc_scorer.py`, `smc_scoring_result.py`, `smc_consumer_contract.py`. Chỉ tách thêm file khi thực sự giúp dễ đọc; không tạo framework detector/plugin tổng quát.
 

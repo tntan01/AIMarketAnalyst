@@ -28,6 +28,7 @@
     #source-zone-toggle { position: absolute; top: 42px; right: 10px; z-index: 10; display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; background: var(--chart-surface); color: var(--chart-muted); border: 1px solid var(--chart-border); border-radius: 4px; cursor: pointer; font-size: 11px; user-select: none; }
     #source-zone-toggle:hover { color: var(--chart-text); background: var(--chart-surface-hover); }
     #source-zone-toggle input { width: 14px; height: 14px; margin: 0; accent-color: var(--chart-accent); cursor: pointer; }
+    #smc-caption { position: absolute; top: 10px; left: 10px; z-index: 10; display: none; max-width: 55%; padding: 3px 8px; background: var(--chart-surface); color: var(--chart-muted); border: 1px solid var(--chart-border); border-radius: 4px; font-size: 11px; font-family: Arial, sans-serif; }
     #empty-state, #error-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--chart-subtle); font-size: 14px; display: none; z-index: 5; pointer-events: none; }
     #watermark { position: absolute; bottom: 8px; left: 10px; color: var(--chart-subtle); font-size: 10px; opacity: 0.3; z-index: 5; pointer-events: none; }
     
@@ -56,6 +57,7 @@
       <input id="source-zone-checkbox" type="checkbox" aria-label="Hiện vùng cấu trúc">
       <span>Vùng cấu trúc</span>
     </label>
+    <div id="smc-caption"></div>
     <div id="empty-state">Chưa có dữ liệu biểu đồ</div>
     <div id="error-state">Không thể tải biểu đồ</div>
     <div id="watermark">AI Market Analyst</div>
@@ -80,6 +82,11 @@
       buy: '#22c55e', sell: '#ef4444', tp: '#22c55e', sl: '#ef4444',
       ema20: '#f59e0b', ema50: '#3b82f6', ema200: '#ef4444',
       currentPrice: '#6b7280', neutral: '#6b7280',
+      // Canonical SMC layer: the selected zone is the most visible, a watched
+      // zone is neutral, an invalid zone is faded, and the M15 trigger keeps a
+      // colour of its own so it is never confused with the zone band.
+      smcSelected: '#22c55e', smcWatch: '#6b7280', smcInvalid: '#4b5563',
+      smcTrigger: '#f59e0b', smcSwing: '#3b82f6',
     };
 
     // Legend colors for button text
@@ -134,6 +141,9 @@
       _emaSeries = [];
       _priceLines = [];
       _zones = [];
+      // The SMC caption belongs to the payload that was just cleared.
+      var caption = document.getElementById('smc-caption');
+      if (caption) { caption.textContent = ''; caption.style.display = 'none'; }
     }
 
     function showEmpty() {
@@ -358,6 +368,100 @@
       } catch(e) {}
     }
 
+    // --- Canonical SMC layer (task 124) -------------------------------------
+    // Draws ONLY what core/chart_payload built from the canonical selection of
+    // this scan: the selected/invalid zone band, the M15 trigger band and the
+    // protected swing when the payload publishes one.  Nothing here detects a
+    // zone, moves an event in time or falls back to a legacy zone: a payload
+    // without the layer simply draws nothing.
+    function _smcLayer() {
+      if (!_payload || !_payload.smc_overlay) return null;
+      var overlay = _payload.smc_overlay;
+      if (!overlay.available || !overlay.timeframes) return null;
+      var layer = overlay.timeframes[_activeTF];
+      return layer || null;
+    }
+
+    function _smcZoneColor(zone) {
+      var status = (zone && zone.status) || '';
+      if (status === 'invalid') return COLORS.smcInvalid;
+      if (status === 'watch') return COLORS.smcWatch;
+      if (status === 'selected') {
+        return zone && zone.side === 'sell' ? COLORS.sell : COLORS.buy;
+      }
+      return COLORS.neutral;
+    }
+
+    function _addSmcPriceLine(price, options) {
+      if (typeof price !== 'number' || !isFinite(price)) return;
+      try {
+        _priceLines.push(_candleSeries.createPriceLine(options));
+      } catch(e) {}
+    }
+
+    function _renderSmcOverlay() {
+      if (!_candleSeries) return;
+      var layer = _smcLayer();
+      var caption = document.getElementById('smc-caption');
+      if (caption) {
+        if (layer && layer.caption) {
+          caption.textContent = layer.caption;
+          caption.style.display = 'block';
+        } else {
+          caption.textContent = '';
+          caption.style.display = 'none';
+        }
+      }
+      if (!layer) return;
+
+      var zones = layer.zones || [];
+      for (var z = 0; z < zones.length; z++) {
+        var zone = zones[z];
+        var color = _smcZoneColor(zone);
+        var label = zone.label || 'SMC';
+        // An invalid zone is drawn faded and dashed so it never reads as a
+        // usable level; the selected one is solid and labelled.
+        var isInvalid = zone.status === 'invalid';
+        var lineStyle = isInvalid ? 4 : (zone.status === 'selected' ? 0 : 2);
+        var lineWidth = zone.status === 'selected' ? 2 : 1;
+        var upperTitle = 'SMC ' + label + ' ▲';
+        var lowerTitle = 'SMC ' + label + ' ▼';
+        _addSmcPriceLine(zone.to, {
+          price: zone.to, color: color, lineWidth: lineWidth,
+          lineStyle: lineStyle, axisLabelVisible: true, title: upperTitle,
+        });
+        _addSmcPriceLine(zone.from, {
+          price: zone.from, color: color, lineWidth: lineWidth,
+          lineStyle: lineStyle, axisLabelVisible: true, title: lowerTitle,
+        });
+      }
+
+      var trigger = layer.trigger;
+      if (trigger) {
+        var triggerLabel = trigger.label || 'Xác nhận M15';
+        if (trigger.trigger_at) {
+          triggerLabel += ' · ' + trigger.trigger_at;
+        }
+        _addSmcPriceLine(trigger.to, {
+          price: trigger.to, color: COLORS.smcTrigger, lineWidth: 1,
+          lineStyle: 1, axisLabelVisible: false, title: triggerLabel,
+        });
+        _addSmcPriceLine(trigger.from, {
+          price: trigger.from, color: COLORS.smcTrigger, lineWidth: 1,
+          lineStyle: 1, axisLabelVisible: false, title: '',
+        });
+      }
+
+      var swing = layer.protected_swing;
+      if (swing) {
+        _addSmcPriceLine(swing.level, {
+          price: swing.level, color: COLORS.smcSwing, lineWidth: 1,
+          lineStyle: 3, axisLabelVisible: true,
+          title: swing.label || 'Đỉnh/đáy bảo vệ',
+        });
+      }
+    }
+
     function _updateActiveButton() {
       var buttons = document.querySelectorAll('#timeframe-selector button');
       for (var i = 0; i < buttons.length; i++) {
@@ -399,6 +503,23 @@
       // Current price
       if (typeof _payload.current_price === 'number' && isFinite(_payload.current_price)) {
         prices.push(_payload.current_price);
+      }
+
+      // Canonical SMC layer: only the bands that are still live take part in the
+      // price range.  An invalid band stays visible when it happens to be in
+      // view but never drags the scale to a level the setup no longer uses.
+      var smcLayer = _smcLayer();
+      if (smcLayer) {
+        var smcZones = smcLayer.zones || [];
+        for (var s = 0; s < smcZones.length; s++) {
+          if (smcZones[s].status === 'invalid') continue;
+          if (typeof smcZones[s].from === 'number' && isFinite(smcZones[s].from)) {
+            prices.push(smcZones[s].from);
+          }
+          if (typeof smcZones[s].to === 'number' && isFinite(smcZones[s].to)) {
+            prices.push(smcZones[s].to);
+          }
+        }
       }
 
       if (prices.length === 0) return;
@@ -471,6 +592,10 @@
       COLORS.ema20 = palette.warning || COLORS.ema20;
       COLORS.ema50 = palette.info || COLORS.ema50;
       COLORS.ema200 = palette.sell || COLORS.ema200;
+      COLORS.smcSelected = palette.buy || COLORS.smcSelected;
+      COLORS.smcTrigger = palette.warning || COLORS.smcTrigger;
+      COLORS.smcSwing = palette.info || COLORS.smcSwing;
+      COLORS.smcWatch = palette.neutral || COLORS.smcWatch;
 
       var rootStyle = document.documentElement.style;
       rootStyle.setProperty('--chart-background', COLORS.bg);
@@ -526,6 +651,7 @@
         _renderLevels();
         _renderEntryZone();
         _renderCurrentPrice();
+        _renderSmcOverlay();
         _fitPriceScale();
         _updateActiveButton();
         if (savedRange) {
@@ -557,6 +683,7 @@
       _renderLevels();
       _renderEntryZone();
       _renderCurrentPrice();
+      _renderSmcOverlay();
       _fitPriceScale();
       _updateActiveButton();
     }
@@ -571,6 +698,7 @@
       _renderLevels();
       _renderEntryZone();
       _renderCurrentPrice();
+      _renderSmcOverlay();
       _fitPriceScale();
       _updateActiveButton();
     }

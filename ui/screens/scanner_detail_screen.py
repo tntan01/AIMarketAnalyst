@@ -195,6 +195,29 @@ def _translate_codes(codes: list[str]) -> list[str]:
     return result
 
 
+def _smc_selection_payload(row: object) -> dict | None:
+    """The CURRENT canonical SMC selection the detail view renders (read-only).
+
+    It resolves to the selected side and then to either side, and it only ever
+    returns a selection the shared read boundary certified current: a row without
+    one — including a stored document another identity produced, or unusable
+    bytes — yields ``None`` so the panel states the absence instead of showing a
+    legacy score or an un-certified payload (task 128 P0).
+    """
+
+    from ui.scanner_presentation import read_smc_selection
+
+    if not isinstance(row, dict):
+        return None
+    side = str(row.get("selected_side") or "").strip().lower()
+    candidates = [side] if side in ("buy", "sell") else ["buy", "sell"]
+    for candidate in candidates:
+        read = read_smc_selection(row, candidate)
+        if read.is_current and isinstance(read.selection, dict):
+            return dict(read.selection)
+    return None
+
+
 
 # ---------------------------------------------------------------------------
 
@@ -1623,6 +1646,10 @@ class ScannerDetailScreen(QWidget):
                 symbol,
                 analysis_result,
                 active_timeframe="H1",
+                # The SMC layer is read from the ROW, so a stored analysis
+                # document carries its persistence verdict into the chart
+                # instead of being read as a live evaluation (task 128 P0).
+                smc_source=self.row,
             )
 
             # Fallback: nếu chart_payload rỗng (không có nến từ scan), thử fetch
@@ -1675,7 +1702,10 @@ class ScannerDetailScreen(QWidget):
                 return None
             analysis_result["chart_payload"] = build_chart_payload(candles)
             return build_full_chart_payload(
-                symbol, analysis_result, active_timeframe="H1"
+                symbol,
+                analysis_result,
+                active_timeframe="H1",
+                smc_source=self.row,
             )
         except Exception:
             return None
@@ -1836,6 +1866,7 @@ class ScannerDetailScreen(QWidget):
                 current_symbol,
                 updated,
                 active_timeframe=str(getattr(self.chart, "_active_tf", "H1")),
+                smc_source=self.row,
             )
             payload["theme"] = "light" if light else "dark"
             payload["palette"] = chart_palette(current_palette())
@@ -2689,6 +2720,7 @@ class ScannerDetailScreen(QWidget):
             # Scanner does not emit.  Render Scanner-native diagnostics instead.
             parts.append(self._diag_route_html(light=light))
             parts.append(self._diag_scores_html(light=light))
+            parts.append(self._diag_smc_html(light=light))
             parts.append(self._diag_location_html(light=light))
             parts.append(self._diag_gates_html(light=light))
             parts.append(self._diag_plan_html(light=light))
@@ -3020,6 +3052,8 @@ class ScannerDetailScreen(QWidget):
     # -- Score Breakdown -------------------------------------------------
 
     def _diag_score_breakdown_html(self, analysis: dict, light: bool = False) -> str:
+        from ui.scanner_presentation import present_smc_selection
+
         scores = analysis.get("scenario_scores", {})
         if not isinstance(scores, dict):
             return ""
@@ -3194,10 +3228,9 @@ class ScannerDetailScreen(QWidget):
                 f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>",
                 "<tr>",
                 f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Hướng</th>",
-                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Zone ID / phiên bản</th>",
-                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Quality</th>",
-                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Relevance</th>",
-                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Setup</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Vùng được chọn</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:center;'>Điểm SMC</th>",
+                f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Trạng thái</th>",
                 f"<th style='padding:5px 8px;border-bottom:2px solid {border_color};color:{muted_color};text-align:left;'>Lý do</th>",
                 "</tr>",
             ])
@@ -3207,27 +3240,40 @@ class ScannerDetailScreen(QWidget):
                     if isinstance(consumer_sides.get(side), dict)
                     else {}
                 )
-                breakdown = (
-                    item.get("score_breakdown")
-                    if isinstance(item.get("score_breakdown"), dict)
-                    else {}
+                selection = (
+                    item.get("selection")
+                    if isinstance(item.get("selection"), dict)
+                    else None
                 )
-                zone_id = item.get("selected_zone_id") or "--"
-                version = item.get("scoring_version") or "--"
-                reason_codes = breakdown.get("reason_codes", [])
-                reason = (
-                    ", ".join(str(code) for code in reason_codes)
-                    if isinstance(reason_codes, list) and reason_codes
-                    else "--"
-                )
+                if selection is None:
+                    # Historical payload: the legacy fields are NOT presented as
+                    # the SMC result of the current logic (task 125/126).
+                    has_legacy = (
+                        item.get("selected_zone") is not None
+                        or item.get("selected_zone_quality_score") is not None
+                    )
+                    state_text = (
+                        "Kết quả lưu theo định dạng cũ — chỉ xem lịch sử"
+                        if has_legacy
+                        else "Chưa có kết quả SMC"
+                    )
+                    rows.append(
+                        "<tr>"
+                        f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;'>{label}</td>"
+                        f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};' colspan='4'>{state_text}</td>"
+                        "</tr>"
+                    )
+                    continue
+                view = present_smc_selection(selection, side=side, max_reasons=None)
                 rows.append(
                     "<tr>"
                     f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};font-weight:bold;'>{label}</td>"
-                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{zone_id}<br><span style='{_HTML_SMALL}'>{version}</span></td>"
-                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{item.get('selected_zone_quality_score') if item.get('selected_zone_quality_score') is not None else '--'}</td>"
-                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{item.get('selected_zone_relevance_score') if item.get('selected_zone_relevance_score') is not None else '--'}</td>"
-                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{item.get('selected_zone_setup_score') if item.get('selected_zone_setup_score') is not None else '--'}</td>"
-                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{reason}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{view.zone_text or '—'}"
+                    f"<br><span style='{_HTML_SMALL}'>{(selection.get('selected_zone_id') or '—')}</span></td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{text_color};text-align:center;'>{view.score_text}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>{view.state_text}</td>"
+                    f"<td style='padding:5px 8px;border-bottom:1px solid {row_border_color};color:{desc_color};'>"
+                    f"{' · '.join(view.reasons) if view.reasons else '—'}</td>"
                     "</tr>"
                 )
             rows.append("</table>")
@@ -3885,7 +3931,7 @@ class ScannerDetailScreen(QWidget):
             f"🧭 Scanner — Hướng {side_text} · Chế độ thị trường: {regime_text}</div>"
             f"<div style='{_HTML_BODY}color:{sc};line-height:1.5;'>"
             f"Trạng thái ứng viên: <b style='color:{state_accent};'>{label}</b>. "
-            f"Đây là kết quả theo pipeline (không dùng dữ liệu V3 kế thừa)."
+            f"Đây là kết quả của lần quét này theo đúng quy tắc đang chạy."
             f"</div></td></tr></table>"
         )
 
@@ -4293,6 +4339,208 @@ class ScannerDetailScreen(QWidget):
             "</div>",
             "</div>",
         ]
+        return "\n".join(rows)
+
+    def _diag_smc_html(self, light: bool = False) -> str:
+        """Canonical SMC verdict of the selected side (tasks 121/122).
+
+        READ-ONLY.  Every value comes from the canonical selection the scan
+        produced (``analysis_result["smc_selection"]``, or the consumer contract
+        of an Analyze result); nothing here scores, re-selects a zone, rebuilds a
+        confirmation or revalidates.  A row that predates the canonical verdict
+        is reported as historical instead of being shown as the current result,
+        and a legacy score is never rendered as if it were canonical.
+
+        Markup uses the shared semantic classes (``rt-location-*``), exactly like
+        the Location panel next to it: no inline styling and no colour literal,
+        so the panel follows the active theme.
+        """
+        from ui.scanner_presentation import (
+            SMC_RAW_MAX,
+            SMC_SCORE_LABEL,
+            SMC_SOURCE_HISTORICAL,
+            SMC_SOURCE_UNUSABLE,
+            present_smc_row,
+            smc_lifecycle_text,
+            smc_reason_text,
+            smc_trigger_kind_text,
+        )
+
+        def _fmt(value: object, digits: int = 3) -> str:
+            if value is None:
+                return "—"
+            try:
+                return f"{float(value):.{digits}f}"
+            except (TypeError, ValueError, OverflowError):
+                return escape(str(value))
+
+        def _txt(value: object) -> str:
+            text = str(value or "").strip()
+            return escape(text) if text else "—"
+
+        def _pair(label: str, value: str, *, number: bool = False, small: bool = False) -> str:
+            value_class = "rt-location-value"
+            if number:
+                value_class += " rt-location-number"
+            if small:
+                value_class += " rt-location-description rt-location-small"
+            return (
+                f'<tr><td class="rt-location-label">{escape(label)}</td>'
+                f'<td class="{value_class}">{value}</td></tr>'
+            )
+
+        view = present_smc_row(self.row, max_reasons=None)
+        selection = _smc_selection_payload(self.row)
+        rows = [
+            f'<div class="rt-location-root {"rt-location-light" if light else "rt-location-dark"}">',
+            '<h2 class="rt-location-title">SMC</h2>',
+            '<p class="rt-location-description">'
+            f"{SMC_SCORE_LABEL} là thang chất lượng 0–{SMC_RAW_MAX} của vùng được chọn, "
+            "không phải xác suất thắng."
+            "</p>",
+        ]
+
+        if not view.available or selection is None:
+            if view.source == SMC_SOURCE_HISTORICAL:
+                label, tone = "Kết quả SMC theo định dạng cũ", "rt-warning"
+            elif view.source == SMC_SOURCE_UNUSABLE:
+                label, tone = "Không đọc được kết quả SMC đã lưu", "rt-danger"
+            else:
+                label, tone = "Chưa có kết quả SMC", "rt-muted"
+            codes = ", ".join(escape(code) for code in view.read_reason_codes)
+            rows.append(
+                '<table class="rt-location-table rt-location-summary"><tr>'
+                f'<td class="rt-location-cell"><span class="{tone}">{label}</span><br>'
+                f'<span class="rt-location-description rt-location-small">'
+                f"{escape(view.state_text)}</span>"
+                + (
+                    f'<br><span class="rt-location-small rt-muted">Mã kỹ thuật: {codes}</span>'
+                    if codes
+                    else ""
+                )
+                + "</td></tr></table></div>"
+            )
+            return "\n".join(rows)
+
+        confirmation = (
+            selection.get("confirmation")
+            if isinstance(selection.get("confirmation"), dict)
+            else {}
+        )
+
+        # --- score + state -------------------------------------------------
+        rows.append('<table class="rt-location-table rt-location-summary">')
+        rows.append(_pair(SMC_SCORE_LABEL, escape(view.score_text)))
+        rows.append(_pair("Trạng thái", escape(view.state_text)))
+        rows.append(
+            _pair("Xác nhận vào lệnh", escape(view.confirmation_text or "—"))
+        )
+        rows.append(_pair("Vùng được chọn", escape(view.zone_text or "—")))
+        rows.append("</table>")
+
+        # --- B/Q/L/C of the SAME selected setup -----------------------------
+        rows.append(
+            '<table class="rt-location-table rt-location-detail"><tr>'
+            '<th class="rt-location-header rt-location-align-left">Thành phần SMC</th>'
+            '<th class="rt-location-header rt-location-align-center">B</th>'
+            '<th class="rt-location-header rt-location-align-center">Q</th>'
+            '<th class="rt-location-header rt-location-align-center">L</th>'
+            '<th class="rt-location-header rt-location-align-center">C</th>'
+            '<th class="rt-location-header rt-location-align-center">S</th>'
+            "</tr><tr>"
+            '<td class="rt-location-cell rt-location-label">'
+            "Cấu trúc · Chất lượng · Thanh khoản · Bối cảnh (0–1)</td>"
+            + "".join(
+                f'<td class="rt-location-cell rt-location-number rt-location-align-center">'
+                f"{_fmt(selection.get(key))}</td>"
+                for key in ("b", "q", "l", "c", "total")
+            )
+            + "</tr></table>"
+        )
+
+        # --- zone identity + lifecycle/visit --------------------------------
+        visit_extra = ""
+        if confirmation.get("visit_anchor_at"):
+            visit_extra += f" · từ {_txt(confirmation.get('visit_anchor_at'))}"
+        if confirmation.get("bars_since_anchor") is not None:
+            visit_extra += f" · {_txt(confirmation.get('bars_since_anchor'))} nến M15"
+        rows.append('<table class="rt-location-table rt-location-detail">')
+        rows.append(
+            _pair(
+                "Mã vùng / mã setup",
+                f"{_txt(selection.get('selected_zone_id'))} · "
+                f"{_txt(selection.get('selected_setup_id'))}",
+                small=True,
+            )
+        )
+        rows.append(
+            _pair(
+                "Vòng đời vùng",
+                _txt(smc_lifecycle_text(selection.get("lifecycle_status"))),
+            )
+        )
+        rows.append(
+            _pair(
+                "Lần giá vào vùng (vòng đời)",
+                _txt(selection.get("entry_visit_id")),
+                small=True,
+            )
+        )
+        rows.append(
+            _pair(
+                "Lần vào vùng trên M15 (xác nhận vào lệnh)",
+                f"{_txt(confirmation.get('entry_visit_id'))}{visit_extra}",
+                small=True,
+            )
+        )
+        rows.append("</table>")
+
+        # --- trigger / expiry / invalidation of the confirmation -------------
+        invalidation = _txt(confirmation.get("invalidated_at"))
+        if confirmation.get("invalidation_reason"):
+            invalidation += " · " + escape(
+                smc_reason_text(confirmation.get("invalidation_reason"))
+            )
+        rows.append('<table class="rt-location-table rt-location-detail">')
+        rows.append(
+            _pair(
+                "Loại tín hiệu xác nhận",
+                _txt(smc_trigger_kind_text(confirmation.get("trigger_kind"))),
+            )
+        )
+        rows.append(
+            _pair("Thời điểm tín hiệu", _txt(confirmation.get("trigger_at")), small=True)
+        )
+        rows.append(
+            _pair("Xác nhận lúc", _txt(confirmation.get("confirmed_at")), small=True)
+        )
+        rows.append(
+            _pair("Hiệu lực đến", _txt(confirmation.get("expires_at")), small=True)
+        )
+        rows.append(_pair("Vô hiệu lúc", invalidation, small=True))
+        rows.append("</table>")
+
+        # --- why this zone was selected -------------------------------------
+        reasons = list(view.reasons)
+        for code in confirmation.get("reason_codes") or ():
+            text = smc_reason_text(code)
+            if text and text not in reasons:
+                reasons.append(text)
+        if reasons:
+            rows.append(
+                '<p class="rt-location-description">Vì sao chọn vùng này:</p><ul>'
+                + "".join(f"<li>{escape(text)}</li>" for text in reasons)
+                + "</ul>"
+            )
+
+        # --- the plan reference of the SAME zone ----------------------------
+        rows.append(
+            '<p class="rt-location-footnote">'
+            f"Kế hoạch vào lệnh: {'có' if selection.get('plan_available') else 'chưa có'}"
+            f" (vùng kế hoạch: {_txt(selection.get('plan_zone_id'))}). "
+            "Mọi lệnh vẫn phải qua bước kiểm tra lại ngay trước khi gửi."
+            "</p></div>"
+        )
         return "\n".join(rows)
 
     # ------------------------------------------------------------------

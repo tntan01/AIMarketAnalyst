@@ -257,6 +257,29 @@ ENTRY_CONFIRMATION_MISSING = "ENTRY_CONFIRMATION_MISSING"
 EXECUTION_FRESH_OK = "EXECUTION_FRESH_OK"
 EXECUTION_NOT_READY = "EXECUTION_NOT_READY"
 EXECUTION_REVALIDATION_REQUIRED = "EXECUTION_REVALIDATION_REQUIRED"
+# F-C-01: the send-boundary kill switch.  It is OFF by default and OFF in the
+# shipped config; while it is off no dispatch may reach the broker, whatever the
+# rest of the chain says.  Turning it on is an owner rollout decision, not a
+# side effect of any other setting.
+LIVE_ORDER_DISABLED = "LIVE_ORDER_DISABLED"
+# F-C-01: the payload did not declare itself intent-only.  ``sends_real_order``
+# must be exactly ``False`` at the send boundary; ``True``, a missing field or a
+# wrong type is a contract violation and can never become permission to send.
+SENDS_REAL_ORDER_NOT_FALSE = "SENDS_REAL_ORDER_NOT_FALSE"
+# F-HC-02: the payload IS intent-only (``sends_real_order is False``), which is
+# precisely why it may not be sent.  Building an order intent is not a cutover;
+# reaching a broker is a separate, owner-approved change.
+ORDER_INTENT_ONLY = "ORDER_INTENT_ONLY"
+# F-HC-01: the owner policy could not be reloaded/validated at the send
+# boundary.  A missing, broken or malformed config closes the boundary; it never
+# falls back to a policy that was loaded earlier.
+ORDER_POLICY_UNAVAILABLE = "ORDER_POLICY_UNAVAILABLE"
+# F-C-02: the injected revalidation clock is not a timezone-aware datetime with a
+# determinate offset, so "now" cannot be established and nothing may pass.
+REVALIDATION_CLOCK_INVALID = "REVALIDATION_CLOCK_INVALID"
+# F-C-02: the broker tick timestamp is not a usable instant, so tick age cannot
+# be measured and the proposal may not pass.
+TICK_TIME_INVALID = "TICK_TIME_INVALID"
 ORDER_PREPARED = "ORDER_PREPARED"
 ORDER_NOT_PREPARED = "ORDER_NOT_PREPARED"
 CANDIDATE_SIDE_INCONSISTENT = "CANDIDATE_SIDE_INCONSISTENT"
@@ -385,6 +408,12 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     EXECUTION_FRESH_OK: "Snapshot không stale/future, execution có thể dựa trên dữ liệu hiện hành.",
     EXECUTION_NOT_READY: "Execution chưa sẵn sàng, giới hạn ở WAITING_CONFIRMATION.",
     EXECUTION_REVALIDATION_REQUIRED: "READY_NOW vẫn phải revalidate execution trước khi đặt lệnh (cutover).",
+    LIVE_ORDER_DISABLED: "Chưa cho phép gửi lệnh thật (chưa rollout).",
+    SENDS_REAL_ORDER_NOT_FALSE: "Payload không khai báo chỉ dừng ở mức ý định, nên bị chặn.",
+    ORDER_INTENT_ONLY: "Đây mới là ý định vào lệnh; chưa có phê duyệt cutover nên không gửi.",
+    ORDER_POLICY_UNAVAILABLE: "Không đọc được policy gửi lệnh hiện hành nên bị chặn.",
+    REVALIDATION_CLOCK_INVALID: "Mốc thời gian kiểm tra lại không hợp lệ nên không thể kết luận.",
+    TICK_TIME_INVALID: "Thời điểm tick từ broker không hợp lệ nên không đo được độ mới.",
     ORDER_PREPARED: "Order payload đã dựng sẵn theo identity đầy đủ, chưa gửi lệnh thật.",
     ORDER_NOT_PREPARED: "Trạng thái candidate chưa cho phép dựng order payload.",
     CANDIDATE_SIDE_INCONSISTENT: "Side của decision không khớp score/scenario/gate, fail-closed DATA_UNAVAILABLE.",

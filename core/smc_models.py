@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 import hashlib
 from math import isfinite
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from core.smc_sweep_linking import SMC_SWEEP_LINK_VERSION
 from core.smc_versions import SMC_CONFLUENCE_VERSION, SMC_SCORER_VERSION
@@ -361,6 +361,69 @@ def candidate_order_key(candidate: "CandidateEvaluation") -> tuple[Any, ...]:
     )
 
 
+# Lô A: allowed ``protected_swing_kind`` values.  The canonical structure
+# consumer resolves bullish→low and bearish→high, so these are the only two
+# kinds a real record can carry; anything else is not republished.
+_PROTECTED_SWING_KINDS = ("high", "low")
+
+
+def protected_swing_record(structure_state: object) -> dict[str, Any] | None:
+    """The canonical protected swing of ONE timeframe, or ``None`` (Lô A).
+
+    **Single owner of the published shape.**  It lifts the record out of the
+    canonical structure state that ``replay_smc_structure`` produced, so every
+    consumer (selection, consumer contract, persistence, chart overlay) reads
+    the same fields instead of each re-deriving them.
+
+    ``None`` is the fail-closed answer, and it is returned unless the state
+    carries a **complete** record: a non-empty swing id, a finite positive
+    level, a known kind, and the provenance that produced it — the same swing
+    id, the source BOS event, the pivot time and the confirmation time.  A
+    level with no source event is not a record a canonical consumer may draw:
+    it would put a line on the chart that no canonical evidence explains, so it
+    stays ``unavailable`` instead.  Nothing is ever substituted — no latest
+    swing, no plan stop-loss, no technical level, no legacy zone — and no field
+    is back-filled (``protected_updated_at`` is when the level was *applied*,
+    not when the swing pivoted or was confirmed, so it never stands in for the
+    missing times).
+    """
+
+    state = structure_state if isinstance(structure_state, Mapping) else {}
+    swing_id = str(state.get("protected_swing_id") or "").strip()
+    if not swing_id:
+        return None
+    kind = str(state.get("protected_swing_kind") or "").strip().lower()
+    if kind not in _PROTECTED_SWING_KINDS:
+        return None
+    try:
+        level = float(state.get("protected_swing_level"))
+    except (TypeError, ValueError):
+        return None
+    if not isfinite(level) or level <= 0:
+        return None
+
+    provenance = state.get("protected_provenance")
+    provenance = provenance if isinstance(provenance, Mapping) else {}
+    # The provenance has to describe THIS swing before any of it may be
+    # republished.  A provenance naming a different swing would otherwise lend
+    # its source event and its times to a level they do not belong to.
+    if str(provenance.get("protected_swing_id") or "").strip() != swing_id:
+        return None
+    source_bos_id = str(provenance.get("source_bos_id") or "").strip()
+    pivot_time = str(provenance.get("protected_swing_pivot_time") or "").strip()
+    confirmed_at = str(provenance.get("protected_swing_confirmed_at") or "").strip()
+    if not source_bos_id or not pivot_time or not confirmed_at:
+        return None
+    return {
+        "protected_swing_id": swing_id,
+        "protected_swing_kind": kind,
+        "protected_swing_level": level,
+        "protected_swing_pivot_time": pivot_time,
+        "protected_swing_confirmed_at": confirmed_at,
+        "source_bos_id": source_bos_id,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class CandidateEvaluation:
     """One evaluated SMC candidate for one side (selection spec §3).
@@ -390,6 +453,17 @@ class CandidateEvaluation:
     reason_codes: tuple[str, ...] = ()
     confirmation_rank: int = CONFIRMATION_RANK_CANDIDATE
     plan_zone: dict[str, Any] | None = None
+    # Task117: the typed M15 confirmation of THIS candidate, carried unchanged so
+    # a stored result can be read back as the confirmation it recorded.  It is
+    # read-only evidence — nothing downstream may re-derive it, and it can never
+    # stand in for a fresh revalidation at dispatch time.
+    confirmation: "M15Confirmation | None" = None
+    # Lô A: the canonical protected swing of THIS candidate's timeframe, lifted
+    # from the timeframe's ``structure_state`` by :func:`protected_swing_record`.
+    # Additive, read-only provenance — it takes no part in B/Q/L/C, the mandatory
+    # gate, the order or the plan, and it is ``None`` whenever the canonical
+    # structure state does not really carry one.
+    protected_swing: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         candidate_id = str(self.candidate_id or "").strip()
