@@ -26,6 +26,7 @@ never dispatches and never fabricates an executable flag.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from fractions import Fraction
 from typing import Any
@@ -157,6 +158,22 @@ def _classify_price_vs_zone(
     if atr is not None and atr > 0 and distance <= atr * 0.5:
         return "near_zone"
     return "far"
+
+
+def _finite_number(value: object) -> float | None:
+    """``value`` as a finite float, or ``None`` when it cannot be one (F-D-03).
+
+    ``isinstance(x, (int, float))`` is not enough to trust a number that goes
+    into the "Vị trí" record: ``bool`` is an ``int`` in Python, and ``nan``/
+    ``inf`` are ordinary floats.  A published ``True`` or ``nan`` would make the
+    carrier an untrue record of a price comparison — and ``nan`` is not even
+    valid JSON for the chart script.  Everything unusable fails closed here.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
 
 
 def _zone_origin_class_from_source(source: object) -> str:
@@ -310,12 +327,34 @@ def pair_to_ui_row(
             if isinstance(_a, (int, float)) and _a > 0:
                 atr = _a
                 break
-    zone_state = _classify_price_vs_zone(
-        plan.entry_zone_low if plan else None,
-        plan.entry_zone_high if plan else None,
-        price,
-        atr,
-    )
+    band_low = _finite_number(plan.entry_zone_low) if plan else None
+    band_high = _finite_number(plan.entry_zone_high) if plan else None
+    price_number = _finite_number(price)
+    # Task 146 / F-D-03: the published detail is the record of ONE comparison,
+    # so it is either complete or it says nothing.  When price or either Entry
+    # bound is missing/unusable there is no comparison to record: the column
+    # fails closed to ``unknown`` and all three values are ``None`` — never a
+    # half-filled record of a comparison that did not happen.
+    if band_low is None or band_high is None or price_number is None:
+        zone_state = "unknown"
+        price_vs_zone_detail = {
+            "price": None,
+            "entry_low": None,
+            "entry_high": None,
+            # The instant the snapshot was frozen at.  Task 147: this is the
+            # moment the plan belongs to, NOT the moment the chart refreshed its
+            # candles, so the UI can tell the two apart without inventing one.
+            "snapshot_at": _iso(row.captured_at),
+        }
+    else:
+        entry_low, entry_high = min(band_low, band_high), max(band_low, band_high)
+        zone_state = _classify_price_vs_zone(band_low, band_high, price_number, atr)
+        price_vs_zone_detail = {
+            "price": price_number,
+            "entry_low": entry_low,
+            "entry_high": entry_high,
+            "snapshot_at": _iso(row.captured_at),
+        }
     analysis_result = {
         "status": ANALYSIS_OK,
         "technical": {"price": price, "atr_h1": atr_h1},
@@ -419,6 +458,9 @@ def pair_to_ui_row(
         "take_profit": take_profit,
         "entry_zone": entry_price,
         "price_vs_zone": zone_state,  # real price-vs-entry-zone classification
+        # Task 146/147: what that classification actually compared, plus the
+        # instant the snapshot belongs to.  Additive, read-only presentation.
+        "price_vs_zone_detail": price_vs_zone_detail,
         "zone_origin_class": zone_origin_class,  # real plan origin (smc/technical/none)
         "analysis_result": analysis_result,
         "scanner_candidate_decision": scanner_candidate_decision,
@@ -696,6 +738,14 @@ def blocked_ui_row(
         "take_profit": None,
         "entry_zone": None,
         "price_vs_zone": "unknown",
+        # Task 146: a blocked row has nothing to compare, and the tooltip must
+        # say "Không xác định" rather than implying anything about the zone.
+        "price_vs_zone_detail": {
+            "price": None,
+            "entry_low": None,
+            "entry_high": None,
+            "snapshot_at": None,
+        },
         "analysis_result": {
             "status": ANALYSIS_OK,
             "reason_codes": list(codes),

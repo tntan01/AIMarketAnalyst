@@ -2520,6 +2520,197 @@ config thiếu/hỏng/non-bool         -> blocked ['ORDER_POLICY_UNAVAILABLE']  
 
 **Kết luận:** `Gói hardening Lô C REVIEW PASS — rollout vẫn BLOCKED`.
 
+### Lô D — Task145–147: H1 là execution view, "Vị trí" là ngữ nghĩa snapshot, nến refresh không đổi kế hoạch (2026-09-18) — `IMPLEMENTED — WAITING_REVIEW Lô D`
+
+**Điều kiện bắt đầu đã kiểm:** [Review gói sửa F-HC-01/02](#review-độc-lập-tech-lead-gói-sửa-f-hc-0102-2026-09-18--review-pass) ghi `Gói hardening Lô C REVIEW PASS — rollout vẫn BLOCKED`; đợt này mở theo chỉ đạo riêng của người dùng (Task145–147), **không** mở Task148+ và **không** đụng rollout/auto-entry. Không có `AGENTS.md` trong repository. Baseline sau commit hiện tại: **6 failed / 4687 passed / 7 skipped / 16 xfailed** (6 failure `tests/test_step3_fred.py`).
+
+#### Câu hỏi gốc và chẩn đoán
+
+Người dùng hỏi vì sao lệnh AUD/NZD trên bảng quét ghi **"Trong vùng"** nhưng trên biểu đồ lại không như vậy. Chẩn đoán trên số liệu thật:
+
+| Thành phần | Giá trị | Nguồn |
+|---|---|---|
+| Giá lúc quét | **1.23790** | snapshot của lần quét |
+| Entry của kế hoạch **BUY** (H4) | **[1.23710, 1.23913]** | `ScenarioPlan.entry_zone` của side đã chọn |
+| Vùng SMC **SELL** (H1) | **[1.23981, 1.24068]** | canonical selection của side còn lại |
+
+`1.23790 ∈ [1.23710, 1.23913]` nên **"Trong vùng" đúng theo đúng thứ nó đo** — cột so giá lúc quét với Entry của kế hoạch đã chọn. Nhưng Detail Chart mặc định mở **H1**, nơi layer SMC của **side BÁN** được vẽ; người dùng thấy band của một side nằm cạnh band Entry của side kia trên cùng một màn hình và đọc "Trong vùng" theo band SMC. Đây là **lỗi trình bày**, không phải lỗi tính toán: không có verdict nào sai.
+
+**Quyết định Tech Lead (chỉ đạo người dùng):** *"H1 chỉ là execution view; người dùng chỉ cần Entry, SL, TP và giá. Không đưa thông tin vùng SMC/triggers/protected swing vào H1."* Không thay Entry/SL/TP, không tính lại, không đổi side/plan/risk/scoring/gate.
+
+#### Bốn điều khoản hợp đồng đã thực hiện
+
+1. **H1 execution view (Task145).** Khi timeframe đang xem là H1, Chart chỉ vẽ nến/giá + band Entry của kế hoạch + SL/TP. Không vùng SMC, không caption SMC, không M15 trigger, không protected swing — **kể cả khi payload canonical có đủ dữ liệu**. Không thay Entry bằng band SMC, không tính lại Entry/SL/TP. H4/D1/M15 giữ nguyên hành vi (phần hiển thị; dữ liệu canonical không đổi).
+2. **"Vị trí" là ngữ nghĩa snapshot (Task146).** Cột vẫn chỉ so **giá lúc quét** với `ScenarioPlan.entry_zone` của side đã chọn. Tooltip nay nói rõ nó đo cái gì, kèm số thật: `Giá lúc quét 1.23790 nằm trong Entry 1.23710–1.23913.` Thiếu giá/band ⇒ `Không xác định`, **không** suy diễn thành "Trong vùng". Không nêu H1/H4 hay vùng SMC trong execution view.
+3. **Nến refresh (Task147).** Khi Detail Chart merge nến mới từ MT5: **không** đổi `price_vs_zone` của dòng, **không** nói/ám chỉ kế hoạch đã được đánh giá lại; thông báo trên chart nêu snapshot mà kế hoạch thuộc về (`price_vs_zone_detail.snapshot_at`), thiếu mốc thì ghi `thời điểm quét` chứ không bịa. Không fetch giá thêm chỉ để đổi nhãn, không dùng đồng hồ hiện tại để giả `as_of`.
+4. **Carrier/certification không đổi.** Đây là **thay đổi trình bày**: không làm legacy/historical/corrupted SMC trở thành current, không đọc `selected_zone` legacy để dựng lại overlay hay Entry, không đổi schema/persistence. Verdict của shared consumer/persistence giữ nguyên; phần thêm vào là metadata trình bày thuần.
+
+#### File/hàm đã thay đổi
+
+| File | Hàm/vùng | Nội dung | Vai trò |
+|---|---|---|---|
+| `ui/chart_bridge.py` | `EXECUTION_VIEW_TIMEFRAMES`, `decorate_chart_payload` | Phát `execution_view_timeframes: ["H1"]` trong payload (additive); payload giữ nguyên toàn bộ dữ liệu overlay | Nguồn luật, đi kèm payload nên đúng cả khi page đổi timeframe phía client |
+| `assets/chart/index.html` | `_isExecutionView(tf)`, `_smcLayer()`, `_renderEntryZone()`, `_resetSourceZoneToggle()` | `_smcLayer()` trả `null` trên execution view ⇒ `_renderSmcOverlay()` early-return ⇒ không caption/zone/trigger/protected swing; source zone (structure) cũng không vẽ | Thi hành luật ở page |
+| `core/scanner_ui_adapter.py` | `pair_to_ui_row`, `blocked_ui_row` | Thêm `price_vs_zone_detail` = `{price, entry_low, entry_high, snapshot_at}` — **đúng hai giá trị mà classifier vừa dùng** + mốc snapshot; dòng blocked nhận bản toàn `None` | Metadata trình bày cho tooltip/thông báo |
+| `ui/screens/scanner_screen.py` | `_price_vs_zone_tooltip`, `_price_vs_zone_reading` (mới) | Copy nói rõ "Giá LÚC QUÉT", "không phải giá hiện tại", `Không xác định = …`; thêm câu đọc số thật | Task146 |
+| `ui/screens/scanner_detail_screen.py` | `_candle_refresh_notice` (mới), gọi trong `_on_candle_refresh_done` | Thông báo "Nến đã cập nhật từ MT5. Kế hoạch (Entry/SL/TP) và cột Vị trí vẫn theo snapshot … — chưa được đánh giá lại." | Task147 |
+| `scripts/smc_ui_smoke.py` | Kỳ vọng caption | Smoke vốn khẳng định caption trong DOM **bằng** caption trong payload ở timeframe đang mở; premise này đổi có chủ đích ở execution view ⇒ nay kỳ vọng caption **rỗng** trên execution view | Tiền đề kiểm tra đổi theo thiết kế, **không** sửa skip/xfail |
+| `scripts/smc_chart_qa.py` | `_chart_payload`, kỳ vọng caption, `caption_check`/`caption_matches_payload` | QA chọn timeframe có zone để caption có nghĩa; nay ưu tiên timeframe **ngoài** execution view; ca chỉ có zone ở H1 ghi `caption_check="execution_view_out_of_scope"` và `caption_matches_payload=None` (không giả "khớp", không báo failure oan) | Giữ QA còn giá trị kiểm chứng caption |
+| `tests/test_smc_execution_view_lo_d.py` | **file test mới** | Fixture tất định cho đúng ca AUD/NZD đã audit + probe render thật ở subprocess | Evidence A–E |
+
+Không sửa `core/chart_payload.py`, `core/smc_*.py`, `core/scanner_composition.py`, persistence, schema hay `config/`.
+
+#### Evidence
+
+**A — tái lập ca AUD/NZD (fixture tất định).** `tests/test_smc_execution_view_lo_d.py` dựng dòng Scanner đúng shape thật (selection đi qua `SmcSideSelection` thật + persistence block, không phải payload viết tay mà reader sẽ từ chối): giá **1.23790**, Entry BUY **[1.23710, 1.23913]**, canonical BUY H4 cùng band, canonical SELL H1 **[1.23981, 1.24068]**. Kết quả: `price_vs_zone == "in_zone"` và tooltip có đúng câu `Giá lúc quét 1.23790 nằm trong Entry 1.23710–1.23913.`; payload H1 vẫn mang `trade_plan.entry_zone` = band BUY, `levels` = SL/TP, `zones` = `entry_zone`, **và** overlay vẫn còn layer H1 — nhưng trang chart thật render DOM caption **rỗng**. Control cùng fixture, cùng trang, chỉ bỏ luật: caption hiện lại `SMC: … BÁN …` ⇒ rỗng là do luật, không phải mất dữ liệu.
+
+**B — H1 không vẽ SMC, H4/D1/M15 giữ nguyên.** Ở mức page: control H4 vẫn vẽ caption của nó. Ở mức harness thật (`smc_chart_qa.py --limit 14 --render 3`, report ghi ra thư mục tạm): hai ca EUR/USD có layer caption ở H4 ⇒ DOM caption **bằng** payload caption (`caption_matches_payload=True`); ca chỉ có zone ở H1 ⇒ DOM caption rỗng, ghi `execution_view_out_of_scope`. `smc_ui_smoke.py` (H1, 7 trạng thái × 2 theme) exit 0: DOM caption rỗng ở **mọi** trạng thái trong khi payload caption vẫn khác rỗng (`SMC: MUA · Vùng đã chọn`, `SMC: BÁN · Vùng đang theo dõi`, …) ⇒ luật là của H1, không phải mất layer.
+
+**C — refresh nến không đổi kế hoạch.** Merge nến mới vào payload chart: `price_vs_zone`, `price_vs_zone_detail` và toàn bộ `analysis_result` **không đổi**; gọi lại classifier với đúng input cũ cho đúng verdict cũ; hai lần dựng payload từ cùng kết quả đã lưu cho cùng Entry/SL/overlay (`candidate_status` vẫn `BLOCKED`). `_candle_refresh_notice` đọc `snapshot_at` của dòng; kiểm bằng AST: **không** có `now`/`utcnow`/`today` trong hàm; thiếu provenance ⇒ `thời điểm quét`; câu chữ có `chưa được đánh giá lại`.
+
+**D — fail-closed.** Thiếu giá/band, giá sai kiểu ⇒ tooltip `Không xác định.` và **không** có câu "nằm trong Entry"; payload historical/không tương thích (carrier có `smc_consumer.selected_zone` legacy) ⇒ `smc_overlay.available=False`, `source != "canonical"` — luật H1 **không** nâng nó thành current; payload corrupted (`smc_selection` không phải mapping) ⇒ H1 không crash, vẫn `available=False`; dòng không có plan ⇒ `entry_zone=None`, `zones=[]`, không SMC trên H1.
+
+**E — qua caller thật.** Dòng Scanner dựng bởi `pair_to_ui_row` thật (fixture task113) mang đủ `price_vs_zone_detail`, rồi đi `build_full_chart_payload` → `decorate_chart_payload` → `chart_update_script`, và HTML thật render trong QWebEngine. Hai theme: luật nằm trong dữ liệu nên light/dark giống nhau.
+
+#### Kiểm chứng đã chạy
+
+| Lệnh | Kết quả |
+|---|---|
+| `pytest tests/test_smc_execution_view_lo_d.py -q` | **22 passed** (3 node render chạy thật trong QWebEngine, không skip) |
+| Targeted Scanner/chart/UI/presentation (9 file) | **133 passed** |
+| Targeted release/composition/persistence/consumer (5 file) | **204 passed** |
+| `scripts/scanner_smoke.py` | exit 0 (`SMOKE` + `PATHB SMOKE OK`), `sends_real_order=False` |
+| `scripts/smc_ui_smoke.py` | exit 0; H1: DOM caption rỗng ở 7 trạng thái × 2 theme |
+| `scripts/smc_restart_smoke.py` | exit 0, `cases=6 failures=0` |
+| `scripts/smc_replay_parity.py` | exit 0, `cases=116 failures=0 no_future_leak=True` |
+| `scripts/smc_chart_qa.py --limit 14 --render 3` (report ghi ra temp) | exit 0, `cases=14 passed=14 failures=0`, 3 ca render `loaded=True` |
+| Full suite | **6 failed / 4725 passed / 7 skipped / 16 xfailed** |
+| `git diff --check` | sạch (chỉ cảnh báo LF→CRLF) |
+
+Sáu failure đúng là sáu node `tests/test_step3_fred.py` của baseline (fallback trả `{}`), **không có failure mới**; skip/xfail giữ nguyên 7/16. Đối chiếu bằng cách chạy lại **cùng lệnh** trên **worktree sạch tại HEAD** (`git worktree add … HEAD`): **6F / 4703P / 7skip / 16xfail** ⇒ phần tăng là **+22 passed, đúng bằng số node của `tests/test_smc_execution_view_lo_d.py`** (`--collect-only`: 4732 → 4754). **Lệch so với con số baseline nêu trong chỉ đạo (4687 passed):** cây tại HEAD đã thu thập 4732 node và chạy ra 4703 passed, tức 4687 thấp hơn 16 node **có trước lô này** (không phải do Lô D); ghi lại để Tech Lead đối chiếu, không tự suy diễn nguyên nhân. Không sửa skip/xfail để xanh.
+
+#### Giới hạn và ghi chú vận hành
+
+* **`tests/test_scanner_detail_rerender.py` crash khi chạy một mình** (access violation trong `ui/components/chart_view._set_page_background`, dựng `ScannerDetailScreen` + QWebEngine trong pytest). Đã đối chứng trên **worktree sạch tại HEAD**: crash y hệt ⇒ **có trước lô này**, phụ thuộc thứ tự chạy, không do Lô D. Full suite vẫn bao file đó.
+* **Test render phải chạy ở subprocess** và với `QApplication(sys.argv)` chứ không phải `QApplication([])`: Chromium trong môi trường này abort toàn tiến trình khi `argv` rỗng (`0xC0000409`). Probe cũng trỏ `OUT_DIR` sang thư mục tạm nên **không** sinh artifact mới trong `reports/`.
+* **Artifact báo cáo/smoke đổi nội dung** khi chạy smoke ở lượt này: đó là output của chính script, không phải thay đổi code; Coder không revert (`git checkout` xóa dữ liệu).
+* **Chưa chứng minh hiệu quả giao dịch.** Đây là sửa trình bày; không phải approval rollout, không auto-entry, không gửi lệnh, `live_order_permitted` vẫn `false`.
+* **Không mở Task148+.** Việc còn để người dùng quyết: có cần thêm nhãn "execution view" hiển thị trên chính chart H1 hay không (hiện luật là ẩn SMC, không thêm chữ).
+
+**Kết luận:** `Task145–147 IMPLEMENTED — WAITING_REVIEW Lô D`. Task148+ **chưa** bắt đầu; không rollout production, không auto-entry, không gửi lệnh thật, không bật cache production, không gỡ adapter compatibility.
+
+#### Review độc lập Tech Lead Lô D (2026-09-18) — `CHANGES_REQUESTED`
+
+**Snapshot/diff đã review:** `main` tại `1673266` cộng worktree chưa commit của Lô D. `git diff --check` sạch (chỉ cảnh báo LF→CRLF). Đã chạy độc lập `pytest tests/test_smc_execution_view_lo_d.py -q` = **22 passed** và `pytest tests/test_smc_ui_presentation_task126.py -q` = **46 passed**. Đường thật đã đọc theo source: `pair_to_ui_row` → `build_full_chart_payload` → `decorate_chart_payload` → `assets/chart/index.html`, và refresh Detail → `_candle_refresh_notice`.
+
+**Phần đạt:** H1 thực sự không còn lấy `smc_overlay` qua `_smcLayer()`; Entry zone và SL/TP vẫn còn trong payload. Test render QWebEngine mới chứng minh H1 vẫn nhận canonical layer nhưng DOM caption rỗng; control bỏ rule hiện lại caption, H4 vẫn vẽ. Copy "Vị trí" dùng giá và biên Entry snapshot; refresh không gọi clock để bịa thời điểm hay đánh giá lại plan. SMC ở tooltip bảng được chấp nhận là diagnostic của bảng, **không** là thành phần của H1 execution chart.
+
+**Gói sửa thống nhất cho Coder — 3 finding, sửa trọn boundary rồi dừng chờ review:**
+
+1. **F-D-01 — BLOCKING, hygiene/phạm vi:** 47 artefact tracked dưới `reports/scanner/smc_real_snapshots/` và `reports/scanner/smc_ui_smoke/` đã bị smoke ghi đè (PNG/PDF/JSON). Đây không phải đầu ra được duyệt của Task145–147; lệnh giao việc cấm sửa/tạo report artifact. `git diff --numstat -- reports/scanner` xác nhận cả binary và JSON bị thay đổi. Coder phải khôi phục **chỉ các output do lượt smoke Lô D tạo/ghi đè** về revision nền, chuyển mọi capture của smoke/QA Lô D sang thư mục tạm explicit, và chứng minh `git diff --name-only -- reports/scanner` rỗng ở bàn giao. Không coi output tái tạo được là lý do giữ thay đổi ngoài scope.
+2. **F-D-02 — BLOCKING, compatibility boundary:** `ui/chart_bridge.decorate_chart_payload()` từng trả nguyên payload không có `smc_overlay`; Lô D nay thêm `execution_view_timeframes` cho mọi `dict`, mâu thuẫn với contract no-op cũ và mở rộng dữ liệu ngoài Scanner/SMC dù Task145 chỉ thuộc Scanner Detail. Khôi phục no-op chính xác cho payload thiếu `smc_overlay`; chỉ gắn rule H1 trên payload đã đi qua SMC overlay. Thêm control chứng minh input dict không overlay bằng output dict (không mutate/không thêm key), đồng thời route Scanner canonical/historical/corrupted vẫn mang rule và H1 fail-closed như hiện tại.
+3. **F-D-03 — BLOCKING, contract `price_vs_zone_detail`:** `pair_to_ui_row()` ghi `price=None` khi `zone_state="unknown"` nhưng vẫn có thể để `entry_low`/`entry_high`; comment lại hứa mọi trường `None` khi không so được. UI tình cờ từ chối nhờ kiểm cả ba, nhưng carrier nửa-vời không còn là bản ghi trung thực của một phép so snapshot. Khi thiếu/không hợp lệ **một** trong price hoặc cả hai Entry bounds, publish toàn bộ `{price, entry_low, entry_high}` là `None` (giữ `snapshot_at` chỉ khi row có captured_at). Thêm test qua caller `pair_to_ui_row`, không chỉ helper/tooltip, cho `price` thiếu và cho một bound thiếu: `price_vs_zone="unknown"`, ba trường đều `None`, tooltip `Không xác định`, không chứa kết luận Entry.
+
+**Không yêu cầu đổi:** không bỏ SMC diagnostic tooltip của bảng; không đổi H4/D1/M15; không đổi plan, score, selection, persistence, refresh semantics, rollout hay Task148+. Sau gói sửa, chạy tối thiểu hai file đã nêu, targeted Scanner/chart/UI, smoke/QA với output temp, và full suite; đối chiếu từng failure với baseline gần nhất, không tự gắn FRED. Ghi command/result, diff boundary, và `git diff --check` vào nhật ký. Trạng thái Lô D giữ **`CHANGES_REQUESTED`** cho đến khi review lại.
+
+#### Gói sửa F-D-01/02/03 (2026-09-18) — `IMPLEMENTED — WAITING_REVIEW Gói sửa F-D-01/02/03`
+
+**Điều kiện bắt đầu đã kiểm:** [Review độc lập Tech Lead Lô D](#review-độc-lập-tech-lead-lô-d-2026-09-18--changes_requested) ghi `CHANGES_REQUESTED` với ba finding BLOCKING và gói sửa *"sửa trọn boundary rồi dừng chờ review"*. Lô D giữ `CHANGES_REQUESTED` cho tới khi review lại. Không mở Task148+, không đổi scoring/selection/plan/risk/gate/persistence/rollout, không đổi H4/D1/M15, **không** bỏ SMC diagnostic tooltip của bảng.
+
+##### F-D-01 — artefact ngoài phạm vi: đã khôi phục + capture chuyển sang thư mục tạm
+
+**Khôi phục:** `git checkout -- reports/scanner` đưa **46 file** tracked về revision nền `1673266` — 43 file trong `reports/scanner/smc_ui_smoke/` (toàn bộ thư mục) + 3 file trong `reports/scanner/smc_real_snapshots/` (`chart_qa_EURUSD_20260611_dark.png`, `replay_parity.json`, `restart_smoke.json`). Không có file untracked dưới `reports/`; index bằng HEAD nên không có gì bị staged. Chỉ artefact output bị đụng, không đụng code/test/tài liệu.
+
+**Nguyên nhân đã xác định (không phải full suite):** `pytest -q` **không** ghi gì vào `reports/` — test duy nhất chạy script ghi báo cáo (`tests/test_smc_execution_view_lo_d.py`) đã trỏ `scripts.smc_ui_smoke.OUT_DIR` sang temp từ trước. Toàn bộ 46 file đến từ **các lần gọi script thủ công của lượt Lô D**.
+
+**Chuyển capture sang thư mục tạm explicit.** Ba script chưa có đường chuyển nay có cờ `--out-dir PATH` (mặc định **không đổi**):
+
+| Script | Sửa | Vì sao cần |
+|---|---|---|
+| `scripts/smc_ui_smoke.py` | `--out-dir`; `_run(out_dir=None)` và `_render_chart(..., *, out_dir=None)` đọc `OUT_DIR` **lúc gọi** (không bind mặc định ở def-time) và dùng `target_dir` cho mkdir/PNG/PDF/JSON | không có CLI; ghi 43 file |
+| `scripts/scanner_smoke.py` | `--out-dir`; `main()` suy **cả hai** JSON từ thư mục đã resolve (bỏ hằng `OUT_PATH` bind lúc import, nay không còn reader) | không có CLI |
+| `scripts/smc_chart_qa.py` | `--out-dir`; `_render_cases` nhận thư mục này, tự `mkdir`, thay cho hằng `OUTPUT_DIR` bị ghim ở call site | `--report` chỉ chuyển JSON, ảnh vẫn rơi vào `reports/` |
+
+`scripts/smc_restart_smoke.py` và `scripts/smc_replay_parity.py` **không phải sửa** — `--report` đã đủ (không đụng `OUTPUT_DIR` vì `CORPUS_PATH` là input chỉ-đọc).
+
+**Thư mục tạm dùng cho lượt này:** `temp/lod_fix/…` (`temp/` đã có trong `.gitignore`, nằm trong repo nên `smc_chart_qa.py` vẫn ghi được đường dẫn tương đối theo repo và schema report không đổi).
+
+**Chứng minh bàn giao — cả ba lệnh đều rỗng** (chạy sau khi toàn bộ smoke/QA của lượt này đã chạy xong):
+
+```text
+$ git diff --name-only -- reports/scanner            # (không có dòng nào)
+$ git status --porcelain -- reports/scanner          # (không có dòng nào)
+$ git ls-files --others --exclude-standard reports/scanner   # (không có dòng nào)
+```
+
+##### F-D-02 — `decorate_chart_payload` no-op trở lại
+
+`ui/chart_bridge.decorate_chart_payload` nay đọc: không phải dict ⇒ trả nguyên; **không có `smc_overlay` ⇒ trả nguyên chính object đó** (không copy, không thêm key); chỉ payload đã có `smc_overlay` mới được gắn `execution_view_timeframes` và đi qua `present_smc_overlay`. Docstring bỏ câu "unchanged *apart from* the rule" (đọc như mâu thuẫn với contract no-op).
+
+**Không làm yếu luật H1:** `core/chart_payload.build_full_chart_payload` **luôn** đặt key `smc_overlay` (kể cả khi `available: False`), nên mọi carrier Scanner canonical/historical/corrupted vẫn nhận rule và H1 vẫn fail-closed. Payload duy nhất thiếu key là literal dựng tay ở `tests/test_dark_theme_surface_phase2.py:93`, nơi webview không tồn tại nên script không được sinh. Hệ quả còn lại (ghi lại, **không** sửa thêm): payload không có `smc_overlay` nhưng có source-zone trong `zones` sẽ không bị luật H1 chi phối — không reachable từ đường production.
+
+**Test:** `test_F_a_dict_without_overlay_is_an_exact_no_op` (cùng object, không key mới, input không mutate), `test_F_an_overlay_payload_gets_the_rule_without_mutating_the_input`, và `test_F_every_carrier_that_reaches_the_overlay_keeps_the_rule` parametrize ba carrier canonical/historical/corrupted.
+
+##### F-D-03 — `price_vs_zone_detail` là bản ghi trọn vẹn của một phép so
+
+`core/scanner_ui_adapter` có thêm `_finite_number(value)` (loại `None`, `bool`, non-`int/float` và non-finite) — đặt **ngoài** chữ ký 4 tham số của `_classify_price_vs_zone` để không phá caller gọi positional. `pair_to_ui_row` nay: nếu **bất kỳ** giá trị nào của bộ ba `(price, entry_low, entry_high)` không dùng được ⇒ `price_vs_zone = "unknown"` **và** publish cả ba trường là `None`; ngược lại phân loại và publish số như cũ. `snapshot_at` vẫn chỉ lấy từ `_iso(row.captured_at)`. `blocked_ui_row` giữ nguyên (đã đúng shape).
+
+**Đo được qua đúng `pair_to_ui_row` (trước → sau):**
+
+| Input (band `[100.0, 101.0]`) | Trước | Sau |
+|---|---|---|
+| không có price | `unknown` + `entry_low/high` **là số** (bản ghi nửa-vời) | `unknown` + ba `None` |
+| price `"100.5"` | `unknown` + bounds là số | `unknown` + ba `None` |
+| price `True` | **`far`** + `price=True` trong carrier | `unknown` + ba `None` |
+| price `nan` | **`far`** + `price=NaN` (JSON không hợp lệ cho chart script) | `unknown` + ba `None` |
+| price `inf` | **`far`** + `price=Infinity` | `unknown` + ba `None` |
+| price `100.5` hợp lệ | `in_zone` + ba số | **không đổi** |
+
+**Test qua caller** (`tests/test_smc_execution_view_lo_d.py`, không chỉ helper tooltip): `test_G_a_missing_price_publishes_three_nones_and_unknown`, `test_G_an_unusable_price_publishes_three_nones_and_unknown` (parametrize `"100.5"`, `True`, `nan`, `inf`), `test_G_a_missing_entry_bound_publishes_three_nones_and_unknown`, `test_G_a_complete_comparison_still_classifies` (guard chống fail-closed quá tay) — mỗi ca còn khẳng định tooltip có `Không xác định.` và **không** có `nằm trong Entry`. Ca "thiếu một Entry bound" dùng plan forged bằng đúng idiom repo đã dùng cho DTO chưa qua constructor (`object.__new__` + `object.__setattr__`, xem `tests/test_smc_selection_identity_task100.py`), vì `ScenarioPlan.__post_init__` bắt buộc both-or-neither nên một document như vậy chỉ có thể tới từ carrier hỏng/legacy.
+
+`tests/test_scanner_detail_entry_checklist.py::test_real_scanner_row_carries_price_vs_zone` (pin "row thật phải phân loại thật") vẫn xanh.
+
+##### Kiểm chứng đã chạy
+
+| Lệnh | Kết quả |
+|---|---|
+| `pytest tests/test_smc_execution_view_lo_d.py -q` | **35 passed** (22 → 35: +13 node cho F-D-01/02/03; 4 node render chạy thật trong QWebEngine) |
+| `pytest tests/test_smc_ui_presentation_task126.py tests/test_scanner_detail_entry_checklist.py tests/test_scanner_ui_adapter.py -q` | **82 passed** |
+| Targeted chart/UI (10 file: chart source-zone, location canonical, presentation, row, detail chart blocked, detail RR, columns help, detail diagnostics, entry checklist, ui adapter) | **147 passed** |
+| Persistence/consumer/SMC-UI (7 file: persistence service, release, composition, consumer contract 113, persistence 117–120, protected swing Lô A, ui presentation 126) | **304 passed** |
+| `scripts/scanner_smoke.py --out-dir temp/lod_fix/scanner` | exit 0 (`SMOKE` + `PATHB SMOKE OK`) |
+| `scripts/smc_ui_smoke.py --out-dir temp/lod_fix/smc_ui_smoke` | exit 0, 43 ảnh/PDF/JSON nằm trong `temp/` |
+| `scripts/smc_chart_qa.py --limit 14 --render 3 --report temp/lod_fix/chart_qa.json --out-dir temp/lod_fix/chart_qa` | exit 0, `cases=14 passed=14 failures=0`, 3 PNG trong `temp/` |
+| `scripts/smc_restart_smoke.py --report temp/lod_fix/restart_smoke.json` | exit 0, `cases=6 failures=0` |
+| `scripts/smc_replay_parity.py --report temp/lod_fix/replay_parity.json` | exit 0, `cases=116 failures=0 no_future_leak=True` |
+| Full suite `pytest -q` | **6 failed / 4738 passed / 7 skipped / 16 xfailed** |
+| `git diff --check` | sạch (chỉ cảnh báo LF→CRLF) |
+| `git diff --name-only -- reports/scanner` / `git status --porcelain -- reports/scanner` / `git ls-files --others --exclude-standard reports/scanner` | **rỗng cả ba** |
+
+**Đối chiếu failure với baseline gần nhất** (đo trên worktree sạch tại HEAD, `6F / 4703P / 7skip / 16xfail`): sáu node thất bại của lượt này là **đúng sáu node ID** của baseline — `tests/test_step3_fred.py::{test_load_fallback_returns_currencies, test_get_latest_rates_no_key_uses_fallback, test_get_latest_rates_empty_key_uses_fallback, test_get_latest_rates_cache_works, test_get_latest_rates_bad_key_falls_back, test_get_latest_rates_fred_exception_falls_back}`. Tên file/node được liệt kê nguyên văn; Coder **không** tự gắn nhãn hay tự kết luận nguyên nhân. Tổng passed tăng 4703 → 4738 = **+35, đúng bằng số node của `tests/test_smc_execution_view_lo_d.py`** (file này đi từ 22 lên 35 node, và vì là file untracked nên nó **không** có trong worktree baseline tại HEAD).
+
+##### Giới hạn
+
+* Lua luật H1 vẫn là **ẩn** SMC trên H1, không thêm nhãn chữ trên chart — giữ nguyên như Lô D đã được chấp nhận.
+* `technical.price`/`atr_h1` passthrough (compat shim) **không** đổi trong gói này: `isinstance(x, (int, float))` vẫn nhận `bool`/`NaN` cho hai field đó. Đây là hành vi có trước Lô D và ngoài phạm vi ba finding; ghi lại để Tech Lead quyết định riêng, không tự mở rộng.
+* Lô D vẫn `CHANGES_REQUESTED` cho tới khi review lại; không có rollout, auto-entry, gửi lệnh hay approval nào trong gói sửa này.
+
+**Kết luận gói sửa:** `IMPLEMENTED — WAITING_REVIEW Gói sửa F-D-01/02/03`. Không làm việc tiếp theo.
+
+#### Tái review độc lập Tech Lead Lô D (2026-09-18) — `REVIEW PASS`
+
+**Snapshot/diff:** `main` tại `1673266` cộng toàn bộ worktree chưa commit của Lô D và gói F-D-01/02/03. `git diff --check` sạch (chỉ cảnh báo LF→CRLF). Ba kiểm trên `reports/scanner` đều rỗng sau smoke/QA độc lập: `git diff --name-only`, `git status --porcelain`, và `git ls-files --others --exclude-standard`.
+
+**F-D-01 PASS.** 46 output tracked đã trở về revision nền; không còn diff hay untracked dưới `reports/scanner`. Đã chạy độc lập `scripts/scanner_smoke.py --out-dir C:\Users\tntan\AppData\Local\Temp\lod-review-scanner` (SMOKE + PATHB OK), `scripts/smc_ui_smoke.py --out-dir C:\Users\tntan\AppData\Local\Temp\lod-review-ui` (exit 0), và `scripts/smc_chart_qa.py --limit 3 --render 1 --report temp/lod-review/chart_qa.json --out-dir temp/lod-review/chart_qa` (3/3 pass); các output chỉ nằm trong output temp/ignored, không ghi `reports/`.
+
+**F-D-02 PASS.** `decorate_chart_payload()` trả đúng chính object input khi thiếu `smc_overlay`, không copy, không mutate, không thêm `execution_view_timeframes`. Với payload từ `build_full_chart_payload`, kể cả canonical/historical/corrupted, rule H1 vẫn được gắn vì key overlay luôn hiện diện; test kiểm cả hai chiều boundary.
+
+**F-D-03 PASS.** `pair_to_ui_row()` nay chỉ publish phép so snapshot hoàn chỉnh. `None`, bool, string, `NaN`, `inf`, hoặc thiếu một bound Entry dẫn tới `price_vs_zone="unknown"` và bộ ba `{price, entry_low, entry_high}` toàn `None`; case hợp lệ giữ verdict/giá trị cũ. Test đi qua caller và tooltip, không chỉ helper.
+
+**Kiểm chứng độc lập:** `tests/test_smc_execution_view_lo_d.py` = **35 passed**; `tests/test_smc_ui_presentation_task126.py` = **46 passed**; `pytest tests -q` = **6 failed / 4722 passed / 7 skipped / 16 xfailed**; `docs/plans/probes/test_smc_gate72_review.py` = **16 passed**. Hai lệnh full disjoint này cộng thành đúng **6F / 4738P / 7skip / 16xfail** của `pytest -q`. Sáu failure là đúng sáu node `tests/test_step3_fred.py` đã liệt kê trong baseline, không có failure mới.
+
+**Quyết định:** `Task145–147 REVIEW PASS — H1 execution view, tooltip "Vị trí" snapshot và candle-refresh notice đủ điều kiện bàn giao.` Đây chỉ là approval Lô D; không APPROVED rollout/auto-entry, không mở Task148+, không thay đổi SMC diagnostic của bảng, scoring, plan, persistence hay H4/D1/M15.
+
 ### BLOCKER phát hiện trong lô — canonical chain chưa tới được dữ liệu production
 
 Đây là phát hiện quan trọng nhất và cần Tech Lead quyết định trước khi làm tiếp Task112–116.

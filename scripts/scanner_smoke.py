@@ -2,6 +2,9 @@
 
 Run:  python scripts/scanner_smoke.py
 
+Pass ``--out-dir PATH`` to write the run's JSON into an explicit directory
+instead of the tracked ``reports/scanner/``.
+
 Drives the SINGLE release wiring against a deterministic canonical fixture and
 produces ``reports/scanner/release_b12_smoke.json``:
 
@@ -17,6 +20,7 @@ The script is byte-reproducible: same fixture → same snapshot id / versions.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from datetime import datetime, timezone
@@ -48,7 +52,6 @@ from tests.scanner_testkit import DEFAULT_THRESHOLD_POLICY, build_snapshot
 NOW = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
 SAMPLE_SYMBOLS = ("XAUUSD", "EURUSD", "US30")
 OUT_DIR = PROJECT_ROOT / "reports" / "scanner"
-OUT_PATH = OUT_DIR / "release_b12_smoke.json"
 
 
 def _run() -> dict[str, object]:
@@ -246,12 +249,27 @@ def _run_pathb() -> dict[str, object]:
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Scanner V4 release smoke (§12.4)")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=(
+            "thư mục nhận JSON của lượt chạy này "
+            f"(mặc định: {OUT_DIR.relative_to(PROJECT_ROOT)})"
+        ),
+    )
+    args = parser.parse_args(argv)
+    # Resolved once, here: both outputs follow the same directory, so a caller
+    # can keep a verification lap out of the tracked reports tree.
+    out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else OUT_DIR
+    out_path = out_dir / "release_b12_smoke.json"
+
     report = _run()
     _assert_release_contract(report)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"SMOKE OK -> {OUT_PATH}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"SMOKE OK -> {out_path}")
     print(f"  threshold: {report['threshold_policy']['policy_version']} "
           f"40/35/5 R:R2/1 DEFAULT (not fabricated)")
     print(f"  ranked: {report['ranked_symbols']}")
@@ -262,7 +280,7 @@ def main() -> None:
 
     # Path-B §12.4 non-order smoke
     pathb = _run_pathb()
-    pathb_out = OUT_DIR / "release_b12_pathb_smoke.json"
+    pathb_out = out_dir / "release_b12_pathb_smoke.json"
     pathb_out.write_text(json.dumps(pathb, indent=2, ensure_ascii=False), encoding="utf-8")
     assert pathb["insufficient_history"] == "TechnicalRawDerivationError"
     assert pathb["row_identity"]["scoring_version"] == "scanner"

@@ -2,6 +2,10 @@
 
 Run:  python -X utf8 scripts/smc_ui_smoke.py
 
+Pass ``--out-dir PATH`` to send every capture of the run (PNG, PDF, JSON) to an
+explicit directory instead of the tracked ``reports/scanner/smc_ui_smoke/`` — a
+verification lap that must not touch the repository's report artifacts uses it.
+
 Task 127.  It walks the three screens with fixtures that cover every SMC state
 (waiting, confirmed, invalid, no-zone, data-unavailable, historical, missing) and
 records what was actually rendered:
@@ -15,7 +19,8 @@ records what was actually rendered:
   PDF and grabbed to PNG.
 
 No configuration is added, no operational data is read and nothing is written
-outside ``reports/scanner/smc_ui_smoke/``.  The script never sends an order.
+outside ``reports/scanner/smc_ui_smoke/`` — or outside the directory given with
+``--out-dir``.  The script never sends an order.
 
 Platform note: this script defaults to ``QT_QPA_PLATFORM=offscreen``, but the
 offscreen Qt platform in this environment exposes no font families, so the
@@ -34,6 +39,7 @@ selection or if a render raises.
 
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 import os
@@ -328,9 +334,15 @@ def _render_chart(
     payload: dict[str, Any],
     name: str,
     theme: str,
+    *,
+    out_dir: Path | None = None,
 ) -> dict[str, Any]:
     from PyQt6.QtWebEngineWidgets import QWebEngineView
 
+    # ``OUT_DIR`` is read at call time (never bound as a default) so a caller can
+    # redirect it — and so the Lô D test probe that monkeypatches
+    # ``smoke.OUT_DIR`` still lands in its own temporary directory.
+    target_dir = out_dir or OUT_DIR
     html = chart_bootstrap_html(CHART_HTML.read_text(encoding="utf-8"), palette_for(theme))
     script = (
         "if(window.setChartData){window.setChartData("
@@ -357,13 +369,13 @@ def _render_chart(
     def capture() -> None:
         stem = f"chart_{name}_{theme}"
         pixmap = view.grab()
-        png_path = OUT_DIR / f"{stem}.png"
+        png_path = target_dir / f"{stem}.png"
         out["png"] = str(png_path) if pixmap.save(str(png_path)) else None
         out["capture"] = _capture_stats(pixmap, theme)
         # printToPdf is asynchronous: the file only exists once Chromium reports
         # it finished, so the caption is read AFTER that signal (the previous
         # version quit first and left no PDF behind).
-        view.page().printToPdf(str(OUT_DIR / f"{stem}.pdf"))
+        view.page().printToPdf(str(target_dir / f"{stem}.pdf"))
 
     def on_pdf_finished(path: str, success: bool) -> None:
         out["pdf"] = path
@@ -393,8 +405,12 @@ def _render_chart(
 # ---------------------------------------------------------------------------
 
 
-def _run() -> dict[str, Any]:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+def _run(out_dir: Path | None = None) -> dict[str, Any]:
+    # Every capture of this run goes to ONE directory, resolved at call time:
+    # the module constant by default, or the explicit ``--out-dir`` a
+    # verification lap passes so it never writes into the tracked reports tree.
+    target_dir = out_dir or OUT_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication(sys.argv)
 
     report: dict[str, Any] = {
@@ -439,7 +455,7 @@ def _run() -> dict[str, Any]:
             try:
                 html, widget = _detail_panel(row, app, theme)
                 pixmap = widget.grab()
-                png = OUT_DIR / f"detail_{name}_{theme}.png"
+                png = target_dir / f"detail_{name}_{theme}.png"
                 saved = pixmap.save(str(png))
                 stats = _capture_stats(pixmap, theme)
                 widget.deleteLater()
@@ -476,7 +492,7 @@ def _run() -> dict[str, Any]:
                 payload = _chart_payload(row, theme)
                 overlay = payload["smc_overlay"]
                 layer = next(iter((overlay.get("timeframes") or {}).values()), {})
-                render = _render_chart(app, payload, name, theme)
+                render = _render_chart(app, payload, name, theme, out_dir=target_dir)
             except Exception as exc:  # pragma: no cover
                 report["failures"].append(f"{name}/{theme}: chart {exc!r}")
                 continue
@@ -514,7 +530,18 @@ def _run() -> dict[str, Any]:
                     f"{name}/{theme}: ảnh chart không có nội dung đọc được "
                     f"(ink={stats.get('ink_ratio')})"
                 )
-            expected_caption = layer.get("caption") or ""
+            # Task 145 (Lô D): an execution-view timeframe (H1) draws no SMC
+            # layer at all, so the correct caption there is EMPTY even though the
+            # payload still carries the layer's data.  Expecting the payload's
+            # caption on H1 would assert the behaviour the task removed.
+            execution_view = {
+                str(tf).upper()
+                for tf in (payload.get("execution_view_timeframes") or ())
+            }
+            if str(payload.get("active_timeframe") or "").upper() in execution_view:
+                expected_caption = ""
+            else:
+                expected_caption = layer.get("caption") or ""
             if str(render.get("caption") or "").strip() != expected_caption.strip():
                 report["failures"].append(
                     f"{name}/{theme}: caption trong DOM {render.get('caption')!r} "
@@ -523,7 +550,7 @@ def _run() -> dict[str, Any]:
 
         report["states"].append(entry)
 
-    path = OUT_DIR / "smc_ui_smoke.json"
+    path = target_dir / "smc_ui_smoke.json"
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     report["report_path"] = str(path)
     return report
@@ -572,8 +599,19 @@ def _summary(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    report = _run()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="SMC UI smoke (Scanner → Detail → Chart)")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=(
+            "thư mục nhận toàn bộ ảnh/PDF/JSON của lượt chạy này "
+            f"(mặc định: {OUT_DIR.relative_to(PROJECT_ROOT)})"
+        ),
+    )
+    args = parser.parse_args(argv)
+    out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else None
+    report = _run(out_dir)
     print(_summary(report))
     print(f"\nBáo cáo: {report['report_path']}")
     return 1 if report["failures"] else 0

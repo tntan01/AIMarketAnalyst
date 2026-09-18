@@ -115,6 +115,8 @@
       if (!sourceToggle) return;
       var zones = (_payload && _payload.zones) || [];
       var hasSource = zones.some(function(zone) { return zone.type === 'source_zone'; });
+      // Task 145: the execution view has no structure zone to toggle.
+      if (_isExecutionView(_activeTF)) hasSource = false;
       sourceToggle.style.display = hasSource ? 'inline-flex' : 'none';
     }
 
@@ -326,6 +328,9 @@
       for (var z = 0; z < zones.length; z++) {
         var zn = zones[z];
         var isSource = zn.type === 'source_zone';
+        // Task 145: a structure zone belongs to the SMC layer, so the execution
+        // view never draws it — the Entry band and SL/TP are what remains.
+        if (isSource && _isExecutionView(_activeTF)) continue;
         if (isSource && !_showSourceZone) continue;
         var drawColor = isSource ? COLORS.neutral : zoneColor;
         var upperTitle = isSource ? 'Source zone' : 'Entry+';
@@ -374,8 +379,21 @@
     // protected swing when the payload publishes one.  Nothing here detects a
     // zone, moves an event in time or falls back to a legacy zone: a payload
     // without the layer simply draws nothing.
+    //
+    // Task 145 (Lô D): an EXECUTION-VIEW timeframe draws candles + the plan's
+    // Entry band + SL/TP and NOTHING of the SMC layer.  The rule is read from
+    // the payload, so it holds on every client-side timeframe switch.  The
+    // overlay data is untouched — this only declines to draw it here.
+    function _isExecutionView(tf) {
+      if (!_payload || !_payload.execution_view_timeframes) return false;
+      var views = _payload.execution_view_timeframes;
+      if (!views.length) return false;
+      return views.indexOf(tf) >= 0;
+    }
+
     function _smcLayer() {
       if (!_payload || !_payload.smc_overlay) return null;
+      if (_isExecutionView(_activeTF)) return null;
       var overlay = _payload.smc_overlay;
       if (!overlay.available || !overlay.timeframes) return null;
       var layer = overlay.timeframes[_activeTF];

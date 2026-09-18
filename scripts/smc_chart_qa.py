@@ -4,6 +4,11 @@ Run:
     python -X utf8 scripts/smc_chart_qa.py --report reports/scanner/smc_real_snapshots/chart_qa.json
     QT_QPA_PLATFORM=windows python -X utf8 scripts/smc_chart_qa.py --render 3
 
+Pass ``--out-dir PATH`` (with ``--render``) to send the case screenshots to an
+explicit directory instead of ``reports/scanner/smc_real_snapshots/``; the
+directory should live inside the repo because the report records each capture as
+a repo-relative path.
+
 For every corpus row the script re-runs the canonical seam on the stored closed
 candles and asks the real chart builder (``core.chart_payload.build_smc_overlay``,
 reached through ``build_full_chart_payload`` exactly as the UI reaches it) what it
@@ -31,8 +36,8 @@ Checked per case:
   drawn layer without a record must carry the reason code.  The record is a
   layer property, not a zone property.
 
-Nothing is written outside ``reports/scanner/smc_real_snapshots/`` and no order is
-ever sent.
+Nothing is written outside ``reports/scanner/smc_real_snapshots/`` (or the
+``--out-dir``/``--report`` a caller passes) and no order is ever sent.
 """
 
 from __future__ import annotations
@@ -443,7 +448,16 @@ def _chart_payload(row: Mapping[str, Any], analysis: Mapping[str, Any]) -> dict[
         for tf, layer in (overlay.get("timeframes") or {}).items()
         if layer.get("zones") and tf in candles
     )
-    active = with_zones[0] if with_zones else "H1"
+    # Task 145 (Lô D): H1 is an execution view and draws no SMC layer at all, so a
+    # layer that is only captioned on H1 can no longer be checked through the
+    # caption.  Open on a captioned timeframe outside the execution view when the
+    # case has one; when it does not, stay on H1 (the page is still rendered and
+    # compared — only the caption half is out of scope, which the report records).
+    from ui.chart_bridge import EXECUTION_VIEW_TIMEFRAMES
+
+    execution_view = {str(tf).upper() for tf in EXECUTION_VIEW_TIMEFRAMES}
+    captioned = [tf for tf in with_zones if str(tf).upper() not in execution_view]
+    active = (captioned or with_zones or ["H1"])[0]
     return build_full_chart_payload(
         row["symbol"],
         {"chart_payload": build_chart_payload(candles)},
@@ -464,6 +478,9 @@ def _render_cases(cases: list[dict[str, Any]], rows_by_key: Mapping[str, Any], a
     from ui.theme import chart_palette, palette_for
 
     app = QApplication.instance() or QApplication(sys.argv)
+    # The screenshots go wherever the caller pointed them, so the directory is
+    # created here rather than assumed to exist (a --out-dir under temp/ is new).
+    out_dir.mkdir(parents=True, exist_ok=True)
     html = chart_bootstrap_html(CHART_HTML.read_text(encoding="utf-8"), palette_for(theme))
     results: list[dict[str, Any]] = []
     for case, row, analysis in zip(cases, rows_by_key, analyses):
@@ -525,19 +542,41 @@ def _render_cases(cases: list[dict[str, Any]], rows_by_key: Mapping[str, Any], a
         observed["loaded"] = state["loaded"]
         # The caption the page shows is written by ``decorate_chart_payload``, so
         # the expected text is read from the payload that was sent, not retyped.
-        expected_captions = {
-            tf: layer.get("caption")
-            for tf, layer in (payload.get("smc_overlay", {}).get("timeframes") or {}).items()
-            if layer.get("caption")
+        # Task 145 (Lô D): on an execution-view timeframe (H1) the page draws no
+        # SMC layer, so the expected caption there is empty.
+        execution_view = {
+            str(tf).upper() for tf in (payload.get("execution_view_timeframes") or ())
         }
+        active = str(payload.get("active_timeframe") or "").upper()
+        expected_captions = (
+            {}
+            if active in execution_view
+            else {
+                tf: layer.get("caption")
+                for tf, layer in (payload.get("smc_overlay", {}).get("timeframes") or {}).items()
+                if layer.get("caption")
+            }
+        )
         observed["expected_captions"] = expected_captions
         observed["active_timeframe"] = payload.get("active_timeframe")
+        # Recorded so an empty caption on an execution-view timeframe reads as
+        # "out of scope by design", not as "the page failed to caption".
+        observed["caption_check"] = (
+            "execution_view_out_of_scope" if active in execution_view else "compared"
+        )
         observed["caption_present"] = bool(
             isinstance(observed.get("caption"), str) and observed["caption"].strip()
         )
-        observed["caption_matches_payload"] = bool(
-            observed["caption_present"]
-            and observed["caption"] in set(expected_captions.values())
+        observed["caption_matches_payload"] = (
+            # No expectation exists on an execution view, so there is nothing to
+            # match: `None` says "not applicable" instead of faking a match or
+            # reporting a failure the page did not commit.
+            None
+            if active in execution_view
+            else bool(
+                observed["caption_present"]
+                and observed["caption"] in set(expected_captions.values())
+            )
         )
         view.deleteLater()
         results.append(observed)
@@ -558,6 +597,15 @@ def main() -> int:
         help="also render this many cases on the real chart page (needs a Qt platform plugin)",
     )
     parser.add_argument("--render-theme", default="dark")
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=(
+            "thư mục nhận ảnh chụp của các ca render "
+            f"(mặc định: {OUTPUT_DIR.relative_to(PROJECT_ROOT)}). "
+            "Nên nằm trong repo: report ghi đường dẫn ảnh tương đối theo repo"
+        ),
+    )
     parser.add_argument(
         "--render-only",
         type=int,
@@ -604,12 +652,15 @@ def main() -> int:
     render_error: str | None = None
     if args.render or args.render_only:
         count = args.render_only or args.render
+        # Screenshots follow --out-dir so a verification lap can keep them out of
+        # the tracked reports tree; --report alone only moves the JSON.
+        render_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else OUTPUT_DIR
         try:
             renders = _render_cases(
                 rows[:count],
                 rows[:count],
                 analyses[:count],
-                OUTPUT_DIR,
+                render_dir,
                 args.render_theme,
             )
         except Exception as exc:  # a render failure is recorded, never hidden

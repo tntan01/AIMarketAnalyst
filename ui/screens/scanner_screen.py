@@ -680,14 +680,52 @@ class ScannerTableModel (QAbstractTableModel ):
     @staticmethod
     def _price_vs_zone_tooltip(row: dict[str, object] | None = None) -> str:
         base = (
-            "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\n"
+            "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm "
+            "đó.\n"
+            "Đây là ảnh chụp tại lúc quét, không phải giá hiện tại.\n"
             "Trong vùng = giá nằm trong hoặc đúng biên vùng.\n"
             "Gần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\n"
             "Xa vùng = giá còn ngoài khoảng cách kể trên.\n"
-            "-- = chưa có vùng thật hoặc thiếu dữ liệu.\n"
+            "Không xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\n"
             "Giá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh."
         )
-        return base + ScannerTableModel._smc_tooltip_suffix(row)
+        return base + ScannerTableModel._price_vs_zone_reading(row) + (
+            ScannerTableModel._smc_tooltip_suffix(row)
+        )
+
+    @staticmethod
+    def _price_vs_zone_reading(row: dict[str, object] | None) -> str:
+        """The concrete reading behind the "Vị trí" cell (task 146).
+
+        Says WHAT was compared — the scan-time price and the plan's entry bounds
+        — so the cell is not a bare adjective.  Missing price or bounds yields
+        "Không xác định"; the tooltip never turns absent data into "Trong vùng".
+        """
+
+        if not isinstance(row, dict):
+            return "\n\nKhông xác định."
+        detail = row.get("price_vs_zone_detail")
+        if not isinstance(detail, dict):
+            return "\n\nKhông xác định."
+        price = detail.get("price")
+        low = detail.get("entry_low")
+        high = detail.get("entry_high")
+        if not all(isinstance(v, (int, float)) for v in (price, low, high)):
+            return "\n\nKhông xác định."
+        bounds = f"{float(low):.5f}–{float(high):.5f}"
+        state = str(row.get("price_vs_zone") or "unknown")
+        if state == "in_zone":
+            reading = f"Giá lúc quét {float(price):.5f} nằm trong Entry {bounds}."
+        elif state == "near_zone":
+            reading = (
+                f"Giá lúc quét {float(price):.5f} ở gần Entry {bounds} "
+                "(chưa vào trong vùng)."
+            )
+        elif state == "far":
+            reading = f"Giá lúc quét {float(price):.5f} còn xa Entry {bounds}."
+        else:
+            return "\n\nKhông xác định."
+        return "\n\n" + reading
 
     @staticmethod
     def _smc_tooltip_suffix(row: dict[str, object] | None) -> str:

@@ -4,6 +4,18 @@ import json
 from typing import Any
 
 
+# Task 145 (Lô D): H1 is the EXECUTION view.  On H1 the user reads the plan's
+# Entry band, its SL/TP and the candles — not the SMC layer.  The rule travels
+# WITH the payload so the chart page applies it on every timeframe switch (the
+# page switches timeframes client-side without rebuilding the payload).
+#
+# It is presentation only.  Nothing about the canonical verdict changes: the
+# overlay still carries its data, the consumer/persistence verdict is untouched,
+# and a legacy/historical/corrupted payload is not made current by hiding a
+# layer.  H4/D1/M15 keep exactly the behaviour they had.
+EXECUTION_VIEW_TIMEFRAMES = ("H1",)
+
+
 def decorate_chart_payload(payload: dict) -> dict:
     """Add the display labels the chart page renders (task 124).
 
@@ -12,14 +24,24 @@ def decorate_chart_payload(payload: dict) -> dict:
     labels are attached here — at the UI boundary — and the chart page only
     draws what it is given.  The canonical payload itself is never mutated; a
     new mapping is returned, and a payload without an overlay is returned
-    unchanged (so this stays a no-op for every other caller).
+    unchanged (so this stays an exact no-op for every other caller).
+
+    Task 145: ``execution_view_timeframes`` names the timeframes whose chart is
+    an execution view (candles + Entry + SL/TP only).  It is attached **only to
+    a payload that carries an SMC overlay** — the rule governs drawing that
+    layer, so a payload that never went through the SMC overlay (F-D-02) is
+    handed back exactly as it arrived.  It is additive metadata: the payload
+    keeps all of its data.
     """
 
-    if not isinstance(payload, dict) or "smc_overlay" not in payload:
+    if not isinstance(payload, dict):
+        return payload
+    if "smc_overlay" not in payload:
         return payload
     from ui.scanner_presentation import present_smc_overlay
 
     decorated: dict[str, Any] = dict(payload)
+    decorated["execution_view_timeframes"] = list(EXECUTION_VIEW_TIMEFRAMES)
     decorated["smc_overlay"] = present_smc_overlay(payload.get("smc_overlay"))
     return decorated
 

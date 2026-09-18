@@ -1876,7 +1876,37 @@ class ScannerDetailScreen(QWidget):
                 "Đang hiển thị dữ liệu snapshot (không cập nhật được nến)."
             )
             return
-        self._set_chart_notice("")
+        self._set_chart_notice(self._candle_refresh_notice())
+
+    def _candle_refresh_notice(self) -> str:
+        """Say that only the CANDLES were refreshed (task 147).
+
+        The chart merges newer candles from MT5 after the Detail is opened, but
+        the plan — Entry/SL/TP and the "Vị trí" reading — still belongs to the
+        scan snapshot.  This states that plainly, using the snapshot instant the
+        row already carries.  It never implies a re-evaluation, and when the
+        provenance is missing it says "snapshot thời điểm quét" rather than
+        inventing a timestamp (no ``datetime.now()``, no re-derived cutoff).
+        """
+
+        stamp = ""
+        detail = self.row.get("price_vs_zone_detail") if isinstance(self.row, dict) else None
+        if isinstance(detail, dict):
+            raw = detail.get("snapshot_at")
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    from datetime import datetime as _dt
+
+                    parsed = _dt.fromisoformat(raw.replace("Z", "+00:00"))
+                    if parsed.tzinfo is not None:
+                        stamp = parsed.astimezone().strftime("%H:%M %d/%m")
+                except (TypeError, ValueError):
+                    stamp = ""
+        when = f"lúc {stamp}" if stamp else "thời điểm quét"
+        return (
+            f"Nến đã cập nhật từ MT5. Kế hoạch (Entry/SL/TP) và cột Vị trí vẫn "
+            f"theo snapshot {when} — chưa được đánh giá lại."
+        )
 
     def refresh_theme_styles(self) -> None:
         """Keep the embedded WebEngine chart in sync with the active theme."""
