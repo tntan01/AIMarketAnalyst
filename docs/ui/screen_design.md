@@ -84,6 +84,30 @@ Quyết định thiết kế bắt buộc:
 - Các phần dài như nhận định AI, điểm thành phần, raw JSON, log kỹ thuật phải đưa vào tab, panel phụ hoặc dialog.
 - Mọi tác vụ nặng như lấy dữ liệu MT5, gọi AI, quét 31 mã, tính indicator phải chạy qua worker/thread; UI không được bị đơ.
 
+### Contract kích thước cửa sổ và responsive (2026-09-18)
+
+Không thiết kế theo độ phân giải vật lý hay một mức Windows scale riêng. Mọi quyết định layout phải dựa trên `QScreen.availableGeometry()` theo **logical pixel** (đã trừ taskbar và đã được Qt quy đổi DPI). Vì vậy Full HD ở 150% chỉ còn xấp xỉ `1280×720` logical pixel; đây là viewport desktop chuẩn phải hỗ trợ, không phải ngoại lệ.
+
+- Lần mở đầu dùng `showMaximized()` như quyết định ở trên. Đây là mặc định cho mọi DPI; không dùng `setFixedSize()`, borderless fullscreen, hoặc tự scale thêm font/UI ngoài DPI của Windows.
+- Sau khi người dùng tự resize hoặc unmaximize, lưu và khôi phục `QSettings` geometry/state. Trước khi khôi phục phải kẹp geometry vào `availableGeometry()` của màn hình hiện tại để không mở ngoài màn hình sau khi đổi monitor hoặc DPI.
+- Nếu không có geometry đã lưu và cần mở cửa sổ thường, target là `min(1440, 0.92 × availableWidth)` × `min(900, 0.90 × availableHeight)`; không được ép `1440×900` khi vùng làm việc không đủ.
+- Mức tối thiểu kỹ thuật chỉ để app còn mở được là `800×500`; trải nghiệm desktop đầy đủ được cam kết từ `1024×620` logical pixel. Bên dưới ngưỡng này phải chuyển compact layout, không cho widget chồng lên nhau.
+
+| Vùng làm việc logical | Bố cục bắt buộc |
+|---|---|
+| `≥ 1520×850` | Sidebar, vùng nội dung chính và các panel thông tin đầy đủ; chart nhận toàn bộ diện tích dư. |
+| Rộng `1150–1519` | Giữ bố cục desktop; rail điều hướng app-wide giữ `48px` theo contract hiện có. Nếu Scanner có panel danh sách kết quả đặt cạnh Detail thì panel đó dùng `QSplitter`, tối thiểu `280–320px`. |
+| Rộng `900–1149` | Sidebar chuyển thành drawer/tab thu gọn; chart chiếm vùng chính; các khối Entry/SL/TP có thể xuống hai hàng. |
+| Rộng `<900` hoặc cao `<560` | Compact layout: chart và kế hoạch là nội dung chính; danh sách và panel phụ phải mở qua tab/drawer hoặc scroll hợp lệ. |
+
+Quy tắc ưu tiên ở mọi breakpoint:
+
+1. Chart co giãn theo vùng còn lại nhưng không tự đổi zoom hoặc mật độ nến chỉ vì cửa sổ resize.
+2. H1 luôn ưu tiên candle, giá và Entry/SL/TP; không đưa vùng SMC vào H1 execution view.
+3. Bảng quá hẹp dùng scroll ngang hoặc chuyển vào drawer; không bóp cột/font để cố nhét đủ.
+4. Nội dung Detail dài dùng scroll dọc/panel/tab; toolbar được phép wrap hoặc chuyển action thứ yếu sang menu, không được tạo hàng control chồng lấn.
+5. Kiểm thử responsive phải bao gồm ít nhất viewport logical `1280×720` (Full HD/150%), `1366×768`, `1920×1080` và một viewport compact; áp dụng cho cả light/dark, bổ sung vào ma trận audit hiện có trong `docs/ui/style-guide.md`.
+
 ### Quy ước tiếng Việt trên giao diện
 
 Trên phần mềm, tất cả thuật ngữ phải cố gắng tối đa để dịch ra tiếng Việt ngắn gọn. Tiếng Anh chỉ giữ khi:

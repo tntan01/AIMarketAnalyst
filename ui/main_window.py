@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QObject, Qt, QSize
 from PyQt6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QFrame,
     QHBoxLayout,
     QMainWindow,
     QPushButton,
     QStackedWidget,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
@@ -23,6 +25,14 @@ from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.orders_screen import OrdersScreen
 from ui.screens.settings_screen import SettingsScreen
 from ui.theme_manager import ThemeManager, resolve_theme
+from ui.window_state import (
+    MINIMUM_WINDOW_SIZE,
+    StartupDecision,
+    WindowStateStore,
+    default_settings,
+    normal_window_rect,
+    resolve_startup,
+)
 
 
 class _NavIconFilter(QObject):
@@ -62,12 +72,26 @@ class _NavIconFilter(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, app: AppController | None = None) -> None:
+    """Cửa sổ chính kiêm owner duy nhất của policy geometry (R1).
+
+    Constructor **không** đụng tới hình học hay `QSettings`: mọi quyết định
+    startup/restore/persist chỉ chạy khi caller gọi `apply_startup_policy()`
+    (production: `main.py`). Nhờ vậy test/tool dựng `MainWindow` để kiểm tra
+    giao diện không ghi state của người dùng.
+    """
+
+    def __init__(
+        self,
+        app: AppController | None = None,
+        *,
+        window_state: WindowStateStore | None = None,
+    ) -> None:
         super().__init__()
         self.app = app or AppController()
         self.setWindowTitle("AI Market Analyst")
-        self.resize(1280, 800)
-        self.setMinimumSize(1024, 700)
+        self.setMinimumSize(*MINIMUM_WINDOW_SIZE)
+        self._window_state = window_state
+        self._persist_window_state = False
         self._apply_styles()
 
         self.nav_buttons: dict[str, QPushButton] = {}
@@ -93,6 +117,73 @@ class MainWindow(QMainWindow):
         self._build_screens()
         self.navigate("dashboard")
         self.statusBar().showMessage("Sẵn sàng")
+
+    def _title_bar_inset(self) -> int:
+        """Chiều cao title bar theo logical pixel của style đang dùng (F-R5-01).
+
+        `resolve_startup()` phải thuần/deterministic nên metric nền tảng được
+        đọc ở đây rồi truyền vào tường minh; module policy không hard-code offset
+        DPI/vật lý. Không đọc được metric thì trả 0 — policy vẫn đúng, chỉ mất
+        phần nới dải chrome theo style.
+        """
+        style = self.style()
+        if style is None:
+            return 0
+        try:
+            height = style.pixelMetric(
+                QStyle.PixelMetric.PM_TitleBarHeight, None, self
+            )
+        except (TypeError, AttributeError):
+            return 0
+        return max(int(height), 0)
+
+    def apply_startup_policy(self, *, normal_window: bool = False) -> StartupDecision:
+        """Entry point duy nhất cho startup/restore/show của cửa sổ chính.
+
+        Production gọi đúng một lần từ `main.py`. Restore chỉ dựa trên
+        `QScreen.availableGeometry()` (logical pixel) qua `resolve_startup()`;
+        state thiếu/hỏng/ngoài màn hình đều quay về maximize.
+
+        Geometry normal "giả maximized" (F-R5-01) cũng quay về maximize: cửa sổ
+        chạm dải chrome trên trong khi phủ gần toàn vùng làm việc thì title bar
+        và nút hệ thống không thao tác được, nên restore nguyên trạng là trạng
+        thái hỏng chứ không phải trạng thái người dùng chọn.
+
+        `normal_window=True` là policy tường minh cho test/dev: bỏ qua state đã
+        lưu và **không** ghi state khi đóng, để không đè geometry người dùng.
+        """
+        if self._window_state is None:
+            self._window_state = WindowStateStore(default_settings())
+        available = [screen.availableGeometry() for screen in QApplication.screens()]
+
+        normal_size: tuple[int, int] | None = None
+        if normal_window and available:
+            normal_rect = normal_window_rect(available[0])
+            normal_size = (normal_rect.width(), normal_rect.height())
+
+        decision = resolve_startup(
+            None if normal_window else self._window_state.load(),
+            available,
+            normal_window_size=normal_size,
+            chrome_inset=self._title_bar_inset(),
+        )
+        if decision.maximized:
+            self.showMaximized()
+        else:
+            self.setGeometry(decision.rect)
+            self.show()
+        self._persist_window_state = not normal_window
+        return decision
+
+    def closeEvent(self, event) -> None:
+        """Lưu geometry/state trước khi đóng; không đổi hành vi shutdown khác."""
+        if self._window_state is not None and self._persist_window_state:
+            try:
+                self._window_state.save_from(self)
+            except Exception:
+                # Không để lỗi ghi state chặn việc đóng ứng dụng.
+                pass
+        super().closeEvent(event)
 
     def navigate(self, route: str, payload: dict[str, object] | None = None) -> None:
         widget = self.screens.get(route)

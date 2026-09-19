@@ -48,7 +48,9 @@ def main() -> int:
     window = MainWindow(app_ctrl)
     if not app_icon.isNull():
         window.setWindowIcon(app_icon)
-    window.showMaximized()
+    # Startup/restore/persist là policy của MainWindow; main.py không tự quyết
+    # định trạng thái cửa sổ (R1: một owner duy nhất).
+    window.apply_startup_policy()
     return app.exec()
 
 

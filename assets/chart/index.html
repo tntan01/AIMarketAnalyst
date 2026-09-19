@@ -263,9 +263,11 @@
 
     function _applyDefaultTimeScale(candleCount) {
       if (!_chart || !candleCount) return;
-      // Medium default candle density: enough history for context without
-      // making each candle oversized on the Scanner Detail screen.
-      var visibleBars = 100;
+      // Default candle density: half the horizontal width per candle (barSpacing
+      // 1.5 against the 3 it used to be), so twice as many candles fit the same
+      // chart width.  Only the time axis is touched — the price scale, the OHLC
+      // data and every manual zoom/pan keep their own behaviour.
+      var visibleBars = 200;
       var rightOffset = 5;
       var from = Math.max(0, candleCount - visibleBars);
       var to = candleCount + rightOffset;
@@ -273,8 +275,8 @@
 
       try {
         timeScale.applyOptions({
-          barSpacing: 3,
-          minBarSpacing: 3,
+          barSpacing: 1.5,
+          minBarSpacing: 1.5,
           rightOffset: rightOffset,
         });
       } catch(e) {}

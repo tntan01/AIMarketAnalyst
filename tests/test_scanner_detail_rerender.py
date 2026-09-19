@@ -2,6 +2,14 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+# Bài test này chỉ kiểm tra layout của Scanner Detail, không kiểm tra chart thật.
+# Trên Windows, Qt platform mặc định sẽ dựng QWebEngineView thật và làm tiến
+# trình chết (access violation trong chart_view). Đặt offscreen TRƯỚC mọi import
+# PyQt/UI để `python -m pytest tests/test_scanner_detail_rerender.py -q` chạy
+# đúng trong tiến trình mới, không phụ thuộc thứ tự collection của full suite.
+# Dùng setdefault nên ai chủ động đặt QT_QPA_PLATFORM khác vẫn được tôn trọng.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget
 from PyQt6.QtCore import QEvent
 from ui.screens.scanner_detail_screen import ScannerDetailScreen

@@ -400,7 +400,13 @@ def test_C_a_candle_refresh_does_not_touch_the_plan_or_the_reading() -> None:
 
 
 def test_C_the_refresh_notice_names_the_snapshot_without_inventing_one() -> None:
-    """The notice is built from the row's own provenance, never from a clock."""
+    """The notice is a fixed sentence from the row's own provenance, no clock.
+
+    Lô UI Chart shortened the copy: it now says which half is new (candles) and
+    which half is not (plan/position — still the scan snapshot, not
+    re-evaluated), and it carries **no** timestamp at all, so the moment of a
+    refresh can never be misread as the moment of the scan.
+    """
 
     import ast
 
@@ -421,10 +427,19 @@ def test_C_the_refresh_notice_names_the_snapshot_without_inventing_one() -> None
     ]
     assert clock_calls == [], f"it must not use the current clock: {clock_calls}"
 
-    body = ast.unparse(fn)  # docstring excluded: `unparse` drops it
-    assert "snapshot_at" in body, "it reads the row's snapshot instant"
-    assert "thời điểm quét" in body, "a missing provenance has honest wording"
-    assert "chưa được đánh giá lại" in body, "it must not imply a re-evaluation"
+    notice = module.ScannerDetailScreen.__new__(
+        module.ScannerDetailScreen
+    )._candle_refresh_notice()
+
+    assert notice == "Nến: MT5 mới · Kế hoạch/Vị trí: snapshot quét (chưa đánh giá lại)."
+    assert "snapshot" in notice, "the plan half is named as the scan snapshot"
+    assert "chưa đánh giá lại" in notice, "it must not imply a re-evaluation"
+    import re
+
+    assert re.search(r"\d{1,2}:\d{2}", notice) is None, (
+        "no time is baked into the notice — only the scan line carries one"
+    )
+    assert "lúc " not in notice
 
 
 def test_C_no_rescore_or_reselection_on_refresh() -> None:

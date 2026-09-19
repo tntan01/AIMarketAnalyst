@@ -82,6 +82,8 @@ def test_chart_uses_medium_default_candle_density() -> None:
     html = _chart_source()
 
     assert "var _activeTF = 'D1';" in html
-    assert "var visibleBars = 100;" in html
-    assert "barSpacing: 3," in html
-    assert "minBarSpacing: 3," in html
+    # Lô UI Chart: the default density was halved — twice the candles (200) at
+    # half the bar width (3 → 1.5), so the same chart width shows more history.
+    assert "var visibleBars = 200;" in html
+    assert "barSpacing: 1.5," in html
+    assert "minBarSpacing: 1.5," in html

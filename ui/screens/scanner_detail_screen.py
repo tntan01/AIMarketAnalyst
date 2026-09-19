@@ -35,6 +35,14 @@ from ui.theme.fonts import QSS_BODY, QSS_NUMBER, QSS_SMALL, QSS_SUBTITLE, QSS_TI
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 
 
+# Candle refresh cadence of the Detail chart, in seconds.  The chart is refreshed
+# as soon as the Detail opens and then once per interval; the interval drives the
+# countdown in ``_auto_refresh_tick`` and nothing else (the scan-time label has
+# its own 60s timer).  Refreshing merges newer candles into the CHART only — it
+# never re-scores, re-selects or changes the plan/snapshot the row was built from.
+CANDLE_REFRESH_INTERVAL_SECONDS = 30
+
+
 # HTML style attributes in this screen use single quotes.  The shared QSS
 # tokens quote font-family names, so strip only those quotes before embedding.
 _HTML_BODY = QSS_BODY.replace("'", "")
@@ -236,7 +244,7 @@ class ScannerDetailScreen(QWidget):
         self._scan_timer.setInterval(60000)
         self._scan_timer.timeout.connect(self._refresh_scan_time_label)
         self._candle_fetch_active = False
-        self._countdown_seconds = 5
+        self._countdown_seconds = CANDLE_REFRESH_INTERVAL_SECONDS
         self._hero_base_text = ""
         self._auto_refresh_timer = QTimer(self)
         self._auto_refresh_timer.setInterval(1000)
@@ -258,13 +266,41 @@ class ScannerDetailScreen(QWidget):
         root.addLayout(self.header_slot)
 
         # ---- Tab widget: Tổng quan | Chẩn đoán | AI kiểm định ---------------
-        # The scan-time notice sits beside the tab bar (corner widget), not in
-        # the header — requested UI change.
+        # The scan-time line and the candle-refresh notice share the tab bar's
+        # corner — notice on top, scan instant under it, both right-aligned.  The
+        # notice is the transient one: hiding it drops its row entirely, so the
+        # "Quét lúc …" line keeps its place instead of leaving a blank band.
         self.tabs = QTabWidget()
         self.tabs.setObjectName("ContentTabs")
+
+        self.chart_notice = QLabel("")
+        self.chart_notice.setObjectName("PageSubtitle")
+        self.chart_notice.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.chart_notice.setWordWrap(True)
+        # A notice is a sentence, not a paragraph: capping the width keeps the
+        # corner (and therefore the tab strip beside it) from growing without
+        # bound, while word-wrap keeps a longer sentence readable.
+        self.chart_notice.setMaximumWidth(400)
+        self.chart_notice.setVisible(False)
+
         self.scan_time_label = QLabel("")
         self.scan_time_label.setObjectName("PageSubtitle")
-        self.tabs.setCornerWidget(self.scan_time_label)
+        self.scan_time_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        corner = QWidget()
+        corner.setObjectName("TabBarCorner")
+        corner_layout = QVBoxLayout(corner)
+        corner_layout.setContentsMargins(0, 0, 4, 0)
+        corner_layout.setSpacing(0)
+        corner_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        corner_layout.addWidget(self.chart_notice)
+        corner_layout.addWidget(self.scan_time_label)
+        corner.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self.tabs.setCornerWidget(corner)
 
         # ---- Tab 1: Tổng quan (verdict + cards + chart + conditions) --------
         overview_tab = card()
@@ -275,8 +311,11 @@ class ScannerDetailScreen(QWidget):
         overview_layout.setSpacing(10)
 
         # --- Left container: button + trade panel + score panel + checklist ---
+        # Không đặt minimum cứng nhỏ hơn nội dung: minimum cứng sẽ ghi đè
+        # minimumSizeHint của cột và bóp chữ trong checklist ở viewport hẹp.
+        # Sàn thật của cột là do nội dung quyết định.
         left_container = QWidget()
-        left_container.setMinimumWidth(200)
+        left_container.setObjectName("ScannerDetailLeftColumn")
         left_col = QVBoxLayout(left_container)
         left_col.setSpacing(4)
         left_col.setContentsMargins(0, 0, 0, 0)
@@ -323,8 +362,10 @@ class ScannerDetailScreen(QWidget):
         overview_layout.addWidget(left_container, 25)
 
         # --- Right container: hero bar + chart ---
+        # Cùng lý do như cột trái: không ghim minimum cứng nhỏ hơn sàn nội dung,
+        # nếu không cột sẽ bị bóp và hero/chart bị cắt ở viewport hẹp.
         right_container = QWidget()
-        right_container.setMinimumWidth(360)
+        right_container.setObjectName("ScannerDetailRightColumn")
         right_col = QVBoxLayout(right_container)
         right_col.setContentsMargins(0, 0, 0, 0)
         right_col.setSpacing(4)
@@ -342,16 +383,9 @@ class ScannerDetailScreen(QWidget):
         right_col.addLayout(hero_row)
 
         # -- Chart --
+        # The candle-refresh notice lives in the tab-bar corner (above the scan
+        # instant), so nothing sits between the hero bar and the chart.
         self.chart = AnalysisChartView()
-        chart_status_row = QHBoxLayout()
-        chart_status_row.setContentsMargins(0, 0, 0, 0)
-        chart_status_row.setSpacing(8)
-        self.chart_notice = QLabel("")
-        self.chart_notice.setObjectName("PageSubtitle")
-        self.chart_notice.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.chart_notice.setVisible(False)
-        chart_status_row.addWidget(self.chart_notice, 1)
-        right_col.addLayout(chart_status_row)
         self.chart_frame = QFrame()
         self.chart_frame.setObjectName("AnalysisChartFrame")
         cl = QVBoxLayout(self.chart_frame)
@@ -366,7 +400,9 @@ class ScannerDetailScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Panel dài phải cuộn dọc được ở viewport thấp (compact); ở desktop
+        # nội dung vẫn vừa nên thanh cuộn không xuất hiện.
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(overview_container)
         overview_tab.layout().addWidget(scroll)
@@ -1740,6 +1776,8 @@ class ScannerDetailScreen(QWidget):
         return bool(status.connected and status.logged_in)
 
     def _auto_refresh_tick(self) -> None:
+        # One tick per second.  A fetch already in flight owns the cadence: the
+        # countdown is left where it stands and NO second MT5 worker is created.
         if self._candle_fetch_active:
             self._refresh_hero_countdown()
             return
@@ -1747,7 +1785,7 @@ class ScannerDetailScreen(QWidget):
             return
         self._countdown_seconds -= 1
         if self._countdown_seconds <= 0:
-            self._countdown_seconds = 5
+            self._countdown_seconds = CANDLE_REFRESH_INTERVAL_SECONDS
             self._trigger_candle_refresh()
         self._refresh_hero_countdown()
 
@@ -1767,6 +1805,11 @@ class ScannerDetailScreen(QWidget):
 
     def _start_candle_refresh_symbol(self, symbol: str, analysis_result: dict) -> None:
         """Fetch the latest candles in the background and merge into the chart."""
+        # The guard sits at the ONE place a worker is created, so no caller —
+        # opening the Detail, the 30s tick or anything added later — can run a
+        # second MT5 fetch on top of one that has not finished.
+        if self._candle_fetch_active:
+            return
         if not symbol or not self.app or not hasattr(self.app, "mt5"):
             return
         chart_payload = analysis_result.get("chart_payload")
@@ -1823,16 +1866,16 @@ class ScannerDetailScreen(QWidget):
 
     def _on_candle_refresh_failed(self, message: str) -> None:
         self._candle_fetch_active = False
-        self._set_chart_notice(
-            f"Đang hiển thị dữ liệu snapshot (không cập nhật được nến). {message}"
-        )
+        # The raw provider/exception text stays out of the UI: the corner line
+        # says only what the user needs (still the snapshot, not refreshed).
+        self._set_chart_notice("Nến: snapshot · Không cập nhật được.")
 
     def _on_candle_refresh_done(
         self, symbol: str, active_tf: str, old_dicts: list, new_candles: list
     ) -> None:
         self._candle_fetch_active = False
         if not new_candles:
-            self._set_chart_notice("Đang hiển thị dữ liệu snapshot (không có nến mới).")
+            self._set_chart_notice("Nến: snapshot · Chưa có nến mới.")
             return
         current_result = self.row.get("analysis_result") if self.row else None
         current_symbol = (
@@ -1872,9 +1915,7 @@ class ScannerDetailScreen(QWidget):
             payload["palette"] = chart_palette(current_palette())
             self.chart.set_payload(payload)
         except Exception:
-            self._set_chart_notice(
-                "Đang hiển thị dữ liệu snapshot (không cập nhật được nến)."
-            )
+            self._set_chart_notice("Nến: snapshot · Không cập nhật được.")
             return
         self._set_chart_notice(self._candle_refresh_notice())
 
@@ -1883,30 +1924,17 @@ class ScannerDetailScreen(QWidget):
 
         The chart merges newer candles from MT5 after the Detail is opened, but
         the plan — Entry/SL/TP and the "Vị trí" reading — still belongs to the
-        scan snapshot.  This states that plainly, using the snapshot instant the
-        row already carries.  It never implies a re-evaluation, and when the
-        provenance is missing it says "snapshot thời điểm quét" rather than
-        inventing a timestamp (no ``datetime.now()``, no re-derived cutoff).
+        scan snapshot.  The copy is deliberately short: it says which half is
+        new (candles) and which half is not (plan/position, still the scan
+        snapshot, not re-evaluated).
+
+        It carries no timestamp at all: the only instant the Detail shows is the
+        scan instant on the line below, so the moment of a refresh can never be
+        read as the moment of the scan.  No clock is consulted and no time is
+        invented.
         """
 
-        stamp = ""
-        detail = self.row.get("price_vs_zone_detail") if isinstance(self.row, dict) else None
-        if isinstance(detail, dict):
-            raw = detail.get("snapshot_at")
-            if isinstance(raw, str) and raw.strip():
-                try:
-                    from datetime import datetime as _dt
-
-                    parsed = _dt.fromisoformat(raw.replace("Z", "+00:00"))
-                    if parsed.tzinfo is not None:
-                        stamp = parsed.astimezone().strftime("%H:%M %d/%m")
-                except (TypeError, ValueError):
-                    stamp = ""
-        when = f"lúc {stamp}" if stamp else "thời điểm quét"
-        return (
-            f"Nến đã cập nhật từ MT5. Kế hoạch (Entry/SL/TP) và cột Vị trí vẫn "
-            f"theo snapshot {when} — chưa được đánh giá lại."
-        )
+        return "Nến: MT5 mới · Kế hoạch/Vị trí: snapshot quét (chưa đánh giá lại)."
 
     def refresh_theme_styles(self) -> None:
         """Keep the embedded WebEngine chart in sync with the active theme."""
@@ -1951,7 +1979,7 @@ class ScannerDetailScreen(QWidget):
             visual_state,
         )
 
-        self._countdown_seconds = 5
+        self._countdown_seconds = CANDLE_REFRESH_INTERVAL_SECONDS
         self._hero_base_text = status_text
         self._refresh_hero_countdown()
         reasons = self._candidate_reason_messages()

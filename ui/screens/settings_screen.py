@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QSpinBox,
@@ -47,6 +48,7 @@ from services.ai.provider_catalog import ProviderCapability, capability_labels, 
 from services.data_provider import ConnectionStatus
 from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
+from ui.responsive_row import ResponsiveSplitter
 from ui.layout_system import configure_table
 from ui.layout_system import (
     LayoutTokens,
@@ -85,7 +87,19 @@ class SettingsScreen(QWidget):
         tabs.addTab(self._order_management_tab(), "Quản lý lệnh")
         tabs.addTab(self._display_tab(), "Hiển thị")
         tabs.addTab(self._advanced_tab(), "Nâng cao")
-        root.addWidget(tabs, 1)
+        # Ở viewport compact, nội dung tab cao hơn vùng hiển thị; đặt trong vùng
+        # cuộn dọc để mọi cài đặt vẫn tới được. Desktop đã vừa nên không mọc
+        # thanh cuộn.
+        scroll = QScrollArea()
+        scroll.setObjectName("SettingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Tab cao nhất vẫn có thể rộng hơn vùng hiển thị vài chục pixel ở
+        # compact; cho cuộn ngang theo nhu cầu để không cắt cụt control.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setWidget(tabs)
+        root.addWidget(scroll, 1)
 
     def _ai_tab(self) -> QFrame:
         frame = card()
@@ -202,15 +216,12 @@ class SettingsScreen(QWidget):
         self.ai_test_button.clicked.connect(self._test_ai_key)
         self.ai_save_button.clicked.connect(self._save_ai_provider)
 
-        # Splitter
-        ai_splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Splitter: tự chuyển dọc khi không đủ chỗ cho hai panel ngang, để
+        # panel cấu hình AI không phải cuộn ngang mới tới được.
+        ai_splitter = ResponsiveSplitter(left_panel, right_panel)
         ai_splitter.setObjectName("SettingsAiSplitter")
-        ai_splitter.setChildrenCollapsible(False)
-        ai_splitter.addWidget(left_panel)
-        ai_splitter.addWidget(right_panel)
-        ai_splitter.setStretchFactor(0, 0)
-        ai_splitter.setStretchFactor(1, 1)
         ai_splitter.setSizes([250, 500])
+        self.ai_splitter = ai_splitter
 
         frame.layout().addWidget(ai_splitter, 1)
         frame.layout().addStretch(1)
@@ -537,6 +548,34 @@ class SettingsScreen(QWidget):
         layout.addWidget(field)
         layout.addStretch(1)
         return widget
+
+    def _sync_threshold_label_width(self) -> None:
+        """Cho bốn nhãn ngưỡng Scanner dùng chung một bề ngang đủ chứa chữ.
+
+        Token ``SETTINGS_LABEL_WIDTH`` hẹp hơn "Chênh lệch điểm tối thiểu" nên
+        nhãn đó từng bị cắt vài pixel ở mọi viewport.
+        """
+
+        labels = getattr(self, "_threshold_form_labels", [])
+        if not labels:
+            return
+        width = max(
+            [LayoutTokens.SETTINGS_LABEL_WIDTH]
+            + [label.fontMetrics().horizontalAdvance(label.text()) for label in labels]
+        )
+        for label in labels:
+            label.setFixedWidth(width)
+
+    def showEvent(self, event) -> None:
+        """Font QSS chỉ có sau khi widget được polish — canh lại bề ngang nhãn."""
+
+        super().showEvent(event)
+        self._sync_threshold_label_width()
+
+    def refresh_theme_styles(self) -> None:
+        """Theme đổi kéo theo font QSS của FormLabel — canh lại bề ngang nhãn."""
+
+        self._sync_threshold_label_width()
 
     def _mt5_tab(self) -> QWidget:
         container = QWidget()
@@ -1266,12 +1305,21 @@ class SettingsScreen(QWidget):
         threshold_grid.setContentsMargins(0, 0, 0, 0)
         threshold_grid.setHorizontalSpacing(LayoutTokens.SPACE_4)
         threshold_grid.setVerticalSpacing(LayoutTokens.SPACE_2)
-        for index, (label, control) in enumerate(threshold_rows):
-            threshold_grid.addWidget(
-                self._compact_form_row(label, control),
-                index // 2,
-                index % 2,
-            )
+        threshold_widgets = [
+            self._compact_form_row(label, control)
+            for label, control in threshold_rows
+        ]
+        # Bề ngang nhãn dùng chung cho cả lưới: đủ cho nhãn dài nhất nhưng vẫn
+        # giữ cột field thẳng hàng. Font QSS của FormLabel chỉ có sau khi theme
+        # được áp, nên bề ngang được đồng bộ lại ở refresh_theme_styles().
+        self._threshold_form_labels = [
+            label_widget
+            for row_widget in threshold_widgets
+            for label_widget in row_widget.findChildren(QLabel, "FormLabel")
+        ]
+        self._sync_threshold_label_width()
+        for index, row_widget in enumerate(threshold_widgets):
+            threshold_grid.addWidget(row_widget, index // 2, index % 2)
         threshold_layout.addLayout(threshold_grid)
         threshold_layout.addStretch(1)
         frame.layout().addWidget(threshold_panel)

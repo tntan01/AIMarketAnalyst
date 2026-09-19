@@ -27,7 +27,8 @@ from PyQt6.QtWidgets import (
 )
 from services.order_management_models import SnapshotStatus
 from services.settings_service import SettingsService
-from ui.layout_system import configure_table
+from ui.responsive_row import ResponsiveGrid
+from ui.layout_system import DialogBodyScroll, configure_table
 from ui.theme.fonts import get_body_font, get_subtitle_font
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.screens.shared import action_button, card, page_header, labeled_value
@@ -116,7 +117,7 @@ class OrdersScreen(QWidget):
         content_card.layout().setSpacing(10)
         content_card.layout().addLayout(self._build_tab_bar())
         content_card.layout().addWidget(self._build_order_table(), 1)
-        content_card.layout().addLayout(self._build_action_bar())
+        content_card.layout().addWidget(self._build_action_bar())
         root.addWidget(content_card, 1)
 
     def _build_status_bar(self) -> QWidget:
@@ -154,12 +155,15 @@ class OrdersScreen(QWidget):
                 val_lbl.setProperty("compactStatus", True)
         self.pl_label.setProperty("metricRole", "profit")
 
-        layout.addWidget(self.balance_card)
-        layout.addWidget(self.position_count_card)
-        layout.addWidget(self.pending_count_card)
-        layout.addWidget(self.pl_card)
-        layout.addWidget(self.trail_count_card)
-        layout.addWidget(self.protection_card)
+        for card_widget in (
+            self.balance_card,
+            self.position_count_card,
+            self.pending_count_card,
+            self.pl_card,
+            self.trail_count_card,
+            self.protection_card,
+        ):
+            layout.addWidget(card_widget)
 
         return container
 
@@ -219,16 +223,17 @@ class OrdersScreen(QWidget):
         table.itemSelectionChanged.connect(self._update_clear_trail_visibility)
         return table
 
-    def _build_action_bar(self) -> QHBoxLayout:
-        layout = QHBoxLayout()
-        layout.setSpacing(8)
+    def _build_action_bar(self) -> QWidget:
+        # Lưới nút xếp trái, tự xuống dòng khi thiếu ngang: ở compact hàng
+        # 7 nút không vừa nên màn hình bị đẩy rộng và cắt mất cột bảng.
+        buttons: list[QWidget] = []
 
         self.refresh_btn = action_button(
             "Làm mới", primary=True, color="info",
             icon="refresh", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.refresh_btn.clicked.connect(self.refresh_orders)
-        layout.addWidget(self.refresh_btn)
+        buttons.append(self.refresh_btn)
 
         self.trail_btn = action_button(
             "Trailing Stop", primary=True, color="warning",
@@ -236,7 +241,7 @@ class OrdersScreen(QWidget):
         )
         self.trail_btn.setToolTip("Bật/tắt trailing stop cho vị thế đã chọn")
         self.trail_btn.clicked.connect(self._show_trailing_dialog)
-        layout.addWidget(self.trail_btn)
+        buttons.append(self.trail_btn)
 
         self.clear_trail_btn = action_button(
             "Xóa trailing", primary=True, color="danger",
@@ -245,21 +250,21 @@ class OrdersScreen(QWidget):
         self.clear_trail_btn.setToolTip("Xóa cấu hình trailing stop của vị thế đã chọn")
         self.clear_trail_btn.clicked.connect(self._clear_trailing)
         self.clear_trail_btn.setVisible(False)
-        layout.addWidget(self.clear_trail_btn)
+        buttons.append(self.clear_trail_btn)
 
         self.modify_position_btn = action_button(
             "Sửa SL/TP", primary=True, color="warning",
             icon="edit", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.modify_position_btn.clicked.connect(self._modify_selected_position)
-        layout.addWidget(self.modify_position_btn)
+        buttons.append(self.modify_position_btn)
 
         self.partial_close_btn = action_button(
             "Đóng một phần", primary=True, color="warning",
             icon="half", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self.partial_close_btn.clicked.connect(self._partial_close_selected)
-        layout.addWidget(self.partial_close_btn)
+        buttons.append(self.partial_close_btn)
 
         self.close_selected_btn = action_button(
             "Đóng lệnh đã chọn", primary=True, color="danger",
@@ -267,7 +272,7 @@ class OrdersScreen(QWidget):
         )
         self.close_selected_btn.setToolTip("Đóng vị thế đang chọn trong bảng")
         self.close_selected_btn.clicked.connect(self._close_selected)
-        layout.addWidget(self.close_selected_btn)
+        buttons.append(self.close_selected_btn)
 
         self.close_all_btn = action_button(
             "Đóng tất cả", primary=True, color="danger",
@@ -275,7 +280,7 @@ class OrdersScreen(QWidget):
         )
         self.close_all_btn.setToolTip("Đóng toàn bộ vị thế đang mở (có xác nhận)")
         self.close_all_btn.clicked.connect(self._close_all)
-        layout.addWidget(self.close_all_btn)
+        buttons.append(self.close_all_btn)
 
         self.modify_pending_btn = action_button(
             "Sửa lệnh chờ", primary=True, color="warning",
@@ -283,7 +288,7 @@ class OrdersScreen(QWidget):
         )
         self.modify_pending_btn.clicked.connect(self._modify_selected_pending)
         self.modify_pending_btn.setVisible(False)
-        layout.addWidget(self.modify_pending_btn)
+        buttons.append(self.modify_pending_btn)
 
         self.cancel_pending_btn = action_button(
             "Hủy lệnh chờ", primary=True, color="danger",
@@ -291,7 +296,7 @@ class OrdersScreen(QWidget):
         )
         self.cancel_pending_btn.clicked.connect(self._cancel_selected_pending)
         self.cancel_pending_btn.setVisible(False)
-        layout.addWidget(self.cancel_pending_btn)
+        buttons.append(self.cancel_pending_btn)
 
         self.flatten_btn = action_button(
             "Flatten tài khoản", primary=True, color="danger",
@@ -301,10 +306,14 @@ class OrdersScreen(QWidget):
             "Đóng tất cả positions và hủy tất cả pending orders trong snapshot xác nhận"
         )
         self.flatten_btn.clicked.connect(self._flatten_account)
-        layout.addWidget(self.flatten_btn)
+        buttons.append(self.flatten_btn)
 
-        layout.addStretch(1)
-        return layout
+        return ResponsiveGrid(
+            widgets=buttons,
+            columns=len(buttons),
+            compact_columns=4,
+            stretch=False,
+        )
 
     # ------------------------------------------------------------------
     # Tab switching
@@ -880,11 +889,22 @@ class OrdersScreen(QWidget):
         root = QVBoxLayout(dlg)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(14)
+        # Thân dialog cuộn được trong khi hàng nút luôn nằm trong tầm nhìn: ở
+        # màn hình compact (900x560) nội dung cao hơn vùng hiển thị nên nút
+        # hành động từng bị đẩy ra ngoài màn hình (F-R4-02).
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(14)
+        trailing_scroll = DialogBodyScroll()
+        trailing_scroll.setObjectName("TrailingDialogScroll")
+        trailing_scroll.setWidget(body)
+        root.addWidget(trailing_scroll, 1)
 
         # Title
         title = QLabel("Cấu hình Trailing Stop")
         title.setObjectName("ActionTitle")
-        root.addWidget(title)
+        body_layout.addWidget(title)
 
         # 1. Position summary card
         summary_card = card("Thông tin lệnh")
@@ -1000,7 +1020,7 @@ class OrdersScreen(QWidget):
 
         _refresh_live_labels(current_price, profit, profit_pips_signed, r_multiple_signed)
 
-        root.addWidget(summary_card)
+        body_layout.addWidget(summary_card)
 
         # 2. Settings card -- unified manual + AI
         settings_card = card("Cài đặt khoảng cách")
@@ -1132,7 +1152,7 @@ class OrdersScreen(QWidget):
         pip_layout.addStretch()
         settings_card.layout().addLayout(pip_layout)
 
-        root.addWidget(settings_card)
+        body_layout.addWidget(settings_card)
 
         # 3. Preview card: BE + Trail (live update)
         preview_card = card("Xem trước")
@@ -1259,7 +1279,7 @@ class OrdersScreen(QWidget):
         _update_preview(default_pips)
         _update_be_live(current_price, current_sl)
         self._dlg_pip_spin.valueChanged.connect(_update_preview)
-        root.addWidget(preview_card)
+        body_layout.addWidget(preview_card)
 
         # ---- Auto-refresh timer: update live data every 2s ----
         _live_timer = QTimer(dlg)
@@ -1378,6 +1398,11 @@ class OrdersScreen(QWidget):
         btn_layout.addWidget(close_btn)
 
         root.addLayout(btn_layout)
+
+        # Áp sizeHint sau khi đã dựng đủ nội dung: DialogBodyScroll tự kẹp chiều
+        # cao thân theo vùng làm việc nên desktop mở đúng như trước còn màn hình
+        # thấp thì thu lại và cuộn (F-R4-02).
+        dlg.adjustSize()
 
         dlg.exec()
 

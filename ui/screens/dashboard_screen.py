@@ -29,6 +29,7 @@ from services.market_data_service import fetch_market_overview
 from services.mt5_service import MT5ConnectionStatus, MT5Service
 from services.settings_service import SettingsService
 from ui.icons import flat_data_uri, flat_icon, flat_icon_fixed, flat_pixmap
+from ui.responsive_row import ResponsiveGrid
 from ui.layout_system import LayoutTokens, configure_table
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
 from ui.theme.fonts import QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
@@ -206,6 +207,29 @@ class StatusCardEventFilter(QObject):
         self.icon.setPixmap(flat_pixmap(self.icon_name, role, size=16))
 
 
+def _status_card_content_width(card: QFrame) -> int:
+    """Bề ngang tối thiểu để thẻ hiển thị trọn chữ của nó.
+
+    Nhãn trong thẻ dùng elide (``_ElidedLabel``, ``QSizePolicy.Ignored``) nên
+    ``minimumSizeHint`` của thẻ gần 0 — không dùng được để quyết định lưới có
+    phải giảm cột hay không. Đo trực tiếp chữ dài nhất cộng icon và lề.
+    """
+
+    widest_text = 0
+    for label in card.findChildren(_ElidedLabel):
+        full_text = getattr(label, "_full_text", "") or ""
+        widest_text = max(
+            widest_text, label.fontMetrics().horizontalAdvance(full_text)
+        )
+    layout = card.layout()
+    margins = layout.contentsMargins() if layout is not None else None
+    spacing = layout.spacing() if layout is not None else 0
+    icon = card.findChild(QLabel, "StatusIcon")
+    icon_width = icon.width() if icon is not None and icon.width() > 0 else 28
+    side_margins = (margins.left() + margins.right()) if margins is not None else 28
+    return widest_text + side_margins + spacing + icon_width
+
+
 class DashboardScreen(QWidget):
     def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
@@ -251,17 +275,33 @@ class DashboardScreen(QWidget):
                     break
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # Ở viewport compact, lưới thẻ 2×2 làm nội dung cao hơn vùng hiển thị;
+        # đặt toàn bộ nội dung trong vùng cuộn dọc để không mất phần dưới.
+        # Desktop đã vừa nên không mọc thanh cuộn.
+        content = QWidget()
+        root = QVBoxLayout(content)
         root.setContentsMargins(26, 22, 26, 22)
         root.setSpacing(18)
         root.addLayout(self._build_header())
-        root.addLayout(self._build_status_grid())
+        root.addWidget(self._build_status_grid())
         self.mt5_warning = self._build_mt5_warning()
         root.addWidget(self.mt5_warning)
         self.market_overview = self._build_market_overview()
         root.addWidget(self.market_overview)
         self.news_section = self._build_news_section()
         root.addWidget(self.news_section)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("DashboardScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+        shell.addWidget(scroll)
         self._refresh_market_overview()
 
     def _build_header(self) -> QHBoxLayout:
@@ -278,20 +318,23 @@ class DashboardScreen(QWidget):
         layout.addWidget(coverage)
         return layout
 
-    def _build_status_grid(self) -> QGridLayout:
-        grid = QGridLayout()
-        grid.setSpacing(8)
+    def _build_status_grid(self) -> QWidget:
+        # Lưới card tự giảm còn 2 cột khi viewport hẹp: ở compact hàng 4 card
+        # làm chữ trong thẻ bị cắt, trái với "không cắt card" của contract R3.
         items = [
             ("Kết nối", "Đang kiểm tra", "Đang đọc kết nối dữ liệu", "warning"),
             ("Broker", "Đang kiểm tra", "Đang đọc tài khoản", "warning"),
             ("AI", "Đang kiểm tra", "Đang đọc cấu hình AI", "warning"),
             ("Nguồn dữ liệu", "Đang kiểm tra", "Đang xác định nguồn dữ liệu", "warning"),
         ]
-        for index, item in enumerate(items):
-            card = self._status_card(*item)
-            grid.addWidget(card, 0, index)
-            grid.setColumnStretch(index, 1)
-        return grid
+        cards = [self._status_card(*item) for item in items]
+        self.status_grid = ResponsiveGrid(
+            widgets=cards,
+            columns=len(cards),
+            compact_columns=2,
+            item_min_width=max(_status_card_content_width(card) for card in cards),
+        )
+        return self.status_grid
 
     def _status_card(self, title: str, value: str, detail: str, state: str) -> QFrame:
         frame = QFrame()

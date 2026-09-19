@@ -49,6 +49,7 @@ from ui.scanner_rr_formatters import (
     format_order_rr_text,
     format_order_rr_tooltip,
 )
+from ui.responsive_row import ResponsiveRow
 from ui.rich_text import compile_rich_html
 from ui.theme import palette_for, semantic_role_for_color
 from ui.theme.fonts import get_body_font
@@ -1003,20 +1004,23 @@ class ScannerScreen (QWidget ):
         for control in compact_controls:
             control .setSizePolicy (QSizePolicy .Policy .Fixed ,QSizePolicy .Policy .Fixed )
 
-        scan_options =QHBoxLayout ()
-        scan_options .setContentsMargins (0 ,0 ,0 ,0 )
-        scan_options .setSpacing (8 )
-        scan_options .addWidget (self .scan_mode_label )
-        scan_options .addWidget (self .scan_mode_combo )
-        scan_options .addWidget (self .scan_interval_label )
-        scan_options .addWidget (self .scan_interval_combo )
-        scan_options .addWidget (self .auto_trade_check )
-        scan_options .addWidget (self .scan_button )
-        scan_options .addWidget (self .stop_auto_scan_button )
-        scan_options .addWidget (self .show_orders_button )
-        scan_options .addStretch (1 )
-        self .scan_options_layout =scan_options
-        frame .layout ().addLayout (scan_options )
+        scan_options =ResponsiveRow (
+        left =(
+        self .scan_mode_label ,
+        self .scan_mode_combo ,
+        self .scan_interval_label ,
+        self .scan_interval_combo ,
+        ),
+        right =(
+        self .auto_trade_check ,
+        self .scan_button ,
+        self .stop_auto_scan_button ,
+        self .show_orders_button ,
+        ),
+        )
+        self .scan_options_row =scan_options
+        self .scan_options_layout =scan_options .layout ()
+        frame .layout ().addWidget (scan_options )
 
         # ---- Status backing labels (not added to UI, used for summary) ----
         self .status_labels :dict [str ,QLabel ]={}
@@ -1572,21 +1576,14 @@ class ScannerScreen (QWidget ):
         if isinstance (title_row ,QLabel ):
             frame .layout ().removeWidget (title_row )
             title_row .deleteLater ()
-            header =QWidget ()
-            header_layout =QHBoxLayout (header )
-            header_layout .setContentsMargins (0 ,0 ,0 ,0 )
-            header_layout .setSpacing (8 )
             header_label =QLabel ('Bảng kết quả quét')
             header_label .setObjectName ("PanelTitle")
-            header_layout .addWidget (header_label )
             self.help_button = action_button(
                 "Giải thích", primary=True, color="info",
                 icon="help-circle", icon_role="selection_text", icon_disabled_role="selection_text",
             )
             self .help_button .setToolTip ('Xem giải thích các thông số trong bảng')
             self .help_button .clicked .connect (self ._show_columns_help )
-            header_layout .addWidget (self .help_button )
-            header_layout .addStretch (1 )
             self.detail_button = action_button(
                 "Xem chi tiết", primary=True,
                 icon="search", icon_role="selection_text", icon_disabled_role="selection_text",
@@ -1605,10 +1602,17 @@ class ScannerScreen (QWidget ):
             )
             self.brief_button.setToolTip("Xem bản tin thị trường do AI tổng hợp từ kết quả quét.")
             self .brief_button .clicked .connect (self ._show_market_brief )
-            header_layout .addWidget (self .detail_button )
-            header_layout .addWidget (self .save_button )
-            header_layout .addWidget (self .brief_button )
-            frame .layout ().insertWidget (0 ,header )
+            # Cùng lý do như hàng tuỳ chọn quét: đủ chỗ thì một hàng đúng như
+            # trước, thiếu ngang thì action xuống hàng thay vì bị cắt.
+            self .table_header_row =ResponsiveRow (
+                left =(header_label ,self .help_button ),
+                right =(
+                    self .detail_button ,
+                    self .save_button ,
+                    self .brief_button ,
+                ),
+            )
+            frame .layout ().insertWidget (0 ,self .table_header_row )
 
         self .table =QTableView ()
         configure_table(self.table)

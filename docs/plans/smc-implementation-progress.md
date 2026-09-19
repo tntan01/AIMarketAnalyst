@@ -2711,6 +2711,159 @@ $ git ls-files --others --exclude-standard reports/scanner   # (không có dòng
 
 **Quyết định:** `Task145–147 REVIEW PASS — H1 execution view, tooltip "Vị trí" snapshot và candle-refresh notice đủ điều kiện bàn giao.` Đây chỉ là approval Lô D; không APPROVED rollout/auto-entry, không mở Task148+, không thay đổi SMC diagnostic của bảng, scoring, plan, persistence hay H4/D1/M15.
 
+#### Lô UI Chart — nến nhỏ hơn một nửa + refresh nến mỗi 30 giây (2026-09-18) — `IMPLEMENTED — WAITING_REVIEW Lô UI Chart`
+
+**Điều kiện bắt đầu đã kiểm:** HEAD `64d9228` (*"SMC: refine H1 execution chart presentation"*) — Lô D và gói sửa F-D-01/02/03 đã được commit, `tests/test_smc_execution_view_lo_d.py` nay được git theo dõi. Lượt này chỉ có hai thay đổi UI Chart theo yêu cầu; không mở task khác, không commit.
+
+##### 1 — Mật độ nến: 200 nến ở một nửa chiều rộng
+
+`assets/chart/index.html`, hàm `_applyDefaultTimeScale`: `visibleBars` 100 → **200**, `barSpacing` và `minBarSpacing` 3 → **1.5**. Chỉ trục thời gian được cấu hình — `rightOffset` giữ nguyên 5, không đụng price scale dọc (`priceScale`/`scaleMargins`/`autoScale` không xuất hiện trong hàm), không đổi OHLC, zoom/pan thủ công, Entry/SL/TP, SMC overlay hay H1 execution view.
+
+**Expected cũ phải cập nhật theo thiết kế:** `tests/test_chart_source_zone_visibility.py::test_chart_uses_medium_default_candle_density` đang pin `visibleBars = 100` / `barSpacing: 3` — chính là giá trị mà yêu cầu này đổi. Node được giữ nguyên tên, chỉ cập nhật expected kèm comment nêu lý do. **Không** sửa golden, **không** thêm/sửa skip hay xfail, không đổi tên node.
+
+##### 2 — Refresh nến mỗi 30 giây, không bao giờ hai worker
+
+`ui/screens/scanner_detail_screen.py`:
+
+* Hằng số module `CANDLE_REFRESH_INTERVAL_SECONDS = 30` thay cho ba literal `5` (khởi tạo, reset trong `_auto_refresh_tick`, reset khi dựng hero).
+* `_auto_refresh_tick` giữ nguyên nhánh thoát sớm khi `_candle_fetch_active` (lượt đang chạy thì **không** trừ countdown và **không** kích hoạt lượt mới), nhịp tick vẫn 1 giây.
+* Refresh đầu tiên khi mở Detail **giữ nguyên**: `_refresh_chart` vẽ payload rồi gọi `_start_candle_refresh_symbol`.
+* Guard `_candle_fetch_active` nay đặt tại **chính chỗ tạo worker** (`_start_candle_refresh_symbol`) — nơi duy nhất dựng `CandleRefreshWorker` — nên không caller nào (mở Detail, tick 30 giây hay code thêm sau) tạo được worker MT5 thứ hai.
+* `_scan_timer` 60 giây của nhãn "Thời điểm quét" **không đổi**; refresh chỉ merge nến vào Chart, không re-score/re-select, không đổi `price_vs_zone`, Entry/SL/TP, snapshot hay readiness (đã có test riêng của Lô D và test mới của lượt này).
+* **Countdown/hero không hiển thị số giây:** `_refresh_hero_countdown` chỉ đặt lại `_hero_base_text` (câu trạng thái candidate), không có nhãn nào in số giây — nên không có chỗ nào phải sửa để "phản ánh 30 giây"; ghi lại để Tech Lead đối chiếu thay vì tự thêm UI mới.
+
+##### Test — `tests/test_chart_ui_refresh.py` (mới, 10 node)
+
+Không test nào chờ 30 giây thật và không tạo QApplication/QThread/MT5: countdown được đẩy từng tick, screen dựng bằng `ScannerDetailScreen.__new__` (cùng cách các test checklist đang dùng, vì `ScannerDetailScreen` đầy đủ cần Qt/WebEngine).
+
+* `test_twenty_nine_ticks_do_not_refresh_and_tick_thirty_refreshes_once` — 29 tick đầu **không** fetch, `_countdown_seconds == 1`; tick thứ 30 fetch **đúng một lần** và đếm lại từ 30; nhịp lặp lại đúng.
+* `test_a_disconnected_provider_never_advances_the_countdown` — chưa kết nối thì không fetch và không đốt countdown.
+* `test_a_fetch_in_flight_never_starts_a_second_worker` — 90 tick khi đang fetch ⇒ 0 lượt mới; gọi thẳng `_start_candle_refresh_symbol` khi đang fetch ⇒ **không** tạo `_candle_worker` và MT5 **không** bị gọi lần nào (MT5 stand-in ghi lại mọi call).
+* `test_the_worker_guard_is_the_first_thing_the_fetch_does` — pin cấu trúc bằng AST: câu lệnh đầu tiên (sau docstring) của hàm tạo worker là `if self._candle_fetch_active: return`.
+* `test_opening_the_detail_still_refreshes_the_candles_once` — gọi thật `_refresh_chart`: vẽ chart một lần, fetch nến một lần, và **row không đổi** (so JSON trước/sau).
+* `test_the_interval_is_a_named_thirty_second_constant` — hằng số 30; tick vẫn 1000 ms; `_scan_timer` vẫn 60000; không còn literal `self._countdown_seconds = 5`.
+* Khóa mật độ: `test_the_chart_shows_two_hundred_bars_at_half_the_bar_spacing` (visibleBars 200, barSpacing/minBarSpacing 1.5, không còn 3/100), `test_the_density_change_leaves_the_price_scale_alone` (không `priceScale`/`scaleMargins`/`autoScale` trong hàm), `test_the_chart_page_still_has_its_ohlc_and_overlay_surfaces` (các bề mặt trang còn nguyên), `test_a_theme_switch_never_resets_the_density` (light/dark không đặt lại `barSpacing`).
+
+##### Kiểm chứng đã chạy
+
+| Lệnh | Kết quả |
+|---|---|
+| `pytest tests/test_chart_ui_refresh.py -q` | **10 passed** |
+| Targeted Chart/Detail/UI (8 file: chart ui refresh, chart source-zone, Lô D execution view, detail chart blocked, detail entry checklist, detail RR, columns help, location canonical) | **100 passed** |
+| `pytest tests/test_dark_theme_surface_phase2.py -q` (chạy riêng) | **7 passed** |
+| `smc_ui_smoke.py --out-dir temp/uichart/smc_ui_smoke` (light + dark) | exit 0, `failures=0`, **28 surface** (7 trạng thái × 2 theme × 2 lớp) đều `theme_ok`/`ink_ok`, mọi capture nằm trong `temp/`; DOM caption H1 vẫn rỗng ở **mọi** trạng thái/theme |
+| Full suite `pytest -q` | **6 failed / 4748 passed / 7 skipped / 16 xfailed** |
+| `git diff --check` | sạch (chỉ cảnh báo LF→CRLF) |
+| `git diff --name-only -- reports/` · `git status --porcelain -- reports/` · `git ls-files --others --exclude-standard -- reports/` | **rỗng cả ba** |
+
+**Đối chiếu failure với baseline gần nhất.** Cùng lệnh `pytest -q` chạy trên **worktree sạch tại HEAD `64d9228`** cho **6 failed / 4738 passed / 7 skipped / 16 xfailed**. Hai lượt cho **cùng một tập failure**: `diff` trên hai danh sách node thất bại đã sắp xếp trả về **rỗng**, và cả sáu node của cả hai lượt đều là:
+
+```text
+FAILED tests/test_step3_fred.py::test_load_fallback_returns_currencies
+FAILED tests/test_step3_fred.py::test_get_latest_rates_no_key_uses_fallback
+FAILED tests/test_step3_fred.py::test_get_latest_rates_empty_key_uses_fallback
+FAILED tests/test_step3_fred.py::test_get_latest_rates_cache_works
+FAILED tests/test_step3_fred.py::test_get_latest_rates_bad_key_falls_back
+FAILED tests/test_step3_fred.py::test_get_latest_rates_fred_exception_falls_back
+```
+
+Liệt kê nguyên văn theo ID/file; Coder **không** tự gắn nhãn hay tự kết luận nguyên nhân. **Không có failure mới.** Chênh lệch passed 4738 → 4748 = **+10**, đúng bằng số node của `tests/test_chart_ui_refresh.py`.
+
+##### Giới hạn
+
+* **Crash theo tổ hợp — chứng minh tiền tồn tại bằng CÙNG một command trên cả hai cây:** `pytest -v` với **đúng 8 file** tồn tại ở cả hai cây (chart source-zone, Lô D execution view, detail chart blocked, detail entry checklist, detail RR, columns help, location canonical, dark theme phase 2) cho **`RC=127` trên cả cây làm việc và worktree sạch tại `64d9228`**; hai log **trùng nhau từng node** — 94 node `PASSED` rồi tiến trình chết, node cuối cùng in ra giống hệt ở cả hai (`tests/test_dark_theme_surface_phase2.py::test_scripts_queued_before_page_load_are_all_flushed_in_order`), `diff` hai log chỉ khác dòng `rootdir`. Từng file chạy riêng đều xanh (10 + 16 + 35 + 6 + 10 + 9 + 13 + 11 + 7). Đây là tương tác thứ tự chạy của Qt/WebEngine có trước lượt này — và **không** được dùng để bỏ qua failure nào: mọi failure của full suite đã được liệt kê riêng và đối chiếu ở mục trên.
+* **Nợ tài liệu có trước:** `docs/ui/screen_design.md:639` ghi *"(100 nến nhìn thấy, `barSpacing=7`)"* — đã **sai từ trước** lượt này (code đang là 3, không phải 7) và nay càng lệch. Không sửa vì ngoài phạm vi hai thay đổi; ghi lại để Tech Lead quyết định.
+* Không đổi `reports/`, golden, skip/xfail; không rollout, không auto-entry, không gửi lệnh.
+
+**Kết luận lượt:** `IMPLEMENTED — WAITING_REVIEW Lô UI Chart`. Dừng chờ Tech Lead review.
+
+#### Review độc lập Tech Lead Lô UI Chart (2026-09-18) — `REVIEW PASS`
+
+**Snapshot/diff:** `main` tại `64d9228` cộng worktree chưa commit của lô. Review chỉ thấy sáu file đúng boundary: `assets/chart/index.html`, `ui/screens/scanner_detail_screen.py`, hai test Chart/UI (một file mới), và hai tài liệu kế hoạch. `git diff --check` sạch (chỉ cảnh báo LF→CRLF); ba lệnh đối với `reports/scanner` đều rỗng.
+
+**Mật độ nến PASS.** `_applyDefaultTimeScale()` đổi duy nhất default time scale từ 100/3/3 thành `visibleBars=200`, `barSpacing=1.5`, `minBarSpacing=1.5`; `rightOffset=5` giữ nguyên. Hàm không thay price scale, scale margin, auto scale, dữ liệu OHLC, overlay hay thao tác zoom/pan của người dùng. Expected cũ được cập nhật cùng node, không nới test.
+
+**Refresh PASS.** `CANDLE_REFRESH_INTERVAL_SECONDS=30` là owner duy nhất của countdown; scan-time timer 60 giây không đổi. Detail vẫn gọi refresh ngay khi mở. `_auto_refresh_tick()` không đếm tiếp khi worker còn active, và `_start_candle_refresh_symbol()` chặn ngay đầu trước bất kỳ truy cập MT5/khởi tạo worker nào. Đường refresh vẫn chỉ merge nến vào chart; row/plan/Entry/SL/TP/`price_vs_zone`/snapshot không được tái đánh giá hay ghi lại.
+
+**Kiểm chứng độc lập:** `pytest tests/test_chart_ui_refresh.py tests/test_chart_source_zone_visibility.py -q` = **16 passed**. Full suite `pytest -q` = **6 failed / 4748 passed / 7 skipped / 16 xfailed** trong 444.23s; đối chiếu baseline worktree sạch `64d9228` (`6F / 4738P / 7skip / 16xfail`) cho đúng +10 node mới và cùng chính xác sáu failure `tests/test_step3_fred.py`, không có failure mới.
+
+**Quyết định:** `Lô UI Chart REVIEW PASS — nến mặc định hiển thị nhỏ hơn 50% theo trục thời gian; Detail refresh nến mỗi 30 giây, không tạo worker chồng.` Không thay đổi SMC, Entry/SL/TP, dữ liệu giá, rollout hay auto-entry. Không mở task tiếp theo.
+
+#### Lô ghi chú Detail — refresh nến lên góc tab, copy gọn (2026-09-18) — `IMPLEMENTED — WAITING_REVIEW Lô ghi chú Detail`
+
+**Điều kiện bắt đầu đã kiểm:** HEAD `64d9228`; cây làm việc đang mang **hai lô chưa commit**: Lô UI Chart (mật độ nến + refresh 30 giây, mục ngay trên) và lô này. Baseline gần nhất vẫn là `64d9228` (`pytest -q` = `6 failed / 4738 passed / 7 skipped / 16 xfailed`).
+
+##### Vị trí: `chart_notice` lên góc tab, trên dòng "Quét lúc…"
+
+`ui/screens/scanner_detail_screen.py`, `_build_ui`:
+
+* **Gỡ** `chart_status_row` (hàng riêng phía trên Chart) — nay không còn gì nằm giữa hero bar và chart.
+* Corner widget mới `TabBarCorner` (QWidget + `QVBoxLayout`, canh phải, `setCornerWidget`), hai dòng:
+  1. `chart_notice` (trên) — `AlignRight|AlignVCenter`, `setWordWrap(True)`, trần chiều rộng **400 px**, mặc định **ẩn**;
+  2. `scan_time_label` ("Quét lúc …") ở dưới, cùng canh phải.
+* `_set_chart_notice` **không đổi**: đặt text và bật/tắt visibility. Qt bỏ widget đang ẩn khỏi layout, nên khi không có ghi chú thì hàng ghi chú biến mất hoàn toàn — **không có vùng trắng** và chiều cao tab trở lại đúng một dòng; dòng "Quét lúc …" giữ nguyên chỗ.
+* Phần còn lại của màn hình không đổi: không đụng layout cột chính, Chart data, SMC, Entry/SL/TP, cadence 30 giây, snapshot hay scoring.
+
+##### Copy rút gọn
+
+| Tình huống | Copy trên UI |
+|---|---|
+| Refresh thành công | `Nến: MT5 mới · Kế hoạch/Vị trí: snapshot quét (chưa đánh giá lại).` |
+| Không có nến mới | `Nến: snapshot · Chưa có nến mới.` |
+| Refresh lỗi | `Nến: snapshot · Không cập nhật được.` |
+| Dòng dưới (không đổi) | `Quét lúc HH:MM (… trước)` |
+
+* `_on_candle_refresh_failed(message)` **không** còn đưa `message` (text lỗi thô từ provider/exception) lên UI — tham số vẫn nhận để giữ chữ ký signal, nhưng chỉ dùng để đặt câu thông báo ngắn.
+* `_candle_refresh_notice()` nay trả **một câu hằng**, không đọc `price_vs_zone_detail.snapshot_at` nữa và không dùng đồng hồ: ghi chú **không mang mốc thời gian nào**, nên thời điểm refresh không thể bị đọc thành "lúc quét" — chỉ dòng dưới mang mốc quét.
+* **Thay thế hành vi của Lô D:** bản trước in mốc snapshot (`lúc HH:MM dd/mm`, thiếu thì "thời điểm quét"). Nay ghi chú không in mốc nào; trường `price_vs_zone_detail.snapshot_at` **vẫn nằm trong carrier** theo contract F-D-03 nhưng UI không còn hiển thị nó. Node test cũ trong `tests/test_smc_execution_view_lo_d.py` được cập nhật expected theo copy mới (giữ nguyên tên node, vẫn khẳng định không dùng đồng hồ và không bịa mốc).
+
+##### Test — `tests/test_scanner_detail_notice_layout.py` (mới, 9 node)
+
+Dựng **`ScannerDetailScreen` thật** trong subprocess (`QT_QPA_PLATFORM=offscreen`, cùng recipe với `tests/test_scanner_detail_entry_checklist.py`) và đọc lại widget thật:
+
+* `test_the_notice_sits_above_the_scan_line_in_the_tab_corner` — corner widget đúng là `tabs.cornerWidget()`, objectName `TabBarCorner`, hai item theo thứ tự `[chart_notice, scan_time_label]`.
+* `test_the_notice_left_the_chart_status_row` — `chart_notice.parentWidget()` **là** corner; không có `AnalysisChartFrame` trong chuỗi cha; nguồn không còn `chart_status_row`.
+* `test_without_a_notice_only_the_scan_line_is_shown` — ghi chú `isHidden()`, "Quét lúc …" vẫn hiện và đúng định dạng.
+* `test_the_notice_wraps_within_a_bounded_width` — `wordWrap()` bật, trần rộng trong khoảng hợp lý.
+* `test_the_success_copy_is_the_short_one` / `test_no_new_candles_and_failure_have_their_own_short_copy` — ba câu đúng nguyên văn.
+* `test_a_provider_error_never_reaches_the_ui` — text lỗi thô (chuỗi thử có cả mã lỗi) **không** xuất hiện trên UI.
+* `test_no_copy_invents_a_timestamp` — không câu nào chứa `lúc `/`thời điểm`/mẫu `HH:MM`, và AST của `_candle_refresh_notice` không có `now`/`utcnow`/`today`.
+* `test_a_refresh_never_touches_the_row_plan_or_reading` — sau cả ba nhánh (thành công / lỗi / không có nến mới) row **không đổi** (JSON trước–sau), gồm plan, `price_vs_zone`, Entry/SL/TP, snapshot và SMC payload.
+
+##### Kiểm chứng đã chạy
+
+| Lệnh | Kết quả |
+|---|---|
+| `pytest tests/test_scanner_detail_notice_layout.py -q` | **9 passed** |
+| Các file bị ảnh hưởng trực tiếp (Lô D execution view, notice layout, chart ui refresh, chart source-zone) | **60 passed** |
+| Targeted Detail/UI (7 file: detail chart blocked, entry checklist, detail RR, columns help, location canonical, detail diagnostics, ui presentation task126) | **118 passed** |
+| `smc_ui_smoke.py --out-dir temp/notice/smc_ui_smoke` (light + dark) | exit 0, `failures=0`, **28 surface** đều `theme_ok`/`ink_ok`, mọi capture trong `temp/`; DOM caption H1 vẫn rỗng ở mọi trạng thái/theme |
+| Full suite `pytest -q` | **6 failed / 4757 passed / 7 skipped / 16 xfailed** |
+| `git diff --check` | sạch (chỉ cảnh báo LF→CRLF) |
+| `git diff --name-only -- reports/` · `git status --porcelain -- reports/` · `git ls-files --others --exclude-standard -- reports/` | **rỗng cả ba** |
+
+**Đối chiếu failure với baseline gần nhất.** Cùng lệnh `pytest -q` trên worktree sạch tại HEAD `64d9228` (đo ở lượt trước; HEAD không đổi) cho **6 failed / 4738 passed / 7 skipped / 16 xfailed**. Hai tập failure **trùng nhau từng node** — `diff` trên hai danh sách node thất bại đã sắp xếp trả về **rỗng**; cả sáu node của cả hai lượt đều là:
+
+```text
+FAILED tests/test_step3_fred.py::test_load_fallback_returns_currencies
+FAILED tests/test_step3_fred.py::test_get_latest_rates_no_key_uses_fallback
+FAILED tests/test_step3_fred.py::test_get_latest_rates_empty_key_uses_fallback
+FAILED tests/test_step3_fred.py::test_get_latest_rates_cache_works
+FAILED tests/test_step3_fred.py::test_get_latest_rates_bad_key_falls_back
+FAILED tests/test_step3_fred.py::test_get_latest_rates_fred_exception_falls_back
+```
+
+Liệt kê nguyên văn theo ID/file; Coder **không** tự gắn nhãn hay tự kết luận nguyên nhân. **Không có failure mới.** Chênh lệch passed 4738 → 4757 = **+19**, đúng bằng số node test mới của hai lô chưa commit: 10 node `tests/test_chart_ui_refresh.py` (Lô UI Chart) + 9 node `tests/test_scanner_detail_notice_layout.py` (lô này); file test Lô D giữ nguyên số node (chỉ cập nhật expected của một node).
+
+##### Giới hạn
+
+* **Trần rộng 400 px + word-wrap là chủ đích:** copy hiện tại vừa một dòng ở cỡ chữ của app; nếu sau này copy dài hơn, dòng ghi chú sẽ xuống dòng và thanh tab cao thêm đúng một dòng (đánh đổi đã chọn để không bóp tab strip).
+* **Text lỗi thô bị bỏ hẳn khỏi UI** (theo yêu cầu): `_on_candle_refresh_failed` vẫn nhận `message` nhưng không hiển thị ở đâu; muốn chẩn đoán sâu phải xem log/worker, không còn trên màn hình.
+* **Ghi chú không còn in mốc snapshot** (thay thế hành vi Lô D); trường `snapshot_at` vẫn ở trong carrier nhưng hiện **không có consumer UI** nào đọc. Ghi lại để Tech Lead quyết định giữ hay dùng lại.
+* Không đổi `reports/`, golden, skip/xfail; không rollout, không auto-entry, không gửi lệnh.
+
+**Kết luận lượt:** `IMPLEMENTED — WAITING_REVIEW Lô ghi chú Detail`. Dừng chờ Tech Lead review.
+
 ### BLOCKER phát hiện trong lô — canonical chain chưa tới được dữ liệu production
 
 Đây là phát hiện quan trọng nhất và cần Tech Lead quyết định trước khi làm tiếp Task112–116.

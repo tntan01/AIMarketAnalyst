@@ -75,12 +75,11 @@
     },
     {
       "path": "ui/main_window.py",
-      "line": 71,
+      "line": 91,
       "method": "setMinimumSize",
       "receiver": "self",
       "arguments": [
-        "1024",
-        "700"
+        "*MINIMUM_WINDOW_SIZE"
       ],
       "category": "container"
     },
