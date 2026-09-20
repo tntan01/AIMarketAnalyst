@@ -7,7 +7,7 @@ threshold.
 
 > **Cập nhật 10/09/2026 — Location ĐÃ TRIỂN KHAI sau H01/H02:** phần parity
 > Location cũ bên dưới là lịch sử/baseline. Contract runtime mới được mô tả ở
-> §0.1 và [plan 32 task](../plans/location-scoring-upgrade-plan.md). Không
+> §0.1 (plan 32 task đã hoàn tất — lịch sử trong Git). Không
 > relabel raw lịch sử theo model mới.
 
 ## 0. Mục tiêu và ranh giới
@@ -34,7 +34,7 @@ Tầng target đã có candle→raw: module `core/scanner_features.py`
 Phạm vi “port/không đổi threshold/contract” ở §0–§7 ghi lại đợt migration cũ
 cho Trend/Momentum/SMC và các contract chung. Location runtime mới là thay đổi
 có version theo
-[plan Location](../plans/location-scoring-upgrade-plan.md), không phải tiếp tục
+contract §0.1, không phải tiếp tục
 cam kết parity với công thức Location tại §3.3. Trend, Momentum, canonical SMC,
 raw maxima và trọng số regime vẫn giữ nguyên.
 

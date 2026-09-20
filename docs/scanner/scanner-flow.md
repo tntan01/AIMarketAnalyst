@@ -453,7 +453,7 @@ Location engine dùng nến H4 đã đóng, cutoff tường minh và vùng riên
 đè vùng technical/SMC mà bước 2 đang dùng. Raw và detail cùng lần tính đi
 xuyên schema/snapshot tới row/UI. F đã chuẩn bị adapter/schema/version, G đã
 chuẩn bị UI, H01 đã chuyển caller live và H02 đã kiểm tra fixture/environment
-smoke theo [plan 32 task](../plans/location-scoring-upgrade-plan.md).
+smoke theo plan Location 32 task (đã hoàn tất — lịch sử trong Git).
 
 Không đưa scenario entry hoặc selected side ngược vào raw scorer. Với cùng
 input và cùng side, logic tạo entry/SL/TP giữ nguyên; scenario hiển thị cuối

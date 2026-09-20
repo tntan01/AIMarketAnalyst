@@ -136,9 +136,10 @@ Module canonical: `core/technical_signal_scorer.py`.
 
 ### 3.4 Location: scorer hình học đang chạy
 
-**Trạng thái: ĐÃ TRIỂN KHAI sau H01/H02 (10/09/2026).** Nguồn chi tiết duy nhất
-cho thuật toán/default config/test/task là
-[Location upgrade plan](../plans/location-scoring-upgrade-plan.md). Không sao
+**Trạng thái: ĐÃ TRIỂN KHAI sau H01/H02 (10/09/2026).** Nguồn đặc tả thuật
+toán/default config duy nhất là
+[Scanner features spec §0.1](scanner-features-spec.md) (plan Location 32 task đã
+hoàn tất và loại khỏi cây tài liệu — lịch sử trong Git). Không sao
 chép các con số default sang nhiều file tài liệu hoặc tự chọn một công thức khác.
 
 Location hiện lấy reference từ H1 cuối đã đóng, dựng vùng swing riêng trên H4,

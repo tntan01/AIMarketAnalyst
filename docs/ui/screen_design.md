@@ -846,7 +846,7 @@ R:R ưu tiên field top-level của scanner row và fallback sang scenario khớ
 ### Location runtime — đã nối, R5 đã duyệt, 10/09/2026
 
 Áp dụng cho breakdown Scanner Detail hiện có theo
-[plan Location §8 và task 26–28](../plans/location-scoring-upgrade-plan.md).
+Location runtime (plan gốc §8/task 26–28 đã hoàn tất — lịch sử trong Git).
 Không mở màn hình riêng. Bắt đầu từ `ui/scanner_v4_presentation.py` và adapter
 canonical; xác minh caller trước khi sửa các nhánh legacy trong screen.
 

@@ -31,7 +31,7 @@
 ### 3.1 Location nâng cấp — đã nối runtime, R5 đã duyệt
 
 **Trạng thái 10/09/2026: runtime đã nối, Tech Lead đã duyệt R5 sau review lại.**
-Chi tiết tại [plan Location](../plans/location-scoring-upgrade-plan.md).
+Chi tiết kỹ thuật tại [Scanner architecture](../scanner/scanner-architecture.md), mục Location runtime.
 
 Location cho biết giá close H1 có gần vùng H4 hỗ trợ hướng giao dịch
 và còn khoảng trống tới vùng cản hay không. Trong chi tiết Scanner, người dùng

@@ -284,8 +284,8 @@ tham khảo legacy, còn runtime contract hiện hành là
 
 ## 14. Location runtime — đã triển khai, 10/09/2026
 
-Nguồn đặc tả thuật toán và 32 task là
-[plan Location](../plans/location-scoring-upgrade-plan.md); ranh giới tích hợp
+Nguồn đặc tả thuật toán là
+[Scanner features spec §0.1](scanner-features-spec.md); ranh giới tích hợp
 là [Scanner architecture §3.4–§3.5](scanner-architecture.md).
 
 Runtime producer Location dùng vùng H4 riêng có confirmation/lifecycle, anchor

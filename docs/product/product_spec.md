@@ -177,8 +177,9 @@ sau H01/H02; R5 đã được Tech Lead duyệt ngày 10/09/2026.
 
 Mục tiêu là đánh giá vị trí giá so với vùng H4 đúng phía, còn hiệu lực và có
 khoảng trống theo hướng giao dịch; khắc phục điểm thưởng sai vùng, xung đột và
-bước nhảy lớn của công thức cũ. Đặc tả và 32 task nằm trong
-[plan Location](../plans/location-scoring-upgrade-plan.md).
+bước nhảy lớn của công thức cũ. Đặc tả runtime nằm trong
+[Scanner features spec](../scanner/scanner-features-spec.md) §0.1; plan 32 task
+đã hoàn tất (lịch sử trong Git).
 
 Runtime hiện cho phép người dùng xem điểm Location, vùng làm mốc, vùng cản,
 khoảng cách theo ATR và lý do điểm thấp/không tính được. Điểm dùng close H1,

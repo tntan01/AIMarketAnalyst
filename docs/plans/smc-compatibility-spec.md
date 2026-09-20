@@ -3,7 +3,7 @@
 > **Trạng thái:** DRAFT — chờ Tech Lead review tại task 16.  
 > **Mục đích:** chốt cách lưu/đọc kết quả SMC qua thay đổi công thức, phân biệt null với no-zone, giữ tính tái lập của cache/replay và không đưa nhãn phiên bản kỹ thuật lên UI.
 >
-> **Trạng thái triển khai (2026-09-16):** phần persistence/cache/đọc lịch sử của đặc tả này đã `REVIEW PASS` ở lô task 117–120: Scanner và Analyze nay lưu cùng canonical block, có evidence serialize/restart fail-closed trên cả hai route. Mục §7 (UI) cũng `REVIEW PASS` ở lô121–128 và Task128 đã `APPROVED`; rollout không thuộc phê duyệt này. Nội dung đặc tả **không đổi**; finding và acceptance ở [nhật ký tiến độ](smc-implementation-progress.md).
+> **Trạng thái triển khai (2026-09-16):** phần persistence/cache/đọc lịch sử của đặc tả này đã `REVIEW PASS` ở lô task 117–120: Scanner và Analyze nay lưu cùng canonical block, có evidence serialize/restart fail-closed trên cả hai route. Mục §7 (UI) cũng `REVIEW PASS` ở lô121–128 và Task128 đã `APPROVED`; rollout không thuộc phê duyệt này. Nội dung đặc tả **không đổi**; finding và acceptance của lô task nằm trong lịch sử Git (nhật ký tiến độ đã hoàn tất và loại khỏi cây tài liệu).
 
 ## 1. Ranh giới compatibility
 

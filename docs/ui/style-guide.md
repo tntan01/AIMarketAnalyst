@@ -99,8 +99,7 @@ không cập nhật lock chỉ để làm test hết lỗi.
 ## 6. Location runtime — đã nối, R5 đã duyệt, 10/09/2026
 
 Nội dung và trạng thái lấy từ
-[screen design — Location runtime](screen_design.md) và
-[plan Location](../plans/location-scoring-upgrade-plan.md). Bản đầu thêm phần
+[screen design — Location runtime](screen_design.md). Bản đầu thêm phần
 giải thích gọn trong breakdown hiện có, không thêm màn hình/dashboard riêng.
 
 - Giữ typography, spacing, theme và component chung ở §1–§3; không hardcode
