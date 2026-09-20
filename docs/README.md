@@ -1,28 +1,32 @@
 # Tài liệu dự án AI Market Analyst
 
-Cập nhật cấu trúc: **09/09/2026**.
+Cập nhật cấu trúc: **20/09/2026** — đợt đơn giản hóa cây tài liệu: chỉ giữ tài
+liệu mô tả kiến trúc, tính năng và contract; toàn bộ biên bản review/response,
+plan đã hoàn tất được loại khỏi cây (lịch sử truy qua Git).
 
-Thư mục này là nguồn tham chiếu cho ứng dụng desktop PyQt6 AI Market Analyst.
-Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
+Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 trong
+[Quy tắc kiến trúc](architecture/architecture-rules.md)):
 
-1. Domain model, controller và test đang chạy.
-2. Tài liệu contract/kiến trúc hiện hành.
-3. Tài liệu target đã được phê duyệt nhưng chưa implement.
-4. Git history cho kế hoạch/review/migration đã hoàn tất.
+1. Ý định Owner trong tài liệu chính — **tính quy định**: code phải theo.
+2. Code/test đang chạy — phản ánh hiện trạng.
+3. Mâu thuẫn giữa hai nguồn = **defect phải đóng** (sửa code theo tài liệu,
+   hoặc Owner sửa tài liệu theo ý định mới), không phải trạng thái chấp nhận.
 
 ## Lối đọc nhanh
 
 | Nhu cầu | Bắt đầu từ |
 |---|---|
+| **Quy tắc kiến trúc (kim chỉ nam mọi thiết kế/sửa chữa)** | `architecture/architecture-rules.md` |
 | Hiểu sản phẩm | `product/product_spec.md` |
 | Hiểu kiến trúc tổng thể | `architecture/architecture.md` |
 | Cài đặt và sử dụng | `guides/installation_guide.md`, `guides/USER_GUIDE.md` |
 | Scanner runtime contract | `scanner/scanner-architecture.md` — live từ 15/08/2026 |
 | Luồng Scanner lịch sử | `scanner/scanner-flow.md` — tham khảo (pre-cutover) |
 | Chấm điểm Scanner | `scanner/scanner-architecture.md` §3; `scanner/technical-scoring-architecture.md` giữ nội dung legacy có nhãn |
-| Nâng cấp Location và plan cho CODER | [Location scoring upgrade plan](plans/location-scoring-upgrade-plan.md) — runtime đã nối sau H01/H02; R5 đã được Tech Lead duyệt ngày 10/09/2026 |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
+| Contract SMC (B/Q/L/C, zone, lifecycle…) | `plans/smc-*-spec.md`, `plans/smc-parameter-table.md` |
+| Quản lý lệnh / R:R | `trading/order-management-contract.md`, `trading/rr_anchor_semantics.md` |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
 
 ## Cấu trúc thư mục
@@ -30,87 +34,66 @@ Khi tài liệu và code khác nhau, ưu tiên theo thứ tự:
 | Thư mục | Nội dung |
 |---|---|
 | `product/` | Đặc tả sản phẩm và hành vi cấp cao. |
-| `architecture/` | Kiến trúc tổng thể, trạng thái runtime, baseline dữ liệu runtime. |
+| `architecture/` | Kiến trúc tổng thể, trạng thái runtime. |
 | `guides/` | Hướng dẫn cài đặt, sử dụng và vận hành. |
-| `scanner/` | Runtime Scanner và kiến trúc đích Scanner. |
+| `scanner/` | Runtime contract và kiến trúc đích Scanner. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
 | `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
-| `plans/` | Kế hoạch, task và bằng chứng review; trạng thái nằm trong từng plan. |
-| `ui/` | Thiết kế màn hình, style guide, audit/report/lock/baseline UI. |
+| `journal/` | Phân tích tính năng journal. |
+| `plans/` | Plan của công việc **đang mở** + spec/contract SMC còn hiệu lực (được code và test tham chiếu). |
+| `ui/` | Thiết kế màn hình, style guide, fixture audit/baseline UI. |
 
 ## Tài liệu hiện hành quan trọng
 
+- `architecture/architecture-rules.md`: **luật kiến trúc ban hành 20/09/2026** —
+  nguồn chân lý duy nhất + một điểm thay đổi duy nhất, phân lớp, tài liệu song
+  hành, quyền Owner và nguyên tắc không phiên bản; kèm danh mục thay đổi mẫu,
+  sổ nợ kiến trúc và án lệ tốt. Mọi task thiết kế/sửa chữa phải tuân thủ.
 - `scanner/scanner-architecture.md`: runtime contract hiện hành của Scanner
   (live từ 15/08/2026): TechnicalScore chỉ gồm Trend/Momentum/Location/SMC, Risk
   và Macro là gate, order policy owner-accepted.
-- `scanner/scanner-flow.md`: luồng Scanner legacy (historical); §11 ghi guard
-  chain thực thi live; §13 ghi luồng canonical và tích hợp Location runtime.
-- `scanner/technical-scoring-architecture.md`: chấm điểm/ranking legacy;
-  §13 tóm tắt canonical và §14 ghi contract Location runtime; R5 đã được Tech Lead duyệt ngày 10/09/2026.
-- `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế trên máy hiện tại.
+- `scanner/scanner-features-spec.md`: đặc tả tính năng; §0.1 là nguồn đặc tả
+  thuật toán/default config của Location runtime.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
+- `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
-- `guides/USER_GUIDE.md` §3.2: cách người dùng đọc vùng SMC, điểm SMC, bốn thành
-  phần B/Q/L/C, các trạng thái và lý do chưa vào lệnh. Đây là bề mặt hướng dẫn
-  người dùng; chi tiết kỹ thuật (contract, cache, version nội bộ, công thức
-  B/Q/L/C) nằm ở hồ sơ nghiệm thu dành cho Tech Lead, không lặp lại ở đây.
+- `plans/smc-bqlc-spec.md`, `plans/smc-readiness-spec.md`,
+  `plans/smc-parameter-table.md`, `plans/smc-r56-01-session-contract.md`:
+  được `core/smc_quality.py`, `core/smc_readiness.py`,
+  `scripts/smc_performance.py` và tests tham chiếu trực tiếp — không xóa/di
+  chuyển khi chưa sửa code tương ứng.
 
-## Location: runtime đã nối, R5 đã duyệt — 10/09/2026
-
-**ĐÃ NỐI RUNTIME, TECH LEAD ĐÃ DUYỆT R5.** Scanner truyền cutoff cố định từ
-packet qua analysis tới snapshot; Location dùng H1/H4 đã đóng, detail versioned
-và card UI dùng template/palette semantic. Tech Lead xác nhận R5 sau review code,
-regression và smoke fixture; chi tiết bằng chứng được ghi trong plan.
-
-- Đặc tả thuật toán, cấu hình khởi đầu và hướng dẫn từng task:
-  [Location upgrade plan](plans/location-scoring-upgrade-plan.md).
-- Ranh giới kiến trúc và tác động lên quyết định:
-  [Scanner architecture](scanner/scanner-architecture.md), mục Location runtime.
-- Input/raw/rounding: [Features spec](scanner/scanner-features-spec.md), §0.1
-  “Location runtime”.
-- Luồng tích hợp: [Scanner flow](scanner/scanner-flow.md), phụ lục Location.
-- Hiển thị: [Screen design](ui/screen_design.md) và [Style guide](ui/style-guide.md),
-  phần Location runtime.
-- Ảnh hưởng đối với người dùng: [User guide](guides/USER_GUIDE.md), §3.1.
-
-CODER dùng code để xác minh **hiện trạng**, dùng plan và các mục runtime này để
-đối chiếu thay đổi đã thống nhất. R5 chưa có smoke production và chưa cho phép
-gửi lệnh; các giới hạn này không thay đổi phạm vi Trend/Momentum/SMC hay gate.
-
-Sau task **8, 14, 21, 28, 32**, CODER **phải dừng, hỏi và chờ xác nhận**
-Tech Lead/người dùng theo plan §11.2. Bản đầu không cần database, replay,
-backtest sâu, gate entry mới hoặc tối ưu threshold.
-
-## Bằng chứng kiểm thử UI
+## Bằng chứng kiểm thử UI (fixture, không phải tài liệu đọc)
 
 - `ui/style/`: baseline, lock và allowlist cho style audit.
 - `ui/density/`: baseline và lock cho density audit.
 - `ui/reports/`: report responsive/dark-surface máy đọc được.
 - `ui/baseline/`: ảnh baseline visual QA và manifest.
 
-Các file này không phải tài liệu đọc chính, nhưng đang được tools/tests dùng để khóa regressions UI.
+Các file này đang được `tools/` và `tests/` dùng để khóa regression UI
+(`capture_ui_style_baseline.py`, `ui_dark_surface_audit.py`,
+`test_dark_theme_surface_phase5.py`…). Không xóa.
 
 ## Quy tắc cập nhật
 
-- Thay đổi hành vi Scanner phải cập nhật tối thiểu `scanner/scanner-flow.md`,
-  tài liệu kỹ thuật liên quan và test.
-- Tính năng Backtest đã bị loại bỏ (2026-09-09): thay đổi phân quyền quét/auto-trade
-  cập nhật `guides/USER_GUIDE.md`.
-- Thay đổi UI contract phải cập nhật `ui/style-guide.md` và các lock/report nếu cần.
-- Thay đổi macro scoring phải cập nhật `macro/macro_score_architecture.md`; nếu
-  liên quan calibration/TTL/map runtime thì cập nhật mục Bước 7 trong cùng file.
-- Mỗi bước Scanner phải được phân tích và cập nhật vào
+- **Mọi thiết kế/sửa chữa code phải tuân thủ `architecture/architecture-rules.md`**
+  (nguồn chân lý duy nhất, một điểm thay đổi duy nhất, tài liệu trước code,
+  không tên phiên bản cho tính năng). Vi phạm mới phải được duyệt ngoại lệ bằng
+  văn bản và ghi vào sổ nợ kiến trúc của tài liệu đó.
+- **Ngôn ngữ tài liệu (D6 trong `architecture/architecture-rules.md`):** tên
+  tệp/thư mục bằng tiếng Anh không dấu; nội dung viết bằng tiếng Việt có dấu;
+  thuật ngữ tiếng Anh dịch tối đa, chỉ giữ mã định danh code, tên công cụ và
+  thuật ngữ không dịch được (chú giải tiếng Anh trong ngoặc ở lần đầu).
+- Thay đổi hành vi Scanner: cập nhật tối thiểu `scanner/scanner-flow.md`, tài
+  liệu kỹ thuật liên quan và test; mỗi bước Scanner phải được phân tích vào
   `scanner/scanner-architecture.md` trước khi sửa code.
-- Scanner direct-cutover không dùng dual scoring/shadow. Tài liệu
-  runtime chỉ được cập nhật khi code, test và version của bước tương ứng
-  đã hoàn tất.
-- Với Location, chỉ đổi mục target thành runtime sau chuyển caller và kiểm
-  tra thực tế theo plan; nghiệm thu cuối phải có xác nhận R5. Không thay các
-  số test lịch sử bằng kết quả chưa chạy.
-
-## Tài liệu đã hợp nhất hoặc loại bỏ
-
-Các proposal năm thành phần, SMC migration plan/log và build-evidence bundle,
-MVP coding guide, Order Management review/implementation plan đã hoàn tất được
-loại khỏi cây tài liệu. Contract còn hiệu lực đã được giữ trong tài liệu
-canonical tương ứng; lịch sử chi tiết vẫn truy được qua Git.
+- Thay đổi macro scoring: cập nhật `macro/macro_score_architecture.md`.
+- Thay đổi UI contract: cập nhật `ui/style-guide.md` và lock/report nếu cần.
+- Thay đổi phân quyền quét/auto-trade: cập nhật `guides/USER_GUIDE.md`.
+- Tài liệu quy trình (review từng vòng, response, handoff) không đưa vào cây
+  `docs/` — trao đổi qua session/commit message, bằng chứng nằm trong `tests/`.
+- Vòng đời plan trong `docs/plans/`: mỗi công việc đang mở có **một** file
+  `<tên>-plan.md` tự mang mục Trạng thái ở header; khi hoàn tất thì xóa plan
+  (lịch sử trong Git) và sáp nhập contract còn hiệu lực vào tài liệu kiến trúc
+  đích danh (`scanner/`, `macro/`, `trading/`…). Spec bị code tham chiếu chỉ
+  xóa/dời cùng lúc sửa code.

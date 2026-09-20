@@ -2,7 +2,7 @@
 
 ## Phạm vi
 
-Báo cáo này được lập bằng cách đọc `ARCHITECTURE.md` ở thư mục gốc và lần theo code liên quan đến phần Nhật ký giao dịch. Phạm vi tập trung vào tính năng hiện có, luồng dữ liệu và những hạn chế có thể ảnh hưởng trực tiếp đến người dùng hoặc độ chính xác của kết quả.
+Báo cáo này được lập bằng cách đọc tài liệu kiến trúc (`docs/architecture/architecture.md`) và lần theo code liên quan đến phần Nhật ký giao dịch. Phạm vi tập trung vào tính năng hiện có, luồng dữ liệu và những hạn chế có thể ảnh hưởng trực tiếp đến người dùng hoặc độ chính xác của kết quả.
 
 Các thành phần chính đã được xem xét:
 
@@ -16,7 +16,7 @@ Các thành phần chính đã được xem xét:
 
 ## Định vị kiến trúc
 
-Theo `ARCHITECTURE.md`, phần Nhật ký giao dịch nằm trên bốn lớp chính:
+Theo tài liệu kiến trúc (`docs/architecture/architecture.md`), phần Nhật ký giao dịch nằm trên bốn lớp chính:
 
 ```text
 Journal UI

@@ -2,6 +2,11 @@
 
 Desktop trading analysis app built with PyQt6.
 
+> **Kiến trúc:** bản đồ module và kiến trúc đầy đủ xem
+> [`docs/architecture/architecture.md`](docs/architecture/architecture.md);
+> luật thiết kế bắt buộc tại
+> [`docs/architecture/architecture-rules.md`](docs/architecture/architecture-rules.md).
+
 Core stack:
 - PyQt6 desktop shell
 - QWebEngineView for embedded web charts

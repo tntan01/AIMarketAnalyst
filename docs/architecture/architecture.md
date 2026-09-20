@@ -1,4 +1,106 @@
-# ARCHITECTURE.md
+# Kiến trúc hệ thống
+
+> Tài liệu kiến trúc đầy đủ **duy nhất** của dự án (bản `ARCHITECTURE.md` ở thư
+> mục gốc đã được gộp vào đây ngày 20/09/2026). Mọi thiết kế/sửa chữa phải tuân
+> thủ [Quy tắc kiến trúc](architecture-rules.md). Trạng thái cấu hình/thực thi
+> thực tế trên máy: [`runtime-status.md`](runtime-status.md).
+
+## Bản đồ định vị nhanh
+
+Đọc mục này trước khi mò vào code.
+
+App desktop **AI Market Analyst** (PyQt6) phân tích trading MT5. Runtime Scanner
+sử dụng luồng: lấy dữ liệu thị trường → phân tích kỹ thuật (SMC) → chấm điểm
+setup; macro, market safety và AI policy chạy ở lớp assessment/gate → xếp hạng →
+hiển thị bảng scanner → (tùy chọn) tự vào lệnh MT5.
+
+> **Kiến trúc đã chốt:** Scanner tách Macro và Risk khỏi điểm số,
+> direct cutover không shadow/dual scoring. Contract runtime tại
+> [`scanner/scanner-architecture.md`](../scanner/scanner-architecture.md).
+
+**Luồng dữ liệu chính:**
+```
+MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích) ──► workers (nền) ──► controllers ──► ui (PyQt6)
+                                                                                              │
+                                                              AI prompts (services/ai) ◄──────┘
+```
+
+### Các lớp (layer)
+
+| Thư mục | Vai trò |
+|---------|---------|
+| `main.py` | Entry point: khởi tạo runtime, QApplication, AppController, MainWindow |
+| `controllers/` | **DI container + điều phối.** `AppController` giữ singleton mọi service/controller. Mỗi màn hình nhận cùng 1 instance |
+| `core/` | **Logic nghiệp vụ thuần** (không phụ thuộc UI). Phân tích, SMC, scoring, risk, scanner engine |
+| `services/` | **Truy cập bên ngoài + hạ tầng**: MT5, AI providers, news, journal (SQLite), telegram, storage, logging |
+| `workers/` | **Thread nền** (QThread/QObject) chạy tác vụ nặng: scan, analyze |
+| `ui/` | **Giao diện PyQt6**: screens, components, theme, chart bridge |
+| `config/` | Cấu hình: constants, paths, settings, risk params, AI providers, symbol profiles |
+| `data/` | SQL migrations + seed data (journal DB) |
+| `tools/`, `scripts/` | Tiện ích dev/audit/validation (chạy thủ công, không phải runtime) |
+| `packaging/` | Build Windows (PyInstaller) |
+| `tests/` | Pytest |
+
+### Module then chốt (đọc khi cần)
+
+**Luồng phân tích 1 symbol**
+- `core/analysis_pipeline.py` — **orchestrator** chính: gọi tuần tự các engine, trả dict kết quả
+- `core/analysis_engine.py` — engine phân tích tổng
+- `core/indicators.py` — tính chỉ báo kỹ thuật
+- `core/smc_*.py` — Smart Money Concepts: context, zones, confluence, scorer, validation
+- `core/signal_engine.py` — scorer composite hiện hành; target tách TechnicalScore khỏi safety/macro gate
+- `core/risk_engine.py` — scenarios, trade permission, contract size, RR
+- `core/final_score_engine.py` — điểm tổng
+- `core/decision_engine.py` — quyết định cuối (entry/stand aside...)
+- `core/correlation_check.py` — điều chỉnh tương quan
+
+**Scanner (bảng quét thị trường)**
+- `core/scanner.py` — models + build scanner output
+- `core/scanner_candidate_engine.py` — build candidate order payload
+- `core/scanner_ranking_engine.py` — xếp hạng (READY_NOW / WAITING / WATCH / BLOCKED)
+- `core/scanner_strategy_engine.py` + `scanner_strategy_router.py` — chọn chiến lược
+- `core/scanner_ai_auditor.py` — AI audit setup
+- `core/scanner_observability.py` / `scanner_performance.py` — theo dõi + hiệu năng
+- `controllers/scanner_controller.py` — điều phối scan (thread pool)
+- `workers/scanner_worker.py` — chạy scan nền
+- `docs/scanner/technical-scoring-architecture.md` — scoring contract runtime hiện hành
+- `docs/scanner/scanner-architecture.md` — **kiến trúc đích đã chốt**:
+  TechnicalScore 4 thành phần, MarketSafetyGate, MacroGate và direct cutover
+
+**Vào lệnh MT5 (auto-entry)**
+- `core/entry_engine.py` — logic vào lệnh
+- `core/execution_*_engine.py` — readiness, quality, revalidation
+- `core/account_guard.py` — bảo vệ tài khoản
+- `core/portfolio_risk_engine.py` — rủi ro danh mục
+
+**Quản lý lệnh (order management — BE/trailing stop)**
+- `core/order_management_state_machine.py` — **state machine thuần** (không biết MT5/Qt/persistence): nhận snapshot broker → trả `DesiredAction` (modify SL)
+- `services/order_management_service.py` — **cầu nối duy nhất** giữa state machine và MT5: thread-safe, mọi broker call chạy trên 1 serial executor, Qt timer chỉ lên lịch
+- `services/order_management_models.py` — contract broker: phân biệt rõ snapshot rỗng vs query lỗi (`SnapshotStatus`, `OperationStatus`, `AccountTradeMode`)
+- `services/order_management_state_store.py` — persist trạng thái quản lý lệnh
+- `ui/screens/orders_screen.py` — hiển thị lệnh (render snapshot cache, không block GUI)
+
+**Journal (nhật ký giao dịch)**
+- `services/journal_service.py` + `journal_models.py` + `journal_converters.py`
+- `core/journal_feedback_engine.py` — phản hồi từ journal
+- `controllers/journal_controller.py` + `ui/screens/journal_*.py`
+
+**AI**
+- `services/ai_service.py` — facade AI
+- `services/ai/provider_adapter.py` + `providers/*.py` — adapter từng provider (openai, anthropic, gemini, deepseek, openai_compatible)
+- `services/ai_provider_catalog_service.py` — catalog provider
+
+**Dữ liệu thị trường**
+- `services/mt5_service.py` — MT5
+- `services/market_data_service.py` + `data_provider.py` + `candle_history_cache.py`
+- `services/yahoo_chart_fetcher.py` — Yahoo fallback
+- `services/forex_factory_client.py` + `macro_*` — tin tức/vĩ mô
+
+### Ghi chú
+
+- **DI container:** mọi service/controller là singleton lazy trong `AppController` — thêm dependency mới thì đăng ký ở đó.
+- **UI không gọi service trực tiếp** — đi qua controller/worker để giữ UI thread không bị block.
+- **Truy vết thay đổi logic:** nhiều engine có hằng `*_VERSION` (SMC_DOMAIN_VERSION, PORTFOLIO_ENGINE_VERSION...) — khóa provenance máy đọc, thuộc ngoại lệ V3(a) của [Quy tắc kiến trúc](architecture-rules.md); không dùng làm tên tính năng.
 
 ## Kiến trúc tổng thể
 
@@ -13,12 +115,12 @@ Mục tiêu kiến trúc:
 * Dễ thêm màn hình, thêm loại phân tích, thêm AI provider và thêm loại tài sản sau này.
 * Dễ đóng gói thành bản cài đặt Windows và chuyển sang máy khác.
 
-## Location runtime — đã nối, R5 đã duyệt, 10/09/2026
+## Location runtime — đã nối, R5 đã duyệt (10/09/2026)
 
-Phạm vi này theo [plan Location 32 task](../plans/location-scoring-upgrade-plan.md)
-và [kiến trúc Scanner canonical](../scanner/scanner-architecture.md), ưu tiên
-ứng dụng cá nhân gọn. Các mô tả Scanner V2/legacy bên dưới không thay thế
-contract canonical hoặc tạo thêm yêu cầu backtest cho Location.
+Phạm vi này theo [kiến trúc Scanner canonical](../scanner/scanner-architecture.md)
+(nâng cấp Location đã hoàn tất — lịch sử trong Git), ưu tiên ứng dụng cá nhân
+gọn. Các mô tả legacy bên dưới không thay thế contract canonical hoặc tạo thêm
+yêu cầu backtest cho Location.
 
 - Module thuần `core/location_engine.py` chứa model/config, dựng vùng H4,
   lifecycle, chọn vùng và tính raw/detail. Không phụ thuộc Qt, broker, mạng
@@ -29,15 +131,13 @@ contract canonical hoặc tạo thêm yêu cầu backtest cho Location.
   Trend, Momentum, SMC, scenario, trọng số hoặc gate hiện có.
 - Dùng nơi lưu snapshot/journal hiện tại cho detail nhỏ và version/config;
   không tạo database, service, replay engine hoặc cache Location riêng.
-- Giới hạn cửa sổ nến theo plan, đo thời gian trên vài lần scan. Chỉ tối ưu
-  thêm nếu có số đo cho thấy chậm; không thêm hạ tầng dự phòng theo giả định.
+- Giới hạn cửa sổ nến; chỉ tối ưu thêm khi có số đo cho thấy chậm, không thêm
+  hạ tầng dự phòng theo giả định.
 
-Runtime đã được nối sau H01/H02; cutoff được đóng băng trước khi lấy history và
-đi xuyên packet → analysis → snapshot. UI đọc detail versioned bằng template/
-semantic palette chung. Năm điểm dừng 8/14/21/28/32 vẫn có hiệu lực; R5
-đã được Tech Lead duyệt ngày 10/09/2026. Chưa có nghiệm thu production smoke, broker không gửi lệnh
-trong smoke hiện tại. Checkpoint rollback/config cụ thể nằm tại
-`reports/scanner/location-r5-checkpoint.json`.
+Cutoff được đóng băng trước khi lấy history và đi xuyên packet → analysis →
+snapshot. UI đọc detail versioned bằng template/semantic palette chung. Chưa có
+nghiệm thu production smoke; broker không gửi lệnh trong smoke hiện tại.
+Checkpoint rollback/config: `reports/scanner/location-r5-checkpoint.json`.
 
 ## Phạm vi symbol được hỗ trợ
 
@@ -51,141 +151,6 @@ Danh sách symbol chuẩn nằm trong `config/constants.py` tại `SUPPORTED_SYM
 Mapping từ symbol hiển thị của ứng dụng sang symbol thật của broker MT5 nằm trong `config/symbol_profiles.json`. Mapping phải hỗ trợ alias không hậu tố và alias có hậu tố phổ biến như `m`, `c`; ví dụ `XAGUSD`, `XAGUSDm`, `BTCUSD`, `BTCUSDm`. Nếu broker dùng hậu tố khác như `.r`, service MT5 phải dò theo tiền tố symbol đã chuẩn hóa trong Market Watch.
 
 Các symbol đặc biệt không được dùng mặc định contract size Forex `100000`. Risk engine phải ưu tiên `trade_contract_size` từ MT5 cho XAU/USD, XAG/USD và BTC/USD; nếu broker không trả về giá trị hợp lệ thì dùng fallback theo cấu hình nội bộ.
-
-## Cấu trúc thư mục đề xuất
-
-```text
-ai-market-analyst/
-  main.py
-  requirements.txt
-  README.md
-
-  config/
-    constants.py
-    paths.py
-    settings.py
-    symbol_profiles.json
-    ai_providers.json
-    interest_rates.json
-
-  core/
-    market_models.py
-    indicators.py
-    chart_payload.py
-    prompt_builder.py
-    analysis_engine.py
-    analysis_pipeline.py
-    signal_engine.py
-    entry_engine.py
-    backtest_engine.py
-    backtest_candidate_ledger.py
-    backtest_contract.py
-    backtest_execution.py
-    backtest_execution_parity.py
-    backtest_feedback.py
-    backtest_market_data.py
-    backtest_provenance.py
-    backtest_migration.py
-    backtest_golden_replay.py
-    backtest_release.py
-    backtest_statistics.py
-    backtest_validation_replay.py
-    system_backtest_engine.py
-    walk_forward_engine.py
-    monte_carlo.py
-    smc_context.py
-    risk_engine.py
-    technical_context.py
-    final_score_engine.py
-    decision_engine.py
-    trade_gate_engine.py
-    correlation_check.py
-    vix_pair_backtest.py
-    account_guard.py
-    journal_feedback_engine.py
-    statistical_edge_engine.py
-    execution_quality_engine.py
-    reason_codes.py
-
-  controllers/
-    app_controller.py
-    backtest_controller.py
-    scanner_controller.py
-    journal_controller.py
-    settings_controller.py
-
-  workers/
-    base_worker.py
-    scanner_worker.py
-    backtest_worker.py
-
-  services/
-    mt5_service.py
-    ai_service.py
-    news_service.py
-    market_data_service.py
-    interest_rate_service.py
-    storage_service.py
-    settings_service.py
-    logging_service.py
-    scanner_worker.py
-
-  ui/
-    theme.py
-    styles/
-      base.qss
-      dark.qss
-      light.qss
-    main_window.py
-    navigation.py
-    chart_bridge.py
-
-    components/
-      app_button.py
-      icon_button.py
-      card.py
-      stat_card.py
-      toolbar.py
-      section_header.py
-      loading_state.py
-      empty_state.py
-
-    screens/
-      dashboard_screen.py
-      scanner_screen.py
-      scanner_detail_screen.py
-      backtest_screen.py
-      journal_screen.py
-      journal_detail_screen.py
-      settings_screen.py
-
-  assets/
-    icons/
-    fonts/
-    chart/
-
-  data/
-    vix_pair_sensitivity.json
-    migrations/
-    seed/
-
-  reports/
-    vix_pair_sensitivity_2026-08-09.json
-
-  scripts/
-    run_vix_pair_backtest.py
-
-  packaging/
-    pyinstaller.spec
-    build_windows.ps1
-    installer_notes.md
-
-  tests/
-    test_indicators.py
-    test_signal_engine.py
-    test_risk_engine.py
-    test_settings_service.py
-```
 
 ## Vai trò từng phần
 
@@ -250,14 +215,11 @@ phiên, ngày lễ, broker maintenance hoặc gap thật. Policy theo Forex, kim
 và crypto dùng timezone New York để tự xử lý DST; chỉ gap thật trong quality
 scope mới làm validation không đủ điều kiện.
 
-> **Backtest đã gỡ (2026-09-09):** Toàn bộ engine Backtest phía trên
-> (`backtest_execution`, `backtest_execution_parity`, `backtest_candidate_ledger`,
-> `backtest_validation_replay`, `backtest_statistics`, `backtest_provenance`,
-> `backtest_migration`, `backtest_advanced`, `backtest_history`,
-> `backtest_golden_replay`, `backtest_release`, `system_backtest_engine`,
-> `monte_carlo`, `walk_forward_engine`) đã bị loại bỏ khỏi sản phẩm cùng tính
-> năng Backtest. Chỉ còn vestigial `scanner_backtest_contract` (hạ tầng Scanner)
-> và `vix_pair_*` (producer data VIX). Chi tiết: `product_spec.md` §3.2.
+> **Backtest đã gỡ (2026-09-09):** Toàn bộ engine Backtest
+> (`backtest_*`, `system_backtest_engine`, `monte_carlo`,
+> `walk_forward_engine`) đã bị loại bỏ khỏi sản phẩm cùng tính năng Backtest.
+> Chỉ còn vestigial `scanner_backtest_contract` (hạ tầng Scanner) và `vix_pair_*`
+> (producer data VIX). Chi tiết: `product_spec.md` §3.2.
 
 `core/technical_context.py` chứa `detect_market_regime()` — hàm phát hiện chế độ thị trường dùng hệ thống chấm điểm 3 thành phần (EMA alignment 0-40, structure 0-30, price position 0-30, tổng 0-100). Khắc phục vấn đề 80% lệnh rơi vào "unknown" của code cũ bằng cách chấp nhận mixed structure khi EMA đã rõ hướng, và nới lỏng ngưỡng phát hiện range.
 
@@ -266,10 +228,9 @@ Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nh
 > **Runtime và kiến trúc đã chốt (11/08/2026):** Đoạn trên mô tả code
 > hiện hành của Scanner. Kiến trúc Scanner đã được phê duyệt:
 > `TechnicalSignalScore` chỉ gồm Trend, Momentum, Location và SMC; Macro và Risk
-> trở thành gate/assessment độc lập, không cộng hoặc trừ điểm. Scanner sẽ cutover
-> trực tiếp, không chạy dual scoring/shadow. Đây vẫn là thiết kế non-runtime cho
-> tới khi code và version được đổi. Xem
-> [`scanner-architecture.md`](../scanner/scanner-architecture.md).
+> trở thành gate/assessment độc lập, không cộng hoặc trừ điểm. Scanner đã cutover
+> trực tiếp, không chạy dual scoring/shadow.
+> Xem [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
 `services/news_service.py` chịu trách nhiệm gom:
 
@@ -286,7 +247,7 @@ Nếu lịch kinh tế bị rate limit, ví dụ HTTP 429 từ Forex Factory, ap
 
 `services/market_data_service.py` chịu trách nhiệm cung cấp dữ liệu thị trường Mỹ cho correlation checking:
 
-* Fetch DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`^IRX`) qua cơ chế 2 tầng: `yfinance` → nếu lỗi/rỗng → gọi thẳng Yahoo Finance chart API bằng `requests`.
+* Fetch DXY (`DX-Y.NYB`), VIX (`^VIX`), US10Y (`^TNX`), US2Y (`2YY=F`) qua cơ chế 2 tầng: `yfinance` → nếu lỗi/rỗng → gọi thẳng Yahoo Finance chart API bằng `requests`.
 * Cache 30 phút để giảm số lần gọi mạng.
 * Parse response thành `list[Candle]` chuẩn hóa cho `core/correlation_check.py`.
 
@@ -326,6 +287,30 @@ Chứa kết nối bên ngoài:
 * Cache.
 * Logging.
 * Settings persistence.
+
+### Hệ con AI (provider) và quản lý API key
+
+* Hệ con AI tổ chức theo provider: `services/ai/provider_catalog.py` là registry
+  tĩnh (`ProviderInfo`: tên, capability, model mặc định/khóa, adapter class);
+  `services/ai/provider_adapter.py` định nghĩa `BaseProviderAdapter`
+  (`generate()`, `generate_stream()`, `discover_models()`, `friendly_error()`,
+  `validate_model()`); adapter cụ thể nằm trong `services/ai/providers/`
+  (DeepSeek, OpenAI, Anthropic, Gemini, OpenAI-compatible) và tự đăng ký khi
+  import.
+* `services/ai_service.py` là dispatcher mỏng — nhận `AIProviderConfig`, tra
+  adapter từ catalog, chuyển tiếp mọi lời gọi; không còn chuỗi if/elif theo
+  provider. **Thêm provider mới = đăng ký `ProviderInfo` + import adapter**,
+  không phải sửa `AIService` hay bất kỳ file nào khác.
+* Provider có capability model discovery tự fetch danh sách model từ API
+  (Gemini: `GET /v1beta/models`, OpenAI: `GET /v1/models`), cache 30 phút trong
+  memory + disk (`cache/provider_runtime/{provider}.json`); khi API lỗi dùng
+  disk cache (fallback offline).
+* Mỗi adapter tự dịch lỗi REST thành thông báo tiếng Việt rõ ràng
+  (`friendly_error()`): model deprecated, API key sai, quota...
+* API key **không lưu plaintext** trong `settings.json`:
+  `services/credential_service.py` bọc keyring hệ điều hành (Windows Credential
+  Manager); `SettingsService` đọc/ghi key qua store này trong suốt, settings cũ
+  chứa plaintext tự động migrate ở lần save đầu tiên.
 
 ### Auto-scan và Telegram Alert
 
@@ -426,6 +411,49 @@ Chứa script đóng gói và ghi chú release.
 
 Mọi asset cần dùng khi đóng gói như icon, font, QSS, sample config và migration phải được liệt kê trong spec/script.
 
+## Scanner runtime hiện hành
+
+Tài liệu kiến trúc Scanner **duy nhất**:
+[`scanner/scanner-architecture.md`](../scanner/scanner-architecture.md) —
+contract runtime live từ 15/08/2026. Luồng chi tiết:
+[`scanner/scanner-flow.md`](../scanner/scanner-flow.md); chấm điểm:
+[`scanner/technical-scoring-architecture.md`](../scanner/technical-scoring-architecture.md).
+
+Các sự kiện vận hành then chốt:
+
+* Mọi bước phân tích/triển khai Scanner phải được cập nhật vào
+  `scanner-architecture.md` **trước khi** sửa code (D1).
+* Rollout machinery cũ (stage ladder, kill switch, canary/readiness) đã bị gỡ
+  hoàn toàn ngày 15/08/2026 theo quyết định của Owner (phần mềm cá nhân, chạy
+  thật trực tiếp). **Không còn kill switch phần mềm**; dừng khẩn cấp = tắt
+  feature flag, đóng lệnh ở terminal broker hoặc ngắt kết nối MT5. Không một
+  feature flag hay nút UI nào được bỏ qua guard chain thực thi còn lại.
+* Order policy owner-accepted (live), tài khoản real được phép; lệnh chỉ đi qua
+  khi policy `certified()` và toàn bộ execution guard chain đạt. Trạng thái thực
+  tế trên máy: [`runtime-status.md`](runtime-status.md).
+* Auto order và manual order đều đi qua **shared execution boundary**
+  (`ScannerController.execute_order_candidate()`) với cùng một guard chain,
+  không có override riêng. `ScannerScreen.AUTO_TRADE_UI_ENABLED=true` cho phép
+  bật auto-entry ở chế độ quét định kỳ; nút mặc định unchecked và bị reset khi
+  chuyển sang quét một lần.
+
+## Quản lý lệnh (BE/trailing stop)
+
+Contract và thiết kế đầy đủ:
+[`trading/order-management-contract.md`](../trading/order-management-contract.md).
+
+Tinh thần kiến trúc: broker DTO, state machine thuần và persistence
+account-scoped tách khỏi widget. Snapshot typed phân biệt `AVAILABLE` với
+`UNAVAILABLE`; SL/TP và close chỉ thành công sau postcondition broker; state
+machine giữ invariant BUY/Bid, SELL/Ask, BE trước trailing, TP không đổi và SL
+không dời lùi.
+
+`AppController` sở hữu `OrderManagementService` ở application scope. MT5 I/O
+chạy qua single-executor/serialization boundary; Scanner reconcile rồi register
+position broker; Orders UI đọc cache và nhận Qt signal; shutdown persist/flush
+state trước khi disconnect MT5. Pending/manual/bulk action cũng dùng service với
+broker postcondition.
+
 ## Nguyên tắc dependency
 
 Luồng phụ thuộc đúng:
@@ -486,7 +514,7 @@ Không lưu database, log hoặc settings vào thư mục cài đặt ứng dụ
 
 ## Nguyên tắc đóng gói
 
-Ngay từ MVP phải giữ code tương thích đóng gói Windows:
+Giữ code tương thích đóng gói Windows:
 
 * Không phụ thuộc current working directory.
 * Không đọc asset bằng relative path trực tiếp.
@@ -496,270 +524,3 @@ Ngay từ MVP phải giữ code tương thích đóng gói Windows:
 * Có checklist test trên máy sạch hoặc Windows user profile mới.
 * Bundle validated `data/vix_pair_sensitivity.json`; calibration runner hiện
   chưa được bundle nên packaged UI chưa tự revalidate được.
-
-## Nguyên tắc phát triển từng bước
-
-Ưu tiên thứ tự:
-
-1. Tạo skeleton project.
-2. Tạo config paths, logging và settings service.
-3. Tạo theme, QSS và component chung.
-4. Tạo MainWindow, Sidebar, TopBar và router.
-5. Tạo Dashboard skeleton có trạng thái thật.
-6. Tạo Settings screen và lưu cấu hình.
-7. Tạo SQLite schema, migration và journal service.
-8. Tích hợp MT5 qua service và worker.
-9. Tích hợp indicator, scoring, risk engine.
-10. Tạo currency drivers, symbol profiles và prompt builder.
-11. Tích hợp AI provider và fallback.
-12. Tạo Scanner, Journal, export JSON.
-13. Viết test core/service.
-14. Tạo script packaging và test build.
-15. Tối ưu UI/UX.
-
-Không code tất cả trong một lần.
-
-## Logic Updates (historical notes)
-
-> Các bullet dưới đây ghi lại thay đổi tại thời điểm triển khai trước Scanner
-> V2. Với Scanner, mọi giá trị threshold, branch, alert và execution phải theo
-> mục “Scanner V2 — kiến trúc hiện hành” bên dưới.
-
-- `risk_engine.build_trade_plan()` returns a wider `watch_zone` for monitoring and a narrower `entry_zone` for confirmation. Only the narrow `entry_zone` is passed to `core/entry_engine.py`; UI, controller and AI must not use `watch_zone` to set `ready_to_trade`.
-- `core/backtest_engine.py` applies `cooldown_bars` after a trade exits before replaying another touch of the same setup zone, reducing duplicate trades during sideways price action.
-- `core.analysis_pipeline.AnalysisPipeline` passes `entry_context` into the technical prompt payload so AI commentary can reference current price versus entry zone, stop loss, take profit and entry status.
-- `core.scanner.scanner_row_from_analysis()` computes `price_vs_zone` for Scanner UI table visibility; Detail still keeps full `entry_status`.
-- `core.analysis_engine.build_entry_checklist()` evaluates trend compatibility by scenario side and allows range setups only when the POI/location quality is strong enough.
-- `core.smc_context._smc_for_timeframe()` uses `lookback=5` for swing detection. If no swings are found (common in strongly trending markets), it automatically falls back to `lookback=2` and sets `swing_source = "fallback"` in the output. Normal markets use `swing_source = "standard"`.
-- `core.risk_engine._find_nearest_swing_for_sl()` and `_find_nearest_swing_for_tp()` collect all swing candidates from both H4 and H1 before selecting the one closest to price. Previously they returned the first H4 candidate without checking H1.
-- `core.smc_context` defines 30 module-level constants (e.g. `_LOOKBACK_WINDOW = 80`, `_ZONE_SCORE_STRONG = 75`, `_PD_THRESHOLD = 0.05`) replacing 51 hardcoded magic numbers. Duplicated values (`80`×3, `0.05`×2, `3`×10) are now unified under single constants. Downstream modules (`signal_engine.py`, `risk_engine.py`) can import these constants instead of re-hardcoding the same thresholds.
-- `core.risk_engine` defines 10 module-level constants (including `_TP_SELECTION_AGGRESSIVENESS = 0.5` for conservative TP selection and `_ENTRY_AGGRESSIVENESS = 0.0` for display) for Entry/SL/TP parameters (e.g. `_MIN_STOP_DISTANCE_ATR_MULT = 0.20`, `_WATCH_ZONE_OFFSET_ATR = 0.10`, `_SL_FLOOR_BUFFER_ATR = 0.20`). The previously ambiguous `atr * 0.10` (used for 3 different purposes) is now split into 3 distinct constants: `_ZONE_SL_BUFFER_ATR`, `_WATCH_ZONE_OFFSET_ATR`, `_SL_FLOOR_BUFFER_ATR`.
-- `core.risk_engine.build_trade_plan()` SL priority: **swing structural → preferred zone boundary → ATR/zone-based**. Swing search (`_find_nearest_swing_for_sl`) runs unconditionally first regardless of whether an SMC preferred zone exists; falling back to zone boundary only when no suitable swing is found. Two guards enforce min distance: floor guard (SL ≥ entry_zone_edge ± 0.20×ATR) and min-distance guard (entry_for_rr→SL ≥ 0.20×ATR for SMC, 0.50×ATR for technical).
-- `core.entry_engine` defines 8 module-level constants (e.g. `_NEAR_ZONE_ATR_MULT = 0.5`, `_ZONE_BROKEN_ATR_MULT = 0.25`, `_M15_DISPLACEMENT_THRESHOLD = 0.3`). An `UnboundLocalError` bug in `evaluate_entry()` (variable `internal_structure` used before assignment in early-return paths) and a missing kwarg bug (parameter accidentally embedded in a string) were fixed.
-- `core.analysis_engine.confidence_reason()` includes component score breakdowns, SMC reason and macro/news context so score confidence is explainable from rule-engine data.
-- `core.decision_engine.make_final_decision()` accepts per-symbol `thresholds`
-  with `ready`, `watch`, `wait`, `min_score_gap` and `min_rr`. Scanner builds
-  these qua `analysis_thresholds_for_symbol()` để giữ Decision Engine độc lập
-  với strategy config (auto-trade) của từng symbol.
-- `config.settings.SymbolScanSettings` stores per-symbol decision thresholds:
-  `decision_ready` (default 65), `decision_watch` (default 60),
-  `decision_wait` (default 55), cùng `min_expected_rr` (default 1.3).
-- `core.risk_engine.build_trade_plan()` includes a **TP1 zone guard** after the 4-tier cascade: TP1 must be strictly outside the entry zone (`> entry_high` for BUY, `< entry_low` for SELL). Without this guard, a resistance/support zone inside the entry zone could be selected as TP1 when `entry_aggressiveness < ~0.32` — producing a take-profit target that hasn't left the entry zone. The guard rejects TP1 and allows the cascade to fall through; if no valid TP is found, the plan is cancelled rather than created with a bogus target.
-- `core.risk_engine.build_trade_plan()` includes a **TP2 minimum gap guard**: TP2 must be at least `_TP2_MIN_GAP_ATR` (0.15 × ATR) away from TP1. `next_target()` finds the nearest S/R zone but previously had no distance floor, so a resistance/support zone just 0.4 pips from TP1 could be selected as TP2 — producing two take-profit targets that are effectively identical. The guard runs after both `next_target` and the Fib 0.618 fallback; if the gap is too small, TP2 is set to None (plan proceeds with TP1 only).
-- `ui.main_window.MainWindow` có nút "Khởi động lại" icon-only (glyph `refresh`) ở đáy sidebar icon rail 48px, tooltip "Khởi động lại". Khi bấm: hiện QMessageBox xác nhận Yes/No; nếu Yes → shutdown MT5, khởi chạy process mới bằng `subprocess.Popen` (hỗ trợ cả PyInstaller `sys.executable` và `python main.py`), `QApplication.quit()`. Logic nằm trong `_restart_app()`. Tham khảo `docs/ui/screen_design.md` phần Sidebar để biết vị trí UI.
-
-## Scanner V2 — kiến trúc hiện hành (24/07/2026)
-
-```text
-UI / ScannerRequest
-  → ScannerController
-      → Analysis Pipeline
-      → Candidate Engine
-          → Side Evaluation
-          → Strategy Router
-          → Scan-time Execution Readiness
-      → Canonical Ranking
-      → Observability + Shadow V1/V2
-      → Rollout Policy
-      → Shared Execution Revalidation
-      → MT5Service.place_market_order()
-```
-
-Các boundary bắt buộc:
-
-- `core/scanner_models.py` định nghĩa domain model và version contract.
-- `core/scanner_strategy_router.py` là nơi duy nhất chọn
-  `BACKTEST_VALIDATED`, `DEFAULT_RULES` hoặc `BACKTEST_INVALID`.
-- Decision thresholds 65/60/55 độc lập với min score/RR của backtest.
-- Config backtest chỉ được thực thi khi `VALIDATED`, đúng schema/scorer/feature,
-  còn hạn và đủ bằng chứng OOS/walk-forward/fingerprint.
-- `core/scanner_candidate_engine.py` tạo canonical candidate decision với sáu
-  status; UI không suy luận lại từ `scanner_action`.
-- `core/scanner_ranking_engine.py` xếp hạng sau filter bằng thang 0–100.
-  `opportunity_score` chỉ là compatibility alias.
-- `controllers/scanner_controller.ScannerController.execute_order_candidate()`
-  là shared execution boundary cho cả auto và manual Scanner order.
-- Execution lấy snapshot MT5 mới, tính lại lot, kiểm tra news, giá/zone/SL/TP/RR,
-  account và portfolio trước khi gọi `place_market_order`.
-- RuntimeOrderPolicy (`config/scanner_order_policy.json`, loader fail-closed,
-  event `ORDER_POLICY_FAULT`) quyết định `order_enabled` trước khi candidate có
-  thể thực thi.
-- Snapshot, full analysis, event JSONL và scan health được lưu trong
-  app-data để replay/audit.
-
-Rollout machinery cũ (stage ladder
-`DISABLED → SHADOW → DEMO_LIMITED → DEMO_FULL → CANARY → PRODUCTION`, kill
-switch, release/canary readiness) đã bị gỡ bỏ hoàn toàn khỏi codebase ngày
-15/08/2026 theo quyết định của owner (phần mềm cá nhân, chạy thật trực tiếp).
-Không còn kill switch phần mềm; dừng khẩn cấp = tắt feature flag, đóng lệnh ở
-terminal broker hoặc ngắt kết nối MT5. Không một feature flag hoặc nút UI nào
-được bỏ qua các guard thực thi còn lại.
-
-Runtime hiện tại: order policy owner-accepted (live), feature flag V2 bật, tài
-khoản real được phép. Lệnh chỉ đi qua khi policy `certified()` và toàn bộ
-execution guard chain đạt. Xem `docs/architecture/runtime-status.md`.
-
-`ScannerScreen.AUTO_TRADE_UI_ENABLED=true` cho phép bật auto-entry ở chế độ
-quét định kỳ. Nút mặc định unchecked và bị reset khi chuyển sang quét một lần.
-Auto order và manual order đều đi qua shared execution boundary, cùng một
-guard chain, không có override riêng.
-
-Xem chi tiết tại `docs/scanner/scanner-flow.md` và
-`docs/scanner/technical-scoring-architecture.md`.
-
-Kiến trúc Scanner là runtime hiện hành, chạy live từ 15/08/2026:
-[`scanner-architecture.md`](../scanner/scanner-architecture.md). Mọi bước
-phân tích/triển khai tiếp theo phải được cập nhật vào tài liệu này trước khi sửa
-code.
-
-## Implementation Addendum trước Scanner V2 (tham chiếu lịch sử)
-
-> Hai mục Telegram/Auto-entry ngay dưới đây mô tả contract cũ. Chúng đã được
-> thay thế bởi candidate status canonical và shared execution path ở mục trên
-> (rollout policy cũ cũng đã bị gỡ bỏ ngày 15/08/2026).
-
-### Telegram alert format
-
-- `services/telegram_alert_service.py` sends detailed trade alerts only for scanner rows with `scanner_action == "ready"`, `trade_permission == "allowed"` and a matching trade plan in `analysis_result`.
-- The detailed trade alert is Vietnamese with accents and bullet icons. It includes symbol, broker symbol, side, Entry, Stop loss, Take profit, suggested lot, R:R, setup score, reason, MT5 balance if present, and source.
-- Detailed R:R uses base effective RR as the primary value when available, falls back to best effective RR, and keeps best nominal RR as a secondary reference. Current execution RR is not substituted into the alert.
-- The scanner summary alert no longer lists watch symbols. It shows only scan time, number of scanned symbols, number of ready symbols, and ready symbols with Entry/SL/TP.
-- Summary time is formatted as `dd-mm-yyyy HH:MM:SS`, for example `09-06-2026 10:30:07`.
-
-### Auto-entry on MT5
-
-- Auto-entry is enabled only when the Scanner is running in auto-scan mode and the user has turned on the `Tự động vào lệnh MT5` toggle button. One-shot scans never place orders automatically; a valid candidate can still be placed manually from its dialog.
-- `ui.screens.scanner_screen.ScannerScreen` exposes a visible auto-entry toggle button. The button is disabled in one-shot mode, enabled in auto-scan mode, and highlighted when active.
-- `ScannerScreen` sets `ScannerRequest.auto_trade_enabled=True` only when scan mode is auto and the auto-entry toggle button is on.
-- `controllers.scanner_controller.ScannerController` executes auto trades after all rows are scanned, sorted and enriched.
-- A row can be auto-traded only when canonical
-  `scanner_candidate_decision.auto_trade_candidate=true`. Setup score,
-  scenario, Gate, entry, R:R và payload phải cùng `selected_side`; không dùng
-  lại `scanner_action`, `trade_permission` hoặc `best_side` legacy để tự suy
-  luận quyền đặt lệnh.
-- Risk is still controlled by the normal sizing path. The controller caps `request.risk_percent` to `settings.trading.max_risk_percent` before analysis and before auto-entry.
-- Auto-entry recalculates volume from the latest MT5 balance, risk percent, entry/SL and quote-to-USD rate; `scenario.position_sizing.suggested_lot` is the fallback when execution-time conversion is unavailable.
-- For each broker symbol, `MT5Service.has_open_position_or_order()` checks both open positions and pending orders. If any existing position/order exists for that symbol, the system skips auto-entry for that symbol.
-- Immediately before execution, the controller retrieves live ask/bid with
-  `MT5Service.get_live_price()`, re-checks the final `entry_zone` from the
-  strict same-side scenario and calculates spread-adjusted current RR. Price
-  outside that zone or current RR below `min_rr` causes an explicit skip.
-  Manual order placement applies the same protection and blocks with a
-  warning. `source_zone`, `watch_zone`, and opposite-side scenarios are never
-  execution fallbacks.
-- Auto-trade results include a `diagnostics` list; manual order data includes an `execution_guard` dict with price source, live/fallback price, entry-zone state, current RR and decision reason.
-- `MT5Service.place_market_order()` sends a market order through the MetaTrader5 Python API:
-  - BUY uses current `ask`.
-  - SELL uses current `bid`.
-  - SL comes from the trade plan.
-  - TP uses the first item in `take_profit`.
-  - The order comment is prefixed with `AMA`.
-- Volume is normalized down to broker `volume_step`; if the normalized value is below broker `volume_min`, the order is skipped instead of increasing risk.
-- Auto-entry results are returned in `output["auto_trade_results"]` with `enabled`, `attempted`, `opened`, `skipped`, `errors`, `orders`, `risk_percent`, and `diagnostics`.
-
-### Order Management V2 — đã triển khai, chờ release validation (09/08/2026)
-
-Order Management V2 tách broker DTO, state machine thuần và persistence
-account-scoped khỏi widget. Snapshot typed phân biệt `AVAILABLE` với
-`UNAVAILABLE`; SL/TP và close chỉ thành công sau postcondition broker; state
-machine giữ invariant BUY/Bid, SELL/Ask, BE trước trailing, TP không đổi và SL
-không dời lùi.
-
-`AppController` hiện sở hữu `OrderManagementService` ở application scope. MT5
-I/O chạy qua single-executor/serialization boundary; Scanner reconcile rồi
-register position broker; Orders UI đọc cache và nhận Qt signal; shutdown
-persist/flush state trước khi disconnect MT5. Pending/manual/bulk action cũng
-dùng service với broker postcondition.
-
-Targeted suite và full suite tích hợp đều xanh: targeted đạt **191 passed in
-3.15s** trên 17 file; full suite đạt **2740 passed, 8 skipped, 17 xfailed,
-5 warnings in 178.62s (179.5s wall)**.
-Forward-demo/reconnect evidence vẫn chưa có, nên implementation chưa được coi là
-live-safe hoặc GA. Kế hoạch và review triển khai đã được hợp nhất vào
-[`order-management-contract.md`](../trading/order-management-contract.md); trạng
-thái vận hành xem [`runtime-status.md`](runtime-status.md). Chi tiết lịch sử vẫn
-có trong Git.
-
-### Gemini API Migration (2026-07-17)
-
-- **Lý do:** Google đã chuyển đổi model Gemini. `gemini-2.5-flash` và `gemini-2.5-pro` không còn khả dụng cho API Key mới (scheduled shutdown: October 16, 2026). Google khuyến nghị dùng `gemini-3.5-flash` (Stable) và `gemini-3.1-pro-preview`.
-- **Model Discovery:** Mỗi provider tự implement `discover_models()` trong adapter. Gemini gọi `GET /v1beta/models`, OpenAI gọi `GET /v1/models`. Chỉ lọc model có `generateContent` (Gemini) hoặc `gpt-*/o*` prefix (OpenAI). Cache 30 phút trong memory + disk (`cache/provider_runtime/{provider}.json`).
-- **Error Messages:** Mỗi adapter tự implement `friendly_error()` — parse lỗi REST API và hiển thị thông báo tiếng Việt rõ ràng cho HTTP 404 (model deprecated), 403 (API Key sai), 401, 429 (quota).
-- **systemInstruction:** Gemini API call dùng `systemInstruction` field thay vì ghép system prompt vào user content.
-- **Backward Compatible:** API Key cũ vẫn hoạt động. Cấu hình cũ (model 2.5) vẫn được chấp nhận trong settings (chỉ lỗi khi gọi API).
-
-### Credential Service (2026-07-17)
-
-- **API Key Storage:** API Key không còn lưu plaintext trong `settings.json`. Thay vào đó dùng `services/credential_service.py` — wrapper quanh `keyring` (Windows Credential Manager / WinVaultKeyring).
-- **Transparent:** `SettingsService._load_ai_settings()` tự động populate `api_key` từ credential store khi load. `SettingsService.save()` tự động lưu key vào credential store và serialize bản sao không có plaintext ra disk.
-- **Migration:** Settings cũ chứa `api_key` plaintext được tự động migrate sang credential store ở lần save đầu tiên sau khi nâng cấp. Không cần user can thiệp.
-- **In-memory preserved:** `SettingsService.save()` tạo bản sao settings để serialize, không xóa `api_key` khỏi memory — runtime consumer không bị ảnh hưởng.
-
-### Provider Runtime Architecture (2026-07-17)
-
-Toàn bộ subsystem AI đã được refactor từ Model-Centric sang Provider-Centric:
-
-- **Provider Catalog (`services/ai/provider_catalog.py`):** Static registry của tất cả provider. Mỗi provider có `ProviderInfo` (name, display_name, capabilities, default_models, locked_models, adapter_class). `ProviderCapability` IntFlag định nghĩa capability: CHAT, STREAM, MODEL_DISCOVERY, VISION, TOOL_CALLING, SYSTEM_PROMPT, REASONING, JSON_MODE, EMBEDDING, IMAGE_GEN. `capability_labels()` trả về nhãn tiếng Việt.
-- **Provider Adapter (`services/ai/provider_adapter.py`):** `BaseProviderAdapter` ABC — mỗi provider implement: `generate()`, `generate_stream()`, `discover_models()`, `friendly_error()`, `validate_model()`. Shared HTTP helpers: `_post_json()`, `_chat_completion_payload()`, `_extract_chat_completion_text()`.
-- **Concrete Adapters (`services/ai/providers/`):** `DeepSeekAdapter`, `OpenAIAdapter`, `AnthropicAdapter`, `GeminiAdapter`. Mỗi adapter tự đăng ký vào `provider_catalog` khi import.
-- **AIService (`services/ai_service.py`):** Thin dispatcher — nhận `AIProviderConfig`, lookup adapter từ `provider_catalog`, delegate mọi call. Không còn if/elif chain.
-- **Runtime Model Discovery:** Model không còn hard-code trong `ai_providers.json`. Mỗi provider có `MODEL_DISCOVERY` capability tự động fetch model từ API (Gemini: `GET /v1beta/models`, OpenAI: `GET /v1/models`). Cache 30 phút trong memory + disk (`cache/provider_runtime/{provider}.json`). Offline fallback: dùng disk cache khi API lỗi.
-- **Settings UI:** Panel trái — danh sách provider (QListWidget). Panel phải — tên provider, capabilities, API key, model (editable combobox + icon ↻ refresh), test/save buttons. Tự động discovery sau khi test API key thành công.
-- **Thêm provider mới:** Đăng ký `ProviderInfo` + import adapter → tự động xuất hiện trong UI. Không cần sửa `AIService`, `AIProviderCatalogService`, hay bất kỳ file nào khác.
-
-## Macro Upgrade (2026-07-05)
-
-### 1. yfinance fallback — market data resilience
-- `services/market_data_service.py` sử dụng cơ chế 2 tầng: `yfinance.download()` → nếu lỗi hoặc trả về empty → gọi thẳng Yahoo Finance chart API qua `requests`.
-- `_fetch_via_requests()` parse JSON response từ `query1.finance.yahoo.com/v8/finance/chart/{ticker}` → `list[Candle]`.
-- Cache TTL tăng từ 15 phút lên 30 phút để giảm tần suất gọi mạng.
-- Log `logger.warning` rõ ràng mỗi khi dùng fallback.
-
-### 2. Correlation expansion — XXX/USD pairs
-- `core/correlation_check.py`: `_us10y_score()` và `_us2y_score()` mở rộng từ XAU/XAG/JPY sang tất cả cặp `XXX/USD` (EUR, GBP, AUD, NZD, CAD).
-- Logic: US10Y/US2Y tăng → USD mạnh → SELL XXX/USD được thưởng (+1.5 với US10Y, +1.0 với US2Y); BUY bị phạt (-1.5 / -1.0).
-- Chỉ áp dụng Tier 1 Directional, bỏ qua Tier 2 (absolute level) và Tier 3 (momentum) cho XXX/USD pairs.
-- XAU/XAG/JPY giữ nguyên logic 3 tầng.
-
-### 3. FRED API — auto-update interest rates
-- `services/interest_rate_service.py` (file mới): tự động fetch lãi suất từ FRED API cho 8 loại tiền tệ.
-- `news_service.py._load_interest_rates()` chuyển từ đọc file JSON tĩnh → gọi `get_latest_rates()`.
-- `config.settings.AdvancedSettings` thêm `fred_api_key: str = ""` — để trống để dùng fallback JSON.
-- Cache 6 giờ, tính trend (hike/cut/hold) từ chênh lệch 2 kỳ gần nhất.
-
-### 4. AI stance analysis — hawkish/dovish
-- `news_service.py._ai_currency_stance()`: dùng AI đọc headline và trả về "hawkish" / "dovish" / "neutral".
-- Fallback về keyword matching (`currency_stance()` cũ) nếu không có AI service hoặc AI lỗi.
-- Cache stance 30 phút theo `currency + hash(5 headlines đầu)` để tránh gọi AI lặp.
-- `_compute_macro_tiers()` truyền `ai_service` xuống `_ai_currency_stance()`.
-- `scanner_controller.run_market_scan()` tạo `AIService` từ settings và truyền qua `_fetch_one_symbol_mt5()` → `data_quality_flags()` → `latest_macro_context()`.
-
-## Brave Search & Calendar Cache Fixes (2026-07-06)
-
-### 5. Persistent calendar cache — tích lũy event quá khứ
-- **Vấn đề:** `forex_factory_client._store_calendar_cache()` chỉ merge khi cùng ngày, ngày mới → overwrite toàn bộ cache. FF API `thisweek.json` chỉ trả event tương lai → `lookup_actuals_batch()` không bao giờ có event quá khứ để lookup actual.
-- **Fix:** `_store_calendar_cache()` luôn merge với cache cũ (bỏ điều kiện `date == today_key`), thêm cleanup tự động event > 7 ngày. `CALENDAR_CACHE_MAX_AGE` tăng 12h → 24h.
-- **Kết quả:** Event quá khứ được tích lũy qua các lần chạy → `lookup_actuals_batch()` có dữ liệu đầu vào → Brave Search tự động tra cứu actual values.
-
-### 6. AI parse fallback — chống reasoning text lọt vào actual
-- **Vấn đề:** `news_service._parse_with_ai()` trả về toàn bộ AI reasoning text (~500 ký tự) thay vì con số actual. DeepSeek model output thinking tokens trước answer → `_parse_fallback_regex()` không được gọi.
-- **Fix:** Nếu `len(result) > 20` → AI đang trả về reasoning → fallback về `_parse_fallback_regex()` trích xuất số từ raw search text.
-- **Kết quả:** Actual values được parse sạch (`-0.4%`, `-1.0%`, `-0.2%`) thay vì nguyên đoạn văn bản.
-
-### 7. Scanner Detail cleanup — xóa dead code tab Tổng quan
-- `ui/screens/scanner_detail_screen.py`: xóa `_cards_container` + 14 `InfoCard` ẩn (108 dòng) — widget được tạo từ `_build_ui()` nhưng không bao giờ hiển thị.
-- Xóa `_refresh_cards()` method — populate card ẩn vô ích. Dialog `_show_scan_detail_dialog()` tạo card riêng bằng `_dialog_card_*()`.
-- Chuyển `_refresh_entry_checklist()` thành lời gọi trực tiếp từ `_render()`, không qua `_refresh_cards()` trung gian.
-
-### 8. Tab Tổng quan redesign — hiển thị trực tiếp không cần mở dialog
-- **Hero bar mở rộng**: thêm 5 chỉ số inline (Điểm, R:R kèm dải worst–best, Buy/Sell, Gap, Vĩ mô) ngay trên hero bar. R:R hiển thị dạng `1:5.6 (2.9–5.6)` — best case + khoảng dao động.
-- **Panel "Số liệu giao dịch"** (`_refresh_trade_panel()`): QFrame cố định ở cột phải, hiển thị Entry zone, SL, TP, R:R (kèm dải worst–best từ `risk_reward_range`), Vĩ mô, Chế độ TT — tái sử dụng `_dialog_card_*()`.
-- Scanner Detail resolves RR from the flat row first and falls back to the scenario matching `best_side`. Entry without a real TP1 is displayed as `N/A` with an explanatory note, not a fabricated RR.
-- **Panel "Điểm phân tích"** (`_refresh_score_panel()`): QFrame cố định ở cột phải, hiển thị Điểm tốt nhất, Điểm cuối, Buy/Sell, Gap, M15, Quyền GD.
-- Cả 2 panel đều có guard `if not self.row` → hiển thị `"—"`, không crash.
-
-### 9. Dialog "Xem đầy đủ" upgrade — bỏ trùng lặp, thêm tooltip
-- Bỏ 10 ô trùng lặp với tab Tổng quan (Điểm, Mua/Bán, Gap, R:R, SL, TP, Entry, Chế độ TT, Quyền GD, Vĩ mô).
-- Giữ 6 ô còn lại, nhóm thành 2 khu vực có tiêu đề: "🔎 Ngữ cảnh mở rộng" (Vị trí giá, Nhóm scanner, M15, Vĩ mô) và "📔 Thống kê nhật ký" (Mẫu NK, Kỳ vọng NK).
-- Thêm `setToolTip()` giải thích thuật ngữ cho từng ô.
-- Cảnh báo `⚠️ Mẫu quá ít, kỳ vọng chưa đáng tin` khi sample_size < 20.
