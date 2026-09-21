@@ -188,7 +188,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   d.729 — DB thay thế, B7 khoản 2: không ghi đường cũ).
 - **Test:** HTTP giả lập JSON ok / 429 / URLError; converter đủ trường; luôn upsert đè (không "tồn tại thì bỏ qua"); `ingest_runs` ghi đúng status.
 - **Phụ thuộc:** L2.1 · **Điểm review:** grep producer không lộ dict thô ra API công khai; không retry vô hạn.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L2.4 — `ff_calendar_producer` kênh HTML (actual targeted) + on-demand lookup (L)
 - **File mới:** mở rộng `ff_calendar_producer.py`, `tests/test_news_ff_producer_html.py` + fixture HTML.
@@ -431,7 +431,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L1.5 | `core/rate_trend.py` | 1 | L1.3 | S | IMPLEMENTED |
 | L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | IMPLEMENTED |
 | L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | IMPLEMENTED |
-| L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | PLANNED |
+| L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | IMPLEMENTED |
 | L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | PLANNED |
 | L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | PLANNED |
 | L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | PLANNED |
