@@ -39,7 +39,7 @@ QWidget ,
 )
 from services .mt5_service import MT5Service
 from services .settings_service import SettingsService
-from ui.layout_system import configure_table
+from ui.layout_system import LayoutTokens, configure_table
 from ui.icons import flat_icon
 from ui .screens .shared import action_button ,card ,labeled_value ,page_header
 from ui.scanner_presentation import sort_scanner_rows_for_display
@@ -55,6 +55,31 @@ from ui.theme import palette_for, semantic_role_for_color
 from ui.theme.fonts import get_body_font
 from ui.theme_manager import current_palette, is_light_theme, set_dynamic_property
 from ui.translation import vi_term
+
+# Sàn bề ngang của combo khi dãy điều khiển quét hết chỗ (bề ngang cửa sổ tối
+# thiểu 800px). Chọn 48 để hai combo hấp thụ hết phần thiếu: nhãn và nút giữ
+# đúng kích thước tự nhiên, không nút nào bị cắt chữ ở 800px.
+SCAN_COMBO_MIN_WIDTH = 48
+
+
+class ScanOptionCombo (QComboBox ):
+    """Combo chế độ/chu kỳ của dãy điều khiển quét: đủ chỗ hiện đủ nhãn, hết chỗ thì co.
+
+    ``QComboBox`` lấy bề ngang nhãn dài nhất làm sàn, nên ở cửa sổ 800px dãy
+    điều khiển quét không còn chỗ: hoặc phải tách hàng, hoặc các control khác bị
+    bóp. Giữ nguyên ``AdjustToContents`` (đủ chỗ thì không elide nhãn) nhưng hạ
+    sàn xuống ``SCAN_COMBO_MIN_WIDTH`` để combo tự co khi thiếu ngang, giữ cả dãy
+    trên một dòng với nhãn và nút đúng kích thước tự nhiên.
+    """
+
+    def __init__ (self ,parent :QWidget |None =None )->None :
+        super ().__init__ (parent )
+        self .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
+        self .setSizePolicy (QSizePolicy .Policy .Preferred ,QSizePolicy .Policy .Fixed )
+
+    def minimumSizeHint (self )->QSize :
+        hint =super ().minimumSizeHint ()
+        return QSize (min (SCAN_COMBO_MIN_WIDTH ,hint .width ()),hint .height ())
 
 
 class ScannerTableModel (QAbstractTableModel ):
@@ -932,10 +957,10 @@ class ScannerScreen (QWidget ):
         symbol_row .addWidget (self .symbol_summary_label ,1 )
         frame .layout ().addLayout (symbol_row )
 
-        self .scan_mode_combo =QComboBox ()
+        self .scan_mode_combo =ScanOptionCombo ()
         self .scan_mode_combo .addItem ("Quét 1 lần","once")
-        self .scan_mode_combo .addItem ("Quét theo khoảng thời gian","auto")
-        self .scan_interval_combo =QComboBox ()
+        self .scan_mode_combo .addItem ("Quét theo chu kỳ","auto")
+        self .scan_interval_combo =ScanOptionCombo ()
         for label ,seconds in [
             ("M5 (theo nến MT5)",300 ),
             ("M15 (theo nến MT5)",900 ),
@@ -947,10 +972,6 @@ class ScannerScreen (QWidget ):
         tf_seconds =old_to_tf .get (settings .notifications .auto_scan_interval_minutes ,900 )
         interval_index =self .scan_interval_combo .findData (tf_seconds )
         self .scan_interval_combo .setCurrentIndex (interval_index if interval_index >=0 else 1 )
-        self .scan_mode_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
-        self .scan_interval_combo .setSizeAdjustPolicy (QComboBox .SizeAdjustPolicy .AdjustToContents )
-        for combo in (self .scan_mode_combo ,self .scan_interval_combo ):
-            combo .setSizePolicy (QSizePolicy .Policy .Fixed ,QSizePolicy .Policy .Fixed )
         self.auto_trade_check = QPushButton("Tự động vào lệnh MT5")
         self.auto_trade_check.setIcon(flat_icon("bot", "text"))
         self.auto_trade_check.setIconSize(QSize(16, 16))
@@ -958,7 +979,7 @@ class ScannerScreen (QWidget ):
         self.auto_trade_check.setCheckable(True)
         self.auto_trade_check.setCursor(Qt.CursorShape.ArrowCursor)
         self .auto_trade_check .setToolTip (
-            "Chỉ dùng trong chế độ quét theo khoảng thời gian. Khi bật, Scanner "
+            "Chỉ dùng trong chế độ quét theo chu kỳ. Khi bật, Scanner "
             "có thể gửi lệnh thật tới MT5; mọi lệnh vẫn phải vượt qua cổng phát "
             "hành và các kiểm tra an toàn."
         )
@@ -973,7 +994,7 @@ class ScannerScreen (QWidget ):
         )
         self .scan_button .clicked .connect (self ._run_scan )
         self.stop_auto_scan_button = action_button(
-            "Dừng quét tự động", primary=True, color="danger",
+            "Dừng quét", primary=True, color="danger",
             icon="stop", icon_role="selection_text", icon_disabled_role="selection_text",
         )
         self .stop_auto_scan_button .setVisible (False )
@@ -993,6 +1014,7 @@ class ScannerScreen (QWidget ):
         self .scan_mode_label .setObjectName ("FormLabel")
         self .scan_interval_label =QLabel ("Khoảng thời gian")
         self .scan_interval_label .setObjectName ("FormLabel")
+        # Nhãn và nút giữ đúng bề ngang tự nhiên; chỉ hai combo ở trên được co.
         compact_controls =(
             self .scan_mode_label ,
             self .scan_interval_label ,
@@ -1004,22 +1026,26 @@ class ScannerScreen (QWidget ):
         for control in compact_controls:
             control .setSizePolicy (QSizePolicy .Policy .Fixed ,QSizePolicy .Policy .Fixed )
 
-        scan_options =ResponsiveRow (
-        left =(
-        self .scan_mode_label ,
-        self .scan_mode_combo ,
-        self .scan_interval_label ,
-        self .scan_interval_combo ,
-        ),
-        right =(
-        self .auto_trade_check ,
-        self .scan_button ,
-        self .stop_auto_scan_button ,
-        self .show_orders_button ,
-        ),
-        )
+        scan_options =QWidget ()
+        scan_options .setObjectName ("ScanOptionsBar")
+        self .scan_options_layout =QHBoxLayout (scan_options )
+        self .scan_options_layout .setContentsMargins (0 ,0 ,0 ,0 )
+        self .scan_options_layout .setSpacing (LayoutTokens .SPACE_2 )
+        # Dãy điều khiển quét: một dòng duy nhất theo thứ tự trái→phải, khoảng
+        # giãn dư chỉ nằm ở cuối dòng — không tách hàng ở bất kỳ bề ngang nào.
+        for widget in (
+            self .scan_mode_label ,
+            self .scan_mode_combo ,
+            self .scan_interval_label ,
+            self .scan_interval_combo ,
+            self .auto_trade_check ,
+            self .scan_button ,
+            self .stop_auto_scan_button ,
+            self .show_orders_button ,
+        ):
+            self .scan_options_layout .addWidget (widget )
+        self .scan_options_layout .addStretch (1 )
         self .scan_options_row =scan_options
-        self .scan_options_layout =scan_options .layout ()
         frame .layout ().addWidget (scan_options )
 
         # ---- Status backing labels (not added to UI, used for summary) ----
@@ -1031,14 +1057,17 @@ class ScannerScreen (QWidget ):
         self .status_summary_label .setWordWrap (True )
         frame .layout ().addWidget (self .status_summary_label )
 
-        self .progress_bar =QProgressBar ()
-        self .progress_bar .setObjectName ("AnalysisProgressBar")
-        self .progress_bar .setRange (0 ,100 )
-        self .progress_bar .setValue (0 )
-        self .progress_bar .setTextVisible (True )
-        self .progress_bar .setFormat ("%p%")
-        self .progress_bar .setFixedHeight (16 )
-        self .progress_bar .setVisible (False )
+        # Thông điệp tiến trình hiển thị ngay trong ô chạy % của thanh tiến trình
+        # (dạng "<thông điệp> - <phần trăm>"), căn giữa, không có nhãn rời. Nút
+        # quét vì vậy giữ nguyên nhãn "Quét thị trường" suốt vòng đời lần quét.
+        self.progress_bar =QProgressBar ()
+        self.progress_bar .setObjectName ("AnalysisProgressBar")
+        self.progress_bar .setRange (0 ,100 )
+        self.progress_bar .setValue (0 )
+        self.progress_bar .setTextVisible (True )
+        self.progress_bar .setFormat ("%p%")
+        self.progress_bar .setFixedHeight (16 )
+        self.progress_bar .setVisible (False )
 
         progress_container =QWidget ()
         progress_container .setObjectName ("ProgressContainer")
@@ -1768,7 +1797,7 @@ class ScannerScreen (QWidget ):
             self .auto_scan_active =True
             self .stop_auto_scan_button .setVisible (True )
         self .scan_button .setEnabled (False )
-        self .scan_button .setText ('Đang quét...')
+        self .progress_bar .setFormat ("Đang quét... - %p%" )
         self .detail_button .setEnabled (False )
         self .save_button .setEnabled (False )
         self ._dim_show_orders_button ()
@@ -1873,12 +1902,24 @@ class ScannerScreen (QWidget ):
         delay_ms =self ._compute_next_candle_delay_ms (tf_seconds )
         self .auto_scan_timer .start (delay_ms )
 
+    def _hide_scan_progress (self )->None :
+        """Ẩn khu vực tiến trình và trả thanh tiến trình về chỉ hiện phần trăm.
+
+        Điểm duy nhất kết thúc vòng đời hiển thị của tiến trình: quét xong, quét
+        lỗi hoặc luồng quét đóng lại đều đi qua đây để thông điệp của lần quét
+        trước không còn sót trong ô chạy %.
+        """
+
+        self .progress_bar .setVisible (False )
+        self .progress_container .setVisible (False )
+        self .progress_bar .setFormat ("%p%" )
+
     def _scan_progress (self ,percent :int ,message :str )->None :
         if not self .progress_bar .isVisible ():
             self .progress_bar .setVisible (True )
             self .progress_container .setVisible (True )
         self .progress_bar .setValue (percent )
-        self .scan_button .setText (message )
+        self .progress_bar .setFormat (f"{message } - %p%" )
 
     def _scan_finished (self ,result :dict [str ,object ])->None :
         self ._active_scan_id =str (result .get ("scan_id","")or "")
@@ -1887,8 +1928,7 @@ class ScannerScreen (QWidget ):
         self ._apply_scan_status (result )
         self ._apply_market_brief (result )
         self .progress_bar .setValue (100 )
-        self .progress_bar .setVisible (False )
-        self .progress_container .setVisible (False )
+        self ._hide_scan_progress ()
         self ._configure_table_columns ()
 
     def _scan_core_finished (self ,result :dict [str ,object ])->None :
@@ -1902,7 +1942,7 @@ class ScannerScreen (QWidget ):
         self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
         self ._update_status_summary ()
         self .progress_bar .setValue (96 )
-        self .scan_button .setText ("Đang gửi/lưu kết quả...")
+        self .progress_bar .setFormat ("Đang gửi/lưu kết quả... - %p%" )
 
     def _scan_aftercare_finished (self ,delta :dict [str ,object ])->None :
         """Merge the aftercare delta into the core result on the GUI thread.
@@ -1918,13 +1958,12 @@ class ScannerScreen (QWidget ):
         self ._apply_scan_status (merged )
         self ._apply_market_brief (merged )
         self .progress_bar .setValue (100 )
-        self .progress_bar .setVisible (False )
-        self .progress_container .setVisible (False )
+        self ._hide_scan_progress ()
         self ._configure_table_columns ()
 
     def _scan_aftercare_progress (self ,percent :int ,message :str )->None :
         self .progress_bar .setValue (percent )
-        self .scan_button .setText (message )
+        self .progress_bar .setFormat (f"{message } - %p%" )
 
     def _render_scan_table (self ,result :dict [str ,object ])->None :
         execution_rows =list (result .get ("rows",[]))
@@ -1948,7 +1987,7 @@ class ScannerScreen (QWidget ):
         if "Telegram"in self .status_labels :
             self .status_labels ["Telegram"].setText (telegram_text )
         if sent :
-            self .scan_button .setText (f"Đã gửi {sent} alert Telegram")
+            self .progress_bar .setFormat (f"Đã gửi {sent} alert Telegram - %p%" )
         self .status_labels ['Lần quét gần nhất'].setText (str (result .get ("timestamp","--")).replace ("T"," ")[:19 ])
         self ._update_status_summary ()
 
@@ -1963,18 +2002,15 @@ class ScannerScreen (QWidget ):
                 self._market_brief_text = f"Lỗi tạo bản tin: {err}"
 
     def _scan_failed (self ,message :str )->None :
-        self .progress_bar .setVisible (False )
-        self .progress_container .setVisible (False )
+        self ._hide_scan_progress ()
         QMessageBox .warning (self ,'Không thể quét thị trường',message )
 
     def _scan_thread_finished (self )->None :
-        self.scan_button.setText("Quét thị trường")
         self ._active_scan_id =""
         self .scan_thread =None
         self .scan_worker =None
         self ._refresh_scan_button_state ()
-        self .progress_bar .setVisible (False )
-        self .progress_container .setVisible (False )
+        self ._hide_scan_progress ()
         self .refresh_status ()
         self ._schedule_next_auto_scan ()
 

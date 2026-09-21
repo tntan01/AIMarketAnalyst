@@ -135,7 +135,7 @@ class ResponsiveRow(QWidget):
 
     @staticmethod
     def _explicitly_hidden(widget: QWidget) -> bool:
-        """Widget bị chính screen ẩn (vd. nút dừng quét tự động) hay không."""
+        """Widget bị chính screen ẩn (vd. nút dừng quét) hay không."""
 
         return widget.testAttribute(Qt.WidgetAttribute.WA_WState_ExplicitShowHide) and (
             widget.isHidden()

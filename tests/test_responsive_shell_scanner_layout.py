@@ -6,8 +6,11 @@ thật (cửa sổ chỉ được resize, không gọi `apply_startup_policy`).
 
 Bài test bám vào hành vi đo được chứ không phải vào một breakpoint hard-code:
 
-* hàng action của Scanner gộp một hàng khi đủ chỗ và tách hai hàng khi thiếu
-  ngang — nhờ đó màn hình không bị cắt ở compact;
+* dãy điều khiển quét của Scanner luôn nằm trên **một dòng** theo thứ tự
+  trái→phải, kể cả ở bề ngang cửa sổ tối thiểu 800px: không control nào xuống
+  hàng và không control nào thò ra ngoài vùng nhìn thấy;
+* thông điệp tiến trình hiển thị **trong ô chạy %** của thanh tiến trình, nhãn
+  nút quét không đổi;
 * bảng Scanner cuộn ngang thay vì bóp cột;
 * cột thông tin của Detail giữ đúng sàn nội dung nên checklist không bị elide;
 * panel dài cuộn dọc khi nội dung không vừa, và không cuộn khi đã vừa (desktop
@@ -256,7 +259,7 @@ def test_row_never_shows_a_control_the_screen_hid() -> None:
     app = _app()
     from PyQt6.QtWidgets import QPushButton
 
-    hidden = QPushButton("Dừng quét tự động")
+    hidden = QPushButton("Dừng quét")
     hidden.setVisible(False)
     left = [QPushButton("Chế độ")]
     right = [hidden, QPushButton("Quét thị trường")]
@@ -308,28 +311,125 @@ def test_row_controls_never_overlap(narrow: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Scanner — hàng action, bảng, rail
+# Scanner — dãy điều khiển quét, thanh tiến trình, bảng, rail
 # ---------------------------------------------------------------------------
 
+# Thứ tự trái→phải bắt buộc của dãy điều khiển quét.
+SCAN_TOOLBAR_ORDER = (
+    "scan_mode_label",
+    "scan_mode_combo",
+    "scan_interval_label",
+    "scan_interval_combo",
+    "auto_trade_check",
+    "scan_button",
+    "stop_auto_scan_button",
+    "show_orders_button",
+)
 
-@pytest.mark.parametrize("viewport", DESKTOP_VIEWPORTS)
-def test_scanner_toolbar_keeps_one_row_at_desktop_viewports(
+
+def _toolbar_controls(screen: ScannerScreen) -> list[QWidget]:
+    return [getattr(screen, name) for name in SCAN_TOOLBAR_ORDER]
+
+
+def _assert_toolbar_is_one_line(screen: ScannerScreen) -> None:
+    """Dãy điều khiển quét: một dòng, đúng thứ tự, không control nào bị cắt."""
+
+    controls = [c for c in _toolbar_controls(screen) if c.isVisibleTo(screen)]
+    centers = [c.mapTo(screen, c.rect().center()).y() for c in controls]
+    assert max(centers) - min(centers) <= 1, "cả dãy phải nằm trên một dòng"
+    lefts = [c.mapTo(screen, c.rect().topLeft()).x() for c in controls]
+    assert lefts == sorted(lefts), f"thứ tự trái→phải bị phá: {lefts}"
+    for control in controls:
+        left = control.mapTo(screen, control.rect().topLeft()).x()
+        assert 0 <= left
+        assert left + control.width() <= screen.width(), (
+            f"{control.objectName() or type(control).__name__} thò ra ngoài màn hình"
+        )
+
+
+@pytest.mark.parametrize(
+    "viewport", (*DESKTOP_VIEWPORTS, COMPACT_VIEWPORT, MINIMUM_VIEWPORT)
+)
+def test_scanner_toolbar_stays_on_one_line(
     shell: Any, viewport: tuple[int, int]
 ) -> None:
     screen = _scanner_resized(shell, viewport)
+    _assert_toolbar_is_one_line(screen)
 
-    assert screen.scan_options_row.row_count() == 1
-    controls = (
+
+@pytest.mark.parametrize("viewport", ((900, 560), MINIMUM_VIEWPORT))
+def test_scanner_toolbar_stays_on_one_line_with_the_stop_button_shown(
+    shell: Any, viewport: tuple[int, int]
+) -> None:
+    """Trạng thái rộng nhất của dãy: đang quét tự động, nút dừng hiện ra."""
+
+    screen = _scanner_resized(shell, viewport)
+    screen.stop_auto_scan_button.setVisible(True)
+    _app().processEvents()
+
+    _assert_toolbar_is_one_line(screen)
+
+
+def test_scanner_combos_absorb_the_missing_width_before_the_buttons(shell: Any) -> None:
+    """Ở 800px chỉ hai combo co lại; nhãn và nút giữ kích thước tự nhiên."""
+
+    screen = _scanner_resized(shell, MINIMUM_VIEWPORT)
+    _app().processEvents()
+
+    for combo in (screen.scan_mode_combo, screen.scan_interval_combo):
+        assert combo.width() >= combo.minimumSizeHint().width(), (
+            "combo không được hẹp hơn sàn của chính nó"
+        )
+        assert combo.width() < combo.sizeHint().width(), (
+            "ở 800px combo phải co lại để nhường chỗ cho phần còn lại"
+        )
+    for control in (
         screen.scan_mode_label,
-        screen.scan_mode_combo,
         screen.scan_interval_label,
-        screen.scan_interval_combo,
         screen.auto_trade_check,
         screen.scan_button,
         screen.show_orders_button,
-    )
-    centers = [c.mapTo(screen, c.rect().center()).y() for c in controls]
-    assert max(centers) - min(centers) <= 1
+    ):
+        assert control.width() >= control.sizeHint().width(), (
+            f"{control.objectName() or type(control).__name__} bị bóp ở 800px"
+        )
+
+
+def test_scan_status_message_is_shown_inside_the_progress_bar(shell: Any) -> None:
+    """Thông điệp tiến trình nằm trong ô chạy %, nhãn nút quét không đổi."""
+
+    screen = _scanner_resized(shell, (1280, 720))
+    assert screen.progress_bar.format() == "%p%"
+
+    screen._scan_progress(90, "Đang dựng bảng kết quả quét...")
+    _app().processEvents()
+
+    assert screen.progress_bar.format() == "Đang dựng bảng kết quả quét... - %p%"
+    assert screen.progress_bar.text() == "Đang dựng bảng kết quả quét... - 90%"
+    assert screen.scan_button.text() == "Quét thị trường"
+    assert not hasattr(screen, "scan_status_label")
+
+    screen._hide_scan_progress()
+    assert screen.progress_bar.format() == "%p%"
+    assert screen.progress_bar.text() == "90%"
+
+
+@pytest.mark.parametrize("viewport", (MINIMUM_VIEWPORT, (1600, 900)))
+def test_longest_scan_status_message_is_not_clipped(
+    shell: Any, viewport: tuple[int, int]
+) -> None:
+    """Thông điệp dài nhất của worker phải vừa trong thanh, không bị cắt chữ."""
+
+    screen = _scanner_resized(shell, viewport)
+    screen._scan_progress(99, "Đang áp dụng Strategy Router và execution filters...")
+    _app().processEvents()
+
+    text = screen.progress_bar.text()
+    assert text.endswith("- 99%")
+    assert (
+        screen.progress_bar.fontMetrics().horizontalAdvance(text)
+        <= screen.progress_bar.width()
+    ), "thông điệp trạng thái bị cắt ở bề ngang này"
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
@@ -351,7 +451,7 @@ def test_scanner_screen_is_not_clipped_at_the_compact_viewport(theme: str) -> No
 
         assert screen.width() >= screen.minimumSizeHint().width()
         assert screen.height() >= screen.minimumSizeHint().height()
-        assert screen.scan_options_row.row_count() == 2
+        _assert_toolbar_is_one_line(screen)
 
         # Không control nào thò ra ngoài vùng nhìn thấy của màn hình.
         for control in (

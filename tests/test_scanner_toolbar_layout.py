@@ -83,8 +83,21 @@ def test_scanner_controls_share_one_compact_row_at_smallest_viewport() -> None:
         assert screen.width() == 1366
         assert right_edge < screen.width()
 
-        for control in controls:
+        # Labels and buttons keep their natural width; only the two combos may
+        # shrink (they are the elastic part of the row — see ScannerScreen).
+        for control in (
+            screen.scan_mode_label,
+            screen.scan_interval_label,
+            screen.auto_trade_check,
+            screen.scan_button,
+            screen.stop_auto_scan_button,
+            screen.show_orders_button,
+        ):
             assert control.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Fixed
             assert control.width() <= control.sizeHint().width() + 1
+        for combo in (screen.scan_mode_combo, screen.scan_interval_combo):
+            assert combo.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Preferred
+            assert combo.minimumSizeHint().width() <= combo.width()
+            assert combo.width() <= combo.sizeHint().width()
 
         screen.close()

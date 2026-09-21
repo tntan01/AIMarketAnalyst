@@ -642,15 +642,27 @@ def test_aftercare_returns_delta_without_mutating_core(monkeypatch):
 
 
 class _ProgressBar:
+    """Thanh tiến trình giả, đủ để đọc lại thông điệp trong ô chạy %."""
+
     def __init__(self):
         self.value = None
         self.visible = True
+        self.fmt = "%p%"
 
     def setValue(self, value):
         self.value = value
 
     def setVisible(self, visible):
         self.visible = visible
+
+    def isVisible(self):
+        return self.visible
+
+    def setFormat(self, fmt):
+        self.fmt = fmt
+
+    def format(self):
+        return self.fmt
 
 
 def _screen_owner(active_scan_id: str, scan_result: dict):
@@ -662,6 +674,8 @@ def _screen_owner(active_scan_id: str, scan_result: dict):
             "scan_result": scan_result,
             "progress_bar": _ProgressBar(),
             "progress_container": _ProgressBar(),
+            # Vòng đời ẩn tiến trình là hành vi thật của screen, không giả lập.
+            "_hide_scan_progress": ScannerScreen._hide_scan_progress,
             "_apply_scan_status": lambda self, result: _screen_owner._calls.append(
                 ("status", result)
             ),
@@ -718,6 +732,7 @@ def test_matching_aftercare_delta_merges_on_gui_thread():
     assert ("brief", expected) in _screen_owner._calls
     assert owner.progress_bar.value == 100
     assert owner.progress_container.visible is False
+    assert owner.progress_bar.format() == "%p%"
 
 
 def test_core_ready_shows_pending_aftercare_status():
@@ -734,7 +749,6 @@ def test_core_ready_shows_pending_aftercare_status():
             "scan_result": None,
             "status_labels": status_labels,
             "progress_bar": _ProgressBar(),
-            "scan_button": MagicMock(),
             "_render_scan_table": lambda self, result: None,
             "_update_status_summary": lambda self: None,
         },
@@ -748,4 +762,41 @@ def test_core_ready_shows_pending_aftercare_status():
     status_labels["AI đã gọi"].setText.assert_called_once_with("Đang tạo bản tin...")
     status_labels["Telegram"].setText.assert_called_once_with("Đang gửi...")
     assert owner.progress_bar.value == 96
-    owner.scan_button.setText.assert_called_once_with("Đang gửi/lưu kết quả...")
+    assert owner.progress_bar.format() == "Đang gửi/lưu kết quả... - %p%"
+
+
+def test_scan_progress_messages_never_touch_the_scan_button() -> None:
+    """Nhãn nút quét là hằng số: owner giả không hề có thuộc tính scan_button.
+
+    Mọi thông điệp tiến trình đi vào ô chạy % của thanh tiến trình và được trả
+    về ``%p%`` khi luồng quét đóng lại.
+    """
+
+    owner = type(
+        "Owner",
+        (),
+        {
+            "_active_scan_id": "scan-1",
+            "scan_thread": object(),
+            "scan_worker": object(),
+            "progress_bar": _ProgressBar(),
+            "progress_container": _ProgressBar(),
+            # Vòng đời ẩn tiến trình là hành vi thật của screen, không giả lập.
+            "_hide_scan_progress": ScannerScreen._hide_scan_progress,
+            "_refresh_scan_button_state": lambda self: None,
+            "refresh_status": lambda self: None,
+            "_schedule_next_auto_scan": lambda self: None,
+        },
+    )()
+
+    ScannerScreen._scan_progress(owner, 42, "Đang phân tích EUR/USD...")
+    assert owner.progress_bar.format() == "Đang phân tích EUR/USD... - %p%"
+    assert owner.progress_bar.value == 42
+    assert owner.progress_container.visible is True
+
+    ScannerScreen._scan_aftercare_progress(owner, 97, "Đang gửi cảnh báo Telegram...")
+    assert owner.progress_bar.format() == "Đang gửi cảnh báo Telegram... - %p%"
+
+    ScannerScreen._scan_thread_finished(owner)
+    assert owner.progress_bar.format() == "%p%"
+    assert owner.progress_container.visible is False

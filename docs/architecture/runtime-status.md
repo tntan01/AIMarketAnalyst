@@ -171,7 +171,7 @@ flag trước re-validation và giữ OFF nếu hypothesis không được xác 
 ## Trạng thái gửi lệnh
 
 Nút **Tự động vào lệnh MT5** trên màn hình Quét thị trường đã được mở cho chế
-độ quét theo khoảng thời gian (`ScannerScreen.AUTO_TRADE_UI_ENABLED=true`).
+độ quét theo chu kỳ (`ScannerScreen.AUTO_TRADE_UI_ENABLED=true`).
 Nút mặc định **không được chọn** mỗi khi tạo màn hình; người dùng phải chủ động
 bật. Khi bật trong auto-scan, request mang
 `ScannerRequest.auto_trade_enabled=true`. Chuyển sang quét một lần sẽ disable
