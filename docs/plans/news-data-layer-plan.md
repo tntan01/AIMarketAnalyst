@@ -130,7 +130,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
 - **Test:** bảng biên thời gian (trước/sau `event_time_utc + grace`, actual
   NULL/có, `impact=non`); store_state đủ 3 trạng thái + chưa-từng-có → `unavailable`.
 - **Phụ thuộc:** L1.3 · **Điểm review:** không import policy/Qt/services trong hàm thuần.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L1.5 — Dẫn xuất trend lãi suất `core/rate_trend.py` (S)
 - **File mới:** `core/rate_trend.py`, `tests/test_rate_trend.py`.
@@ -427,7 +427,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L1.1 | Chính sách + loader `core/news_policy.py` | 1 | — | S | IMPLEMENTED |
 | L1.2 | `news_db_path()` + migration `data/migrations/news/001` + spec | 1 | — | S | IMPLEMENTED |
 | L1.3 | `core/news_models.py` (6 dataclass + enum) | 1 | L1.2 | S | IMPLEMENTED |
-| L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | PLANNED |
+| L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | IMPLEMENTED |
 | L1.5 | `core/rate_trend.py` | 1 | L1.3 | S | PLANNED |
 | L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | PLANNED |
 | L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | PLANNED |
