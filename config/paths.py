@@ -30,5 +30,10 @@ def journal_db_path() -> Path:
     return app_data_dir() / "journal.db"
 
 
+def news_db_path() -> Path:
+    """Đường dẫn database Tin tức —  %APPDATA%/ai-market-analyst/news.db (§4.1)."""
+    return app_data_dir() / "news.db"
+
+
 def log_path() -> Path:
     return app_data_dir() / "logs" / "app.log"

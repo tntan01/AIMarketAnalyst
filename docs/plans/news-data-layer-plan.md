@@ -109,7 +109,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
 - **Test:** áp SQL lên DB trống → đủ 5 bảng, đúng cột/kiểu, đủ index,
   `dedupe_key` UNIQUE có hiệu lực; chạy lại có bảng `schema_migrations` kiểm soát (test mô phỏng version).
 - **Phụ thuộc:** — · **Điểm review:** đối chiếu từng cột với §4; spec bundle đủ; không đụng `journal.db`.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L1.3 — Mô hình miền `core/news_models.py` (S)
 - **File mới:** `core/news_models.py`, `tests/test_news_models.py`.
@@ -425,7 +425,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | Lô | Nội dung | Bước | Phụ thuộc | Cỡ | Trạng thái |
 |---|---|---|---|---|---|
 | L1.1 | Chính sách + loader `core/news_policy.py` | 1 | — | S | IMPLEMENTED |
-| L1.2 | `news_db_path()` + migration `data/migrations/news/001` + spec | 1 | — | S | PLANNED |
+| L1.2 | `news_db_path()` + migration `data/migrations/news/001` + spec | 1 | — | S | IMPLEMENTED |
 | L1.3 | `core/news_models.py` (6 dataclass + enum) | 1 | L1.2 | S | PLANNED |
 | L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | PLANNED |
 | L1.5 | `core/rate_trend.py` | 1 | L1.3 | S | PLANNED |

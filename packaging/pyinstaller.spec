@@ -8,6 +8,7 @@ a = Analysis(
         ("../assets", "assets"),
         ("../config/*.json", "config"),
         ("../data/migrations/*.sql", "data/migrations"),
+        ("../data/migrations/news/*.sql", "data/migrations/news"),
         ("../data/vix_pair_sensitivity.json", "data"),
         ("../ui/styles/*.qss", "ui/styles"),
     ],
