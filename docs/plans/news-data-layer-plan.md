@@ -95,7 +95,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   dòng chủ sở hữu "Nạp và validate chính sách miền Tin tức → `core/news_policy.py`"
   (hiện contract chưa đăng ký chủ sở hữu loader — xem QĐ-3).
 - **Phụ thuộc:** — · **Điểm review:** không số ma thuật ngoài JSON; lỗi có kiểu; §11b đã thêm dòng.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L1.2 — Đường dẫn + migration schema `news.db` (S)
 - **File mới:** `data/migrations/news/001_create_news_db.sql`, `tests/test_news_migration.py`.
@@ -424,7 +424,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 
 | Lô | Nội dung | Bước | Phụ thuộc | Cỡ | Trạng thái |
 |---|---|---|---|---|---|
-| L1.1 | Chính sách + loader `core/news_policy.py` | 1 | — | S | PLANNED |
+| L1.1 | Chính sách + loader `core/news_policy.py` | 1 | — | S | IMPLEMENTED |
 | L1.2 | `news_db_path()` + migration `data/migrations/news/001` + spec | 1 | — | S | PLANNED |
 | L1.3 | `core/news_models.py` (6 dataclass + enum) | 1 | L1.2 | S | PLANNED |
 | L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | PLANNED |

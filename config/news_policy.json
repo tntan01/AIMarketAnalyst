@@ -1,0 +1,34 @@
+{
+  "_accepted_by_owner": "2026-09-20 — toàn bộ giá trị Owner chốt tại bảng docs/news/news-architecture.md §7. Đổi số = sửa file này (không sửa code); loader fail-closed (file thiếu/hỏng/thiếu khóa/sai policy_version → raise, không có giá trị mặc định ngầm).",
+  "policy_version": "news-policy",
+  "rss_poll_interval_minutes": 15,
+  "rss_window_hours": 24,
+  "fred_refresh_hours": 6,
+  "event_stale_grace_minutes": 15,
+  "ingest_freshness_hours": 2,
+  "ingest_runs_retention_days": 30,
+  "ai_window_days": 7,
+  "ai_min_items": 3,
+  "ai_horizons": {
+    "short": {
+      "unit": "day",
+      "min": 0,
+      "max": 3
+    },
+    "mid": {
+      "unit": "week",
+      "min": 1,
+      "max": 4
+    },
+    "long": {
+      "unit": "month",
+      "min": 1,
+      "max": 6
+    }
+  },
+  "_provenance": {
+    "rss_window_hours": "kế thừa runtime hiện hành (bằng chứng: đang chạy) — contract §7",
+    "fred_refresh_hours": "kế thừa runtime hiện hành (bằng chứng: đang chạy) — interest_rate_service._CACHE_TTL = timedelta(hours=6) (services/interest_rate_service.py:42; xác nhận docs/macro/macro_score_architecture.md §12: TTL 6 giờ)",
+    "ai_horizons": "nguyên văn contract §7 — ngắn: trong ngày–3 ngày (day 0–3); trung: 1–4 tuần (week 1–4); dài: 1–6 tháng (month 1–6). Giữ nguyên đơn vị gốc Owner viết, không quy đổi ra ngày."
+  }
+}

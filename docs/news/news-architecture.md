@@ -84,7 +84,7 @@ ui → controllers → core ← services (repository, producer)
 | Lớp | Mô-đun của miền này | Vai trò |
 |---|---|---|
 | `services/` | `news_repository.py`; `news_producers/ff_calendar_producer.py`; `news_producers/rss_producer.py`; `news_producers/fred_rate_producer.py` | Vào/ra + tầng chống ăn mòn (C2): biên dịch dữ liệu thô nguồn ngoài → mô hình miền có tên ngay tại biên; dữ liệu thô không tồn tại ngoài bộ chuyển đổi |
-| `core/` | `news_models.py`; `news_freshness.py`; `rate_trend.py`; `trend_prompt_builder.py`; `trend_verdict_parser.py` | Logic thuần: mô hình miền, phân loại trạng thái dữ liệu, dẫn xuất trend lãi suất, dựng prompt, parse verdict. Không vào/ra, không chuỗi hiển thị (L2, L3). Mô hình miền **bắt buộc đặt trong `core/`** vì L1 cấm `Core → Services` (hàm thuần `core/` nhận mô hình làm tham số) |
+| `core/` | `news_policy.py`; `news_models.py`; `news_freshness.py`; `rate_trend.py`; `trend_prompt_builder.py`; `trend_verdict_parser.py` | Logic thuần: nạp và xác thực chính sách miền, mô hình miền, phân loại trạng thái dữ liệu, dẫn xuất trend lãi suất, dựng prompt, parse verdict. Không vào/ra, không chuỗi hiển thị (L2, L3). Mô hình miền **bắt buộc đặt trong `core/`** vì L1 cấm `Core → Services` (hàm thuần `core/` nhận mô hình làm tham số) |
 | `controllers/` | `news_controller.py` | Điều phối: lên lịch producer, phục vụ truy vấn cho bên tiêu thụ, tiếp nhận nhập tay, điều phối gọi AI trong worker |
 | `workers/` | worker nền cho producer poll + lời gọi AI | Bao bọc concurrency, không logic nghiệp vụ |
 | `ui/` | màn Quản lý tin, mục tin Dashboard | Chỉ hiển thị dữ liệu miền đã định dạng (đặc tả ở tài liệu UI — ngoài phạm vi tài liệu này) |
@@ -470,6 +470,7 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 | Sản xuất tín hiệu tin văn bản tự động | `rss_producer` |
 | Sản xuất quan sát lãi suất | `fred_rate_producer` |
 | Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
+| Nạp và validate chính sách miền Tin tức | `core/news_policy.py` |
 | Dẫn xuất trend lãi suất (hike/cut/hold) | `core/rate_trend.py` (`derive_rate_trend`) |
 | Ghi tin nhập tay | `news_controller` |
 | Đọc/ghi database tin tức | `news_repository` |
