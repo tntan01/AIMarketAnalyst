@@ -118,7 +118,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   không logic nghiệp vụ, không I/O, không chuỗi hiển thị (L2/L3).
 - **Test:** ghim giá trị enum (đổi chuỗi = đỏ); khởi tạo không cần mock (L2); ánh xạ trường ↔ cột.
 - **Phụ thuộc:** L1.2 (thống nhất tên) · **Điểm review:** đúng đủ 6 mô hình; không dict trần.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L1.4 — Phân loại trạng thái `core/news_freshness.py` (M)
 - **File mới:** `core/news_freshness.py`, `tests/test_news_freshness.py`.
@@ -426,7 +426,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 |---|---|---|---|---|---|
 | L1.1 | Chính sách + loader `core/news_policy.py` | 1 | — | S | IMPLEMENTED |
 | L1.2 | `news_db_path()` + migration `data/migrations/news/001` + spec | 1 | — | S | IMPLEMENTED |
-| L1.3 | `core/news_models.py` (6 dataclass + enum) | 1 | L1.2 | S | PLANNED |
+| L1.3 | `core/news_models.py` (6 dataclass + enum) | 1 | L1.2 | S | IMPLEMENTED |
 | L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | PLANNED |
 | L1.5 | `core/rate_trend.py` | 1 | L1.3 | S | PLANNED |
 | L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | PLANNED |
