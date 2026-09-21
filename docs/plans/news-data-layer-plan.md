@@ -162,7 +162,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
 - **Cấm trong lô:** công thức chấm điểm, quyết định gate, chuỗi hiển thị (§8).
 - **Test:** upsert/dedupe theo `dedupe_key`; từng quy tắc merge một test; user_note protect; purge theo retention (giá trị truyền vào, không hard-code).
 - **Phụ thuộc:** L1.1, L1.2, L1.3, L1.4 · **Điểm review:** 3 quy tắc merge đủ 3 test riêng; không logic nghiệp vụ ngoài upsert.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L2.2 — `NewsRepository` phần ĐỌC + `store_state` + kiểm thử hợp đồng C4 (M)
 - **File mới:** mở rộng `services/news_repository.py` (file mới của ca — được sửa trong ca), `tests/test_news_repository_contract.py`.
@@ -429,7 +429,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L1.3 | `core/news_models.py` (6 dataclass + enum) | 1 | L1.2 | S | IMPLEMENTED |
 | L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | IMPLEMENTED |
 | L1.5 | `core/rate_trend.py` | 1 | L1.3 | S | IMPLEMENTED |
-| L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | PLANNED |
+| L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | IMPLEMENTED |
 | L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | PLANNED |
 | L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | PLANNED |
 | L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | PLANNED |
