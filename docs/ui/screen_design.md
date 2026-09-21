@@ -30,8 +30,9 @@ Phần mềm nên gồm **9 màn hình chính** trong thiết kế (mục 2/3 Si
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
+| 10 | Tin tức (Quản lý tin) — **PLANNED** | Quản lý database tin tức: xem/lọc, nhập tay, xuất/nhập file; cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
 
-Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **13 màn hình/tabs chức năng**:
+Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **14 màn hình/tabs chức năng** (mục 14 trạng thái PLANNED):
 
 1. Dashboard (Bảng điều khiển tổng quan)
 2. Single Analysis Input (Màn hình nhập phân tích một mã)
@@ -46,6 +47,7 @@ Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài �
 11. Settings - Display (Cài đặt hiển thị)
 12. Settings - Advanced (Cài đặt nâng cao)
 13. Orders (Quản lý lệnh) — tab riêng trong sidebar
+14. Tin tức (Quản lý tin) — tab riêng trong sidebar, **PLANNED** theo ca Tin tức
 
 ---
 
@@ -75,7 +77,13 @@ Quyết định thiết kế bắt buộc:
   contribution của score. Nếu không có dữ liệu, phải hiển thị rõ “không có dữ
   liệu” thay vì để trống.
 - Mục Tin mới nhất chỉ hiển thị headline thị trường và phát biểu đáng chú ý trong 24h qua, mỗi dòng riêng. Dòng tin mới nhất dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm `-> ảnh hưởng tới đồng tiền đang xét` khi đã có nhận định tác động cụ thể. Lịch kinh tế vẫn hiển thị tác động vì bản thân event có mức impact.
-- Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo khoảng thời gian`; interval hỗ trợ M5, M15, H1, H4. Khi đang auto-scan phải có nút `Dừng quét tự động`.
+- Màn hình Scanner có phần Thiết lập quét cho phép chọn `Quét 1 lần` hoặc `Quét theo chu kỳ`; interval hỗ trợ M5, M15, H1, H4. Khi đang auto-scan phải có nút `Dừng quét`.
+- Hàng điều khiển quét là **đúng một dòng, trái→phải**: nhãn và combo chế
+  độ/chu kỳ đứng trước, rồi tới nút `Tự động vào lệnh MT5`, nút quét, nút
+  `Dừng quét` và nút `Kế hoạch lệnh`; khoảng giãn dư chỉ nằm ở cuối
+  dòng. Hàng **không tách hai dòng** ở bất kỳ bề ngang nào từ `800px` trở lên.
+  Khi hết chỗ, **hai combo là phần co lại** (nhãn dài bị elide); nhãn và các nút
+  giữ kích thước tự nhiên và không control nào thò ra ngoài vùng nhìn thấy.
 - Khi mở tab Scanner lần đầu trong phiên, tự động chọn tất cả mã, đặt chế độ
   quét tự động M5 và chạy quét lần đầu sau 1.5 giây. Nút auto-trade khả dụng
   nhưng mặc định unchecked; lượt quét tự khởi động không yêu cầu đặt lệnh nếu
@@ -656,6 +664,12 @@ lệnh từ các field legacy.
 - Sau mỗi lần quét, chỉ hiển thị dòng trạng thái ngắn: số mã đã quét và thời
   gian quét gần nhất.
 - Progress và thống kê theo sáu trạng thái candidate.
+- Nút **Quét thị trường** giữ nguyên nhãn trong suốt vòng đời lần quét. Thông
+  điệp tiến trình (`Đang quét...`, thông điệp worker báo, `Đang gửi/lưu kết
+  quả...`) hiển thị **ngay trong ô chạy %** của thanh tiến trình, dạng
+  `<thông điệp> - <phần trăm>` (ví dụ `Đang dựng bảng kết quả quét - 90%`), căn
+  giữa; không có nhãn trạng thái rời. Khi kết thúc — quét xong, quét lỗi hoặc
+  luồng quét đóng lại — thanh tiến trình trở về chỉ hiển thị `%p%`.
 - Bảng model/view theo đúng `ScannerTableModel.COLUMNS`.
 - Trong tab **Tổng quan**, cột card thông tin và biểu đồ dùng tỷ lệ mặc định
   `30% / 70%`. Biểu đồ mở mặc định ở khung **D1 (Ngày)**; nếu snapshot không
@@ -1395,6 +1409,8 @@ AI Market Analyst (Nhà phân tích thị trường AI)
 │   ├── Journal List (Danh sách nhật ký)
 │   └── Journal Detail (Chi tiết nhật ký)
 │
+├── Tin tức (Quản lý tin) — PLANNED
+│
 └── Settings (Cài đặt)
     ├── AI (Trí tuệ nhân tạo)
     ├── Dữ liệu (MT5)
@@ -1494,3 +1510,154 @@ Khi scanner mở lệnh qua auto-trade, hệ thống tự động đăng ký BE 
 - TP **giữ nguyên**, không can thiệp
 - Chỉ quản lý lệnh **do hệ thống mở** (comment prefix "AMA")
 - Timer chạy **ngay cả khi tab không active**
+
+---
+
+## News Screen (Quản lý tin) — PLANNED (ca Tin tức, Bước 3)
+
+> Contract dữ liệu — nguồn thẩm quyền duy nhất:
+> [`../news/news-architecture.md`](../news/news-architecture.md) (ban hành
+> 20/09/2026). Mục này chỉ đặc tả **bố cục và tương tác**; mọi dữ liệu đọc
+> qua `NewsRepository` theo hợp đồng mục 8 của contract — UI không tự tính,
+> không gọi nguồn ngoài trực tiếp, không chứa công thức/ngưỡng (L1, S2).
+> Mục tin tức trên Dashboard được đặc tả sau, khi phần Tin tức hoàn thành —
+> mục này KHÔNG thay thế nó.
+
+### Mục đích
+
+Cho phép người dùng xem toàn bộ tin trong database theo ngày, bổ sung tin mà
+nguồn tự động bỏ sót, loại trừ tin không có giá trị, xuất/nhập file để sao
+lưu hoặc bù ngày app không chạy, và yêu cầu AI nhận định xu hướng một cặp
+tiền để **tham khảo**.
+
+### Bố cục
+
+```text
+[ Tin tức (Quản lý tin)                                        ]
+
+[ Bộ lọc: Loại tin ▼ | Đồng tiền ▼ | Tác động ▼ | Nguồn ▼ | Trạng thái ▼ | Khoảng ngày ]
+
+[ Bảng tin ]
+  Thời gian | Loại | Nguồn | Đồng tiền | Tiêu đề/Nội dung | Tác động | Thực tế | Trạng thái | Chi tiết
+
+[ Thanh công cụ: Lấy lịch kinh tế | Cập nhật actual | Nhập tin | Xuất file | Nhập file | AI nhận định xu hướng ]
+```
+
+- **Bảng tin:** hợp nhất sự kiện lịch kinh tế (`news_events`) và tin văn bản
+  (`news_items`), sắp xếp theo thời gian; cột Trạng thái hiển thị
+  `scheduled`/`released`/`stale` (sự kiện) và cờ `excluded` (tin văn bản) bằng
+  badge theo semantic palette của style guide. Nhãn tiếng Việt theo **Từ điển
+  hiển thị** bên dưới.
+- **Bộ lọc:** theo `kind` (sự kiện/headline/phát biểu/nhập tay), đồng tiền,
+  `impact`, `source`, trạng thái, khoảng ngày — giá trị enum lấy đúng từ vựng
+  miền trong contract (S5), nhãn tiếng Việt theo **Từ điển hiển thị** bên dưới.
+- **Chi tiết dòng:** dialog xem đầy đủ nội dung/provenance (nguồn, giờ fetch,
+  `raw_json` nếu có); với tin văn bản có URL thì kèm liên kết ngoài.
+
+### Từ điển hiển thị tiếng Việt (S5, D6 — Owner duyệt 21/09/2026)
+
+Đăng ký **một lần tại đây** cho mọi enum hiển thị trên màn này (theo contract
+§2 — enum trong code giữ nguyên chuỗi máy đọc; tầng trình bày sở hữu nhãn hiển
+thị):
+
+| Enum | Nhãn tiếng Việt |
+|---|---|
+| `status` (sự kiện) | `scheduled` = "Chưa tới giờ" · `released` = "Đã có số liệu" · `stale` = "Thiếu số liệu" |
+| Cờ `excluded` (tin văn bản) | `excluded` = "Đã loại trừ" |
+| `kind` (tin văn bản) | `headline` = "Headline" · `statement` = "Phát biểu" · `user_note` = "Nhập tay" |
+| `impact` / `impact_hint` | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `non` = "Không đáng kể" |
+| `source` | `ff_json` = "ForexFactory (lịch)" · `ff_html` = "ForexFactory (actual)" · `google_news_rss` = "Google News" · `fxstreet_rss` = "FXStreet" · `investing_rss` = "Investing" · `fred` = "FRED" · `config_fallback` = "Cấu hình dự phòng" · `user` = "Nhập tay" · `import` = "Nhập file" |
+| `direction` (verdict AI) | `bullish` = "Tăng" · `bearish` = "Giảm" · `neutral` = "Trung lập" · `insufficient_data` = "Không đủ dữ liệu" |
+| `confidence` (verdict AI) | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `none` = "Không có" |
+| `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
+
+### Hành vi lấy dữ liệu ForexFactory (2 nút)
+
+Không có poll định kỳ từ UI; ngoài 2 nút này, mạng chỉ được gọi ở lượt tự
+động khi khởi động app và on-demand lookup khi chấm điểm cần actual (4
+trường hợp duy nhất — contract §6.1):
+
+- **Lấy lịch kinh tế:** fetch JSON tuần này + tuần sau, **luôn upsert đè**
+  (không kiểm tra "đã tồn tại") để hiệu đính của FF được cập nhật. Trong lúc
+  chạy: nút disable + chỉ báo tiến trình. Kết thúc: thông báo tóm tắt số sự
+  kiện mới/cập nhật. Lỗi (mạng/429): thông báo rõ nguyên nhân, **không tự
+  retry**.
+- **Cập nhật actual:** fetch HTML targeted cho các sự kiện đã đến hạn công bố
+  mà actual còn thiếu (trạng thái `stale`). Kết thúc: thông báo số sự kiện
+  nhận được actual. Lỗi HTML: thông báo rõ nguyên nhân + gợi ý hành động
+  "Nhập actual bằng tay" (mở form nhập tin với sự kiện liên quan điền sẵn).
+- Dữ liệu người dùng nhập tay không bao giờ bị 2 nút trên ghi đè (quy tắc
+  merge của contract); xung đột actual tự-động vs nhập-tay → ưu tiên nhập
+  tay, ghi log vận hành.
+
+### Hành vi nhập/sửa tin
+
+- Nút **Nhập tin** mở form `user_note`; trường bắt buộc: giờ đăng, loại tin,
+  nội dung, đồng tiền; trường tùy chọn: mức tác động (`impact_hint`), URL.
+  Thiếu trường bắt buộc → báo lỗi ngay trên form, không ghi DB.
+- Sửa/xóa chỉ khả dụng với tin `source=user`; tin tự động chỉ có toggle
+  **Loại trừ** (`excluded`) — không có nút xóa (giữ provenance theo contract).
+- Nhập file (CSV/JSON) chạy nền, upsert theo `dedupe_key`; kết thúc hiện tóm
+  tắt: số bản ghi mới / cập nhật / bỏ qua trùng.
+
+### Hành vi xuất file
+
+- Xuất CSV hoặc JSON theo khoảng ngày đang lọc, ghi ra thư mục exports chuẩn
+  (`%APPDATA%/ai-market-analyst/exports/` — xem contract mục 10); chạy nền có
+  progress, kết thúc hiện đường dẫn file trong thông báo.
+
+### Trạng thái tải và rỗng
+
+- **Bảng tin:** đọc database qua worker nền (`NewsController` → `NewsRepository`)
+  khi mở màn và khi đổi bộ lọc; hiện chỉ báo loading trong lúc đọc. Kết quả
+  rỗng → empty state "Không có tin trong khoảng lọc" kèm hành động gợi ý:
+  nới khoảng ngày / "Lấy lịch kinh tế" / "Nhập tin".
+- **Dialog AI nhận định:** trong lúc chờ verdict hiện progress + disable nút
+  "Nhận định" (lời gọi chạy worker nền — đã quy định ở mục dưới); lỗi provider
+  → thông báo `friendly_error()`.
+- **Xuất/nhập file:** chạy nền có progress; hoàn tất hiện tóm tắt (xuất:
+  đường dẫn file; nhập: số bản ghi mới / cập nhật / bỏ qua trùng).
+
+### Cửa sổ AI nhận định xu hướng (dialog nhỏ)
+
+Mở từ nút **AI nhận định xu hướng**; kích thước tham khảo 520×640, không
+modal toàn app:
+
+```text
+[ AI nhận định xu hướng                                        ]
+Phạm vi: [ Cặp tiền EUR/USD ▼ ]   (hoặc chuyển sang chọn 1 đồng tiền)
+Cửa sổ tin: <ai_window_days> ngày gần nhất — <N> tin/sự kiện liên quan
+[ Nhận định ]
+
+─ Kết quả (3 thẻ chân trời, theo ai_horizons trong chính sách) ─
+[ Ngắn hạn ]  xu hướng ▲/▼/— + màu semantic, confidence, lập luận, dẫn chứng
+[ Trung hạn ] như trên
+[ Dài hạn ]   như trên
+
+Lịch sử nhận định của phạm vi này (mới nhất trước)
+⚠ Nhận định của AI chỉ để tham khảo — không tham gia bất cứ quy trình nào
+```
+
+- Trước khi gọi AI hiển thị số tin/sự kiện sẽ đưa vào prompt; nếu dưới
+  `ai_min_items` → hiện "Không đủ dữ liệu nhận định" và **không gọi AI**
+  (fail-closed, contract mục 9.1).
+- Lời gọi AI chạy trong worker nền (không block GUI); lỗi provider hiển thị
+  bằng thông báo thân thiện từ `friendly_error()`.
+- Mỗi mục dẫn chứng bấm được → đóng dialog và nhảy tới dòng tin tương ứng
+  trong bảng.
+- Dòng cảnh báo advisory **luôn hiển thị** trong dialog (chữ thường trực,
+  không chỉ trong tooltip).
+
+### Nguyên tắc
+
+- Màn hình chỉ đọc/ghi qua `NewsController` → `NewsRepository`; không fetch
+  nguồn ngoài trực tiếp, không tính toán trong UI. Riêng 2 nút lấy dữ liệu
+  ForexFactory đi qua `NewsController` → `ff_calendar_producer` (mạng chỉ nằm
+  trong producer).
+- Không hiển thị/đọc `ai_trend_verdicts` ở bất kỳ màn hình nào khác; không
+  chi tiết verdict nào xuất hiện trong Scanner, Dashboard hay alert
+  (ranh giới cứng, contract mục 9.2).
+- Dùng component chung (`card`, `action_button`, `configure_table`,
+  ResponsiveRow/Grid) và tuân thủ contract kích thước cửa sổ tối thiểu 800×500.
+- Trạng thái PLANNED: triển khai ở Bước 3 của lộ trình trong contract; sửa
+  đặc tả này phải cùng commit với code (D2).

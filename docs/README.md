@@ -24,6 +24,8 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
 | Luồng Scanner lịch sử | `scanner/scanner-flow.md` — tham khảo (pre-cutover) |
 | Chấm điểm Scanner | `scanner/scanner-architecture.md` §3; `scanner/technical-scoring-architecture.md` giữ nội dung legacy có nhãn |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
+| Contract dữ liệu Tin tức (DB, producer, repository, AI nhận định xu hướng) | `news/news-architecture.md` — ban hành 20/09/2026; lộ trình §16 |
+| Plan triển khai ca Tin tức (đang mở) | `plans/news-data-layer-plan.md` |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Contract SMC (B/Q/L/C, zone, lifecycle…) | `plans/smc-*-spec.md`, `plans/smc-parameter-table.md` |
 | Quản lý lệnh / R:R | `trading/order-management-contract.md`, `trading/rr_anchor_semantics.md` |
@@ -39,6 +41,7 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
 | `scanner/` | Runtime contract và kiến trúc đích Scanner. |
 | `trading/` | Quản lý lệnh, R:R và contract liên quan giao dịch. |
 | `macro/` | Macro runtime, economic calendar và VIX pair sensitivity. |
+| `news/` | Tầng dữ liệu tin tức: database nguồn chân lý, bộ sản xuất, kho truy cập, contract AI nhận định xu hướng (advisory-only). |
 | `journal/` | Phân tích tính năng journal. |
 | `plans/` | Plan của công việc **đang mở** + spec/contract SMC còn hiệu lực (được code và test tham chiếu). |
 | `ui/` | Thiết kế màn hình, style guide, fixture audit/baseline UI. |
@@ -55,6 +58,14 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
 - `scanner/scanner-features-spec.md`: đặc tả tính năng; §0.1 là nguồn đặc tả
   thuật toán/default config của Location runtime.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
+- `news/news-architecture.md`: **contract tầng dữ liệu Tin tức ban hành
+  20/09/2026** (Owner duyệt) — database tin tức là nguồn chân lý duy nhất; bộ
+  sản xuất (ForexFactory/RSS/FRED/nhập tay) chỉ ghi, bên tiêu thụ chỉ đọc qua
+  `NewsRepository`; AI nhận định xu hướng là advisory-only, không tham gia bất
+  cứ quy trình nào; ca "đập đi – xây mới" là ngoại lệ B6 đã ghi E3 trong
+  `architecture/architecture-rules.md`. Đặc tả hiển thị Dashboard và mapping
+  chấm điểm vĩ mô sẽ cập nhật vào tài liệu miền tương ứng sau khi phần Tin
+  tức triển khai xong.
 - `architecture/runtime-status.md`: trạng thái settings/thực thi thực tế.
 - `ui/style-guide.md`: quy tắc UI sau chuẩn hóa style/density.
 - `plans/smc-bqlc-spec.md`, `plans/smc-readiness-spec.md`,
@@ -88,6 +99,8 @@ Các file này đang được `tools/` và `tests/` dùng để khóa regression
   liệu kỹ thuật liên quan và test; mỗi bước Scanner phải được phân tích vào
   `scanner/scanner-architecture.md` trước khi sửa code.
 - Thay đổi macro scoring: cập nhật `macro/macro_score_architecture.md`.
+- Thay đổi tầng dữ liệu tin tức (schema, bộ sản xuất, repository, chính sách,
+  contract AI nhận định): cập nhật `news/news-architecture.md`.
 - Thay đổi UI contract: cập nhật `ui/style-guide.md` và lock/report nếu cần.
 - Thay đổi phân quyền quét/auto-trade: cập nhật `guides/USER_GUIDE.md`.
 - Tài liệu quy trình (review từng vòng, response, handoff) không đưa vào cây

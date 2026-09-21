@@ -82,6 +82,34 @@ seed/stale/schema cũ/thiếu bằng chứng bị bỏ qua; loader có thể dù
 fallback hợp lệ và chỉ flat khi không còn candidate eligible. Runner calibration
 không được tự bật flag.
 
+### 3.5 Tin tức & Quản lý tin — PLANNED (ban hành 20/09/2026)
+
+Tính năng tầng dữ liệu tin tức theo contract duy nhất
+[`news/news-architecture.md`](../news/news-architecture.md):
+
+- **Database tin tức (`news.db`) là nguồn chân lý duy nhất:** bộ sản xuất chỉ
+  ghi, bên tiêu thụ chỉ đọc qua repository. Nguồn tự động: ForexFactory (lịch
+  kinh tế — thu theo lượt khởi động app + nút bấm của người dùng + lookup
+  theo yêu cầu, không poll; số liệu thực tế lấy targeted bằng HTML khi đến
+  hạn công bố), RSS (headline, phát biểu chính thức — poll định kỳ), FRED
+  (lãi suất — định kỳ). Người dùng có thể **nhập tay** tin bổ sung; tin tự
+  động chỉ có thể bị loại trừ, không xóa (giữ provenance).
+- **Màn Quản lý tin (Tin tức):** xem/lọc theo ngày, nhập/sửa tin tay,
+  xuất/nhập file CSV-JSON để sao lưu và bù ngày app không chạy.
+- **AI nhận định xu hướng:** cửa sổ trong màn Quản lý tin gọi AI đánh giá xu
+  hướng ngắn hạn/trung hạn/dài hạn của cặp tiền từ tin trong database. Kết
+  quả **chỉ để người dùng tham khảo — không tham gia bất cứ quy trình nào**
+  (không chấm điểm, không gate, không thực thi lệnh, không alert). Quyết
+  định Owner 20/09/2026, thay đổi cần quyết định mới tường minh.
+- Mọi con số vận hành (chu kỳ thu tin, ân hạn, cửa sổ AI...) nằm trong một
+  tệp chính sách duy nhất `config/news_policy.json`; giá trị đã được Owner
+  chốt trong contract.
+- Tính năng thay thế `services/news_service.py` theo lộ trình trong contract
+  (ngoại lệ E3 của quy tắc B6, đã ghi trong Phụ lục B
+  `architecture/architecture-rules.md`); hai bên tiêu thụ lớn — hiển thị
+  Dashboard và chấm điểm vĩ mô — sẽ di trú sang đọc database ở các ca kế
+  tiếp, đặc tả tại tài liệu miền tương ứng.
+
 ## 4. Contract quyết định Scanner
 
 ### 4.1 Decision thresholds

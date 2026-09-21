@@ -96,6 +96,23 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `services/yahoo_chart_fetcher.py` — Yahoo fallback
 - `services/forex_factory_client.py` + `macro_*` — tin tức/vĩ mô
 
+**Tin tức (tầng dữ liệu) — PLANNED theo lộ trình trong [`news/news-architecture.md`](../news/news-architecture.md) (ban hành 20/09/2026)**
+- `services/news_repository.py` — điểm truy cập duy nhất (đọc + ghi) vào `news.db`
+- `services/news_producers/ff_calendar_producer.py` — bộ sản xuất sự kiện lịch kinh tế ForexFactory (lượt tự động khi khởi động / nút "Lấy lịch kinh tế" + "Cập nhật actual" / lookup actual theo yêu cầu — không poll)
+- `services/news_producers/rss_producer.py` — bộ sản xuất tin văn bản (headline, phát biểu chính thức)
+- `services/news_producers/fred_rate_producer.py` — bộ sản xuất quan sát lãi suất FRED (hấp thụ `interest_rate_service.py` — file cũ bị xóa tại đấu nối vĩ mô)
+- `controllers/news_controller.py` — điều phối lịch producer, nhập tay, lời gọi AI nhận định
+- `core/news_models.py` — mô hình miền có kiểu của miền Tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`)
+- `core/news_freshness.py` — phân loại trạng thái dữ liệu (`scheduled/released/stale`, `fresh/degraded/unavailable`)
+- `core/rate_trend.py` — dẫn xuất trend lãi suất (hike/cut/hold) từ hai quan sát gần nhất
+- `core/trend_prompt_builder.py` + `core/trend_verdict_parser.py` — contract AI nhận định xu hướng (chỉ tư vấn, không tham gia bất cứ quy trình nào)
+- `ui/screens/news_screen.py` — màn Quản lý tin
+- Chính sách vận hành: `config/news_policy.json` — nguồn duy nhất của mọi con số vận hành miền này (tài liệu trỏ về khóa, không chép giá trị — D5)
+
+Nhóm module Tin tức thay thế dần `services/news_service.py` và
+`services/forex_factory_client.py`; hai file cũ bị xóa khi di trú xong (ngoại lệ
+E3 đã ghi trong Phụ lục B của [Quy tắc kiến trúc](architecture-rules.md)).
+
 ### Ghi chú
 
 - **DI container:** mọi service/controller là singleton lazy trong `AppController` — thêm dependency mới thì đăng ký ở đó.
@@ -232,6 +249,15 @@ Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nh
 > trực tiếp, không chạy dual scoring/shadow.
 > Xem [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
+> **Đang thay thế (E3, Owner duyệt 20/09/2026):** phần thu thập tin tức của
+> `news_service.py` (lịch kinh tế, headline, phát biểu, cache đĩa) được thay
+> bằng tầng dữ liệu Tin tức — database `news.db` là nguồn chân lý duy nhất,
+> bộ sản xuất chỉ ghi, bên tiêu thụ chỉ đọc qua repository — theo
+> [`news/news-architecture.md`](../news/news-architecture.md). Đoạn mô tả dưới
+> đây còn hiệu lực với code đang chạy cho tới khi di trú xong và bị xóa cùng
+> commit xóa code (D2); phần chấm điểm vĩ mô di trú ở ca sau, chưa đụng trong
+> ca Tin tức.
+
 `services/news_service.py` chịu trách nhiệm gom:
 
 * Lịch kinh tế theo chuỗi fallback: Forex Factory JSON, Forex Factory HTML scrape nhẹ, file cache gần nhất, cuối cùng là `Calendar unavailable` kèm warning.
@@ -314,7 +340,7 @@ Chứa kết nối bên ngoài:
 
 ### Auto-scan và Telegram Alert
 
-Scanner hỗ trợ chạy một lần hoặc chạy theo khoảng thời gian do người dùng chọn: M5, M15, H1, H4. Interval mặc định lưu trong `settings.notifications.auto_scan_interval_minutes`; màn hình Scanner có thể override cho phiên quét hiện tại.
+Scanner hỗ trợ chạy một lần hoặc chạy theo chu kỳ do người dùng chọn: M5, M15, H1, H4. Interval mặc định lưu trong `settings.notifications.auto_scan_interval_minutes`; màn hình Scanner có thể override cho phiên quét hiện tại.
 
 Khi mở tab Scanner lần đầu trong phiên, hệ thống tự động chọn tất cả mã (`SUPPORTED_SYMBOLS`), đặt chế độ quét tự động với interval M5, và chạy quét đầu tiên sau 1.5 giây. Auto-trade (tự động vào lệnh MT5) luôn mặc định OFF. Cờ `_auto_scanned_this_session` đảm bảo chỉ auto-scan đúng 1 lần mỗi phiên.
 
@@ -395,6 +421,7 @@ Các màn hình chính trong ứng dụng:
 * `journal_screen.py`: Nhật ký giao dịch; tổng quan, thống kê và bộ lọc.
 * `journal_detail_screen.py`: Chi tiết một giao dịch trong nhật ký.
 * `orders_screen.py`: Quản lý lệnh/vị thế đang mở và trạng thái Order Management (SL/BE/trailing).
+* `news_screen.py`: Quản lý tin — **PLANNED** (ca Tin tức, Bước 3): xem/lọc tin từ `news.db`, nhập/sửa tin tay, xuất/nhập file CSV-JSON, cửa sổ AI nhận định xu hướng (chỉ tham khảo). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
 * `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao; gồm kill-switch VIX pair-aware mặc định OFF.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.
@@ -495,7 +522,7 @@ UI phải luôn có trạng thái loading, progress, cancel hoặc retry phù h�
 Phân biệt rõ:
 
 * App assets: icon, font, QSS, sample data; readonly sau khi đóng gói.
-* User data: settings, API key metadata, journal database, exports, logs; nằm trong `%APPDATA%/ai-market-analyst/`.
+* User data: settings, API key metadata, journal database, news database (`news.db` — PLANNED theo ca Tin tức), exports (gồm kết xuất tin tức), logs; nằm trong `%APPDATA%/ai-market-analyst/`.
 * Cache: dữ liệu tạm có thể xóa được.
 * VIX sensitivity: mutable map nằm trong app-data và được ưu tiên; validated
   `data/vix_pair_sensitivity.json` trong package là readonly fallback. Map hết
