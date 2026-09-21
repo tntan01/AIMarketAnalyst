@@ -1,13 +1,12 @@
 """NewsRepository — the single read/write access point of the News database.
 
-Written per plan batch L2.1 ("NewsRepository phần GHI + runner migration").
-This file implements the WRITE half of the contract section 8 plus the
-versioned migration runner for ``data/migrations/news/``. Domain data crossing
-this module's boundary is exactly the ``core/news_models.py`` dataclasses
-(contract section 5, R8) — never a bare dict.  The write methods return typed
-result structures (``UpsertEventsResult``/``UpsertItemsResult``) or a plain
-``int`` count/id, so no raw dict ever crosses the boundary (C3, contract §8:
-"tất cả trả số bản ghi đã ghi/lỗi có kiểu").
+Written per plan batches L2.1 (WRITE half + migration runner) and L2.2 (READ
+half + ``store_state`` + the on-demand lookup seam).  Domain data crossing this
+module's boundary is exactly the ``core/news_models.py`` dataclasses (contract
+section 5, R8) — never a bare dict (C3).  Write methods return typed result
+structures (``UpsertEventsResult``/``UpsertItemsResult``) or a plain ``int``
+count/id; read methods return ``core/news_models.py`` dataclasses or the
+typed ``CurrencyRateTrend`` declared here.
 
 Connection fabric is copied from ``JournalService._connect()``
 (services/journal_service.py:584-590): WAL, ``busy_timeout=15s``,
@@ -17,10 +16,12 @@ nil: the news runner globs only its own ``data/migrations/news/`` subdirectory
 (QD-2, plan §5) and never opens ``journal.db``.
 
 Forbidden in this file (contract §8): scoring formulas, business/gating
-decisions, display strings, network imports.  Status classification is
-delegated to ``core/news_freshness.classify_event_status`` (contract §6.5)
-and the ``grace`` input is read from the policy via
-``core/news_policy.load_news_policy`` (R4 — no hard-coded operational number).
+decisions, display strings, network imports (the on-demand fetch is injected
+as a callable — the repository never calls the network).  Status classification
+is delegated to ``core/news_freshness`` (contract §6.5) and trend derivation to
+``core/rate_trend.derive_rate_trend`` (contract §4.4) — the repository keeps
+neither formula.  Operational numbers are read once from the policy via
+``core/news_policy.load_news_policy`` (R4 — no hard-coded number here).
 """
 
 from __future__ import annotations
@@ -28,29 +29,40 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from config.paths import PROJECT_ROOT, news_db_path
-from core.news_freshness import classify_event_status
+from core.news_freshness import classify_event_status, classify_store_state
 from core.news_models import (
     CalendarEvent,
     EventImpact,
     EventSource,
     EventStatus,
+    ImpactHint,
+    IngestProducer,
     IngestRun,
     NewsItem,
     NewsItemKind,
     NewsItemSource,
     RateObservation,
+    RateSource,
+    StoreState,
     TrendVerdict,
+    VerdictConfidence,
+    VerdictDirection,
+    VerdictHorizon,
+    VerdictScopeType,
 )
 from core.news_policy import load_news_policy
+from core.rate_trend import RateTrend, derive_rate_trend
 from services.journal_models import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
 
 __all__ = [
     "ActualConflict",
+    "CurrencyRateTrend",
     "NewsRepository",
     "UpsertEventsResult",
     "UpsertItemsResult",
@@ -93,6 +105,23 @@ class UpsertItemsResult:
     updated: int
 
 
+@dataclass(frozen=True, slots=True)
+class CurrencyRateTrend:
+    """One currency's latest observation plus its derived trend (contract §4.4).
+
+    ``latest`` is always a real observation; ``previous`` is the second-nearest
+    one and ``None`` when the currency has fewer than two observations.
+    ``trend`` is the ``core/rate_trend.py`` result (hike/cut/hold) — the
+    repository never derives it itself.  Typed packet — never a dict across the
+    boundary (C3).
+    """
+
+    currency: str
+    latest: RateObservation
+    previous: RateObservation | None
+    trend: RateTrend
+
+
 class NewsRepository:
     """Single access point of the News database — WRITE covenant, plan L2.1."""
 
@@ -100,16 +129,25 @@ class NewsRepository:
         self,
         db_path: Path | None = None,
         migrations_dir: Path | None = None,
+        lookup: Callable[[int], CalendarEvent | None] | None = None,
     ) -> None:
         self.db_path = db_path or news_db_path()
         self.migrations_dir = migrations_dir or PROJECT_ROOT / "data" / "migrations" / "news"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.migrate()
-        # Grace is an operational number: read from the policy loader (R4) —
-        # no number hard-coded here or in the merge/status logic.
+        # Operational numbers are read once from the policy loader (R4 — no
+        # number hard-coded here or in the merge/status logic).
+        policy = load_news_policy()
         self._event_stale_grace = timedelta(
-            minutes=load_news_policy().event_stale_grace_minutes
+            minutes=policy.event_stale_grace_minutes
         )
+        self._ingest_freshness_max_age = timedelta(
+            hours=policy.ingest_freshness_hours
+        )
+        # On-demand lookup seam (contract §6.1 lượt 4, plan L2.2): a callable
+        # that L2.4/L2.7 plug in.  When unplugged (None) the repository never
+        # fetches — it merely returns the stored event.
+        self.on_demand_lookup = lookup
 
     # --- migration runner (khuôn: JournalService.migrate, journal_service.py:44-59) --
 
@@ -557,6 +595,212 @@ class NewsRepository:
             conn.commit()
             return int(cursor.rowcount)
 
+    # --- READ: contract section 8 -------------------------------------------------
+
+    def events_in_range(
+        self,
+        from_utc: str,
+        to_utc: str,
+        currencies: list[str] | None = None,
+        include_non_impact: bool = True,
+    ) -> list[CalendarEvent]:
+        """Calendar events inside a closed ``[from_utc, to_utc]`` window on
+        ``event_time_utc`` (indexed, contract §4.1), ascending by time (contract
+        §8).  ``currencies=None`` reads every currency; otherwise any currency
+        of the list matches.  ``include_non_impact=False`` drops ``impact=non``
+        rows.  Each returned event's ``status`` is re-classified at read time
+        through ``core/news_freshness.classify_event_status`` (contract §6.5 —
+        the stored column is never trusted optimistically, B4)."""
+        clauses = ["event_time_utc >= ?", "event_time_utc <= ?"]
+        params: list[object] = [from_utc, to_utc]
+        if not include_non_impact:
+            clauses.append("impact != ?")
+            params.append(EventImpact.NON.value)
+        if currencies:
+            clauses.append(f"currency IN ({_placeholders(len(currencies))})")
+            params.extend(currencies)
+        now = datetime.now(timezone.utc)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM news_events WHERE {' AND '.join(clauses)} "
+                "ORDER BY event_time_utc ASC, id ASC",
+                params,
+            ).fetchall()
+        return [
+            self._with_read_status(_event_from_row(row), now)
+            for row in rows
+        ]
+
+    def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
+        """Events already past their ``event_time_utc + grace`` window that
+        still lack an actual (contract §8: ``impact != non``, past grace, actual
+        NULL) — the input of the startup/button/on-demand HTML fetches (§6.1).
+        The SQL window is deliberately broad (``actual IS NULL AND impact != non``);
+        the grace filter is applied by re-classification through
+        ``core/news_freshness`` so the grace formula lives in exactly one place
+        (S1 — no copied classification knowledge in SQL)."""
+        now_utc = now
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM news_events "
+                "WHERE actual IS NULL AND impact != ? "
+                "ORDER BY event_time_utc ASC, id ASC",
+                (EventImpact.NON.value,),
+            ).fetchall()
+        pending: list[CalendarEvent] = []
+        for row in rows:
+            event = _event_from_row(row)
+            if self._classify_status(event, now_utc) == EventStatus.STALE:
+                pending.append(replace(event, status=EventStatus.STALE))
+        return pending
+
+    def event_actual_or_lookup(self, event_id: int) -> CalendarEvent | None:
+        """Return one event; if it is ``stale`` at read time and an on-demand
+        lockup callable is plugged in, invoke it exactly once and return its
+        result (contract §6.1 lượt 4).  The repository never fetches the
+        network itself — the injected callable (L2.4/L2.7) owns transport and
+        the ``on_demand_lookup`` ``ingest_runs``.  Returns ``None`` when the id
+        is unknown."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM news_events WHERE id = ?",
+                (event_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        event = _event_from_row(row)
+        if (
+            self._classify_status(event, datetime.now(timezone.utc)) == EventStatus.STALE
+            and self.on_demand_lookup is not None
+        ):
+            return self.on_demand_lookup(event_id)
+        return event
+
+    def items_in_range(
+        self,
+        from_utc: str,
+        to_utc: str | None = None,
+        kinds: list[str] | None = None,
+        currencies: list[str] | None = None,
+        exclude_flagged: bool = True,
+    ) -> list[NewsItem]:
+        """News items published inside ``[from_utc, to_utc]`` (``to_utc=None``
+        = open upper bound), ascending by ``published_utc`` (contract §8).  The
+        window uses the indexed ``published_utc``/``(kind, published_utc)``
+        columns (§4.1) so the caller's window bounds the row set.
+        ``kinds``/``currencies`` match any value of the list; the currency match
+        runs on the decoded ``currencies`` list (R8/C3).  ``exclude_flagged=True``
+        (default) drops ``excluded=1`` rows (§8)."""
+        clauses = ["published_utc >= ?"]
+        params: list[object] = [from_utc]
+        if to_utc is not None:
+            clauses.append("published_utc <= ?")
+            params.append(to_utc)
+        if kinds:
+            clauses.append(f"kind IN ({_placeholders(len(kinds))})")
+            params.extend(kinds)
+        if exclude_flagged:
+            clauses.append("excluded != 1")
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM news_items WHERE {' AND '.join(clauses)} "
+                "ORDER BY published_utc ASC, id ASC",
+                params,
+            ).fetchall()
+        wanted = set(currencies) if currencies else None
+        result: list[NewsItem] = []
+        for row in rows:
+            item = _item_from_row(row)
+            if wanted is not None and not (set(item.currencies) & wanted):
+                continue
+            result.append(item)
+        return result
+
+    def latest_rates(self, currencies: list[str]) -> list[CurrencyRateTrend]:
+        """Per requested currency, the two nearest rate observations by
+        ``observed_at`` and the trend derived from them (contract §4.4).  The
+        trend comes from ``core/rate_trend.derive_rate_trend`` — this repository
+        never computes it (contract §11b).  A currency with no observation at
+        all produces no entry (B4 — nothing is invented); a single observation
+        resolves to ``HOLD`` through the core function."""
+        result: list[CurrencyRateTrend] = []
+        for currency in currencies:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM interest_rates WHERE currency = ? "
+                    "ORDER BY observed_at DESC, id DESC LIMIT 2",
+                    (currency,),
+                ).fetchall()
+            if not rows:
+                continue
+            latest = _observation_from_row(rows[0])
+            previous = _observation_from_row(rows[1]) if len(rows) > 1 else None
+            result.append(
+                CurrencyRateTrend(
+                    currency=currency,
+                    latest=latest,
+                    previous=previous,
+                    trend=derive_rate_trend(latest, previous),
+                )
+            )
+        return result
+
+    def store_state(self) -> StoreState:
+        """Freshness of the whole store (contract §8/6.5): the last successful
+        ingest (``status`` ``ok`` or ``partial``) per producer by ``finished_at``
+        is mapped to ``core/news_freshness.classify_store_state`` with
+        ``max_age`` read from the policy ``ingest_freshness_hours`` key.  The
+        repository does not classify — it only feeds the core owner."""
+        last_success_by_producer: dict[IngestProducer, datetime] = {}
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT producer, MAX(finished_at) AS last_success "
+                "FROM ingest_runs WHERE status IN ('ok', 'partial') "
+                "GROUP BY producer"
+            ).fetchall()
+        for row in rows:
+            last_success_by_producer[IngestProducer(row["producer"])] = _parse_utc_iso(
+                row["last_success"]
+            )
+        return classify_store_state(
+            last_success_by_producer,
+            datetime.now(timezone.utc),
+            self._ingest_freshness_max_age,
+        )
+
+    def verdicts_for(
+        self,
+        scope_type: VerdictScopeType,
+        scope_value: str,
+        limit: int,
+    ) -> list[TrendVerdict]:
+        """AI verdict history for one scope, newest first and capped by ``limit``
+        (contract §8 — bounded rows, §4.1).  ``evidence_item_ids`` and
+        ``input_snapshot`` are decoded from their JSON columns by this layer
+        (docstring of ``core/news_models.py``)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM ai_trend_verdicts "
+                "WHERE scope_type = ? AND scope_value = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (scope_type.value, scope_value, limit),
+            ).fetchall()
+        return [_verdict_from_row(row) for row in rows]
+
+    # --- read helpers ------------------------------------------------------------
+
+    def _classify_status(self, event: CalendarEvent, now: datetime) -> EventStatus:
+        """Single seam into ``core/news_freshness`` for read-time re-classification."""
+        return classify_event_status(event, now, self._event_stale_grace)
+
+    def _with_read_status(self, event: CalendarEvent, now: datetime) -> CalendarEvent:
+        """Return the event with its status re-classified at read time; a row
+        whose stored status still matches is returned as-is (no copy)."""
+        status = self._classify_status(event, now)
+        if status == event.status:
+            return event
+        return replace(event, status=status)
+
 
 def _actual_updated_at(event: CalendarEvent, now_utc: str) -> str | None:
     """Timestamp written alongside an actual: the producer's own stamp when it
@@ -568,3 +812,104 @@ def _actual_updated_at(event: CalendarEvent, now_utc: str) -> str | None:
 
 def _bool_to_flag(value: bool) -> int:
     return 1 if value else 0
+
+
+def _placeholders(count: int) -> str:
+    return ", ".join("?" for _ in range(count))
+
+
+def _parse_utc_iso(value: str) -> datetime:
+    """Decode a persisted ISO-8601 UTC string (``Z`` or explicit offset form)
+    into an aware UTC ``datetime``."""
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+_EVENT_COLUMNS = (
+    "id", "day_key", "event_time_utc", "currency", "title", "impact",
+    "forecast", "previous", "actual", "actual_updated_at", "status",
+    "source", "dedupe_key", "raw_json", "fetched_at",
+)
+
+_ITEM_COLUMNS = (
+    "id", "kind", "source", "title", "content", "url", "published_utc",
+    "currencies_json", "impact_hint", "speaker_role", "excluded",
+    "dedupe_key", "fetched_at",
+)
+
+_OBSERVATION_COLUMNS = ("id", "currency", "rate", "observed_at", "source", "fetched_at")
+
+_VERDICT_COLUMNS = (
+    "id", "created_at", "scope_type", "scope_value", "horizon", "direction",
+    "confidence", "rationale", "evidence_item_ids_json", "input_snapshot_json",
+    "provider", "model", "prompt_hash",
+)
+
+
+def _event_from_row(row: sqlite3.Row) -> CalendarEvent:
+    return CalendarEvent(
+        id=row["id"],
+        day_key=row["day_key"],
+        event_time_utc=row["event_time_utc"],
+        currency=row["currency"],
+        title=row["title"],
+        impact=EventImpact(row["impact"]),
+        forecast=row["forecast"],
+        previous=row["previous"],
+        actual=row["actual"],
+        actual_updated_at=row["actual_updated_at"],
+        status=EventStatus(row["status"]),
+        source=EventSource(row["source"]),
+        dedupe_key=row["dedupe_key"],
+        raw_json=row["raw_json"],
+        fetched_at=row["fetched_at"],
+    )
+
+
+def _item_from_row(row: sqlite3.Row) -> NewsItem:
+    return NewsItem(
+        id=row["id"],
+        kind=NewsItemKind(row["kind"]),
+        source=NewsItemSource(row["source"]),
+        title=row["title"],
+        content=row["content"],
+        url=row["url"],
+        published_utc=row["published_utc"],
+        currencies=json.loads(row["currencies_json"]),
+        impact_hint=ImpactHint(row["impact_hint"]) if row["impact_hint"] is not None else None,
+        speaker_role=row["speaker_role"],
+        excluded=bool(row["excluded"]),
+        dedupe_key=row["dedupe_key"],
+        fetched_at=row["fetched_at"],
+    )
+
+
+def _observation_from_row(row: sqlite3.Row) -> RateObservation:
+    return RateObservation(
+        id=row["id"],
+        currency=row["currency"],
+        rate=row["rate"],
+        observed_at=row["observed_at"],
+        source=RateSource(row["source"]),
+        fetched_at=row["fetched_at"],
+    )
+
+
+def _verdict_from_row(row: sqlite3.Row) -> TrendVerdict:
+    return TrendVerdict(
+        id=row["id"],
+        created_at=row["created_at"],
+        scope_type=VerdictScopeType(row["scope_type"]),
+        scope_value=row["scope_value"],
+        horizon=VerdictHorizon(row["horizon"]),
+        direction=VerdictDirection(row["direction"]),
+        confidence=VerdictConfidence(row["confidence"]),
+        rationale=row["rationale"],
+        evidence_item_ids=json.loads(row["evidence_item_ids_json"]),
+        input_snapshot=json.loads(row["input_snapshot_json"]),
+        provider=row["provider"],
+        model=row["model"],
+        prompt_hash=row["prompt_hash"],
+    )

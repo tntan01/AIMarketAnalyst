@@ -174,7 +174,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   (chỉ đánh dấu điểm nối on-demand — callback/dependency injection để L2.4/L2.7 cắm lookup, tránh repo tự gọi mạng: services không tự phong quyết định điều phối).
 - **Test C4:** ghim chữ ký + ngữ nghĩa từng method (đây là test hai ca đấu nối sẽ dùng lại — xanh nguyên trạng khi nội bộ đổi).
 - **Phụ thuộc:** L2.1, L1.4, L1.5 · **Điểm review:** test hợp đồng không ghim giá trị trung gian nội bộ (C4); repo không import network.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L2.3 — `ff_calendar_producer` kênh JSON (lịch) (M)
 - **File mới:** `services/news_producers/__init__.py`, `services/news_producers/ff_calendar_producer.py`, `tests/test_news_ff_producer_json.py`.
@@ -430,7 +430,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L1.4 | `core/news_freshness.py` | 1 | L1.3 | M | IMPLEMENTED |
 | L1.5 | `core/rate_trend.py` | 1 | L1.3 | S | IMPLEMENTED |
 | L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | IMPLEMENTED |
-| L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | PLANNED |
+| L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | IMPLEMENTED |
 | L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | PLANNED |
 | L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | PLANNED |
 | L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | PLANNED |
