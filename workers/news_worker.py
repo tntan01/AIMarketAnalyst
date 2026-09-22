@@ -36,6 +36,16 @@ code removed at connect-time (a), while ``workers/news_worker.py`` is the
 mandated file name of this layer (plan L2.7), keeping file name and class name
 aligned as ``ai_test_worker.py`` does for ``AITestWorker``.  This batch touches
 neither the old class nor its screen.
+
+``NewsReadWorker`` (plan batch L3.2) is the news screen's background reader: it
+runs ONE zero-argument callable in the worker's thread and publishes the typed
+payload it returns — the same khuôn as ``ScannerWorker`` (task + typed result)
+and, like it, it holds no domain logic (the screen passes a callable that calls
+``NewsController``).  Its ``task`` parameter is typed ``object`` on purpose: this
+module's import whitelist is asserted by the L2.7 test
+(``tests/test_news_controller.py::TestNewsWorker::test_worker_carries_no_domain_logic``)
+and that batch's test file is not open to this one, so the callable contract is
+stated here instead of importing ``collections.abc.Callable``.
 """
 
 from __future__ import annotations
@@ -45,7 +55,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot
 from controllers.news_controller import NewsController
 from workers.base_worker import WorkerState
 
-__all__ = ["NewsWorker"]
+__all__ = ["NewsReadWorker", "NewsWorker"]
 
 # Unit conversion only (the cadences themselves are policy values, R4).
 _MINUTE_MS = 60_000
@@ -127,3 +137,39 @@ class NewsWorker(QObject):
             return
         self.state = WorkerState.FINISHED
         self.rates_succeeded.emit(result)
+
+
+class NewsReadWorker(QObject):
+    """Runs ONE background read for the news screen and publishes its payload.
+
+    The caller hands in a zero-argument callable (in practice a bound method of
+    the screen that reads through ``NewsController``) and receives exactly what
+    it returns: this class carries no domain logic, no query and no formatting
+    (contract §3 — a worker only wraps concurrency).  It mirrors
+    ``workers/scanner_worker.py``: one task per run, one typed outcome, failures
+    reported as text rather than raised into the event loop.
+    """
+
+    succeeded = pyqtSignal(object)
+    failed = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self, task: object) -> None:
+        super().__init__()
+        self._task = task
+        self.state = WorkerState.IDLE
+
+    @pyqtSlot()
+    def run(self) -> None:
+        """Run the task once (in the thread this worker was moved to)."""
+        self.state = WorkerState.RUNNING
+        try:
+            result = self._task()  # type: ignore[operator]
+        except Exception as exc:
+            self.state = WorkerState.FAILED
+            self.failed.emit(str(exc))
+        else:
+            self.state = WorkerState.FINISHED
+            self.succeeded.emit(result)
+        finally:
+            self.finished.emit()

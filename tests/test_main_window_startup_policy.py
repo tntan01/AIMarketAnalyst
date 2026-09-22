@@ -129,10 +129,10 @@ def test_app_shell_minimum_and_rail_are_unchanged(store) -> None:
         assert MINIMUM_WINDOW_SIZE == (800, 500)
         assert window.minimumSize().width() == 800
         assert window.minimumSize().height() == 500
-        # R1 không đụng sidebar/rail (48px, 5 mục điều hướng).
+        # R1 không đụng sidebar/rail (48px, 6 mục điều hướng).
         assert window.sidebar_width == 48
         assert window.sidebar.width() == 48
-        assert len(window.nav_buttons) == 5
+        assert len(window.nav_buttons) == 6
 
 
 # --- startup / restore --------------------------------------------------------

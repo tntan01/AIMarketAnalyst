@@ -46,7 +46,7 @@ def test_main_window_has_no_backtest_route_and_falls_back_to_dashboard() -> None
             # Màn Backtest không còn được đăng ký.
             assert "backtest" not in window.screens
             assert "backtest" not in window.nav_buttons
-            assert len(window.nav_buttons) == 5
+            assert len(window.nav_buttons) == 6
             assert set(window.screens) == {
                 "dashboard",
                 "scanner",
@@ -54,6 +54,7 @@ def test_main_window_has_no_backtest_route_and_falls_back_to_dashboard() -> None
                 "scanner_detail",
                 "journal",
                 "journal_detail",
+                "news",
                 "settings",
             }
 

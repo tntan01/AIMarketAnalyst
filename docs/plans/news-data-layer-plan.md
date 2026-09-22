@@ -68,6 +68,7 @@ tổng.
 | `controllers/app_controller.py` | thêm `self._news_controller` + property lazy theo khuôn `journal_controller` (d.141-148); không đụng property `news_service` cũ (d.71-75) | L2.7 |
 | `ui/navigation.py` | thêm `("news", "Tin tức")` vào `NAV_ITEMS` + glyph vào `NAV_ICONS` | L3.2 |
 | `ui/main_window.py` | import `NewsScreen` + thêm `"news"` vào `screen_factories` (d.229-247) + ánh xạ `nav_route` (d.324-331) | L3.2 |
+| `tests/test_backtest_removal_step3_ui.py`, `tests/test_main_window_startup_policy.py` | **chỉ cập nhật ghim inventory điều hướng 5→6** — hệ quả tất yếu của điểm chạm đã đăng ký (`ui/navigation.py` + mục `"news"`); Owner duyệt phương án A 22/09/2026, đúng 4 dòng | L3.2 |
 
 Ngoài 5 file này: **mọi thay đổi là file mới**. `git diff` trên
 `news_service.py` / `forex_factory_client.py` / `interest_rate_service.py` /
@@ -281,7 +282,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   render non-offscreen `QT_QPA_PLATFORM=windows` (yêu cầu plan Bước 3); bảng
   có dữ liệu giả → đúng nhãn từ điển; empty state hiện khi lọc rỗng.
 - **Phụ thuộc:** L2.7 · **Điểm review:** đối chiếu từng bullet bố cục screen_design; sidebar thêm mục "Tin tức" không vỡ layout 800px.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L3.3 — Hành vi tương tác: nhập/sửa tin + 2 nút ForexFactory (M)
 - **File mới:** mở rộng `news_screen.py`, `tests/test_news_screen_actions.py`.
@@ -472,7 +473,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | IMPLEMENTED |
 | L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | IMPLEMENTED |
 | L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | IMPLEMENTED |
-| L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | PLANNED |
+| L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | IMPLEMENTED |
 | L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | PLANNED |
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | PLANNED |
 | L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | PLANNED |

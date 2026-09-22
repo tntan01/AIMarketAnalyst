@@ -20,6 +20,7 @@ from ui.navigation import NAV_ICONS, NAV_ITEMS
 from ui.screens.dashboard_screen import DashboardScreen
 from ui.screens.journal_detail_screen import JournalDetailScreen
 from ui.screens.journal_screen import JournalScreen
+from ui.screens.news_screen import NewsScreen
 from ui.screens.scanner_detail_screen import ScannerDetailScreen
 from ui.screens.scanner_screen import ScannerScreen
 from ui.screens.orders_screen import OrdersScreen
@@ -234,6 +235,7 @@ class MainWindow(QMainWindow):
             "scanner_detail": ScannerDetailScreen,
             "journal": JournalScreen,
             "journal_detail": JournalDetailScreen,
+            "news": NewsScreen,
             "settings": SettingsScreen,
         }
         for route, factory in screen_factories.items():
@@ -327,6 +329,7 @@ def nav_route(key: str) -> str:
         "scanner": "scanner",
         "orders": "orders",
         "journal": "journal",
+        "news": "news",
         "settings": "settings",
     }.get(key, "dashboard")
 

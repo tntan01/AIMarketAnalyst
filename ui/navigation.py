@@ -5,6 +5,7 @@ NAV_ITEMS = [
     ("scanner", "Quét thị trường"),
     ("orders", "Quản lý lệnh"),
     ("journal", "Nhật ký"),
+    ("news", "Tin tức"),
     ("settings", "Cài đặt"),
 ]
 
@@ -14,5 +15,6 @@ NAV_ICONS = {
     "scanner": "search",
     "orders": "clipboard",
     "journal": "book-open",
+    "news": "message-square",
     "settings": "gear",
 }
