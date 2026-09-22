@@ -202,7 +202,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   (on-demand, ghi `ingest_runs` producer `on_demand_lookup`).
 - **Test:** parse HTML fixture (rowspan, timezone); targeted đúng ngày/tuần; merge không NULL-đè actual; xung đột actual → ưu tiên user + run log; 429/lỗi → run `failed`/`partial`, không retry lặp.
 - **Phụ thuộc:** L2.3, L2.2 (`events_pending_actual`) · **Điểm review:** đối chiếu `_parse_html` cũ ↔ mới trên cùng fixture (B3 mức hàm); xác nhận không có đường poll.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L2.5 — `rss_producer` (M)
 - **File mới:** `services/news_producers/rss_producer.py`, `tests/test_news_rss_producer.py` + fixture XML.
@@ -432,7 +432,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.1 | Repository GHI + runner migration + 3 quy tắc merge | 2 | L1.1-1.4 | L | IMPLEMENTED |
 | L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | IMPLEMENTED |
 | L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | IMPLEMENTED |
-| L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | PLANNED |
+| L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | IMPLEMENTED |
 | L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | PLANNED |
 | L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | PLANNED |
 | L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | PLANNED |
