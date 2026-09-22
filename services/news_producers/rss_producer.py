@@ -353,15 +353,15 @@ class RssProducer:
                     successful_sources += 1
                 for row in rows:
                     if self._first_seen(row, seen):
-                        headline_items.append(
-                            self._to_news_item(
-                                row,
-                                kind=NewsItemKind.HEADLINE,
-                                source=NewsItemSource.GOOGLE_NEWS_RSS,
-                                speaker_role=None,
-                                fetched_at=fetched_at,
-                            )
+                        item = self._to_news_item(
+                            row,
+                            kind=NewsItemKind.HEADLINE,
+                            source=NewsItemSource.GOOGLE_NEWS_RSS,
+                            speaker_role=None,
+                            fetched_at=fetched_at,
                         )
+                        if item is not None:
+                            headline_items.append(item)
 
         # --- kind=headline: extra free feeds (sequential, khuôn cũ) -------------
         for feed_url, source in EXTRA_RSS_FEEDS:
@@ -380,15 +380,15 @@ class RssProducer:
             successful_sources += 1
             for row in rows:
                 if self._first_seen(row, seen):
-                    headline_items.append(
-                        self._to_news_item(
-                            row,
-                            kind=NewsItemKind.HEADLINE,
-                            source=source,
-                            speaker_role=None,
-                            fetched_at=fetched_at,
-                        )
+                    item = self._to_news_item(
+                        row,
+                        kind=NewsItemKind.HEADLINE,
+                        source=source,
+                        speaker_role=None,
+                        fetched_at=fetched_at,
                     )
+                    if item is not None:
+                        headline_items.append(item)
 
         # --- kind=statement: 6 official-statement queries (parallel, 6 workers) --
         statement_roles = dict(STATEMENT_SOURCES)
@@ -425,16 +425,19 @@ class RssProducer:
                         row["speaker_role"] = statement_roles[query]
                         statement_rows.append(row)
 
-        # Inherited cap: at most 10 statements total (d.2674-2675).
+        # Inherited cap: at most 10 statements total (d.2674-2675).  Items that
+        # cannot be converted (missing title / unparseable time, §4.3) are
+        # dropped at this boundary — never handed to ``upsert_items``.
         statement_items = [
-            self._to_news_item(
+            item
+            for row in statement_rows[:10]
+            if (item := self._to_news_item(
                 row,
                 kind=NewsItemKind.STATEMENT,
                 source=NewsItemSource.GOOGLE_NEWS_RSS,
                 speaker_role=str(row.get("speaker_role") or None),
                 fetched_at=fetched_at,
-            )
-            for row in statement_rows[:10]
+            )) is not None
         ]
 
         upsert = self._repo.upsert_items(headline_items + statement_items)

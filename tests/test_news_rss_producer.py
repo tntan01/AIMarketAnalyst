@@ -598,6 +598,46 @@ class TestErrors:
         assert run["error_type"] is None
 
 
+# ---- 6b. DEFECT L2.5-01: converter None never reaches upsert_items ---------------
+
+
+class TestDefectL2501:
+    def test_bad_extra_pubdates_skipped_round_survives(self, tmp_path):
+        """An extra-feed item with an unparseable/empty pubDate must be dropped
+        at the converter boundary, never handed as ``None`` to ``upsert_items``:
+        the round writes the healthy item, logs exactly one ``ingest_runs`` row
+        (§4.6/§10) and no row carries an empty ``published_utc`` (§4.3)."""
+        producer = _producer(tmp_path)
+        bad_extra = _rss_bytes(
+            [
+                ("Broken timestamp item", "https://e/broken", "not-a-date"),
+                ("Empty timestamp item", "https://e/empty", ""),
+                ("Healthy piece", "https://e/ok", _rfc(NOW - timedelta(hours=2))),
+            ]
+        )
+        routes = {rssmod.EXTRA_RSS_FEEDS[0][0]: bad_extra}
+        p1, p2, _, sleeps = _mock_routes(routes)
+        with p1, p2:
+            result = producer.fetch_round(now=NOW)     # must not raise
+
+        assert result.inserted == 1
+        assert result.updated == 0
+        assert result.run_status is IngestRunStatus.OK
+        assert sleeps == []
+
+        rows = _items_in(producer._repo.db_path)
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Healthy piece"
+        assert rows[0]["published_utc"]                  # no empty published_utc row
+        assert not any(r["published_utc"] == "" for r in rows)
+
+        assert _read(producer._repo.db_path, "SELECT COUNT(*) AS n FROM ingest_runs")["n"] == 1
+        run = _latest_run(producer._repo.db_path)
+        assert run["producer"] == IngestProducer.RSS.value
+        assert run["status"] == "ok"
+        assert run["items_written"] == 1
+
+
 # ---- 7. typed result -------------------------------------------------------------
 
 
