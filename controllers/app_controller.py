@@ -10,6 +10,7 @@ factory method because their config changes at runtime.
 from __future__ import annotations
 
 from controllers.journal_controller import JournalController
+from controllers.news_controller import NewsController
 from controllers.scanner_controller import ScannerController
 from controllers.settings_controller import SettingsController
 from services.ai_provider_catalog_service import AIProviderCatalogService
@@ -50,6 +51,7 @@ class AppController:
         self._scanner_controller: ScannerController | None = None
         self._journal_controller: JournalController | None = None
         self._settings_controller: SettingsController | None = None
+        self._news_controller: NewsController | None = None
 
         # Load settings eagerly — nearly every screen needs them
         self.settings = self.settings_service.load()
@@ -152,3 +154,9 @@ class AppController:
         if self._settings_controller is None:
             self._settings_controller = SettingsController(service=self.settings_service)
         return self._settings_controller
+
+    @property
+    def news_controller(self) -> NewsController:
+        if self._news_controller is None:
+            self._news_controller = NewsController()
+        return self._news_controller

@@ -247,7 +247,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   subclass mới); **chưa có đường AI** (thêm ở L3.5).
 - **Test:** orchestration với repo/producer giả (fake có kiểu, không mock sâu); validate nhập tay đủ nhánh; DI: battery cũ xanh nguyên trạng + property mới lazy.
 - **Phụ thuộc:** L2.2-L2.6 · **Điểm review:** controller không moi ruột dict (C3/S2); không logic trong worker.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 ### Bước 3 — Màn Quản lý tin + AI nhận định
 
@@ -435,7 +435,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | IMPLEMENTED |
 | L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | IMPLEMENTED |
 | L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | IMPLEMENTED |
-| L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | PLANNED |
+| L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | IMPLEMENTED |
 | L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | PLANNED |
 | L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | PLANNED |
 | L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | PLANNED |
