@@ -216,7 +216,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   giữ khuôn cũ (max 3/6); `record_run` producer `rss` với `error_type` phân loại.
 - **Test:** fixture XML từng feed; dedupe trùng title; cửa sổ thời gian theo policy; feed chết → run `partial`, các feed khác vẫn ghi.
 - **Phụ thuộc:** L2.1, L1.1 · **Điểm review:** query/URL lấy đúng danh sách cũ (không bịa nguồn mới); window từ policy.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L2.6 — `fred_rate_producer` (S)
 - **File mới:** `services/news_producers/fred_rate_producer.py`, `tests/test_news_fred_producer.py`.
@@ -433,7 +433,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.2 | Repository ĐỌC + `store_state` + test hợp đồng C4 | 2 | L2.1, L1.4, L1.5 | M | IMPLEMENTED |
 | L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | IMPLEMENTED |
 | L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | IMPLEMENTED |
-| L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | PLANNED |
+| L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | IMPLEMENTED |
 | L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | PLANNED |
 | L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | PLANNED |
 | L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | PLANNED |

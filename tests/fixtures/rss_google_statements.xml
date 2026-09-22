@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Google News: statements</title>
+    <item>
+      <title>Trump trade rhetoric dollar under pressure</title>
+      <link>https://news.example.com/trump-rhetoric</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 09:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Powell says inflation still above target</title>
+      <link>https://news.example.com/powell-inflation</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 08:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Japan PM intervention yen remarks</title>
+      <link>https://news.example.com/japan-pm</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 07:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>UK leader pound sterling policy remarks</title>
+      <link>https://news.example.com/uk-leader</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 06:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>European Commission on euro outlook</title>
+      <link>https://news.example.com/eu-commission</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 06:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

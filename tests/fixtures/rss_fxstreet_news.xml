@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>FXStreet News</title>
+    <item>
+      <title>RBA holds cash rate at 4.35 percent</title>
+      <link>https://www.fxstreet.com/news/rba-holds</link>
+      <source url="https://www.fxstreet.com">Fxstreet</source>
+      <pubDate>Mon, 20 Jul 2026 05:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>ECB speech on tap this week</title>
+      <link>https://www.fxstreet.com/news/ecb-speech</link>
+      <source url="https://www.fxstreet.com">Fxstreet</source>
+      <pubDate>Mon, 20 Jul 2026 04:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Gold analysis no source tag</title>
+      <link>https://www.fxstreet.com/news/gold-analysis</link>
+      <pubDate>Sun, 19 Jul 2026 22:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Stale extra item out of window</title>
+      <link>https://www.fxstreet.com/news/stale</link>
+      <source url="https://www.fxstreet.com">Fxstreet</source>
+      <pubDate>Sun, 19 Jul 2026 06:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

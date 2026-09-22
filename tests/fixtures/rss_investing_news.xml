@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Investing.com News</title>
+    <item>
+      <title>Oil prices climb on supply concerns</title>
+      <link>https://www.investing.com/news/oil</link>
+      <source url="https://www.investing.com">Investing.com</source>
+      <pubDate>Mon, 20 Jul 2026 03:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Dow futures steady into the open</title>
+      <link>https://www.investing.com/news/dow</link>
+      <source url="https://www.investing.com">Investing.com</source>
+      <pubDate>Mon, 20 Jul 2026 02:30:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Google News: forex macro</title>
+    <item>
+      <title>Fed Powell speech dollar treasury yields latest</title>
+      <link>https://news.example.com/fed-powell</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 06:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>ECB Lagarde remarks euro inflation latest</title>
+      <link>https://news.example.com/ecb-lagarde</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Mon, 20 Jul 2026 05:30:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>BOJ Japan yen intervention latest</title>
+      <link>https://news.example.com/boj-japan</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Sun, 19 Jul 2026 20:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>UK Prime Minister pound sterling statement</title>
+      <link>https://news.example.com/uk-pm</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Sun, 19 Jul 2026 18:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Old gold rally before window</title>
+      <link>https://news.example.com/old-gold</link>
+      <source url="https://example.com">Example News</source>
+      <pubDate>Sun, 19 Jul 2026 06:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
