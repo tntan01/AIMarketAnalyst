@@ -263,7 +263,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   toàn bộ, không lưu rác.
 - **Test:** prompt ổn định + hash đổi khi khuôn đổi; parser: hợp lệ/lỗi/thiếu horizon/thừa horizon; không chuỗi hiển thị trong core (L3).
 - **Phụ thuộc:** L1.1, L1.3 · **Điểm review:** builder/parser không import services/Qt; hash không chứa dữ liệu tin.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L3.2 — Khung màn Quản lý tin: bảng + bộ lọc + chi tiết dòng (L)
 - **File mới:** `ui/screens/news_screen.py`, `tests/test_news_screen_smoke.py`.
@@ -471,7 +471,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | IMPLEMENTED |
 | L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | IMPLEMENTED |
 | L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | IMPLEMENTED |
-| L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | PLANNED |
+| L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | IMPLEMENTED |
 | L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | PLANNED |
 | L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | PLANNED |
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | PLANNED |
