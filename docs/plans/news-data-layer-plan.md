@@ -231,7 +231,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   `latest_rates` ở L2.2); **không đụng cache 6h in-memory cũ** (file cũ untouched).
 - **Test:** FRED mock ok/lỗi → fallback chain đúng thứ tự; source ghi đúng enum; obs trùng → upsert không nhân bản.
 - **Phụ thuộc:** L2.1, L1.5 · **Điểm review:** diff logic với file gốc — chỉ đổi đích ghi; `interest_rate_service.py` không bị sửa.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L2.7 — `NewsController` + worker + đăng ký DI (M)
 - **File mới:** `controllers/news_controller.py`, `workers/news_worker.py`, `tests/test_news_controller.py`.
@@ -434,7 +434,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.3 | `ff_calendar_producer` kênh JSON | 2 | L2.1 | M | IMPLEMENTED |
 | L2.4 | `ff_calendar_producer` kênh HTML + on-demand lookup | 2 | L2.3, L2.2 | L | IMPLEMENTED |
 | L2.5 | `rss_producer` | 2 | L2.1, L1.1 | M | IMPLEMENTED |
-| L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | PLANNED |
+| L2.6 | `fred_rate_producer` (QĐ-1A) | 2 | L2.1, L1.5 | S | IMPLEMENTED |
 | L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | PLANNED |
 | L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | PLANNED |
 | L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | PLANNED |
