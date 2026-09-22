@@ -298,13 +298,21 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
 
 #### L3.4 — Xuất/nhập file CSV-JSON (S)
 - **File mới:** mở rộng `news_screen.py` + `services/news_file_transfer.py` (logic đọc/ghi file thuần qua repo — UI không tự parse), `tests/test_news_file_transfer.py`.
-- **Neo đặc tả:** contract §10; screen_design "Hành vi xuất file"/"Nhập file".
+- **Điều kiện kèm theo — QĐ-4 (Owner duyệt 22/09/2026, §5):** lô này BẮT
+  BUỘC gom công thức `dedupe_key` §4.3 về một hàm thuần duy nhất trong
+  `core/news_models.py`; sửa `rss_producer.py` + `news_controller.py` xóa hai
+  bản sao; import của `news_file_transfer.py` gọi cùng hàm đó (cấm bản sao thứ
+  ba); contract §11b thêm dòng chủ sở hữu cùng commit (D2). Chi tiết 5 khoản
+  tại QĐ-4 mục 5. File của ca được sửa trong ca: `core/news_models.py`,
+  `services/news_producers/rss_producer.py`, `controllers/news_controller.py`,
+  `docs/news/news-architecture.md` (chỉ §11b).
+- **Neo đặc tả:** contract §10; screen_design "Hành vi xuất file"/"Hành vi nhập file"; QĐ-4 (§5).
 - **Nội dung:** export theo khoảng ngày đang lọc → `%APPDATA%/ai-market-analyst/exports/`
   (thư mục qua helper paths); import upsert theo `dedupe_key`, `source=import`,
   không ghi đè `actual` chính thống trừ khi bản ghi `stale`; chạy nền +
   progress + tóm tắt mới/cập nhật/bỏ-qua-trùng.
-- **Test:** round-trip CSV/JSON; import đè đúng quy tắc `stale`; file hỏng → lỗi thân thiện, DB nguyên vẹn.
-- **Phụ thuộc:** L3.2 · **Điểm review:** parse/serialize không nằm trong UI; đường dẫn export qua `paths.py`.
+- **Test:** round-trip CSV/JSON; import đè đúng quy tắc `stale`; file hỏng → lỗi thân thiện, DB nguyên vẹn; QĐ-4 khoản 5 — test `dedupe_key` hiện có của L2.5/L2.7 xanh nguyên trạng + test thuần cho hàm mới.
+- **Phụ thuộc:** L3.2 · **Điểm review:** parse/serialize không nằm trong UI; đường dẫn export qua `paths.py`; QĐ-4 — grep toàn miền Tin tức chỉ còn ĐÚNG MỘT định nghĩa công thức §4.3 (trong `core/news_models.py`).
 - **Trạng thái:** PLANNED
 
 #### L3.5 — Dialog AI nhận định xu hướng (L)
@@ -393,6 +401,33 @@ thuật từ khảo sát code, 21/09/2026).** Contract §7 quy định tệp
 `core/scanner_order_policy.py` (Phụ lục C — chính sách có phiên bản, fail-closed).
 Điều khoản §3 + §11b được bổ sung **trong commit của L1.1** (D2); nếu Owner
 không đồng ý vị trí `core/` thì sửa trước khi L1.1 chạy.
+
+**QĐ-4 — Chủ sở hữu duy nhất của công thức `dedupe_key` (§4.3):
+`core/news_models.py` (Owner duyệt 22/09/2026, khi nghiệm thu L2.7).** Hiện
+trạng được ghi nhận tại biên bản nghiệm thu L2.7 (commit 6eaa0bd): công thức
+§4.3 (hash của url, else hash của `title + published_utc`) đang bị **nhân bản
+hai nơi** — `rss_producer._dedupe_key` và `news_controller._user_note_dedupe_key`
+(hai bản giống hệt nhau, khai báo V2 điểm lệch 4 của lô) — trái nguyên tắc
+"một điểm thay đổi duy nhất". Lô **L3.4** (xuất/nhập file — nơi sẽ cần đúng
+công thức này cho đường import theo `dedupe_key`, nguy cơ bản sao thứ ba)
+**BẮT BUỘC** thực hiện trong phạm vi lô:
+
+1. Chuyển công thức thành **một hàm thuần duy nhất** trong `core/news_models.py`
+   (hàm trên mô hình miền, không I/O — L2).
+2. Sửa `services/news_producers/rss_producer.py` + `controllers/news_controller.py`
+   gọi hàm đó, xóa hai bản sao (đây là các file mới của ca — được sửa trong ca,
+   án lệ L2.2 "mở rộng file mới của ca").
+3. Đường import của `news_file_transfer.py` gọi **cùng hàm đó** — cấm tạo bản
+   sao thứ ba.
+4. Contract §11b thêm dòng chủ sở hữu "Công thức `dedupe_key` của `news_items`
+   (§4.3) → `core/news_models.py`" **trong cùng commit** (D2). Phạm vi QĐ-4
+   chỉ là công thức `news_items` — `dedupe_key` của `news_events` (§4.2) đang
+   có một chủ sở hữu duy nhất trong `ff_calendar_producer`, không đụng tới.
+5. Giá trị khóa không đổi (hành vi tương đương B3): test hiện có của L2.5/L2.7
+   ghim `dedupe_key` phải xanh nguyên trạng; thêm test thuần cho hàm mới.
+
+Nợ đóng khi L3.4 đạt; nếu việc gom này đụng vấn đề ngoài phạm vi → DỪNG, báo
+BLOCKED theo kỷ luật, không tự mở rộng.
 
 ## 6. Rủi ro và giảm thiểu
 
