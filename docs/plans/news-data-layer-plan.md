@@ -32,7 +32,7 @@ của ca này (trước đấu nối):
 
 ## 2. Phạm vi
 
-**Trong phạm vi:** 20 lô trong 4 bước ở mục 4 — chính sách, schema, mô hình
+**Trong phạm vi:** 21 lô trong 4 bước ở mục 4 — chính sách, schema, mô hình
 miền, hàm thuần `core/`, repository, 3 bộ sản xuất + nhập tay,
 controller/worker, màn Quản lý tin + dialog AI, cổng cưỡng chế E2, nghiệm thu
 tổng.
@@ -345,6 +345,52 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
 - **Nội dung:** khi app khởi động: `purge_expired_runs()` (retention từ policy) + lượt JSON tuần này/tuần sau + HTML targeted cho `events_pending_actual`; cờ `_fetched_this_session` đảm bảo đúng 1 lần (khuôn `_auto_scanned_this_session` của Scanner).
 - **Test:** gọi 2 lần chỉ fetch 1; purge xóa đúng run quá hạn, không đụng tin/verdict.
 - **Phụ thuộc:** L3.3 (nút dùng chung đường), L2.7 · **Điểm review:** không timer/poll FF nào được tạo; hành vi boot cũ không đổi khi tính năng chưa bật.
+- **Trạng thái:** IMPLEMENTED
+
+#### L3.7 — Bật lịch producer RSS/FRED trong production (S)
+- **File sửa (file mới của ca — được sửa trong ca):**
+  `controllers/news_controller.py`, `workers/news_worker.py` (chỉ đoạn ghi chú
+  wiring trong docstring module), `tests/test_news_controller.py`.
+- **Điểm chạm additive:** **KHÔNG** (QĐ-7 phương án A — `main.py` giữ nguyên
+  1 dòng QĐ-5; `controllers/app_controller.py` không đụng).
+- **Neo đặc tả:** contract §3 (dòng controllers: "Điều phối: **lên lịch
+  producer**"), §6.2 (RSS poll theo khóa `rss_poll_interval_minutes`), §6.3
+  (FRED định kỳ theo khóa `fred_refresh_hours`), §13 ("RSS + FRED **giữ tự
+  động định kỳ** như đã ban hành").
+- **Căn cứ (QĐ-7):** L2.7 đã build trọn cỗ máy `NewsWorker` (2 QTimer theo
+  cadence policy, `start()/stop()`, khuôn `moveToThread` + `thread.started →
+  start` ghi trong docstring của nó) nhưng việc wire entry point production
+  không được gán cho lô nào — L3.2 chỉ dùng `NewsReadWorker`, L3.6 chỉ phủ
+  lượt FF §6.1. Không có lô này, READY-FOR-CONNECT (L4.2) tuyên bố trên lệch
+  docs↔code (V2): contract đòi tự động định kỳ, production không bật timer.
+- **Nội dung:** `NewsController` nhận tham số khởi tạo tùy chọn
+  `schedule_starter` (seam kiểm thử; mặc định `None` = starter thật). Trong
+  `run_startup_turn` lượt đầu (sau lượt FF), gọi starter đúng một lần. Starter
+  thật: dựng `QThread` + `NewsWorker(self)` theo khuôn docstring
+  `news_worker.py` (`moveToThread`, `thread.started → start`,
+  `thread.finished → deleteLater`, controller giữ tham chiếu mạnh); import Qt
+  mức hàm (tiền lệ `settings_service` ngay trong file; tránh import vòng
+  `news_worker ↔ news_controller`; tiền lệ controller-Qt: `scanner_controller`
+  d.18). Không có `QApplication.instance()` → lỗi fail-closed có thông điệp
+  (B4) — boot production luôn có app trước dòng hook QĐ-5. **Đường tắt máy
+  không sửa file cũ:** nối `stop_producer_schedule()` vào tín hiệu
+  `aboutToQuit` khi start (dừng timer qua lời gọi xếp hàng, `thread.quit()`,
+  `wait` có chặn trên — khuôn bounded wait của `AppController.shutdown`);
+  start lần hai = no-op. Lượt RSS/FRED đầu tiên nổ theo timer **cuối chu kỳ
+  đầu** — KHÔNG thêm lượt tức thì lúc khởi động (contract chỉ yêu cầu "tự
+  động định kỳ"; bịa lượt tức thì = hành vi không điều khoản, V2).
+- **Test:** fake starter — `run_startup_turn` 2 lần chỉ gọi starter 1 lần;
+  starter thật với qapp offscreen: thread chạy, 2 timer active đúng cadence
+  policy, `stop_producer_schedule` dừng timer + join thread, start lần 2 no-op,
+  không QThread treo khi teardown; 3 test `TestStartupTurn` của L3.6 inject
+  fake starter — assertion cũ xanh nguyên trạng; battery xanh.
+- **Tài liệu cùng commit (D2):** cập nhật đoạn ghi chú wiring trong docstring
+  `workers/news_worker.py` ("Nothing in this batch calls ``start()``…" — lô sở
+  hữu entry point nay là L3.7); plan §8.
+- **Phụ thuộc:** L3.6, L2.7 · **Điểm review:** `git diff` trên mọi file cũ
+  ngoài 3 file của ca = rỗng; pytest teardown sạch (không "QThread: Destroyed
+  while thread is still running"); không lượt tức thì bịa; cadence 100% từ
+  policy (R4).
 - **Trạng thái:** PLANNED
 
 ### Bước 4 — Nghiệm thu tổng + cổng cưỡng chế E2
@@ -372,7 +418,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   thiếu công cụ là **đỏ có thông báo cách cài**, không skip im lặng (B4).
 - **DoD đặc biệt:** **tự chứng minh cổng đỏ** — thêm vi phạm giả vào nhánh tạm, chạy đỏ, hoàn nguyên (ghi evidence vào commit message).
 - **Phụ thuộc:** L3.5 (đủ module để quét) · **Điểm review:** cổng không bỏ sót `dashboard_screen`/`scanner_*`/`telegram_*`.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L4.2 — Nghiệm thu tổng + đồng bộ tài liệu + đóng plan (M)
 - **File:** không code mới; sửa tài liệu + chạy nghiệm thu.
@@ -384,7 +430,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   → IMPLEMENTED đúng các mục đã làm; `docs/README.md` bỏ dòng plan này;
   (5) **xóa plan file này trong commit nghiệm thu** (D3); (6) tuyên bố
   READY-FOR-CONNECT — sổ nợ #1 **chưa đóng** (chỉ đóng tại đấu nối b).
-- **Phụ thuộc:** tất cả · **Điểm review:** bảng trạng thái mục 8 — 20/20 IMPLEMENTED trước khi chạy lô này.
+- **Phụ thuộc:** tất cả · **Điểm review:** bảng trạng thái mục 8 — 21/21 IMPLEMENTED trước khi chạy lô này.
 - **Trạng thái:** PLANNED
 
 ## 5. Quyết định đã chốt
@@ -483,6 +529,25 @@ lô khác — cổng E2 không trọn theo §14. **Owner chọn A.** Phạm vi: 
 trong môi trường dev; thiếu công cụ khi chạy cổng = **đỏ kèm hướng dẫn cài**,
 không skip im lặng (B4). Phạm vi ngoài 1 dòng = BLOCKED mới.
 
+**QĐ-7 — Thêm lô L3.7: bật lịch producer RSS/FRED trong production (Owner
+duyệt 23/09/2026, phương án A).** Nghiệm thu L4.1 phát hiện gap giữa plan và
+contract: contract §6.2/§6.3/§13 quy định RSS + FRED "giữ tự động định kỳ",
+và L2.7 đã build trọn cỗ máy (`workers/news_worker.py` — 2 QTimer theo cadence
+policy, `start()/stop()`, khuôn `moveToThread` ghi trong docstring), nhưng
+**không lô nào sở hữu việc wire entry point production** — bằng chứng code
+thật: `main.py` chỉ có 1 dòng lượt khởi động FF (QĐ-5), `news_screen.py` chỉ
+dùng `NewsReadWorker` (đường đọc L3.2), không caller production nào của
+`NewsWorker.start()`. Tuyên bố READY-FOR-CONNECT trên lệch này = defect V2,
+trái contract §3.1 khoản 3 ("hoàn thiện theo tài liệu này mới đấu nối"). Ba
+phương án trình Owner: (A) thêm lô nhỏ L3.7 wire qua đường khởi động có sẵn —
+**không điểm chạm mới**, L4.2 giao sau; (B) sửa contract §6.2/§6.3 dời timer
+sang ca đấu nối — hệ mới không tự vận hành đúng ý định §1.2; (C) L4.2 chạy
+nhưng không tuyên bố READY-FOR-CONNECT, ghi nợ — ca không đóng được theo D3.
+**Owner chọn A.** Phạm vi L3.7: chỉ file của ca (`controllers/news_controller.py`,
+docstring `workers/news_worker.py`, `tests/test_news_controller.py`); `main.py`
+giữ đúng 1 dòng QĐ-5; `app_controller.py` không đụng. Mọi điểm chạm ngoài
+phạm vi này = BLOCKED mới. Thứ tự giao: L3.7 → nghiệm thu → L4.2.
+
 ## 6. Rủi ro và giảm thiểu
 
 | Rủi ro | Giảm thiểu |
@@ -498,7 +563,7 @@ không skip im lặng (B4). Phạm vi ngoài 1 dòng = BLOCKED mới.
 
 ## 7. Tiêu chí nghiệm thu tổng (Definition of Done toàn ca)
 
-1. 20/20 lô IMPLEMENTED; battery + smoke + build `.exe` xanh (L4.2).
+1. 21/21 lô IMPLEMENTED; battery + smoke + build `.exe` xanh (L4.2).
 2. Bằng chứng R1: `git diff` rỗng trên `news_service.py`,
    `forex_factory_client.py`, `interest_rate_service.py`, `dashboard_screen.py`;
    5 file additive chỉ đúng thay đổi đã đăng ký; test cũ xanh nguyên trạng.
@@ -531,6 +596,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | IMPLEMENTED |
 | L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | IMPLEMENTED |
 | L3.6 | Bật fetch khởi động + retention purge | 3 | L3.3, L2.7 | S | IMPLEMENTED |
+| L3.7 | Bật lịch producer RSS/FRED trong production (QĐ-7) | 3 | L3.6, L2.7 | S | PLANNED |
 | L4.1 | Cổng E2 (verdict isolation + import-linter + quét chuỗi) | 4 | L3.5 | M | IMPLEMENTED |
 | L4.2 | Nghiệm thu tổng + đồng bộ tài liệu + xóa plan | 4 | tất cả | M | PLANNED |
 
