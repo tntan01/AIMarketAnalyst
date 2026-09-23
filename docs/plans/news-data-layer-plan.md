@@ -69,8 +69,9 @@ tổng.
 | `ui/navigation.py` | thêm `("news", "Tin tức")` vào `NAV_ITEMS` + glyph vào `NAV_ICONS` | L3.2 |
 | `ui/main_window.py` | import `NewsScreen` + thêm `"news"` vào `screen_factories` (d.229-247) + ánh xạ `nav_route` (d.324-331) | L3.2 |
 | `tests/test_backtest_removal_step3_ui.py`, `tests/test_main_window_startup_policy.py` | **chỉ cập nhật ghim inventory điều hướng 5→6** — hệ quả tất yếu của điểm chạm đã đăng ký (`ui/navigation.py` + mục `"news"`); Owner duyệt phương án A 22/09/2026, đúng 4 dòng | L3.2 |
+| `main.py` | thêm **đúng 1 dòng lệnh** hook khởi động lượt tin tức, đặt sau `app_ctrl = AppController()` (d.42) theo tiền lệ boot-hook duy nhất `scanner_retention.ensure_started()` (d.24); nếu cần dòng import thì tính vào điểm chạm và nêu trong commit message — Owner duyệt 23/09/2026 (QĐ-5 phương án A, §5) | L3.6 |
 
-Ngoài 5 file này: **mọi thay đổi là file mới**. `git diff` trên
+Ngoài các file trong bảng trên: **mọi thay đổi là file mới**. `git diff` trên
 `news_service.py` / `forex_factory_client.py` / `interest_rate_service.py` /
 `dashboard_screen.py` phải rỗng ở mọi lô (bằng chứng máy đọc của R1).
 
@@ -334,7 +335,11 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
 
 #### L3.6 — Bật lượt fetch khởi động + retention purge (S)
 - **File mới:** mở rộng `controllers/news_controller.py` (+ cờ phiên), test bổ sung.
-- **Điểm chạm additive:** không file cũ mới nào ngoài những gì L2.7 đã đăng ký (hook khởi động qua AppController/main theo đường controller có sẵn — nếu phải sửa `main.py` thì **dừng, báo Owner** vì ngoài sổ R1).
+- **Điểm chạm additive:** `main.py` — **đúng 1 dòng lệnh** hook khởi động đặt
+  sau `app_ctrl = AppController()` (d.42), theo tiền lệ boot-hook duy nhất
+  `scanner_retention.ensure_started()` (d.24); đã đăng ký vào sổ §3 theo QĐ-5
+  (Owner duyệt 23/09/2026). Không file cũ nào khác ngoài những gì L2.7 đã
+  đăng ký.
 - **Neo đặc tả:** contract §6.1 lượt 1 (một lần mỗi phiên, không timer), §4.6 (purge khi khởi động).
 - **Nội dung:** khi app khởi động: `purge_expired_runs()` (retention từ policy) + lượt JSON tuần này/tuần sau + HTML targeted cho `events_pending_actual`; cờ `_fetched_this_session` đảm bảo đúng 1 lần (khuôn `_auto_scanned_this_session` của Scanner).
 - **Test:** gọi 2 lần chỉ fetch 1; purge xóa đúng run quá hạn, không đụng tin/verdict.
@@ -429,6 +434,27 @@ công thức này cho đường import theo `dedupe_key`, nguy cơ bản sao th�
 
 Nợ đóng khi L3.4 đạt; nếu việc gom này đụng vấn đề ngoài phạm vi → DỪNG, báo
 BLOCKED theo kỷ luật, không tự mở rộng.
+
+**QĐ-5 — Hook khởi động của L3.6: đúng 1 dòng lệnh trong `main.py` (Owner
+duyệt 23/09/2026, phương án A).** Coder dừng báo BLOCKED đúng kỷ luật §6 của
+lô: khảo sát độc lập (coder + Tech Lead đối chiếu code thật) xác nhận không
+tồn tại route khởi động nào đạt đồng thời 4 tiêu chí trong phạm vi sổ R1 cũ —
+(a) chạy tại boot production, (b) nằm trong file được phép sửa, (c) không phá
+test ghim khuôn lazy DI (`tests/test_news_controller.py` d.884), (d) không vi
+phạm quy tắc miền. Các phương án bị loại kèm bằng chứng: B1 gọi từ
+`AppController.__init__` (regress test lazy + phát mạng trong 8 test DI và
+`MainWindow.__init__`); B2 method không ai gọi (tính năng chết — V2); C hook
+`ui/main_window.py` d.248-249 (file cấm của lô); D hook `NewsScreen.__init__`
+d.1385 (vi phạm screen_design "chỉ 2 nút FF có đường mạng" + V2); biến thể
+phát mạng trong `NewsController.__init__` (phá mọi test dựng controller +
+khuôn DI lazy). Quyết định: đăng ký vào sổ điểm chạm §3 đúng **1 dòng lệnh**
+trong `main.py` sau `app_ctrl = AppController()` (d.42) gọi lượt khởi động
+của `news_controller` qua property lazy có sẵn — theo tiền lệ boot-hook duy
+nhất `scanner_retention.ensure_started()` (d.24); nếu cần dòng import thì tính
+vào điểm chạm và nêu trong commit message. Khuôn lazy (R7) và hành vi boot
+cũ giữ nguyên 100%. Quyết định này sửa điều khoản dừng của lô L3.6 ("nếu
+phải sửa `main.py` → dừng, báo Owner") — coder đã dừng báo đúng, và Owner đã
+duyệt; phạm vi ngoài 1 dòng = BLOCKED mới.
 
 ## 6. Rủi ro và giảm thiểu
 
