@@ -10,7 +10,7 @@ Kiểm các nhánh hành vi của lô (screen_design "Hành vi lấy dữ liệu
 * sửa/xóa chỉ ``source=user``; toggle Loại trừ mọi dòng tin văn bản; dòng sự
   kiện không có;
 * empty state: 2 nút gợi ý enabled và đi đúng 2 đường hành vi;
-* ranh giới lô: 1 nút còn lại (AI nhận định) vẫn disabled.
+* ranh giới lô: cả 6 nút thanh công cụ đã nối hành vi (L3.3-L3.5).
 * 2 nút "Xuất file"/"Nhập file" (L3.4): chạy nền + disable khi chạy; xuất báo
   đường dẫn file, nhập báo tóm tắt mới/cập nhật/bỏ qua trùng, đọc lại bảng;
   chọn format/file hủy → không gọi controller.
@@ -741,20 +741,12 @@ class TestEmptyStateAndBoundaries:
         screen.empty_state_buttons[news.TOOLBAR_LABELS[2]].click()
         assert len(opened) == 1
 
-    def test_remaining_toolbar_buttons_stay_disabled(self):
+    def test_all_toolbar_buttons_are_wired(self):
+        """L3.5: hết nút disabled — cả 6 nút thanh công cụ đã nối hành vi."""
         screen = _screen()
-        live = {
-            news.TOOLBAR_LABELS[0],
-            news.TOOLBAR_LABELS[1],
-            news.TOOLBAR_LABELS[2],
-            news.TOOLBAR_LABELS[3],
-            news.TOOLBAR_LABELS[4],
-        }
         for label, button in screen.toolbar_buttons.items():
-            if label in live:
-                continue
-            assert button.isEnabled() is False  # AI nhận định xu hướng (L3.5)
-            assert button.receivers(button.clicked) == 0
+            assert button.isEnabled() is True
+            assert button.receivers(button.clicked) >= 1
 
 
 # ---- 8. nút "Xuất file"/"Nhập file" (L3.4) ------------------------------------

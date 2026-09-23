@@ -42,6 +42,31 @@ Khai báo đọc-hiểu (V2):
   tin + Xuất + Nhập) — khuôn D10; khi kết thúc re-enable; sau lượt NHẬP đọc lại
   bảng (dữ liệu đã đổi), sau lượt XUẤT không cần.
 
+**Lô L3.5 — cửa sổ AI nhận định xu hướng** (screen_design d.1621-1649; contract
+§9.1-§9.2): nút "AI nhận định xu hướng" mở ``AiTrendDialog`` (520×640, không
+modal toàn app — WindowModal, d.1624); phạm vi = cặp tiền ``SUPPORTED_SYMBOLS``
+(tiêu thụ) hoặc 1 đồng tiền rút từ chính danh sách cặp; dòng đếm qua
+``controller.ai_scope_preview`` (không gọi AI); dưới ``ai_min_items`` hiện
+d.1642 và nút "Nhận định" không gọi AI (B4); lời gọi AI chạy trong worker nền
+(khuôn ``_start_fetch`` D10 — không gọi ``analyze()`` đồng bộ trong callback,
+không processEvents); lỗi provider/parser → thông báo thân thiện; 3 thẻ chân
+trời nhãn đúng từ điển d.1570-1572, ký hiệu ▲/▼/— màu semantic; dẫn chứng bấm
+được → đóng dialog + ``_jump_to_evidence`` nhảy dòng bảng; lịch sử
+``verdicts_for`` mới nhất trước; cảnh báo advisory d.1638 THƯỜNG TRỰC.
+
+Khai báo đọc-hiểu (V2):
+
+* Cơ chế nhảy dòng theo dẫn chứng (d.1646-1647, chưa được tài liệu ghim — id
+  evidence là int CHUNG hai bảng, ``_evidence_ids`` của builder): ưu tiên khớp
+  ``item.id`` rồi ``event.id`` trong tập dòng đã đọc; chỉ nhảy khi dòng đang
+  hiển thị trên bảng (bị bộ lọc che thì chỉ đóng dialog — không tự đổi bộ lọc).
+* Limit lịch sử verdicts_for = 5 (``AI_HISTORY_LIMIT``) — hằng TRÌNH BÀY của
+  dialog, không phải giá trị vận hành (B5: không thêm khóa policy).
+* Lỗi provider: adapter đã dịch qua ``friendly_error()`` khi raise → dialog
+  hiển thị ``error_message`` của result nguyên văn (không dịch lại ở UI).
+* "Nhận định" là nút duy nhất khởi động lượt AI; không có lấy lại tự động
+  (retry do controller theo tín hiệu retryable của parser — UI không biết).
+
 **Lô L3.3 — hành vi tương tác** (screen_design "Hành vi lấy dữ liệu ForexFactory
 (2 nút)" + "Hành vi nhập/sửa tin"; contract §6.1/§6.4):
 
@@ -121,8 +146,9 @@ from PyQt6.QtCore import (
     Qt,
     QThread,
 )
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QDateEdit,
     QDateTimeEdit,
@@ -143,6 +169,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config.constants import SUPPORTED_SYMBOLS
 from config.paths import exports_dir
 from core.news_models import (
     CalendarEvent,
@@ -153,6 +180,7 @@ from core.news_models import (
     NewsItem,
     NewsItemKind,
     NewsItemSource,
+    TrendVerdict,
 )
 from ui.layout_system import configure_table
 from ui.responsive_row import ResponsiveGrid
@@ -323,6 +351,57 @@ TRANSFER_BUSY_LABELS: tuple[str, ...] = FETCH_BUSY_LABELS + (
     TOOLBAR_LABELS[3],
     TOOLBAR_LABELS[4],
 )
+
+# ---------------------------------------------------------------------------
+# Từ điển lô L3.5 — cửa sổ AI nhận định xu hướng (screen_design d.1621-1649 +
+# bảng từ điển d.1570-1572; mọi chuỗi có nguồn đăng ký, không phát minh nhãn).
+# ---------------------------------------------------------------------------
+AI_TEXT = TOOLBAR_LABELS[5]  # "AI nhận định xu hướng" (nhãn nút đã đăng ký)
+AI_SCOPE_LABEL = "Phạm vi"  # mockup d.1628
+AI_SCOPE_HINT = "hoặc chuyển sang chọn 1 đồng tiền"  # mockup d.1628 (nguyên văn)
+AI_COUNT_TEXT = "Cửa sổ tin: {window_days} ngày gần nhất — {count} tin/sự kiện liên quan"  # d.1629
+AI_INSUFFICIENT_TEXT = "Không đủ dữ liệu nhận định"  # d.1642 (nguyên văn)
+AI_ANALYZE_TEXT = "Nhận định"  # mockup d.1631
+# Chuỗi có sẵn của repo (dashboard_screen d.1393) cho chỉ báo tiến trình.
+AI_PROGRESS_TEXT = "Đang phân tích..."
+AI_ADVISORY_TEXT = "⚠ Nhận định của AI chỉ để tham khảo — không tham gia bất cứ quy trình nào"  # d.1638 (nguyên văn)
+AI_HISTORY_TEXT = "Lịch sử nhận định của phạm vi này (mới nhất trước)"  # d.1637 (nguyên văn)
+AI_RESULT_HEADER_TEXT = "─ Kết quả (3 thẻ chân trời, theo ai_horizons trong chính sách) ─"  # d.1632
+AI_EVIDENCE_TEXT = "Dẫn chứng"  # d.1633/1637 (từ vựng mockup)
+
+# Từ điển verdict (screen_design d.1570-1572 — ĐÚNG TỪNG CHUỖI).
+HORIZON_TEXT: dict[str, str] = {
+    "short": "Ngắn hạn",
+    "mid": "Trung hạn",
+    "long": "Dài hạn",
+}
+DIRECTION_TEXT: dict[str, str] = {
+    "bullish": "Tăng",
+    "bearish": "Giảm",
+    "neutral": "Trung lập",
+    "insufficient_data": "Không đủ dữ liệu",
+}
+CONFIDENCE_TEXT: dict[str, str] = {
+    "high": "Cao",
+    "medium": "Trung bình",
+    "low": "Thấp",
+    "none": "Không có",
+}
+# Ký hiệu xu hướng (d.1633 "▲/▼/—") + vai trò màu semantic (V2): insufficient_data
+# không có xu hướng → "—" cùng tông text_muted; bullish=success, bearish=danger.
+DIRECTION_SYMBOL: dict[str, str] = {
+    "bullish": "▲",
+    "bearish": "▼",
+    "neutral": "—",
+    "insufficient_data": "—",
+}
+DIRECTION_ROLE: dict[str, str] = {
+    "bullish": "success",
+    "bearish": "danger",
+    "neutral": "text_muted",
+    "insufficient_data": "text_muted",
+}
+AI_HISTORY_LIMIT = 5  # đọc-hiểu trình bày (B5 — không phải giá trị vận hành)
 
 EVENT_ROW = "event"
 ITEM_ROW = "item"
@@ -926,6 +1005,372 @@ class UserNoteDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# Cửa sổ AI nhận định xu hướng (screen_design d.1621-1649; contract §9.1-§9.2)
+# ---------------------------------------------------------------------------
+
+
+class AiTrendDialog(QDialog):
+    """Cửa sổ AI nhận định xu hướng — 520×640, không modal toàn app (d.1624).
+
+    * Phạm vi: một combo chứa các cặp tiền ``SUPPORTED_SYMBOLS`` (tiêu thụ, không
+      bịa danh sách) rồi đến từng đồng tiền rút từ chính danh sách cặp (V2 —
+      "hoặc chuyển sang chọn 1 đồng tiền", d.1628).
+    * Dòng đếm qua ``controller.ai_scope_preview`` (KHÔNG gọi AI — §9.1 bước 2);
+      dưới ``ai_min_items`` hiện chuỗi d.1642 và nút "Nhận định" không gọi AI
+      (fail-closed, B4).
+    * Lời gọi AI chạy trong worker nền (``NewsReadWorker`` — khuôn ``_start_fetch``
+      D10 của màn): lúc chờ disable nút "Nhận định" + chỉ báo tiến trình
+      (d.1615-1616), không block GUI, không processEvents.
+    * Kết quả = 3 thẻ chân trời (nhãn từ điển d.1570-1572, ký hiệu ▲/▼/— màu
+      semantic); lỗi provider/parser hiện thông báo thân thiện (d.1644-1645).
+    * Dẫn chứng bấm được → đóng dialog rồi nhảy dòng bảng (d.1646-1647).
+    * Cảnh báo advisory (d.1638) THƯỜNG TRỰC — không phải tooltip.
+    * Modal WindowModal (d.1624 "không modal toàn app").
+    """
+
+    def __init__(self, controller, on_evidence, parent=None) -> None:
+        super().__init__(parent)
+        self._controller = controller
+        self._on_evidence = on_evidence
+        self._preview = None
+        self._ai_thread: QThread | None = None
+        self._ai_worker: NewsReadWorker | None = None
+        self._cards: dict[str, dict[str, object]] = {}
+        self.setObjectName("NewsAiDialog")
+        self.setWindowTitle(AI_TEXT)
+        self.resize(520, 640)
+        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self._build()
+        self._on_scope_changed()
+
+    # -- dựng form ----------------------------------------------------------
+
+    def _build(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(20, 16, 20, 16)
+        root.setSpacing(8)
+
+        scope_row = QHBoxLayout()
+        scope_row.setSpacing(8)
+        scope_label = QLabel(AI_SCOPE_LABEL)
+        scope_label.setObjectName("CardDetail")
+        scope_row.addWidget(scope_label)
+        self._scope_combo = QComboBox()
+        self._scope_combo.setObjectName("NewsAiScope")
+        self._scope_combo.setMinimumWidth(220)
+        self._fill_scope_combo()
+        self._scope_combo.currentIndexChanged.connect(lambda _i: self._on_scope_changed())
+        scope_row.addWidget(self._scope_combo, 1)
+        root.addLayout(scope_row)
+
+        hint = QLabel(AI_SCOPE_HINT)
+        hint.setObjectName("CardDetail")
+        root.addWidget(hint)
+
+        self._count_label = QLabel("")
+        self._count_label.setObjectName("NewsAiCount")
+        self._count_label.setWordWrap(True)
+        root.addWidget(self._count_label)
+
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("NewsAiStatus")
+        self._status_label.setWordWrap(True)
+        root.addWidget(self._status_label)
+
+        self._analyze_button = action_button(AI_ANALYZE_TEXT, primary=True, color="success")
+        self._analyze_button.clicked.connect(self._on_analyze_clicked)
+
+        header = QLabel(AI_RESULT_HEADER_TEXT)
+        header.setObjectName("CardDetail")
+        root.addWidget(header)
+        for horizon in ("short", "mid", "long"):
+            card = self._make_card(horizon)
+            root.addWidget(card["frame"])
+            self._cards[horizon] = card
+
+        history_header = QLabel(AI_HISTORY_TEXT)
+        history_header.setObjectName("CardDetail")
+        root.addWidget(history_header)
+        history_widget = QWidget()
+        self._history_layout = QVBoxLayout(history_widget)
+        self._history_layout.setContentsMargins(0, 0, 0, 0)
+        self._history_layout.setSpacing(2)
+        root.addWidget(history_widget, 1)
+
+        root.addWidget(self._analyze_button)
+        advisory = QLabel(AI_ADVISORY_TEXT)
+        advisory.setObjectName("NewsAiAdvisory")
+        advisory.setWordWrap(True)
+        root.addWidget(advisory)
+
+    def _make_card(self, horizon: str) -> dict[str, object]:
+        """Một thẻ chân trời: header (hướng + ký hiệu màu semantic), confidence,
+        lập luận, hàng dẫn chứng bấm được.
+
+        Màu semantic của hướng tô qua QPalette (không dùng `style=` HTML hay
+        setStyleSheet — giữ bộ đếm nợ UI style của file mới bằng 0, khuôn
+        docs/ui/style/ui-style-baseline.json)."""
+        frame = QFrame()
+        frame.setObjectName(f"NewsAiCard{horizon.capitalize()}")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(6)
+        header = QLabel("")
+        header.setObjectName(f"NewsAi{horizon.capitalize()}Header")
+        header.setWordWrap(False)
+        header_row.addWidget(header)
+        direction = QLabel("")
+        direction.setObjectName(f"NewsAi{horizon.capitalize()}Direction")
+        header_row.addWidget(direction)
+        header_row.addStretch(1)
+        layout.addLayout(header_row)
+        conf = QLabel("")
+        conf.setObjectName("CardDetail")
+        layout.addWidget(conf)
+        rationale = QLabel("")
+        rationale.setObjectName("CardValue")
+        rationale.setWordWrap(True)
+        rationale.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(rationale)
+        evidence_row = QWidget()
+        ev_layout = QHBoxLayout(evidence_row)
+        ev_layout.setContentsMargins(0, 0, 0, 0)
+        ev_layout.setSpacing(6)
+        layout.addWidget(evidence_row)
+        frame.setVisible(False)
+        return {
+            "frame": frame,
+            "header": header,
+            "direction": direction,
+            "conf": conf,
+            "rationale": rationale,
+            "layout": ev_layout,
+        }
+
+    def _fill_scope_combo(self) -> None:
+        """Các cặp tiền ``SUPPORTED_SYMBOLS`` rồi đến từng đồng tiền rút từ
+        chính danh sách cặp (V2 — không bịa danh sách)."""
+        for symbol in SUPPORTED_SYMBOLS:
+            self._scope_combo.addItem(symbol, ("pair", symbol))
+        seen: set[str] = set()
+        for symbol in SUPPORTED_SYMBOLS:
+            for code in symbol.split("/"):
+                code = code.strip()
+                if code and code not in seen:
+                    seen.add(code)
+                    self._scope_combo.addItem(code, ("currency", code))
+
+    def _current_scope(self) -> tuple[str, str] | None:
+        data = self._scope_combo.currentData()
+        if data is None:
+            return None
+        return (str(data[0]), str(data[1]))
+
+    # -- dòng đếm + lịch sử (không gọi AI) -----------------------------------
+
+    def _on_scope_changed(self) -> None:
+        """Cập nhật dòng đếm (§9.1 bước 2 — KHÔNG gọi AI) + lịch sử."""
+        scope = self._current_scope()
+        if scope is None:
+            return
+        try:
+            self._preview = self._controller.ai_scope_preview(scope[0], scope[1])
+        except Exception:
+            self._preview = None
+            self._count_label.clear()
+            self._status_label.setText(AI_INSUFFICIENT_TEXT)
+            return
+        self._update_count_line()
+        self._load_history()
+
+    def _update_count_line(self) -> None:
+        preview = self._preview
+        if preview is None:
+            return
+        count = preview.event_count + preview.item_count
+        self._count_label.setText(
+            AI_COUNT_TEXT.format(window_days=preview.window_days, count=count)
+        )
+        if preview.insufficient:
+            # d.1642 — fail-closed: không gọi AI.
+            self._status_label.setText(AI_INSUFFICIENT_TEXT)
+        elif self._status_label.text() == AI_PROGRESS_TEXT:
+            # Sau lượt nhận định: chỉ xóa trạng thái "đang phân tích" — lỗi/kết
+            # quả vừa hiện không bị dòng đếm làm mất (V2).
+            self._status_label.clear()
+
+    def _load_history(self) -> None:
+        """Lịch sử nhận định của phạm vi này, mới nhất trước (d.1637) — limit
+        là hằng trình bày (B5: không phải giá trị vận hành)."""
+        self._clear_layout(self._history_layout)
+        scope = self._current_scope()
+        if scope is None:
+            return
+        try:
+            verdicts = self._controller.verdicts_for(scope[0], scope[1], AI_HISTORY_LIMIT)
+        except Exception:
+            return
+        for verdict in verdicts:
+            label = QLabel(self._history_line(verdict))
+            label.setObjectName("CardDetail")
+            label.setWordWrap(True)
+            self._history_layout.addWidget(label)
+
+    @staticmethod
+    def _history_line(verdict: TrendVerdict) -> str:
+        return (
+            f"{_display_time(verdict.created_at)} · "
+            f"{HORIZON_TEXT.get(verdict.horizon.value, verdict.horizon.value)} · "
+            f"{DIRECTION_TEXT.get(verdict.direction.value, verdict.direction.value)} · "
+            f"{CONFIDENCE_TEXT.get(verdict.confidence.value, verdict.confidence.value)}"
+        )
+
+    # -- lượt nhận định (worker nền — khuôn _start_fetch, D10) ----------------
+
+    def _on_analyze_clicked(self) -> None:
+        preview = self._preview
+        if preview is None or preview.insufficient:
+            # Fail-closed: dưới ai_min_items → hiện d.1642, KHÔNG gọi AI (B4).
+            self._status_label.setText(AI_INSUFFICIENT_TEXT)
+            return
+        self._start_analysis()
+
+    def _start_analysis(self) -> None:
+        scope = self._current_scope()
+        if scope is None or self._ai_worker is not None:
+            return
+        self._analyze_button.setEnabled(False)
+        self._scope_combo.setEnabled(False)
+        self._status_label.setText(AI_PROGRESS_TEXT)  # d.1615-1616: progress + disable
+        thread = QThread(self)
+        controller = self._controller
+        worker = NewsReadWorker(lambda: controller.analyze_trend(scope[0], scope[1]))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_ai_succeeded)
+        worker.failed.connect(self._on_ai_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self._on_ai_worker_done)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._forget_ai_thread(thread))
+        self._ai_thread = thread
+        self._ai_worker = worker
+        thread.start()
+
+    def _forget_ai_thread(self, thread: QThread) -> None:
+        if self._ai_thread is thread:
+            self._ai_thread = None
+            self._ai_worker = None
+
+    def _on_ai_succeeded(self, payload) -> None:
+        if getattr(payload, "insufficient", False):
+            self._status_label.setText(AI_INSUFFICIENT_TEXT)
+            return
+        if not payload.ok:
+            self._status_label.setText(payload.error_message or AI_TEXT)
+            self._clear_result()
+            return
+        self._status_label.clear()
+        self._render_verdicts(payload.verdicts)
+
+    def _on_ai_failed(self, message: str) -> None:
+        self._status_label.setText(message)
+        self._clear_result()
+
+    def _on_ai_worker_done(self) -> None:
+        self._analyze_button.setEnabled(True)
+        self._scope_combo.setEnabled(True)
+        self._on_scope_changed()  # dòng đếm + lịch sử sau lượt nhận định
+
+    # -- kết quả --------------------------------------------------------------
+
+    def _render_verdicts(self, verdicts) -> None:
+        self._clear_result()
+        by_horizon = {verdict.horizon.value: verdict for verdict in verdicts}
+        for horizon, card in self._cards.items():
+            verdict = by_horizon.get(horizon)
+            if verdict is None:
+                continue
+            role = DIRECTION_ROLE.get(verdict.direction.value, "text_muted")
+            color = semantic_qcolor(role)
+            symbol = DIRECTION_SYMBOL.get(verdict.direction.value, "—")
+            direction = DIRECTION_TEXT.get(verdict.direction.value, verdict.direction.value)
+            card["header"].setText(f"<b>{HORIZON_TEXT.get(horizon, horizon)}</b>")
+            direction_label = card["direction"]
+            direction_label.setText(f"{symbol} {direction}")
+            palette = direction_label.palette()
+            palette.setColor(QPalette.ColorRole.WindowText, color)
+            direction_label.setPalette(palette)
+            card["conf"].setText(
+                CONFIDENCE_TEXT.get(verdict.confidence.value, verdict.confidence.value)
+            )
+            card["rationale"].setText(verdict.rationale)
+            self._fill_evidence(card, verdict.evidence_item_ids)
+            card["frame"].setVisible(True)
+
+    def _fill_evidence(self, card: dict[str, object], ids) -> None:
+        """Hàng dẫn chứng — mỗi id một nút bấm được (d.1646-1647)."""
+        self._clear_layout(card["layout"])
+        label = QLabel(AI_EVIDENCE_TEXT)
+        label.setObjectName("CardDetail")
+        card["layout"].addWidget(label)
+        for row_id in ids:
+            button = action_button(str(row_id))
+            button.clicked.connect(
+                lambda _checked=False, rid=int(row_id): self._pick_evidence(rid)
+            )
+            card["layout"].addWidget(button)
+        card["layout"].addStretch(1)
+
+    def _pick_evidence(self, row_id: int) -> None:
+        """Dẫn chứng bấm → đóng dialog rồi screen nhảy dòng (d.1646-1647)."""
+        self.accept()
+        if self._on_evidence is not None:
+            self._on_evidence(row_id)
+
+    def _clear_result(self) -> None:
+        for card in self._cards.values():
+            card["frame"].setVisible(False)
+            card["header"].clear()
+            card["direction"].clear()
+            card["conf"].clear()
+            card["rationale"].clear()
+            self._clear_layout(card["layout"])
+
+    @staticmethod
+    def _clear_layout(layout: QVBoxLayout | QHBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    # -- dọn worker ------------------------------------------------------------
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - tên Qt
+        self._shutdown_ai()
+        super().closeEvent(event)
+
+    def _shutdown_ai(self) -> None:
+        """Dừng lượt AI nền (khuôn ``_shutdown_fetch``) — chờ có giới hạn."""
+        thread = self._ai_thread
+        self._ai_thread = None
+        self._ai_worker = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except RuntimeError:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Màn
 # ---------------------------------------------------------------------------
 
@@ -1127,8 +1572,7 @@ class NewsScreen(QWidget):
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — 5 nút hành vi đã nối (L3.3 + L3.4);
-        "AI nhận định xu hướng" vẫn disabled (L3.5)."""
+        """Nút thanh công cụ — cả 6 nút đã nối hành vi (L3.3, L3.4, L3.5)."""
         button = action_button(label)
         if label == TOOLBAR_LABELS[0]:
             button.clicked.connect(lambda: self._start_fetch("json"))
@@ -1141,7 +1585,7 @@ class NewsScreen(QWidget):
         elif label == TOOLBAR_LABELS[4]:
             button.clicked.connect(self._on_import_clicked)
         else:
-            button.setEnabled(False)
+            button.clicked.connect(self.open_ai_dialog)
         self.toolbar_buttons[label] = button
         return button
 
@@ -1507,6 +1951,39 @@ class NewsScreen(QWidget):
             if code:
                 codes.append(str(code))
         return codes
+
+    # -- cửa sổ AI nhận định xu hướng (L3.5 — §9.1/§9.2) -----------------------
+
+    def open_ai_dialog(self) -> None:
+        """Mở cửa sổ AI nhận định xu hướng — không modal toàn app (d.1624)."""
+        if self.news_controller is None:
+            return
+        dialog = AiTrendDialog(self.news_controller, self._jump_to_evidence, self)
+        dialog.exec()
+
+    def _jump_to_evidence(self, row_id: int) -> None:
+        """Nhảy tới dòng của một dẫn chứng (d.1646-1647) — V2: ưu tiên khớp
+        item rồi event trong tập dòng đã đọc; chỉ nhảy khi dòng đang hiển thị
+        (không tự đổi bộ lọc)."""
+        target: NewsRow | None = None
+        for row in self._rows:
+            if row.item is not None and row.item.id == row_id:
+                target = row
+                break
+        if target is None:
+            for row in self._rows:
+                if row.event is not None and row.event.id == row_id:
+                    target = row
+                    break
+        if target is None:
+            return
+        if not any(row is target for row in self.table_model.rows):
+            return
+        index = self.table_model.rows.index(target)
+        self.table.selectRow(index)
+        self.table.scrollTo(
+            self.table_model.index(index, 0), QAbstractItemView.ScrollHint.EnsureVisible
+        )
 
     # -- sửa/xóa/toggle theo dòng (D7 — trong dialog chi tiết dòng) ---------------
 

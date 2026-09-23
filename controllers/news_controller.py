@@ -36,11 +36,6 @@ Delivered by this batch (plan L2.7):
   network itself; the producer owns transport and its ``on_demand_lookup``
   ``ingest_runs`` row.
 
-**No AI path here** (plan L2.7 — the AI call arrives with L3.5), and
-``verdicts_for`` is deliberately *not* delegated yet: the verdict history read
-belongs to the AI dialog batch (L3.5; contract §9.2 names the news screen and
-this controller as the only allowed consumers).
-
 **File transfer (plan L3.4):** ``export_news_range``/``import_news_file`` are
 thin delegations to ``services/news_file_transfer.py`` — the single owner of
 every CSV/JSON serializer/parser (the screen owns no parsing, screen_design
@@ -48,6 +43,24 @@ every CSV/JSON serializer/parser (the screen owns no parsing, screen_design
 computes ``NewsItem.dedupe_key`` through the §4.3 formula owner
 ``core/news_models.news_item_dedupe_key`` (QĐ-4) and never writes an
 ``ingest_runs`` row (the frozen §4.6 producer enum has no ``import`` value, R6).
+
+**AI trend judgement (plan L3.5):** ``ai_scope_preview``/``analyze_trend``
+implement contract §9.1 in the controller — read the repo (calendar events +
+text items touching the scope's currencies, ``excluded=0``, inside
+``ai_window_days``) → floor check via ``core/trend_prompt_builder`` (below
+``ai_min_items`` no prompt exists and no AI call is made, B4) → build the
+prompt → ``AIService.analyze`` inside the dialog's worker → parse via
+``core/trend_verdict_parser`` → one retry on the parser's ``retryable`` signal
+→ on final failure a friendly message and nothing stored → compose the three
+``TrendVerdict`` rows (``input_snapshot`` = prompt snapshot, ``prompt_hash``,
+provider/model provenance) and store via ``add_verdicts`` (§8).  The parser
+never retries and never builds messages; ``friendly_error()``-translated
+provider exceptions surface as-is (the adapters translate at raise time).
+``verdicts_for`` is now delegated (the news screen is the *only* allowed
+consumer of verdict history, §9.2).  The AI service and the settings provider
+are constructor seams (khuôn d.275-282); the production default resolves
+``settings.ai.active_provider()`` lazily exactly like ``scanner_controller``
+(d.720-728).
 
 Declared readings (V2 — decided here on purpose, not silently):
 
@@ -65,9 +78,9 @@ Declared readings (V2 — decided here on purpose, not silently):
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from core.news_models import (
     CalendarEvent,
@@ -79,9 +92,14 @@ from core.news_models import (
     NewsItemKind,
     NewsItemSource,
     StoreState,
+    TrendVerdict,
+    VerdictScopeType,
     news_item_dedupe_key,
 )
 from core.news_policy import NewsPolicy, load_news_policy
+from core.trend_prompt_builder import TrendPrompt, TrendPromptOutcome, build_trend_prompt
+from core.trend_verdict_parser import TrendParseOutcome, parse_trend_verdict
+from services.ai_service import AIProviderConfig, AIService
 from services.news_producers.ff_calendar_producer import (
     FFCalendarProducer,
     HtmlCalendarResult,
@@ -97,7 +115,13 @@ from services.news_file_transfer import (
 )
 from services.news_repository import CurrencyRateTrend, NewsRepository, UpsertItemsResult
 
-__all__ = ["NewsController", "UserNoteFieldError", "UserNoteResult"]
+__all__ = [
+    "AiScopePreview",
+    "NewsController",
+    "TrendAnalysisResult",
+    "UserNoteFieldError",
+    "UserNoteResult",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +163,59 @@ class UserNoteResult:
     def ok(self) -> bool:
         """True when the note passed validation and was written."""
         return not self.errors
+
+
+# ---------------------------------------------------------------------------
+# Typed results of the AI trend path (plan L3.5 — C3, no bare dict)
+# ---------------------------------------------------------------------------
+
+# Friendly messages of the AI path (repo strings — khuôn scanner):
+#  - "Chưa cấu hình AI Provider hoặc API key trong Settings." scanner_controller d.2943
+#  - "AI không trả về JSON hợp lệ."                       scanner_detail_screen d.2881
+NO_AI_CONFIG_TEXT = "Chưa cấu hình AI Provider hoặc API key trong Settings."
+PARSE_FAIL_TEXT = "AI không trả về JSON hợp lệ."
+
+
+@dataclass(frozen=True, slots=True)
+class AiScopePreview:
+    """§9.1 step 2 — the data counts of one scope, WITHOUT calling the AI.
+
+    The dialog shows the count line before judging ("Cửa sổ tin: <ai_window_days>
+    ngày gần nhất — <N> tin/sự kiện liên quan", screen_design d.1629) and only
+    then offers the judge button; ``insufficient`` (below ``ai_min_items``) is
+    fail-closed — no prompt exists, so the AI is never called (B4)."""
+
+    scope_type: str
+    scope_value: str
+    window_days: int
+    event_count: int
+    item_count: int
+    min_items: int
+
+    @property
+    def insufficient(self) -> bool:
+        """True when the considered rows are below ``ai_min_items``."""
+        return self.event_count + self.item_count < self.min_items
+
+
+@dataclass(frozen=True, slots=True)
+class TrendAnalysisResult:
+    """Typed outcome of one ``analyze_trend`` run (§9.1 steps 2-6, C3).
+
+    ``ok`` holds exactly when the three verdict rows were composed and stored
+    (``inserted`` from the repository's typed count); ``insufficient`` is the
+    fail-closed report (no AI call); ``verdicts`` carries the composed rows for
+    the dialog to render; ``error_message`` is the friendly text (never a bare
+    parser detail) when the run failed — and in every failure case nothing was
+    stored (§9.1: "không lưu verdict rác")."""
+
+    ok: bool
+    verdicts: tuple[TrendVerdict, ...] = ()
+    inserted: int = 0
+    insufficient: bool = False
+    event_count: int = 0
+    item_count: int = 0
+    error_message: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +346,18 @@ def _fred_api_key() -> str | None:
         return None
 
 
+def _read_active_ai_provider() -> object | None:
+    """The settings AI provider for this turn (khuôn scanner_controller d.720-728
+    ``settings.ai.active_provider()``); a read failure yields ``None`` (fail-
+    closed — the AI path reports "Chưa cấu hình" without calling anything)."""
+    try:
+        from services.settings_service import SettingsService
+
+        return SettingsService().load().ai.active_provider()
+    except Exception:
+        return None
+
+
 class NewsController:
     """Thin orchestration over ``NewsRepository`` + the three producers (M5/§3)."""
 
@@ -279,6 +368,9 @@ class NewsController:
         rss_producer: RssProducer | None = None,
         fred_producer: FredRateProducer | None = None,
         ff_producer: FFCalendarProducer | None = None,
+        *,
+        ai_service: object | None = None,
+        ai_config_provider: Callable[[], object] | None = None,
     ) -> None:
         self._repo = repo if repo is not None else NewsRepository()
         self._policy = policy if policy is not None else load_news_policy()
@@ -293,6 +385,11 @@ class NewsController:
         # fetch and its ingest_runs row; the repository only calls the callable
         # when it meets a stale event.
         self._repo.on_demand_lookup = self._ff_producer.lookup_event_actual
+        # AI seams (L3.5 — khuôn d.275-282): injected fakes for tests; the
+        # production default resolves settings.ai.active_provider() lazily per
+        # analyze turn (khuôn scanner_controller d.720-728).
+        self._ai_service = ai_service
+        self._ai_config_provider = ai_config_provider
 
     # --- producer schedule per policy (§6.1 lượt 1-3, §7 keys) --------------------
 
@@ -535,3 +632,201 @@ class NewsController:
         """Freshness of each signal (§8/§6.5) — delegated; the classification
         comes from ``core/news_freshness.py``."""
         return self._repo.store_state()
+
+    # --- AI trend judgement (§9.1, plan L3.5) --------------------------------------
+
+    def ai_scope_preview(self, scope_type: str, scope_value: str, now: datetime | None = None) -> AiScopePreview:
+        """§9.1 step 2 — counts + floor of one scope, NO AI call.
+
+        The dialog shows "Cửa sổ tin: <window_days> ngày gần nhất — <N> tin/sự
+        kiện liên quan" (d.1629) from this preview and, when ``insufficient``,
+        shows "Không đủ dữ liệu nhận định" (d.1642) and never calls the AI
+        (fail-closed, B4 — the same floor the builder enforces)."""
+        outcome = self._ai_outcome(scope_type, scope_value, now)
+        return AiScopePreview(
+            scope_type=scope_type,
+            scope_value=scope_value,
+            window_days=self._policy.ai_window_days,
+            event_count=outcome.event_count,
+            item_count=outcome.item_count,
+            min_items=outcome.min_items,
+        )
+
+    def analyze_trend(
+        self, scope_type: str, scope_value: str, now: datetime | None = None
+    ) -> TrendAnalysisResult:
+        """One AI trend run for one scope (§9.1 steps 2-6).
+
+        Runs inside the dialog's background worker (the screen never calls this
+        synchronously from a GUI callback).  Reads the repo for the scope's
+        currencies inside ``ai_window_days`` (``excluded=0``), builds the prompt
+        through ``core/trend_prompt_builder``, fails closed below
+        ``ai_min_items`` (no AI call), calls ``AIService.analyze`` inside the
+        worker, parses through ``core/trend_verdict_parser``, retries exactly
+        ONCE on the parser's ``retryable`` signal, and stores nothing on final
+        failure (§9.1 step 5 — friendly message instead).  On success composes
+        the three ``TrendVerdict`` rows (``input_snapshot`` = prompt snapshot,
+        ``prompt_hash``, provider/model provenance) and stores via
+        ``repo.add_verdicts`` (§8)."""
+        outcome = self._ai_outcome(scope_type, scope_value, now)
+        prompt = outcome.prompt
+        if prompt is None:
+            # Below ai_min_items — no prompt exists, the AI must not be called.
+            return TrendAnalysisResult(
+                ok=False,
+                insufficient=True,
+                event_count=outcome.event_count,
+                item_count=outcome.item_count,
+            )
+        resolved = self._resolve_ai_service()
+        if resolved is None:
+            return TrendAnalysisResult(
+                ok=False,
+                error_message=NO_AI_CONFIG_TEXT,
+                event_count=outcome.event_count,
+                item_count=outcome.item_count,
+            )
+        service, provider, model = resolved
+        try:
+            parsed = self._analyze_answer(service, prompt)
+            if parsed.error is not None and parsed.error.retryable:
+                # §9.1 bước 5 — retry ĐÚNG MỘT lần theo tín hiệu retryable
+                # của parser (parser không bao giờ tự retry).
+                parsed = self._analyze_answer(service, prompt)
+        except Exception as exc:
+            # Provider lỗi — các adapter đã dịch qua friendly_error() khi raise.
+            return TrendAnalysisResult(
+                ok=False,
+                error_message=str(exc),
+                event_count=outcome.event_count,
+                item_count=outcome.item_count,
+            )
+        if not parsed.ok:
+            # Thất bại cuối (retry cạn hoặc câu trả lời không hợp lệ) — không
+            # lưu verdict rác (§9.1).
+            return TrendAnalysisResult(
+                ok=False,
+                error_message=PARSE_FAIL_TEXT,
+                event_count=outcome.event_count,
+                item_count=outcome.item_count,
+            )
+        verdicts = self._compose_verdicts(scope_type, scope_value, prompt, parsed, provider, model)
+        inserted = self._repo.add_verdicts(verdicts)
+        return TrendAnalysisResult(
+            ok=True,
+            verdicts=tuple(verdicts),
+            inserted=inserted,
+            event_count=outcome.event_count,
+            item_count=outcome.item_count,
+        )
+
+    def verdicts_for(self, scope_type: str, scope_value: str, limit: int) -> list[TrendVerdict]:
+        """Verdict history of one scope, newest first (§8) — the news screen is
+        the ONLY consumer of verdict history (contract §9.2).  ``limit`` is a
+        presentation value of the dialog (B5 — no policy key involved)."""
+        return self._repo.verdicts_for(VerdictScopeType(scope_type), scope_value, limit)
+
+    # --- AI helpers ---------------------------------------------------------------
+
+    def _ai_outcome(
+        self, scope_type: str, scope_value: str, now: datetime | None
+    ) -> TrendPromptOutcome:
+        """The prompt outcome for one scope — the single data-read path shared
+        by the preview and the analysis (they agree on counts and the floor)."""
+        moment = now if now is not None else datetime.now(UTC)
+        events, items = self._ai_rows(scope_type, scope_value, moment)
+        return build_trend_prompt(
+            scope_type=scope_type,
+            scope_value=scope_value,
+            events=events,
+            items=items,
+            now=moment,
+            window_days=self._policy.ai_window_days,
+            horizons=self._policy.ai_horizons,
+            min_items=self._policy.ai_min_items,
+        )
+
+    def _ai_rows(
+        self, scope_type: str, scope_value: str, moment: datetime
+    ) -> tuple[list[CalendarEvent], list[NewsItem]]:
+        """Rows relevant to one scope inside ``ai_window_days``: events and text
+        items touching the scope's currencies, ``excluded=0`` (§9.1 bước 2).
+        The scope value is the dialog's contract (pairs come from the
+        SUPPORTED_SYMBOLS combo — no invented list)."""
+        if scope_type == "currency":
+            currencies = [str(scope_value)]
+        else:
+            currencies = [part.strip() for part in str(scope_value).split("/") if part.strip()]
+        from_utc = _normalize_published_utc(moment - timedelta(days=self._policy.ai_window_days))
+        to_utc = _normalize_published_utc(moment)
+        events = self._repo.events_in_range(from_utc, to_utc, currencies=currencies)
+        items = self._repo.items_in_range(
+            from_utc, to_utc, currencies=currencies, exclude_flagged=True
+        )
+        return list(events), list(items)
+
+    def _resolve_ai_service(self) -> tuple[AIService, str, str] | None:
+        """Resolve the AI service for this turn (khuôn scanner d.720-728): the
+        settings provider, or None when unconfigured / keyless — fail-closed,
+        no call, friendly message (V2 declared)."""
+        if self._ai_config_provider is None:
+            provider = _read_active_ai_provider()
+        else:
+            provider = self._ai_config_provider()
+        if provider is None or not getattr(provider, "api_key", ""):
+            return None
+        name = str(getattr(provider, "provider", ""))
+        model = str(getattr(provider, "model", ""))
+        if self._ai_service is not None:
+            return self._ai_service, name, model
+        return (
+            AIService(
+                AIProviderConfig(
+                    provider=name,
+                    model=model,
+                    api_key=str(getattr(provider, "api_key", "")),
+                    base_url=str(getattr(provider, "base_url", "") or ""),
+                )
+            ),
+            name,
+            model,
+        )
+
+    def _analyze_answer(self, service: object, prompt: TrendPrompt) -> TrendParseOutcome:
+        """One analyze+parse round; the caller owns the retry decision."""
+        raw = service.analyze(prompt.text)  # type: ignore[attr-defined]
+        return parse_trend_verdict(
+            raw,
+            horizons=tuple(self._policy.ai_horizons),
+            evidence_item_ids=prompt.evidence_item_ids,
+        )
+
+    def _compose_verdicts(
+        self,
+        scope_type: str,
+        scope_value: str,
+        prompt: TrendPrompt,
+        parsed: TrendParseOutcome,
+        provider: str,
+        model: str,
+    ) -> list[TrendVerdict]:
+        """Compose the three verdict rows of one accepted answer (§9.1 bước 6 —
+        "composing the three rows is the controller's job (L3.5)")."""
+        created_at = _utc_now()
+        return [
+            TrendVerdict(
+                created_at=created_at,
+                scope_type=VerdictScopeType(scope_type),
+                scope_value=scope_value,
+                horizon=verdict.horizon,
+                direction=verdict.direction,
+                confidence=verdict.confidence,
+                rationale=verdict.rationale,
+                evidence_item_ids=list(verdict.evidence_item_ids),
+                input_snapshot=dict(prompt.snapshot),
+                provider=provider,
+                model=model,
+                prompt_hash=prompt.prompt_hash,
+            )
+            for verdict in parsed.verdicts
+        ]

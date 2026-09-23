@@ -50,6 +50,11 @@ from core.news_models import (
     RateSource,
     StoreState,
     StoreStatus,
+    TrendVerdict,
+    VerdictConfidence,
+    VerdictDirection,
+    VerdictHorizon,
+    VerdictScopeType,
 )
 from core.news_policy import NewsPolicy
 from core.rate_trend import RateTrend
@@ -91,6 +96,7 @@ class FakeRepository:
             items_state=StoreStatus.FRESH,
             rates_state=StoreStatus.FRESH,
         )
+        self.verdict_history: list[TrendVerdict] = []
 
     def _record(self, name: str, args: tuple, kwargs: dict) -> None:
         self.calls.append((name, args, kwargs))
@@ -136,6 +142,10 @@ class FakeRepository:
     def store_state(self) -> StoreState:
         self._record("store_state", (), {})
         return self.state
+
+    def verdicts_for(self, scope_type: VerdictScopeType, scope_value: str, limit: int) -> list[TrendVerdict]:
+        self._record("verdicts_for", (scope_type, scope_value, limit), {})
+        return self.verdict_history
 
 
 class FakeRssProducer:
@@ -743,10 +753,34 @@ class TestReadDelegation:
         assert isinstance(rates[0].latest, RateObservation)
         assert isinstance(controller.store_state(), StoreState)
 
-    def test_verdict_history_is_not_exposed_in_this_batch(self):
-        """Đường AI (kể cả lịch sử verdict) thuộc L3.5 — chưa mở ở L2.7."""
-        controller = _controller()
-        assert not hasattr(controller, "verdicts_for")
+    def test_verdict_history_delegation_is_exposed(self):
+        """L3.5 — delegation lịch sử verdict mở (chuỗi §9.2 + screen_design
+        d.1637 + plan d.328); pin thời hạn L2.7 tự khai "thuộc L3.5" được đảo
+        theo duyệt Tech Lead phương án A — đính chính prompt, không phải quyết
+        định Owner."""
+        repo = FakeRepository()
+        repo.verdict_history = [
+            TrendVerdict(
+                created_at="2026-09-23T10:00:00Z",
+                scope_type=VerdictScopeType.PAIR,
+                scope_value="EUR/USD",
+                horizon=VerdictHorizon.SHORT,
+                direction=VerdictDirection.BULLISH,
+                confidence=VerdictConfidence.HIGH,
+                rationale="Lập luận tiếng Việt.",
+                evidence_item_ids=[1],
+                input_snapshot={"window_days": 7, "event_count": 0, "item_count": 3},
+                provider="deepseek",
+                model="deepseek-v4-flash",
+                prompt_hash="x",
+            )
+        ]
+        controller = _controller(repo=repo)
+
+        assert hasattr(controller, "verdicts_for")  # (a) đường đã mở
+        history = controller.verdicts_for("pair", "EUR/USD", 5)
+        assert repo.calls == [("verdicts_for", ("pair", "EUR/USD", 5), {})]  # (b) truyền đúng
+        assert history is repo.verdict_history  # (c) trả nguyên trạng list[TrendVerdict] (C3)
 
 
 # ---- 5. worker (bọc concurrency, không logic nghiệp vụ) -------------------------

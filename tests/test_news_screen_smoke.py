@@ -395,7 +395,7 @@ class TestScreenLayout:
 
         assert _combo_texts(screen, screen.currency_combo) == ["Tất cả đồng tiền", "EUR", "JPY", "USD"]
 
-    def test_toolbar_buttons_are_wired_only_for_this_batch(self):
+    def test_toolbar_buttons_are_wired_per_lot(self):
         screen = _screen()
         live = {
             news.TOOLBAR_LABELS[0],  # Lấy lịch kinh tế (L3.3)
@@ -403,6 +403,7 @@ class TestScreenLayout:
             news.TOOLBAR_LABELS[2],  # Nhập tin (L3.3)
             news.TOOLBAR_LABELS[3],  # Xuất file (L3.4)
             news.TOOLBAR_LABELS[4],  # Nhập file (L3.4)
+            news.TOOLBAR_LABELS[5],  # AI nhận định xu hướng (L3.5)
         }
 
         assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
@@ -410,9 +411,6 @@ class TestScreenLayout:
             if label in live:
                 assert button.isEnabled() is True
                 assert button.receivers(button.clicked) >= 1
-            else:
-                assert button.isEnabled() is False  # AI nhận định xu hướng (L3.5)
-                assert button.receivers(button.clicked) == 0
 
     def test_table_headers_are_rendered(self):
         screen = _screen()

@@ -330,7 +330,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   `friendly_error()`; parser hỏng → retry một lần → thất bại không lưu verdict rác.
 - **Test:** insufficient_data không phát lời gọi AI (fake service đếm call); verdict lưu đủ `input_snapshot_json` + `prompt_hash`; advisory label tồn tại; dialog smoke offscreen.
 - **Phụ thuộc:** L3.1, L3.2, L2.7 · **Điểm review:** ranh giới §9.2 — không screen/worker nào khác đọc verdict; AI chạy worker thật (không processEvents đồng bộ).
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L3.6 — Bật lượt fetch khởi động + retention purge (S)
 - **File mới:** mở rộng `controllers/news_controller.py` (+ cờ phiên), test bổ sung.
@@ -476,7 +476,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | IMPLEMENTED |
 | L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | IMPLEMENTED |
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | IMPLEMENTED |
-| L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | PLANNED |
+| L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | IMPLEMENTED |
 | L3.6 | Bật fetch khởi động + retention purge | 3 | L3.3, L2.7 | S | PLANNED |
 | L4.1 | Cổng E2 (verdict isolation + import-linter + quét chuỗi) | 4 | L3.5 | M | PLANNED |
 | L4.2 | Nghiệm thu tổng + đồng bộ tài liệu + xóa plan | 4 | tất cả | M | PLANNED |
