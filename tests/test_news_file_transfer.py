@@ -238,6 +238,7 @@ class TestRoundTrip:
         assert got.actual_updated_at == "2026-09-20T16:00:00Z"
         assert got.raw_json == '{"country": "USD", "title": "FOMC Meeting"}'
         assert got.fetched_at == "2026-09-20T15:00:00Z"
+        assert got.source is EventSource.IMPORT  # §10 — import đóng dấu source
 
         items = target.items_in_range(WIDE_FROM, None, exclude_flagged=False)
         by_title = {item.title: item for item in items}
@@ -249,13 +250,13 @@ class TestRoundTrip:
             published_utc="2026-09-21T08:00:00Z",
         )
         assert head.kind is NewsItemKind.HEADLINE
-        assert head.source is NewsItemSource.GOOGLE_NEWS_RSS
+        assert head.source is NewsItemSource.IMPORT  # §10 — import đóng dấu source
         assert head.currencies == ["USD"]
         assert head.fetched_at == "2026-09-21T09:00:00Z"
         assert head.excluded is False
         note = by_title["Ghi chú nội bộ"]
         assert note.kind is NewsItemKind.USER_NOTE
-        assert note.source is NewsItemSource.USER
+        assert note.source is NewsItemSource.IMPORT  # kể cả note user — §10
         assert note.excluded is True
         assert note.content == "Theo dõi thêm."
 
@@ -349,7 +350,92 @@ class TestImportActualRule:
 
 
 # ---------------------------------------------------------------------------
-# 5. Trùng trong file + dedupe items tính lại qua hàm core
+# 5. Bảo vệ dòng source=user (quy tắc merge 2) + cột source không được đọc
+# ---------------------------------------------------------------------------
+
+
+class TestUserRowProtection:
+    def test_import_does_not_overwrite_an_existing_user_item_and_does_not_count_it(self, tmp_path):
+        note = _item(
+            title="Ghi chú nội bộ",
+            published_utc="2026-09-22T07:00:00Z",
+            url=None,
+            kind=NewsItemKind.USER_NOTE,
+            source=NewsItemSource.USER,
+            content="Bản ghi của tôi",
+        )
+        target = _repo(tmp_path / "target")
+        target.upsert_items([note])
+        # File chứa 2 item: một trùng dedupe với note (nội dung khác), một mới.
+        source = _repo(tmp_path / "src")
+        source.upsert_items(
+            [
+                _item(
+                    title="Ghi chú nội bộ",
+                    published_utc="2026-09-22T07:00:00Z",
+                    url=None,
+                    content="Nội dung khác trong file",
+                ),
+                _item(),
+            ]
+        )
+        result = export_news_range(source, WIDE_FROM, WIDE_TO, "csv", out_dir=tmp_path / "out")
+
+        imported = import_news_file(target, result.path)
+        # Merge rule 2: dòng user hiện hữu bị từ chối — repository không trả số
+        # đếm cho nó, tóm tắt chỉ có item mới (không bịa số đếm thứ tư).
+        assert (imported.inserted, imported.updated, imported.skipped_duplicates) == (1, 0, 0)
+
+        rows = {
+            item.title: item
+            for item in target.items_in_range(WIDE_FROM, None, exclude_flagged=False)
+        }
+        kept = rows["Ghi chú nội bộ"]
+        assert kept.source is NewsItemSource.USER  # nguyên vẹn
+        assert kept.content == "Bản ghi của tôi"  # nội dung không đổi
+        assert rows["Fed signals patience"].source is NewsItemSource.IMPORT
+        assert len(target.items_in_range(WIDE_FROM, None)) == 2
+
+    def test_import_does_not_overwrite_an_existing_user_event_and_does_not_count_it(self, tmp_path):
+        target = _repo(tmp_path / "target")
+        target.upsert_events(
+            [_event(dedupe_key="ev-user", title="FOMC", actual="5.50%", source=EventSource.USER)]
+        )
+        source = _repo(tmp_path / "src")
+        source.upsert_events(
+            [_event(dedupe_key="ev-user", title="FOMC", actual="5.75%", forecast="6.00%")]
+        )
+        result = export_news_range(source, WIDE_FROM, WIDE_TO, "json", out_dir=tmp_path / "out")
+
+        imported = import_news_file(target, result.path)
+        assert (imported.inserted, imported.updated, imported.skipped_duplicates) == (0, 0, 0)
+
+        got = target.events_in_range(WIDE_FROM, WIDE_TO)[0]
+        assert got.source is EventSource.USER
+        assert got.actual == "5.50%"
+        assert got.forecast == "5.50%"  # không cột nào bị cập nhật (merge rule 2)
+
+    def test_file_source_column_is_never_read(self, tmp_path):
+        """§10 — đường nhập không đọc cột `source`; giá trị không hợp lệ trong
+        file vẫn nhập được và mọi bản ghi được đóng dấu ``source=import``."""
+        source = _repo(tmp_path / "src")
+        source.upsert_items([_item()])
+        result = export_news_range(source, WIDE_FROM, WIDE_TO, "csv", out_dir=tmp_path / "out")
+        path = Path(result.path)
+
+        def corrupt_source(rows):
+            rows[0]["source"] = "!!!not-an-enum!!!"
+
+        _rewrite_csv(path, corrupt_source)
+
+        target = _repo(tmp_path / "dst")
+        imported = import_news_file(target, str(path))
+        assert imported.inserted == 1
+        assert target.items_in_range(WIDE_FROM, None)[0].source is NewsItemSource.IMPORT
+
+
+# ---------------------------------------------------------------------------
+# 6. Trùng trong file + dedupe items tính lại qua hàm core
 # ---------------------------------------------------------------------------
 
 
@@ -435,7 +521,7 @@ class TestImportDedupe:
 
 
 # ---------------------------------------------------------------------------
-# 6. File hỏng → lỗi thân thiện, DB nguyên vẹn
+# 7. File hỏng → lỗi thân thiện, DB nguyên vẹn
 # ---------------------------------------------------------------------------
 
 
@@ -524,7 +610,7 @@ class TestImportErrors:
 
 
 # ---------------------------------------------------------------------------
-# 7. Import không ghi ingest_runs (enum producer §4.6 đóng băng — R6)
+# 8. Import không ghi ingest_runs (enum producer §4.6 đóng băng — R6)
 # ---------------------------------------------------------------------------
 
 

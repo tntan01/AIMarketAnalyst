@@ -2,15 +2,17 @@
 
 Contract section 10 + screen_design "Hành vi xuất file"/"Hành vi nhập file":
 export CSV/JSON of the filtered date range into ``config/paths.exports_dir()``;
-import upserts by ``dedupe_key`` with ``source=import`` (compensating days the
-app did not run); import must NOT overwrite an ``actual`` already recorded from
-an authoritative source (ff_json/ff_html) unless the destination row is
-currently ``stale``.  This module is the **sole owner** of every file
-serializer/parser — the screen never parses ("Nguyên tắc", screen_design).
-Data crossing this boundary is the typed ``core/news_models`` dataclasses (C3 —
-results are typed, never bare dicts); staleness classification comes from
-`core/news_freshness` through the repository's section-8 read (S1 — this module
-installs no classification of its own).
+import upserts by ``dedupe_key`` and stamps **EVERY** restored record with
+``source=import`` (both tables — the file never dictates provenance, contract
+section 10; enum values ``import`` are frozen, V3(a)); import must NOT
+overwrite an ``actual`` already recorded from an authoritative source
+(ff_json/ff_html) unless the destination row is currently ``stale``.  This
+module is the **sole owner** of every file serializer/parser — the screen never
+parses ("Nguyên tắc", screen_design).  Data crossing this boundary is the typed
+``core/news_models`` dataclasses (C3 — results are typed, never bare dicts);
+staleness classification comes from `core/news_freshness` through the
+repository's section-8 read (S1 — this module installs no classification of its
+own).
 
 Declared readings (V2 — decided here on purpose, recorded in the commit message):
 
@@ -19,6 +21,12 @@ Declared readings (V2 — decided here on purpose, recorded in the commit messag
   discriminator (``event``/``item``); a single-file round-trip restores both
   ``news_events`` and ``news_items`` of the filtered range.  ``id`` is never
   exported (assigned by the database on insert, section 5).
+* **The file's ``source`` column is NEVER read on import** — it is only written
+  by export for readability/provenance (export carries the pre-import source).
+  Import stamps ``EventSource.IMPORT`` / ``NewsItemSource.IMPORT`` on every
+  record regardless of the file, so a file cannot impersonate a producer and
+  the round-trip file always re-imports (the column is neither required nor
+  validated on import).
 * **Event dedupe keys come from the file verbatim** (the section 4.2 formula
   owner stays ``ff_calendar_producer``; QD-4 scopes section 4.3 only); **item
   dedupe keys are ALWAYS recomputed** via
@@ -26,15 +34,15 @@ Declared readings (V2 — decided here on purpose, recorded in the commit messag
   (QD-4 clause 3 — the import path calls the SAME core function; no third copy,
   and a drifted key inside a file is healed).
 * **Required fields** — event rows: ``record_type/event_time_utc/currency/
-  title/impact/source/dedupe_key``; item rows: ``record_type/kind/title/
-  published_utc/source``.  A missing ``day_key`` is derived from
-  ``event_time_utc``; ``status`` cannot be pinned by a file (the repository
-  always re-classifies at upsert via ``news_freshness``, B4) — the file only
-  supplies the SCHEDULED model placeholder.  A row missing a required field /
-  carrying an unparseable value / an invalid enum **fails the WHOLE file**
-  (``NewsFileTransferError``, nothing is written — DB stays intact): a
-  round-trip file is always complete and a partial write would silently corrupt
-  the user's data.
+  title/impact/dedupe_key``; item rows: ``record_type/kind/title/
+  published_utc``.  ``source`` is NOT required (stamped on import).  A missing
+  ``day_key`` is derived from ``event_time_utc``; ``status`` cannot be pinned by
+  a file (the repository always re-classifies at upsert via ``news_freshness``,
+  B4) — the file only supplies the SCHEDULED model placeholder.  A row missing
+  a required field / carrying an unparseable value / an invalid enum **fails
+  the WHOLE file** (``NewsFileTransferError``, nothing is written — DB stays
+  intact): a round-trip file is always complete and a partial write would
+  silently corrupt the user's data.
 * **"Bỏ qua trùng" (screen_design d.1601) = rows of the import file whose
   ``dedupe_key`` already appeared earlier IN THE SAME FILE**; the first
   occurrence is imported, later ones are counted into ``skipped_duplicates``.
@@ -47,6 +55,12 @@ Declared readings (V2 — decided here on purpose, recorded in the commit messag
   (the other columns still update); ``stale`` rows (actual NULL, past grace)
   and rows imported earlier take the file's actual.  ``source=user`` rows are
   protected by the repository's merge rule 2.
+* **Summary counts** mirror the repository's typed results
+  (``UpsertEventsResult``/``UpsertItemsResult`` — C3): a destination row
+  rejected by merge rule 2 (existing ``source=user``) is written neither as
+  inserted nor updated, and the repository reports nothing about it, so it is
+  simply absent from the three summary numbers (screen_design d.1601) —
+  no fourth count is invented.
 * An empty file (no records) is rejected with a friendly error — an export of a
   real filtered range always carries records.
 """
@@ -380,7 +394,6 @@ def _event_from_row(row: dict[str, object], row_no: int) -> CalendarEvent:
     currency = _required_cell(row, "currency", row_no)
     title = _required_cell(row, "title", row_no)
     impact = _enum_cell(row, "impact", EventImpact, row_no)
-    source = _enum_cell(row, "source", EventSource, row_no)
     dedupe_key = _required_cell(row, "dedupe_key", row_no)
     day_key = str(row.get("day_key") or "").strip() or event_time_utc[:10]
     raw_status = str(row.get("status") or "").strip()
@@ -396,7 +409,9 @@ def _event_from_row(row: dict[str, object], row_no: int) -> CalendarEvent:
         title=title,
         impact=impact,
         status=status or EventStatus.SCHEDULED,
-        source=source,
+        # Contract §10: import stamps source=import on EVERY record — the
+        # file's `source` column is never read (no provenance impersonation).
+        source=EventSource.IMPORT,
         dedupe_key=dedupe_key,
         fetched_at=_time_cell(row, "fetched_at", row_no, required=False) or "",
         forecast=_empty_to_none(row.get("forecast")),
@@ -409,7 +424,6 @@ def _event_from_row(row: dict[str, object], row_no: int) -> CalendarEvent:
 
 def _item_from_row(row: dict[str, object], row_no: int) -> NewsItem:
     kind = _enum_cell(row, "kind", NewsItemKind, row_no)
-    source = _enum_cell(row, "source", NewsItemSource, row_no)
     title = _required_cell(row, "title", row_no)
     published_utc = _time_cell(row, "published_utc", row_no, required=True)
     url = _empty_to_none(row.get("url"))
@@ -425,7 +439,9 @@ def _item_from_row(row: dict[str, object], row_no: int) -> NewsItem:
         )
     return NewsItem(
         kind=kind,
-        source=source,
+        # Contract §10: import stamps source=import on EVERY record — the
+        # file's `source` column is never read (no provenance impersonation).
+        source=NewsItemSource.IMPORT,
         title=title,
         published_utc=published_utc,
         currencies=currencies,
