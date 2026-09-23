@@ -30,9 +30,9 @@ Phần mềm nên gồm **9 màn hình chính** trong thiết kế (mục 2/3 Si
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
-| 10 | Tin tức (Quản lý tin) — **PLANNED** | Quản lý database tin tức: xem/lọc, nhập tay, xuất/nhập file; cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
+| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** | Quản lý database tin tức: xem/lọc, nhập tay, xuất/nhập file; cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
 
-Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **14 màn hình/tabs chức năng** (mục 14 trạng thái PLANNED):
+Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **14 màn hình/tabs chức năng** (mục 14 triển khai tại ca Tin tức):
 
 1. Dashboard (Bảng điều khiển tổng quan)
 2. Single Analysis Input (Màn hình nhập phân tích một mã)
@@ -47,7 +47,7 @@ Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài �
 11. Settings - Display (Cài đặt hiển thị)
 12. Settings - Advanced (Cài đặt nâng cao)
 13. Orders (Quản lý lệnh) — tab riêng trong sidebar
-14. Tin tức (Quản lý tin) — tab riêng trong sidebar, **PLANNED** theo ca Tin tức
+14. Tin tức (Quản lý tin) — tab riêng trong sidebar, **IMPLEMENTED** (ca Tin tức)
 
 ---
 
@@ -1409,7 +1409,7 @@ AI Market Analyst (Nhà phân tích thị trường AI)
 │   ├── Journal List (Danh sách nhật ký)
 │   └── Journal Detail (Chi tiết nhật ký)
 │
-├── Tin tức (Quản lý tin) — PLANNED
+├── Tin tức (Quản lý tin) — IMPLEMENTED
 │
 └── Settings (Cài đặt)
     ├── AI (Trí tuệ nhân tạo)
@@ -1513,7 +1513,7 @@ Khi scanner mở lệnh qua auto-trade, hệ thống tự động đăng ký BE 
 
 ---
 
-## News Screen (Quản lý tin) — PLANNED (ca Tin tức, Bước 3)
+## News Screen (Quản lý tin) — IMPLEMENTED (ca Tin tức, Bước 3)
 
 > Contract dữ liệu — nguồn thẩm quyền duy nhất:
 > [`../news/news-architecture.md`](../news/news-architecture.md) (ban hành
@@ -1659,5 +1659,5 @@ Lịch sử nhận định của phạm vi này (mới nhất trước)
   (ranh giới cứng, contract mục 9.2).
 - Dùng component chung (`card`, `action_button`, `configure_table`,
   ResponsiveRow/Grid) và tuân thủ contract kích thước cửa sổ tối thiểu 800×500.
-- Trạng thái PLANNED: triển khai ở Bước 3 của lộ trình trong contract; sửa
-  đặc tả này phải cùng commit với code (D2).
+- Trạng thái: **IMPLEMENTED** (triển khai ở Bước 3 của lộ trình trong contract,
+  nghiệm thu 23/09/2026); sửa đặc tả này phải cùng commit với code (D2).

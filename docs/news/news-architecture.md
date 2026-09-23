@@ -488,7 +488,7 @@ Viết **sau** khi phần Tin tức được duyệt và triển khai (theo quy�
 
 | Tài liệu | Nội dung tiếp nhận từ miền này |
 |---|---|
-| `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen, trạng thái PLANNED). **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
+| `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026 + IMPLEMENTED 23/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen — ca Tin tức đã nghiệm thu). **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
 | `docs/macro/macro_score_architecture.md` | Mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên |
 | `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | MacroGate/news gate dùng `event_actual_or_lookup`; khẳng định verdict AI ngoài guard chain |
 | `docs/architecture/architecture.md` | Bản đồ module/luồng dữ liệu mới; xóa mô tả `news_service.py` cũ |
@@ -556,12 +556,18 @@ Nơi lưu giá trị chính thức lúc runtime: `config/news_policy.json` (mụ
    chỉ `policy_version`/`prompt_hash` là khóa provenance máy đọc — ngoại lệ
    V3(a), đóng băng, không xuất hiện trên UI.
 
-## 16. Lộ trình triển khai (đăng ký 21/09/2026)
+## 16. Lộ trình triển khai (đăng ký 21/09/2026 — HOÀN TẤT 23/09/2026)
+
+**Trạng thái hoàn tất (23/09/2026):** toàn bộ 4 bước + 21 lô của tầng dữ liệu
+Tin tức đã IMPLEMENTED và nghiệm thu (battery + smoke + build `.exe` + boot
+bản đóng gói xanh; cổng E2 hoạt động). Tuyên bố **READY-FOR-CONNECT** cho hai
+ca đấu nối: (a) Dashboard và (b) vĩ mô — đặc tả riêng, lập plan riêng theo
+§3.1 khoản 3–4. Sổ nợ kiến trúc **#1 chưa đóng** — chỉ đóng tại đấu nối (b)
+khi xóa `news_service.py` + `forex_factory_client.py` (§3.1 khoản 4, B7).
 
 Bốn bước, đúng thứ tự; chi tiết thực thi (sản phẩm, Definition of Done, ràng
-buộc, rủi ro, quyết định mở) tại plan đang mở
-[`../plans/news-data-layer-plan.md`](../plans/news-data-layer-plan.md) (vòng
-đời D3 — xóa khi hoàn tất ca):
+buộc, rủi ro, quyết định mở) nằm trong plan triển khai của ca — **đã đóng và
+xóa theo vòng đời D3 sau khi hoàn tất ca**; lịch sử còn trong Git.
 
 | Bước | Nội dung | Điều khoản neo |
 |---|---|---|

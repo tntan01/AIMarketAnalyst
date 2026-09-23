@@ -96,7 +96,7 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `services/yahoo_chart_fetcher.py` — Yahoo fallback
 - `services/forex_factory_client.py` + `macro_*` — tin tức/vĩ mô
 
-**Tin tức (tầng dữ liệu) — PLANNED theo lộ trình trong [`news/news-architecture.md`](../news/news-architecture.md) (ban hành 20/09/2026)**
+**Tin tức (tầng dữ liệu) — IMPLEMENTED, READY-FOR-CONNECT (nghiệm thu 23/09/2026; contract [`news/news-architecture.md`](../news/news-architecture.md))**
 - `services/news_repository.py` — điểm truy cập duy nhất (đọc + ghi) vào `news.db`
 - `services/news_producers/ff_calendar_producer.py` — bộ sản xuất sự kiện lịch kinh tế ForexFactory (lượt tự động khi khởi động / nút "Lấy lịch kinh tế" + "Cập nhật actual" / lookup actual theo yêu cầu — không poll)
 - `services/news_producers/rss_producer.py` — bộ sản xuất tin văn bản (headline, phát biểu chính thức)
@@ -421,7 +421,7 @@ Các màn hình chính trong ứng dụng:
 * `journal_screen.py`: Nhật ký giao dịch; tổng quan, thống kê và bộ lọc.
 * `journal_detail_screen.py`: Chi tiết một giao dịch trong nhật ký.
 * `orders_screen.py`: Quản lý lệnh/vị thế đang mở và trạng thái Order Management (SL/BE/trailing).
-* `news_screen.py`: Quản lý tin — **PLANNED** (ca Tin tức, Bước 3): xem/lọc tin từ `news.db`, nhập/sửa tin tay, xuất/nhập file CSV-JSON, cửa sổ AI nhận định xu hướng (chỉ tham khảo). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
+* `news_screen.py`: Quản lý tin — **IMPLEMENTED** (ca Tin tức, Bước 3): xem/lọc tin từ `news.db`, nhập/sửa tin tay, xuất/nhập file CSV-JSON, cửa sổ AI nhận định xu hướng (chỉ tham khảo). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
 * `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao; gồm kill-switch VIX pair-aware mặc định OFF.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.
@@ -522,7 +522,7 @@ UI phải luôn có trạng thái loading, progress, cancel hoặc retry phù h�
 Phân biệt rõ:
 
 * App assets: icon, font, QSS, sample data; readonly sau khi đóng gói.
-* User data: settings, API key metadata, journal database, news database (`news.db` — PLANNED theo ca Tin tức), exports (gồm kết xuất tin tức), logs; nằm trong `%APPDATA%/ai-market-analyst/`.
+* User data: settings, API key metadata, journal database, news database (`news.db` — tầng dữ liệu Tin tức, READY-FOR-CONNECT 23/09/2026), exports (gồm kết xuất tin tức), logs; nằm trong `%APPDATA%/ai-market-analyst/`.
 * Cache: dữ liệu tạm có thể xóa được.
 * VIX sensitivity: mutable map nằm trong app-data và được ưu tiên; validated
   `data/vix_pair_sensitivity.json` trong package là readonly fallback. Map hết
