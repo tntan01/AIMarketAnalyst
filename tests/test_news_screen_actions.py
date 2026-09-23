@@ -10,7 +10,10 @@ Kiểm các nhánh hành vi của lô (screen_design "Hành vi lấy dữ liệu
 * sửa/xóa chỉ ``source=user``; toggle Loại trừ mọi dòng tin văn bản; dòng sự
   kiện không có;
 * empty state: 2 nút gợi ý enabled và đi đúng 2 đường hành vi;
-* ranh giới lô: 3 nút còn lại vẫn disabled.
+* ranh giới lô: 1 nút còn lại (AI nhận định) vẫn disabled.
+* 2 nút "Xuất file"/"Nhập file" (L3.4): chạy nền + disable khi chạy; xuất báo
+  đường dẫn file, nhập báo tóm tắt mới/cập nhật/bỏ qua trùng, đọc lại bảng;
+  chọn format/file hủy → không gọi controller.
 
 Controller là **fake có kiểu** (trả mô hình miền thật ``core/news_models`` +
 kết quả thật của ``controllers/news_controller`` / ``ff_calendar_producer``),
@@ -53,6 +56,7 @@ from core.news_models import (
     NewsItemSource,
 )
 from core.news_policy import load_news_policy
+from services.news_file_transfer import FileExportResult, FileImportResult
 from services.news_producers.ff_calendar_producer import (
     HtmlCalendarFetchError,
     HtmlCalendarResult,
@@ -145,6 +149,18 @@ class FakeNewsController:
         self.delete_calls: list[int] = []
         self.json_gate: threading.Event | None = None
         self.note_result = UserNoteResult(errors=())
+        self.export_calls: list[tuple[str, str, str]] = []
+        self.import_calls: list[str] = []
+        self.export_gate: threading.Event | None = None
+        self.import_gate: threading.Event | None = None
+        self.export_error: Exception | None = None
+        self.import_error: Exception | None = None
+        self.export_result = FileExportResult(
+            path="C:/tmp/exports/news_export_test.csv",
+            events_written=2,
+            items_written=1,
+        )
+        self.import_result = FileImportResult(inserted=3, updated=2, skipped_duplicates=1)
         self.json_result = JsonCalendarResult(
             inserted=3,
             updated=2,
@@ -200,6 +216,22 @@ class FakeNewsController:
     def update_user_note(self, item_id, **kwargs):
         self.update_calls.append((item_id, kwargs))
         return self.note_result
+
+    def export_news_range(self, from_utc, to_utc, fmt):
+        self.export_calls.append((from_utc, to_utc, fmt))
+        if self.export_gate is not None:
+            self.export_gate.wait(timeout=5)
+        if self.export_error is not None:
+            raise self.export_error
+        return self.export_result
+
+    def import_news_file(self, path):
+        self.import_calls.append(path)
+        if self.import_gate is not None:
+            self.import_gate.wait(timeout=5)
+        if self.import_error is not None:
+            raise self.import_error
+        return self.import_result
 
 
 _SCREENS: list[NewsScreen] = []
@@ -711,15 +743,122 @@ class TestEmptyStateAndBoundaries:
 
     def test_remaining_toolbar_buttons_stay_disabled(self):
         screen = _screen()
-        live = {news.TOOLBAR_LABELS[0], news.TOOLBAR_LABELS[1], news.TOOLBAR_LABELS[2]}
+        live = {
+            news.TOOLBAR_LABELS[0],
+            news.TOOLBAR_LABELS[1],
+            news.TOOLBAR_LABELS[2],
+            news.TOOLBAR_LABELS[3],
+            news.TOOLBAR_LABELS[4],
+        }
         for label, button in screen.toolbar_buttons.items():
             if label in live:
                 continue
-            assert button.isEnabled() is False
+            assert button.isEnabled() is False  # AI nhận định xu hướng (L3.5)
             assert button.receivers(button.clicked) == 0
 
 
-# ---- 7. ranh giới mạng của màn (điểm review lô) --------------------------------
+# ---- 8. nút "Xuất file"/"Nhập file" (L3.4) ------------------------------------
+
+
+class TestExportFileButton:
+    def test_exports_in_background_disables_and_reports_path(self):
+        controller = FakeNewsController()
+        controller.export_gate = threading.Event()
+        screen = _screen(controller)
+        reads_before = len(controller.item_calls)
+
+        captured: list[str] = []
+        _dismiss_box(captured, news.CLOSE_TEXT)
+        screen._choose_export_format = lambda: "csv"  # type: ignore[method-assign]
+        screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].click()
+
+        assert _wait_until(lambda: not screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].isEnabled())
+        assert news.LOADING_TEXT in screen.status_message.toPlainText()
+
+        controller.export_gate.set()
+        assert _wait_until(lambda: captured), "không thấy thông báo kết quả xuất"
+        assert "C:/tmp/exports/news_export_test.csv" in captured[0]  # đường dẫn file
+        assert len(controller.export_calls) == 1
+        from_utc, to_utc, fmt = controller.export_calls[0]
+        assert fmt == "csv"
+        assert from_utc and to_utc  # khoảng ngày đang lọc của màn
+        assert _wait_until(lambda: screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].isEnabled())
+        assert len(controller.item_calls) == reads_before  # xuất không đọc lại bảng
+
+    def test_export_error_reports_cause(self):
+        controller = FakeNewsController()
+        controller.export_error = RuntimeError("boom")
+        screen = _screen(controller)
+
+        captured: list[str] = []
+        _dismiss_box(captured, news.CLOSE_TEXT)
+        screen._choose_export_format = lambda: "json"  # type: ignore[method-assign]
+        screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].click()
+
+        assert _wait_until(lambda: captured)
+        assert "boom" in captured[0]
+
+    def test_cancel_format_box_exports_nothing(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+
+        screen._choose_export_format = lambda: None  # type: ignore[method-assign]
+        screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].click()
+        _app().processEvents()
+
+        assert controller.export_calls == []
+        assert screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].isEnabled() is True
+
+
+class TestImportFileButton:
+    def test_imports_the_picked_file_in_background_and_reports_summary(self):
+        controller = FakeNewsController()
+        controller.import_gate = threading.Event()
+        screen = _screen(controller)
+        reads_before = len(controller.item_calls)
+
+        captured: list[str] = []
+        _dismiss_box(captured, news.CLOSE_TEXT)
+        screen._pick_import_path = lambda: "C:/tmp/news_export_test.csv"  # type: ignore[method-assign]
+        screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].click()
+
+        assert _wait_until(lambda: not screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].isEnabled())
+        assert news.LOADING_TEXT in screen.status_message.toPlainText()
+
+        controller.import_gate.set()
+        assert _wait_until(lambda: captured), "không thấy thông báo kết quả nhập"
+        text = captured[0]
+        assert "3" in text and "2" in text and "1" in text  # mới / cập nhật / bỏ qua trùng
+        assert controller.import_calls == ["C:/tmp/news_export_test.csv"]
+        assert _wait_until(lambda: screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].isEnabled())
+        assert _wait_until(lambda: len(controller.item_calls) > reads_before)  # đọc lại bảng
+
+    def test_import_error_reports_cause(self):
+        controller = FakeNewsController()
+        controller.import_error = RuntimeError("boom")
+        screen = _screen(controller)
+
+        captured: list[str] = []
+        _dismiss_box(captured, news.CLOSE_TEXT)
+        screen._pick_import_path = lambda: "C:/tmp/bad.csv"  # type: ignore[method-assign]
+        screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].click()
+
+        assert _wait_until(lambda: captured)
+        assert "boom" in captured[0]
+
+    def test_cancel_picker_imports_nothing(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+
+        screen._pick_import_path = lambda: ""  # type: ignore[method-assign]
+        screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].click()
+        _app().processEvents()
+
+        assert controller.import_calls == []
+        assert screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].isEnabled() is True
+
+
+# ---- 9. ranh giới mạng của màn (điểm review lô) --------------------------------
 
 
 def test_screen_has_no_direct_network_or_producer_import():

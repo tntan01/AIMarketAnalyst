@@ -41,6 +41,14 @@ Delivered by this batch (plan L2.7):
 belongs to the AI dialog batch (L3.5; contract §9.2 names the news screen and
 this controller as the only allowed consumers).
 
+**File transfer (plan L3.4):** ``export_news_range``/``import_news_file`` are
+thin delegations to ``services/news_file_transfer.py`` — the single owner of
+every CSV/JSON serializer/parser (the screen owns no parsing, screen_design
+"Nguyên tắc").  Both return the service's typed results; the import path
+computes ``NewsItem.dedupe_key`` through the §4.3 formula owner
+``core/news_models.news_item_dedupe_key`` (QĐ-4) and never writes an
+``ingest_runs`` row (the frozen §4.6 producer enum has no ``import`` value, R6).
+
 Declared readings (V2 — decided here on purpose, not silently):
 
 * §6.4 makes the form supply "loại tin" while the write in the same sentence
@@ -57,7 +65,6 @@ Declared readings (V2 — decided here on purpose, not silently):
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -72,6 +79,7 @@ from core.news_models import (
     NewsItemKind,
     NewsItemSource,
     StoreState,
+    news_item_dedupe_key,
 )
 from core.news_policy import NewsPolicy, load_news_policy
 from services.news_producers.ff_calendar_producer import (
@@ -81,6 +89,12 @@ from services.news_producers.ff_calendar_producer import (
 )
 from services.news_producers.fred_rate_producer import FredRateProducer, RateFetchResult
 from services.news_producers.rss_producer import RssCollectionResult, RssProducer
+from services.news_file_transfer import (
+    FileExportResult,
+    FileImportResult,
+    export_news_range,
+    import_news_file,
+)
 from services.news_repository import CurrencyRateTrend, NewsRepository, UpsertItemsResult
 
 __all__ = ["NewsController", "UserNoteFieldError", "UserNoteResult"]
@@ -236,14 +250,6 @@ def _normalize_currencies(value: object) -> list[str] | None:
     return [str(code).strip() for code in value if str(code).strip()]
 
 
-def _user_note_dedupe_key(*, url: str | None, title: str, published_utc: str) -> str:
-    """The §4.3 dedupe key of a ``news_items`` row: hash of the url, else hash of
-    ``title + published_utc`` (stable sha256 hex — the same formula the
-    ``rss_producer`` converter applies at its boundary; §4.3 defines it once)."""
-    seed = url if url else f"{title}|{published_utc}"
-    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
-
-
 def _utc_now() -> str:
     """Current UTC time in the khuôn ISO-8601 form: ``YYYY-MM-DDTHH:MM:SSZ``."""
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -385,7 +391,7 @@ class NewsController:
             title=draft.content,
             published_utc=draft.published_utc,
             currencies=draft.currencies,
-            dedupe_key=_user_note_dedupe_key(
+            dedupe_key=news_item_dedupe_key(
                 url=draft.url,
                 title=draft.content,
                 published_utc=draft.published_utc,
@@ -466,6 +472,25 @@ class NewsController:
             url=url,
             impact_hint=impact_hint,
         )
+
+    # --- xuất/nhập file (contract §10, plan L3.4) -----------------------------------
+
+    def export_news_range(self, from_utc: str, to_utc: str, file_format: str) -> FileExportResult:
+        """Export the filtered date range to a CSV/JSON file (contract §10,
+        screen_design "Hành vi xuất file") — delegated to the file-transfer
+        service, which owns every serializer/parser and writes into
+        ``config/paths.exports_dir()`` (§10).  The screen never parses files
+        (screen_design "Nguyên tắc")."""
+        return export_news_range(self._repo, from_utc, to_utc, file_format)
+
+    def import_news_file(self, path: str) -> FileImportResult:
+        """Import a CSV/JSON file (contract §10, screen_design "Hành vi nhập
+        file") — delegated to the file-transfer service: upsert by
+        ``dedupe_key`` with ``source=import``, no ``ingest_runs`` row (the §4.6
+        producer enum is frozen and carries no ``import`` value, R6), and an
+        actual already recorded from an authoritative source (FF) is only
+        overwritten when the destination row is stale (contract §10)."""
+        return import_news_file(self._repo, path)
 
     # --- reads served to consumers (§3 role, §8 read contract) --------------------
 

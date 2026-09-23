@@ -314,7 +314,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   progress + tóm tắt mới/cập nhật/bỏ-qua-trùng.
 - **Test:** round-trip CSV/JSON; import đè đúng quy tắc `stale`; file hỏng → lỗi thân thiện, DB nguyên vẹn; QĐ-4 khoản 5 — test `dedupe_key` hiện có của L2.5/L2.7 xanh nguyên trạng + test thuần cho hàm mới.
 - **Phụ thuộc:** L3.2 · **Điểm review:** parse/serialize không nằm trong UI; đường dẫn export qua `paths.py`; QĐ-4 — grep toàn miền Tin tức chỉ còn ĐÚNG MỘT định nghĩa công thức §4.3 (trong `core/news_models.py`).
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L3.5 — Dialog AI nhận định xu hướng (L)
 - **File mới:** mở rộng `news_screen.py` (dialog) + `controllers/news_controller.py` (đường AI: đọc dữ liệu → đếm → builder → `AIService.analyze` trong worker → parser → retry một lần → `add_verdicts`), `tests/test_news_ai_dialog.py`.
@@ -475,7 +475,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | IMPLEMENTED |
 | L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | IMPLEMENTED |
 | L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | IMPLEMENTED |
-| L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | PLANNED |
+| L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | IMPLEMENTED |
 | L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | PLANNED |
 | L3.6 | Bật fetch khởi động + retention purge | 3 | L3.3, L2.7 | S | PLANNED |
 | L4.1 | Cổng E2 (verdict isolation + import-linter + quét chuỗi) | 4 | L3.5 | M | PLANNED |

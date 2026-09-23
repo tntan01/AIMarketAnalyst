@@ -21,9 +21,26 @@ tự đặt thêm.  Bốn chuỗi ngoài bảng đó đều có nguồn đã đ�
 * ``LOADING_TEXT = "Đang tải..."`` — chuỗi có sẵn của repo
   (``dashboard_screen.py``) cho chỉ báo loading mà screen_design yêu cầu.
 
-**Ngoài phạm vi lô này** (V2 — không vẽ kèm hành vi): 3 nút thanh công cụ
-"Xuất file", "Nhập file", "AI nhận định xu hướng" vẫn để **disabled** — hành vi
-của chúng thuộc L3.4/L3.5.
+**Lô L3.4 — xuất/nhập file CSV-JSON** (contract §10; screen_design "Hành vi
+xuất file" d.1603-1607 + "Hành vi nhập file" d.1600-1601 + "Trạng thái tải và
+rỗng" d.1618-1619): nút "Xuất file"/"Nhập file" chạy theo đúng khuôn luồng nền
+của 2 nút ForexFactory (D10 — slot thread riêng, disable khi chạy, chỉ báo tiến
+trình, thông báo kết thúc).  Màn chỉ đi qua ``NewsController`` → mọi
+serializer/parser nằm trong ``services/news_file_transfer.py`` (UI không tự
+parse — "Nguyên tắc"); "AI nhận định xu hướng" VẪN disabled (L3.5).
+
+Khai báo đọc-hiểu (V2):
+
+* Xuất theo **khoảng ngày đang lọc** (d.1605); đường dẫn file hiện trong thông
+  báo (d.1607).  Xuất/nhập chạy trên slot thread riêng ``_transfer_thread``
+  (khuôn ``_fetch_thread`` L3.3) — không đụng lượt đọc bảng.
+* Cơ chế chọn format chưa được tài liệu ghim (d.1605 "CSV hoặc JSON") → hộp hai
+  nút "CSV"/"JSON" (chuỗi nguyên văn của chính d.1605); cơ chế chọn file nhập →
+  ``QFileDialog.getOpenFileName`` với bộ lọc ``*.csv;*.json``, thư mục mở đầu là
+  thư mục exports chuẩn.
+* Khi một lượt xuất/nhập chạy, disable toàn bộ nhóm nút ghi (2 nút FF + Nhập
+  tin + Xuất + Nhập) — khuôn D10; khi kết thúc re-enable; sau lượt NHẬP đọc lại
+  bảng (dữ liệu đã đổi), sau lượt XUẤT không cần.
 
 **Lô L3.3 — hành vi tương tác** (screen_design "Hành vi lấy dữ liệu ForexFactory
 (2 nút)" + "Hành vi nhập/sửa tin"; contract §6.1/§6.4):
@@ -110,6 +127,7 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QDateTimeEdit,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHeaderView,
@@ -125,6 +143,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config.paths import exports_dir
 from core.news_models import (
     CalendarEvent,
     EventImpact,
@@ -282,6 +301,27 @@ FETCH_BUSY_LABELS: tuple[str, ...] = (
     TOOLBAR_LABELS[0],
     TOOLBAR_LABELS[1],
     TOOLBAR_LABELS[2],
+)
+
+# Nhãn hành vi lô L3.4 — xuất/nhập file (screen_design d.1600-1607 + d.1618-1619;
+# mọi chuỗi có nguồn đăng ký, không phát minh nhãn).
+EXPORT_TEXT = TOOLBAR_LABELS[3]  # "Xuất file" (nhãn nút đã đăng ký)
+IMPORT_TEXT = TOOLBAR_LABELS[4]  # "Nhập file" (nhãn nút đã đăng ký)
+# Câu mời hộp chọn định dạng — nguyên văn screen_design d.1605.
+EXPORT_FORMAT_PROMPT = "Xuất CSV hoặc JSON theo khoảng ngày đang lọc"
+EXPORT_SUCCESS_TEXT = "Đã xuất file: {path}"  # d.1607: "kết thúc hiện đường dẫn file trong thông báo"
+EXPORT_ERROR_TEXT = "Xuất file thất bại: {detail}"
+IMPORT_SUCCESS_TEXT = (
+    "Nhập file hoàn tất: {inserted} bản ghi mới, {updated} bản ghi cập nhật, {skipped} bỏ qua trùng."
+)  # d.1601: "số bản ghi mới / cập nhật / bỏ qua trùng"
+IMPORT_ERROR_TEXT = "Nhập file thất bại: {detail}"
+IMPORT_DIALOG_TITLE = IMPORT_TEXT
+
+# Nhóm nút disable khi một lượt xuất/nhập đang chạy (khuôn D10 mở rộng từ
+# FETCH_BUSY_LABELS: thêm 2 nút của chính lô).
+TRANSFER_BUSY_LABELS: tuple[str, ...] = FETCH_BUSY_LABELS + (
+    TOOLBAR_LABELS[3],
+    TOOLBAR_LABELS[4],
 )
 
 EVENT_ROW = "event"
@@ -907,6 +947,12 @@ class NewsScreen(QWidget):
         self._fetch_thread: QThread | None = None
         self._fetch_worker: NewsReadWorker | None = None
         self._fetch_channel: str | None = None
+        # Slot thread riêng cho xuất/nhập file (L3.4 — khuôn D10).
+        self._transfer_thread: QThread | None = None
+        self._transfer_worker: NewsReadWorker | None = None
+        self._transfer_channel: str | None = None
+        self._transfer_fmt: str = ""
+        self._transfer_path: str = ""
         self.toolbar_buttons: dict[str, QPushButton] = {}
         self.empty_state_buttons: dict[str, QPushButton] = {}
         self.setObjectName("FormScreen")
@@ -1081,8 +1127,8 @@ class NewsScreen(QWidget):
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — 3 nút của lô L3.3 được nối hành vi; 3 nút còn lại
-        ("Xuất file"/"Nhập file"/"AI nhận định xu hướng") vẫn disabled (L3.4/L3.5)."""
+        """Nút thanh công cụ — 5 nút hành vi đã nối (L3.3 + L3.4);
+        "AI nhận định xu hướng" vẫn disabled (L3.5)."""
         button = action_button(label)
         if label == TOOLBAR_LABELS[0]:
             button.clicked.connect(lambda: self._start_fetch("json"))
@@ -1090,6 +1136,10 @@ class NewsScreen(QWidget):
             button.clicked.connect(lambda: self._start_fetch("html"))
         elif label == TOOLBAR_LABELS[2]:
             button.clicked.connect(lambda: self.open_note_dialog())
+        elif label == TOOLBAR_LABELS[3]:
+            button.clicked.connect(self._on_export_clicked)
+        elif label == TOOLBAR_LABELS[4]:
+            button.clicked.connect(self._on_import_clicked)
         else:
             button.setEnabled(False)
         self.toolbar_buttons[label] = button
@@ -1144,6 +1194,7 @@ class NewsScreen(QWidget):
         """Đóng màn thì dừng luôn worker nền (không để thread sống ngoài màn)."""
         self.shutdown()
         self._shutdown_fetch()
+        self._shutdown_transfer()
         super().closeEvent(event)
 
     def _shutdown_fetch(self) -> None:
@@ -1152,6 +1203,148 @@ class NewsScreen(QWidget):
         self._fetch_thread = None
         self._fetch_worker = None
         self._fetch_channel = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except RuntimeError:
+            pass
+
+    # -- xuất/nhập file (§10, screen_design "Hành vi xuất file"/"Hành vi nhập file") --
+
+    def _on_export_clicked(self) -> None:
+        """Nút "Xuất file": chọn định dạng rồi chạy lượt xuất nền (L3.4)."""
+        fmt = self._choose_export_format()
+        if fmt is not None:
+            self._start_export(fmt)
+
+    def _choose_export_format(self) -> str | None:
+        """Hộp chọn định dạng xuất — hai nút CSV/JSON (V2: cơ chế chọn format
+        chưa được tài liệu ghim; chuỗi nguyên văn screen_design d.1605)."""
+        box = QMessageBox(self)
+        box.setWindowTitle(EXPORT_TEXT)
+        box.setText(EXPORT_FORMAT_PROMPT)
+        csv_button = action_button("CSV", icon="save", icon_role="text", icon_disabled_role="text")
+        box.addButton(csv_button, QMessageBox.ButtonRole.AcceptRole)
+        json_button = action_button("JSON", icon="save", icon_role="text", icon_disabled_role="text")
+        box.addButton(json_button, QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(
+            action_button(CANCEL_TEXT, icon="x", icon_role="text", icon_disabled_role="text"),
+            QMessageBox.ButtonRole.RejectRole,
+        )
+        box.exec()
+        if box.clickedButton() is csv_button:
+            return "csv"
+        if box.clickedButton() is json_button:
+            return "json"
+        return None
+
+    def _start_export(self, fmt: str) -> None:
+        """Chạy lượt xuất nền theo khuôn ``_start_fetch`` (D10): disable nhóm
+        nút ghi + chỉ báo tiến trình; kết thúc re-enable và thông báo đường dẫn
+        file (d.1607).  Màn chỉ gọi ``NewsController`` — parse/serialize nằm
+        trong ``services/news_file_transfer.py``."""
+        if self.news_controller is None:
+            return
+        self._transfer_channel = "export"
+        self._transfer_fmt = fmt
+        self._start_transfer_worker(self._export_task)
+
+    def _export_task(self):
+        from_utc, to_utc = self._window_bounds()
+        return self.news_controller.export_news_range(from_utc, to_utc, self._transfer_fmt)
+
+    def _on_import_clicked(self) -> None:
+        """Nút "Nhập file": chọn file rồi chạy lượt nhập nền (L3.4)."""
+        path = self._pick_import_path()
+        if path:
+            self._start_import(path)
+
+    def _pick_import_path(self) -> str:
+        """Chọn file nhập qua hộp chọn file (V2: cơ chế chọn file chưa được tài
+        liệu ghim) — thư mục mở đầu là thư mục exports chuẩn."""
+        path, _selected = QFileDialog.getOpenFileName(
+            self,
+            IMPORT_DIALOG_TITLE,
+            str(exports_dir()),
+            "CSV (*.csv);;JSON (*.json)",
+        )
+        return path
+
+    def _start_import(self, path: str) -> None:
+        """Chạy lượt nhập nền theo khuôn ``_start_fetch`` (D10); kết thúc hiện
+        tóm tắt mới/cập nhật/bỏ qua trùng (d.1601) rồi đọc lại bảng."""
+        if self.news_controller is None:
+            return
+        self._transfer_channel = "import"
+        self._transfer_path = path
+        self._start_transfer_worker(self._import_task)
+
+    def _import_task(self):
+        return self.news_controller.import_news_file(self._transfer_path)
+
+    def _start_transfer_worker(self, task) -> None:
+        self._set_transfer_busy(True)
+        self._set_status(LOADING_TEXT)
+        thread = QThread(self)
+        worker = NewsReadWorker(task)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_transfer_succeeded)
+        worker.failed.connect(self._on_transfer_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self._on_transfer_worker_done)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._forget_transfer_thread(thread))
+        self._transfer_thread = thread
+        self._transfer_worker = worker
+        thread.start()
+
+    def _forget_transfer_thread(self, thread: QThread) -> None:
+        if self._transfer_thread is thread:
+            self._transfer_thread = None
+            self._transfer_worker = None
+
+    def _set_transfer_busy(self, busy: bool) -> None:
+        """Disable/enable nhóm nút ghi khi một lượt xuất/nhập chạy (khuôn D10)."""
+        for label in TRANSFER_BUSY_LABELS:
+            for button in (self.toolbar_buttons.get(label), self.empty_state_buttons.get(label)):
+                if button is not None:
+                    button.setEnabled(not busy)
+
+    def _on_transfer_worker_done(self) -> None:
+        self._set_transfer_busy(False)
+        if self._transfer_channel == "import":
+            self.reload_rows()  # dữ liệu đã đổi sau lượt nhập
+
+    def _on_transfer_succeeded(self, payload) -> None:
+        if self._transfer_channel == "export":
+            self._notify(EXPORT_TEXT, EXPORT_SUCCESS_TEXT.format(path=payload.path))
+        else:
+            self._notify(
+                IMPORT_TEXT,
+                IMPORT_SUCCESS_TEXT.format(
+                    inserted=payload.inserted,
+                    updated=payload.updated,
+                    skipped=payload.skipped_duplicates,
+                ),
+            )
+
+    def _on_transfer_failed(self, message: str) -> None:
+        if self._transfer_channel == "export":
+            self._notify(EXPORT_TEXT, EXPORT_ERROR_TEXT.format(detail=message))
+        else:
+            self._notify(IMPORT_TEXT, IMPORT_ERROR_TEXT.format(detail=message))
+
+    def _shutdown_transfer(self) -> None:
+        """Dừng lượt xuất/nhập nền (L3.4) — slot thread riêng, chờ có giới hạn."""
+        thread = self._transfer_thread
+        self._transfer_thread = None
+        self._transfer_worker = None
+        self._transfer_channel = None
         if thread is None:
             return
         try:

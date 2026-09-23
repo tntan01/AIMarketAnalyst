@@ -35,5 +35,11 @@ def news_db_path() -> Path:
     return app_data_dir() / "news.db"
 
 
+def exports_dir() -> Path:
+    """Thư mục xuất file của màn Quản lý tin — %APPDATA%/ai-market-analyst/exports/
+    (contract news §10: dữ liệu người dùng, không ghi vào thư mục cài đặt)."""
+    return app_data_dir() / "exports"
+
+
 def log_path() -> Path:
     return app_data_dir() / "logs" / "app.log"

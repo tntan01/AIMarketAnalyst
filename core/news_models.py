@@ -24,7 +24,9 @@ Governance:
   ``core/news_freshness.py``, batch L1.4; rate-trend derivation lives in
   ``core/rate_trend.py``, batch L1.5), no I/O, no display strings (L2/L3).
   A ``core/`` module never imports services/ui/Qt and never touches the
-  network or the filesystem.
+  network or the filesystem.  The one exception is the ``news_items``
+  ``dedupe_key`` derivation (contract section 4.3) - QD-4 (plan section 5)
+  makes this module its sole owner, a pure key function on the model fields.
 * **Enums are frozen strings.** Every closed value set of sections 4.2-4.6 is
   one ``str``-mixin enum whose members equal the persisted string exactly -
   the same sets the L1.2 CHECK constraints pin, so a member change here fails
@@ -39,6 +41,7 @@ Governance:
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from enum import Enum
 
@@ -162,6 +165,18 @@ class NewsItem:
     speaker_role: str | None = None
     excluded: bool = False
     id: int | None = None
+
+
+def news_item_dedupe_key(*, url: str | None, title: str, published_utc: str) -> str:
+    """Section 4.3 formula - the ``dedupe_key`` of a ``news_items`` row: hash
+    of the url, else hash of ``title + published_utc`` (stable sha256 hex).
+
+    Sole owner of this formula (QD-4, contract section 11b): ``rss_producer``
+    and ``news_controller`` delegate here and the file-import path of
+    ``news_file_transfer`` calls the same function - a third copy is banned.
+    Pure function (L2 - no I/O)."""
+    seed = url if url else f"{title}|{published_utc}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 
 
 # --- interest_rates enums (section 4.4) ------------------------------------

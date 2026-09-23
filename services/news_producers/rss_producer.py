@@ -46,7 +46,6 @@ Governance:
 
 from __future__ import annotations
 
-import hashlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -63,6 +62,7 @@ from core.news_models import (
     NewsItem,
     NewsItemKind,
     NewsItemSource,
+    news_item_dedupe_key,
 )
 from core.news_policy import NewsPolicy, load_news_policy
 from services.calendar_helpers import clean_text, parse_event_time
@@ -207,11 +207,10 @@ def _collection_status(successful_sources: int, attempted_sources: int) -> Inges
 
 
 def _dedupe_key(*, url: str | None, title: str, published_utc: str) -> str:
-    """Persisted ``NewsItem.dedupe_key`` per contract §4.3: hash of the url,
-    else hash of ``title + published_utc`` (stable sha256 hex — same khuôn as
-    the calendar producer)."""
-    seed = url if url else f"{title}|{published_utc}"
-    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    """Thin delegation to the sole owner of the section 4.3 formula (QD-4) —
+    ``core.news_models.news_item_dedupe_key`` — no formula lives here; the name
+    stays so the pinned L2.5 test keeps passing unchanged."""
+    return news_item_dedupe_key(url=url, title=title, published_utc=published_utc)
 
 
 class RssProducer:
