@@ -1,0 +1,40 @@
+; Dependency-direction gate of the News domain (E2 gate, part (b) - plan batch L4.1).
+;
+; Authority: docs/news/news-architecture.md section 9.2(b) + section 14 ("Cong E2");
+; docs/architecture/architecture-rules.md E2 + L1 (ui -> controllers -> core <- services).
+;
+; NOTE: this file must stay pure ASCII - import-linter's INI reader opens it with the
+; platform locale encoding (cp1252 on Windows), so non-ASCII bytes break the tool.
+;
+; Scope is the MINIMAL News-domain scope (B6 - legacy violations of older code are not
+; pulled into this gate): only the six core/ modules of the domain are sources, and the
+; contract forbids them from importing the outer layers or PyQt6.
+
+[importlinter]
+root_packages =
+    core
+    services
+    controllers
+    ui
+    workers
+include_external_packages = True
+
+[importlinter:contract:news-core-independence]
+name = News core must not depend on outer layers or PyQt6
+type = forbidden
+; The six core/ modules of the News domain (news_policy, news_models, news_freshness,
+; rate_trend, trend_prompt_builder, trend_verdict_parser). Listed explicitly: this tool
+; only accepts whole-segment wildcards, and core.* would pull legacy core modules
+; (which do import services/ui) into the gate, breaking the minimal scope required by B6.
+source_modules =
+    core.news_policy
+    core.news_models
+    core.news_freshness
+    core.rate_trend
+    core.trend_prompt_builder
+    core.trend_verdict_parser
+forbidden_modules =
+    services
+    ui
+    controllers
+    PyQt6

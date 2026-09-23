@@ -531,7 +531,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | IMPLEMENTED |
 | L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | IMPLEMENTED |
 | L3.6 | Bật fetch khởi động + retention purge | 3 | L3.3, L2.7 | S | IMPLEMENTED |
-| L4.1 | Cổng E2 (verdict isolation + import-linter + quét chuỗi) | 4 | L3.5 | M | PLANNED |
+| L4.1 | Cổng E2 (verdict isolation + import-linter + quét chuỗi) | 4 | L3.5 | M | IMPLEMENTED |
 | L4.2 | Nghiệm thu tổng + đồng bộ tài liệu + xóa plan | 4 | tất cả | M | PLANNED |
 
 ## Phụ lục — Khuôn prompt giao lô chuẩn (Tech Lead dùng cho mọi lô)
