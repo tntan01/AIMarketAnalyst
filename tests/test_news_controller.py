@@ -58,6 +58,10 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy
 from core.rate_trend import RateTrend
+from services.news_producers.ff_calendar_producer import (
+    HtmlCalendarResult,
+    JsonCalendarResult,
+)
 from services.news_repository import (
     CurrencyRateTrend,
     NewsRepository,
@@ -86,6 +90,8 @@ class FakeRepository:
         self.record_run_result = 42
         self.set_excluded_result = 1
         self.delete_user_note_result = 1
+        self.purge_calls: list[int] = []
+        self.purge_result = 3
         self.events: list[CalendarEvent] = []
         self.pending: list[CalendarEvent] = []
         self.event: CalendarEvent | None = None
@@ -100,6 +106,11 @@ class FakeRepository:
 
     def _record(self, name: str, args: tuple, kwargs: dict) -> None:
         self.calls.append((name, args, kwargs))
+
+    def purge_expired_runs(self, retention_days: int) -> int:
+        self._record("purge_expired_runs", (retention_days,), {})
+        self.purge_calls.append(retention_days)
+        return self.purge_result
 
     def upsert_items(self, items: list[NewsItem]) -> UpsertItemsResult:
         self._record("upsert_items", (items,), {})
@@ -180,15 +191,56 @@ class FakeRateProducer:
 
 
 class FakeFfProducer:
-    """Typed fake of ``ff_calendar_producer`` — records the on-demand lookups."""
+    """Typed fake of ``ff_calendar_producer`` — records the on-demand lookups
+    and counts the two shared channel calls (JSON calendar + HTML actual) so
+    the startup turn (L3.6) can be exercised without any network."""
 
     def __init__(self, result: CalendarEvent | None = None) -> None:
         self.lookups: list[int] = []
         self.result = result
+        self.json_calls = 0
+        self.html_calls = 0
+        self.html_nows: list[datetime | None] = []
 
     def lookup_event_actual(self, event_id: int) -> CalendarEvent | None:
         self.lookups.append(event_id)
         return self.result
+
+    def fetch_calendar_json(self) -> JsonCalendarResult:
+        self.json_calls += 1
+        return _json_result()
+
+    def fetch_actual_html(self, now: datetime | None = None) -> HtmlCalendarResult:
+        self.html_calls += 1
+        self.html_nows.append(now)
+        return _html_result()
+
+
+def _json_result() -> JsonCalendarResult:
+    from services.news_producers.ff_calendar_producer import JsonCalendarResult
+
+    return JsonCalendarResult(
+        inserted=2,
+        updated=1,
+        conflicts=(),
+        run_status=IngestRunStatus.OK,
+        run_id=31,
+        feed_errors=(),
+    )
+
+
+def _html_result() -> HtmlCalendarResult:
+    from services.news_producers.ff_calendar_producer import HtmlCalendarResult
+
+    return HtmlCalendarResult(
+        pending_count=1,
+        weeks_fetched=("this",),
+        written=1,
+        conflicts=(),
+        run_status=IngestRunStatus.OK,
+        run_id=32,
+        fetch_errors=(),
+    )
 
 
 class FakeController:
@@ -430,6 +482,97 @@ class TestOnDemandLookupSeam:
 
         assert ff.lookups == []
         assert result is not None and result.id == stored.id
+
+
+# ---- 2b. lượt khởi động (§6.1 lượt 1, plan L3.6) --------------------------------
+
+
+class TestStartupTurn:
+    def test_startup_turn_runs_purge_then_json_then_html_once(self):
+        """The boot hook runs the full §6.1 lượt 1 turn: purge first (retention
+        from the policy key, R4), then the shared JSON calendar channel, then
+        the shared targeted HTML actual channel."""
+        repo = FakeRepository()
+        ff = FakeFfProducer()
+        policy = _policy(ingest_runs_retention_days=21)
+        controller = _controller(repo=repo, ff=ff, policy=policy)
+
+        result = controller.run_startup_turn()
+
+        assert result.ran is True
+        assert repo.purge_calls == [21]  # retention passed by the controller (R4)
+        assert ff.json_calls == 1
+        assert ff.html_calls == 1
+        assert isinstance(result.json_result, JsonCalendarResult)
+        assert isinstance(result.html_result, HtmlCalendarResult)
+        assert result.purged_runs == repo.purge_result
+        # Order: the boot turn purges before any fetch.
+        purge_index = next(i for i, (name, _, _) in enumerate(repo.calls) if name == "purge_expired_runs")
+        assert purge_index == 0
+
+    def test_startup_turn_fetches_only_once_per_session(self):
+        """Session flag (khuôn ``_auto_scanned_this_session`` của Scanner): a
+        second call is a typed no-op — no extra fetch, no extra purge."""
+        repo = FakeRepository()
+        ff = FakeFfProducer()
+        controller = _controller(repo=repo, ff=ff)
+
+        first = controller.run_startup_turn()
+        second = controller.run_startup_turn()
+
+        assert first.ran is True
+        assert second.ran is False
+        assert ff.json_calls == 1
+        assert ff.html_calls == 1
+        assert repo.purge_calls == [30]  # policy default _policy()
+
+    def test_startup_turn_purges_only_expired_runs_keeps_content(self, tmp_path):
+        """Libre retention on a real repository (plan L3.6 test 2): only the
+        expired ``ingest_runs`` rows are deleted; news items, events and
+        verdicts are never touched (contract §4.6)."""
+        repo = _repo(tmp_path)
+        # One ingest run below the retention window (finished 100 days ago)
+        # and one fresh run.
+        old = (datetime.now(UTC) - timedelta(days=100)).isoformat(timespec="seconds").replace("+00:00", "Z")
+        fresh = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+        repo.record_run(IngestRun(
+            producer=IngestProducer.FF_CRAWLER, started_at=old, finished_at=old,
+            status=IngestRunStatus.OK, items_written=1,
+        ))
+        repo.record_run(IngestRun(
+            producer=IngestProducer.RSS, started_at=fresh, finished_at=fresh,
+            status=IngestRunStatus.OK, items_written=2,
+        ))
+        # News content that must survive the purge.
+        repo.upsert_items([_auto_item("keep-item")])
+        repo.upsert_events([_stale_event()])
+        repo.add_verdicts([TrendVerdict(
+            created_at=fresh,
+            scope_type=VerdictScopeType.PAIR,
+            scope_value="EUR/USD",
+            horizon=VerdictHorizon.SHORT,
+            direction=VerdictDirection.BULLISH,
+            confidence=VerdictConfidence.MEDIUM,
+            rationale="Lập luận tiếng Việt.",
+            evidence_item_ids=[1],
+            input_snapshot={"window_days": 7, "event_count": 0, "item_count": 1},
+            provider="deepseek",
+            model="deepseek-v4-flash",
+            prompt_hash="x",
+        )])
+        ff = FakeFfProducer()
+        controller = _controller(repo=repo, ff=ff)
+
+        result = controller.run_startup_turn()
+
+        assert result.ran is True
+        assert result.purged_runs == 1
+        rows = _rows(tmp_path / "news.db", "SELECT * FROM ingest_runs")
+        assert len(rows) == 1
+        assert rows[0]["producer"] == IngestProducer.RSS.value
+        assert len(_rows(tmp_path / "news.db", "SELECT * FROM news_items")) == 1
+        assert len(_rows(tmp_path / "news.db", "SELECT * FROM news_events")) == 1
+        assert len(_rows(tmp_path / "news.db", "SELECT * FROM ai_trend_verdicts")) == 1
 
 
 # ---- 3. nhập tay (§6.4) ---------------------------------------------------------

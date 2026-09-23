@@ -36,6 +36,14 @@ Delivered by this batch (plan L2.7):
   network itself; the producer owns transport and its ``on_demand_lookup``
   ``ingest_runs`` row.
 
+**App-startup turn (plan L3.6):** ``run_startup_turn`` implements contract
+§6.1 lượt 1 (one turn per session, no FF timer) — purge expired ``ingest_runs``
+(retention from the policy key, §4.6) then run the shared JSON calendar channel
+(this week + next week) and the shared targeted HTML actual channel for
+``events_pending_actual``; the ``_fetched_this_session`` session flag (khuôn
+``_auto_scanned_this_session`` của Scanner) makes repeated calls no-ops so the
+boot hook in ``main.py`` (QĐ-5) never fetches twice.
+
 **File transfer (plan L3.4):** ``export_news_range``/``import_news_file`` are
 thin delegations to ``services/news_file_transfer.py`` — the single owner of
 every CSV/JSON serializer/parser (the screen owns no parsing, screen_design
@@ -118,6 +126,7 @@ from services.news_repository import CurrencyRateTrend, NewsRepository, UpsertIt
 __all__ = [
     "AiScopePreview",
     "NewsController",
+    "StartupTurnResult",
     "TrendAnalysisResult",
     "UserNoteFieldError",
     "UserNoteResult",
@@ -216,6 +225,30 @@ class TrendAnalysisResult:
     event_count: int = 0
     item_count: int = 0
     error_message: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Typed result of the app-startup turn (plan L3.6 — C3, no bare dict)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class StartupTurnResult:
+    """Typed outcome of the app-startup turn (contract §6.1 lượt 1, plan L3.6).
+
+    ``ran`` is False when the turn was skipped because this session already
+    ran it (the ``_fetched_this_session`` guard — exactly one turn per session,
+    no timer/poll FF is ever created).  When it ran: ``purged_runs`` is the
+    number of expired ``ingest_runs`` rows the retention policy removed
+    (contract §4.6 — only the operational log; news and verdicts are never
+    touched) and ``json_result``/``html_result`` the typed outcomes of the two
+    ForexFactory channels of the turn (JSON this week + next week, then HTML
+    actuals targeted for ``events_pending_actual``)."""
+
+    ran: bool
+    purged_runs: int = 0
+    json_result: JsonCalendarResult | None = None
+    html_result: HtmlCalendarResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +423,10 @@ class NewsController:
         # analyze turn (khuôn scanner_controller d.720-728).
         self._ai_service = ai_service
         self._ai_config_provider = ai_config_provider
+        # Session guard of the app-startup turn (plan L3.6, khuôn
+        # ``_auto_scanned_this_session`` của Scanner): the hook in ``main.py``
+        # runs the §6.1 lượt 1 turn exactly once per session.
+        self._fetched_this_session = False
 
     # --- producer schedule per policy (§6.1 lượt 1-3, §7 keys) --------------------
 
@@ -445,6 +482,40 @@ class NewsController:
         producer targets only the weekly HTML pages of the pending events and
         returns the typed summary + errors (never retried — §6.1 anti-abuse)."""
         return self._ff_producer.fetch_actual_html(now)
+
+    def run_startup_turn(self, *, now: datetime | None = None) -> StartupTurnResult:
+        """Run the app-startup turn (contract §6.1 lượt 1, plan L3.6) — once per
+        session.
+
+        The hook in ``main.py`` calls this at boot (QĐ-5, plan L3.6); the
+        ``_fetched_this_session`` session guard (khuôn ``_auto_scanned_this_session``
+        của Scanner) makes every further call a typed no-op, so exactly one turn
+        happens per session and **no FF timer or poll is ever created** (§6.1 —
+        ForexFactory is button/startup/lookup only).  The turn itself:
+
+        1. purges expired ``ingest_runs`` — retention read from the policy key
+           ``ingest_runs_retention_days`` via the loader (R4, contract §4.6:
+           only the operational log; news and verdicts are never touched);
+        2. fetches the JSON calendar (this week + next week) — the shared
+           channel path of the "Lấy lịch kinh tế" button (§6.1 lượt 1/2, plan
+           L3.3);
+        3. fetches HTML actuals targeted for ``events_pending_actual`` — the
+           shared targeted path of the "Cập nhật actual" button (§6.1 lượt 1/3).
+
+        All network transport stays in the producer (this layer delegates, C3 —
+        no display string, no retry added)."""
+        if self._fetched_this_session:
+            return StartupTurnResult(ran=False)
+        self._fetched_this_session = True
+        purged = self._repo.purge_expired_runs(self._policy.ingest_runs_retention_days)
+        json_result = self.fetch_calendar_json()
+        html_result = self.fetch_actual_html(now)
+        return StartupTurnResult(
+            ran=True,
+            purged_runs=purged,
+            json_result=json_result,
+            html_result=html_result,
+        )
 
     # --- manual entry (§6.4) ------------------------------------------------------
 
