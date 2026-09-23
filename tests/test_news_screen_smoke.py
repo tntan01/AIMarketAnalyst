@@ -395,13 +395,22 @@ class TestScreenLayout:
 
         assert _combo_texts(screen, screen.currency_combo) == ["Tất cả đồng tiền", "EUR", "JPY", "USD"]
 
-    def test_toolbar_buttons_are_drawn_but_not_wired_in_this_batch(self):
+    def test_toolbar_buttons_are_wired_only_for_this_batch(self):
         screen = _screen()
+        live = {
+            news.TOOLBAR_LABELS[0],  # Lấy lịch kinh tế (L3.3)
+            news.TOOLBAR_LABELS[1],  # Cập nhật actual (L3.3)
+            news.TOOLBAR_LABELS[2],  # Nhập tin (L3.3)
+        }
 
         assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
-        for button in screen.toolbar_buttons.values():
-            assert button.isEnabled() is False  # hành vi thuộc L3.3/L3.4/L3.5
-            assert button.receivers(button.clicked) == 0
+        for label, button in screen.toolbar_buttons.items():
+            if label in live:
+                assert button.isEnabled() is True
+                assert button.receivers(button.clicked) >= 1
+            else:
+                assert button.isEnabled() is False  # Xuất/Nhập file (L3.4), AI (L3.5)
+                assert button.receivers(button.clicked) == 0
 
     def test_table_headers_are_rendered(self):
         screen = _screen()
@@ -462,6 +471,9 @@ class TestLoadingAndEmptyState:
         assert screen.status_message.isVisible() is True
         assert screen.empty_actions.isVisible() is True
         assert set(screen.empty_state_buttons) == {"Lấy lịch kinh tế", "Nhập tin"}
+        # Hai nút gợi ý đã bật hành vi ở L3.3 (trước đây disabled).
+        for button in screen.empty_state_buttons.values():
+            assert button.isEnabled() is True
 
     def test_reading_error_is_reported_without_crashing(self):
         screen = _screen()

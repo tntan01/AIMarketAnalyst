@@ -74,7 +74,11 @@ from core.news_models import (
     StoreState,
 )
 from core.news_policy import NewsPolicy, load_news_policy
-from services.news_producers.ff_calendar_producer import FFCalendarProducer
+from services.news_producers.ff_calendar_producer import (
+    FFCalendarProducer,
+    HtmlCalendarResult,
+    JsonCalendarResult,
+)
 from services.news_producers.fred_rate_producer import FredRateProducer, RateFetchResult
 from services.news_producers.rss_producer import RssCollectionResult, RssProducer
 from services.news_repository import CurrencyRateTrend, NewsRepository, UpsertItemsResult
@@ -323,6 +327,22 @@ class NewsController:
             )
         return self._fred_producer
 
+    # --- ForexFactory button turns (§6.1 lượt 2-3, plan L3.3) ---------------------
+
+    def fetch_calendar_json(self) -> JsonCalendarResult:
+        """Run the "Lấy lịch kinh tế" turn (§6.1 lượt 2) — delegated to
+        ``ff_calendar_producer`` so the network transport stays in the producer
+        and the screen owns no fetch.  The producer always upserts (no
+        "skip-if-exists") and returns the typed summary + errors the button
+        displays (no display string here, L3)."""
+        return self._ff_producer.fetch_calendar_json()
+
+    def fetch_actual_html(self, now: datetime | None = None) -> HtmlCalendarResult:
+        """Run the "Cập nhật actual" turn (§6.1 lượt 3) — delegated; the
+        producer targets only the weekly HTML pages of the pending events and
+        returns the typed summary + errors (never retried — §6.1 anti-abuse)."""
+        return self._ff_producer.fetch_actual_html(now)
+
     # --- manual entry (§6.4) ------------------------------------------------------
 
     def add_user_note(
@@ -403,6 +423,49 @@ class NewsController:
         ``kind=user_note`` guard, so an automatic item is never deleted and the
         call reports 0 rows.  Returns the rows deleted."""
         return self._repo.delete_user_note(item_id)
+
+    def update_user_note(
+        self,
+        item_id: int,
+        *,
+        kind: str | None,
+        published_utc: str | datetime | None,
+        content: str | None,
+        currencies: Sequence[str] | None,
+        url: str | None = None,
+        impact_hint: str | None = None,
+    ) -> UserNoteResult:
+        """Replace one manual note (§6.4) — the "Sửa" path of the news screen.
+
+        The contract §8 has no update-by-id method, so the edit is composed from
+        the write methods it does expose and the §4.3 ``dedupe_key`` formula is
+        NOT copied into the screen (QĐ-4 owns it in ``core/news_models.py``,
+        L3.4).  The draft is validated through the SAME pure path
+        ``add_user_note`` uses **before** anything is removed: a broken draft
+        returns its typed field errors and nothing is written — the existing row
+        is never deleted.  A valid draft deletes the old manual note and writes
+        the replacement through the same ``add_user_note`` path (upsert +
+        ``ingest_runs`` producer ``user``), so it uses only repository methods of
+        §8.  Returns the ``UserNoteResult`` of the new write."""
+        _draft, errors = _validate_user_note(
+            kind=kind,
+            published_utc=published_utc,
+            content=content,
+            currencies=currencies,
+            url=url,
+            impact_hint=impact_hint,
+        )
+        if errors:
+            return UserNoteResult(errors=errors)
+        self.delete_user_note(item_id)
+        return self.add_user_note(
+            kind=kind,
+            published_utc=published_utc,
+            content=content,
+            currencies=currencies,
+            url=url,
+            impact_hint=impact_hint,
+        )
 
     # --- reads served to consumers (§3 role, §8 read contract) --------------------
 

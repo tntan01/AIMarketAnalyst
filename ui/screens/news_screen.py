@@ -21,10 +21,47 @@ tự đặt thêm.  Bốn chuỗi ngoài bảng đó đều có nguồn đã đ�
 * ``LOADING_TEXT = "Đang tải..."`` — chuỗi có sẵn của repo
   (``dashboard_screen.py``) cho chỉ báo loading mà screen_design yêu cầu.
 
-**Ngoài phạm vi lô này** (V2 — không vẽ kèm hành vi): 6 nút thanh công cụ được
-vẽ đúng nhãn đã đăng ký nhưng để **disabled** — hành vi của chúng thuộc L3.3
-(2 nút ForexFactory + nhập tin), L3.4 (xuất/nhập file), L3.5 (AI nhận định);
-hai nút gợi ý trong empty state cũng vậy.  Không có đường ghi nào trong lô này.
+**Ngoài phạm vi lô này** (V2 — không vẽ kèm hành vi): 3 nút thanh công cụ
+"Xuất file", "Nhập file", "AI nhận định xu hướng" vẫn để **disabled** — hành vi
+của chúng thuộc L3.4/L3.5.
+
+**Lô L3.3 — hành vi tương tác** (screen_design "Hành vi lấy dữ liệu ForexFactory
+(2 nút)" + "Hành vi nhập/sửa tin"; contract §6.1/§6.4):
+
+* **2 nút ForexFactory** đi qua ``NewsController`` → ``ff_calendar_producer``
+  (screen_design "Nguyên tắc": UI không gọi thẳng producer, mạng chỉ nằm trong
+  producer).  Lượt fetch chạy trong worker nền riêng (``NewsReadWorker``, slot
+  thread của nút — D10), disable cả 2 nút FF + nút "Nhập tin" khi chạy; kết thúc
+  hiện thông báo có kiểu của result (``QMessageBox`` khuôn ``journal_screen`` —
+  D8) rồi đọc lại bảng qua `reload_rows()`.
+* **Form nhập/sửa ``user_note``** (``UserNoteDialog``): trường bắt buộc giờ
+  đăng/loại tin/nội dung/đồng tiền, tùy chọn mức tác động + URL; thiếu trường
+  bắt buộc → lỗi hiện trên form, KHÔNG gọi controller (không ghi DB); lỗi
+  validate controller trả về hiện đúng từng trường, form không đóng.  Ghi qua
+  ``NewsController.add_user_note``/``update_user_note`` (không tự dựng
+  ``NewsItem``, không tính ``dedupe_key`` — S1/S2).
+* **Sửa/xóa/toggle theo dòng** nằm trong dialog chi tiết dòng (D7 — không thêm
+  nút toolbar, không thêm cột bảng đã đóng băng): tin ``source=user`` có "Sửa"
+  + "Xóa", mọi dòng tin văn bản có toggle "Loại trừ"; dòng sự kiện không có
+  (cờ ``excluded`` chỉ tồn tại ở ``news_items`` — §4.3).  Sau mỗi lượt ghi,
+  bảng đọc lại qua `reload_rows()`.
+
+Khai báo đọc-hiểu lô L3.3 (V2 — bên dưới, xem từng điểm):
+
+* **D2 — giờ đăng theo UTC:** widget giờ của form thu UTC (``Qt.TimeSpec.UTC``),
+  nhất quán với ``_display_time`` của bảng.
+* **D3 — "Loại tin" cố định "Nhập tay":** combo chỉ có ``user_note``, không
+  chào lựa chọn tự động (controller từ chối kind tự động — ``not_manual_note``).
+* **D4 — "Đồng tiền" là danh sách mã:** control cho nhập tự do (phẩy ngăn cách),
+  gợi ý lấy từ chính ``currency_combo`` của màn (không bịa danh sách tiền tệ).
+* **D5 — combo "Mức tác động"** chỉ ``high``/``medium``/``low`` (``ImpactHint``)
+  + mục trống đầu tiên cho trường tùy chọn.
+* **D9 — prefill "Nhập actual bằng tay":** chọn sự kiện đến hạn sớm nhất của
+  tuần bị lỗi từ ``controller.events_pending_actual(now)``; hết sự kiện → form
+  trống; KHÔNG tạo đường ghi nào vào ``news_events``.  Vì UI không được import
+  ``services/`` (L1) nên thẻ tuần Monday–Sunday được soi gương bằng một hàm
+  thuần cục bộ `_ff_week_label` — chỉ dùng cho gợi ý prefill, KHÔNG dùng cho
+  quyết định URL fetch (producer giữ thẩm quyền đó).
 
 Khai báo đọc-hiểu (V2):
 
@@ -56,19 +93,30 @@ Khai báo đọc-hiểu (V2):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, time as clock_time
+from datetime import UTC, datetime, time as clock_time, timedelta
 
-from PyQt6.QtCore import QAbstractTableModel, QDate, QModelIndex, Qt, QThread
+from PyQt6.QtCore import (
+    QAbstractTableModel,
+    QDate,
+    QDateTime,
+    QModelIndex,
+    QTime,
+    Qt,
+    QThread,
+)
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
     QDateEdit,
+    QDateTimeEdit,
     QDialog,
     QFrame,
     QGridLayout,
     QHeaderView,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QMessageBox,
     QPushButton,
     QTextEdit,
     QSizePolicy,
@@ -82,6 +130,7 @@ from core.news_models import (
     EventImpact,
     EventSource,
     EventStatus,
+    ImpactHint,
     NewsItem,
     NewsItemKind,
     NewsItemSource,
@@ -181,6 +230,59 @@ NO_VALUE = "—"
 
 # Nhãn dùng trong dialog chi tiết (đều đã có nguồn: nhãn cột hoặc câu chữ screen_design).
 PROVENANCE_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Giờ fetch", "Liên kết")
+
+# ---------------------------------------------------------------------------
+# Từ điển lô L3.3 — form nhập/sửa tin + 2 nút ForexFactory (screen_design
+# "Hành vi nhập/sửa tin" d.1593-1601 + "Hành vi lấy dữ liệu ForexFactory (2 nút)"
+# d.1574-1591).  Mọi chuỗi ở đây đều có nguồn đã đăng ký; không phát minh nhãn.
+# ---------------------------------------------------------------------------
+
+# Nhãn dialog/nút (nguồn: nhãn nút thanh công cụ đã đăng ký + khối "Bố cục" +
+# chuỗi có sẵn của repo).
+NOTE_DIALOG_TITLE = TOOLBAR_LABELS[2]  # "Nhập tin" (nhãn nút đã đăng ký)
+EDIT_DIALOG_TITLE = "Sửa tin"  # screen_design d.1598 "Sửa/xóa"
+EXCLUDE_TEXT = "Loại trừ"  # screen_design d.1598 "toggle Loại trừ"
+EDIT_TEXT = "Sửa"  # screen_design d.1598 "Sửa/xóa"
+DELETE_TEXT = "Xóa"  # screen_design d.1598 "Sửa/xóa"
+MANUAL_ACTUAL_TEXT = "Nhập actual bằng tay"  # screen_design d.1588 (nguyên văn)
+SAVE_TEXT = "Lưu"  # chuỗi có sẵn repo (settings_screen d.198)
+CANCEL_TEXT = "Hủy"  # chuỗi có sẵn repo (scanner_screen d.2351)
+CLOSE_TEXT = "Đóng"  # chuỗi có sẵn repo (journal_screen d.1885)
+
+# Nhãn trường form (nguyên văn screen_design d.1595-1596).
+FORM_FIELD_LABELS: dict[str, str] = {
+    "published_utc": "Giờ đăng",
+    "kind": "Loại tin",
+    "content": "Nội dung",
+    "currencies": "Đồng tiền",
+    "impact_hint": "Mức tác động",
+    "url": "URL",
+}
+# Ánh xạ mã lý do (máy đọc, ``UserNoteFieldError.reason``) → thông báo tiếng Việt
+# (tầng trình bày — L3; nguồn: controller docstring §6.4 + screen_design d.1597).
+FORM_ERROR_TEXT: dict[str, str] = {
+    "missing": "thiếu trường bắt buộc",
+    "not_manual_note": "chỉ nhận loại tin nhập tay",
+    "invalid_timestamp": "giờ đăng không đọc được",
+    "invalid_currency": "thiếu mã đồng tiền hợp lệ",
+    "invalid_impact_hint": "mức tác động không hợp lệ",
+}
+
+# Câu thông báo kết quả 2 nút (ghép câu chữ screen_design d.1582-1587 + số liệu
+# có kiểu của result — D8).
+FETCH_JSON_TITLE = TOOLBAR_LABELS[0]  # "Lấy lịch kinh tế"
+FETCH_HTML_TITLE = TOOLBAR_LABELS[1]  # "Cập nhật actual"
+JSON_SUCCESS_TEXT = "Đã đồng bộ lịch kinh tế: {inserted} sự kiện mới, {updated} sự kiện cập nhật."
+JSON_ERROR_TEXT = "Lấy lịch kinh tế thất bại: {error_type} — {detail}"
+HTML_SUCCESS_TEXT = "Đã ghi actual cho {written} sự kiện."
+HTML_ERROR_TEXT = "Cập nhật actual thất bại: {error_type} — {detail}"
+
+# Ba hành động bật trong lô này (D10: disable trong lúc một lượt fetch chạy).
+FETCH_BUSY_LABELS: tuple[str, ...] = (
+    TOOLBAR_LABELS[0],
+    TOOLBAR_LABELS[1],
+    TOOLBAR_LABELS[2],
+)
 
 EVENT_ROW = "event"
 ITEM_ROW = "item"
@@ -472,12 +574,324 @@ def _display_time(value: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Gợi ý điền sẵn cho "Nhập actual bằng tay" (D9) — hàm thuần
+# ---------------------------------------------------------------------------
+
+
+def _ff_week_label(day_key: str, now: datetime) -> str | None:
+    """Thẻ tuần ForexFactory (Monday–Sunday) của một ``day_key`` — hàm thuần.
+
+    Soi gương công thức lịch tuần mà ``ff_calendar_producer`` dùng để chọn trang
+    HTML (``this``/``next``/``None``).  UI **không được** import ``services/``
+    (L1) nên thẻ tuần được tính lại tại đây, nhưng **chỉ** để chọn sự kiện điền
+    sẵn cho form "Nhập actual bằng tay" (D9) — quyết định URL fetch vẫn thuộc
+    producer.  Giá trị trả về là chuỗi máy đọc, không phải chuỗi hiển thị.
+    """
+    try:
+        event_date = datetime.strptime(day_key, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    this_monday = now.date() - timedelta(days=now.date().weekday())
+    delta_days = (event_date - this_monday).days
+    if 0 <= delta_days < 7:
+        return "this"
+    if 7 <= delta_days < 14:
+        return "next"
+    return None
+
+
+def suggest_manual_actual_event(
+    pending: list[CalendarEvent], error_week: str = "", now: datetime | None = None
+) -> CalendarEvent | None:
+    """Chọn sự kiện điền sẵn cho "Nhập actual bằng tay" (D9) — hàm thuần.
+
+    Sự kiện đến hạn sớm nhất **của tuần bị lỗi** (``error_week``); không còn sự
+    kiện nào → ``None`` (form mở trống).  Chỉ đọc mốc thời gian — không tạo
+    đường ghi nào vào ``news_events``.
+    """
+    if not pending:
+        return None
+    moment = now or datetime.now(UTC)
+    candidates = pending
+    if error_week:
+        in_week = [
+            event for event in pending if _ff_week_label(event.day_key, moment) == error_week
+        ]
+        if in_week:
+            candidates = in_week
+    return min(candidates, key=lambda event: event.event_time_utc)
+
+
+def _iso_to_qdatetime(value: str) -> QDateTime | None:
+    """Đọc một mốc ISO-8601 (UTC) thành ``QDateTime`` mang wall-time UTC."""
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    moment = moment.astimezone(UTC).replace(tzinfo=None)
+    stamp = QDateTime(QDate(moment.year, moment.month, moment.day), QTime(moment.hour, moment.minute, moment.second))
+    stamp.setTimeSpec(Qt.TimeSpec.UTC)
+    return stamp
+
+
+# ---------------------------------------------------------------------------
+# Form nhập/sửa tin ``user_note`` (screen_design "Hành vi nhập/sửa tin", §6.4)
+# ---------------------------------------------------------------------------
+
+
+class UserNoteDialog(QDialog):
+    """Form nhập/sửa một tin ``user_note`` — validate hiện lỗi NGAY TRÊN FORM.
+
+    Trường bắt buộc: giờ đăng, loại tin, nội dung, đồng tiền; tùy chọn: mức tác
+    động (``impact_hint``) + URL (screen_design d.1595-1596).  Loại tin cố định
+    "Nhập tay" (D3); giờ đăng thu UTC (D2).  Thiếu trường bắt buộc → hiện lỗi
+    từng trường và KHÔNG gọi controller (không ghi DB); lỗi validate controller
+    trả về hiện lên đúng trường, form KHÔNG đóng.  Draft hợp lệ đi qua
+    ``NewsController.add_user_note`` (nhập) hoặc ``update_user_note`` (sửa — D1,
+    không tự dựng model, không tính ``dedupe_key``).
+    """
+
+    def __init__(
+        self,
+        controller,
+        parent=None,
+        *,
+        prefill: CalendarEvent | None = None,
+        editing_item: NewsItem | None = None,
+        currencies: list[str] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._controller = controller
+        self._prefill = prefill
+        self._editing_item = editing_item
+        self._field_errors: dict[str, QLabel] = {}
+        self._empty_moment = QDateTime(QDate(2000, 1, 1), QTime(0, 0))
+        self._empty_moment.setTimeSpec(Qt.TimeSpec.UTC)
+        self.setObjectName("NewsNoteDialog")
+        self.setWindowTitle(EDIT_DIALOG_TITLE if editing_item is not None else NOTE_DIALOG_TITLE)
+        self._build(currencies or [])
+        self._fill_from_source()
+
+    # -- dựng form --------------------------------------------------------------
+
+    def _build(self, currencies: list[str]) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(10)
+
+        # Giờ đăng (UTC — D2): giá trị đặc biệt (bằng minimum) hiển thị rỗng =
+        # "chưa nhập", nên trường bắt buộc này thực sự có thể thiếu.
+        self.time_edit = QDateTimeEdit(self._empty_moment)
+        self.time_edit.setObjectName("NewsNoteTime")
+        self.time_edit.setTimeSpec(Qt.TimeSpec.UTC)
+        self.time_edit.setMinimumDateTime(self._empty_moment)
+        self.time_edit.setSpecialValueText("")
+        self.time_edit.setDisplayFormat("dd/MM/yyyy HH:mm")
+        self.time_edit.setCalendarPopup(True)
+
+        # Loại tin cố định "Nhập tay" (D3).
+        self.kind_combo = QComboBox()
+        self.kind_combo.setObjectName("NewsNoteKind")
+        self.kind_combo.addItem(KIND_TEXT["user_note"], "user_note")
+        self.kind_combo.setEnabled(False)
+
+        self.content_edit = QTextEdit()
+        self.content_edit.setObjectName("NewsNoteContent")
+        self.content_edit.setAcceptRichText(False)
+
+        # Đồng tiền (D4): danh sách mã, cho nhập tự do; gợi ý lấy từ dữ liệu màn.
+        self.currency_edit = QComboBox()
+        self.currency_edit.setObjectName("NewsNoteCurrencies")
+        self.currency_edit.setEditable(True)
+        self.currency_edit.setMinimumWidth(120)
+        self.currency_edit.addItem("")
+        for code in currencies:
+            self.currency_edit.addItem(code)
+
+        # Mức tác động (D5): trống (tùy chọn) + high/medium/low (không "non").
+        self.impact_combo = QComboBox()
+        self.impact_combo.setObjectName("NewsNoteImpact")
+        self.impact_combo.setMinimumWidth(120)
+        self.impact_combo.addItem("", None)
+        for member in ImpactHint:
+            self.impact_combo.addItem(IMPACT_TEXT[member.value], member.value)
+
+        self.url_edit = QLineEdit()
+        self.url_edit.setObjectName("NewsNoteUrl")
+
+        self.form_error_label = QLabel("")
+        self.form_error_label.setObjectName("NewsFormError")
+        self.form_error_label.setWordWrap(True)
+        self.form_error_label.setVisible(False)
+
+        root.addWidget(self._field_block("Giờ đăng", self.time_edit, "published_utc"))
+        root.addWidget(self._field_block("Loại tin", self.kind_combo, "kind"))
+        root.addWidget(self._field_block("Nội dung", self.content_edit, "content"))
+        root.addWidget(self._field_block("Đồng tiền", self.currency_edit, "currencies"))
+        root.addWidget(self._field_block("Mức tác động", self.impact_combo, "impact_hint"))
+        root.addWidget(self._field_block("URL", self.url_edit, "url"))
+        root.addWidget(self.form_error_label)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        buttons.addStretch(1)
+        self.cancel_button = action_button(CANCEL_TEXT, icon="x", icon_role="text", icon_disabled_role="text")
+        self.cancel_button.clicked.connect(self.reject)
+        self.save_button = action_button(
+            SAVE_TEXT, primary=True, color="success", icon="save", icon_role="selection_text", icon_disabled_role="selection_text"
+        )
+        self.save_button.clicked.connect(self._on_save_clicked)
+        buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.save_button)
+        root.addLayout(buttons)
+
+    def _field_block(self, label: str, control: QWidget, field: str) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(form_row(label, control))
+        error = QLabel("")
+        error.setObjectName("NewsFormError")
+        error.setWordWrap(True)
+        error.setVisible(False)
+        layout.addWidget(error)
+        self._field_errors[field] = error
+        return container
+
+    # -- nạp giá trị ban đầu -----------------------------------------------------
+
+    def _fill_from_source(self) -> None:
+        if self._editing_item is not None:
+            self._load_item(self._editing_item)
+        elif self._prefill is not None:
+            self._load_prefill(self._prefill)
+
+    def _load_prefill(self, event: CalendarEvent) -> None:
+        """Điền sẵn từ sự kiện liên quan (D9): giờ đăng/đồng tiền/nội dung."""
+        self._set_time(event.event_time_utc)
+        self.content_edit.setPlainText(event.title or "")
+        self._set_currencies([event.currency] if event.currency else [])
+
+    def _load_item(self, item: NewsItem) -> None:
+        self._set_time(item.published_utc)
+        self.content_edit.setPlainText(item.content or item.title or "")
+        self._set_currencies(list(item.currencies))
+        if item.impact_hint is not None:
+            self._select_data(self.impact_combo, item.impact_hint.value)
+        if item.url:
+            self.url_edit.setText(item.url)
+
+    def _set_time(self, value: str) -> None:
+        stamp = _iso_to_qdatetime(value)
+        if stamp is not None:
+            self.time_edit.setDateTime(stamp)
+
+    def _set_currencies(self, codes: list[str]) -> None:
+        self.currency_edit.setCurrentText(", ".join(code for code in codes if code))
+
+    @staticmethod
+    def _select_data(combo: QComboBox, data: str) -> None:
+        for index in range(combo.count()):
+            if combo.itemData(index) == data:
+                combo.setCurrentIndex(index)
+                return
+
+    # -- đọc/validate/ghi --------------------------------------------------------
+
+    def _time_missing(self) -> bool:
+        return self.time_edit.dateTime() <= self.time_edit.minimumDateTime()
+
+    def time_value(self) -> datetime | None:
+        """Giờ đăng đang nhập (UTC) — ``None`` khi trường còn trống."""
+        if self._time_missing():
+            return None
+        moment = self.time_edit.dateTime().toPyDateTime()
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return moment.astimezone(UTC)
+
+    def currency_values(self) -> list[str]:
+        """Danh sách mã đồng tiền đang nhập (phẩy ngăn cách) — D4."""
+        text = self.currency_edit.currentText()
+        return [code.strip() for code in text.split(",") if code.strip()]
+
+    def field_error_text(self, field: str) -> str:
+        """Lỗi đang hiển thị ở một trường (rỗng khi trường hợp lệ) — cho test."""
+        label = self._field_errors.get(field)
+        return label.text() if label is not None else ""
+
+    def form_error_text(self) -> str:
+        return self.form_error_label.text()
+
+    def _presence_errors(self) -> dict[str, str]:
+        """Kiểm tra hiện diện trường bắt buộc NGAY TRÊN FORM (không gọi controller)."""
+        errors: dict[str, str] = {}
+        if self._time_missing():
+            errors["published_utc"] = "missing"
+        if not self.content_edit.toPlainText().strip():
+            errors["content"] = "missing"
+        if not self.currency_values():
+            errors["currencies"] = "missing"
+        return errors
+
+    def _draft_kwargs(self) -> dict[str, object]:
+        return {
+            "kind": NewsItemKind.USER_NOTE.value,
+            "published_utc": self.time_value(),
+            "content": self.content_edit.toPlainText().strip(),
+            "currencies": self.currency_values(),
+            "url": self.url_edit.text().strip() or None,
+            "impact_hint": self.impact_combo.currentData(),
+        }
+
+    def _on_save_clicked(self) -> None:
+        presence = self._presence_errors()
+        if presence:
+            self._show_errors(presence)
+            return
+        try:
+            if self._editing_item is not None:
+                result = self._controller.update_user_note(self._editing_item.id, **self._draft_kwargs())
+            else:
+                result = self._controller.add_user_note(**self._draft_kwargs())
+        except Exception as exc:
+            self._show_errors({"_form": str(exc)})
+            return
+        if getattr(result, "ok", False):
+            self.accept()
+        else:
+            self._show_errors({error.field: error.reason for error in result.errors})
+
+    def _show_errors(self, errors: dict[str, str]) -> None:
+        for field, label in self._field_errors.items():
+            reason = errors.get(field)
+            if reason:
+                label.setText(
+                    f"{FORM_FIELD_LABELS.get(field, field)}: {FORM_ERROR_TEXT.get(reason, reason)}"
+                )
+                label.setVisible(True)
+            else:
+                label.clear()
+                label.setVisible(False)
+        form_reason = errors.get("_form")
+        if form_reason:
+            self.form_error_label.setText(form_reason)
+            self.form_error_label.setVisible(True)
+        else:
+            self.form_error_label.clear()
+            self.form_error_label.setVisible(False)
+
+
+# ---------------------------------------------------------------------------
 # Màn
 # ---------------------------------------------------------------------------
 
 
 class NewsScreen(QWidget):
-    """Màn Quản lý tin — khung bảng lọc + chi tiết dòng (plan lô L3.2)."""
+    """Màn Quản lý tin — bảng lọc + chi tiết dòng + hành vi tương tác (lô L3.2/L3.3)."""
 
     def __init__(self, navigate=None, *, app=None) -> None:
         super().__init__()
@@ -488,6 +902,11 @@ class NewsScreen(QWidget):
         self._rows: list[NewsRow] = []
         self._thread: QThread | None = None
         self._worker: NewsReadWorker | None = None
+        # Slot thread riêng cho lượt fetch của 2 nút FF (D10) — không đụng lượt
+        # đọc bảng đang chạy (``shutdown()`` chỉ dành cho đọc).
+        self._fetch_thread: QThread | None = None
+        self._fetch_worker: NewsReadWorker | None = None
+        self._fetch_channel: str | None = None
         self.toolbar_buttons: dict[str, QPushButton] = {}
         self.empty_state_buttons: dict[str, QPushButton] = {}
         self.setObjectName("FormScreen")
@@ -638,12 +1057,18 @@ class NewsScreen(QWidget):
         empty_layout.addStretch(1)
         for label in (TOOLBAR_LABELS[0], TOOLBAR_LABELS[2]):
             button = action_button(label)
-            button.setEnabled(False)
+            # Nút gợi ý empty state đi cùng 2 hành vi đã bật ở toolbar (L3.3).
+            button.clicked.connect(self._empty_action_handler(label))
             empty_layout.addWidget(button)
             self.empty_state_buttons[label] = button
         empty_layout.addStretch(1)
         table_card.layout().addWidget(self.empty_actions)
         return table_card
+
+    def _empty_action_handler(self, label: str):
+        if label == TOOLBAR_LABELS[0]:
+            return lambda: self._start_fetch("json")
+        return lambda: self.open_note_dialog()
 
     def _toolbar(self) -> QWidget:
         toolbar = ResponsiveGrid(
@@ -656,9 +1081,17 @@ class NewsScreen(QWidget):
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — VẼ đúng nhãn đã đăng ký, hành vi thuộc lô sau."""
+        """Nút thanh công cụ — 3 nút của lô L3.3 được nối hành vi; 3 nút còn lại
+        ("Xuất file"/"Nhập file"/"AI nhận định xu hướng") vẫn disabled (L3.4/L3.5)."""
         button = action_button(label)
-        button.setEnabled(False)
+        if label == TOOLBAR_LABELS[0]:
+            button.clicked.connect(lambda: self._start_fetch("json"))
+        elif label == TOOLBAR_LABELS[1]:
+            button.clicked.connect(lambda: self._start_fetch("html"))
+        elif label == TOOLBAR_LABELS[2]:
+            button.clicked.connect(lambda: self.open_note_dialog())
+        else:
+            button.setEnabled(False)
         self.toolbar_buttons[label] = button
         return button
 
@@ -710,7 +1143,249 @@ class NewsScreen(QWidget):
     def closeEvent(self, event) -> None:  # noqa: N802 - tên Qt
         """Đóng màn thì dừng luôn worker nền (không để thread sống ngoài màn)."""
         self.shutdown()
+        self._shutdown_fetch()
         super().closeEvent(event)
+
+    def _shutdown_fetch(self) -> None:
+        """Dừng lượt fetch FF nền (D10) — slot thread riêng, chờ có giới hạn."""
+        thread = self._fetch_thread
+        self._fetch_thread = None
+        self._fetch_worker = None
+        self._fetch_channel = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except RuntimeError:
+            pass
+
+    # -- 2 nút ForexFactory (§6.1 lượt 2-3, screen_design d.1574-1591) -----------
+
+    def _start_fetch(self, channel: str) -> None:
+        """Chạy một lượt fetch FF trong worker nền riêng (D10).
+
+        Nút được disable + chỉ báo tiến trình khi chạy; kết thúc re-enable và đọc
+        lại bảng.  Màn chỉ gọi ``NewsController`` — mạng nằm trong producer
+        (screen_design "Nguyên tắc")."""
+        if self.news_controller is None:
+            return
+        self._fetch_channel = channel
+        self._set_fetch_busy(True)
+        self._set_status(LOADING_TEXT)
+        thread = QThread(self)
+        worker = NewsReadWorker(self._fetch_json_task if channel == "json" else self._fetch_html_task)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_fetch_succeeded)
+        worker.failed.connect(self._on_fetch_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(self._on_fetch_worker_done)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._forget_fetch_thread(thread))
+        self._fetch_thread = thread
+        self._fetch_worker = worker
+        thread.start()
+
+    def _fetch_json_task(self):
+        return self.news_controller.fetch_calendar_json()
+
+    def _fetch_html_task(self):
+        return self.news_controller.fetch_actual_html()
+
+    def _forget_fetch_thread(self, thread: QThread) -> None:
+        if self._fetch_thread is thread:
+            self._fetch_thread = None
+            self._fetch_worker = None
+
+    def _set_fetch_busy(self, busy: bool) -> None:
+        """Disable/enable 2 nút FF + nút "Nhập tin" (cả toolbar lẫn empty state) — D10."""
+        for label in FETCH_BUSY_LABELS:
+            for button in (self.toolbar_buttons.get(label), self.empty_state_buttons.get(label)):
+                if button is not None:
+                    button.setEnabled(not busy)
+
+    def _on_fetch_worker_done(self) -> None:
+        self._set_fetch_busy(False)
+        self.reload_rows()
+
+    def _on_fetch_succeeded(self, payload: object) -> None:
+        if self._fetch_channel == "json":
+            self._notify_json_result(payload)
+        else:
+            self._notify_html_result(payload)
+
+    def _on_fetch_failed(self, message: str) -> None:
+        title = FETCH_HTML_TITLE if self._fetch_channel == "html" else FETCH_JSON_TITLE
+        self._notify(title, message)
+
+    def _notify_json_result(self, result) -> None:
+        """Thông báo tóm tắt/lỗi lượt JSON (D8)."""
+        if result.feed_errors:
+            first = result.feed_errors[0]
+            self._notify(
+                FETCH_JSON_TITLE,
+                JSON_ERROR_TEXT.format(error_type=first.error_type, detail=first.detail),
+            )
+        else:
+            self._notify(
+                FETCH_JSON_TITLE,
+                JSON_SUCCESS_TEXT.format(inserted=result.inserted, updated=result.updated),
+            )
+
+    def _notify_html_result(self, result) -> None:
+        """Thông báo lượt HTML (D8) — lỗi kèm gợi ý "Nhập actual bằng tay" bấm được."""
+        if result.fetch_errors:
+            first = result.fetch_errors[0]
+            self._notify(
+                FETCH_HTML_TITLE,
+                HTML_ERROR_TEXT.format(error_type=first.error_type, detail=first.detail),
+                suggestion=MANUAL_ACTUAL_TEXT,
+                on_suggestion=lambda: self.open_note_dialog(
+                    prefill_event=self._suggested_pending_event(first.week)
+                ),
+            )
+        else:
+            self._notify(
+                FETCH_HTML_TITLE,
+                HTML_SUCCESS_TEXT.format(written=result.written),
+            )
+
+    def _suggested_pending_event(self, week: str) -> CalendarEvent | None:
+        """Sự kiện điền sẵn cho "Nhập actual bằng tay" (D9) — đọc qua controller."""
+        if self.news_controller is None:
+            return None
+        moment = datetime.now(UTC)
+        try:
+            pending = list(self.news_controller.events_pending_actual(moment))
+        except Exception:
+            return None
+        return suggest_manual_actual_event(pending, week, moment)
+
+    def _notify(self, title: str, text: str, *, suggestion: str | None = None, on_suggestion=None) -> None:
+        """QMessageBox khuôn ``journal_screen`` (D8) — gợi ý là nút AcceptRole."""
+        box = QMessageBox(self)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setIcon(QMessageBox.Icon.Warning if suggestion else QMessageBox.Icon.Information)
+        suggested_button = None
+        if suggestion:
+            suggested_button = action_button(suggestion, icon="edit", icon_role="text", icon_disabled_role="text")
+            box.addButton(suggested_button, QMessageBox.ButtonRole.AcceptRole)
+            box.addButton(
+                action_button(CLOSE_TEXT, icon="x", icon_role="text", icon_disabled_role="text"),
+                QMessageBox.ButtonRole.RejectRole,
+            )
+        else:
+            box.addButton(
+                action_button(CLOSE_TEXT, icon="x", icon_role="text", icon_disabled_role="text"),
+                QMessageBox.ButtonRole.AcceptRole,
+            )
+        box.exec()
+        if suggested_button is not None and box.clickedButton() is suggested_button and on_suggestion is not None:
+            on_suggestion()
+
+    # -- form nhập/sửa tin (§6.4, screen_design "Hành vi nhập/sửa tin") -----------
+
+    def open_note_dialog(self, *, prefill_event: CalendarEvent | None = None, editing_item: NewsItem | None = None) -> None:
+        """Mở form nhập/sửa tin (chặn) — ghi xong thì đọc lại bảng."""
+        if self.news_controller is None:
+            return
+        dialog = self.create_note_dialog(prefill_event=prefill_event, editing_item=editing_item)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.reload_rows()
+
+    def create_note_dialog(self, *, prefill_event: CalendarEvent | None = None, editing_item: NewsItem | None = None) -> UserNoteDialog:
+        """Dựng (không mở) form nhập/sửa tin — gợi ý đồng tiền lấy từ dữ liệu màn (D4)."""
+        return UserNoteDialog(
+            self.news_controller,
+            self,
+            prefill=prefill_event,
+            editing_item=editing_item,
+            currencies=self._currency_codes(),
+        )
+
+    def _currency_codes(self) -> list[str]:
+        codes: list[str] = []
+        for index in range(1, self.currency_combo.count()):
+            code = self.currency_combo.itemData(index)
+            if code:
+                codes.append(str(code))
+        return codes
+
+    # -- sửa/xóa/toggle theo dòng (D7 — trong dialog chi tiết dòng) ---------------
+
+    def _row_actions(self, dialog: QDialog, row: NewsRow) -> QWidget | None:
+        """Hàng điều khiển dòng: toggle Loại trừ (mọi tin văn bản) + Sửa/Xóa (source=user)."""
+        if row.row_type != ITEM_ROW or row.item is None:
+            return None
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        toggle = action_button(EXCLUDE_TEXT, icon="eye", icon_role="text", icon_disabled_role="text")
+        toggle.setCheckable(True)
+        toggle.setChecked(row.excluded)
+        toggle.toggled.connect(lambda checked: self._toggle_excluded(row.item.id, checked))
+        layout.addWidget(toggle)
+        if row.source == NewsItemSource.USER.value:
+            edit = action_button(EDIT_TEXT, icon="edit", icon_role="text", icon_disabled_role="text")
+            edit.clicked.connect(lambda: self._edit_item(row.item, dialog))
+            layout.addWidget(edit)
+            remove = action_button(
+                DELETE_TEXT, primary=True, color="danger", icon="trash", icon_role="selection_text", icon_disabled_role="selection_text"
+            )
+            remove.clicked.connect(lambda: self._delete_item(row.item, dialog))
+            layout.addWidget(remove)
+        layout.addStretch(1)
+        return container
+
+    def _toggle_excluded(self, item_id: int | None, checked: bool) -> None:
+        if self.news_controller is None:
+            return
+        try:
+            self.news_controller.set_excluded(item_id, bool(checked))
+        except Exception as exc:
+            self._notify(EXCLUDE_TEXT, str(exc))
+            return
+        self.reload_rows()
+
+    def _edit_item(self, item: NewsItem, dialog: QDialog) -> None:
+        if self.news_controller is None:
+            return
+        note = self.create_note_dialog(editing_item=item)
+        if note.exec() == QDialog.DialogCode.Accepted:
+            dialog.accept()
+            self.reload_rows()
+
+    def _delete_item(self, item: NewsItem, dialog: QDialog) -> None:
+        if self.news_controller is None:
+            return
+        if not self._confirm_delete(item):
+            return
+        try:
+            self.news_controller.delete_user_note(item.id)
+        except Exception as exc:
+            self._notify(DELETE_TEXT, str(exc))
+            return
+        dialog.accept()
+        self.reload_rows()
+
+    def _confirm_delete(self, item: NewsItem) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle(DELETE_TEXT)
+        box.setText(item.title)
+        box.setIcon(QMessageBox.Icon.Warning)
+        confirm = action_button(DELETE_TEXT, icon="trash", icon_role="text", icon_disabled_role="text")
+        box.addButton(confirm, QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(
+            action_button(CANCEL_TEXT, icon="x", icon_role="text", icon_disabled_role="text"),
+            QMessageBox.ButtonRole.RejectRole,
+        )
+        box.exec()
+        return box.clickedButton() is confirm
 
     def _read_window(self) -> list[NewsRow]:
         """Đọc cửa sổ đang lọc qua controller — chạy TRONG worker (không GUI thread)."""
@@ -844,6 +1519,11 @@ class NewsScreen(QWidget):
         body.setWordWrap(True)
         body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         root.addWidget(body, 1)
+
+        # Điều khiển sửa/xóa/toggle theo dòng (D7 — trong dialog chi tiết dòng).
+        actions = self._row_actions(dialog, row)
+        if actions is not None:
+            root.addWidget(actions)
         return dialog
 
     def _provenance_pairs(self, row: NewsRow) -> list[tuple[str, str, bool]]:

@@ -295,7 +295,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   mở form điền sẵn sự kiện liên quan).
 - **Test:** offscreen với controller giả: trạng thái nút khi chạy, nhánh lỗi hiện đúng thông báo, form thiếu trường không ghi.
 - **Phụ thuộc:** L3.2 · **Điểm review:** không có đường mạng nào từ UI ngoài 2 nút → controller (nguyên tắc screen_design).
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 #### L3.4 — Xuất/nhập file CSV-JSON (S)
 - **File mới:** mở rộng `news_screen.py` + `services/news_file_transfer.py` (logic đọc/ghi file thuần qua repo — UI không tự parse), `tests/test_news_file_transfer.py`.
@@ -474,7 +474,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L2.7 | `NewsController` + worker + DI | 2 | L2.2-L2.6 | M | IMPLEMENTED |
 | L3.1 | `trend_prompt_builder` + `trend_verdict_parser` | 3 | L1.1, L1.3 | M | IMPLEMENTED |
 | L3.2 | Khung màn Quản lý tin (bảng/lọc/từ điển/chi tiết) | 3 | L2.7 | L | IMPLEMENTED |
-| L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | PLANNED |
+| L3.3 | Nhập/sửa tin + 2 nút ForexFactory | 3 | L3.2 | M | IMPLEMENTED |
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | PLANNED |
 | L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | PLANNED |
 | L3.6 | Bật fetch khởi động + retention purge | 3 | L3.3, L2.7 | S | PLANNED |
