@@ -391,7 +391,7 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   ngoài 3 file của ca = rỗng; pytest teardown sạch (không "QThread: Destroyed
   while thread is still running"); không lượt tức thì bịa; cadence 100% từ
   policy (R4).
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED
 
 ### Bước 4 — Nghiệm thu tổng + cổng cưỡng chế E2
 
@@ -596,7 +596,7 @@ có thể giao song song cho 2 coder (ví dụ L1.4 ∥ L1.5; L2.3 ∥ L2.5 ∥ 
 | L3.4 | Xuất/nhập CSV-JSON | 3 | L3.2 | S | IMPLEMENTED |
 | L3.5 | Dialog AI nhận định xu hướng | 3 | L3.1, L3.2 | L | IMPLEMENTED |
 | L3.6 | Bật fetch khởi động + retention purge | 3 | L3.3, L2.7 | S | IMPLEMENTED |
-| L3.7 | Bật lịch producer RSS/FRED trong production (QĐ-7) | 3 | L3.6, L2.7 | S | PLANNED |
+| L3.7 | Bật lịch producer RSS/FRED trong production (QĐ-7) | 3 | L3.6, L2.7 | S | IMPLEMENTED |
 | L4.1 | Cổng E2 (verdict isolation + import-linter + quét chuỗi) | 4 | L3.5 | M | IMPLEMENTED |
 | L4.2 | Nghiệm thu tổng + đồng bộ tài liệu + xóa plan | 4 | tất cả | M | PLANNED |
 

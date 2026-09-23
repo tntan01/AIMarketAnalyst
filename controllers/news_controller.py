@@ -44,6 +44,19 @@ Delivered by this batch (plan L2.7):
 ``_auto_scanned_this_session`` của Scanner) makes repeated calls no-ops so the
 boot hook in ``main.py`` (QĐ-5) never fetches twice.
 
+**Producer schedule (plan L3.7):** the first startup turn also starts the
+periodic RSS/FRED rounds — contract §6.2/§6.3/§13 keep both "tự động định kỳ".
+``NewsController`` takes an optional ``schedule_starter`` seam (injected in
+tests; ``None`` resolves to the real starter, which builds a ``QThread`` +
+``NewsWorker`` per the caller khuôn in ``workers/news_worker.py`` and imports
+PyQt/``NewsWorker`` at function level to avoid the ``news_worker ↔
+news_controller`` import cycle).  The startup-turn session guard starts it
+exactly once; ``stop_producer_schedule`` (wired to ``aboutToQuit`` at start
+time, QĐ-7) stops the timers via a queued call on the worker's own thread and
+joins the thread with a bounded wait.  No immediate RSS/FRED round at boot —
+the contract only asks for periodics, the first round fires at the end of the
+first cadence (V2).
+
 **File transfer (plan L3.4):** ``export_news_range``/``import_news_file`` are
 thin delegations to ``services/news_file_transfer.py`` — the single owner of
 every CSV/JSON serializer/parser (the screen owns no parsing, screen_design
@@ -404,6 +417,7 @@ class NewsController:
         *,
         ai_service: object | None = None,
         ai_config_provider: Callable[[], object] | None = None,
+        schedule_starter: Callable[["NewsController"], object] | None = None,
     ) -> None:
         self._repo = repo if repo is not None else NewsRepository()
         self._policy = policy if policy is not None else load_news_policy()
@@ -427,6 +441,13 @@ class NewsController:
         # ``_auto_scanned_this_session`` của Scanner): the hook in ``main.py``
         # runs the §6.1 lượt 1 turn exactly once per session.
         self._fetched_this_session = False
+        # Producer-schedule seam (plan L3.7): ``None`` resolves to the real
+        # QThread starter (built on use — needs a live QApplication); tests
+        # inject a countable fake.  ``_schedule_*`` hold the running owner.
+        self._schedule_starter = schedule_starter
+        self._schedule_thread: object | None = None
+        self._schedule_worker: object | None = None
+        self._schedule: object | None = None
 
     # --- producer schedule per policy (§6.1 lượt 1-3, §7 keys) --------------------
 
@@ -510,12 +531,105 @@ class NewsController:
         purged = self._repo.purge_expired_runs(self._policy.ingest_runs_retention_days)
         json_result = self.fetch_calendar_json()
         html_result = self.fetch_actual_html(now)
+        self._start_producer_schedule()
         return StartupTurnResult(
             ran=True,
             purged_runs=purged,
             json_result=json_result,
             html_result=html_result,
         )
+
+    # --- producer schedule (contract §6.2/§6.3/§13, plan L3.7) ----------------
+
+    def _start_producer_schedule(self) -> None:
+        """Start the periodic RSS/FRED rounds — called by the first startup turn.
+
+        The starter is the test seam ``schedule_starter`` if one was injected,
+        otherwise the real QThread starter is built and started on use.  The
+        session guard in ``run_startup_turn`` guarantees this runs at most once
+        per session, so the schedule is never double-started."""
+        if self._schedule_starter is not None:
+            self._schedule = self._schedule_starter(self)
+            return
+        self._schedule = self._build_producer_schedule()
+
+    def _build_producer_schedule(self) -> object:
+        """The real starter: a ``QThread`` running a ``NewsWorker``.
+
+        Imports PyQt and ``NewsWorker`` at function level (khuôn
+        ``services.settings_service`` import ngay trong file, tránh import vòng
+        ``news_worker ↔ news_controller``; tiền lệ controller-Qt:
+        ``scanner_controller`` d.18).  Follows the caller khuôn documented in
+        ``workers/news_worker.py``: ``moveToThread(thread)``,
+        ``thread.started → worker.start``, ``thread.finished → deleteLater``.
+        The controller keeps a strong reference (``_schedule_worker``) so the
+        thread never outlives the controller silently.
+
+        Fail-closed (B4): without a live ``QApplication`` the schedule cannot
+        run safely, so the starter raises instead of silently skipping — the
+        production boot (``main.py``) always creates the app before the QĐ-5
+        hook.  Shutdown is wired here (no old file is touched to register it):
+        ``aboutToQuit → stop_producer_schedule``."""
+        from PyQt6.QtCore import QThread
+        from PyQt6.QtWidgets import QApplication
+        from workers.news_worker import NewsWorker
+
+        app = QApplication.instance()
+        if app is None:
+            raise RuntimeError(
+                "Không thể lên lịch producer RSS/FRED: thiếu QApplication. "
+                "Lượt khởi động phải chạy sau khi Qt app được tạo (main.py)."
+            )
+        thread: QThread = QThread()
+        thread.setObjectName("news-producer-schedule")
+        worker: NewsWorker = NewsWorker(self)
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.start)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        # Shutdown seam: wired at start time, so no other file needs to change
+        # (QĐ-7 — app_controller.py is not touched).
+        app.aboutToQuit.connect(self.stop_producer_schedule)
+
+        self._schedule_worker = worker
+        self._schedule_thread = thread
+        thread.start()
+        return thread
+
+    def stop_producer_schedule(self) -> None:
+        """Stop the periodic producer rounds and join their thread (bounded).
+
+        Connected to ``aboutToQuit`` when the schedule starts; a second call
+        (or a call with no running schedule) is a deterministic no-op.  The
+        worker's timers are stopped via a queued call that runs in the worker's
+        own thread (``QMetaObject.invokeMethod(BlockingQueuedConnection)``),
+        then the thread is ``quit``-ed and ``wait``-ed with a ceiling (khuôn
+        bounded wait của ``AppController.shutdown``) so teardown never hangs.
+        """
+        thread = getattr(self, "_schedule_thread", None)
+        if thread is None:
+            return
+        self._schedule_thread = None
+        self._schedule = None
+        try:
+            from PyQt6.QtCore import QMetaObject, Qt
+
+            worker = getattr(self, "_schedule_worker", None)
+            if worker is not None:
+                QMetaObject.invokeMethod(
+                    worker,
+                    "stop",
+                    Qt.ConnectionType.BlockingQueuedConnection,
+                )
+        except Exception:
+            # The worker may already be gone — thread.quit() below still
+            # releases the thread safely (never a hidden hang).
+            pass
+        self._schedule_worker = None
+        thread.quit()
+        thread.wait(5000)
 
     # --- manual entry (§6.4) ------------------------------------------------------
 

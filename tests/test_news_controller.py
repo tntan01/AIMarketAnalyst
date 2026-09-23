@@ -216,6 +216,20 @@ class FakeFfProducer:
         return _html_result()
 
 
+class FakeStarter:
+    """Typed fake of the L3.7 ``schedule_starter`` seam — counts how many times
+    the producer schedule was started (one per session)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.controllers: list[NewsController] = []
+
+    def __call__(self, controller: NewsController) -> object:
+        self.calls += 1
+        self.controllers.append(controller)
+        return self
+
+
 def _json_result() -> JsonCalendarResult:
     from services.news_producers.ff_calendar_producer import JsonCalendarResult
 
@@ -333,13 +347,25 @@ def _controller(
     rss: object | None = None,
     rates: object | None = None,
     ff: object | None = None,
+    starter: FakeStarter | None = None,
+    use_real_starter: bool = False,
 ) -> NewsController:
+    # Seam L3.7: everything not under test gets a disposable fake starter so a
+    # startup turn never builds a real QThread; the L3.6 startup-turn tests keep
+    # asserting exactly what they asserted before.  Tests of the production
+    # wiring opt into the real starter with ``use_real_starter=True`` (which
+    # resolves ``schedule_starter=None`` — the AppController default).
+    if use_real_starter:
+        schedule_starter: object | None = None
+    else:
+        schedule_starter = starter if starter is not None else FakeStarter()
     return NewsController(
         repo=repo if repo is not None else FakeRepository(),
         policy=policy if policy is not None else _policy(),
         rss_producer=rss if rss is not None else FakeRssProducer(),
         fred_producer=rates if rates is not None else FakeRateProducer(),
         ff_producer=ff if ff is not None else FakeFfProducer(),
+        schedule_starter=schedule_starter,
     )
 
 
@@ -575,7 +601,110 @@ class TestStartupTurn:
         assert len(_rows(tmp_path / "news.db", "SELECT * FROM ai_trend_verdicts")) == 1
 
 
-# ---- 3. nhập tay (§6.4) ---------------------------------------------------------
+# ---- 2c. lịch producer RSS/FRED (contract §6.2/§6.3/§13, plan L3.7) ---------
+
+
+class TestProducerScheduleWire:
+    def test_startup_turn_starts_the_schedule_exactly_once(self):
+        """The L3.7 wiring: the first startup turn starts the producer schedule
+        exactly once; a second turn is a no-op for the starter too."""
+        starter = FakeStarter()
+        repo = FakeRepository()
+        controller = _controller(repo=repo, starter=starter)
+
+        first = controller.run_startup_turn()
+        second = controller.run_startup_turn()
+
+        assert first.ran is True
+        assert second.ran is False
+        assert starter.calls == 1
+        assert starter.controllers == [controller]
+
+    def test_boot_hook_default_resolves_to_the_real_starter(self):
+        """AppController builds ``NewsController()`` with no arguments — the
+        production default must be the real starter path (schedule_starter None),
+        not a fake (QĐ-7: no additive touchpoint, production always real)."""
+        controller = NewsController(
+            repo=FakeRepository(),
+            policy=_policy(),
+            rss_producer=FakeRssProducer(),
+            fred_producer=FakeRateProducer(),
+            ff_producer=FakeFfProducer(),
+        )
+
+        assert controller._schedule_starter is None
+
+    def test_real_starter_runs_a_thread_with_policy_cadence_timers(self):
+        """Starter thật: QThread + NewsWorker, 2 QTimer active đúng cadence
+        policy (giá trị phân biệt — R4, không con số trong logic); teardown
+        gọi stop để không để QThread treo."""
+        policy = _policy(rss_poll_interval_minutes=11, fred_refresh_hours=5)
+        # rates_refresh_hours is read from the rate producer (which owns the
+        # policy key) — inject a producer that agrees with the policy value.
+        controller = _controller(
+            policy=policy,
+            rates=FakeRateProducer(refresh_hours=5),
+            use_real_starter=True,
+        )
+
+        try:
+            result = controller.run_startup_turn()
+            assert result.ran is True
+
+            thread = controller._schedule_thread
+            worker = controller._schedule_worker
+            assert thread is not None and worker is not None
+            assert thread.isRunning()
+            # Worker timers carry the policy intervals (not some invented number).
+            assert worker.news_interval_minutes == 11
+            assert worker.rates_interval_hours == 5
+        finally:
+            controller.stop_producer_schedule()
+
+        assert controller._schedule_thread is None
+
+    def test_stop_producer_schedule_stops_timers_and_joins_thread(self):
+        controller = _controller(use_real_starter=True)
+        controller.run_startup_turn()
+        thread = controller._schedule_thread
+        assert thread is not None and thread.isRunning()
+
+        controller.stop_producer_schedule()
+
+        assert controller._schedule_thread is None
+        assert not thread.isRunning()
+
+    def test_stop_when_nothing_started_is_a_noop(self):
+        controller = _controller(use_real_starter=True)
+
+        controller.stop_producer_schedule()  # nothing started
+
+        assert controller._schedule_thread is None
+        assert controller._schedule_worker is None
+
+    def test_real_starter_restart_after_stop_is_a_noop(self):
+        """Start lần hai sau stop = no-op (không crash, không thread mới)."""
+        controller = _controller(use_real_starter=True)
+        controller.run_startup_turn()
+        first_thread = controller._schedule_thread
+        controller.stop_producer_schedule()
+
+        controller.run_startup_turn()  # session flag already consumed
+
+        assert controller._schedule_thread is None
+        assert first_thread is not None and not first_thread.isRunning()
+
+    def test_real_starter_requires_a_qapplication(self, monkeypatch):
+        """B4 fail-closed: thiếu QApplication → raise lỗi rõ, không im lặng."""
+        from PyQt6.QtWidgets import QApplication
+
+        monkeypatch.setattr(QApplication, "instance", staticmethod(lambda: None))
+        controller = _controller(use_real_starter=True)
+
+        with pytest.raises(RuntimeError) as excinfo:
+            controller.run_startup_turn()
+
+        assert "QApplication" in str(excinfo.value)
 
 
 class TestManualEntryValidation:

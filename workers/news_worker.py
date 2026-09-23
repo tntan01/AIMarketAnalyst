@@ -18,10 +18,12 @@ Two rounds exist in this layer — the ones §13 keeps on a timer:
 
 ForexFactory has no poll (Owner decision, contract §6.1/§13): its four turns are
 event-driven and belong to the news screen (L3.3) and the app-startup turn
-(L3.6) — so no FF timer and no startup turn is created here.  Nothing in this
-batch calls ``start()`` either: the cadences are wired by the batches that own
-those entry points (L3.2 screen / L3.6 boot), which keeps the current boot
-behavior untouched (plan L2.7: "chưa bật lượt khởi động").
+(L3.6) — so no FF timer and no startup turn is created here.  The periodic
+entry point is wired by plan batch L3.7: the first app-startup turn of
+``NewsController`` starts this schedule (a ``QThread`` holding this worker,
+``thread.started`` → ``start``, ``thread.finished`` → ``deleteLater``) and
+``NewsController.stop_producer_schedule`` stops it at shutdown — so nothing in
+this module calls ``start()`` itself.
 
 The caller follows the inherited thread khuôn (``ui/screens/settings_screen.py``
 for ``AITestWorker``): build the worker, ``moveToThread(thread)``, connect
