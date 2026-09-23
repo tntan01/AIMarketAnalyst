@@ -70,6 +70,7 @@ tổng.
 | `ui/main_window.py` | import `NewsScreen` + thêm `"news"` vào `screen_factories` (d.229-247) + ánh xạ `nav_route` (d.324-331) | L3.2 |
 | `tests/test_backtest_removal_step3_ui.py`, `tests/test_main_window_startup_policy.py` | **chỉ cập nhật ghim inventory điều hướng 5→6** — hệ quả tất yếu của điểm chạm đã đăng ký (`ui/navigation.py` + mục `"news"`); Owner duyệt phương án A 22/09/2026, đúng 4 dòng | L3.2 |
 | `main.py` | thêm **đúng 1 dòng lệnh** hook khởi động lượt tin tức, đặt sau `app_ctrl = AppController()` (d.42) theo tiền lệ boot-hook duy nhất `scanner_retention.ensure_started()` (d.24); nếu cần dòng import thì tính vào điểm chạm và nêu trong commit message — Owner duyệt 23/09/2026 (QĐ-5 phương án A, §5) | L3.6 |
+| `requirements.txt` | **append-only**: thêm đúng **1 dòng** `import-linter>=2.0` (công cụ chạy cổng E2 phần (b) — contract §9.2(b) đích danh import-linter); không sửa/xóa dòng nào khác — Owner duyệt 23/09/2026 (QĐ-6 phương án A, §5) | L4.1 |
 
 Ngoài các file trong bảng trên: **mọi thay đổi là file mới**. `git diff` trên
 `news_service.py` / `forex_factory_client.py` / `interest_rate_service.py` /
@@ -358,6 +359,17 @@ Quy ước cỡ lô: **S** ≤ nửa phiên coder · **M** ≈ một phiên · *
   `core.news_*`/`core.rate_trend`/`core.trend_*` không import
   services/ui/controllers/PyQt6; (c) quét chuỗi hiển thị tiếng Việt trong các
   module `core/` mới (L3).
+- **Làm rõ thực thi (không đổi hành vi đã đặc tả; neo contract §5/§11b, L3):**
+  phần (a) cấm **import/query dữ liệu verdict** — việc `core/news_models.py`
+  **khai báo mô hình** `TrendVerdict` (§5, §11b) là hợp lệ và không tính vi
+  phạm; nhắc tên bảng/mô hình trong docstring/comment cũng không tính — chỉ
+  tính import, lời gọi (`verdicts_for`) và truy vấn SQL thật; phần (c) chỉ quét
+  **string literal ở vị trí code** (chuỗi hiển thị) — docstring/comment không
+  tính (docstring tiếng Việt trong `core/` là hợp lệ).
+- **Điểm chạm additive (QĐ-6 phương án A, Owner duyệt 23/09/2026 — §3/§5):**
+  `requirements.txt` **+1 dòng** `import-linter>=2.0`; coder cài gói trong môi
+  trường dev trước khi chạy cổng. Cổng (b) phải chạy **thật** trong battery —
+  thiếu công cụ là **đỏ có thông báo cách cài**, không skip im lặng (B4).
 - **DoD đặc biệt:** **tự chứng minh cổng đỏ** — thêm vi phạm giả vào nhánh tạm, chạy đỏ, hoàn nguyên (ghi evidence vào commit message).
 - **Phụ thuộc:** L3.5 (đủ module để quét) · **Điểm review:** cổng không bỏ sót `dashboard_screen`/`scanner_*`/`telegram_*`.
 - **Trạng thái:** PLANNED
@@ -455,6 +467,21 @@ vào điểm chạm và nêu trong commit message. Khuôn lazy (R7) và hành vi
 cũ giữ nguyên 100%. Quyết định này sửa điều khoản dừng của lô L3.6 ("nếu
 phải sửa `main.py` → dừng, báo Owner") — coder đã dừng báo đúng, và Owner đã
 duyệt; phạm vi ngoài 1 dòng = BLOCKED mới.
+
+**QĐ-6 — Cổng E2 phần (b) của L4.1 dùng import-linter thật: đăng ký
+`requirements.txt` +1 dòng (Owner duyệt 23/09/2026, phương án A).** Khảo sát
+code thật trước khi giao lô: `import-linter` **chưa cài** trên máy
+(`ModuleNotFoundError`) và **không có** trong `requirements.txt` — mà contract
+§9.2(b) và `architecture-rules.md` L1 **đích danh import-linter** là cơ chế
+chặn tự động, plan mục L4.1 cũng yêu cầu tạo `.importlinter`. Nếu không đăng
+ký điểm chạm, lô sẽ lặp lại vòng BLOCKED như L3.6. Ba phương án trình Owner:
+(A) đăng ký `requirements.txt` +1 dòng `import-linter>=2.0` + cài gói, cổng
+chạy thật trong battery — khớp nguyên văn §9.2(b); (B) test AST thuần không
+phụ thuộc, phải sửa câu chữ contract §9.2(b) cùng commit; (C) hoãn (b) sang
+lô khác — cổng E2 không trọn theo §14. **Owner chọn A.** Phạm vi: **append-only
+đúng 1 dòng** trong `requirements.txt` (không sửa/xóa dòng nào khác) + cài gói
+trong môi trường dev; thiếu công cụ khi chạy cổng = **đỏ kèm hướng dẫn cài**,
+không skip im lặng (B4). Phạm vi ngoài 1 dòng = BLOCKED mới.
 
 ## 6. Rủi ro và giảm thiểu
 
