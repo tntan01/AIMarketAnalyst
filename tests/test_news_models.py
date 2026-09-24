@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import re
 import sqlite3
 import typing
@@ -56,6 +57,7 @@ from core.news_models import (
     VerdictDirection,
     VerdictHorizon,
     VerdictScopeType,
+    calendar_event_dedupe_key,
 )
 
 MIGRATION_SQL = (
@@ -642,3 +644,48 @@ class TestCoreLayerBoundary:
             "core/news_models.py must stay pure ASCII - display strings "
             "(Vietnamese labels) belong to the presentation tier"
         )
+
+
+class TestCalendarEventDedupeKey:
+    """Section 4.2 ``dedupe_key`` owner (QD-8): pure, keyword-only, B3-locked."""
+
+    def test_formula_equals_the_locked_section_4_2_hash(self):
+        # B3: the hash of ``event_time_utc|currency|title`` (utf-8, ``|``
+        # separator) must equal what the former ``ff_calendar_producer``
+        # persisted — recomputed here with the same formula.
+        seed = "2026-09-24T02:30:00Z|JPY|JN Flash Manufacturing PMI"
+        assert calendar_event_dedupe_key(
+            event_time_utc="2026-09-24T02:30:00Z",
+            currency="JPY",
+            title="JN Flash Manufacturing PMI",
+        ) == hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+    def test_pinned_hex_values_guard_separator_and_encoding(self):
+        # Hardcoded hex pins the EXACT §4.2 formula: changing the separator,
+        # the join order or the encoding is red (B3 — every persisted key is
+        # immutable).
+        assert calendar_event_dedupe_key(
+            event_time_utc="2026-09-24T02:30:00Z",
+            currency="JPY",
+            title="JN Flash Manufacturing PMI",
+        ) == "397076ea2350420e89a5108890257bd7088bdbaa7f1a57350204bd7cde3c804d"
+        assert calendar_event_dedupe_key(
+            event_time_utc="2026-09-24T03:30:00Z",
+            currency="CHF",
+            title="SZ SNB Policy Rate",
+        ) == "455eed02c74a12e42e68cfe71aef98479790352fe227ac49db4ea45ba8ec7c15"
+
+    def test_keyword_only_and_stable(self):
+        first = calendar_event_dedupe_key(
+            event_time_utc="2026-09-24T08:00:00Z",
+            currency="AUD",
+            title="AU Employment Change",
+        )
+        second = calendar_event_dedupe_key(
+            event_time_utc="2026-09-24T08:00:00Z",
+            currency="AUD",
+            title="AU Employment Change",
+        )
+        assert first == second
+        with pytest.raises(TypeError):
+            calendar_event_dedupe_key("2026-09-24T08:00:00Z", "AUD", "AU Employment Change")  # positional forbidden

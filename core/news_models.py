@@ -24,9 +24,10 @@ Governance:
   ``core/news_freshness.py``, batch L1.4; rate-trend derivation lives in
   ``core/rate_trend.py``, batch L1.5), no I/O, no display strings (L2/L3).
   A ``core/`` module never imports services/ui/Qt and never touches the
-  network or the filesystem.  The one exception is the ``news_items``
-  ``dedupe_key`` derivation (contract section 4.3) - QD-4 (plan section 5)
-  makes this module its sole owner, a pure key function on the model fields.
+  network or the filesystem.  The two exceptions are the ``dedupe_key``
+  derivations (contract sections 4.2 and 4.3) - QD-4 (plan section 5) owns
+  the ``news_items`` key and QD-8 (FF source-paste ca, plan F2) owns the
+  ``news_events`` key, both pure key functions on the model fields.
 * **Enums are frozen strings.** Every closed value set of sections 4.2-4.6 is
   one ``str``-mixin enum whose members equal the persisted string exactly -
   the same sets the L1.2 CHECK constraints pin, so a member change here fails
@@ -176,6 +177,21 @@ def news_item_dedupe_key(*, url: str | None, title: str, published_utc: str) -> 
     ``news_file_transfer`` calls the same function - a third copy is banned.
     Pure function (L2 - no I/O)."""
     seed = url if url else f"{title}|{published_utc}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()
+
+
+def calendar_event_dedupe_key(*, event_time_utc: str, currency: str, title: str) -> str:
+    """Section 4.2 formula - the ``dedupe_key`` of a ``news_events`` row: hash
+    of ``event_time_utc|currency|title`` (stable sha256 hex).
+
+    Sole owner of this formula (contract section 6.1 step 3 / section 11b,
+    QD-8): ``services/ff_source_parser.py`` delegates here - a second copy is
+    banned.  B3: the separator, the join order and the utf-8 encoding are
+    locked to every ``news_events`` row persisted by the former
+    ``ff_calendar_producer`` (``sha256(f"{event_time_utc}|{currency}|{title}".
+    encode("utf-8"))``), so a key never changes for an existing row.  Pure
+    function (L2 - no I/O)."""
+    seed = f"{event_time_utc}|{currency}|{title}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()
 
 

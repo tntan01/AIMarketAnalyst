@@ -155,6 +155,12 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
 
 - **File mới:** `services/ff_source_parser.py`, `tests/test_news_ff_source_parser.py`,
   fixture source thật `tests/fixtures/ff_homepage_source.html`.
+- **Bổ sung inventory (QĐ-F8 — duyệt PO 24/09/2026):** `core/news_models.py`
+  THÊM hàm thuần `calendar_event_dedupe_key` (chủ sở hữu công thức §4.2 — §6.1
+  bước 3; công thức NGUYÊN VĂN producer cũ, B3 bất biến); `tests/test_news_models.py`
+  THÊM test thuần cho hàm mới (ghim giá trị); `docs/news/news-architecture.md`
+  2 chỉnh §11b (bổ sung dòng chủ sở hữu `news_events` (§4.2) + bỏ cụm
+  ", tính lại `dedupe_key`" sót đợt 3 mâu thuẫn đợt 4). Cả 3 trong commit D2 của F2.
 - **Fixture (điều kiện giao lô):** PO đính kèm **mã nguồn thật trang chủ FF
   Owner dán 24/09/2026** (bản đầy đủ hoặc cắt còn khối `calendarComponentStates`
   + `<head>` tối thiểu) khi giao lô. Coder KHÔNG bịa fixture "thật" (B5);
@@ -203,7 +209,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
   nhận text, chỉ trả mô hình); không bản sao `dedupe_key` (grep); danh mục
   lãi suất diff từng dòng với `interest_rate_service.py` d.29-38 (B3 mức dữ
   liệu, không "cải tiến"); cổng E2 xanh (parser không chạm verdict).
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED (24/09/2026 — collector D2; bảng §8 cập nhật KÉP; QĐ-F8)
 
 ### F3 — Đường nhập 2 pha qua controller: `parse_pasted_source` + `commit_pasted_source` (M)
 
@@ -400,6 +406,26 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
   + gỡ kwarg `ff_producer=_NullFF()`; không đổi test AI, không thêm test,
   không đổi nhãn/hành vi. `tests/test_news_repository_write.py` KHÔNG đổi
   (kiểm chứng: file không có nhánh lookup — đúng điều kiện "nếu có").
+- **QĐ-F8 — Bổ sung `core/news_models.py` + `tests/test_news_models.py` +
+  `docs/news/news-architecture.md` vào inventory F2** (duyệt PO 24/09/2026 sau
+  kiểm chứng máy-đọc của Tech Lead): F2 yêu cầu parser **GỌI hàm core** cho
+  công thức §4.2 (R4 "cấm bản sao") nhưng `core/news_models.py` chỉ mới sở hữu
+  công thức §4.3 (`news_item_dedupe_key`) — hàm `news_events` (§4.2) chưa tồn
+  tại vì QĐ-4 ca trước đã HOÃN nó lại trong `ff_calendar_producer` (chủ đó bị
+  F1 xóa → §4.2 mất chủ sở hữu sống). Nội dung bổ sung:
+  1. `core/news_models.py`: THÊM hàm thuần `calendar_event_dedupe_key` (chủ sở
+     hữu §4.2 theo §6.1 bước 3) — công thức NGUYÊN VĂN producer cũ
+     `sha256(f"{event_time_utc}|{currency}|{title}".encode("utf-8"))`, B3 giá
+     trị hash BẤT BIẾN với mọi dòng đã persist; khuôn style
+     `news_item_dedupe_key` d.170 (keyword-only, docstring nêu điều khoản).
+  2. `tests/test_news_models.py`: THÊM test thuần cho hàm mới (ghim giá trị;
+     test hiện có XANH NGUYÊN TRẠNG).
+  3. `docs/news/news-architecture.md`: 2 chỉnh §11b ĐÚNG CHỮ — (a) bổ sung dòng
+     "| Công thức `dedupe_key` của `news_events` (§4.2) | `core/news_models.py` |"
+     cạnh dòng §4.3 hiện có; (b) dòng chung-thiện-lô bỏ cụm ", tính lại
+     `dedupe_key`" (sót đợt 3 mâu thuẫn đợt 4 — dedupe_key BẤT BIẾN).
+  Parser vẫn GỌI hàm core (cấm bản sao); grep điểm review bổ sung: toàn miền
+  Tin tức chỉ MỘT định nghĩa công thức §4.2 (trong `core/news_models.py`).
 
 ## 6. Rủi ro và giảm thiểu
 
@@ -431,7 +457,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
 | Lô | Nội dung | Cỡ | Phụ thuộc | Trạng thái |
 |---|---|---|---|---|
 | F1 | Xóa hoàn toàn đường FF tự động + xuất/nhập file (producer, file_transfer, 2 nút FF, 2 nút file, lookup seam, kênh ff_html trong fred producer) + test theo D2 (gồm QĐ-F7) | L | — | IMPLEMENTED |
-| F2 | Parser `services/ff_source_parser.py` (bóc tách + hàm thuần phân loại dòng) + fixture source thật + test | M | — (giao sau F1) | PLANNED |
+| F2 | Parser `services/ff_source_parser.py` (bóc tách + hàm thuần phân loại dòng) + fixture source thật + test (QĐ-F8: bổ sung `calendar_event_dedupe_key` vào core + test models + 2 chỉnh §11b) | M | F1 | IMPLEMENTED |
 | F3 | Đường nhập 2 pha: `parse_pasted_source` (preview — không ghi) + `commit_pasted_source` (chung thiện lô: dòng sửa actual→`source=user`+`raw_json` actual gốc, `dedupe_key` bất biến; ghi DB + run `producer=user` + tóm tắt) | M | F1, F2 | PLANNED |
 | F4 | UI: dialog dán mã nguồn 2 pha (bảng xem trước — **chỉ cột actual sửa được** + Cập nhật/Hủy) + panel "Sự kiện đang thiếu số liệu" + toolbar 3 nút | M | F3 | PLANNED |
 | F5 | Nghiệm thu tổng (battery/smoke/build/boot + bằng chứng không-mạng-FF) + đồng bộ tài liệu + xóa plan | M | tất cả | PLANNED |

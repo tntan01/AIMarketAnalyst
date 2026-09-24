@@ -545,10 +545,11 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 |---|---|
 | Sản xuất tín hiệu sự kiện lịch kinh tế (kể cả actual) | đường dán mã nguồn: `news_controller` (tiếp nhận) + `services/ff_source_parser.py` (bóc tách) |
 | Bóc tách mã nguồn trang ForexFactory (JSON `calendarComponentStates` → `CalendarEvent` + `RateObservation` lãi suất `ff_html`) | `services/ff_source_parser.py` |
-| Phân loại dòng của lô dán so với database (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`) + **chung thiện lô đã chỉnh sửa** (stamp `source=user` cho dòng có sửa, giữ giá trị gốc vào `raw_json`, tính lại `dedupe_key`) — hàm thuần, không I/O | `services/ff_source_parser.py` |
+| Phân loại dòng của lô dán so với database (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`) + **chung thiện lô đã chỉnh sửa** (stamp `source=user` cho dòng có sửa, giữ giá trị gốc vào `raw_json`) — hàm thuần, không I/O | `services/ff_source_parser.py` |
 | Sản xuất tín hiệu tin văn bản tự động | `rss_producer` |
 | Sản xuất quan sát lãi suất (FRED API + config fallback) | `fred_rate_producer` |
 | Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
+| Công thức `dedupe_key` của `news_events` (§4.2) | `core/news_models.py` |
 | Công thức `dedupe_key` của `news_items` (§4.3) | `core/news_models.py` |
 | Nạp và validate chính sách miền Tin tức | `core/news_policy.py` |
 | Dẫn xuất trend lãi suất (hike/cut/hold) | `core/rate_trend.py` (`derive_rate_trend`) |
