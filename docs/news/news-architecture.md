@@ -1,6 +1,10 @@
 # Kiến trúc Tin tức — Contract tầng dữ liệu
 
-> **Trạng thái: BAN HÀNH — Owner duyệt ngày 20/09/2026 (V1).** Tài liệu này
+> **Trạng thái: BAN HÀNH — Owner duyệt ngày 20/09/2026 (V1). Sửa đổi đợt 3 —
+> Owner duyệt 24/09/2026:** ForexFactory chuyển sang kênh **dán mã nguồn trang
+> (page source) do người dùng cung cấp** — bỏ mọi đường thu tự động của FF;
+> **bỏ xuất/nhập file CSV-JSON**; RSS và FRED giữ tự động định kỳ (§6.1, §10,
+> §13 đợt 3). Tài liệu này
 > là đặc tả thẩm quyền **duy nhất** của miền Tin tức (V2): code phải đúng từng
 > hành vi mô tả ở đây; lệch tài liệu ↔ code = defect phải đóng. Toàn bộ giá
 > trị chính sách đã được Owner chốt (mục 7, 13) — không còn điểm `OPEN`.
@@ -15,8 +19,9 @@
 > B6 **đã ghi vào Phụ lục B** `architecture-rules.md` (E3, 20/09/2026);
 > (2) database là nguồn chân lý duy nhất; (3) AI nhận định xu hướng **chỉ để
 > người dùng tham khảo, không tham gia bất cứ quy trình nào**; (4) ForexFactory
-> thu theo chế độ **khởi động + nút bấm, không thăm dò định kỳ (poll)**; RSS
-> và FRED giữ tự động định kỳ (quyết định bổ sung cùng ngày, mục 6.1 và 13).
+> — **từ 24/09/2026 (đợt 3): không thu tự động dưới mọi hình thức**, lịch kinh
+> tế + actual đến từ mã nguồn trang người dùng dán; RSS và FRED giữ tự động
+> định kỳ (các quyết định bổ sung: mục 6.1 và 13).
 
 ---
 
@@ -24,21 +29,24 @@
 
 1. Database tin tức (SQLite) là **nguồn chân lý duy nhất**: bộ sản xuất chỉ
    GHI, bên tiêu thụ chỉ ĐỌC; không bên tiêu thụ nào gọi thẳng ra nguồn ngoài.
-2. Tin tức tự động thu từ ForexFactory (lịch kinh tế), RSS (headline/phát
-   biểu), FRED (lãi suất); người dùng có thể nhập tay tin bổ sung; dữ liệu
-   được cập nhật vào database theo từng ngày.
+2. Tin văn bản thu tự động từ RSS (headline/phát biểu); lãi suất thu tự động
+   từ FRED; **lịch kinh tế + actual ForexFactory đến từ mã nguồn trang người
+   dùng dán** (không tự động — đợt 3, 24/09/2026); người dùng có thể nhập tay
+   tin bổ sung; dữ liệu được cập nhật vào database theo từng ngày.
 3. Database phục vụ hai bên tiêu thụ chính: **tin tức trên Dashboard** và
    **chấm điểm vĩ mô/macro gate** (đặc tả từng bên nằm ở tài liệu miền tương
-   ứng — mục 12), cộng với màn **Quản lý tin** (xem/nhập/sửa/xuất).
+   ứng — mục 12), cộng với màn **Quản lý tin** (xem/nhập tay/dán mã nguồn
+   trang).
 4. Màn Quản lý tin có cửa sổ nhỏ gọi **AI nhận định xu hướng ngắn hạn/trung
    hạn/dài hạn** của cặp tiền — kết quả **chỉ tư vấn cho người dùng**, không
    là đầu vào của scoring, gate, guard thực thi hay alert (quyết định chốt
    20/09/2026).
-5. Riêng ForexFactory: **không thăm dò định kỳ (poll)** — dữ liệu lịch lấy
-   theo lượt tự động khi khởi động app và theo nút bấm của người dùng; actual
-   chỉ lấy đúng đối tượng cần (targeted) bằng HTML khi cần. RSS và FRED **giữ
-   tự động định kỳ** như thiết kế (Owner quyết 20/09/2026, đợt 2 — chi tiết
-   mục 6.1, 13).
+5. Riêng ForexFactory: **không thu tự động dưới bất kỳ hình thức nào** —
+   không lượt khởi động, không nút fetch, không thăm dò (poll), không lookup;
+   hệ thống **không phát request mạng nào tới ForexFactory**. Lịch kinh tế và
+   actual được bóc tách từ **mã nguồn trang (page source) người dùng dán** qua
+   màn Quản lý tin (Owner quyết 24/09/2026, đợt 3 — chi tiết mục 6.1, 13).
+   RSS và FRED **giữ tự động định kỳ** như thiết kế.
 
 ## 2. Từ vựng miền (S5 — định nghĩa một lần, dùng nhất quán)
 
@@ -53,7 +61,8 @@
 | Kho tin tức (`NewsRepository`) | Điểm truy cập database duy nhất (đọc + ghi) của miền |
 | Trạng thái sự kiện | `scheduled` (chưa tới giờ) — `released` (đã có số liệu thực tế) — `stale` (đã qua giờ công bố + ân hạn mà chưa có số liệu thực tế) |
 | Loại trừ (`excluded`) | Cờ do người dùng đặt để tin tự động không được tính trong dữ liệu phục vụ vĩ mô; không xóa vật lý |
-| Lượt ingest (ingest run) | Một lần chạy của một bộ sản xuất, có kết quả và số bản ghi đã ghi |
+| Mã nguồn trang (page source) | Toàn bộ văn bản HTML của một trang lịch ForexFactory do người dùng sao chép/lưu từ trình duyệt của chính mình — đầu vào duy nhất của kênh cập nhật lịch kinh tế + actual (§6.1) |
+| Lượt ingest (ingest run) | Một lần chạy của một bộ sản xuất hoặc một lượt dán mã nguồn (ghi `producer=user`), có kết quả và số bản ghi đã ghi |
 | Ân hạn (grace) | Khoảng chờ sau giờ sự kiện trước khi đánh dấu `stale` |
 
 Nhãn trạng thái/loại/nguồn là **enum máy đọc** — chuỗi đóng băng, không đổi
@@ -63,29 +72,31 @@ giá trị đã persist (V3(a)). Từ điển hiển thị tiếng Việt thuộ
 ## 3. Kiến trúc tổng thể và phân lớp (L1)
 
 ```text
-BỘ SẢN XUẤT (chỉ GHI)                       DATABASE                      BÊN TIÊU THỤ (chỉ ĐỌC)
-─────────────────────                       ────────                      ─────────────────────
-ff_calendar_producer  (ForexFactory)  ───►  news_events              ───►  Dashboard (đặc tả: screen_design.md — viết sau)
-rss_producer          (Google News,   ───►  news_items               ───►  Chấm điểm vĩ mô/gate (đặc tả: macro_score_architecture.md — viết sau)
-                       FXStreet,            interest_rates           ───►  Màn Quản lý tin (xem/nhập/sửa/xuất)
-                       Investing)           ai_trend_verdicts        ───►  Cửa sổ AI nhận định xu hướng (đọc lịch sử verdict)
-fred_rate_producer    (FRED)          ───►  ingest_runs
-Người dùng (form nhập tay, qua NewsController)
+BÊN GHI (chỉ GHI)                             DATABASE                      BÊN TIÊU THỤ (chỉ ĐỌC)
+───────────────                               ────────                      ─────────────────────
+Người dùng dán mã nguồn trang FF        ───►  news_events              ───►  Dashboard (đặc tả: screen_design.md — viết sau)
+ (qua NewsController                          news_items               ───►  Chấm điểm vĩ mô/gate (đặc tả: macro_score_architecture.md — viết sau)
+  + services/ff_source_parser.py)       ───►  interest_rates           ───►  Màn Quản lý tin (xem/nhập tay/dán mã nguồn)
+rss_producer (Google News, FXStreet,          ai_trend_verdicts        ───►  Cửa sổ AI nhận định xu hướng (đọc lịch sử verdict)
+ Investing)                             ───►  ingest_runs
+fred_rate_producer (FRED API + config fallback)
+Người dùng nhập tay (form, qua NewsController)
 
 Mọi đọc/ghi đi qua NewsRepository — điểm truy cập database duy nhất (S1).
+App KHÔNG phát request mạng nào tới ForexFactory (§6.1 — Owner quyết đợt 3).
 ```
 
 Chiều phụ thuộc bắt buộc:
 
 ```text
-ui → controllers → core ← services (repository, producer)
+ui → controllers → core ← services (repository, producer, parser)
 ```
 
 | Lớp | Mô-đun của miền này | Vai trò |
 |---|---|---|
-| `services/` | `news_repository.py`; `news_producers/ff_calendar_producer.py`; `news_producers/rss_producer.py`; `news_producers/fred_rate_producer.py` | Vào/ra + tầng chống ăn mòn (C2): biên dịch dữ liệu thô nguồn ngoài → mô hình miền có tên ngay tại biên; dữ liệu thô không tồn tại ngoài bộ chuyển đổi |
+| `services/` | `news_repository.py`; `ff_source_parser.py`; `news_producers/rss_producer.py`; `news_producers/fred_rate_producer.py` | Vào/ra + tầng chống ăn mòn (C2): biên dịch dữ liệu thô nguồn ngoài (XML RSS, JSON feed FRED, **mã nguồn trang FF người dùng dán**) → mô hình miền có tên ngay tại biên; dữ liệu thô không tồn tại ngoài bộ chuyển đổi |
 | `core/` | `news_policy.py`; `news_models.py`; `news_freshness.py`; `rate_trend.py`; `trend_prompt_builder.py`; `trend_verdict_parser.py` | Logic thuần: nạp và xác thực chính sách miền, mô hình miền, phân loại trạng thái dữ liệu, dẫn xuất trend lãi suất, dựng prompt, parse verdict. Không vào/ra, không chuỗi hiển thị (L2, L3). Mô hình miền **bắt buộc đặt trong `core/`** vì L1 cấm `Core → Services` (hàm thuần `core/` nhận mô hình làm tham số) |
-| `controllers/` | `news_controller.py` | Điều phối: lên lịch producer, phục vụ truy vấn cho bên tiêu thụ, tiếp nhận nhập tay, điều phối gọi AI trong worker |
+| `controllers/` | `news_controller.py` | Điều phối: lên lịch producer, phục vụ truy vấn cho bên tiêu thụ, tiếp nhận nhập tay **và mã nguồn trang FF dán** (giao parser, ghi qua repository), điều phối gọi AI trong worker |
 | `workers/` | worker nền cho producer poll + lời gọi AI | Bao bọc concurrency, không logic nghiệp vụ |
 | `ui/` | màn Quản lý tin, mục tin Dashboard | Chỉ hiển thị dữ liệu miền đã định dạng (đặc tả ở tài liệu UI — ngoài phạm vi tài liệu này) |
 
@@ -106,8 +117,9 @@ cho ca Tin tức:
 2. **Không dùng chung đường dữ liệu khi song song:** hệ mới chỉ ghi
    `news.db`; hệ cũ giữ cache đĩa của nó. Không bên nào đọc/ghi đường của bên
    kia.
-3. **Hoàn thiện mới đấu nối.** Tính năng Tin tức (database + đủ bộ sản xuất
-   FF/RSS/FRED/nhập tay + màn Quản lý tin + cửa sổ AI nhận định) phải hoàn
+3. **Hoàn thiện mới đấu nối.** Tính năng Tin tức (database + producer RSS/FRED
+   + kênh dán mã nguồn trang FF + nhập tay + màn Quản lý tin + cửa sổ AI nhận
+   định) phải hoàn
    thiện và nghiệm thu đạt theo tài liệu này, khi đó mới đấu nối lần lượt:
    **(a) Dashboard** chuyển mục tin sang đọc `news.db` (đặc tả trong
    `screen_design.md`, viết ở ca đấu nối); **(b) vĩ mô** chuyển sang đọc qua
@@ -142,10 +154,10 @@ cho ca Tin tức:
 | `forecast` / `previous` / `actual` | TEXT NULL | `actual` NULL khi chưa công bố |
 | `actual_updated_at` | TEXT NULL | thời điểm actual được ghi |
 | `status` | TEXT enum | `scheduled` \| `released` \| `stale` |
-| `source` | TEXT enum | `ff_json` \| `ff_html` \| `user` \| `import` |
+| `source` | TEXT enum | `ff_json` \| `ff_html` \| `user` \| `import` — chuỗi đóng băng (V3(a)). **Ngữ nghĩa từ đợt 3 (24/09/2026):** `ff_html` = bóc từ mã nguồn trang FF người dùng dán (kênh FF chính thức duy nhất); `user` = nhập tay; `ff_json`, `import` = giá trị lịch sử của dữ liệu cũ, không phát sinh thêm |
 | `dedupe_key` | TEXT UNIQUE | hash(`event_time_utc` + `currency` + `title`) — upsert (ghi đè nếu đã tồn tại, chèn nếu chưa) không trùng |
-| `raw_json` | TEXT NULL | payload gốc, chỉ cho provenance/self-heal |
-| `fetched_at` | TEXT | lượt lấy dữ liệu (fetch) gần nhất chạm bản ghi |
+| `raw_json` | TEXT NULL | JSON sự kiện đã trích (provenance/self-heal) — đường dán mã nguồn lưu phần trích từng sự kiện (kèm `revision`/`notice`), không lưu cả trang |
+| `fetched_at` | TEXT | lượt gần nhất (fetch tự động cũ hoặc dán mã nguồn) chạm bản ghi |
 
 Index: `(day_key)`, `(event_time_utc)`, `(currency, event_time_utc)`, index
 một phần `(status='stale')`.
@@ -178,7 +190,7 @@ Index: `(kind, published_utc)`, `(published_utc)`.
 | `currency` | TEXT | 8 tiền tệ theo phạm vi `interest_rate_service` hiện hành |
 | `rate` | REAL | %/năm |
 | `observed_at` | TEXT | ngày quan sát của số liệu |
-| `source` | TEXT enum | `fred` \| `ff_html` \| `config_fallback` |
+| `source` | TEXT enum | `fred` \| `ff_html` \| `config_fallback` — từ đợt 3 (24/09/2026): `ff_html` phát sinh **duy nhất** từ đường dán mã nguồn trang (§6.1 bước 4; kênh mạng FF-HTML cũ trong producer bị gỡ) |
 | `fetched_at` | TEXT | |
 | UNIQUE | | `(currency, observed_at, source)` |
 
@@ -212,11 +224,11 @@ và `NewsRepository` chỉ gọi hàm này, không tự tính (L1 — tính toá
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | `id` | INTEGER PK | |
-| `producer` | TEXT enum | `ff_crawler` \| `rss` \| `fred` \| `user` \| `on_demand_lookup` |
+| `producer` | TEXT enum | `ff_crawler` \| `rss` \| `fred` \| `user` \| `on_demand_lookup` — chuỗi đóng băng (V3(a)); từ đợt 3 (24/09/2026): `ff_crawler`, `on_demand_lookup` là giá trị lịch sử, không phát sinh thêm; **lượt dán mã nguồn trang ghi `user`** |
 | `started_at` / `finished_at` | TEXT | |
 | `status` | TEXT enum | `ok` \| `partial` \| `failed` |
 | `items_written` | INTEGER | số bản ghi upsert |
-| `error_type` / `error_detail` | TEXT NULL | phân loại lỗi kế thừa transport hiện hành (vd `Http429`, `InvalidRSSStructure`) |
+| `error_type` / `error_detail` | TEXT NULL | phân loại lỗi có kiểu (vd `InvalidRSSStructure` của RSS; đường dán mã nguồn: lỗi không tìm thấy JSON lịch trong source — tên mã cụ thể đăng ký tại lô triển khai) |
 
 **Retention (Owner chốt 20/09/2026):** giá trị vận hành nằm ở khóa
 `ingest_runs_retention_days` của tệp chính sách (mục 7); dọn tự động khi
@@ -237,67 +249,99 @@ dataclass tường minh, **không dùng dict không kiểu**:
 | `IngestRun` | `ingest_runs` | producer, mốc thời gian, status, items_written, lỗi |
 | `StoreState` | — (dẫn xuất từ `ingest_runs` + `news_freshness`) | trạng thái `fresh`/`degraded`/`unavailable` từng tín hiệu (`events`, `items`, `rates`) + giờ ingest thành công cuối |
 
-Bộ chuyển đổi nguồn (trong từng producer) là nơi **duy nhất** nhìn thấy dữ
-liệu thô (JSON feed, HTML, XML RSS); ra khỏi biên chỉ có mô hình miền. Đổi
-nhà cung cấp = thay bộ chuyển đổi, giữ nguyên mô hình (C2).
+Bộ chuyển đổi nguồn (trong từng producer và trong `ff_source_parser.py`) là
+nơi **duy nhất** nhìn thấy dữ liệu thô (JSON feed FRED, XML RSS, **mã nguồn
+trang FF người dùng dán**); ra khỏi biên chỉ có mô hình miền. Đổi nhà cung
+cấp/khuôn dạng nguồn = thay bộ chuyển đổi, giữ nguyên mô hình (C2).
 
 ## 6. Bộ sản xuất — sổ đăng ký tín hiệu (S6: mỗi tín hiệu một chủ sở hữu)
 
 | Tín hiệu | Bộ sản xuất duy nhất | Danh tính mô-đun (M5 — một câu không "và") |
 |---|---|---|
-| Sự kiện lịch kinh tế + actual | `ff_calendar_producer` | Sở hữu tri thức lấy và chuẩn hóa lịch kinh tế ForexFactory thành `CalendarEvent` |
+| Sự kiện lịch kinh tế + actual (ForexFactory) | đường dán mã nguồn: `news_controller` (tiếp nhận) + `services/ff_source_parser.py` (bóc tách) | Parser: Sở hữu tri thức chuyển mã nguồn trang ForexFactory thành mô hình miền có kiểu |
 | Headline + phát biểu chính thức | `rss_producer` | Sở hữu tri thức thu thập tin văn bản công khai thành `NewsItem` |
 | Quan sát lãi suất | `fred_rate_producer` (FRED) | Sở hữu tri thức thu thập lãi suất điều hành 8 đồng tiền thành `RateObservation` |
 | Ghi chú nhập tay | `news_controller` (đường nhập tay) | Sở hữu tri thức tiếp nhận và xác thực tin người dùng nhập |
 | Nhận định xu hướng AI | `news_controller` (đường AI, ghi qua repository) | Sở hữu điều phối lời gọi AI; thẩm quyền nội dung verdict thuộc parser (mục 9) |
 
-### 6.1. `ff_calendar_producer` — chế độ khởi động + nút bấm (không poll)
+### 6.1. ForexFactory — kênh dán mã nguồn trang (không mạng)
 
-Kế thừa transport của `forex_factory_client.py` hiện hành (JSON feed
-`nfs.faireconomy.media/ff_calendar_thisweek.json` + `nextweek.json`; HTML
-`forexfactory.com/calendar`; xử lý 429; hòa trộn (merge) actual từ HTML) —
-hấp thụ thành bộ chuyển đổi nội bộ, mô hình ra là `CalendarEvent`.
+**Quyết định Owner đợt 3 (24/09/2026):** BỎ toàn bộ thu tự động từ
+ForexFactory (4 lượt thu cũ: lượt khởi động, nút "Lấy lịch kinh tế", nút
+"Cập nhật actual", on-demand lookup) và BỎ xuất/nhập file CSV-JSON (mục 10).
+Kênh **duy nhất** của lịch kinh tế + actual là **mã nguồn trang (page source)
+người dùng dán** — hệ thống **không phát bất kỳ request mạng nào tới
+ForexFactory**.
 
-**Phân công hai kênh (Owner quyết 20/09/2026):** JSON đảm nhận **lịch** (giờ,
-đồng tiền, tên, impact, forecast/previous — dữ liệu gần như tĩnh, FF chốt
-trước theo tuần); HTML đảm nhận **actual** — JSON feed không có actual, và
-HTML chỉ được fetch **targeted** (đúng ngày/tuần chứa sự kiện đến hạn), không
-bao giờ poll định kỳ.
+Căn cứ (điều tra 24/09/2026 — bằng chứng trong lịch sử Git/memory dự án): cả
+ba kênh tự động đều chết hoặc bất ổn với client không-phải-browser —
+(1) JSON feed `nfs.faireconomy.media`: `ff_calendar_nextweek.json` bị gỡ khỏi
+CDN (404 vĩnh viễn), `thisweek` bị giới hạn tần suất theo IP rất hẹp (429 tái
+diễn, retry khuếch đại); (2) HTML `forexfactory.com`: Cloudflare chặn theo
+TLS fingerprint — Python/curl không bắt tay được (handshake timeout);
+(3) WebSocket feed nội bộ (`calendar-feed.forexfactory.com:2087`): Cloudflare
+managed challenge từ chối client không-phải-browser (403 `cf-mitigated:
+challenge`). Trình duyệt người dùng luôn qua được (fingerprint thật + tự giải
+challenge) — người dùng trở thành kênh vận chuyển, hệ thống giữ phần bóc tách.
 
-Các lượt thu — request mạng tới ForexFactory chỉ phát sinh trong 4 trường hợp:
+**Luồng (hành vi đặc tả):**
 
-1. **Lượt tự động khi khởi động app** (một lần mỗi phiên, không timer): fetch
-   JSON tuần này + tuần sau, upsert lịch; sau đó fetch HTML targeted cho các
-   sự kiện đã đến hạn công bố (theo `events_pending_actual`) mà `actual` còn
-   NULL.
-2. **Nút "Lấy lịch kinh tế"** (màn Quản lý tin): lặp lại phần JSON của lượt
-   khởi động — **luôn fetch, không kiểm tra "đã tồn tại thì bỏ qua"** để hiệu
-   đính của FF (đổi giờ/impact/forecast) luôn được cập nhật.
-3. **Nút "Cập nhật actual"** (màn Quản lý tin): fetch HTML targeted cho các
-   sự kiện `events_pending_actual()` trả về, merge actual.
-4. **On-demand lookup:** bên tiêu thụ yêu cầu (qua `NewsController`) một sự
-   kiện đã qua giờ công bố mà `actual` còn NULL → fetch ngay sự kiện đó,
-   upsert rồi trả `CalendarEvent` mới; ghi `ingest_runs` với producer
-   `on_demand_lookup`.
+1. Người dùng mở một trang lịch ForexFactory bất kỳ bằng trình duyệt của mình
+   (trang chủ hôm nay, `/calendar?day=...`, `/calendar?week=this|next`), sao
+   chép toàn bộ mã nguồn trang, dán vào dialog "Dán mã nguồn" của màn Quản lý
+   tin (hoặc chọn file `.html` đã lưu).
+2. `NewsController` tiếp nhận văn bản source (không tự bóc tách — S2), gọi
+   chủ sở hữu duy nhất: `services/ff_source_parser.py`.
+3. Parser trích khối JSON nhúng `window.calendarComponentStates[...]` trong
+   source (cấu trúc dữ liệu chính frontend FF dùng để render lịch) → chuẩn
+   hóa thành `CalendarEvent`:
+   - `dateline` (Unix epoch, chuẩn UTC) → `event_time_utc` + `day_key` — không
+     suy đoán timezone;
+   - `prefixedName` → `title`; `currency` giữ nguyên;
+   - `impactName` (`high`/`medium`/`low`/`holiday`) → enum `impact` của §4.2
+     (`holiday` → `non`);
+   - `forecast`/`previous`/`actual`: chuỗi rỗng → NULL;
+   - các trường bổ sung (`revision`, `notice`, `ebaseId`, `soloUrl`) đưa vào
+     `raw_json` của sự kiện (provenance từng sự kiện — không lưu cả trang);
+   - stamp `source=ff_html` (giá trị enum đóng băng §4.2 — ngữ nghĩa "từ mã
+     nguồn trang FF"); `dedupe_key` theo công thức §4.2 (chủ sở hữu duy nhất
+     `core/news_models.py` — cấm bản sao công thức).
+4. Parser đồng thời bóc **sự kiện lãi suất** có trong source (tên sự kiện
+   khớp danh mục lãi suất điều hành của 8 tiền tệ) thành `RateObservation`
+   (`source=ff_html`, `observed_at` = ngày sự kiện, `rate` parse từ `actual`) —
+   kênh lãi suất `ff_html` (§4.4) sống lại qua đường dán. Danh mục sự kiện bóc
+   **kế thừa `_FOREX_RATE_EVENTS` hiện hành** của `interest_rate_service.py`
+   (bằng chứng: runtime hiện hành — không bịa danh mục mới, B5).
+5. Controller ghi qua repository: `upsert_events` + `add_rate_observations`
+   (chống trùng tuyệt đối nhờ `dedupe_key` UNIQUE + **3 quy tắc merge an toàn**
+   bên dưới) và `record_run` (`producer=user`; `items_written` = tổng bản ghi
+   sự kiện + lãi suất đã ghi; `failed` khi bóc lỗi).
+6. Màn hình hiển thị tóm tắt lượt dán: số bản ghi **mới / cập nhật / xung
+   đột** + lỗi có kiểu (nếu có).
 
-**Tuần trước: KHÔNG thu** (Owner quyết) — JSON feed không có tuần trước; app
-tắt trọn tuần thì chấp nhận mất dữ liệu tuần đó. Đường bù duy nhất là nhập
-file thủ công (mục 10).
+**Trang parser đọc được:** mọi source có chứa `calendarComponentStates` —
+parser đọc **toàn bộ các ngày** trong `days[]`, không giới hạn loại trang;
+dán được trang ngày quá khứ để bù dữ liệu (thay thế điều khoản "Tuần trước:
+KHÔNG thu" cũ — điều khoản đó bãi bỏ cùng kênh JSON feed).
 
-**Quy tắc merge khi upsert (3 quy tắc an toàn):**
+**Quy tắc merge khi upsert (3 quy tắc an toàn — giữ nguyên văn 20/09/2026):**
 
 1. **Không ghi đè giá trị thật bằng NULL** — `actual` chỉ được ghi khi dữ liệu
-   mới có giá trị; lịch từ JSON không được xóa `actual` đã có.
-2. **Bảo vệ dữ liệu nhập tay** — bản ghi `source=user` không bị merge tự động
-   đè; chỉ người dùng được sửa.
-3. **Xung đột actual** (giá trị nhập tay khác giá trị tự động) → ưu tiên nhập
-   tay, ghi nhận xung đột vào `ingest_runs`.
+   mới có giá trị; source chưa có actual thì actual đã có được giữ nguyên.
+2. **Bảo vệ dữ liệu nhập tay** — bản ghi `source=user` không bị lượt dán đè;
+   chỉ người dùng được sửa.
+3. **Xung đột actual** (giá trị nhập tay khác giá trị trong source dán) → ưu
+   tiên nhập tay, ghi nhận xung đột vào `ingest_runs`.
 
-**Chống lạm dụng nguồn:** lỗi/429 → thông báo rõ nguyên nhân cho người dùng
-(nút bấm) hoặc ghi `ingest_runs` (lượt khởi động/on-demand); **không tự retry
-theo vòng lặp**. Tần suất chạm HTML thực tế vài lượt/ngày — rủi ro bị chặn
-nguồn gần bằng 0. Khi HTML lỗi, người dùng có thể nhập actual bằng tay qua
-màn Quản lý tin.
+**Dán trùng (source đã có trong DB):** `dedupe_key` không tạo row trùng — bản
+ghi khớp khóa được **cập nhật** theo 3 quy tắc merge; tóm tắt lượt dán phản
+ánh đúng số mới/cập nhật/xung đột để người dùng biết điều gì đã xảy ra.
+
+**Lỗi (fail-closed, B4):** source không chứa JSON lịch → lỗi có kiểu "không
+tìm thấy dữ liệu lịch kinh tế trong mã nguồn", **không ghi gì**, run
+`failed`; source cắt cụt/JSON hỏng → báo lỗi rõ nguyên nhân, không ghi nửa
+vời (một lượt dán là một khối all-or-nothing). Không có mạng ⇒ không retry,
+không 429, không điều khoản chống lạm dụng nguồn.
 
 ### 6.2. `rss_producer`
 
@@ -310,10 +354,14 @@ theo khóa `rss_poll_interval_minutes`; cửa sổ thu theo khóa `rss_window_ho
 ### 6.3. `fred_rate_producer` (QĐ-1 phương án A — Owner duyệt 21/09/2026)
 
 File mới `services/news_producers/fred_rate_producer.py`, hấp thụ logic FRED
-hiện hành của `interest_rate_service.py` theo cùng khuôn FF (§6.1): copy
-logic sang file mới, **không sửa file cũ**. Giữ tần suất hiện hành (khóa
-`fred_refresh_hours`); đích ghi là bảng `interest_rates`. Fallback
-`config/interest_rates.json` ghi `source=config_fallback`. Dẫn xuất trend
+hiện hành của `interest_rate_service.py`: copy logic sang file mới, **không
+sửa file cũ**. Giữ tần suất hiện hành (khóa `fred_refresh_hours`); đích ghi là
+bảng `interest_rates`. Chuỗi nguồn: FRED API → fallback
+`config/interest_rates.json` ghi `source=config_fallback`. **Từ đợt 3
+(24/09/2026):** kênh FF-HTML lãi suất qua mạng trong producer (khuôn
+`_update_from_forexfactory` kế thừa) bị **gỡ** — kênh đó chết vì Cloudflare
+chặn client không-phải-browser (§6.1 căn cứ); quan sát `source=ff_html` từ nay
+phát sinh duy nhất qua đường dán mã nguồn (§6.1 bước 4). Dẫn xuất trend
 (hike/cut/hold) không nằm trong producer — gọi `core/rate_trend.py` (§4.4).
 Trong thời gian song song, hai hệ fetch FRED độc lập (B7 — đường cache cũ
 nuôi vĩ mô di sản giữ nguyên 100%); `interest_rate_service.py` bị xóa tại
@@ -363,9 +411,9 @@ máy đọc, V3(a)). Tài liệu này trỏ về khóa, **không chép giá tr�
 | `ai_min_items` | số tin tối thiểu để được gọi AI | **3** |
 | `ai_horizons` | định nghĩa 3 chân trời (short/mid/long) | **ngắn: trong ngày–3 ngày; trung: 1–4 tuần; dài: 1–6 tháng** |
 
-**ForexFactory không có khóa chu kỳ** — chế độ thu là 4 trường hợp của mục
-6.1 (lượt khởi động, 2 nút bấm, on-demand lookup), không poll (Owner quyết
-20/09/2026 đợt 2).
+**ForexFactory không có khóa chính sách nào** — từ đợt 3 (24/09/2026): không
+thu tự động dưới mọi hình thức, không lượt thu, không nút fetch; kênh duy
+nhất của lịch kinh tế + actual là mã nguồn trang người dùng dán (mục 6.1).
 
 Bảng trên là **quyết định của Owner** (B5 — không còn giá trị `OPEN`). Nơi
 lưu chính thức lúc runtime là tệp chính sách `config/news_policy.json` tạo khi
@@ -391,8 +439,7 @@ ra ổn định; đổi cách lưu trữ bên trong không buộc bên tiêu th�
 | Phương thức | Ngữ nghĩa |
 |---|---|
 | `events_in_range(from_utc, to_utc, currencies=None, include_non_impact=True)` | sự kiện theo cửa sổ, đã phân loại `status` |
-| `events_pending_actual(now)` | sự kiện đã đến hạn công bố (`impact != non`, qua `event_time_utc + grace`) mà `actual` còn NULL — phục vụ lượt khởi động, nút "Cập nhật actual" và on-demand lookup |
-| `event_actual_or_lookup(event_id)` | trả `CalendarEvent`; nếu `stale` → kích hoạt on-demand lookup (6.1) trước khi trả |
+| `events_pending_actual(now)` | sự kiện đã đến hạn công bố (`impact != non`, qua `event_time_utc + grace`) mà `actual` còn NULL — từ đợt 3 (24/09/2026) phục vụ **panel hướng dẫn "sự kiện đang thiếu actual"** của màn Quản lý tin (cho người dùng biết cần mở trang FF nào để dán mã nguồn); KHÔNG phục vụ lượt fetch tự động nào (không còn — §6.1) |
 | `items_in_range(from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True)` | tin văn bản; mặc định bỏ tin `excluded=1` |
 | `latest_rates(currencies)` | quan sát gần nhất mỗi đồng tiền + trend dẫn xuất |
 | `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`) + giờ ingest thành công cuối mỗi tín hiệu (từ `ingest_runs`) |
@@ -436,15 +483,18 @@ kiểm thử ghim — (a) không mô-đun scoring/gate/alert/producer nào impor
 query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngược vào
 `core/`; (c) parser/prompt builder được kiểm thử như hàm thuần (L2).
 
-## 10. Provenance, nhập/xuất file
+## 10. Provenance và nhập mã nguồn trang FF
 
-- Mọi bản ghi có `source` + `fetched_at`; `news_events.raw_json` giữ payload
-  gốc để self-heal; mọi lượt producer có `ingest_runs`.
-- **Export:** CSV/JSON theo khoảng ngày, ra `%APPDATA%/ai-market-analyst/exports/`
-  (dữ liệu người dùng, không ghi vào thư mục cài đặt).
-- **Import:** upsert theo `dedupe_key`, `source=import` — để bù ngày app không
-  chạy. Import không được ghi đè `actual` đã có từ nguồn chính thống
-  (FF) trừ khi bản ghi đích đang `stale`.
+- Mọi bản ghi có `source` + `fetched_at`; `news_events.raw_json` giữ JSON sự
+  kiện đã trích để self-heal (không lưu cả trang); mọi lượt ghi có
+  `ingest_runs`.
+- **Kênh cập nhật duy nhất của lịch kinh tế + actual:** dán mã nguồn trang
+  ForexFactory (mục 6.1) — chống trùng bằng `dedupe_key` UNIQUE, 3 quy tắc
+  merge an toàn giữ nguyên văn, tóm tắt mới/cập nhật/xung đột mỗi lượt.
+- **Xuất/nhập file CSV-JSON: BÃI BỎ** (Owner quyết 24/09/2026, đợt 3). Nhu
+  cầu sao lưu (nếu có) thuộc về chính tệp database (`news.db` trong
+  `%APPDATA%` — dữ liệu người dùng); bù ngày app không chạy thực hiện bằng
+  dán mã nguồn trang của ngày quá khứ (mục 6.1).
 
 ## 11. Danh mục thay đổi bắt buộc (D4)
 
@@ -452,7 +502,7 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 
 | Yêu cầu thay đổi | Điểm chạm duy nhất | Cơ chế bảo vệ |
 |---|---|---|
-| Đổi khuôn dạng/nguồn lịch kinh tế (JSON feed, cách scrape) | bộ chuyển đổi trong `ff_calendar_producer` | mô hình `CalendarEvent` bất biến (C2) + kiểm thử hợp đồng producer |
+| Đổi cấu trúc mã nguồn trang FF (khuôn JSON `calendarComponentStates`) | bộ chuyển đổi trong `services/ff_source_parser.py` | mô hình `CalendarEvent` bất biến (C2) + kiểm thử hợp đồng parser trên fixture source thật |
 | Thêm/đổi nguồn tin văn bản (bỏ FXStreet, thêm feed mới) | bộ chuyển đổi trong `rss_producer` | mô hình `NewsItem` bất biến (C2) |
 | Đổi chu kỳ poll/ân hạn/retention/cửa sổ AI | `config/news_policy.json` | chính sách có phiên bản; không sửa code (S4); giá trị mới cần bằng chứng hoặc `OPEN` |
 | Đổi schema DB tin tức | migration mới + `NewsRepository` | bên tiêu thụ chỉ đọc qua hợp đồng repository (C1/C4) — kiểm thử consumer xanh nguyên trạng |
@@ -466,9 +516,10 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 
 | Phép tính/quyết định | Chủ sở hữu duy nhất |
 |---|---|
-| Sản xuất tín hiệu sự kiện lịch kinh tế (kể cả actual) | `ff_calendar_producer` |
+| Sản xuất tín hiệu sự kiện lịch kinh tế (kể cả actual) | đường dán mã nguồn: `news_controller` (tiếp nhận) + `services/ff_source_parser.py` (bóc tách) |
+| Bóc tách mã nguồn trang ForexFactory (JSON `calendarComponentStates` → `CalendarEvent` + `RateObservation` lãi suất `ff_html`) | `services/ff_source_parser.py` |
 | Sản xuất tín hiệu tin văn bản tự động | `rss_producer` |
-| Sản xuất quan sát lãi suất | `fred_rate_producer` |
+| Sản xuất quan sát lãi suất (FRED API + config fallback) | `fred_rate_producer` |
 | Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
 | Công thức `dedupe_key` của `news_items` (§4.3) | `core/news_models.py` |
 | Nạp và validate chính sách miền Tin tức | `core/news_policy.py` |
@@ -478,7 +529,7 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 | Phân loại trạng thái dữ liệu (`scheduled/released/stale`, `fresh/degraded/unavailable`) | `core/news_freshness.py` |
 | Dựng prompt nhận định xu hướng | `core/trend_prompt_builder.py` |
 | Thẩm quyền nội dung verdict (parse/chấp nhận/từ chối) | `core/trend_verdict_parser.py` |
-| Điều phối lịch producer + lời gọi AI | `news_controller` |
+| Điều phối lịch producer + tiếp nhận dán mã nguồn/nhập tay + lời gọi AI | `news_controller` |
 | Quyết định dùng verdict AI trong quy trình tự động | **không mô-đun nào** — bị cấm (mục 9.2); thay đổi = quyết định mới của Owner |
 
 ## 12. Tài liệu liên quan (trỏ, không chép — D5)
@@ -490,15 +541,16 @@ Viết **sau** khi phần Tin tức được duyệt và triển khai (theo quy�
 |---|---|
 | `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026 + IMPLEMENTED 23/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen — ca Tin tức đã nghiệm thu). **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
 | `docs/macro/macro_score_architecture.md` | Mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên |
-| `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | MacroGate/news gate dùng `event_actual_or_lookup`; khẳng định verdict AI ngoài guard chain |
+| `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | MacroGate/news gate đọc `events_in_range` + trạng thái `stale` — fail-closed: độ tươi dữ kiện FF phụ thuộc kỷ luật dán mã nguồn của người dùng (đợt 3, 24/09/2026 — không còn đường tự chữa `event_actual_or_lookup`); khẳng định verdict AI ngoài guard chain |
 | `docs/architecture/architecture.md` | Bản đồ module/luồng dữ liệu mới; xóa mô tả `news_service.py` cũ |
 | `docs/architecture/architecture-rules.md` (Phụ lục B) | **ĐÃ GHI 20/09/2026:** ngoại lệ E3 cho ca "đập đi – xây mới"; cập nhật mốc xử lý sổ nợ #1 |
 | `docs/README.md` | **ĐÃ ĐĂNG KÝ 20/09/2026** vào danh sách tài liệu chính (D3) |
 | `docs/product/product_spec.md`, `docs/guides/USER_GUIDE.md` | Tính năng + hướng dẫn sử dụng |
 
 Code cũ bị thay thế (thời điểm xóa theo lộ trình tiêu thụ, tránh khoảng trống
-runtime): `services/news_service.py`, `services/forex_factory_client.py` (hấp
-thụ vào `ff_calendar_producer`), `services/interest_rate_service.py` (hấp thụ
+runtime): `services/news_service.py`, `services/forex_factory_client.py`
+(**không hấp thụ vào hệ mới** — đợt 3 chuyển FF sang kênh dán mã nguồn;
+xóa tại đấu nối b), `services/interest_rate_service.py` (hấp thụ
 vào `fred_rate_producer` — QĐ-1 phương án A, xóa tại đấu nối b), cache JSON
 tin tức trên đĩa, `NewsWorker`/`fetch_news_window` phía Dashboard.
 
@@ -511,7 +563,9 @@ Chốt ngày 20/09/2026 (đợt duyệt tài liệu này):
 | Toàn bộ giá trị chính sách số (chu kỳ poll RSS, cửa sổ thu RSS, chu kỳ FRED, ân hạn stale, ngưỡng degraded, retention log vận hành, cửa sổ AI, định nghĩa 3 chân trời) | Chốt tại bảng mục 7 — `config/news_policy.json` là nguồn runtime duy nhất (D5: mục này không nhân bản giá trị; riêng retention dọn tự động khi khởi động app theo mục 4.6) |
 | Ranh giới verdict AI | **Advisory-only — không tham gia bất cứ quy trình nào** (scoring, gate, guard thực thi, alert, producer); đổi = quyết định mới của Owner (đặc tả hành vi: mục 9.2) |
 
-Chốt ngày 20/09/2026, đợt 2 (điều chỉnh chế độ thu ForexFactory):
+Chốt ngày 20/09/2026, đợt 2 (điều chỉnh chế độ thu ForexFactory) — **đã bị
+đợt 3 (24/09/2026) thay thế toàn bộ phần ForexFactory; bảng giữ làm ghi nhận
+lịch sử quyết định, riêng dòng "RSS + FRED" còn hiệu lực**:
 
 | Hạng mục | Quyết định |
 |---|---|
@@ -524,6 +578,22 @@ Chốt ngày 20/09/2026, đợt 2 (điều chỉnh chế độ thu ForexFactory)
 
 Nơi lưu giá trị chính thức lúc runtime: `config/news_policy.json` (mục 7).
 
+Chốt ngày 24/09/2026, đợt 3 (kênh ForexFactory — dán mã nguồn trang; bãi bỏ
+xuất/nhập file):
+
+| Hạng mục | Quyết định |
+|---|---|
+| Bỏ thu tự động FF | Xóa cả 4 lượt thu (lượt khởi động JSON+HTML, nút "Lấy lịch kinh tế", nút "Cập nhật actual", on-demand lookup) — app **không phát request mạng nào tới ForexFactory** |
+| Bãi bỏ xuất/nhập file | Export CSV/JSON và Import CSV/JSON (mục 10 cũ) bị bỏ; sao lưu = tệp `news.db`; bù ngày app không chạy = dán mã nguồn trang ngày quá khứ |
+| Kênh duy nhất | Người dùng dán mã nguồn trang FF (dialog dán hoặc file `.html`) → `services/ff_source_parser.py` bóc JSON `calendarComponentStates` → upsert qua repository (chống trùng `dedupe_key` + 3 quy tắc merge giữ nguyên văn) → tóm tắt mới/cập nhật/xung đột (đặc tả hành vi: mục 6.1) |
+| Stamp `source` | Sự kiện/actual/lãi suất bóc từ source dán = `ff_html` (enum đóng băng, đúng provenance); `ff_json`, `import` = giá trị lịch sử, không phát sinh; lượt dán ghi `ingest_runs` `producer=user` |
+| Lãi suất từ source dán | CÓ — parser bóc sự kiện lãi suất theo danh mục kế thừa `_FOREX_RATE_EVENTS` (B5) → `interest_rates` `source=ff_html`; kênh FF-HTML qua mạng trong `fred_rate_producer` bị gỡ |
+| `event_actual_or_lookup` | XÓA khỏi hợp đồng §8 — bên tiêu thụ đọc `events_in_range` + trạng thái `stale` (fail-closed; độ tươi là trách nhiệm người dùng dán source) |
+| `events_pending_actual` | GIỮ, đổi công dụng: nuôi panel hướng dẫn "sự kiện đang thiếu actual" của màn Quản lý tin |
+| Nhập tay | Form tin `user_note` (§6.4) GIỮ nguyên; đường "nhập actual bằng tay cho sự kiện khi HTML lỗi" BỎ — dán source là kênh actual duy nhất |
+| RSS + FRED | KHÔNG đổi — giữ tự động định kỳ (`rss_poll_interval_minutes`, `fred_refresh_hours`) |
+| Căn cứ | Điều tra 24/09/2026: nextweek JSON 404 vĩnh viễn (upstream gỡ), thisweek 429 tái diễn (budget IP hẹp + retry khuếch đại), HTML `forexfactory.com` chặn theo TLS fingerprint (handshake timeout với Python/curl, browser qua được), wss `calendar-feed:2087` bị managed challenge (403 `cf-mitigated: challenge`) — cả ba kênh tự động bất khả thi với app |
+
 ## 14. Kiểm thử (C4, B3, E2)
 
 - **Hàm thuần (`core/`):** `news_freshness` (bảng trạng thái theo biên thời
@@ -531,10 +601,20 @@ Nơi lưu giá trị chính thức lúc runtime: `config/news_policy.json` (mụ
   (JSON hợp lệ/lỗi/thiếu horizon → từ chối, không lưu rác).
 - **Repository:** CRUD/upsert/dedupe/`excluded`/retention purge; `store_state`
   đúng theo `ingest_runs`.
-- **Producer:** HTTP giả lập — JSON ok / 429 / HTML targeted / merge actual;
-  lượt khởi động; hành vi 2 nút bấm; on-demand lookup; 3 quy tắc merge (không
-  NULL đè actual, bảo vệ `source=user`, xung đột actual → ưu tiên nhập tay +
-  log `ingest_runs`).
+- **Parser source FF (`services/ff_source_parser.py`):** bóc trên **fixture
+  mã nguồn thật** (trang chủ/ngày/tuần — fixture lấy từ source người dùng dán
+  24/09/2026): đủ trường ánh xạ §6.1 bước 3 (dateline UTC, impact, rỗng→NULL,
+  revision/notice vào `raw_json`); nhiều ngày trong `days[]`; bóc sự kiện lãi
+  suất theo danh mục kế thừa; source không có JSON lịch → lỗi có kiểu, không
+  ghi gì; JSON hỏng/cắt cụt → all-or-nothing.
+- **Lượt dán (controller + repository):** chống trùng — dán 2 lần cùng source
+  không tạo row trùng (khớp `dedupe_key` → cập nhật); 3 quy tắc merge mỗi quy
+  tắc một test riêng (không NULL đè actual, bảo vệ `source=user`, xung đột
+  actual → ưu tiên user + log); đếm mới/cập nhật/xung đột đúng; `ingest_runs`
+  ghi `producer=user`.
+- **Producer RSS/FRED:** HTTP giả lập — RSS: fixture XML từng feed, dedupe,
+  feed chết → `partial`; FRED: chuỗi nguồn API → config fallback đúng thứ tự,
+  không còn kênh FF-HTML qua mạng.
 - **Kiểm thử hợp đồng (C4):** ghim chữ ký + ngữ nghĩa phương thức đọc mục 8 —
   bên tiêu thụ (Dashboard, vĩ mô) viết kiểm thử theo hợp đồng này, xanh nguyên
   trạng khi nội bộ repository thay đổi.
@@ -578,3 +658,8 @@ xóa theo vòng đời D3 sau khi hoàn tất ca**; lịch sử còn trong Git.
 
 Hai ca đấu nối **(a) Dashboard** và **(b) vĩ mô** (§3.1 khoản 3–4) nằm ngoài
 lộ trình này, lập plan riêng sau khi Bước 4 đạt.
+
+**Sửa đổi đợt 3 (24/09/2026):** ca "Nguồn dán FF" — thay kênh thu
+ForexFactory bằng dán mã nguồn trang + bãi bỏ xuất/nhập file (mục 6.1, 10,
+13); triển khai theo plan riêng (vòng đời D3). Lộ trình 4 bước ở trên giữ
+nguyên làm ghi nhận lịch sử của ca tầng dữ liệu.

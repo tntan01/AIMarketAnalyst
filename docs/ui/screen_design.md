@@ -30,7 +30,7 @@ Phần mềm nên gồm **9 màn hình chính** trong thiết kế (mục 2/3 Si
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
-| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** | Quản lý database tin tức: xem/lọc, nhập tay, xuất/nhập file; cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
+| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** (đợt 3 sửa đổi: PLANNED) | Quản lý database tin tức: xem/lọc, nhập tay, dán mã nguồn trang ForexFactory để cập nhật lịch kinh tế + actual; cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
 
 Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **14 màn hình/tabs chức năng** (mục 14 triển khai tại ca Tin tức):
 
@@ -1526,9 +1526,10 @@ Khi scanner mở lệnh qua auto-trade, hệ thống tự động đăng ký BE 
 ### Mục đích
 
 Cho phép người dùng xem toàn bộ tin trong database theo ngày, bổ sung tin mà
-nguồn tự động bỏ sót, loại trừ tin không có giá trị, xuất/nhập file để sao
-lưu hoặc bù ngày app không chạy, và yêu cầu AI nhận định xu hướng một cặp
-tiền để **tham khảo**.
+nguồn tự động bỏ sót, loại trừ tin không có giá trị, **dán mã nguồn trang
+ForexFactory để cập nhật lịch kinh tế + actual** (kênh duy nhất — contract
+§6.1 đợt 3, 24/09/2026), và yêu cầu AI nhận định xu hướng một cặp tiền để
+**tham khảo**.
 
 ### Bố cục
 
@@ -1540,7 +1541,10 @@ tiền để **tham khảo**.
 [ Bảng tin ]
   Thời gian | Loại | Nguồn | Đồng tiền | Tiêu đề/Nội dung | Tác động | Thực tế | Trạng thái | Chi tiết
 
-[ Thanh công cụ: Lấy lịch kinh tế | Cập nhật actual | Nhập tin | Xuất file | Nhập file | AI nhận định xu hướng ]
+[ Panel "Sự kiện đang thiếu số liệu": danh sách sự kiện `stale` (từ
+  events_pending_actual) + link trang FF tương ứng cần mở để dán mã nguồn ]
+
+[ Thanh công cụ: Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]
 ```
 
 - **Bảng tin:** hợp nhất sự kiện lịch kinh tế (`news_events`) và tin văn bản
@@ -1566,29 +1570,34 @@ thị):
 | Cờ `excluded` (tin văn bản) | `excluded` = "Đã loại trừ" |
 | `kind` (tin văn bản) | `headline` = "Headline" · `statement` = "Phát biểu" · `user_note` = "Nhập tay" |
 | `impact` / `impact_hint` | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `non` = "Không đáng kể" |
-| `source` | `ff_json` = "ForexFactory (lịch)" · `ff_html` = "ForexFactory (actual)" · `google_news_rss` = "Google News" · `fxstreet_rss` = "FXStreet" · `investing_rss` = "Investing" · `fred` = "FRED" · `config_fallback` = "Cấu hình dự phòng" · `user` = "Nhập tay" · `import` = "Nhập file" |
+| `source` | `ff_json` = "ForexFactory (lịch — dữ liệu cũ)" · `ff_html` = "ForexFactory (mã nguồn trang)" · `google_news_rss` = "Google News" · `fxstreet_rss` = "FXStreet" · `investing_rss` = "Investing" · `fred` = "FRED" · `config_fallback` = "Cấu hình dự phòng" · `user` = "Nhập tay" · `import` = "Nhập file (dữ liệu cũ)" |
 | `direction` (verdict AI) | `bullish` = "Tăng" · `bearish` = "Giảm" · `neutral` = "Trung lập" · `insufficient_data` = "Không đủ dữ liệu" |
 | `confidence` (verdict AI) | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `none` = "Không có" |
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
 
-### Hành vi lấy dữ liệu ForexFactory (2 nút)
+### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — PLANNED, sửa đổi đợt 3 24/09/2026)
 
-Không có poll định kỳ từ UI; ngoài 2 nút này, mạng chỉ được gọi ở lượt tự
-động khi khởi động app và on-demand lookup khi chấm điểm cần actual (4
-trường hợp duy nhất — contract §6.1):
+Màn hình **không có đường mạng nào tới ForexFactory** — không nút fetch,
+không poll, không lookup (contract §6.1 đợt 3). Hai nút cũ "Lấy lịch kinh
+tế" / "Cập nhật actual" bị **gỡ bỏ**.
 
-- **Lấy lịch kinh tế:** fetch JSON tuần này + tuần sau, **luôn upsert đè**
-  (không kiểm tra "đã tồn tại") để hiệu đính của FF được cập nhật. Trong lúc
-  chạy: nút disable + chỉ báo tiến trình. Kết thúc: thông báo tóm tắt số sự
-  kiện mới/cập nhật. Lỗi (mạng/429): thông báo rõ nguyên nhân, **không tự
-  retry**.
-- **Cập nhật actual:** fetch HTML targeted cho các sự kiện đã đến hạn công bố
-  mà actual còn thiếu (trạng thái `stale`). Kết thúc: thông báo số sự kiện
-  nhận được actual. Lỗi HTML: thông báo rõ nguyên nhân + gợi ý hành động
-  "Nhập actual bằng tay" (mở form nhập tin với sự kiện liên quan điền sẵn).
-- Dữ liệu người dùng nhập tay không bao giờ bị 2 nút trên ghi đè (quy tắc
-  merge của contract); xung đột actual tự-động vs nhập-tay → ưu tiên nhập
-  tay, ghi log vận hành.
+- Nút **Dán mã nguồn trang** mở dialog dán: một ô text lớn (dán toàn bộ mã
+  nguồn trang FF đã sao chép từ trình duyệt) + nút chọn file `.html` đã lưu
+  + hướng dẫn 3 bước ngắn gọn (mở trang lịch FF → xem mã nguồn trang, chọn
+  tất cả, sao chép → dán vào đây).
+- Bấm "Cập nhật": controller tiếp nhận source → parser bóc tách (contract
+  §6.1) → upsert qua repository (chống trùng `dedupe_key` + 3 quy tắc merge
+  của contract — dữ liệu nhập tay không bao giờ bị đè; xung đột actual → ưu
+  tiên nhập tay, ghi log vận hành).
+- Kết thúc hiện **tóm tắt lượt dán**: số bản ghi mới / cập nhật / xung đột
+  (sự kiện + lãi suất). Lỗi (source không chứa dữ liệu lịch, JSON hỏng):
+  thông báo rõ nguyên nhân, không ghi gì (all-or-nothing), người dùng có thể
+  dán lại.
+- **Panel "Sự kiện đang thiếu số liệu"** (danh sách `stale` từ
+  `events_pending_actual` — contract §8): mỗi dòng hiện sự kiện + nút mở
+  trang FF tương ứng bằng trình duyệt mặc định (chỉ mở link — app không tự
+  fetch), giúp người dùng biết cần dán nguồn của ngày/trang nào; dán xong
+  panel tự làm mới.
 
 ### Hành vi nhập/sửa tin
 
@@ -1597,26 +1606,21 @@ trường hợp duy nhất — contract §6.1):
   Thiếu trường bắt buộc → báo lỗi ngay trên form, không ghi DB.
 - Sửa/xóa chỉ khả dụng với tin `source=user`; tin tự động chỉ có toggle
   **Loại trừ** (`excluded`) — không có nút xóa (giữ provenance theo contract).
-- Nhập file (CSV/JSON) chạy nền, upsert theo `dedupe_key`; kết thúc hiện tóm
-  tắt: số bản ghi mới / cập nhật / bỏ qua trùng.
-
-### Hành vi xuất file
-
-- Xuất CSV hoặc JSON theo khoảng ngày đang lọc, ghi ra thư mục exports chuẩn
-  (`%APPDATA%/ai-market-analyst/exports/` — xem contract mục 10); chạy nền có
-  progress, kết thúc hiện đường dẫn file trong thông báo.
+- **Xuất/nhập file CSV-JSON: BÃI BỎ** (contract §10 đợt 3, 24/09/2026) — các
+  nút "Xuất file" / "Nhập file" bị gỡ; sao lưu thuộc về tệp `news.db`, bù dữ
+  liệu ngày cũ bằng dán mã nguồn trang của ngày đó.
 
 ### Trạng thái tải và rỗng
 
 - **Bảng tin:** đọc database qua worker nền (`NewsController` → `NewsRepository`)
   khi mở màn và khi đổi bộ lọc; hiện chỉ báo loading trong lúc đọc. Kết quả
   rỗng → empty state "Không có tin trong khoảng lọc" kèm hành động gợi ý:
-  nới khoảng ngày / "Lấy lịch kinh tế" / "Nhập tin".
+  nới khoảng ngày / "Dán mã nguồn trang" / "Nhập tin".
 - **Dialog AI nhận định:** trong lúc chờ verdict hiện progress + disable nút
   "Nhận định" (lời gọi chạy worker nền — đã quy định ở mục dưới); lỗi provider
   → thông báo `friendly_error()`.
-- **Xuất/nhập file:** chạy nền có progress; hoàn tất hiện tóm tắt (xuất:
-  đường dẫn file; nhập: số bản ghi mới / cập nhật / bỏ qua trùng).
+- **Lượt dán mã nguồn:** xử lý cục bộ (không mạng) nên nhanh; vẫn hiện chỉ
+  báo tiến trình trong lúc bóc tách/ghi và tóm tắt khi hoàn tất (mục trên).
 
 ### Cửa sổ AI nhận định xu hướng (dialog nhỏ)
 
@@ -1650,14 +1654,18 @@ Lịch sử nhận định của phạm vi này (mới nhất trước)
 
 ### Nguyên tắc
 
-- Màn hình chỉ đọc/ghi qua `NewsController` → `NewsRepository`; không fetch
-  nguồn ngoài trực tiếp, không tính toán trong UI. Riêng 2 nút lấy dữ liệu
-  ForexFactory đi qua `NewsController` → `ff_calendar_producer` (mạng chỉ nằm
-  trong producer).
+- Màn hình chỉ đọc/ghi qua `NewsController` → `NewsRepository`; **không có
+  đường mạng nào tới ForexFactory từ màn này** (đợt 3: kênh duy nhất là dán mã
+  nguồn trang — controller tiếp nhận, `services/ff_source_parser.py` bóc tách,
+  UI không tự parse). Mạng chỉ còn ở producer RSS/FRED (tự động định kỳ,
+  ngoài màn này) và lời gọi AI (worker nền).
 - Không hiển thị/đọc `ai_trend_verdicts` ở bất kỳ màn hình nào khác; không
   chi tiết verdict nào xuất hiện trong Scanner, Dashboard hay alert
   (ranh giới cứng, contract mục 9.2).
 - Dùng component chung (`card`, `action_button`, `configure_table`,
   ResponsiveRow/Grid) và tuân thủ contract kích thước cửa sổ tối thiểu 800×500.
-- Trạng thái: **IMPLEMENTED** (triển khai ở Bước 3 của lộ trình trong contract,
-  nghiệm thu 23/09/2026); sửa đặc tả này phải cùng commit với code (D2).
+- Trạng thái: khung màn + nhập/sửa tin + dialog AI **IMPLEMENTED** (nghiệm thu
+  23/09/2026); các thay đổi **đợt 3 (24/09/2026)** — gỡ 2 nút FF + xuất/nhập
+  file, thêm dialog dán mã nguồn + panel thiếu số liệu — ở trạng thái
+  **PLANNED** (ca "Nguồn dán FF"); sửa đặc tả này phải cùng commit với code
+  (D2).

@@ -82,20 +82,26 @@ seed/stale/schema cũ/thiếu bằng chứng bị bỏ qua; loader có thể dù
 fallback hợp lệ và chỉ flat khi không còn candidate eligible. Runner calibration
 không được tự bật flag.
 
-### 3.5 Tin tức & Quản lý tin — PLANNED (ban hành 20/09/2026)
+### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026); sửa đổi đợt 3 (24/09/2026) PLANNED
 
 Tính năng tầng dữ liệu tin tức theo contract duy nhất
 [`news/news-architecture.md`](../news/news-architecture.md):
 
 - **Database tin tức (`news.db`) là nguồn chân lý duy nhất:** bộ sản xuất chỉ
-  ghi, bên tiêu thụ chỉ đọc qua repository. Nguồn tự động: ForexFactory (lịch
-  kinh tế — thu theo lượt khởi động app + nút bấm của người dùng + lookup
-  theo yêu cầu, không poll; số liệu thực tế lấy targeted bằng HTML khi đến
-  hạn công bố), RSS (headline, phát biểu chính thức — poll định kỳ), FRED
-  (lãi suất — định kỳ). Người dùng có thể **nhập tay** tin bổ sung; tin tự
-  động chỉ có thể bị loại trừ, không xóa (giữ provenance).
-- **Màn Quản lý tin (Tin tức):** xem/lọc theo ngày, nhập/sửa tin tay,
-  xuất/nhập file CSV-JSON để sao lưu và bù ngày app không chạy.
+  ghi, bên tiêu thụ chỉ đọc qua repository. Nguồn dữ liệu: RSS (headline,
+  phát biểu chính thức — tự động định kỳ), FRED (lãi suất — tự động định kỳ),
+  **ForexFactory (lịch kinh tế + số liệu thực tế): KHÔNG thu tự động — người
+  dùng dán mã nguồn trang FF từ trình duyệt, hệ thống bóc tách và cập nhật vào
+  database** (quyết định Owner đợt 3, 24/09/2026 — cả ba kênh tự động của FF
+  đều bị Cloudflare chặn/hủy feed). Người dùng có thể **nhập tay** tin bổ
+  sung; tin tự động chỉ có thể bị loại trừ, không xóa (giữ provenance). Dán
+  trùng không sinh bản ghi kép (chống trùng theo khóa + quy tắc hợp nhất an
+  toàn — contract §6.1).
+- **Màn Quản lý tin (Tin tức):** xem/lọc theo ngày, nhập/sửa tin tay, **dán
+  mã nguồn trang ForexFactory** (kênh cập nhật lịch kinh tế + actual duy nhất)
+  kèm panel hướng dẫn "sự kiện đang thiếu số liệu". (Xuất/nhập file CSV-JSON
+  đã bãi bỏ đợt 3 — sao lưu thuộc về tệp database; bù ngày app không chạy
+  bằng dán mã nguồn trang của ngày cũ.)
 - **AI nhận định xu hướng:** cửa sổ trong màn Quản lý tin gọi AI đánh giá xu
   hướng ngắn hạn/trung hạn/dài hạn của cặp tiền từ tin trong database. Kết
   quả **chỉ để người dùng tham khảo — không tham gia bất cứ quy trình nào**

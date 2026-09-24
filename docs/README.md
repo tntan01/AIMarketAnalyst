@@ -58,8 +58,10 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
   thuật toán/default config của Location runtime.
 - `macro/macro_score_architecture.md`: contract chấm điểm macro hiện hành.
 - `news/news-architecture.md`: **contract tầng dữ liệu Tin tức ban hành
-  20/09/2026** (Owner duyệt) — database tin tức là nguồn chân lý duy nhất; bộ
-  sản xuất (ForexFactory/RSS/FRED/nhập tay) chỉ ghi, bên tiêu thụ chỉ đọc qua
+  20/09/2026, sửa đổi đợt 3 24/09/2026** (Owner duyệt) — database tin tức là
+  nguồn chân lý duy nhất; bên ghi (RSS/FRED tự động định kỳ, nhập tay, **dán
+  mã nguồn trang ForexFactory** — kênh duy nhất của lịch kinh tế + actual,
+  không thu tự động FF) chỉ ghi, bên tiêu thụ chỉ đọc qua
   `NewsRepository`; AI nhận định xu hướng là advisory-only, không tham gia bất
   cứ quy trình nào; ca "đập đi – xây mới" là ngoại lệ B6 đã ghi E3 trong
   `architecture/architecture-rules.md`. Đặc tả hiển thị Dashboard và mapping
