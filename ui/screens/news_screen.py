@@ -21,26 +21,17 @@ tự đặt thêm.  Bốn chuỗi ngoài bảng đó đều có nguồn đã đ�
 * ``LOADING_TEXT = "Đang tải..."`` — chuỗi có sẵn của repo
   (``dashboard_screen.py``) cho chỉ báo loading mà screen_design yêu cầu.
 
-**Lô L3.4 — xuất/nhập file CSV-JSON** (contract §10; screen_design "Hành vi
-xuất file" d.1603-1607 + "Hành vi nhập file" d.1600-1601 + "Trạng thái tải và
-rỗng" d.1618-1619): nút "Xuất file"/"Nhập file" chạy theo đúng khuôn luồng nền
-của 2 nút ForexFactory (D10 — slot thread riêng, disable khi chạy, chỉ báo tiến
-trình, thông báo kết thúc).  Màn chỉ đi qua ``NewsController`` → mọi
-serializer/parser nằm trong ``services/news_file_transfer.py`` (UI không tự
-parse — "Nguyên tắc"); "AI nhận định xu hướng" VẪN disabled (L3.5).
-
-Khai báo đọc-hiểu (V2):
-
-* Xuất theo **khoảng ngày đang lọc** (d.1605); đường dẫn file hiện trong thông
-  báo (d.1607).  Xuất/nhập chạy trên slot thread riêng ``_transfer_thread``
-  (khuôn ``_fetch_thread`` L3.3) — không đụng lượt đọc bảng.
-* Cơ chế chọn format chưa được tài liệu ghim (d.1605 "CSV hoặc JSON") → hộp hai
-  nút "CSV"/"JSON" (chuỗi nguyên văn của chính d.1605); cơ chế chọn file nhập →
-  ``QFileDialog.getOpenFileName`` với bộ lọc ``*.csv;*.json``, thư mục mở đầu là
-  thư mục exports chuẩn.
-* Khi một lượt xuất/nhập chạy, disable toàn bộ nhóm nút ghi (2 nút FF + Nhập
-  tin + Xuất + Nhập) — khuôn D10; khi kết thúc re-enable; sau lượt NHẬP đọc lại
-  bảng (dữ liệu đã đổi), sau lượt XUẤT không cần.
+**Đợt 3 (24/09/2026 — ca "Nguồn dán FF", plan F1):** thanh công cụ chỉ còn
+**[ Nhập tin | AI nhận định xu hướng ]** — hai nút "Lấy lịch kinh tế"/"Cập nhật
+actual" (lô L3.3 cũ) và hai nút "Xuất file"/"Nhập file" (lô L3.4 cũ) cùng toàn
+bộ slot thread/dialog riêng của chúng đã bị **GỠ** (contract §13/§10 đợt 3 — bỏ
+thu tự động FF, bỏ xuất/nhập file; app không phát request mạng nào tới
+ForexFactory).  Gợi ý "Nhập actual bằng tay" cũng bỏ (dán source là kênh actual
+duy nhất — contract §13 đợt 3).  Nhãn hiển thị nguồn đổi 3 chuỗi theo Từ điển
+đợt 3 (``ff_html`` = "ForexFactory (mã nguồn trang)", ``ff_json`` = "ForexFactory
+(lịch — dữ liệu cũ)", ``import`` = "Nhập file (dữ liệu cũ)" — nhãn cũ phục vụ
+dữ liệu cũ, GIỮ); empty state gợi ý "Dán mã nguồn trang" (nút giữ chỗ disabled
+— hành vi thật ở F4, khuôn nút chưa nối hành vi của các lô trước).
 
 **Lô L3.5 — cửa sổ AI nhận định xu hướng** (screen_design d.1621-1649; contract
 §9.1-§9.2): nút "AI nhận định xu hướng" mở ``AiTrendDialog`` (520×640, không
@@ -48,7 +39,7 @@ modal toàn app — WindowModal, d.1624); phạm vi = cặp tiền ``SUPPORTED_S
 (tiêu thụ) hoặc 1 đồng tiền rút từ chính danh sách cặp; dòng đếm qua
 ``controller.ai_scope_preview`` (không gọi AI); dưới ``ai_min_items`` hiện
 d.1642 và nút "Nhận định" không gọi AI (B4); lời gọi AI chạy trong worker nền
-(khuôn ``_start_fetch`` D10 — không gọi ``analyze()`` đồng bộ trong callback,
+(khuôn worker D10 của màn — không gọi ``analyze()`` đồng bộ trong callback,
 không processEvents); lỗi provider/parser → thông báo thân thiện; 3 thẻ chân
 trời nhãn đúng từ điển d.1570-1572, ký hiệu ▲/▼/— màu semantic; dẫn chứng bấm
 được → đóng dialog + ``_jump_to_evidence`` nhảy dòng bảng; lịch sử
@@ -67,15 +58,9 @@ Khai báo đọc-hiểu (V2):
 * "Nhận định" là nút duy nhất khởi động lượt AI; không có lấy lại tự động
   (retry do controller theo tín hiệu retryable của parser — UI không biết).
 
-**Lô L3.3 — hành vi tương tác** (screen_design "Hành vi lấy dữ liệu ForexFactory
-(2 nút)" + "Hành vi nhập/sửa tin"; contract §6.1/§6.4):
+**Lô L3.3 — hành vi nhập tin + chi tiết dòng** (screen_design "Hành vi nhập/sửa
+tin", contract §6.4):
 
-* **2 nút ForexFactory** đi qua ``NewsController`` → ``ff_calendar_producer``
-  (screen_design "Nguyên tắc": UI không gọi thẳng producer, mạng chỉ nằm trong
-  producer).  Lượt fetch chạy trong worker nền riêng (``NewsReadWorker``, slot
-  thread của nút — D10), disable cả 2 nút FF + nút "Nhập tin" khi chạy; kết thúc
-  hiện thông báo có kiểu của result (``QMessageBox`` khuôn ``journal_screen`` —
-  D8) rồi đọc lại bảng qua `reload_rows()`.
 * **Form nhập/sửa ``user_note``** (``UserNoteDialog``): trường bắt buộc giờ
   đăng/loại tin/nội dung/đồng tiền, tùy chọn mức tác động + URL; thiếu trường
   bắt buộc → lỗi hiện trên form, KHÔNG gọi controller (không ghi DB); lỗi
@@ -98,12 +83,6 @@ Khai báo đọc-hiểu lô L3.3 (V2 — bên dưới, xem từng điểm):
   gợi ý lấy từ chính ``currency_combo`` của màn (không bịa danh sách tiền tệ).
 * **D5 — combo "Mức tác động"** chỉ ``high``/``medium``/``low`` (``ImpactHint``)
   + mục trống đầu tiên cho trường tùy chọn.
-* **D9 — prefill "Nhập actual bằng tay":** chọn sự kiện đến hạn sớm nhất của
-  tuần bị lỗi từ ``controller.events_pending_actual(now)``; hết sự kiện → form
-  trống; KHÔNG tạo đường ghi nào vào ``news_events``.  Vì UI không được import
-  ``services/`` (L1) nên thẻ tuần Monday–Sunday được soi gương bằng một hàm
-  thuần cục bộ `_ff_week_label` — chỉ dùng cho gợi ý prefill, KHÔNG dùng cho
-  quyết định URL fetch (producer giữ thẩm quyền đó).
 
 Khai báo đọc-hiểu (V2):
 
@@ -124,8 +103,9 @@ Khai báo đọc-hiểu (V2):
   và thanh công cụ: một hàng đầy đủ ở desktop, tự xuống nhiều hàng khi hẹp, nên
   sàn bề ngang của màn là bề ngang MỘT hàng compact — màn vừa 800px (điểm review
   của lô).  Combo/date-edit được đặt sàn bề ngang tường minh
-  (``setMinimumWidth``) vì nhãn item dài (vd "ForexFactory (actual)") sẽ đẩy sàn
-  vượt 800px nếu để mặc định.
+  (``setMinimumWidth``) vì nhãn item dài (vd "ForexFactory (mã nguồn trang)")
+  sẽ đẩy sàn vượt 800px nếu để mặc định.  Thanh công cụ 2 nút (đợt 3) càng
+  không vượt sàn.
 * Bảng đặt bề ngang cột tường minh (khuôn ``scanner_screen._configure_table_columns``):
   cột "Tiêu đề/Nội dung" giãn, các cột còn lại cố định đủ đọc trọn nhãn cột;
   cửa sổ hẹp thì bảng cuộn ngang (``ScrollBarAsNeeded``) thay vì bóp cột tới mức
@@ -135,7 +115,7 @@ Khai báo đọc-hiểu (V2):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, time as clock_time, timedelta
+from datetime import UTC, datetime, time as clock_time
 
 from PyQt6.QtCore import (
     QAbstractTableModel,
@@ -153,7 +133,6 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QDateTimeEdit,
     QDialog,
-    QFileDialog,
     QFrame,
     QGridLayout,
     QHeaderView,
@@ -170,7 +149,6 @@ from PyQt6.QtWidgets import (
 )
 
 from config.constants import SUPPORTED_SYMBOLS
-from config.paths import exports_dir
 from core.news_models import (
     CalendarEvent,
     EventImpact,
@@ -211,15 +189,15 @@ IMPACT_TEXT: dict[str, str] = {
     "non": "Không đáng kể",
 }
 SOURCE_TEXT: dict[str, str] = {
-    "ff_json": "ForexFactory (lịch)",
-    "ff_html": "ForexFactory (actual)",
+    "ff_json": "ForexFactory (lịch — dữ liệu cũ)",
+    "ff_html": "ForexFactory (mã nguồn trang)",
     "google_news_rss": "Google News",
     "fxstreet_rss": "FXStreet",
     "investing_rss": "Investing",
     "fred": "FRED",
     "config_fallback": "Cấu hình dự phòng",
     "user": "Nhập tay",
-    "import": "Nhập file",
+    "import": "Nhập file (dữ liệu cũ)",
 }
 
 # Nhãn loại dòng sự kiện — bullet bộ lọc screen_design d.1551 + contract §2.
@@ -262,11 +240,7 @@ FILTER_LABELS: tuple[str, ...] = (
     "Khoảng ngày",
 )
 TOOLBAR_LABELS: tuple[str, ...] = (
-    "Lấy lịch kinh tế",
-    "Cập nhật actual",
     "Nhập tin",
-    "Xuất file",
-    "Nhập file",
     "AI nhận định xu hướng",
 )
 EMPTY_TEXT = "Không có tin trong khoảng lọc"
@@ -275,23 +249,28 @@ DETAIL_TEXT = "Chi tiết"
 ALL_PREFIX = "Tất cả"
 NO_VALUE = "—"
 
+# Nút gợi ý empty state (screen_design "Trạng thái tải và rỗng" d.1634-1635:
+# "nới khoảng ngày / 'Dán mã nguồn trang' / 'Nhập tin'").  "Dán mã nguồn trang"
+# là nút GIỮ CHỖ disabled trong lô này (đợt 3 — hành vi thật ở F4, khuôn nút
+# chưa nối hành vi của các lô trước); "Nhập tin" đi thẳng form nhập tay.
+PASTE_SOURCE_TEXT = "Dán mã nguồn trang"
+EMPTY_STATE_LABELS: tuple[str, ...] = (PASTE_SOURCE_TEXT, TOOLBAR_LABELS[0])
+
 # Nhãn dùng trong dialog chi tiết (đều đã có nguồn: nhãn cột hoặc câu chữ screen_design).
 PROVENANCE_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Giờ fetch", "Liên kết")
 
 # ---------------------------------------------------------------------------
-# Từ điển lô L3.3 — form nhập/sửa tin + 2 nút ForexFactory (screen_design
-# "Hành vi nhập/sửa tin" d.1593-1601 + "Hành vi lấy dữ liệu ForexFactory (2 nút)"
-# d.1574-1591).  Mọi chuỗi ở đây đều có nguồn đã đăng ký; không phát minh nhãn.
+# Từ điển lô L3.3 — form nhập/sửa tin (screen_design "Hành vi nhập/sửa tin"
+# d.1593-1601).  Mọi chuỗi ở đây đều có nguồn đã đăng ký; không phát minh nhãn.
 # ---------------------------------------------------------------------------
 
 # Nhãn dialog/nút (nguồn: nhãn nút thanh công cụ đã đăng ký + khối "Bố cục" +
 # chuỗi có sẵn của repo).
-NOTE_DIALOG_TITLE = TOOLBAR_LABELS[2]  # "Nhập tin" (nhãn nút đã đăng ký)
+NOTE_DIALOG_TITLE = TOOLBAR_LABELS[0]  # "Nhập tin" (nhãn nút đã đăng ký)
 EDIT_DIALOG_TITLE = "Sửa tin"  # screen_design d.1598 "Sửa/xóa"
 EXCLUDE_TEXT = "Loại trừ"  # screen_design d.1598 "toggle Loại trừ"
 EDIT_TEXT = "Sửa"  # screen_design d.1598 "Sửa/xóa"
 DELETE_TEXT = "Xóa"  # screen_design d.1598 "Sửa/xóa"
-MANUAL_ACTUAL_TEXT = "Nhập actual bằng tay"  # screen_design d.1588 (nguyên văn)
 SAVE_TEXT = "Lưu"  # chuỗi có sẵn repo (settings_screen d.198)
 CANCEL_TEXT = "Hủy"  # chuỗi có sẵn repo (scanner_screen d.2351)
 CLOSE_TEXT = "Đóng"  # chuỗi có sẵn repo (journal_screen d.1885)
@@ -315,48 +294,11 @@ FORM_ERROR_TEXT: dict[str, str] = {
     "invalid_impact_hint": "mức tác động không hợp lệ",
 }
 
-# Câu thông báo kết quả 2 nút (ghép câu chữ screen_design d.1582-1587 + số liệu
-# có kiểu của result — D8).
-FETCH_JSON_TITLE = TOOLBAR_LABELS[0]  # "Lấy lịch kinh tế"
-FETCH_HTML_TITLE = TOOLBAR_LABELS[1]  # "Cập nhật actual"
-JSON_SUCCESS_TEXT = "Đã đồng bộ lịch kinh tế: {inserted} sự kiện mới, {updated} sự kiện cập nhật."
-JSON_ERROR_TEXT = "Lấy lịch kinh tế thất bại: {error_type} — {detail}"
-HTML_SUCCESS_TEXT = "Đã ghi actual cho {written} sự kiện."
-HTML_ERROR_TEXT = "Cập nhật actual thất bại: {error_type} — {detail}"
-
-# Ba hành động bật trong lô này (D10: disable trong lúc một lượt fetch chạy).
-FETCH_BUSY_LABELS: tuple[str, ...] = (
-    TOOLBAR_LABELS[0],
-    TOOLBAR_LABELS[1],
-    TOOLBAR_LABELS[2],
-)
-
-# Nhãn hành vi lô L3.4 — xuất/nhập file (screen_design d.1600-1607 + d.1618-1619;
-# mọi chuỗi có nguồn đăng ký, không phát minh nhãn).
-EXPORT_TEXT = TOOLBAR_LABELS[3]  # "Xuất file" (nhãn nút đã đăng ký)
-IMPORT_TEXT = TOOLBAR_LABELS[4]  # "Nhập file" (nhãn nút đã đăng ký)
-# Câu mời hộp chọn định dạng — nguyên văn screen_design d.1605.
-EXPORT_FORMAT_PROMPT = "Xuất CSV hoặc JSON theo khoảng ngày đang lọc"
-EXPORT_SUCCESS_TEXT = "Đã xuất file: {path}"  # d.1607: "kết thúc hiện đường dẫn file trong thông báo"
-EXPORT_ERROR_TEXT = "Xuất file thất bại: {detail}"
-IMPORT_SUCCESS_TEXT = (
-    "Nhập file hoàn tất: {inserted} bản ghi mới, {updated} bản ghi cập nhật, {skipped} bỏ qua trùng."
-)  # d.1601: "số bản ghi mới / cập nhật / bỏ qua trùng"
-IMPORT_ERROR_TEXT = "Nhập file thất bại: {detail}"
-IMPORT_DIALOG_TITLE = IMPORT_TEXT
-
-# Nhóm nút disable khi một lượt xuất/nhập đang chạy (khuôn D10 mở rộng từ
-# FETCH_BUSY_LABELS: thêm 2 nút của chính lô).
-TRANSFER_BUSY_LABELS: tuple[str, ...] = FETCH_BUSY_LABELS + (
-    TOOLBAR_LABELS[3],
-    TOOLBAR_LABELS[4],
-)
-
 # ---------------------------------------------------------------------------
 # Từ điển lô L3.5 — cửa sổ AI nhận định xu hướng (screen_design d.1621-1649 +
 # bảng từ điển d.1570-1572; mọi chuỗi có nguồn đăng ký, không phát minh nhãn).
 # ---------------------------------------------------------------------------
-AI_TEXT = TOOLBAR_LABELS[5]  # "AI nhận định xu hướng" (nhãn nút đã đăng ký)
+AI_TEXT = TOOLBAR_LABELS[1]  # "AI nhận định xu hướng" (nhãn nút đã đăng ký)
 AI_SCOPE_LABEL = "Phạm vi"  # mockup d.1628
 AI_SCOPE_HINT = "hoặc chuyển sang chọn 1 đồng tiền"  # mockup d.1628 (nguyên văn)
 AI_COUNT_TEXT = "Cửa sổ tin: {window_days} ngày gần nhất — {count} tin/sự kiện liên quan"  # d.1629
@@ -692,55 +634,6 @@ def _display_time(value: str) -> str:
     return moment.astimezone(UTC).strftime("%d/%m/%Y %H:%M")
 
 
-# ---------------------------------------------------------------------------
-# Gợi ý điền sẵn cho "Nhập actual bằng tay" (D9) — hàm thuần
-# ---------------------------------------------------------------------------
-
-
-def _ff_week_label(day_key: str, now: datetime) -> str | None:
-    """Thẻ tuần ForexFactory (Monday–Sunday) của một ``day_key`` — hàm thuần.
-
-    Soi gương công thức lịch tuần mà ``ff_calendar_producer`` dùng để chọn trang
-    HTML (``this``/``next``/``None``).  UI **không được** import ``services/``
-    (L1) nên thẻ tuần được tính lại tại đây, nhưng **chỉ** để chọn sự kiện điền
-    sẵn cho form "Nhập actual bằng tay" (D9) — quyết định URL fetch vẫn thuộc
-    producer.  Giá trị trả về là chuỗi máy đọc, không phải chuỗi hiển thị.
-    """
-    try:
-        event_date = datetime.strptime(day_key, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        return None
-    this_monday = now.date() - timedelta(days=now.date().weekday())
-    delta_days = (event_date - this_monday).days
-    if 0 <= delta_days < 7:
-        return "this"
-    if 7 <= delta_days < 14:
-        return "next"
-    return None
-
-
-def suggest_manual_actual_event(
-    pending: list[CalendarEvent], error_week: str = "", now: datetime | None = None
-) -> CalendarEvent | None:
-    """Chọn sự kiện điền sẵn cho "Nhập actual bằng tay" (D9) — hàm thuần.
-
-    Sự kiện đến hạn sớm nhất **của tuần bị lỗi** (``error_week``); không còn sự
-    kiện nào → ``None`` (form mở trống).  Chỉ đọc mốc thời gian — không tạo
-    đường ghi nào vào ``news_events``.
-    """
-    if not pending:
-        return None
-    moment = now or datetime.now(UTC)
-    candidates = pending
-    if error_week:
-        in_week = [
-            event for event in pending if _ff_week_label(event.day_key, moment) == error_week
-        ]
-        if in_week:
-            candidates = in_week
-    return min(candidates, key=lambda event: event.event_time_utc)
-
-
 def _iso_to_qdatetime(value: str) -> QDateTime | None:
     """Đọc một mốc ISO-8601 (UTC) thành ``QDateTime`` mang wall-time UTC."""
     try:
@@ -1018,7 +911,7 @@ class AiTrendDialog(QDialog):
     * Dòng đếm qua ``controller.ai_scope_preview`` (KHÔNG gọi AI — §9.1 bước 2);
       dưới ``ai_min_items`` hiện chuỗi d.1642 và nút "Nhận định" không gọi AI
       (fail-closed, B4).
-    * Lời gọi AI chạy trong worker nền (``NewsReadWorker`` — khuôn ``_start_fetch``
+    * Lời gọi AI chạy trong worker nền (``NewsReadWorker`` — khuôn worker D10
       D10 của màn): lúc chờ disable nút "Nhận định" + chỉ báo tiến trình
       (d.1615-1616), không block GUI, không processEvents.
     * Kết quả = 3 thẻ chân trời (nhãn từ điển d.1570-1572, ký hiệu ▲/▼/— màu
@@ -1228,7 +1121,7 @@ class AiTrendDialog(QDialog):
             f"{CONFIDENCE_TEXT.get(verdict.confidence.value, verdict.confidence.value)}"
         )
 
-    # -- lượt nhận định (worker nền — khuôn _start_fetch, D10) ----------------
+    # -- lượt nhận định (worker nền — khuôn D10) -------------------------------
 
     def _on_analyze_clicked(self) -> None:
         preview = self._preview
@@ -1356,7 +1249,7 @@ class AiTrendDialog(QDialog):
         super().closeEvent(event)
 
     def _shutdown_ai(self) -> None:
-        """Dừng lượt AI nền (khuôn ``_shutdown_fetch``) — chờ có giới hạn."""
+        """Dừng lượt AI nền (khuôn shutdown của màn) — chờ có giới hạn."""
         thread = self._ai_thread
         self._ai_thread = None
         self._ai_worker = None
@@ -1387,17 +1280,9 @@ class NewsScreen(QWidget):
         self._rows: list[NewsRow] = []
         self._thread: QThread | None = None
         self._worker: NewsReadWorker | None = None
-        # Slot thread riêng cho lượt fetch của 2 nút FF (D10) — không đụng lượt
-        # đọc bảng đang chạy (``shutdown()`` chỉ dành cho đọc).
-        self._fetch_thread: QThread | None = None
-        self._fetch_worker: NewsReadWorker | None = None
-        self._fetch_channel: str | None = None
-        # Slot thread riêng cho xuất/nhập file (L3.4 — khuôn D10).
-        self._transfer_thread: QThread | None = None
-        self._transfer_worker: NewsReadWorker | None = None
-        self._transfer_channel: str | None = None
-        self._transfer_fmt: str = ""
-        self._transfer_path: str = ""
+        # (Đợt 3 — slot thread riêng của 2 nút FF và của xuất/nhập file đã được
+        # gỡ cùng hai đường hành vi đó; màn chỉ còn worker đọc bảng + worker AI
+        # nằm trong chính dialog.)
         self.toolbar_buttons: dict[str, QPushButton] = {}
         self.empty_state_buttons: dict[str, QPushButton] = {}
         self.setObjectName("FormScreen")
@@ -1546,10 +1431,14 @@ class NewsScreen(QWidget):
         empty_layout.setContentsMargins(0, 0, 0, 0)
         empty_layout.setSpacing(8)
         empty_layout.addStretch(1)
-        for label in (TOOLBAR_LABELS[0], TOOLBAR_LABELS[2]):
+        for label in EMPTY_STATE_LABELS:
             button = action_button(label)
-            # Nút gợi ý empty state đi cùng 2 hành vi đã bật ở toolbar (L3.3).
-            button.clicked.connect(self._empty_action_handler(label))
+            # Nút gợi ý empty state (đợt 3): "Dán mã nguồn trang" là GIỮ CHỖ
+            # disabled (hành vi thật ở F4); "Nhập tin" đi thẳng form nhập tay.
+            if label == PASTE_SOURCE_TEXT:
+                button.setEnabled(False)
+            else:
+                button.clicked.connect(self._empty_action_handler(label))
             empty_layout.addWidget(button)
             self.empty_state_buttons[label] = button
         empty_layout.addStretch(1)
@@ -1558,32 +1447,24 @@ class NewsScreen(QWidget):
 
     def _empty_action_handler(self, label: str):
         if label == TOOLBAR_LABELS[0]:
-            return lambda: self._start_fetch("json")
-        return lambda: self.open_note_dialog()
+            return lambda: self.open_note_dialog()
+        return lambda: None
 
     def _toolbar(self) -> QWidget:
         toolbar = ResponsiveGrid(
             widgets=[self._toolbar_button(label) for label in TOOLBAR_LABELS],
             columns=len(TOOLBAR_LABELS),
-            compact_columns=3,
+            compact_columns=len(TOOLBAR_LABELS),
             stretch=False,
         )
         toolbar.setObjectName("NewsToolbarRow")
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — cả 6 nút đã nối hành vi (L3.3, L3.4, L3.5)."""
+        """Nút thanh công cụ — đúng 2 nút đã nối hành vi (đợt 3: [Nhập tin | AI])."""
         button = action_button(label)
         if label == TOOLBAR_LABELS[0]:
-            button.clicked.connect(lambda: self._start_fetch("json"))
-        elif label == TOOLBAR_LABELS[1]:
-            button.clicked.connect(lambda: self._start_fetch("html"))
-        elif label == TOOLBAR_LABELS[2]:
             button.clicked.connect(lambda: self.open_note_dialog())
-        elif label == TOOLBAR_LABELS[3]:
-            button.clicked.connect(self._on_export_clicked)
-        elif label == TOOLBAR_LABELS[4]:
-            button.clicked.connect(self._on_import_clicked)
         else:
             button.clicked.connect(self.open_ai_dialog)
         self.toolbar_buttons[label] = button
@@ -1635,271 +1516,12 @@ class NewsScreen(QWidget):
             pass
 
     def closeEvent(self, event) -> None:  # noqa: N802 - tên Qt
-        """Đóng màn thì dừng luôn worker nền (không để thread sống ngoài màn)."""
+        """Đóng màn thì dừng luôn worker đọc nền (không để thread sống ngoài màn).
+
+        (Đợt 3 — trước đây còn dừng slot thread của 2 nút FF và của xuất/nhập
+        file; hai slot đó đã gỡ cùng hai đường hành vi.)"""
         self.shutdown()
-        self._shutdown_fetch()
-        self._shutdown_transfer()
         super().closeEvent(event)
-
-    def _shutdown_fetch(self) -> None:
-        """Dừng lượt fetch FF nền (D10) — slot thread riêng, chờ có giới hạn."""
-        thread = self._fetch_thread
-        self._fetch_thread = None
-        self._fetch_worker = None
-        self._fetch_channel = None
-        if thread is None:
-            return
-        try:
-            if thread.isRunning():
-                thread.quit()
-                thread.wait(2000)
-        except RuntimeError:
-            pass
-
-    # -- xuất/nhập file (§10, screen_design "Hành vi xuất file"/"Hành vi nhập file") --
-
-    def _on_export_clicked(self) -> None:
-        """Nút "Xuất file": chọn định dạng rồi chạy lượt xuất nền (L3.4)."""
-        fmt = self._choose_export_format()
-        if fmt is not None:
-            self._start_export(fmt)
-
-    def _choose_export_format(self) -> str | None:
-        """Hộp chọn định dạng xuất — hai nút CSV/JSON (V2: cơ chế chọn format
-        chưa được tài liệu ghim; chuỗi nguyên văn screen_design d.1605)."""
-        box = QMessageBox(self)
-        box.setWindowTitle(EXPORT_TEXT)
-        box.setText(EXPORT_FORMAT_PROMPT)
-        csv_button = action_button("CSV", icon="save", icon_role="text", icon_disabled_role="text")
-        box.addButton(csv_button, QMessageBox.ButtonRole.AcceptRole)
-        json_button = action_button("JSON", icon="save", icon_role="text", icon_disabled_role="text")
-        box.addButton(json_button, QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(
-            action_button(CANCEL_TEXT, icon="x", icon_role="text", icon_disabled_role="text"),
-            QMessageBox.ButtonRole.RejectRole,
-        )
-        box.exec()
-        if box.clickedButton() is csv_button:
-            return "csv"
-        if box.clickedButton() is json_button:
-            return "json"
-        return None
-
-    def _start_export(self, fmt: str) -> None:
-        """Chạy lượt xuất nền theo khuôn ``_start_fetch`` (D10): disable nhóm
-        nút ghi + chỉ báo tiến trình; kết thúc re-enable và thông báo đường dẫn
-        file (d.1607).  Màn chỉ gọi ``NewsController`` — parse/serialize nằm
-        trong ``services/news_file_transfer.py``."""
-        if self.news_controller is None:
-            return
-        self._transfer_channel = "export"
-        self._transfer_fmt = fmt
-        self._start_transfer_worker(self._export_task)
-
-    def _export_task(self):
-        from_utc, to_utc = self._window_bounds()
-        return self.news_controller.export_news_range(from_utc, to_utc, self._transfer_fmt)
-
-    def _on_import_clicked(self) -> None:
-        """Nút "Nhập file": chọn file rồi chạy lượt nhập nền (L3.4)."""
-        path = self._pick_import_path()
-        if path:
-            self._start_import(path)
-
-    def _pick_import_path(self) -> str:
-        """Chọn file nhập qua hộp chọn file (V2: cơ chế chọn file chưa được tài
-        liệu ghim) — thư mục mở đầu là thư mục exports chuẩn."""
-        path, _selected = QFileDialog.getOpenFileName(
-            self,
-            IMPORT_DIALOG_TITLE,
-            str(exports_dir()),
-            "CSV (*.csv);;JSON (*.json)",
-        )
-        return path
-
-    def _start_import(self, path: str) -> None:
-        """Chạy lượt nhập nền theo khuôn ``_start_fetch`` (D10); kết thúc hiện
-        tóm tắt mới/cập nhật/bỏ qua trùng (d.1601) rồi đọc lại bảng."""
-        if self.news_controller is None:
-            return
-        self._transfer_channel = "import"
-        self._transfer_path = path
-        self._start_transfer_worker(self._import_task)
-
-    def _import_task(self):
-        return self.news_controller.import_news_file(self._transfer_path)
-
-    def _start_transfer_worker(self, task) -> None:
-        self._set_transfer_busy(True)
-        self._set_status(LOADING_TEXT)
-        thread = QThread(self)
-        worker = NewsReadWorker(task)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.succeeded.connect(self._on_transfer_succeeded)
-        worker.failed.connect(self._on_transfer_failed)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(self._on_transfer_worker_done)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._forget_transfer_thread(thread))
-        self._transfer_thread = thread
-        self._transfer_worker = worker
-        thread.start()
-
-    def _forget_transfer_thread(self, thread: QThread) -> None:
-        if self._transfer_thread is thread:
-            self._transfer_thread = None
-            self._transfer_worker = None
-
-    def _set_transfer_busy(self, busy: bool) -> None:
-        """Disable/enable nhóm nút ghi khi một lượt xuất/nhập chạy (khuôn D10)."""
-        for label in TRANSFER_BUSY_LABELS:
-            for button in (self.toolbar_buttons.get(label), self.empty_state_buttons.get(label)):
-                if button is not None:
-                    button.setEnabled(not busy)
-
-    def _on_transfer_worker_done(self) -> None:
-        self._set_transfer_busy(False)
-        if self._transfer_channel == "import":
-            self.reload_rows()  # dữ liệu đã đổi sau lượt nhập
-
-    def _on_transfer_succeeded(self, payload) -> None:
-        if self._transfer_channel == "export":
-            self._notify(EXPORT_TEXT, EXPORT_SUCCESS_TEXT.format(path=payload.path))
-        else:
-            self._notify(
-                IMPORT_TEXT,
-                IMPORT_SUCCESS_TEXT.format(
-                    inserted=payload.inserted,
-                    updated=payload.updated,
-                    skipped=payload.skipped_duplicates,
-                ),
-            )
-
-    def _on_transfer_failed(self, message: str) -> None:
-        if self._transfer_channel == "export":
-            self._notify(EXPORT_TEXT, EXPORT_ERROR_TEXT.format(detail=message))
-        else:
-            self._notify(IMPORT_TEXT, IMPORT_ERROR_TEXT.format(detail=message))
-
-    def _shutdown_transfer(self) -> None:
-        """Dừng lượt xuất/nhập nền (L3.4) — slot thread riêng, chờ có giới hạn."""
-        thread = self._transfer_thread
-        self._transfer_thread = None
-        self._transfer_worker = None
-        self._transfer_channel = None
-        if thread is None:
-            return
-        try:
-            if thread.isRunning():
-                thread.quit()
-                thread.wait(2000)
-        except RuntimeError:
-            pass
-
-    # -- 2 nút ForexFactory (§6.1 lượt 2-3, screen_design d.1574-1591) -----------
-
-    def _start_fetch(self, channel: str) -> None:
-        """Chạy một lượt fetch FF trong worker nền riêng (D10).
-
-        Nút được disable + chỉ báo tiến trình khi chạy; kết thúc re-enable và đọc
-        lại bảng.  Màn chỉ gọi ``NewsController`` — mạng nằm trong producer
-        (screen_design "Nguyên tắc")."""
-        if self.news_controller is None:
-            return
-        self._fetch_channel = channel
-        self._set_fetch_busy(True)
-        self._set_status(LOADING_TEXT)
-        thread = QThread(self)
-        worker = NewsReadWorker(self._fetch_json_task if channel == "json" else self._fetch_html_task)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.succeeded.connect(self._on_fetch_succeeded)
-        worker.failed.connect(self._on_fetch_failed)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        worker.finished.connect(self._on_fetch_worker_done)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._forget_fetch_thread(thread))
-        self._fetch_thread = thread
-        self._fetch_worker = worker
-        thread.start()
-
-    def _fetch_json_task(self):
-        return self.news_controller.fetch_calendar_json()
-
-    def _fetch_html_task(self):
-        return self.news_controller.fetch_actual_html()
-
-    def _forget_fetch_thread(self, thread: QThread) -> None:
-        if self._fetch_thread is thread:
-            self._fetch_thread = None
-            self._fetch_worker = None
-
-    def _set_fetch_busy(self, busy: bool) -> None:
-        """Disable/enable 2 nút FF + nút "Nhập tin" (cả toolbar lẫn empty state) — D10."""
-        for label in FETCH_BUSY_LABELS:
-            for button in (self.toolbar_buttons.get(label), self.empty_state_buttons.get(label)):
-                if button is not None:
-                    button.setEnabled(not busy)
-
-    def _on_fetch_worker_done(self) -> None:
-        self._set_fetch_busy(False)
-        self.reload_rows()
-
-    def _on_fetch_succeeded(self, payload: object) -> None:
-        if self._fetch_channel == "json":
-            self._notify_json_result(payload)
-        else:
-            self._notify_html_result(payload)
-
-    def _on_fetch_failed(self, message: str) -> None:
-        title = FETCH_HTML_TITLE if self._fetch_channel == "html" else FETCH_JSON_TITLE
-        self._notify(title, message)
-
-    def _notify_json_result(self, result) -> None:
-        """Thông báo tóm tắt/lỗi lượt JSON (D8)."""
-        if result.feed_errors:
-            first = result.feed_errors[0]
-            self._notify(
-                FETCH_JSON_TITLE,
-                JSON_ERROR_TEXT.format(error_type=first.error_type, detail=first.detail),
-            )
-        else:
-            self._notify(
-                FETCH_JSON_TITLE,
-                JSON_SUCCESS_TEXT.format(inserted=result.inserted, updated=result.updated),
-            )
-
-    def _notify_html_result(self, result) -> None:
-        """Thông báo lượt HTML (D8) — lỗi kèm gợi ý "Nhập actual bằng tay" bấm được."""
-        if result.fetch_errors:
-            first = result.fetch_errors[0]
-            self._notify(
-                FETCH_HTML_TITLE,
-                HTML_ERROR_TEXT.format(error_type=first.error_type, detail=first.detail),
-                suggestion=MANUAL_ACTUAL_TEXT,
-                on_suggestion=lambda: self.open_note_dialog(
-                    prefill_event=self._suggested_pending_event(first.week)
-                ),
-            )
-        else:
-            self._notify(
-                FETCH_HTML_TITLE,
-                HTML_SUCCESS_TEXT.format(written=result.written),
-            )
-
-    def _suggested_pending_event(self, week: str) -> CalendarEvent | None:
-        """Sự kiện điền sẵn cho "Nhập actual bằng tay" (D9) — đọc qua controller."""
-        if self.news_controller is None:
-            return None
-        moment = datetime.now(UTC)
-        try:
-            pending = list(self.news_controller.events_pending_actual(moment))
-        except Exception:
-            return None
-        return suggest_manual_actual_event(pending, week, moment)
 
     def _notify(self, title: str, text: str, *, suggestion: str | None = None, on_suggestion=None) -> None:
         """QMessageBox khuôn ``journal_screen`` (D8) — gợi ý là nút AcceptRole."""

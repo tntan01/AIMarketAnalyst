@@ -7,9 +7,14 @@ where the write path itself is under test (manual entry, dedupe, the kind guard)
 — no deep mocking, no real network, ``%APPDATA%`` never touched.
 
 Lô L2.7 checklist covered here: lịch producer theo chính sách (không hard-code),
-điểm nối on-demand lookup, validate nhập tay đủ nhánh (thiếu trường ⇒ không ghi
-DB), uỷ quyền đọc có kiểu (C3/S2), worker không chứa logic nghiệp vụ, và DI
-property ``app_controller.news_controller`` lazy.
+validate nhập tay đủ nhánh (thiếu trường ⇒ không ghi DB), uỷ quyền đọc có kiểu
+(C3/S2), worker không chứa logic nghiệp vụ, và DI property
+``app_controller.news_controller`` lazy.
+
+Đợt 3 (ca "Nguồn dán FF", plan F1 — QĐ-F7): gỡ cùng commit các test của hành
+vi bị xóa — nhóm nút FF / on-demand lookup seam (``event_actual_or_lookup``),
+xuất/nhập file; viết lại nhóm startup-turn: purge + schedule đúng 1 lần/phiên,
+KHÔNG còn kết quả json/html trong ``StartupTurnResult``.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from controllers import app_controller as app_controller_module
 from controllers.app_controller import AppController
 from controllers.news_controller import (
     NewsController,
+    StartupTurnResult,
     UserNoteFieldError,
     UserNoteResult,
 )
@@ -58,10 +64,6 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy
 from core.rate_trend import RateTrend
-from services.news_producers.ff_calendar_producer import (
-    HtmlCalendarResult,
-    JsonCalendarResult,
-)
 from services.news_repository import (
     CurrencyRateTrend,
     NewsRepository,
@@ -82,7 +84,6 @@ class FakeRepository:
     controller's, so the store itself is not exercised here."""
 
     def __init__(self) -> None:
-        self.on_demand_lookup = None
         self.calls: list[tuple[str, tuple, dict]] = []
         self.upsert_items_calls: list[list[NewsItem]] = []
         self.upsert_items_result = UpsertItemsResult(inserted=1, updated=0)
@@ -94,7 +95,6 @@ class FakeRepository:
         self.purge_result = 3
         self.events: list[CalendarEvent] = []
         self.pending: list[CalendarEvent] = []
-        self.event: CalendarEvent | None = None
         self.items: list[NewsItem] = []
         self.rates: list[CurrencyRateTrend] = []
         self.state = StoreState(
@@ -137,10 +137,6 @@ class FakeRepository:
     def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
         self._record("events_pending_actual", (now,), {})
         return self.pending
-
-    def event_actual_or_lookup(self, event_id: int) -> CalendarEvent | None:
-        self._record("event_actual_or_lookup", (event_id,), {})
-        return self.event
 
     def items_in_range(self, *args: object, **kwargs: object) -> list[NewsItem]:
         self._record("items_in_range", args, kwargs)
@@ -190,32 +186,6 @@ class FakeRateProducer:
         return self.result
 
 
-class FakeFfProducer:
-    """Typed fake of ``ff_calendar_producer`` — records the on-demand lookups
-    and counts the two shared channel calls (JSON calendar + HTML actual) so
-    the startup turn (L3.6) can be exercised without any network."""
-
-    def __init__(self, result: CalendarEvent | None = None) -> None:
-        self.lookups: list[int] = []
-        self.result = result
-        self.json_calls = 0
-        self.html_calls = 0
-        self.html_nows: list[datetime | None] = []
-
-    def lookup_event_actual(self, event_id: int) -> CalendarEvent | None:
-        self.lookups.append(event_id)
-        return self.result
-
-    def fetch_calendar_json(self) -> JsonCalendarResult:
-        self.json_calls += 1
-        return _json_result()
-
-    def fetch_actual_html(self, now: datetime | None = None) -> HtmlCalendarResult:
-        self.html_calls += 1
-        self.html_nows.append(now)
-        return _html_result()
-
-
 class FakeStarter:
     """Typed fake of the L3.7 ``schedule_starter`` seam — counts how many times
     the producer schedule was started (one per session)."""
@@ -228,33 +198,6 @@ class FakeStarter:
         self.calls += 1
         self.controllers.append(controller)
         return self
-
-
-def _json_result() -> JsonCalendarResult:
-    from services.news_producers.ff_calendar_producer import JsonCalendarResult
-
-    return JsonCalendarResult(
-        inserted=2,
-        updated=1,
-        conflicts=(),
-        run_status=IngestRunStatus.OK,
-        run_id=31,
-        feed_errors=(),
-    )
-
-
-def _html_result() -> HtmlCalendarResult:
-    from services.news_producers.ff_calendar_producer import HtmlCalendarResult
-
-    return HtmlCalendarResult(
-        pending_count=1,
-        weeks_fetched=("this",),
-        written=1,
-        conflicts=(),
-        run_status=IngestRunStatus.OK,
-        run_id=32,
-        fetch_errors=(),
-    )
 
 
 class FakeController:
@@ -303,7 +246,6 @@ def _rates_result() -> object:
 
     return RateFetchResult(
         fred_observations=16,
-        ff_html_observations=0,
         config_fallback_observations=0,
         currencies_covered=("AUD", "USD"),
         run_status=IngestRunStatus.OK,
@@ -346,7 +288,6 @@ def _controller(
     policy: NewsPolicy | None = None,
     rss: object | None = None,
     rates: object | None = None,
-    ff: object | None = None,
     starter: FakeStarter | None = None,
     use_real_starter: bool = False,
 ) -> NewsController:
@@ -364,7 +305,6 @@ def _controller(
         policy=policy if policy is not None else _policy(),
         rss_producer=rss if rss is not None else FakeRssProducer(),
         fred_producer=rates if rates is not None else FakeRateProducer(),
-        ff_producer=ff if ff is not None else FakeFfProducer(),
         schedule_starter=schedule_starter,
     )
 
@@ -444,7 +384,6 @@ class TestProducerSchedule:
             repo=FakeRepository(),
             policy=_policy(fred_refresh_hours=4),
             rss_producer=FakeRssProducer(),
-            ff_producer=FakeFfProducer(),
         )
 
         assert controller.rates_refresh_hours == 4
@@ -459,101 +398,55 @@ class TestProducerSchedule:
         assert repo.upsert_items_calls == []
 
 
-# ---- 2. điểm nối on-demand lookup (§6.1 lượt 4) ---------------------------------
-
-
-class TestOnDemandLookupSeam:
-    def test_constructor_plugs_the_ff_producer_into_the_repository(self):
-        repo, ff = FakeRepository(), FakeFfProducer()
-
-        _controller(repo=repo, ff=ff)
-
-        assert repo.on_demand_lookup == ff.lookup_event_actual
-
-    def test_stale_event_triggers_the_lookup_once(self, tmp_path):
-        repo = _repo(tmp_path)
-        repo.upsert_events([_stale_event()])
-        stored = repo.events_in_range("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z")[0]
-        assert stored.status == EventStatus.STALE  # phân loại lúc đọc (§6.5)
-        refreshed = dataclasses.replace(_stale_event(), actual="5.50%", id=stored.id)
-        ff = FakeFfProducer(result=refreshed)
-        controller = _controller(repo=repo, ff=ff)
-
-        result = controller.event_actual_or_lookup(stored.id)
-
-        assert ff.lookups == [stored.id]
-        assert result is refreshed
-
-    def test_future_event_does_not_trigger_the_lookup(self, tmp_path):
-        repo = _repo(tmp_path)
-        future = _stale_event()
-        ahead = (datetime.now(UTC) + timedelta(days=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
-        event = CalendarEvent(
-            day_key=ahead[:10],
-            event_time_utc=ahead,
-            currency=future.currency,
-            title=future.title,
-            impact=future.impact,
-            status=future.status,
-            source=future.source,
-            dedupe_key="future-1",
-            fetched_at=future.fetched_at,
-        )
-        repo.upsert_events([event])
-        stored = repo.events_in_range("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z")[0]
-        ff = FakeFfProducer()
-        controller = _controller(repo=repo, ff=ff)
-
-        result = controller.event_actual_or_lookup(stored.id)
-
-        assert ff.lookups == []
-        assert result is not None and result.id == stored.id
-
-
-# ---- 2b. lượt khởi động (§6.1 lượt 1, plan L3.6) --------------------------------
+# ---- 2. lượt khởi động (§6.1 → QĐ-F2 đợt 3, plan L3.6) -------------------------
 
 
 class TestStartupTurn:
-    def test_startup_turn_runs_purge_then_json_then_html_once(self):
-        """The boot hook runs the full §6.1 lượt 1 turn: purge first (retention
-        from the policy key, R4), then the shared JSON calendar channel, then
-        the shared targeted HTML actual channel."""
+    def test_startup_turn_runs_purge_then_starts_the_schedule_once(self):
+        """The boot hook runs the QĐ-F2 turn: purge first (retention from the
+        policy key, R4), then the RSS/FRED producer schedule (plan L3.7) — no
+        ForexFactory channel, no json/html result (đợt 3)."""
         repo = FakeRepository()
-        ff = FakeFfProducer()
+        starter = FakeStarter()
         policy = _policy(ingest_runs_retention_days=21)
-        controller = _controller(repo=repo, ff=ff, policy=policy)
+        controller = _controller(repo=repo, policy=policy, starter=starter)
 
         result = controller.run_startup_turn()
 
         assert result.ran is True
         assert repo.purge_calls == [21]  # retention passed by the controller (R4)
-        assert ff.json_calls == 1
-        assert ff.html_calls == 1
-        assert isinstance(result.json_result, JsonCalendarResult)
-        assert isinstance(result.html_result, HtmlCalendarResult)
+        assert starter.calls == 1
+        assert starter.controllers == [controller]
         assert result.purged_runs == repo.purge_result
-        # Order: the boot turn purges before any fetch.
+        # Order: the boot turn purges before anything else.
         purge_index = next(i for i, (name, _, _) in enumerate(repo.calls) if name == "purge_expired_runs")
         assert purge_index == 0
 
-    def test_startup_turn_fetches_only_once_per_session(self):
+    def test_startup_turn_runs_only_once_per_session(self):
         """Session flag (khuôn ``_auto_scanned_this_session`` của Scanner): a
-        second call is a typed no-op — no extra fetch, no extra purge."""
+        second call is a typed no-op — no extra purge, no extra schedule."""
         repo = FakeRepository()
-        ff = FakeFfProducer()
-        controller = _controller(repo=repo, ff=ff)
+        starter = FakeStarter()
+        controller = _controller(repo=repo, starter=starter)
 
         first = controller.run_startup_turn()
         second = controller.run_startup_turn()
 
         assert first.ran is True
         assert second.ran is False
-        assert ff.json_calls == 1
-        assert ff.html_calls == 1
         assert repo.purge_calls == [30]  # policy default _policy()
+        assert starter.calls == 1
+
+    def test_startup_turn_result_bears_no_ff_channel_results(self):
+        """Đợt 3 — ``StartupTurnResult`` chỉ còn ran/purged_runs; kết quả kênh
+        FF json/html đã bị gỡ cùng các kênh đó (R6 — không tái sinh)."""
+        assert {field.name for field in dataclasses.fields(StartupTurnResult)} == {
+            "ran",
+            "purged_runs",
+        }
 
     def test_startup_turn_purges_only_expired_runs_keeps_content(self, tmp_path):
-        """Libre retention on a real repository (plan L3.6 test 2): only the
+        """Libre retention on a real repository (plan L3.6 test): only the
         expired ``ingest_runs`` rows are deleted; news items, events and
         verdicts are never touched (contract §4.6)."""
         repo = _repo(tmp_path)
@@ -586,8 +479,7 @@ class TestStartupTurn:
             model="deepseek-v4-flash",
             prompt_hash="x",
         )])
-        ff = FakeFfProducer()
-        controller = _controller(repo=repo, ff=ff)
+        controller = _controller(repo=repo)
 
         result = controller.run_startup_turn()
 
@@ -629,7 +521,6 @@ class TestProducerScheduleWire:
             policy=_policy(),
             rss_producer=FakeRssProducer(),
             fred_producer=FakeRateProducer(),
-            ff_producer=FakeFfProducer(),
         )
 
         assert controller._schedule_starter is None
@@ -987,7 +878,6 @@ class TestReadDelegation:
 
         assert controller.events_in_range("a", "b", ["USD"], False) is repo.events
         assert controller.events_pending_actual(now) is repo.pending
-        assert controller.event_actual_or_lookup(7) is repo.event
         assert controller.items_in_range("a", "b", ["user_note"], ["USD"], False) is repo.items
         assert controller.latest_rates(["USD"]) is repo.rates
         assert controller.store_state() is repo.state
@@ -995,7 +885,6 @@ class TestReadDelegation:
         assert repo.calls == [
             ("events_in_range", ("a", "b", ["USD"], False), {}),
             ("events_pending_actual", (now,), {}),
-            ("event_actual_or_lookup", (7,), {}),
             ("items_in_range", ("a", "b", ["user_note"], ["USD"], False), {}),
             ("latest_rates", (["USD"],), {}),
             ("store_state", (), {}),

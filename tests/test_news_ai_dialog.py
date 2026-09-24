@@ -70,11 +70,6 @@ def _past(days: int = 0, hours: int = 1) -> datetime:
     return NOW - timedelta(days=days, hours=hours)
 
 
-class _NullFF:
-    def lookup_event_actual(self, event_id):
-        return None
-
-
 class _FakeConfig:
     """Cấu hình AI giả — đúng bề mặt `settings.ai.active_provider()` (khuôn scanner)."""
 
@@ -113,7 +108,6 @@ def _ai_controller(tmp_path: Path, ai: FakeAI, *, config: object = _USE_DEFAULT_
         repo=_repo(tmp_path),
         policy=load_news_policy(),
         rss_producer=object(),
-        ff_producer=_NullFF(),
         ai_service=ai,
         ai_config_provider=lambda: config,
     )

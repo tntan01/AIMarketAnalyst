@@ -3,7 +3,7 @@
 Owner of "tiếp nhận và xác thực tin người dùng nhập" (contract §6.4 / §11b) and
 the orchestrator registered in the contract §3 layer table: it schedules the
 producers per policy, serves queries to consumers, accepts manual entries and
-— later, in L3.5 — coordinates the AI call inside a worker.
+coordinates the AI call inside a worker (contract §9.1).
 
 This module **delegates**.  It owns no formula, no status classification, no
 trend derivation and no display string (C3/S2, L1/L3): every read and write goes
@@ -11,15 +11,25 @@ to ``NewsRepository`` (the single access point, §8), the values crossing its
 boundary are the typed models of ``core/news_models.py``, and every operational
 number comes from the policy via ``core/news_policy.load_news_policy`` (R4).
 
+**Đợt 3 (24/09/2026 — ca "Nguồn dán FF", plan F1):** tất cả đường ForexFactory
+tự động và xuất/nhập file đã bị BỎ khỏi controller này: hai lượt fetch nút của
+đường thu cũ (kênh lịch JSON và kênh actual HTML), seam on-demand lookup (kênh
+của producer lịch cũ cắm vào repository) và delegate một-sự-kiện kèm lookup,
+và hai lượt đối ngoại của đường xuất/nhập file (contract §13 / §10 đợt 3 — "Bỏ
+thu tự động FF; app không phát request mạng nào tới ForexFactory" + "Bãi bỏ
+xuất/nhập file"; sao lưu = tệp ``news.db``).  Kênh duy nhất của lịch kinh tế +
+actual là **mã nguồn trang người dùng dán** — đường đó tiếp nhận tại lô F3
+(``parse_pasted_source``/``commit_pasted_source``), chưa tồn tại trong lô F1
+này.  ``run_startup_turn`` chỉ còn purge retention + khởi động lịch producer
+RSS/FRED (L3.6/L3.7 giữ nguyên — QĐ-F2).
+
 Delivered by this batch (plan L2.7):
 
 * **Producer schedule per policy** — ``poll_news`` runs one ``rss_producer``
   round (cadence key ``rss_poll_interval_minutes``) and ``refresh_rates`` one
   ``fred_rate_producer`` round (cadence read from that producer's
   ``refresh_hours``, i.e. the ``fred_refresh_hours`` key).  Both cadences are
-  exposed for the timer owner, ``workers/news_worker.py``.  **This batch starts
-  nothing**: the app-startup turn of §6.1 is L3.6 and the news-screen buttons
-  are L3.3.
+  exposed for the timer owner, ``workers/news_worker.py``.
 * **Manual entry** (§6.4) — ``add_user_note`` validates the four mandatory form
   fields (publish time, kind, content, currency) and writes **nothing** when one
   of them is missing or unusable; otherwise it upserts
@@ -30,40 +40,27 @@ Delivered by this batch (plan L2.7):
   the only write path that keeps an automatic item's provenance) while
   ``delete_user_note`` exists for manual notes only; the kind guard itself stays
   in the repository.
-* **On-demand lookup seam** (§6.1 lượt 4, plan L2.2) — the constructor plugs
-  ``ff_calendar_producer.lookup_event_actual`` into the repository.  The
-  repository triggers the callable for a ``stale`` event and never touches the
-  network itself; the producer owns transport and its ``on_demand_lookup``
-  ``ingest_runs`` row.
 
-**App-startup turn (plan L3.6):** ``run_startup_turn`` implements contract
-§6.1 lượt 1 (one turn per session, no FF timer) — purge expired ``ingest_runs``
-(retention from the policy key, §4.6) then run the shared JSON calendar channel
-(this week + next week) and the shared targeted HTML actual channel for
-``events_pending_actual``; the ``_fetched_this_session`` session flag (khuôn
-``_auto_scanned_this_session`` của Scanner) makes repeated calls no-ops so the
-boot hook in ``main.py`` (QĐ-5) never fetches twice.
+**App-startup turn (plan L3.6):** ``run_startup_turn`` implements QĐ-F2 — one
+turn per session, no FF channel of any kind: it purges expired ``ingest_runs``
+(retention from the policy key, §4.6) and starts the periodic RSS/FRED rounds
+(plan L3.7); the ``_fetched_this_session`` session flag (khuôn
+``_auto_scanned_this_session`` của Scanner) makes repeated calls typed no-ops so
+the boot hook in ``main.py`` never purges/starts twice.  ``StartupTurnResult``
+carries only ``ran`` + ``purged_runs`` (the retired json/html fields were
+removed with the FF channels).
 
-**Producer schedule (plan L3.7):** the first startup turn also starts the
-periodic RSS/FRED rounds — contract §6.2/§6.3/§13 keep both "tự động định kỳ".
-``NewsController`` takes an optional ``schedule_starter`` seam (injected in
-tests; ``None`` resolves to the real starter, which builds a ``QThread`` +
-``NewsWorker`` per the caller khuôn in ``workers/news_worker.py`` and imports
-PyQt/``NewsWorker`` at function level to avoid the ``news_worker ↔
+**Producer schedule (plan L3.7):** contract §6.2/§6.3/§13 keep both RSS and FRED
+"tự động định kỳ".  ``NewsController`` takes an optional ``schedule_starter``
+seam (injected in tests; ``None`` resolves to the real starter, which builds a
+``QThread`` + ``NewsWorker`` per the caller khuôn in ``workers/news_worker.py``
+and imports PyQt/``NewsWorker`` at function level to avoid the ``news_worker ↔
 news_controller`` import cycle).  The startup-turn session guard starts it
 exactly once; ``stop_producer_schedule`` (wired to ``aboutToQuit`` at start
 time, QĐ-7) stops the timers via a queued call on the worker's own thread and
 joins the thread with a bounded wait.  No immediate RSS/FRED round at boot —
 the contract only asks for periodics, the first round fires at the end of the
 first cadence (V2).
-
-**File transfer (plan L3.4):** ``export_news_range``/``import_news_file`` are
-thin delegations to ``services/news_file_transfer.py`` — the single owner of
-every CSV/JSON serializer/parser (the screen owns no parsing, screen_design
-"Nguyên tắc").  Both return the service's typed results; the import path
-computes ``NewsItem.dedupe_key`` through the §4.3 formula owner
-``core/news_models.news_item_dedupe_key`` (QĐ-4) and never writes an
-``ingest_runs`` row (the frozen §4.6 producer enum has no ``import`` value, R6).
 
 **AI trend judgement (plan L3.5):** ``ai_scope_preview``/``analyze_trend``
 implement contract §9.1 in the controller — read the repo (calendar events +
@@ -121,19 +118,8 @@ from core.news_policy import NewsPolicy, load_news_policy
 from core.trend_prompt_builder import TrendPrompt, TrendPromptOutcome, build_trend_prompt
 from core.trend_verdict_parser import TrendParseOutcome, parse_trend_verdict
 from services.ai_service import AIProviderConfig, AIService
-from services.news_producers.ff_calendar_producer import (
-    FFCalendarProducer,
-    HtmlCalendarResult,
-    JsonCalendarResult,
-)
 from services.news_producers.fred_rate_producer import FredRateProducer, RateFetchResult
 from services.news_producers.rss_producer import RssCollectionResult, RssProducer
-from services.news_file_transfer import (
-    FileExportResult,
-    FileImportResult,
-    export_news_range,
-    import_news_file,
-)
 from services.news_repository import CurrencyRateTrend, NewsRepository, UpsertItemsResult
 
 __all__ = [
@@ -247,21 +233,19 @@ class TrendAnalysisResult:
 
 @dataclass(frozen=True, slots=True)
 class StartupTurnResult:
-    """Typed outcome of the app-startup turn (contract §6.1 lượt 1, plan L3.6).
+    """Typed outcome of the app-startup turn (plan L3.6, QĐ-F2 — đợt 3, 24/09/2026).
 
     ``ran`` is False when the turn was skipped because this session already
-    ran it (the ``_fetched_this_session`` guard — exactly one turn per session,
-    no timer/poll FF is ever created).  When it ran: ``purged_runs`` is the
-    number of expired ``ingest_runs`` rows the retention policy removed
-    (contract §4.6 — only the operational log; news and verdicts are never
-    touched) and ``json_result``/``html_result`` the typed outcomes of the two
-    ForexFactory channels of the turn (JSON this week + next week, then HTML
-    actuals targeted for ``events_pending_actual``)."""
+    ran it (the ``_fetched_this_session`` guard — exactly one turn per session).
+    When it ran: ``purged_runs`` is the number of expired ``ingest_runs`` rows
+    the retention policy removed (contract §4.6 — only the operational log;
+    news and verdicts are never touched) and the RSS/FRED producer schedule is
+    started exactly once (plan L3.7).  The two ForexFactory channel results of
+    the old turn were removed with the FF channels (đợt 3 — no FF request of
+    any kind remains)."""
 
     ran: bool
     purged_runs: int = 0
-    json_result: JsonCalendarResult | None = None
-    html_result: HtmlCalendarResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +397,6 @@ class NewsController:
         policy: NewsPolicy | None = None,
         rss_producer: RssProducer | None = None,
         fred_producer: FredRateProducer | None = None,
-        ff_producer: FFCalendarProducer | None = None,
         *,
         ai_service: object | None = None,
         ai_config_provider: Callable[[], object] | None = None,
@@ -425,13 +408,6 @@ class NewsController:
             rss_producer if rss_producer is not None else RssProducer(self._repo, self._policy)
         )
         self._fred_producer = fred_producer
-        self._ff_producer = (
-            ff_producer if ff_producer is not None else FFCalendarProducer(self._repo)
-        )
-        # On-demand lookup seam (§6.1 lượt 4, plan L2.2): the producer owns the
-        # fetch and its ingest_runs row; the repository only calls the callable
-        # when it meets a stale event.
-        self._repo.on_demand_lookup = self._ff_producer.lookup_event_actual
         # AI seams (L3.5 — khuôn d.275-282): injected fakes for tests; the
         # production default resolves settings.ai.active_provider() lazily per
         # analyze turn (khuôn scanner_controller d.720-728).
@@ -439,7 +415,8 @@ class NewsController:
         self._ai_config_provider = ai_config_provider
         # Session guard of the app-startup turn (plan L3.6, khuôn
         # ``_auto_scanned_this_session`` của Scanner): the hook in ``main.py``
-        # runs the §6.1 lượt 1 turn exactly once per session.
+        # runs the turn exactly once per session — purge + schedule start
+        # (QĐ-F2, đợt 3: no FF fetch remains in this turn).
         self._fetched_this_session = False
         # Producer-schedule seam (plan L3.7): ``None`` resolves to the real
         # QThread starter (built on use — needs a live QApplication); tests
@@ -488,56 +465,33 @@ class NewsController:
             )
         return self._fred_producer
 
-    # --- ForexFactory button turns (§6.1 lượt 2-3, plan L3.3) ---------------------
+    # --- app-startup turn (plan L3.6, QĐ-F2 — đợt 3: purge + schedule only) ------
 
-    def fetch_calendar_json(self) -> JsonCalendarResult:
-        """Run the "Lấy lịch kinh tế" turn (§6.1 lượt 2) — delegated to
-        ``ff_calendar_producer`` so the network transport stays in the producer
-        and the screen owns no fetch.  The producer always upserts (no
-        "skip-if-exists") and returns the typed summary + errors the button
-        displays (no display string here, L3)."""
-        return self._ff_producer.fetch_calendar_json()
+    def run_startup_turn(self) -> StartupTurnResult:
+        """Run the app-startup turn (QĐ-F2, plan L3.6) — once per session.
 
-    def fetch_actual_html(self, now: datetime | None = None) -> HtmlCalendarResult:
-        """Run the "Cập nhật actual" turn (§6.1 lượt 3) — delegated; the
-        producer targets only the weekly HTML pages of the pending events and
-        returns the typed summary + errors (never retried — §6.1 anti-abuse)."""
-        return self._ff_producer.fetch_actual_html(now)
-
-    def run_startup_turn(self, *, now: datetime | None = None) -> StartupTurnResult:
-        """Run the app-startup turn (contract §6.1 lượt 1, plan L3.6) — once per
-        session.
-
-        The hook in ``main.py`` calls this at boot (QĐ-5, plan L3.6); the
-        ``_fetched_this_session`` session guard (khuôn ``_auto_scanned_this_session``
-        của Scanner) makes every further call a typed no-op, so exactly one turn
-        happens per session and **no FF timer or poll is ever created** (§6.1 —
-        ForexFactory is button/startup/lookup only).  The turn itself:
+        The hook in ``main.py`` calls this at boot; the ``_fetched_this_session``
+        session guard (khuôn ``_auto_scanned_this_session`` của Scanner) makes
+        every further call a typed no-op, so exactly one turn happens per
+        session.  The turn:
 
         1. purges expired ``ingest_runs`` — retention read from the policy key
            ``ingest_runs_retention_days`` via the loader (R4, contract §4.6:
            only the operational log; news and verdicts are never touched);
-        2. fetches the JSON calendar (this week + next week) — the shared
-           channel path of the "Lấy lịch kinh tế" button (§6.1 lượt 1/2, plan
-           L3.3);
-        3. fetches HTML actuals targeted for ``events_pending_actual`` — the
-           shared targeted path of the "Cập nhật actual" button (§6.1 lượt 1/3).
+        2. starts the periodic RSS/FRED producer schedule (plan L3.7 — the two
+           "tự động định kỳ" channels contract §6.2/§6.3/§13 keep).
 
-        All network transport stays in the producer (this layer delegates, C3 —
-        no display string, no retry added)."""
+        The ForexFactory parts of the old turn (JSON calendar + HTML actual
+        channels) were removed with the FF automatic channels (đợt 3 — no
+        request to ForexFactory remains anywhere; the only FF channel is the
+        human-pasted page-source path, tiếp nhận sau này tại F3).  This layer
+        delegates (C3 — no display string, no added retry)."""
         if self._fetched_this_session:
             return StartupTurnResult(ran=False)
         self._fetched_this_session = True
         purged = self._repo.purge_expired_runs(self._policy.ingest_runs_retention_days)
-        json_result = self.fetch_calendar_json()
-        html_result = self.fetch_actual_html(now)
         self._start_producer_schedule()
-        return StartupTurnResult(
-            ran=True,
-            purged_runs=purged,
-            json_result=json_result,
-            html_result=html_result,
-        )
+        return StartupTurnResult(ran=True, purged_runs=purged)
 
     # --- producer schedule (contract §6.2/§6.3/§13, plan L3.7) ----------------
 
@@ -755,25 +709,6 @@ class NewsController:
             impact_hint=impact_hint,
         )
 
-    # --- xuất/nhập file (contract §10, plan L3.4) -----------------------------------
-
-    def export_news_range(self, from_utc: str, to_utc: str, file_format: str) -> FileExportResult:
-        """Export the filtered date range to a CSV/JSON file (contract §10,
-        screen_design "Hành vi xuất file") — delegated to the file-transfer
-        service, which owns every serializer/parser and writes into
-        ``config/paths.exports_dir()`` (§10).  The screen never parses files
-        (screen_design "Nguyên tắc")."""
-        return export_news_range(self._repo, from_utc, to_utc, file_format)
-
-    def import_news_file(self, path: str) -> FileImportResult:
-        """Import a CSV/JSON file (contract §10, screen_design "Hành vi nhập
-        file") — delegated to the file-transfer service: upsert by
-        ``dedupe_key`` with ``source=import``, no ``ingest_runs`` row (the §4.6
-        producer enum is frozen and carries no ``import`` value, R6), and an
-        actual already recorded from an authoritative source (FF) is only
-        overwritten when the destination row is stale (contract §10)."""
-        return import_news_file(self._repo, path)
-
     # --- reads served to consumers (§3 role, §8 read contract) --------------------
 
     def events_in_range(
@@ -788,14 +723,10 @@ class NewsController:
         return self._repo.events_in_range(from_utc, to_utc, currencies, include_non_impact)
 
     def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
-        """Events past their grace window without an actual (§8) — the input of
-        the HTML actual turns (§6.1)."""
+        """Events past their grace window without an actual (§8) — from đợt 3
+        it feeds the guidance panel of the news screen, never an automatic
+        fetch (contract §8)."""
         return self._repo.events_pending_actual(now)
-
-    def event_actual_or_lookup(self, event_id: int) -> CalendarEvent | None:
-        """One event; a ``stale`` event triggers the on-demand lookup the
-        constructor wired (§6.1 lượt 4).  Returns ``None`` for an unknown id."""
-        return self._repo.event_actual_or_lookup(event_id)
 
     def items_in_range(
         self,

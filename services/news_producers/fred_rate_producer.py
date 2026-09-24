@@ -4,10 +4,8 @@ Sole owner of "thu thập lãi suất điều hành 8 đồng tiền thành ``Ra
 (contract §6.3 / §11b, identity M5 — QĐ-1 phương án A, Owner duyệt 21/09/2026).
 This batch absorbs ``services/interest_rate_service.py`` into a new file and
 leaves the old file untouched (QĐ-1A: its rate cache keeps feeding the legacy
-macro path until connect-time b): ``FRED_SERIES`` (d.17-26),
-``_fetch_from_fred`` (d.155-204), the ForexFactory-HTML rate channel
-``_update_from_forexfactory`` + ``_FOREX_RATE_EVENTS`` (d.76-139 / d.29-38) and
-the JSON fallback ``_load_fallback`` (d.207-212).
+macro path until connect-time b): ``FRED_SERIES`` (d.17-26), ``_fetch_from_fred``
+(d.155-204) and the JSON fallback ``_load_fallback`` (d.207-212).
 
 One entry point, ``fetch_round`` = ONE refresh round = one ``ingest_runs`` row
 (producer ``fred``, contract §4.6/§10).  The write destination is the only
@@ -16,14 +14,17 @@ thing that changes (plan L2.6 review point): observations go to
 ``(currency, observed_at, source)`` (§4.4) — instead of the legacy in-memory
 ``_CACHE`` dict plus the ``config/interest_rates.json`` write-back.
 
-**Source chain per currency: ``fred`` → ``ff_html`` → ``config_fallback``**
-(plan L2.6 "fallback chain đúng thứ tự").  Every currency of ``FRED_SERIES``
-the primary FRED channel could not deliver is offered to the HTML channel, and
-whatever is still missing at the end is filled from the local JSON file.  A
-currency carries exactly one source per round.  The run status is ``ok`` when
-the FRED channel covered the whole scope, ``partial`` when observations were
-written without full primary coverage, ``failed`` when nothing was written
-(B4 — the status never claims a healthy primary source it did not have).
+**Source chain per currency: ``fred`` → ``config_fallback``** (from đợt 3,
+24/09/2026 — contract §6.3: the ForexFactory-HTML rate channel
+``_update_from_forexfactory`` inherited from the legacy file was REMOVED because
+Cloudflare blocks non-browser clients (§6.1 căn cứ); ``ff_html`` observations
+now arise only through the human-pasted page-source channel of §6.1 bước 4).
+Every currency of ``FRED_SERIES`` the primary FRED channel could not deliver is
+offered to the local JSON fallback.  A currency carries exactly one source per
+round.  The run status is ``ok`` when the FRED channel covered the whole scope,
+``partial`` when observations were written without full primary coverage,
+``failed`` when nothing was written (B4 — the status never claims a healthy
+primary source it did not have).
 
 Trend (hike/cut/hold) is NEVER derived here (§4.4/§11b: ``core/rate_trend.py``
 owns the derivation and the consumer calls ``NewsRepository.latest_rates``).
@@ -46,32 +47,20 @@ Governance:
 * **No display strings** (contract §8): the legacy ``rate_label`` and
   ``central_bank`` have no ``interest_rates`` column (§4.4) and are dropped —
   only the five §4.4 columns are written.
-* **Raw rows never leave the converters** (R8/C2): the ForexFactory HTML row
-  shape (``currency``/``event``/``actual``/``time_utc``) is visible only inside
-  ``_rate_observations_from_html``, the FRED JSON observations only inside
-  ``_fred_observations``.
-* **The HTML channel reuses the inherited client** exactly as the legacy
-  function does — ``services/forex_factory_client.ForexFactoryClient``
-  (read-only, untouched, one shot per week page, no retry: §6.1 anti-abuse).
-  Its parser is the same code the old file ran, so the HTML link is
-  B3-identical by construction; the connect-time batch b that deletes that
-  client (contract §12) must rewire this link.
-* **Deviations, plan-sanctioned (V2):** (a) the legacy FF gate
-  ``new_rate != old_rate`` (d.122) compared the HTML reading against a
-  cross-source merged value and only mutated a dict — the plan's chain hands
-  the HTML channel the currencies FRED left empty, so that gate has no
-  counterpart in a source-separated store and is not ported; (b) transport and
-  channel failures are recorded as typed errors in ``ingest_runs`` (§4.6/§10)
-  instead of being swallowed by ``logger.debug``; (c) a fallback entry without
-  any observation date is skipped — ``observed_at`` is NOT NULL and part of the
-  §4.4 key, and no date is ever invented (B4/B5).
+* **Raw rows never leave the converters** (R8/C2): the FRED JSON observations
+  are visible only inside ``_fred_observations``.
+* **Deviations, plan-sanctioned (V2):** (a) transport and channel failures are
+  recorded as typed errors in ``ingest_runs`` (§4.6/§10) instead of being
+  swallowed by ``logger.debug``; (b) a fallback entry without any observation
+  date is skipped — ``observed_at`` is NOT NULL and part of the §4.4 key, and
+  no date is ever invented (B4/B5).
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -110,35 +99,16 @@ FRED_SERIES: dict[str, str] = {
     "CHF": "SNPOLICYR",          # SNB Policy Rate
 }
 
-# interest_rate_service.py:29-38 — tiền tệ → mẫu tên sự kiện trên ForexFactory
-# (nguyên văn; khớp bằng ``p in event_name`` trên tên đã lower()).
-_FOREX_RATE_EVENTS: dict[str, list[str]] = {
-    "USD": ["federal funds rate", "fed funds rate"],
-    "EUR": ["ecb deposit rate", "ecb interest rate", "ecb refinancing rate"],
-    "GBP": ["boe official bank rate", "mpc official bank rate", "boe interest rate"],
-    "JPY": ["boj policy rate", "boj interest rate"],
-    "AUD": ["cash rate"],
-    "NZD": ["official cash rate"],
-    "CAD": ["overnight rate"],
-    "CHF": ["snb policy rate", "snb interest rate"],
-}
-
 # interest_rate_service.py:157 — endpoint FRED (nguyên văn).
 FRED_OBSERVATIONS_URL = "https://api.stlouisfed.org/fred/series/observations"
-
-# interest_rate_service.py:88-91 — hai trang tuần ForexFactory của đường lãi suất
-# ("this" + "last"; nguyên văn — khác bộ URL của ff_calendar_producer).
-FF_WEEK_URLS: tuple[str, ...] = (
-    "https://www.forexfactory.com/calendar?week=this",
-    "https://www.forexfactory.com/calendar?week=last",
-)
 
 # interest_rate_service.py:43 — tệp fallback cục bộ (đọc, không bao giờ ghi).
 FALLBACK_FILENAME = "interest_rates.json"
 
-# Kênh ghi = giá trị enum của §4.4 (một nguồn từ vựng duy nhất).
+# Kênh ghi = giá trị enum của §4.4 (một nguồn từ vựng duy nhất).  Kênh FF-HTML
+# qua mạng đã bị gỡ (đợt 3 — chỉ đường dán mã nguồn trang của §6.1 phát sinh
+# ``ff_html`` nữa, và nó đi thẳng qua repository, không qua producer này).
 _CHANNEL_FRED = RateSource.FRED.value
-_CHANNEL_FF_HTML = RateSource.FF_HTML.value
 _CHANNEL_CONFIG_FALLBACK = RateSource.CONFIG_FALLBACK.value
 
 
@@ -168,10 +138,9 @@ class RateFetchResult:
 
     Per-source observation counts (never a bare dict, C3), the currencies the
     round covered, the run status logged into ``ingest_runs`` and the typed
-    channel errors.  No raw FRED/HTML row crosses this boundary (R8)."""
+    channel errors.  No raw FRED row crosses this boundary (R8)."""
 
     fred_observations: int
-    ff_html_observations: int
     config_fallback_observations: int
     currencies_covered: tuple[str, ...]
     run_status: IngestRunStatus
@@ -181,11 +150,7 @@ class RateFetchResult:
     @property
     def written(self) -> int:
         """Total observations handed to ``add_rate_observations`` (typed count)."""
-        return (
-            self.fred_observations
-            + self.ff_html_observations
-            + self.config_fallback_observations
-        )
+        return self.fred_observations + self.config_fallback_observations
 
 
 class FredRateProducer:
@@ -222,8 +187,10 @@ class FredRateProducer:
     # --- public round (contract §6.3, plan L2.6) ---------------------------------
 
     def fetch_round(self) -> RateFetchResult:
-        """One refresh round over the 8 currencies: FRED, then the ForexFactory
-        HTML channel, then the local JSON fallback (plan L2.6 chain order).
+        """One refresh round over the 8 currencies: FRED, then the local JSON
+        fallback (đợt 3 chain order ``fred → config_fallback`` — contract §6.3:
+        the inherited ForexFactory-HTML channel was removed with the FF
+        automatic channels).
 
         Every observation of the round is written through
         ``NewsRepository.add_rate_observations`` (§4.4 — a duplicate
@@ -239,16 +206,6 @@ class FredRateProducer:
         errors.extend(fred_errors)
         covered = {observation.currency for observation in fred_observations}
 
-        ff_html_observations: list[RateObservation] = []
-        remaining = [currency for currency in FRED_SERIES if currency not in covered]
-        if remaining:
-            ff_html_observations, ff_errors = self._update_from_forexfactory(
-                fetched_at, remaining
-            )
-            ff_html_observations = _dedupe(ff_html_observations)
-            errors.extend(ff_errors)
-            covered.update(observation.currency for observation in ff_html_observations)
-
         fallback_observations: list[RateObservation] = []
         remaining = [currency for currency in FRED_SERIES if currency not in covered]
         if remaining:
@@ -260,7 +217,6 @@ class FredRateProducer:
 
         observations = [
             *fred_observations,
-            *ff_html_observations,
             *fallback_observations,
         ]
         written = self._repo.add_rate_observations(observations)
@@ -281,7 +237,6 @@ class FredRateProducer:
         )
         return RateFetchResult(
             fred_observations=len(fred_observations),
-            ff_html_observations=len(ff_html_observations),
             config_fallback_observations=len(fallback_observations),
             currencies_covered=tuple(sorted(covered)),
             run_status=run_status,
@@ -367,57 +322,6 @@ class FredRateProducer:
                 )
                 continue
         return observations, errors
-
-    # --- ForexFactory HTML channel (port of _update_from_forexfactory, d.76-139) ---
-
-    def _update_from_forexfactory(
-        self, fetched_at: str, currencies: list[str]
-    ) -> tuple[list[RateObservation], list[RateChannelError]]:
-        """Scan the two ForexFactory week pages for central-bank rate decisions
-        of ``currencies`` — the inherited HTML link of the rate channel.
-
-        Paged verbatim (d.88-96): the ``this`` and ``last`` week URLs, each
-        fetched by the inherited client, a failing week never blocking the
-        other.  Rows that match ``_FOREX_RATE_EVENTS`` with a readable actual
-        become ``ff_html`` observations; the raw rows are consumed by the
-        converter here and never leave this module (R8).  The HTML transport is
-        one shot per page — a failure is recorded, never re-polled (§6.1
-        anti-abuse)."""
-        rows: list[dict[str, object]] = []
-        errors: list[RateChannelError] = []
-        for week_url in FF_WEEK_URLS:
-            try:
-                rows.extend(self._fetch_html_week(week_url))
-            except Exception as exc:  # một tuần hỏng không chặn tuần kia (d.92-96)
-                errors.append(
-                    RateChannelError(
-                        _CHANNEL_FF_HTML,
-                        "",
-                        _classify_html_error(exc),
-                        f"{week_url}: {exc}",
-                    )
-                )
-                continue
-        if not rows:
-            return [], errors
-        return _rate_observations_from_html(rows, currencies, fetched_at), errors
-
-    def _fetch_html_week(self, week_url: str) -> list[dict[str, object]]:
-        """One-shot fetch+parse of a single ForexFactory week page.
-
-        Uses the inherited client exactly as the legacy function did (d.84-94):
-        a fresh ``ForexFactoryClient`` per round, its HTML URL pointed at the
-        requested week, then ``_fetch_html_events`` (UA
-        ``Mozilla/5.0 (compatible; AI Market Analyst/1.0)``, ``timeout=10``, no
-        retry — HTTPError/URLError become ``RuntimeError("HTTP <code>")``/
-        ``RuntimeError(str(reason))``, an unparseable page becomes
-        ``RuntimeError("không đọc được bảng HTML")``).  The client is read-only
-        and untouched (QĐ-1A); its parsed rows stay inside this module (R8)."""
-        from services.forex_factory_client import ForexFactoryClient
-
-        client = ForexFactoryClient()
-        client.FOREX_FACTORY_HTML_URL = week_url
-        return client._fetch_html_events()
 
     # --- JSON fallback channel (port of interest_rate_service._load_fallback) -----
 
@@ -578,49 +482,6 @@ def _fred_observations(
     return observations
 
 
-def _rate_observations_from_html(
-    rows: list[dict[str, object]], currencies: list[str], fetched_at: str
-) -> list[RateObservation]:
-    """Convert raw ForexFactory HTML rows into ``ff_html`` observations (R8).
-
-    Port of the matching block of ``_update_from_forexfactory`` (d.104-131): the
-    currency must be one of the currencies this round still needs, the event
-    name must contain one of its ``_FOREX_RATE_EVENTS`` patterns
-    (case-insensitive), the actual must be non-empty and read as a float.  The
-    observation date is the day of the event's ``time_utc`` (d.130), falling
-    back to the fetch day when the row carries none — both verbatim from the
-    legacy.  Every matched decision is recorded (the §4.4 table stores
-    observations, not one value per currency); rows that match nothing are
-    dropped, never guessed."""
-    today = fetched_at[:10]
-    observations: list[RateObservation] = []
-    for row in rows:
-        currency = str(row.get("currency", "")).strip()
-        if currency not in currencies:
-            continue
-        event_name = str(row.get("event", "")).strip().lower()
-        patterns = _FOREX_RATE_EVENTS[currency]
-        if not any(pattern in event_name for pattern in patterns):
-            continue
-        actual = str(row.get("actual", "")).strip()
-        if not actual:
-            continue
-        rate = _parse_rate(actual)
-        if rate is None:
-            continue
-        observed_at = str(row.get("time_utc", ""))[:10] or today
-        observations.append(
-            RateObservation(
-                currency=currency,
-                rate=rate,
-                observed_at=observed_at,
-                source=RateSource.FF_HTML,
-                fetched_at=fetched_at,
-            )
-        )
-    return observations
-
-
 def _fallback_observed_at(entry: dict[str, object], file_last_updated: object) -> str | None:
     """Observation date of one fallback entry: its own ``_updated`` (the legacy
     ``_save_fallback``/``_fetch_from_fred`` wrote the data's date there, d.130/
@@ -664,21 +525,6 @@ def _classify_error(exc: Exception) -> str:
     (khuôn ``type(exc).__name__`` of the rss producer, contract §4.6 style)."""
     if isinstance(exc, (KeyError, TypeError, ValueError)):
         return "InvalidObservation"
-    return type(exc).__name__
-
-
-def _classify_html_error(exc: Exception) -> str:
-    """Inherited transport classification for the HTML channel (khuôn
-    ``_classify_html_error`` of ``ff_calendar_producer``): ``Http<code>`` for a
-    failed response, ``UrlError`` for a connection fault, ``InvalidHtmlTable``
-    when the page carried no parseable rows, otherwise the exception name."""
-    if isinstance(exc, RuntimeError):
-        message = str(exc)
-        if message.startswith("HTTP "):
-            return "Http" + message[len("HTTP ") :]
-        if message.startswith("không đọc được bảng HTML"):
-            return "InvalidHtmlTable"
-        return "UrlError"
     return type(exc).__name__
 
 

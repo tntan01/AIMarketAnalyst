@@ -3,18 +3,19 @@
 This is the contract test that the two wiring batches (Dashboard, macro) will
 reuse (contract §14: "kiểm thử hợp đồng (C4) ... xanh nguyên trạng khi nội bộ
 repository thay đổi").  It therefore pins only the *signature* and the
-observable *output semantics* of the seven read methods of contract §8 —
-never an internal intermediate (SQL text, private helpers, row mappings).
-Any direct SQL below is fixture *setup* only, never an assertion target.
+observable *output semantics* of the read methods of contract §8 — never an
+internal intermediate (SQL text, private helpers, row mappings).  Any direct
+SQL below is fixture *setup* only, never an assertion target.
 
-Coverage required by the batch: signatures of all 7 read methods; events window
+Coverage required by the batch: signatures of the read methods; events window
 bounds/currency/include_non_impact/order/read-time status; pending-actual set +
-grace boundary; the four branches of ``event_actual_or_lookup`` with a typed
-fake lookup; items window/open-upper/kinds/currencies/excluded/decode/order;
-``latest_rates`` cross-checked against ``core/rate_trend`` (no threshold copied
-into the test); ``store_state`` fresh/degraded/unavailable incl. ``partial``
-counts and ``failed`` does not; verdicts filter/order/limit + JSON decode; and
-the no-network-import scan of the module.
+grace boundary (contract §8 — từ đợt 3 phục vụ panel hướng dẫn, không phục vụ
+lượt fetch tự động nào); items window/open-upper/kinds/currencies/excluded/
+decode/order; ``latest_rates`` cross-checked against ``core/rate_trend`` (no
+threshold copied into the test); ``store_state`` fresh/degraded/unavailable
+incl. ``partial`` counts and ``failed`` does not; verdicts filter/order/limit +
+JSON decode; and the no-network-import scan of the module.  (Đợt 3 — ghim C4
+của ``event_actual_or_lookup`` và seam lookup đã được gỡ cùng hành vi bị xóa.)
 """
 
 from __future__ import annotations
@@ -60,11 +61,10 @@ NEWS_MIGRATIONS_DIR = PROJECT_ROOT / "data" / "migrations" / "news"
 # ---- fixture scaffolding (setup only - temp DB, never %APPDATA%) ---------------
 
 
-def _repo(tmp_path: Path, lookup=None) -> NewsRepository:
+def _repo(tmp_path: Path) -> NewsRepository:
     return NewsRepository(
         db_path=tmp_path / "news.db",
         migrations_dir=NEWS_MIGRATIONS_DIR,
-        lookup=lookup,
     )
 
 
@@ -242,10 +242,6 @@ class TestContractSignatures:
         assert list(sig.parameters) == ["self", "now"]
         assert sig.parameters["now"].default is inspect.Parameter.empty
 
-    def test_event_actual_or_lookup_signature(self):
-        sig = inspect.signature(NewsRepository.event_actual_or_lookup)
-        assert list(sig.parameters) == ["self", "event_id"]
-
     def test_items_in_range_signature(self):
         sig = inspect.signature(NewsRepository.items_in_range)
         assert list(sig.parameters) == [
@@ -401,74 +397,20 @@ class TestEventsPendingActual:
         assert [e.dedupe_key for e in repo.events_pending_actual(now)] == ["past"]
 
 
-# ---- 4. event_actual_or_lookup --------------------------------------------------
+# ---- 4. (gỡ đợt 3: event_actual_or_lookup + seam lookup — test của hành vi
+# ----    bị xóa; ghim còn lại: mô-đun không có import mạng) --------------------
 
-
-class TestEventActualOrLookup:
-    def _fake_lookup(self, result: CalendarEvent | None):
-        calls: list[int] = []
-
-        def lookup(event_id: int) -> CalendarEvent | None:
-            calls.append(event_id)
-            return result
-
-        return lookup, calls
-
-    def test_unknown_id_returns_none(self, tmp_path):
-        repo = _repo(tmp_path)
-        assert repo.event_actual_or_lookup(999_999) is None
-
-    def test_non_stale_event_never_triggers_lookup(self, tmp_path):
-        lookup, calls = self._fake_lookup(
-            _event("fresh", actual="1.2", event_time="2020-01-01T08:00:00Z")
-        )
-        repo = _repo(tmp_path, lookup=lookup)
-        repo.upsert_events([_event("e1", event_time="2100-01-01T08:00:00Z")])
-        event = repo.event_actual_or_lookup(event_id_for(repo, "e1"))
-        assert event.dedupe_key == "e1"
-        assert calls == []
-
-    def test_stale_event_triggers_lookup_exactly_once(self, tmp_path):
-        fresh_result = _event("e1", event_time="2100-01-01T08:00:00Z", actual="9.9")
-        lookup, calls = self._fake_lookup(fresh_result)
-        repo = _repo(tmp_path, lookup=lookup)
-        _insert_event_raw(
-            repo_db_file(tmp_path), dedupe="e1", event_time="2020-01-01T08:00:00Z"
-        )
-        result = repo.event_actual_or_lookup(event_id_for(repo, "e1"))
-        assert calls == [event_id_for(repo, "e1")]
-        assert result == fresh_result
-
-    def test_lookup_unplugged_returns_stored_event(self, tmp_path):
-        repo = _repo(tmp_path)  # no lookup wired
-        _insert_event_raw(
-            repo_db_file(tmp_path), dedupe="e1", event_time="2020-01-01T08:00:00Z"
-        )
-        event = repo.event_actual_or_lookup(event_id_for(repo, "e1"))
-        assert event is not None
-        assert event.dedupe_key == "e1"
-
-    def test_module_has_no_network_imports(self):
-        source = Path(news_repository_module.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        imported: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported.update(alias.name.split(".")[0] for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                imported.add(node.module.split(".")[0])
-        banned = {"urllib", "requests", "http", "socket", "aiohttp", "httpx"}
-        assert not (imported & banned), sorted(imported & banned)
-
-
-def event_id_for(repo: NewsRepository, dedupe: str) -> int:
-    conn = sqlite3.connect(repo.db_path)
-    try:
-        return int(conn.execute(
-            "SELECT id FROM news_events WHERE dedupe_key = ?", (dedupe,)
-        ).fetchone()[0])
-    finally:
-        conn.close()
+def test_module_has_no_network_imports():
+    source = Path(news_repository_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    banned = {"urllib", "requests", "http", "socket", "aiohttp", "httpx"}
+    assert not (imported & banned), sorted(imported & banned)
 
 
 # ---- 5. items_in_range ----------------------------------------------------------

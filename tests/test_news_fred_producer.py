@@ -1,17 +1,19 @@
 """fred_rate_producer tests (plan lô L2.6, contract §6.3/§4.4/§4.6).
 
-Behavioral parity with the inherited runtime (B3, function level): every
-transport is mocked — ``requests.get`` in the producer namespace for the FRED
-channel, ``urlopen`` inside ``services.forex_factory_client`` for the
-ForexFactory week pages (so the inherited parser runs on the fixture pages and
-the HTML link is compared on the same code path as the old file).  No real
+Behavioral parity with the inherited runtime (B3, function level): the FRED
+transport is mocked — ``requests.get`` in the producer namespace.  No real
 HTTP, no waiting and ``%APPDATA%`` is never touched (throwaway temp DB); the
 fallback JSON is always a temp fixture, never ``config/interest_rates.json``.
 
+Đợt 3 (24/09/2026 — ca "Nguồn dán FF", plan F1): kênh ForexFactory-HTML của
+producer bị gỡ (Cloudflare chặn client không-phải-browser — contract §6.3);
+nhánh test của kênh đó và mock trình duyệt (``urllib``/client) được gỡ cùng
+commit.  Chuỗi nguồn còn đúng hai kênh: **``fred`` → ``config_fallback``**.
+
 Plan L2.6 checklist covered here: FRED mock ok / lỗi → source chain in order
-(``fred`` → ``ff_html`` → ``config_fallback``), the written ``source`` enum of
-each branch, and a duplicate ``(currency, observed_at, source)`` upserting
-instead of duplicating.
+(``fred`` → ``config_fallback``), the written ``source`` enum of each branch,
+and a duplicate ``(currency, observed_at, source)`` upserting instead of
+duplicating.
 """
 
 from __future__ import annotations
@@ -20,10 +22,8 @@ import ast
 import inspect
 import json
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
-from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -35,11 +35,9 @@ from core.news_models import (
     RateSource,
 )
 from core.news_policy import NewsPolicy
-from services import forex_factory_client as ffclient
 from services.news_producers import fred_rate_producer as fredmod
 from services.news_producers.fred_rate_producer import (
     FRED_SERIES,
-    FF_WEEK_URLS,
     FredRateProducer,
     RateChannelError,
     RateFetchResult,
@@ -48,27 +46,16 @@ from services.news_repository import NewsRepository
 
 NEWS_MIGRATIONS_DIR = PROJECT_ROOT / "data" / "migrations" / "news"
 
-THIS_WEEK_URL, LAST_WEEK_URL = FF_WEEK_URLS
-
-# The inherited date parser resolves the year from ``now`` and validates the
-# weekday name, so the fixture page always carries today's UTC date (a noon
-# Bangkok event maps to the same UTC day).
-_EVENT_DATE_TEXT = datetime.now(UTC).strftime("%a %b %d")
-_EVENT_DAY = datetime.now(UTC).strftime("%Y-%m-%d")
-
 
 @pytest.fixture(autouse=True)
 def _hermetic_transport():
-    """No test may reach the network: FRED raises if a test forgot to mock it and
-    the inherited ForexFactory transport behaves like a dead page.  A test that
-    wants the HTML channel patches ``ffclient.urlopen`` itself (inner patch)."""
+    """No test may reach the network: FRED raises if a test forgot to mock it
+    (đợt 3 — the inherited ForexFactory transport of this producer was removed,
+    so there is nothing else to patch)."""
     with mock.patch.object(
         fredmod.requests, "get", side_effect=AssertionError("FRED called without a mock")
     ):
-        with mock.patch.object(
-            ffclient, "urlopen", side_effect=URLError("network disabled in tests")
-        ):
-            yield
+        yield
 
 
 # ---- fixture scaffolding (temp DB + fully mocked transport) ---------------------
@@ -85,20 +72,6 @@ class _FredResponse:
         if isinstance(self._payload, BaseException):
             raise self._payload
         return self._payload
-
-
-class _FakeUrlResponse:
-    def __init__(self, raw: bytes) -> None:
-        self._raw = raw
-
-    def __enter__(self) -> "_FakeUrlResponse":
-        return self
-
-    def __exit__(self, *exc) -> bool:
-        return False
-
-    def read(self) -> bytes:
-        return self._raw
 
 
 def _observations(
@@ -139,57 +112,6 @@ def _mock_fred(spec: dict[str, object] | None = None, default: object = None):
         return _FredResponse(200, item)
 
     return fake_get, calls
-
-
-def _mock_ff_html(pages: dict[str, object]):
-    """Mock ``urlopen`` inside the inherited ForexFactory client.
-
-    ``pages`` maps a week URL to an HTML page or an exception; a URL without a
-    fixture raises ``URLError`` (a dead page).  Returns the fake and the list of
-    requested URLs."""
-    calls: list[str] = []
-
-    def fake_urlopen(request, timeout=10):
-        url = getattr(request, "full_url", str(request))
-        calls.append(url)
-        page = pages.get(url)
-        if page is None:
-            raise URLError(f"no fixture page for {url}")
-        if isinstance(page, BaseException):
-            raise page
-        return _FakeUrlResponse(str(page).encode("utf-8"))
-
-    return fake_urlopen, calls
-
-
-def _ff_row(
-    currency: str,
-    event: str,
-    actual: str = "",
-    *,
-    date_text: str = _EVENT_DATE_TEXT,
-    time_text: str = "12:00pm",
-) -> str:
-    return (
-        '<tr class="calendar__row">'
-        f'<td class="calendar__cell calendar__date">{date_text}</td>'
-        f'<td class="calendar__time">{time_text}</td>'
-        f'<td class="calendar__currency">{currency}</td>'
-        f'<td class="calendar__event-title">{event}</td>'
-        '<td class="calendar__impact">'
-        '<span class="calendar__impact-icon--red">High Impact</span></td>'
-        '<td class="calendar__forecast">-</td>'
-        '<td class="calendar__previous">-</td>'
-        f'<td class="calendar__actual">{actual}</td>'
-        "</tr>"
-    )
-
-
-def _ff_page(*rows: str) -> str:
-    return (
-        '<div class="calendar__timezone">Calendar Time Zone: Asia/Bangkok (GMT +7)</div>\n'
-        "<table>\n" + "\n".join(rows) + "\n</table>\n"
-    )
 
 
 def _policy(**overrides) -> NewsPolicy:
@@ -282,7 +204,6 @@ class TestFredChannel:
 
         assert result.run_status == IngestRunStatus.OK
         assert result.fred_observations == 2 * len(FRED_SERIES)
-        assert result.ff_html_observations == 0
         assert result.config_fallback_observations == 0
         assert result.currencies_covered == tuple(sorted(FRED_SERIES))
         assert result.errors == ()
@@ -418,49 +339,50 @@ class TestFredChannel:
         assert _channel_errors(result, "fred") == {"InvalidObservation"}
 
     def test_missing_api_key_skips_fred_channel(self, tmp_path):
+        # Đợt 3: thiếu khóa ⇒ bỏ kênh FRED; không có kênh HTML nữa — fallback
+        # lấp trực tiếp (chuỗi fred → config_fallback).
         fake_get, calls = _mock_fred()
-        fake_urlopen, html_calls = _mock_ff_html({})
-        producer = _producer(tmp_path, api_key=None, fallback=_writer(tmp_path, {}))
+        fallback = _writer(
+            tmp_path,
+            {"currencies": {currency: {"rate": 3.75, "_updated": "2026-06-01"} for currency in FRED_SERIES}},
+        )
+        producer = _producer(tmp_path, api_key=None, fallback=fallback)
         with mock.patch.object(fredmod.requests, "get", fake_get):
-            with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-                result = producer.fetch_round()
+            result = producer.fetch_round()
 
         assert calls == []  # nguyên hành vi cũ (d.58): không khóa ⇒ không gọi FRED
-        assert html_calls == [THIS_WEEK_URL, LAST_WEEK_URL]
         assert result.errors[0] == RateChannelError(
             "fred", "", "NoApiKey", "no FRED API key configured"
         )
+        assert result.config_fallback_observations == len(FRED_SERIES)
+        assert result.run_status == IngestRunStatus.PARTIAL
 
 
-# ---- 2. Chuỗi nguồn: fred → ff_html → config_fallback --------------------------
+# ---- 2. Chuỗi nguồn (đợt 3): fred → config_fallback -------------------------
 
 
 class TestSourceChain:
     def test_fred_covered_currency_is_not_offered_downstream(self, tmp_path):
-        """FRED thắng: kênh HTML không được gọi, không có dòng ff_html/fallback."""
+        """FRED thắng: không có dòng fallback nào cho đồng tiền FRED đã phủ."""
         fake_get, _ = _mock_fred()
-        html = _ff_page(_ff_row("USD", "Federal Funds Rate", "5.25%"))
-        fake_urlopen, html_calls = _mock_ff_html({THIS_WEEK_URL: html, LAST_WEEK_URL: html})
         fallback = _writer(
             tmp_path,
             {"currencies": {currency: {"rate": 3.75, "_updated": "2026-06-01"} for currency in FRED_SERIES}},
         )
         producer = _producer(tmp_path, api_key="key-1", fallback=fallback)
         with mock.patch.object(fredmod.requests, "get", fake_get):
-            with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-                result = producer.fetch_round()
+            result = producer.fetch_round()
 
-        assert html_calls == []
         assert result.run_status == IngestRunStatus.OK
+        assert result.config_fallback_observations == 0
         assert _sources_by_currency(_rows(tmp_path / "news.db")) == {
             currency: {"fred"} for currency in FRED_SERIES
         }
 
-    def test_chain_order_fred_then_ff_html_then_config_fallback(self, tmp_path):
-        # FRED hỏng toàn bộ ⇒ HTML tiếp nhận USD, fallback lấp phần còn lại.
+    def test_chain_order_fred_then_config_fallback(self, tmp_path):
+        # FRED hỏng toàn bộ ⇒ fallback lấp trọn phần còn lại (đợt 3: không còn
+        # kênh HTML giữa; ``source`` trả về đúng enum §4.4 của mỗi nhánh).
         fake_get, _ = _mock_fred(default=400)
-        html = _ff_page(_ff_row("USD", "Federal Funds Rate", "5.25%"))
-        fake_urlopen, _ = _mock_ff_html({THIS_WEEK_URL: html, LAST_WEEK_URL: html})
         fallback = _writer(
             tmp_path,
             {
@@ -472,131 +394,35 @@ class TestSourceChain:
         )
         producer = _producer(tmp_path, api_key="key-1", fallback=fallback)
         with mock.patch.object(fredmod.requests, "get", fake_get):
-            with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-                result = producer.fetch_round()
+            result = producer.fetch_round()
 
         rows = _rows(tmp_path / "news.db")
-        assert result.ff_html_observations == 1
-        assert result.config_fallback_observations == len(FRED_SERIES) - 1
         assert result.fred_observations == 0
+        assert result.config_fallback_observations == len(FRED_SERIES)
         assert result.run_status == IngestRunStatus.PARTIAL
+        assert {row["source"] for row in rows} == {"config_fallback"}
 
-        usd = [row for row in rows if row["currency"] == "USD"]
-        assert len(usd) == 1
-        assert usd[0]["source"] == "ff_html"
-        assert usd[0]["rate"] == 5.25
-        assert usd[0]["observed_at"] == _EVENT_DAY
-        others = [row for row in rows if row["currency"] != "USD"]
-        assert {row["source"] for row in others} == {"config_fallback"}
-
-    def test_html_fills_only_currencies_fred_left_empty(self, tmp_path):
-        # Chỉ USD lấy được từ FRED; JPY có sự kiện lãi suất trên HTML.
+    def test_fallback_used_only_when_fred_did_not_cover(self, tmp_path):
+        # Chỉ USD lấy được từ FRED; 7 đồng tiền còn lại chuyển thẳng fallback.
         only_usd = {FRED_SERIES["USD"]: _observations()}
         fake_get, _ = _mock_fred(spec=only_usd, default=400)
-        html = _ff_page(
-            _ff_row("USD", "Federal Funds Rate", "9.99%"),  # FRED đã phủ ⇒ bỏ qua
-            _ff_row("JPY", "BOJ Policy Rate", "0.50%"),
-        )
-        fake_urlopen, _ = _mock_ff_html({THIS_WEEK_URL: html, LAST_WEEK_URL: html})
         fallback = _writer(
             tmp_path,
-            {"currencies": {"JPY": {"rate": 0.10, "_updated": "2026-01-01"}}},
+            {"currencies": {currency: {"rate": 0.10, "_updated": "2026-01-01"} for currency in FRED_SERIES}},
         )
         producer = _producer(tmp_path, api_key="key-1", fallback=fallback)
         with mock.patch.object(fredmod.requests, "get", fake_get):
-            with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-                result = producer.fetch_round()
+            result = producer.fetch_round()
 
         sources = _sources_by_currency(_rows(tmp_path / "news.db"))
         assert sources["USD"] == {"fred"}
-        assert sources["JPY"] == {"ff_html"}
-        assert result.fred_observations == 2
-        assert result.ff_html_observations == 1
-
-    def test_fallback_used_only_when_both_remote_channels_fail(self, tmp_path):
-        fallback = _writer(
-            tmp_path,
-            {"currencies": {"EUR": {"rate": 2.50, "_updated": "2026-07-01"}}},
-        )
-        producer = _producer(tmp_path, api_key=None, fallback=fallback)
-        fake_urlopen, html_calls = _mock_ff_html({})  # mọi trang tuần đều chết
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
-
-        assert html_calls == [THIS_WEEK_URL, LAST_WEEK_URL]  # hai trang, không retry
-        assert result.config_fallback_observations == 1
-        assert result.run_status == IngestRunStatus.PARTIAL
-        rows = _rows(tmp_path / "news.db")
-        assert [(row["currency"], row["source"], row["rate"]) for row in rows] == [
-            ("EUR", "config_fallback", 2.50)
-        ]
+        assert sources["JPY"] == {"config_fallback"}
+        assert result.fred_observations == 2  # hai điểm gần nhất của USD
+        assert result.config_fallback_observations == len(FRED_SERIES) - 1
 
 
-# ---- 3. Kênh FF HTML: khớp mẫu tên sự kiện ------------------------------------
-
-
-class TestForexFactoryChannel:
-    def _run_with_html(self, tmp_path: Path, page: str, **kwargs):
-        producer = _producer(tmp_path, **kwargs)
-        fake_urlopen, calls = _mock_ff_html({THIS_WEEK_URL: page})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            return producer.fetch_round(), calls
-
-    def test_only_rate_decision_events_with_actual_are_recorded(self, tmp_path):
-        page = _ff_page(
-            _ff_row("USD", "Federal Funds Rate", "5.25%"),
-            _ff_row("AUD", "RBA Cash Rate", "4.35%"),
-            _ff_row("EUR", "German ZEW Economic Sentiment", "4.2"),  # không phải lãi suất
-            _ff_row("JPY", "BOJ Policy Rate", ""),  # chưa có actual
-            _ff_row("GBP", "BOE Official Bank Rate", "n/a"),  # actual không đọc được
-        )
-        result, _ = self._run_with_html(tmp_path, page, api_key=None, fallback=_writer(tmp_path, {}))
-
-        rows = _rows(tmp_path / "news.db")
-        assert result.ff_html_observations == 2
-        assert {(row["currency"], row["source"], row["rate"]) for row in rows} == {
-            ("USD", "ff_html", 5.25),
-            ("AUD", "ff_html", 4.35),
-        }
-        assert {row["observed_at"] for row in rows} == {_EVENT_DAY}
-
-    def test_html_week_failure_is_typed_and_not_retried(self, tmp_path):
-        producer = _producer(tmp_path, api_key=None, fallback=_writer(tmp_path, {}))
-        page = _ff_page(_ff_row("USD", "Federal Funds Rate", "5.25%"))
-        fake_urlopen, calls = _mock_ff_html(
-            {THIS_WEEK_URL: HTTPError(THIS_WEEK_URL, 429, "rate limited", {}, None),
-             LAST_WEEK_URL: page}
-        )
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
-
-        assert calls == [THIS_WEEK_URL, LAST_WEEK_URL]
-        assert result.ff_html_observations == 1  # tuần hỏng không chặn tuần kia
-        ff_errors = [error for error in result.errors if error.channel == "ff_html"]
-        assert ff_errors[0].error_type == "Http429"
-
-    def test_unparseable_page_is_typed(self, tmp_path):
-        producer = _producer(tmp_path, api_key=None, fallback=_writer(tmp_path, {}))
-        page = "<html>no calendar rows</html>"
-        fake_urlopen, _ = _mock_ff_html({THIS_WEEK_URL: page, LAST_WEEK_URL: page})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
-
-        assert result.ff_html_observations == 0
-        assert _channel_errors(result, "ff_html") == {"InvalidHtmlTable"}
-
-    def test_same_reading_on_both_week_pages_is_written_once(self, tmp_path):
-        """Hai trang tuần chồng lấn ⇒ cùng một quan sát: ghi một lần (khóa §4.4)."""
-        producer = _producer(tmp_path, api_key=None, fallback=_writer(tmp_path, {}))
-        page = _ff_page(_ff_row("USD", "Federal Funds Rate", "5.25%"))
-        fake_urlopen, calls = _mock_ff_html({THIS_WEEK_URL: page, LAST_WEEK_URL: page})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
-
-        assert calls == [THIS_WEEK_URL, LAST_WEEK_URL]
-        assert result.ff_html_observations == 1
-        assert len(_rows(tmp_path / "news.db")) == 1
-
+# ---- 3. (gỡ đợt 3: Kênh FF-HTML — test của hành vi bị xóa; chuỗi nguồn mới
+# ----    fred → config_fallback đã ghim ở TestSourceChain) -----------------------
 
 # ---- 4. Kênh fallback JSON ----------------------------------------------------
 
@@ -614,9 +440,7 @@ class TestFallbackChannel:
             },
         )
         producer = _producer(tmp_path, api_key=None, fallback=fallback)
-        fake_urlopen, _ = _mock_ff_html({})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
+        result = producer.fetch_round()
 
         rows = {row["currency"]: row for row in _rows(tmp_path / "news.db")}
         assert result.config_fallback_observations == 2
@@ -628,9 +452,7 @@ class TestFallbackChannel:
         """B4/B5: ``observed_at`` NOT NULL — thiếu ngày ⇒ bỏ, không bịa."""
         fallback = _writer(tmp_path, {"currencies": {"USD": {"rate": 3.75}}})
         producer = _producer(tmp_path, api_key=None, fallback=fallback)
-        fake_urlopen, _ = _mock_ff_html({})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
+        result = producer.fetch_round()
 
         assert _rows(tmp_path / "news.db") == []
         assert result.run_status == IngestRunStatus.FAILED
@@ -638,9 +460,7 @@ class TestFallbackChannel:
 
     def test_missing_file_or_entry_yields_no_row(self, tmp_path):
         producer = _producer(tmp_path, api_key=None, fallback=tmp_path / "absent.json")
-        fake_urlopen, _ = _mock_ff_html({})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
+        result = producer.fetch_round()
 
         assert _rows(tmp_path / "news.db") == []
         assert _channel_errors(result, "config_fallback") == {"MissingFallbackEntry"}
@@ -651,9 +471,7 @@ class TestFallbackChannel:
             {"currencies": {"USD": {"rate": "n/a", "_updated": "2026-06-01"}}},
         )
         producer = _producer(tmp_path, api_key=None, fallback=fallback)
-        fake_urlopen, _ = _mock_ff_html({})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
+        result = producer.fetch_round()
 
         assert _channel_errors(result, "config_fallback") == {
             "InvalidFallbackRate",
@@ -702,9 +520,7 @@ class TestRateWrite:
 class TestRunLogAndPolicy:
     def test_empty_round_logs_a_failed_run(self, tmp_path):
         producer = _producer(tmp_path, api_key=None, fallback=tmp_path / "absent.json")
-        fake_urlopen, _ = _mock_ff_html({})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
+        result = producer.fetch_round()
 
         assert result.run_status == IngestRunStatus.FAILED
         assert result.written == 0
@@ -723,10 +539,8 @@ class TestRunLogAndPolicy:
             {"currencies": {currency: {"rate": 3.75, "_updated": "2026-06-01"} for currency in FRED_SERIES}},
         )
         producer = _producer(tmp_path, api_key="key-1", fallback=fallback)
-        fake_urlopen, _ = _mock_ff_html({})
         with mock.patch.object(fredmod.requests, "get", fake_get):
-            with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-                result = producer.fetch_round()
+            result = producer.fetch_round()
 
         runs = _runs(tmp_path / "news.db")
         assert runs[0]["status"] == "partial"
@@ -799,9 +613,7 @@ class TestBoundary:
 
     def test_error_objects_carry_no_payload(self, tmp_path):
         producer = _producer(tmp_path, api_key=None, fallback=tmp_path / "absent.json")
-        fake_urlopen, _ = _mock_ff_html({})
-        with mock.patch.object(ffclient, "urlopen", fake_urlopen):
-            result = producer.fetch_round()
+        result = producer.fetch_round()
 
         for error in result.errors:
             assert isinstance(error, RateChannelError)

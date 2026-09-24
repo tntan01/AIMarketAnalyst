@@ -205,15 +205,15 @@ class TestDisplayDictionary:
             "non": "Không đáng kể",
         }
         assert news.SOURCE_TEXT == {
-            "ff_json": "ForexFactory (lịch)",
-            "ff_html": "ForexFactory (actual)",
+            "ff_json": "ForexFactory (lịch — dữ liệu cũ)",
+            "ff_html": "ForexFactory (mã nguồn trang)",
             "google_news_rss": "Google News",
             "fxstreet_rss": "FXStreet",
             "investing_rss": "Investing",
             "fred": "FRED",
             "config_fallback": "Cấu hình dự phòng",
             "user": "Nhập tay",
-            "import": "Nhập file",
+            "import": "Nhập file (dữ liệu cũ)",
         }
 
     def test_column_filter_and_toolbar_labels_are_the_registered_block(self):
@@ -237,11 +237,7 @@ class TestDisplayDictionary:
             "Khoảng ngày",
         )
         assert news.TOOLBAR_LABELS == (
-            "Lấy lịch kinh tế",
-            "Cập nhật actual",
             "Nhập tin",
-            "Xuất file",
-            "Nhập file",
             "AI nhận định xu hướng",
         )
 
@@ -283,7 +279,7 @@ class TestTableModel:
 
         assert model.data(index, Qt.ItemDataRole.DisplayRole) == "20/09/2026 14:30"
         assert cell(1) == news.EVENT_TEXT
-        assert cell(2) == "ForexFactory (actual)"
+        assert cell(2) == "ForexFactory (mã nguồn trang)"
         assert cell(3) == "USD"
         assert cell(4) == "FOMC Meeting"
         assert cell(5) == "Cao"
@@ -397,20 +393,12 @@ class TestScreenLayout:
 
     def test_toolbar_buttons_are_wired_per_lot(self):
         screen = _screen()
-        live = {
-            news.TOOLBAR_LABELS[0],  # Lấy lịch kinh tế (L3.3)
-            news.TOOLBAR_LABELS[1],  # Cập nhật actual (L3.3)
-            news.TOOLBAR_LABELS[2],  # Nhập tin (L3.3)
-            news.TOOLBAR_LABELS[3],  # Xuất file (L3.4)
-            news.TOOLBAR_LABELS[4],  # Nhập file (L3.4)
-            news.TOOLBAR_LABELS[5],  # AI nhận định xu hướng (L3.5)
-        }
-
+        # Đợt 3: toolbar đúng 2 nút [ Nhập tin | AI nhận định xu hướng ] — cả
+        # hai đã nối hành vi (4 nút FF/xuất-nhập bị gỡ).
         assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
         for label, button in screen.toolbar_buttons.items():
-            if label in live:
-                assert button.isEnabled() is True
-                assert button.receivers(button.clicked) >= 1
+            assert button.isEnabled() is True
+            assert button.receivers(button.clicked) >= 1
 
     def test_table_headers_are_rendered(self):
         screen = _screen()
@@ -470,10 +458,14 @@ class TestLoadingAndEmptyState:
         assert news.EMPTY_TEXT in screen.status_message.toPlainText()
         assert screen.status_message.isVisible() is True
         assert screen.empty_actions.isVisible() is True
-        assert set(screen.empty_state_buttons) == {"Lấy lịch kinh tế", "Nhập tin"}
-        # Hai nút gợi ý đã bật hành vi ở L3.3 (trước đây disabled).
-        for button in screen.empty_state_buttons.values():
-            assert button.isEnabled() is True
+        # Đợt 3: "Dán mã nguồn trang" (giữ chỗ — disabled, hành vi thật ở F4)
+        # + "Nhập tin" (bật, đi form).
+        assert set(screen.empty_state_buttons) == {
+            news.PASTE_SOURCE_TEXT,
+            news.TOOLBAR_LABELS[0],
+        }
+        assert screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].isEnabled() is False
+        assert screen.empty_state_buttons[news.TOOLBAR_LABELS[0]].isEnabled() is True
 
     def test_reading_error_is_reported_without_crashing(self):
         screen = _screen()
@@ -510,7 +502,7 @@ class TestRowDetailDialog:
         joined = " ".join(label.text() for label in dialog.findChildren(QLabel))
         assert "raw_json" in joined
         assert "FOMC Meeting" in joined
-        assert "ForexFactory (actual)" in joined
+        assert "ForexFactory (mã nguồn trang)" in joined
 
 
 # ---- 7. màn không vỡ layout 800px + đăng ký điều hướng ------------------------

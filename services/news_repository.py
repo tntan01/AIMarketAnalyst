@@ -1,12 +1,12 @@
 """NewsRepository — the single read/write access point of the News database.
 
 Written per plan batches L2.1 (WRITE half + migration runner) and L2.2 (READ
-half + ``store_state`` + the on-demand lookup seam).  Domain data crossing this
-module's boundary is exactly the ``core/news_models.py`` dataclasses (contract
-section 5, R8) — never a bare dict (C3).  Write methods return typed result
-structures (``UpsertEventsResult``/``UpsertItemsResult``) or a plain ``int``
-count/id; read methods return ``core/news_models.py`` dataclasses or the
-typed ``CurrencyRateTrend`` declared here.
+half + ``store_state``).  Domain data crossing this module's boundary is exactly
+the ``core/news_models.py`` dataclasses (contract section 5, R8) — never a bare
+dict (C3).  Write methods return typed result structures
+(``UpsertEventsResult``/``UpsertItemsResult``) or a plain ``int`` count/id; read
+methods return ``core/news_models.py`` dataclasses or the typed
+``CurrencyRateTrend`` declared here.
 
 Connection fabric is copied from ``JournalService._connect()``
 (services/journal_service.py:584-590): WAL, ``busy_timeout=15s``,
@@ -16,9 +16,11 @@ nil: the news runner globs only its own ``data/migrations/news/`` subdirectory
 (QD-2, plan §5) and never opens ``journal.db``.
 
 Forbidden in this file (contract §8): scoring formulas, business/gating
-decisions, display strings, network imports (the on-demand fetch is injected
-as a callable — the repository never calls the network).  Status classification
-is delegated to ``core/news_freshness`` (contract §6.5) and trend derivation to
+decisions, display strings, network imports — the repository never calls the
+network.  The on-demand lookup seam (contract §6.1 lượt 4 cũ) was removed with
+the FF automatic channels (đợt 3, 24/09/2026 — the only FF channel is the
+human-pasted page source of §6.1).  Status classification is delegated to
+``core/news_freshness`` (contract §6.5) and trend derivation to
 ``core/rate_trend.derive_rate_trend`` (contract §4.4) — the repository keeps
 neither formula.  Operational numbers are read once from the policy via
 ``core/news_policy.load_news_policy`` (R4 — no hard-coded number here).
@@ -29,7 +31,6 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -129,7 +130,6 @@ class NewsRepository:
         self,
         db_path: Path | None = None,
         migrations_dir: Path | None = None,
-        lookup: Callable[[int], CalendarEvent | None] | None = None,
     ) -> None:
         self.db_path = db_path or news_db_path()
         self.migrations_dir = migrations_dir or PROJECT_ROOT / "data" / "migrations" / "news"
@@ -144,10 +144,6 @@ class NewsRepository:
         self._ingest_freshness_max_age = timedelta(
             hours=policy.ingest_freshness_hours
         )
-        # On-demand lookup seam (contract §6.1 lượt 4, plan L2.2): a callable
-        # that L2.4/L2.7 plug in.  When unplugged (None) the repository never
-        # fetches — it merely returns the stored event.
-        self.on_demand_lookup = lookup
 
     # --- migration runner (khuôn: JournalService.migrate, journal_service.py:44-59) --
 
@@ -634,11 +630,13 @@ class NewsRepository:
     def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
         """Events already past their ``event_time_utc + grace`` window that
         still lack an actual (contract §8: ``impact != non``, past grace, actual
-        NULL) — the input of the startup/button/on-demand HTML fetches (§6.1).
-        The SQL window is deliberately broad (``actual IS NULL AND impact != non``);
-        the grace filter is applied by re-classification through
-        ``core/news_freshness`` so the grace formula lives in exactly one place
-        (S1 — no copied classification knowledge in SQL)."""
+        NULL).  From đợt 3 (24/09/2026) this serves only the guidance panel of
+        the news screen ("sự kiện đang thiếu actual" — telling the user which
+        ForexFactory page to open and paste); it feeds no automatic fetch
+        (contract §8).  The SQL window is deliberately broad (``actual IS NULL
+        AND impact != non``); the grace filter is applied by re-classification
+        through ``core/news_freshness`` so the grace formula lives in exactly
+        one place (S1 — no copied classification knowledge in SQL)."""
         now_utc = now
         with self._connect() as conn:
             rows = conn.execute(
@@ -653,28 +651,6 @@ class NewsRepository:
             if self._classify_status(event, now_utc) == EventStatus.STALE:
                 pending.append(replace(event, status=EventStatus.STALE))
         return pending
-
-    def event_actual_or_lookup(self, event_id: int) -> CalendarEvent | None:
-        """Return one event; if it is ``stale`` at read time and an on-demand
-        lockup callable is plugged in, invoke it exactly once and return its
-        result (contract §6.1 lượt 4).  The repository never fetches the
-        network itself — the injected callable (L2.4/L2.7) owns transport and
-        the ``on_demand_lookup`` ``ingest_runs``.  Returns ``None`` when the id
-        is unknown."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM news_events WHERE id = ?",
-                (event_id,),
-            ).fetchone()
-        if row is None:
-            return None
-        event = _event_from_row(row)
-        if (
-            self._classify_status(event, datetime.now(timezone.utc)) == EventStatus.STALE
-            and self.on_demand_lookup is not None
-        ):
-            return self.on_demand_lookup(event_id)
-        return event
 
     def items_in_range(
         self,

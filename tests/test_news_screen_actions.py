@@ -1,34 +1,29 @@
 """Hành vi tương tác màn Quản lý tin (plan lô L3.3).
 
-Kiểm các nhánh hành vi của lô (screen_design "Hành vi lấy dữ liệu ForexFactory
-(2 nút)" + "Hành vi nhập/sửa tin"; contract §6.1/§6.4):
+Kiểm các nhánh hành vi của lô (screen_design "Hành vi nhập/sửa tin"; contract
+§6.4):
 
-* 2 nút FF chạy trong worker nền: disable + tiến trình khi chạy, thông báo tóm
-  tắt/lỗi có kiểu khi xong, không retry, đọc lại bảng;
 * form nhập/sửa ``user_note``: thiếu trường bắt buộc → lỗi trên form, KHÔNG ghi;
   lỗi validate controller hiện từng trường, không đóng;
 * sửa/xóa chỉ ``source=user``; toggle Loại trừ mọi dòng tin văn bản; dòng sự
   kiện không có;
-* empty state: 2 nút gợi ý enabled và đi đúng 2 đường hành vi;
-* ranh giới lô: cả 6 nút thanh công cụ đã nối hành vi (L3.3-L3.5).
-* 2 nút "Xuất file"/"Nhập file" (L3.4): chạy nền + disable khi chạy; xuất báo
-  đường dẫn file, nhập báo tóm tắt mới/cập nhật/bỏ qua trùng, đọc lại bảng;
-  chọn format/file hủy → không gọi controller.
+* empty state: nút "Nhập tin" enabled và đi đúng đường form; nút "Dán mã nguồn
+  trang" là giữ chỗ disabled (đợt 3 — hành vi thật ở F4);
+* ranh giới lô: đúng 2 nút thanh công cụ đã nối hành vi [Nhập tin | AI] (đợt 3 —
+  4 nút FF/xuất-nhập đã gỡ khỏi toolbar).
 
 Controller là **fake có kiểu** (trả mô hình miền thật ``core/news_models`` +
-kết quả thật của ``controllers/news_controller`` / ``ff_calendar_producer``),
-không mock sâu, không DB, không mạng.  Riêng đường D1 (sửa tin) được kiểm thêm
-với ``NewsController`` THẬT + repository giả ghi lời gọi (không DB) để ghim thứ
-tự "validate trước, xóa sau".  Test chạy offscreen; không ghi gì vào repo.
+kết quả thật của ``controllers/news_controller``), không mock sâu, không DB,
+không mạng.  Riêng đường D1 (sửa tin) được kiểm thêm với ``NewsController``
+THẬT + repository giả ghi lời gọi (không DB) để ghim thứ tự "validate trước,
+xóa sau".  Test chạy offscreen; không ghi gì vào repo.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-import threading
 import time
-from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -50,22 +45,14 @@ from core.news_models import (
     EventStatus,
     ImpactHint,
     IngestProducer,
-    IngestRunStatus,
     NewsItem,
     NewsItemKind,
     NewsItemSource,
 )
 from core.news_policy import load_news_policy
-from services.news_file_transfer import FileExportResult, FileImportResult
-from services.news_producers.ff_calendar_producer import (
-    HtmlCalendarFetchError,
-    HtmlCalendarResult,
-    JsonCalendarFetchError,
-    JsonCalendarResult,
-)
 from services.news_repository import UpsertItemsResult
 from ui.screens import news_screen as news
-from ui.screens.news_screen import NewsScreen, build_rows, suggest_manual_actual_event
+from ui.screens.news_screen import NewsScreen, build_rows
 
 _APP = QApplication.instance() or QApplication(sys.argv)
 
@@ -114,70 +101,32 @@ USER_ITEM = NewsItem(
 )
 
 
-def _weekday_of_this_week(week: str) -> str:
-    today = datetime.now(UTC).date()
-    monday = today - timedelta(days=today.weekday())
-    offset = 1 if week == "this" else 8
-    return (monday + timedelta(days=offset)).isoformat()
-
-
 # ---------------------------------------------------------------------------
 # Fake controller có kiểu
 # ---------------------------------------------------------------------------
 
 
 class FakeNewsController:
-    """Controller giả: ghi lời gọi, trả mô hình/kết quả thật của miền."""
+    """Controller giả: ghi lời gọi, trả mô hình/kết quả thật của miền.
+
+    (Đợt 3 — các thành viên của 2 nút FF và xuất/nhập file đã gỡ cùng hành vi
+    bị xóa; fake chỉ còn các đường màn còn dùng: đọc bảng, nhập/sửa tin,
+    sửa/xóa/toggle.)"""
 
     def __init__(
         self,
         events: list[CalendarEvent] | None = None,
         items: list[NewsItem] | None = None,
-        pending: list[CalendarEvent] | None = None,
     ) -> None:
         self.events = list(events) if events is not None else [EVENT]
         self.items = list(items) if items is not None else [AUTO_ITEM, USER_ITEM]
-        self.pending = list(pending) if pending is not None else []
         self.event_calls: list[tuple[str, str]] = []
         self.item_calls: list[tuple] = []
-        self.pending_calls: list[datetime] = []
-        self.json_calls = 0
-        self.html_calls = 0
         self.add_calls: list[dict] = []
         self.update_calls: list[tuple] = []
         self.exclude_calls: list[tuple] = []
         self.delete_calls: list[int] = []
-        self.json_gate: threading.Event | None = None
         self.note_result = UserNoteResult(errors=())
-        self.export_calls: list[tuple[str, str, str]] = []
-        self.import_calls: list[str] = []
-        self.export_gate: threading.Event | None = None
-        self.import_gate: threading.Event | None = None
-        self.export_error: Exception | None = None
-        self.import_error: Exception | None = None
-        self.export_result = FileExportResult(
-            path="C:/tmp/exports/news_export_test.csv",
-            events_written=2,
-            items_written=1,
-        )
-        self.import_result = FileImportResult(inserted=3, updated=2, skipped_duplicates=1)
-        self.json_result = JsonCalendarResult(
-            inserted=3,
-            updated=2,
-            conflicts=(),
-            run_status=IngestRunStatus.OK,
-            run_id=1,
-            feed_errors=(),
-        )
-        self.html_result = HtmlCalendarResult(
-            pending_count=0,
-            weeks_fetched=(),
-            written=4,
-            conflicts=(),
-            run_status=IngestRunStatus.OK,
-            run_id=2,
-            fetch_errors=(),
-        )
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
         self.event_calls.append((from_utc, to_utc))
@@ -186,20 +135,6 @@ class FakeNewsController:
     def items_in_range(self, from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True):
         self.item_calls.append((from_utc, to_utc, exclude_flagged))
         return list(self.items)
-
-    def fetch_calendar_json(self):
-        self.json_calls += 1
-        if self.json_gate is not None:
-            self.json_gate.wait(timeout=5)
-        return self.json_result
-
-    def fetch_actual_html(self, now=None):
-        self.html_calls += 1
-        return self.html_result
-
-    def events_pending_actual(self, now):
-        self.pending_calls.append(now)
-        return list(self.pending)
 
     def set_excluded(self, item_id, excluded):
         self.exclude_calls.append((item_id, bool(excluded)))
@@ -217,22 +152,6 @@ class FakeNewsController:
         self.update_calls.append((item_id, kwargs))
         return self.note_result
 
-    def export_news_range(self, from_utc, to_utc, fmt):
-        self.export_calls.append((from_utc, to_utc, fmt))
-        if self.export_gate is not None:
-            self.export_gate.wait(timeout=5)
-        if self.export_error is not None:
-            raise self.export_error
-        return self.export_result
-
-    def import_news_file(self, path):
-        self.import_calls.append(path)
-        if self.import_gate is not None:
-            self.import_gate.wait(timeout=5)
-        if self.import_error is not None:
-            raise self.import_error
-        return self.import_result
-
 
 _SCREENS: list[NewsScreen] = []
 
@@ -242,7 +161,6 @@ def _close_screens():
     yield
     for screen in _SCREENS:
         screen.shutdown()
-        screen._shutdown_fetch()
     _app().processEvents()
 
 
@@ -296,145 +214,8 @@ def _row_for(screen: NewsScreen, row_type: str, title: str) -> news.NewsRow:
     raise AssertionError(f"không thấy dòng {row_type}:{title}")
 
 
-# ---- 1. nút "Lấy lịch kinh tế" -------------------------------------------------
-
-
-class TestCalendarJsonButton:
-    def test_runs_in_background_disables_button_and_reports_summary(self):
-        gate = threading.Event()
-        controller = FakeNewsController()
-        controller.json_gate = gate
-        screen = _screen(controller)
-        reads_before = len(controller.event_calls)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[0]].click()
-
-        assert _wait_until(lambda: not screen.toolbar_buttons[news.TOOLBAR_LABELS[0]].isEnabled())
-        assert news.LOADING_TEXT in screen.status_message.toPlainText()
-
-        gate.set()
-        assert _wait_until(lambda: captured), "không thấy thông báo kết quả"
-        assert "3" in captured[0] and "2" in captured[0]
-        assert controller.json_calls == 1
-        assert _wait_until(lambda: screen.toolbar_buttons[news.TOOLBAR_LABELS[0]].isEnabled())
-        assert _wait_until(lambda: len(controller.event_calls) > reads_before)
-
-    def test_error_reports_cause_and_never_retries(self):
-        controller = FakeNewsController()
-        controller.json_result = JsonCalendarResult(
-            inserted=0,
-            updated=0,
-            conflicts=(),
-            run_status=IngestRunStatus.FAILED,
-            run_id=9,
-            feed_errors=(JsonCalendarFetchError(feed="thisweek", error_type="Http429", detail="HTTP 429"),),
-        )
-        screen = _screen(controller)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[0]].click()
-
-        assert _wait_until(lambda: captured)
-        assert "Http429" in captured[0]
-        assert "HTTP 429" in captured[0]
-        assert controller.json_calls == 1  # không retry
-
-
-# ---- 2. nút "Cập nhật actual" --------------------------------------------------
-
-
-class TestCalendarActualButton:
-    def test_reports_written_actual(self):
-        controller = FakeNewsController()
-        screen = _screen(controller)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[1]].click()
-
-        assert _wait_until(lambda: captured)
-        assert "4" in captured[0]
-        assert controller.html_calls == 1
-
-    def test_html_error_offers_manual_entry_with_the_related_event(self):
-        monday_event = CalendarEvent(
-            day_key=_weekday_of_this_week("this"),
-            event_time_utc=f"{_weekday_of_this_week('this')}T12:00:00Z",
-            currency="USD",
-            title="Non-Farm Payrolls",
-            impact=EventImpact.HIGH,
-            status=EventStatus.STALE,
-            source=EventSource.FF_JSON,
-            dedupe_key="pending-1",
-            fetched_at="2026-09-22T00:00:00Z",
-            id=77,
-        )
-        controller = FakeNewsController(pending=[monday_event])
-        controller.html_result = HtmlCalendarResult(
-            pending_count=1,
-            weeks_fetched=("this",),
-            written=0,
-            conflicts=(),
-            run_status=IngestRunStatus.FAILED,
-            run_id=6,
-            fetch_errors=(HtmlCalendarFetchError(week="this", error_type="UrlError", detail="boom"),),
-        )
-        screen = _screen(controller)
-
-        opened: list[dict] = []
-        screen.open_note_dialog = lambda **kwargs: opened.append(kwargs)  # type: ignore[method-assign]
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.MANUAL_ACTUAL_TEXT)
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[1]].click()
-
-        assert _wait_until(lambda: opened), "không thấy form nhập actual tay"
-        assert "UrlError" in captured[0] and "boom" in captured[0]
-        assert opened[0]["prefill_event"] is monday_event
-
-    def test_manual_actual_prefill_carries_event_fields(self):
-        event = CalendarEvent(
-            day_key="2026-09-20",
-            event_time_utc="2026-09-20T14:30:00Z",
-            currency="EUR",
-            title="ECB Speech",
-            impact=EventImpact.MEDIUM,
-            status=EventStatus.STALE,
-            source=EventSource.FF_JSON,
-            dedupe_key="pending-2",
-            fetched_at="2026-09-20T00:00:00Z",
-            id=88,
-        )
-        controller = FakeNewsController()
-        screen = _screen(controller)
-        dialog = screen.create_note_dialog(prefill_event=event)
-
-        assert dialog.time_value() is not None
-        assert dialog.time_value().isoformat() == "2026-09-20T14:30:00+00:00"
-        assert dialog.content_edit.toPlainText() == "ECB Speech"
-        assert dialog.currency_values() == ["EUR"]
-        assert dialog.impact_combo.currentData() is None
-        assert dialog.url_edit.text() == ""
-
-    def test_suggest_manual_actual_event_prefers_the_errored_week(self):
-        now = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)  # Wednesday
-        this_week = CalendarEvent(
-            day_key="2026-09-21", event_time_utc="2026-09-21T10:00:00Z", currency="USD",
-            title="this", impact=EventImpact.HIGH, status=EventStatus.STALE,
-            source=EventSource.FF_JSON, dedupe_key="a", fetched_at="2026-09-21T00:00:00Z",
-        )
-        next_week = CalendarEvent(
-            day_key="2026-09-28", event_time_utc="2026-09-28T10:00:00Z", currency="EUR",
-            title="next", impact=EventImpact.HIGH, status=EventStatus.STALE,
-            source=EventSource.FF_JSON, dedupe_key="b", fetched_at="2026-09-28T00:00:00Z",
-        )
-        assert suggest_manual_actual_event([this_week, next_week], "next", now) is next_week
-        assert suggest_manual_actual_event([this_week, next_week], "", now) is this_week
-        assert suggest_manual_actual_event([], "this", now) is None
-
+# ---- 1-2. (gỡ đợt 3: 2 nút FF "Lấy lịch kinh tế"/"Cập nhật actual" + gợi ý
+# ----    "Nhập actual bằng tay" — test của hành vi bị xóa) --------------------
 
 # ---- 3. form nhập/sửa tin ------------------------------------------------------
 
@@ -546,16 +327,10 @@ class TestUserNoteForm:
 # ---- 4. đường D1 (sửa tin) với NewsController thật + repo giả ------------------
 
 
-class _NullFF:
-    def lookup_event_actual(self, event_id):
-        return None
-
-
 class _RecordingRepo:
     """Repository giả chỉ ghi lời gọi — không DB, không mạng."""
 
     def __init__(self) -> None:
-        self.on_demand_lookup = None
         self.delete_calls: list[int] = []
         self.upsert_calls: list[list[NewsItem]] = []
         self.run_calls: list = []
@@ -578,7 +353,6 @@ def _real_controller(repo: _RecordingRepo) -> NewsController:
         repo=repo,
         policy=load_news_policy(),
         rss_producer=object(),
-        ff_producer=_NullFF(),
     )
 
 
@@ -719,136 +493,36 @@ class TestRowActions:
 
 
 class TestEmptyStateAndBoundaries:
-    def test_empty_state_buttons_are_enabled_and_wired(self):
+    def test_empty_state_buttons_match_the_dot3_labels_and_wiring(self):
+        """Đợt 3 — empty state gợi ý "Dán mã nguồn trang" (giữ chỗ disabled,
+        hành vi thật ở F4) + "Nhập tin" (đi thẳng form)."""
         controller = FakeNewsController(events=[], items=[])
         screen = _screen(controller)
         _wait_until(lambda: screen.empty_actions.isVisible())
 
-        assert set(screen.empty_state_buttons) == {news.TOOLBAR_LABELS[0], news.TOOLBAR_LABELS[2]}
-        for button in screen.empty_state_buttons.values():
-            assert button.isEnabled() is True
+        assert set(screen.empty_state_buttons) == {news.PASTE_SOURCE_TEXT, news.TOOLBAR_LABELS[0]}
+        # Nút giữ chỗ F4 bị disabled; nút form bật và nối hành vi.
+        assert screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].isEnabled() is False
+        paste_button = screen.empty_state_buttons[news.PASTE_SOURCE_TEXT]
+        assert paste_button.receivers(paste_button.clicked) == 0
 
         opened: list[dict] = []
         screen.open_note_dialog = lambda **kwargs: opened.append(kwargs)  # type: ignore[method-assign]
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
 
         screen.empty_state_buttons[news.TOOLBAR_LABELS[0]].click()
-        assert _wait_until(lambda: controller.json_calls == 1)
-        # đợi lượt fetch kết thúc (nút re-enable) rồi mới bấm nút form
-        assert _wait_until(lambda: screen.empty_state_buttons[news.TOOLBAR_LABELS[2]].isEnabled())
-
-        screen.empty_state_buttons[news.TOOLBAR_LABELS[2]].click()
         assert len(opened) == 1
 
-    def test_all_toolbar_buttons_are_wired(self):
-        """L3.5: hết nút disabled — cả 6 nút thanh công cụ đã nối hành vi."""
+    def test_the_two_toolbar_buttons_are_wired(self):
+        """Đợt 3: toolbar đúng 2 nút [ Nhập tin | AI nhận định xu hướng ] — cả
+        hai đã nối hành vi."""
         screen = _screen()
+        assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
         for label, button in screen.toolbar_buttons.items():
             assert button.isEnabled() is True
             assert button.receivers(button.clicked) >= 1
 
 
-# ---- 8. nút "Xuất file"/"Nhập file" (L3.4) ------------------------------------
-
-
-class TestExportFileButton:
-    def test_exports_in_background_disables_and_reports_path(self):
-        controller = FakeNewsController()
-        controller.export_gate = threading.Event()
-        screen = _screen(controller)
-        reads_before = len(controller.item_calls)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen._choose_export_format = lambda: "csv"  # type: ignore[method-assign]
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].click()
-
-        assert _wait_until(lambda: not screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].isEnabled())
-        assert news.LOADING_TEXT in screen.status_message.toPlainText()
-
-        controller.export_gate.set()
-        assert _wait_until(lambda: captured), "không thấy thông báo kết quả xuất"
-        assert "C:/tmp/exports/news_export_test.csv" in captured[0]  # đường dẫn file
-        assert len(controller.export_calls) == 1
-        from_utc, to_utc, fmt = controller.export_calls[0]
-        assert fmt == "csv"
-        assert from_utc and to_utc  # khoảng ngày đang lọc của màn
-        assert _wait_until(lambda: screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].isEnabled())
-        assert len(controller.item_calls) == reads_before  # xuất không đọc lại bảng
-
-    def test_export_error_reports_cause(self):
-        controller = FakeNewsController()
-        controller.export_error = RuntimeError("boom")
-        screen = _screen(controller)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen._choose_export_format = lambda: "json"  # type: ignore[method-assign]
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].click()
-
-        assert _wait_until(lambda: captured)
-        assert "boom" in captured[0]
-
-    def test_cancel_format_box_exports_nothing(self):
-        controller = FakeNewsController()
-        screen = _screen(controller)
-
-        screen._choose_export_format = lambda: None  # type: ignore[method-assign]
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].click()
-        _app().processEvents()
-
-        assert controller.export_calls == []
-        assert screen.toolbar_buttons[news.TOOLBAR_LABELS[3]].isEnabled() is True
-
-
-class TestImportFileButton:
-    def test_imports_the_picked_file_in_background_and_reports_summary(self):
-        controller = FakeNewsController()
-        controller.import_gate = threading.Event()
-        screen = _screen(controller)
-        reads_before = len(controller.item_calls)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen._pick_import_path = lambda: "C:/tmp/news_export_test.csv"  # type: ignore[method-assign]
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].click()
-
-        assert _wait_until(lambda: not screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].isEnabled())
-        assert news.LOADING_TEXT in screen.status_message.toPlainText()
-
-        controller.import_gate.set()
-        assert _wait_until(lambda: captured), "không thấy thông báo kết quả nhập"
-        text = captured[0]
-        assert "3" in text and "2" in text and "1" in text  # mới / cập nhật / bỏ qua trùng
-        assert controller.import_calls == ["C:/tmp/news_export_test.csv"]
-        assert _wait_until(lambda: screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].isEnabled())
-        assert _wait_until(lambda: len(controller.item_calls) > reads_before)  # đọc lại bảng
-
-    def test_import_error_reports_cause(self):
-        controller = FakeNewsController()
-        controller.import_error = RuntimeError("boom")
-        screen = _screen(controller)
-
-        captured: list[str] = []
-        _dismiss_box(captured, news.CLOSE_TEXT)
-        screen._pick_import_path = lambda: "C:/tmp/bad.csv"  # type: ignore[method-assign]
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].click()
-
-        assert _wait_until(lambda: captured)
-        assert "boom" in captured[0]
-
-    def test_cancel_picker_imports_nothing(self):
-        controller = FakeNewsController()
-        screen = _screen(controller)
-
-        screen._pick_import_path = lambda: ""  # type: ignore[method-assign]
-        screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].click()
-        _app().processEvents()
-
-        assert controller.import_calls == []
-        assert screen.toolbar_buttons[news.TOOLBAR_LABELS[4]].isEnabled() is True
-
+# ---- 8. (gỡ đợt 3: 2 nút "Xuất file"/"Nhập file" — test của hành vi bị xóa) ----
 
 # ---- 9. ranh giới mạng của màn (điểm review lô) --------------------------------
 

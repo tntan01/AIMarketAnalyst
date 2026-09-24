@@ -128,10 +128,12 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
     đúng 1 lần/phiên, KHÔNG json/html; gỡ nhóm nút FF/xuất-nhập/lookup seam);
     `tests/test_news_repository_contract.py` (gỡ ghim C4 `event_actual_or_lookup`
     — các ghim đọc khác XANH NGUYÊN TRẠNG); `tests/test_news_repository_write.py`
-    (gỡ nhánh lookup nếu có); `tests/test_news_screen_actions.py` (gỡ test 2 nút
-    FF + xuất/nhập; GIỮ test form nhập tay); `tests/test_news_screen_smoke.py`
-    (inventory toolbar mới); `tests/test_news_fred_producer.py` (gỡ nhánh FF-HTML,
-    ghim chuỗi nguồn mới fred→config_fallback).
+    (gỡ nhánh lookup nếu có — thực tế không có nhánh đó, file không đổi);
+    `tests/test_news_screen_actions.py` (gỡ test 2 nút FF + xuất/nhập; GIỮ test
+    form nhập tay); `tests/test_news_screen_smoke.py` (inventory toolbar mới);
+    `tests/test_news_fred_producer.py` (gỡ nhánh FF-HTML, ghim chuỗi nguồn mới
+    fred→config_fallback); `tests/test_news_ai_dialog.py` (QĐ-F7 — gỡ seam
+    `ff_producer` khỏi `_ai_controller`, hệ quả cơ học của việc gỡ `_ff_producer`).
 - **CẤM đụng:** `main.py` (hook QĐ-5 giữ nguyên — `run_startup_turn` vẫn tồn
   tại), `workers/news_worker.py` (NewsWorker timer + NewsReadWorker giữ), mọi
   file legacy/hệ thống (§2).
@@ -147,7 +149,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
   event_actual_or_lookup|news_file_transfer|ff_calendar_producer`; `run_startup_turn`
   còn đúng purge + schedule (test ghim); toolbar đúng 2 nút; nhãn từ điển đúng
   TỪNG CHUỖI screen_design đợt 3.
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED (24/09/2026 — collector D2; bảng §8 cập nhật KÉP; QĐ-F7)
 
 ### F2 — Parser mã nguồn trang FF: `services/ff_source_parser.py` (M)
 
@@ -389,6 +391,15 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
   Căn cứ: người dùng là chốt chặn cuối + người hiệu đính số liệu trước khi
   vào nguồn chân lý (nuôi vĩ mô/gate tại đấu nối b) — B4; giá trị sửa được
   bảo vệ vĩnh viễn bởi quy tắc merge 2-3 như nhập tay.
+- **QĐ-F7 — Bổ sung `tests/test_news_ai_dialog.py` vào inventory F1** (duyệt PO
+  24/09/2026 sau kiểm chứng máy-đọc của Tech Lead — grep `ff_producer` toàn
+  repo ra đúng 4 call site test, `pyinstaller.spec` sạch): hệ quả CƠ HỌC của
+  việc gỡ `_ff_producer` khỏi `NewsController.__init__` — test AI (hành vi
+  GIỮ) phải xanh nguyên trạng nên `_ai_controller` không thể còn truyền
+  `ff_producer=_NullFF()`. Phạm vi sửa TỐI THIỂU đúng 2 chỗ: gỡ class `_NullFF`
+  + gỡ kwarg `ff_producer=_NullFF()`; không đổi test AI, không thêm test,
+  không đổi nhãn/hành vi. `tests/test_news_repository_write.py` KHÔNG đổi
+  (kiểm chứng: file không có nhánh lookup — đúng điều kiện "nếu có").
 
 ## 6. Rủi ro và giảm thiểu
 
@@ -419,7 +430,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
 
 | Lô | Nội dung | Cỡ | Phụ thuộc | Trạng thái |
 |---|---|---|---|---|
-| F1 | Xóa hoàn toàn đường FF tự động + xuất/nhập file (producer, file_transfer, 2 nút FF, 2 nút file, lookup seam, kênh ff_html trong fred producer) + test theo D2 | L | — | PLANNED |
+| F1 | Xóa hoàn toàn đường FF tự động + xuất/nhập file (producer, file_transfer, 2 nút FF, 2 nút file, lookup seam, kênh ff_html trong fred producer) + test theo D2 (gồm QĐ-F7) | L | — | IMPLEMENTED |
 | F2 | Parser `services/ff_source_parser.py` (bóc tách + hàm thuần phân loại dòng) + fixture source thật + test | M | — (giao sau F1) | PLANNED |
 | F3 | Đường nhập 2 pha: `parse_pasted_source` (preview — không ghi) + `commit_pasted_source` (chung thiện lô: dòng sửa actual→`source=user`+`raw_json` actual gốc, `dedupe_key` bất biến; ghi DB + run `producer=user` + tóm tắt) | M | F1, F2 | PLANNED |
 | F4 | UI: dialog dán mã nguồn 2 pha (bảng xem trước — **chỉ cột actual sửa được** + Cập nhật/Hủy) + panel "Sự kiện đang thiếu số liệu" + toolbar 3 nút | M | F3 | PLANNED |
