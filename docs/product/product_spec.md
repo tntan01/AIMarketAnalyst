@@ -91,17 +91,21 @@ Tính năng tầng dữ liệu tin tức theo contract duy nhất
   ghi, bên tiêu thụ chỉ đọc qua repository. Nguồn dữ liệu: RSS (headline,
   phát biểu chính thức — tự động định kỳ), FRED (lãi suất — tự động định kỳ),
   **ForexFactory (lịch kinh tế + số liệu thực tế): KHÔNG thu tự động — người
-  dùng dán mã nguồn trang FF từ trình duyệt, hệ thống bóc tách và cập nhật vào
-  database** (quyết định Owner đợt 3, 24/09/2026 — cả ba kênh tự động của FF
-  đều bị Cloudflare chặn/hủy feed). Người dùng có thể **nhập tay** tin bổ
-  sung; tin tự động chỉ có thể bị loại trừ, không xóa (giữ provenance). Dán
-  trùng không sinh bản ghi kép (chống trùng theo khóa + quy tắc hợp nhất an
-  toàn — contract §6.1).
+  dùng dán mã nguồn trang FF từ trình duyệt, hệ thống bóc tách và hiển thị
+  BẢNG XÁC NHẬN; người dùng chỉ được chỉnh sửa số liệu thực tế (actual) nếu
+  phát hiện sai sót — các cột còn lại chỉ đọc — trước khi bấm cập nhật để
+  ghi vào database** (quyết định Owner đợt 3+4, 24/09/2026 — cả
+  ba kênh tự động của FF đều bị Cloudflare chặn/hủy feed). Người dùng có thể
+  **nhập tay** tin bổ sung; tin tự động chỉ có thể bị loại trừ, không xóa
+  (giữ provenance). Dán trùng không sinh bản ghi kép (chống trùng theo khóa
+  + quy tắc hợp nhất an toàn — contract §6.1); dòng đã chỉnh sửa được bảo vệ
+  như dữ liệu nhập tay.
 - **Màn Quản lý tin (Tin tức):** xem/lọc theo ngày, nhập/sửa tin tay, **dán
-  mã nguồn trang ForexFactory** (kênh cập nhật lịch kinh tế + actual duy nhất)
-  kèm panel hướng dẫn "sự kiện đang thiếu số liệu". (Xuất/nhập file CSV-JSON
-  đã bãi bỏ đợt 3 — sao lưu thuộc về tệp database; bù ngày app không chạy
-  bằng dán mã nguồn trang của ngày cũ.)
+  mã nguồn trang ForexFactory** 2 pha (bóc tách → bảng xem trước chỉnh sửa
+  được → xác nhận cập nhật — kênh duy nhất của lịch kinh tế + actual) kèm
+  panel hướng dẫn "sự kiện đang thiếu số liệu". (Xuất/nhập file CSV-JSON đã
+  bãi bỏ đợt 3 — sao lưu thuộc về tệp database; bù ngày app không chạy bằng
+  dán mã nguồn trang của ngày cũ.)
 - **AI nhận định xu hướng:** cửa sổ trong màn Quản lý tin gọi AI đánh giá xu
   hướng ngắn hạn/trung hạn/dài hạn của cặp tiền từ tin trong database. Kết
   quả **chỉ để người dùng tham khảo — không tham gia bất cứ quy trình nào**

@@ -154,7 +154,7 @@ cho ca Tin tức:
 | `forecast` / `previous` / `actual` | TEXT NULL | `actual` NULL khi chưa công bố |
 | `actual_updated_at` | TEXT NULL | thời điểm actual được ghi |
 | `status` | TEXT enum | `scheduled` \| `released` \| `stale` |
-| `source` | TEXT enum | `ff_json` \| `ff_html` \| `user` \| `import` — chuỗi đóng băng (V3(a)). **Ngữ nghĩa từ đợt 3 (24/09/2026):** `ff_html` = bóc từ mã nguồn trang FF người dùng dán (kênh FF chính thức duy nhất); `user` = nhập tay; `ff_json`, `import` = giá trị lịch sử của dữ liệu cũ, không phát sinh thêm |
+| `source` | TEXT enum | `ff_json` \| `ff_html` \| `user` \| `import` — chuỗi đóng băng (V3(a)). **Ngữ nghĩa từ đợt 3-4 (24/09/2026):** `ff_html` = bóc từ mã nguồn trang FF người dùng dán (kênh FF chính thức duy nhất); `user` = nhập tay, **gồm cả dòng sự kiện người dùng đã chỉnh sửa trong luồng dán (đợt 4 — giá trị FF gốc giữ trong `raw_json`)**; `ff_json`, `import` = giá trị lịch sử của dữ liệu cũ, không phát sinh thêm |
 | `dedupe_key` | TEXT UNIQUE | hash(`event_time_utc` + `currency` + `title`) — upsert (ghi đè nếu đã tồn tại, chèn nếu chưa) không trùng |
 | `raw_json` | TEXT NULL | JSON sự kiện đã trích (provenance/self-heal) — đường dán mã nguồn lưu phần trích từng sự kiện (kèm `revision`/`notice`), không lưu cả trang |
 | `fetched_at` | TEXT | lượt gần nhất (fetch tự động cũ hoặc dán mã nguồn) chạm bản ghi |
@@ -284,12 +284,15 @@ managed challenge từ chối client không-phải-browser (403 `cf-mitigated:
 challenge`). Trình duyệt người dùng luôn qua được (fingerprint thật + tự giải
 challenge) — người dùng trở thành kênh vận chuyển, hệ thống giữ phần bóc tách.
 
-**Luồng (hành vi đặc tả):**
+**Luồng 2 pha (hành vi đặc tả — Owner duyệt đợt 4, 24/09/2026: người dùng
+xác nhận trước khi ghi):**
+
+*Pha 1 — bóc tách và xem trước (không ghi dữ liệu):*
 
 1. Người dùng mở một trang lịch ForexFactory bất kỳ bằng trình duyệt của mình
    (trang chủ hôm nay, `/calendar?day=...`, `/calendar?week=this|next`), sao
    chép toàn bộ mã nguồn trang, dán vào dialog "Dán mã nguồn" của màn Quản lý
-   tin (hoặc chọn file `.html` đã lưu).
+   tin (hoặc chọn file `.html` đã lưu) → bấm **"Bóc tách"**.
 2. `NewsController` tiếp nhận văn bản source (không tự bóc tách — S2), gọi
    chủ sở hữu duy nhất: `services/ff_source_parser.py`.
 3. Parser trích khối JSON nhúng `window.calendarComponentStates[...]` trong
@@ -312,12 +315,35 @@ challenge) — người dùng trở thành kênh vận chuyển, hệ thống gi
    kênh lãi suất `ff_html` (§4.4) sống lại qua đường dán. Danh mục sự kiện bóc
    **kế thừa `_FOREX_RATE_EVENTS` hiện hành** của `interest_rate_service.py`
    (bằng chứng: runtime hiện hành — không bịa danh mục mới, B5).
-5. Controller ghi qua repository: `upsert_events` + `add_rate_observations`
-   (chống trùng tuyệt đối nhờ `dedupe_key` UNIQUE + **3 quy tắc merge an toàn**
-   bên dưới) và `record_run` (`producer=user`; `items_written` = tổng bản ghi
-   sự kiện + lãi suất đã ghi; `failed` khi bóc lỗi).
-6. Màn hình hiển thị tóm tắt lượt dán: số bản ghi **mới / cập nhật / xung
-   đột** + lỗi có kiểu (nếu có).
+5. **Bảng xem trước (preview):** màn hình hiển thị dữ liệu đã bóc tách dạng
+   bảng — thời gian (UTC), đồng tiền, sự kiện, tác động, dự báo, kỳ trước,
+   **thực tế (actual lấy từ chính source)** — kèm **trạng thái từng dòng**
+   đối chiếu database theo `dedupe_key` (chỉ đọc): `Mới` / `Sẽ cập nhật` /
+   `Xung đột — giữ nhập tay` (bản ghi hiện hữu `source=user` khác actual).
+   **Người dùng chỉ được chỉnh sửa cột `actual` khi phát hiện sai sót** (đợt
+   4 — quyết định Owner: các cột còn lại thời gian/đồng tiền/sự kiện/tác
+   động/dự báo/kỳ trước **read-only**; không bỏ chọn/xóa dòng); dòng đã sửa
+   hiển thị trạng thái `Đã sửa`, phân loại dòng được tính lại sau khi sửa.
+   **Chưa ghi gì vào database ở pha này.**
+
+*Pha 2 — xác nhận ghi:*
+
+6. Người dùng bấm **"Cập nhật"** → controller ghi qua repository **giá trị
+   sau chỉnh sửa actual**: `upsert_events` + `add_rate_observations`
+   (chống trùng tuyệt đối nhờ `dedupe_key` UNIQUE — **bất biến** vì chỉ
+   `actual` được sửa — + **3 quy tắc merge an toàn** bên dưới) và
+   `record_run` (`producer=user`; `items_written` = tổng bản ghi sự kiện +
+   lãi suất đã ghi) → màn hình hiện tóm tắt số bản ghi **mới / cập nhật /
+   xung đột**. Bấm **"Hủy"** → **không ghi gì, không sinh lượt ingest**
+   (preview là dữ liệu có kiểu, hủy = loại bỏ cùng mọi chỉnh sửa).
+   "Cập nhật" ghi toàn bộ lô (all-or-nothing). **Provenance của chỉnh sửa
+   (đợt 4):** dòng sự kiện có `actual` người dùng đã sửa → ghi `source=user`
+   (được quy tắc merge 2 bảo vệ bất khả xâm phạm trước các lượt dán sau; quy
+   tắc 3 coi là phía nhập tay khi xung đột), **giá trị actual FF gốc trước
+   sửa được giữ trong `raw_json`**; dòng không sửa giữ `source=ff_html`.
+   Quan sát lãi suất bóc từ source dán giữ `source=ff_html` (§4.4 enum không
+   có giá trị `user` — đóng băng, không thêm), **giá trị đồng bộ theo actual
+   đã sửa** nếu sự kiện gốc thuộc danh mục lãi suất và bị sửa actual.
 
 **Trang parser đọc được:** mọi source có chứa `calendarComponentStates` —
 parser đọc **toàn bộ các ngày** trong `days[]`, không giới hạn loại trang;
@@ -333,15 +359,16 @@ KHÔNG thu" cũ — điều khoản đó bãi bỏ cùng kênh JSON feed).
 3. **Xung đột actual** (giá trị nhập tay khác giá trị trong source dán) → ưu
    tiên nhập tay, ghi nhận xung đột vào `ingest_runs`.
 
-**Dán trùng (source đã có trong DB):** `dedupe_key` không tạo row trùng — bản
-ghi khớp khóa được **cập nhật** theo 3 quy tắc merge; tóm tắt lượt dán phản
-ánh đúng số mới/cập nhật/xung đột để người dùng biết điều gì đã xảy ra.
+**Dán trùng (source đã có trong DB):** `dedupe_key` không tạo row trùng —
+bảng xem trước hiển thị các dòng trạng thái `Sẽ cập nhật`; khi xác nhận, bản
+ghi khớp khóa được **cập nhật** theo 3 quy tắc merge; tóm tắt phản ánh đúng
+số mới/cập nhật/xung đột để người dùng biết điều gì đã xảy ra.
 
 **Lỗi (fail-closed, B4):** source không chứa JSON lịch → lỗi có kiểu "không
-tìm thấy dữ liệu lịch kinh tế trong mã nguồn", **không ghi gì**, run
-`failed`; source cắt cụt/JSON hỏng → báo lỗi rõ nguyên nhân, không ghi nửa
-vời (một lượt dán là một khối all-or-nothing). Không có mạng ⇒ không retry,
-không 429, không điều khoản chống lạm dụng nguồn.
+tìm thấy dữ liệu lịch kinh tế trong mã nguồn" hiển thị ngay ở pha 1, **không
+ghi dữ liệu**, ghi run `failed`; source cắt cụt/JSON hỏng → báo lỗi rõ nguyên
+nhân, không ghi nửa vời (một lô bóc tách là all-or-nothing). Không có mạng
+⇒ không retry, không 429, không điều khoản chống lạm dụng nguồn.
 
 ### 6.2. `rss_producer`
 
@@ -518,6 +545,7 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 |---|---|
 | Sản xuất tín hiệu sự kiện lịch kinh tế (kể cả actual) | đường dán mã nguồn: `news_controller` (tiếp nhận) + `services/ff_source_parser.py` (bóc tách) |
 | Bóc tách mã nguồn trang ForexFactory (JSON `calendarComponentStates` → `CalendarEvent` + `RateObservation` lãi suất `ff_html`) | `services/ff_source_parser.py` |
+| Phân loại dòng của lô dán so với database (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`) + **chung thiện lô đã chỉnh sửa** (stamp `source=user` cho dòng có sửa, giữ giá trị gốc vào `raw_json`, tính lại `dedupe_key`) — hàm thuần, không I/O | `services/ff_source_parser.py` |
 | Sản xuất tín hiệu tin văn bản tự động | `rss_producer` |
 | Sản xuất quan sát lãi suất (FRED API + config fallback) | `fred_rate_producer` |
 | Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
@@ -594,6 +622,18 @@ xuất/nhập file):
 | RSS + FRED | KHÔNG đổi — giữ tự động định kỳ (`rss_poll_interval_minutes`, `fred_refresh_hours`) |
 | Căn cứ | Điều tra 24/09/2026: nextweek JSON 404 vĩnh viễn (upstream gỡ), thisweek 429 tái diễn (budget IP hẹp + retry khuếch đại), HTML `forexfactory.com` chặn theo TLS fingerprint (handshake timeout với Python/curl, browser qua được), wss `calendar-feed:2087` bị managed challenge (403 `cf-mitigated: challenge`) — cả ba kênh tự động bất khả thi với app |
 
+Chốt ngày 24/09/2026, đợt 4 (đường dán mã nguồn — **xác nhận của người dùng
+trước khi ghi**; bổ sung hạng mục "Kênh duy nhất" của đợt 3, các hạng mục
+khác của đợt 3 giữ nguyên hiệu lực):
+
+| Hạng mục | Quyết định |
+|---|---|
+| Luồng 2 pha | **Pha 1:** dán source → "Bóc tách" → hệ thống hiển thị **bảng xem trước** dữ liệu kinh tế đã bóc (thời gian UTC, đồng tiền, sự kiện, tác động, dự báo, kỳ trước, **actual từ chính source**) kèm trạng thái từng dòng (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`, đối chiếu `dedupe_key` chỉ-đọc) — **không ghi gì**. **Pha 2:** người dùng kiểm tra, bấm **"Cập nhật"** → hệ thống mới ghi CSDL (+ `ingest_runs` `producer=user` + tóm tắt); bấm **"Hủy"** → không ghi, không sinh lượt ingest (đặc tả hành vi: §6.1) |
+| Quyền trên bảng xem trước | **Chỉ được sửa cột `actual` khi phát hiện sai sót** (Owner quyết 24/09/2026); mọi cột còn lại (thời gian, đồng tiền, sự kiện, tác động, dự báo, kỳ trước) **read-only**; không bỏ chọn/xóa dòng — "Cập nhật" ghi toàn bộ lô bóc được (all-or-nothing); dòng đã sửa mang trạng thái `Đã sửa`, phân loại tính lại |
+| Provenance của chỉnh sửa | Dòng sự kiện có actual đã sửa → `source=user` (quy tắc merge 2+3 bảo vệ trước các lượt dán sau), **giá trị actual FF gốc giữ trong `raw_json`**; dòng không sửa → `source=ff_html`; quan sát lãi suất giữ `ff_html` (enum §4.4 không có `user` — đóng băng), giá trị đồng bộ theo actual đã sửa; `dedupe_key` **bất biến** (chỉ actual được sửa) |
+| Phân loại dòng preview | Hàm thuần trong `services/ff_source_parser.py` (đăng ký §11b) — controller không tự tính (S2), UI không tự tính (L1) |
+| Căn cứ | Người dùng là chốt chặn cuối trước khi số liệu vào nguồn chân lý duy nhất (nuôi vĩ mô/gate tại đấu nối b); parser lệch do FF đổi cấu trúc → thấy ngay trên bảng preview và hủy, thay vì nhiễm DB âm thầm (B4) |
+
 ## 14. Kiểm thử (C4, B3, E2)
 
 - **Hàm thuần (`core/`):** `news_freshness` (bảng trạng thái theo biên thời
@@ -607,11 +647,16 @@ xuất/nhập file):
   revision/notice vào `raw_json`); nhiều ngày trong `days[]`; bóc sự kiện lãi
   suất theo danh mục kế thừa; source không có JSON lịch → lỗi có kiểu, không
   ghi gì; JSON hỏng/cắt cụt → all-or-nothing.
-- **Lượt dán (controller + repository):** chống trùng — dán 2 lần cùng source
-  không tạo row trùng (khớp `dedupe_key` → cập nhật); 3 quy tắc merge mỗi quy
-  tắc một test riêng (không NULL đè actual, bảo vệ `source=user`, xung đột
-  actual → ưu tiên user + log); đếm mới/cập nhật/xung đột đúng; `ingest_runs`
-  ghi `producer=user`.
+- **Lượt dán 2 pha (controller + repository):** pha 1 không ghi — bóc tách +
+  preview xong, database nguyên trạng, không run mới; phân loại dòng đúng
+  (mới/sẽ cập nhật/xung đột-giữ-nhập-tay); **chung thiện lô đã sửa đúng**
+  (dòng có sửa actual → `source=user` + actual gốc trong `raw_json`; dòng
+  không sửa → `ff_html`; lãi suất theo actual đã sửa; `dedupe_key` bất
+  biến); hủy = không ghi không run; pha 2
+  xác nhận → chống trùng (dán 2 lần cùng source không tạo row trùng — khớp
+  `dedupe_key` → cập nhật); 3 quy tắc merge mỗi quy tắc một test riêng (không
+  NULL đè actual, bảo vệ `source=user`, xung đột actual → ưu tiên user +
+  log); đếm mới/cập nhật/xung đột đúng; `ingest_runs` ghi `producer=user`.
 - **Producer RSS/FRED:** HTTP giả lập — RSS: fixture XML từng feed, dedupe,
   feed chết → `partial`; FRED: chuỗi nguồn API → config fallback đúng thứ tự,
   không còn kênh FF-HTML qua mạng.

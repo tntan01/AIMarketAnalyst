@@ -1574,25 +1574,42 @@ thị):
 | `direction` (verdict AI) | `bullish` = "Tăng" · `bearish` = "Giảm" · `neutral` = "Trung lập" · `insufficient_data` = "Không đủ dữ liệu" |
 | `confidence` (verdict AI) | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `none` = "Không có" |
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
+| Trạng thái dòng bảng xem trước (đợt 4 — nhãn dẫn xuất, không persist) | mới = "Mới" · sẽ cập nhật = "Sẽ cập nhật" · xung đột = "Xung đột — giữ nhập tay" · đã chỉnh sửa = "Đã sửa" |
 
-### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — PLANNED, sửa đổi đợt 3 24/09/2026)
+### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — 2 pha, xác nhận trước khi ghi; PLANNED, sửa đổi đợt 3+4 24/09/2026)
 
 Màn hình **không có đường mạng nào tới ForexFactory** — không nút fetch,
 không poll, không lookup (contract §6.1 đợt 3). Hai nút cũ "Lấy lịch kinh
-tế" / "Cập nhật actual" bị **gỡ bỏ**.
+tế" / "Cập nhật actual" bị **gỡ bỏ**. Luồng 2 pha theo contract §6.1 (đợt 4 —
+người dùng xác nhận trước khi ghi):
 
-- Nút **Dán mã nguồn trang** mở dialog dán: một ô text lớn (dán toàn bộ mã
-  nguồn trang FF đã sao chép từ trình duyệt) + nút chọn file `.html` đã lưu
-  + hướng dẫn 3 bước ngắn gọn (mở trang lịch FF → xem mã nguồn trang, chọn
-  tất cả, sao chép → dán vào đây).
-- Bấm "Cập nhật": controller tiếp nhận source → parser bóc tách (contract
-  §6.1) → upsert qua repository (chống trùng `dedupe_key` + 3 quy tắc merge
-  của contract — dữ liệu nhập tay không bao giờ bị đè; xung đột actual → ưu
-  tiên nhập tay, ghi log vận hành).
-- Kết thúc hiện **tóm tắt lượt dán**: số bản ghi mới / cập nhật / xung đột
-  (sự kiện + lãi suất). Lỗi (source không chứa dữ liệu lịch, JSON hỏng):
-  thông báo rõ nguyên nhân, không ghi gì (all-or-nothing), người dùng có thể
-  dán lại.
+- Nút **Dán mã nguồn trang** mở dialog 2 pha:
+  - **Pha 1 — dán + bóc tách:** ô text lớn (dán toàn bộ mã nguồn trang FF đã
+    sao chép từ trình duyệt) + nút chọn file `.html` đã lưu + hướng dẫn 3 bước
+    ngắn gọn (mở trang lịch FF → xem mã nguồn trang, chọn tất cả, sao chép →
+    dán vào đây) + nút **"Bóc tách"**. Bấm "Bóc tách": parse chạy nền
+    (worker), **không ghi gì vào database**. Lỗi (source không chứa dữ liệu
+    lịch, JSON hỏng): thông báo rõ nguyên nhân, dialog giữ nguyên pha 1 để
+    dán lại.
+  - **Pha 2 — bảng xem trước + xác nhận:** bảng dữ liệu kinh tế đã bóc —
+    cột: Thời gian (UTC) | Đồng tiền | Sự kiện | Tác động | Dự báo | Kỳ trước
+    | **Thực tế (actual từ chính source)** | Trạng thái dòng (badge theo
+    semantic palette, nhãn đúng Từ điển hiển thị: Mới / Sẽ cập nhật / Xung
+    đột — giữ nhập tay / Đã sửa); kèm dòng đếm số quan sát lãi suất bóc
+    được. **Chỉ cột "Thực tế" (actual) chỉnh sửa được** — khi phát hiện sai
+    sót (quyết định Owner đợt 4); mọi cột còn lại (thời gian, đồng tiền, sự
+    kiện, tác động, dự báo, kỳ trước) **read-only**; không bỏ chọn/xóa dòng.
+    Dòng có actual đã sửa → trạng thái chuyển "Đã sửa" và được phân loại lại
+    so với database; chỉnh sửa ảnh hưởng provenance khi ghi theo contract
+    §6.1 bước 6 (dòng đã sửa `source=user`, giá trị actual FF gốc giữ trong
+    `raw_json`). Hai nút:
+    **"Cập nhật"** (ghi CSDL **giá trị sau chỉnh sửa** — chống trùng
+    `dedupe_key` + 3 quy tắc merge của contract; dữ liệu nhập tay hiện hữu
+    không bao giờ bị đè; xung đột actual → ưu tiên nhập tay, ghi log vận
+    hành) và **"Hủy"** (loại bỏ cả chỉnh sửa, không ghi, không sinh lượt
+    ingest). Không bỏ chọn/xóa dòng — ghi toàn bộ lô (all-or-nothing).
+- Sau "Cập nhật": hiện **tóm tắt**: số bản ghi mới / cập nhật / xung đột (sự
+  kiện + lãi suất); bảng tin chính và panel bên dưới tự làm mới.
 - **Panel "Sự kiện đang thiếu số liệu"** (danh sách `stale` từ
   `events_pending_actual` — contract §8): mỗi dòng hiện sự kiện + nút mở
   trang FF tương ứng bằng trình duyệt mặc định (chỉ mở link — app không tự
@@ -1619,8 +1636,9 @@ tế" / "Cập nhật actual" bị **gỡ bỏ**.
 - **Dialog AI nhận định:** trong lúc chờ verdict hiện progress + disable nút
   "Nhận định" (lời gọi chạy worker nền — đã quy định ở mục dưới); lỗi provider
   → thông báo `friendly_error()`.
-- **Lượt dán mã nguồn:** xử lý cục bộ (không mạng) nên nhanh; vẫn hiện chỉ
-  báo tiến trình trong lúc bóc tách/ghi và tóm tắt khi hoàn tất (mục trên).
+- **Dán mã nguồn (2 pha):** xử lý cục bộ (không mạng); pha "Bóc tách" hiện
+  progress trong lúc parse; pha ghi (sau bấm "Cập nhật") hiện progress và kết
+  thúc bằng tóm tắt mới/cập nhật/xung đột (mục trên).
 
 ### Cửa sổ AI nhận định xu hướng (dialog nhỏ)
 
@@ -1665,7 +1683,7 @@ Lịch sử nhận định của phạm vi này (mới nhất trước)
 - Dùng component chung (`card`, `action_button`, `configure_table`,
   ResponsiveRow/Grid) và tuân thủ contract kích thước cửa sổ tối thiểu 800×500.
 - Trạng thái: khung màn + nhập/sửa tin + dialog AI **IMPLEMENTED** (nghiệm thu
-  23/09/2026); các thay đổi **đợt 3 (24/09/2026)** — gỡ 2 nút FF + xuất/nhập
-  file, thêm dialog dán mã nguồn + panel thiếu số liệu — ở trạng thái
-  **PLANNED** (ca "Nguồn dán FF"); sửa đặc tả này phải cùng commit với code
-  (D2).
+  23/09/2026); các thay đổi **đợt 3+4 (24/09/2026)** — gỡ 2 nút FF + xuất/nhập
+  file, thêm dialog dán mã nguồn **2 pha (bảng xem trước + xác nhận)** + panel
+  thiếu số liệu — ở trạng thái **PLANNED** (ca "Nguồn dán FF"); sửa đặc tả này
+  phải cùng commit với code (D2).
