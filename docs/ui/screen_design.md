@@ -30,7 +30,7 @@ Phần mềm nên gồm **9 màn hình chính** trong thiết kế (mục 2/3 Si
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
-| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** (đợt 3 sửa đổi: PLANNED) | Quản lý database tin tức: xem/lọc, nhập tay, dán mã nguồn trang ForexFactory để cập nhật lịch kinh tế + actual; cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
+| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** (nghiệm thu 25/09/2026 — ca "Nguồn dán FF" hoàn tất) | Quản lý database tin tức: xem/lọc, nhập tay, dán mã nguồn trang ForexFactory để cập nhật lịch kinh tế + actual (luồng 2 pha, xác nhận trước khi ghi); cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
 
 Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **14 màn hình/tabs chức năng** (mục 14 triển khai tại ca Tin tức):
 
@@ -1576,7 +1576,7 @@ thị):
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
 | Trạng thái dòng bảng xem trước (đợt 4 — nhãn dẫn xuất, không persist) | mới = "Mới" · sẽ cập nhật = "Sẽ cập nhật" · xung đột = "Xung đột — giữ nhập tay" · đã chỉnh sửa = "Đã sửa" |
 
-### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — 2 pha, xác nhận trước khi ghi; PLANNED, sửa đổi đợt 3+4 24/09/2026)
+### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — 2 pha, xác nhận trước khi ghi; IMPLEMENTED — sửa đổi đợt 3+4 24/09/2026, ca "Nguồn dán FF" nghiệm thu 25/09/2026)
 
 Màn hình **không có đường mạng nào tới ForexFactory** — không nút fetch,
 không poll, không lookup (contract §6.1 đợt 3). Hai nút cũ "Lấy lịch kinh
@@ -1685,5 +1685,4 @@ Lịch sử nhận định của phạm vi này (mới nhất trước)
 - Trạng thái: khung màn + nhập/sửa tin + dialog AI **IMPLEMENTED** (nghiệm thu
   23/09/2026); các thay đổi **đợt 3+4 (24/09/2026)** — gỡ 2 nút FF + xuất/nhập
   file, thêm dialog dán mã nguồn **2 pha (bảng xem trước + xác nhận)** + panel
-  thiếu số liệu — ở trạng thái **PLANNED** (ca "Nguồn dán FF"); sửa đặc tả này
-  phải cùng commit với code (D2).
+  thiếu số liệu — **IMPLEMENTED** (ca "Nguồn dán FF" nghiệm thu 25/09/2026).

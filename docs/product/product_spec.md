@@ -82,7 +82,7 @@ seed/stale/schema cũ/thiếu bằng chứng bị bỏ qua; loader có thể dù
 fallback hợp lệ và chỉ flat khi không còn candidate eligible. Runner calibration
 không được tự bật flag.
 
-### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026); sửa đổi đợt 3 (24/09/2026) PLANNED
+### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026; sửa đổi ca "Nguồn dán FF" IMPLEMENTED — nghiệm thu 25/09/2026)
 
 Tính năng tầng dữ liệu tin tức theo contract duy nhất
 [`news/news-architecture.md`](../news/news-architecture.md):

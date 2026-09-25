@@ -24,8 +24,7 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
 | Luồng Scanner lịch sử | `scanner/scanner-flow.md` — tham khảo (pre-cutover) |
 | Chấm điểm Scanner | `scanner/scanner-architecture.md` §3; `scanner/technical-scoring-architecture.md` giữ nội dung legacy có nhãn |
 | Macro scoring hiện hành | `macro/macro_score_architecture.md` |
-| Contract dữ liệu Tin tức (DB, producer, repository, AI nhận định xu hướng) | `news/news-architecture.md` — ban hành 20/09/2026, sửa đổi đợt 3 24/09/2026 (FF = dán mã nguồn trang); lộ trình §16 (tầng dữ liệu hoàn tất 23/09/2026, READY-FOR-CONNECT) |
-| Plan triển khai ca "Nguồn dán FF" (đang mở) | `plans/ff-source-paste-plan.md` |
+| Contract dữ liệu Tin tức (DB, producer, repository, AI nhận định xu hướng) | `news/news-architecture.md` — ban hành 20/09/2026, sửa đổi đợt 3 24/09/2026 (FF = dán mã nguồn trang); lộ trình §16 (tầng dữ liệu hoàn tất 23/09/2026, READY-FOR-CONNECT; ca "Nguồn dán FF" hoàn tất 25/09/2026) |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Contract SMC (B/Q/L/C, zone, lifecycle…) | `plans/smc-*-spec.md`, `plans/smc-parameter-table.md` |
 | Quản lý lệnh / R:R | `trading/order-management-contract.md`, `trading/rr_anchor_semantics.md` |

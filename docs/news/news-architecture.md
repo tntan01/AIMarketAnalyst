@@ -709,3 +709,12 @@ lộ trình này, lập plan riêng sau khi Bước 4 đạt.
 ForexFactory bằng dán mã nguồn trang + bãi bỏ xuất/nhập file (mục 6.1, 10,
 13); triển khai theo plan riêng (vòng đời D3). Lộ trình 4 bước ở trên giữ
 nguyên làm ghi nhận lịch sử của ca tầng dữ liệu.
+
+**Ghi chú hoàn tất ca "Nguồn dán FF" (25/09/2026):** 5 lô F1–F5 đều
+**IMPLEMENTED**; nghiệm thu tổng xanh (battery đối chiếu ngoại lệ danh tính R9 —
+họ `test_step3_fred.py` + collection error `test_smc_gate72_fix_acceptance.py`;
+3 smoke EXIT=0; build `.exe` + boot bản đóng gói không sinh lượt `ff_crawler`;
+luồng dán 2 pha đầu-cuối đúng điều khoản §6.1 đợt 4). Tuyên bố: miền Tin tức giữ
+READY-FOR-CONNECT — hai ca đấu nối (a) Dashboard / (b) vĩ mô không đổi lộ trình
+(§3.1 khoản 3-4); sổ nợ #1 **chưa đóng** — chỉ đóng tại đấu nối (b) khi xóa
+`news_service.py` + `forex_factory_client.py`.
