@@ -30,8 +30,43 @@ ForexFactory).  Gợi ý "Nhập actual bằng tay" cũng bỏ (dán source là 
 duy nhất — contract §13 đợt 3).  Nhãn hiển thị nguồn đổi 3 chuỗi theo Từ điển
 đợt 3 (``ff_html`` = "ForexFactory (mã nguồn trang)", ``ff_json`` = "ForexFactory
 (lịch — dữ liệu cũ)", ``import`` = "Nhập file (dữ liệu cũ)" — nhãn cũ phục vụ
-dữ liệu cũ, GIỮ); empty state gợi ý "Dán mã nguồn trang" (nút giữ chỗ disabled
-— hành vi thật ở F4, khuôn nút chưa nối hành vi của các lô trước).
+dữ liệu cũ, GIỮ); empty state gợi ý "Dán mã nguồn trang".
+
+**Lô F4 — dialog dán mã nguồn 2 pha + panel thiếu số liệu** (screen_design
+"Hành vi dán mã nguồn trang ForexFactory" d.1579-1617 + "Bố cục" d.1544-1547 +
+từ điển d.1577; contract §6.1 đợt 3+4; QĐ-F6/F9/F10): toolbar
+**[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** — nút đầu và nút
+empty state cùng nhãn mở ``PasteSourceDialog`` (2 pha).  Pha 1: dán source hoặc
+chọn file `.html` (đọc file TRONG WORKER — không block GUI) → "Bóc tách" →
+``controller.parse_pasted_source`` trong ``NewsReadWorker`` (khuôn D10 — không
+processEvents); lỗi parse → thông báo theo ``PARSE_ERROR_TEXT`` (L3 — ánh xạ mã
+lỗi có kiểu của parser, không đặt chuỗi này trong services), giữ pha 1.  Pha 2:
+bảng xem trước đúng cột d.1594-1596 + đếm quan sát lãi suất; **chỉ cột "Thực
+tế" sửa được** (QĐ-F6/đợt 4), cột còn lại read-only, không checkbox/xóa dòng;
+sửa actual → badge "Đã sửa" + phân loại lại qua ``controller.reclassify_pasted_rows``
+(QĐ-F9 — UI không tự phân loại, S2); "Cập nhật" → ``commit_pasted_source(preview,
+edited_actuals)`` trong worker → tóm tắt mới/cập nhật/xung đột → đóng dialog (màn
+làm mới bảng tin + panel); "Hủy" → reject, không ghi/không run (§6.1 bước 6).
+Panel "Sự kiện đang thiếu số liệu" đọc ``events_pending_actual`` qua worker
+(contract §8 — chỉ nuôi panel hướng dẫn, không phục vụ fetch tự động); nút "Mở
+trang ForexFactory" mỗi dòng → ``QDesktopServices.openUrl`` URL trang lịch TUẦN
+tương ứng (QĐ-F10 — chỉ mở link bằng trình duyệt ngoài, app không phát request
+mạng nào tới ForexFactory; QĐ-F4).
+
+Khai báo đọc-hiểu lô F4 (V2):
+
+* Worker của mọi thao tác nền trong dialog dán (parse / đọc file / phân loại
+  lại / commit) là ``NewsReadWorker`` dùng chung — một task một thread, khuôn
+  D10; phân loại lại sau sửa actual có cờ đợi (``_reclassify_pending``) để
+  không chồng lời gọi khi người dùng sửa liên tiếp.
+* "Đã sửa" là trạng thái hiển thị ƯU TIÊN của dòng đã sửa actual (d.1602 "trạng
+  thái chuyển 'Đã sửa'"); kết quả ``reclassify_pasted_rows`` vẫn được tính (và
+  giữ) để phân loại các dòng chưa sửa.
+* Dialog đóng (accept) ngay sau "Cập nhật" thành công — màn chủ lo phần làm mới
+  bảng tin + panel (d.1611-1612); "Hủy" reject không chạm controller.
+* URLs ``https://www.forexfactory.com/calendar...`` là hằng số QĐ-F10 (bốn
+  URL) — là nơi DUY NHẤT chứa "http" trên màn, luôn đi qua
+  ``QDesktopServices.openUrl`` để mở trình duyệt ngoài; màn không import mạng.
 
 **Lô L3.5 — cửa sổ AI nhận định xu hướng** (screen_design d.1621-1649; contract
 §9.1-§9.2): nút "AI nhận định xu hướng" mở ``AiTrendDialog`` (520×640, không
@@ -114,8 +149,8 @@ Khai báo đọc-hiểu (V2):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime, time as clock_time
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta, time as clock_time
 
 from PyQt6.QtCore import (
     QAbstractTableModel,
@@ -125,14 +160,16 @@ from PyQt6.QtCore import (
     QTime,
     Qt,
     QThread,
+    QUrl,
 )
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QColor, QDesktopServices, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDateEdit,
     QDateTimeEdit,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHeaderView,
@@ -240,6 +277,7 @@ FILTER_LABELS: tuple[str, ...] = (
     "Khoảng ngày",
 )
 TOOLBAR_LABELS: tuple[str, ...] = (
+    "Dán mã nguồn trang",
     "Nhập tin",
     "AI nhận định xu hướng",
 )
@@ -251,10 +289,10 @@ NO_VALUE = "—"
 
 # Nút gợi ý empty state (screen_design "Trạng thái tải và rỗng" d.1634-1635:
 # "nới khoảng ngày / 'Dán mã nguồn trang' / 'Nhập tin'").  "Dán mã nguồn trang"
-# là nút GIỮ CHỖ disabled trong lô này (đợt 3 — hành vi thật ở F4, khuôn nút
-# chưa nối hành vi của các lô trước); "Nhập tin" đi thẳng form nhập tay.
-PASTE_SOURCE_TEXT = "Dán mã nguồn trang"
-EMPTY_STATE_LABELS: tuple[str, ...] = (PASTE_SOURCE_TEXT, TOOLBAR_LABELS[0])
+# = nút thanh công cụ thứ nhất (F4 — cùng nhãn, cùng handler `open_paste_dialog`);
+# "Nhập tin" đi thẳng form nhập tay.
+PASTE_SOURCE_TEXT = TOOLBAR_LABELS[0]
+EMPTY_STATE_LABELS: tuple[str, ...] = (TOOLBAR_LABELS[0], TOOLBAR_LABELS[1])
 
 # Nhãn dùng trong dialog chi tiết (đều đã có nguồn: nhãn cột hoặc câu chữ screen_design).
 PROVENANCE_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Giờ fetch", "Liên kết")
@@ -266,7 +304,7 @@ PROVENANCE_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Giờ fetch", "
 
 # Nhãn dialog/nút (nguồn: nhãn nút thanh công cụ đã đăng ký + khối "Bố cục" +
 # chuỗi có sẵn của repo).
-NOTE_DIALOG_TITLE = TOOLBAR_LABELS[0]  # "Nhập tin" (nhãn nút đã đăng ký)
+NOTE_DIALOG_TITLE = TOOLBAR_LABELS[1]  # "Nhập tin" (nhãn nút đã đăng ký)
 EDIT_DIALOG_TITLE = "Sửa tin"  # screen_design d.1598 "Sửa/xóa"
 EXCLUDE_TEXT = "Loại trừ"  # screen_design d.1598 "toggle Loại trừ"
 EDIT_TEXT = "Sửa"  # screen_design d.1598 "Sửa/xóa"
@@ -298,7 +336,7 @@ FORM_ERROR_TEXT: dict[str, str] = {
 # Từ điển lô L3.5 — cửa sổ AI nhận định xu hướng (screen_design d.1621-1649 +
 # bảng từ điển d.1570-1572; mọi chuỗi có nguồn đăng ký, không phát minh nhãn).
 # ---------------------------------------------------------------------------
-AI_TEXT = TOOLBAR_LABELS[1]  # "AI nhận định xu hướng" (nhãn nút đã đăng ký)
+AI_TEXT = TOOLBAR_LABELS[2]  # "AI nhận định xu hướng" (nhãn nút đã đăng ký)
 AI_SCOPE_LABEL = "Phạm vi"  # mockup d.1628
 AI_SCOPE_HINT = "hoặc chuyển sang chọn 1 đồng tiền"  # mockup d.1628 (nguyên văn)
 AI_COUNT_TEXT = "Cửa sổ tin: {window_days} ngày gần nhất — {count} tin/sự kiện liên quan"  # d.1629
@@ -344,6 +382,135 @@ DIRECTION_ROLE: dict[str, str] = {
     "insufficient_data": "text_muted",
 }
 AI_HISTORY_LIMIT = 5  # đọc-hiểu trình bày (B5 — không phải giá trị vận hành)
+
+# ---------------------------------------------------------------------------
+# Từ điển lô F4 — dialog dán mã nguồn 2 pha + panel thiếu số liệu
+# (screen_design từ điển d.1577 + "Hành vi dán mã nguồn trang ForexFactory"
+# d.1579-1617 + "Bố cục" d.1544-1547; mọi chuỗi có nguồn đăng ký — không phát
+# minh nhãn; L3: chuỗi thân thiện cho lỗi parser đặt TẠI đây, không trong
+# services).
+# ---------------------------------------------------------------------------
+
+# Bốn nhãn trạng thái dòng bảng xem trước (d.1577 — ĐÚNG TỪNG CHUỖI; dẫn xuất,
+# không persist).
+PREVIEW_STATUS_TEXT: dict[str, str] = {
+    "new": "Mới",
+    "will_update": "Sẽ cập nhật",
+    "conflict_keep_manual": "Xung đột — giữ nhập tay",
+    "edited": "Đã sửa",
+}
+# Vai trò màu semantic cho badge (screen_design: "badge theo semantic palette").
+PREVIEW_STATUS_ROLE: dict[str, str] = {
+    "new": "info",
+    "will_update": "success",
+    "conflict_keep_manual": "warning",
+    "edited": "danger",
+}
+
+PASTE_DIALOG_TITLE = TOOLBAR_LABELS[0]  # "Dán mã nguồn trang" (nhãn nút đã đăng ký)
+PASTE_PARSE_TEXT = "Bóc tách"  # d.1590
+PASTE_COMMIT_TEXT = "Cập nhật"  # d.1606
+PASTE_FILE_TEXT = "Chọn file .html"  # d.1588 "nút chọn file `.html` đã lưu"
+# Hướng dẫn 3 bước (d.1588-1590 — nguyên văn ba cụm, mỗi cụm một dòng).
+PASTE_STEP_TEXTS: tuple[str, ...] = (
+    "Mở trang lịch FF",
+    "Xem mã nguồn trang, chọn tất cả, sao chép",
+    "Dán vào đây",
+)
+# Ánh xạ mã lỗi có kiểu của parser → thông báo tiếng Việt (L3 — nguồn docstring
+# ff_source_parser.py d.114-118; không đặt chuỗi hiển thị trong services).
+PARSE_ERROR_TEXT: dict[str, str] = {
+    "not_found": "source không chứa dữ liệu lịch",
+    "malformed": "JSON lịch hỏng/cắt cụt",
+}
+# Cột bảng xem trước (d.1594-1596).  CHỈ cột "Thực tế" (actual) sửa được — QĐ-F6/đợt 4.
+_PREVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("event_time_utc", "Thời gian (UTC)"),
+    ("currency", "Đồng tiền"),
+    ("title", "Sự kiện"),
+    ("impact", "Tác động"),
+    ("forecast", "Dự báo"),
+    ("previous", "Kỳ trước"),
+    ("actual", "Thực tế"),
+    ("disposition", "Trạng thái dòng"),
+)
+PREVIEW_COLUMN_LABELS: tuple[str, ...] = tuple(label for _key, label in _PREVIEW_COLUMNS)
+PREVIEW_ACTUAL_COLUMN = "Thực tế"
+_PREVIEW_COLUMN_WIDTHS: dict[str, int] = {
+    "event_time_utc": 130,
+    "currency": 90,
+    "impact": 90,
+    "forecast": 100,
+    "previous": 100,
+    "actual": 100,
+    "disposition": 180,
+}
+_PREVIEW_STRETCH_COLUMN = "title"
+
+PASTE_RATES_TEXT = "Số quan sát lãi suất bóc được: {count}"  # d.1598
+PASTE_SUMMARY_TEXT = "Mới: {inserted} · Cập nhật: {updated} · Xung đột: {conflicts} · Lãi suất: {rates}"  # d.1611-1612
+# Chỉ báo tiến trình (d.1618-1620 "pha 'Bóc tách' hiện progress... pha ghi hiện
+# progress") + nhắc form (V2 — khuyên dùng trình bày, không phải chuỗi enum).
+PASTE_PARSE_PROGRESS_TEXT = "Đang bóc tách..."
+PASTE_COMMIT_PROGRESS_TEXT = "Đang ghi..."
+PASTE_FILE_LOAD_PROGRESS_TEXT = "Đang đọc file..."
+PASTE_EMPTY_SOURCE_TEXT = "Hãy dán mã nguồn trang vào ô bên trên trước khi bóc tách."
+
+# Panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617).
+PANEL_TITLE_TEXT = "Sự kiện đang thiếu số liệu"
+OPEN_FF_TEXT = "Mở trang ForexFactory"  # d.1614
+
+# ---------------------------------------------------------------------------
+# URL trang lịch tuần ForexFactory (QĐ-F10 — căn cứ code legacy
+# forex_factory_client.py d.57-58: this/next + interest_rate_service.py d.89-90:
+# this/last).  Chỉ mở bằng trình duyệt ngoài (QDesktopServices.openUrl) — app
+# không phát request mạng nào tới ForexFactory (contract §6.1 đợt 3, QĐ-F4).
+# ---------------------------------------------------------------------------
+
+FF_CALENDAR_BASE_URL = "https://www.forexfactory.com/calendar"
+FF_WEEK_THIS_URL = f"{FF_CALENDAR_BASE_URL}?week=this"
+FF_WEEK_NEXT_URL = f"{FF_CALENDAR_BASE_URL}?week=next"
+FF_WEEK_LAST_URL = f"{FF_CALENDAR_BASE_URL}?week=last"
+
+
+def _week_start_utc(moment: datetime) -> datetime:
+    """Thứ 2 00:00 (UTC) của tuần chứa một mốc — tuần = Thứ 2 → Chủ nhật (QĐ-F10)."""
+    moment_utc = moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+    moment_utc = moment_utc.astimezone(UTC)
+    monday = moment_utc - timedelta(days=moment_utc.weekday())
+    return datetime.combine(monday.date(), clock_time.min, tzinfo=UTC)
+
+
+def ff_week_url_for_event(event_time_utc: str, *, now: datetime | None = None) -> str:
+    """URL trang lịch tuần FF tương ứng vị trí tuần của sự kiện (QĐ-F10).
+
+    Vị trí tuần tính theo UTC từ ``event_time_utc`` (tuần = Thứ 2 → Chủ nhật):
+    tuần hiện tại → ``?week=this``; kế sau → ``?week=next``; liền trước →
+    ``?week=last``; xa hơn → trang mặc định (declared fallback — legacy không
+    có URL tuần tùy ý).  ``now`` là seam kiểm thử; luôn mở qua
+    ``QDesktopServices.openUrl`` (chỉ mở link, không fetch)."""
+    try:
+        event_week = _week_start_utc(
+            datetime.fromisoformat(str(event_time_utc).replace("Z", "+00:00"))
+        )
+    except ValueError:
+        return FF_CALENDAR_BASE_URL
+    moment = now if now is not None else datetime.now(UTC)
+    current_week = _week_start_utc(moment)
+    delta_weeks = (event_week.date() - current_week.date()).days // 7
+    if delta_weeks == 0:
+        return FF_WEEK_THIS_URL
+    if delta_weeks == 1:
+        return FF_WEEK_NEXT_URL
+    if delta_weeks == -1:
+        return FF_WEEK_LAST_URL
+    return FF_CALENDAR_BASE_URL
+
+
+def _read_source_file(path: str) -> str:
+    """Đọc file `.html` đã lưu — chạy TRONG worker (không block GUI; d.1588)."""
+    with open(path, mode="r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
 
 EVENT_ROW = "event"
 ITEM_ROW = "item"
@@ -1264,6 +1431,463 @@ class AiTrendDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# Dialog dán mã nguồn 2 pha + bảng xem trước
+# (screen_design "Hành vi dán mã nguồn trang ForexFactory" d.1579-1617; QĐ-F6/F9)
+# ---------------------------------------------------------------------------
+
+
+class PastePreviewModel(QAbstractTableModel):
+    """Bảng xem trước của dialog dán mã nguồn (pha 2 — d.1594-1596, QĐ-F6).
+
+    CHỈ cột "Thực tế" (actual) sửa được (Owner đợt 4): mọi cột còn lại read-only,
+    không checkbox/không xóa dòng (all-or-nothing).  Dòng đã sửa → trạng thái
+    "Đã sửa" (d.1577).  Disposition của dòng chưa sửa do dialog đổ vào sau mỗi
+    lần phân loại lại QUA CONTROLLER (``reclassify_pasted_rows`` — UI không tự
+    phân loại, S2); mô hình này không giữ công thức/phân loại nghiệp vụ nào.
+    """
+
+    COLUMNS = _PREVIEW_COLUMNS
+    ACTUAL_KEY = "actual"
+    DISPOSITION_KEY = "disposition"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[CalendarEvent] = []
+        self.dispositions: list[str] = []
+        self.edited: set[str] = set()
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self.rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self.COLUMNS)
+
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole):
+        if role != Qt.ItemDataRole.DisplayRole:
+            return None
+        if orientation == Qt.Orientation.Horizontal:
+            return self.COLUMNS[section][1]
+        return str(section + 1)
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        event = self.rows[index.row()]
+        key = self.COLUMNS[index.column()][0]
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self._display(event, key, index.row())
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            if key in {"event_time_utc", "currency", "impact", "forecast", "previous", "actual", "disposition"}:
+                return Qt.AlignmentFlag.AlignCenter
+            return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        if role == Qt.ItemDataRole.ForegroundRole and key == self.DISPOSITION_KEY:
+            return semantic_qcolor(PREVIEW_STATUS_ROLE.get(self._disposition_value(index.row()), "info"))
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return event.title
+        return None
+
+    def flags(self, index: QModelIndex) -> int:
+        base = super().flags(index) | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        if self.COLUMNS[index.column()][0] == self.ACTUAL_KEY:
+            return base | Qt.ItemFlag.ItemIsEditable
+        return base
+
+    def setData(self, index: QModelIndex, value, role: int = Qt.ItemDataRole.EditRole) -> bool:
+        if role != Qt.ItemDataRole.EditRole or not self.flags(index) & Qt.ItemFlag.ItemIsEditable:
+            return False
+        row_index = index.row()
+        event = self.rows[row_index]
+        actual = str(value).strip() or None
+        if actual == event.actual:
+            return False  # gõ lại đúng giá trị bóc không phải một chỉnh sửa
+        self.rows[row_index] = replace(event, actual=actual)
+        self.edited.add(event.dedupe_key)
+        top = self.index(row_index, 0)
+        bottom = self.index(row_index, self.columnCount() - 1)
+        self.dataChanged.emit(top, bottom, [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ForegroundRole])
+        return True
+
+    def set_preview(self, preview) -> None:
+        """Nạp một lô bóc tách (pha 1 → pha 2): events + disposition ban đầu."""
+        self.beginResetModel()
+        self.rows = list(preview.events)
+        self.dispositions = [d.value for d in preview.dispositions]
+        self.edited.clear()
+        self.endResetModel()
+
+    def set_dispositions(self, values) -> None:
+        """Đổ kết quả phân loại lại (controller) — không thay đổi gì khi lệch số dòng."""
+        if not values or len(values) != len(self.rows):
+            return
+        self.dispositions = [str(d) for d in values]
+        column = next(
+            i for i, (key, _label) in enumerate(self.COLUMNS) if key == self.DISPOSITION_KEY
+        )
+        self.dataChanged.emit(
+            self.index(0, column),
+            self.index(len(self.rows) - 1, column),
+            [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ForegroundRole],
+        )
+
+    def edited_actuals_mapping(self) -> dict[str, str]:
+        """Khóa = ``dedupe_key`` · giá trị = actual mới của dòng ĐÃ SỬA (chuỗi
+        rỗng khi user xóa sạch — parser quy rỗng về NULL; tránh str(None)="None")."""
+        return {
+            event.dedupe_key: str(event.actual) if event.actual is not None else ""
+            for event in self.rows
+            if event.dedupe_key in self.edited
+        }
+
+    def row_at(self, index: int) -> CalendarEvent | None:
+        if 0 <= index < len(self.rows):
+            return self.rows[index]
+        return None
+
+    def _display(self, event: CalendarEvent, key: str, row_index: int) -> str:
+        if key == "event_time_utc":
+            return _display_time(event.event_time_utc)
+        if key == "currency":
+            return event.currency
+        if key == "title":
+            return event.title or NO_VALUE
+        if key == "impact":
+            return IMPACT_TEXT.get(event.impact.value, event.impact.value)
+        if key == "forecast":
+            return event.forecast or NO_VALUE
+        if key == "previous":
+            return event.previous or NO_VALUE
+        if key == "actual":
+            return event.actual or NO_VALUE
+        if key == self.DISPOSITION_KEY:
+            value = self._disposition_value(row_index)
+            return PREVIEW_STATUS_TEXT.get(value, value)
+        return NO_VALUE
+
+    def _disposition_value(self, row_index: int) -> str:
+        if self.rows[row_index].dedupe_key in self.edited:
+            return "edited"
+        if row_index < len(self.dispositions):
+            return self.dispositions[row_index]
+        return "new"
+
+
+class PasteSourceDialog(QDialog):
+    """Dialog dán mã nguồn 2 pha (screen_design d.1579-1617; QĐ-F6/F9).
+
+    * **Pha 1 — dán + bóc tách:** ô text dán source / nút chọn file `.html`
+      (đọc file TRONG WORKER — không block GUI) + hướng dẫn 3 bước + nút
+      **"Bóc tách"** → ``controller.parse_pasted_source`` trong
+      ``NewsReadWorker`` (khuôn D10 — không processEvents).  Parse lỗi → thông
+      báo từ điển ``PARSE_ERROR_TEXT`` và GIỮ pha 1 để dán lại.  Không ghi gì
+      ở pha này (contract §6.1 bước 2).
+    * **Pha 2 — bảng xem trước:** chỉ cột "Thực tế" sửa được (QĐ-F6); sửa
+      actual → badge "Đã sửa" + phân loại lại qua
+      ``controller.reclassify_pasted_rows`` (UI không tự phân loại — S2).
+      **"Cập nhật"** → ``controller.commit_pasted_source(preview, edited_actuals)``
+      trong worker → tóm tắt mới/cập nhật/xung đột (sự kiện + lãi suất) rồi
+      đóng dialog (màn chủ làm mới bảng tin + panel).  **"Hủy"** → reject,
+      không ghi/không run, loại bỏ cả chỉnh sửa (§6.1 bước 6).
+    """
+
+    def __init__(self, controller, parent=None) -> None:
+        super().__init__(parent)
+        self._controller = controller
+        self._preview = None
+        self._task_thread: QThread | None = None
+        self._task_worker: NewsReadWorker | None = None
+        self._task_tag = ""
+        self._busy = False
+        self._reclassify_pending = False
+        self._file_parse_pending = False
+        self.preview_model = PastePreviewModel()
+        self.preview_model.dataChanged.connect(self._on_preview_edited)
+        self.setObjectName("NewsPasteDialog")
+        self.setWindowTitle(PASTE_DIALOG_TITLE)
+        self.resize(880, 600)
+        self.setWindowModality(Qt.WindowModality.WindowModal)
+        self._build()
+
+    # -- dựng giao diện ------------------------------------------------------
+
+    def _build(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(10)
+        self._phase_1 = self._build_phase_1()
+        self._phase_2 = self._build_phase_2()
+        root.addWidget(self._phase_1, 1)
+        root.addWidget(self._phase_2, 1)
+        self._phase_2.setVisible(False)
+        self._status_label = QLabel("")
+        self._status_label.setObjectName("NewsPasteStatus")
+        self._status_label.setWordWrap(True)
+        self._status_label.setVisible(False)
+        root.addWidget(self._status_label)
+
+    def _build_phase_1(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        steps = QLabel("\n".join(f"• {step}" for step in PASTE_STEP_TEXTS))
+        steps.setObjectName("CardDetail")
+        steps.setWordWrap(True)
+        layout.addWidget(steps)
+        self.source_edit = QTextEdit()
+        self.source_edit.setObjectName("NewsPasteSource")
+        self.source_edit.setAcceptRichText(False)
+        layout.addWidget(self.source_edit, 1)
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.file_button = action_button(PASTE_FILE_TEXT)
+        self.file_button.clicked.connect(self._on_file_clicked)
+        self.parse_button = action_button(PASTE_PARSE_TEXT, primary=True, color="success")
+        self.parse_button.clicked.connect(self._on_parse_clicked)
+        controls.addWidget(self.file_button)
+        controls.addStretch(1)
+        controls.addWidget(self.parse_button)
+        layout.addLayout(controls)
+        return widget
+
+    def _build_phase_2(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self.preview_table = QTableView()
+        self.preview_table.setObjectName("NewsPastePreviewTable")
+        configure_table(self.preview_table)
+        self.preview_table.setModel(self.preview_model)
+        header = self.preview_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        for index, (key, _label) in enumerate(self.preview_model.COLUMNS):
+            if key == _PREVIEW_STRETCH_COLUMN:
+                header.setSectionResizeMode(index, QHeaderView.ResizeMode.Stretch)
+                continue
+            header.setSectionResizeMode(index, QHeaderView.ResizeMode.Fixed)
+            self.preview_table.setColumnWidth(index, _PREVIEW_COLUMN_WIDTHS.get(key, 110))
+        self.preview_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.preview_table.verticalHeader().setDefaultSectionSize(30)
+        self.preview_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.preview_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.preview_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        layout.addWidget(self.preview_table, 1)
+        self.rates_label = QLabel("")
+        self.rates_label.setObjectName("CardDetail")
+        layout.addWidget(self.rates_label)
+        self.summary_label = QLabel("")
+        self.summary_label.setObjectName("NewsPasteSummary")
+        self.summary_label.setWordWrap(True)
+        self.summary_label.setVisible(False)
+        layout.addWidget(self.summary_label)
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.cancel_button = action_button(CANCEL_TEXT, icon="x", icon_role="text", icon_disabled_role="text")
+        self.cancel_button.clicked.connect(self.reject)
+        self.commit_button = action_button(
+            PASTE_COMMIT_TEXT, primary=True, color="success", icon="save",
+            icon_role="selection_text", icon_disabled_role="selection_text",
+        )
+        self.commit_button.clicked.connect(self._on_commit_clicked)
+        controls.addStretch(1)
+        controls.addWidget(self.cancel_button)
+        controls.addWidget(self.commit_button)
+        layout.addLayout(controls)
+        return widget
+
+    # -- worker nền chung (khuôn AiTrendDialog/D10) ---------------------------
+
+    def _run_task(self, task, tag: str) -> None:
+        thread = QThread(self)
+        worker = NewsReadWorker(task)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_task_succeeded)
+        worker.failed.connect(self._on_task_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._on_task_thread_finished(thread))
+        self._task_tag = tag
+        self._task_thread = thread
+        self._task_worker = worker
+        self._busy = True
+        thread.start()
+
+    def _on_task_thread_finished(self, thread: QThread) -> None:
+        if self._task_thread is thread:
+            self._task_thread = None
+            self._task_worker = None
+        self._busy = False
+        self._pump_reclassify()
+        self._pump_file_parse()
+
+    def _on_task_succeeded(self, payload) -> None:
+        tag = self._task_tag
+        if tag == "parse":
+            self._apply_preview(payload)
+        elif tag == "file":
+            self._file_loaded(payload)
+        elif tag == "reclassify":
+            self._apply_dispositions(payload)
+        elif tag == "commit":
+            self._on_commit_succeeded(payload)
+
+    def _on_task_failed(self, message: str) -> None:
+        tag = self._task_tag
+        if tag in ("parse", "file"):
+            self.parse_button.setEnabled(True)
+            self.file_button.setEnabled(True)
+            self._set_status(message)  # giữ pha 1 để dán lại
+        elif tag == "commit":
+            self.commit_button.setEnabled(True)
+            self.cancel_button.setEnabled(True)
+            self._set_status(message)
+        elif tag == "reclassify":
+            pass  # chỉ là đọc lại — giữ disposition cũ, không làm mất chỉnh sửa
+
+    # -- pha 1: dán + bóc tách -------------------------------------------------
+
+    def _on_parse_clicked(self) -> None:
+        if self._busy:
+            return
+        source = self.source_edit.toPlainText()
+        if not source.strip():
+            self._set_status(PASTE_EMPTY_SOURCE_TEXT)
+            return
+        self._set_status(PASTE_PARSE_PROGRESS_TEXT)
+        self.parse_button.setEnabled(False)
+        self.file_button.setEnabled(False)
+        self._run_task(lambda: self._controller.parse_pasted_source(source), "parse")
+
+    def _on_file_clicked(self) -> None:
+        if self._busy:
+            return
+        path, _selected = QFileDialog.getOpenFileName(
+            self, PASTE_DIALOG_TITLE, "", "HTML files (*.html *.htm);;All files (*)"
+        )
+        if not path:
+            return
+        self._set_status(PASTE_FILE_LOAD_PROGRESS_TEXT)
+        self.parse_button.setEnabled(False)
+        self.file_button.setEnabled(False)
+        self._run_task(lambda: _read_source_file(str(path)), "file")
+
+    def _file_loaded(self, content) -> None:
+        self.parse_button.setEnabled(True)
+        self.file_button.setEnabled(True)
+        self._set_status("")
+        self.source_edit.setPlainText(str(content))
+        self._file_parse_pending = True  # bóc ngay sau khi worker file dừng hẳn (không busy)
+
+    def _apply_preview(self, payload) -> None:
+        self.parse_button.setEnabled(True)
+        self.file_button.setEnabled(True)
+        error = getattr(payload, "error", None)
+        if error is not None:
+            self._set_status(PARSE_ERROR_TEXT.get(error.kind.value, error.kind.value))
+            return  # dialog giữ pha 1 — dán lại
+        self._preview = payload
+        self.summary_label.setVisible(False)
+        self.preview_model.set_preview(payload)
+        self.rates_label.setText(PASTE_RATES_TEXT.format(count=len(payload.rates)))
+        self._set_status("")
+        self._phase_1.setVisible(False)
+        self._phase_2.setVisible(True)
+
+    # -- pha 2: sửa actual → phân loại lại; Cập nhật / Hủy --------------------
+
+    def _on_preview_edited(self, *signal_args) -> None:
+        """Chỉ khi ô cột "Thực tế" đổi (dataChanged do setData / set_dispositions
+        đều đi qua đây) — tránh vòng lặp: set_dispositions phát lại dataChanged
+        cho cột trạng thái không được kích phân loại lại."""
+        if self._preview is None or len(signal_args) < 2:
+            return
+        top_left = signal_args[0]
+        bottom_right = signal_args[1]
+        for row in range(top_left.row(), bottom_right.row() + 1):
+            for column in range(top_left.column(), bottom_right.column() + 1):
+                if self.preview_model.COLUMNS[column][0] == self.preview_model.ACTUAL_KEY:
+                    # Badge "Đã sửa" do model tự cập nhật (edited set); phân loại
+                    # lại qua controller — UI không tự phân loại (S2).
+                    self._reclassify_pending = True
+                    self._pump_reclassify()
+                    return
+
+    def _pump_reclassify(self) -> None:
+        if not self._reclassify_pending or self._busy or self._preview is None:
+            return
+        self._reclassify_pending = False
+        preview = self._preview
+        edited = dict(self.preview_model.edited_actuals_mapping())
+        self._run_task(
+            lambda: self._controller.reclassify_pasted_rows(preview, edited),
+            "reclassify",
+        )
+
+    def _pump_file_parse(self) -> None:
+        if not self._file_parse_pending or self._busy:
+            return
+        self._file_parse_pending = False
+        self._on_parse_clicked()  # đưa nội dung file vào luồng bóc
+
+    def _apply_dispositions(self, payload) -> None:
+        values = [getattr(d, "value", None) or str(d) for d in payload]
+        self.preview_model.set_dispositions(values)
+
+    def _on_commit_clicked(self) -> None:
+        if self._busy or self._preview is None:
+            return
+        edited = dict(self.preview_model.edited_actuals_mapping())
+        self.commit_button.setEnabled(False)
+        self.cancel_button.setEnabled(False)
+        self._set_status(PASTE_COMMIT_PROGRESS_TEXT)
+        self._run_task(
+            lambda: self._controller.commit_pasted_source(self._preview, edited),
+            "commit",
+        )
+
+    def _on_commit_succeeded(self, result) -> None:
+        self._set_status("")
+        self.summary_label.setText(
+            PASTE_SUMMARY_TEXT.format(
+                inserted=getattr(result, "inserted", 0),
+                updated=getattr(result, "updated", 0),
+                conflicts=len(getattr(result, "conflicts", ())),
+                rates=getattr(result, "rates_written", 0),
+            )
+        )
+        self.summary_label.setVisible(True)
+        self.accept()  # đóng dialog — màn chủ làm mới bảng tin + panel (d.1611-1612)
+
+    def _set_status(self, message: str) -> None:
+        self._status_label.setText(message)
+        self._status_label.setVisible(bool(message))
+
+    # -- dọn worker khi đóng (khuôn AiTrendDialog.closeEvent/_shutdown_ai) -----
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - tên Qt
+        self._shutdown_tasks()
+        super().closeEvent(event)
+
+    def _shutdown_tasks(self) -> None:
+        thread = self._task_thread
+        self._task_thread = None
+        self._task_worker = None
+        self._busy = False
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except RuntimeError:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Màn
 # ---------------------------------------------------------------------------
 
@@ -1280,14 +1904,18 @@ class NewsScreen(QWidget):
         self._rows: list[NewsRow] = []
         self._thread: QThread | None = None
         self._worker: NewsReadWorker | None = None
+        self._pending_events: list[CalendarEvent] = []
+        self._pending_thread: QThread | None = None
+        self._pending_worker: NewsReadWorker | None = None
         # (Đợt 3 — slot thread riêng của 2 nút FF và của xuất/nhập file đã được
         # gỡ cùng hai đường hành vi đó; màn chỉ còn worker đọc bảng + worker AI
-        # nằm trong chính dialog.)
+        # nằm trong chính dialog.  F4 thêm worker đọc panel thiếu số liệu.)
         self.toolbar_buttons: dict[str, QPushButton] = {}
         self.empty_state_buttons: dict[str, QPushButton] = {}
         self.setObjectName("FormScreen")
         self._build_ui()
         self.reload_rows()
+        self._reload_pending()
 
     # -- dựng giao diện ---------------------------------------------------------
 
@@ -1303,6 +1931,7 @@ class NewsScreen(QWidget):
         root.addWidget(filter_card)
 
         root.addWidget(self._table_card(), 1)
+        root.addWidget(self._pending_panel())
         root.addWidget(self._toolbar())
 
     def _filter_bar(self) -> QWidget:
@@ -1433,12 +2062,7 @@ class NewsScreen(QWidget):
         empty_layout.addStretch(1)
         for label in EMPTY_STATE_LABELS:
             button = action_button(label)
-            # Nút gợi ý empty state (đợt 3): "Dán mã nguồn trang" là GIỮ CHỖ
-            # disabled (hành vi thật ở F4); "Nhập tin" đi thẳng form nhập tay.
-            if label == PASTE_SOURCE_TEXT:
-                button.setEnabled(False)
-            else:
-                button.clicked.connect(self._empty_action_handler(label))
+            button.clicked.connect(self._empty_action_handler(label))
             empty_layout.addWidget(button)
             self.empty_state_buttons[label] = button
         empty_layout.addStretch(1)
@@ -1446,9 +2070,29 @@ class NewsScreen(QWidget):
         return table_card
 
     def _empty_action_handler(self, label: str):
+        """Nút gợi ý empty state (d.1634-1635): "Dán mã nguồn trang" đi thẳng
+        dialog dán (F4 — cùng handler nút toolbar); "Nhập tin" đi form nhập tay."""
         if label == TOOLBAR_LABELS[0]:
+            return lambda: self.open_paste_dialog()
+        if label == TOOLBAR_LABELS[1]:
             return lambda: self.open_note_dialog()
         return lambda: None
+
+    def _pending_panel(self) -> QFrame:
+        """Panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617): chỉ
+        hiển thị khi có sự kiện stale (ẩn khi rỗng — không phát minh nhãn rỗng)."""
+        panel = card()
+        panel.setObjectName("NewsPendingPanel")
+        title = QLabel(PANEL_TITLE_TEXT)
+        title.setObjectName("PanelTitle")
+        panel.layout().addWidget(title)
+        self._pending_list = QWidget()
+        self._pending_layout = QVBoxLayout(self._pending_list)
+        self._pending_layout.setContentsMargins(0, 0, 0, 0)
+        self._pending_layout.setSpacing(4)
+        panel.layout().addWidget(self._pending_list)
+        self._pending_panel = panel
+        return panel
 
     def _toolbar(self) -> QWidget:
         toolbar = ResponsiveGrid(
@@ -1461,9 +2105,11 @@ class NewsScreen(QWidget):
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — đúng 2 nút đã nối hành vi (đợt 3: [Nhập tin | AI])."""
+        """Nút thanh công cụ — đúng 3 nút nối hành vi (F4: [Dán | Nhập | AI])."""
         button = action_button(label)
         if label == TOOLBAR_LABELS[0]:
+            button.clicked.connect(self.open_paste_dialog)
+        elif label == TOOLBAR_LABELS[1]:
             button.clicked.connect(lambda: self.open_note_dialog())
         else:
             button.clicked.connect(self.open_ai_dialog)
@@ -1502,6 +2148,7 @@ class NewsScreen(QWidget):
 
     def shutdown(self) -> None:
         """Dừng worker đọc nền (màn đóng / mở lượt đọc mới) — chờ có giới hạn."""
+        self._stop_pending_worker()
         thread = self._thread
         self._thread = None
         self._worker = None
@@ -1519,9 +2166,92 @@ class NewsScreen(QWidget):
         """Đóng màn thì dừng luôn worker đọc nền (không để thread sống ngoài màn).
 
         (Đợt 3 — trước đây còn dừng slot thread của 2 nút FF và của xuất/nhập
-        file; hai slot đó đã gỡ cùng hai đường hành vi.)"""
+        file; hai slot đó đã gỡ cùng hai đường hành vi.  F4 thêm worker đọc
+        panel thiếu số liệu.)"""
         self.shutdown()
         super().closeEvent(event)
+
+    # -- panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617) -----------
+
+    def _reload_pending(self) -> None:
+        """Đọc ``events_pending_actual`` qua worker nền (khuôn đọc bảng hiện có
+        — contract §8: chỉ nuôi panel hướng dẫn, không phục vụ fetch tự động)."""
+        if self.news_controller is None:
+            self._show_pending([])
+            return
+
+        def read() -> list[CalendarEvent]:
+            return list(self.news_controller.events_pending_actual(datetime.now(UTC)))
+
+        self._stop_pending_worker()
+        thread = QThread(self)
+        worker = NewsReadWorker(read)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(self._on_pending_loaded)
+        worker.failed.connect(lambda _message: self._show_pending([]))
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: self._forget_pending_thread(thread))
+        self._pending_thread = thread
+        self._pending_worker = worker
+        thread.start()
+
+    def _forget_pending_thread(self, thread: QThread) -> None:
+        if self._pending_thread is thread:
+            self._pending_thread = None
+            self._pending_worker = None
+
+    def _stop_pending_worker(self) -> None:
+        thread = self._pending_thread
+        self._pending_thread = None
+        self._pending_worker = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except RuntimeError:
+            pass
+
+    def _on_pending_loaded(self, payload: object) -> None:
+        self._show_pending(list(payload) if isinstance(payload, list) else [])
+
+    def _show_pending(self, events: list[CalendarEvent]) -> None:
+        """Dựng lại nội dung panel (mỗi dòng: sự kiện + nút mở trang FF tuần)."""
+        self._clear_layout(self._pending_layout)
+        self._pending_events = list(events)
+        for event in events:
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
+            label = QLabel(
+                f"{_display_time(event.event_time_utc)} · {event.currency} · {event.title}"
+            )
+            label.setObjectName("CardDetail")
+            label.setWordWrap(True)
+            row_layout.addWidget(label, 1)
+            button = action_button(OPEN_FF_TEXT)
+            button.clicked.connect(lambda _checked=False, ev=event: self._open_ff_page(ev))
+            row_layout.addWidget(button)
+            self._pending_layout.addWidget(row)
+        self._pending_panel.setVisible(bool(events))
+
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _open_ff_page(self, event: CalendarEvent) -> None:
+        """Mở trang lịch tuần FF bằng trình duyệt ngoài (QĐ-F4/F10 — chỉ
+        ``QDesktopServices.openUrl``; app không phát request mạng nào)."""
+        QDesktopServices.openUrl(QUrl(ff_week_url_for_event(event.event_time_utc)))
 
     def _notify(self, title: str, text: str, *, suggestion: str | None = None, on_suggestion=None) -> None:
         """QMessageBox khuôn ``journal_screen`` (D8) — gợi ý là nút AcceptRole."""
@@ -1565,6 +2295,22 @@ class NewsScreen(QWidget):
             editing_item=editing_item,
             currencies=self._currency_codes(),
         )
+
+    # -- dialog dán mã nguồn 2 pha (F4 — §6.1 đợt 3+4) --------------------------
+
+    def open_paste_dialog(self) -> None:
+        """Mở dialog dán mã nguồn 2 pha (chặn) — sau "Cập nhật" làm mới bảng tin
+        + panel (d.1611-1612); "Hủy" reject = không ghi, không run (§6.1 bước 6)."""
+        if self.news_controller is None:
+            return
+        dialog = self.create_paste_dialog()
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.reload_rows()
+            self._reload_pending()
+
+    def create_paste_dialog(self) -> PasteSourceDialog:
+        """Dựng (không mở) dialog dán mã nguồn 2 pha."""
+        return PasteSourceDialog(self.news_controller, self)
 
     def _currency_codes(self) -> list[str]:
         codes: list[str] = []

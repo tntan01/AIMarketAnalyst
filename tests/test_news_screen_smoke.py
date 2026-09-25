@@ -20,6 +20,7 @@ vào `tmp_path` — không ghi gì vào repo.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
 import sys
 import threading
@@ -110,11 +111,14 @@ class FakeNewsController:
         self,
         events: list[CalendarEvent] | None = None,
         items: list[NewsItem] | None = None,
+        pending: list[CalendarEvent] | None = None,
     ) -> None:
         self.events = [EVENT] if events is None else events
         self.items = [HEADLINE, EXCLUDED_NOTE] if items is None else items
+        self.pending = [] if pending is None else pending
         self.event_calls: list[tuple[str, str]] = []
         self.item_calls: list[tuple[str, str, bool]] = []
+        self.pending_calls: list[datetime] = []
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
         self.event_calls.append((from_utc, to_utc))
@@ -123,6 +127,10 @@ class FakeNewsController:
     def items_in_range(self, from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True):
         self.item_calls.append((from_utc, to_utc, exclude_flagged))
         return list(self.items)
+
+    def events_pending_actual(self, now):
+        self.pending_calls.append(now)
+        return list(self.pending)
 
 
 _SCREENS: list[NewsScreen] = []
@@ -237,6 +245,7 @@ class TestDisplayDictionary:
             "Khoảng ngày",
         )
         assert news.TOOLBAR_LABELS == (
+            "Dán mã nguồn trang",
             "Nhập tin",
             "AI nhận định xu hướng",
         )
@@ -393,8 +402,8 @@ class TestScreenLayout:
 
     def test_toolbar_buttons_are_wired_per_lot(self):
         screen = _screen()
-        # Đợt 3: toolbar đúng 2 nút [ Nhập tin | AI nhận định xu hướng ] — cả
-        # hai đã nối hành vi (4 nút FF/xuất-nhập bị gỡ).
+        # F4: toolbar đúng 3 nút [ Dán mã nguồn trang | Nhập tin | AI nhận định
+        # xu hướng ] — cả ba đã nối hành vi.
         assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
         for label, button in screen.toolbar_buttons.items():
             assert button.isEnabled() is True
@@ -416,6 +425,36 @@ class TestScreenLayout:
 
         assert screen.date_to_input.date() == QDate.currentDate()
         assert screen.date_from_input.date() == QDate.currentDate().addMonths(-1)
+
+
+class TestPendingPanel:
+    """F4 — panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617)."""
+
+    def test_panel_shows_title_and_open_button_when_events_pending(self):
+        now = datetime.now(UTC)
+        pending = [
+            dataclasses.replace(
+                EVENT,
+                day_key=now.strftime("%Y-%m-%d"),
+                event_time_utc=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                title="Stale FOMC",
+                actual=None,
+                status=EventStatus.STALE,
+                dedupe_key="p-1",
+            )
+        ]
+        controller = FakeNewsController(pending=pending)
+        screen = _screen(controller)
+
+        assert _wait_until(lambda: screen._pending_panel.isVisible())
+        texts = _texts(screen)
+        assert news.PANEL_TITLE_TEXT in texts
+        assert news.OPEN_FF_TEXT in texts
+
+    def test_panel_stays_hidden_when_nothing_pending(self):
+        screen = _screen()
+
+        assert _wait_until(lambda: not screen._pending_panel.isVisible())
 
 
 # ---- 5. trạng thái tải và rỗng -------------------------------------------------
@@ -458,14 +497,13 @@ class TestLoadingAndEmptyState:
         assert news.EMPTY_TEXT in screen.status_message.toPlainText()
         assert screen.status_message.isVisible() is True
         assert screen.empty_actions.isVisible() is True
-        # Đợt 3: "Dán mã nguồn trang" (giữ chỗ — disabled, hành vi thật ở F4)
-        # + "Nhập tin" (bật, đi form).
+        # F4: "Dán mã nguồn trang" (bật — đi dialog dán) + "Nhập tin" (đi form).
         assert set(screen.empty_state_buttons) == {
             news.PASTE_SOURCE_TEXT,
-            news.TOOLBAR_LABELS[0],
+            news.TOOLBAR_LABELS[1],
         }
-        assert screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].isEnabled() is False
-        assert screen.empty_state_buttons[news.TOOLBAR_LABELS[0]].isEnabled() is True
+        assert screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].isEnabled() is True
+        assert screen.empty_state_buttons[news.TOOLBAR_LABELS[1]].isEnabled() is True
 
     def test_reading_error_is_reported_without_crashing(self):
         screen = _screen()

@@ -124,7 +124,7 @@ Declared readings (V2 — decided here on purpose, not silently):
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from core.news_models import (
@@ -779,6 +779,36 @@ class NewsController:
             rates_written=rates_written,
             run_id=run_id,
         )
+
+    def reclassify_pasted_rows(
+        self,
+        preview: SourcePreview,
+        edited_actuals: Mapping[str, str],
+    ) -> tuple[RowDisposition, ...]:
+        """Phân loại lại từng dòng sau khi người dùng sửa actual (QĐ-F9 — PO
+        duyệt 25/09/2026; screen_design d.1602 "được phân loại lại so với
+        database"; UI không tự phân loại — S2).
+
+        Áp actual đã sửa lên bản sao của ``preview.events`` (chỉ
+        ``replace(actual=...)`` — cùng quy ước ``finalize_edited_batch``, chỉ
+        actual được khác giá trị bóc; ``dedupe_key`` BẤT BIẾN), đọc sự kiện hiện
+        hữu qua ``events_in_range`` (cửa sổ = min→max ``event_time_utc`` của lô
+        dán — §8, không method repo mới) rồi gọi hàm thuần
+        ``classify_incoming_events`` của parser (§11b).  **KHÔNG GHI, KHÔNG run**
+        — bản sao chỉ phục vụ hiển thị preview, không chạm DB."""
+        if not preview.events:
+            return ()
+        edited_events = [
+            replace(
+                event,
+                actual=str(edited_actuals[event.dedupe_key]).strip() or None,
+            )
+            if event.dedupe_key in edited_actuals
+            else event
+            for event in preview.events
+        ]
+        existing = self._existing_in_paste_window(preview.events)
+        return tuple(classify_incoming_events(edited_events, existing))
 
     def _existing_in_paste_window(
         self, events: Sequence[CalendarEvent]

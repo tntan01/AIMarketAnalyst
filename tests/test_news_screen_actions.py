@@ -21,20 +21,24 @@ xóa sau".  Test chạy offscreen; không ghi gì vào repo.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton
 
 from controllers.news_controller import (
     NewsController,
+    SourceIngestResult,
+    SourcePreview,
     UserNoteFieldError,
     UserNoteResult,
 )
@@ -48,8 +52,11 @@ from core.news_models import (
     NewsItem,
     NewsItemKind,
     NewsItemSource,
+    RateObservation,
+    RateSource,
 )
 from core.news_policy import load_news_policy
+from services.ff_source_parser import ParseError, ParseErrorKind, RowDisposition
 from services.news_repository import UpsertItemsResult
 from ui.screens import news_screen as news
 from ui.screens.news_screen import NewsScreen, build_rows
@@ -111,7 +118,8 @@ class FakeNewsController:
 
     (Đợt 3 — các thành viên của 2 nút FF và xuất/nhập file đã gỡ cùng hành vi
     bị xóa; fake chỉ còn các đường màn còn dùng: đọc bảng, nhập/sửa tin,
-    sửa/xóa/toggle.)"""
+    sửa/xóa/toggle.  F4 — mở rộng đúng chữ ký controller thật: parse/commit/
+    reclassify/events_pending_actual.)"""
 
     def __init__(
         self,
@@ -127,6 +135,17 @@ class FakeNewsController:
         self.exclude_calls: list[tuple] = []
         self.delete_calls: list[int] = []
         self.note_result = UserNoteResult(errors=())
+        # F4 — đường dán mã nguồn 2 pha (khuôn chữ ký F3/QĐ-F9).
+        self.paste_parse_calls: list[str] = []
+        self.paste_commit_calls: list[tuple] = []
+        self.paste_reclassify_calls: list[tuple] = []
+        self.pending: list[CalendarEvent] = []
+        self.paste_preview = _sample_preview()
+        self.paste_error_preview: SourcePreview | None = None
+        self.paste_commit_result = SourceIngestResult(
+            inserted=3, updated=1, conflicts=(), rates_written=1, run_id=7
+        )
+        self.paste_reclassify_result: tuple | None = None
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
         self.event_calls.append((from_utc, to_utc))
@@ -151,6 +170,64 @@ class FakeNewsController:
     def update_user_note(self, item_id, **kwargs):
         self.update_calls.append((item_id, kwargs))
         return self.note_result
+
+    # --- F4 — kênh dán mã nguồn (đúng chữ ký controller thật) ------------------
+
+    def parse_pasted_source(self, source_text):
+        self.paste_parse_calls.append(source_text)
+        if self.paste_error_preview is not None:
+            return self.paste_error_preview
+        return self.paste_preview
+
+    def commit_pasted_source(self, preview, edited_actuals):
+        self.paste_commit_calls.append((preview, dict(edited_actuals)))
+        return self.paste_commit_result
+
+    def reclassify_pasted_rows(self, preview, edited_actuals):
+        self.paste_reclassify_calls.append((preview, dict(edited_actuals)))
+        if self.paste_reclassify_result is not None:
+            return self.paste_reclassify_result
+        return tuple(self.paste_preview.dispositions)
+
+    def events_pending_actual(self, now):
+        return list(self.pending)
+
+
+def _sample_preview() -> SourcePreview:
+    """Lô bóc giả có kiểu: 3 sự kiện (new / sẽ cập nhật / xung đột-giữ-nhập-tay)
+    + 1 quan sát lãi suất — để kiểm bảng preview + đếm lãi suất."""
+
+    def event(*, day: str, time_utc: str, currency: str, title: str, actual: str | None, key: str) -> CalendarEvent:
+        return dataclasses.replace(
+            EVENT,
+            day_key=day,
+            event_time_utc=time_utc,
+            currency=currency,
+            title=title,
+            actual=actual,
+            dedupe_key=key,
+        )
+
+    return SourcePreview(
+        events=[
+            event(day="2026-09-20", time_utc="2026-09-20T14:30:00Z", currency="USD", title="FOMC Meeting", actual="5.50%", key="event-1"),
+            event(day="2026-09-21", time_utc="2026-09-21T09:00:00Z", currency="AUD", title="AU Employment Change", actual="39.5K", key="event-2"),
+            event(day="2026-09-22", time_utc="2026-09-22T10:00:00Z", currency="JPY", title="JN Flash Manufacturing PMI", actual="54.1", key="event-3"),
+        ],
+        rates=[
+            RateObservation(
+                currency="CHF", rate=0.0, observed_at="2026-09-24",
+                source=RateSource.FF_HTML, fetched_at="2026-09-24T22:00:00Z",
+            )
+        ],
+        dispositions=(
+            RowDisposition.NEW,
+            RowDisposition.WILL_UPDATE,
+            RowDisposition.CONFLICT_KEEP_MANUAL,
+        ),
+        error=None,
+        fetched_at="2026-09-24T22:00:00Z",
+    )
 
 
 _SCREENS: list[NewsScreen] = []
@@ -212,6 +289,32 @@ def _row_for(screen: NewsScreen, row_type: str, title: str) -> news.NewsRow:
         if row.row_type == row_type and row.title == title:
             return row
     raise AssertionError(f"không thấy dòng {row_type}:{title}")
+
+
+def _preview_cell(dialog, row: int, key: str) -> str:
+    """Ô của bảng xem trước theo khóa cột (vd "actual", "disposition")."""
+    model = dialog.preview_model
+    column = next(i for i, (k, _label) in enumerate(model.COLUMNS) if k == key)
+    return model.data(model.index(row, column), Qt.ItemDataRole.DisplayRole)
+
+
+def _paste_dialog(controller: FakeNewsController | None = None):
+    """Dựng màn + dialog dán mã nguồn (không exec — test lái trực tiếp; dialog
+    được show để ``isVisible`` phản ánh đúng pha)."""
+    controller = controller or FakeNewsController()
+    screen = _screen(controller)
+    dialog = screen.create_paste_dialog()
+    dialog.show()
+    _app().processEvents()
+    return controller, dialog
+
+
+def _parse_source(controller, dialog, source: str = "SOURCE") -> None:
+    """Đưa dialog qua pha 1 → pha 2 (đợi worker parse hoàn tất — không block)."""
+    dialog.source_edit.setPlainText(source)
+    dialog.parse_button.click()
+    assert _wait_until(lambda: not dialog._busy), "worker parse chưa kết thúc"
+    _app().processEvents()
 
 
 # ---- 1-2. (gỡ đợt 3: 2 nút FF "Lấy lịch kinh tế"/"Cập nhật actual" + gợi ý
@@ -493,33 +596,44 @@ class TestRowActions:
 
 
 class TestEmptyStateAndBoundaries:
-    def test_empty_state_buttons_match_the_dot3_labels_and_wiring(self):
-        """Đợt 3 — empty state gợi ý "Dán mã nguồn trang" (giữ chỗ disabled,
-        hành vi thật ở F4) + "Nhập tin" (đi thẳng form)."""
+    def test_empty_state_buttons_are_enabled_and_wired(self):
+        """F4 — empty state gợi ý "Dán mã nguồn trang" (nối dialog dán — không
+        còn giữ chỗ) + "Nhập tin" (đi thẳng form)."""
         controller = FakeNewsController(events=[], items=[])
         screen = _screen(controller)
         _wait_until(lambda: screen.empty_actions.isVisible())
 
-        assert set(screen.empty_state_buttons) == {news.PASTE_SOURCE_TEXT, news.TOOLBAR_LABELS[0]}
-        # Nút giữ chỗ F4 bị disabled; nút form bật và nối hành vi.
-        assert screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].isEnabled() is False
-        paste_button = screen.empty_state_buttons[news.PASTE_SOURCE_TEXT]
-        assert paste_button.receivers(paste_button.clicked) == 0
-
-        opened: list[dict] = []
-        screen.open_note_dialog = lambda **kwargs: opened.append(kwargs)  # type: ignore[method-assign]
-
-        screen.empty_state_buttons[news.TOOLBAR_LABELS[0]].click()
-        assert len(opened) == 1
-
-    def test_the_two_toolbar_buttons_are_wired(self):
-        """Đợt 3: toolbar đúng 2 nút [ Nhập tin | AI nhận định xu hướng ] — cả
-        hai đã nối hành vi."""
-        screen = _screen()
-        assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
-        for label, button in screen.toolbar_buttons.items():
+        assert set(screen.empty_state_buttons) == {news.PASTE_SOURCE_TEXT, news.TOOLBAR_LABELS[1]}
+        for label, button in screen.empty_state_buttons.items():
             assert button.isEnabled() is True
             assert button.receivers(button.clicked) >= 1
+
+    def test_the_three_toolbar_buttons_are_wired(self):
+        """F4: toolbar đúng 3 nút [ Dán mã nguồn trang | Nhập tin | AI nhận định
+        xu hướng ] — cả ba đã nối hành vi."""
+        screen = _screen()
+        assert set(screen.toolbar_buttons) == set(news.TOOLBAR_LABELS)
+        skipped: list[str] = []
+        for label, button in screen.toolbar_buttons.items():
+            if label == news.TOOLBAR_LABELS[0]:
+                continue  # mở dialog chặn — không click trong test
+            assert button.isEnabled() is True
+            assert button.receivers(button.clicked) >= 1
+        assert news.TOOLBAR_LABELS[0] not in skipped
+        assert screen.toolbar_buttons[news.TOOLBAR_LABELS[0]].isEnabled() is True
+
+    def test_empty_state_paste_button_opens_the_paste_dialog(self):
+        """Nút empty state "Dán mã nguồn trang" đi thẳng dialog dán (cùng handler
+        với nút toolbar — d.1634-1635)."""
+        controller = FakeNewsController(events=[], items=[])
+        screen = _screen(controller)
+        _wait_until(lambda: screen.empty_actions.isVisible())
+
+        opened: list[str] = []
+        screen.open_paste_dialog = lambda: opened.append("paste")  # type: ignore[method-assign]
+
+        screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].click()
+        assert opened == ["paste"]
 
 
 # ---- 8. (gỡ đợt 3: 2 nút "Xuất file"/"Nhập file" — test của hành vi bị xóa) ----
@@ -533,3 +647,200 @@ def test_screen_has_no_direct_network_or_producer_import():
     source = pathlib.Path(news.__file__).read_text(encoding="utf-8")
     for forbidden in ("import requests", "import urllib", "import socket", "from services."):
         assert forbidden not in source, forbidden
+    # UI không tự bóc/phân loại — chỉ đi qua controller (R8/S2).
+    for symbol in ("parse_calendar_source", "classify_incoming_events", "finalize_edited_batch"):
+        assert symbol not in source, symbol
+
+
+# ---- 10. F4 — dialog dán mã nguồn 2 pha (screen_design d.1579-1617) -------------
+
+
+class TestPasteDialog:
+    def test_dialog_starts_in_phase_one_with_registered_labels(self):
+        controller, dialog = _paste_dialog()
+
+        assert dialog.windowTitle() == news.PASTE_DIALOG_TITLE
+        assert dialog._phase_1.isVisible() is True
+        assert dialog._phase_2.isVisible() is False
+        assert dialog.cancel_button.isVisible() is False  # "Hủy" chỉ hiện ở pha 2
+        assert dialog.commit_button.isVisible() is False  # "Cập nhật" chỉ hiện ở pha 2
+        labels = {button.text() for button in dialog.findChildren(QPushButton)}
+        assert news.PASTE_PARSE_TEXT in labels  # "Bóc tách"
+        assert news.PASTE_FILE_TEXT in labels  # "Chọn file .html"
+        step_texts = " ".join(
+            label.text() for label in dialog._phase_1.findChildren(QLabel)
+        )  # hướng dẫn 3 bước (d.1588-1590)
+        assert "Mở trang lịch FF" in step_texts
+
+    def test_parse_fills_the_preview_table_with_badges_and_rates(self):
+        controller, dialog = _paste_dialog()
+        _parse_source(controller, dialog)
+
+        assert controller.paste_parse_calls == ["SOURCE"]
+        model = dialog.preview_model
+        assert model.rowCount() == 3
+        assert _preview_cell(dialog, 0, "actual") == "5.50%"
+        # nhãn badge ĐÚNG TỪNG CHUỖI từ điển d.1577
+        assert _preview_cell(dialog, 0, "disposition") == news.PREVIEW_STATUS_TEXT["new"]
+        assert _preview_cell(dialog, 1, "disposition") == news.PREVIEW_STATUS_TEXT["will_update"]
+        assert _preview_cell(dialog, 2, "disposition") == news.PREVIEW_STATUS_TEXT["conflict_keep_manual"]
+        assert dialog.rates_label.text() == news.PASTE_RATES_TEXT.format(count=1)
+        assert controller.paste_commit_calls == []
+
+    def test_every_column_except_actual_is_read_only(self):
+        controller, dialog = _paste_dialog()
+        _parse_source(controller, dialog)
+        model = dialog.preview_model
+
+        for row in range(model.rowCount()):
+            for column in range(model.columnCount()):
+                key = model.COLUMNS[column][0]
+                flags = model.flags(model.index(row, column))
+                editable = bool(flags & Qt.ItemFlag.ItemIsEditable)
+                assert editable is (key == news.PastePreviewModel.ACTUAL_KEY), key
+
+    def test_editing_actual_marks_edited_badge_and_calls_reclassify(self):
+        controller, dialog = _paste_dialog()
+        _parse_source(controller, dialog)
+
+        model = dialog.preview_model
+        actual_col = next(
+            i for i, (k, _l) in enumerate(model.COLUMNS) if k == model.ACTUAL_KEY
+        )
+        wrote = model.setData(model.index(1, actual_col), "40.0", Qt.ItemDataRole.EditRole)
+
+        assert wrote is True
+        assert _preview_cell(dialog, 1, "disposition") == news.PREVIEW_STATUS_TEXT["edited"]
+        assert _wait_until(lambda: len(controller.paste_reclassify_calls) >= 1)
+        preview_arg, edited_arg = controller.paste_reclassify_calls[0]
+        assert preview_arg is controller.paste_preview
+        assert edited_arg == {"event-2": "40.0"}
+        assert controller.paste_commit_calls == []
+
+    def test_commit_sends_edited_actuals_shows_summary_and_accepts(self):
+        controller, dialog = _paste_dialog()
+        _parse_source(controller, dialog)
+        model = dialog.preview_model
+        actual_col = next(i for i, (k, _l) in enumerate(model.COLUMNS) if k == model.ACTUAL_KEY)
+        model.setData(model.index(0, actual_col), "5.75%", Qt.ItemDataRole.EditRole)
+        _wait_until(lambda: not dialog._busy)
+
+        dialog.commit_button.click()
+        assert _wait_until(lambda: dialog.result() == QDialog.DialogCode.Accepted, 8)
+
+        assert len(controller.paste_commit_calls) == 1
+        preview_arg, edited_arg = controller.paste_commit_calls[0]
+        assert preview_arg is controller.paste_preview
+        assert edited_arg == {"event-1": "5.75%"}
+        expected = news.PASTE_SUMMARY_TEXT.format(
+            inserted=3, updated=1, conflicts=0, rates=1
+        )
+        assert dialog.summary_label.text() == expected
+
+    def test_cancel_rejects_without_calling_commit(self):
+        controller, dialog = _paste_dialog()
+        _parse_source(controller, dialog)
+
+        dialog.cancel_button.click()
+        _app().processEvents()
+
+        assert dialog.result() == QDialog.DialogCode.Rejected
+        assert controller.paste_commit_calls == []  # "Hủy" không chạm commit
+
+    def test_parse_error_shows_dictionary_message_and_stays_in_phase_one(self):
+        controller = FakeNewsController()
+        controller.paste_error_preview = SourcePreview(
+            events=[],
+            rates=[],
+            dispositions=(),
+            error=ParseError(ParseErrorKind.NOT_FOUND, "no calendar"),
+            fetched_at="2026-09-24T22:00:00Z",
+        )
+        _, dialog = _paste_dialog(controller)
+        _parse_source(controller, dialog)
+
+        assert news.PARSE_ERROR_TEXT["not_found"] in dialog._status_label.text()
+        assert dialog._phase_1.isVisible() is True
+        assert dialog._phase_2.isVisible() is False
+        assert controller.paste_parse_calls == ["SOURCE"]
+
+    def test_choose_html_file_reads_in_worker_and_enters_the_flow(self, tmp_path, monkeypatch):
+        controller, dialog = _paste_dialog()
+        target = tmp_path / "page.html"
+        target.write_text("FILE_CONTENT", encoding="utf-8")
+        monkeypatch.setattr(
+            news.QFileDialog, "getOpenFileName",
+            lambda *args, **kwargs: (str(target), ""),
+        )
+
+        dialog.file_button.click()
+
+        assert _wait_until(lambda: controller.paste_parse_calls == ["FILE_CONTENT"])  # đưa vào luồng bóc
+        assert dialog.source_edit.toPlainText() == "FILE_CONTENT"
+        assert _wait_until(lambda: dialog._phase_2.isVisible())
+
+
+# ---- 11. F4 — panel "Sự kiện đang thiếu số liệu" (d.1613-1617, QĐ-F10) ---------
+
+
+def _pending_event(*, time_utc: str, day: str, title: str, key: str, currency: str = "USD") -> CalendarEvent:
+    return dataclasses.replace(
+        EVENT,
+        day_key=day,
+        event_time_utc=time_utc,
+        currency=currency,
+        title=title,
+        actual=None,
+        status=EventStatus.STALE,
+        dedupe_key=key,
+    )
+
+
+class TestPendingPanel:
+    def test_panel_lists_pending_events_with_open_button(self):
+        now = datetime.now(UTC)
+        pending = [
+            _pending_event(
+                time_utc=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                day=now.strftime("%Y-%m-%d"), title="FOMC past due", key="p-1",
+            )
+        ]
+        controller = FakeNewsController()
+        controller.pending = pending
+        screen = _screen(controller)
+
+        assert _wait_until(lambda: screen._pending_panel.isVisible())
+        labels = [label.text() for label in screen.findChildren(QLabel)]
+        assert news.PANEL_TITLE_TEXT in labels
+        buttons = [b for b in screen.findChildren(QPushButton) if b.text() == news.OPEN_FF_TEXT]
+        assert len(buttons) == 1
+
+    def test_open_button_calls_desktop_services_with_the_week_url(self, monkeypatch):
+        now = datetime.now(UTC)
+        iso = lambda dt: dt.isoformat(timespec="seconds").replace("+00:00", "Z")  # noqa: E731
+        pending = [
+            _pending_event(time_utc=iso(now), day=now.strftime("%Y-%m-%d"), title="This week", key="p-this"),
+            _pending_event(time_utc=iso(now - timedelta(days=7)), day=(now - timedelta(days=7)).strftime("%Y-%m-%d"), title="Last week", key="p-last"),
+            _pending_event(time_utc=iso(now - timedelta(days=35)), day=(now - timedelta(days=35)).strftime("%Y-%m-%d"), title="Far past", key="p-far"),
+        ]
+        controller = FakeNewsController()
+        controller.pending = pending
+        screen = _screen(controller)
+        assert _wait_until(lambda: screen._pending_panel.isVisible())
+
+        opened: list[str] = []
+        monkeypatch.setattr(
+            news.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toString()))
+        )
+        assert _wait_until(lambda: screen._pending_panel.isVisible())
+        buttons = [b for b in screen.findChildren(QPushButton) if b.text() == news.OPEN_FF_TEXT]
+        assert len(buttons) == 3
+        for button in buttons:
+            button.click()
+            _app().processEvents()
+
+        assert opened == [
+            news.FF_WEEK_THIS_URL,  # tuần hiện tại → week=this
+            news.FF_WEEK_LAST_URL,  # tuần trước → week=last
+            news.FF_CALENDAR_BASE_URL,  # xa hơn → trang mặc định
+        ]

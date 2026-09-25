@@ -263,7 +263,11 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
 ### F4 — UI: dialog dán mã nguồn 2 pha + panel "Sự kiện đang thiếu số liệu" (M)
 
 - **File sửa:** `ui/screens/news_screen.py`, `tests/test_news_screen_actions.py`
-  (+ smoke nếu inventory đổi).
+  (+ smoke nếu inventory đổi).  **QĐ-F9 (25/09/2026):** bổ sung inventory
+  `controllers/news_controller.py` (method đọc thuần `reclassify_pasted_rows` —
+  phân loại lại dòng sau sửa actual) + `tests/test_news_controller.py`;
+  **QĐ-F10 (25/09/2026):** nút panel mở trang lịch tuần FF theo vị trí tuần
+  (this/next/last / trang mặc định) — căn cứ URL legacy.
 - **Neo đặc tả:** screen_design mục "Hành vi dán mã nguồn trang ForexFactory"
   (đợt 3+4 — dialog 2 pha, bảng xem trước, nhãn trạng thái dòng, tóm tắt,
   lỗi, panel, nút mở link) + "Bố cục" (toolbar 3 nút, panel) + "Từ điển hiển
@@ -293,9 +297,9 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
       ghi, không run).
   - Panel "Sự kiện đang thiếu số liệu": đọc `events_pending_actual` qua
     controller/worker (khuôn đọc bảng hiện có); mỗi dòng: sự kiện + nút "Mở
-    trang ForexFactory" → `QDesktopServices.openUrl` trang lịch ngày tương ứng
-    (chỉ mở link bằng trình duyệt ngoài — app không fetch, đúng §6.1); panel
-    tự làm mới sau lượt dán thành công.
+    trang ForexFactory" → `QDesktopServices.openUrl` trang lịch **tuần** tương
+    ứng (QĐ-F10 — only mở link bằng trình duyệt ngoài, app không fetch, đúng
+    §6.1); panel tự làm mới sau lượt dán thành công.
   - Bố cục tuân thủ style-guide (24/20px, không setStyleSheet cục bộ) +
     contract responsive 800×500 (panel không phá layout — ResponsiveRow/Grid).
 - **Test (offscreen, controller giả có kiểu):** dialog mở/đóng; bấm "Bóc
@@ -310,12 +314,13 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
   panel liệt kê đúng sự kiện stale từ fake; nút mở link gọi `openUrl` đúng
   URL ngày (mock); smoke màn + `QT_QPA_PLATFORM=windows` non-offscreen xanh.
 - **Phụ thuộc:** F3 · **Điểm review:** không `urlopen`/`requests`/mạng nào
-  trong `news_screen.py` (grep — chỉ `openUrl`); parse + phân loại không nằm
-  trong UI (R8/S2 — UI chỉ hiển thị preview có kiểu); nhãn đúng TỪNG CHUỖI
-  từ điển (kể cả 3 nhãn preview đợt 4); đường "Hủy" không chạm controller
-  (test đếm call); worker thật (không processEvents đồng bộ); layout 800px
-  không vỡ (smoke non-offscreen).
-- **Trạng thái:** PLANNED
+  trong `news_screen.py` (grep — chỉ `openUrl`; bốn hằng URL QĐ-F10 là nơi duy
+  nhất chứa "http"); parse + phân loại không nằm trong UI (R8/S2 — UI chỉ hiển
+  thị preview có kiểu); nhãn đúng TỪNG CHUỖI từ điển (kể cả 3 nhãn preview đợt
+  4); đường "Hủy" không chạm controller (test đếm call); worker thật (không
+  processEvents đồng bộ); layout 800px không vỡ (smoke non-offscreen).
+- **Trạng thái:** IMPLEMENTED (25/09/2026 — collector D2; bảng §8 cập nhật KÉP;
+  QĐ-F9/F10)
 
 ### F5 — Nghiệm thu tổng + đồng bộ tài liệu + đóng plan (M)
 
@@ -426,6 +431,25 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
      `dedupe_key`" (sót đợt 3 mâu thuẫn đợt 4 — dedupe_key BẤT BIẾN).
   Parser vẫn GỌI hàm core (cấm bản sao); grep điểm review bổ sung: toàn miền
   Tin tức chỉ MỘT định nghĩa công thức §4.2 (trong `core/news_models.py`).
+- **QĐ-F9 — method đọc thuần `reclassify_pasted_rows(preview, edited_actuals)
+  -> tuple[RowDisposition, ...]` trong `news_controller` (PO duyệt 25/09/2026):**
+  bổ sung inventory F4 (controllers/news_controller.py + tests/test_news_controller.py).
+  Lý do: screen_design d.1602 đòi "phân loại lại so với database" sau khi sửa
+  actual; S2 cấm UI tự phân loại; phương thức parse/commit của F3 không phơi
+  được bước này.  Hành vi: áp actual đã sửa lên BẢN SAO của `preview.events` (chỉ
+  `replace(actual=...)` — cùng quy ước `finalize_edited_batch`, chỉ actual được
+  khác giá trị bóc), đọc hiện hữu qua `events_in_range` (cửa sổ = min→max
+  `event_time_utc` của lô dán), gọi hàm thuần `classify_incoming_events` của
+  parser.  KHÔNG ghi, KHÔNG run, KHÔNG method repo mới (khuôn F3 d.752-762).
+- **QĐ-F10 — nút "Mở trang ForexFactory" của panel mở trang lịch TUẦN theo vị
+  trí tuần của sự kiện (PO duyệt 25/09/2026):** tuần = Thứ 2→Chủ nhật, tính
+  theo UTC từ `event_time_utc`; tuần hiện tại →
+  `https://www.forexfactory.com/calendar?week=this`, tuần kế → `?week=next`,
+  tuần trước → `?week=last`, xa hơn (bù dữ liệu quá khứ sâu) → trang mặc định
+  `https://www.forexfactory.com/calendar` (declared fallback — legacy không có
+  URL tuần tùy ý).  Căn cứ URL: `forex_factory_client.py` d.57-58 (this/next)
+  + `interest_rate_service.py` d.89-90 (this/last).  Chỉ mở trình duyệt ngoài
+  (`QDesktopServices.openUrl`) — app không fetch (QĐ-F4, contract §6.1 đợt 3).
 
 ## 6. Rủi ro và giảm thiểu
 
@@ -459,7 +483,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
 | F1 | Xóa hoàn toàn đường FF tự động + xuất/nhập file (producer, file_transfer, 2 nút FF, 2 nút file, lookup seam, kênh ff_html trong fred producer) + test theo D2 (gồm QĐ-F7) | L | — | IMPLEMENTED |
 | F2 | Parser `services/ff_source_parser.py` (bóc tách + hàm thuần phân loại dòng) + fixture source thật + test (QĐ-F8: bổ sung `calendar_event_dedupe_key` vào core + test models + 2 chỉnh §11b) | M | F1 | IMPLEMENTED |
 | F3 | Đường nhập 2 pha: `parse_pasted_source` (preview — không ghi) + `commit_pasted_source` (chung thiện lô: dòng sửa actual→`source=user`+`raw_json` actual gốc, `dedupe_key` bất biến; ghi DB + run `producer=user` + tóm tắt) | M | F1, F2 | IMPLEMENTED |
-| F4 | UI: dialog dán mã nguồn 2 pha (bảng xem trước — **chỉ cột actual sửa được** + Cập nhật/Hủy) + panel "Sự kiện đang thiếu số liệu" + toolbar 3 nút | M | F3 | PLANNED |
+| F4 | UI: dialog dán mã nguồn 2 pha (bảng xem trước — **chỉ cột actual sửa được** + Cập nhật/Hủy) + panel "Sự kiện đang thiếu số liệu" + toolbar 3 nút (QĐ-F9: `reclassify_pasted_rows`; QĐ-F10: URL tuần FF) | M | F3 | IMPLEMENTED |
 | F5 | Nghiệm thu tổng (battery/smoke/build/boot + bằng chứng không-mạng-FF) + đồng bộ tài liệu + xóa plan | M | tất cả | PLANNED |
 
 ## Phụ lục — Kỷ luật giao lô (A3) và khuôn prompt

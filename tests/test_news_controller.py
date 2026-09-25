@@ -1359,3 +1359,69 @@ class TestPasteMergeRules:
         assert runs[-1]["error_type"] == "ActualConflict"  # ghi nhận vào run
         assert "user=54.5" in runs[-1]["error_detail"]
         assert "auto=54.1" in runs[-1]["error_detail"]
+
+
+# ---------------------------------------------------------------------------
+# 9. Phân loại lại dòng sau sửa actual (QĐ-F9 — screen_design d.1602)
+# ---------------------------------------------------------------------------
+
+
+class TestReclassifyPastedRows:
+    def test_reclassify_turns_conflict_into_will_update_when_matching_user_value(self, tmp_path):
+        """Sửa actual dòng xung đột cho khớp giá trị nhập tay → sẽ cập nhật;
+        các dòng không đụng giữ nguyên phân loại (QĐ-F9)."""
+        _, controller = _real_controller(tmp_path)
+        first = controller.parse_pasted_source(REAL_SOURCE)
+        jn = next(e for e in first.events if e.title == "JN Flash Manufacturing PMI")
+        controller.commit_pasted_source(first, edited_actuals={jn.dedupe_key: "54.5"})
+        second = controller.parse_pasted_source(REAL_SOURCE)
+        index = next(i for i, e in enumerate(second.events) if e.dedupe_key == jn.dedupe_key)
+        assert second.dispositions[index] is RowDisposition.CONFLICT_KEEP_MANUAL
+
+        dispositions = controller.reclassify_pasted_rows(
+            second, edited_actuals={jn.dedupe_key: "54.5"}
+        )
+
+        assert len(dispositions) == len(second.events)
+        assert dispositions[index] is RowDisposition.WILL_UPDATE  # khớp giá trị user
+        assert all(
+            d is RowDisposition.WILL_UPDATE
+            for i, d in enumerate(dispositions)
+            if i != index  # dòng không đụng giữ nguyên (đều sẽ cập nhật)
+        )
+
+    def test_reclassify_on_fresh_db_keeps_every_row_new(self, tmp_path):
+        _, controller = _real_controller(tmp_path)
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+
+        dispositions = controller.reclassify_pasted_rows(
+            preview, edited_actuals={preview.events[0].dedupe_key: "99.9"}
+        )
+
+        assert dispositions == (RowDisposition.NEW,) * len(preview.events)
+
+    def test_reclassify_with_empty_batch_returns_empty(self, tmp_path):
+        _, controller = _real_controller(tmp_path)
+
+        dispositions = controller.reclassify_pasted_rows(
+            SourcePreview(events=[], rates=[], dispositions=(), error=None, fetched_at="2026-09-24T22:00:00Z"),
+            edited_actuals={},
+        )
+
+        assert dispositions == ()
+
+    def test_reclassify_writes_nothing_and_no_new_run(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+        events_before = _rows(browser, "SELECT * FROM news_events")
+        rates_before = _rows(browser, "SELECT * FROM interest_rates")
+        runs_before = _rows(browser, "SELECT * FROM ingest_runs")
+
+        controller.reclassify_pasted_rows(
+            preview, edited_actuals={preview.events[0].dedupe_key: "9.9"}
+        )
+
+        assert _rows(browser, "SELECT * FROM news_events") == events_before
+        assert _rows(browser, "SELECT * FROM interest_rates") == rates_before
+        assert _rows(browser, "SELECT * FROM ingest_runs") == runs_before
