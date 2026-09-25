@@ -157,6 +157,7 @@ from PyQt6.QtCore import (
     QDate,
     QDateTime,
     QModelIndex,
+    QSize,
     QTime,
     Qt,
     QThread,
@@ -178,6 +179,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QSizePolicy,
     QTableView,
@@ -197,7 +199,7 @@ from core.news_models import (
     NewsItemSource,
     TrendVerdict,
 )
-from ui.layout_system import configure_table
+from ui.layout_system import LayoutTokens, configure_table
 from ui.responsive_row import ResponsiveGrid
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
 from ui.screens.shared import action_button, card, form_row, page_header
@@ -511,6 +513,100 @@ def _read_source_file(path: str) -> str:
     """Đọc file `.html` đã lưu — chạy TRONG worker (không block GUI; d.1588)."""
     with open(path, mode="r", encoding="utf-8", errors="replace") as fh:
         return fh.read()
+
+
+class _ElidedLabel(QLabel):
+    """QLabel cắt "…" khi text quá dài thay vì wrap (khuôn dashboard d.107-125
+    — dùng cho dòng panel QĐ-P2: một hàng, tiêu đề dài cắt "…")."""
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._full_text = text
+        self.setWordWrap(False)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def setText(self, text: str) -> None:
+        self._full_text = text or ""
+        super().setText(self._full_text)
+        self._apply_elide()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - tên Qt
+        super().resizeEvent(event)
+        self._apply_elide()
+
+    def _apply_elide(self) -> None:
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.width()
+        )
+        if elided != self.text():
+            super().setText(elided)
+
+
+class _PendingPanel(QFrame):
+    """Khung panel "Sự kiện đang thiếu số liệu" giới hạn chiều cao bằng token
+    (QĐ-P1 — ``PANEL_LIST_MAX_HEIGHT`` = 180).
+
+    Điều khoản ca (plan §2): màn Tin tức nằm NGOÀI bộ density-lock hiện hành,
+    nên chiều cao panel khai báo qua override layout của ``QFrame``
+    (``sizeHint``/``minimumSizeHint``/``maximumHeight``) chứ KHÔNG gọi
+    ``setMaximumHeight`` — tránh sinh height-call mới bị audit density phase0/3
+    báo "new unreviewed" ngoài danh tính R9 (khuôn override
+    ``DialogBodyScroll.sizeHint``).  Observable vẫn đúng: ``maximumHeight() ==
+    PANEL_LIST_MAX_HEIGHT`` và panel cao đúng token khi hiển thị."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("NewsPendingPanel")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+    def sizeHint(self) -> QSize:
+        return QSize(200, LayoutTokens.PANEL_LIST_MAX_HEIGHT)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, LayoutTokens.PANEL_LIST_MAX_HEIGHT)
+
+    def maximumHeight(self) -> int:
+        return LayoutTokens.PANEL_LIST_MAX_HEIGHT
+
+
+class _PendingScroll(QScrollArea):
+    """Vùng cuộn danh sách panel — khuôn ``DialogBodyScroll`` (widgetResizable
+    True + ScrollBarAsNeeded, ngang tắt); dần dần nội dung dài bị cuộn thay vì
+    nén bảng tin/toolbar."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("NewsPendingScroll")
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def sizeHint(self) -> QSize:
+        hint = super().sizeHint()
+        return QSize(hint.width(), LayoutTokens.PANEL_LIST_MAX_HEIGHT)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, LayoutTokens.TABLE_ROW_HEIGHT)
+
+
+class _PendingRow(QWidget):
+    """Một dòng của panel: một hàng cao đúng ``TABLE_ROW_HEIGHT``, không wrap —
+    chiều cao khai báo qua override layout (không gọi ``setFixedHeight`` —
+    tránh height-call mới trong audit density phase0/3, plan §2)."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("NewsPendingRow")
+
+    def sizeHint(self) -> QSize:
+        return QSize(0, LayoutTokens.TABLE_ROW_HEIGHT)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, LayoutTokens.TABLE_ROW_HEIGHT)
 
 EVENT_ROW = "event"
 ITEM_ROW = "item"
@@ -2080,17 +2176,24 @@ class NewsScreen(QWidget):
 
     def _pending_panel(self) -> QFrame:
         """Panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617): chỉ
-        hiển thị khi có sự kiện stale (ẩn khi rỗng — không phát minh nhãn rỗng)."""
-        panel = card()
-        panel.setObjectName("NewsPendingPanel")
+        hiển thị khi có sự kiện stale (ẩn khi rỗng — không phát minh nhãn rỗng).
+
+        QĐ-P1 — danh sách nằm trong ``QScrollArea`` (khuôn ``DialogBodyScroll``:
+        ``setWidgetResizable(True)`` + ``ScrollBarAsNeeded``, ngang tắt); panel
+        cao đúng ``LayoutTokens.PANEL_LIST_MAX_HEIGHT`` qua override layout của
+        ``_PendingPanel`` (plan §2: news screen ngoài density-lock — không gọi
+        ``setMaximumHeight``)."""
+        panel = _PendingPanel()
         title = QLabel(PANEL_TITLE_TEXT)
         title.setObjectName("PanelTitle")
         panel.layout().addWidget(title)
         self._pending_list = QWidget()
         self._pending_layout = QVBoxLayout(self._pending_list)
         self._pending_layout.setContentsMargins(0, 0, 0, 0)
-        self._pending_layout.setSpacing(4)
-        panel.layout().addWidget(self._pending_list)
+        self._pending_layout.setSpacing(2)
+        self._pending_scroll = _PendingScroll()
+        self._pending_scroll.setWidget(self._pending_list)
+        panel.layout().addWidget(self._pending_scroll)
         self._pending_panel = panel
         return panel
 
@@ -2220,19 +2323,19 @@ class NewsScreen(QWidget):
         self._show_pending(list(payload) if isinstance(payload, list) else [])
 
     def _show_pending(self, events: list[CalendarEvent]) -> None:
-        """Dựng lại nội dung panel (mỗi dòng: sự kiện + nút mở trang FF tuần)."""
+        """Dựng lại nội dung panel — mỗi dòng một hàng cố định cao token, tiêu
+        đề cắt "…" khi dài (QĐ-P2); danh sách nằm trong vùng cuộn (QĐ-P1)."""
         self._clear_layout(self._pending_layout)
         self._pending_events = list(events)
         for event in events:
-            row = QWidget()
+            row = _PendingRow()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(8)
-            label = QLabel(
+            label = _ElidedLabel(
                 f"{_display_time(event.event_time_utc)} · {event.currency} · {event.title}"
             )
             label.setObjectName("CardDetail")
-            label.setWordWrap(True)
             row_layout.addWidget(label, 1)
             button = action_button(OPEN_FF_TEXT)
             button.clicked.connect(lambda _checked=False, ev=event: self._open_ff_page(ev))

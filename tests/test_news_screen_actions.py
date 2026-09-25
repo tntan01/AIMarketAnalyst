@@ -33,7 +33,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton, QWidget
 
 from controllers.news_controller import (
     NewsController,
@@ -844,3 +844,99 @@ class TestPendingPanel:
             news.FF_WEEK_LAST_URL,  # tuần trước → week=last
             news.FF_CALENDAR_BASE_URL,  # xa hơn → trang mặc định
         ]
+
+
+# ---- 12. P1 — panel cuộn + dòng một hàng elide (QĐ-P1/P2/P3) --------------------
+
+
+def _pending_events_many(count: int = 70) -> list[CalendarEvent]:
+    """70+ sự kiện stale giả (mỗi dòng lùi 1 ngày so với hôm nay) — kịch bản
+    thật gây nén layout trước khi sửa."""
+    now = datetime.now(UTC)
+    iso = lambda dt: dt.isoformat(timespec="seconds").replace("+00:00", "Z")  # noqa: E731
+    return [
+        _pending_event(
+            time_utc=iso(now - timedelta(days=i)),
+            day=(now - timedelta(days=i)).strftime("%Y-%m-%d"),
+            title=f"Stale event {i:02d} với tiêu đề khá dài để kiểm tra elide",
+            key=f"p{i:03d}",
+            currency="USD" if i % 2 else "EUR",
+        )
+        for i in range(count)
+    ]
+
+
+class TestPendingPanelScrolled:
+    @staticmethod
+    def _row_widgets(screen: news.NewsScreen) -> list:
+        return [w for w in screen.findChildren(QWidget) if w.objectName() == "NewsPendingRow"]
+
+    @staticmethod
+    def _screen_with_pending(count: int = 70) -> tuple[FakeNewsController, NewsScreen]:
+        controller = FakeNewsController()
+        controller.pending = _pending_events_many(count)
+        screen = _screen(controller)
+        assert _wait_until(lambda: screen._pending_panel.isVisible()), "panel chưa hiện sau đọc 70 dòng"
+        return controller, screen
+
+    def test_panel_caps_height_and_scrolls_to_the_last_row(self):
+        _controller, screen = self._screen_with_pending(70)
+        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
+
+        # (a) panel kẹp chiều cao bằng token + vùng cuộn cuộn được tới dòng cuối.
+        assert screen._pending_panel.maximumHeight() == news.LayoutTokens.PANEL_LIST_MAX_HEIGHT
+        vbar = screen._pending_scroll.verticalScrollBar()
+        assert _wait_until(lambda: vbar.maximum() > 0), f"scrollbar max={vbar.maximum()} <= 0"
+
+    def test_rows_have_fixed_height_and_never_overlap(self):
+        _controller, screen = self._screen_with_pending(70)
+        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
+        rows = self._row_widgets(screen)
+
+        # (b) mỗi dòng một hàng cao đúng token (bỏ word-wrap — ghim defect chữ chồng).
+        assert _wait_until(
+            lambda: all(r.height() == news.LayoutTokens.TABLE_ROW_HEIGHT for r in rows)
+        )
+        for index, row in enumerate(rows):
+            assert row.height() == news.LayoutTokens.TABLE_ROW_HEIGHT
+            # Không 2 widget dòng nào giao nhau (gốc defect: chữ chèn vào nhau).
+            for other_index in range(index + 1, len(rows)):
+                assert not row.geometry().intersects(rows[other_index].geometry()), (
+                    f"dòng {index} và {other_index} giao nhau: {row.geometry()} vs {rows[other_index].geometry()}"
+                )
+
+    def test_table_card_still_visible_with_70_pending_rows(self):
+        _controller, screen = self._screen_with_pending(70)
+        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
+
+        # (c) bảng tin vẫn hiển thị — không bị nén về 0.
+        assert screen.table.isVisible() is True
+        assert screen.table.height() > 0
+        assert screen.table_model.rowCount() > 0
+
+    def test_every_row_button_opens_the_correct_week_url(self, monkeypatch):
+        controller, screen = self._screen_with_pending(70)
+        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
+
+        opened: list[str] = []
+        monkeypatch.setattr(
+            news.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toString()))
+        )
+        buttons = [b for b in screen.findChildren(QPushButton) if b.text() == news.OPEN_FF_TEXT]
+        assert len(buttons) == 70  # (d) đúng từng dòng
+        first_pending, last_pending = screen._pending_events[0], screen._pending_events[-1]
+        expected_first = news.ff_week_url_for_event(first_pending.event_time_utc)
+        expected_last = news.ff_week_url_for_event(last_pending.event_time_utc)
+
+        buttons[0].click()
+        buttons[-1].click()
+        _app().processEvents()
+
+        assert opened == [expected_first, expected_last]
+
+    def test_panel_is_hidden_when_no_pending_events(self):
+        controller = FakeNewsController()  # pending mặc định rỗng
+        screen = _screen(controller)
+
+        # (e) panel rỗng → ẩn toàn bộ.
+        assert _wait_until(lambda: not screen._pending_panel.isVisible())

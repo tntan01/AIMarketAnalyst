@@ -1614,7 +1614,8 @@ người dùng xác nhận trước khi ghi):
   `events_pending_actual` — contract §8): mỗi dòng hiện sự kiện + nút mở
   trang FF tương ứng bằng trình duyệt mặc định (chỉ mở link — app không tự
   fetch), giúp người dùng biết cần dán nguồn của ngày/trang nào; dán xong
-  panel tự làm mới.
+  panel tự làm mới. Danh sách hiển thị trong vùng cuộn giới hạn chiều cao
+  theo LayoutTokens; mỗi dòng một hàng, tiêu đề quá dài cắt "…".
 
 ### Hành vi nhập/sửa tin
 

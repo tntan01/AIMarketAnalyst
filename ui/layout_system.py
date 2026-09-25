@@ -49,6 +49,10 @@ class LayoutTokens:
     SETTINGS_FIELD_WIDTH = 220
     TABLE_HEADER_HEIGHT = 32
     TABLE_ROW_HEIGHT = 36
+    # Chiều cao tối đa danh sách panel (QĐ-P1 — panel "Sự kiện đang thiếu số
+    # liệu" của màn Quản lý tin): con số UI duy nhất cho vùng cuộn giới hạn
+    # chiều cao (~4 dòng 36px + header + scrollbar), không rải rác.
+    PANEL_LIST_MAX_HEIGHT = 180
     CHART_MIN_HEIGHT = 240
 
     DIALOG_SM_WIDTH = 420
